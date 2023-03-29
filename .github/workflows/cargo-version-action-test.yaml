@@ -1,0 +1,41 @@
+name: "Release: Core"
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+jobs:
+  cargo_version_test:
+    runs-on: ubuntu-latest
+    name: A job to test cargo version action
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          persist-credentials: false
+
+      - name: Set Git author
+        run: |
+          git config user.name "Bot"
+          git config user.email "bot@gorules.io"
+
+      - name: Cargo version
+        uses: ./actions/cargo-version-action
+        id: semver
+        with:
+          version: ${{ github.event.inputs.version }}
+          tag-prefix: core-v
+
+      - name: Push changes
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.PAT}}

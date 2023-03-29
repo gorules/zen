@@ -1,0 +1,45 @@
+[build-system]
+requires = ["maturin>=0.14,<0.15"]
+build-backend = "maturin"
+
+[project]
+name = "zen-engine"
+requires-python = ">=3.7"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+
+description = "Read the latest Real Python tutorials"
+readme = "README.md"
+authors = [{ name = "GoRules Team", email = "hi@gorules.io" }]
+license = { file = "LICENSE" }
+
+keywords = ["gorules",
+    "zen-engine",
+    "business rules engine",
+    "rules engine",
+    "rule engine",
+    "bre",
+    "rule",
+    "rules",
+    "engine",
+    "decision",
+    "decision table",
+    "rust",
+    "pyo3"
+]
+
+[project.optional-dependencies]
+dev = ["black", "bumpver", "isort", "pip-tools", "pytest"]
+
+[project.urls]
+Homepage = "https://github.com/realpython/reader"
+
+[project.scripts]
+realpython = "reader.__main__:main"
+
+
+[tool.maturin]
+features = ["pyo3/extension-module"]

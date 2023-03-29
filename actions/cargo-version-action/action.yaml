@@ -1,0 +1,23 @@
+name: 'Zen Cargo Action'
+description: 'Bump Zen Engine version'
+inputs:
+  version:
+    description: 'One of patch | minor | major'
+    required: true
+    default: 'patch'
+  commit-message:
+    description: 'Commit message'
+    required: true
+    default: 'chore(release): publish core'
+  tag-prefix:
+    description: 'Prefix of the tag'
+    required: true
+    default: 'v'
+outputs:
+  version:
+    description: 'Output version'
+  tag:
+    description: 'Output tag'
+runs:
+  using: 'node16'
+  main: 'dist/index.js'

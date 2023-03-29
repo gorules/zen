@@ -1,0 +1,20 @@
+[package]
+name = "zen-nodejs"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+async-trait = "0.1.66"
+napi = { version = "2", features = ["serde-json", "error_anyhow", "tokio_rt"] }
+napi-derive = "2"
+serde_json = "1.0.93"
+futures = "0.3.26"
+zen-engine = { path = "../../core/engine" }
+
+[build-dependencies]
+napi-build = "2"

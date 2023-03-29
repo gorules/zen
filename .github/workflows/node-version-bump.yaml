@@ -1,0 +1,60 @@
+name: "Release: NodeJS"
+
+env:
+  WORKING_DIRECTORY: bindings/nodejs
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Version
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          persist-credentials: false
+
+      - name: Set Git author
+        run: |
+          git config user.name "Bot"
+          git config user.email "bot@gorules.io"
+
+      - name: Setup node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          check-latest: true
+          cache: yarn
+          cache-dependency-path: 'bindings/nodejs/yarn.lock'
+
+      - name: 'Install dependencies'
+        run: yarn install --immutable --mode=skip-build
+
+      - name: Lerna version
+        run: yarn lerna version ${{ github.event.inputs.version }} --tag-version-prefix="nodejs-" --no-push --yes
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push changes
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.PAT}}

@@ -1,0 +1,51 @@
+{
+  "name": "@gorules/zen-engine-linux-x64-musl",
+  "version": "0.1.4",
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "libc": [
+    "musl"
+  ],
+  "main": "zen-engine.linux-x64-musl.node",
+  "files": [
+    "zen-engine.linux-x64-musl.node"
+  ],
+  "description": "Rust zen-engine binding",
+  "keywords": [
+    "gorules",
+    "zen-engine",
+    "business rules engine",
+    "rules engine",
+    "rule engine",
+    "bre",
+    "rule",
+    "rules",
+    "engine",
+    "decision",
+    "decision table",
+    "rust",
+    "N-API",
+    "napi-rs",
+    "node-rs"
+  ],
+  "author": "GoRules <hi@gorules.io> (https://gorules.io)",
+  "homepage": "https://github.com/gorules/zen",
+  "license": "MIT",
+  "engines": {
+    "node": ">= 14"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gorules/zen.git"
+  },
+  "bugs": {
+    "url": "https://github.com/gorules/zen/issues"
+  }
+}

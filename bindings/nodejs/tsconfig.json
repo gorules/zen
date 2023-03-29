@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "allowSyntheticDefaultImports": true,
+    "declaration": true,
+    "downlevelIteration": true,
+    "importHelpers": true,
+    "allowJs": true,
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "newLine": "LF",
+    "noEmitHelpers": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "suppressImplicitAnyIndexErrors": true,
+    "suppressExcessPropertyErrors": true,
+    "forceConsistentCasingInFileNames": true,
+    "preserveSymlinks": true,
+    "target": "ES2015",
+    "sourceMap": true,
+    "esModuleInterop": true,
+    "stripInternal": true,
+    "resolveJsonModule": true,
+    "importsNotUsedAsValues": "remove",
+    "outDir": "dist",
+    "lib": ["dom", "DOM.Iterable", "ES2019", "ES2020", "esnext"]
+  },
+  "include": ["."],
+  "exclude": ["node_modules", "bench", "cli/scripts", "scripts", "target"]
+}

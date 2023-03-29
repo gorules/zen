@@ -1,0 +1,20 @@
+[package]
+name = "zen-python"
+version = "0.4.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[lib]
+name = "zen"
+crate-type = ["cdylib"]
+
+[dependencies]
+async-trait = "0.1.66"
+anyhow = "1.0.69"
+pyo3 = { version = "0.18.1", features = ["anyhow", "serde"] }
+pythonize = "0.18.0"
+serde = "1"
+serde_json = "1"
+futures = "0.3.26"
+zen-engine = { path = "../../core/engine" }

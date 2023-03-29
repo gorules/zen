@@ -7,17 +7,17 @@ license = "MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-async-recursion = "1.0.2"
+async-recursion = "1.0.4"
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 async-trait = { workspace = true }
 bincode = { workspace = true, optional = true }
 serde_json = { workspace = true, features = ["arbitrary_precision"] }
 serde = { version = "1", features = ["derive"] }
-serde_v8 = { version = "0.78.0" }
+serde_v8 = { version = "0.88.0" }
 once_cell = { version = "1.17.1" }
-futures = "0.3.26"
-v8 = { version = "0.60.1" }
+futures = "0.3.27"
+v8 = { version = "0.66.0" }
 zen-vm = { path = "../vm" }
 
 [dev-dependencies]

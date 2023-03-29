@@ -26,9 +26,7 @@ jobs:
         working-directory: ${{ env.WORKING_DIRECTORY }}
     strategy:
       matrix:
-#        target: [x86_64, x86, aarch64, armv7, s390x, ppc64le]
-#        target: [x86_64, aarch64]
-        target: [x86_64]
+        target: [x86_64, x86, aarch64, armv7, s390x, ppc64le]
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4

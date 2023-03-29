@@ -17,7 +17,7 @@ on:
       - 'bindings/nodejs/**'
       - 'core/**'
       - 'test-data/**'
-      - '.github/workflows/node-v2.yaml'
+      - '.github/workflows/node.yaml'
   pull_request:
 
 jobs:
@@ -28,19 +28,17 @@ jobs:
       fail-fast: false
       matrix:
         settings:
-#          - host: macos-latest
-#            target: 'x86_64-apple-darwin'
-#            build: |
-#              yarn build
-#              strip -x packages/*/*.node
-#          - host: windows-latest
-#            build: yarn build
-#            target: 'x86_64-pc-windows-msvc'
-#          - host: windows-latest
-#            build: |
-#              yarn lerna exec "yarn build --target i686-pc-windows-msvc" --concurrency 1 --stream --no-prefix
-#              yarn test -s
-#            target: 'i686-pc-windows-msvc'
+          - host: macos-latest
+            target: 'x86_64-apple-darwin'
+            build: |
+              cd bindings/nodejs &&
+              yarn build &&
+              strip -x ./*.node
+          - host: windows-latest
+            build: |
+              cd bindings/nodejs &&
+              yarn build
+            target: 'x86_64-pc-windows-msvc'
           - host: ubuntu-latest
             target: 'x86_64-unknown-linux-gnu'
             docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian
@@ -50,55 +48,40 @@ jobs:
               cd bindings/nodejs &&
               yarn lerna exec "yarn build --target x86_64-unknown-linux-gnu" --concurrency 1 --stream --no-prefix &&
               strip ./*.node
-#          - host: ubuntu-latest
-#            target: 'x86_64-unknown-linux-musl'
-#            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
-#            build: yarn build
-#          - host: macos-latest
-#            target: 'aarch64-apple-darwin'
-#            build: |
-#              sudo rm -Rf /Library/Developer/CommandLineTools/SDKs/*;
-#              export CC=$(xcrun -f clang);
-#              export CXX=$(xcrun -f clang++);
-#              SYSROOT=$(xcrun --sdk macosx --show-sdk-path);
-#              export CFLAGS="-isysroot $SYSROOT -isystem $SYSROOT";
-#              yarn lerna exec "yarn build --target aarch64-apple-darwin" --concurrency 1 --stream --no-prefix
-#              strip -x packages/*/*.node
-#          - host: ubuntu-latest
-#            target: aarch64-unknown-linux-gnu
-#            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian-aarch64
-#            build: >-
-#              rustup target add aarch64-unknown-linux-gnu &&
-#              yarn lerna exec "yarn build --target aarch64-unknown-linux-gnu" --concurrency 1 --stream --no-prefix &&
-#              llvm-strip packages/*/*.node
-#          - host: ubuntu-latest
-#            target: 'armv7-unknown-linux-gnueabihf'
-#            setup: |
-#              sudo apt-get update
-#              sudo apt-get install gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf -y
-#            build: yarn lerna exec "yarn build --target armv7-unknown-linux-gnueabihf" --concurrency 1 --stream --no-prefix
-#          - host: ubuntu-latest
-#            target: aarch64-linux-android
-#            build: |
-#              yarn lerna exec "yarn build --target aarch64-linux-android" --concurrency 1 --stream --no-prefix
-#              ${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip packages/*/*.node
-#          - host: ubuntu-latest
-#            architecture: x64
-#            target: armv7-linux-androideabi
-#            build: |
-#              yarn lerna exec "yarn build --target armv7-linux-androideabi" --concurrency 1 --stream --no-prefix
-#              ${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip packages/*/*.node
-#          - host: ubuntu-latest
-#            target: 'aarch64-unknown-linux-musl'
-#            downloadTarget: 'aarch64-unknown-linux-musl'
-#            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
-#            build: >-
-#              set -e &&
-#              rustup target add aarch64-unknown-linux-musl &&
-#              yarn lerna exec "yarn build --target aarch64-unknown-linux-musl" --concurrency 1 --stream --no-prefix
-#          - host: windows-latest
-#            target: 'aarch64-pc-windows-msvc'
-#            build: yarn lerna exec "yarn build --target aarch64-pc-windows-msvc" --ignore @node-rs/jsonwebtoken --concurrency 1 --stream --no-prefix
+          - host: ubuntu-latest
+            target: 'x86_64-unknown-linux-musl'
+            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
+            build: |
+              cd bindings/nodejs &&
+              yarn build
+          - host: macos-latest
+            target: 'aarch64-apple-darwin'
+            build: |
+              sudo rm -Rf /Library/Developer/CommandLineTools/SDKs/*;
+              export CC=$(xcrun -f clang);
+              export CXX=$(xcrun -f clang++);
+              SYSROOT=$(xcrun --sdk macosx --show-sdk-path);
+              export CFLAGS="-isysroot $SYSROOT -isystem $SYSROOT";
+              cd bindings/nodejs &&
+              yarn lerna exec "yarn build --target aarch64-apple-darwin" --concurrency 1 --stream --no-prefix
+              strip -x ./*.node
+          - host: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian-aarch64
+            build: >-
+              rustup target add aarch64-unknown-linux-gnu &&
+              cd bindings/nodejs &&
+              yarn lerna exec "yarn build --target aarch64-unknown-linux-gnu" --concurrency 1 --stream --no-prefix &&
+              llvm-strip ./*.node
+          - host: ubuntu-latest
+            target: 'aarch64-unknown-linux-musl'
+            downloadTarget: 'aarch64-unknown-linux-musl'
+            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
+            build: >-
+              set -e &&
+              rustup target add aarch64-unknown-linux-musl &&
+              cd bindings/nodejs &&
+              yarn lerna exec "yarn build --target aarch64-unknown-linux-musl" --concurrency 1 --stream --no-prefix
 
     name: stable - ${{ matrix.settings.target }} - node@18
     runs-on: ${{ matrix.settings.host }}
@@ -163,49 +146,56 @@ jobs:
           path: bindings/nodejs/*.node
           if-no-files-found: error
 
-#  test-macOS-windows-binding:
-#    name: Test bindings on ${{ matrix.settings.target }} - node@${{ matrix.node }}
-#    needs:
-#      - build
-#    strategy:
-#      fail-fast: false
-#      matrix:
-#        settings:
-#          - host: macos-latest
-#            target: 'x86_64-apple-darwin'
-#          - host: windows-latest
-#            target: 'x86_64-pc-windows-msvc'
-#        node: ['14', '16', '18']
-#    runs-on: ${{ matrix.settings.host }}
-#
-#    steps:
-#      - uses: actions/checkout@v3
-#        with:
-#          submodules: true
-#
-#      - name: Setup node
-#        uses: actions/setup-node@v3
-#        with:
-#          node-version: ${{ matrix.node }}
-#          check-latest: true
-#          cache: yarn
-#
-#      - name: Install dependencies
-#        run: yarn install --immutable --mode=skip-build
-#
-#      - name: Download artifacts
-#        uses: actions/download-artifact@v3
-#        with:
-#          name: bindings-${{ matrix.settings.target }}
-#          path: artifacts
-#
-#      - name: Move artifacts
-#        run: yarn artifacts
-#        shell: bash
-#
-#      - name: Test bindings
-#        run: |
-#          yarn test packages/argon2
+  test-macOS-windows-binding:
+    name: Test bindings on ${{ matrix.settings.target }} - node@${{ matrix.node }}
+    needs:
+      - build
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - host: macos-latest
+            target: 'x86_64-apple-darwin'
+          - host: windows-latest
+            target: 'x86_64-pc-windows-msvc'
+        node: ['14', '16', '18']
+    runs-on: ${{ matrix.settings.host }}
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - name: Setup node
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node }}
+          check-latest: true
+          cache: yarn
+          cache-dependency-path: 'bindings/nodejs/yarn.lock'
+
+      - name: Install dependencies
+        run: yarn install --immutable --mode=skip-build
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: bindings-${{ matrix.settings.target }}
+          path: artifacts
+
+      - name: Move artifacts
+        run: yarn artifacts
+        shell: bash
+
+      - name: Test bindings
+        run: |
+          cd workspace/bindings/nodejs
+          yarn install
+          yarn link
+          yarn test
   test-linux-x64-gnu-binding:
     name: Test bindings on Linux-x64-gnu - node@${{ matrix.node }}
     needs:
@@ -216,8 +206,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-#        node: ['14', '16', '18']
-        node: ['18']
+        node: ['14', '16', '18']
     runs-on: ubuntu-latest
 
     steps:
@@ -438,7 +427,7 @@ jobs:
 #      - test-linux-x64-musl-binding
 #      - test-linux-aarch64-gnu-binding
 #      - test-linux-arm-gnueabihf-binding
-#      - test-macOS-windows-binding
+      - test-macOS-windows-binding
     steps:
       - uses: actions/checkout@v3
 

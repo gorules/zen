@@ -273,8 +273,8 @@ jobs:
         run: yarn artifacts
         shell: bash
 
-      - name: List packages
-        run: ls -R packages
+      - name: List folder
+        run: ls ./
         shell: bash
 
       - name: Test bindings
@@ -295,7 +295,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - run: docker run --rm --privileged multiarch/qemu-user-static:register --reset
+#      - run: docker run --rm --privileged multiarch/qemu-user-static:register --reset
 
       - uses: actions/checkout@v3
 
@@ -314,8 +314,8 @@ jobs:
         run: yarn artifacts
         shell: bash
 
-      - name: List packages
-        run: ls -R packages
+      - name: List folder
+        run: ls ./
         shell: bash
 
       - name: Setup and run tests
@@ -325,6 +325,7 @@ jobs:
           options: -v ${{ github.workspace }}:/build -w /build
           run: |
             set -e
+            ls -la
             yarn build:ts
             yarn test -s
             ls -la

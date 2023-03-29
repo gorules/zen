@@ -31,16 +31,11 @@ jobs:
           - host: macos-latest
             target: 'x86_64-apple-darwin'
             build: |
-              pwd &&
-              ls -la &&
-              cd bindings/nodejs &&
               yarn build &&
-              ls -la &&
               strip -x ./*.node
           - host: windows-latest
             build: |
-              cd bindings/nodejs &&
-              yarn build
+s              yarn build
             target: 'x86_64-pc-windows-msvc'
           - host: ubuntu-latest
             target: 'x86_64-unknown-linux-gnu'
@@ -65,7 +60,6 @@ jobs:
               export CXX=$(xcrun -f clang++);
               SYSROOT=$(xcrun --sdk macosx --show-sdk-path);
               export CFLAGS="-isysroot $SYSROOT -isystem $SYSROOT";
-              cd bindings/nodejs &&
               yarn lerna exec "yarn build --target aarch64-apple-darwin" --concurrency 1 --stream --no-prefix
               strip -x ./*.node
           - host: ubuntu-latest

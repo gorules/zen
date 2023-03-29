@@ -1,0 +1,88 @@
+name: Rust
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+    tags-ignore:
+      - '**'
+
+env:
+  RUST_BACKTRACE: 1
+  RUSTUP_MAX_RETRIES: 10
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: cargo test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install Rust
+        run: rustup update nightly --no-self-update && rustup default nightly
+      - run: cargo test --workspace --all-features
+      - run: cargo test --workspace --all-features --release
+
+  build:
+    name: cargo +${{ matrix.rust }} build
+    strategy:
+      fail-fast: false
+      matrix:
+        rust:
+          - stable
+          - beta
+          - nightly
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install Rust
+        run: rustup update ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
+      - run: cargo build --tests
+
+  bench:
+    name: cargo bench
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install Rust
+        run: rustup update nightly && rustup default nightly
+      - run: cargo bench --workspace
+
+  miri:
+    name: cargo miri test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install Rust
+        run: rustup toolchain install nightly --component miri && rustup default nightly
+      - run: cargo miri test --workspace --all-features
+        env:
+          MIRIFLAGS: -Zmiri-strict-provenance -Zmiri-symbolic-alignment-check -Zmiri-disable-isolation
+          RUSTFLAGS: ${{ env.RUSTFLAGS }} -Z randomize-layout
+
+  fmt:
+    name: cargo fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install Rust
+        run: rustup update stable
+      - run: cargo fmt --all -- --check

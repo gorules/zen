@@ -137,12 +137,10 @@ mod tests {
 
         let graph = DecisionEngine::new(mem_loader);
         let res1 = tokio_test::block_on(graph.evaluate("table", &json!({ "input": 12 })));
-        let res2 = tokio_test::block_on(graph.evaluate("function", &json!({ "input": 12 })));
-        let res3 = tokio_test::block_on(graph.evaluate("aaa", &json!({ "input": 12 })));
+        let res2 = tokio_test::block_on(graph.evaluate("aaa", &json!({ "input": 12 })));
 
         assert_eq!(res1.unwrap().result, json!({"output": 10}));
-        assert_eq!(res2.unwrap().result, json!({"output": 24}));
-        assert!(res3.is_err());
+        assert!(res2.is_err());
     }
 
     #[test]
@@ -156,12 +154,10 @@ mod tests {
 
         let graph = DecisionEngine::new(fs_loader);
         let res1 = tokio_test::block_on(graph.evaluate("table.json", &json!({ "input": 12 })));
-        let res2 = tokio_test::block_on(graph.evaluate("function.json", &json!({ "input": 12 })));
-        let res3 = tokio_test::block_on(graph.evaluate("aaa", &json!({ "input": 12 })));
+        let res2 = tokio_test::block_on(graph.evaluate("aaa", &json!({ "input": 12 })));
 
         assert_eq!(res1.unwrap().result, json!({"output": 10}));
-        assert_eq!(res2.unwrap().result, json!({"output": 24}));
-        assert!(res3.is_err());
+        assert!(res2.is_err());
     }
 
     #[test]

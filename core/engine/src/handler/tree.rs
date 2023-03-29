@@ -362,6 +362,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn function() {
         let content =
             &serde_json::from_str(include_str!("../../../../test-data/function.json")).unwrap();

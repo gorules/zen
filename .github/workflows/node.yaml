@@ -328,7 +328,9 @@ jobs:
           options: -v ${{ github.workspace }}:/workspace -w /workspace
           run: |
             ls -la
-            yarn lerna link
+            cd bindings/nodejs
+            yarn install
+            yarn link
             yarn test
 
   release:

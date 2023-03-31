@@ -38,6 +38,14 @@ jobs:
         run: |
           python -m venv .env &&
           source .env/bin/activate
+      - name: Test wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          sccache: 'true'
+          working-directory: ${{ env.WORKING_DIRECTORY }}
+      - name: Test Bindings
+        run: python index.py
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -46,8 +54,6 @@ jobs:
           sccache: 'true'
           manylinux: auto
           working-directory: ${{ env.WORKING_DIRECTORY }}
-      - name: Test Bindings
-        run: python index.py
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
@@ -73,6 +79,14 @@ jobs:
         run: |
           python -m venv .env &&
           source .env/bin/activate
+      - name: Test wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          sccache: 'true'
+          working-directory: ${{ env.WORKING_DIRECTORY }}
+      - name: Test Bindings
+        run: python index.py
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -80,8 +94,6 @@ jobs:
           args: --release --out dist --find-interpreter -m ./Cargo.toml
           sccache: 'true'
           working-directory: ${{ env.WORKING_DIRECTORY }}
-      - name: Test Bindings
-        run: python index.py
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
@@ -106,6 +118,14 @@ jobs:
         run: |
           python -m venv .env &&
           source .env/bin/activate
+      - name: Test wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          sccache: 'true'
+          working-directory: ${{ env.WORKING_DIRECTORY }}
+      - name: Test Bindings
+        run: python index.py
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -113,8 +133,6 @@ jobs:
           args: --release --out dist --find-interpreter -m ./Cargo.toml
           sccache: 'true'
           working-directory: ${{ env.WORKING_DIRECTORY }}
-      - name: Test Bindings
-        run: python index.py
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:

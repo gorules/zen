@@ -296,8 +296,11 @@ jobs:
 
     steps:
       - run: docker run --rm --privileged multiarch/qemu-user-static:register --reset
-
       - uses: actions/checkout@v3
+      - name: List directory
+        run: |
+          ls -la &&
+          pwd
 
       - name: Download artifacts
         uses: actions/download-artifact@v3
@@ -324,6 +327,7 @@ jobs:
           image: ghcr.io/napi-rs/napi-rs/nodejs:aarch64-${{ matrix.node }}
           options: -v ${{ github.workspace }}:/workspace -w /workspace
           run: |
+            ls -la
             yarn lerna link
             yarn test
 

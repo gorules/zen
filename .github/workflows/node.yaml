@@ -295,8 +295,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - run: docker run --rm --privileged multiarch/qemu-user-static:register --reset
       - uses: actions/checkout@v3
+      - run: docker run --rm --privileged multiarch/qemu-user-static:register --reset
       - name: List directory
         run: |
           ls -la &&

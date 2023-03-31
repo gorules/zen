@@ -34,18 +34,20 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Copy LICENSE
-        run: cp ../../LICENSE .
-
+      - name: Set venv
+        run: |
+          python -m venv .env &&
+          source .env/bin/activate
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist --find-interpreter -m bindings/python/Cargo.toml
+          args: --release --out dist --find-interpreter -m ./Cargo.toml
           sccache: 'true'
           manylinux: auto
-#      - name: Test Bindings
-#        run: python index.py
+          working-directory: ${{ env.WORKING_DIRECTORY }}
+      - name: Test Bindings
+        run: python index.py
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
@@ -67,17 +69,19 @@ jobs:
           python-version: '3.10'
           architecture: ${{ matrix.target }}
 
-      - name: Copy LICENSE
-        run: cp ../../LICENSE .
-
+      - name: Set venv
+        run: |
+          python -m venv .env &&
+          source .env/bin/activate
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist --find-interpreter -m bindings/python/Cargo.toml
+          args: --release --out dist --find-interpreter -m ./Cargo.toml
           sccache: 'true'
-#      - name: Test Bindings
-#        run: python index.py
+          working-directory: ${{ env.WORKING_DIRECTORY }}
+      - name: Test Bindings
+        run: python index.py
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
@@ -98,17 +102,19 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Copy LICENSE
-        run: cp ../../LICENSE .
-
+      - name: Set venv
+        run: |
+          python -m venv .env &&
+          source .env/bin/activate
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist --find-interpreter -m bindings/python/Cargo.toml
+          args: --release --out dist --find-interpreter -m ./Cargo.toml
           sccache: 'true'
-#      - name: Test Bindings
-#        run: python index.py
+          working-directory: ${{ env.WORKING_DIRECTORY }}
+      - name: Test Bindings
+        run: python index.py
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
@@ -122,13 +128,13 @@ jobs:
         working-directory: ${{ env.WORKING_DIRECTORY }}
     steps:
       - uses: actions/checkout@v3
-      - name: Copy LICENSE
-        run: cp ../../LICENSE .
+
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:
           command: sdist
-          args: --out dist -m bindings/python/Cargo.toml
+          args: --out dist -m ./Cargo.toml
+          working-directory: ${{ env.WORKING_DIRECTORY }}
       - name: Upload sdist
         uses: actions/upload-artifact@v3
         with:

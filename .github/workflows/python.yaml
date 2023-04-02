@@ -27,17 +27,12 @@ jobs:
     strategy:
       matrix:
 #        target: [x86_64, x86, aarch64, armv7, s390x, ppc64le]
-#        target: [x86_64, aarch64]
-        target: [x86_64]
+        target: [x86_64, aarch64]
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-
-      - name: Copy LICENSE
-        run: cp ../../LICENSE .
-
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -45,80 +40,81 @@ jobs:
           args: --release --out dist --find-interpreter -m bindings/python/Cargo.toml
           sccache: 'true'
           manylinux: auto
-#      - name: Test Bindings
-#        run: python index.py
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
           name: wheels
           path: dist
 
-#  windows:
-#    runs-on: windows-latest
-#    strategy:
-#      matrix:
-#        target: [x64, x86]
-#    steps:
-#      - uses: actions/checkout@v3
-#      - uses: actions/setup-python@v4
-#        with:
-#          python-version: '3.10'
-#          architecture: ${{ matrix.target }}
-#      - name: Build wheels
-#        uses: PyO3/maturin-action@v1
-#        with:
-#          target: ${{ matrix.target }}
-#          args: --release --out dist --find-interpreter -m bindings/python/Cargo.toml
-#          sccache: 'true'
-#      - name: Test Bindings
-#        run: python index.py
-#      - name: Upload wheels
-#        uses: actions/upload-artifact@v3
-#        with:
-#          name: wheels
-#          path: dist
-#
-#  macos:
-#    runs-on: macos-latest
-#    strategy:
-#      matrix:
-#        target: [x86_64, aarch64]
-#    steps:
-#      - uses: actions/checkout@v3
-#      - uses: actions/setup-python@v4
-#        with:
-#          python-version: '3.10'
-#      - name: Build wheels
-#        uses: PyO3/maturin-action@v1
-#        with:
-#          target: ${{ matrix.target }}
-#          args: --release --out dist --find-interpreter -m bindings/python/Cargo.toml
-#          sccache: 'true'
-#      - name: Test Bindings
-#        run: python index.py
-#      - name: Upload wheels
-#        uses: actions/upload-artifact@v3
-#        with:
-#          name: wheels
-#          path: dist
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+    strategy:
+      matrix:
+        target: [x64]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          architecture: ${{ matrix.target }}
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist --find-interpreter -m bindings/python/Cargo.toml
+          sccache: 'true'
+      - name: Upload wheels
+        uses: actions/upload-artifact@v3
+        with:
+          name: wheels
+          path: dist
 
-#  sdist:
-#    runs-on: ubuntu-latest
-#    defaults:
-#      run:
-#        working-directory: ${{ env.WORKING_DIRECTORY }}
-#    steps:
-#      - uses: actions/checkout@v3
-#      - name: Build sdist
-#        uses: PyO3/maturin-action@v1
-#        with:
-#          command: sdist
-#          args: --out dist -m bindings/python/Cargo.toml
-#      - name: Upload sdist
-#        uses: actions/upload-artifact@v3
-#        with:
-#          name: wheels
-#          path: dist
+  macos:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+    strategy:
+      matrix:
+        target: [x86_64, aarch64]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist --find-interpreter -m bindings/python/Cargo.toml
+          sccache: 'true'
+      - name: Upload wheels
+        uses: actions/upload-artifact@v3
+        with:
+          name: wheels
+          path: dist
+
+  sdist:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist -m bindings/python/Cargo.toml
+      - name: Upload sdist
+        uses: actions/upload-artifact@v3
+        with:
+          name: wheels
+          path: dist
 
   release:
     name: Release
@@ -127,9 +123,9 @@ jobs:
       run:
         working-directory: ${{ env.WORKING_DIRECTORY }}
 #    if: "startsWith(github.ref, 'refs/tags/')"
-#    needs: [linux, windows, macos, sdist]
+    needs: [linux, windows, macos, sdist]
 #    needs: [linux, sdist]
-    needs: [linux]
+#    needs: [linux]
     steps:
       - uses: actions/download-artifact@v3
         with:

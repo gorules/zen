@@ -1,0 +1,387 @@
+name: NodeJS Bindings
+env:
+  WORKING_DIRECTORY: bindings/nodejs
+  DEBUG: 'napi:*'
+  MACOSX_DEPLOYMENT_TARGET: '10.13'
+  NODE_OPTIONS: '--max-old-space-size=3072'
+  CARGO_UNSTABLE_TARGET_APPLIES_TO_HOST: true
+  CARGO_TARGET_APPLIES_TO_HOST: false
+
+on:
+  push:
+    branches:
+      - master
+    tags-ignore:
+      - '**'
+    paths:
+      - 'bindings/nodejs/**'
+      - 'core/**'
+      - 'test-data/**'
+      - '.github/workflows/node.yaml'
+  pull_request:
+
+jobs:
+  build:
+    if: "!contains(github.event.head_commit.message, 'skip ci')"
+
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - host: macos-latest
+            target: 'x86_64-apple-darwin'
+            build: |
+              yarn build &&
+              strip -x ./*.node
+          - host: windows-latest
+            build: |
+              yarn build
+            target: 'x86_64-pc-windows-msvc'
+          - host: ubuntu-latest
+            target: 'x86_64-unknown-linux-gnu'
+            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian
+            build: >-
+              set -e &&
+              rustup target add x86_64-unknown-linux-gnu &&
+              cd bindings/nodejs &&
+              yarn lerna exec "yarn build --target x86_64-unknown-linux-gnu" --concurrency 1 --stream --no-prefix &&
+              strip ./*.node
+#          - host: ubuntu-latest
+#            target: 'x86_64-unknown-linux-musl'
+#            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
+#            build: |
+#              cd bindings/nodejs &&
+#              yarn build
+          - host: macos-latest
+            target: 'aarch64-apple-darwin'
+            build: |
+              sudo rm -Rf /Library/Developer/CommandLineTools/SDKs/*;
+              export CC=$(xcrun -f clang);
+              export CXX=$(xcrun -f clang++);
+              SYSROOT=$(xcrun --sdk macosx --show-sdk-path);
+              export CFLAGS="-isysroot $SYSROOT -isystem $SYSROOT";
+              yarn lerna exec "yarn build --target aarch64-apple-darwin" --concurrency 1 --stream --no-prefix
+              strip -x ./*.node
+          - host: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian-aarch64
+            build: >-
+              rustup target add aarch64-unknown-linux-gnu &&
+              cd bindings/nodejs &&
+              yarn lerna exec "yarn build --target aarch64-unknown-linux-gnu" --concurrency 1 --stream --no-prefix &&
+              llvm-strip ./*.node
+#          - host: ubuntu-latest
+#            target: 'aarch64-unknown-linux-musl'
+#            downloadTarget: 'aarch64-unknown-linux-musl'
+#            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
+#            build: >-
+#              set -e &&
+#              rustup target add aarch64-unknown-linux-musl &&
+#              cd bindings/nodejs &&
+#              yarn lerna exec "yarn build --target aarch64-unknown-linux-musl" --concurrency 1 --stream --no-prefix
+
+    name: stable - ${{ matrix.settings.target }} - node@18
+    runs-on: ${{ matrix.settings.host }}
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup node
+        uses: actions/setup-node@v3
+        if: ${{ !matrix.settings.docker }}
+        with:
+          node-version: 18
+          check-latest: true
+          cache: yarn
+          cache-dependency-path: 'bindings/nodejs/yarn.lock'
+
+      - name: Install
+        uses: dtolnay/rust-toolchain@stable
+        if: ${{ !matrix.settings.docker }}
+        with:
+          toolchain: nightly-2023-03-01
+          targets: ${{ matrix.settings.target }}
+
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+            .cargo-cache
+          key: ${{ matrix.settings.target }}-cargo-registry
+
+      - name: Setup toolchain
+        run: ${{ matrix.settings.setup }}
+        if: ${{ matrix.settings.setup }}
+        shell: bash
+
+      - name: 'Install dependencies'
+        run: yarn install --immutable --mode=skip-build
+
+      - name: Build in docker
+        uses: addnab/docker-run-action@v3
+        if: ${{ matrix.settings.docker }}
+        with:
+          image: ${{ matrix.settings.docker }}
+          options: --user 0:0 -v ${{ github.workspace }}/.cargo-cache/.cargo/git:/usr/local/cargo/git -v ${{ github.workspace }}/.cargo-cache/.cargo/registry:/usr/local/cargo/registry -v ${{ github.workspace }}:/build -w /build
+          run: ${{ matrix.settings.build }}
+
+      - name: 'Build'
+        run: ${{ matrix.settings.build }}
+        if: ${{ !matrix.settings.docker }}
+        shell: bash
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: bindings-${{ matrix.settings.target }}
+          path: bindings/nodejs/*.node
+          if-no-files-found: error
+
+  test-macOS-windows-binding:
+    name: Test bindings on ${{ matrix.settings.target }} - node@${{ matrix.node }}
+    needs:
+      - build
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - host: macos-latest
+            target: 'x86_64-apple-darwin'
+          - host: windows-latest
+            target: 'x86_64-pc-windows-msvc'
+        node: ['14', '16', '18']
+    runs-on: ${{ matrix.settings.host }}
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - name: Setup node
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node }}
+          check-latest: true
+          cache: yarn
+          cache-dependency-path: 'bindings/nodejs/yarn.lock'
+
+      - name: Install dependencies
+        run: yarn install --immutable --mode=skip-build
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: bindings-${{ matrix.settings.target }}
+          path: artifacts
+
+      - name: Move artifacts
+        run: yarn artifacts
+        shell: bash
+
+      - name: Test bindings
+        run: |
+          yarn install
+          yarn link
+          yarn test
+  test-linux-x64-gnu-binding:
+    name: Test bindings on Linux-x64-gnu - node@${{ matrix.node }}
+    needs:
+      - build
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['14', '16', '18']
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup node
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node }}
+          check-latest: true
+          cache: yarn
+          cache-dependency-path: 'bindings/nodejs/yarn.lock'
+
+      - name: Install dependencies
+        run: yarn install --immutable --mode=skip-build
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: bindings-x86_64-unknown-linux-gnu
+          path: artifacts
+
+      - name: Move artifacts
+        run: yarn artifacts
+        shell: bash
+
+      - name: List folder
+        run: ls ./
+        shell: bash
+
+      - name: Test bindings
+        uses: addnab/docker-run-action@v3
+        with:
+          image: node:${{ matrix.node }}-slim
+          options: -v ${{ github.workspace }}:/workspace
+          run: |
+            cd workspace/bindings/nodejs
+            yarn install
+            yarn link
+            yarn test
+
+  test-linux-x64-centos-7:
+    name: Test bindings on Linux-x64-glibc-2.17
+    needs:
+      - build
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+    runs-on: ubuntu-latest
+    container:
+      image: centos:7
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install dependencies
+        run: |
+          curl -sL https://rpm.nodesource.com/setup_16.x | bash -
+          yum install nodejs -y
+          npm install -g yarn
+          yarn install --immutable --mode=skip-build
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: bindings-x86_64-unknown-linux-gnu
+          path: artifacts
+
+      - name: Move artifacts
+        run: yarn artifacts
+        shell: bash
+
+      - name: List folder
+        run: ls ./
+        shell: bash
+
+      - name: Test bindings
+        run: |
+          yarn lerna link
+          yarn test
+  test-linux-aarch64-gnu-binding:
+    name: Test bindings on aarch64-unknown-linux-gnu - node@${{ matrix.node }}
+    needs:
+      - build
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['14', '16', '18']
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - run: docker run --rm --privileged multiarch/qemu-user-static:register --reset
+      - name: List directory
+        run: |
+          ls -la &&
+          pwd
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: bindings-aarch64-unknown-linux-gnu
+          path: artifacts
+
+      - name: Install dependencies
+        run: |
+          yarn config set supportedArchitectures.cpu "arm64"
+          yarn config set supportedArchitectures.libc "glibc"
+          yarn install --immutable --mode=skip-build
+      - name: Move artifacts
+        run: yarn artifacts
+        shell: bash
+
+      - name: List folder
+        run: ls ./
+        shell: bash
+
+      - name: Setup and run tests
+        uses: addnab/docker-run-action@v3
+        with:
+          image: ghcr.io/napi-rs/napi-rs/nodejs:aarch64-${{ matrix.node }}
+          options: -v ${{ github.workspace }}:/workspace -w /workspace
+          run: |
+            ls -la
+            cd bindings/nodejs
+            yarn install
+            yarn link
+            yarn test
+
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+    needs:
+      - test-linux-x64-gnu-binding
+      - test-linux-x64-centos-7
+#      - test-linux-x64-musl-binding
+      - test-linux-aarch64-gnu-binding
+#      - test-linux-arm-gnueabihf-binding
+      - test-macOS-windows-binding
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          check-latest: true
+          cache: yarn
+          cache-dependency-path: 'bindings/nodejs/yarn.lock'
+          registry-url: 'https://registry.npmjs.org'
+          # Organisation
+          scope: '@gorules'
+
+      - name: 'Install dependencies'
+        run: yarn install --immutable --mode=skip-build
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: artifacts
+
+      - name: Copy LICENSE
+        run: cp ../../LICENSE .
+
+      - name: Move artifacts
+        run: yarn artifacts
+
+      - name: List folder
+        run: ls ./
+        shell: bash
+
+      - name: Lerna publish
+        if: "startsWith(github.event.head_commit.message, 'chore(release): publish nodejs')"
+        run: yarn lerna publish from-package --no-verify-access --yes
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

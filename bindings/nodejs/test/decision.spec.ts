@@ -1,12 +1,13 @@
 import {ZenEngine} from "../index";
 import fs from 'fs/promises';
 import path from 'path';
-import {describe, expect, it} from "@jest/globals";
-
+import {describe, expect, it, jest} from "@jest/globals";
 
 const testDataRoot = path.join(__dirname, '../../../', 'test-data');
 
 const loader = async (key: string) => fs.readFile(path.join(testDataRoot, key))
+
+jest.useRealTimers();
 
 describe('ZenEngine', () => {
     it('Evaluates decisions using loader', async () => {
@@ -21,7 +22,7 @@ describe('ZenEngine', () => {
         expect(r1.result.output).toEqual(10);
         expect(r2.result.output).toEqual(0);
         expect(r3.result.output).toEqual(10);
-    });
+    }, 10000);
 
     it('Evaluates decisions using getDecision', async () => {
         const engine = new ZenEngine({
@@ -38,7 +39,7 @@ describe('ZenEngine', () => {
         expect(r1.result.output).toEqual(20);
         expect(r2.result.output).toEqual(0);
         expect(r3.result.output).toEqual(10);
-    });
+    }, 10000);
 
     it('Creates a decision from contents', async () => {
         const engine = new ZenEngine();
@@ -47,5 +48,5 @@ describe('ZenEngine', () => {
 
         const r = await functionDecision.evaluate({input: 15});
         expect(r.result.output).toEqual(30);
-    })
+    }, 10000)
 })

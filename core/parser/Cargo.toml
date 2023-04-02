@@ -1,9 +1,11 @@
 [package]
+authors = ["GoRules Team <bot@gorules.io>"]
+description = "Zen expression language parser"
 name = "zen-parser"
-version = "0.1.2"
-edition = "2021"
 license = "MIT"
-publish = false
+version = "0.1.0"
+edition = "2021"
+repository = "https://github.com/gorules/zen.git"
 
 [dependencies]
 ahash = { workspace = true }

@@ -1,8 +1,11 @@
 [package]
+authors = ["GoRules Team <bot@gorules.io>"]
+description = "Business rules engine"
 name = "zen-engine"
-version = "0.1.2"
-edition = "2021"
 license = "MIT"
+version = "0.1.0"
+edition = "2021"
+repository = "https://github.com/gorules/zen.git"
 
 [lib]
 doctest = false

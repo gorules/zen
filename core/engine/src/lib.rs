@@ -14,11 +14,11 @@
 //! use zen_engine::model::decision::DecisionContent;
 //!
 //! async fn main() {
-//!   let decision_content: DecisionContent = serde_json::from_str(include_str!("jdm_graph.json")).unwrap();
-//!   let engine = DecisionEngine::default();
-//!   let decision = engine.create_decision(decision_content.into());
+//!     let decision_content: DecisionContent = serde_json::from_str(include_str!("jdm_graph.json")).unwrap();
+//!     let engine = DecisionEngine::default();
+//!     let decision = engine.create_decision(decision_content.into());
 //!
-//!   let result = decision.evaluate(&json!({ "input": 12 })).await;
+//!     let result = decision.evaluate(&json!({ "input": 12 })).await;
 //! }
 //! ```
 //!
@@ -35,6 +35,39 @@
 //! and returns an `Arc<DecisionContent>` instance
 //! - NoopLoader - (default) fails to load decision, allows for usage of create_decision
 //! (mostly existing for streamlining API across languages)
+//!
+//! ## Filesystem loader
+//!
+//! Assuming that you have a folder with decision models (.json files) which is located under /app/decisions,
+//! you may use FilesystemLoader in the following way:
+//!
+//! ```rust
+//! use zen_engine::engine::DecisionEngine;
+//! use zen_engine::loader::filesystem::{FilesystemLoader, FilesystemLoaderOptions};
+//!
+//! async fn main() {
+//!     use serde_json::json;
+//!     let engine = DecisionEngine::new(FilesystemLoader::new(FilesystemLoaderOptions {
+//!         keep_in_memory: true, // optionally, keep in memory for increase performance
+//!         root: "/app/decisions"
+//!     }));
+//!     
+//!     let context = json!({ "customer": { "joinedAt": "2022-01-01" } });
+//!     // If you plan on using it multiple times, you may cache JDM for minor performance gains
+//!     // In case of bindings (in other languages, this increase is much greater)
+//!     {
+//!         let promotion_decision = engine.get_decision("commercial/promotion.json").await.unwrap();
+//!         let result = promotion_decision.evaluate(&context).await.unwrap();
+//!     }
+//!     
+//!     // Or on demand
+//!     {
+//!         let result = engine.evaluate("commercial/promotion.json", &context).await.unwrap();
+//!     }
+//! }
+//!
+//!
+//! ```
 //!
 //! ## Custom loader
 //! You may create a custom loader for zen engine by implementing `DecisionLoader` trait using async_trait crate.

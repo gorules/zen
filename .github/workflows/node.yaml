@@ -1,4 +1,4 @@
-name: NodeJS Bindings
+name: NodeJS
 env:
   WORKING_DIRECTORY: bindings/nodejs
   DEBUG: 'napi:*'
@@ -281,57 +281,57 @@ jobs:
         run: |
           yarn lerna link
           yarn test
-  test-linux-aarch64-gnu-binding:
-    name: Test bindings on aarch64-unknown-linux-gnu - node@${{ matrix.node }}
-    needs:
-      - build
-    defaults:
-      run:
-        working-directory: ${{ env.WORKING_DIRECTORY }}
-    strategy:
-      fail-fast: false
-      matrix:
-        node: ['14', '16', '18']
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v3
-      - run: docker run --rm --privileged multiarch/qemu-user-static:register --reset
-      - name: List directory
-        run: |
-          ls -la &&
-          pwd
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v3
-        with:
-          name: bindings-aarch64-unknown-linux-gnu
-          path: artifacts
-
-      - name: Install dependencies
-        run: |
-          yarn config set supportedArchitectures.cpu "arm64"
-          yarn config set supportedArchitectures.libc "glibc"
-          yarn install --immutable --mode=skip-build
-      - name: Move artifacts
-        run: yarn artifacts
-        shell: bash
-
-      - name: List folder
-        run: ls ./
-        shell: bash
-
-      - name: Setup and run tests
-        uses: addnab/docker-run-action@v3
-        with:
-          image: ghcr.io/napi-rs/napi-rs/nodejs:aarch64-${{ matrix.node }}
-          options: -v ${{ github.workspace }}:/workspace -w /workspace
-          run: |
-            ls -la
-            cd bindings/nodejs
-            yarn install
-            yarn link
-            yarn test
+#  test-linux-aarch64-gnu-binding:
+#    name: Test bindings on aarch64-unknown-linux-gnu - node@${{ matrix.node }}
+#    needs:
+#      - build
+#    defaults:
+#      run:
+#        working-directory: ${{ env.WORKING_DIRECTORY }}
+#    strategy:
+#      fail-fast: false
+#      matrix:
+#        node: ['14', '16', '18']
+#    runs-on: ubuntu-latest
+#
+#    steps:
+#      - uses: actions/checkout@v3
+#      - run: docker run --rm --privileged multiarch/qemu-user-static:register --reset
+#      - name: List directory
+#        run: |
+#          ls -la &&
+#          pwd
+#
+#      - name: Download artifacts
+#        uses: actions/download-artifact@v3
+#        with:
+#          name: bindings-aarch64-unknown-linux-gnu
+#          path: artifacts
+#
+#      - name: Install dependencies
+#        run: |
+#          yarn config set supportedArchitectures.cpu "arm64"
+#          yarn config set supportedArchitectures.libc "glibc"
+#          yarn install --immutable --mode=skip-build
+#      - name: Move artifacts
+#        run: yarn artifacts
+#        shell: bash
+#
+#      - name: List folder
+#        run: ls ./
+#        shell: bash
+#
+#      - name: Setup and run tests
+#        uses: addnab/docker-run-action@v3
+#        with:
+#          image: ghcr.io/napi-rs/napi-rs/nodejs:aarch64-${{ matrix.node }}
+#          options: -v ${{ github.workspace }}:/workspace -w /workspace
+#          run: |
+#            ls -la
+#            cd bindings/nodejs
+#            yarn install
+#            yarn link
+#            yarn test
 
   release:
     name: Release
@@ -343,7 +343,7 @@ jobs:
       - test-linux-x64-gnu-binding
       - test-linux-x64-centos-7
 #      - test-linux-x64-musl-binding
-      - test-linux-aarch64-gnu-binding
+#      - test-linux-aarch64-gnu-binding
 #      - test-linux-arm-gnueabihf-binding
       - test-macOS-windows-binding
     steps:

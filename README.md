@@ -2,40 +2,71 @@
 
 ## ZEN Engine
 
-ZEN Engine is business friendly Open-Source Business Rules Engine (BRE) to execute decision models according to the [GoRules JSON Decision Model (JDM)](https://gorules.io/docs/decisions) standard. It is written in **Rust** and provides native bindings for **NodeJS** and **Python**. ZEN Engine allows to load and execute JSON Decision Model (JDM) from JSON files.
+ZEN Engine is business friendly Open-Source Business Rules Engine (BRE) to execute decision models according to the [GoRules JSON Decision Model (JDM)](https://gorules.io/docs/rules-engine/json-decision-model) standard. It is written in **Rust** and provides native bindings for **NodeJS** and **Python**. ZEN Engine allows to load and execute JSON Decision Model (JDM) from JSON files.
 
 
 ## Usage
-ZEN Engine is built as embeddable BRE for your **Rust**, **NodeJS** or **Python** applications. You can find more details on the links:
+ZEN Engine is built as embeddable BRE for your **Rust**, **NodeJS** or **Python** applications.
+It parses JDM from JSON content. It is up to you to obtain the JSON content, e.g. from file system, database or service call.
 
-* [Rust]()
-* [NodeJS]()
-* [Python]()
+If you are looking for a **Decision-as-a-Service** (DaaS) over REST, take a look at [GoRules Cloud](https://gorules.io).
 
-If you are looking for a **Decision-as-a-Service** (DaaS) over REST, take a look at [GoRules Cloud](https://gorules.io/cloud).
-
-// TODO Change API on RUST
-### Rust Instalation
-```rust
+### Rust
+```toml
 [dependencies]
-zen-engine = "1"
+zen-engine = "0"
 ```
-### Evaluating Decision
-ZEN Engine parses JDM from JSON content. It is up to you to obtain the JSON content, e.g. from file system, database or service call.
 
-// TODO
 ```rust
-let mem_loader = MemoryLoader::default();
+use serde_json::json;
+use zen_engine::engine::DecisionEngine;
+use zen_engine::model::decision::DecisionContent;
 
-mem_loader.add(
-	"jdm_graph",
-	serde_json::from_str::<DecisionContent>(include_str!("../test_data/table.json"))
-	.unwrap(),
-);
-
-let graph = DecisionGraph::new(mem_loader);
-let result = graph.evaluate("jdm_graph", &json!({ "input": 12 }))).await;
+async fn evaluate() {
+    let decision_content: DecisionContent = serde_json::from_str(include_str!("jdm_graph.json")).unwrap();
+    let engine = DecisionEngine::default();
+    let decision = engine.create_decision(decision_content.into());
+ 
+    let result = decision.evaluate(&json!({ "input": 12 })).await;
+}
 ```
+
+### NodeJS
+```bash
+npm install @gorules/zen-engine
+```
+```typescript
+import { ZenEngine } from "@gorules/zen-engine";
+import fs from 'fs/promises';
+
+(async () => {
+    // Example filesystem content, it is up to you how you obtain content
+    const content = await fs.readFile('./jdm_graph.json');
+    const engine = new ZenEngine();
+
+    const decision = engine.createDecision(content);
+    const result = await decision.evaluate({input: 15});
+})();
+```
+For more advanced use cases where you want to load multiple decisions you can use loaders. To learn more please visit [NodeJS Docs](bindings/nodejs)
+
+### Python
+```bash
+pip install zen-engine
+```
+```python
+import zen
+
+# Example filesystem content, it is up to you how you obtain content
+with open("./jdm_graph.json", "r") as f:
+  content = f.read()
+
+engine = zen.ZenEngine()
+
+decision = engine.create_decision(content)
+result = decision.evaluate({"input": 15})
+```
+For more advanced use cases where you want to load multiple decisions you can use loaders. To learn more please visit [Python Docs](bindings/python)
 
 ## JSON Decision Model (JDM)
 
@@ -45,7 +76,7 @@ You can try [Free Online Editor](https://editor.gorules.io) with built in Simula
 
 <img width="1258" alt="JSON Decision Model" src="https://user-images.githubusercontent.com/60513195/224425568-4a717e34-3d4b-4cc6-b031-8cd35f8ff459.png">
 
-[JSON Example](https://gorules.io)
+[JSON Example](test-data/credit-analysis.json)
 
 Input node contains all data sent in the context, and Output node returns the data from the decision. Data flows from the Input Node towards Output Node evaluating all the Nodes in between and passing the data where nodes are connected.
 
@@ -92,7 +123,7 @@ List shows basic example of the unary tests in the Input Fields:
 | | any value, even null/undefined |
 | null | the value null or undefined |
 
-Note: For the full list please visit [ZEN Expr docs]().
+Note: For the full list please visit [ZEN Expression Language](https://gorules.io/docs/rules-engine/expression-language/).
 
 **Outputs**
 
@@ -131,6 +162,19 @@ const handler = (input) => {
 
 ### Decision
 Decision is a special node whose purpose is for decision model to have an ability to call other/re-usable decision models during an execution.
+
+
+## Support matrix
+
+Arch   | Rust               | NodeJS             | Python
+:------------ |:-------------------|:-------------------| :-------------
+linux-x64-gnu | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark:
+linux-arm64-gnu | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark:
+darvin-x64 | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark:
+darvin-arm64 | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark:
+win32-x64-msvc | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark:
+
+We do not support linux-musl for now as we are relying on the GoogleV8 engine to run function blocks as isolates.
 
 
 ## Contribution

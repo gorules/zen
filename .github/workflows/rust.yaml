@@ -10,6 +10,12 @@ on:
       - master
     tags-ignore:
       - '**'
+    paths-ignore:
+      - 'bindings/**'
+      - '.github/workflows/python.yaml'
+      - '.github/workflows/python-version-bump.yaml'
+      - '.github/workflows/node.yaml'
+      - '.github/workflows/node-version-bump.yaml'
 
 env:
   RUST_BACKTRACE: 1

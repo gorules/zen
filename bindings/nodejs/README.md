@@ -73,7 +73,7 @@ You can try [Free Online Editor](https://editor.gorules.io) with built in Simula
 
 <img width="1258" alt="JSON Decision Model" src="https://user-images.githubusercontent.com/60513195/224425568-4a717e34-3d4b-4cc6-b031-8cd35f8ff459.png">
 
-[JSON Example](../../test-data/credit-analysis.json)
+[JSON Example](https://github.com/gorules/zen/blob/master/test-data/credit-analysis.json)
 
 Input node contains all data sent in the context, and Output node returns the data from the decision. Data flows from the Input Node towards Output Node evaluating all the Nodes in between and passing the data where nodes are connected.
 

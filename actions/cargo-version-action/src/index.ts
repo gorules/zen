@@ -6,7 +6,9 @@ import * as toml from 'toml';
 import * as path from 'path';
 import { inc, ReleaseType } from 'semver';
 
-const versionRegex = /version = "[0-9]+\.[0-9]+\.[0-9]+"/i;
+const versionRegex = /^version = "[0-9]+\.[0-9]+\.[0-9]+"$/i;
+const vmDep = /^zen-vm = .*$/
+const parserDep = /^zen-parser = .*$/;
 
 async function run() {
   try {
@@ -37,7 +39,11 @@ async function run() {
     await Promise.all(
       folders.map(async (folder) => {
         const cargoFilePath = path.join(...[workspace, projectsFolder, folder, 'Cargo.toml']);
-        const cargoFile = fs.readFileSync(cargoFilePath, 'utf-8').replace(versionRegex, `version = "${version}"`);
+        const cargoFile = fs.readFileSync(cargoFilePath, 'utf-8')
+            .replace(versionRegex, `version = "${version}"`)
+            .replace(parserDep, `zen-parser = { path = "../parser", version = "${version}" }`)
+            .replace(vmDep, `zen-vm = { path = "../vm", version = "${version}" }`);
+
         console.log(`Writing new version to: ${cargoFilePath}`);
         fs.writeFileSync(cargoFilePath, cargoFile);
         files.push(path.join(projectsFolder, folder, 'Cargo.toml'));

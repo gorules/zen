@@ -38,4 +38,17 @@ jobs:
       - name: Push changes
         uses: ad-m/github-push-action@master
         with:
-          github_token: ${{ secrets.PAT}}
+          github_token: ${{ secrets.PAT }}
+
+      - name: Publish crates
+        runs-on: ubuntu-latest
+        steps:
+          - uses: actions/checkout@v3
+            run: git checkout core-v${{ github.event.inputs.version }}
+          - name: Install Rust
+            run: rustup update stable
+          - run: cargo login ${{ secrets.CRATES_TOKEN }}
+          - run: cd core
+          - run: cd parser && cargo publish
+          - run: cd ../vm && cargo publish
+          - run: cd ../engine && cargo publish

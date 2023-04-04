@@ -85,7 +85,7 @@ jobs:
           RUSTFLAGS: ${{ env.RUSTFLAGS }} -Z randomize-layout
 
   fmt:
-    name: Cargo fmt
+    name: Cargo FMT
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -100,9 +100,6 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         run: git checkout core-v${{ github.event.inputs.version }}
-
-      - name: Install Rust
-        run: rustup update stable
 
       - name: Install Rust
         run: rustup update stable

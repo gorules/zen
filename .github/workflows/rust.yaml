@@ -97,8 +97,16 @@ jobs:
     name: Cargo Release
     runs-on: ubuntu-latest
     if: "startsWith(github.event.head_commit.message, 'chore(release): publish core')"
+    needs:
+      - test
+      - build
+      - bench
+      - miri
+      - fmt
     steps:
       - uses: actions/checkout@v3
+
+      - name: Checkout branch
         run: git checkout core-v${{ github.event.inputs.version }}
 
       - name: Install Rust
@@ -108,7 +116,7 @@ jobs:
         run: cargo login ${{ secrets.CRATES_TOKEN }}
 
       - name: Switch directory to core
-      - run: cd core
+        run: cd core
 
       - name: Publish Parser
         run: cd parser && cargo publish

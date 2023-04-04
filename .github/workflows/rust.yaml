@@ -84,11 +84,33 @@ jobs:
           MIRIFLAGS: -Zmiri-strict-provenance -Zmiri-symbolic-alignment-check -Zmiri-disable-isolation
           RUSTFLAGS: ${{ env.RUSTFLAGS }} -Z randomize-layout
 
-  fmt:
-    name: cargo fmt
+  release:
+    name: Cargo Release
     runs-on: ubuntu-latest
+    if: "startsWith(github.event.head_commit.message, 'chore(release): publish core')"
     steps:
       - uses: actions/checkout@v3
       - name: Install Rust
         run: rustup update stable
-      - run: cargo fmt --all -- --check
+      - run: cargo fmt --all -- --check\
+
+      - uses: actions/checkout@v3
+        run: git checkout core-v${{ github.event.inputs.version }}
+
+      - name: Install Rust
+        run: rustup update stable
+
+      - name: Login to Crates.IO
+        run: cargo login ${{ secrets.CRATES_TOKEN }}
+
+      - name: Switch directory to core
+      - run: cd core
+
+      - name: Publish Parser
+        run: cd parser && cargo publish
+
+      - name: Publish VM
+        run: cd ../vm && cargo publish
+
+      - name: Publish Engine
+        run: cd ../engine && cargo publish

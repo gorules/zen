@@ -7,7 +7,7 @@ import * as path from 'path';
 import { inc, ReleaseType } from 'semver';
 
 const versionRegex = /^version = "[0-9]+\.[0-9]+\.[0-9]+"$/i;
-const vmDep = /^zen-vm = .*$/
+const vmDep = /^zen-vm = .*$/;
 const parserDep = /^zen-parser = .*$/;
 
 async function run() {

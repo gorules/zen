@@ -97,6 +97,12 @@ jobs:
     name: Cargo Release
     runs-on: ubuntu-latest
     if: "startsWith(github.event.head_commit.message, 'chore(release): publish core')"
+    needs:
+      - test
+      - build
+      - bench
+      - miri
+      - fmt
     steps:
       - uses: actions/checkout@v3
 

@@ -11395,11 +11395,11 @@ function run() {
             const tagArgs = ['tag', '-a', tag];
             if (commitMessage) {
                 tagArgs.push('-m');
-                tagArgs.push(`"${commitMessage}"`);
+                tagArgs.push(commitMessage);
             }
             yield exec.exec('git', tagArgs);
             yield exec.exec('git', ['add', '.']);
-            yield exec.exec('git', ['commit', '-m', `"${commitMessage}"`]);
+            yield exec.exec('git', ['commit', '-m', commitMessage]);
             console.log(`New tag ${tag}`);
             core.setOutput('version', version);
             core.setOutput('tag', tag);

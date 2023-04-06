@@ -5,6 +5,12 @@ permissions:
 
 on:
   pull_request:
+    paths-ignore:
+      - 'bindings/**'
+      - '.github/workflows/python.yaml'
+      - '.github/workflows/python-version-bump.yaml'
+      - '.github/workflows/node.yaml'
+      - '.github/workflows/node-version-bump.yaml'
   push:
     branches:
       - master

@@ -19,6 +19,11 @@ on:
       - 'test-data/**'
       - '.github/workflows/node.yaml'
   pull_request:
+    paths:
+      - 'bindings/nodejs/**'
+      - 'core/**'
+      - 'test-data/**'
+      - '.github/workflows/node.yaml'
 
 jobs:
   build:

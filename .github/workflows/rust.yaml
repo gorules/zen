@@ -114,9 +114,6 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Checkout branch
-        run: git checkout core-v${{ github.event.inputs.version }}
-
       - name: Install Rust
         run: rustup update stable
 

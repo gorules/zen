@@ -7,6 +7,7 @@ on:
   pull_request:
     paths-ignore:
       - 'bindings/**'
+      - 'examples/**'
       - '.github/workflows/python.yaml'
       - '.github/workflows/python-version-bump.yaml'
       - '.github/workflows/node.yaml'
@@ -18,6 +19,7 @@ on:
       - '**'
     paths-ignore:
       - 'bindings/**'
+      - 'examples/**'
       - '.github/workflows/python.yaml'
       - '.github/workflows/python-version-bump.yaml'
       - '.github/workflows/node.yaml'

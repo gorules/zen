@@ -5,6 +5,7 @@
   "main": "dist/index.js",
   "author": "GoRules <hi@gorules.io> (https://gorules.io)",
   "homepage": "https://github.com/gorules/zen",
+  "type": "module",
   "scripts": {
     "dev": "ncc run src/index.ts",
     "build": "ncc build src/index.ts -o dist",

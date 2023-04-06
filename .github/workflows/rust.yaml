@@ -120,14 +120,11 @@ jobs:
       - name: Login to Crates.IO
         run: cargo login ${{ secrets.CRATES_TOKEN }}
 
-      - name: Switch directory to core
-        run: cd core
-
       - name: Publish Parser
-        run: cd parser && cargo publish
+        run: cd core/parser && cargo publish
 
       - name: Publish VM
-        run: cd ../vm && cargo publish
+        run: cd core/vm && cargo publish
 
       - name: Publish Engine
-        run: cd ../engine && cargo publish
+        run: cd core/engine && cargo publish

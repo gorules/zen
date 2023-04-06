@@ -16,9 +16,7 @@ async function run() {
     const project = 'engine';
     const projectsFolder = 'core';
 
-    const directory = await fs
-      .readdir(path.join(...[workspace, projectsFolder]), {withFileTypes: true});
-
+    const directory = await fs.readdir(path.join(...[workspace, projectsFolder]), {withFileTypes: true});
     const folders = directory
       .filter((dirent) => dirent.isDirectory())
       .map((dirent) => dirent.name);
@@ -29,8 +27,8 @@ async function run() {
     console.log(`Reading current version ${currentVersion}, from ${cargoFilePath}`);
 
     const version = inc(currentVersion, versionBump as ReleaseType);
-
     console.log(`New version: ${version}`);
+
     await Promise.all(
       folders.map(async (folder) => {
         const cargoFilePath = path.join(...[workspace, projectsFolder, folder, 'Cargo.toml']);
@@ -46,12 +44,14 @@ async function run() {
     const tagArgs = ['tag', '-a', tag];
     if (commitMessage) {
       tagArgs.push('-m');
-      tagArgs.push(`"${commitMessage}"`);
+      tagArgs.push(commitMessage);
     }
+
     await exec.exec('git', tagArgs);
     await exec.exec('git', ['add', '.']);
-    await exec.exec('git', ['commit', '-m', `"${commitMessage}"`]);
+    await exec.exec('git', ['commit', '-m', commitMessage]);
     console.log(`New tag ${tag}`);
+
     core.setOutput('version', version);
     core.setOutput('tag', tag);
   } catch (error) {

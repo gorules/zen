@@ -1,8 +1,4 @@
-import * as path from 'path';
 import * as toml from "toml";
-
-const escapeDir = (count: number) => '../'.repeat(count);
-export const coreDirectory = path.join(__dirname, escapeDir(3), 'core');
 
 type UpdateCargoOptions = {
   version: string;

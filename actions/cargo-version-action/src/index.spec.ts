@@ -1,34 +1,35 @@
 import {describe} from "node:test";
 import {expect, test} from "@jest/globals";
-import {coreDirectory, getCargoVersion, updateCargoContents} from "./cargo";
+import {getCargoVersion, updateCargoContents} from "./cargo";
 import {inc, ReleaseType} from "semver";
 import * as fs from "fs/promises";
+import * as path from "path";
 
 // language=Toml
 const makeToml = ({version}): string => `
-    [package]
-    authors = ["GoRules Team <bot@gorules.io>"]
-    description = "Business rules engine"
-    name = "zen-engine"
-    license = "MIT"
-    version = "${version}"
-    edition = "2021"
-    repository = "https://github.com/gorules/zen.git"
+[package]
+authors = ["GoRules Team <bot@gorules.io>"]
+description = "Business rules engine"
+name = "zen-engine"
+license = "MIT"
+version = "${version}"
+edition = "2021"
+repository = "https://github.com/gorules/zen.git"
 
-    [dependencies]
-    async-recursion = "1.0.4"
-    anyhow = { workspace = true }
-    thiserror = { workspace = true }
-    async-trait = { workspace = true }
-    bincode = { workspace = true, optional = true }
-    serde_json = { workspace = true, features = ["arbitrary_precision"] }
-    serde = { version = "1", features = ["derive"] }
-    serde_v8 = { version = "0.88.0" }
-    once_cell = { version = "1.17.1" }
-    futures = "0.3.27"
-    v8 = { version = "0.66.0" }
-    zen-parser = { path = "../parser", version = "${version}" }
-    zen-vm = { path = "../vm", version = "${version}" }
+[dependencies]
+async-recursion = "1.0.4"
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+bincode = { workspace = true, optional = true }
+serde_json = { workspace = true, features = ["arbitrary_precision"] }
+serde = { version = "1", features = ["derive"] }
+serde_v8 = { version = "0.88.0" }
+once_cell = { version = "1.17.1" }
+futures = "0.3.27"
+v8 = { version = "0.66.0" }
+zen-parser = { path = "../parser", version = "${version}" }
+zen-vm = { path = "../vm", version = "${version}" }
 `
 
 describe("GitHub Action", () => {
@@ -54,6 +55,9 @@ describe("GitHub Action", () => {
   })
 
   test("Points to right directory", async () => {
+    const escapeDir = (count: number) => '../'.repeat(count);
+    const coreDirectory = path.join(__dirname, escapeDir(3), 'core');
+
     const folders = await fs.readdir(coreDirectory);
     expect(folders).toEqual(expect.arrayContaining(["engine", "parser", "vm"]))
   });

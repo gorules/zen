@@ -11302,7 +11302,6 @@ var __awaiter = (undefined && undefined.__awaiter) || function (thisArg, _argume
 function run() {
     var _a;
     return __awaiter(this, void 0, void 0, function* () {
-        return;
         try {
             const versionBump = core.getInput('version') || 'patch';
             const tagPrefix = core.getInput('tag-prefix') || 'v';

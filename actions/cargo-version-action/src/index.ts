@@ -1,14 +1,10 @@
 import * as core from '@actions/core';
 import * as exec from '@actions/exec';
 
-import * as fs from 'fs';
-import * as toml from 'toml';
+import * as fs from 'fs/promises';
 import * as path from 'path';
-import { inc, ReleaseType } from 'semver';
-
-const versionRegex = /^version = "[0-9]+\.[0-9]+\.[0-9]+"$/i;
-const vmDep = /^zen-vm = .*$/;
-const parserDep = /^zen-parser = .*$/;
+import {inc, ReleaseType} from 'semver';
+import {getCargoVersion, updateCargoContents} from "./cargo";
 
 async function run() {
   try {
@@ -20,45 +16,42 @@ async function run() {
     const project = 'engine';
     const projectsFolder = 'core';
 
-    const folders = fs
-      .readdirSync(path.join(...[workspace, projectsFolder]), { withFileTypes: true })
+    const directory = await fs.readdir(path.join(...[workspace, projectsFolder]), {withFileTypes: true});
+    const folders = directory
       .filter((dirent) => dirent.isDirectory())
       .map((dirent) => dirent.name);
 
     const cargoFilePath = path.join(...[workspace, projectsFolder, project, 'Cargo.toml']);
-    const cargoFile = fs.readFileSync(cargoFilePath, 'utf-8');
-
-    const parsed = toml.parse(cargoFile);
-    const currentVersion = parsed?.package?.version;
+    const cargoFile = await fs.readFile(cargoFilePath, 'utf-8');
+    const currentVersion = getCargoVersion(cargoFile);
     console.log(`Reading current version ${currentVersion}, from ${cargoFilePath}`);
 
     const version = inc(currentVersion, versionBump as ReleaseType);
-
     console.log(`New version: ${version}`);
-    const files: string[] = [];
+
     await Promise.all(
       folders.map(async (folder) => {
         const cargoFilePath = path.join(...[workspace, projectsFolder, folder, 'Cargo.toml']);
-        const cargoFile = fs.readFileSync(cargoFilePath, 'utf-8')
-            .replace(versionRegex, `version = "${version}"`)
-            .replace(parserDep, `zen-parser = { path = "../parser", version = "${version}" }`)
-            .replace(vmDep, `zen-vm = { path = "../vm", version = "${version}" }`);
+        const cargoFile = await fs.readFile(cargoFilePath, 'utf-8');
+        const updatedCargoFile = updateCargoContents(cargoFile, {version});
 
         console.log(`Writing new version to: ${cargoFilePath}`);
-        fs.writeFileSync(cargoFilePath, cargoFile);
-        files.push(path.join(projectsFolder, folder, 'Cargo.toml'));
+        await fs.writeFile(cargoFilePath, updatedCargoFile);
       }),
     );
+
     const tag = `${tagPrefix}${version}`;
     const tagArgs = ['tag', '-a', tag];
     if (commitMessage) {
       tagArgs.push('-m');
-      tagArgs.push(`"${commitMessage}"`);
+      tagArgs.push(commitMessage);
     }
+
     await exec.exec('git', tagArgs);
     await exec.exec('git', ['add', '.']);
-    await exec.exec('git', ['commit', '-m', `"${commitMessage}"`]);
+    await exec.exec('git', ['commit', '-m', commitMessage]);
     console.log(`New tag ${tag}`);
+
     core.setOutput('version', version);
     core.setOutput('tag', tag);
   } catch (error) {

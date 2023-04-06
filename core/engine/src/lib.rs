@@ -1,4 +1,4 @@
-//! # Zen Engine
+//! # ZEN Engine
 //!
 //! ZEN Engine is business friendly Open-Source Business Rules Engine (BRE) which executes decision
 //! models according to the GoRules JSON Decision Model (JDM) standard. It's written in Rust and

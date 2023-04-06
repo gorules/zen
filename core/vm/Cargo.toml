@@ -3,7 +3,7 @@ authors = ["GoRules Team <bot@gorules.io>"]
 description = "Zen expression language virtual machine"
 name = "zen-vm"
 license = "MIT"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
 repository = "https://github.com/gorules/zen.git"
 
@@ -20,7 +20,7 @@ serde_json = { workspace = true, features = ["arbitrary_precision"] }
 thiserror = { workspace = true }
 rust_decimal = { workspace = true, features = ["maths-nopanic"] }
 rust_decimal_macros = { workspace = true }
-zen-parser = { path = "../parser", version = "0.1.6" }
+zen-parser = { path = "../parser", version = "0.1.7" }
 
 [dev-dependencies]
 criterion = { workspace = true }

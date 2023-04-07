@@ -5,8 +5,7 @@ use napi::tokio;
 use napi_derive::napi;
 use serde_json::Value;
 use std::sync::Arc;
-use zen_engine::decision::Decision;
-use zen_engine::engine::EvaluationOptions;
+use zen_engine::{Decision, EvaluationOptions};
 
 #[napi(js_name = "ZenDecision")]
 pub struct JsZenDecision(pub(crate) Arc<Decision<JsDecisionLoader>>);

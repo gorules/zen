@@ -19,14 +19,14 @@ zen-engine = "0"
 
 ```rust
 use serde_json::json;
-use zen_engine::engine::DecisionEngine;
-use zen_engine::model::decision::DecisionContent;
+use zen_engine::DecisionEngine;
+use zen_engine::model::DecisionContent;
 
 async fn evaluate() {
     let decision_content: DecisionContent = serde_json::from_str(include_str!("jdm_graph.json")).unwrap();
     let engine = DecisionEngine::default();
     let decision = engine.create_decision(decision_content.into());
- 
+    
     let result = decision.evaluate(&json!({ "input": 12 })).await;
 }
 ```

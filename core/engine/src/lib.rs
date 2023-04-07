@@ -42,11 +42,11 @@
 //! you may use FilesystemLoader in the following way:
 //!
 //! ```rust
+//! use serde_json::json;
 //! use zen_engine::DecisionEngine;
 //! use zen_engine::loader::{FilesystemLoader, FilesystemLoaderOptions};
 //!
 //! async fn evaluate() {
-//!     use serde_json::json;
 //!     let engine = DecisionEngine::new(FilesystemLoader::new(FilesystemLoaderOptions {
 //!         keep_in_memory: true, // optionally, keep in memory for increase performance
 //!         root: "/app/decisions"

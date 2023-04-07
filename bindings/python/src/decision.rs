@@ -6,8 +6,7 @@ use pyo3::types::PyDict;
 use pyo3::{pyclass, pymethods, PyObject, PyResult, Python, ToPyObject};
 use pythonize::depythonize;
 use std::sync::Arc;
-use zen_engine::decision::Decision;
-use zen_engine::engine::EvaluationOptions;
+use zen_engine::{Decision, EvaluationOptions};
 
 #[pyclass]
 #[pyo3(name = "ZenDecision")]

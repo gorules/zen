@@ -32,6 +32,7 @@ async fn evaluate() {
     let decision_content: DecisionContent = serde_json::from_str(include_str!("jdm_graph.json")).unwrap();
     let engine = DecisionEngine::default();
     let decision = engine.create_decision(decision_content.into());
+  
     let result = decision.evaluate(&json!({ "input": 12 })).await;
 }
 ```
@@ -54,11 +55,11 @@ Assuming that you have a folder with decision models (.json files) which is loca
 you may use FilesystemLoader in the following way:
 
 ```rust
+use serde_json::json;
 use zen_engine::DecisionEngine;
 use zen_engine::loader::{FilesystemLoader, FilesystemLoaderOptions};
 
 async fn evaluate() {
-    use serde_json::json;
     let engine = DecisionEngine::new(FilesystemLoader::new(FilesystemLoaderOptions {
         keep_in_memory: true, // optionally, keep in memory for increase performance
         root: "/app/decisions"

@@ -3,8 +3,8 @@ use criterion::{criterion_group, criterion_main, Bencher, Criterion};
 use futures::executor::block_on;
 use serde_json::{json, Value};
 use std::path::Path;
-use zen_engine::engine::DecisionEngine;
-use zen_engine::loader::filesystem::{FilesystemLoader, FilesystemLoaderOptions};
+use zen_engine::loader::{FilesystemLoader, FilesystemLoaderOptions};
+use zen_engine::DecisionEngine;
 
 fn create_graph() -> DecisionEngine<FilesystemLoader> {
     let cargo_root = Path::new(env!("CARGO_MANIFEST_DIR"));

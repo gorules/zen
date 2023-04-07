@@ -1,7 +1,7 @@
 use crate::loader::{DecisionLoader, LoaderError, LoaderResponse};
 use async_trait::async_trait;
 
-use crate::model::decision::DecisionContent;
+use crate::model::DecisionContent;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;

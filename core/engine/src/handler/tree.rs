@@ -3,7 +3,7 @@ use crate::handler::function::FunctionHandler;
 use crate::handler::node::{NodeError, NodeRequest};
 use crate::handler::table::zen::DecisionTableHandler;
 use crate::loader::DecisionLoader;
-use crate::model::decision::{DecisionContent, DecisionNode, DecisionNodeKind};
+use crate::model::{DecisionContent, DecisionNode, DecisionNodeKind};
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -338,7 +338,7 @@ impl<'a, T: DecisionLoader> GraphTree<'a, T> {
 #[cfg(test)]
 mod tests {
     use crate::handler::tree::{GraphTree, GraphTreeConfig};
-    use crate::loader::memory::MemoryLoader;
+    use crate::loader::MemoryLoader;
     use serde_json::json;
     use std::sync::Arc;
 

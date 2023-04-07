@@ -10,8 +10,8 @@
 //!
 //! ```rust
 //! use serde_json::json;
-//! use zen_engine::engine::DecisionEngine;
-//! use zen_engine::model::decision::DecisionContent;
+//! use zen_engine::DecisionEngine;
+//! use zen_engine::model::DecisionContent;
 //!
 //! async fn evaluate() {
 //!     let decision_content: DecisionContent = serde_json::from_str(include_str!("jdm_graph.json")).unwrap();
@@ -42,8 +42,8 @@
 //! you may use FilesystemLoader in the following way:
 //!
 //! ```rust
-//! use zen_engine::engine::DecisionEngine;
-//! use zen_engine::loader::filesystem::{FilesystemLoader, FilesystemLoaderOptions};
+//! use zen_engine::DecisionEngine;
+//! use zen_engine::loader::{FilesystemLoader, FilesystemLoaderOptions};
 //!
 //! async fn evaluate() {
 //!     use serde_json::json;
@@ -76,7 +76,7 @@
 //! use std::collections::HashMap;
 //! use std::sync::{Arc, RwLock};
 //! use zen_engine::loader::{DecisionLoader, LoaderError, LoaderResponse};
-//! use zen_engine::model::decision::DecisionContent;
+//! use zen_engine::model::DecisionContent;
 //!
 //! #[derive(Debug, Default)]
 //! pub struct MemoryLoader {
@@ -122,9 +122,13 @@
 #![deny(clippy::unwrap_used)]
 #![allow(clippy::module_inception)]
 
+mod decision;
+mod engine;
 mod handler;
 
-pub mod decision;
-pub mod engine;
 pub mod loader;
+#[path = "model/mod.rs"]
 pub mod model;
+
+pub use decision::Decision;
+pub use engine::{DecisionEngine, EvaluationOptions};

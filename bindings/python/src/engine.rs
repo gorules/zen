@@ -7,9 +7,8 @@ use pyo3::{pyclass, pymethods, PyObject, PyResult, Python, ToPyObject};
 use pythonize::depythonize;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use zen_engine::engine::{DecisionEngine, EvaluationOptions};
-
-use zen_engine::model::decision::DecisionContent;
+use zen_engine::model::DecisionContent;
+use zen_engine::{DecisionEngine, EvaluationOptions};
 
 #[pyclass]
 #[pyo3(name = "ZenEngine")]

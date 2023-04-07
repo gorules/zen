@@ -1,7 +1,7 @@
 use crate::handler::node::{NodeRequest, NodeResponse, NodeResult};
 use crate::handler::tree::{GraphTree, GraphTreeConfig};
 use crate::loader::DecisionLoader;
-use crate::model::decision::DecisionNodeKind;
+use crate::model::DecisionNodeKind;
 use anyhow::{anyhow, Context};
 use async_recursion::async_recursion;
 use std::ops::Deref;

@@ -1,6 +1,6 @@
-# ZEN Parser
+# ZEN VM
 
-Virtual machine for business-first expression language used in
+Parser for business-first expression language used in
 Zen business rules engine by GoRules. The language is designed
 to follow these principles:
 
@@ -8,7 +8,7 @@ to follow these principles:
 - Dynamic types
 - Simple syntax for broad audiences
 
-It's primary objective is to bridge the gap between business analysts and engineers, 
+It's primary objective is to bridge the gap between business analysts and engineers,
 while providing outstanding performance and readability.
 
 ## Resources
@@ -20,9 +20,9 @@ while providing outstanding performance and readability.
 [Online Rules Editor](https://editor.gorules.io/)
 
 ## Unary tests
-Unary test is a comma-separated list of simple expressions which 
-evaluate to a boolean value. Each comma separation is treated as 
-or operator. Inside unary expressions, a special symbol is available 
+Unary test is a comma-separated list of simple expressions which
+evaluate to a boolean value. Each comma separation is treated as
+or operator. Inside unary expressions, a special symbol is available
 $ which refers to a current column.
 
 Some examples:
@@ -45,9 +45,9 @@ lower($) == "usd"     // true - defaults to expression mode
 
 ## Standard tests
 
-Expressions feature full capability syntax of ZEN language. 
-They give you access to all functions, and are most useful when 
-defining columns or outputs. Full syntax is also available in unary 
+Expressions feature full capability syntax of ZEN language.
+They give you access to all functions, and are most useful when
+defining columns or outputs. Full syntax is also available in unary
 expressions when $ is used (as it forces the expression mode).
 
 ```js

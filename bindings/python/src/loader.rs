@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use pyo3::{PyObject, Python};
 use std::sync::Arc;
 use zen_engine::loader::{DecisionLoader, LoaderError, LoaderResult};
-use zen_engine::model::decision::DecisionContent;
+use zen_engine::model::DecisionContent;
 
 #[derive(Default)]
 pub(crate) struct PyDecisionLoader(Option<PyObject>);

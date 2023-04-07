@@ -1,5 +1,5 @@
 use crate::loader::{DecisionLoader, LoaderError, LoaderResponse};
-use crate::model::decision::DecisionContent;
+use crate::model::DecisionContent;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};

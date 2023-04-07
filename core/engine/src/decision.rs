@@ -1,8 +1,7 @@
 use crate::engine::EvaluationOptions;
 use crate::handler::tree::{GraphResponse, GraphTree, GraphTreeConfig};
-use crate::loader::noop::NoopLoader;
-use crate::loader::DecisionLoader;
-use crate::model::decision::DecisionContent;
+use crate::loader::{DecisionLoader, NoopLoader};
+use crate::model::DecisionContent;
 use anyhow::Context;
 use serde_json::Value;
 use std::sync::Arc;

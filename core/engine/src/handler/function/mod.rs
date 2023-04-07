@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 
 use crate::handler::function::script::{EvaluateResponse, Script};
 use crate::handler::node::{NodeRequest, NodeResponse, NodeResult};
-use crate::model::decision::DecisionNodeKind;
+use crate::model::DecisionNodeKind;
 
 mod script;
 mod vm;

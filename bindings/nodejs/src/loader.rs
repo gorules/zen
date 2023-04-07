@@ -6,7 +6,7 @@ use napi::JsFunction;
 use std::sync::Arc;
 
 use zen_engine::loader::{DecisionLoader, LoaderError, LoaderResult};
-use zen_engine::model::decision::DecisionContent;
+use zen_engine::model::DecisionContent;
 
 pub(crate) struct JsDecisionLoader {
     function: Option<Arc<ThreadsafeFunction<String, ErrorStrategy::Fatal>>>,

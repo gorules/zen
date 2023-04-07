@@ -6,8 +6,8 @@ use napi::{tokio, JsFunction};
 use napi_derive::napi;
 use serde_json::Value;
 use std::sync::Arc;
-use zen_engine::engine::{DecisionEngine, EvaluationOptions};
-use zen_engine::model::decision::DecisionContent;
+use zen_engine::model::DecisionContent;
+use zen_engine::{DecisionEngine, EvaluationOptions};
 
 #[napi(js_name = "ZenEngine")]
 pub struct JsZenEngine {

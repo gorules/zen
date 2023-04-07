@@ -1,11 +1,16 @@
-pub mod closure;
-pub mod filesystem;
-pub mod memory;
-pub mod noop;
+mod closure;
+mod filesystem;
+mod memory;
+mod noop;
+
+pub use closure::ClosureLoader;
+pub use filesystem::{FilesystemLoader, FilesystemLoaderOptions};
+pub use memory::MemoryLoader;
+pub use noop::NoopLoader;
 
 use async_trait::async_trait;
 
-use crate::model::decision::DecisionContent;
+use crate::model::DecisionContent;
 use std::fmt::Debug;
 use std::sync::Arc;
 use thiserror::Error;

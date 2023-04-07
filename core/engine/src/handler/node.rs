@@ -1,4 +1,4 @@
-use crate::model::decision::DecisionNode;
+use crate::model::DecisionNode;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt::{Display, Formatter};

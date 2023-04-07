@@ -1,9 +1,7 @@
 use crate::decision::Decision;
 use crate::handler::tree::GraphResponse;
-use crate::loader::closure::ClosureLoader;
-use crate::loader::noop::NoopLoader;
-use crate::loader::{DecisionLoader, LoaderResponse, LoaderResult};
-use crate::model::decision::DecisionContent;
+use crate::loader::{ClosureLoader, DecisionLoader, LoaderResponse, LoaderResult, NoopLoader};
+use crate::model::DecisionContent;
 
 use serde_json::Value;
 use std::future::Future;
@@ -111,9 +109,8 @@ impl<T: DecisionLoader> DecisionEngine<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::loader::filesystem::{FilesystemLoader, FilesystemLoaderOptions};
-    use crate::loader::memory::MemoryLoader;
-    use crate::model::decision::DecisionContent;
+    use crate::loader::{FilesystemLoader, FilesystemLoaderOptions, MemoryLoader};
+    use crate::model::DecisionContent;
     use serde_json::json;
     use std::path::Path;
 

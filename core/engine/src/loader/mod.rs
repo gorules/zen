@@ -18,6 +18,7 @@ use thiserror::Error;
 pub type LoaderResult<T> = Result<T, LoaderError>;
 pub type LoaderResponse = LoaderResult<Arc<DecisionContent>>;
 
+/// Trait used for implementing a loader for decisions
 #[async_trait]
 pub trait DecisionLoader {
     async fn load(&self, key: &str) -> LoaderResponse;

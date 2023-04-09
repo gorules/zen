@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
+/// Loads decisions from in-memory hashmap
 #[derive(Debug, Default)]
 pub struct MemoryLoader {
     memory_refs: RwLock<HashMap<String, Arc<DecisionContent>>>,

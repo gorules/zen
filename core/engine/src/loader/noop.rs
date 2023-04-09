@@ -2,6 +2,7 @@ use crate::loader::{DecisionLoader, LoaderError, LoaderResponse};
 use anyhow::anyhow;
 use async_trait::async_trait;
 
+/// Default loader which always fails
 #[derive(Default, Debug)]
 pub struct NoopLoader;
 

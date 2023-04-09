@@ -2,6 +2,8 @@ use crate::loader::{DecisionLoader, LoaderResponse};
 use async_trait::async_trait;
 use std::future::Future;
 
+/// Loads decisions using an async closure
+#[derive(Debug)]
 pub struct ClosureLoader<F>
 where
     F: Sync + Send,

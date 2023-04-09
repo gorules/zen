@@ -9,6 +9,7 @@ use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
+/// Loads decisions based on filesystem root
 #[derive(Debug)]
 pub struct FilesystemLoader {
     root: String,

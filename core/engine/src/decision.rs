@@ -6,6 +6,8 @@ use anyhow::Context;
 use serde_json::Value;
 use std::sync::Arc;
 
+/// Represents a JDM decision which can be evaluated
+#[derive(Debug, Clone)]
 pub struct Decision<L>
 where
     L: DecisionLoader,
@@ -46,10 +48,12 @@ where
         }
     }
 
+    /// Evaluates a decision using an in-memory reference stored in struct
     pub async fn evaluate(&self, context: &Value) -> Result<GraphResponse, anyhow::Error> {
         self.evaluate_with_opts(context, Default::default()).await
     }
 
+    /// Evaluates a decision using in-memory reference with advanced options
     pub async fn evaluate_with_opts(
         &self,
         context: &Value,

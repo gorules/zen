@@ -8,11 +8,13 @@ use std::future::Future;
 
 use std::sync::Arc;
 
-pub struct DecisionEngine<T>
+/// Structure used for generating and evaluating JDM decisions
+#[derive(Debug, Clone)]
+pub struct DecisionEngine<L>
 where
-    T: DecisionLoader,
+    L: DecisionLoader,
 {
-    loader: Arc<T>,
+    loader: Arc<L>,
 }
 
 #[derive(Debug, Default)]
@@ -41,20 +43,21 @@ where
     }
 }
 
-impl<T: DecisionLoader> DecisionEngine<T> {
-    pub fn new<L>(loader: L) -> Self
+impl<L: DecisionLoader> DecisionEngine<L> {
+    pub fn new<Loader>(loader: Loader) -> Self
     where
-        L: Into<Arc<T>>,
+        Loader: Into<Arc<L>>,
     {
         Self {
             loader: loader.into(),
         }
     }
 
-    pub fn new_arc(loader: Arc<T>) -> Self {
+    pub fn new_arc(loader: Arc<L>) -> Self {
         Self { loader }
     }
 
+    /// Evaluates a decision through loader using a key
     pub async fn evaluate<K>(&self, key: K, context: &Value) -> Result<GraphResponse, anyhow::Error>
     where
         K: AsRef<str>,
@@ -63,6 +66,7 @@ impl<T: DecisionLoader> DecisionEngine<T> {
             .await
     }
 
+    /// Evaluates a decision through loader using a key with advanced options
     pub async fn evaluate_with_opts<K>(
         &self,
         key: K,
@@ -77,30 +81,13 @@ impl<T: DecisionLoader> DecisionEngine<T> {
         decision.evaluate_with_opts(context, options).await
     }
 
-    pub async fn simulate(
-        &self,
-        content: DecisionContent,
-        context: &Value,
-    ) -> Result<GraphResponse, anyhow::Error> {
-        self.simulate_with_opts(content, context, Default::default())
-            .await
-    }
-
-    pub async fn simulate_with_opts(
-        &self,
-        content: DecisionContent,
-        context: &Value,
-        options: EvaluationOptions,
-    ) -> Result<GraphResponse, anyhow::Error> {
-        let decision = self.create_decision(Arc::new(content));
-        decision.evaluate_with_opts(context, options).await
-    }
-
-    pub fn create_decision(&self, content: Arc<DecisionContent>) -> Decision<T> {
+    /// Creates a decision from DecisionContent, exists for easier binding creation
+    pub fn create_decision(&self, content: Arc<DecisionContent>) -> Decision<L> {
         Decision::from(content).with_loader(self.loader.clone())
     }
 
-    pub async fn get_decision(&self, key: &str) -> LoaderResult<Decision<T>> {
+    /// Retrieves a decision based on the loader
+    pub async fn get_decision(&self, key: &str) -> LoaderResult<Decision<L>> {
         let content = self.loader.load(key).await?;
         Ok(self.create_decision(content))
     }

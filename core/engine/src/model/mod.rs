@@ -4,6 +4,7 @@ use std::collections::HashMap;
 #[cfg(feature = "bincode")]
 use bincode::{Decode, Encode};
 
+/// JDM Decision model
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[cfg_attr(feature = "bincode", derive(Encode, Decode))]
 #[serde(rename_all = "camelCase")]

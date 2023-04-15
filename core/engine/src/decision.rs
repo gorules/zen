@@ -70,6 +70,6 @@ where
         tree.connect()?;
         tree.evaluate(context)
             .await
-            .context("Failed to revaluate graph")
+            .context("Failed to evaluate graph")
     }
 }

@@ -169,6 +169,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn it_throws_correct_error_type() {
         let cargo_root = Path::new(env!("CARGO_MANIFEST_DIR"));
         let test_data_root = cargo_root.join("../../").join("test-data");

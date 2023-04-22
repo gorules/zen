@@ -32,9 +32,12 @@ impl PyDecisionLoader {
 #[async_trait]
 impl DecisionLoader for PyDecisionLoader {
     async fn load(&self, key: &str) -> LoaderResult<Arc<DecisionContent>> {
-        self.load_element(key).map_err(|e| LoaderError::Internal {
-            source: e,
-            key: key.to_string(),
+        self.load_element(key).map_err(|e| {
+            LoaderError::Internal {
+                source: e,
+                key: key.to_string(),
+            }
+            .into()
         })
     }
 }

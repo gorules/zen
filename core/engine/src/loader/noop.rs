@@ -12,6 +12,7 @@ impl DecisionLoader for NoopLoader {
         Err(LoaderError::Internal {
             key: key.to_string(),
             source: anyhow!("Loader is no-op"),
-        })
+        }
+        .into())
     }
 }

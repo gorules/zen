@@ -124,6 +124,7 @@
 
 mod decision;
 mod engine;
+mod error;
 mod handler;
 
 pub mod loader;
@@ -132,3 +133,5 @@ pub mod model;
 
 pub use decision::Decision;
 pub use engine::{DecisionEngine, EvaluationOptions};
+pub use error::EvaluationError;
+pub use handler::node::NodeError;

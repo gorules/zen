@@ -2,7 +2,7 @@ use crate::engine::EvaluationOptions;
 use crate::handler::tree::{GraphResponse, GraphTree, GraphTreeConfig};
 use crate::loader::{DecisionLoader, NoopLoader};
 use crate::model::DecisionContent;
-use anyhow::Context;
+use crate::EvaluationError;
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -49,7 +49,7 @@ where
     }
 
     /// Evaluates a decision using an in-memory reference stored in struct
-    pub async fn evaluate(&self, context: &Value) -> Result<GraphResponse, anyhow::Error> {
+    pub async fn evaluate(&self, context: &Value) -> Result<GraphResponse, Box<EvaluationError>> {
         self.evaluate_with_opts(context, Default::default()).await
     }
 
@@ -58,7 +58,7 @@ where
         &self,
         context: &Value,
         options: EvaluationOptions,
-    ) -> Result<GraphResponse, anyhow::Error> {
+    ) -> Result<GraphResponse, Box<EvaluationError>> {
         let tree = GraphTree::new(GraphTreeConfig {
             max_depth: options.max_depth.unwrap_or(5),
             trace: options.trace.unwrap_or_default(),
@@ -68,8 +68,6 @@ where
         });
 
         tree.connect()?;
-        tree.evaluate(context)
-            .await
-            .context("Failed to evaluate graph")
+        Ok(tree.evaluate(context).await?)
     }
 }

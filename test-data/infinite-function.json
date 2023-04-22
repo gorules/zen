@@ -1,0 +1,46 @@
+{
+  "edges": [
+    {
+      "id": "7ef2014c-9ea3-4ec2-b3f8-aa3672a0956d",
+      "sourceId": "a2e9b2aa-fbc5-46c1-bbe3-8b4ff45e2f59",
+      "type": "edge",
+      "targetId": "e0fd96d0-44dc-4f0e-b825-06e56b442d78"
+    },
+    {
+      "id": "8b122464-c8eb-4f8a-9deb-7bfd3b94bc96",
+      "sourceId": "e0fd96d0-44dc-4f0e-b825-06e56b442d78",
+      "type": "edge",
+      "targetId": "b8b98fa5-3a16-496d-99bf-7bc6d3caedb3"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "a2e9b2aa-fbc5-46c1-bbe3-8b4ff45e2f59",
+      "type": "inputNode",
+      "position": {
+        "x": 160,
+        "y": 220
+      },
+      "name": "Request"
+    },
+    {
+      "id": "e0fd96d0-44dc-4f0e-b825-06e56b442d78",
+      "type": "functionNode",
+      "position": {
+        "x": 440,
+        "y": 220
+      },
+      "name": "functionNode 1",
+      "content": "/**\n* @param {import('gorules').Input} input\n* @param {{\n*  moment: import('dayjs')\n*  env: Record<string, any>\n* }} helpers\n*/\nconst handler = (input, { moment, env }) => {\n  while (true) {}\n  return input;\n}"
+    },
+    {
+      "id": "b8b98fa5-3a16-496d-99bf-7bc6d3caedb3",
+      "type": "outputNode",
+      "position": {
+        "x": 750,
+        "y": 220
+      },
+      "name": "Response"
+    }
+  ]
+}

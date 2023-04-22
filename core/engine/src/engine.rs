@@ -6,6 +6,7 @@ use crate::model::DecisionContent;
 use serde_json::Value;
 use std::future::Future;
 
+use crate::EvaluationError;
 use std::sync::Arc;
 
 /// Structure used for generating and evaluating JDM decisions
@@ -58,7 +59,11 @@ impl<L: DecisionLoader> DecisionEngine<L> {
     }
 
     /// Evaluates a decision through loader using a key
-    pub async fn evaluate<K>(&self, key: K, context: &Value) -> Result<GraphResponse, anyhow::Error>
+    pub async fn evaluate<K>(
+        &self,
+        key: K,
+        context: &Value,
+    ) -> Result<GraphResponse, Box<EvaluationError>>
     where
         K: AsRef<str>,
     {
@@ -72,7 +77,7 @@ impl<L: DecisionLoader> DecisionEngine<L> {
         key: K,
         context: &Value,
         options: EvaluationOptions,
-    ) -> Result<GraphResponse, anyhow::Error>
+    ) -> Result<GraphResponse, Box<EvaluationError>>
     where
         K: AsRef<str>,
     {
@@ -99,6 +104,7 @@ mod tests {
     use crate::loader::{FilesystemLoader, FilesystemLoaderOptions, MemoryLoader};
     use crate::model::DecisionContent;
     use serde_json::json;
+    use std::ops::Deref;
     use std::path::Path;
 
     #[test]
@@ -160,5 +166,28 @@ mod tests {
 
         assert_eq!(res1.unwrap().result, json!({"output": 10}));
         assert_eq!(res2.unwrap().result, json!({"output": 0}))
+    }
+
+    #[test]
+    fn it_throws_correct_error_type() {
+        let cargo_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let test_data_root = cargo_root.join("../../").join("test-data");
+        let fs_loader = FilesystemLoader::new(FilesystemLoaderOptions {
+            keep_in_memory: true,
+            root: test_data_root.to_str().unwrap(),
+        });
+
+        let graph = DecisionEngine::new(fs_loader);
+
+        let infinite_fn =
+            tokio_test::block_on(graph.evaluate("infinite-function.json", &json!({})));
+
+        match infinite_fn.unwrap_err().deref() {
+            EvaluationError::NodeError(e) => {
+                assert_eq!(e.node_id, "e0fd96d0-44dc-4f0e-b825-06e56b442d78");
+                assert_eq!(e.source.to_string(), "Timeout exceeded");
+            }
+            _ => assert!(false, "Wrong error type"),
+        }
     }
 }

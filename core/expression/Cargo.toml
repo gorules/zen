@@ -1,7 +1,7 @@
 [package]
 authors = ["GoRules Team <bot@gorules.io>"]
-description = "Zen expression language virtual machine"
-name = "zen-vm"
+description = "Zen Expression Language"
+name = "zen-expression"
 license = "MIT"
 version = "0.2.1"
 edition = "2021"
@@ -16,14 +16,26 @@ hashbrown = { workspace = true, features = ["bumpalo"] }
 humantime = { workspace = true }
 fastrand = { workspace = true }
 once_cell = { workspace = true }
+phf = { workspace = true, features = ["macros"] }
 serde_json = { workspace = true, features = ["arbitrary_precision"] }
 thiserror = { workspace = true }
 rust_decimal = { workspace = true, features = ["maths-nopanic"] }
 rust_decimal_macros = { workspace = true }
-zen-parser = { path = "../parser", version = "0.2.1" }
 
 [dev-dependencies]
 criterion = { workspace = true }
+
+[[bench]]
+harness = false
+name = "unary"
+
+[[bench]]
+harness = false
+name = "standard"
+
+[[bench]]
+harness = false
+name = "lexer"
 
 [[bench]]
 harness = false

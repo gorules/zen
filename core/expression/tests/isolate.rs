@@ -2,8 +2,8 @@ use bumpalo::Bump;
 use rust_decimal_macros::dec;
 use serde_json::{json, Value};
 
-use zen_vm::isolate::Isolate;
-use zen_vm::opcodes::{ExecResult, Variable};
+use zen_expression::isolate::Isolate;
+use zen_expression::opcodes::{ExecResult, Variable};
 
 struct TestEnv {
     env: Value,

@@ -4,7 +4,7 @@ use std::rc::Rc;
 use bumpalo::Bump;
 use thiserror::Error;
 
-use zen_parser::ast::Node;
+use crate::ast::Node;
 
 use crate::compiler::CompilerError::{
     ArgumentNotFound, UnknownBinaryOperator, UnknownBuiltIn, UnknownUnaryOperator,

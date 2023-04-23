@@ -7,7 +7,7 @@ use serde_json::Value;
 use crate::handler::node::{NodeRequest, NodeResponse, NodeResult};
 use crate::handler::table::{RowOutput, RowOutputKind};
 use crate::model::{DecisionNodeKind, DecisionTableContent, DecisionTableHitPolicy};
-use zen_vm::isolate::Isolate;
+use zen_expression::isolate::Isolate;
 
 #[derive(Debug, Serialize)]
 struct RowResult {

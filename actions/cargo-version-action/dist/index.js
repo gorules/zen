@@ -11268,14 +11268,12 @@ var semver = __nccwpck_require__(1383);
 var toml = __nccwpck_require__(4920);
 ;// CONCATENATED MODULE: ./src/cargo.ts
 
-const versionRegex = /version = "[0-9]+\.[0-9]+\.[0-9]+"$/mi;
-const vmDep = /zen-vm =.*$/mi;
-const parserDep = /zen-parser =.*$/mi;
+const versionRegex = /version = "[0-9]+\.[0-9]+\.[0-9]+"$/im;
+const expressionDep = /zen-expression =.*$/im;
 const updateCargoContents = (contents, { version }) => {
     return contents
         .replace(versionRegex, `version = "${version}"`)
-        .replace(parserDep, `zen-parser = { path = "../parser", version = "${version}" }`)
-        .replace(vmDep, `zen-vm = { path = "../vm", version = "${version}" }`);
+        .replace(expressionDep, `zen-expression = { path = "../expression", version = "${version}" }`);
 };
 const getCargoVersion = (contents) => {
     var _a;
@@ -11310,9 +11308,7 @@ function run() {
             const project = 'engine';
             const projectsFolder = 'core';
             const directory = yield promises_namespaceObject.readdir(external_path_.join(...[workspace, projectsFolder]), { withFileTypes: true });
-            const folders = directory
-                .filter((dirent) => dirent.isDirectory())
-                .map((dirent) => dirent.name);
+            const folders = directory.filter((dirent) => dirent.isDirectory()).map((dirent) => dirent.name);
             const cargoFilePath = external_path_.join(...[workspace, projectsFolder, project, 'Cargo.toml']);
             const cargoFile = yield promises_namespaceObject.readFile(cargoFilePath, 'utf-8');
             const currentVersion = getCargoVersion(cargoFile);

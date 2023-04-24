@@ -143,3 +143,20 @@ jobs:
         with:
           command: upload
           args: --skip-existing *
+
+      - name: Upload wheel artifacts
+        if: "startsWith(github.event.head_commit.message, 'chore(release): publish python')"
+        uses: actions/upload-artifact@v3
+        with:
+          name: wheels
+          path: dist
+
+      - name: Upload binary artifacts
+        if: "startsWith(github.event.head_commit.message, 'chore(release): publish python')"
+        uses: actions/upload-artifact@v3
+        with:
+          name: binaries
+          path: |
+            *.tar.gz
+            *.zip
+            *.deb

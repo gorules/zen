@@ -1,5 +1,5 @@
-use zen_parser::lexer::token::{Token, TokenKind};
-use zen_parser::lexer::Lexer;
+use zen_expression::lexer::token::{Token, TokenKind};
+use zen_expression::lexer::Lexer;
 
 struct LexerTest {
     test: &'static str,

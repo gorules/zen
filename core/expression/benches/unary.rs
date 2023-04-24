@@ -1,8 +1,8 @@
 use bumpalo::Bump;
 use criterion::{criterion_group, criterion_main, Bencher, Criterion};
 
-use zen_parser::lexer::Lexer;
-use zen_parser::parser::UnaryParser;
+use zen_expression::lexer::Lexer;
+use zen_expression::parser::UnaryParser;
 
 fn bench_source(b: &mut Bencher, src: &'static str) {
     let lexer = Lexer::new();

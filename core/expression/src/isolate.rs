@@ -10,10 +10,10 @@ use bumpalo::Bump;
 use serde_json::Value;
 use thiserror::Error;
 
-use zen_parser::lexer::error::LexerError;
-use zen_parser::lexer::Lexer;
-use zen_parser::parser::error::ParserError;
-use zen_parser::parser::{StandardParser, UnaryParser};
+use crate::lexer::error::LexerError;
+use crate::lexer::Lexer;
+use crate::parser::error::ParserError;
+use crate::parser::{StandardParser, UnaryParser};
 
 use crate::compiler::{Compiler, CompilerError};
 use crate::opcodes::{ExecResult, Opcode, Variable};

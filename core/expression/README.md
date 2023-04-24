@@ -1,7 +1,7 @@
-# ZEN Parser
+# ZEN Expression
 
-Virtual machine for business-first expression language used in
-Zen business rules engine by GoRules. The language is designed
+Zen Expression is business-first expression language used in
+Zen Business rules engine by GoRules. The language is designed
 to follow these principles:
 
 - Side-effect free

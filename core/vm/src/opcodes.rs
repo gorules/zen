@@ -32,31 +32,6 @@ impl<'a> Display for Variable<'a> {
     }
 }
 
-impl<'a> Clone for Variable<'a> {
-    fn clone(&self) -> Self {
-        match self {
-            Variable::Null => Variable::Null,
-            Variable::Bool(b) => Variable::Bool((*b).clone()),
-            Variable::Int(i) => Variable::Int((*i).clone()),
-            Variable::Number(n) => Variable::Number(n.clone()),
-            Variable::String(s) => Variable::String(s.clone()),
-            Variable::Array(a) => Variable::Array(a.clone()),
-            Variable::Object(o) => Variable::Object(o.clone()),
-            Variable::Interval {
-                left_bracket,
-                right_bracket,
-                left,
-                right,
-            } => Variable::Interval {
-                left_bracket: left_bracket.clone(),
-                right_bracket: right_bracket.clone(),
-                left: left.clone(),
-                right: right.clone(),
-            },
-        }
-    }
-}
-
 impl<'a> Variable<'a> {
     pub fn empty_object_in(bump: &'a Bump) -> Self {
         Variable::Object(hashbrown::HashMap::new_in(BumpWrapper(bump)))
@@ -68,7 +43,7 @@ impl<'a> Variable<'a> {
             Value::Number(f) => {
                 Variable::Number(Decimal::from_str_exact(f.to_string().as_str()).unwrap())
             }
-            Value::Bool(b) => Variable::Bool((*b).clone()),
+            Value::Bool(b) => Variable::Bool(*b),
             Value::Array(v) => {
                 let mut arr: Vec<&'a Variable> = Vec::with_capacity(v.len());
                 for i in v {
@@ -177,7 +152,7 @@ impl TryFrom<&Variable<'_>> for ExecResult {
     fn try_from(value: &Variable) -> Result<Self, Self::Error> {
         match value {
             Variable::Null => Ok(ExecResult::Null),
-            Variable::Bool(b) => Ok(ExecResult::Bool((*b).clone())),
+            Variable::Bool(b) => Ok(ExecResult::Bool(*b)),
             Variable::Number(n) => Ok(ExecResult::Number(*n)),
             Variable::String(s) => Ok(ExecResult::String(s.to_string())),
             Variable::Array(arr) => {
@@ -192,7 +167,7 @@ impl TryFrom<&Variable<'_>> for ExecResult {
                 let mut t = HashMap::new();
 
                 for k in obj.keys() {
-                    let v = *obj.get(k).ok_or_else(|| ())?;
+                    let v = *obj.get(k).ok_or(())?;
                     t.insert(k.to_string(), ExecResult::try_from(v)?);
                 }
 
@@ -207,7 +182,7 @@ impl ExecResult {
     pub fn to_variable<'a>(&self, bump: &'a Bump) -> Result<&'a Variable<'a>, ()> {
         match self {
             ExecResult::Null => Ok(bump.alloc(Variable::Null)),
-            ExecResult::Bool(b) => Ok(bump.alloc(Variable::Bool((*b).clone()))),
+            ExecResult::Bool(b) => Ok(bump.alloc(Variable::Bool(*b))),
             ExecResult::Number(n) => Ok(bump.alloc(Variable::Number(*n))),
             ExecResult::String(str) => Ok(bump.alloc(Variable::String(bump.alloc_str(str)))),
             ExecResult::Array(arr) => {
@@ -222,7 +197,7 @@ impl ExecResult {
                 let mut t = hashbrown::HashMap::<&'a str, _, _, _>::new_in(BumpWrapper(bump));
 
                 for k in obj.keys() {
-                    let v = obj.get(k).ok_or_else(|| ())?;
+                    let v = obj.get(k).ok_or(())?;
                     t.insert(bump.alloc_str(k), v.to_variable(bump)?);
                 }
 
@@ -234,7 +209,7 @@ impl ExecResult {
     pub fn to_value(&self) -> Result<Value, ()> {
         match self {
             ExecResult::Null => Ok(Value::Null),
-            ExecResult::Bool(b) => Ok(Value::Bool((*b).clone())),
+            ExecResult::Bool(b) => Ok(Value::Bool(*b)),
             ExecResult::Number(n) => Ok(Value::Number(
                 Number::from_str(n.to_string().as_str()).map_err(|_| ())?,
             )),
@@ -251,7 +226,7 @@ impl ExecResult {
                 let mut t = Map::new();
 
                 for k in obj.keys() {
-                    let v = obj.get(k).ok_or_else(|| ())?;
+                    let v = obj.get(k).ok_or(())?;
                     t.insert(k.to_string(), v.to_value()?);
                 }
 
@@ -262,7 +237,7 @@ impl ExecResult {
 
     pub fn bool(&self) -> Result<bool, ()> {
         match self {
-            ExecResult::Bool(b) => Ok((*b).clone()),
+            ExecResult::Bool(b) => Ok(*b),
             _ => Err(()),
         }
     }

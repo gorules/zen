@@ -344,6 +344,78 @@ fn isolate_standard_test() {
                 },
             ]),
         },
+        TestEnv {
+            env: json!({
+                "numbers": [[1, 2, 3], [4, 5, 6], [7, 8 ,9]]
+            }),
+            cases: Vec::from([
+                TestCase {
+                    expr: r#"numbers[0]"#,
+                    result: ExecResult::from(&json!([1, 2, 3])),
+                },
+                TestCase {
+                    expr: r#"map(numbers, sum(#))"#,
+                    result: ExecResult::from(&json!([6, 15, 24])),
+                },
+                TestCase {
+                    expr: r#"map(numbers, map(#, # - 1))"#,
+                    result: ExecResult::from(&json!([[0, 1, 2], [3, 4, 5], [6, 7, 8]])),
+                },
+                TestCase {
+                    expr: r#"filter(numbers, some(#, # < 5))"#,
+                    result: ExecResult::from(&json!([[1, 2, 3], [4, 5, 6]])),
+                },
+            ]),
+        },
+        TestEnv {
+            env: json!({
+                "numbers": [[1, 2, 3], [4, 5, 6], [7, 8 ,9]]
+            }),
+            cases: Vec::from([
+                TestCase {
+                    expr: r#"numbers[0]"#,
+                    result: ExecResult::from(&json!([1, 2, 3])),
+                },
+                TestCase {
+                    expr: r#"map(numbers, sum(#))"#,
+                    result: ExecResult::from(&json!([6, 15, 24])),
+                },
+                TestCase {
+                    expr: r#"map(numbers, map(#, # - 1))"#,
+                    result: ExecResult::from(&json!([[0, 1, 2], [3, 4, 5], [6, 7, 8]])),
+                },
+                TestCase {
+                    expr: r#"filter(numbers, some(#, # < 5))"#,
+                    result: ExecResult::from(&json!([[1, 2, 3], [4, 5, 6]])),
+                },
+            ]),
+        },
+        TestEnv {
+            env: json!({
+              "cart": [
+                { "id": "1", "categories": [{"categoryId": "cat1"}, {"categoryId": "cat2"}] },
+                { "id": "2", "categories": [{"categoryId": "cat3"}, {"categoryId": "cat4"}] },
+                { "id": "3", "categories": [{"categoryId": "cat1"}, {"categoryId": "cat5"}] }
+              ]
+            }),
+            cases: Vec::from([
+                TestCase {
+                    expr: r#"filter(cart, some(#.categories, #.categoryId == 'cat1'))"#,
+                    result: ExecResult::from(&json!([
+                        { "id": "1", "categories": [{"categoryId": "cat1"}, {"categoryId": "cat2"}] },
+                        { "id": "3", "categories": [{"categoryId": "cat1"}, {"categoryId": "cat5"}] }
+                    ])),
+                },
+                TestCase {
+                    expr: r#"map(cart, map(#.categories, #.categoryId))"#,
+                    result: ExecResult::from(&json!([
+                        ["cat1", "cat2"],
+                        ["cat3", "cat4"],
+                        ["cat1", "cat5"],
+                    ])),
+                },
+            ]),
+        },
     ]);
 
     let isolate = Isolate::default();

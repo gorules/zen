@@ -1079,7 +1079,9 @@ impl<'a> VM<'a> {
                         }
                     }
                 }
-                Opcode::End => self.scopes.clear(),
+                Opcode::End => {
+                    self.scopes.pop();
+                }
             }
         }
 

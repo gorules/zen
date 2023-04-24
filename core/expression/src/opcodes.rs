@@ -146,6 +146,28 @@ pub enum ExecResult {
     Object(HashMap<String, ExecResult>),
 }
 
+impl From<&Value> for ExecResult {
+    fn from(value: &Value) -> Self {
+        match value {
+            Value::Null => ExecResult::Null,
+            Value::Number(num) => {
+                ExecResult::Number(Decimal::from_str(num.to_string().as_str()).unwrap())
+            }
+            Value::String(str) => ExecResult::String(str.clone()),
+            Value::Bool(b) => ExecResult::Bool(*b),
+            Value::Array(arr) => ExecResult::Array(arr.iter().map(ExecResult::from).collect()),
+            Value::Object(map) => {
+                let remapped = map
+                    .iter()
+                    .map(|(key, val)| (key.clone(), ExecResult::from(val)))
+                    .collect::<HashMap<String, ExecResult>>();
+
+                ExecResult::Object(remapped)
+            }
+        }
+    }
+}
+
 impl TryFrom<&Variable<'_>> for ExecResult {
     type Error = ();
 

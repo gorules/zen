@@ -41,6 +41,6 @@ impl MemoryLoader {
 impl DecisionLoader for MemoryLoader {
     async fn load(&self, key: &str) -> LoaderResponse {
         self.get(&key)
-            .ok_or_else(|| LoaderError::NotFound(key.to_string()))
+            .ok_or_else(|| LoaderError::NotFound(key.to_string()).into())
     }
 }

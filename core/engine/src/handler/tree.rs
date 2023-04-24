@@ -4,6 +4,7 @@ use crate::handler::node::{NodeError, NodeRequest};
 use crate::handler::table::zen::DecisionTableHandler;
 use crate::loader::DecisionLoader;
 use crate::model::{DecisionContent, DecisionNode, DecisionNodeKind};
+use crate::EvaluationError;
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -87,9 +88,9 @@ impl<'a, T: DecisionLoader> GraphTree<'a, T> {
         }
     }
 
-    pub fn connect(&self) -> anyhow::Result<()> {
+    pub fn connect(&self) -> Result<(), EvaluationError> {
         if self.iteration >= self.max_depth {
-            return Err(anyhow!("Depth limit reached"));
+            return Err(EvaluationError::DepthLimitExceeded);
         }
 
         let mut node_ids = self.node_ids.borrow_mut();
@@ -104,13 +105,14 @@ impl<'a, T: DecisionLoader> GraphTree<'a, T> {
         self.content
             .edges
             .iter()
-            .try_for_each::<_, anyhow::Result<()>>(|edge| {
+            .try_for_each::<_, Result<(), EvaluationError>>(|edge| {
                 let source_ref = nodes
                     .get(edge.source_id.as_str())
-                    .ok_or_else(|| anyhow!("Failed to retrieve source node"))?;
+                    .ok_or_else(|| EvaluationError::NodeConnectError(edge.source_id.to_string()))?;
+
                 let target_ref = nodes
                     .get(edge.target_id.as_str())
-                    .ok_or_else(|| anyhow!("Failed to retrieve target node"))?;
+                    .ok_or_else(|| EvaluationError::NodeConnectError(edge.target_id.to_string()))?;
 
                 let source = source_ref.borrow();
                 let mut target = target_ref.borrow_mut();
@@ -242,7 +244,7 @@ impl<'a, T: DecisionLoader> GraphTree<'a, T> {
                         .handle(&req)
                         .await
                         .map_err(|e| NodeError {
-                            source: e,
+                            source: e.into(),
                             node_id: node.node.id.clone(),
                         })?;
 
@@ -275,7 +277,7 @@ impl<'a, T: DecisionLoader> GraphTree<'a, T> {
                         .handle(&req)
                         .await
                         .map_err(|e| NodeError {
-                            source: e,
+                            source: e.into(),
                             node_id: id.to_string(),
                         })?;
 
@@ -309,7 +311,7 @@ impl<'a, T: DecisionLoader> GraphTree<'a, T> {
                         .await
                         .map_err(|e| NodeError {
                             node_id: id.to_string(),
-                            source: e,
+                            source: e.into(),
                         })?;
 
                     node_data.insert(id, res.output.clone());

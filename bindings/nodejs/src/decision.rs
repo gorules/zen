@@ -41,7 +41,8 @@ impl JsZenDecision {
             ))
         })
         .await
-        .map_err(|_| anyhow!("Hook timed out"))??;
+        .map_err(|_| anyhow!("Hook timed out"))?
+        .map_err(|e| anyhow!(e))?;
 
         Ok(serde_json::to_value(&result)?)
     }

@@ -54,7 +54,7 @@ impl FilesystemLoader {
 
         let path = self.key_to_path(key.as_ref());
         if !Path::exists(&path) {
-            return Err(LoaderError::NotFound(String::from(key.as_ref())));
+            return Err(LoaderError::NotFound(String::from(key.as_ref())).into());
         }
 
         let file = File::open(path).map_err(|e| LoaderError::Internal {

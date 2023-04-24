@@ -39,7 +39,7 @@ impl JsDecisionLoader {
           return Err(LoaderError::Internal {
               key: key.to_string(),
               source: anyhow!("Loader is undefined")
-          })
+          }.into())
         };
 
         let promise: Promise<Option<Buffer>> =
@@ -57,7 +57,7 @@ impl JsDecisionLoader {
         })?;
 
         let Some(buffer) = result else {
-            return Err(LoaderError::NotFound(key.to_string()));
+            return Err(LoaderError::NotFound(key.to_string()).into());
         };
 
         let decision_content =

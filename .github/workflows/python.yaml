@@ -135,6 +135,10 @@ jobs:
       - uses: actions/download-artifact@v3
         with:
           name: wheels
+      - name: List folder
+        run: ls ./
+        shell: bash
+
       - name: Publish to PyPI
         if: "startsWith(github.event.head_commit.message, 'chore(release): publish python')"
         uses: PyO3/maturin-action@v1

@@ -109,7 +109,7 @@ impl<'a> DecisionTableHandler<'a> {
                 return None;
             }
 
-            let is_ok = result.unwrap().bool().unwrap_or_else(|_| false);
+            let is_ok = result.unwrap().as_bool().unwrap_or(false);
             if !is_ok {
                 return None;
             }
@@ -127,10 +127,7 @@ impl<'a> DecisionTableHandler<'a> {
                 return None;
             }
 
-            outputs.insert(
-                output.field.clone(),
-                RowOutputKind::Value(res.unwrap().to_value().ok()?),
-            );
+            outputs.insert(output.field.clone(), RowOutputKind::Value(res.unwrap()));
         }
 
         if !self.trace {

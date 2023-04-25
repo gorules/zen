@@ -16,7 +16,7 @@ use crate::parser::error::ParserError;
 use crate::parser::{StandardParser, UnaryParser};
 
 use crate::compiler::{Compiler, CompilerError};
-use crate::opcodes::{ExecResult, Opcode, Variable};
+use crate::opcodes::{Opcode, Variable};
 use crate::vm::{Scope, VMError, VM};
 
 type ADefHasher = BuildHasherDefault<AHasher>;
@@ -76,7 +76,7 @@ impl<'a> Isolate<'a> {
         *env = ManuallyDrop::new(new_env);
     }
 
-    pub fn run(&self, source: &'a str) -> Result<ExecResult, IsolateError> {
+    pub fn run(&self, source: &'a str) -> Result<Value, IsolateError> {
         if self.contains_ref(source) {
             self.run_standard(source)
         } else {
@@ -98,9 +98,7 @@ impl<'a> Isolate<'a> {
 
         if !references.contains_key(reference) {
             let result = self.run_standard(reference)?;
-            let value = result
-                .to_variable(bump)
-                .map_err(|_| IsolateError::ValueCastError)?;
+            let value = bump.alloc(Variable::from_serde(&result, bump));
 
             references.insert(reference, value);
         }
@@ -127,7 +125,7 @@ impl<'a> Isolate<'a> {
         Ok(())
     }
 
-    pub fn run_standard(&self, source: &'a str) -> Result<ExecResult, IsolateError> {
+    pub fn run_standard(&self, source: &'a str) -> Result<Value, IsolateError> {
         self.clear();
 
         let tokens = self
@@ -163,10 +161,10 @@ impl<'a> Isolate<'a> {
             .run(unsafe { &*self.environment.get() })
             .map_err(|source| IsolateError::VMError { source })?;
 
-        ExecResult::try_from(res).map_err(|_| IsolateError::ValueCastError)
+        res.try_into().map_err(|_| IsolateError::ValueCastError)
     }
 
-    pub fn run_unary(&self, source: &'a str) -> Result<ExecResult, IsolateError> {
+    pub fn run_unary(&self, source: &'a str) -> Result<Value, IsolateError> {
         self.clear();
 
         let tokens = self
@@ -202,7 +200,7 @@ impl<'a> Isolate<'a> {
             .run(unsafe { &*self.environment.get() })
             .map_err(|source| IsolateError::VMError { source })?;
 
-        ExecResult::try_from(res).map_err(|_| IsolateError::ValueCastError)
+        res.try_into().map_err(|_| IsolateError::ValueCastError)
     }
 
     fn clear(&self) {

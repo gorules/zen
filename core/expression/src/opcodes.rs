@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
 use bumpalo::Bump;
@@ -24,12 +22,6 @@ pub enum Variable<'a> {
         left: &'a Variable<'a>,
         right: &'a Variable<'a>,
     },
-}
-
-impl<'a> Display for Variable<'a> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self:?}")
-    }
 }
 
 impl<'a> Variable<'a> {
@@ -130,136 +122,35 @@ pub enum Opcode<'a> {
     End,
 }
 
-impl<'a> Display for Opcode<'a> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum ExecResult {
-    Null,
-    Bool(bool),
-    Number(Decimal),
-    String(String),
-    Array(Vec<ExecResult>),
-    Object(HashMap<String, ExecResult>),
-}
-
-impl From<&Value> for ExecResult {
-    fn from(value: &Value) -> Self {
-        match value {
-            Value::Null => ExecResult::Null,
-            Value::Number(num) => {
-                ExecResult::Number(Decimal::from_str(num.to_string().as_str()).unwrap())
-            }
-            Value::String(str) => ExecResult::String(str.clone()),
-            Value::Bool(b) => ExecResult::Bool(*b),
-            Value::Array(arr) => ExecResult::Array(arr.iter().map(ExecResult::from).collect()),
-            Value::Object(map) => {
-                let remapped = map
-                    .iter()
-                    .map(|(key, val)| (key.clone(), ExecResult::from(val)))
-                    .collect::<HashMap<String, ExecResult>>();
-
-                ExecResult::Object(remapped)
-            }
-        }
-    }
-}
-
-impl TryFrom<&Variable<'_>> for ExecResult {
+impl TryFrom<&Variable<'_>> for Value {
     type Error = ();
 
-    fn try_from(value: &Variable) -> Result<Self, Self::Error> {
+    fn try_from(value: &Variable<'_>) -> Result<Self, Self::Error> {
         match value {
-            Variable::Null => Ok(ExecResult::Null),
-            Variable::Bool(b) => Ok(ExecResult::Bool(*b)),
-            Variable::Number(n) => Ok(ExecResult::Number(*n)),
-            Variable::String(s) => Ok(ExecResult::String(s.to_string())),
-            Variable::Array(arr) => {
-                let mut v = Vec::<ExecResult>::with_capacity(arr.len());
-                for i in *arr {
-                    v.push(ExecResult::try_from(*i)?)
-                }
-
-                Ok(ExecResult::Array(v))
-            }
-            Variable::Object(obj) => {
-                let mut t = HashMap::new();
-
-                for k in obj.keys() {
-                    let v = *obj.get(k).ok_or(())?;
-                    t.insert(k.to_string(), ExecResult::try_from(v)?);
-                }
-
-                Ok(ExecResult::Object(t))
-            }
-            _ => Err(()),
-        }
-    }
-}
-
-impl ExecResult {
-    pub fn to_variable<'a>(&self, bump: &'a Bump) -> Result<&'a Variable<'a>, ()> {
-        match self {
-            ExecResult::Null => Ok(bump.alloc(Variable::Null)),
-            ExecResult::Bool(b) => Ok(bump.alloc(Variable::Bool(*b))),
-            ExecResult::Number(n) => Ok(bump.alloc(Variable::Number(*n))),
-            ExecResult::String(str) => Ok(bump.alloc(Variable::String(bump.alloc_str(str)))),
-            ExecResult::Array(arr) => {
-                let mut v = Vec::<&'a Variable<'a>>::with_capacity(arr.len());
-                for i in arr {
-                    v.push(i.to_variable(bump)?)
-                }
-
-                Ok(bump.alloc(Variable::Array(bump.alloc_slice_copy(v.as_slice()))))
-            }
-            ExecResult::Object(obj) => {
-                let mut t = hashbrown::HashMap::<&'a str, _, _, _>::new_in(BumpWrapper(bump));
-
-                for k in obj.keys() {
-                    let v = obj.get(k).ok_or(())?;
-                    t.insert(bump.alloc_str(k), v.to_variable(bump)?);
-                }
-
-                Ok(bump.alloc(Variable::Object(t)))
-            }
-        }
-    }
-
-    pub fn to_value(&self) -> Result<Value, ()> {
-        match self {
-            ExecResult::Null => Ok(Value::Null),
-            ExecResult::Bool(b) => Ok(Value::Bool(*b)),
-            ExecResult::Number(n) => Ok(Value::Number(
+            Variable::Null => Ok(Value::Null),
+            Variable::Bool(b) => Ok(Value::Bool(*b)),
+            Variable::Number(n) => Ok(Value::Number(
                 Number::from_str(n.to_string().as_str()).map_err(|_| ())?,
             )),
-            ExecResult::String(s) => Ok(Value::String(s.clone())),
-            ExecResult::Array(arr) => {
+            Variable::String(s) => Ok(Value::String(s.to_string())),
+            Variable::Array(arr) => {
                 let mut v = Vec::<Value>::with_capacity(arr.len());
-                for i in arr {
-                    v.push(i.to_value()?)
+                for i in *arr {
+                    v.push(Value::try_from(*i)?)
                 }
 
                 Ok(Value::Array(v))
             }
-            ExecResult::Object(obj) => {
+            Variable::Object(obj) => {
                 let mut t = Map::new();
 
                 for k in obj.keys() {
-                    let v = obj.get(k).ok_or(())?;
-                    t.insert(k.to_string(), v.to_value()?);
+                    let v = *obj.get(k).ok_or(())?;
+                    t.insert(k.to_string(), Value::try_from(v)?);
                 }
 
                 Ok(Value::Object(t))
             }
-        }
-    }
-
-    pub fn bool(&self) -> Result<bool, ()> {
-        match self {
-            ExecResult::Bool(b) => Ok(*b),
             _ => Err(()),
         }
     }

@@ -12,6 +12,7 @@ use zen_expression::isolate::Isolate;
 #[derive(Debug, Serialize)]
 struct RowResult {
     rule: Option<HashMap<String, String>>,
+    reference_map: Option<HashMap<String, Value>>,
     index: usize,
     #[serde(skip)]
     output: RowOutput,
@@ -134,6 +135,7 @@ impl<'a> DecisionTableHandler<'a> {
             return Some(RowResult {
                 output: outputs,
                 rule: None,
+                reference_map: None,
                 index,
             });
         }
@@ -144,16 +146,22 @@ impl<'a> DecisionTableHandler<'a> {
         };
 
         let mut expressions: HashMap<String, String> = Default::default();
+        let mut reference_map: HashMap<String, Value> = Default::default();
         expressions.insert("_id".to_string(), rule_id.clone());
 
         for input in &content.inputs {
             let rule_value = rule.get(input.id.as_str())?;
             expressions.insert(input.field.clone(), rule_value.clone());
+
+            if let Some(reference) = self.isolate.get_reference(input.field.as_str()) {
+                reference_map.insert(input.field.clone(), reference);
+            }
         }
 
         Some(RowResult {
             output: outputs,
             rule: Some(expressions),
+            reference_map: Some(reference_map),
             index,
         })
     }

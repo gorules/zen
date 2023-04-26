@@ -118,6 +118,13 @@ impl<'a> Isolate<'a> {
         Ok(())
     }
 
+    pub fn get_reference(&self, reference: &'a str) -> Option<Value> {
+        let refs = self.references.borrow();
+        let var = refs.get(reference)?;
+
+        (*var).try_into().ok()
+    }
+
     pub fn run_standard(&self, source: &'a str) -> Result<Value, IsolateError> {
         self.clear();
 

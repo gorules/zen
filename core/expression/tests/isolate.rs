@@ -409,6 +409,31 @@ fn isolate_standard_test() {
                 },
             ]),
         },
+        TestEnv {
+            env: json!({
+                "nestedArray": [[1, 2, 3], [4, 5, 6]],
+                "mixedArray": [1, [2, 3], 4],
+                "mixedTypeArray": [1, {"t": "t"}, "hello", ["a", "b"], [4]]
+            }),
+            cases: Vec::from([
+                TestCase {
+                    expr: r#"flatten(nestedArray)"#,
+                    result: json!([1, 2, 3, 4, 5, 6]),
+                },
+                TestCase {
+                    expr: r#"flatten(mixedArray)"#,
+                    result: json!([1, 2, 3, 4]),
+                },
+                TestCase {
+                    expr: r#"flatten(mixedTypeArray)"#,
+                    result: json!([1, {"t": "t"}, "hello", "a", "b", 4]),
+                },
+                TestCase {
+                    expr: r#"flatMap(nestedArray, #)"#,
+                    result: json!([1, 2, 3, 4, 5, 6]),
+                },
+            ]),
+        },
     ]);
 
     let isolate = Isolate::default();

@@ -17,6 +17,7 @@ pub(crate) static BUILT_INS: Lazy<HashMap<&'static str, BuiltIn, ADefHasher>> = 
         "duration" => BuiltIn { arity: Arity::Single },
         "upper" => BuiltIn { arity: Arity::Single },
         "lower" => BuiltIn { arity: Arity::Single },
+        "flatten" => BuiltIn { arity: Arity::Single },
 
         "abs" => BuiltIn { arity: Arity::Single },
         "sum" => BuiltIn { arity: Arity::Single },
@@ -48,7 +49,8 @@ pub(crate) static BUILT_INS: Lazy<HashMap<&'static str, BuiltIn, ADefHasher>> = 
         "filter" => BuiltIn { arity: Arity::Closure },
         "map" => BuiltIn { arity: Arity::Closure },
         "count" => BuiltIn { arity: Arity::Closure },
-        "one" => BuiltIn { arity: Arity::Closure }
+        "one" => BuiltIn { arity: Arity::Closure },
+        "flatMap" => BuiltIn { arity: Arity::Closure },
     }
 });
 

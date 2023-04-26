@@ -317,6 +317,10 @@ impl<'a> Compiler<'a> {
                     self.compile_argument(name, arguments, 1)?;
                     Ok(self.emit(Opcode::Contains))
                 }
+                "flatten" => {
+                    self.compile_argument(name, arguments, 0)?;
+                    Ok(self.emit(Opcode::Flatten))
+                }
                 "upper" => {
                     self.compile_argument(name, arguments, 0)?;
                     Ok(self.emit(Opcode::Uppercase))
@@ -449,6 +453,18 @@ impl<'a> Compiler<'a> {
                     self.emit(Opcode::GetLen);
                     self.emit(Opcode::End);
                     Ok(self.emit(Opcode::Array))
+                }
+                "flatMap" => {
+                    self.compile_argument(name, arguments, 0)?;
+                    self.emit(Opcode::Begin);
+                    self.emit_loop(|| {
+                        self.compile_argument(name, arguments, 1)?;
+                        Ok(())
+                    })?;
+                    self.emit(Opcode::GetLen);
+                    self.emit(Opcode::End);
+                    self.emit(Opcode::Array);
+                    Ok(self.emit(Opcode::Flatten))
                 }
                 "count" => {
                     self.compile_argument(name, arguments, 0)?;

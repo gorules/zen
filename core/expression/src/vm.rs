@@ -964,6 +964,26 @@ impl<'a> VM<'a> {
 
                     self.stack.push(self.bump.alloc(Number(len.into())))
                 }
+                Opcode::Flatten => {
+                    let current = self.pop()?;
+                    let Array(arr) = current else {
+                        return Err(OpcodeErr {
+                            opcode: "Flatten".into(),
+                            message: "Unsupported type".into()
+                        })
+                    };
+
+                    let mut flat_arr = Vec::new();
+                    arr.iter().for_each(|&v| match v {
+                        Array(arr) => arr.iter().for_each(|&v| flat_arr.push(v)),
+                        _ => flat_arr.push(v),
+                    });
+
+                    self.stack.push(
+                        self.bump
+                            .alloc(Array(self.bump.alloc_slice_copy(flat_arr.as_slice()))),
+                    )
+                }
                 Opcode::ParseTime => {
                     let a = self.pop()?;
                     let ts = match a {

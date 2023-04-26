@@ -120,6 +120,7 @@ pub enum Opcode<'a> {
     Pointer,
     Begin,
     End,
+    Flatten,
 }
 
 impl TryFrom<&Variable<'_>> for Value {

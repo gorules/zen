@@ -21,6 +21,8 @@ pub(crate) const BUILT_INS: Map<&'static str, BuiltIn> = phf_map! {
     "ceil" => BuiltIn { arity: Arity::Single },
     "round" => BuiltIn { arity: Arity::Single },
 
+    "flatten" => BuiltIn { arity: Arity::Single },
+
     "dayOfWeek" => BuiltIn { arity: Arity::Single },
     "dayOfMonth" => BuiltIn { arity: Arity::Single },
     "dayOfYear" => BuiltIn { arity: Arity::Single },

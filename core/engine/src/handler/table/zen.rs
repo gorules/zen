@@ -104,7 +104,7 @@ impl<'a> DecisionTableHandler<'a> {
                 return None;
             }
 
-            let result = self.isolate.run(rule_value.as_str());
+            let result = self.isolate.run_unary(rule_value.as_str());
             if result.is_err() {
                 return None;
             }

@@ -16,6 +16,7 @@ use crate::parser::error::ParserError;
 use crate::parser::{StandardParser, UnaryParser};
 
 use crate::compiler::{Compiler, CompilerError};
+use crate::lexer::token::TokenKind;
 use crate::opcodes::{Opcode, Variable};
 use crate::vm::{Scope, VMError, VM};
 
@@ -74,14 +75,6 @@ impl<'a> Isolate<'a> {
         let new_env = Variable::from_serde(value, self.get_reference_bump());
         let env = unsafe { &mut (*self.environment.get()) };
         *env = ManuallyDrop::new(new_env);
-    }
-
-    pub fn run(&self, source: &'a str) -> Result<Value, IsolateError> {
-        if self.contains_ref(source) {
-            self.run_standard(source)
-        } else {
-            self.run_unary(source)
-        }
     }
 
     fn get_bump(&self) -> &'a Bump {
@@ -164,6 +157,8 @@ impl<'a> Isolate<'a> {
         res.try_into().map_err(|_| IsolateError::ValueCastError)
     }
 
+    /// Runs unary test
+    /// If reference identifier is present ($) it will use standard parser
     pub fn run_unary(&self, source: &'a str) -> Result<Value, IsolateError> {
         self.clear();
 
@@ -173,14 +168,29 @@ impl<'a> Isolate<'a> {
             .map_err(|source| IsolateError::LexerError { source })?;
 
         let tkn = tokens.borrow();
+        let unary_disallowed = tkn
+            .iter()
+            .any(|token| token.kind == TokenKind::Identifier && token.value == "$");
+
         let bump = self.get_bump();
+        let ast = match unary_disallowed {
+            true => {
+                let parser = StandardParser::try_new(tkn.as_ref(), bump)
+                    .map_err(|source| IsolateError::ParserError { source })?;
 
-        let parser = UnaryParser::try_new(tkn.as_ref(), bump)
-            .map_err(|source| IsolateError::ParserError { source })?;
+                parser
+                    .parse()
+                    .map_err(|source| IsolateError::ParserError { source })?
+            }
+            false => {
+                let parser = UnaryParser::try_new(tkn.as_ref(), bump)
+                    .map_err(|source| IsolateError::ParserError { source })?;
 
-        let ast = parser
-            .parse()
-            .map_err(|source| IsolateError::ParserError { source })?;
+                parser
+                    .parse()
+                    .map_err(|source| IsolateError::ParserError { source })?
+            }
+        };
 
         let compiler = Compiler::new(ast, self.bytecode.clone(), bump);
         compiler
@@ -210,9 +220,5 @@ impl<'a> Isolate<'a> {
             (*self.stack.get()).clear();
             (*self.scopes.get()).clear();
         }
-    }
-
-    fn contains_ref(&self, source: &str) -> bool {
-        source.chars().any(|c| c == '$')
     }
 }

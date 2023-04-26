@@ -95,20 +95,10 @@ impl<'a> DecisionTableHandler<'a> {
         index: usize,
     ) -> Option<RowResult> {
         let rule = content.rules.get(index)?;
-        let mut reference_map = self.trace.then(|| HashMap::<String, Value>::new());
-
         for input in &content.inputs {
             let rule_value = rule.get(input.id.as_str())?;
             if rule_value.is_empty() {
                 continue;
-            }
-
-            let Ok(reference_value) = self.isolate.set_reference(input.field.as_str()) else {
-                return None
-            };
-
-            if let Some(rmap) = &mut reference_map {
-                rmap.insert(input.field.clone(), reference_value);
             }
 
             if self.isolate.set_reference(input.field.as_str()).is_err() {
@@ -145,7 +135,7 @@ impl<'a> DecisionTableHandler<'a> {
             return Some(RowResult {
                 output: outputs,
                 rule: None,
-                reference_map,
+                reference_map: None,
                 index,
             });
         }
@@ -156,17 +146,22 @@ impl<'a> DecisionTableHandler<'a> {
         };
 
         let mut expressions: HashMap<String, String> = Default::default();
+        let mut reference_map: HashMap<String, Value> = Default::default();
         expressions.insert("_id".to_string(), rule_id.clone());
 
         for input in &content.inputs {
             let rule_value = rule.get(input.id.as_str())?;
             expressions.insert(input.field.clone(), rule_value.clone());
+
+            if let Some(reference) = self.isolate.get_reference(input.field.as_str()) {
+                reference_map.insert(input.field.clone(), reference);
+            }
         }
 
         Some(RowResult {
             output: outputs,
             rule: Some(expressions),
-            reference_map,
+            reference_map: Some(reference_map),
             index,
         })
     }

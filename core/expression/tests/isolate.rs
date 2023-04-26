@@ -537,7 +537,7 @@ fn isolate_unary_tests() {
         isolate.set_reference(reference).unwrap();
 
         for TestCase { expr, result } in cases {
-            assert_eq!(result, isolate.run(expr).unwrap(), "{}", expr);
+            assert_eq!(result, isolate.run_unary(expr).unwrap(), "{}", expr);
         }
     }
 }

@@ -122,7 +122,9 @@ impl<'a> Isolate<'a> {
             obj.insert("$", value);
         }
 
-        (*value).try_into().map_err(|_| IsolateError::ReferenceError)
+        (*value)
+            .try_into()
+            .map_err(|_| IsolateError::ReferenceError)
     }
 
     pub fn run_standard(&self, source: &'a str) -> Result<Value, IsolateError> {

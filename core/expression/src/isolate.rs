@@ -92,7 +92,7 @@ impl<'a> Isolate<'a> {
         unsafe { std::mem::transmute(&self.reference_bump) }
     }
 
-    pub fn set_reference(&self, reference: &'a str) -> Result<(), IsolateError> {
+    pub fn set_reference(&self, reference: &'a str) -> Result<Value, IsolateError> {
         let mut references = self.references.borrow_mut();
         let bump = self.get_reference_bump();
 
@@ -122,7 +122,7 @@ impl<'a> Isolate<'a> {
             obj.insert("$", value);
         }
 
-        Ok(())
+        (*value).try_into().map_err(|_| IsolateError::ReferenceError)
     }
 
     pub fn run_standard(&self, source: &'a str) -> Result<Value, IsolateError> {

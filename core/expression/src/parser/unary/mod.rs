@@ -72,6 +72,13 @@ where
                             token = self.iterator.current();
                             continue;
                         }
+                    } else {
+                        return Err(ParserError::FailedToParse {
+                            message: format!(
+                                "Unexpected operator {} on {:?}",
+                                token.value, token.span
+                            ),
+                        });
                     }
                 }
                 TokenKind::Identifier | TokenKind::String | TokenKind::Number => {
@@ -110,7 +117,15 @@ where
                         } else {
                             node_left = node_right;
                         }
+                    } else {
+                        return Err(ParserError::FailedToParse {
+                            message: format!(
+                                "Unexpected bracket {} on {:?}",
+                                token.value, token.span
+                            ),
+                        });
                     }
+
                     continue;
                 }
             }

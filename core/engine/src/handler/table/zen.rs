@@ -101,16 +101,10 @@ impl<'a> DecisionTableHandler<'a> {
                 continue;
             }
 
-            if self.isolate.set_reference(input.field.as_str()).is_err() {
-                return None;
-            }
+            self.isolate.set_reference(input.field.as_str()).ok()?;
+            let result = self.isolate.run_unary(rule_value.as_str()).ok()?;
 
-            let result = self.isolate.run_unary(rule_value.as_str());
-            if result.is_err() {
-                return None;
-            }
-
-            let is_ok = result.unwrap().as_bool().unwrap_or(false);
+            let is_ok = result.as_bool().unwrap_or(false);
             if !is_ok {
                 return None;
             }
@@ -123,12 +117,8 @@ impl<'a> DecisionTableHandler<'a> {
                 continue;
             }
 
-            let res = self.isolate.run_standard(rule_value);
-            if res.is_err() {
-                return None;
-            }
-
-            outputs.insert(output.field.clone(), RowOutputKind::Value(res.unwrap()));
+            let res = self.isolate.run_standard(rule_value).ok()?;
+            outputs.push(&output.field, RowOutputKind::Value(res));
         }
 
         if !self.trace {

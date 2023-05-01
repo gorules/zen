@@ -5,6 +5,7 @@ use crate::parser::definitions::{Arity, BuiltIn, Operator};
 
 pub(crate) const BUILT_INS: Map<&'static str, BuiltIn> = phf_map! {
     "date" => BuiltIn { arity: Arity::Single },
+    "time" => BuiltIn { arity: Arity::Single },
     "duration" => BuiltIn { arity: Arity::Single },
 
     "upper" => BuiltIn { arity: Arity::Single },

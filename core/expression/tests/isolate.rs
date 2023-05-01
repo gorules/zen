@@ -109,6 +109,18 @@ fn isolate_standard_test() {
                     result: json!(true),
                 },
                 TestCase {
+                    expr: r#"time("21:48:30") > time("21:48:20")"#,
+                    result: json!(true),
+                },
+                TestCase {
+                    expr: r#"time("21:48:19") < time("21:48:20")"#,
+                    result: json!(true),
+                },
+                TestCase {
+                    expr: r#"time("12:00:00") == time("12:00:00")"#,
+                    result: json!(true),
+                },
+                TestCase {
                     expr: r#"duration("60m") == duration("1h")"#,
                     result: json!(true),
                 },

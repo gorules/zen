@@ -120,6 +120,17 @@ fn unary_test() {
             },
         },
         UnaryTest {
+            src: "time('14:00:00')",
+            result: &Node::Binary {
+                operator: "==",
+                left: &Node::Identifier("$"),
+                right: &Node::BuiltIn {
+                    name: "time",
+                    arguments: &[&Node::String("14:00:00")],
+                },
+            },
+        },
+        UnaryTest {
             src: "< 50",
             result: &Node::Binary {
                 operator: "<",

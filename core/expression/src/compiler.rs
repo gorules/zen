@@ -296,6 +296,10 @@ impl<'a> Compiler<'a> {
                 }
                 "date" => {
                     self.compile_argument(name, arguments, 0)?;
+                    Ok(self.emit(Opcode::ParseDateTime))
+                }
+                "time" => {
+                    self.compile_argument(name, arguments, 0)?;
                     Ok(self.emit(Opcode::ParseTime))
                 }
                 "duration" => {

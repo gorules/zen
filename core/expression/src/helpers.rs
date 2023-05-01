@@ -7,6 +7,12 @@ use crate::vm::VMError;
 #[allow(clippy::unwrap_used)]
 static ZERO_TIME: Lazy<NaiveTime> = Lazy::new(|| NaiveTime::from_hms_opt(0, 0, 0).unwrap());
 
+static DT_RFC: &str = "%Y-%m-%d %H:%M:%S";
+static DT_ISO: &str = "%Y-%m-%dT%H:%M:%S";
+static DT_ISO_Z: &str = "%Y-%m-%dT%H:%M:%S%z";
+static DATE: &str = "%Y-%m-%d";
+static TIME: &str = "%H:%M:%S";
+
 pub(crate) fn date_time(str: &str) -> Result<NaiveDateTime, VMError> {
     if str == "now" {
         return Ok(Utc::now().naive_utc());
@@ -14,12 +20,13 @@ pub(crate) fn date_time(str: &str) -> Result<NaiveDateTime, VMError> {
 
     let zero_time = ZERO_TIME.to_owned();
 
-    let x = NaiveDateTime::parse_from_str(str, "%Y-%m-%d %H:%M:%S");
-    let y = NaiveDate::parse_from_str(str, "%Y-%m-%d").map(|c| c.and_time(zero_time));
-
-    x.or(y).map_err(|_| VMError::ParseDateTimeErr {
-        timestamp: str.to_string(),
-    })
+    NaiveDateTime::parse_from_str(str, DT_RFC)
+        .or(NaiveDateTime::parse_from_str(str, DT_ISO))
+        .or(NaiveDateTime::parse_from_str(str, DT_ISO_Z))
+        .or(NaiveDate::parse_from_str(str, DATE).map(|c| c.and_time(zero_time)))
+        .map_err(|_| VMError::ParseDateTimeErr {
+            timestamp: str.to_string(),
+        })
 }
 
 pub(crate) fn time(str: &str) -> Result<i64, VMError> {
@@ -30,8 +37,10 @@ pub(crate) fn time(str: &str) -> Result<i64, VMError> {
         return Ok(now.signed_duration_since(today_midnight).num_seconds());
     }
 
-    let parsed_time = NaiveTime::parse_from_str(str, "%H:%M:%S");
-    return parsed_time
+    return NaiveTime::parse_from_str(str, DT_RFC)
+        .or(NaiveTime::parse_from_str(str, DT_ISO))
+        .or(NaiveTime::parse_from_str(str, DT_ISO_Z))
+        .or(NaiveTime::parse_from_str(str, TIME))
         .map_err(|_| VMError::ParseDateTimeErr {
             timestamp: str.to_string(),
         })

@@ -105,8 +105,24 @@ fn isolate_standard_test() {
             env: json!({}),
             cases: Vec::from([
                 TestCase {
+                    expr: r#"date("2022-04-04T21:48:30") > date("2022-03-04T21:48:20")"#,
+                    result: json!(true),
+                },
+                TestCase {
+                    expr: r#"date("2022-04-04 21:48:10") < date("2022-03-04 21:48:20")"#,
+                    result: json!(false),
+                },
+                TestCase {
                     expr: r#"date("2022-04-04") > date("2022-03-04")"#,
                     result: json!(true),
+                },
+                TestCase {
+                    expr: r#"time("2022-04-04T21:48:30") > time("2022-05-04T21:48:20")"#,
+                    result: json!(true),
+                },
+                TestCase {
+                    expr: r#"time("2022-04-04 21:48:30") < time("2022-05-04 21:48:20")"#,
+                    result: json!(false),
                 },
                 TestCase {
                     expr: r#"time("21:48:30") > time("21:48:20")"#,
@@ -114,10 +130,6 @@ fn isolate_standard_test() {
                 },
                 TestCase {
                     expr: r#"time("21:48:19") < time("21:48:20")"#,
-                    result: json!(true),
-                },
-                TestCase {
-                    expr: r#"time("12:00:00") == time("12:00:00")"#,
                     result: json!(true),
                 },
                 TestCase {

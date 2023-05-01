@@ -1,6 +1,6 @@
 use bumpalo::Bump;
-use chrono::Datelike;
 use chrono::NaiveDateTime;
+use chrono::{Datelike, Timelike};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::{Decimal, MathematicalOps};
 use thiserror::Error;
@@ -1001,7 +1001,7 @@ impl<'a> VM<'a> {
                 Opcode::ParseTime => {
                     let a = self.pop()?;
                     let ts = match a {
-                        String(a) => time(a)?,
+                        String(a) => time(a)?.num_seconds_from_midnight(),
                         _ => {
                             return Err(OpcodeErr {
                                 opcode: "ParseTime".into(),

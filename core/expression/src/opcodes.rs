@@ -111,6 +111,7 @@ pub enum Opcode<'a> {
     Slice,
     Array,
     Len,
+    ParseDateTime,
     ParseTime,
     ParseDuration,
     IncrementIt,

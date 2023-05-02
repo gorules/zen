@@ -14,6 +14,7 @@ pub(crate) static BUILT_INS: Lazy<HashMap<&'static str, BuiltIn, ADefHasher>> = 
     hashmap! {
         "len" => BuiltIn { arity: Arity::Single },
         "date" => BuiltIn { arity: Arity::Single },
+        "time" => BuiltIn { arity: Arity::Single },
         "duration" => BuiltIn { arity: Arity::Single },
         "upper" => BuiltIn { arity: Arity::Single },
         "lower" => BuiltIn { arity: Arity::Single },

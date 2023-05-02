@@ -1,14 +1,14 @@
 use bumpalo::Bump;
-use chrono::Datelike;
 use chrono::NaiveDateTime;
+use chrono::{Datelike, Timelike};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::{Decimal, MathematicalOps};
 use thiserror::Error;
 
-use crate::helpers::date_time;
+use crate::helpers::{date_time, time};
 use crate::opcodes::Variable::{Array, Bool, Int, Interval, Null, Number, Object, String};
 use crate::opcodes::{Opcode, Variable};
-use crate::vm::VMError::{OpcodeErr, OpcodeOutOfBounds, ParseTimeErr, StackOutOfBounds};
+use crate::vm::VMError::{OpcodeErr, OpcodeOutOfBounds, ParseDateTimeErr, StackOutOfBounds};
 
 #[derive(Debug, Error)]
 pub enum VMError {
@@ -27,8 +27,8 @@ pub enum VMError {
     #[error("Stack out of bounds")]
     StackOutOfBounds { stack: std::string::String },
 
-    #[error("Failed to parse time")]
-    ParseTimeErr { timestamp: std::string::String },
+    #[error("Failed to parse date time")]
+    ParseDateTimeErr { timestamp: std::string::String },
 }
 
 pub struct Scope<'a> {
@@ -845,7 +845,7 @@ impl<'a> VM<'a> {
                             })?,
                             0,
                         )
-                        .ok_or_else(|| ParseTimeErr {
+                        .ok_or_else(|| ParseDateTimeErr {
                             timestamp: a.to_string(),
                         })?,
                         _ => {
@@ -984,13 +984,13 @@ impl<'a> VM<'a> {
                             .alloc(Array(self.bump.alloc_slice_copy(flat_arr.as_slice()))),
                     )
                 }
-                Opcode::ParseTime => {
+                Opcode::ParseDateTime => {
                     let a = self.pop()?;
                     let ts = match a {
                         String(a) => date_time(a)?.timestamp(),
                         _ => {
                             return Err(OpcodeErr {
-                                opcode: "ParseTime".into(),
+                                opcode: "ParseDateTime".into(),
                                 message: "Unsupported type".into(),
                             })
                         }
@@ -998,12 +998,25 @@ impl<'a> VM<'a> {
 
                     self.stack.push(self.bump.alloc(Number(ts.into())))
                 }
+                Opcode::ParseTime => {
+                    let a = self.pop()?;
+                    let ts = match a {
+                        String(a) => time(a)?.num_seconds_from_midnight(),
+                        _ => {
+                            return Err(OpcodeErr {
+                                opcode: "ParseTime".into(),
+                                message: "Unsupported type".into(),
+                            })
+                        }
+                    };
+                    self.stack.push(self.bump.alloc(Number(ts.into())))
+                }
                 Opcode::ParseDuration => {
                     let a = self.pop()?;
 
                     let dur = match a {
                         String(a) => humantime::parse_duration(a)
-                            .map_err(|_| ParseTimeErr {
+                            .map_err(|_| ParseDateTimeErr {
                                 timestamp: a.to_string(),
                             })?
                             .as_secs(),

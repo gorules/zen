@@ -3,7 +3,7 @@ authors = ["GoRules Team <bot@gorules.io>"]
 description = "Business rules engine"
 name = "zen-engine"
 license = "MIT"
-version = "0.3.4"
+version = "0.4.0"
 edition = "2021"
 repository = "https://github.com/gorules/zen.git"
 
@@ -22,7 +22,7 @@ serde_v8 = { version = "0.88.0" }
 once_cell = { version = "1.17.1" }
 futures = "0.3.27"
 v8 = { version = "0.66.0" }
-zen-expression = { path = "../expression", version = "0.3.4" }
+zen-expression = { path = "../expression", version = "0.4.0" }
 
 [dev-dependencies]
 tokio-test = "0.4.2"

@@ -7,6 +7,7 @@ use zen_engine::{Decision, EvaluationError};
 mod support;
 
 #[tokio::test]
+#[cfg_attr(miri, ignore)]
 async fn decision_from_content() {
     let table_content = load_test_data("table.json");
     let decision = Decision::from(table_content);
@@ -18,6 +19,7 @@ async fn decision_from_content() {
 }
 
 #[tokio::test]
+#[cfg_attr(miri, ignore)]
 async fn decision_from_content_recursive() {
     let recursive_content = load_test_data("recursive-table1.json");
     let decision = Decision::from(recursive_content);

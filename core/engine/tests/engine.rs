@@ -28,6 +28,7 @@ async fn engine_memory_loader() {
 }
 
 #[tokio::test]
+#[cfg_attr(miri, ignore)]
 async fn engine_filesystem_loader() {
     let engine = DecisionEngine::new(create_fs_loader());
     let table = engine.evaluate("table.json", &json!({ "input": 12 })).await;

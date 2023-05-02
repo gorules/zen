@@ -12,9 +12,6 @@ pub enum EvaluationError {
 
     #[error("Depth limit exceeded")]
     DepthLimitExceeded,
-
-    #[error("Node not found {0}")]
-    NodeConnectError(String),
 }
 
 impl From<LoaderError> for Box<EvaluationError> {

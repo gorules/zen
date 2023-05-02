@@ -256,3 +256,48 @@ fn merge_json(doc: &mut Value, patch: &Value, top_level: bool) {
         *doc = patch.clone();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::handler::graph::{DecisionGraph, DecisionGraphConfig};
+    use crate::loader::MemoryLoader;
+    use serde_json::json;
+    use std::sync::Arc;
+
+    #[test]
+    fn decision_table() {
+        let content =
+            &serde_json::from_str(include_str!("../../../../test-data/table.json")).unwrap();
+        let tree = DecisionGraph::new(DecisionGraphConfig {
+            max_depth: 5,
+            trace: false,
+            iteration: 0,
+            content,
+            loader: Arc::new(MemoryLoader::default()),
+        });
+
+        let result =
+            tokio_test::block_on(async { tree.evaluate(&json!({ "input": 15 })).await.unwrap() });
+
+        assert_eq!(result.result, json!({ "output": 10 }));
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn function() {
+        let content =
+            &serde_json::from_str(include_str!("../../../../test-data/function.json")).unwrap();
+        let tree = DecisionGraph::new(DecisionGraphConfig {
+            max_depth: 5,
+            trace: false,
+            iteration: 0,
+            content,
+            loader: Arc::new(MemoryLoader::default()),
+        });
+
+        let result =
+            tokio_test::block_on(async { tree.evaluate(&json!({ "input": 15 })).await.unwrap() });
+
+        assert_eq!(result.result, json!({ "output": 30 }));
+    }
+}

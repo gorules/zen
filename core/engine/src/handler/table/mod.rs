@@ -48,20 +48,19 @@ impl RowOutput {
         let mut result: BTreeMap<RowKey, Value> = BTreeMap::new();
         for inner_map in map {
             for (key, value) in inner_map {
-                let rk = RowKey::from(key);
                 match value {
                     // Unexpected, as we've filtered out all objects in prior step
                     Value::Object(_) => return Err(RowOutputError::FailedToParse),
                     Value::Array(arr) => {
-                        let maybe_exist = result.get_mut(&rk).map(|a| a.as_array_mut()).flatten();
+                        let maybe_exist = result.get_mut(&key).map(|a| a.as_array_mut()).flatten();
                         if let Some(exist) = maybe_exist {
                             exist.extend_from_slice(&arr);
                         } else {
-                            result.insert(rk, Value::Array(arr));
+                            result.insert(key, Value::Array(arr));
                         }
                     }
                     _ => {
-                        result.insert(rk, value);
+                        result.insert(key, value);
                     }
                 }
             }

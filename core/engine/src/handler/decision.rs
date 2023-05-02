@@ -1,5 +1,5 @@
+use crate::handler::graph::{DecisionGraph, DecisionGraphConfig};
 use crate::handler::node::{NodeRequest, NodeResponse, NodeResult};
-use crate::handler::tree::{GraphTree, GraphTreeConfig};
 use crate::loader::DecisionLoader;
 use crate::model::DecisionNodeKind;
 use anyhow::{anyhow, Context};
@@ -30,7 +30,7 @@ impl<T: DecisionLoader> DecisionHandler<T> {
         }?;
 
         let sub_decision = self.loader.load(&content.key).await?;
-        let sub_tree = GraphTree::new(GraphTreeConfig {
+        let sub_tree = DecisionGraph::new(DecisionGraphConfig {
             content: sub_decision.deref(),
             max_depth: self.max_depth,
             loader: self.loader.clone(),
@@ -38,7 +38,6 @@ impl<T: DecisionLoader> DecisionHandler<T> {
             trace: self.trace,
         });
 
-        sub_tree.connect()?;
         let result = sub_tree
             .evaluate(&request.input)
             .await
@@ -46,12 +45,10 @@ impl<T: DecisionLoader> DecisionHandler<T> {
 
         Ok(NodeResponse {
             output: result.result,
-            trace_data: match self.trace {
-                true => {
-                    Some(serde_json::to_value(result.trace).context("Failed to parse trace data")?)
-                }
-                false => None,
-            },
+            trace_data: self
+                .trace
+                .then(|| serde_json::to_value(result.trace).context("Failed to parse trace data"))
+                .transpose()?,
         })
     }
 }

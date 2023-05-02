@@ -10,7 +10,7 @@ use crate::model::DecisionNodeKind;
 mod script;
 mod vm;
 
-pub async fn evaluate(source: &str, args: &Value) -> anyhow::Result<EvaluateResponse> {
+async fn evaluate(source: &str, args: &Value) -> anyhow::Result<EvaluateResponse> {
     let mut script = Script::new().with_timeout(Duration::from_millis(50));
     script.call(source, args).await
 }

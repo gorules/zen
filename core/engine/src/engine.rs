@@ -1,11 +1,11 @@
 use crate::decision::Decision;
-use crate::handler::tree::GraphResponse;
 use crate::loader::{ClosureLoader, DecisionLoader, LoaderResponse, LoaderResult, NoopLoader};
 use crate::model::DecisionContent;
 
 use serde_json::Value;
 use std::future::Future;
 
+use crate::handler::graph::DecisionGraphResponse;
 use crate::EvaluationError;
 use std::sync::Arc;
 
@@ -63,7 +63,7 @@ impl<L: DecisionLoader> DecisionEngine<L> {
         &self,
         key: K,
         context: &Value,
-    ) -> Result<GraphResponse, Box<EvaluationError>>
+    ) -> Result<DecisionGraphResponse, Box<EvaluationError>>
     where
         K: AsRef<str>,
     {
@@ -77,7 +77,7 @@ impl<L: DecisionLoader> DecisionEngine<L> {
         key: K,
         context: &Value,
         options: EvaluationOptions,
-    ) -> Result<GraphResponse, Box<EvaluationError>>
+    ) -> Result<DecisionGraphResponse, Box<EvaluationError>>
     where
         K: AsRef<str>,
     {

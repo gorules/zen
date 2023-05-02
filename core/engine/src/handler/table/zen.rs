@@ -51,12 +51,12 @@ impl<'a> DecisionTableHandler<'a> {
             if let Some(result) = self.evaluate_row(&content, i).await {
                 return Ok(NodeResponse {
                     output: result.output.to_json().await?,
-                    trace_data: match self.trace {
-                        true => Some(
-                            serde_json::to_value(result).context("Failed to parse trace data")?,
-                        ),
-                        false => None,
-                    },
+                    trace_data: self
+                        .trace
+                        .then(|| {
+                            serde_json::to_value(&result).context("Failed to parse trace data")
+                        })
+                        .transpose()?,
                 });
             }
         }
@@ -82,10 +82,10 @@ impl<'a> DecisionTableHandler<'a> {
 
         Ok(NodeResponse {
             output: serde_json::to_value(&outputs).context("Failed to parse table row output")?,
-            trace_data: match self.trace {
-                true => Some(serde_json::to_value(&results).context("Failed to parse trace data")?),
-                false => None,
-            },
+            trace_data: self
+                .trace
+                .then(|| serde_json::to_value(&results).context("Failed to parse trace data"))
+                .transpose()?,
         })
     }
 

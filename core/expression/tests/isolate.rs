@@ -109,6 +109,10 @@ fn isolate_standard_test() {
                     result: json!(true),
                 },
                 TestCase {
+                    expr: r#"date("2022-04-04T21:48:30Z") > date("2022-04-04T21:48:40+01:00")"#,
+                    result: json!(true),
+                },
+                TestCase {
                     expr: r#"date("2022-04-04 21:48:10") < date("2022-03-04T21:48:20Z")"#,
                     result: json!(false),
                 },
@@ -126,6 +130,10 @@ fn isolate_standard_test() {
                 },
                 TestCase {
                     expr: r#"time("2022-04-04T21:48:30Z") > time("2022-05-04 21:48:20")"#,
+                    result: json!(true),
+                },
+                TestCase {
+                    expr: r#"time("21:48:30") > time("2022-05-04T21:48:30+01:00")"#,
                     result: json!(true),
                 },
                 TestCase {

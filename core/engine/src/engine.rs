@@ -191,4 +191,24 @@ mod tests {
             _ => assert!(false, "Wrong error type"),
         }
     }
+
+    #[test]
+    fn it_terminates_when_depth_limit_exceeded() {
+        let cargo_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let test_data_root = cargo_root.join("../../").join("test-data");
+        let fs_loader = FilesystemLoader::new(FilesystemLoaderOptions {
+            keep_in_memory: true,
+            root: test_data_root.to_str().unwrap(),
+        });
+
+        let graph = DecisionEngine::new(fs_loader);
+        let recursive = tokio_test::block_on(graph.evaluate("recursive-table1.json", &json!({})));
+
+        match recursive.unwrap_err().deref() {
+            EvaluationError::NodeError(e) => {
+                assert_eq!(e.source.to_string(), "Depth limit exceeded")
+            }
+            _ => assert!(false, "Depth limit not exceeded"),
+        }
+    }
 }

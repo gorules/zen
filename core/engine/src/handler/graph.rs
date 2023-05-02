@@ -7,7 +7,7 @@ use crate::handler::function::FunctionHandler;
 use crate::handler::node::NodeRequest;
 use crate::handler::table::zen::DecisionTableHandler;
 
-use crate::NodeError;
+use crate::{EvaluationError, NodeError};
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -79,6 +79,13 @@ impl<'a, T: DecisionLoader> DecisionGraph<'a, T> {
     }
 
     pub async fn evaluate(&self, state: &Value) -> Result<DecisionGraphResponse, NodeError> {
+        if self.iteration >= self.max_depth {
+            return Err(NodeError {
+                node_id: "".to_string(),
+                source: anyhow!(EvaluationError::DepthLimitExceeded),
+            });
+        }
+
         let root_start = Instant::now();
         let mut node_data = HashMap::<&str, Value>::default();
         let mut node_traces = self.trace.then(|| HashMap::default());

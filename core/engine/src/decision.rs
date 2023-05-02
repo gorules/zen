@@ -1,5 +1,5 @@
 use crate::engine::EvaluationOptions;
-use crate::handler::tree::{GraphResponse, GraphTree, GraphTreeConfig};
+use crate::handler::graph::{DecisionGraph, DecisionGraphConfig, DecisionGraphResponse};
 use crate::loader::{DecisionLoader, NoopLoader};
 use crate::model::DecisionContent;
 use crate::EvaluationError;
@@ -49,7 +49,10 @@ where
     }
 
     /// Evaluates a decision using an in-memory reference stored in struct
-    pub async fn evaluate(&self, context: &Value) -> Result<GraphResponse, Box<EvaluationError>> {
+    pub async fn evaluate(
+        &self,
+        context: &Value,
+    ) -> Result<DecisionGraphResponse, Box<EvaluationError>> {
         self.evaluate_with_opts(context, Default::default()).await
     }
 
@@ -58,8 +61,8 @@ where
         &self,
         context: &Value,
         options: EvaluationOptions,
-    ) -> Result<GraphResponse, Box<EvaluationError>> {
-        let tree = GraphTree::new(GraphTreeConfig {
+    ) -> Result<DecisionGraphResponse, Box<EvaluationError>> {
+        let tree = DecisionGraph::new(DecisionGraphConfig {
             max_depth: options.max_depth.unwrap_or(5),
             trace: options.trace.unwrap_or_default(),
             loader: self.loader.clone(),
@@ -67,7 +70,6 @@ where
             content: &self.content,
         });
 
-        tree.connect()?;
         Ok(tree.evaluate(context).await?)
     }
 }

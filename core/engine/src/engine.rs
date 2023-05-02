@@ -1,11 +1,11 @@
 use crate::decision::Decision;
-use crate::handler::tree::GraphResponse;
 use crate::loader::{ClosureLoader, DecisionLoader, LoaderResponse, LoaderResult, NoopLoader};
 use crate::model::DecisionContent;
 
 use serde_json::Value;
 use std::future::Future;
 
+use crate::handler::graph::DecisionGraphResponse;
 use crate::EvaluationError;
 use std::sync::Arc;
 
@@ -63,7 +63,7 @@ impl<L: DecisionLoader> DecisionEngine<L> {
         &self,
         key: K,
         context: &Value,
-    ) -> Result<GraphResponse, Box<EvaluationError>>
+    ) -> Result<DecisionGraphResponse, Box<EvaluationError>>
     where
         K: AsRef<str>,
     {
@@ -77,7 +77,7 @@ impl<L: DecisionLoader> DecisionEngine<L> {
         key: K,
         context: &Value,
         options: EvaluationOptions,
-    ) -> Result<GraphResponse, Box<EvaluationError>>
+    ) -> Result<DecisionGraphResponse, Box<EvaluationError>>
     where
         K: AsRef<str>,
     {
@@ -189,6 +189,26 @@ mod tests {
                 assert_eq!(e.source.to_string(), "Timeout exceeded");
             }
             _ => assert!(false, "Wrong error type"),
+        }
+    }
+
+    #[test]
+    fn it_terminates_when_depth_limit_exceeded() {
+        let cargo_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let test_data_root = cargo_root.join("../../").join("test-data");
+        let fs_loader = FilesystemLoader::new(FilesystemLoaderOptions {
+            keep_in_memory: true,
+            root: test_data_root.to_str().unwrap(),
+        });
+
+        let graph = DecisionEngine::new(fs_loader);
+        let recursive = tokio_test::block_on(graph.evaluate("recursive-table1.json", &json!({})));
+
+        match recursive.unwrap_err().deref() {
+            EvaluationError::NodeError(e) => {
+                assert_eq!(e.source.to_string(), "Depth limit exceeded")
+            }
+            _ => assert!(false, "Depth limit not exceeded"),
         }
     }
 }

@@ -1,0 +1,49 @@
+{
+  "contentType": "application/vnd.gorules.decision",
+  "edges": [
+    {
+      "id": "0f5ca374-811e-44da-b882-0d5566f43b65",
+      "type": "edge",
+      "sourceId": "341e36a6-be77-44e1-99a5-d7c7ff1b7aba",
+      "targetId": "0b8dcf6b-fc04-47cb-bf82-bda764e6c09b"
+    },
+    {
+      "id": "f07bc0ac-05f1-43ce-b942-9ba7e0bca430",
+      "type": "edge",
+      "sourceId": "0b8dcf6b-fc04-47cb-bf82-bda764e6c09b",
+      "targetId": "513e554b-ecf7-42f8-97fc-caca1849930c"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "341e36a6-be77-44e1-99a5-d7c7ff1b7aba",
+      "name": "Request",
+      "type": "inputNode",
+      "position": {
+        "x": 40,
+        "y": 240
+      }
+    },
+    {
+      "id": "0b8dcf6b-fc04-47cb-bf82-bda764e6c09b",
+      "name": "inf2",
+      "type": "decisionNode",
+      "content": {
+        "key": "recursive-table2.json"
+      },
+      "position": {
+        "x": 370,
+        "y": 240
+      }
+    },
+    {
+      "id": "513e554b-ecf7-42f8-97fc-caca1849930c",
+      "name": "Response",
+      "type": "outputNode",
+      "position": {
+        "x": 710,
+        "y": 240
+      }
+    }
+  ]
+}

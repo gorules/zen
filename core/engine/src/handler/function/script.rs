@@ -66,22 +66,17 @@ impl Script {
 
         let Some(src_script) = v8::Script::compile(tc_scope, src, None) else {
             let exception = tc_scope.exception().context("Failed to load script")?;
-            return Err(anyhow!(exception.to_rust_string_lossy(tc_scope).to_string()));
+            return Err(anyhow!(exception.to_rust_string_lossy(tc_scope)));
         };
 
-        match src_script.run(tc_scope) {
-            Some(..) => {}
-            None => {
-                let exception = tc_scope.exception().unwrap();
-                return Err(anyhow!(exception
-                    .to_rust_string_lossy(tc_scope)
-                    .to_string()));
-            }
+        if let None = src_script.run(tc_scope) {
+            let exception = tc_scope.exception().unwrap();
+            return Err(anyhow!(exception.to_rust_string_lossy(tc_scope)));
         }
 
         let Some(js_script) = v8::Script::compile(tc_scope, js_src, None) else {
             let exception = tc_scope.exception().context("Failed to load script")?;
-            return Err(anyhow!(exception.to_rust_string_lossy(tc_scope).to_string()));
+            return Err(anyhow!(exception.to_rust_string_lossy(tc_scope)));
         };
 
         let Some(result) = js_script.run(tc_scope) else {
@@ -90,10 +85,9 @@ impl Script {
             }
 
             let exception = tc_scope.exception().context("Failed to run loaded script")?;
-            return Err(anyhow!(exception.to_rust_string_lossy(tc_scope).to_string()));
+            return Err(anyhow!(exception.to_rust_string_lossy(tc_scope)));
         };
 
-        let res: EvaluateResponse = serde_v8::from_v8(tc_scope, result).unwrap();
-        Ok(res)
+        serde_v8::from_v8(tc_scope, result).context("Failed to parse function result")
     }
 }

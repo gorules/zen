@@ -25,7 +25,7 @@ v8 = { version = "0.66.0" }
 zen-expression = { path = "../expression", version = "0.4.0" }
 
 [dev-dependencies]
-tokio-test = "0.4.2"
+tokio = { version = "1.28", features = ["macros"] }
 criterion = { workspace = true, features = ["async_futures"] }
 
 [features]

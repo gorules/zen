@@ -202,21 +202,21 @@ mod tests {
         assert_eq!(rk!("a.b.c").cmp(&rk!("a.b.c", 1)), Ordering::Less);
     }
 
-    #[test]
-    fn test_insert_order() {
+    #[tokio::test]
+    async fn test_insert_order() {
         let mut o = RowOutput::default();
         o.push("a", RowOutputKind::Value(json!("abc")));
         o.push("a.b", RowOutputKind::Value(json!("abc")));
         o.push("a.b.c", RowOutputKind::Value(json!("abc")));
 
         assert_eq!(
-            tokio_test::block_on(o.to_json()).unwrap(),
+            o.to_json().await.unwrap(),
             json!({ "a": { "b": { "c": "abc" } } })
         );
     }
 
-    #[test]
-    fn test_nested() {
+    #[tokio::test]
+    async fn test_nested() {
         let mut o = RowOutput::default();
         o.push("a.first.deleted", RowOutputKind::Value(json!("deleted")));
         o.push(
@@ -228,7 +228,7 @@ mod tests {
         o.push("a.third.nested", RowOutputKind::Value(json!("nested")));
 
         assert_eq!(
-            tokio_test::block_on(o.to_json()).unwrap(),
+            o.to_json().await.unwrap(),
             json!({
                 "a": {
                     "first": "first",

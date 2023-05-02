@@ -271,8 +271,8 @@ mod tests {
     use serde_json::json;
     use std::sync::Arc;
 
-    #[test]
-    fn decision_table() {
+    #[tokio::test]
+    async fn decision_table() {
         let content =
             &serde_json::from_str(include_str!("../../../../test-data/table.json")).unwrap();
         let tree = DecisionGraph::new(DecisionGraphConfig {
@@ -283,15 +283,14 @@ mod tests {
             loader: Arc::new(MemoryLoader::default()),
         });
 
-        let result =
-            tokio_test::block_on(async { tree.evaluate(&json!({ "input": 15 })).await.unwrap() });
+        let result = tree.evaluate(&json!({ "input": 15 })).await.unwrap();
 
         assert_eq!(result.result, json!({ "output": 10 }));
     }
 
-    #[test]
+    #[tokio::test]
     #[cfg_attr(miri, ignore)]
-    fn function() {
+    async fn function() {
         let content =
             &serde_json::from_str(include_str!("../../../../test-data/function.json")).unwrap();
         let tree = DecisionGraph::new(DecisionGraphConfig {
@@ -302,8 +301,7 @@ mod tests {
             loader: Arc::new(MemoryLoader::default()),
         });
 
-        let result =
-            tokio_test::block_on(async { tree.evaluate(&json!({ "input": 15 })).await.unwrap() });
+        let result = tree.evaluate(&json!({ "input": 15 })).await.unwrap();
 
         assert_eq!(result.result, json!({ "output": 30 }));
     }

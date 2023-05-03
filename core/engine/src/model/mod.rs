@@ -42,6 +42,7 @@ pub enum DecisionNodeKind {
     FunctionNode { content: String },
     DecisionNode { content: DecisionNodeContent },
     DecisionTableNode { content: DecisionTableContent },
+    ExpressionNode { content: ExpressionNodeContent },
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -85,4 +86,19 @@ pub struct DecisionTableOutputField {
     pub id: String,
     pub name: String,
     pub field: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
+#[serde(rename_all = "camelCase")]
+pub struct ExpressionNodeContent {
+    pub expressions: Vec<Expression>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
+#[serde(rename_all = "camelCase")]
+pub struct Expression {
+    pub key: String,
+    pub value: String,
 }

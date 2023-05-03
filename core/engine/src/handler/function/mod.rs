@@ -34,10 +34,7 @@ impl FunctionHandler {
 
         Ok(NodeResponse {
             output: result.output,
-            trace_data: match self.trace {
-                true => Some(json!({ "log": result.log })),
-                false => None,
-            },
+            trace_data: self.trace.then(|| json!({ "log": result.log })),
         })
     }
 }

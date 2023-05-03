@@ -48,7 +48,7 @@ impl<'a> DecisionTableHandler<'a> {
 
     async fn handle_first_hit(&self, content: &'a DecisionTableContent) -> NodeResult {
         for i in 0..content.rules.len() {
-            if let Some(result) = self.evaluate_row(&content, i).await {
+            if let Some(result) = self.evaluate_row(&content, i) {
                 return Ok(NodeResponse {
                     output: result.output.to_json().await?,
                     trace_data: self
@@ -70,7 +70,7 @@ impl<'a> DecisionTableHandler<'a> {
     async fn handle_collect(&self, content: &'a DecisionTableContent) -> NodeResult {
         let mut results = Vec::new();
         for i in 0..content.rules.len() {
-            if let Some(result) = self.evaluate_row(&content, i).await {
+            if let Some(result) = self.evaluate_row(&content, i) {
                 results.push(result);
             }
         }
@@ -89,11 +89,7 @@ impl<'a> DecisionTableHandler<'a> {
         })
     }
 
-    async fn evaluate_row(
-        &self,
-        content: &'a DecisionTableContent,
-        index: usize,
-    ) -> Option<RowResult> {
+    fn evaluate_row(&self, content: &'a DecisionTableContent, index: usize) -> Option<RowResult> {
         let rule = content.rules.get(index)?;
         for input in &content.inputs {
             let rule_value = rule.get(input.id.as_str())?;

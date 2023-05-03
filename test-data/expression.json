@@ -20,18 +20,22 @@
       "content": {
         "expressions": [
           {
+            "id": "xWauegxfG7",
             "key": "deep.nested.sum",
             "value": "sum(numbers)"
           },
           {
+            "id": "qGAHmak0xj",
             "key": "fullName",
             "value": "firstName + ' ' + lastName"
           },
           {
+            "id": "5ZnYGPFT-N",
             "key": "largeNumbers",
             "value": "filter(numbers, # >= 10)"
           },
           {
+            "id": "pSg-vIQR5Q",
             "key": "smallNumbers",
             "value": "filter(numbers, # < 10)"
           }

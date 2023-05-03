@@ -220,14 +220,13 @@ impl<'a, T: DecisionLoader> DecisionGraph<'a, T> {
                         input,
                     };
 
-                    let res =
-                        ExpressionHandler::new()
-                            .handle(&req)
-                            .await
-                            .map_err(|e| NodeError {
-                                node_id: node.id.clone(),
-                                source: e.into(),
-                            })?;
+                    let res = ExpressionHandler::new(self.trace)
+                        .handle(&req)
+                        .await
+                        .map_err(|e| NodeError {
+                            node_id: node.id.clone(),
+                            source: e.into(),
+                        })?;
 
                     node_data.insert(&node.id, res.output.clone());
                     trace!({

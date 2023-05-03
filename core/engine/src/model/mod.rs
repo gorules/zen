@@ -99,6 +99,7 @@ pub struct ExpressionNodeContent {
 #[cfg_attr(feature = "bincode", derive(Encode, Decode))]
 #[serde(rename_all = "camelCase")]
 pub struct Expression {
+    pub id: String,
     pub key: String,
     pub value: String,
 }

@@ -53,7 +53,7 @@ impl FlatJsonMap {
             .map(|(index, (key, value))| flatten_value(key, value.clone(), index as u32))
             .collect::<Vec<BTreeMap<JsonMapKey, Value>>>();
 
-        let mut result: BTreeMap<JsonMapKey, Value> = BTreeMap::new();
+        let mut result = BTreeMap::<JsonMapKey, Value>::new();
         for inner_map in map {
             for (key, value) in inner_map {
                 match value {
@@ -77,28 +77,23 @@ impl FlatJsonMap {
         let mut root = Map::new();
         for (key, value) in result {
             let mut node = &mut root;
-            let mut segments = key
-                .str
-                .split('.')
-                .map(|s| s.to_string())
-                .collect::<Vec<String>>();
-
-            let last_segment = segments.pop().ok_or_else(|| JsonMapError::SerdeError)?;
+            let mut segments = key.str.split('.');
+            let last_segment = segments.next_back().ok_or(JsonMapError::SerdeError)?;
 
             for segment in segments {
                 node = node
                     .entry(segment)
                     .and_modify(|val| {
-                        if !val.is_object() {
+                        if !matches!(val, Value::Object(_)) {
                             let _ = std::mem::replace(val, Value::Object(Map::new()));
                         }
                     })
-                    .or_insert(Value::Object(Map::new()))
+                    .or_insert_with(|| Value::Object(Map::new()))
                     .as_object_mut()
-                    .ok_or_else(|| JsonMapError::SerdeError)?;
+                    .ok_or(JsonMapError::SerdeError)?;
             }
 
-            node.insert(last_segment, value);
+            node.insert(last_segment.to_string(), value);
         }
 
         Ok(Value::Object(root))
@@ -170,7 +165,7 @@ impl Display for JsonMapKey {
 }
 
 fn flatten_value(prefix_key: &str, value: Value, bucket: u32) -> BTreeMap<JsonMapKey, Value> {
-    let mut map: BTreeMap<JsonMapKey, Value> = BTreeMap::new();
+    let mut map = BTreeMap::<JsonMapKey, Value>::new();
     match value {
         Value::Object(obj) => {
             for (key, value) in obj {

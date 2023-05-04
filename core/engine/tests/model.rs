@@ -1,3 +1,8 @@
+use crate::support::test_data_root;
+use std::fs;
+use std::path::Path;
+use zen_engine::model::DecisionContent;
+
 mod support;
 
 #[cfg(feature = "bincode")]
@@ -21,5 +26,18 @@ mod bincode_tests {
 
         let decoded_decision_content = decode_res.unwrap();
         assert_eq!(decoded_decision_content.0, decision_content);
+    }
+}
+
+#[test]
+fn jdm_serde() {
+    let root_dir = test_data_root();
+    let files = fs::read_dir(Path::new(root_dir.as_str())).unwrap();
+    for maybe_file in files {
+        let file = maybe_file.unwrap();
+        let file_contents = fs::read_to_string(file.path()).unwrap();
+        let serialized = serde_json::from_str::<DecisionContent>(&file_contents).unwrap();
+
+        assert!(serde_json::to_string(&serialized).is_ok());
     }
 }

@@ -30,6 +30,7 @@ mod bincode_tests {
 }
 
 #[test]
+#[cfg_attr(miri, ignore)]
 fn jdm_serde() {
     let root_dir = test_data_root();
     let files = fs::read_dir(Path::new(root_dir.as_str())).unwrap();

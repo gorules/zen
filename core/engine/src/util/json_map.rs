@@ -75,7 +75,7 @@ impl FlatJsonMap {
         }
 
         let mut root = Map::new();
-        for (key, value) in result {
+        for (key, mut value) in result {
             let mut node = &mut root;
             let mut segments = key.str.split('.');
             let last_segment = segments.next_back().ok_or(JsonMapError::SerdeError)?;
@@ -93,7 +93,17 @@ impl FlatJsonMap {
                     .ok_or(JsonMapError::SerdeError)?;
             }
 
-            node.insert(last_segment.to_string(), value);
+            let entry = node.get_mut(last_segment);
+            if let Some(mut entry_val) = entry {
+                match (&mut entry_val, &mut value) {
+                    (Value::Array(arr1), Value::Array(arr2)) => arr1.extend_from_slice(&arr2),
+                    _ => {
+                        let _ = std::mem::replace(entry_val, value);
+                    }
+                }
+            } else {
+                node.insert(last_segment.to_string(), value);
+            }
         }
 
         Ok(Value::Object(root))
@@ -173,7 +183,7 @@ fn flatten_value(prefix_key: &str, value: Value, bucket: u32) -> BTreeMap<JsonMa
                     let inner_map = flatten_value(&key, Value::Object(inner_obj), bucket);
                     for (inner_key, inner_value) in inner_map {
                         map.insert(
-                            JsonMapKey::new(format!("{prefix_key}.{key}.{inner_key}"), bucket),
+                            JsonMapKey::new(format!("{prefix_key}.{inner_key}"), bucket),
                             inner_value,
                         );
                     }
@@ -217,8 +227,8 @@ mod tests {
         assert_eq!(key!("a.b.c").cmp(&key!("a.b.c", 1)), Ordering::Less);
     }
 
-    #[tokio::test]
-    async fn test_insert_order() {
+    #[test]
+    fn flatmap_insert_order() {
         let mut o = FlatJsonMap::default();
         o.insert("a", json!("abc"));
         o.insert("a.b", json!("abc"));
@@ -230,8 +240,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn test_nested() {
+    #[test]
+    fn flatmap_secondary_order() {
         let mut o = FlatJsonMap::default();
         o.insert("a.first.deleted", json!("deleted"));
         o.insert("a.third.firstNested", json!("firstNested"));
@@ -252,5 +262,58 @@ mod tests {
                 }
             })
         );
+    }
+
+    #[test]
+    fn flatmap_nested() {
+        let mut o = FlatJsonMap::default();
+        o.insert("array", json!([1, 2]));
+        o.insert("array", json!([3, 4]));
+        o.insert(
+            "object",
+            json!({
+                "a": "a",
+                "b": "b",
+                "nested": {
+                    "array": [10, 11]
+                }
+            }),
+        );
+        o.insert(
+            "object",
+            json!({
+                "b": "c",
+                "nested": {
+                    "array": [12, 13]
+                }
+            }),
+        );
+
+        assert_eq!(
+            o.to_json().unwrap(),
+            json!({
+                "array": [1, 2, 3, 4],
+                "object": {
+                    "a": "a",
+                    "b": "c",
+                    "nested": {
+                        "array": [10, 11, 12, 13]
+                    }
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn flatmap_with_capacity() {
+        let mut a = FlatJsonMap::new();
+        assert_eq!(a.capacity(), 0);
+        a.reserve(10);
+        assert_eq!(a.capacity(), 10);
+
+        let mut b = FlatJsonMap::with_capacity(10);
+        assert_eq!(b.capacity(), 10);
+        b.reserve(20);
+        assert_eq!(b.capacity(), 20);
     }
 }

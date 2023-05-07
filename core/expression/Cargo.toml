@@ -3,7 +3,7 @@ authors = ["GoRules Team <bot@gorules.io>"]
 description = "Zen Expression Language"
 name = "zen-expression"
 license = "MIT"
-version = "0.4.1"
+version = "0.5.0"
 edition = "2021"
 repository = "https://github.com/gorules/zen.git"
 

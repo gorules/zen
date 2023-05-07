@@ -7,6 +7,7 @@ use crate::handler::function::FunctionHandler;
 use crate::handler::node::NodeRequest;
 use crate::handler::table::zen::DecisionTableHandler;
 
+use crate::handler::expression::ExpressionHandler;
 use crate::{EvaluationError, NodeError};
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
@@ -193,6 +194,33 @@ impl<'a, T: DecisionLoader> DecisionGraph<'a, T> {
                     };
 
                     let res = DecisionTableHandler::new(self.trace)
+                        .handle(&req)
+                        .await
+                        .map_err(|e| NodeError {
+                            node_id: node.id.clone(),
+                            source: e.into(),
+                        })?;
+
+                    node_data.insert(&node.id, res.output.clone());
+                    trace!({
+                        input: req.input,
+                        output: res.output,
+                        name: node.name.clone(),
+                        id: node.id.clone(),
+                        performance: Some(format!("{:?}", start.elapsed())),
+                        trace_data: res.trace_data,
+                    });
+                }
+                DecisionNodeKind::ExpressionNode { .. } => {
+                    let input = graph_node.parent_data(&node_data)?;
+
+                    let req = NodeRequest {
+                        node,
+                        iteration: self.iteration,
+                        input,
+                    };
+
+                    let res = ExpressionHandler::new(self.trace)
                         .handle(&req)
                         .await
                         .map_err(|e| NodeError {

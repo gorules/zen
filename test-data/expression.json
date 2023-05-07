@@ -1,0 +1,69 @@
+{
+  "nodes": [
+    {
+      "id": "115975ef-2f43-4e22-b553-0da6f4cc7f68",
+      "type": "inputNode",
+      "position": {
+        "x": 180,
+        "y": 240
+      },
+      "name": "Request"
+    },
+    {
+      "id": "138b3b11-ff46-450f-9704-3f3c712067b2",
+      "type": "expressionNode",
+      "position": {
+        "x": 470,
+        "y": 240
+      },
+      "name": "expressionNode 1",
+      "content": {
+        "expressions": [
+          {
+            "id": "xWauegxfG7",
+            "key": "deep.nested.sum",
+            "value": "sum(numbers)"
+          },
+          {
+            "id": "qGAHmak0xj",
+            "key": "fullName",
+            "value": "firstName + ' ' + lastName"
+          },
+          {
+            "id": "5ZnYGPFT-N",
+            "key": "largeNumbers",
+            "value": "filter(numbers, # >= 10)"
+          },
+          {
+            "id": "pSg-vIQR5Q",
+            "key": "smallNumbers",
+            "value": "filter(numbers, # < 10)"
+          }
+        ]
+      }
+    },
+    {
+      "id": "db8797b1-bcc1-4fbf-a5d8-e7d43a181d5e",
+      "type": "outputNode",
+      "position": {
+        "x": 780,
+        "y": 240
+      },
+      "name": "Response"
+    }
+  ],
+  "edges": [
+    {
+      "id": "05740fa7-3755-4756-b85e-bc1af2f6773b",
+      "sourceId": "115975ef-2f43-4e22-b553-0da6f4cc7f68",
+      "type": "edge",
+      "targetId": "138b3b11-ff46-450f-9704-3f3c712067b2"
+    },
+    {
+      "id": "5d89c1d6-e894-4e8a-bd13-22368c2a6bc7",
+      "sourceId": "138b3b11-ff46-450f-9704-3f3c712067b2",
+      "type": "edge",
+      "targetId": "db8797b1-bcc1-4fbf-a5d8-e7d43a181d5e"
+    }
+  ]
+}

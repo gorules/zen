@@ -43,3 +43,28 @@ async fn decision_from_content_recursive() {
         _ => assert!(false, "Depth limit not exceeded"),
     }
 }
+
+#[tokio::test]
+async fn decision_expression_node() {
+    let decision = Decision::from(load_test_data("expression.json"));
+    let context = json!({
+        "numbers": [1, 5, 15, 25],
+        "firstName": "John",
+        "lastName": "Doe"
+    });
+
+    let result = decision.evaluate(&context).await;
+    assert_eq!(
+        result.unwrap().result,
+        json!({
+            "largeNumbers": [15, 25],
+            "smallNumbers": [1, 5],
+            "fullName": "John Doe",
+            "deep": {
+                "nested": {
+                    "sum": 46
+                }
+            }
+        })
+    )
+}

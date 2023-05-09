@@ -7,17 +7,15 @@ export interface ZenEvaluateOptions {
   maxDepth?: number
   trace?: boolean
 }
-export interface JsZenEngineOptions {
+export interface ZenEngineOptions {
   loader?: (key: string) => Promise<Buffer>
 }
-export type JsZenDecision = ZenDecision
 export class ZenDecision {
   constructor()
-  evaluate(context: any, opts?: JsZenEvaluateOptions | undefined | null): Promise<any>
+  evaluate(context: any, opts?: ZenEvaluateOptions | undefined | null): Promise<any>
 }
-export type JsZenEngine = ZenEngine
 export class ZenEngine {
-  constructor(options?: JsZenEngineOptions | undefined | null)
+  constructor(options?: ZenEngineOptions | undefined | null)
   evaluate(key: string, context: any, opts?: ZenEvaluateOptions | undefined | null): Promise<any>
   createDecision(content: Buffer): ZenDecision
   getDecision(key: string): Promise<ZenDecision>

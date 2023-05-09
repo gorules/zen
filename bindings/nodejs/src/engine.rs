@@ -1,5 +1,5 @@
 use crate::decision::ZenDecision;
-use crate::loader::JsDecisionLoader;
+use crate::loader::DecisionLoader;
 use napi::anyhow::{anyhow, Context};
 use napi::bindgen_prelude::Buffer;
 use napi::{tokio, JsFunction};
@@ -11,7 +11,7 @@ use zen_engine::{DecisionEngine, EvaluationOptions};
 
 #[napi]
 pub struct ZenEngine {
-    graph: Arc<DecisionEngine<JsDecisionLoader>>,
+    graph: Arc<DecisionEngine<DecisionLoader>>,
 }
 
 #[napi(object)]
@@ -40,15 +40,15 @@ impl ZenEngine {
     #[napi(constructor)]
     pub fn new(options: Option<ZenEngineOptions>) -> napi::Result<Self> {
         let Some(opts) = options else {
-          return Ok(Self { graph: DecisionEngine::new(JsDecisionLoader::default()).into() })
+          return Ok(Self { graph: DecisionEngine::new(DecisionLoader::default()).into() })
         };
 
         let Some(loader_fn) = opts.loader else {
-            return Ok(Self { graph: DecisionEngine::new(JsDecisionLoader::default()).into() })
+            return Ok(Self { graph: DecisionEngine::new(DecisionLoader::default()).into() })
         };
 
         Ok(Self {
-            graph: DecisionEngine::new(JsDecisionLoader::try_from(loader_fn)?).into(),
+            graph: DecisionEngine::new(DecisionLoader::try_from(loader_fn)?).into(),
         })
     }
 

@@ -1,5 +1,5 @@
 use crate::engine::ZenEvaluateOptions;
-use crate::loader::JsDecisionLoader;
+use crate::loader::DecisionLoader;
 use napi::anyhow::anyhow;
 use napi::tokio;
 use napi_derive::napi;
@@ -8,10 +8,10 @@ use std::sync::Arc;
 use zen_engine::{Decision, EvaluationOptions};
 
 #[napi]
-pub struct ZenDecision(pub(crate) Arc<Decision<JsDecisionLoader>>);
+pub struct ZenDecision(pub(crate) Arc<Decision<DecisionLoader>>);
 
-impl From<Decision<JsDecisionLoader>> for ZenDecision {
-    fn from(value: Decision<JsDecisionLoader>) -> Self {
+impl From<Decision<DecisionLoader>> for ZenDecision {
+    fn from(value: Decision<DecisionLoader>) -> Self {
         Self(value.into())
     }
 }

@@ -1,5 +1,5 @@
-use crate::engine::JsZenEvaluateOptions;
-use crate::loader::JsDecisionLoader;
+use crate::engine::ZenEvaluateOptions;
+use crate::loader::DecisionLoader;
 use napi::anyhow::anyhow;
 use napi::tokio;
 use napi_derive::napi;
@@ -7,17 +7,17 @@ use serde_json::Value;
 use std::sync::Arc;
 use zen_engine::{Decision, EvaluationOptions};
 
-#[napi(js_name = "ZenDecision")]
-pub struct JsZenDecision(pub(crate) Arc<Decision<JsDecisionLoader>>);
+#[napi]
+pub struct ZenDecision(pub(crate) Arc<Decision<DecisionLoader>>);
 
-impl From<Decision<JsDecisionLoader>> for JsZenDecision {
-    fn from(value: Decision<JsDecisionLoader>) -> Self {
+impl From<Decision<DecisionLoader>> for ZenDecision {
+    fn from(value: Decision<DecisionLoader>) -> Self {
         Self(value.into())
     }
 }
 
 #[napi]
-impl JsZenDecision {
+impl ZenDecision {
     #[napi(constructor)]
     pub fn new() -> napi::Result<Self> {
         Err(anyhow!("Private constructor").into())
@@ -27,7 +27,7 @@ impl JsZenDecision {
     pub async fn evaluate(
         &self,
         context: Value,
-        opts: Option<JsZenEvaluateOptions>,
+        opts: Option<ZenEvaluateOptions>,
     ) -> napi::Result<Value> {
         let decision = self.0.clone();
         let result = tokio::spawn(async move {

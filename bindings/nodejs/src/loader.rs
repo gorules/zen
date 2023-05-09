@@ -5,20 +5,20 @@ use napi::threadsafe_function::{ErrorStrategy, ThreadSafeCallContext, Threadsafe
 use napi::JsFunction;
 use std::sync::Arc;
 
-use zen_engine::loader::{DecisionLoader, LoaderError, LoaderResult};
+use zen_engine::loader::{DecisionLoader as DecisionLoaderTrait, LoaderError, LoaderResult};
 use zen_engine::model::DecisionContent;
 
-pub(crate) struct JsDecisionLoader {
+pub(crate) struct DecisionLoader {
     function: Option<Arc<ThreadsafeFunction<String, ErrorStrategy::Fatal>>>,
 }
 
-impl Default for JsDecisionLoader {
+impl Default for DecisionLoader {
     fn default() -> Self {
         Self { function: None }
     }
 }
 
-impl TryFrom<JsFunction> for JsDecisionLoader {
+impl TryFrom<JsFunction> for DecisionLoader {
     type Error = napi::Error;
 
     fn try_from(function: JsFunction) -> Result<Self, Self::Error> {
@@ -33,7 +33,7 @@ impl TryFrom<JsFunction> for JsDecisionLoader {
     }
 }
 
-impl JsDecisionLoader {
+impl DecisionLoader {
     pub async fn get_key(&self, key: &str) -> LoaderResult<Arc<DecisionContent>> {
         let Some(function) = &self.function else {
           return Err(LoaderError::Internal {
@@ -71,7 +71,7 @@ impl JsDecisionLoader {
 }
 
 #[async_trait]
-impl DecisionLoader for JsDecisionLoader {
+impl DecisionLoaderTrait for DecisionLoader {
     async fn load(&self, key: &str) -> LoaderResult<Arc<DecisionContent>> {
         let decision_content = self.get_key(key).await?;
         Ok(decision_content)

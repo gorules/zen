@@ -2,7 +2,7 @@ use crate::decision::ZenDecision;
 use crate::loader::DecisionLoader;
 use napi::anyhow::{anyhow, Context};
 use napi::bindgen_prelude::Buffer;
-use napi::{tokio, JsFunction};
+use napi::{tokio, Env, JsFunction};
 use napi_derive::napi;
 use serde_json::Value;
 use std::sync::Arc;
@@ -38,7 +38,7 @@ pub struct ZenEngineOptions {
 #[napi]
 impl ZenEngine {
     #[napi(constructor)]
-    pub fn new(options: Option<ZenEngineOptions>) -> napi::Result<Self> {
+    pub fn new(mut env: Env, options: Option<ZenEngineOptions>) -> napi::Result<Self> {
         let Some(opts) = options else {
           return Ok(Self { graph: DecisionEngine::new(DecisionLoader::default()).into() })
         };
@@ -48,7 +48,7 @@ impl ZenEngine {
         };
 
         Ok(Self {
-            graph: DecisionEngine::new(DecisionLoader::try_from(loader_fn)?).into(),
+            graph: DecisionEngine::new(DecisionLoader::try_new(&mut env, loader_fn)?).into(),
         })
     }
 
@@ -92,7 +92,7 @@ impl ZenEngine {
             .graph
             .get_decision(&key)
             .await
-            .context("Failed to find decision with given key")?;
+            .with_context(|| format!("Failed to find decision with key = {key}"))?;
 
         Ok(ZenDecision::from(decision))
     }

@@ -73,7 +73,7 @@
   "scripts": {
     "build": "napi build --platform --release --js index.js --dts index.d.ts",
     "build:debug": "napi build --platform --js index.js --dts index.d.ts",
-    "test": "jest --forceExit",
+    "test": "jest",
     "artifacts": "napi artifacts -d ../../artifacts",
     "prepublishOnly": "napi prepublish",
     "version": "napi version"

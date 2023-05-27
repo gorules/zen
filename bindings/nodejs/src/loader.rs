@@ -2,14 +2,15 @@ use async_trait::async_trait;
 use napi::anyhow::anyhow;
 use napi::bindgen_prelude::{Buffer, Promise};
 use napi::threadsafe_function::{ErrorStrategy, ThreadSafeCallContext, ThreadsafeFunction};
-use napi::JsFunction;
+use napi::{Env, JsFunction};
+
 use std::sync::Arc;
 
 use zen_engine::loader::{DecisionLoader as DecisionLoaderTrait, LoaderError, LoaderResult};
 use zen_engine::model::DecisionContent;
 
 pub(crate) struct DecisionLoader {
-    function: Option<Arc<ThreadsafeFunction<String, ErrorStrategy::Fatal>>>,
+    function: Option<ThreadsafeFunction<String, ErrorStrategy::Fatal>>,
 }
 
 impl Default for DecisionLoader {
@@ -18,22 +19,20 @@ impl Default for DecisionLoader {
     }
 }
 
-impl TryFrom<JsFunction> for DecisionLoader {
-    type Error = napi::Error;
-
-    fn try_from(function: JsFunction) -> Result<Self, Self::Error> {
-        let tsf =
-            function.create_threadsafe_function(0, move |cx: ThreadSafeCallContext<String>| {
+impl DecisionLoader {
+    pub fn try_new(env: &mut Env, function: JsFunction) -> napi::Result<Self> {
+        let mut tsf =
+            function.create_threadsafe_function(0, |cx: ThreadSafeCallContext<String>| {
                 cx.env.create_string(cx.value.as_str()).map(|v| vec![v])
             })?;
 
+        tsf.unref(env)?;
+
         Ok(Self {
-            function: Some(Arc::new(tsf)),
+            function: Some(tsf),
         })
     }
-}
 
-impl DecisionLoader {
     pub async fn get_key(&self, key: &str) -> LoaderResult<Arc<DecisionContent>> {
         let Some(function) = &self.function else {
           return Err(LoaderError::Internal {

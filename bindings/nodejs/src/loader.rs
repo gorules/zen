@@ -41,14 +41,14 @@ impl DecisionLoader {
           }.into())
         };
 
-        let promise: Promise<Option<Buffer>> =
-            function
-                .call_async(key.to_string())
-                .await
-                .map_err(|e| LoaderError::Internal {
-                    key: key.to_string(),
-                    source: e.into(),
-                })?;
+        let promise: Promise<Option<Buffer>> = function
+            .clone()
+            .call_async(key.to_string())
+            .await
+            .map_err(|e| LoaderError::Internal {
+            key: key.to_string(),
+            source: e.into(),
+        })?;
 
         let result = promise.await.map_err(|e| LoaderError::Internal {
             key: key.to_string(),

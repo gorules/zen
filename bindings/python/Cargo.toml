@@ -10,11 +10,11 @@ name = "zen"
 crate-type = ["cdylib"]
 
 [dependencies]
-async-trait = "0.1.66"
-anyhow = "1.0.69"
-pyo3 = { version = "0.18.1", features = ["anyhow", "serde"] }
+async-trait = "0.1.68"
+anyhow = "1.0.71"
+pyo3 = { version = "0.18.3", features = ["anyhow", "serde"] }
 pythonize = "0.18.0"
-serde = "1"
-serde_json = "1"
-futures = "0.3.26"
+serde = "1.0.163"
+serde_json = "1.0.96"
+futures = "0.3.28"
 zen-engine = { path = "../../core/engine" }

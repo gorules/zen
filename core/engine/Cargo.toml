@@ -17,15 +17,15 @@ thiserror = { workspace = true }
 async-trait = { workspace = true }
 bincode = { workspace = true, optional = true }
 serde_json = { workspace = true, features = ["arbitrary_precision"] }
-serde = { version = "1", features = ["derive"] }
-serde_v8 = { version = "0.88.0" }
-once_cell = { version = "1.17.1" }
-futures = "0.3.27"
-v8 = { version = "0.66.0" }
+serde = { version = "1.0.163", features = ["derive"] }
+serde_v8 = { version = "0.100.0" }
+once_cell = { version = "1.17.2" }
+futures = "0.3.28"
+v8 = { version = "0.73.0" }
 zen-expression = { path = "../expression", version = "0.5.1" }
 
 [dev-dependencies]
-tokio = { version = "1.28", features = ["rt", "macros"] }
+tokio = { version = "1.28.2", features = ["rt", "macros"] }
 criterion = { workspace = true, features = ["async_futures"] }
 
 [features]

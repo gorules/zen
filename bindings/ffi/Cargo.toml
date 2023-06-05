@@ -1,0 +1,19 @@
+[package]
+name = "zen-ffi"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+async-trait = { workspace = true }
+libc = "0.2.145"
+serde_json = { workspace = true }
+futures = "0.3.28"
+zen-engine = { path = "../../core/engine" }
+
+[build-dependencies]
+cbindgen = "0.24.0"

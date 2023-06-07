@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-void *go_zen_engine_new(const uintptr_t *loader_ptr);
+void *go_zen_engine_new(const uintptr_t *maybe_loader);
 
 void go_zen_engine_free(void *engine);
 

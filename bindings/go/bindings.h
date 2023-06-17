@@ -19,20 +19,19 @@ typedef struct CResult_c_char {
 
 CGoEngine *go_zen_engine_new(const uintptr_t *maybe_loader);
 
-void go_zen_engine_free(CGoEngine *engine);
+void go_zen_engine_free(const CGoEngine *engine);
 
-struct CResult_CGoDecision go_zen_engine_create_decision(const CGoEngine *engine_ptr,
+struct CResult_CGoDecision go_zen_engine_create_decision(CGoEngine *engine_ptr,
                                                          const char *content_ptr);
 
-struct CResult_c_char go_zen_engine_evaluate(const CGoEngine *engine_ptr,
+struct CResult_c_char go_zen_engine_evaluate(CGoEngine *engine_ptr,
                                              const char *key_ptr,
                                              const char *context_ptr,
                                              bool trace);
 
-struct CResult_CGoDecision go_zen_engine_load_decision(const CGoEngine *engine_ptr,
-                                                       const char *key_ptr);
+struct CResult_CGoDecision go_zen_engine_load_decision(CGoEngine *engine_ptr, const char *key_ptr);
 
-struct CResult_c_char go_zen_engine_decision_evaluate(const CGoDecision *decision_ptr,
+struct CResult_c_char go_zen_engine_decision_evaluate(CGoDecision *decision_ptr,
                                                       const char *context_ptr,
                                                       bool trace);
 

@@ -1,7 +1,9 @@
 [workspace]
 members = [
     "core/*",
-    "bindings/*"
+    "bindings/ffi",
+    "bindings/nodejs",
+    "bindings/python",
 ]
 
 [workspace.dependencies]

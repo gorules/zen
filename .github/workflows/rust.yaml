@@ -51,7 +51,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Install Rust
-        run: rustup update nightly --no-self-update && rustup default nightly
+        run: rustup update
       - run: cargo test --workspace --all-features
       - run: cargo test --workspace --all-features --release
 
@@ -77,7 +77,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Install Rust
-        run: rustup update nightly && rustup default nightly
+        run: rustup update
       - run: cargo bench --workspace
 
   miri:

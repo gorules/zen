@@ -32,7 +32,15 @@ func (z zenDecision) EvaluateWithOpts(context any, options EvaluationOptions) (E
 	cData := C.CString(string(jsonData))
 	defer C.free(unsafe.Pointer(cData))
 
-	resultPtr := C.go_zen_engine_decision_evaluate(z.decisionPtr, cData, C.bool(options.Trace))
+	maxDepth := options.MaxDepth
+	if maxDepth == 0 {
+		maxDepth = 1
+	}
+
+	resultPtr := C.zen_engine_decision_evaluate(z.decisionPtr, cData, C.CZenEngineEvaluationOptions{
+		trace:     C.bool(options.Trace),
+		max_depth: C.uint8_t(maxDepth),
+	})
 	if resultPtr.error != nil {
 		defer C.free(unsafe.Pointer(resultPtr.error))
 		return EvaluationResponse{}, errors.New(C.GoString(resultPtr.error))
@@ -50,5 +58,5 @@ func (z zenDecision) EvaluateWithOpts(context any, options EvaluationOptions) (E
 }
 
 func (z zenDecision) Dispose() {
-	C.go_zen_engine_decision_free(z.decisionPtr)
+	C.zen_engine_decision_free(z.decisionPtr)
 }

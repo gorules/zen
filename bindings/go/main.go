@@ -1,7 +1,7 @@
 package main
 
 /*
-#cgo LDFLAGS: ./libzen_ffia.a -ldl -lm -lpthread
+#cgo LDFLAGS: ./libzen_ffi.a -ldl -lm -lpthread
 #include "./bindings.h"
 */
 import "C"
@@ -36,8 +36,7 @@ func stress(engine zen.Engine) {
 
 func main() {
 	engine := zen.NewEngine(func(key string) ([]byte, error) {
-		tableJson, _ := os.ReadFile(fmt.Sprintf("../../test-data/%s", key))
-		return tableJson, nil
+		return os.ReadFile(fmt.Sprintf("../../test-data/%s", key))
 	})
 
 	go stress(engine)

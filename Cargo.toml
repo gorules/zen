@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "core/*",
-    "bindings/ffi",
+    "bindings/c",
     "bindings/nodejs",
     "bindings/python",
 ]

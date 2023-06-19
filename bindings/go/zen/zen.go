@@ -3,7 +3,8 @@ package zen
 import "encoding/json"
 
 type EvaluationOptions struct {
-	Trace bool
+	Trace    bool
+	MaxDepth uint8
 }
 
 type EvaluationResponse struct {

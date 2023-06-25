@@ -21,25 +21,25 @@ jobs:
             target: 'x86_64-apple-darwin'
             build: |
               cargo build --release
-          - host: macos-latest
-            target: 'aarch64-apple-darwin'
-            build: |
-              sudo rm -Rf /Library/Developer/CommandLineTools/SDKs/*;
-              export CC=$(xcrun -f clang);
-              export CXX=$(xcrun -f clang++);
-              SYSROOT=$(xcrun --sdk macosx --show-sdk-path);
-              export CFLAGS="-isysroot $SYSROOT -isystem $SYSROOT";
-              rustup target add aarch64-apple-darwin &&
-              cargo build --target aarch64-apple-darwin --release
+#          - host: macos-latest
+#            target: 'aarch64-apple-darwin'
+#            build: |
+#              sudo rm -Rf /Library/Developer/CommandLineTools/SDKs/*;
+#              export CC=$(xcrun -f clang);
+#              export CXX=$(xcrun -f clang++);
+#              SYSROOT=$(xcrun --sdk macosx --show-sdk-path);
+#              export CFLAGS="-isysroot $SYSROOT -isystem $SYSROOT";
+#              rustup target add aarch64-apple-darwin &&
+#              cargo build --target aarch64-apple-darwin --release
           - host: ubuntu-latest
             target: 'x86_64-unknown-linux-gnu'
             build: |
               cargo build --release
-          - host: ubuntu-latest
-            target: 'aarch64-unknown-linux-gnu'
-            build: |
-              rustup target add aarch64-unknown-linux-gnu &&
-              cargo build --target aarch64-unknown-linux-gnu --release
+#          - host: ubuntu-latest
+#            target: 'aarch64-unknown-linux-gnu'
+#            build: |
+#              rustup target add aarch64-unknown-linux-gnu &&
+#              cargo build --target aarch64-unknown-linux-gnu --release
           - host: windows-latest
             build: |
               cargo build --release
@@ -119,13 +119,36 @@ jobs:
     needs:
       - build
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout zen-go
+        uses: actions/checkout@v3
+        with:
+          repository: gorules/zen-go
+          token: ${{ secrets.PAT }}
 
       - name: Download all artifacts
         uses: actions/download-artifact@v3
         with:
           path: artifacts
 
+      - run: git checkout -b feat/${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Move artifacts
+        run: |
+          mv artifacts/x86_64-apple-darwin.a deps/darwin_amd64/libzen_ffi.a
+          mv artifacts/x86_64-unknown-linux-gnu.a deps/linux_amd64/libzen_ffi.a
+          mv artifacts/x86_64-pc-windows-msvc.lib deps/windows_amd64/zen_ffi.lib
+          rm -rf artifacts
+
       - name: List folder
-        run: ls ./artifacts
+        run: |
+          ls ./artifacts
+          ls ./deps
         shell: bash
+
+      - name: Create pull request
+        uses: devops-infra/action-pull-request@v0.5.5
+        with:
+          github_token: ${{ secrets.PAT }}
+          title: Automatic pull request
+
+

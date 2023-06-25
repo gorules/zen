@@ -19,11 +19,11 @@ jobs:
       fail-fast: false
       matrix:
         settings:
-          - host: macos-latest
-            target: 'x86_64-apple-darwin'
+          - host: ubuntu-latest
+            target: 'x86_64-unknown-linux-gnu'
             build: |
               cargo build --release &&
-              strip -x ./*.node
+              strip -x ../../target/release/libzen_ffi*
 
     name: stable - ${{ matrix.settings.target }}
     runs-on: ${{ matrix.settings.host }}
@@ -76,7 +76,7 @@ jobs:
           path: target/release/libzen_ffi*
           if-no-files-found: error
 
-  test-macOS-windows-binding:
+  test-linux-go-binding:
     name: Test bindings on ${{ matrix.settings.target }}
     needs:
       - build
@@ -87,7 +87,7 @@ jobs:
       fail-fast: false
       matrix:
         settings:
-          - host: macos-latest
+          - host: ubuntu-latest
             target: 'x86_64-apple-darwin'
     runs-on: ${{ matrix.settings.host }}
 
@@ -109,7 +109,7 @@ jobs:
       run:
         working-directory: ${{ env.WORKING_DIRECTORY }}
     needs:
-      - test-macOS-windows-binding
+      - test-linux-go-binding
     steps:
       - uses: actions/checkout@v3
 

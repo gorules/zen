@@ -34,6 +34,10 @@ jobs:
             target: 'x86_64-unknown-linux-gnu'
             build: |
               cargo build --release
+          - host: ubuntu-latest
+            target: 'aarch64-unknown-linux-gnu'
+            build: |
+              cargo build --release --target aarch64-unknown-linux-gnu
           - host: windows-latest
             build: |
               cargo build --release
@@ -83,7 +87,13 @@ jobs:
         if: ${{ !matrix.settings.docker }}
         shell: bash
 
-      - run: ls -la ../../target/release
+      - name: List folder
+        if: ${{ matrix.settings.target != 'x86_64-pc-windows-msvc' }}
+        run: ls -la ../../target/release
+
+      - name: List folder windows
+        if: ${{ matrix.settings.target == 'x86_64-pc-windows-msvc' }}
+        run: dir ..\..\target\release
 
       - name: Upload artifact
         uses: actions/upload-artifact@v3

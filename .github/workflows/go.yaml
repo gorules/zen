@@ -153,6 +153,7 @@ jobs:
           # Commit the changes and push the feature branch to origin
           git add .
           git commit -m "chore: update deps"
+          echo "Pushing origin"
           git push origin $BRANCH_NAME
 
           # Store the PAT in a file that can be accessed by the
@@ -161,6 +162,7 @@ jobs:
           
           # Authorize GitHub CLI for the current repository and
           # create a pull-requests containing the updates.
+          echo "Authorizing for PR"
           gh auth login --with-token < token.txt
           gh pr create \
             --body "" \

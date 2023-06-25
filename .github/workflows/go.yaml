@@ -139,6 +139,11 @@ jobs:
           mv artifacts/x86_64-pc-windows-msvc/zen_ffi.lib deps/windows_amd64/
           rm -rf artifacts
 
+      - name: List folder
+        run: ls -la
+
+      - run: git status
+
       - name: Create pull request
         uses: devops-infra/action-pull-request@v0.5.5
         with:

@@ -1,0 +1,121 @@
+name: Go
+env:
+  WORKING_DIRECTORY: bindings/c
+  MACOSX_DEPLOYMENT_TARGET: '10.13'
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    if: "!contains(github.event.head_commit.message, 'skip ci')"
+
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - host: macos-latest
+            target: 'x86_64-apple-darwin'
+            build: |
+              yarn build &&
+              strip -x ./*.node
+
+    name: stable - ${{ matrix.settings.target }}
+    runs-on: ${{ matrix.settings.host }}
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install
+        uses: dtolnay/rust-toolchain@stable
+        if: ${{ !matrix.settings.docker }}
+        with:
+          toolchain: nightly-2023-03-01
+          targets: ${{ matrix.settings.target }}
+
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+            .cargo-cache
+          key: ${{ matrix.settings.target }}-cargo-registry
+
+      - name: Setup toolchain
+        run: ${{ matrix.settings.setup }}
+        if: ${{ matrix.settings.setup }}
+        shell: bash
+
+      - name: 'Install dependencies'
+        run: yarn install --immutable --mode=skip-build
+
+      - name: Build in docker
+        uses: addnab/docker-run-action@v3
+        if: ${{ matrix.settings.docker }}
+        with:
+          image: ${{ matrix.settings.docker }}
+          options: --user 0:0 -v ${{ github.workspace }}/.cargo-cache/.cargo/git:/usr/local/cargo/git -v ${{ github.workspace }}/.cargo-cache/.cargo/registry:/usr/local/cargo/registry -v ${{ github.workspace }}:/build -w /build
+          run: ${{ matrix.settings.build }}
+
+      - name: 'Build'
+        run: ${{ matrix.settings.build }}
+        if: ${{ !matrix.settings.docker }}
+        shell: bash
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: bindings-${{ matrix.settings.target }}
+          path: target/release/libzen_ffi*
+          if-no-files-found: error
+
+  test-macOS-windows-binding:
+    name: Test bindings on ${{ matrix.settings.target }}
+    needs:
+      - build
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - host: macos-latest
+            target: 'x86_64-apple-darwin'
+    runs-on: ${{ matrix.settings.host }}
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: bindings-${{ matrix.settings.target }}
+          path: artifacts
+
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+    needs:
+      - test-macOS-windows-binding
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: artifacts
+
+      - name: List folder
+        run: ls ./
+        shell: bash

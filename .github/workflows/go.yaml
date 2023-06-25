@@ -132,11 +132,22 @@ jobs:
 
       - run: git checkout -b feat/${{ github.run_id }}-${{ github.run_attempt }}
 
+      - name: List folder
+        run: |
+          ls ./artifacts
+          ls ./deps
+        shell: bash
+
+      - name: List folder
+        run: |
+          ls ./artifacts/x86_64-apple-darwin
+        shell: bash
+
       - name: Move artifacts
         run: |
-          mv artifacts/x86_64-apple-darwin.a deps/darwin_amd64/libzen_ffi.a
-          mv artifacts/x86_64-unknown-linux-gnu.a deps/linux_amd64/libzen_ffi.a
-          mv artifacts/x86_64-pc-windows-msvc.lib deps/windows_amd64/zen_ffi.lib
+          mv artifacts/x86_64-apple-darwin/libzen_ffi.a deps/darwin_amd64/
+          mv artifacts/x86_64-unknown-linux-gnu/libzen_ffi.a deps/linux_amd64/
+          mv artifacts/x86_64-pc-windows-msvc/zen_ffi.lib deps/windows_amd64/
           rm -rf artifacts
 
       - name: List folder

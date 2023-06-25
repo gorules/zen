@@ -22,7 +22,7 @@ jobs:
           - host: macos-latest
             target: 'x86_64-apple-darwin'
             build: |
-              yarn build &&
+              cargo build --release &&
               strip -x ./*.node
 
     name: stable - ${{ matrix.settings.target }}
@@ -55,9 +55,6 @@ jobs:
         run: ${{ matrix.settings.setup }}
         if: ${{ matrix.settings.setup }}
         shell: bash
-
-      - name: 'Install dependencies'
-        run: yarn install --immutable --mode=skip-build
 
       - name: Build in docker
         uses: addnab/docker-run-action@v3

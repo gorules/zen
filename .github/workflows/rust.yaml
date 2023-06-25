@@ -12,6 +12,7 @@ on:
       - '.github/workflows/python-version-bump.yaml'
       - '.github/workflows/node.yaml'
       - '.github/workflows/node-version-bump.yaml'
+      - '.github/workflows/go.yaml'
   push:
     branches:
       - master
@@ -24,6 +25,7 @@ on:
       - '.github/workflows/python-version-bump.yaml'
       - '.github/workflows/node.yaml'
       - '.github/workflows/node-version-bump.yaml'
+      - '.github/workflows/go.yaml'
 
 env:
   RUST_BACKTRACE: 1

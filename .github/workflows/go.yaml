@@ -4,7 +4,12 @@ env:
   MACOSX_DEPLOYMENT_TARGET: '10.13'
 
 on:
-  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'bindings/c/**'
+      - 'core/**'
+      - 'test-data/**'
+      - '.github/workflows/go.yaml'
 
 jobs:
   build:

@@ -23,8 +23,7 @@ jobs:
             target: 'x86_64-unknown-linux-gnu'
             build: |
               cargo build --release &&
-              ls -la ../../target/release &&
-              strip -x ../../target/release/libzen_ffi.a
+              ls -la ../../target/release
 
     name: stable - ${{ matrix.settings.target }}
     runs-on: ${{ matrix.settings.host }}
@@ -74,7 +73,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: bindings-${{ matrix.settings.target }}
-          path: target/release/libzen_ffi*
+          path: target/release/libzen_ffi.a
           if-no-files-found: error
 
   test-linux-go-binding:

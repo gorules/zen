@@ -17,6 +17,19 @@ jobs:
       fail-fast: false
       matrix:
         settings:
+          - host: macos-latest
+            target: 'x86_64-apple-darwin'
+            build: |
+              cargo build --release
+          - host: macos-latest
+            target: 'aarch64-apple-darwin'
+            build: |
+              sudo rm -Rf /Library/Developer/CommandLineTools/SDKs/*;
+              export CC=$(xcrun -f clang);
+              export CXX=$(xcrun -f clang++);
+              SYSROOT=$(xcrun --sdk macosx --show-sdk-path);
+              export CFLAGS="-isysroot $SYSROOT -isystem $SYSROOT";
+              cargo build --release --target aarch64-apple-darwin
           - host: ubuntu-latest
             target: 'x86_64-unknown-linux-gnu'
             build: |
@@ -70,10 +83,12 @@ jobs:
         if: ${{ !matrix.settings.docker }}
         shell: bash
 
+      - run: ls -la ../../target/release
+
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
-          name: deps/${{ matrix.settings.target }}
+          name: ${{ matrix.settings.target }}
           path: target/release/libzen_ffi.a
           if-no-files-found: error
 

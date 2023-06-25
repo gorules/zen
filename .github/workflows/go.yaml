@@ -23,7 +23,8 @@ jobs:
             target: 'x86_64-unknown-linux-gnu'
             build: |
               cargo build --release &&
-              strip -x ../../target/release/libzen_ffi*
+              ls -la ../../target/release &&
+              strip -x ../../target/release/libzen_ffi.a
 
     name: stable - ${{ matrix.settings.target }}
     runs-on: ${{ matrix.settings.host }}

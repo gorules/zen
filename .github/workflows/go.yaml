@@ -127,5 +127,5 @@ jobs:
           path: artifacts
 
       - name: List folder
-        run: ls ./
+        run: ls ./artifacts
         shell: bash

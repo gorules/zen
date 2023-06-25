@@ -4,17 +4,10 @@ env:
   MACOSX_DEPLOYMENT_TARGET: '10.13'
 
 on:
-  pull_request:
-    paths:
-      - 'bindings/c/**'
-      - 'core/**'
-      - 'test-data/**'
-      - '.github/workflows/go.yaml'
+  workflow_dispatch:
 
 jobs:
   build:
-    if: "!contains(github.event.head_commit.message, 'skip ci')"
-
     strategy:
       fail-fast: false
       matrix:
@@ -22,10 +15,13 @@ jobs:
           - host: ubuntu-latest
             target: 'x86_64-unknown-linux-gnu'
             build: |
-              cargo build --release &&
-              ls -la ../../target/release
+              cargo build --release
+          - host: windows-latest
+            build: |
+              cargo build --release
+            target: 'x86_64-pc-windows-msvc'
 
-    name: stable - ${{ matrix.settings.target }}
+    name: ${{ matrix.settings.target }}
     runs-on: ${{ matrix.settings.host }}
     defaults:
       run:
@@ -72,44 +68,15 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
-          name: bindings-${{ matrix.settings.target }}
+          name: deps/${{ matrix.settings.target }}
           path: target/release/libzen_ffi.a
           if-no-files-found: error
-
-  test-linux-go-binding:
-    name: Test bindings on ${{ matrix.settings.target }}
-    needs:
-      - build
-    defaults:
-      run:
-        working-directory: ${{ env.WORKING_DIRECTORY }}
-    strategy:
-      fail-fast: false
-      matrix:
-        settings:
-          - host: ubuntu-latest
-            target: 'x86_64-unknown-linux-gnu'
-    runs-on: ${{ matrix.settings.host }}
-
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          submodules: true
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v3
-        with:
-          name: bindings-${{ matrix.settings.target }}
-          path: artifacts
 
   release:
     name: Release
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ${{ env.WORKING_DIRECTORY }}
     needs:
-      - test-linux-go-binding
+      - build
     steps:
       - uses: actions/checkout@v3
 

@@ -101,7 +101,7 @@ jobs:
         uses: actions/upload-artifact@v3
         if: ${{ matrix.settings.target != 'x86_64-pc-windows-msvc' }}
         with:
-          name: ${{ matrix.settings.target }}
+          name: ${{ matrix.settings.target }}.a
           path: target/release/libzen_ffi.a
           if-no-files-found: error
 
@@ -109,7 +109,7 @@ jobs:
         uses: actions/upload-artifact@v3
         if: ${{ matrix.settings.target == 'x86_64-pc-windows-msvc' }}
         with:
-          name: ${{ matrix.settings.target }}
+          name: ${{ matrix.settings.target }}.lib
           path: target/release/zen_ffi.lib
           if-no-files-found: error
 

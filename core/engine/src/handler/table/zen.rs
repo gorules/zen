@@ -149,7 +149,7 @@ impl<'a> DecisionTableHandler<'a> {
             let rule_value = rule.get(input.id.as_str())?;
             let mut input_identifier = input.id.clone();
             if let Some(input_field) = &input.field {
-                input_identifier.insert_str(0, input_field.as_str());
+                input_identifier = format!("{input_field}[{input_identifier}]");
             }
 
             if let Some(reference) = self.isolate.get_reference(input_identifier.as_str()) {

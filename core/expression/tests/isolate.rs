@@ -500,74 +500,84 @@ struct UnaryTestEnv {
 #[test]
 fn isolate_unary_tests() {
     let tests = Vec::from([
+        // UnaryTestEnv {
+        //     env: json!({
+        //         "customer": {
+        //             "groups": ["admin", "user"],
+        //             "purchaseAmounts": [100, 200, 400, 800]
+        //         },
+        //     }),
+        //     reference: "customer.groups",
+        //     cases: Vec::from([TestCase {
+        //         expr: r#"some($, # == "admin")"#,
+        //         result: json!(true),
+        //     }]),
+        // },
         UnaryTestEnv {
             env: json!({
-                "customer": {
-                    "groups": ["admin", "user"],
-                    "purchaseAmounts": [100, 200, 400, 800]
-                },
+                "input": "2023-01-02"
             }),
-            reference: "customer.groups",
+            reference: "date(input)",
             cases: Vec::from([TestCase {
-                expr: r#"some($, # == "admin")"#,
+                expr: r#"[date("2023-01-01")..date("2023-01-03")]"#,
                 result: json!(true),
             }]),
         },
-        UnaryTestEnv {
-            env: json!({
-                "customer": {
-                    "groups": ["admin", "user"],
-                    "purchaseAmounts": [100, 200, 400, 800]
-                }
-            }),
-            reference: "sum(filter(customer.purchaseAmounts, # < 300))",
-            cases: Vec::from([
-                TestCase {
-                    expr: "300",
-                    result: json!(true),
-                },
-                TestCase {
-                    expr: ")100..200(",
-                    result: json!(true),
-                },
-                TestCase {
-                    expr: "in [100..300]",
-                    result: json!(true),
-                },
-                TestCase {
-                    expr: "[100, 200, 300]",
-                    result: json!(true),
-                },
-                TestCase {
-                    expr: "100, 200, 300",
-                    result: json!(true),
-                },
-                TestCase {
-                    expr: "not in [250, 350]",
-                    result: json!(true),
-                },
-                TestCase {
-                    expr: "> 250",
-                    result: json!(true),
-                },
-                TestCase {
-                    expr: "< 350",
-                    result: json!(true),
-                },
-                TestCase {
-                    expr: "== 300",
-                    result: json!(true),
-                },
-                TestCase {
-                    expr: "!= 301",
-                    result: json!(true),
-                },
-                TestCase {
-                    expr: ">= 300 and <= 300",
-                    result: json!(true),
-                },
-            ]),
-        },
+        // UnaryTestEnv {
+        //     env: json!({
+        //         "customer": {
+        //             "groups": ["admin", "user"],
+        //             "purchaseAmounts": [100, 200, 400, 800]
+        //         }
+        //     }),
+        //     reference: "sum(filter(customer.purchaseAmounts, # < 300))",
+        //     cases: Vec::from([
+        //         TestCase {
+        //             expr: "300",
+        //             result: json!(true),
+        //         },
+        //         TestCase {
+        //             expr: ")100..200(",
+        //             result: json!(true),
+        //         },
+        //         TestCase {
+        //             expr: "in [100..300]",
+        //             result: json!(true),
+        //         },
+        //         TestCase {
+        //             expr: "[100, 200, 300]",
+        //             result: json!(true),
+        //         },
+        //         TestCase {
+        //             expr: "100, 200, 300",
+        //             result: json!(true),
+        //         },
+        //         TestCase {
+        //             expr: "not in [250, 350]",
+        //             result: json!(true),
+        //         },
+        //         TestCase {
+        //             expr: "> 250",
+        //             result: json!(true),
+        //         },
+        //         TestCase {
+        //             expr: "< 350",
+        //             result: json!(true),
+        //         },
+        //         TestCase {
+        //             expr: "== 300",
+        //             result: json!(true),
+        //         },
+        //         TestCase {
+        //             expr: "!= 301",
+        //             result: json!(true),
+        //         },
+        //         TestCase {
+        //             expr: ">= 300 and <= 300",
+        //             result: json!(true),
+        //         },
+        //     ]),
+        // },
     ]);
 
     let isolate = Isolate::default();

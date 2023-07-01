@@ -17,19 +17,28 @@ pub(crate) struct ParserIterator<'a, 'b> {
     position: Cell<usize>,
     bump: &'b Bump,
     is_done: Cell<bool>,
+    has_interval: bool,
 }
 
 impl<'a, 'b> ParserIterator<'a, 'b> {
     pub fn try_new(tokens: &'a Vec<Token<'a>>, bump: &'b Bump) -> Result<Self, ParserError> {
         let current = tokens.get(0).ok_or(ParserError::TokenOutOfBounds)?;
+        let has_interval = tokens
+            .iter()
+            .any(|t| t.kind == TokenKind::Operator && t.value == "..");
 
         Ok(Self {
             tokens,
             bump,
+            has_interval,
             current: Cell::new(current),
             position: Cell::new(0),
             is_done: Cell::new(false),
         })
+    }
+
+    pub fn has_interval(&self) -> bool {
+        self.has_interval
     }
 
     pub fn current(&self) -> &'a Token<'a> {

@@ -135,6 +135,11 @@ where
     }
 
     fn parse_interval(&self, node: &'b Node<'b>) -> ParserResult<Option<&'b Node<'b>>> {
+        // Performance optimisation: skip if expression does not contain an interval for faster evaluation
+        if !self.iterator.has_interval() {
+            return Ok(None);
+        }
+
         let current_token = self.iterator.current();
         if current_token.kind != TokenKind::Bracket {
             return Ok(None);

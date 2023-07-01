@@ -17,23 +17,46 @@ pub(crate) struct ParserIterator<'a, 'b> {
     position: Cell<usize>,
     bump: &'b Bump,
     is_done: Cell<bool>,
+    has_interval: bool,
 }
 
 impl<'a, 'b> ParserIterator<'a, 'b> {
     pub fn try_new(tokens: &'a Vec<Token<'a>>, bump: &'b Bump) -> Result<Self, ParserError> {
         let current = tokens.get(0).ok_or(ParserError::TokenOutOfBounds)?;
+        let has_interval = tokens
+            .iter()
+            .any(|t| t.kind == TokenKind::Operator && t.value == "..");
 
         Ok(Self {
             tokens,
             bump,
+            has_interval,
             current: Cell::new(current),
             position: Cell::new(0),
             is_done: Cell::new(false),
         })
     }
 
+    pub fn has_interval(&self) -> bool {
+        self.has_interval
+    }
+
     pub fn current(&self) -> &'a Token<'a> {
         self.current.get()
+    }
+
+    pub fn position(&self) -> usize {
+        self.position.get()
+    }
+
+    pub fn set_position(&self, position: usize) -> ParserResult<()> {
+        let Some(token) = self.tokens.get(position) else {
+            return Err(ParserError::TokenOutOfBounds)
+        };
+
+        self.position.set(position);
+        self.current.set(token);
+        Ok(())
     }
 
     pub fn is_done(&self) -> bool {
@@ -66,6 +89,7 @@ impl<'a, 'b> ParserIterator<'a, 'b> {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn lookup(&self, dx: usize, kind: TokenKind, values: TokenValues<'a>) -> bool {
         self.token_cmp_at_bool(self.position.get() + dx, kind, values)
     }

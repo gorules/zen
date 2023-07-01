@@ -135,27 +135,49 @@ where
     }
 
     fn parse_interval(&self, node: &'b Node<'b>) -> ParserResult<Option<&'b Node<'b>>> {
+        // Performance optimisation: skip if expression does not contain an interval for faster evaluation
+        if !self.iterator.has_interval() {
+            return Ok(None);
+        }
+
         let current_token = self.iterator.current();
         if current_token.kind != TokenKind::Bracket {
             return Ok(None);
         }
 
-        if !self.iterator.lookup(2, TokenKind::Operator, Some(&[".."])) {
-            return Ok(None);
-        }
-
+        let initial_position = self.iterator.position();
         let should_wrap =
             !self
                 .iterator
                 .lookup_back(1, TokenKind::Operator, Some(&["not in", "in"]));
 
         let left_bracket = self.iterator.current().value;
-        self.iterator.expect(TokenKind::Bracket, None)?;
-        let left = self.parse_primary()?;
-        self.iterator.expect(TokenKind::Operator, Some(&[".."]))?;
-        let right = self.parse_primary()?;
+        if let Err(_) = self.iterator.expect(TokenKind::Bracket, None) {
+            self.iterator.set_position(initial_position)?;
+            return Ok(None);
+        }
+
+        let Ok(left) = self.parse_primary() else {
+            self.iterator.set_position(initial_position)?;
+            return Ok(None);
+        };
+
+        if let Err(_) = self.iterator.expect(TokenKind::Operator, Some(&[".."])) {
+            self.iterator.set_position(initial_position)?;
+            return Ok(None);
+        }
+
+        let Ok(right) = self.parse_primary() else {
+            self.iterator.set_position(initial_position)?;
+            return Ok(None);
+        };
+
         let right_bracket = self.iterator.current().value;
-        self.iterator.expect(TokenKind::Bracket, None)?;
+
+        if let Err(_) = self.iterator.expect(TokenKind::Bracket, None) {
+            self.iterator.set_position(initial_position)?;
+            return Ok(None);
+        }
 
         let interval_node = self.iterator.node(Node::Interval {
             left,

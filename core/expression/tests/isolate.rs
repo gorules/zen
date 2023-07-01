@@ -129,6 +129,14 @@ fn isolate_standard_test() {
                     result: json!(true),
                 },
                 TestCase {
+                    expr: r#"date("2022-04-04") in [date("2022-03-04")..date("2022-04-04")]"#,
+                    result: json!(true),
+                },
+                TestCase {
+                    expr: r#"date("2022-04-04") in [date("2022-03-04")..date("2022-04-04"))"#,
+                    result: json!(false),
+                },
+                TestCase {
                     expr: r#"time("2022-04-04T21:48:30Z") > time("2022-05-04 21:48:20")"#,
                     result: json!(true),
                 },
@@ -512,6 +520,26 @@ fn isolate_unary_tests() {
                 expr: r#"some($, # == "admin")"#,
                 result: json!(true),
             }]),
+        },
+        UnaryTestEnv {
+            env: json!({
+                "input": "2023-01-02"
+            }),
+            reference: "date(input)",
+            cases: Vec::from([
+                TestCase {
+                    expr: r#"[date("2023-01-01")..date("2023-01-03")]"#,
+                    result: json!(true),
+                },
+                TestCase {
+                    expr: r#"[date("2023-02-01")..date("2023-01-03")]"#,
+                    result: json!(false),
+                },
+                TestCase {
+                    expr: r#"$ in [date("2023-01-01")..date("2023-01-03")]"#,
+                    result: json!(true),
+                },
+            ]),
         },
         UnaryTestEnv {
             env: json!({

@@ -18,10 +18,10 @@ async-trait = { workspace = true }
 bincode = { workspace = true, optional = true }
 serde_json = { workspace = true, features = ["arbitrary_precision"] }
 serde = { version = "1.0.163", features = ["derive"] }
-serde_v8 = { version = "0.100.0" }
+serde_v8 = { version = "0.103.0" }
 once_cell = { version = "1.17.2" }
 futures = "0.3.28"
-v8 = { version = "0.73.0" }
+v8 = { version = "0.74.0" }
 zen-expression = { path = "../expression", version = "0.5.2" }
 
 [dev-dependencies]

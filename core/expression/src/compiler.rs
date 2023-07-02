@@ -321,6 +321,16 @@ impl<'a> Compiler<'a> {
                     self.compile_argument(name, arguments, 1)?;
                     Ok(self.emit(Opcode::Contains))
                 }
+                "matches" => {
+                    self.compile_argument(name, arguments, 0)?;
+                    self.compile_argument(name, arguments, 1)?;
+                    Ok(self.emit(Opcode::Matches))
+                }
+                "extract" => {
+                    self.compile_argument(name, arguments, 0)?;
+                    self.compile_argument(name, arguments, 1)?;
+                    Ok(self.emit(Opcode::Extract))
+                }
                 "flatten" => {
                     self.compile_argument(name, arguments, 0)?;
                     Ok(self.emit(Opcode::Flatten))

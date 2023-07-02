@@ -44,6 +44,9 @@ pub(crate) static BUILT_INS: Lazy<HashMap<&'static str, BuiltIn, ADefHasher>> = 
         "startsWith" => BuiltIn { arity: Arity::Dual },
         "endsWith" => BuiltIn { arity: Arity::Dual },
         "contains" => BuiltIn { arity: Arity::Dual },
+        "matches" => BuiltIn { arity: Arity::Dual },
+        "extract" => BuiltIn { arity: Arity::Dual },
+
         "all" => BuiltIn { arity: Arity::Closure },
         "some" => BuiltIn { arity: Arity::Closure },
         "none" => BuiltIn { arity: Arity::Closure },

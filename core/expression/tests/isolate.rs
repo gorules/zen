@@ -374,6 +374,18 @@ fn isolate_standard_test() {
                     expr: r#"true ? 10.0 == 10 : 1.0"#,
                     result: json!(true),
                 },
+                TestCase {
+                    expr: r#"median([1, 2, 3])"#,
+                    result: json!(2),
+                },
+                TestCase {
+                    expr: r#"median([1, 2, 3, 4])"#,
+                    result: json!(2.5),
+                },
+                TestCase {
+                    expr: r#"mode([1, 1, 2, 2, 2, 5, 6, 9])"#,
+                    result: json!(2),
+                },
             ]),
         },
         TestEnv {

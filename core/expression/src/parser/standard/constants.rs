@@ -26,6 +26,8 @@ pub(crate) static BUILT_INS: Lazy<HashMap<&'static str, BuiltIn, ADefHasher>> = 
         "min" => BuiltIn { arity: Arity::Single },
         "max" => BuiltIn { arity: Arity::Single },
         "rand" => BuiltIn { arity: Arity::Single },
+        "median" => BuiltIn { arity: Arity::Single },
+        "mode" => BuiltIn { arity: Arity::Single },
 
         "floor" => BuiltIn { arity: Arity::Single },
         "ceil" => BuiltIn { arity: Arity::Single },

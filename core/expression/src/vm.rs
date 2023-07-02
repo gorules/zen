@@ -1,6 +1,7 @@
 use bumpalo::Bump;
 use chrono::NaiveDateTime;
 use chrono::{Datelike, Timelike};
+use regex::Regex;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::{Decimal, MathematicalOps};
 use thiserror::Error;
@@ -832,6 +833,56 @@ impl<'a> VM<'a> {
                             })
                         }
                     }
+                }
+                Opcode::Matches => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+
+                    let (String(a), String(b)) = (a, b) else {
+                        return Err(OpcodeErr {
+                            opcode: "Matches".into(),
+                            message: "Unsupported type".into(),
+                        })
+                    };
+
+                    let regex = Regex::new(b).map_err(|_| OpcodeErr {
+                        opcode: "Matches".into(),
+                        message: "Invalid regular expression".into(),
+                    })?;
+
+                    self.push(Bool(regex.is_match(a)));
+                }
+                Opcode::Extract => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+
+                    let (String(a), String(b)) = (a, b) else {
+                        return Err(OpcodeErr {
+                            opcode: "Matches".into(),
+                            message: "Unsupported type".into(),
+                        })
+                    };
+
+                    let regex = Regex::new(b).map_err(|_| OpcodeErr {
+                        opcode: "Matches".into(),
+                        message: "Invalid regular expression".into(),
+                    })?;
+
+                    let captures = regex
+                        .captures(a)
+                        .map(|capture| {
+                            capture
+                                .iter()
+                                .map(|c| c.map(|c| c.as_str()))
+                                .filter_map(|c| c)
+                                .map(|s| {
+                                    self.bump.alloc(String(self.bump.alloc_str(s))) as &Variable
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+
+                    self.push(Array(self.bump.alloc_slice_copy(captures.as_slice())));
                 }
                 Opcode::DateManipulation(operation) => {
                     let timestamp = self.pop()?;

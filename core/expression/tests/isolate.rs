@@ -486,6 +486,27 @@ fn isolate_standard_test() {
                 },
             ]),
         },
+        TestEnv {
+            env: json!({}),
+            cases: Vec::from([
+                TestCase {
+                    expr: r#"extract("2022-02-01", "(\d{4})-(\d{2})-(\d{2})")"#,
+                    result: json!(["2022-02-01", "2022", "02", "01"]),
+                },
+                TestCase {
+                    expr: r#"all(["babble", "bebble", "bibble", "bobble", "bubble"], matches(#, "b[aeiou]bble"))"#,
+                    result: json!(true),
+                },
+                TestCase {
+                    expr: r#"none(["babble", "bebble", "bibble", "bobble", "bubble"], matches(#, "b[aeiou]bblo"))"#,
+                    result: json!(true),
+                },
+                TestCase {
+                    expr: r#"extract("foo.bar", "(\w+)\.(\w+)")"#,
+                    result: json!(["foo.bar", "foo", "bar"]),
+                },
+            ]),
+        },
     ]);
 
     let isolate = Isolate::default();

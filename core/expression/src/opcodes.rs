@@ -108,6 +108,8 @@ pub enum Opcode<'a> {
     Lowercase,
     StartsWith,
     EndsWith,
+    Matches,
+    Extract,
     Slice,
     Array,
     Len,

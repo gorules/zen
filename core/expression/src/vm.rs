@@ -3,6 +3,8 @@ use chrono::NaiveDateTime;
 use chrono::{Datelike, Timelike};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::{Decimal, MathematicalOps};
+use rust_decimal_macros::dec;
+use std::collections::HashMap;
 use thiserror::Error;
 
 use crate::helpers::{date_time, time};
@@ -509,6 +511,101 @@ impl<'a> VM<'a> {
                             })
                         }
                     }
+                }
+                Opcode::Median => {
+                    let Array(arr) = self.pop()? else {
+                        return Err(OpcodeErr {
+                            opcode: "Median".into(),
+                            message: "Unsupported type".into()
+                        })
+                    };
+
+                    let mut num_arr = arr
+                        .iter()
+                        .map(|n| match n {
+                            Number(num) => Ok(num),
+                            _ => Err(OpcodeErr {
+                                opcode: "Median".into(),
+                                message: "Unsupported type".into(),
+                            }),
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+
+                    if num_arr.len() == 0 {
+                        return Err(OpcodeErr {
+                            opcode: "Median".into(),
+                            message: "Array is empty".into(),
+                        });
+                    }
+
+                    num_arr.sort();
+
+                    let center = num_arr.len() / 2;
+                    if num_arr.len() % 2 == 1 {
+                        let center_num = num_arr.get(center).ok_or_else(|| OpcodeErr {
+                            opcode: "Median".into(),
+                            message: "Array out of bounds".into(),
+                        })?;
+
+                        self.push(Number((*center_num).clone()));
+                    } else {
+                        let center_left = num_arr.get(center - 1).ok_or_else(|| OpcodeErr {
+                            opcode: "Median".into(),
+                            message: "Array out of bounds".into(),
+                        })?;
+
+                        let center_right = num_arr.get(center).ok_or_else(|| OpcodeErr {
+                            opcode: "Median".into(),
+                            message: "Array out of bounds".into(),
+                        })?;
+
+                        let median = ((**center_left) + (**center_right)) / dec!(2);
+                        self.push(Number(median));
+                    }
+                }
+                Opcode::Mode => {
+                    let Array(arr) = self.pop()? else {
+                        return Err(OpcodeErr {
+                            opcode: "Mode".into(),
+                            message: "Unsupported type".into()
+                        })
+                    };
+
+                    let num_arr = arr
+                        .iter()
+                        .map(|n| match n {
+                            Number(num) => Ok(num),
+                            _ => Err(OpcodeErr {
+                                opcode: "Mode".into(),
+                                message: "Unsupported type".into(),
+                            }),
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+
+                    if num_arr.len() == 0 {
+                        return Err(OpcodeErr {
+                            opcode: "Mode".into(),
+                            message: "Array is empty".into(),
+                        });
+                    }
+
+                    let mut map = HashMap::new();
+                    num_arr.iter().for_each(|n| {
+                        let count = map.entry(**n).or_insert(0);
+                        *count += 1;
+                    });
+
+                    let maybe_mode = map
+                        .iter()
+                        .max_by_key(|&(_, count)| *count)
+                        .map(|(val, _)| val);
+
+                    let mode = maybe_mode.ok_or_else(|| OpcodeErr {
+                        opcode: "Mode".into(),
+                        message: "Failed to find most common element".into(),
+                    })?;
+
+                    self.push(Number(*mode));
                 }
                 Opcode::Min => {
                     let var = self.pop()?;

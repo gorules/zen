@@ -17,6 +17,8 @@ pub(crate) const BUILT_INS: Map<&'static str, BuiltIn> = phf_map! {
     "min" => BuiltIn { arity: Arity::Single },
     "max" => BuiltIn { arity: Arity::Single },
     "rand" => BuiltIn { arity: Arity::Single },
+    "median" => BuiltIn { arity: Arity::Single },
+    "mode" => BuiltIn { arity: Arity::Single },
 
     "floor" => BuiltIn { arity: Arity::Single },
     "ceil" => BuiltIn { arity: Arity::Single },

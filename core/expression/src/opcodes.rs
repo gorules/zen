@@ -85,6 +85,8 @@ pub enum Opcode<'a> {
     MoreOrEqual,
     Abs,
     Average,
+    Median,
+    Mode,
     Min,
     Max,
     Round,
@@ -132,7 +134,7 @@ impl TryFrom<&Variable<'_>> for Value {
             Variable::Null => Ok(Value::Null),
             Variable::Bool(b) => Ok(Value::Bool(*b)),
             Variable::Number(n) => Ok(Value::Number(
-                Number::from_str(n.to_string().as_str()).map_err(|_| ())?,
+                Number::from_str(n.normalize().to_string().as_str()).map_err(|_| ())?,
             )),
             Variable::String(s) => Ok(Value::String(s.to_string())),
             Variable::Array(arr) => {

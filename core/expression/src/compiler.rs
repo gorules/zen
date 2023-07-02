@@ -341,6 +341,14 @@ impl<'a> Compiler<'a> {
                     self.compile_argument(name, arguments, 0)?;
                     Ok(self.emit(Opcode::Average))
                 }
+                "median" => {
+                    self.compile_argument(name, arguments, 0)?;
+                    Ok(self.emit(Opcode::Median))
+                }
+                "mode" => {
+                    self.compile_argument(name, arguments, 0)?;
+                    Ok(self.emit(Opcode::Mode))
+                }
                 "max" => {
                     self.compile_argument(name, arguments, 0)?;
                     Ok(self.emit(Opcode::Max))

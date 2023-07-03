@@ -1,7 +1,7 @@
 #[macro_export]
 macro_rules! is_token_type {
     ($str: expr, "space") => {
-        matches!($str, ' ')
+        matches!($str, ' ' | '\n' | '\t')
     };
     ($str: expr, "quote") => {
         matches!($str, '\'' | '"')

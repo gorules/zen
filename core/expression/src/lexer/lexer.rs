@@ -54,7 +54,7 @@ impl<'a> Scanner<'a> {
     pub fn scan(&self) -> VoidResult {
         while let Some((i, s)) = self.cursor.peek() {
             match s {
-                ' ' => {
+                _ if is_token_type!(s, "space") => {
                     self.cursor.next();
                     Ok(())
                 }

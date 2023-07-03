@@ -76,7 +76,7 @@ pub enum DecisionTableHitPolicy {
 pub struct DecisionTableInputField {
     pub id: String,
     pub name: String,
-    pub field: String,
+    pub field: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]

@@ -97,7 +97,17 @@ impl<'a> DecisionTableHandler<'a> {
                 continue;
             }
 
-            self.isolate.set_reference(input.field.as_str()).ok()?;
+            let Some(input_field) = &input.field else {
+                let result = self.isolate.run_standard(rule_value.as_str()).ok()?;
+                let is_ok = result.as_bool().unwrap_or(false);
+                if !is_ok {
+                    return None;
+                }
+
+                continue;
+            };
+
+            self.isolate.set_reference(input_field.as_str()).ok()?;
             let result = self.isolate.run_unary(rule_value.as_str()).ok()?;
 
             let is_ok = result.as_bool().unwrap_or(false);
@@ -137,11 +147,16 @@ impl<'a> DecisionTableHandler<'a> {
 
         for input in &content.inputs {
             let rule_value = rule.get(input.id.as_str())?;
-            expressions.insert(input.field.clone(), rule_value.clone());
-
-            if let Some(reference) = self.isolate.get_reference(input.field.as_str()) {
-                reference_map.insert(input.field.clone(), reference);
+            let mut input_identifier = input.id.clone();
+            if let Some(input_field) = &input.field {
+                input_identifier = format!("{input_field}[{input_identifier}]");
             }
+
+            if let Some(reference) = self.isolate.get_reference(input_identifier.as_str()) {
+                reference_map.insert(input_identifier.clone(), reference);
+            }
+
+            expressions.insert(input_identifier, rule_value.clone());
         }
 
         Some(RowResult {

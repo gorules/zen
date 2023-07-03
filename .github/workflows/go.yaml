@@ -1,0 +1,175 @@
+name: Go
+env:
+  WORKING_DIRECTORY: bindings/c
+  MACOSX_DEPLOYMENT_TARGET: '10.13'
+
+on:
+  pull_request:
+    paths:
+      - 'bindings/c/**'
+      - 'core/**'
+      - 'test-data/**'
+      - '.github/workflows/go.yaml'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - host: macos-latest
+            target: 'x86_64-apple-darwin'
+            build: |
+              cargo build --release
+          #          - host: macos-latest
+          #            target: 'aarch64-apple-darwin'
+          #            build: |
+          #              sudo rm -Rf /Library/Developer/CommandLineTools/SDKs/*;
+          #              export CC=$(xcrun -f clang);
+          #              export CXX=$(xcrun -f clang++);
+          #              SYSROOT=$(xcrun --sdk macosx --show-sdk-path);
+          #              export CFLAGS="-isysroot $SYSROOT -isystem $SYSROOT";
+          #              rustup target add aarch64-apple-darwin &&
+          #              cargo build --target aarch64-apple-darwin --release
+          - host: ubuntu-latest
+            target: 'x86_64-unknown-linux-gnu'
+            build: |
+              cargo build --release
+          #          - host: ubuntu-latest
+          #            target: 'aarch64-unknown-linux-gnu'
+          #            build: |
+          #              rustup target add aarch64-unknown-linux-gnu &&
+          #              cargo build --target aarch64-unknown-linux-gnu --release
+          - host: windows-latest
+            build: |
+              cargo build --release
+            target: 'x86_64-pc-windows-msvc'
+
+    name: ${{ matrix.settings.target }}
+    runs-on: ${{ matrix.settings.host }}
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install
+        uses: dtolnay/rust-toolchain@stable
+        if: ${{ !matrix.settings.docker }}
+        with:
+          toolchain: nightly-2023-03-01
+          targets: ${{ matrix.settings.target }}
+
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+            .cargo-cache
+          key: ${{ matrix.settings.target }}-cargo-registry
+
+      - name: Setup toolchain
+        run: ${{ matrix.settings.setup }}
+        if: ${{ matrix.settings.setup }}
+        shell: bash
+
+      - name: Build in docker
+        uses: addnab/docker-run-action@v3
+        if: ${{ matrix.settings.docker }}
+        with:
+          image: ${{ matrix.settings.docker }}
+          options: --user 0:0 -v ${{ github.workspace }}/.cargo-cache/.cargo/git:/usr/local/cargo/git -v ${{ github.workspace }}/.cargo-cache/.cargo/registry:/usr/local/cargo/registry -v ${{ github.workspace }}:/build -w /build
+          run: ${{ matrix.settings.build }}
+
+      - name: 'Build'
+        run: ${{ matrix.settings.build }}
+        if: ${{ !matrix.settings.docker }}
+        shell: bash
+
+      - name: List folder
+        if: ${{ matrix.settings.target != 'x86_64-pc-windows-msvc' }}
+        run: ls -la ../../target/release
+
+      - name: List folder Windows
+        if: ${{ matrix.settings.target == 'x86_64-pc-windows-msvc' }}
+        run: dir ..\..\target\release
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        if: ${{ matrix.settings.target != 'x86_64-pc-windows-msvc' }}
+        with:
+          name: ${{ matrix.settings.target }}
+          path: target/release/libzen_ffi.a
+          if-no-files-found: error
+
+      - name: Upload artifact Windows
+        uses: actions/upload-artifact@v3
+        if: ${{ matrix.settings.target == 'x86_64-pc-windows-msvc' }}
+        with:
+          name: ${{ matrix.settings.target }}
+          path: target/release/zen_ffi.lib
+          if-no-files-found: error
+
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    needs:
+      - build
+    steps:
+      - name: Checkout zen-go
+        uses: actions/checkout@v3
+        with:
+          repository: gorules/zen-go
+          token: ${{ secrets.PAT }}
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: artifacts
+
+      - name: Move artifacts
+        run: |
+          mv artifacts/x86_64-apple-darwin/libzen_ffi.a deps/darwin_amd64/
+          mv artifacts/x86_64-unknown-linux-gnu/libzen_ffi.a deps/linux_amd64/
+          mv artifacts/x86_64-pc-windows-msvc/zen_ffi.lib deps/windows_amd64/
+          rm -rf artifacts
+
+      - name: List folder
+        run: ls -la
+
+      - run: git status
+
+      - name: Send pull-request
+        run: |
+          BRANCH_NAME="chore/${{ github.run_id }}-${{ github.run_attempt }}"
+          git checkout -b $BRANCH_NAME
+          # Setup the committers identity.
+          git config user.email "bot@gorules.io"
+          git config user.name "Bot GoRules"
+          git config http.postBuffer 524288000
+          git config http.lowSpeedTime 600
+          
+          # Commit the changes and push the feature branch to origin
+          git add .
+          git commit -m "chore: update deps"
+          echo "Pushing origin"
+          git push origin $BRANCH_NAME
+
+          # Store the PAT in a file that can be accessed by the
+          # GitHub CLI.
+          echo "${{ secrets.PAT }}" > token.txt
+          
+          # Authorize GitHub CLI for the current repository and
+          # create a pull-requests containing the updates.
+          echo "Authorizing for PR"
+          gh auth login --with-token < token.txt
+          gh pr create \
+            --body "" \
+            --title "chore: update deps" \
+            --head "$BRANCH_NAME" \
+            --base "master"
+
+

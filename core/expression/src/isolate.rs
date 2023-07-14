@@ -118,7 +118,7 @@ impl<'a> Isolate<'a> {
         Ok(())
     }
 
-    pub fn get_reference(&self, reference: &'a str) -> Option<Value> {
+    pub fn get_reference(&self, reference: &str) -> Option<Value> {
         let refs = self.references.borrow();
         let var = refs.get(reference)?;
 

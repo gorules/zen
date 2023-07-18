@@ -253,7 +253,7 @@ where
             Arity::Dual => {
                 let arg1 = self.parse_expression(0)?;
                 self.iterator.expect(TokenKind::Operator, Some(&[","]))?;
-                let arg2 = self.parse_primary_expression()?;
+                let arg2 = self.parse_expression(0)?;
                 self.iterator.expect(TokenKind::Bracket, Some(&[")"]))?;
 
                 self.iterator.node(Node::BuiltIn {

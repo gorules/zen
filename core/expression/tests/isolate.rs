@@ -519,6 +519,27 @@ fn isolate_standard_test() {
                 },
             ]),
         },
+        TestEnv {
+            env: json!({}),
+            cases: Vec::from([
+                TestCase {
+                    expr: r#"some(['a', 'b'], startsWith('a', #))"#,
+                    result: json!(true),
+                },
+                TestCase {
+                    expr: r#"some(['a', 'b'], startsWith(#, 'a'))"#,
+                    result: json!(true),
+                },
+                TestCase {
+                    expr: r#"some(['a', 'b'], startsWith('c', #))"#,
+                    result: json!(false),
+                },
+                TestCase {
+                    expr: r#"some(['a', 'b'], startsWith(#, 'c'))"#,
+                    result: json!(false),
+                },
+            ]),
+        },
     ]);
 
     let isolate = Isolate::default();

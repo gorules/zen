@@ -143,7 +143,11 @@ impl<'a> DecisionTableHandler<'a> {
 
         let mut expressions: HashMap<String, String> = Default::default();
         let mut reference_map: HashMap<String, Value> = Default::default();
+
         expressions.insert("_id".to_string(), rule_id.clone());
+        if let Some(description) = rule.get("_description") {
+            expressions.insert("_description".to_string(), description.clone());
+        }
 
         for input in &content.inputs {
             let rule_value = rule.get(input.id.as_str())?;

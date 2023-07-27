@@ -33,6 +33,7 @@ pub(crate) static BUILT_INS: Lazy<HashMap<&'static str, BuiltIn, ADefHasher>> = 
         "ceil" => BuiltIn { arity: Arity::Single },
         "round" => BuiltIn { arity: Arity::Single },
 
+        "year" => BuiltIn { arity: Arity::Single },
         "dayOfWeek" => BuiltIn { arity: Arity::Single },
         "dayOfMonth" => BuiltIn { arity: Arity::Single },
         "dayOfYear" => BuiltIn { arity: Arity::Single },

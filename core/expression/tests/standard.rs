@@ -298,7 +298,7 @@ fn standard_test() {
 
 #[test]
 fn failure_tests() {
-    let tests: Vec<&str> = Vec::from(["a + b ++"]);
+    let tests: Vec<&str> = Vec::from(["a + b ++", "null.nested.property", "false.nested.property"]);
 
     let lexer = Lexer::new();
     let mut bump = Bump::new();

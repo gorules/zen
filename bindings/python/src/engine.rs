@@ -1,7 +1,7 @@
 use crate::decision::PyZenDecision;
 use crate::loader::PyDecisionLoader;
 use crate::value::PyValue;
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use pyo3::types::PyDict;
 use pyo3::{pyclass, pymethods, PyObject, PyResult, Python, ToPyObject};
 use pythonize::depythonize;
@@ -80,7 +80,9 @@ impl PyZenEngine {
                 trace: options.trace,
             },
         ))
-        .context("Failed to evaluate graph")?;
+        .map_err(|e| {
+            anyhow!(serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string()))
+        })?;
 
         let value = serde_json::to_value(&result).context("Failed to serialize result")?;
         Ok(PyValue(value).to_object(py))

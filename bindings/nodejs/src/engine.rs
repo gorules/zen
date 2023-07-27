@@ -74,7 +74,9 @@ impl ZenEngine {
         })
         .await
         .map_err(|_| anyhow!("Hook timed out"))?
-        .map_err(|e| anyhow!(e))?;
+        .map_err(|e| {
+            anyhow!(serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string()))
+        })?;
 
         Ok(serde_json::to_value(&result)?)
     }

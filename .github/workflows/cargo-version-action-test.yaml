@@ -36,6 +36,6 @@ jobs:
           tag-prefix: core-v
 
       - name: Push changes
-        uses: ad-m/github-push-action@master
+        uses: ad-m/github-push-action@v0.6.0
         with:
           github_token: ${{ secrets.PAT }}

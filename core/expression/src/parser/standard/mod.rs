@@ -5,13 +5,16 @@ use bumpalo::Bump;
 use crate::ast::Node;
 use crate::lexer::token::{Token, TokenKind};
 use crate::parser::definitions::{Arity, Associativity};
-use crate::parser::error::ParserError::{MemoryFailure, UnexpectedToken, UnknownBuiltIn};
+use crate::parser::error::ParserError::{
+    FailedToParse, MemoryFailure, UnexpectedToken, UnknownBuiltIn,
+};
 use crate::parser::error::ParserResult;
 use crate::parser::iter::ParserIterator;
 use crate::parser::standard::constants::{BINARY_OPERATORS, BUILT_INS, UNARY_OPERATORS};
 
 mod constants;
 
+#[derive(Debug)]
 pub struct StandardParser<'a, 'b>
 where
     'b: 'a,
@@ -34,7 +37,15 @@ where
     }
 
     pub fn parse(&self) -> ParserResult<&'b Node<'b>> {
-        self.parse_expression(0)
+        let result = self.parse_expression(0)?;
+        if !self.iterator.is_done() {
+            let token = self.iterator.current();
+            return Err(FailedToParse {
+                message: format!("Unterminated token {} on {:?}", token.value, token.span),
+            });
+        }
+
+        return Ok(result);
     }
 
     fn parse_expression(&self, precedence: u8) -> ParserResult<&'b Node<'b>> {

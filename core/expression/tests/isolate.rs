@@ -21,12 +21,18 @@ fn isolate_standard_test() {
         TestEnv {
             env: json!({
                 "hello": "Hello, ",
-                "world": "world!"
+                "world": "world!",
             }),
-            cases: Vec::from([TestCase {
-                expr: "hello + world",
-                result: json!("Hello, world!"),
-            }]),
+            cases: Vec::from([
+                TestCase {
+                    expr: "hello + world",
+                    result: json!("Hello, world!"),
+                },
+                TestCase {
+                    expr: "hello.nested.null.test",
+                    result: json!(null),
+                },
+            ]),
         },
         TestEnv {
             env: json!({
@@ -328,6 +334,14 @@ fn isolate_standard_test() {
                 TestCase {
                     expr: r#"weekdayString(date("2022-11-14"))"#,
                     result: json!("Mon"),
+                },
+                TestCase {
+                    expr: r#"year("2022-01-01")"#,
+                    result: json!(2022),
+                },
+                TestCase {
+                    expr: r#"year(date("2022-01-01"))"#,
+                    result: json!(2022),
                 },
             ]),
         },

@@ -13,6 +13,8 @@ use crate::opcodes::Variable::{Array, Bool, Int, Interval, Null, Number, Object,
 use crate::opcodes::{Opcode, Variable};
 use crate::vm::VMError::{OpcodeErr, OpcodeOutOfBounds, ParseDateTimeErr, StackOutOfBounds};
 
+const NULL_VAR: &'static Variable = &Null;
+
 #[derive(Debug, Error)]
 pub enum VMError {
     #[error("Unsupported opcode type")]
@@ -114,54 +116,21 @@ impl<'a> VM<'a> {
 
                     match (a, b) {
                         (Object(o), String(s)) => {
-                            self.push_ref(o.get(*s).ok_or_else(|| OpcodeErr {
-                                opcode: "Fetch".into(),
-                                message: "Undefined object key".into(),
-                            })?);
+                            self.push_ref(o.get(*s).unwrap_or(&NULL_VAR));
                         }
                         (Array(arr), Number(n)) => self.push_ref(
                             arr.get(n.to_usize().ok_or_else(|| OpcodeErr {
                                 opcode: "Fetch".into(),
                                 message: "Failed to convert to usize".into(),
                             })?)
-                            .ok_or_else(|| OpcodeErr {
-                                opcode: "Fetch".into(),
-                                message: "Undefined array index".into(),
-                            })?,
+                            .unwrap_or(&NULL_VAR),
                         ),
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "Fetch".into(),
-                                message: "Unsupported types".into(),
-                            })
-                        }
-                    }
-                }
-                Opcode::FetchField(f) => {
-                    let a = self.pop()?;
-                    match a {
-                        Object(o) => {
-                            self.push_ref(o.get(*f).ok_or_else(|| OpcodeErr {
-                                opcode: "FetchField".into(),
-                                message: "Undefined object key".into(),
-                            })?);
-                        }
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "FetchField".into(),
-                                message: "Unsupported type".into(),
-                            })
-                        }
+                        _ => self.push_ref(&NULL_VAR),
                     }
                 }
                 Opcode::FetchEnv(f) => match env {
-                    Object(o) => {
-                        self.push_ref(o.get(*f).ok_or_else(|| OpcodeErr {
-                            opcode: "FetchEnv".into(),
-                            message: "Undefined object key".into(),
-                        })?);
-                    }
-                    Null => self.push(Null),
+                    Object(o) => self.push_ref(o.get(*f).unwrap_or(&NULL_VAR)),
+                    Null => self.push_ref(NULL_VAR),
                     _ => {
                         return Err(OpcodeErr {
                             opcode: "FetchEnv".into(),
@@ -212,10 +181,7 @@ impl<'a> VM<'a> {
                             self.stack.push(self.bump.alloc(Bool(true)));
                         }
                         _ => {
-                            return Err(OpcodeErr {
-                                opcode: "Equal".into(),
-                                message: "Unsupported type".into(),
-                            })
+                            self.stack.push(self.bump.alloc(Bool(false)));
                         }
                     }
                 }
@@ -343,6 +309,14 @@ impl<'a> VM<'a> {
                         (Bool(a), Array(arr)) => {
                             let is_in = arr.iter().any(|b| match b {
                                 Bool(b) => a == b,
+                                _ => false,
+                            });
+
+                            self.stack.push(self.bump.alloc(Bool(is_in)));
+                        }
+                        (Null, Array(arr)) => {
+                            let is_in = arr.iter().any(|b| match b {
+                                Null => true,
                                 _ => false,
                             });
 
@@ -885,6 +859,7 @@ impl<'a> VM<'a> {
                                     (Number(a), Number(b)) => a == b,
                                     (String(a), String(b)) => a == b,
                                     (Bool(a), Bool(b)) => a == b,
+                                    (Null, Null) => true,
                                     _ => false,
                                 });
 
@@ -1005,6 +980,7 @@ impl<'a> VM<'a> {
                     };
 
                     let var = match *operation {
+                        "year" => Number(time.year().into()),
                         "dayOfWeek" => Number(time.weekday().number_from_monday().into()),
                         "dayOfMonth" => Number(time.day().into()),
                         "dayOfYear" => Number(time.ordinal().into()),
@@ -1136,6 +1112,10 @@ impl<'a> VM<'a> {
                     let a = self.pop()?;
                     let ts = match a {
                         String(a) => date_time(a)?.timestamp(),
+                        Number(a) => a.to_i64().ok_or_else(|| OpcodeErr {
+                            opcode: "ParseDateTime".into(),
+                            message: "Number overflow".into(),
+                        })?,
                         _ => {
                             return Err(OpcodeErr {
                                 opcode: "ParseDateTime".into(),
@@ -1150,6 +1130,10 @@ impl<'a> VM<'a> {
                     let a = self.pop()?;
                     let ts = match a {
                         String(a) => time(a)?.num_seconds_from_midnight(),
+                        Number(a) => a.to_u32().ok_or_else(|| OpcodeErr {
+                            opcode: "ParseTime".into(),
+                            message: "Number overflow".into(),
+                        })?,
                         _ => {
                             return Err(OpcodeErr {
                                 opcode: "ParseTime".into(),
@@ -1168,6 +1152,10 @@ impl<'a> VM<'a> {
                                 timestamp: a.to_string(),
                             })?
                             .as_secs(),
+                        Number(n) => n.to_u64().ok_or_else(|| OpcodeErr {
+                            opcode: "ParseDuration".into(),
+                            message: "Number overflow".into(),
+                        })?,
                         _ => {
                             return Err(OpcodeErr {
                                 opcode: "ParseDuration".into(),

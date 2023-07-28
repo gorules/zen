@@ -156,7 +156,7 @@ fn unary_test() {
 
 #[test]
 fn failure_tests() {
-    let tests: Vec<&str> = Vec::from(["a + b ++", "a +++ b +--= fa"]);
+    let tests: Vec<&str> = Vec::from(["a + b ++", "a +++ b +--= fa", "null.a", "false.b"]);
 
     let lexer = Lexer::new();
     let mut bump = Bump::new();

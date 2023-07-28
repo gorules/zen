@@ -1,6 +1,6 @@
 {
   "name": "@gorules/zen-engine-linux-arm64-gnu",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "os": [
     "linux"
   ],

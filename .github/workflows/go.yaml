@@ -133,6 +133,7 @@ jobs:
       - name: Push changes
         uses: ad-m/github-push-action@master
         with:
+          repository: gorules/zen-go
           github_token: ${{ secrets.PAT }}
           branch: ${{ env.BRANCH_NAME }}
       - name: Create PR

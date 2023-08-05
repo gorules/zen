@@ -85,6 +85,7 @@ jobs:
         with:
           lfs: true
           repository: gorules/zen-go
+          persist-credentials: false
           token: ${{ secrets.PAT }}
       - name: Checkout LFS objects
         run: |
@@ -106,14 +107,17 @@ jobs:
 
       - name: List folder
         run: ls -la
+      - name: Set branch name
+        run: |
+          echo "BRANCH_NAME=chore/${{ github.run_id }}-${{ github.run_attempt }}" >> $GITHUB_ENV
 
       - run: git status
 
       - run: git config -l
 
-      - name: Send pull-request
+      - name: Commit
         run: |
-          BRANCH_NAME="chore/${{ github.run_id }}-${{ github.run_attempt }}"
+          BRANCH_NAME="${{ env.BRANCH_NAME }}"
           git checkout -b $BRANCH_NAME
           # Setup the committers identity.
           git config user.email "bot@gorules.io"
@@ -126,9 +130,14 @@ jobs:
           git lfs track deps/**/*.lib
           git add .
           git commit -m "chore: update deps"
-          echo "Pushing origin"
-          git push origin $BRANCH_NAME
-
+      - name: Push changes
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.PAT }}
+          branch: ${{ env.BRANCH_NAME }}
+      - name: Create PR
+        run: |
+          BRANCH_NAME="${{ env.BRANCH_NAME }}"
           # Store the PAT in a file that can be accessed by the
           # GitHub CLI.
           echo "${{ secrets.PAT }}" > token.txt

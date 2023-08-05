@@ -40,12 +40,12 @@ jobs:
           profile: minimal
           toolchain: nightly-2023-03-01
           override: true
-          target: ${{ matrix.job.target }}
+          target: ${{ matrix.settings.target }}
           components: rust-src # necessary for wasi, because there isn't a cross image for it
       - uses: actions-rs/cargo@v1
         with:
           use-cross: true
-          args: --release --target=${{ matrix.job.target }} --locked
+          args: --release --target=${{ matrix.settings.target }} --locked
           command: build
 
       - name: List folder

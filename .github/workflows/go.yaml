@@ -107,6 +107,8 @@ jobs:
 
       - run: git status
 
+      - run: git config -l
+
       - name: Send pull-request
         run: |
           BRANCH_NAME="chore/${{ github.run_id }}-${{ github.run_attempt }}"

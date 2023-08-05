@@ -4,12 +4,7 @@ env:
   MACOSX_DEPLOYMENT_TARGET: '10.13'
 
 on:
-  pull_request:
-    paths:
-      - 'bindings/c/**'
-      - 'core/**'
-      - 'test-data/**'
-      - '.github/workflows/go.yaml'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -19,30 +14,13 @@ jobs:
         settings:
           - host: macos-latest
             target: 'x86_64-apple-darwin'
-            build: |
-              cargo build --release
-          #          - host: macos-latest
-          #            target: 'aarch64-apple-darwin'
-          #            build: |
-          #              sudo rm -Rf /Library/Developer/CommandLineTools/SDKs/*;
-          #              export CC=$(xcrun -f clang);
-          #              export CXX=$(xcrun -f clang++);
-          #              SYSROOT=$(xcrun --sdk macosx --show-sdk-path);
-          #              export CFLAGS="-isysroot $SYSROOT -isystem $SYSROOT";
-          #              rustup target add aarch64-apple-darwin &&
-          #              cargo build --target aarch64-apple-darwin --release
+          - host: macos-latest
+            target: 'aarch64-apple-darwin'
           - host: ubuntu-latest
             target: 'x86_64-unknown-linux-gnu'
-            build: |
-              cargo build --release
-          #          - host: ubuntu-latest
-          #            target: 'aarch64-unknown-linux-gnu'
-          #            build: |
-          #              rustup target add aarch64-unknown-linux-gnu &&
-          #              cargo build --target aarch64-unknown-linux-gnu --release
+          - host: ubuntu-latest
+            target: 'aarch64-unknown-linux-gnu'
           - host: windows-latest
-            build: |
-              cargo build --release
             target: 'x86_64-pc-windows-msvc'
 
     name: ${{ matrix.settings.target }}
@@ -54,40 +32,18 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Install
-        uses: dtolnay/rust-toolchain@stable
-        if: ${{ !matrix.settings.docker }}
+      - uses: actions-rs/toolchain@v1
         with:
+          profile: minimal
           toolchain: nightly-2023-03-01
-          targets: ${{ matrix.settings.target }}
-
-      - name: Cache cargo registry
-        uses: actions/cache@v3
+          override: true
+          target: ${{ matrix.job.target }}
+          components: rust-src # necessary for wasi, because there isn't a cross image for it
+      - uses: actions-rs/cargo@v1
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-            .cargo-cache
-          key: ${{ matrix.settings.target }}-cargo-registry
-
-      - name: Setup toolchain
-        run: ${{ matrix.settings.setup }}
-        if: ${{ matrix.settings.setup }}
-        shell: bash
-
-      - name: Build in docker
-        uses: addnab/docker-run-action@v3
-        if: ${{ matrix.settings.docker }}
-        with:
-          image: ${{ matrix.settings.docker }}
-          options: --user 0:0 -v ${{ github.workspace }}/.cargo-cache/.cargo/git:/usr/local/cargo/git -v ${{ github.workspace }}/.cargo-cache/.cargo/registry:/usr/local/cargo/registry -v ${{ github.workspace }}:/build -w /build
-          run: ${{ matrix.settings.build }}
-
-      - name: 'Build'
-        run: ${{ matrix.settings.build }}
-        if: ${{ !matrix.settings.docker }}
-        shell: bash
+          use-cross: true
+          args: --release --target=${{ matrix.job.target }} --locked
+          command: build
 
       - name: List folder
         if: ${{ matrix.settings.target != 'x86_64-pc-windows-msvc' }}
@@ -122,9 +78,13 @@ jobs:
       - name: Checkout zen-go
         uses: actions/checkout@v3
         with:
+          lfs: true
           repository: gorules/zen-go
           token: ${{ secrets.PAT }}
-
+      - name: Checkout LFS objects
+        run: |
+          git lfs checkout
+          git lfs pull
       - name: Download all artifacts
         uses: actions/download-artifact@v3
         with:
@@ -132,7 +92,9 @@ jobs:
 
       - name: Move artifacts
         run: |
+          mv artifacts/aarch64-apple-darwin/libzen_ffi.a deps/darwin_arm64/
           mv artifacts/x86_64-apple-darwin/libzen_ffi.a deps/darwin_amd64/
+          mv artifacts/aarch64-unknown-linux-gnu/libzen_ffi.a deps/linux_arm64/
           mv artifacts/x86_64-unknown-linux-gnu/libzen_ffi.a deps/linux_amd64/
           mv artifacts/x86_64-pc-windows-msvc/zen_ffi.lib deps/windows_amd64/
           rm -rf artifacts
@@ -153,6 +115,7 @@ jobs:
           git config http.lowSpeedTime 600
           
           # Commit the changes and push the feature branch to origin
+          git lfs track deps/**/*
           git add .
           git commit -m "chore: update deps"
           echo "Pushing origin"
@@ -171,5 +134,3 @@ jobs:
             --title "chore: update deps" \
             --head "$BRANCH_NAME" \
             --base "master"
-
-

@@ -52,6 +52,10 @@ jobs:
         if: ${{ matrix.settings.target != 'x86_64-pc-windows-msvc' }}
         run: ls -la ../../target/release
 
+      - name: List folder 2
+        if: ${{ matrix.settings.target != 'x86_64-pc-windows-msvc' }}
+        run: ls -la ../../target
+
       - name: List folder Windows
         if: ${{ matrix.settings.target == 'x86_64-pc-windows-msvc' }}
         run: dir ..\..\target\release

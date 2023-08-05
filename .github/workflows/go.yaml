@@ -54,7 +54,7 @@ jobs:
 
       - name: List folder 2
         if: ${{ matrix.settings.target != 'x86_64-pc-windows-msvc' }}
-        run: ls -la ../../target/aarch64-unknown-linux-gnu
+        run: ls -la ../../target/aarch64-unknown-linux-gnu/release
 
       - name: List folder Windows
         if: ${{ matrix.settings.target == 'x86_64-pc-windows-msvc' }}

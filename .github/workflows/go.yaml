@@ -38,10 +38,9 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: stable
+          toolchain: nightly
           override: true
           target: ${{ matrix.settings.target }}
-          components: rust-src # necessary for wasi, because there isn't a cross image for it
       - uses: marcopolo/cargo@master
         with:
           use-cross: true

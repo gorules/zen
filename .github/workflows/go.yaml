@@ -118,7 +118,8 @@ jobs:
           git config http.lowSpeedTime 600
           
           # Commit the changes and push the feature branch to origin
-          git lfs track deps/**/*
+          git lfs track deps/**/*.a
+          git lfs track deps/**/*.lib
           git add .
           git commit -m "chore: update deps"
           echo "Pushing origin"

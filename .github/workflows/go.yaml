@@ -102,16 +102,12 @@ jobs:
           mv artifacts/x86_64-apple-darwin/libzen_ffi.a deps/darwin_amd64/
           mv artifacts/aarch64-unknown-linux-gnu/libzen_ffi.a deps/linux_arm64/
           mv artifacts/x86_64-unknown-linux-gnu/libzen_ffi.a deps/linux_amd64/
-          mv artifacts/x86_64-pc-windows-msvc/zen_ffi.lib deps/windows_amd64/
+          mv artifacts/x86_64-pc-windows-msvc/zen_ffi.lib deps/windows_amd64/libzen_ffi.lib
           rm -rf artifacts
 
-      - name: List folder
-        run: ls -la
       - name: Set branch name
         run: |
           echo "BRANCH_NAME=chore/${{ github.run_id }}-${{ github.run_attempt }}" >> $GITHUB_ENV
-
-      - run: git status
 
       - run: git config -l
 

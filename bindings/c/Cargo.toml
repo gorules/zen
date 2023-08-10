@@ -5,9 +5,6 @@ edition = "2021"
 license = "MIT"
 publish = false
 
-[lib]
-crate-type = ["staticlib"]
-
 [dependencies]
 async-trait = { workspace = true }
 anyhow = { workspace = true }
@@ -18,3 +15,6 @@ zen-engine = { path = "../../core/engine" }
 
 [build-dependencies]
 cbindgen = "0.24.0"
+
+[features]
+cdylib = []

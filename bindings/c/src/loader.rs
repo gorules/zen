@@ -53,6 +53,7 @@ impl CZenDecisionLoaderResult {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct CDecisionLoader {
     callback: CZenDecisionLoaderCallback,
 }

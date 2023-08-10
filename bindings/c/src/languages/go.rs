@@ -1,8 +1,7 @@
-use crate::helpers::types::{CZenDecisionEngine, CZenDecisionEnginePtr, DynDecisionLoader};
+use crate::helpers::types::{CZenDecisionEngine, CZenDecisionEnginePtr, DynamicDecisionLoader};
 use crate::loader::CZenDecisionLoaderResult;
 use async_trait::async_trait;
-use std::ffi::{c_char, CString};
-use std::sync::Arc;
+use std::ffi::c_char;
 use zen_engine::loader::{DecisionLoader, LoaderError, LoaderResponse};
 use zen_engine::DecisionEngine;
 
@@ -11,8 +10,8 @@ use zen_engine::DecisionEngine;
 pub extern "C" fn zen_engine_new_with_go_loader(
     maybe_loader: Option<&usize>,
 ) -> *mut CZenDecisionEnginePtr {
-    let loader = Arc::new(CGoDecisionLoader::new(maybe_loader.cloned()));
-    let engine: CZenDecisionEngine = DecisionEngine::new(DynDecisionLoader::new(loader));
+    let loader = CGoDecisionLoader::new(maybe_loader.cloned());
+    let engine: CZenDecisionEngine = DecisionEngine::new(DynamicDecisionLoader::Go(loader));
 
     Box::into_raw(Box::new(engine)) as *mut CZenDecisionEnginePtr
 }
@@ -24,8 +23,9 @@ extern "C" {
         -> CZenDecisionLoaderResult;
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub(crate) struct CGoDecisionLoader {
+    #[allow(dead_code)]
     handler: Option<usize>,
 }
 
@@ -42,7 +42,7 @@ impl DecisionLoader for CGoDecisionLoader {
             return Err(LoaderError::NotFound(key.to_string()).into())
         };
 
-        let c_key = CString::new(key).unwrap();
+        let c_key = std::ffi::CString::new(key).unwrap();
         let c_content_ptr =
             unsafe { zen_engine_go_loader_callback(handler.clone(), c_key.as_ptr()) };
 

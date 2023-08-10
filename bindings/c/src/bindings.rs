@@ -1,23 +1,21 @@
 use crate::helpers::result::CResult;
 use crate::helpers::types::{
     CZenDecision, CZenDecisionEngine, CZenDecisionEnginePtr, CZenDecisionPtr,
-    CZenEngineEvaluationOptions, DynDecisionLoader,
+    CZenEngineEvaluationOptions, DynamicDecisionLoader,
 };
 use crate::loader::{CDecisionLoader, CZenDecisionLoaderCallback};
 
 use futures::executor::block_on;
 use serde_json::Value;
-use std::ffi::{c_char, c_void, CStr, CString};
+use std::ffi::{c_char, CStr, CString};
 use std::sync::Arc;
-use zen_engine::loader::NoopLoader;
 use zen_engine::model::DecisionContent;
 use zen_engine::DecisionEngine;
 
 /// Create a new DecisionEngine instance, caller is responsible for freeing the returned reference
 #[no_mangle]
 pub extern "C" fn zen_engine_new() -> *mut CZenDecisionEnginePtr {
-    let loader = Arc::new(NoopLoader::default());
-    let engine: CZenDecisionEngine = DecisionEngine::new(DynDecisionLoader::new(loader));
+    let engine: CZenDecisionEngine = DecisionEngine::new(DynamicDecisionLoader::default());
 
     Box::into_raw(Box::new(engine)) as *mut CZenDecisionEnginePtr
 }
@@ -27,8 +25,8 @@ pub extern "C" fn zen_engine_new() -> *mut CZenDecisionEnginePtr {
 pub extern "C" fn zen_engine_new_with_loader(
     callback: CZenDecisionLoaderCallback,
 ) -> *mut CZenDecisionEnginePtr {
-    let loader = Arc::new(CDecisionLoader::new(callback));
-    let engine: CZenDecisionEngine = DecisionEngine::new(DynDecisionLoader::new(loader));
+    let loader = CDecisionLoader::new(callback);
+    let engine: CZenDecisionEngine = DecisionEngine::new(DynamicDecisionLoader::Native(loader));
 
     Box::into_raw(Box::new(engine)) as *mut CZenDecisionEnginePtr
 }
@@ -38,7 +36,7 @@ pub extern "C" fn zen_engine_new_with_loader(
 pub extern "C" fn zen_engine_free(engine: *mut CZenDecisionEnginePtr) {
     assert!(!engine.is_null());
 
-    unsafe { Box::from_raw(engine as *mut CZenDecisionEnginePtr) };
+    unsafe { Box::from_raw(engine as *mut CZenDecisionEngine) };
 }
 
 /// Creates a Decision using a reference of DecisionEngine and content (JSON)
@@ -147,7 +145,7 @@ pub extern "C" fn zen_engine_load_decision(
         Err(e) => return CResult::from(&e),
     };
 
-    CResult::ok(Box::into_raw(Box::new(decision)) as *mut c_void)
+    CResult::ok(Box::into_raw(Box::new(decision)) as *mut CZenDecisionPtr)
 }
 
 /// Evaluates rules engine using a Decision

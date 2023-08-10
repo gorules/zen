@@ -1,2 +1,4 @@
 /// Language specific bindings, loaders and helpers
-mod go;
+
+#[cfg(not(feature = "cdylib"))]
+pub(crate) mod go;

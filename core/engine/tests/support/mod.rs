@@ -1,3 +1,4 @@
+use std::fmt::format;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
@@ -21,7 +22,12 @@ pub fn test_data_root() -> String {
 pub fn load_test_data(key: &str) -> DecisionContent {
     let file = File::open(Path::new(&test_data_root()).join(key)).unwrap();
     let reader = BufReader::new(file);
-    serde_json::from_reader(reader).unwrap()
+    serde_json::from_reader(reader).unwrap_or_else(|e| {
+        panic!(
+            "Was unable to create condent from reader, with error {:#?}",
+            e
+        );
+    })
 }
 
 #[allow(dead_code)]

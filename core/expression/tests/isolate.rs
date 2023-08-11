@@ -626,6 +626,7 @@ fn isolate_unary_tests() {
                     expr: ")100..200(",
                     result: json!(true),
                 },
+                // testing range
                 TestCase {
                     expr: "in [100..300]",
                     result: json!(true),

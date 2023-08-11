@@ -47,6 +47,7 @@ impl<'a> DecisionTableHandler<'a> {
     }
 
     async fn handle_first_hit(&self, content: &'a DecisionTableContent) -> NodeResult {
+        // for each rule, evaluate using evaluate_row
         for i in 0..content.rules.len() {
             if let Some(result) = self.evaluate_row(&content, i) {
                 return Ok(NodeResponse {
@@ -89,6 +90,7 @@ impl<'a> DecisionTableHandler<'a> {
         })
     }
 
+    // Core logic
     fn evaluate_row(&self, content: &'a DecisionTableContent, index: usize) -> Option<RowResult> {
         let rule = content.rules.get(index)?;
         for input in &content.inputs {

@@ -1,3 +1,4 @@
+// use either::Either;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -42,7 +43,57 @@ pub enum DecisionNodeKind {
     FunctionNode { content: String },
     DecisionNode { content: DecisionNodeContent },
     DecisionTableNode { content: DecisionTableContent },
+    SwitchNode { content: SwitchContent },
     ExpressionNode { content: ExpressionNodeContent },
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
+#[serde(rename_all = "camelCase")]
+// pub struct RuleValue(HashMap<String, Either<String, RuleValue>>);
+// type
+// type Rules = HashMap<String, Either<String, Rules>>;
+
+// old impl.
+pub enum RuleValue {
+    Model(String),
+    Nested(HashMap<String, RuleValue>),
+}
+
+type Rules = HashMap<String, RuleValue>;
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+pub struct SwitchContent {
+    // pub rules: Vec<HashMap<String, String>>, ??
+    pub rules: Rules,
+    pub inputs: Vec<SwitchInputField>,
+    pub outputs: Vec<SwitchOutputField>,
+    pub hit_policy: SwitchHitPolicy,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
+#[serde(rename_all = "camelCase")]
+pub enum SwitchHitPolicy {
+    First,
+    Collect,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
+#[serde(rename_all = "camelCase")]
+pub struct SwitchInputField {
+    pub id: String,
+    pub name: String,
+    pub field: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
+#[serde(rename_all = "camelCase")]
+pub struct SwitchOutputField {
+    pub id: String,
+    pub name: String,
+    pub field: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -87,7 +138,6 @@ pub struct DecisionTableOutputField {
     pub name: String,
     pub field: String,
 }
-
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[cfg_attr(feature = "bincode", derive(Encode, Decode))]
 #[serde(rename_all = "camelCase")]

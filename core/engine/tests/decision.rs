@@ -20,6 +20,13 @@ async fn decision_from_content() {
 
 #[tokio::test]
 #[cfg_attr(miri, ignore)]
+async fn decision_from_content_switch() {
+    let switch_content = load_test_data("switch-node.json");
+    let decision = Decision::from(switch_content);
+}
+
+#[tokio::test]
+#[cfg_attr(miri, ignore)]
 async fn decision_from_content_recursive() {
     let recursive_content = load_test_data("recursive-table1.json");
     let decision = Decision::from(recursive_content);

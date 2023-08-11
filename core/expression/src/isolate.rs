@@ -43,6 +43,7 @@ pub enum IsolateError {
     ReferenceError,
 }
 
+// Isolate evaluates expressions in an isolated context
 #[derive(Debug)]
 pub struct Isolate<'a> {
     lexer: Lexer<'a>,
@@ -124,7 +125,7 @@ impl<'a> Isolate<'a> {
 
         (*var).try_into().ok()
     }
-
+    // lex, parse, compile, and run
     pub fn run_standard(&self, source: &'a str) -> Result<Value, IsolateError> {
         self.clear();
 

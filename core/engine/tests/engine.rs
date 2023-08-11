@@ -84,7 +84,6 @@ async fn engine_get_decision() {
     assert!(engine.get_decision("any.json").await.is_err());
 }
 
-// test creating decision
 #[tokio::test]
 async fn engine_create_decision() {
     let engine = DecisionEngine::default();

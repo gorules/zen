@@ -47,7 +47,6 @@ impl<'a> DecisionTableHandler<'a> {
     }
 
     async fn handle_first_hit(&self, content: &'a DecisionTableContent) -> NodeResult {
-        // for each rule, evaluate using evaluate_row
         for i in 0..content.rules.len() {
             if let Some(result) = self.evaluate_row(&content, i) {
                 return Ok(NodeResponse {

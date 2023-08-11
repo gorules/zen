@@ -27,21 +27,16 @@ impl<'a> ExpressionHandler<'a> {
     }
 
     pub async fn handle(&self, request: &'a NodeRequest<'_>) -> NodeResult {
-        // Expect DecisionNodeKind::ExpressionNode
         let content = match &request.node.kind {
             DecisionNodeKind::ExpressionNode { content } => Ok(content),
             _ => Err(anyhow!("Unexpected node type")),
         }?;
 
-        // Initialize result hashmap
         let mut result = FlatJsonMap::with_capacity(content.expressions.len());
         let mut trace_map = self.trace.then(|| HashMap::<&str, ExpressionTrace>::new());
 
-        // Inject request into isolate
         self.isolate.inject_env(&request.input);
-        // Iterate over expressions in the content
         for expression in &content.expressions {
-            // Evaluate expression and put into res
             let value = self.evaluate_expression(&expression.value)?;
             if let Some(tmap) = &mut trace_map {
                 tmap.insert(

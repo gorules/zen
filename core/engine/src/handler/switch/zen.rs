@@ -48,7 +48,7 @@ impl<'a> SwitchHandler<'a> {
     }
 
     async fn handle_first_hit(&self, content: &'a SwitchContent) -> NodeResult {
-        // for each rule, evaluate using evaluate_rule
+        // evaluate for each key value pair of rules
         for (rule_key, sub_rule_or_model) in &content.rules {
             if let Some(result) = self.evaluate_rule(rule_key, sub_rule_or_model) {
                 return Ok(NodeResponse {
@@ -66,7 +66,6 @@ impl<'a> SwitchHandler<'a> {
         // If there's an "else" rule, evaluate it (assuming it's a terminal node)
         if let Some(RuleValue::Model(model)) = content.rules.get("else") {
             let mut outputs: RuleOutput = Default::default();
-            // Fixed this line
             outputs.push(
                 &content.outputs[0].field,
                 RuleOutputKind::Value(Value::String(model.clone())),
@@ -95,12 +94,10 @@ impl<'a> SwitchHandler<'a> {
         })
     }
 
-    // Not implemented
     async fn handle_collect(&self, content: &'a SwitchContent) -> NodeResult {
         unimplemented!();
     }
 
-    // Core logic
     fn evaluate_rule(&self, rule_key: &'a String, rule_value: &'a RuleValue) -> Option<RuleResult> {
         let rule = self.isolate.run_unary(rule_key.as_str()).ok()?;
         let is_rule_ok = rule.as_bool().unwrap_or(false);
@@ -114,12 +111,10 @@ impl<'a> SwitchHandler<'a> {
                         rule_key,
                         RuleOutputKind::Value(Value::String(model.clone())),
                     );
-                    // hashmap for result?
                     let mut map = HashMap::new();
                     map.insert(rule_key.clone(), model.clone());
                     return Some(RuleResult {
                         output: outputs,
-                        // rule: Some(hashmap! {rule_key.clone() => Value::String(model.clone())}),
                         rule: Some(map),
                         reference_map: None,
                         index: 0,

@@ -1,4 +1,3 @@
-// use either::Either;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -50,11 +49,7 @@ pub enum DecisionNodeKind {
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[cfg_attr(feature = "bincode", derive(Encode, Decode))]
 #[serde(rename_all = "camelCase")]
-// pub struct RuleValue(HashMap<String, Either<String, RuleValue>>);
-// type
-// type Rules = HashMap<String, Either<String, Rules>>;
 
-// old impl.
 pub enum RuleValue {
     Model(String),
     Nested(HashMap<String, RuleValue>),
@@ -63,7 +58,6 @@ pub enum RuleValue {
 type Rules = HashMap<String, RuleValue>;
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct SwitchContent {
-    // pub rules: Vec<HashMap<String, String>>, ??
     pub rules: Rules,
     pub inputs: Vec<SwitchInputField>,
     pub outputs: Vec<SwitchOutputField>,

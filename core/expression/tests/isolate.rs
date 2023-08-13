@@ -332,6 +332,10 @@ fn isolate_standard_test() {
                     result: json!("Nov"),
                 },
                 TestCase {
+                    expr: r#"monthOfYear("2022-11-14")"#,
+                    result: json!(11),
+                },
+                TestCase {
                     expr: r#"weekdayString(date("2022-11-14"))"#,
                     result: json!("Mon"),
                 },

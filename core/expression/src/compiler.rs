@@ -387,8 +387,8 @@ impl<'a> Compiler<'a> {
                     self.compile_argument(name, arguments, 0)?;
                     Ok(self.emit(Opcode::Random))
                 }
-                "dayOfWeek" | "dayOfMonth" | "dayOfYear" | "weekOfMonth" | "weekOfYear"
-                | "monthOfYear" | "seasonOfYear" | "monthString" | "weekdayString" | "year" => {
+                "dayOfWeek" | "dayOfMonth" | "dayOfYear" | "weekOfYear" | "monthOfYear"
+                | "monthString" | "weekdayString" | "year" => {
                     self.compile_argument(name, arguments, 0)?;
                     Ok(self.emit(Opcode::DateManipulation(name)))
                 }

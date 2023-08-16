@@ -4,14 +4,15 @@
 
 ZEN Engine is business friendly Open-Source Business Rules Engine (BRE) to execute decision models according to the [GoRules JSON Decision Model (JDM)](https://gorules.io/docs/rules-engine/json-decision-model) standard. It is written in **Rust** and provides native bindings for **NodeJS** and **Python**. ZEN Engine allows to load and execute JSON Decision Model (JDM) from JSON files.
 
-
 ## Usage
+
 ZEN Engine is built as embeddable BRE for your **Rust**, **NodeJS** or **Python** applications.
 It parses JDM from JSON content. It is up to you to obtain the JSON content, e.g. from file system, database or service call.
 
 If you are looking for a **Decision-as-a-Service** (DaaS) over REST, take a look at [GoRules Cloud](https://gorules.io).
 
 ### Rust
+
 ```toml
 [dependencies]
 zen-engine = "0"
@@ -26,17 +27,19 @@ async fn evaluate() {
     let decision_content: DecisionContent = serde_json::from_str(include_str!("jdm_graph.json")).unwrap();
     let engine = DecisionEngine::default();
     let decision = engine.create_decision(decision_content.into());
-    
+
     let result = decision.evaluate(&json!({ "input": 12 })).await;
 }
 ```
 
 ### NodeJS
+
 ```bash
 npm install @gorules/zen-engine
 ```
+
 ```typescript
-import { ZenEngine } from "@gorules/zen-engine";
+import { ZenEngine } from '@gorules/zen-engine';
 import fs from 'fs/promises';
 
 (async () => {
@@ -45,15 +48,18 @@ import fs from 'fs/promises';
     const engine = new ZenEngine();
 
     const decision = engine.createDecision(content);
-    const result = await decision.evaluate({input: 15});
+    const result = await decision.evaluate({ input: 15 });
 })();
 ```
+
 For more advanced use cases where you want to load multiple decisions you can use loaders. To learn more please visit [NodeJS Docs](bindings/nodejs)
 
 ### Python
+
 ```bash
 pip install zen-engine
 ```
+
 ```python
 import zen
 
@@ -66,6 +72,7 @@ engine = zen.ZenEngine()
 decision = engine.create_decision(content)
 result = decision.evaluate({"input": 15})
 ```
+
 For more advanced use cases where you want to load multiple decisions you can use loaders. To learn more please visit [Python Docs](bindings/python)
 
 ## JSON Decision Model (JDM)
@@ -81,6 +88,7 @@ You can try [Free Online Editor](https://editor.gorules.io) with built in Simula
 Input node contains all data sent in the context, and Output node returns the data from the decision. Data flows from the Input Node towards Output Node evaluating all the Nodes in between and passing the data where nodes are connected.
 
 ### Decision Tables
+
 Decision table is a node which allows business users to easily modify and add new rules in an intuitive way using spreadsheet like interface. The structure of decision table is defined by its schema. Schema consists of inputs and outputs.
 
 Decision tables are evaluated row by row from top to bottom, and depending on the hit policy a result is calculated.
@@ -108,20 +116,20 @@ Inputs are using business-friendly ZEN Expression Language. The language is desi
 
 List shows basic example of the unary tests in the Input Fields:
 
-| Input entry | Input Expression |
-| ---------|-----------|
-| "A" | the field equals "A" |
-| "A", "B" | the field is either "A" or "B"
-| 36 | the numeric value equals 36 |
-| < 36 | a value less than 36 |
-| > 36 | a value greater than 36 |
-| [20..39]                  | a value between 20 and 39 (inclusive) |
-| 20,39 | a value either 20 or 39 |
-| <20, >39 | a value either less than 20 or greater than 39|
-| true | the boolean value true |
-| false | the boolean value false |
-| | any value, even null/undefined |
-| null | the value null or undefined |
+| Input entry | Input Expression                               |
+| ----------- | ---------------------------------------------- |
+| "A"         | the field equals "A"                           |
+| "A", "B"    | the field is either "A" or "B"                 |
+| 36          | the numeric value equals 36                    |
+| < 36        | a value less than 36                           |
+| > 36        | a value greater than 36                        |
+| [20..39]    | a value between 20 and 39 (inclusive)          |
+| 20,39       | a value either 20 or 39                        |
+| <20, >39    | a value either less than 20 or greater than 39 |
+| true        | the boolean value true                         |
+| false       | the boolean value false                        |
+|             | any value, even null/undefined                 |
+| null        | the value null or undefined                    |
 
 Note: For the full list please visit [ZEN Expression Language](https://gorules.io/docs/rules-engine/expression-language/).
 
@@ -152,33 +160,35 @@ And the result would be:
 ```
 
 ### Functions
+
 Function nodes are JavaScript lambdas that allow for quick and easy parsing, re-mapping or otherwise modifying the data. Inputs of the node are provided as function's arguments. Functions are executed on top of Google's V8 Engine that is built in into the ZEN Engine.
 
 ```js
 const handler = (input) => {
-  return input;
-}
+    return input;
+};
 ```
 
 ### Decision
-Decision is a special node whose purpose is for decision model to have an ability to call other/re-usable decision models during an execution.
 
+Decision is a special node whose purpose is for decision model to have an ability to call other/re-usable decision models during an execution.
 
 ## Support matrix
 
-Arch   | Rust               | NodeJS             | Python
-:------------ |:-------------------|:-------------------| :-------------
-linux-x64-gnu | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark:
-linux-arm64-gnu | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark:
-darvin-x64 | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark:
-darvin-arm64 | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark:
-win32-x64-msvc | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark:
+| Arch            | Rust               | NodeJS             | Python             |
+| :-------------- | :----------------- | :----------------- | :----------------- |
+| linux-x64-gnu   | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
+| linux-arm64-gnu | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
+| darwin-x64      | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
+| darwin-arm64    | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
+| win32-x64-msvc  | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
 
 We do not support linux-musl for now as we are relying on the GoogleV8 engine to run function blocks as isolates.
 
-
 ## Contribution
+
 Contributions are welcome 🎉.
 
 ## License
+
 [MIT License]()

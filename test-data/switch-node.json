@@ -36,20 +36,20 @@
           }
         ],
         "rules": {
-          "group = 1": {
+          "group == 1": {
             "number <= 10": "model1",
             "number > 10": "model2",
             "else": "model3"
           },
-          "group = 2": {
+          "group == 2": {
             "number <= 10": {
-              "letter == A": "model1",
-              "else": "model2"
+              "letter == 'A'": "model1",
+              "else": "model2-from-inner-else"
             },
-            "number > 10": "model2",
-            "else": "model3"
+            "number > 15": "model2",
+            "else": "model3-else"
           },
-          "group = 3": "model4"
+          "group == 3": "model4"
         }
       }
     },

@@ -20,6 +20,7 @@ pub fn test_data_root() -> String {
 
 #[allow(dead_code)]
 pub fn load_test_data(key: &str) -> DecisionContent {
+    let file_root = test_data_root();
     let file = File::open(Path::new(&test_data_root()).join(key)).unwrap();
     let reader = BufReader::new(file);
     serde_json::from_reader(reader).unwrap_or_else(|e| {

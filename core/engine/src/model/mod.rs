@@ -48,15 +48,17 @@ pub enum DecisionNodeKind {
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[cfg_attr(feature = "bincode", derive(Encode, Decode))]
-#[serde(rename_all = "camelCase")]
-
+#[serde(untagged, rename_all = "camelCase")]
 pub enum RuleValue {
     Model(String),
-    Nested(HashMap<String, RuleValue>),
+    Nested(Rules),
 }
 
-type Rules = HashMap<String, RuleValue>;
+pub type Rules = HashMap<String, RuleValue>;
+
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
+#[serde(rename_all = "camelCase")]
 pub struct SwitchContent {
     pub rules: Rules,
     pub inputs: Vec<SwitchInputField>,

@@ -49,6 +49,7 @@ impl<'a> SwitchHandler<'a> {
 
     async fn handle_first_hit(&self, content: &'a SwitchContent) -> NodeResult {
         // evaluate for each key value pair of rules
+        println!("{:#?}", content);
         for (rule_key, sub_rule_or_model) in &content.rules {
             if let Some(result) = self.evaluate_rule(rule_key, sub_rule_or_model) {
                 return Ok(NodeResponse {
@@ -99,7 +100,7 @@ impl<'a> SwitchHandler<'a> {
     }
 
     fn evaluate_rule(&self, rule_key: &'a String, rule_value: &'a RuleValue) -> Option<RuleResult> {
-        let rule = self.isolate.run_unary(rule_key.as_str()).ok()?;
+        let rule = self.isolate.run_standard(rule_key.as_str()).ok()?;
         let is_rule_ok = rule.as_bool().unwrap_or(false);
 
         if is_rule_ok {
@@ -126,6 +127,22 @@ impl<'a> SwitchHandler<'a> {
                         if let Some(result) = self.evaluate_rule(nested_key, nested_value) {
                             return Some(result);
                         }
+                    }
+
+                    if let Some(RuleValue::Model(model)) = nested_rules.get("else") {
+                        let mut outputs: RuleOutput = Default::default();
+                        outputs.push(
+                            rule_key,
+                            RuleOutputKind::Value(Value::String(model.clone())),
+                        );
+                        let mut map = HashMap::new();
+                        map.insert(rule_key.clone(), model.clone());
+                        return Some(RuleResult {
+                            output: outputs,
+                            rule: Some(map),
+                            reference_map: None,
+                            index: 0,
+                        });
                     }
                 }
                 _ => {}

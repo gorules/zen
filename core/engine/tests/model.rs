@@ -1,6 +1,9 @@
+use std::collections::HashMap;
 use crate::support::test_data_root;
 use std::fs;
 use std::path::Path;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use zen_engine::model::DecisionContent;
 
 mod support;
@@ -41,4 +44,24 @@ fn jdm_serde() {
 
         assert!(serde_json::to_string(&serialized).is_ok());
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Foo {
+    bar: Bar
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(untagged, rename_all = "camelCase")]
+enum Bar {
+    Str(String),
+    HM(HashMap<String, String>)
+}
+
+#[test]
+fn serde_des() {
+    let json_data = r#"{"bar": "test"}"#;
+    let data = serde_json::from_str::<Foo>(json_data);
+    println!("{:?}", data)
 }

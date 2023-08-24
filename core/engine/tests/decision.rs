@@ -23,6 +23,11 @@ async fn decision_from_content() {
 async fn decision_from_content_switch() {
     let switch_content = load_test_data("switch-node.json");
     let decision = Decision::from(switch_content);
+
+    let context = json!({ "group": 2, "letter": "A", "number": 8 });
+    let result = decision.evaluate(&context).await.unwrap();
+
+    println!("result is {:?}", result);
 }
 
 #[tokio::test]

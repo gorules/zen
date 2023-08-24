@@ -185,7 +185,7 @@ impl<'a, T: DecisionLoader> DecisionGraph<'a, T> {
                         trace_data: res.trace_data,
                     });
                 }
-                DecisionNodeKind::SwitchNode { .. } => {
+                DecisionNodeKind::DecisionTreeNode { .. } => {
                     let input = graph_node.parent_data(&node_data)?;
 
                     let req = NodeRequest {

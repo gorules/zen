@@ -35,7 +35,7 @@ impl<'a> SwitchHandler<'a> {
 
     pub async fn handle(&self, request: &'a NodeRequest<'_>) -> NodeResult {
         let content = match &request.node.kind {
-            DecisionNodeKind::SwitchNode { content } => Ok(content),
+            DecisionNodeKind::DecisionTreeNode { content } => Ok(content),
             _ => Err(anyhow!("Unexpected node type")),
         }?;
 

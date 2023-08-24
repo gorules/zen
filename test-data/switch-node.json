@@ -11,7 +11,7 @@
     },
     {
       "id": "0624d5fd-1944-4781-92bb-e32873ce91e2",
-      "type": "switchNode",
+      "type": "decisionTreeNode",
       "position": {
         "x": 410,
         "y": 210

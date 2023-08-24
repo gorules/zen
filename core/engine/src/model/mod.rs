@@ -42,7 +42,7 @@ pub enum DecisionNodeKind {
     FunctionNode { content: String },
     DecisionNode { content: DecisionNodeContent },
     DecisionTableNode { content: DecisionTableContent },
-    SwitchNode { content: SwitchContent },
+    DecisionTreeNode { content: SwitchContent },
     ExpressionNode { content: ExpressionNodeContent },
 }
 

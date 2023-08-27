@@ -34,10 +34,14 @@ pub static BASE_VM: Lazy<Vec<u8>> = Lazy::new(|| {
         let scope = &mut v8::ContextScope::new(handle_scope, context);
 
         let dayjs_src = v8::String::new(scope, include_str!("scripts/dayjs.js")).unwrap();
+        let bigjs_src = v8::String::new(scope, include_str!("scripts/big.js")).unwrap();
         let internal_src = v8::String::new(scope, include_str!("scripts/internals.js")).unwrap();
         let env_src = v8::String::new(scope, env_src_string.as_str()).unwrap();
 
         v8::Script::compile(scope, dayjs_src, None)
+            .unwrap()
+            .run(scope);
+        v8::Script::compile(scope, bigjs_src, None)
             .unwrap()
             .run(scope);
         v8::Script::compile(scope, internal_src, None)

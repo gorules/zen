@@ -17,11 +17,14 @@ pub fn test_data_root() -> String {
         .to_string()
 }
 
+pub fn load_raw_test_data(key: &str) -> BufReader<File> {
+    let file = File::open(Path::new(&test_data_root()).join(key)).unwrap();
+    BufReader::new(file)
+}
+
 #[allow(dead_code)]
 pub fn load_test_data(key: &str) -> DecisionContent {
-    let file = File::open(Path::new(&test_data_root()).join(key)).unwrap();
-    let reader = BufReader::new(file);
-    serde_json::from_reader(reader).unwrap()
+    serde_json::from_reader(load_raw_test_data(key)).unwrap()
 }
 
 #[allow(dead_code)]

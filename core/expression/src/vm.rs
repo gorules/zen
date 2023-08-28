@@ -491,8 +491,8 @@ impl<'a> VM<'a> {
                     let Array(arr) = self.pop()? else {
                         return Err(OpcodeErr {
                             opcode: "Median".into(),
-                            message: "Unsupported type".into()
-                        })
+                            message: "Unsupported type".into(),
+                        });
                     };
 
                     let mut num_arr = arr
@@ -542,8 +542,8 @@ impl<'a> VM<'a> {
                     let Array(arr) = self.pop()? else {
                         return Err(OpcodeErr {
                             opcode: "Mode".into(),
-                            message: "Unsupported type".into()
-                        })
+                            message: "Unsupported type".into(),
+                        });
                     };
 
                     let num_arr = arr
@@ -914,7 +914,7 @@ impl<'a> VM<'a> {
                         return Err(OpcodeErr {
                             opcode: "Matches".into(),
                             message: "Unsupported type".into(),
-                        })
+                        });
                     };
 
                     let regex = Regex::new(b).map_err(|_| OpcodeErr {
@@ -932,7 +932,7 @@ impl<'a> VM<'a> {
                         return Err(OpcodeErr {
                             opcode: "Matches".into(),
                             message: "Unsupported type".into(),
-                        })
+                        });
                     };
 
                     let regex = Regex::new(b).map_err(|_| OpcodeErr {
@@ -1093,8 +1093,8 @@ impl<'a> VM<'a> {
                     let Array(arr) = current else {
                         return Err(OpcodeErr {
                             opcode: "Flatten".into(),
-                            message: "Unsupported type".into()
-                        })
+                            message: "Unsupported type".into(),
+                        });
                     };
 
                     let mut flat_arr = Vec::new();

@@ -44,11 +44,11 @@ impl PyZenEngine {
     #[new]
     pub fn new(maybe_options: Option<&PyDict>) -> PyResult<Self> {
         let Some(options) = maybe_options else {
-            return Ok(Default::default())
+            return Ok(Default::default());
         };
 
         let Some(loader_any) = options.get_item("loader") else {
-            return Ok(Default::default())
+            return Ok(Default::default());
         };
 
         let loader = Python::with_gil(|py| loader_any.to_object(py));

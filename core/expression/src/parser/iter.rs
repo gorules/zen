@@ -51,7 +51,7 @@ impl<'a, 'b> ParserIterator<'a, 'b> {
 
     pub fn set_position(&self, position: usize) -> ParserResult<()> {
         let Some(token) = self.tokens.get(position) else {
-            return Err(ParserError::TokenOutOfBounds)
+            return Err(ParserError::TokenOutOfBounds);
         };
 
         self.position.set(position);

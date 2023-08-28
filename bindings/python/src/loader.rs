@@ -17,7 +17,7 @@ impl From<PyObject> for PyDecisionLoader {
 impl PyDecisionLoader {
     fn load_element(&self, key: &str) -> Result<Arc<DecisionContent>, anyhow::Error> {
         let Some(object) = &self.0 else {
-            return Err(anyhow!("Loader is not defined"))
+            return Err(anyhow!("Loader is not defined"));
         };
 
         let content = Python::with_gil(|py| {

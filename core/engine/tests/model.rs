@@ -35,7 +35,11 @@ fn jdm_serde() {
     let root_dir = test_data_root();
     let files = fs::read_dir(Path::new(root_dir.as_str())).unwrap();
     for maybe_file in files {
-        let file = maybe_file.unwrap();
+        let Ok(file) = maybe_file else {
+            // We expect directories, which we skip
+            continue
+        };
+
         let file_contents = fs::read_to_string(file.path()).unwrap();
         let serialized = serde_json::from_str::<DecisionContent>(&file_contents).unwrap();
 

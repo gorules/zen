@@ -35,10 +35,11 @@ impl DecisionLoader {
 
     pub async fn get_key(&self, key: &str) -> LoaderResult<Arc<DecisionContent>> {
         let Some(function) = &self.function else {
-          return Err(LoaderError::Internal {
-              key: key.to_string(),
-              source: anyhow!("Loader is undefined")
-          }.into())
+            return Err(LoaderError::Internal {
+                key: key.to_string(),
+                source: anyhow!("Loader is undefined"),
+            }
+            .into());
         };
 
         let promise: Promise<Option<Buffer>> = function

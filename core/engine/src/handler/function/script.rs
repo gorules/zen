@@ -84,7 +84,9 @@ impl Script {
                 return Err(anyhow!("Timeout exceeded"));
             }
 
-            let exception = tc_scope.exception().context("Failed to run loaded script")?;
+            let exception = tc_scope
+                .exception()
+                .context("Failed to run loaded script")?;
             return Err(anyhow!(exception.to_rust_string_lossy(tc_scope)));
         };
 

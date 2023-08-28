@@ -40,11 +40,15 @@ impl ZenEngine {
     #[napi(constructor)]
     pub fn new(mut env: Env, options: Option<ZenEngineOptions>) -> napi::Result<Self> {
         let Some(opts) = options else {
-          return Ok(Self { graph: DecisionEngine::new(DecisionLoader::default()).into() })
+            return Ok(Self {
+                graph: DecisionEngine::new(DecisionLoader::default()).into(),
+            });
         };
 
         let Some(loader_fn) = opts.loader else {
-            return Ok(Self { graph: DecisionEngine::new(DecisionLoader::default()).into() })
+            return Ok(Self {
+                graph: DecisionEngine::new(DecisionLoader::default()).into(),
+            });
         };
 
         Ok(Self {

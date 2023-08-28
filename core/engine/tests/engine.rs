@@ -1,9 +1,13 @@
-use crate::support::{create_fs_loader, load_test_data};
+use crate::support::{create_fs_loader, load_raw_test_data, load_test_data};
+use serde::Deserialize;
 use serde_json::json;
+use std::io::Read;
 use std::ops::Deref;
+use std::path::Path;
 use std::sync::Arc;
 
 use zen_engine::loader::{LoaderError, MemoryLoader};
+use zen_engine::model::DecisionNodeKind;
 use zen_engine::{DecisionEngine, EvaluationError, EvaluationOptions};
 
 mod support;
@@ -137,4 +141,40 @@ async fn engine_with_trace() {
 
     let trace = table_opt.trace.unwrap();
     assert_eq!(trace.len(), 3); // trace for each node
+}
+
+#[tokio::test]
+#[cfg_attr(miri, ignore)]
+async fn engine_function_imports() {
+    let mut function_content = load_test_data("function.json");
+
+    let imports_js_path = Path::new("js").join("imports.js");
+    let mut replace_buffer = load_raw_test_data(imports_js_path.to_str().unwrap());
+    let mut replace_data = String::new();
+    replace_buffer.read_to_string(&mut replace_data).unwrap();
+
+    function_content.nodes.iter_mut().for_each(|node| {
+        if let DecisionNodeKind::FunctionNode { content } = &mut node.kind {
+            let _ = std::mem::replace(content, replace_data.clone());
+        }
+    });
+
+    let decision = DecisionEngine::default().create_decision(function_content.into());
+    let response = decision.evaluate(&json!({})).await.unwrap();
+
+    #[derive(Deserialize, Debug)]
+    #[serde(rename_all = "camelCase")]
+    struct GraphResult {
+        bigjs_tests: Vec<bool>,
+        bigjs_valid: bool,
+        dayjs_valid: bool,
+        moment_valid: bool,
+    }
+
+    let result = serde_json::from_value::<GraphResult>(response.result).unwrap();
+
+    assert!(result.bigjs_tests.iter().all(|v| *v));
+    assert!(result.bigjs_valid);
+    assert!(result.dayjs_valid);
+    assert!(result.moment_valid);
 }

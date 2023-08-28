@@ -17,6 +17,6 @@ const console = {
 };
 
 const main = (input) => ({
-    output: handler(input, {moment: __GLOBAL__DAYJS, env: __GLOBAL__ENV}),
+    output: handler(input, {moment: __GLOBAL__DAYJS, dayjs: __GLOBAL__DAYJS, Big: Big, env: __GLOBAL__ENV}),
     log,
 });

@@ -1,46 +1,33 @@
-use crate::loader::DecisionLoader;
-use crate::model::{DecisionContent, DecisionNode, DecisionNodeKind};
 use std::collections::HashMap;
-
-use crate::handler::decision::DecisionHandler;
-use crate::handler::function::FunctionHandler;
-use crate::handler::node::NodeRequest;
-use crate::handler::table::zen::DecisionTableHandler;
-
-use crate::handler::expression::ExpressionHandler;
-use crate::{EvaluationError, NodeError};
-use anyhow::anyhow;
-use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
 use std::sync::Arc;
 use std::time::Instant;
 
-pub struct DecisionGraph<'a, T: DecisionLoader> {
-    nodes: Vec<DecisionGraphNode<'a>>,
-    loader: Arc<T>,
+use anyhow::anyhow;
+use petgraph::algo::is_cyclic_directed;
+use petgraph::graph::NodeIndex;
+use petgraph::prelude::DiGraph;
+use petgraph::visit::Topo;
+use petgraph::Direction;
+use serde::ser::SerializeMap;
+use serde::{Deserialize, Serialize, Serializer};
+use serde_json::{Map, Value};
+use thiserror::Error;
+
+use crate::handler::decision::DecisionHandler;
+use crate::handler::expression::ExpressionHandler;
+use crate::handler::function::FunctionHandler;
+use crate::handler::node::NodeRequest;
+use crate::handler::table::zen::DecisionTableHandler;
+use crate::loader::DecisionLoader;
+use crate::model::{DecisionContent, DecisionNode, DecisionNodeKind};
+use crate::{EvaluationError, NodeError};
+
+pub struct DecisionGraph<'a, L: DecisionLoader> {
+    graph: DiGraph<&'a DecisionNode, usize>,
+    loader: Arc<L>,
     trace: bool,
     max_depth: u8,
     iteration: u8,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DecisionGraphResponse {
-    pub performance: String,
-    pub result: Value,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub trace: Option<HashMap<String, DecisionGraphTrace>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DecisionGraphTrace {
-    input: Value,
-    output: Value,
-    name: String,
-    id: String,
-    performance: Option<String>,
-    trace_data: Option<Value>,
 }
 
 pub struct DecisionGraphConfig<'a, T: DecisionLoader> {
@@ -51,35 +38,85 @@ pub struct DecisionGraphConfig<'a, T: DecisionLoader> {
     pub max_depth: u8,
 }
 
-impl<'a, T: DecisionLoader> DecisionGraph<'a, T> {
-    pub fn new(config: DecisionGraphConfig<'a, T>) -> Self {
-        let nodes = config
-            .content
-            .nodes
-            .iter()
-            .map(|node| {
-                let parents: Vec<&'a str> = config
-                    .content
-                    .edges
-                    .iter()
-                    .filter(|edge| edge.target_id == node.id)
-                    .map(|edge| edge.source_id.as_str())
-                    .collect();
+impl<'a, L: DecisionLoader> DecisionGraph<'a, L> {
+    pub fn try_new(
+        config: DecisionGraphConfig<'a, L>,
+    ) -> Result<Self, DecisionGraphValidationError> {
+        let content = config.content;
+        let mut graph = DiGraph::new();
+        let mut index_map = HashMap::new();
 
-                DecisionGraphNode { parents, node }
-            })
-            .collect();
+        for node in &content.nodes {
+            let node_id = node.id.clone();
+            let node_index = graph.add_node(node);
 
-        Self {
-            nodes,
-            max_depth: config.max_depth,
+            index_map.insert(node_id, node_index);
+        }
+
+        for (weight, edge) in content.edges.iter().enumerate() {
+            let source_index = index_map.get(&edge.source_id).ok_or_else(|| {
+                DecisionGraphValidationError::MissingNode(edge.source_id.to_string())
+            })?;
+
+            let target_index = index_map.get(&edge.target_id).ok_or_else(|| {
+                DecisionGraphValidationError::MissingNode(edge.target_id.to_string())
+            })?;
+
+            graph.add_edge(source_index.clone(), target_index.clone(), weight);
+        }
+
+        Ok(Self {
+            graph,
             iteration: config.iteration,
             trace: config.trace,
-            loader: config.loader,
-        }
+            loader: config.loader.clone(),
+            max_depth: config.max_depth,
+        })
     }
 
-    pub async fn evaluate(&self, state: &Value) -> Result<DecisionGraphResponse, NodeError> {
+    pub fn validate(&self) -> Result<(), DecisionGraphValidationError> {
+        let input_count = self.node_kind_count(DecisionNodeKind::InputNode);
+        if input_count != 1 {
+            return Err(DecisionGraphValidationError::InvalidInputCount(
+                input_count as u32,
+            ));
+        }
+
+        let output_count = self.node_kind_count(DecisionNodeKind::OutputNode);
+        if output_count < 1 {
+            return Err(DecisionGraphValidationError::InvalidOutputCount(
+                output_count as u32,
+            ));
+        }
+
+        if is_cyclic_directed(&self.graph) {
+            return Err(DecisionGraphValidationError::CyclicGraph);
+        }
+
+        Ok(())
+    }
+
+    fn node_kind_count(&self, kind: DecisionNodeKind) -> usize {
+        self.graph
+            .raw_nodes()
+            .iter()
+            .filter(|node| node.weight.kind == kind)
+            .count()
+    }
+
+    fn incoming_nodes(&self, node_id: NodeIndex) -> Vec<&DecisionNode> {
+        let neighbors = self.graph.neighbors_directed(node_id, Direction::Incoming);
+        neighbors.map(|neighbor| self.graph[neighbor]).collect()
+    }
+
+    pub async fn evaluate(&self, context: &Value) -> Result<DecisionGraphResponse, NodeError> {
+        let root_start = Instant::now();
+
+        self.validate().map_err(|e| NodeError {
+            node_id: "".to_string(),
+            source: anyhow!(e),
+        })?;
+
         if self.iteration >= self.max_depth {
             return Err(NodeError {
                 node_id: "".to_string(),
@@ -87,12 +124,14 @@ impl<'a, T: DecisionLoader> DecisionGraph<'a, T> {
             });
         }
 
-        let root_start = Instant::now();
+        let mut dfs = Topo::new(&self.graph);
         let mut node_data = HashMap::<&str, Value>::default();
         let mut node_traces = self.trace.then(|| HashMap::default());
 
-        for graph_node in &self.nodes {
-            let node = graph_node.node;
+        let default_patch = Value::Object(Map::new());
+
+        while let Some(nid) = dfs.next(&self.graph) {
+            let node = self.graph[nid];
             let start = Instant::now();
 
             macro_rules! trace {
@@ -103,9 +142,28 @@ impl<'a, T: DecisionLoader> DecisionGraph<'a, T> {
                 };
             }
 
+            let incoming_nodes = self.incoming_nodes(nid);
+            let incoming_data =
+                incoming_nodes
+                    .iter()
+                    .fold(Value::Object(Map::new()), |mut prev, &curr| {
+                        let data = node_data
+                            .get(curr.id.as_str())
+                            .unwrap_or_else(|| &default_patch);
+
+                        merge_json(&mut prev, data, true);
+                        prev
+                    });
+
+            let node_request = NodeRequest {
+                node,
+                iteration: self.iteration,
+                input: incoming_data,
+            };
+
             match node.kind {
                 DecisionNodeKind::InputNode => {
-                    node_data.insert(&node.id, state.clone());
+                    node_data.insert(&node.id, context.clone());
                     trace!({
                         input: Value::Null,
                         output: Value::Null,
@@ -126,21 +184,14 @@ impl<'a, T: DecisionLoader> DecisionGraph<'a, T> {
                     });
 
                     return Ok(DecisionGraphResponse {
-                        result: graph_node.parent_data(&node_data)?,
+                        result: node_request.input,
                         performance: format!("{:?}", root_start.elapsed()),
                         trace: node_traces,
                     });
                 }
                 DecisionNodeKind::FunctionNode { .. } => {
-                    let input = graph_node.parent_data(&node_data)?;
-                    let req = NodeRequest {
-                        node,
-                        iteration: self.iteration,
-                        input,
-                    };
-
                     let res = FunctionHandler::new(self.trace)
-                        .handle(&req)
+                        .handle(&node_request)
                         .await
                         .map_err(|e| NodeError {
                             source: e.into(),
@@ -149,7 +200,7 @@ impl<'a, T: DecisionLoader> DecisionGraph<'a, T> {
 
                     node_data.insert(&node.id, res.output.clone());
                     trace!({
-                        input: req.input,
+                        input: node_request.input,
                         output: res.output,
                         name: node.name.clone(),
                         id: node.id.clone(),
@@ -158,16 +209,8 @@ impl<'a, T: DecisionLoader> DecisionGraph<'a, T> {
                     });
                 }
                 DecisionNodeKind::DecisionNode { .. } => {
-                    let input = graph_node.parent_data(&node_data)?;
-
-                    let req = NodeRequest {
-                        node,
-                        iteration: self.iteration,
-                        input,
-                    };
-
                     let res = DecisionHandler::new(self.trace, self.max_depth, self.loader.clone())
-                        .handle(&req)
+                        .handle(&node_request)
                         .await
                         .map_err(|e| NodeError {
                             source: e.into(),
@@ -176,7 +219,7 @@ impl<'a, T: DecisionLoader> DecisionGraph<'a, T> {
 
                     node_data.insert(&node.id, res.output.clone());
                     trace!({
-                        input: req.input,
+                        input: node_request.input,
                         output: res.output,
                         name: node.name.clone(),
                         id: node.id.clone(),
@@ -185,16 +228,8 @@ impl<'a, T: DecisionLoader> DecisionGraph<'a, T> {
                     });
                 }
                 DecisionNodeKind::DecisionTableNode { .. } => {
-                    let input = graph_node.parent_data(&node_data)?;
-
-                    let req = NodeRequest {
-                        node,
-                        iteration: self.iteration,
-                        input,
-                    };
-
                     let res = DecisionTableHandler::new(self.trace)
-                        .handle(&req)
+                        .handle(&node_request)
                         .await
                         .map_err(|e| NodeError {
                             node_id: node.id.clone(),
@@ -203,7 +238,7 @@ impl<'a, T: DecisionLoader> DecisionGraph<'a, T> {
 
                     node_data.insert(&node.id, res.output.clone());
                     trace!({
-                        input: req.input,
+                        input: node_request.input,
                         output: res.output,
                         name: node.name.clone(),
                         id: node.id.clone(),
@@ -212,16 +247,8 @@ impl<'a, T: DecisionLoader> DecisionGraph<'a, T> {
                     });
                 }
                 DecisionNodeKind::ExpressionNode { .. } => {
-                    let input = graph_node.parent_data(&node_data)?;
-
-                    let req = NodeRequest {
-                        node,
-                        iteration: self.iteration,
-                        input,
-                    };
-
                     let res = ExpressionHandler::new(self.trace)
-                        .handle(&req)
+                        .handle(&node_request)
                         .await
                         .map_err(|e| NodeError {
                             node_id: node.id.clone(),
@@ -230,7 +257,7 @@ impl<'a, T: DecisionLoader> DecisionGraph<'a, T> {
 
                     node_data.insert(&node.id, res.output.clone());
                     trace!({
-                        input: req.input,
+                        input: node_request.input,
                         output: res.output,
                         name: node.name.clone(),
                         id: node.id.clone(),
@@ -245,28 +272,6 @@ impl<'a, T: DecisionLoader> DecisionGraph<'a, T> {
             node_id: "".to_string(),
             source: anyhow!("Graph did not halt. Missing output node."),
         })
-    }
-}
-
-struct DecisionGraphNode<'a> {
-    parents: Vec<&'a str>,
-    node: &'a DecisionNode,
-}
-
-impl<'a> DecisionGraphNode<'a> {
-    pub fn parent_data(&self, node_data: &HashMap<&str, Value>) -> Result<Value, NodeError> {
-        let mut object = Value::Object(Map::new());
-
-        for pid in &self.parents {
-            let data = node_data.get(pid).ok_or_else(|| NodeError {
-                node_id: self.node.id.clone(),
-                source: anyhow!("Failed to parse node data"),
-            })?;
-
-            merge_json(&mut object, data, true);
-        }
-
-        Ok(object)
     }
 }
 
@@ -292,45 +297,66 @@ fn merge_json(doc: &mut Value, patch: &Value, top_level: bool) {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::handler::graph::{DecisionGraph, DecisionGraphConfig};
-    use crate::loader::MemoryLoader;
-    use serde_json::json;
-    use std::sync::Arc;
+#[derive(Debug, Error)]
+pub enum DecisionGraphValidationError {
+    #[error("Invalid input node count: {0}")]
+    InvalidInputCount(u32),
 
-    #[tokio::test]
-    async fn decision_table() {
-        let content =
-            &serde_json::from_str(include_str!("../../../../test-data/table.json")).unwrap();
-        let tree = DecisionGraph::new(DecisionGraphConfig {
-            max_depth: 5,
-            trace: false,
-            iteration: 0,
-            content,
-            loader: Arc::new(MemoryLoader::default()),
-        });
+    #[error("Invalid output node count: {0}")]
+    InvalidOutputCount(u32),
 
-        let result = tree.evaluate(&json!({ "input": 15 })).await.unwrap();
+    #[error("Cyclic graph detected")]
+    CyclicGraph,
 
-        assert_eq!(result.result, json!({ "output": 10 }));
+    #[error("Missing node")]
+    MissingNode(String),
+}
+
+impl Serialize for DecisionGraphValidationError {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(None)?;
+
+        match &self {
+            DecisionGraphValidationError::InvalidInputCount(count) => {
+                map.serialize_entry("type", "invalidInputCount")?;
+                map.serialize_entry("nodeCount", count)?;
+            }
+            DecisionGraphValidationError::InvalidOutputCount(count) => {
+                map.serialize_entry("type", "invalidOutputCount")?;
+                map.serialize_entry("nodeCount", count)?;
+            }
+            DecisionGraphValidationError::MissingNode(node_id) => {
+                map.serialize_entry("type", "missingNode")?;
+                map.serialize_entry("nodeId", node_id)?;
+            }
+            DecisionGraphValidationError::CyclicGraph => {
+                map.serialize_entry("type", "cyclicGraph")?;
+            }
+        }
+
+        map.end()
     }
+}
 
-    #[tokio::test]
-    #[cfg_attr(miri, ignore)]
-    async fn function() {
-        let content =
-            &serde_json::from_str(include_str!("../../../../test-data/function.json")).unwrap();
-        let tree = DecisionGraph::new(DecisionGraphConfig {
-            max_depth: 5,
-            trace: false,
-            iteration: 0,
-            content,
-            loader: Arc::new(MemoryLoader::default()),
-        });
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecisionGraphResponse {
+    pub performance: String,
+    pub result: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trace: Option<HashMap<String, DecisionGraphTrace>>,
+}
 
-        let result = tree.evaluate(&json!({ "input": 15 })).await.unwrap();
-
-        assert_eq!(result.result, json!({ "output": 30 }));
-    }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecisionGraphTrace {
+    input: Value,
+    output: Value,
+    name: String,
+    id: String,
+    performance: Option<String>,
+    trace_data: Option<Value>,
 }

@@ -30,13 +30,13 @@ impl<T: DecisionLoader> DecisionHandler<T> {
         }?;
 
         let sub_decision = self.loader.load(&content.key).await?;
-        let sub_tree = DecisionGraph::new(DecisionGraphConfig {
+        let sub_tree = DecisionGraph::try_new(DecisionGraphConfig {
             content: sub_decision.deref(),
             max_depth: self.max_depth,
             loader: self.loader.clone(),
             iteration: request.iteration + 1,
             trace: self.trace,
-        });
+        })?;
 
         let result = sub_tree
             .evaluate(&request.input)

@@ -43,4 +43,13 @@ impl PyZenDecision {
         let value = serde_json::to_value(&result).context("Fail")?;
         Ok(PyValue(value).to_object(py))
     }
+
+    pub fn validate(&self) -> PyResult<()> {
+        let decision = self.0.clone();
+        decision
+            .validate()
+            .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?;
+
+        Ok(())
+    }
 }

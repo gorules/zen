@@ -2,7 +2,7 @@ use crate::engine::EvaluationOptions;
 use crate::handler::graph::{DecisionGraph, DecisionGraphConfig, DecisionGraphResponse};
 use crate::loader::{DecisionLoader, NoopLoader};
 use crate::model::DecisionContent;
-use crate::EvaluationError;
+use crate::{DecisionGraphValidationError, EvaluationError};
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -62,14 +62,26 @@ where
         context: &Value,
         options: EvaluationOptions,
     ) -> Result<DecisionGraphResponse, Box<EvaluationError>> {
-        let tree = DecisionGraph::new(DecisionGraphConfig {
+        let decision_graph = DecisionGraph::try_new(DecisionGraphConfig {
             max_depth: options.max_depth.unwrap_or(5),
             trace: options.trace.unwrap_or_default(),
             loader: self.loader.clone(),
             iteration: 0,
             content: &self.content,
-        });
+        })?;
 
-        Ok(tree.evaluate(context).await?)
+        Ok(decision_graph.evaluate(context).await?)
+    }
+
+    pub fn validate(&self) -> Result<(), DecisionGraphValidationError> {
+        let decision_graph = DecisionGraph::try_new(DecisionGraphConfig {
+            max_depth: 1,
+            trace: false,
+            loader: self.loader.clone(),
+            iteration: 0,
+            content: &self.content,
+        })?;
+
+        decision_graph.validate()
     }
 }

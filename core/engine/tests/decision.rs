@@ -2,7 +2,7 @@ use crate::support::{create_fs_loader, load_test_data};
 use serde_json::json;
 use std::ops::Deref;
 use std::sync::Arc;
-use zen_engine::{Decision, EvaluationError};
+use zen_engine::{Decision, DecisionGraphValidationError, EvaluationError};
 
 mod support;
 
@@ -67,4 +67,28 @@ async fn decision_expression_node() {
             }
         })
     )
+}
+
+#[tokio::test]
+async fn decision_validation() {
+    let cyclic_decision = Decision::from(load_test_data("error-cyclic.json"));
+    let cyclic_error = cyclic_decision.validate().unwrap_err();
+    assert!(matches!(
+        cyclic_error,
+        DecisionGraphValidationError::CyclicGraph
+    ));
+
+    let missing_input_decision = Decision::from(load_test_data("error-missing-input.json"));
+    let missing_input_error = missing_input_decision.validate().unwrap_err();
+    assert!(matches!(
+        missing_input_error,
+        DecisionGraphValidationError::InvalidInputCount(_)
+    ));
+
+    let missing_output_decision = Decision::from(load_test_data("error-missing-output.json"));
+    let missing_output_error = missing_output_decision.validate().unwrap_err();
+    assert!(matches!(
+        missing_output_error,
+        DecisionGraphValidationError::InvalidOutputCount(_)
+    ));
 }

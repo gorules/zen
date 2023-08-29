@@ -1,14 +1,16 @@
-use crate::support::{create_fs_loader, load_raw_test_data, load_test_data};
-use serde::Deserialize;
-use serde_json::json;
 use std::io::Read;
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
 
+use serde::Deserialize;
+use serde_json::json;
+
 use zen_engine::loader::{LoaderError, MemoryLoader};
 use zen_engine::model::DecisionNodeKind;
 use zen_engine::{DecisionEngine, EvaluationError, EvaluationOptions};
+
+use crate::support::{create_fs_loader, load_raw_test_data, load_test_data};
 
 mod support;
 

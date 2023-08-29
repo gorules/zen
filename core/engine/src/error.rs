@@ -1,3 +1,4 @@
+use crate::handler::graph::DecisionGraphValidationError;
 use crate::handler::node::NodeError;
 use crate::loader::LoaderError;
 use serde::ser::SerializeMap;
@@ -14,6 +15,9 @@ pub enum EvaluationError {
 
     #[error("Depth limit exceeded")]
     DepthLimitExceeded,
+
+    #[error("Invalid graph")]
+    InvalidGraph(Box<DecisionGraphValidationError>),
 }
 
 impl Serialize for EvaluationError {
@@ -43,6 +47,10 @@ impl Serialize for EvaluationError {
                     }
                 }
             }
+            EvaluationError::InvalidGraph(err) => {
+                map.serialize_entry("type", "InvalidGraph")?;
+                map.serialize_entry("source", err)?;
+            }
         }
 
         map.end()
@@ -70,5 +78,11 @@ impl From<NodeError> for Box<EvaluationError> {
 impl From<Box<NodeError>> for Box<EvaluationError> {
     fn from(error: Box<NodeError>) -> Self {
         Box::new(EvaluationError::NodeError(error))
+    }
+}
+
+impl From<DecisionGraphValidationError> for Box<EvaluationError> {
+    fn from(error: DecisionGraphValidationError) -> Self {
+        Box::new(EvaluationError::InvalidGraph(error.into()))
     }
 }

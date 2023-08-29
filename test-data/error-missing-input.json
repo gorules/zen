@@ -1,0 +1,54 @@
+{
+  "nodes": [
+    {
+      "id": "138b3b11-ff46-450f-9704-3f3c712067b2",
+      "type": "expressionNode",
+      "position": {
+        "x": 470,
+        "y": 240
+      },
+      "name": "expressionNode 1",
+      "content": {
+        "expressions": [
+          {
+            "id": "xWauegxfG7",
+            "key": "deep.nested.sum",
+            "value": "sum(numbers)"
+          },
+          {
+            "id": "qGAHmak0xj",
+            "key": "fullName",
+            "value": "firstName + ' ' + lastName"
+          },
+          {
+            "id": "5ZnYGPFT-N",
+            "key": "largeNumbers",
+            "value": "filter(numbers, # >= 10)"
+          },
+          {
+            "id": "pSg-vIQR5Q",
+            "key": "smallNumbers",
+            "value": "filter(numbers, # < 10)"
+          }
+        ]
+      }
+    },
+    {
+      "id": "db8797b1-bcc1-4fbf-a5d8-e7d43a181d5e",
+      "type": "outputNode",
+      "position": {
+        "x": 780,
+        "y": 240
+      },
+      "name": "Response"
+    }
+  ],
+  "edges": [
+    {
+      "id": "5d89c1d6-e894-4e8a-bd13-22368c2a6bc7",
+      "sourceId": "138b3b11-ff46-450f-9704-3f3c712067b2",
+      "type": "edge",
+      "targetId": "db8797b1-bcc1-4fbf-a5d8-e7d43a181d5e"
+    }
+  ]
+}

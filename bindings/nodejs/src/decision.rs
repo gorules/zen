@@ -48,4 +48,14 @@ impl ZenDecision {
 
         Ok(serde_json::to_value(&result)?)
     }
+
+    #[napi]
+    pub fn validate(&self) -> napi::Result<()> {
+        let decision = self.0.clone();
+        let result = decision
+            .validate()
+            .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?;
+
+        Ok(result)
+    }
 }

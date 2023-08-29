@@ -13,6 +13,7 @@ export interface ZenEngineOptions {
 export class ZenDecision {
   constructor()
   evaluate(context: any, opts?: ZenEvaluateOptions | undefined | null): Promise<any>
+  validate(): void
 }
 export class ZenEngine {
   constructor(options?: ZenEngineOptions | undefined | null)

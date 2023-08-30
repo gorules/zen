@@ -1,11 +1,12 @@
-use anyhow::{anyhow, Context};
 use std::fmt::Debug;
 use std::thread;
 use std::time::Duration;
 
-use crate::handler::function::vm::BASE_VM;
+use anyhow::{anyhow, Context};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+use crate::handler::function::vm::BASE_VM;
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -90,6 +91,9 @@ impl Script {
             return Err(anyhow!(exception.to_rust_string_lossy(tc_scope)));
         };
 
-        serde_v8::from_v8(tc_scope, result).context("Failed to parse function result")
+        let result_string: String =
+            serde_v8::from_v8(tc_scope, result).context("Failed to parse function result")?;
+
+        serde_json::from_str(result_string.as_str()).context("Failed to parse function result")
     }
 }

@@ -16,7 +16,7 @@ const console = {
     }
 };
 
-const main = (input) => ({
+const main = (input) => JSON.stringify({
     output: handler(input, {moment: __GLOBAL__DAYJS, dayjs: __GLOBAL__DAYJS, Big: Big, env: __GLOBAL__ENV}),
     log,
 });

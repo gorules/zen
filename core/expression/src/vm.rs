@@ -1,7 +1,6 @@
 use bumpalo::Bump;
 use chrono::NaiveDateTime;
 use chrono::{Datelike, Timelike};
-use regex::Regex;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::{Decimal, MathematicalOps};
 use rust_decimal_macros::dec;
@@ -12,6 +11,12 @@ use crate::helpers::{date_time, time};
 use crate::opcodes::Variable::{Array, Bool, Int, Interval, Null, Number, Object, String};
 use crate::opcodes::{Opcode, Variable};
 use crate::vm::VMError::{OpcodeErr, OpcodeOutOfBounds, ParseDateTimeErr, StackOutOfBounds};
+
+#[cfg(not(feature = "regex-lite"))]
+use regex::Regex;
+
+#[cfg(feature = "regex-lite")]
+use regex_lite::Regex;
 
 const NULL_VAR: &'static Variable = &Null;
 

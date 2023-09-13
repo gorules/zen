@@ -17,8 +17,7 @@ humantime = { workspace = true }
 fastrand = { workspace = true }
 once_cell = { workspace = true }
 phf = { workspace = true, features = ["macros"] }
-regex = { workspace = true, optional = true }
-regex-lite = { workspace = true, optional = true }
+regex-lite = { workspace = true }
 serde_json = { workspace = true, features = ["arbitrary_precision"] }
 thiserror = { workspace = true }
 rust_decimal = { workspace = true, features = ["maths-nopanic"] }
@@ -26,11 +25,6 @@ rust_decimal_macros = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
-
-[features]
-default = ["regex-default"]
-regex-default = ["dep:regex"]
-regex-lite = ["dep:regex-lite"]
 
 [[bench]]
 harness = false

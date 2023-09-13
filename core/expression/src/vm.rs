@@ -12,10 +12,6 @@ use crate::opcodes::Variable::{Array, Bool, Int, Interval, Null, Number, Object,
 use crate::opcodes::{Opcode, Variable};
 use crate::vm::VMError::{OpcodeErr, OpcodeOutOfBounds, ParseDateTimeErr, StackOutOfBounds};
 
-#[cfg(not(feature = "regex-lite"))]
-use regex::Regex;
-
-#[cfg(feature = "regex-lite")]
 use regex_lite::Regex;
 
 const NULL_VAR: &'static Variable = &Null;

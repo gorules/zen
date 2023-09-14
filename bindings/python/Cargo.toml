@@ -1,6 +1,6 @@
 [package]
 name = "zen-python"
-version = "0.10.2"
+version = "0.11.0"
 edition = "2021"
 license = "MIT"
 publish = false

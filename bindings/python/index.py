@@ -28,7 +28,6 @@ class ZenEngine(unittest.TestCase):
         r2 = tableDecision.evaluate({"input": 5})
         r3 = tableDecision.evaluate({"input": 12})
 
-        print(r1)
         self.assertEqual(r1["result"]["output"], 20)
         self.assertEqual(r2["result"]["output"], 0)
         self.assertEqual(r3["result"]["output"], 10)
@@ -41,6 +40,14 @@ class ZenEngine(unittest.TestCase):
 
         r = functionDecision.evaluate({"input": 15})
         self.assertEqual(r["result"]["output"], 30)
+
+    def test_evaluate_expression(self):
+        result = zen.evaluate_expression("sum(a)", { "a": [1, 2, 3, 4] })
+        self.assertEqual(result, 10)
+
+    def test_evaluate_unary_expression(self):
+        result = zen.evaluate_unary_expression("'FR', 'ES', 'GB'", { "$": "GB" })
+        self.assertEqual(result, True)
 
 # run the test
 unittest.main()

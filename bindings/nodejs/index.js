@@ -246,7 +246,9 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { ZenDecision, ZenEngine } = nativeBinding
+const { ZenDecision, ZenEngine, evaluateExpression, evaluateUnaryExpression } = nativeBinding
 
 module.exports.ZenDecision = ZenDecision
 module.exports.ZenEngine = ZenEngine
+module.exports.evaluateExpression = evaluateExpression
+module.exports.evaluateUnaryExpression = evaluateUnaryExpression

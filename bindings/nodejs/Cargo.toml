@@ -15,6 +15,7 @@ napi-derive = "2.13.0"
 serde_json = "1.0.96"
 futures = "0.3.28"
 zen-engine = { path = "../../core/engine" }
+zen-expression = { path = "../../core/expression" }
 
 [build-dependencies]
 napi-build = "2.0.1"

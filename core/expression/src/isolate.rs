@@ -7,6 +7,8 @@ use std::rc::Rc;
 
 use ahash::AHasher;
 use bumpalo::Bump;
+use serde::ser::SerializeMap;
+use serde::{Serialize, Serializer};
 use serde_json::Value;
 use thiserror::Error;
 
@@ -41,6 +43,42 @@ pub enum IsolateError {
 
     #[error("Failed to compute reference")]
     ReferenceError,
+}
+
+impl Serialize for IsolateError {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(None)?;
+
+        match &self {
+            IsolateError::ReferenceError => {
+                map.serialize_entry("type", "referenceError")?;
+            }
+            IsolateError::ValueCastError => {
+                map.serialize_entry("type", "valueCastError")?;
+            }
+            IsolateError::LexerError { source } => {
+                map.serialize_entry("type", "lexerError")?;
+                map.serialize_entry("source", source.to_string().as_str())?;
+            }
+            IsolateError::ParserError { source } => {
+                map.serialize_entry("type", "parserError")?;
+                map.serialize_entry("source", source.to_string().as_str())?;
+            }
+            IsolateError::CompilerError { source } => {
+                map.serialize_entry("type", "compilerError")?;
+                map.serialize_entry("source", source.to_string().as_str())?;
+            }
+            IsolateError::VMError { source } => {
+                map.serialize_entry("type", "vmError")?;
+                map.serialize_entry("source", source.to_string().as_str())?;
+            }
+        }
+
+        map.end()
+    }
 }
 
 #[derive(Debug)]

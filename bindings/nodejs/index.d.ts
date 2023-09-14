@@ -10,6 +10,8 @@ export interface ZenEvaluateOptions {
 export interface ZenEngineOptions {
   loader?: (key: string) => Promise<Buffer>
 }
+export function evaluateExpression(expression: string, context?: any | undefined | null): Promise<any>
+export function evaluateUnaryExpression(expression: string, context: any): Promise<any>
 export class ZenDecision {
   constructor()
   evaluate(context: any, opts?: ZenEvaluateOptions | undefined | null): Promise<any>

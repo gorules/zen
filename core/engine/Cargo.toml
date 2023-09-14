@@ -11,22 +11,22 @@ repository = "https://github.com/gorules/zen.git"
 doctest = false
 
 [dependencies]
-async-recursion = "1.0.4"
+async-recursion = "1.0.5"
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 async-trait = { workspace = true }
 bincode = { workspace = true, optional = true }
 petgraph = { workspace = true }
 serde_json = { workspace = true, features = ["arbitrary_precision"] }
-serde = { version = "1.0.163", features = ["derive"] }
-serde_v8 = { version = "0.103.0" }
-once_cell = { version = "1.17.2" }
+serde = { workspace = true, features = ["derive"] }
+serde_v8 = { version = "0.121.0" }
+once_cell = { version = "1.18.0" }
 futures = "0.3.28"
-v8 = { version = "0.74.0" }
+v8 = { version = "0.76.0" }
 zen-expression = { path = "../expression", version = "0.10.0" }
 
 [dev-dependencies]
-tokio = { version = "1.28.2", features = ["rt", "macros"] }
+tokio = { version = "1.32.0", features = ["rt", "macros"] }
 criterion = { workspace = true, features = ["async_futures"] }
 
 [features]

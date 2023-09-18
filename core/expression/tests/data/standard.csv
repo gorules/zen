@@ -1,0 +1,204 @@
+expression (string);input (json 5);output (json 5)
+
+# Boolean
+true and true;;true
+true and false;;false
+false and true;;false
+false and false;;false
+true or true;;true
+true or false;;true
+false or true;;true
+false or false;;false
+not true;;false
+not false;;true
+x == true;{ "x": true };true
+x == true;{ "x": false };false
+x == false;{ "x": true };false
+x == false;{ "x": false };true
+x and true;{ "x": true };true
+x and true;{ "x": false };false
+x or true;{ "x": true };true
+x or true;{ "x": false };true
+not x;{ "x": true };false
+not x;{ "x": false };true
+true and x;{ "x": true };true
+true and x;{ "x": false };false
+true or x;{ "x": true };true
+true or x;{ "x": false };true
+true and not x;{ "x": true };false
+true and not x;{ "x": false };true
+false or x;{ "x": true };true
+false or x;{ "x": false };false
+false and x;{ "x": true };false
+false and x;{ "x": false };false
+false or not x;{ "x": true };false
+false or not x;{ "x": false };true
+not x and true;{ "x": true };false
+not x and true;{ "x": false };true
+x or not true;{ "x": true };true
+x or not true;{ "x": false };false
+x or not false;{ "x": true };true
+x or not false;{ "x": false };true
+
+# Numbers
+1 == 1;;true
+1 == 2;;false
+1 != 2;;true
+1 != 1;;false
+1 < 2;;true
+1 < 1;;false
+1 <= 1;;true
+2 <= 1;;false
+2 > 1;;true
+1 > 1;;false
+1 >= 1;;true
+1 >= 2;;false
+-1 == -1;;true
+-1 == 1;;false
+-1 != 1;;true
+-1 != -1;;false
+-1 < 1;;true
+-1 < -1;;false
+-1 <= -1;;true
+1 <= -1;;false
+1 > -1;;true
+-1 > -1;;false
+-1 >= -1;;true
+-1 >= 1;;false
+1 + 2 == 3;;true
+1 + 2 == 4;;false
+1 - 2 == -1;;true
+1 - 2 == 0;;false
+2 * 3 == 6;;true
+2 * 3 == 7;;false
+6 / 3 == 2;;true
+6 / 3 == 2.5;;false
+5 % 2 == 1;;true
+6 % 2 == 0;;true
+-5 + 5 == 0;;true
+-5 * 5 == -25;;true
+-5 * -5 == 25;;true
+abs(-5) == 5;;true
+abs(5) == 5;;true
+2 ^ 3 == 8;;true
+2 ^ -1 == 0.5;;true
+max([3, 5]) == 5;;true
+max([-3, -5]) == -3;;true
+min([3, 5]) == 3;;true
+min([-3, -5]) == -5;;true
+3 + 4 * 2;;11
+(3 + 4) * 2;;14
+(10 - 4) / 2;;3
+abs(-5);;5
+sum([1, 2, 3, 4, 5]);;15
+avg([10, 20, 30]);;20
+min([5, 8, 2, 11, 7]);;2
+max([5, 8, 2, 11, 7]);;11
+floor(4.8);;4
+ceil(4.1);;5
+round(3.5);;4
+rand(100) >= 0 and rand(100) <= 100;;true
+median([4, 2, 7, 5, 3]);;4
+mode([1, 2, 2, 3, 3, 3, 4, 4, 4, 4]);;4
+5 % 2 == 1;;true
+10 % 4 == 2;;true
+true ? 10 == 10 : 20 == 30;;true
+false ? 10 == 10 : 20 == 30;;false
+true ? 10 == 20 : false ? 30 == 40 : true ? 50 == 60 : 70 == 80;;false
+
+# String
+'hello' + " " + "world";; 'hello world'
+len("Hello, World!");; 13
+lower("Hello, World!");; "hello, world!"
+upper("Hello, World!");; "HELLO, WORLD!"
+startsWith("Hello, World!", "Hello");; true
+startsWith("Hello, World!", "World");; false
+endsWith("Hello, World!", "World!");; true
+endsWith("Hello, World!", "Hello!");; false
+contains("Hello, World!", "lo");; true
+contains("Hello, World!", "foo");; false
+matches("Hello, World!", "H[a-z]+, W[a-z]+!");; true
+matches("Hello, World!", "[0-9]+");; false
+extract("2022-09-18", "(\d{4})-(\d{2})-(\d{2})");; ["2022-09-18", "2022", "09", "18"]
+
+# Array
+len([1, 2, 3, 4, 5]);; 5
+sum([1, 2, 3, 4, 5]);; 15
+avg([10, 20, 30]);; 20
+min([5, 8, 2, 11, 7]);; 2
+max([5, 8, 2, 11, 7]);; 11
+contains([1, 2, 3, 4, 5], 3);; true
+contains([1, 2, 3, 4, 5], 6);; false
+count([1, 2, 3, 4, 5, 2], # == 2);; 2
+filter([1, 2, 3, 4, 5], # > 3);; [4, 5]
+map([1, 2, 3, 4, 5], # * 2);; [2, 4, 6, 8, 10]
+one([1, 2, 3, 4, 5], # == 3);; true
+one([1, 2, 3, 4, 5], # == 6);; false
+none([1, 2, 3, 4, 5], # > 5);; true
+some([1, 2, 3, 4, 5], # > 3);; true
+flatMap([[1, 2], [3, 4], [5, 6]], #);; [1, 2, 3, 4, 5, 6]
+
+# Dates
+date("2023-09-18T12:00:00Z");; 1695038400
+date("2023-09-18T00:00:00Z");; 1694995200
+time("2023-09-18T12:00:00Z");; 43200
+time("2023-09-18T00:00:00Z");; 0
+duration("1h 30m");; 5400
+year("2023-09-18");; 2023
+monthOfYear("2023-09-18");; 9
+monthString("2023-09-18");; "Sep"
+dayOfMonth("2023-09-18");; 18
+dayOfWeek("2023-09-18");; 1
+dayOfYear("2023-09-18");; 261
+weekOfYear("2023-09-18");; 38
+weekdayString("2023-09-18");; "Mon"
+
+# Decimal precision
+0.1 + 0.2 == 0.3;; true
+0.1 + 0.2;; 0.3
+0.1 * 0.2 == 0.02;; true
+0.1 * 0.2;; 0.02
+0.3 - 0.1 == 0.2;; true
+0.3 - 0.1;; 0.2
+0.3 / 0.1 == 3.0;; true
+0.3 / 0.1;; 3
+
+# More complex formulas
+(10 + 5) * 3 / 2 > 15;; true
+(100 - 25) / (5 * 2) < 10;; true
+1000 / (10 - 2) + 50 == 175;; true
+(3 + 4) * (8 - 6) == 14;; true
+10^3 != 999;; true
+1000 / 10^3 <= 1.1;; true
+abs(-20) > 10;; true
+floor(8.9) == 8;; true
+ceil(8.1) == 9;; true
+round(7.6) == 8;; true
+10 % 3 != 0;; true
+-8 + 2^3 == 0;; true
+2 * -(-5) == 10;; true
+20 / (5 / 2) == 8.0;; true
+(4 + 2) * 3 - (5 / 2) + 1 < 18;; true
+5^2 + 3 * 4 - 6 / 2 > 20;; true
+4^3 - 2 * 5 + 7 / 2 == 57.5;; true
+abs(-7 + 4) * (8 - 6^2) < 34;; true
+5 in [1..10];; true
+5 in (1..10);; true
+5 not in [1..10);; false
+5 not in (1..10);; false
+-5 in [-10..-1];; true
+-5 in [-10..-1);; true
+-5 not in [-10..-1];; false
+-5 not in [-10..-1);; false
+-5 in [-5..5];; true
+-5 in (-5..5);; false
+-5 not in [-5..5);; false
+-5 not in (-5..5);; true
+10 > 5;; true
+5 < 10;; true
+10 >= 10;; true
+5 <= 5;; true
+(1 + 2) == 3;; true
+(1 + 2) != 4;; true
+(1 + 2) > 2;; true
+(1 + 2) < 5;; true

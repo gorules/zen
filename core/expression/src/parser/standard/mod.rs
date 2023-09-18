@@ -37,7 +37,7 @@ where
     }
 
     pub fn parse(&self) -> ParserResult<&'b Node<'b>> {
-        let result = self.parse_expression(0)?;
+        let result = self.expression(0)?;
         if !self.iterator.is_done() {
             let token = self.iterator.current();
             return Err(FailedToParse {
@@ -48,8 +48,8 @@ where
         return Ok(result);
     }
 
-    fn parse_expression(&self, precedence: u8) -> ParserResult<&'b Node<'b>> {
-        let mut node_left = self.parse_primary()?;
+    fn expression(&self, precedence: u8) -> ParserResult<&'b Node<'b>> {
+        let mut node_left = self.primary_expression()?;
         let mut token = self.iterator.current();
 
         while !self.iterator.is_done() {
@@ -58,8 +58,8 @@ where
                     if op.precedence >= precedence {
                         self.iterator.next()?;
                         let node_right = match op.associativity {
-                            Associativity::Left => self.parse_expression(op.precedence + 1)?,
-                            _ => self.parse_expression(op.precedence)?,
+                            Associativity::Left => self.expression(op.precedence + 1)?,
+                            _ => self.expression(op.precedence)?,
                         };
 
                         node_left = self.iterator.node(Node::Binary {
@@ -77,36 +77,36 @@ where
         }
 
         if precedence == 0 {
-            node_left = self.parse_conditional(node_left)?;
+            node_left = self.conditional(node_left)?;
         }
 
         Ok(node_left)
     }
 
-    fn parse_primary(&self) -> ParserResult<&'b Node<'b>> {
+    fn primary_expression(&self) -> ParserResult<&'b Node<'b>> {
         let token = self.iterator.current();
         if token.kind == TokenKind::Operator {
             if let Some(op) = UNARY_OPERATORS.get(token.value) {
                 self.iterator.next()?;
-                let expr = self.parse_expression(op.precedence)?;
+                let expr = self.expression(op.precedence)?;
                 let node = self.iterator.node(Node::Unary {
                     operator: self.iterator.str_value(token.value),
                     node: expr,
                 })?;
 
-                return self.parse_postfix(node);
+                return self.postfix(node);
             }
         }
 
-        if let Some(interval_node) = self.parse_interval()? {
-            return self.parse_postfix(interval_node);
+        if let Some(interval_node) = self.interval()? {
+            return self.postfix(interval_node);
         }
 
         if token.kind == TokenKind::Bracket && token.value == "(" {
             self.iterator.next()?;
-            let expr = self.parse_expression(0)?;
+            let expr = self.expression(0)?;
             self.iterator.expect(TokenKind::Bracket, Some(&[")"]))?;
-            return self.parse_postfix(expr);
+            return self.postfix(expr);
         }
 
         if self.depth.get() > 0 {
@@ -115,7 +115,7 @@ where
                     self.iterator.next()?;
                 }
                 let node = self.iterator.node(Node::Pointer)?;
-                return self.parse_postfix(node);
+                return self.postfix(node);
             }
         } else if token.kind == TokenKind::Operator && (token.value == "#" || token.value == ".") {
             return Err(UnexpectedToken {
@@ -124,10 +124,10 @@ where
             });
         }
 
-        self.parse_primary_expression()
+        self.literal()
     }
 
-    fn parse_conditional(&self, node: &'b Node<'b>) -> ParserResult<&'b Node<'b>> {
+    fn conditional(&self, node: &'b Node<'b>) -> ParserResult<&'b Node<'b>> {
         let mut nd = self.iterator.node(node.clone())?;
         let mut expr1: &'b Node;
         let mut expr2: &'b Node;
@@ -139,13 +139,13 @@ where
 
             let token = self.iterator.current();
             if token.kind != TokenKind::Operator && token.value != ":" {
-                expr1 = self.parse_expression(0)?;
+                expr1 = self.expression(0)?;
                 self.iterator.expect(TokenKind::Operator, Some(&[":"]))?;
-                expr2 = self.parse_expression(0)?;
+                expr2 = self.expression(0)?;
             } else {
                 self.iterator.next()?;
                 expr1 = node;
-                expr2 = self.parse_expression(0)?;
+                expr2 = self.expression(0)?;
             }
 
             nd = self.iterator.node(Node::Conditional {
@@ -158,7 +158,7 @@ where
         Ok(nd)
     }
 
-    fn parse_primary_expression(&self) -> ParserResult<&'b Node<'b>> {
+    fn literal(&self) -> ParserResult<&'b Node<'b>> {
         let node: &'b Node;
         let token = self.iterator.current();
 
@@ -168,14 +168,14 @@ where
                 match token.value {
                     "true" | "false" => return self.iterator.bool(token),
                     "null" => return self.iterator.null(token),
-                    _ => node = self.parse_identifier_expression(token)?,
+                    _ => node = self.identifier_expression(token)?,
                 }
             }
             TokenKind::Number => return self.iterator.number(token),
             TokenKind::String => return self.iterator.string(token),
             _ => {
                 if token.kind == TokenKind::Bracket && token.value == "[" {
-                    node = self.parse_array(token)?;
+                    node = self.array(token)?;
                 } else {
                     return Err(UnexpectedToken {
                         expected: "identifier, string, number or opening bracket".to_string(),
@@ -185,10 +185,10 @@ where
             }
         }
 
-        self.parse_postfix(node)
+        self.postfix(node)
     }
 
-    fn parse_interval(&self) -> ParserResult<Option<&'b Node<'b>>> {
+    fn interval(&self) -> ParserResult<Option<&'b Node<'b>>> {
         // Performance optimisation: skip if expression does not contain an interval for faster evaluation
         if !self.iterator.has_interval() {
             return Ok(None);
@@ -205,7 +205,7 @@ where
             return Ok(None);
         };
 
-        let Ok(left) = self.parse_primary_expression() else {
+        let Ok(left) = self.primary_expression() else {
             self.iterator.set_position(initial_position)?;
             return Ok(None);
         };
@@ -215,7 +215,7 @@ where
             return Ok(None);
         };
 
-        let Ok(right) = self.parse_primary_expression() else {
+        let Ok(right) = self.primary_expression() else {
             self.iterator.set_position(initial_position)?;
             return Ok(None);
         };
@@ -236,7 +236,8 @@ where
 
         Ok(Some(interval_node))
     }
-    fn parse_identifier_expression(&self, token: &Token) -> ParserResult<&'b Node<'b>> {
+
+    fn identifier_expression(&self, token: &Token) -> ParserResult<&'b Node<'b>> {
         if self.iterator.current().kind != TokenKind::Bracket
             || self.iterator.current().value != "("
         {
@@ -253,7 +254,7 @@ where
 
         return match builtin.arity {
             Arity::Single => {
-                let arg = self.parse_expression(0)?;
+                let arg = self.expression(0)?;
                 self.iterator.expect(TokenKind::Bracket, Some(&[")"]))?;
 
                 self.iterator.node(Node::BuiltIn {
@@ -262,9 +263,9 @@ where
                 })
             }
             Arity::Dual => {
-                let arg1 = self.parse_expression(0)?;
+                let arg1 = self.expression(0)?;
                 self.iterator.expect(TokenKind::Operator, Some(&[","]))?;
-                let arg2 = self.parse_expression(0)?;
+                let arg2 = self.expression(0)?;
                 self.iterator.expect(TokenKind::Bracket, Some(&[")"]))?;
 
                 self.iterator.node(Node::BuiltIn {
@@ -273,9 +274,9 @@ where
                 })
             }
             Arity::Closure => {
-                let arg1 = self.parse_expression(0)?;
+                let arg1 = self.expression(0)?;
                 self.iterator.expect(TokenKind::Operator, Some(&[","]))?;
-                let arg2 = self.parse_closure()?;
+                let arg2 = self.closure()?;
                 self.iterator.expect(TokenKind::Bracket, Some(&[")"]))?;
 
                 self.iterator.node(Node::BuiltIn {
@@ -286,12 +287,12 @@ where
         };
     }
 
-    fn parse_array(&self, _token: &Token) -> ParserResult<&'b Node<'b>> {
+    fn array(&self, _token: &Token) -> ParserResult<&'b Node<'b>> {
         let mut nodes = Vec::new();
-
         self.iterator.expect(TokenKind::Bracket, Some(&["["]))?;
-        while self.iterator.current().kind != TokenKind::Bracket
-            && self.iterator.current().value != "]"
+
+        while !(self.iterator.current().kind == TokenKind::Bracket
+            && self.iterator.current().value == "]")
         {
             if !nodes.is_empty() {
                 self.iterator.expect(TokenKind::Operator, Some(&[","]))?;
@@ -300,7 +301,7 @@ where
                 }
             }
 
-            nodes.push(self.parse_primary()?);
+            nodes.push(self.expression(0)?);
         }
 
         self.iterator.expect(TokenKind::Bracket, Some(&["]"]))?;
@@ -309,15 +310,15 @@ where
         self.iterator.node(node)
     }
 
-    fn parse_closure(&self) -> ParserResult<&'b Node<'b>> {
+    fn closure(&self) -> ParserResult<&'b Node<'b>> {
         self.depth.set(self.depth.get() + 1);
-        let node = self.parse_expression(0)?;
+        let node = self.expression(0)?;
         self.depth.set(self.depth.get() - 1);
 
         return self.iterator.node(Node::Closure(node));
     }
 
-    fn parse_postfix(&self, node: &'b Node<'b>) -> ParserResult<&'b Node<'b>> {
+    fn postfix(&self, node: &'b Node<'b>) -> ParserResult<&'b Node<'b>> {
         let mut postfix_token = self.iterator.current();
         let mut nd = self.iterator.node(node.clone())?;
 
@@ -353,13 +354,13 @@ where
                     c = self.iterator.current();
 
                     if c.kind != TokenKind::Bracket && c.value != "]" {
-                        to = Some(self.parse_expression(0)?);
+                        to = Some(self.expression(0)?);
                     }
 
                     nd = self.iterator.node(Node::Slice { node: nd, to, from })?;
                     self.iterator.expect(TokenKind::Bracket, Some(&["]"]))?;
                 } else {
-                    from = Some(self.parse_expression(0)?);
+                    from = Some(self.expression(0)?);
                     c = self.iterator.current();
 
                     if c.kind == TokenKind::Operator && c.value == ":" {
@@ -367,7 +368,7 @@ where
                         c = self.iterator.current();
 
                         if c.kind != TokenKind::Bracket && c.value != "]" {
-                            to = Some(self.parse_expression(0)?);
+                            to = Some(self.expression(0)?);
                         }
 
                         nd = self.iterator.node(Node::Slice { node: nd, from, to })?;

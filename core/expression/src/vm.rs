@@ -421,7 +421,7 @@ impl<'a> VM<'a> {
                     let var = self.pop()?;
 
                     match var {
-                        Number(a) => self.stack.push(self.bump.alloc(Number(a.round()))),
+                        Number(a) => self.stack.push(self.bump.alloc(Number(a.ceil()))),
                         _ => {
                             return Err(OpcodeErr {
                                 opcode: "Ceil".into(),

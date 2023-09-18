@@ -1,0 +1,42 @@
+expression (string);input (json 5);output (json 5)
+
+# Boolean
+true;{ "$": true }; true
+true;{ "$": false }; false
+false;{ "$": true }; false
+false;{ "$": false }; true
+
+# Number
+> 5;{$: 10};true
+< 10;{$: 5};true
+>= 10;{$: 10};true
+<= 5;{$: 5};true
+[-10..0];{$: 5};true
+(-10..0];{$: 5};false
+[-10..0);{$: 5};true
+(-10..0);{$: 5};false
+[-15..-5];{$: 5};false
+[-5..5];{$: 5};true
+[-6..6];{$: 5};false
+[-5..5];{$: 5};true
+[0..0];{$: 5};true
+> 5 and < 10;{$: 5};true
+<= 10 and > 5;{$: 5};true
+>= 10 or < 5;{$: 10};true
+<= 5 or >= 10;{$: 10};true
+[-10..0] and > -5;{$: -5};true
+(-10..0] or > 0;{$: 5};true
+[-10..0) and > -5;{$: -5};false
+(-10..0) or > 0;{$: 5};true
+[-15..-5] and <= -10;{$: -5};false
+[-5..5] or > 0;{$: 5};true
+[-5..5] or < 0;{$: 5};false
+[-5..5] and > 0;{$: 5};true
+[0..0] and < 5;{$: 5};true
+> 10 or < -5;{$: 5};true
+> 10, < -5;{$: 5};true
+<= -10 and >= -15;{$: -5};true
+
+# String
+'GB','US';{$: 'US'};true
+'GB','US';{$: 'FR'};false

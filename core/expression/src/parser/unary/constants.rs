@@ -36,7 +36,7 @@ pub(crate) const BUILT_INS: Map<&'static str, BuiltIn> = phf_map! {
     "weekdayString" => BuiltIn { arity: Arity::Single },
 };
 
-pub(crate) const OPERATORS: Map<&'static str, Operator> = phf_map! {
+pub(crate) const STANDARD_OPERATORS: Map<&'static str, Operator> = phf_map! {
     "or" => Operator { precedence: 10, associativity: Left },
     "and" => Operator { precedence: 15, associativity: Left },
     "==" => Operator { precedence: 20, associativity: Left },
@@ -53,4 +53,11 @@ pub(crate) const OPERATORS: Map<&'static str, Operator> = phf_map! {
     "/" => Operator { precedence: 60, associativity: Left },
     "%" => Operator { precedence: 60, associativity: Left },
     "^" => Operator { precedence: 70, associativity: Right },
+};
+
+pub(crate) static UNARY_OPERATORS: Map<&'static str, Operator> = phf_map! {
+    "not" => Operator { precedence: 50, associativity: Left },
+    "!" => Operator { precedence: 50, associativity: Left },
+    "+" => Operator { precedence: 200, associativity: Left },
+    "-" => Operator { precedence: 200, associativity: Left },
 };

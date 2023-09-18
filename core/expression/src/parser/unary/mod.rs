@@ -5,7 +5,7 @@ use crate::lexer::token::{Token, TokenKind};
 use crate::parser::definitions::{Arity, Associativity};
 use crate::parser::error::{ParserError, ParserResult};
 use crate::parser::iter::ParserIterator;
-use crate::parser::unary::constants::{BUILT_INS, OPERATORS};
+use crate::parser::unary::constants::{BUILT_INS, STANDARD_OPERATORS, UNARY_OPERATORS};
 
 mod constants;
 
@@ -31,10 +31,10 @@ where
     }
 
     pub fn parse(&self) -> ParserResult<&'b Node<'b>> {
-        self.parse_expression(0, true)
+        self.expression(0, true)
     }
 
-    fn parse_expression(&self, precedence: u8, root: bool) -> ParserResult<&'b Node<'b>> {
+    fn expression(&self, precedence: u8, root: bool) -> ParserResult<&'b Node<'b>> {
         let mut node_left: &'b Node<'b> = self.iterator.node(MAIN_NODE)?;
         let mut token = self.iterator.current();
 
@@ -43,7 +43,7 @@ where
                 TokenKind::Operator => {
                     if token.value == "," {
                         self.iterator.next()?;
-                        let node_right: &'b Node<'b> = self.parse_expression(0, true)?;
+                        let node_right: &'b Node<'b> = self.expression(0, true)?;
 
                         token = self.iterator.current();
                         node_left = self.iterator.node(Node::Binary {
@@ -51,17 +51,12 @@ where
                             operator: "or",
                             right: node_right,
                         })?;
-                        continue;
-                    } else if let Some(op) = OPERATORS.get(token.value) {
+                    } else if let Some(op) = STANDARD_OPERATORS.get(token.value) {
                         if op.precedence >= precedence {
                             self.iterator.next()?;
                             let node_right = match op.associativity {
-                                Associativity::Left => {
-                                    self.parse_expression(op.precedence + 1, false)?
-                                }
-                                Associativity::Right => {
-                                    self.parse_expression(op.precedence, false)?
-                                }
+                                Associativity::Left => self.expression(op.precedence + 1, false)?,
+                                Associativity::Right => self.expression(op.precedence, false)?,
                             };
 
                             node_left = self.iterator.node(Node::Binary {
@@ -70,7 +65,6 @@ where
                                 right: node_right,
                             })?;
                             token = self.iterator.current();
-                            continue;
                         }
                     } else {
                         return Err(ParserError::FailedToParse {
@@ -82,7 +76,7 @@ where
                     }
                 }
                 TokenKind::Identifier | TokenKind::String | TokenKind::Number => {
-                    let node_right = self.parse_primary()?;
+                    let node_right = self.literal()?;
                     if !root {
                         return Ok(node_right);
                     }
@@ -93,12 +87,11 @@ where
                         operator: "==",
                         right: node_right,
                     })?;
-                    continue;
                 }
                 TokenKind::Bracket => {
                     let node_right: &Node;
 
-                    if let Some(interval) = self.parse_interval(node_left)? {
+                    if let Some(interval) = self.interval(node_left)? {
                         node_left = interval;
                     } else if token.value == "[" {
                         let should_wrap = !self.iterator.lookup_back(
@@ -106,7 +99,7 @@ where
                             TokenKind::Operator,
                             Some(&["not in", "in"]),
                         );
-                        node_right = self.parse_array(token)?;
+                        node_right = self.array(token)?;
 
                         if should_wrap {
                             node_left = self.iterator.node(Node::Binary {
@@ -125,8 +118,6 @@ where
                             ),
                         });
                     }
-
-                    continue;
                 }
             }
         }
@@ -134,7 +125,7 @@ where
         Ok(node_left)
     }
 
-    fn parse_interval(&self, node: &'b Node<'b>) -> ParserResult<Option<&'b Node<'b>>> {
+    fn interval(&self, node: &'b Node<'b>) -> ParserResult<Option<&'b Node<'b>>> {
         // Performance optimisation: skip if expression does not contain an interval for faster evaluation
         if !self.iterator.has_interval() {
             return Ok(None);
@@ -157,7 +148,7 @@ where
             return Ok(None);
         }
 
-        let Ok(left) = self.parse_primary() else {
+        let Ok(left) = self.literal() else {
             self.iterator.set_position(initial_position)?;
             return Ok(None);
         };
@@ -167,7 +158,7 @@ where
             return Ok(None);
         }
 
-        let Ok(right) = self.parse_primary() else {
+        let Ok(right) = self.literal() else {
             self.iterator.set_position(initial_position)?;
             return Ok(None);
         };
@@ -197,7 +188,7 @@ where
         Ok(Some(interval_node))
     }
 
-    fn parse_array(&self, _token: &Token) -> ParserResult<&'b Node<'b>> {
+    fn array(&self, _token: &Token) -> ParserResult<&'b Node<'b>> {
         let mut nodes = Vec::new();
 
         self.iterator.expect(TokenKind::Bracket, Some(&["["]))?;
@@ -211,7 +202,7 @@ where
                 }
             }
 
-            nodes.push(self.parse_primary()?);
+            nodes.push(self.literal()?);
         }
 
         self.iterator.expect(TokenKind::Bracket, Some(&["]"]))?;
@@ -219,7 +210,7 @@ where
         self.iterator.node(node)
     }
 
-    fn parse_primary(&self) -> ParserResult<&'b Node<'b>> {
+    fn literal(&self) -> ParserResult<&'b Node<'b>> {
         let token = self.iterator.current();
 
         match token.kind {
@@ -228,7 +219,7 @@ where
                 match token.value {
                     "true" | "false" => self.iterator.bool(token),
                     "null" => self.iterator.null(token),
-                    _ => self.parse_prebuilt(token),
+                    _ => self.builtin(token),
                 }
             }
             TokenKind::Number => self.iterator.number(token),
@@ -240,7 +231,7 @@ where
         }
     }
 
-    fn parse_prebuilt(&self, token: &Token<'a>) -> ParserResult<&'b Node<'b>> {
+    fn builtin(&self, token: &Token<'a>) -> ParserResult<&'b Node<'b>> {
         let current_token = self.iterator.current();
         let valid_token = current_token.kind == TokenKind::Bracket && current_token.value == "(";
 
@@ -260,7 +251,7 @@ where
 
         match built_in.arity {
             Arity::Single => {
-                let arg = self.parse_primary()?;
+                let arg = self.literal()?;
                 let node = self.iterator.node(Node::BuiltIn {
                     name: self.iterator.str_value(token.value),
                     arguments: self.bump.alloc_slice_copy(&[arg]),

@@ -5,7 +5,7 @@ use crate::lexer::token::{Token, TokenKind};
 use crate::parser::definitions::{Arity, Associativity};
 use crate::parser::error::{ParserError, ParserResult};
 use crate::parser::iter::ParserIterator;
-use crate::parser::unary::constants::{BUILT_INS, STANDARD_OPERATORS, UNARY_OPERATORS};
+use crate::parser::unary::constants::{BUILT_INS, STANDARD_OPERATORS};
 
 mod constants;
 

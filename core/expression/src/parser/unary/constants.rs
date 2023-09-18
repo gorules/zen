@@ -54,10 +54,3 @@ pub(crate) const STANDARD_OPERATORS: Map<&'static str, Operator> = phf_map! {
     "%" => Operator { precedence: 60, associativity: Left },
     "^" => Operator { precedence: 70, associativity: Right },
 };
-
-pub(crate) static UNARY_OPERATORS: Map<&'static str, Operator> = phf_map! {
-    "not" => Operator { precedence: 50, associativity: Left },
-    "!" => Operator { precedence: 50, associativity: Left },
-    "+" => Operator { precedence: 200, associativity: Left },
-    "-" => Operator { precedence: 200, associativity: Left },
-};

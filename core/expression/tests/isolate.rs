@@ -748,7 +748,7 @@ fn test_standard_csv() {
 
 #[test]
 fn test_unary_csv() {
-    return;
+    todo!();
     let csv_data = include_str!("data/unary.csv");
     let mut r = csv::ReaderBuilder::new()
         .delimiter(b';')

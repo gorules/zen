@@ -25,7 +25,10 @@ rust_decimal = { workspace = true, features = ["maths-nopanic"] }
 rust_decimal_macros = { workspace = true }
 
 [dev-dependencies]
+anyhow = { workspace = true }
 criterion = { workspace = true }
+csv = "1.2.2"
+serde_json5 = "0.1.0"
 
 [features]
 default = ["regex-deprecated"]

@@ -1,4 +1,6 @@
+use anyhow::Context;
 use bumpalo::Bump;
+use std::ops::Index;
 
 use serde_json::{json, Value};
 
@@ -705,4 +707,41 @@ fn isolate_test_decimals() {
     let result = isolate.run_standard("9223372036854775807").unwrap();
 
     assert_eq!(result, Value::from(9223372036854775807i64));
+}
+
+#[test]
+fn test_standard_csv() {
+    let csv_data = include_str!("data/standard.csv");
+    let mut r = csv::ReaderBuilder::new()
+        .delimiter(b';')
+        .from_reader(csv_data.as_bytes());
+
+    while let Some(maybe_row) = r.records().next() {
+        let Ok(row) = maybe_row else {
+            continue;
+        };
+
+        let (expression, input_str, output_str) = (row.index(0), row.index(1), row.index(2));
+        if expression.starts_with("#") {
+            continue;
+        }
+
+        let output: Value = serde_json5::from_str(output_str).unwrap();
+
+        let isolate = Isolate::default();
+        if !input_str.is_empty() {
+            let input: Value = serde_json5::from_str(input_str).unwrap();
+            isolate.inject_env(&input);
+        }
+
+        let result = isolate
+            .run_standard(expression)
+            .context(format!("Expression: {expression}"))
+            .unwrap();
+
+        assert_eq!(
+            result, output,
+            "Expression {expression}. Expected: {output}, got: {result}"
+        );
+    }
 }

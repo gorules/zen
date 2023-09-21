@@ -1,4 +1,6 @@
-use chrono::{DateTime, Datelike, Days, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Utc};
+use chrono::{
+    DateTime, Datelike, Days, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Utc, Weekday,
+};
 use once_cell::sync::Lazy;
 
 use crate::vm::VMError;
@@ -109,17 +111,17 @@ pub(crate) fn date_time_end_of(date: NaiveDateTime, unit: DateUnit) -> Option<Na
             .with_second(59)?
             .with_minute(59)?
             .with_hour(23)?
-            .checked_add_days(Days::new(date.weekday().num_days_from_sunday() as u64)),
+            .checked_add_days(Days::new(Weekday::Sun as u64 - date.weekday() as u64)),
         DateUnit::Month => date
             .with_second(59)?
             .with_minute(59)?
             .with_hour(23)?
-            .with_day0(get_month_days(&date)? as u32),
+            .with_day(get_month_days(&date)? as u32),
         DateUnit::Year => date
             .with_second(59)?
             .with_minute(59)?
             .with_hour(23)?
-            .with_day0(get_month_days(&date)? as u32)?
+            .with_day(get_month_days(&date)? as u32)?
             .with_month0(11),
     }
 }

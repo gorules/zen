@@ -40,7 +40,10 @@ pub(crate) static BUILT_INS: Lazy<HashMap<&'static str, BuiltIn, ADefHasher>> = 
         "weekOfYear" => BuiltIn { arity: Arity::Single },
         "monthOfYear" => BuiltIn { arity: Arity::Single },
         "monthString" => BuiltIn { arity: Arity::Single },
+        "dateString" => BuiltIn { arity: Arity::Single },
         "weekdayString" => BuiltIn { arity: Arity::Single },
+        "startOf" => BuiltIn { arity: Arity::Dual },
+        "endOf" => BuiltIn { arity: Arity::Dual },
 
         "startsWith" => BuiltIn { arity: Arity::Dual },
         "endsWith" => BuiltIn { arity: Arity::Dual },

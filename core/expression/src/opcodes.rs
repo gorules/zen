@@ -1,9 +1,14 @@
 use std::str::FromStr;
 
 use bumpalo::Bump;
+use chrono::NaiveDateTime;
 use hashbrown::hash_map::DefaultHashBuilder;
 use hashbrown::BumpWrapper;
 
+use crate::helpers::date_time;
+use crate::vm::VMError;
+use crate::vm::VMError::{OpcodeErr, ParseDateTimeErr};
+use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde_json::{Map, Number, Value};
 
@@ -104,6 +109,7 @@ pub enum Opcode<'a> {
         right_bracket: &'a str,
     },
     Contains,
+    DateFunction(&'a str),
     DateManipulation(&'a str),
     Uppercase,
     Lowercase,
@@ -157,6 +163,30 @@ impl TryFrom<&Variable<'_>> for Value {
                 Ok(Value::Object(t))
             }
             _ => Err(()),
+        }
+    }
+}
+
+impl TryFrom<&Variable<'_>> for NaiveDateTime {
+    type Error = VMError;
+
+    fn try_from(value: &Variable<'_>) -> Result<Self, Self::Error> {
+        match value {
+            Variable::String(a) => date_time(a),
+            Variable::Number(a) => NaiveDateTime::from_timestamp_opt(
+                a.to_i64().ok_or_else(|| OpcodeErr {
+                    opcode: "DateManipulation".into(),
+                    message: "Failed to extract date".into(),
+                })?,
+                0,
+            )
+            .ok_or_else(|| ParseDateTimeErr {
+                timestamp: a.to_string(),
+            }),
+            _ => Err(OpcodeErr {
+                opcode: "DateManipulation".into(),
+                message: "Unsupported type".into(),
+            }),
         }
     }
 }

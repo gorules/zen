@@ -1,22 +1,21 @@
+use std::collections::HashMap;
+
 use bumpalo::Bump;
 use chrono::NaiveDateTime;
 use chrono::{Datelike, Timelike};
+#[cfg(not(feature = "regex-lite"))]
+use regex::Regex;
+#[cfg(feature = "regex-lite")]
+use regex_lite::Regex;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::{Decimal, MathematicalOps};
 use rust_decimal_macros::dec;
-use std::collections::HashMap;
 use thiserror::Error;
 
-use crate::helpers::{date_time, time};
+use crate::helpers::{date_time, date_time_end_of, date_time_start_of, time};
 use crate::opcodes::Variable::{Array, Bool, Int, Interval, Null, Number, Object, String};
 use crate::opcodes::{Opcode, Variable};
 use crate::vm::VMError::{OpcodeErr, OpcodeOutOfBounds, ParseDateTimeErr, StackOutOfBounds};
-
-#[cfg(not(feature = "regex-lite"))]
-use regex::Regex;
-
-#[cfg(feature = "regex-lite")]
-use regex_lite::Regex;
 
 const NULL_VAR: &'static Variable = &Null;
 
@@ -964,26 +963,7 @@ impl<'a> VM<'a> {
                 Opcode::DateManipulation(operation) => {
                     let timestamp = self.pop()?;
 
-                    let time = match timestamp {
-                        String(a) => date_time(a)?,
-                        Number(a) => NaiveDateTime::from_timestamp_opt(
-                            a.to_i64().ok_or_else(|| OpcodeErr {
-                                opcode: "DateManipulation".into(),
-                                message: "Failed to extract date".into(),
-                            })?,
-                            0,
-                        )
-                        .ok_or_else(|| ParseDateTimeErr {
-                            timestamp: a.to_string(),
-                        })?,
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "DateManipulation".into(),
-                                message: "Unsupported type".into(),
-                            })
-                        }
-                    };
-
+                    let time: NaiveDateTime = timestamp.try_into()?;
                     let var = match *operation {
                         "year" => Number(time.year().into()),
                         "dayOfWeek" => Number(time.weekday().number_from_monday().into()),
@@ -995,6 +975,7 @@ impl<'a> VM<'a> {
                             String(self.bump.alloc_str(&time.format("%b").to_string()))
                         }
                         "weekdayString" => String(self.bump.alloc_str(&time.weekday().to_string())),
+                        "dateString" => String(self.bump.alloc_str(&time.to_string())),
                         _ => {
                             return Err(OpcodeErr {
                                 opcode: "DateManipulation".into(),
@@ -1004,6 +985,35 @@ impl<'a> VM<'a> {
                     };
 
                     self.stack.push(self.bump.alloc(var));
+                }
+                Opcode::DateFunction(name) => {
+                    let unit_var = self.pop()?;
+                    let timestamp = self.pop()?;
+
+                    let date_time: NaiveDateTime = timestamp.try_into()?;
+                    let String(unit_name) = *unit_var else {
+                        return Err(OpcodeErr {
+                            opcode: "DateFunction".into(),
+                            message: "Unknown date function".into(),
+                        });
+                    };
+
+                    let s = match *name {
+                        "startOf" => date_time_start_of(date_time, unit_name.try_into()?),
+                        "endOf" => date_time_end_of(date_time, unit_name.try_into()?),
+                        _ => {
+                            return Err(OpcodeErr {
+                                opcode: "DateManipulation".into(),
+                                message: "Unsupported operation".into(),
+                            })
+                        }
+                    }
+                    .ok_or_else(|| OpcodeErr {
+                        opcode: "DateFunction".into(),
+                        message: "Failed to run DateFunction".into(),
+                    })?;
+
+                    self.push(Number(s.timestamp().into()));
                 }
                 Opcode::Slice => {
                     let from_var = self.pop()?;

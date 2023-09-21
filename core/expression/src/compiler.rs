@@ -387,8 +387,13 @@ impl<'a> Compiler<'a> {
                     self.compile_argument(name, arguments, 0)?;
                     Ok(self.emit(Opcode::Random))
                 }
+                "startOf" | "endOf" => {
+                    self.compile_argument(name, arguments, 0)?;
+                    self.compile_argument(name, arguments, 1)?;
+                    Ok(self.emit(Opcode::DateFunction(name)))
+                }
                 "dayOfWeek" | "dayOfMonth" | "dayOfYear" | "weekOfYear" | "monthOfYear"
-                | "monthString" | "weekdayString" | "year" => {
+                | "monthString" | "weekdayString" | "year" | "dateString" => {
                     self.compile_argument(name, arguments, 0)?;
                     Ok(self.emit(Opcode::DateManipulation(name)))
                 }

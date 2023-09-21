@@ -33,6 +33,7 @@ pub(crate) const BUILT_INS: Map<&'static str, BuiltIn> = phf_map! {
     "weekOfYear" => BuiltIn { arity: Arity::Single },
     "monthOfYear" => BuiltIn { arity: Arity::Single },
     "monthString" => BuiltIn { arity: Arity::Single },
+    "dateString" => BuiltIn { arity: Arity::Single },
     "weekdayString" => BuiltIn { arity: Arity::Single },
 };
 

@@ -1,5 +1,4 @@
-use chrono::{DateTime, NaiveDate, NaiveTime};
-use chrono::{NaiveDateTime, Utc};
+use chrono::{DateTime, Datelike, Days, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Utc};
 use once_cell::sync::Lazy;
 
 use crate::vm::VMError;
@@ -43,4 +42,102 @@ pub(crate) fn time(str: &str) -> Result<NaiveTime, VMError> {
         .map_err(|_| VMError::ParseDateTimeErr {
             timestamp: str.to_string(),
         });
+}
+
+pub(crate) enum DateUnit {
+    Second,
+    Minute,
+    Hour,
+    Day,
+    Week,
+    Month,
+    Year,
+}
+
+impl TryFrom<&str> for DateUnit {
+    type Error = VMError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "s" | "second" | "seconds" => Ok(Self::Second),
+            "m" | "minute" | "minutes" => Ok(Self::Minute),
+            "h" | "hour" | "hours" => Ok(Self::Hour),
+            "d" | "day" | "days" => Ok(Self::Day),
+            "w" | "week" | "weeks" => Ok(Self::Week),
+            "M" | "month" | "months" => Ok(Self::Month),
+            "y" | "year" | "years" => Ok(Self::Year),
+            _ => Err(VMError::OpcodeErr {
+                opcode: "DateUnit".into(),
+                message: "Unknown date unit".into(),
+            }),
+        }
+    }
+}
+
+pub(crate) fn date_time_start_of(date: NaiveDateTime, unit: DateUnit) -> Option<NaiveDateTime> {
+    match unit {
+        DateUnit::Second => Some(date),
+        DateUnit::Minute => date.with_second(0),
+        DateUnit::Hour => date.with_second(0)?.with_minute(0),
+        DateUnit::Day => date.with_second(0)?.with_minute(0)?.with_hour(0),
+        DateUnit::Week => date
+            .with_second(0)?
+            .with_minute(0)?
+            .with_hour(0)?
+            .checked_sub_days(Days::new(date.weekday().num_days_from_monday() as u64)),
+        DateUnit::Month => date
+            .with_second(0)?
+            .with_minute(0)?
+            .with_hour(0)?
+            .with_day0(0),
+        DateUnit::Year => date
+            .with_second(0)?
+            .with_minute(0)?
+            .with_hour(0)?
+            .with_day0(0)?
+            .with_month0(0),
+    }
+}
+
+pub(crate) fn date_time_end_of(date: NaiveDateTime, unit: DateUnit) -> Option<NaiveDateTime> {
+    match unit {
+        DateUnit::Second => Some(date),
+        DateUnit::Minute => date.with_second(59),
+        DateUnit::Hour => date.with_second(59)?.with_minute(59),
+        DateUnit::Day => date.with_second(59)?.with_minute(59)?.with_hour(23),
+        DateUnit::Week => date
+            .with_second(59)?
+            .with_minute(59)?
+            .with_hour(23)?
+            .checked_add_days(Days::new(date.weekday().num_days_from_sunday() as u64)),
+        DateUnit::Month => date
+            .with_second(59)?
+            .with_minute(59)?
+            .with_hour(23)?
+            .with_day0(get_month_days(&date)? as u32),
+        DateUnit::Year => date
+            .with_second(59)?
+            .with_minute(59)?
+            .with_hour(23)?
+            .with_day0(get_month_days(&date)? as u32)?
+            .with_month0(11),
+    }
+}
+
+fn get_month_days(date: &NaiveDateTime) -> Option<i64> {
+    Some(
+        NaiveDate::from_ymd_opt(
+            match date.month() {
+                12 => date.year() + 1,
+                _ => date.year(),
+            },
+            match date.month() {
+                12 => 1,
+                _ => date.month() + 1,
+            },
+            1,
+        )?
+        .signed_duration_since(NaiveDate::from_ymd_opt(date.year(), date.month(), 1)?)
+        .num_days(),
+    )
 }

@@ -4,6 +4,8 @@
 
 ZEN Engine is business friendly Open-Source Business Rules Engine (BRE) to execute decision models according to the [GoRules JSON Decision Model (JDM)](https://gorules.io/docs/rules-engine/json-decision-model) standard. It is written in **Rust** and provides native bindings for **NodeJS** and **Python**. ZEN Engine allows to load and execute JSON Decision Model (JDM) from JSON files.
 
+<img width="1258" alt="JSON Decision Model" src="https://user-images.githubusercontent.com/60513195/224425568-4a717e34-3d4b-4cc6-b031-8cd35f8ff459.png">
+
 If you are interested in an open-source editor please take a look at our [JDM Editor](https://github.com/gorules/jdm-editor) repository.
 ## Usage
 
@@ -83,8 +85,6 @@ JDM is a modeling standard for business decisions and business rules and is stor
 An open-source version of the React Component is available on our [JDM Editor](https://github.com/gorules/jdm-editor) repo.
 
 You can try [Free Online Editor](https://editor.gorules.io) with built in Simulator.
-
-<img width="1258" alt="JSON Decision Model" src="https://user-images.githubusercontent.com/60513195/224425568-4a717e34-3d4b-4cc6-b031-8cd35f8ff459.png">
 
 [JSON Example](test-data/credit-analysis.json)
 

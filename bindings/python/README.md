@@ -1,8 +1,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+# Python Rules Engine
 
-## Python ZEN Engine
+ZEN Engine is a cross-platform, Open-Source Business Rules Engine (BRE). It is written in **Rust** and provides native bindings for **NodeJS** and **Python**. ZEN Engine allows to load and execute [JSON Decision Model (JDM)](https://gorules.io/docs/rules-engine/json-decision-model) from JSON files.
 
-ZEN Engine is business friendly Open-Source Business Rules Engine (BRE) to execute decision models according to the [GoRules JSON Decision Model (JDM)](https://gorules.io/docs/rules-engine/json-decision-model) standard. It is written in **Rust** and provides native bindings for **NodeJS** and **Python**. ZEN Engine allows to load and execute JSON Decision Model (JDM) from JSON files.
+<img width="1258" alt="JSON Decision Model" src="https://user-images.githubusercontent.com/60513195/224425568-4a717e34-3d4b-4cc6-b031-8cd35f8ff459.png">
+
+An open-source React editor is available on our [JDM Editor](https://github.com/gorules/jdm-editor) repo.
 
 ## Usage
 
@@ -58,9 +61,9 @@ Similar to this example you can also utilise loader to load from different place
 
 JDM is a modeling standard for business decisions and business rules and is stored in a JSON format. Decision models are represented by graphs. Graphs are built using nodes and edges. Edges are used to pass the data from one node to another (left-side to right-side).
 
-You can try [Free Online Editor](https://editor.gorules.io) with built in Simulator.
+An open-source version of the React Component is available on our [JDM Editor](https://github.com/gorules/jdm-editor) repo.
 
-<img width="1258" alt="JSON Decision Model" src="https://user-images.githubusercontent.com/60513195/224425568-4a717e34-3d4b-4cc6-b031-8cd35f8ff459.png">
+You can try [Free Online Editor](https://editor.gorules.io) with built-in Simulator.
 
 [JSON Example](https://github.com/gorules/zen/blob/master/test-data/credit-analysis.json)
 

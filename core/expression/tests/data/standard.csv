@@ -121,6 +121,12 @@ matches("Hello, World!", "H[a-z]+, W[a-z]+!");; true
 matches("Hello, World!", "[0-9]+");; false
 extract("2022-09-18", "(\d{4})-(\d{2})-(\d{2})");; ["2022-09-18", "2022", "09", "18"]
 
+# String Slice
+string[0:5];{string: 'sample_string'};'sample'
+string[7:12];{string: 'sample_string'};'string'
+string[7:];{string: 'sample_string'};'string'
+string[:5];{string: 'sample_string'};'sample'
+
 # Array
 len([1, 2, 3, 4, 5]);; 5
 sum([1, 2, 3, 4, 5]);; 15

@@ -16,7 +16,6 @@ use serde_json::{Map, Number, Value};
 pub enum Variable<'a> {
     Null,
     Bool(bool),
-    Int(i64),
     Number(Decimal),
     String(&'a str),
     Array(&'a [&'a Variable<'a>]),

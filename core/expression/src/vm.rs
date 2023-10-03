@@ -13,7 +13,7 @@ use rust_decimal_macros::dec;
 use thiserror::Error;
 
 use crate::helpers::{date_time, date_time_end_of, date_time_start_of, time};
-use crate::opcodes::Variable::{Array, Bool, Int, Interval, Null, Number, Object, String};
+use crate::opcodes::Variable::{Array, Bool, Interval, Null, Number, Object, String};
 use crate::opcodes::{Opcode, Variable};
 use crate::vm::VMError::{OpcodeErr, OpcodeOutOfBounds, ParseDateTimeErr, StackOutOfBounds};
 
@@ -102,10 +102,9 @@ impl<'a> VM<'a> {
             self.ip += 1;
 
             match op {
-                Opcode::Push(v) => match v {
-                    Int(a) => self.push(Number(Decimal::from(*a))),
-                    _ => self.push_ref(v),
-                },
+                Opcode::Push(v) => {
+                    self.push_ref(v);
+                }
                 Opcode::Pop => {
                     self.pop()?;
                 }
@@ -129,6 +128,18 @@ impl<'a> VM<'a> {
                             })?)
                             .unwrap_or(&NULL_VAR),
                         ),
+                        (String(str), Number(n)) => {
+                            let index = n.to_usize().ok_or_else(|| OpcodeErr {
+                                opcode: "Fetch".into(),
+                                message: "Failed to convert to usize".into(),
+                            })?;
+
+                            if let Some(slice) = str.get(index..index + 1) {
+                                self.push(String(self.bump.alloc_str(slice)));
+                            } else {
+                                self.push_ref(&NULL_VAR)
+                            };
+                        }
                         _ => self.push_ref(&NULL_VAR),
                     }
                 }
@@ -1018,7 +1029,7 @@ impl<'a> VM<'a> {
                 Opcode::Slice => {
                     let from_var = self.pop()?;
                     let to_var = self.pop()?;
-                    let slice = self.pop()?;
+                    let current = self.pop()?;
 
                     match (from_var, to_var) {
                         (Number(f), Number(t)) => {
@@ -1031,12 +1042,22 @@ impl<'a> VM<'a> {
                                 message: "Failed to get range to".into(),
                             })?;
 
-                            match slice {
+                            match current {
                                 Array(arr) => {
-                                    self.stack.push(self.bump.alloc(Array(&arr[from..=to])))
+                                    let slice = arr.get(from..=to).ok_or_else(|| OpcodeErr {
+                                        opcode: "Slice".into(),
+                                        message: "Index out of range".into(),
+                                    })?;
+
+                                    self.stack.push(self.bump.alloc(Array(slice)))
                                 }
                                 String(s) => {
-                                    self.stack.push(self.bump.alloc(String(&s[from..=to])))
+                                    let slice = s.get(from..=to).ok_or_else(|| OpcodeErr {
+                                        opcode: "Slice".into(),
+                                        message: "Index out of range".into(),
+                                    })?;
+
+                                    self.stack.push(self.bump.alloc(String(slice)))
                                 }
                                 _ => {
                                     return Err(OpcodeErr {

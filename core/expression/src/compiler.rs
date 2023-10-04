@@ -2,6 +2,8 @@ use std::cell::UnsafeCell;
 use std::rc::Rc;
 
 use bumpalo::Bump;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use thiserror::Error;
 
 use crate::ast::Node;
@@ -117,7 +119,7 @@ impl<'a> Compiler<'a> {
             Node::Array(v) => {
                 v.iter()
                     .try_for_each(|&n| self.compile_node(n).map(|_| ()))?;
-                self.emit(Opcode::Push(Variable::Int(v.len() as i64)));
+                self.emit(Opcode::Push(Variable::Number(Decimal::from(v.len()))));
                 Ok(self.emit(Opcode::Array))
             }
             Node::Identifier(v) => Ok(self.emit(Opcode::FetchEnv(v))),
@@ -133,12 +135,14 @@ impl<'a> Compiler<'a> {
                     self.compile_node(t)?;
                 } else {
                     self.emit(Opcode::Len);
+                    self.emit(Opcode::Push(Variable::Number(dec!(1))));
+                    self.emit(Opcode::Subtract);
                 }
 
                 if let Some(f) = from {
                     self.compile_node(f)?;
                 } else {
-                    self.emit(Opcode::Push(Variable::Int(0)));
+                    self.emit(Opcode::Push(Variable::Number(dec!(0))));
                 }
 
                 Ok(self.emit(Opcode::Slice))
@@ -451,7 +455,7 @@ impl<'a> Compiler<'a> {
                         Ok(())
                     })?;
                     self.emit(Opcode::GetCount);
-                    self.emit(Opcode::Push(Variable::Int(1)));
+                    self.emit(Opcode::Push(Variable::Number(dec!(1))));
                     self.emit(Opcode::Equal);
                     Ok(self.emit(Opcode::End))
                 }

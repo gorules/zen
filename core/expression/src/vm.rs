@@ -13,8 +13,8 @@ use rust_decimal_macros::dec;
 use thiserror::Error;
 
 use crate::helpers::{date_time, date_time_end_of, date_time_start_of, time};
-use crate::opcodes::Variable::{Array, Bool, Interval, Null, Number, Object, String};
-use crate::opcodes::{Opcode, Variable};
+use crate::opcodes::Variable::{Array, Bool, Null, Number, Object, String};
+use crate::opcodes::{IntervalObject, Opcode, Variable};
 use crate::vm::VMError::{OpcodeErr, OpcodeOutOfBounds, ParseDateTimeErr, StackOutOfBounds};
 
 const NULL_VAR: &'static Variable = &Null;
@@ -256,63 +256,63 @@ impl<'a> VM<'a> {
 
                             self.stack.push(self.bump.alloc(Bool(is_in)));
                         }
-                        (
-                            Number(v),
-                            Interval {
-                                left_bracket,
-                                right_bracket,
-                                left,
-                                right,
-                            },
-                        ) => match (left, right) {
-                            (Number(l), Number(r)) => {
-                                let mut is_open = false;
-
-                                let first = match *left_bracket {
-                                    "[" => l <= v,
-                                    "(" => l < v,
-                                    "]" => {
-                                        is_open = true;
-                                        l >= v
-                                    }
-                                    ")" => {
-                                        is_open = true;
-                                        l > v
-                                    }
-                                    _ => {
-                                        return Err(OpcodeErr {
-                                            opcode: "In".into(),
-                                            message: "Unsupported bracket".into(),
-                                        })
-                                    }
-                                };
-
-                                let second = match *right_bracket {
-                                    "]" => r >= v,
-                                    ")" => r > v,
-                                    "[" => r <= v,
-                                    "(" => r < v,
-                                    _ => {
-                                        return Err(OpcodeErr {
-                                            opcode: "In".into(),
-                                            message: "Unsupported bracket".into(),
-                                        })
-                                    }
-                                };
-
-                                let open_stmt = is_open && (first || second);
-                                let closed_stmt = !is_open && first && second;
-
-                                self.stack
-                                    .push(self.bump.alloc(Bool(open_stmt || closed_stmt)));
-                            }
-                            _ => {
-                                return Err(OpcodeErr {
+                        (Number(v), Object(_)) => {
+                            let interval =
+                                IntervalObject::try_from_object(b).ok_or_else(|| OpcodeErr {
                                     opcode: "In".into(),
-                                    message: "Unsupported type".into(),
-                                })
+                                    message: "Failed to deconstruct interval".into(),
+                                })?;
+
+                            match (interval.left, interval.right) {
+                                (Number(l), Number(r)) => {
+                                    let mut is_open = false;
+
+                                    let first = match interval.left_bracket {
+                                        "[" => l <= v,
+                                        "(" => l < v,
+                                        "]" => {
+                                            is_open = true;
+                                            l >= v
+                                        }
+                                        ")" => {
+                                            is_open = true;
+                                            l > v
+                                        }
+                                        _ => {
+                                            return Err(OpcodeErr {
+                                                opcode: "In".into(),
+                                                message: "Unsupported bracket".into(),
+                                            })
+                                        }
+                                    };
+
+                                    let second = match interval.right_bracket {
+                                        "]" => r >= v,
+                                        ")" => r > v,
+                                        "[" => r <= v,
+                                        "(" => r < v,
+                                        _ => {
+                                            return Err(OpcodeErr {
+                                                opcode: "In".into(),
+                                                message: "Unsupported bracket".into(),
+                                            })
+                                        }
+                                    };
+
+                                    let open_stmt = is_open && (first || second);
+                                    let closed_stmt = !is_open && first && second;
+
+                                    self.stack
+                                        .push(self.bump.alloc(Bool(open_stmt || closed_stmt)));
+                                }
+                                _ => {
+                                    return Err(OpcodeErr {
+                                        opcode: "In".into(),
+                                        message: "Unsupported type".into(),
+                                    })
+                                }
                             }
-                        },
+                        }
                         (String(a), Array(arr)) => {
                             let is_in = arr.iter().any(|b| match b {
                                 String(b) => a == b,
@@ -812,12 +812,16 @@ impl<'a> VM<'a> {
                     let a = self.pop()?;
 
                     match (a, b) {
-                        (Number(_), Number(_)) => self.stack.push(self.bump.alloc(Interval {
-                            left_bracket,
-                            right_bracket,
-                            left: a,
-                            right: b,
-                        })),
+                        (Number(_), Number(_)) => {
+                            let interval = IntervalObject {
+                                left_bracket,
+                                right_bracket,
+                                left: a,
+                                right: b,
+                            };
+
+                            self.push(interval.cast_to_object(self.bump));
+                        }
                         _ => {
                             return Err(OpcodeErr {
                                 opcode: "Interval".into(),

@@ -1,11 +1,11 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::is_token_type;
 use crate::lexer::cursor::{Cursor, CursorItem};
 use crate::lexer::error::LexerError;
 use crate::lexer::error::LexerError::{UnexpectedEof, UnmatchedSymbol};
 use crate::lexer::token::{Token, TokenKind};
+use crate::{is_token_type, token_type};
 
 type TokenSlice<'a> = Rc<RefCell<Vec<Token<'a>>>>;
 
@@ -54,17 +54,17 @@ impl<'a> Scanner<'a> {
     pub fn scan(&self) -> VoidResult {
         while let Some((i, s)) = self.cursor.peek() {
             match s {
-                _ if is_token_type!(s, "space") => {
+                token_type!("space") => {
                     self.cursor.next();
                     Ok(())
                 }
-                _ if is_token_type!(s, "quote") => self.string(),
-                _ if is_token_type!(s, "digit") => self.number(),
-                _ if is_token_type!(s, "bracket") => self.bracket(),
-                _ if is_token_type!(s, "cmp_operator") => self.operator(),
-                _ if is_token_type!(s, "operator") => self.simple_operator(),
+                token_type!("quote") => self.string(),
+                token_type!("digit") => self.number(),
+                token_type!("bracket") => self.bracket(),
+                token_type!("cmp_operator") => self.cmp_operator(),
+                token_type!("operator") => self.operator(),
                 '.' => self.dot(),
-                _ if is_token_type!(s, "alpha") => self.identifier(),
+                token_type!("alpha") => self.identifier(),
 
                 _ => Err(UnmatchedSymbol {
                     symbol: s,
@@ -178,7 +178,7 @@ impl<'a> Scanner<'a> {
         Ok(())
     }
 
-    fn operator(&self) -> VoidResult {
+    fn cmp_operator(&self) -> VoidResult {
         let (start, _) = self.next()?;
         let mut end = start;
 
@@ -195,7 +195,7 @@ impl<'a> Scanner<'a> {
         Ok(())
     }
 
-    fn simple_operator(&self) -> VoidResult {
+    fn operator(&self) -> VoidResult {
         let (start, _) = self.next()?;
 
         self.push(Token {

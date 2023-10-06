@@ -4,13 +4,13 @@ use bumpalo::Bump;
 use chrono::NaiveDateTime;
 use hashbrown::hash_map::DefaultHashBuilder;
 use hashbrown::BumpWrapper;
+use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::Decimal;
+use serde_json::{Map, Number, Value};
 
 use crate::helpers::date_time;
 use crate::vm::VMError;
 use crate::vm::VMError::{OpcodeErr, ParseDateTimeErr};
-use rust_decimal::prelude::ToPrimitive;
-use rust_decimal::Decimal;
-use serde_json::{Map, Number, Value};
 
 #[derive(Debug)]
 pub enum Variable<'a> {
@@ -20,12 +20,6 @@ pub enum Variable<'a> {
     String(&'a str),
     Array(&'a [&'a Variable<'a>]),
     Object(hashbrown::HashMap<&'a str, &'a Variable<'a>, DefaultHashBuilder, BumpWrapper<'a>>),
-    Interval {
-        left_bracket: &'a str,
-        right_bracket: &'a str,
-        left: &'a Variable<'a>,
-        right: &'a Variable<'a>,
-    },
 }
 
 impl<'a> Variable<'a> {
@@ -62,6 +56,13 @@ impl<'a> Variable<'a> {
                 Variable::Object(tree)
             }
             Value::Null => Variable::Null,
+        }
+    }
+
+    pub(crate) fn as_str(&self) -> Option<&'a str> {
+        match self {
+            Variable::String(str) => Some(str),
+            _ => None,
         }
     }
 }
@@ -161,7 +162,6 @@ impl TryFrom<&Variable<'_>> for Value {
 
                 Ok(Value::Object(t))
             }
-            _ => Err(()),
         }
     }
 }
@@ -187,5 +187,55 @@ impl TryFrom<&Variable<'_>> for NaiveDateTime {
                 message: "Unsupported type".into(),
             }),
         }
+    }
+}
+
+pub(crate) struct IntervalObject<'a> {
+    pub(crate) left_bracket: &'a str,
+    pub(crate) right_bracket: &'a str,
+    pub(crate) left: &'a Variable<'a>,
+    pub(crate) right: &'a Variable<'a>,
+}
+
+impl<'a> IntervalObject<'a> {
+    pub(crate) fn cast_to_object(&self, bump: &'a Bump) -> Variable<'a> {
+        let mut tree: hashbrown::HashMap<&'a str, &'a Variable, _, _> =
+            hashbrown::HashMap::new_in(BumpWrapper(bump));
+
+        tree.insert("_symbol", &Variable::String("Interval"));
+        tree.insert(
+            "left_bracket",
+            bump.alloc(Variable::String(self.left_bracket)),
+        );
+        tree.insert(
+            "right_bracket",
+            bump.alloc(Variable::String(self.right_bracket)),
+        );
+        tree.insert("left", self.left);
+        tree.insert("right", self.right);
+
+        Variable::Object(tree)
+    }
+
+    pub(crate) fn try_from_object(var: &'a Variable<'a>) -> Option<IntervalObject> {
+        let Variable::Object(tree) = var else {
+            return None;
+        };
+
+        if tree.get("_symbol")?.as_str()? != "Interval" {
+            return None;
+        }
+
+        let left_bracket = tree.get("left_bracket")?.as_str()?;
+        let right_bracket = tree.get("right_bracket")?.as_str()?;
+        let left = tree.get("left")?;
+        let right = tree.get("right")?;
+
+        Some(Self {
+            left_bracket,
+            right_bracket,
+            right,
+            left,
+        })
     }
 }

@@ -235,3 +235,11 @@ number(123.123);;123.123
 number(123);;123
 number(true);;1
 number(false);;0
+
+# Type check
+isNumeric(123.123);;true
+isNumeric(123);;true
+isNumeric('123.123');;true
+isNumeric('123');;true
+isNumeric('string');;false
+isNumeric(true);;false

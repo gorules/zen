@@ -10,6 +10,7 @@ pub(crate) const BUILT_INS: Map<&'static str, BuiltIn> = phf_map! {
 
     "string" => BuiltIn { arity: Arity::Single },
     "number" => BuiltIn { arity: Arity::Single },
+    "isNumeric" => BuiltIn { arity: Arity::Single },
 
     "upper" => BuiltIn { arity: Arity::Single },
     "lower" => BuiltIn { arity: Arity::Single },

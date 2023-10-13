@@ -143,12 +143,18 @@ pub enum Opcode<'a> {
     End,
     Flatten,
     TypeConversion(TypeConversionKind),
+    TypeCheck(TypeCheckKind),
 }
 
 #[derive(Debug)]
 pub enum TypeConversionKind {
     Number,
     String,
+}
+
+#[derive(Debug)]
+pub enum TypeCheckKind {
+    Numeric,
 }
 
 impl TryFrom<&Variable<'_>> for Value {

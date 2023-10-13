@@ -14,7 +14,7 @@ use thiserror::Error;
 
 use crate::helpers::{date_time, date_time_end_of, date_time_start_of, time};
 use crate::opcodes::Variable::{Array, Bool, Null, Number, Object, String};
-use crate::opcodes::{IntervalObject, Opcode, TypeConversionKind, Variable};
+use crate::opcodes::{IntervalObject, Opcode, TypeCheckKind, TypeConversionKind, Variable};
 use crate::vm::VMError::{OpcodeErr, OpcodeOutOfBounds, ParseDateTimeErr, StackOutOfBounds};
 
 const NULL_VAR: &'static Variable = &Null;
@@ -1205,6 +1205,19 @@ impl<'a> VM<'a> {
                     };
 
                     self.stack.push(self.bump.alloc(Number(dur.into())));
+                }
+                Opcode::TypeCheck(check) => {
+                    let var = self.pop()?;
+
+                    let is_equal = match (check, var) {
+                        (TypeCheckKind::Numeric, String(str)) => {
+                            Decimal::from_str_exact(str).is_ok()
+                        }
+                        (TypeCheckKind::Numeric, Number(_)) => true,
+                        (TypeCheckKind::Numeric, _) => false,
+                    };
+
+                    self.push(Bool(is_equal));
                 }
                 Opcode::TypeConversion(conversion) => {
                     let var = self.pop()?;

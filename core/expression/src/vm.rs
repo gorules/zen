@@ -14,7 +14,7 @@ use thiserror::Error;
 
 use crate::helpers::{date_time, date_time_end_of, date_time_start_of, time};
 use crate::opcodes::Variable::{Array, Bool, Null, Number, Object, String};
-use crate::opcodes::{IntervalObject, Opcode, Variable};
+use crate::opcodes::{IntervalObject, Opcode, TypeConversionKind, Variable};
 use crate::vm::VMError::{OpcodeErr, OpcodeOutOfBounds, ParseDateTimeErr, StackOutOfBounds};
 
 const NULL_VAR: &'static Variable = &Null;
@@ -1205,6 +1205,55 @@ impl<'a> VM<'a> {
                     };
 
                     self.stack.push(self.bump.alloc(Number(dur.into())));
+                }
+                Opcode::TypeConversion(conversion) => {
+                    let var = self.pop()?;
+
+                    let make_string = |val: &str| self.bump.alloc(String(self.bump.alloc_str(val)));
+
+                    let converted_var = match (conversion, var) {
+                        (TypeConversionKind::String, String(_)) => var,
+                        (TypeConversionKind::String, Number(num)) => {
+                            make_string(num.to_string().as_str())
+                        }
+                        (TypeConversionKind::String, Bool(v)) => {
+                            make_string(v.to_string().as_str())
+                        }
+                        (TypeConversionKind::String, _) => {
+                            return Err(OpcodeErr {
+                                opcode: "TypeConversion".into(),
+                                message: format!(
+                                    "Type {} cannot be converted to string",
+                                    var.type_name()
+                                ),
+                            })
+                        }
+                        (TypeConversionKind::Number, String(str)) => {
+                            let parsed_number =
+                                Decimal::from_str_exact(str).map_err(|_| OpcodeErr {
+                                    opcode: "TypeConversion".into(),
+                                    message: "Failed to parse string to number".into(),
+                                })?;
+
+                            self.bump.alloc(Number(parsed_number))
+                        }
+                        (TypeConversionKind::Number, Number(_)) => var,
+                        (TypeConversionKind::Number, Bool(v)) => {
+                            let number = if *v { dec!(1) } else { dec!(0) };
+                            self.bump.alloc(Number(number))
+                        }
+                        (TypeConversionKind::Number, _) => {
+                            return Err(OpcodeErr {
+                                opcode: "TypeConversion".into(),
+                                message: format!(
+                                    "Type {} cannot be converted to number",
+                                    var.type_name()
+                                ),
+                            })
+                        }
+                    };
+
+                    self.push_ref(converted_var);
                 }
                 Opcode::JumpIfEnd(j) => {
                     let scope = self.scopes.last().ok_or_else(|| OpcodeErr {

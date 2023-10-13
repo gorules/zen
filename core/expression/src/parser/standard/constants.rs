@@ -20,6 +20,9 @@ pub(crate) static BUILT_INS: Lazy<HashMap<&'static str, BuiltIn, ADefHasher>> = 
         "lower" => BuiltIn { arity: Arity::Single },
         "flatten" => BuiltIn { arity: Arity::Single },
 
+        "string" => BuiltIn { arity: Arity::Single },
+        "number" => BuiltIn { arity: Arity::Single },
+
         "abs" => BuiltIn { arity: Arity::Single },
         "sum" => BuiltIn { arity: Arity::Single },
         "avg" => BuiltIn { arity: Arity::Single },

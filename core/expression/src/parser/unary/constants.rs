@@ -8,6 +8,9 @@ pub(crate) const BUILT_INS: Map<&'static str, BuiltIn> = phf_map! {
     "time" => BuiltIn { arity: Arity::Single },
     "duration" => BuiltIn { arity: Arity::Single },
 
+    "string" => BuiltIn { arity: Arity::Single },
+    "number" => BuiltIn { arity: Arity::Single },
+
     "upper" => BuiltIn { arity: Arity::Single },
     "lower" => BuiltIn { arity: Arity::Single },
 

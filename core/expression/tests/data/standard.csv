@@ -209,7 +209,7 @@ abs(-7 + 4) * (8 - 6^2) < 34;; true
 (1 + 2) > 2;; true
 (1 + 2) < 5;; true
 
-# Date Functions;;
+# Date Functions
 dateString(startOf('2023-01-01 15:45:01', 'day'));;'2023-01-01 00:00:00'
 dateString(endOf('2023-01-01 15:45:01', 'd'));;'2023-01-01 23:59:59'
 dateString(startOf('2023-01-01 15:45:01', 'hour'));;'2023-01-01 15:00:00'
@@ -222,3 +222,16 @@ dateString(startOf('2023-01-04 15:45:01', 'month'));;'2023-01-01 00:00:00'
 dateString(endOf('2023-01-04 15:45:01', 'M'));;'2023-01-31 23:59:59'
 dateString(startOf('2023-01-04 15:45:01', 'year'));;'2023-01-01 00:00:00'
 dateString(endOf('2023-01-04 15:45:01', 'y'));;'2023-12-31 23:59:59'
+
+# Type conversions
+string(123.123);;'123.123'
+string(123);;'123'
+string(true);;'true'
+string(false);;'false'
+string('already string');;'already string'
+number('123.123');;123.123
+number('123');;123
+number(123.123);;123.123
+number(123);;123
+number(true);;1
+number(false);;0

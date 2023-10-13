@@ -11,7 +11,7 @@ use crate::ast::Node;
 use crate::compiler::CompilerError::{
     ArgumentNotFound, UnknownBinaryOperator, UnknownBuiltIn, UnknownUnaryOperator,
 };
-use crate::opcodes::{Opcode, Variable};
+use crate::opcodes::{Opcode, TypeConversionKind, Variable};
 
 type Bytecode<'a> = Rc<UnsafeCell<Vec<&'a Opcode<'a>>>>;
 
@@ -390,6 +390,14 @@ impl<'a> Compiler<'a> {
                 "rand" => {
                     self.compile_argument(name, arguments, 0)?;
                     Ok(self.emit(Opcode::Random))
+                }
+                "string" => {
+                    self.compile_argument(name, arguments, 0)?;
+                    Ok(self.emit(Opcode::TypeConversion(TypeConversionKind::String)))
+                }
+                "number" => {
+                    self.compile_argument(name, arguments, 0)?;
+                    Ok(self.emit(Opcode::TypeConversion(TypeConversionKind::Number)))
                 }
                 "startOf" | "endOf" => {
                     self.compile_argument(name, arguments, 0)?;

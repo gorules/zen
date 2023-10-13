@@ -65,6 +65,17 @@ impl<'a> Variable<'a> {
             _ => None,
         }
     }
+
+    pub(crate) fn type_name(&self) -> &str {
+        match self {
+            Variable::Null => "null",
+            Variable::Bool(_) => "bool",
+            Variable::Number(_) => "number",
+            Variable::String(_) => "string",
+            Variable::Array(_) => "array",
+            Variable::Object(_) => "object",
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -131,6 +142,13 @@ pub enum Opcode<'a> {
     Begin,
     End,
     Flatten,
+    TypeConversion(TypeConversionKind),
+}
+
+#[derive(Debug)]
+pub enum TypeConversionKind {
+    Number,
+    String,
 }
 
 impl TryFrom<&Variable<'_>> for Value {

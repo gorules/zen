@@ -107,7 +107,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         if: ${{ !matrix.settings.docker }}
         with:
-          toolchain: nightly-2023-03-01
+          toolchain: stable
           targets: ${{ matrix.settings.target }}
 
       - name: Cache cargo registry

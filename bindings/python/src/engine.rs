@@ -47,7 +47,7 @@ impl PyZenEngine {
             return Ok(Default::default());
         };
 
-        let Some(loader_any) = options.get_item("loader") else {
+        let Some(loader_any) = options.get_item("loader")? else {
             return Ok(Default::default());
         };
 

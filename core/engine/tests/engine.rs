@@ -180,3 +180,15 @@ async fn engine_function_imports() {
     assert!(result.dayjs_valid);
     assert!(result.moment_valid);
 }
+
+#[tokio::test]
+async fn engine_switch_node() {
+    let engine = DecisionEngine::new(create_fs_loader());
+
+    let switch_node_r = engine
+        .evaluate("switch-node.json", &json!({ "input": 12 }))
+        .await;
+
+    let table = switch_node_r.unwrap();
+    println!("{table:?}");
+}

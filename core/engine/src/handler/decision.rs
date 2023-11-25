@@ -30,7 +30,7 @@ impl<T: DecisionLoader> DecisionHandler<T> {
         }?;
 
         let sub_decision = self.loader.load(&content.key).await?;
-        let sub_tree = DecisionGraph::try_new(DecisionGraphConfig {
+        let mut sub_tree = DecisionGraph::try_new(DecisionGraphConfig {
             content: sub_decision.deref(),
             max_depth: self.max_depth,
             loader: self.loader.clone(),

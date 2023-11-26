@@ -186,7 +186,7 @@ async fn engine_switch_node() {
     let engine = DecisionEngine::new(create_fs_loader());
 
     let switch_node_r = engine
-        .evaluate("switch-node.json", &json!({ "input": 12 }))
+        .evaluate("switch-node.json", &json!({ "color": "yellow" }))
         .await;
 
     let table = switch_node_r.unwrap();

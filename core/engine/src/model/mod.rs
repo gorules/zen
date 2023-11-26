@@ -118,7 +118,7 @@ pub struct Expression {
 #[serde(rename_all = "camelCase")]
 pub struct SwitchNodeContent {
     #[serde(default)]
-    pub mode: SwitchNodeMode,
+    pub hit_policy: SwitchStatementHitPolicy,
     pub statements: Vec<SwitchStatement>,
 }
 
@@ -133,7 +133,7 @@ pub struct SwitchStatement {
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default)]
 #[cfg_attr(feature = "bincode", derive(Encode, Decode))]
 #[serde(rename_all = "camelCase")]
-pub enum SwitchNodeMode {
+pub enum SwitchStatementHitPolicy {
     #[default]
     First,
     Collect,

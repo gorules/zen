@@ -6,11 +6,13 @@ use petgraph::graph::{DiGraph, EdgeIndex, NodeIndex};
 use petgraph::matrix_graph::Zero;
 use petgraph::visit::{EdgeRef, IntoNeighbors, IntoNodeIdentifiers, Reversed, VisitMap, Visitable};
 use petgraph::{Incoming, Outgoing};
-use serde_json::{Map, Value};
+use serde_json::{json, Map, Value};
 
 use zen_expression::isolate::Isolate;
 
-use crate::model::{DecisionEdge, DecisionNode, DecisionNodeKind, SwitchNodeMode, SwitchStatement};
+use crate::model::{
+    DecisionEdge, DecisionNode, DecisionNodeKind, SwitchStatement, SwitchStatementHitPolicy,
+};
 
 pub(crate) type DiDecisionGraph<'a> = DiGraph<&'a DecisionNode, &'a DecisionEdge>;
 
@@ -24,8 +26,6 @@ pub(crate) struct GraphWalker {
 const ITER_MAX: usize = 1_000;
 
 impl GraphWalker {
-    /// Create a new `Topo`, using the graph's visitor map, and put all
-    /// initial nodes in the to visit list.
     pub fn new(graph: &DiDecisionGraph) -> Self {
         let mut topo = Self::empty(graph);
         topo.extend_with_initials(graph);
@@ -91,7 +91,6 @@ impl GraphWalker {
         let mut value = Value::Null;
         while let Some(nid) = self.to_visit.pop() {
             let decision_node = *g.node_weight(nid)?;
-            println!("{:?}", &decision_node);
             if self.ordered.is_visited(&nid) {
                 continue;
             }
@@ -99,26 +98,21 @@ impl GraphWalker {
             self.ordered.visit(nid);
 
             if let DecisionNodeKind::SwitchNode { content } = &decision_node.kind {
-                let input_data = self.incoming_node_data(g, nid);
+                let mut input_data = self.incoming_node_data(g, nid);
+                let input_context = json!({ "$": &input_data });
+                merge_json(&mut input_data, &input_context, true);
+
                 let isolate = Isolate::default();
                 isolate.inject_env(&input_data);
 
                 let mut statement_iter = content.statements.iter();
-                let valid_statements: Vec<&SwitchStatement> = match content.mode {
-                    SwitchNodeMode::First => statement_iter
-                        .find(|&s| {
-                            isolate
-                                .run_standard(&s.condition)
-                                .map_or(false, |v| v.as_bool().unwrap_or(false))
-                        })
+                let valid_statements: Vec<&SwitchStatement> = match content.hit_policy {
+                    SwitchStatementHitPolicy::First => statement_iter
+                        .find(|&s| switch_statement_evaluate(&isolate, &s))
                         .into_iter()
                         .collect(),
-                    SwitchNodeMode::Collect => statement_iter
-                        .filter(|&s| {
-                            isolate
-                                .run_standard(&s.condition)
-                                .map_or(false, |v| v.as_bool().unwrap_or(false))
-                        })
+                    SwitchStatementHitPolicy::Collect => statement_iter
+                        .filter(|&s| switch_statement_evaluate(&isolate, &s))
                         .collect(),
                 };
 
@@ -163,6 +157,19 @@ impl GraphWalker {
     }
 }
 
+fn switch_statement_evaluate<'a>(
+    isolate: &Isolate<'a>,
+    switch_statement: &'a SwitchStatement,
+) -> bool {
+    if switch_statement.condition.is_empty() {
+        return true;
+    }
+
+    isolate
+        .run_standard(switch_statement.condition.as_str())
+        .map_or(false, |v| v.as_bool().unwrap_or(false))
+}
+
 fn remove_edge_recursive(g: &mut DiDecisionGraph, edge_id: EdgeIndex) {
     let Some((source_nid, target_nid)) = g.edge_endpoints(edge_id) else {
         return;
@@ -182,9 +189,9 @@ fn remove_edge_recursive(g: &mut DiDecisionGraph, edge_id: EdgeIndex) {
             remove_edge_recursive(g, edge_id.clone());
         });
 
-        // if g.edges(target_nid).count().is_zero() {
-        //     g.remove_node(target_nid);
-        // }
+        if g.edges(target_nid).count().is_zero() {
+            g.remove_node(target_nid);
+        }
     }
 
     // Remove dead branches from source
@@ -199,9 +206,9 @@ fn remove_edge_recursive(g: &mut DiDecisionGraph, edge_id: EdgeIndex) {
             remove_edge_recursive(g, edge_id.clone());
         });
 
-        // if g.edges(source_nid).count().is_zero() {
-        //     g.remove_node(source_nid);
-        // }
+        if g.edges(source_nid).count().is_zero() {
+            g.remove_node(source_nid);
+        }
     }
 }
 

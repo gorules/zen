@@ -116,8 +116,13 @@ impl GraphWalker {
                         .collect(),
                 };
 
+                let valid_statements_trace: Value = valid_statements
+                    .iter()
+                    .map(|&statement| json!({ "id": &statement.id }))
+                    .collect();
+                value = json!({ "statements": valid_statements_trace });
+
                 // Remove all non-valid edges
-                value = serde_json::to_value(&valid_statements).unwrap_or_default();
                 let edges_to_remove: Vec<EdgeIndex> = g
                     .edges_directed(nid, Outgoing)
                     .filter(|edge| {

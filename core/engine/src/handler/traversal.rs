@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use fixedbitset::FixedBitSet;
 use petgraph::data::DataMap;
-use petgraph::graph::{DiGraph, EdgeIndex, NodeIndex};
 use petgraph::matrix_graph::Zero;
+use petgraph::prelude::{EdgeIndex, NodeIndex, StableDiGraph};
 use petgraph::visit::{EdgeRef, IntoNeighbors, IntoNodeIdentifiers, Reversed, VisitMap, Visitable};
 use petgraph::{Incoming, Outgoing};
 use serde_json::{json, Map, Value};
@@ -14,7 +14,7 @@ use crate::model::{
     DecisionEdge, DecisionNode, DecisionNodeKind, SwitchStatement, SwitchStatementHitPolicy,
 };
 
-pub(crate) type DiDecisionGraph<'a> = DiGraph<&'a DecisionNode, &'a DecisionEdge>;
+pub(crate) type StableDiDecisionGraph<'a> = StableDiGraph<&'a DecisionNode, &'a DecisionEdge>;
 
 pub(crate) struct GraphWalker {
     ordered: FixedBitSet,
@@ -26,13 +26,13 @@ pub(crate) struct GraphWalker {
 const ITER_MAX: usize = 1_000;
 
 impl GraphWalker {
-    pub fn new(graph: &DiDecisionGraph) -> Self {
+    pub fn new(graph: &StableDiDecisionGraph) -> Self {
         let mut topo = Self::empty(graph);
         topo.extend_with_initials(graph);
         topo
     }
 
-    fn extend_with_initials(&mut self, g: &DiDecisionGraph) {
+    fn extend_with_initials(&mut self, g: &StableDiDecisionGraph) {
         // find all initial nodes (nodes without incoming edges)
         self.to_visit
             .extend(g.node_identifiers().filter(move |&nid| {
@@ -41,7 +41,7 @@ impl GraphWalker {
             }));
     }
 
-    fn empty(graph: &DiDecisionGraph) -> Self {
+    fn empty(graph: &StableDiDecisionGraph) -> Self {
         Self {
             ordered: graph.visit_map(),
             to_visit: Vec::new(),
@@ -50,7 +50,7 @@ impl GraphWalker {
         }
     }
 
-    pub fn reset(&mut self, g: &DiDecisionGraph) {
+    pub fn reset(&mut self, g: &StableDiDecisionGraph) {
         self.ordered.clear();
         self.to_visit.clear();
         self.extend_with_initials(g);
@@ -66,7 +66,7 @@ impl GraphWalker {
         self.node_data.insert(node_id, value);
     }
 
-    pub fn incoming_node_data(&self, g: &DiDecisionGraph, node_id: NodeIndex) -> Value {
+    pub fn incoming_node_data(&self, g: &StableDiDecisionGraph, node_id: NodeIndex) -> Value {
         self.merge_node_data(g.neighbors_directed(node_id, Incoming))
     }
 
@@ -83,7 +83,7 @@ impl GraphWalker {
         })
     }
 
-    pub fn next(&mut self, g: &mut DiDecisionGraph) -> Option<(NodeIndex, Value)> {
+    pub fn next(&mut self, g: &mut StableDiDecisionGraph) -> Option<(NodeIndex, Value)> {
         if self.iter >= ITER_MAX {
             return None;
         }
@@ -175,7 +175,7 @@ fn switch_statement_evaluate<'a>(
         .map_or(false, |v| v.as_bool().unwrap_or(false))
 }
 
-fn remove_edge_recursive(g: &mut DiDecisionGraph, edge_id: EdgeIndex) {
+fn remove_edge_recursive(g: &mut StableDiDecisionGraph, edge_id: EdgeIndex) {
     let Some((source_nid, target_nid)) = g.edge_endpoints(edge_id) else {
         return;
     };

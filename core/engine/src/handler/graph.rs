@@ -14,13 +14,13 @@ use crate::handler::expression::ExpressionHandler;
 use crate::handler::function::FunctionHandler;
 use crate::handler::node::NodeRequest;
 use crate::handler::table::zen::DecisionTableHandler;
-use crate::handler::traversal::{DiDecisionGraph, GraphWalker};
+use crate::handler::traversal::{GraphWalker, StableDiDecisionGraph};
 use crate::loader::DecisionLoader;
 use crate::model::{DecisionContent, DecisionNodeKind};
 use crate::{EvaluationError, NodeError};
 
 pub struct DecisionGraph<'a, L: DecisionLoader> {
-    graph: DiDecisionGraph<'a>,
+    graph: StableDiDecisionGraph<'a>,
     loader: Arc<L>,
     trace: bool,
     max_depth: u8,
@@ -40,7 +40,7 @@ impl<'a, L: DecisionLoader> DecisionGraph<'a, L> {
         config: DecisionGraphConfig<'a, L>,
     ) -> Result<Self, DecisionGraphValidationError> {
         let content = config.content;
-        let mut graph = DiDecisionGraph::new();
+        let mut graph = StableDiDecisionGraph::new();
         let mut index_map = HashMap::new();
 
         for node in &content.nodes {

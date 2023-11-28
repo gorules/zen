@@ -1,0 +1,498 @@
+{
+  "tests": [{
+    "input": {
+      "company": {
+        "type": "LLC"
+      }
+    },
+    "output": {
+      "flag": {
+        "turnover": "red"
+      }
+    }
+  }, {
+    "input": {
+      "company": {
+        "type": "LLC",
+        "secretaries": ["first", "second"]
+      }
+    },
+    "output": {
+      "flag": {
+        "secretaries": "amber",
+        "turnover": "red"
+      }
+    }
+  }, {
+    "input": {
+      "company": {
+        "type": "LLC",
+        "secretaries": ["first", "second"],
+        "directors": ["first", "second"]
+      }
+    },
+    "output": {
+      "flag": {
+        "directors": "red",
+        "secretaries": "amber",
+        "turnover": "red"
+      }
+    }
+  }, {
+    "input": {
+      "company": {
+        "type": "Corporation",
+        "secretaries": ["first", "second"],
+        "directors": ["first", "second"],
+        "turnover": 10000000
+      }
+    },
+    "output": {
+      "flag": {
+        "secretaries": "red",
+        "turnover": "amber"
+      }
+    }
+  }, {
+    "input": {
+      "company": {
+        "type": "Corporation",
+        "secretaries": ["first", "second"],
+        "directors": ["first", "second"]
+      }
+    },
+    "output": {
+      "flag": {
+        "secretaries": "red",
+        "turnover": "red"
+      }
+    }
+  }],
+  "contentType": "application/vnd.gorules.decision",
+  "nodes": [
+    {
+      "id": "2ee16c8c-fb12-4f20-9813-67bad6f4eb14",
+      "name": "Model Turnover LLC",
+      "type": "decisionTableNode",
+      "content": {
+        "rules": [
+          {
+            "_id": "39e37b47-4f40-43f0-becd-d029d7ab8eb1",
+            "e083f703-2a6a-495d-88d5-7e5ad71c3a58": "\"green\"",
+            "fa0fd31a-8865-43fb-8a60-b729c640140a": "> 1000000"
+          },
+          {
+            "_id": "bf6212bb-f3fb-418a-87b2-a4c4c448c6e1",
+            "e083f703-2a6a-495d-88d5-7e5ad71c3a58": "\"amber\"",
+            "fa0fd31a-8865-43fb-8a60-b729c640140a": "[200000..1000000]"
+          },
+          {
+            "_id": "952300fd-e4d9-4301-8a5a-4eda1d01d8ee",
+            "e083f703-2a6a-495d-88d5-7e5ad71c3a58": "\"red\"",
+            "fa0fd31a-8865-43fb-8a60-b729c640140a": ""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "fa0fd31a-8865-43fb-8a60-b729c640140a",
+            "name": "Input",
+            "type": "expression",
+            "field": "company.turnover"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "e083f703-2a6a-495d-88d5-7e5ad71c3a58",
+            "name": "Output",
+            "type": "expression",
+            "field": "flag.turnover"
+          }
+        ],
+        "hitPolicy": "first"
+      },
+      "position": {
+        "x": 1230,
+        "y": 140
+      }
+    },
+    {
+      "id": "2b06eb6e-f3ed-4a9e-9f36-a0de372d97fe",
+      "name": "switchNode 1",
+      "type": "switchNode",
+      "content": {
+        "hitPolicy": "collect",
+        "statements": [
+          {
+            "id": "2ce01e42-e125-4184-9a8d-2a7ccf8daf14",
+            "condition": "company.secretaries != null"
+          },
+          {
+            "id": "3fba0ac2-8498-4421-bb1d-c0c8cabd9c39",
+            "condition": ""
+          }
+        ]
+      },
+      "position": {
+        "x": 830,
+        "y": 260
+      }
+    },
+    {
+      "id": "49f76396-88ae-4808-a6db-65091d5be0c7",
+      "name": "Model 1a",
+      "type": "decisionTableNode",
+      "content": {
+        "rules": [
+          {
+            "_id": "c6aaa4e1-cd0f-4c2a-a5d8-6d0101c27728",
+            "c2ba0ab0-2797-4d33-85bb-55e4c12424b2": "\"green\"",
+            "d34e312e-3c73-4e7f-a384-8c7b63d226cc": "> 2"
+          },
+          {
+            "_id": "c6cc83a2-3b57-4c21-b2e9-a5753c1714cc",
+            "c2ba0ab0-2797-4d33-85bb-55e4c12424b2": "\"amber\"",
+            "d34e312e-3c73-4e7f-a384-8c7b63d226cc": "> 1"
+          },
+          {
+            "_id": "bfde2c94-4736-4e34-acb5-7cf9972d513f",
+            "c2ba0ab0-2797-4d33-85bb-55e4c12424b2": "\"red\"",
+            "d34e312e-3c73-4e7f-a384-8c7b63d226cc": ""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "d34e312e-3c73-4e7f-a384-8c7b63d226cc",
+            "name": "Input",
+            "type": "expression",
+            "field": "len(company.secretaries)"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "c2ba0ab0-2797-4d33-85bb-55e4c12424b2",
+            "name": "Output",
+            "type": "expression",
+            "field": "flag.secretaries"
+          }
+        ],
+        "hitPolicy": "first"
+      },
+      "position": {
+        "x": 1230,
+        "y": -70
+      }
+    },
+    {
+      "id": "71100c8d-ae90-4529-904e-b3741298b739",
+      "name": "Model 2b",
+      "type": "decisionTableNode",
+      "content": {
+        "rules": [
+          {
+            "_id": "37095f5e-ab97-45b0-a252-dd270e618347",
+            "529a8358-a078-4416-a82c-87a177d674e9": "\"green\"",
+            "9705e5a5-a590-40da-b1a0-43e6af121e1b": "> 2"
+          },
+          {
+            "_id": "3877b676-e4ff-4479-910d-8fa9d32809d6",
+            "529a8358-a078-4416-a82c-87a177d674e9": "\"red\"",
+            "9705e5a5-a590-40da-b1a0-43e6af121e1b": ""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "9705e5a5-a590-40da-b1a0-43e6af121e1b",
+            "name": "Input",
+            "type": "expression",
+            "field": "len(company.secretaries)"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "529a8358-a078-4416-a82c-87a177d674e9",
+            "name": "Output",
+            "type": "expression",
+            "field": "flag.secretaries"
+          }
+        ],
+        "hitPolicy": "first"
+      },
+      "position": {
+        "x": 1230,
+        "y": 340
+      }
+    },
+    {
+      "id": "84b0e11b-8c9d-46f3-ac34-f674f3b98068",
+      "name": "Response",
+      "type": "outputNode",
+      "position": {
+        "x": 1540,
+        "y": -70
+      }
+    },
+    {
+      "id": "ab1b450a-ce21-4d99-8de6-4e4deeb37d75",
+      "name": "Model 1b",
+      "type": "decisionTableNode",
+      "content": {
+        "rules": [
+          {
+            "_id": "784d6cd6-e1fb-48b0-9254-c264cdecf963",
+            "014f4025-ddb0-48c3-9e79-aa60368b485b": "> 2",
+            "af543c04-78da-4661-8a10-9d259afe517a": "\"green\""
+          },
+          {
+            "_id": "171ec41f-ac79-4926-a24f-c8d227879989",
+            "014f4025-ddb0-48c3-9e79-aa60368b485b": "",
+            "af543c04-78da-4661-8a10-9d259afe517a": "\"red\""
+          },
+          {
+            "_id": "fb0638bf-8912-46c3-8569-9116ed3b23f2",
+            "014f4025-ddb0-48c3-9e79-aa60368b485b": "",
+            "af543c04-78da-4661-8a10-9d259afe517a": ""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "014f4025-ddb0-48c3-9e79-aa60368b485b",
+            "name": "Input",
+            "type": "expression",
+            "field": "len(company.directors)"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "af543c04-78da-4661-8a10-9d259afe517a",
+            "name": "Output",
+            "type": "expression",
+            "field": "flag.directors"
+          }
+        ],
+        "hitPolicy": "first"
+      },
+      "position": {
+        "x": 1230,
+        "y": 40
+      }
+    },
+    {
+      "id": "d29b5884-76fc-4c55-8646-3d3417e5b366",
+      "name": "Response",
+      "type": "outputNode",
+      "position": {
+        "x": 1540,
+        "y": 440
+      }
+    },
+    {
+      "id": "dc7b8739-e234-4363-afe9-df156f082f6f",
+      "name": "switchNode 1",
+      "type": "switchNode",
+      "content": {
+        "hitPolicy": "collect",
+        "statements": [
+          {
+            "id": "e672a228-ff6b-4859-a017-ab5e5c125b60",
+            "condition": "company.secretaries != null"
+          },
+          {
+            "id": "5ba3e324-a4fa-4e5f-8523-db21b47b32b6",
+            "condition": "company.directors != null"
+          },
+          {
+            "id": "931eda5b-a780-428b-9a0a-e3eb6283bab4",
+            "condition": ""
+          }
+        ]
+      },
+      "position": {
+        "x": 830,
+        "y": -80
+      }
+    },
+    {
+      "id": "de6cc00d-ef1b-46f5-9beb-9285d468c39d",
+      "name": "switchNode 1",
+      "type": "switchNode",
+      "content": {
+        "hitPolicy": "first",
+        "statements": [
+          {
+            "id": "6499e0bb-2cda-4a5f-9246-d48e7d2177fb",
+            "condition": "company.type == 'LLC'"
+          },
+          {
+            "id": "597a39af-4be4-4626-8de9-c110527a49bb",
+            "condition": "company.type == 'Corporation'"
+          },
+          {
+            "id": "8319f702-f71a-46da-9372-5e5424dda469",
+            "condition": ""
+          }
+        ]
+      },
+      "position": {
+        "x": 300,
+        "y": 140
+      }
+    },
+    {
+      "id": "fecde070-38cf-4656-81d7-3a2cb6e38f8f",
+      "name": "Request",
+      "type": "inputNode",
+      "position": {
+        "x": -30,
+        "y": 140
+      }
+    },
+    {
+      "id": "ff35357b-2a9f-4eb0-aaee-edb56e3a0ca2",
+      "name": "Model Turnover Corp",
+      "type": "decisionTableNode",
+      "content": {
+        "rules": [
+          {
+            "_id": "df314172-11a3-4b52-a688-ed81c8755e4c",
+            "e083f703-2a6a-495d-88d5-7e5ad71c3a58": "\"green\"",
+            "fa0fd31a-8865-43fb-8a60-b729c640140a": "> 10000000"
+          },
+          {
+            "_id": "6a967f72-ee4d-407d-ad16-d0695170222e",
+            "e083f703-2a6a-495d-88d5-7e5ad71c3a58": "\"amber\"",
+            "fa0fd31a-8865-43fb-8a60-b729c640140a": "[1000000..10000000]"
+          },
+          {
+            "_id": "4b7953b5-a8dc-4a1e-9412-32a038eab1bf",
+            "e083f703-2a6a-495d-88d5-7e5ad71c3a58": "\"red\"",
+            "fa0fd31a-8865-43fb-8a60-b729c640140a": ""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "fa0fd31a-8865-43fb-8a60-b729c640140a",
+            "name": "Input",
+            "type": "expression",
+            "field": "company.turnover"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "e083f703-2a6a-495d-88d5-7e5ad71c3a58",
+            "name": "Output",
+            "type": "expression",
+            "field": "flag.turnover"
+          }
+        ],
+        "hitPolicy": "first"
+      },
+      "position": {
+        "x": 1230,
+        "y": 440
+      }
+    },
+    {
+      "id": "2dce41a5-bec2-4362-9fea-013779b3262b",
+      "name": "Response",
+      "type": "outputNode",
+      "position": {
+        "x": 610,
+        "y": 360
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "4e2890ab-2153-47a4-95f5-7ef2cf982d51",
+      "type": "edge",
+      "sourceId": "ab1b450a-ce21-4d99-8de6-4e4deeb37d75",
+      "targetId": "84b0e11b-8c9d-46f3-ac34-f674f3b98068"
+    },
+    {
+      "id": "56be46a8-d550-47af-adc4-33fe822b48d3",
+      "type": "edge",
+      "sourceId": "dc7b8739-e234-4363-afe9-df156f082f6f",
+      "targetId": "ab1b450a-ce21-4d99-8de6-4e4deeb37d75",
+      "sourceHandle": "5ba3e324-a4fa-4e5f-8523-db21b47b32b6"
+    },
+    {
+      "id": "59ded4c8-3c04-44e7-bd9e-9390cc8e6e6e",
+      "type": "edge",
+      "sourceId": "de6cc00d-ef1b-46f5-9beb-9285d468c39d",
+      "targetId": "dc7b8739-e234-4363-afe9-df156f082f6f",
+      "sourceHandle": "6499e0bb-2cda-4a5f-9246-d48e7d2177fb"
+    },
+    {
+      "id": "763fa4fb-8edc-4edc-a790-fe36867f067a",
+      "type": "edge",
+      "sourceId": "de6cc00d-ef1b-46f5-9beb-9285d468c39d",
+      "targetId": "2b06eb6e-f3ed-4a9e-9f36-a0de372d97fe",
+      "sourceHandle": "597a39af-4be4-4626-8de9-c110527a49bb"
+    },
+    {
+      "id": "aeae444a-36ec-4d82-a568-07af4f472616",
+      "type": "edge",
+      "sourceId": "71100c8d-ae90-4529-904e-b3741298b739",
+      "targetId": "d29b5884-76fc-4c55-8646-3d3417e5b366"
+    },
+    {
+      "id": "c636694e-7ac8-45ba-8fa0-cc3bd2a21865",
+      "type": "edge",
+      "sourceId": "49f76396-88ae-4808-a6db-65091d5be0c7",
+      "targetId": "84b0e11b-8c9d-46f3-ac34-f674f3b98068"
+    },
+    {
+      "id": "d8cd3546-48a5-49ea-8351-b1814b4552df",
+      "type": "edge",
+      "sourceId": "fecde070-38cf-4656-81d7-3a2cb6e38f8f",
+      "targetId": "de6cc00d-ef1b-46f5-9beb-9285d468c39d"
+    },
+    {
+      "id": "e7d65d51-674d-4ce1-bc7e-1ba8e63e8333",
+      "type": "edge",
+      "sourceId": "dc7b8739-e234-4363-afe9-df156f082f6f",
+      "targetId": "49f76396-88ae-4808-a6db-65091d5be0c7",
+      "sourceHandle": "e672a228-ff6b-4859-a017-ab5e5c125b60"
+    },
+    {
+      "id": "f4be274b-d88c-4fff-8f3f-9deb31df9775",
+      "type": "edge",
+      "sourceId": "2b06eb6e-f3ed-4a9e-9f36-a0de372d97fe",
+      "targetId": "71100c8d-ae90-4529-904e-b3741298b739",
+      "sourceHandle": "2ce01e42-e125-4184-9a8d-2a7ccf8daf14"
+    },
+    {
+      "id": "455542ce-2c87-4374-baa8-875ce60107f8",
+      "type": "edge",
+      "sourceId": "ff35357b-2a9f-4eb0-aaee-edb56e3a0ca2",
+      "targetId": "d29b5884-76fc-4c55-8646-3d3417e5b366"
+    },
+    {
+      "id": "70a9923c-b664-4b56-a838-0212e29b1079",
+      "type": "edge",
+      "sourceId": "2ee16c8c-fb12-4f20-9813-67bad6f4eb14",
+      "targetId": "84b0e11b-8c9d-46f3-ac34-f674f3b98068"
+    },
+    {
+      "id": "321a5e3f-4900-40e1-9003-e331aaa43fa5",
+      "type": "edge",
+      "sourceId": "dc7b8739-e234-4363-afe9-df156f082f6f",
+      "targetId": "2ee16c8c-fb12-4f20-9813-67bad6f4eb14",
+      "sourceHandle": "931eda5b-a780-428b-9a0a-e3eb6283bab4"
+    },
+    {
+      "id": "3b620c91-ae91-4ff7-a4a2-87950feff73c",
+      "type": "edge",
+      "sourceId": "2b06eb6e-f3ed-4a9e-9f36-a0de372d97fe",
+      "targetId": "ff35357b-2a9f-4eb0-aaee-edb56e3a0ca2",
+      "sourceHandle": "3fba0ac2-8498-4421-bb1d-c0c8cabd9c39"
+    },
+    {
+      "id": "b8e3f866-3528-43cd-a228-30c2d11fca57",
+      "type": "edge",
+      "sourceId": "de6cc00d-ef1b-46f5-9beb-9285d468c39d",
+      "targetId": "2dce41a5-bec2-4362-9fea-013779b3262b",
+      "sourceHandle": "8319f702-f71a-46da-9372-5e5424dda469"
+    }
+  ]
+}

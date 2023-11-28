@@ -1,0 +1,171 @@
+{
+  "tests": [
+    {
+      "input": {
+        "origin": "JFK",
+        "class": "economy"
+      },
+      "output": {
+        "code": "BAG10",
+        "price": 12
+      }
+    },
+    {
+      "input": {
+        "origin": "JFK",
+        "destination": "LAX",
+        "class": "economy"
+      },
+      "output": {
+        "code": "BAG10",
+        "price": 10
+      }
+    },
+    {
+      "input": {
+        "origin": "JFK",
+        "destination": "LAX",
+        "class": "business"
+      },
+      "output": {
+        "code": "BAG23",
+        "included": true,
+        "price": 0
+      }
+    }
+  ],
+  "contentType": "application/vnd.gorules.decision",
+  "nodes": [
+    {
+      "id": "36aa02a4-df14-4c54-a852-175e749d5860",
+      "name": "Request",
+      "type": "inputNode",
+      "position": {
+        "x": 30,
+        "y": 140
+      }
+    },
+    {
+      "id": "5d03a351-786f-4f7d-9b2b-709dc0d81460",
+      "name": "Bags",
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "inputs": [
+          {
+            "id": "a9711b12-1d29-40a3-a48f-2c03df5c8aff",
+            "name": "Origin",
+            "type": "expression",
+            "field": "origin"
+          },
+          {
+            "id": "UmZtXogtD7",
+            "name": "Destination",
+            "type": "expression",
+            "field": "destination"
+          },
+          {
+            "id": "b2e2476f-5340-4d66-aec0-9a282be0e716",
+            "name": "Class",
+            "type": "expression",
+            "field": "class"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "DxiL62dzK7",
+            "name": "Code",
+            "type": "expression",
+            "field": "code"
+          },
+          {
+            "id": "b3bbcf27-5b30-4c05-aedf-2828b6274cdb",
+            "name": "Price",
+            "type": "expression",
+            "field": "price"
+          },
+          {
+            "id": "3d548469-f407-449a-9ba4-be6e1631612a",
+            "name": "Included",
+            "type": "expression",
+            "field": "included"
+          }
+        ],
+        "rules": [
+          {
+            "_id": "a882b24f-b796-435e-a116-d7e6e5214ff6",
+            "DxiL62dzK7": "\"BAG10\"",
+            "UmZtXogtD7": "\"LAX\"",
+            "3d548469-f407-449a-9ba4-be6e1631612a": "",
+            "a9711b12-1d29-40a3-a48f-2c03df5c8aff": "\"JFK\"",
+            "b2e2476f-5340-4d66-aec0-9a282be0e716": "\"economy\"",
+            "b3bbcf27-5b30-4c05-aedf-2828b6274cdb": "10"
+          },
+          {
+            "_id": "a6083cab-8dfe-46ae-acf3-823e02ca3f3b",
+            "DxiL62dzK7": "\"BAG10\"",
+            "UmZtXogtD7": "",
+            "3d548469-f407-449a-9ba4-be6e1631612a": "",
+            "a9711b12-1d29-40a3-a48f-2c03df5c8aff": "\"JFK\"",
+            "b2e2476f-5340-4d66-aec0-9a282be0e716": "\"economy\"",
+            "b3bbcf27-5b30-4c05-aedf-2828b6274cdb": "12"
+          },
+          {
+            "_id": "c1c432ee-0715-4a6e-af7e-600f7456427a",
+            "DxiL62dzK7": "\"BAG23\"",
+            "UmZtXogtD7": "",
+            "3d548469-f407-449a-9ba4-be6e1631612a": "",
+            "a9711b12-1d29-40a3-a48f-2c03df5c8aff": "\"DEN\"",
+            "b2e2476f-5340-4d66-aec0-9a282be0e716": "\"economy\"",
+            "b3bbcf27-5b30-4c05-aedf-2828b6274cdb": "22"
+          },
+          {
+            "_id": "673f808b-02c2-4055-94c3-e4503578c285",
+            "DxiL62dzK7": "\"BAG23\"",
+            "UmZtXogtD7": "",
+            "3d548469-f407-449a-9ba4-be6e1631612a": "",
+            "a9711b12-1d29-40a3-a48f-2c03df5c8aff": "\"DEN\"",
+            "b2e2476f-5340-4d66-aec0-9a282be0e716": "\"economy\"",
+            "b3bbcf27-5b30-4c05-aedf-2828b6274cdb": "25"
+          },
+          {
+            "_id": "731388b9-9e94-499a-b201-3f107e7e8a54",
+            "DxiL62dzK7": "\"BAG23\"",
+            "UmZtXogtD7": "",
+            "3d548469-f407-449a-9ba4-be6e1631612a": "true",
+            "a9711b12-1d29-40a3-a48f-2c03df5c8aff": "",
+            "b2e2476f-5340-4d66-aec0-9a282be0e716": "\"business\", \"first\"",
+            "b3bbcf27-5b30-4c05-aedf-2828b6274cdb": "0"
+          }
+        ]
+      },
+      "position": {
+        "x": 290,
+        "y": 140
+      }
+    },
+    {
+      "id": "f42391bc-6183-4b12-8eaa-6b56510c17ef",
+      "name": "Response",
+      "type": "outputNode",
+      "position": {
+        "x": 580,
+        "y": 140
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "56fd0fb1-0964-4c11-881d-f42114b43ad8",
+      "type": "edge",
+      "sourceId": "36aa02a4-df14-4c54-a852-175e749d5860",
+      "targetId": "5d03a351-786f-4f7d-9b2b-709dc0d81460"
+    },
+    {
+      "id": "d148ef92-e6e2-486f-9867-7faf8459b111",
+      "type": "edge",
+      "sourceId": "5d03a351-786f-4f7d-9b2b-709dc0d81460",
+      "targetId": "f42391bc-6183-4b12-8eaa-6b56510c17ef"
+    }
+  ]
+}

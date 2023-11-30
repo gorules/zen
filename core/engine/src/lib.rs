@@ -135,5 +135,7 @@ pub mod model;
 pub use decision::Decision;
 pub use engine::{DecisionEngine, EvaluationOptions};
 pub use error::EvaluationError;
+pub use handler::graph::DecisionGraphResponse;
+pub use handler::graph::DecisionGraphTrace;
 pub use handler::graph::DecisionGraphValidationError;
 pub use handler::node::NodeError;

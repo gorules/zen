@@ -4,9 +4,7 @@
 
 ZEN Engine is a cross-platform, Open-Source Business Rules Engine (BRE). It is written in **Rust** and provides native bindings for **NodeJS** and **Python**. ZEN Engine allows to load and execute [JSON Decision Model (JDM)](https://gorules.io/docs/rules-engine/json-decision-model) from JSON files.
 
-// TODO NEW Graph Image
-
-<img width="1258" alt="JSON Decision Model" src="https://user-images.githubusercontent.com/60513195/224425568-4a717e34-3d4b-4cc6-b031-8cd35f8ff459.png">
+<img width="1258" alt="GoRules JSON Decision Model" src="https://github.com/gorules/zen/assets/60513195/41238e35-8a24-4ee2-85b6-4238b6c2b4f6">
 
 An open-source React editor is available on our [JDM Editor](https://github.com/gorules/jdm-editor) repo.
 
@@ -111,8 +109,7 @@ There are 5 main node types in addition to a graph Input Node (Request) and Outp
 
 Decision Tables stand as a foundational element within the GoRules JDM standard, offering an intuitive and powerful approach to modeling decision logic. These tables provide a structured representation of decision-making processes, allowing developers to express complex rules in a clear and concise manner.
 
-// TODO Image
-
+<img width="960" alt="Decision Table" src="https://github.com/gorules/zen/assets/60513195/b18f645b-3bdc-4fb6-8fd4-023bee5a8999">
 
 #### Structure
 
@@ -161,7 +158,8 @@ For the input:
 }
 ```
 
-// TODO unary image
+<img width="960" alt="Unary test" src="https://github.com/gorules/zen/assets/60513195/9149b07f-db24-4d50-8db7-1cfe7b3d9dd6">
+
 
 This evaluation translates to
 
@@ -192,7 +190,6 @@ List shows basic example of the unary tests in the Input Fields:
 
 Note: For the full list please visit [ZEN Expression Language](https://gorules.io/docs/rules-engine/expression-language/).
 
-
 **Expression Evaluation**
 
 Expression evaluation is used when we would like to create more complex evaluation logic inside single cell, by comparing multiple fields from the incoming context inside same cell or when we would like to use Zen Expression functions. By not defining `field` in column schema cell of that column are running evaluation in Expression mode.
@@ -205,13 +202,13 @@ For the input:
 {
   "transaction": {
     "country": "US",
-    "createdAt": "2023-11-20 19:00:25",
+    "createdAt": "2023-11-20T19:00:25Z",
     "amount": 10000
   }
 }
 ```
 
-// TODO Image
+<img width="960" alt="Expression" src="https://github.com/gorules/zen/assets/60513195/d92685c4-9ac4-499d-bc15-332f2f9417c3">
 
 ```
 IF time(transaction.createdAt) > time("17:00:00") AND transaction.amount > 1000 THEN {"status": "reject"}
@@ -253,7 +250,7 @@ Conditions are written in a Zen Expression Language.
 By incorporating the Switch node, decision models become more flexible and context-aware. This capability is particularly valuable in scenarios where diverse decision logic is required based on varying inputs. The Switch node efficiently manages branching within the graph, enhancing the overall complexity and realism of decision models in GoRules JDM, making it a pivotal component for crafting intelligent and adaptive systems.
 The Switch node preserves the incoming data without modification; it forwards the entire context to the output branch(es).
 
-// TODO IMAGE
+<img width="960" alt="Switch / Branching node" src="https://github.com/gorules/zen/assets/60513195/05c5793c-563e-471b-b487-261b58a84f97">
 
 #### HitPolicy
 There are two HitPolicy options for the switch node, `first` and `collect`.
@@ -284,7 +281,7 @@ The Expression node serves as a tool for swiftly transforming input objects into
 
 It's important to be aware that any errors within the Expression node will bring the graph to a halt, emphasizing the need for precision and accuracy when utilizing this feature.
 
-// TODO Expression image
+<img width="800" alt="Expression node" src="https://github.com/gorules/zen/assets/60513195/225824cc-191a-45bc-b476-b0ffc514d22f">
 
 ### Decision Node
 

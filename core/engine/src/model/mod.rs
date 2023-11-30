@@ -17,11 +17,13 @@ pub struct DecisionContent {
 #[cfg_attr(feature = "bincode", derive(Encode, Decode))]
 #[serde(rename_all = "camelCase")]
 pub struct DecisionEdge {
+    pub id: String,
     pub source_id: String,
     pub target_id: String,
+    pub source_handle: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "bincode", derive(Encode, Decode))]
 #[serde(rename_all = "camelCase")]
 pub struct DecisionNode {
@@ -30,6 +32,12 @@ pub struct DecisionNode {
     #[serde(rename = "type")]
     #[serde(flatten)]
     pub kind: DecisionNodeKind,
+}
+
+impl PartialEq for DecisionNode {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -43,6 +51,7 @@ pub enum DecisionNodeKind {
     DecisionNode { content: DecisionNodeContent },
     DecisionTableNode { content: DecisionTableContent },
     ExpressionNode { content: ExpressionNodeContent },
+    SwitchNode { content: SwitchNodeContent },
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -102,4 +111,30 @@ pub struct Expression {
     pub id: String,
     pub key: String,
     pub value: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
+#[serde(rename_all = "camelCase")]
+pub struct SwitchNodeContent {
+    #[serde(default)]
+    pub hit_policy: SwitchStatementHitPolicy,
+    pub statements: Vec<SwitchStatement>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
+#[serde(rename_all = "camelCase")]
+pub struct SwitchStatement {
+    pub id: String,
+    pub condition: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default)]
+#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
+#[serde(rename_all = "camelCase")]
+pub enum SwitchStatementHitPolicy {
+    #[default]
+    First,
+    Collect,
 }

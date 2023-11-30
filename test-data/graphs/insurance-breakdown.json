@@ -1,0 +1,421 @@
+{
+  "tests": [
+    {
+      "input": {
+        "coverage": {
+          "pi": "1M",
+          "pl": "10M"
+        },
+        "country": "CA"
+      },
+      "output": {
+        "breakdown": [
+          {
+            "key": "premium",
+            "title": "Premium",
+            "value": 83
+          },
+          {
+            "key": "gst",
+            "title": "GST",
+            "value": 10.3
+          },
+          {
+            "key": "brokerFee",
+            "title": "Broker Fee",
+            "value": 20
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "coverage": {
+          "pi": "1M",
+          "pl": "10M"
+        }
+      },
+      "output": {
+        "breakdown": [
+          {
+            "key": "premium",
+            "title": "Premium",
+            "value": 83
+          },
+          {
+            "key": "gst",
+            "title": "GST",
+            "value": 0
+          },
+          {
+            "key": "brokerFee",
+            "title": "Broker Fee",
+            "value": 20
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "coverage": {
+          "pi": "2M",
+          "pl": "20M"
+        }
+      },
+      "output": {
+        "breakdown": [
+          {
+            "key": "premium",
+            "title": "Premium",
+            "value": 125
+          },
+          {
+            "key": "gst",
+            "title": "GST",
+            "value": 0
+          },
+          {
+            "key": "brokerFee",
+            "title": "Broker Fee",
+            "value": 45
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "coverage": {
+          "pi": "2M",
+          "pl": "10M"
+        },
+        "country": "CA"
+      },
+      "output": {
+        "breakdown": [
+          {
+            "key": "premium",
+            "title": "Premium",
+            "value": 95
+          },
+          {
+            "key": "gst",
+            "title": "GST",
+            "value": 12
+          },
+          {
+            "key": "brokerFee",
+            "title": "Broker Fee",
+            "value": 25
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "coverage": {
+          "pi": "2M",
+          "pl": "20M"
+        },
+        "country": "CA"
+      },
+      "output": {
+        "breakdown": [
+          {
+            "key": "premium",
+            "title": "Premium",
+            "value": 125
+          },
+          {
+            "key": "gst",
+            "title": "GST",
+            "value": 17
+          },
+          {
+            "key": "brokerFee",
+            "title": "Broker Fee",
+            "value": 45
+          }
+        ]
+      }
+    }
+  ],
+  "contentType": "application/vnd.gorules.decision",
+  "nodes": [
+    {
+      "id": "4b197c9b-8db6-4d67-8e64-2ea7d262b1c6",
+      "name": "Request",
+      "type": "inputNode",
+      "position": {
+        "x": 80,
+        "y": 330
+      }
+    },
+    {
+      "id": "52d501fa-5089-471a-81e1-9d604b6b864d",
+      "name": "Response",
+      "type": "outputNode",
+      "position": {
+        "x": 870,
+        "y": 330
+      }
+    },
+    {
+      "id": "ebec39cc-ac87-4145-ae5d-744759a37268",
+      "name": "PI Base",
+      "type": "decisionTableNode",
+      "content": {
+        "rules": [
+          {
+            "_id": "900c2af2-8b75-414f-b365-97fbf2ddf28f",
+            "b45e7cc2-5fa7-4ace-814e-3eac8ff8cfc9": "63",
+            "ec711970-6b90-492f-8b5b-4a6e7cbf3088": "\"1M\""
+          },
+          {
+            "_id": "9b10a56d-ee99-40f3-aa30-85ed38f60ec7",
+            "b45e7cc2-5fa7-4ace-814e-3eac8ff8cfc9": "75",
+            "ec711970-6b90-492f-8b5b-4a6e7cbf3088": "\"2M\""
+          },
+          {
+            "_id": "91ffd81f-0fa4-4f99-b4fe-09c84ce0780c",
+            "b45e7cc2-5fa7-4ace-814e-3eac8ff8cfc9": "0",
+            "ec711970-6b90-492f-8b5b-4a6e7cbf3088": ""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "ec711970-6b90-492f-8b5b-4a6e7cbf3088",
+            "name": "Coverage PI",
+            "type": "expression",
+            "field": "coverage.pi"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "b45e7cc2-5fa7-4ace-814e-3eac8ff8cfc9",
+            "name": "Base PI",
+            "type": "expression",
+            "field": "base.pi"
+          }
+        ],
+        "hitPolicy": "first"
+      },
+      "position": {
+        "x": 370,
+        "y": 210
+      }
+    },
+    {
+      "id": "831e22b5-93c4-4963-9d21-8af157dd1606",
+      "name": "PL Base",
+      "type": "decisionTableNode",
+      "content": {
+        "rules": [
+          {
+            "_id": "e4ffd222-ef9c-4ab7-a5ef-6f6ff0c6f1c2",
+            "6d179b45-a0b7-4c85-8324-73058f3def42": "\"10M\"",
+            "bfc690c9-d11e-42ee-b141-0112c3b02ee0": "20"
+          },
+          {
+            "_id": "5a8986b1-27a3-4961-ab6d-e32fb773e083",
+            "6d179b45-a0b7-4c85-8324-73058f3def42": "\"20M\"",
+            "bfc690c9-d11e-42ee-b141-0112c3b02ee0": "50"
+          },
+          {
+            "_id": "d6560ee2-26c8-4863-bc8c-a4717cde4a1d",
+            "6d179b45-a0b7-4c85-8324-73058f3def42": "",
+            "bfc690c9-d11e-42ee-b141-0112c3b02ee0": "0"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "6d179b45-a0b7-4c85-8324-73058f3def42",
+            "name": "Coverage PL",
+            "type": "expression",
+            "field": "coverage.pl"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "bfc690c9-d11e-42ee-b141-0112c3b02ee0",
+            "name": "Base PL",
+            "type": "expression",
+            "field": "base.pl"
+          }
+        ],
+        "hitPolicy": "first"
+      },
+      "position": {
+        "x": 370,
+        "y": 330
+      }
+    },
+    {
+      "id": "b9d38a6e-2d57-483c-9765-66d97b940a04",
+      "name": "GST",
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "inputs": [
+          {
+            "id": "5ca5e8d1-8339-483b-9c81-cdd34a4fb953",
+            "name": "Country",
+            "type": "expression",
+            "field": "country"
+          },
+          {
+            "id": "8342de09-7a13-4d3b-82f9-156e2381817d",
+            "name": "State",
+            "type": "expression",
+            "field": "state"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "49135c04-c19b-40c3-8a7c-0de08ffaa713",
+            "name": "GST (%)",
+            "type": "expression",
+            "field": "tax.gst"
+          }
+        ],
+        "rules": [
+          {
+            "_id": "35babb81-b350-4445-853f-3877892910f9",
+            "49135c04-c19b-40c3-8a7c-0de08ffaa713": "10",
+            "5ca5e8d1-8339-483b-9c81-cdd34a4fb953": "\"CA\"",
+            "8342de09-7a13-4d3b-82f9-156e2381817d": ""
+          },
+          {
+            "_id": "6670eccf-b410-4e6d-9979-da9f6bddc75d",
+            "49135c04-c19b-40c3-8a7c-0de08ffaa713": "0",
+            "5ca5e8d1-8339-483b-9c81-cdd34a4fb953": "",
+            "8342de09-7a13-4d3b-82f9-156e2381817d": ""
+          }
+        ]
+      },
+      "position": {
+        "x": 370,
+        "y": 450
+      }
+    },
+    {
+      "id": "453ed4ec-8754-4768-823a-0741e12926ee",
+      "name": "Aggregator",
+      "type": "functionNode",
+      "content": "/**\n * @param input\n * @param {{\n *  dayjs: import('dayjs')\n *  Big: import('big.js').BigConstructor\n * }} helpers\n */\nconst handler = (input, { dayjs, Big }) => {\n  const round = (val) => {\n    if (val === undefined) return 0;\n    return val?.toFixed !== undefined ? val.round(2).toNumber() : val\n  }\n\n  const getPercentage = (num, perc) => {\n    return Big(num).times(Big(perc).div(100))\n  }\n\n  const basePi = Big(input.base.pi);\n  const piGst = getPercentage(basePi, input.tax.gst);\n\n  const basePl = Big(input.base.pl);\n  const plGst = getPercentage(basePl, input.tax.gst);\n\n  const brokerFee = Big(input.fee.broker);\n  const brokerFeeGst = getPercentage(brokerFee, input.tax.gst);\n\n  const base = basePi.add(basePl);\n  const gst = piGst.add(plGst).add(brokerFeeGst);\n\n  return {\n    breakdown: [{\n      title: 'Premium',\n      key: 'premium',\n      value: round(base)\n    }, {\n      title: 'GST',\n      key: 'gst',\n      value: round(gst)\n    }, {\n      title: 'Broker Fee',\n      key: 'brokerFee',\n      value: round(brokerFee)\n    }]\n  }\n}",
+      "position": {
+        "x": 630,
+        "y": 330
+      }
+    },
+    {
+      "id": "0b998a2f-2b8d-45b4-8cea-13c731d0cd0d",
+      "name": "Fees",
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "inputs": [
+          {
+            "id": "d49e2534-a500-4596-a575-220fc7da2bfc",
+            "name": "Contracts",
+            "type": "expression"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "503a8564-eab4-473a-ba23-d1dc351368ac",
+            "name": "Broker Fee",
+            "type": "expression",
+            "field": "fee.broker"
+          }
+        ],
+        "rules": [
+          {
+            "_id": "629a0bff-c452-474c-b5a0-0b5c0b7d0880",
+            "d49e2534-a500-4596-a575-220fc7da2bfc": "coverage.pi == '1M' and coverage.pl == '10M'",
+            "503a8564-eab4-473a-ba23-d1dc351368ac": "20"
+          },
+          {
+            "_id": "03ac3c59-9d38-431a-965f-d8da913b0100",
+            "d49e2534-a500-4596-a575-220fc7da2bfc": "coverage.pi == '2M' and coverage.pl == '10M'",
+            "503a8564-eab4-473a-ba23-d1dc351368ac": "25"
+          },
+          {
+            "_id": "e9f771aa-a2c1-4e6d-b541-fbef6a20e637",
+            "d49e2534-a500-4596-a575-220fc7da2bfc": "coverage.pi == '1M' and coverage.pl == '20M'",
+            "503a8564-eab4-473a-ba23-d1dc351368ac": "40"
+          },
+          {
+            "_id": "4b4e7a3c-17f9-451b-9099-d938de7bfbbb",
+            "d49e2534-a500-4596-a575-220fc7da2bfc": "coverage.pi == '2M' and coverage.pl == '20M'",
+            "503a8564-eab4-473a-ba23-d1dc351368ac": "45"
+          },
+          {
+            "_id": "ca9d6c4c-c013-426a-a23a-930da2e5941b",
+            "d49e2534-a500-4596-a575-220fc7da2bfc": "",
+            "503a8564-eab4-473a-ba23-d1dc351368ac": "0"
+          }
+        ]
+      },
+      "position": {
+        "x": 370,
+        "y": 580
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e5c60566-130b-48e3-a572-406ace13e24d",
+      "type": "edge",
+      "sourceId": "4b197c9b-8db6-4d67-8e64-2ea7d262b1c6",
+      "targetId": "831e22b5-93c4-4963-9d21-8af157dd1606"
+    },
+    {
+      "id": "5554b69a-de2a-4986-9067-b5a3fb5ab27c",
+      "type": "edge",
+      "sourceId": "4b197c9b-8db6-4d67-8e64-2ea7d262b1c6",
+      "targetId": "ebec39cc-ac87-4145-ae5d-744759a37268"
+    },
+    {
+      "id": "8b81e148-8ba3-408f-864d-639dba3e8231",
+      "type": "edge",
+      "sourceId": "4b197c9b-8db6-4d67-8e64-2ea7d262b1c6",
+      "targetId": "b9d38a6e-2d57-483c-9765-66d97b940a04"
+    },
+    {
+      "id": "03f1c9ac-b748-48c8-b6ca-7bbde5638dd4",
+      "type": "edge",
+      "sourceId": "831e22b5-93c4-4963-9d21-8af157dd1606",
+      "targetId": "453ed4ec-8754-4768-823a-0741e12926ee"
+    },
+    {
+      "id": "abf74448-ec29-4c85-bb34-c591059054f2",
+      "type": "edge",
+      "sourceId": "b9d38a6e-2d57-483c-9765-66d97b940a04",
+      "targetId": "453ed4ec-8754-4768-823a-0741e12926ee"
+    },
+    {
+      "id": "3772f66b-1f80-45cd-baac-a7962f955aea",
+      "type": "edge",
+      "sourceId": "ebec39cc-ac87-4145-ae5d-744759a37268",
+      "targetId": "453ed4ec-8754-4768-823a-0741e12926ee"
+    },
+    {
+      "id": "de650378-2163-4984-9f3a-5eaa94f401cc",
+      "type": "edge",
+      "sourceId": "453ed4ec-8754-4768-823a-0741e12926ee",
+      "targetId": "52d501fa-5089-471a-81e1-9d604b6b864d"
+    },
+    {
+      "id": "8a72d8a5-3962-44f7-9bdb-611efaabd822",
+      "type": "edge",
+      "sourceId": "4b197c9b-8db6-4d67-8e64-2ea7d262b1c6",
+      "targetId": "0b998a2f-2b8d-45b4-8cea-13c731d0cd0d"
+    },
+    {
+      "id": "24ce6bc8-36c2-49f7-bb2b-6f1d38455ee0",
+      "type": "edge",
+      "sourceId": "0b998a2f-2b8d-45b4-8cea-13c731d0cd0d",
+      "targetId": "453ed4ec-8754-4768-823a-0741e12926ee"
+    }
+  ]
+}

@@ -1,0 +1,390 @@
+{
+  "tests": [{
+    "input": {
+      "companyInformation": {
+        "country": {
+          "code": "US"
+        },
+        "experian": {
+          "legalStatus": "LTD"
+        }
+      }
+    },
+    "output": {
+      "flag": {
+        "companyType": "green",
+        "country": "green",
+        "turnover": "red"
+      },
+      "overall": "red"
+    }
+  }, {
+    "input": {
+      "companyInformation": {
+        "country": {
+          "code": "FR"
+        },
+        "financialDetails": {
+          "turnover": 250000
+        },
+        "experian": {
+          "legalStatus": "LTD"
+        }
+      }
+    },
+    "output": {
+      "flag": {
+        "companyType": "green",
+        "country": "amber",
+        "turnover": "amber"
+      },
+      "overall": "amber"
+    }
+  }, {
+    "input": {
+      "companyInformation": {
+        "country": {
+          "code": "FR"
+        },
+        "financialDetails": {
+          "turnover": 10000001
+        },
+        "experian": {
+          "legalStatus": "LTD"
+        }
+      }
+    },
+    "output": {
+      "flag": {
+        "companyType": "green",
+        "country": "amber",
+        "turnover": "green"
+      },
+      "overall": "green"
+    }
+  }],
+  "contentType": "application/vnd.gorules.decision",
+  "edges": [
+    {
+      "id": "3e749d7f-97d5-45c9-917f-20ae877c3bde",
+      "type": "edge",
+      "sourceId": "4e7e6bb9-f128-41e7-8cc5-b9d79670b96a",
+      "targetId": "abaaa033-5516-440c-b211-35f1d616ad9f"
+    },
+    {
+      "id": "d00252c1-9a54-4599-940c-c9c1c3bb6800",
+      "type": "edge",
+      "sourceId": "4e7e6bb9-f128-41e7-8cc5-b9d79670b96a",
+      "targetId": "46fbad36-4bbe-44ac-833f-d30e0d37d8d7"
+    },
+    {
+      "id": "f5be27b5-4eea-40f4-abce-31081a0caf65",
+      "type": "edge",
+      "sourceId": "4e7e6bb9-f128-41e7-8cc5-b9d79670b96a",
+      "targetId": "d6925cde-b3c9-4b7f-8652-7380dacea6a4"
+    },
+    {
+      "id": "3000e420-4846-4f86-8ed2-f595d204672e",
+      "type": "edge",
+      "sourceId": "46fbad36-4bbe-44ac-833f-d30e0d37d8d7",
+      "targetId": "95aa8f3c-f371-4e48-beb3-0b5775d2a814"
+    },
+    {
+      "id": "638c35a9-eef7-4d90-bf1e-58ba10734d98",
+      "type": "edge",
+      "sourceId": "d6925cde-b3c9-4b7f-8652-7380dacea6a4",
+      "targetId": "95aa8f3c-f371-4e48-beb3-0b5775d2a814"
+    },
+    {
+      "id": "30f2247a-140c-40f3-8160-a4e61d56da8e",
+      "type": "edge",
+      "sourceId": "af6cdac4-2019-4a0f-9715-2ecfb27e0bfc",
+      "targetId": "86ce04c9-b4dd-4513-ae2b-7f585ceb224a"
+    },
+    {
+      "id": "822d2eeb-5a9e-4670-b181-4af0ed6dd9b9",
+      "type": "edge",
+      "sourceId": "86ce04c9-b4dd-4513-ae2b-7f585ceb224a",
+      "targetId": "95aa8f3c-f371-4e48-beb3-0b5775d2a814"
+    },
+    {
+      "id": "61cc8c10-57c2-411d-a88c-90176ebb8593",
+      "type": "edge",
+      "sourceId": "d6925cde-b3c9-4b7f-8652-7380dacea6a4",
+      "targetId": "af6cdac4-2019-4a0f-9715-2ecfb27e0bfc"
+    },
+    {
+      "id": "2011fc65-fd8c-421f-8123-d1fb5f1accb3",
+      "type": "edge",
+      "sourceId": "46fbad36-4bbe-44ac-833f-d30e0d37d8d7",
+      "targetId": "af6cdac4-2019-4a0f-9715-2ecfb27e0bfc"
+    },
+    {
+      "id": "d65fb53d-0fef-47ff-aeac-b8cbac5af7be",
+      "type": "edge",
+      "sourceId": "abaaa033-5516-440c-b211-35f1d616ad9f",
+      "targetId": "af6cdac4-2019-4a0f-9715-2ecfb27e0bfc"
+    },
+    {
+      "id": "7cfe568d-9d34-45bf-ba9d-5ce0ad47d35e",
+      "type": "edge",
+      "sourceId": "abaaa033-5516-440c-b211-35f1d616ad9f",
+      "targetId": "95aa8f3c-f371-4e48-beb3-0b5775d2a814"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "4e7e6bb9-f128-41e7-8cc5-b9d79670b96a",
+      "name": "Request",
+      "type": "inputNode",
+      "position": {
+        "x": 70,
+        "y": 160
+      }
+    },
+    {
+      "id": "d6925cde-b3c9-4b7f-8652-7380dacea6a4",
+      "name": "Company Type",
+      "type": "decisionTableNode",
+      "content": {
+        "rules": [
+          {
+            "_id": "D8T0xuyYLC",
+            "Yi49Ln4-V_": "\"green\"",
+            "nd30YgUKve": "\"INC\",\"LTD\",\"LLC\""
+          },
+          {
+            "_id": "Ewgtm_21qr",
+            "Yi49Ln4-V_": "\"amber\"",
+            "nd30YgUKve": ""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "nd30YgUKve",
+            "name": "Company Type",
+            "type": "expression",
+            "field": "companyInformation.experian.legalStatus"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "Yi49Ln4-V_",
+            "name": "Flag CompanyType",
+            "type": "expression",
+            "field": "flag.companyType"
+          }
+        ],
+        "hitPolicy": "first"
+      },
+      "position": {
+        "x": 380,
+        "y": 270
+      }
+    },
+    {
+      "id": "46fbad36-4bbe-44ac-833f-d30e0d37d8d7",
+      "name": "Turnover",
+      "type": "decisionTableNode",
+      "content": {
+        "rules": [
+          {
+            "_id": "fJxWqBVUNk",
+            "2Zxqan3BtC": "",
+            "6xj5CMIFv9": "> 1_000_000",
+            "rrW6s3l7vU": "\"green\""
+          },
+          {
+            "_id": "lqBoqkvWHA",
+            "2Zxqan3BtC": "",
+            "6xj5CMIFv9": "[200_000..1_000_000]",
+            "rrW6s3l7vU": "\"amber\""
+          },
+          {
+            "_id": "YO3K4Q1iuU",
+            "2Zxqan3BtC": "",
+            "6xj5CMIFv9": "< 200_000",
+            "rrW6s3l7vU": "\"red\""
+          },
+          {
+            "_id": "SY7uwJEPqS",
+            "2Zxqan3BtC": "",
+            "6xj5CMIFv9": "",
+            "rrW6s3l7vU": "\"red\""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "6xj5CMIFv9",
+            "name": "Turnover (LY)",
+            "type": "expression",
+            "field": "companyInformation.financialDetails.turnover"
+          },
+          {
+            "id": "2Zxqan3BtC",
+            "name": "CompanyInformation Country Code",
+            "type": "expression",
+            "field": "companyInformation.country.code"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "rrW6s3l7vU",
+            "name": "Flag Turnover",
+            "type": "expression",
+            "field": "flag.turnover"
+          }
+        ],
+        "hitPolicy": "first"
+      },
+      "position": {
+        "x": 380,
+        "y": 160
+      }
+    },
+    {
+      "id": "abaaa033-5516-440c-b211-35f1d616ad9f",
+      "name": "Country",
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "inputs": [
+          {
+            "id": "z87lDk-Xar",
+            "name": "Company Country",
+            "type": "expression",
+            "field": "companyInformation.country.code"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "I493u7jDPg",
+            "name": "Flag Country",
+            "type": "expression",
+            "field": "flag.country"
+          }
+        ],
+        "rules": [
+          {
+            "_id": "TOi2qECISd",
+            "I493u7jDPg": "\"green\"",
+            "z87lDk-Xar": "\"US\",\"IE\",\"GB\",\"CA\", \"MX\""
+          },
+          {
+            "_id": "aGPqCdh2tU",
+            "I493u7jDPg": "\"amber\"",
+            "z87lDk-Xar": "\"FR\", \"DE\""
+          },
+          {
+            "_id": "VYiuLkrLWb",
+            "I493u7jDPg": "\"red\"",
+            "z87lDk-Xar": ""
+          }
+        ]
+      },
+      "position": {
+        "x": 380,
+        "y": 50
+      }
+    },
+    {
+      "id": "af6cdac4-2019-4a0f-9715-2ecfb27e0bfc",
+      "name": "Overall Mapper",
+      "type": "functionNode",
+      "content": "/**\n* @param {import('gorules').Input} input\n* @param {{\n*  moment: import('dayjs')\n*  env: Record<string, any>\n* }} helpers\n*/\nconst handler = (input, { moment, env }) => {\n  const count = (flag) => Object.values(input?.flag || {}).reduce((acc, curr) => {\n    if (curr === flag) return acc + 1;\n    return acc;\n  }, 0);\n\n  return {\n    critical: count('critical'),\n    red: count('red'),\n    amber: count('amber'),\n    green: count('green')\n  };\n}",
+      "position": {
+        "x": 630,
+        "y": 270
+      }
+    },
+    {
+      "id": "86ce04c9-b4dd-4513-ae2b-7f585ceb224a",
+      "name": "Overall",
+      "type": "decisionTableNode",
+      "content": {
+        "rules": [
+          {
+            "_id": "P0RQ3NFWfc",
+            "AczIUwvClr": "",
+            "KsBwLhAedP": "> 0",
+            "QJttqyV2FB": "",
+            "ek5q9WgLL9": "\"red\"",
+            "iFQl1CKB5S": ""
+          },
+          {
+            "_id": "UGrT2iHE61",
+            "AczIUwvClr": "> 0",
+            "KsBwLhAedP": "",
+            "QJttqyV2FB": "",
+            "ek5q9WgLL9": "\"red\"",
+            "iFQl1CKB5S": ""
+          },
+          {
+            "_id": "SBBO_aWujh",
+            "AczIUwvClr": "",
+            "KsBwLhAedP": "",
+            "QJttqyV2FB": "> 1",
+            "ek5q9WgLL9": "\"amber\"",
+            "iFQl1CKB5S": ""
+          },
+          {
+            "_id": "N2jO9BnXHY",
+            "AczIUwvClr": "",
+            "KsBwLhAedP": "",
+            "QJttqyV2FB": "",
+            "ek5q9WgLL9": "\"green\"",
+            "iFQl1CKB5S": ""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "AczIUwvClr",
+            "name": "Red",
+            "type": "expression",
+            "field": "red"
+          },
+          {
+            "id": "QJttqyV2FB",
+            "name": "Amber",
+            "type": "expression",
+            "field": "amber"
+          },
+          {
+            "id": "iFQl1CKB5S",
+            "name": "Green",
+            "type": "expression",
+            "field": "green"
+          },
+          {
+            "id": "KsBwLhAedP",
+            "name": "Critical",
+            "type": "expression",
+            "field": "critical"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "ek5q9WgLL9",
+            "name": "Overall",
+            "type": "expression",
+            "field": "overall"
+          }
+        ],
+        "hitPolicy": "first"
+      },
+      "position": {
+        "x": 880,
+        "y": 270
+      }
+    },
+    {
+      "id": "95aa8f3c-f371-4e48-beb3-0b5775d2a814",
+      "name": "Response",
+      "type": "outputNode",
+      "position": {
+        "x": 1120,
+        "y": 160
+      }
+    }
+  ]
+}

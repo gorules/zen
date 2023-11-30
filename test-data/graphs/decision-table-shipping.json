@@ -1,0 +1,398 @@
+{
+  "tests": [
+    {
+      "input": {
+        "cart": {
+          "items": [
+            {"unitPrice": 500, "quantity": 2},
+            {"unitPrice": 300, "quantity": 3}
+          ]
+        },
+        "customer": {
+          "tags": ["premium"],
+          "country": "US"
+        }
+      },
+      "output": {
+        "price": 15,
+        "group": "PREMIUM_HIGH"
+      }
+    },
+    {
+      "input": {
+        "cart": {
+          "items": [
+            {"unitPrice": 300, "quantity": 1},
+            {"unitPrice": 100, "quantity": 2}
+          ]
+        },
+        "customer": {
+          "tags": ["premium"],
+          "country": "US"
+        }
+      },
+      "output": {
+        "price": 20,
+        "group": "PREMIUM_MEDIUM"
+      }
+    },
+    {
+      "input": {
+        "cart": {
+          "items": [
+            {"unitPrice": 300, "quantity": 1},
+            {"unitPrice": 100, "quantity": 1}
+          ]
+        },
+        "customer": {
+          "tags": ["premium"],
+          "country": "US"
+        }
+      },
+      "output": {
+        "price": 25,
+        "group": "PREMIUM_LOW"
+      }
+    },
+    {
+      "input": {
+        "cart": {
+          "items": [
+            {"unitPrice": 1500, "quantity": 2},
+            {"unitPrice": 800, "quantity": 3}
+          ]
+        },
+        "customer": {
+          "tags": [],
+          "country": "US"
+        }
+      },
+      "output": {
+        "price": 25,
+        "group": "US_HIGH"
+      }
+    },
+    {
+      "input": {
+        "cart": {
+          "items": [
+            {"unitPrice": 300, "quantity": 2},
+            {"unitPrice": 50, "quantity": 3}
+          ]
+        },
+        "customer": {
+          "tags": [],
+          "country": "US"
+        }
+      },
+      "output": {
+        "price": 35,
+        "group": "US_MEDIUM"
+      }
+    },
+    {
+      "input": {
+        "cart": {
+          "items": [
+            {"unitPrice": 200, "quantity": 1},
+            {"unitPrice": 125, "quantity": 2}
+          ]
+        },
+        "customer": {
+          "tags": [],
+          "country": "US"
+        }
+      },
+      "output": {
+        "price": 40,
+        "group": "US_LOW"
+      }
+    },
+    {
+      "input": {
+        "cart": {
+          "items": [
+            {"unitPrice": 700, "quantity": 1},
+            {"unitPrice": 900, "quantity": 2}
+          ]
+        },
+        "customer": {
+          "tags": [],
+          "country": "IE"
+        }
+      },
+      "output": {
+        "price": 20,
+        "group": "UK_HIGH"
+      }
+    },
+    {
+      "input": {
+        "cart": {
+          "items": [
+            {"unitPrice": 400, "quantity": 1},
+            {"unitPrice": 200, "quantity": 2}
+          ]
+        },
+        "customer": {
+          "tags": [],
+          "country": "GB"
+        }
+      },
+      "output": {
+        "price": 30,
+        "group": "UK_MEDIUM"
+      }
+    },
+    {
+      "input": {
+        "cart": {
+          "items": [
+            {"unitPrice": 200, "quantity": 1},
+            {"unitPrice": 100, "quantity": 1}
+          ]
+        },
+        "customer": {
+          "tags": [],
+          "country": "IE"
+        }
+      },
+      "output": {
+        "price": 35,
+        "group": "UK_LOW"
+      }
+    },
+    {
+      "input": {
+        "cart": {
+          "items": [
+            {"unitPrice": 1500, "quantity": 1},
+            {"unitPrice": 1200, "quantity": 2}
+          ]
+        },
+        "customer": {
+          "tags": [],
+          "country": "ROW"
+        }
+      },
+      "output": {
+        "price": 35,
+        "group": "ROW_HIGH"
+      }
+    },
+    {
+      "input": {
+        "cart": {
+          "items": [
+            {"unitPrice": 400, "quantity": 2},
+            {"unitPrice": 199.99, "quantity": 1}
+          ]
+        },
+        "customer": {
+          "tags": [],
+          "country": "ROW"
+        }
+      },
+      "output": {
+        "price": 45,
+        "group": "ROW_MEDIUM"
+      }
+    },
+    {
+      "input": {
+        "cart": {
+          "items": [
+            {"unitPrice": 499.99, "quantity": 1}
+          ]
+        },
+        "customer": {
+          "tags": [],
+          "country": "ROW"
+        }
+      },
+      "output": {
+        "price": 50,
+        "group": "ROW_LOW"
+      }
+    }
+  ],
+  "contentType": "application/vnd.gorules.decision",
+  "nodes": [
+    {
+      "id": "4c688656-05ba-4503-a582-02e6e4a5a135",
+      "type": "inputNode",
+      "position": {
+        "x": 220,
+        "y": 260
+      },
+      "name": "Request"
+    },
+    {
+      "id": "2938f93f-1dce-4f85-a401-44c224d9237f",
+      "type": "outputNode",
+      "position": {
+        "x": 730,
+        "y": 260
+      },
+      "name": "Response"
+    },
+    {
+      "id": "405841da-b7bb-4f4e-824f-21f1f4bc6fd9",
+      "type": "decisionTableNode",
+      "position": {
+        "x": 460,
+        "y": 260
+      },
+      "name": "Shipping Fees",
+      "content": {
+        "hitPolicy": "first",
+        "inputs": [
+          {
+            "id": "ea23eec9-76c5-4b62-821c-aec504545506",
+            "name": "Totals",
+            "type": "expression",
+            "field": "sum(map(cart.items, #.unitPrice * #.quantity))"
+          },
+          {
+            "id": "184cc5f5-f459-41cf-814b-79f6ffea695d",
+            "type": "expression",
+            "field": "customer.tags",
+            "name": "Customer Tags"
+          },
+          {
+            "id": "d89ca9da-581e-4392-a990-24cde9c33a2b",
+            "type": "expression",
+            "field": "customer.country",
+            "name": "Customer Country"
+          }
+        ],
+        "outputs": [
+          {
+            "field": "price",
+            "id": "f01ad940-81f0-4164-9868-5423fb66cca9",
+            "name": "Price",
+            "type": "expression"
+          },
+          {
+            "id": "adf3d882-64d8-4cf9-a208-023f586f8697",
+            "type": "expression",
+            "field": "group",
+            "name": "Group"
+          }
+        ],
+        "rules": [
+          {
+            "_id": "ab7bcf2b-4594-4347-a085-5dac0601d7e5",
+            "ea23eec9-76c5-4b62-821c-aec504545506": ">= 1_000",
+            "184cc5f5-f459-41cf-814b-79f6ffea695d": "contains($, \"premium\")",
+            "d89ca9da-581e-4392-a990-24cde9c33a2b": "",
+            "f01ad940-81f0-4164-9868-5423fb66cca9": "15",
+            "adf3d882-64d8-4cf9-a208-023f586f8697": "\"PREMIUM_HIGH\""
+          },
+          {
+            "_id": "4a2ae2e9-9ad7-45b2-9fad-db26e3cab0c8",
+            "ea23eec9-76c5-4b62-821c-aec504545506": "[500..1_000)",
+            "184cc5f5-f459-41cf-814b-79f6ffea695d": "contains($, \"premium\")",
+            "d89ca9da-581e-4392-a990-24cde9c33a2b": "",
+            "f01ad940-81f0-4164-9868-5423fb66cca9": "20",
+            "adf3d882-64d8-4cf9-a208-023f586f8697": "\"PREMIUM_MEDIUM\""
+          },
+          {
+            "_id": "b7aaeca2-7e42-4fb2-9867-eb4e43ca911d",
+            "ea23eec9-76c5-4b62-821c-aec504545506": "",
+            "184cc5f5-f459-41cf-814b-79f6ffea695d": "contains($, \"premium\")",
+            "d89ca9da-581e-4392-a990-24cde9c33a2b": "",
+            "f01ad940-81f0-4164-9868-5423fb66cca9": "25",
+            "adf3d882-64d8-4cf9-a208-023f586f8697": "\"PREMIUM_LOW\""
+          },
+          {
+            "_id": "a179f314-512c-4cc6-a892-5f1e0b6b979c",
+            "ea23eec9-76c5-4b62-821c-aec504545506": ">= 1_000",
+            "184cc5f5-f459-41cf-814b-79f6ffea695d": "",
+            "d89ca9da-581e-4392-a990-24cde9c33a2b": "\"US\"",
+            "f01ad940-81f0-4164-9868-5423fb66cca9": "25",
+            "adf3d882-64d8-4cf9-a208-023f586f8697": "\"US_HIGH\""
+          },
+          {
+            "_id": "db1f0c0e-e48a-4f9f-95fe-04e143cfd029",
+            "ea23eec9-76c5-4b62-821c-aec504545506": "[500..1_000)",
+            "184cc5f5-f459-41cf-814b-79f6ffea695d": "",
+            "d89ca9da-581e-4392-a990-24cde9c33a2b": "\"US\"",
+            "f01ad940-81f0-4164-9868-5423fb66cca9": "35",
+            "adf3d882-64d8-4cf9-a208-023f586f8697": "\"US_MEDIUM\""
+          },
+          {
+            "_id": "3110b1b5-6552-48c4-8a78-417ee6185125",
+            "ea23eec9-76c5-4b62-821c-aec504545506": "",
+            "184cc5f5-f459-41cf-814b-79f6ffea695d": "",
+            "d89ca9da-581e-4392-a990-24cde9c33a2b": "\"US\"",
+            "f01ad940-81f0-4164-9868-5423fb66cca9": "40",
+            "adf3d882-64d8-4cf9-a208-023f586f8697": "\"US_LOW\""
+          },
+          {
+            "_id": "6ad80268-5400-45f4-977f-07515cc0d4a0",
+            "ea23eec9-76c5-4b62-821c-aec504545506": ">= 1_000",
+            "184cc5f5-f459-41cf-814b-79f6ffea695d": "",
+            "d89ca9da-581e-4392-a990-24cde9c33a2b": "\"GB\", \"IE\"",
+            "f01ad940-81f0-4164-9868-5423fb66cca9": "20",
+            "adf3d882-64d8-4cf9-a208-023f586f8697": "\"UK_HIGH\""
+          },
+          {
+            "_id": "b814770e-c35b-406b-ba0a-39e2832853bc",
+            "ea23eec9-76c5-4b62-821c-aec504545506": "[500..1_000)",
+            "184cc5f5-f459-41cf-814b-79f6ffea695d": "",
+            "d89ca9da-581e-4392-a990-24cde9c33a2b": "\"GB\", \"IE\"",
+            "f01ad940-81f0-4164-9868-5423fb66cca9": "30",
+            "adf3d882-64d8-4cf9-a208-023f586f8697": "\"UK_MEDIUM\""
+          },
+          {
+            "_id": "705783d4-e015-47d6-98fc-84f6544b3ce1",
+            "ea23eec9-76c5-4b62-821c-aec504545506": "",
+            "184cc5f5-f459-41cf-814b-79f6ffea695d": "",
+            "d89ca9da-581e-4392-a990-24cde9c33a2b": "\"GB\", \"IE\"",
+            "f01ad940-81f0-4164-9868-5423fb66cca9": "35",
+            "adf3d882-64d8-4cf9-a208-023f586f8697": "\"UK_LOW\""
+          },
+          {
+            "_id": "889c2ab2-d495-4299-9809-3aac70352c9b",
+            "ea23eec9-76c5-4b62-821c-aec504545506": ">= 1_000",
+            "184cc5f5-f459-41cf-814b-79f6ffea695d": "",
+            "d89ca9da-581e-4392-a990-24cde9c33a2b": "",
+            "f01ad940-81f0-4164-9868-5423fb66cca9": "35",
+            "adf3d882-64d8-4cf9-a208-023f586f8697": "\"ROW_HIGH\""
+          },
+          {
+            "_id": "3c32d0b0-32a1-465c-9f50-643f8f2a0700",
+            "ea23eec9-76c5-4b62-821c-aec504545506": "[500..1_000)",
+            "184cc5f5-f459-41cf-814b-79f6ffea695d": "",
+            "d89ca9da-581e-4392-a990-24cde9c33a2b": "",
+            "f01ad940-81f0-4164-9868-5423fb66cca9": "45",
+            "adf3d882-64d8-4cf9-a208-023f586f8697": "\"ROW_MEDIUM\""
+          },
+          {
+            "_id": "5449fa1d-78f1-463f-a4e7-6ce8018adf1f",
+            "ea23eec9-76c5-4b62-821c-aec504545506": "",
+            "184cc5f5-f459-41cf-814b-79f6ffea695d": "",
+            "d89ca9da-581e-4392-a990-24cde9c33a2b": "",
+            "f01ad940-81f0-4164-9868-5423fb66cca9": "50",
+            "adf3d882-64d8-4cf9-a208-023f586f8697": "\"ROW_LOW\""
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "1ded87cb-d27c-40ba-a31a-8a7127303f6c",
+      "sourceId": "4c688656-05ba-4503-a582-02e6e4a5a135",
+      "type": "edge",
+      "targetId": "405841da-b7bb-4f4e-824f-21f1f4bc6fd9"
+    },
+    {
+      "id": "2a3ed2d7-ab77-4935-968e-11642ebd4f75",
+      "sourceId": "405841da-b7bb-4f4e-824f-21f1f4bc6fd9",
+      "type": "edge",
+      "targetId": "2938f93f-1dce-4f85-a401-44c224d9237f"
+    }
+  ]
+}

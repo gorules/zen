@@ -62,7 +62,7 @@ where
         context: &Value,
         options: EvaluationOptions,
     ) -> Result<DecisionGraphResponse, Box<EvaluationError>> {
-        let decision_graph = DecisionGraph::try_new(DecisionGraphConfig {
+        let mut decision_graph = DecisionGraph::try_new(DecisionGraphConfig {
             max_depth: options.max_depth.unwrap_or(5),
             trace: options.trace.unwrap_or_default(),
             loader: self.loader.clone(),

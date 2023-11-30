@@ -1,0 +1,537 @@
+{
+  "tests": [
+    {
+      "input": {
+        "transaction": {
+          "id": "123456789",
+          "timestamp": "2023-11-30T12:34:56Z",
+          "amountUSD": 100.50,
+          "currency": "EUR",
+          "status": "pending"
+        },
+        "customer": {
+          "id": "987654321",
+          "firstName": "John",
+          "lastName": "Doe",
+          "email": "john.doe@example.com",
+          "address": {
+            "street": "123 Main St",
+            "city": "Anytown",
+            "state": "CA",
+            "zipCode": "12345",
+            "country": "USA"
+          }
+        },
+        "merchant": {
+          "id": "567890123",
+          "name": "SuperMart",
+          "category": "Retail",
+          "reputation": 0.81,
+          "location": {
+            "country": "RU"
+          }
+        }
+      },
+      "output": {
+        "breakdown": {
+          "amber": 0,
+          "green": 3,
+          "red": 1
+        },
+        "flags": {
+          "eurSanctions": "red",
+          "globalSanctions": "green",
+          "merchantReputation": "green",
+          "transactionAmount": "green"
+        },
+        "overallFlag": "red"
+      }
+    },
+    {
+      "input": {
+        "transaction": {
+          "id": "123456789",
+          "timestamp": "2023-11-30T12:34:56Z",
+          "amountUSD": 30000.50,
+          "currency": "USD",
+          "status": "pending"
+        },
+        "customer": {
+          "id": "987654321",
+          "firstName": "John",
+          "lastName": "Doe",
+          "email": "john.doe@example.com",
+          "address": {
+            "street": "123 Main St",
+            "city": "Anytown",
+            "state": "CA",
+            "zipCode": "12345",
+            "country": "USA"
+          }
+        },
+        "merchant": {
+          "id": "567890123",
+          "name": "SuperMart",
+          "category": "Retail",
+          "reputation": 0.55,
+          "location": {
+            "street": "456 High St",
+            "city": "AnotherTown",
+            "state": "CA",
+            "zipCode": "54321",
+            "country": "USA"
+          }
+        }
+      },
+      "output": {
+        "breakdown": {
+          "amber": 2,
+          "green": 2,
+          "red": 0
+        },
+        "flags": {
+          "globalSanctions": "green",
+          "merchantReputation": "amber",
+          "transactionAmount": "amber",
+          "usdSanction": "green"
+        },
+        "overallFlag": "amber"
+      }
+    },
+    {
+      "input": {
+        "transaction": {
+          "id": "123456789",
+          "timestamp": "2023-11-30T12:34:56Z",
+          "amountUSD": 30000,
+          "currency": "EUR",
+          "status": "pending"
+        },
+        "customer": {
+          "id": "987654321",
+          "firstName": "John",
+          "lastName": "Doe",
+          "email": "john.doe@example.com",
+          "tier": "enterprise",
+          "address": {
+            "country": "FR"
+          }
+        },
+        "merchant": {
+          "id": "567890123",
+          "name": "SuperMart",
+          "category": "Retail",
+          "reputation": 0.55,
+          "location": {
+            "street": "456 High St",
+            "city": "AnotherTown",
+            "state": "CA",
+            "zipCode": "54321",
+            "country": "VE"
+          }
+        }
+      },
+      "output": {
+        "breakdown": {
+          "amber": 2,
+          "green": 2,
+          "red": 0
+        },
+        "flags": {
+          "eurSanctions": "amber",
+          "globalSanctions": "green",
+          "merchantReputation": "amber",
+          "transactionAmount": "green"
+        },
+        "overallFlag": "amber"
+      }
+    }
+  ],
+  "contentType": "application/vnd.gorules.decision",
+  "nodes": [
+    {
+      "id": "df092198-208d-4526-82a2-2ff4359d9001",
+      "type": "inputNode",
+      "position": {
+        "x": 90,
+        "y": 330
+      },
+      "name": "Request"
+    },
+    {
+      "id": "f7e19179-48b7-4d94-b085-ea3d6c9e829e",
+      "type": "switchNode",
+      "position": {
+        "x": 400,
+        "y": 440
+      },
+      "name": "Sanctions",
+      "content": {
+        "hitPolicy": "collect",
+        "statements": [
+          {
+            "id": "5bffb0f5-a69d-46ba-9122-08bae9f6fe92",
+            "condition": "transaction.currency == \"USD\""
+          },
+          {
+            "id": "13737427-cb8c-4c32-bde5-e49ef6fa03e0",
+            "condition": "transaction.currency == \"EUR\""
+          },
+          {
+            "id": "aa630466-3bb1-45e3-9ae8-12eb57451f55",
+            "condition": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": "9bc09d87-84ce-4f4c-9c53-317688ee6cc5",
+      "type": "decisionTableNode",
+      "position": {
+        "x": 700,
+        "y": 520
+      },
+      "name": "USD Sanctions",
+      "content": {
+        "hitPolicy": "first",
+        "inputs": [
+          {
+            "id": "e03b1f07-7d3a-4a64-9aa5-aca83e4cfa01",
+            "name": "Merchant country",
+            "type": "expression",
+            "field": "merchant.location.country"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "1959963a-2aec-4988-87a5-bfc590ca08c4",
+            "name": "Output",
+            "type": "expression",
+            "field": "flags.usdSanction"
+          }
+        ],
+        "rules": [
+          {
+            "_id": "fca1348e-026f-4356-a443-617fa99909eb",
+            "e03b1f07-7d3a-4a64-9aa5-aca83e4cfa01": "\"RU\", \"CU\", \"KP\", \"VE\"",
+            "1959963a-2aec-4988-87a5-bfc590ca08c4": "\"red\""
+          },
+          {
+            "_id": "26b794b7-26ce-4e51-9432-cf1d3580a638",
+            "e03b1f07-7d3a-4a64-9aa5-aca83e4cfa01": "",
+            "1959963a-2aec-4988-87a5-bfc590ca08c4": "\"green\""
+          }
+        ]
+      }
+    },
+    {
+      "id": "3187c4af-565f-482c-805f-9099e9d56fc1",
+      "type": "decisionTableNode",
+      "position": {
+        "x": 700,
+        "y": 620
+      },
+      "name": "EUR Sanctions",
+      "content": {
+        "hitPolicy": "first",
+        "inputs": [
+          {
+            "id": "90adfc05-ffdf-490f-ab47-cede8dd899f3",
+            "name": "Location",
+            "type": "expression",
+            "field": "merchant.location.country"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "e49398d3-cc2b-4e5a-81b0-e50fd020b5c0",
+            "name": "Output",
+            "type": "expression",
+            "field": "flags.eurSanctions"
+          }
+        ],
+        "rules": [
+          {
+            "_id": "ff990579-78ff-4a25-9706-eae402a26c4e",
+            "90adfc05-ffdf-490f-ab47-cede8dd899f3": "\"RU\", \"NK\"",
+            "e49398d3-cc2b-4e5a-81b0-e50fd020b5c0": "\"red\""
+          },
+          {
+            "_id": "380670ff-4a6a-48d6-b430-8cbb6186438b",
+            "90adfc05-ffdf-490f-ab47-cede8dd899f3": "\"VE\", \"IR\"",
+            "e49398d3-cc2b-4e5a-81b0-e50fd020b5c0": "\"amber\""
+          },
+          {
+            "_id": "5fb3c366-54d5-4a17-bbd0-88f2d65ce99d",
+            "90adfc05-ffdf-490f-ab47-cede8dd899f3": "",
+            "e49398d3-cc2b-4e5a-81b0-e50fd020b5c0": "\"green\""
+          }
+        ]
+      }
+    },
+    {
+      "id": "fd8f6200-f236-4d00-859e-9a732e553176",
+      "type": "decisionTableNode",
+      "position": {
+        "x": 700,
+        "y": 720
+      },
+      "name": "Global Sanctions",
+      "content": {
+        "hitPolicy": "first",
+        "inputs": [
+          {
+            "id": "c31240e0-8761-4c31-9f79-5210a656f820",
+            "name": "Input",
+            "type": "expression"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "156ad457-da15-468b-9444-978f37c28463",
+            "name": "Output",
+            "type": "expression",
+            "field": "flags.globalSanctions"
+          }
+        ],
+        "rules": [
+          {
+            "_id": "e19c68ab-6db3-41b2-baef-8b5cca4254a9",
+            "c31240e0-8761-4c31-9f79-5210a656f820": "\"RU\", \"NK\"",
+            "156ad457-da15-468b-9444-978f37c28463": "\"red\""
+          },
+          {
+            "_id": "380eee74-94aa-4321-a673-878386dc3200",
+            "c31240e0-8761-4c31-9f79-5210a656f820": "",
+            "156ad457-da15-468b-9444-978f37c28463": "\"green\""
+          }
+        ]
+      }
+    },
+    {
+      "id": "204af8f6-325f-41cc-a5bd-ee99905d8c1f",
+      "type": "functionNode",
+      "position": {
+        "x": 1060,
+        "y": 360
+      },
+      "name": "Aggregator",
+      "content": "/**\n * @param input\n * @param {{\n *  dayjs: import('dayjs')\n *  Big: import('big.js').BigConstructor\n * }} helpers\n */\nconst handler = (input, { dayjs, Big }) => {\n  const flags = input.flags || {};\n  const countFlags = (flag) => Object.values(flags).reduce((acc, curr) => {\n    return curr == flag ? acc + 1 : acc;\n  }, 0);\n\n  const breakdown = {\n    red: countFlags('red'),\n    amber: countFlags('amber'),\n    green: countFlags('green')\n  };\n\n  let overallFlag = 'green';\n  if (breakdown.amber > 0) {\n    overallFlag = 'amber';\n  }\n  if (breakdown.red > 0) {\n    overallFlag = 'red';\n  }\n\n  return {\n    ...input,\n    breakdown,\n    overallFlag,\n  };\n}"
+    },
+    {
+      "id": "ac9cf968-98b2-4ba5-a481-28da1e32b649",
+      "type": "decisionTableNode",
+      "position": {
+        "x": 460,
+        "y": 220
+      },
+      "name": "Transaction Amount",
+      "content": {
+        "hitPolicy": "first",
+        "inputs": [
+          {
+            "id": "a713c7ef-1db6-4fa4-aca4-590c4092c742",
+            "name": "Customer Tier",
+            "type": "expression",
+            "field": "customer.tier"
+          },
+          {
+            "id": "360ba5d7-25b0-44ff-9cce-3f365634a42f",
+            "type": "expression",
+            "field": "transaction.amountUSD",
+            "name": "Transaction Amount USD"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "245ca04d-fd91-4c2b-80a5-660ec16d5ac1",
+            "name": "Transaction amount flag",
+            "type": "expression",
+            "field": "flags.transactionAmount"
+          }
+        ],
+        "rules": [
+          {
+            "_id": "3819029a-2446-47ed-ae6c-268c23f06ad2",
+            "a713c7ef-1db6-4fa4-aca4-590c4092c742": "\"enterprise\"",
+            "360ba5d7-25b0-44ff-9cce-3f365634a42f": "> 50_000",
+            "245ca04d-fd91-4c2b-80a5-660ec16d5ac1": "\"amber\""
+          },
+          {
+            "_id": "831b4587-4f1b-494c-97c3-da2861991779",
+            "a713c7ef-1db6-4fa4-aca4-590c4092c742": "\"enterprise\"",
+            "360ba5d7-25b0-44ff-9cce-3f365634a42f": "",
+            "245ca04d-fd91-4c2b-80a5-660ec16d5ac1": "\"green\""
+          },
+          {
+            "_id": "94556461-324d-4a4b-a039-2b703203ae64",
+            "a713c7ef-1db6-4fa4-aca4-590c4092c742": "\"business\"",
+            "360ba5d7-25b0-44ff-9cce-3f365634a42f": "> 100_000",
+            "245ca04d-fd91-4c2b-80a5-660ec16d5ac1": "\"red\""
+          },
+          {
+            "_id": "e4170bfe-9ceb-49d4-9ef8-c56e2d3501e9",
+            "a713c7ef-1db6-4fa4-aca4-590c4092c742": "\"business\"",
+            "360ba5d7-25b0-44ff-9cce-3f365634a42f": "> 20_000",
+            "245ca04d-fd91-4c2b-80a5-660ec16d5ac1": "\"amber\""
+          },
+          {
+            "_id": "0156a3ca-aca4-42a0-8d6a-f55290501573",
+            "a713c7ef-1db6-4fa4-aca4-590c4092c742": "\"business\"",
+            "360ba5d7-25b0-44ff-9cce-3f365634a42f": "",
+            "245ca04d-fd91-4c2b-80a5-660ec16d5ac1": "\"green\""
+          },
+          {
+            "_id": "26fbd01d-e355-49c9-88ad-7f5b00d4118a",
+            "a713c7ef-1db6-4fa4-aca4-590c4092c742": "",
+            "360ba5d7-25b0-44ff-9cce-3f365634a42f": "> 50_000",
+            "245ca04d-fd91-4c2b-80a5-660ec16d5ac1": "\"red\""
+          },
+          {
+            "_id": "65f91c4f-bf69-40fa-86c6-36ad71abbc1b",
+            "a713c7ef-1db6-4fa4-aca4-590c4092c742": "",
+            "360ba5d7-25b0-44ff-9cce-3f365634a42f": "> 10_000",
+            "245ca04d-fd91-4c2b-80a5-660ec16d5ac1": "\"amber\""
+          },
+          {
+            "_id": "58cf804e-ad94-4ed6-99fe-8263ae8cf7cd",
+            "a713c7ef-1db6-4fa4-aca4-590c4092c742": "",
+            "360ba5d7-25b0-44ff-9cce-3f365634a42f": "",
+            "245ca04d-fd91-4c2b-80a5-660ec16d5ac1": "\"green\""
+          }
+        ]
+      }
+    },
+    {
+      "id": "57b828f3-e0ff-4e3a-9549-7dae4eeba55d",
+      "type": "decisionTableNode",
+      "position": {
+        "x": 460,
+        "y": 330
+      },
+      "name": "Merchant Reputation",
+      "content": {
+        "hitPolicy": "first",
+        "inputs": [
+          {
+            "id": "c658ae97-99c8-46fe-bc3a-64c14ea8c475",
+            "name": "Merchant reputation",
+            "type": "expression",
+            "field": "merchant.reputation"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "71bf3b59-455d-4a6e-894c-4e3a7cf7cbde",
+            "name": "Merchant Reputation Flag",
+            "type": "expression",
+            "field": "flags.merchantReputation"
+          }
+        ],
+        "rules": [
+          {
+            "_id": "e8a05a05-d7f7-4272-94a1-c5aa84b0feaf",
+            "c658ae97-99c8-46fe-bc3a-64c14ea8c475": "(0.8..1.0]",
+            "71bf3b59-455d-4a6e-894c-4e3a7cf7cbde": "\"green\""
+          },
+          {
+            "_id": "cdee900f-a1b1-4a0c-8aca-c305c19a33dd",
+            "c658ae97-99c8-46fe-bc3a-64c14ea8c475": "(0.5..0.8]",
+            "71bf3b59-455d-4a6e-894c-4e3a7cf7cbde": "\"amber\""
+          },
+          {
+            "_id": "5c58e04a-94b8-40ec-8709-39847e2d4704",
+            "c658ae97-99c8-46fe-bc3a-64c14ea8c475": "",
+            "71bf3b59-455d-4a6e-894c-4e3a7cf7cbde": "\"red\""
+          }
+        ]
+      }
+    },
+    {
+      "id": "71285ae0-45cf-4300-afe7-de39e0f81590",
+      "type": "outputNode",
+      "position": {
+        "x": 1320,
+        "y": 360
+      },
+      "name": "Response"
+    }
+  ],
+  "edges": [
+    {
+      "id": "284924aa-b0e8-4161-bfc0-4cadb7a581a6",
+      "sourceId": "df092198-208d-4526-82a2-2ff4359d9001",
+      "type": "edge",
+      "targetId": "f7e19179-48b7-4d94-b085-ea3d6c9e829e"
+    },
+    {
+      "id": "bbacf049-12b4-406d-bf36-1b68a9640992",
+      "sourceId": "f7e19179-48b7-4d94-b085-ea3d6c9e829e",
+      "type": "edge",
+      "targetId": "9bc09d87-84ce-4f4c-9c53-317688ee6cc5",
+      "sourceHandle": "5bffb0f5-a69d-46ba-9122-08bae9f6fe92"
+    },
+    {
+      "id": "79e399d4-57ba-46ec-8f74-12260081043f",
+      "sourceId": "f7e19179-48b7-4d94-b085-ea3d6c9e829e",
+      "type": "edge",
+      "targetId": "3187c4af-565f-482c-805f-9099e9d56fc1",
+      "sourceHandle": "13737427-cb8c-4c32-bde5-e49ef6fa03e0"
+    },
+    {
+      "id": "da7e7f8b-1e05-4189-afa4-42423be11367",
+      "sourceId": "f7e19179-48b7-4d94-b085-ea3d6c9e829e",
+      "type": "edge",
+      "targetId": "fd8f6200-f236-4d00-859e-9a732e553176",
+      "sourceHandle": "aa630466-3bb1-45e3-9ae8-12eb57451f55"
+    },
+    {
+      "id": "5624c75f-9f3c-4739-983d-9cf509967201",
+      "sourceId": "9bc09d87-84ce-4f4c-9c53-317688ee6cc5",
+      "type": "edge",
+      "targetId": "204af8f6-325f-41cc-a5bd-ee99905d8c1f"
+    },
+    {
+      "id": "6d2d4d98-901a-4304-82e1-bc67219308a8",
+      "sourceId": "3187c4af-565f-482c-805f-9099e9d56fc1",
+      "type": "edge",
+      "targetId": "204af8f6-325f-41cc-a5bd-ee99905d8c1f"
+    },
+    {
+      "id": "f0c921b9-9b8c-43ab-9215-ed9b3af54d88",
+      "sourceId": "fd8f6200-f236-4d00-859e-9a732e553176",
+      "type": "edge",
+      "targetId": "204af8f6-325f-41cc-a5bd-ee99905d8c1f"
+    },
+    {
+      "id": "1fd5ad15-4bdf-451c-9bdc-f34424382e0b",
+      "sourceId": "df092198-208d-4526-82a2-2ff4359d9001",
+      "type": "edge",
+      "targetId": "57b828f3-e0ff-4e3a-9549-7dae4eeba55d"
+    },
+    {
+      "id": "fd6caf40-ef8f-4a2e-bf05-a42bb7f33236",
+      "sourceId": "df092198-208d-4526-82a2-2ff4359d9001",
+      "type": "edge",
+      "targetId": "ac9cf968-98b2-4ba5-a481-28da1e32b649"
+    },
+    {
+      "id": "74c48816-e17d-4d44-83da-e05940e778c7",
+      "sourceId": "ac9cf968-98b2-4ba5-a481-28da1e32b649",
+      "type": "edge",
+      "targetId": "204af8f6-325f-41cc-a5bd-ee99905d8c1f"
+    },
+    {
+      "id": "ac21ce5c-0a87-4f23-8006-0d75b782f5dd",
+      "sourceId": "57b828f3-e0ff-4e3a-9549-7dae4eeba55d",
+      "type": "edge",
+      "targetId": "204af8f6-325f-41cc-a5bd-ee99905d8c1f"
+    },
+    {
+      "id": "0af5670d-eb0f-4051-a129-843488525e43",
+      "sourceId": "204af8f6-325f-41cc-a5bd-ee99905d8c1f",
+      "type": "edge",
+      "targetId": "71285ae0-45cf-4300-afe7-de39e0f81590"
+    }
+  ]
+}

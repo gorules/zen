@@ -1,0 +1,167 @@
+{
+  "contentType": "application/vnd.gorules.decision",
+  "nodes": [
+    {
+      "id": "ca98730e-a40f-4601-98cc-b5a57429596d",
+      "type": "inputNode",
+      "position": {
+        "x": 70,
+        "y": 150
+      },
+      "name": "Request"
+    },
+    {
+      "id": "7b80ff11-c196-4f6f-826f-571ddde1015e",
+      "type": "outputNode",
+      "position": {
+        "x": 1020,
+        "y": 120
+      },
+      "name": "Response"
+    },
+    {
+      "id": "46ec83d6-44e3-4436-b57f-915e0718c1ca",
+      "type": "outputNode",
+      "position": {
+        "x": 1020,
+        "y": 250
+      },
+      "name": "Response"
+    },
+    {
+      "id": "9dc1082f-fbe7-4bee-a32a-bcc11be71985",
+      "type": "switchNode",
+      "position": {
+        "x": 380,
+        "y": 150
+      },
+      "name": "switchNode 1",
+      "content": {
+        "statements": [
+          {
+            "id": "06bac0d2-9da9-444a-8c14-75bfd165ee5f",
+            "condition": "color == 'yellow'"
+          },
+          {
+            "id": "3784c59e-7f38-40f6-a0d2-58ebc7f24d4c",
+            "condition": "color == 'red'"
+          },
+          {
+            "id": "9db25b58-02d9-45a1-ad03-77e5c5b5cf6d",
+            "condition": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": "05e8efcc-9151-4681-97a3-ffc46d9678f2",
+      "type": "expressionNode",
+      "position": {
+        "x": 740,
+        "y": 120
+      },
+      "name": "EN1",
+      "content": {
+        "expressions": [
+          {
+            "id": "f8e969ad-87a6-4392-9a4e-b41c858f6bd2",
+            "key": "path1",
+            "value": "true"
+          }
+        ]
+      }
+    },
+    {
+      "id": "6d3d30cf-263c-4a47-b85f-4d07cd6e319b",
+      "type": "expressionNode",
+      "position": {
+        "x": 740,
+        "y": 380
+      },
+      "name": "EN3",
+      "content": {
+        "expressions": [
+          {
+            "id": "9c0a323e-fec9-4a14-bd52-bbde8c7fcdc0",
+            "key": "path3",
+            "value": "true"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ffd7380c-861e-4f1a-ab33-e287dbd17e85",
+      "type": "expressionNode",
+      "position": {
+        "x": 740,
+        "y": 250
+      },
+      "name": "EN2",
+      "content": {
+        "expressions": [
+          {
+            "id": "8cca0067-ae52-437a-8b92-451eb1dc54f6",
+            "key": "path2",
+            "value": "true"
+          }
+        ]
+      }
+    },
+    {
+      "id": "825acd18-dc9d-4d98-ab4f-d57bb29d191a",
+      "type": "outputNode",
+      "position": {
+        "x": 1020,
+        "y": 380
+      },
+      "name": "Response"
+    }
+  ],
+  "edges": [
+    {
+      "id": "af35139a-48d5-4f54-a835-b6a49dc80c76",
+      "sourceId": "ca98730e-a40f-4601-98cc-b5a57429596d",
+      "type": "edge",
+      "targetId": "9dc1082f-fbe7-4bee-a32a-bcc11be71985"
+    },
+    {
+      "id": "edef36ef-4f0f-4a70-b625-50b71f2af4b8",
+      "sourceId": "9dc1082f-fbe7-4bee-a32a-bcc11be71985",
+      "type": "edge",
+      "targetId": "05e8efcc-9151-4681-97a3-ffc46d9678f2",
+      "sourceHandle": "06bac0d2-9da9-444a-8c14-75bfd165ee5f"
+    },
+    {
+      "id": "1d9e31bb-4a64-4546-993a-1bbbeb699eb4",
+      "sourceId": "05e8efcc-9151-4681-97a3-ffc46d9678f2",
+      "type": "edge",
+      "targetId": "7b80ff11-c196-4f6f-826f-571ddde1015e"
+    },
+    {
+      "id": "79570832-2285-471e-bd65-e45b730b5071",
+      "sourceId": "9dc1082f-fbe7-4bee-a32a-bcc11be71985",
+      "type": "edge",
+      "targetId": "ffd7380c-861e-4f1a-ab33-e287dbd17e85",
+      "sourceHandle": "3784c59e-7f38-40f6-a0d2-58ebc7f24d4c"
+    },
+    {
+      "id": "9757cd62-3d39-4814-b322-c965a37d0c9f",
+      "sourceId": "ffd7380c-861e-4f1a-ab33-e287dbd17e85",
+      "type": "edge",
+      "targetId": "46ec83d6-44e3-4436-b57f-915e0718c1ca"
+    },
+    {
+      "id": "b73856ef-9921-4a1c-b776-3310ec3a9692",
+      "sourceId": "9dc1082f-fbe7-4bee-a32a-bcc11be71985",
+      "type": "edge",
+      "targetId": "6d3d30cf-263c-4a47-b85f-4d07cd6e319b",
+      "sourceHandle": "9db25b58-02d9-45a1-ad03-77e5c5b5cf6d"
+    },
+    {
+      "id": "9a058ad7-ffe5-4efb-a5ad-428af59a7839",
+      "sourceId": "6d3d30cf-263c-4a47-b85f-4d07cd6e319b",
+      "type": "edge",
+      "targetId": "825acd18-dc9d-4d98-ab4f-d57bb29d191a"
+    }
+  ]
+}

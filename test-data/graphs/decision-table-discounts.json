@@ -1,0 +1,168 @@
+{
+  "tests": [
+    {
+      "input": {
+        "code": "WELCOME_2023",
+        "order": {"createdAt": "2023-01-15"},
+        "customer": {
+          "joinDate": "2023-02-01",
+          "pastPurchases": []
+        }
+      },
+      "output": [
+        {
+          "discount": {"percentage": 15}
+        }
+      ]
+    },
+    {
+      "input": {
+        "code": "BACK_TO_BACK",
+        "order": {"createdAt": "2023-01-20"},
+        "customer": {
+          "joinDate": "2023-01-10",
+          "pastPurchases": [{}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}]
+        }
+      },
+      "output": [
+        {
+          "discount": {"flat": 25}
+        }
+      ]
+    },
+    {
+      "input": {
+        "code": "EARLY_BIRD",
+        "order": {"createdAt": "2022-01-15"},
+        "customer": {
+          "joinDate": "2019-12-01",
+          "pastPurchases": []
+        }
+      },
+      "output": [
+        {
+          "discount": {"percentage": 10}
+        }
+      ]
+    }
+  ],
+  "contentType": "application/vnd.gorules.decision",
+  "nodes": [
+    {
+      "id": "5eefa8a4-56a9-46b1-a265-7ddbddde3441",
+      "type": "inputNode",
+      "position": {
+        "x": 240,
+        "y": 280
+      },
+      "name": "Request"
+    },
+    {
+      "id": "638d767d-ae08-4ba3-9db3-97c6c4e4c6f5",
+      "type": "decisionTableNode",
+      "position": {
+        "x": 520,
+        "y": 280
+      },
+      "name": "Discounts",
+      "content": {
+        "hitPolicy": "collect",
+        "inputs": [
+          {
+            "id": "6fd35e3e-584b-4149-b4bf-5f2d258f40e7",
+            "type": "expression",
+            "field": "code",
+            "name": "Code"
+          },
+          {
+            "id": "a1700de6-fe35-4cec-b66f-0897d2604a3f",
+            "name": "Order Date",
+            "type": "expression",
+            "field": "date(order.createdAt)"
+          },
+          {
+            "id": "813dace4-0b55-4409-adb2-b4739a653302",
+            "type": "expression",
+            "field": "date(customer.joinDate)",
+            "name": "Customer Join Date"
+          },
+          {
+            "id": "f34f2c8b-eba9-4ebe-aeec-384bce69e3aa",
+            "type": "expression",
+            "field": "len(customer.pastPurchases)",
+            "name": "Customer Past Purchases"
+          }
+        ],
+        "outputs": [
+          {
+            "field": "discount.percentage",
+            "id": "16d637be-1093-4468-b29f-236666bf2f26",
+            "name": "Discount Percentage",
+            "type": "expression"
+          },
+          {
+            "id": "bccbb1bc-f0da-4b1e-b186-122ba4a193ac",
+            "type": "expression",
+            "field": "discount.flat",
+            "name": "Discount Flat"
+          }
+        ],
+        "rules": [
+          {
+            "_id": "eabd4e2e-5c14-4d4d-ada6-b3cdc547ae99",
+            "_description": "Welcome bonus of 15%",
+            "6fd35e3e-584b-4149-b4bf-5f2d258f40e7": "\"WELCOME_2023\"",
+            "a1700de6-fe35-4cec-b66f-0897d2604a3f": "",
+            "813dace4-0b55-4409-adb2-b4739a653302": "> date(\"2023-01-01\")",
+            "f34f2c8b-eba9-4ebe-aeec-384bce69e3aa": "0",
+            "16d637be-1093-4468-b29f-236666bf2f26": "15",
+            "bccbb1bc-f0da-4b1e-b186-122ba4a193ac": ""
+          },
+          {
+            "_id": "d80dee00-07a7-42fb-bc83-262eeee9fbdb",
+            "_description": "Recurring customer 25$ discount",
+            "6fd35e3e-584b-4149-b4bf-5f2d258f40e7": "\"BACK_TO_BACK\"",
+            "a1700de6-fe35-4cec-b66f-0897d2604a3f": "[date(\"2023-01-01\")..date(\"2023-02-01\")]",
+            "813dace4-0b55-4409-adb2-b4739a653302": "",
+            "f34f2c8b-eba9-4ebe-aeec-384bce69e3aa": "> 10",
+            "16d637be-1093-4468-b29f-236666bf2f26": "",
+            "bccbb1bc-f0da-4b1e-b186-122ba4a193ac": "25"
+          },
+          {
+            "_id": "fcfae4b3-5c86-4efe-91cd-ca4bc1fa7c7c",
+            "_description": "Old customer 10%",
+            "6fd35e3e-584b-4149-b4bf-5f2d258f40e7": "\"EARLY_BIRD\"",
+            "a1700de6-fe35-4cec-b66f-0897d2604a3f": "",
+            "813dace4-0b55-4409-adb2-b4739a653302": "< date(\"2020-01-01\")",
+            "f34f2c8b-eba9-4ebe-aeec-384bce69e3aa": "",
+            "16d637be-1093-4468-b29f-236666bf2f26": "10",
+            "bccbb1bc-f0da-4b1e-b186-122ba4a193ac": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": "c87d26e6-f3a2-47ad-9310-cbd1899cc68a",
+      "type": "outputNode",
+      "position": {
+        "x": 830,
+        "y": 280
+      },
+      "name": "Response"
+    }
+  ],
+  "edges": [
+    {
+      "id": "3b07d6c5-6949-4e5d-a8c6-f5cf44dbba0a",
+      "sourceId": "5eefa8a4-56a9-46b1-a265-7ddbddde3441",
+      "type": "edge",
+      "targetId": "638d767d-ae08-4ba3-9db3-97c6c4e4c6f5"
+    },
+    {
+      "id": "69e558e4-4c20-4a53-9230-c068ebb19830",
+      "sourceId": "638d767d-ae08-4ba3-9db3-97c6c4e4c6f5",
+      "type": "edge",
+      "targetId": "c87d26e6-f3a2-47ad-9310-cbd1899cc68a"
+    }
+  ]
+}

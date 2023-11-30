@@ -195,6 +195,7 @@ async fn engine_switch_node() {
 }
 
 #[tokio::test]
+#[cfg_attr(miri, ignore)]
 async fn engine_graph_tests() {
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]

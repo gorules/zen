@@ -35,7 +35,7 @@ async fn evaluate() {
     let result = decision.evaluate(&json!({ "input": 12 })).await;
 }
 ```
-For more advanced use cases where you want to load multiple decisions you can use loaders. To learn more please visit [Rust Docs](https://gorules.io/docs/rules-engine/engines/rust)
+For more advanced use cases where you want to load multiple decisions you can use loaders. To learn more please visit [Rust Docs](https://gorules.io/docs/rules-engine/engines/rust).
 
 ### NodeJS
 
@@ -57,7 +57,7 @@ import fs from 'fs/promises';
 })();
 ```
 
-For more advanced use cases where you want to load multiple decisions you can use loaders. To learn more please visit [NodeJS Docs](https://gorules.io/docs/rules-engine/engines/nodejs)
+For more advanced use cases where you want to load multiple decisions you can use loaders. To learn more please visit [NodeJS Docs](https://gorules.io/docs/rules-engine/engines/nodejs).
 
 ### Python
 
@@ -78,21 +78,19 @@ decision = engine.create_decision(content)
 result = decision.evaluate({"input": 15})
 ```
 
-For more advanced use cases where you want to load multiple decisions you can use loaders. To learn more please visit [Python Docs](https://gorules.io/docs/rules-engine/engines/python)
+For more advanced use cases where you want to load multiple decisions you can use loaders. To learn more please visit [Python Docs](https://gorules.io/docs/rules-engine/engines/python).
 
 ## JSON Decision Model (JDM)
 
-### Introduction to GoRules JDM Standard
-
-GoRules JDM (JSON Decision Model) is a comprehensive modeling framework designed to streamline the representation and implementation of decision models. Rooted in the principle of clarity and efficiency, GoRules JDM harnesses the power of graphs to provide a visual and intuitive way to depict decision-making processes.
+GoRules JDM (JSON Decision Model) is a modeling framework designed to streamline the representation and implementation of decision models.
 
 #### Understanding GoRules JDM
 At its core, GoRules JDM revolves around the concept of decision models as interconnected graphs stored in JSON format.
-These graphs elegantly capture the intricate relationships between various decision points, conditions, and outcomes in a GoRules Zen-Engine.
+These graphs capture the intricate relationships between various decision points, conditions, and outcomes in a GoRules Zen-Engine.
 
-Graphs are constructed through the connection of nodes by edges. These edges serve as conduits for transferring data from one node to another, typically from the left side to the right side.
+Graphs are made by linking nodes with edges, which act like pathways for moving information from one node to another, usually from the left to the right.
 
-The Input node serves as a repository for all data relevant to the context, while the Outputs node releases the data resulting from the decision-making process. The progression of data follows a path from the Input Node to the Output Node, traversing all interconnected nodes in between. As the data flows through this network, it undergoes evaluation at each node, and connections determine where the data is passed along the graph.
+The Input node serves as an entry for all data relevant to the context, while the Output nodes produce the result of decision-making process. The progression of data follows a path from the Input Node to the Output Node, traversing all interconnected nodes in between. As the data flows through this network, it undergoes evaluation at each node, and connections determine where the data is passed along the graph.
 
 To see JDM Graph in action you can use [Free Online Editor](https://editor.gorules.io) with built in Simulator.
 
@@ -107,7 +105,7 @@ There are 5 main node types in addition to a graph Input Node (Request) and Outp
 
 #### Overview
 
-Decision Tables stand as a foundational element within the GoRules JDM standard, offering an intuitive and powerful approach to modeling decision logic. These tables provide a structured representation of decision-making processes, allowing developers to express complex rules in a clear and concise manner.
+Tables provide a structured representation of decision-making processes, allowing developers and business users to express complex rules in a clear and concise manner.
 
 <img width="960" alt="Decision Table" src="https://github.com/gorules/zen/assets/60513195/b18f645b-3bdc-4fb6-8fd4-023bee5a8999">
 
@@ -120,6 +118,8 @@ Inputs and outputs are expressed through a user-friendly interface, often resemb
 
 Decision Tables are evaluated row by row, from top to bottom, adhering to a specified hit policy.
 Single row is evaluated via Inputs columns, from left to right. Each input column represents `AND` operator. If cell is empty that column is evaluated **truthfully**, independently of the value.
+
+If a single cell within a row fails (due to error, or otherwise), the row is skipped.
 
 **HitPolicy**
 
@@ -192,7 +192,9 @@ Note: For the full list please visit [ZEN Expression Language](https://gorules.i
 
 **Expression Evaluation**
 
-Expression evaluation is used when we would like to create more complex evaluation logic inside single cell, by comparing multiple fields from the incoming context inside same cell or when we would like to use Zen Expression functions. By not defining `field` in column schema cell of that column are running evaluation in Expression mode.
+Expression evaluation is used when we would like to create more complex evaluation logic inside single cell. It allows us to compare multiple fields from the incoming context inside same cell. 
+
+It can be used by providing an empty `Selector (field)` inside column configuration.
 
 ***Example***
 
@@ -220,9 +222,9 @@ Note: For the full list please visit [ZEN Expression Language](https://gorules.i
 
 **Outputs**
 
-Within the context of decision tables, output columns play a crucial role in defining the specific fields that will be produced as a result when a particular row is validated. These columns essentially serve as the blueprint for the data that the decision table will generate based on the conditions met during evaluation.
+Output columns serve as the blueprint for the data that the decision table will generate when the conditions are met during evaluation.
 
-When a row in the decision table satisfies its specified conditions, the output columns determine the nature and structure of the information that will be returned. Each output column represents a distinct field, and the collective set of these fields forms the output or result associated with the validated row. This mechanism allows decision tables to precisely define and control the data output, ensuring a tailored and context-specific response to different scenarios within the decision-making process.
+When a row in the decision table satisfies its specified conditions, the output columns determine the nature and structure of the information that will be returned. Each output column represents a distinct field, and the collective set of these fields forms the output or result associated with the validated row. This mechanism allows decision tables to precisely define and control the data output.
 
 ***Example***
 
@@ -243,26 +245,29 @@ And the result would be:
 ```
 ### Switch Node
 
-The Switch node in GoRules JDM introduces a dynamic branching mechanism to decision models, enabling the graph to diverge based on predefined conditions. This node empowers developers to create versatile decision-making processes where distinct paths are followed depending on the evaluation of specific criteria. Each branch within the Switch node represents a unique set of conditions, fostering adaptability and responsiveness to a variety of input scenarios.
+The Switch node in GoRules JDM introduces a dynamic branching mechanism to decision models, enabling the graph to diverge based on conditions.
 
 Conditions are written in a Zen Expression Language.
 
 By incorporating the Switch node, decision models become more flexible and context-aware. This capability is particularly valuable in scenarios where diverse decision logic is required based on varying inputs. The Switch node efficiently manages branching within the graph, enhancing the overall complexity and realism of decision models in GoRules JDM, making it a pivotal component for crafting intelligent and adaptive systems.
+
 The Switch node preserves the incoming data without modification; it forwards the entire context to the output branch(es).
 
 <img width="960" alt="Switch / Branching node" src="https://github.com/gorules/zen/assets/60513195/05c5793c-563e-471b-b487-261b58a84f97">
 
 #### HitPolicy
 There are two HitPolicy options for the switch node, `first` and `collect`.
-In the context of a first hit policy, the graph branches to the initial matching condition, analogous to the behavior observed in a table. Conversely, under a collect hit policy, the graph extends to all branches where conditions hold true, allowing for comprehensive branching to multiple paths.
+
+In the context of a first hit policy, the graph branches to the initial matching condition, analogous to the behavior observed in a table. Conversely, under a collect hit policy, the graph extends to all branches where conditions hold true, allowing branching to multiple paths.
 
 Note: If there are multiple edges from the same condition, there is no guaranteed order of execution.
 
-
 ### Functions Node
 
-Function nodes are JavaScript snippets that allow for quick and easy parsing, re-mapping or otherwise modifying the data using JavaScript. Inputs of the node are provided as function's arguments. Functions are executed on top of Google's V8 Engine that is built in into the ZEN Engine.
+Function nodes are JavaScript snippets that allow for quick and easy parsing, re-mapping or otherwise modifying the data using JavaScript. Inputs of the node are provided as function's arguments. Functions are executed on top of Google's V8 Engine Isolates that are built into the ZEN Engine.
+
 Function timeout is set to a 50ms. 
+
 ```js
 const handler = (input, {dayjs, Big}) => {
     return {
@@ -273,23 +278,23 @@ const handler = (input, {dayjs, Big}) => {
 ```
 
 There are two built in libraries:
-* dayjs - for Date Manipulation
-* big.js - for arbitrary-precision decimal arithmetic.
+* [dayjs](https://www.npmjs.com/package/dayjs) - for Date Manipulation
+* [big.js](https://www.npmjs.com/package/big.js) - for arbitrary-precision decimal arithmetic.
 
 ### Expression Node
-The Expression node serves as a tool for swiftly transforming input objects into alternative objects using the Zen Expression Language. When specifying the output properties, each property requires a separate row. These rows encompass two inputs: the initial input is the key, signifying the qualified name of the output property, and the subsequent input is the value expressed through the Zen Expression Language.
+The Expression node serves as a tool for transforming input objects into alternative objects using the Zen Expression Language. When specifying the output properties, each property requires a separate row. These rows are defined by two fields: 
+- Key - qualified name of the output property
+- Value - value expressed through the Zen Expression Language
 
-It's important to be aware that any errors within the Expression node will bring the graph to a halt, emphasizing the need for precision and accuracy when utilizing this feature.
+Note: Any errors within the Expression node will bring the graph to a halt.
 
 <img width="800" alt="Expression node" src="https://github.com/gorules/zen/assets/60513195/225824cc-191a-45bc-b476-b0ffc514d22f">
 
 ### Decision Node
 
-The "Decision" node within the GoRules JDM standard serves as a distinctive and valuable component designed to extend the capabilities of decision models. Its primary function is to empower decision models with the ability to invoke and reuse other decision models seamlessly during execution.
+The "Decision" node is designed to extend the capabilities of decision models. Its function is to invoke and reuse other decision models during execution. 
 
-By incorporating the "Decision" node, developers can modularize decision logic, promoting reusability and maintainability in complex systems. This node allows decision models to call upon other pre-defined or reusable decision models, enabling a more modular and organized approach to managing decision-making processes.
-
-This feature is particularly advantageous in scenarios where certain decision logic is shared across multiple parts of an application. The "Decision" node streamlines the execution flow, providing an efficient means to leverage existing decision models and promoting a more modular and scalable architecture. In essence, it facilitates a dynamic and interconnected decision-making environment within the GoRules JDM framework.
+By incorporating the "Decision" node, developers can modularize decision logic, promoting reusability and maintainability in complex systems.
 
 ## Support matrix
 
@@ -306,7 +311,7 @@ We do not support linux-musl for now as we are relying on the GoogleV8 engine to
 ## Contribution
 
 JDM standard is growing and we need to keep tight control over its development and roadmap as there are number of companies that are using GoRules Zen-Engine and GoRules BRMS.
-For this reason we can't accept any code contributions at this moment.
+For this reason we can't accept any code contributions at this moment, apart from help with documentation and additional tests.
 
 ## License
 [MIT License]()

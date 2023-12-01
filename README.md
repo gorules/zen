@@ -243,7 +243,7 @@ And the result would be:
   }
 }
 ```
-### Switch Node
+### Switch Node (NEW)
 
 The Switch node in GoRules JDM introduces a dynamic branching mechanism to decision models, enabling the graph to diverge based on conditions.
 
@@ -261,6 +261,11 @@ There are two HitPolicy options for the switch node, `first` and `collect`.
 In the context of a first hit policy, the graph branches to the initial matching condition, analogous to the behavior observed in a table. Conversely, under a collect hit policy, the graph extends to all branches where conditions hold true, allowing branching to multiple paths.
 
 Note: If there are multiple edges from the same condition, there is no guaranteed order of execution.
+
+*Available from:*
+* Python 0.16.0
+* NodeJS 0.13.0
+* Rust 0.16.0
 
 ### Functions Node
 

@@ -8,7 +8,7 @@ use petgraph::visit::{EdgeRef, IntoNeighbors, IntoNodeIdentifiers, Reversed, Vis
 use petgraph::{Incoming, Outgoing};
 use serde_json::{json, Map, Value};
 
-use zen_expression::isolate::Isolate;
+use zen_expression_rewrite::isolate::Isolate;
 
 use crate::model::{
     DecisionEdge, DecisionNode, DecisionNodeKind, SwitchStatement, SwitchStatementHitPolicy,
@@ -102,17 +102,17 @@ impl GraphWalker {
                 let input_context = json!({ "$": &input_data });
                 merge_json(&mut input_data, &input_context, true);
 
-                let isolate = Isolate::default();
+                let mut isolate = Isolate::default();
                 isolate.inject_env(&input_data);
 
                 let mut statement_iter = content.statements.iter();
                 let valid_statements: Vec<&SwitchStatement> = match content.hit_policy {
                     SwitchStatementHitPolicy::First => statement_iter
-                        .find(|&s| switch_statement_evaluate(&isolate, &s))
+                        .find(|&s| switch_statement_evaluate(&mut isolate, &s))
                         .into_iter()
                         .collect(),
                     SwitchStatementHitPolicy::Collect => statement_iter
-                        .filter(|&s| switch_statement_evaluate(&isolate, &s))
+                        .filter(|&s| switch_statement_evaluate(&mut isolate, &s))
                         .collect(),
                 };
 
@@ -163,7 +163,7 @@ impl GraphWalker {
 }
 
 fn switch_statement_evaluate<'a>(
-    isolate: &Isolate<'a>,
+    isolate: &mut Isolate<'a>,
     switch_statement: &'a SwitchStatement,
 ) -> bool {
     if switch_statement.condition.is_empty() {

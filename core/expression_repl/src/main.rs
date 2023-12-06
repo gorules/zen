@@ -3,7 +3,7 @@ use rustyline::config::Configurer;
 use rustyline::{DefaultEditor, Result};
 use serde_json::Value;
 
-use zen_expression::isolate::Isolate;
+use zen_expression_rewrite::isolate::Isolate;
 
 trait PrettyPrint {
     fn pretty_print(&self) -> String;
@@ -47,7 +47,7 @@ fn main() -> Result<()> {
             break;
         };
 
-        let isolate = Isolate::default();
+        let mut isolate = Isolate::default();
         let result = isolate.run_standard(line.as_str());
 
         match result {

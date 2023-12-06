@@ -1,12 +1,12 @@
 use criterion::{criterion_group, criterion_main, Bencher, Criterion};
 use serde_json::Value;
 
-use zen_expression::isolate::Isolate;
+use zen_expression_rewrite::isolate::Isolate;
 
 fn bench_source(b: &mut Bencher, source: &'static str) {
     let s: Value = serde_json::from_str(r#"{ "$": "ru" }"#).unwrap();
 
-    let isolate = Isolate::default();
+    let mut isolate = Isolate::default();
     isolate.inject_env(&s);
 
     b.iter(|| {
@@ -17,7 +17,7 @@ fn bench_source(b: &mut Bencher, source: &'static str) {
 fn bench_standard(b: &mut Bencher, source: &'static str) {
     let s: Value = serde_json::from_str(r#"{ "$": "ru" }"#).unwrap();
 
-    let isolate = Isolate::default();
+    let mut isolate = Isolate::default();
     isolate.inject_env(&s);
 
     b.iter(|| {

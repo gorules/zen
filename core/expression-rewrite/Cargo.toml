@@ -1,0 +1,53 @@
+[package]
+authors = ["GoRules Team <bot@gorules.io>"]
+description = "Zen Expression Language"
+name = "zen-expression-rewrite"
+license = "MIT"
+version = "0.16.1"
+edition = "2021"
+repository = "https://github.com/gorules/zen.git"
+publish = false
+
+[dependencies]
+ahash = { workspace = true }
+bumpalo = { workspace = true, features = ["collections"] }
+chrono = { workspace = true }
+hashbrown = { workspace = true, features = ["bumpalo"] }
+humantime = { workspace = true }
+fastrand = { workspace = true }
+once_cell = { workspace = true }
+phf = { workspace = true, features = ["macros"] }
+regex = { workspace = true, optional = true }
+regex-lite = { workspace = true, optional = true }
+serde = { workspace = true }
+serde_json = { workspace = true, features = ["arbitrary_precision"] }
+thiserror = { workspace = true }
+rust_decimal = { workspace = true, features = ["maths-nopanic"] }
+rust_decimal_macros = { workspace = true }
+
+[dev-dependencies]
+anyhow = { workspace = true }
+criterion = { workspace = true }
+csv = "1.2.2"
+serde_json5 = "0.1.0"
+
+[features]
+default = ["regex-deprecated"]
+regex-deprecated = ["dep:regex"]
+regex-lite = ["dep:regex-lite"]
+
+[[bench]]
+harness = false
+name = "lexer"
+
+[[bench]]
+harness = false
+name = "standard"
+
+[[bench]]
+harness = false
+name = "unary"
+
+[[bench]]
+harness = false
+name = "isolate"

@@ -70,8 +70,8 @@ mode([1, 2, 2, 3, 3, 3, 4, 4, 4, 4]); { "$": 4 }; true
 'GB','US';{$: 'FR'};false
 'hello' + " " + "world"; { "$": 'hello world' }; true
 len($) == 13; { "$": "Hello, World!" }; true
-$ == lower("Hello, World!"); { "$": "HELLO, WORLD!" }; false
-$ == upper("Hello, World!"); { "$": "HELLO, WORLD!" }; true
+lower("Hello, World!"); { "$": "HELLO, WORLD!" }; false
+upper("Hello, World!"); { "$": "HELLO, WORLD!" }; true
 startsWith($, "Hello"); { "$": "Hello, World!" }; true
 startsWith($, "World"); { "$": "Hello, World!" }; false
 endsWith($, "World!"); { "$": "Hello, World!" }; true
@@ -88,15 +88,15 @@ $[7:] == 'string'; { "$": 'sample_string' }; true
 $[:5] == 'sample'; { "$": 'sample_string' }; true
 
 # Type conversion
-$ == string(true); { "$": 'true' }; true
-$ == string(false); { "$": 'false' }; true
-$ == string(123); { "$": '123' }; true
+string(true); { "$": 'true' }; true
+string(false); { "$": 'false' }; true
+string(123); { "$": '123' }; true
 
-$ == number('123.45'); { "$": 123.45 }; true
-$ == number('-56.78'); { "$": -56.78 }; true
-$ == number(true); { "$": 1 }; true
+number('123.45'); { "$": 123.45 }; true
+number('-56.78'); { "$": -56.78 }; true
+number(true); { "$": 1 }; true
 
-$ == bool('true'); { "$": true }; true
-$ == bool('false'); { "$": false }; true
-$ == bool(1); { "$": true }; true
-$ == bool(0); { "$": false }; true
+bool('true'); { "$": true }; true
+bool('false'); { "$": false }; true
+bool(1); { "$": true }; true
+bool(0); { "$": false }; true

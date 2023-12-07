@@ -568,7 +568,17 @@ fn isolate_standard_test() {
         isolate.inject_env(&env);
 
         for TestCase { expr, result } in cases {
-            assert_eq!(result, isolate.run_standard(expr).unwrap(), "{}", expr);
+            let isolate_result = isolate.run_standard(expr);
+            let Ok(response) = isolate_result else {
+                assert!(
+                    false,
+                    "Expression failed: {expr}. Error: {:?}",
+                    isolate_result.unwrap_err()
+                );
+                continue;
+            };
+
+            assert_eq!(result, response, "{}", expr);
         }
     }
 }

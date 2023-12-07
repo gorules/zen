@@ -288,9 +288,18 @@ fn standard_test() {
     for StandardTest { src, result } in tests {
         let tokens = lexer.tokenize(src).unwrap();
         let unary_parser = StandardParser::try_new(tokens, &bump).unwrap();
-        let ast = unary_parser.parse();
-        assert_eq!(ast.unwrap(), result);
+        let parser_result = unary_parser.parse();
+        let Ok(ast) = parser_result else {
+            assert!(
+                false,
+                "Failed on expression: {}. Error: {:?}.",
+                src,
+                parser_result.unwrap_err()
+            );
+            return;
+        };
 
+        assert_eq!(ast, result, "Failed on expression: {}", src);
         bump.reset();
     }
 }
@@ -307,6 +316,23 @@ fn failure_tests() {
         let parser = StandardParser::try_new(tokens, &bump).unwrap();
         let ast = parser.parse();
         assert!(ast.is_err());
+
+        bump.reset();
+    }
+}
+
+#[test]
+fn failure_tests_2() {
+    let tests: Vec<&str> = Vec::from(["abs(a - b -c)"]);
+
+    let mut lexer = Lexer::new();
+    let mut bump = Bump::new();
+
+    for test in tests {
+        let tokens = lexer.tokenize(test).unwrap();
+        let parser = StandardParser::try_new(tokens, &bump).unwrap();
+        let ast = parser.parse();
+        assert!(ast.is_ok(), "AST Error: {:?}", ast.unwrap_err());
 
         bump.reset();
     }

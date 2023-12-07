@@ -205,24 +205,7 @@ impl<'arena, 'token_ref> UnaryParser<'arena, 'token_ref> {
     }
 
     fn literal(&self) -> ParserResult<&'arena Node<'arena>> {
-        let token = self.iterator.current();
-
-        match token.kind {
-            TokenKind::Identifier => {
-                self.iterator.next()?;
-                match token.value {
-                    "true" | "false" => self.iterator.bool(token),
-                    "null" => self.iterator.null(token),
-                    _ => self.builtin(token),
-                }
-            }
-            TokenKind::Number => self.iterator.number(token),
-            TokenKind::String => self.iterator.string(token),
-            _ => Err(ParserError::UnexpectedToken {
-                expected: "one of [identifier, number, string]".to_string(),
-                received: format!("{:?}", token.kind),
-            }),
-        }
+        self.iterator.literal(|| self.expression(0, false))
     }
 
     fn builtin(&self, token: &Token<'arena>) -> ParserResult<&'arena Node<'arena>> {

@@ -1256,6 +1256,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                         (TypeConversionKind::String, Bool(v)) => {
                             make_string(v.to_string().as_str())
                         }
+                        (TypeConversionKind::String, Null) => make_string("null"),
                         (TypeConversionKind::String, _) => {
                             return Err(OpcodeErr {
                                 opcode: "TypeConversion".into(),
@@ -1287,6 +1288,23 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                                     var.type_name()
                                 ),
                             })
+                        }
+                        (TypeConversionKind::Bool, Number(n)) => {
+                            self.bump.alloc(Bool(!n.is_zero()))
+                        }
+                        (TypeConversionKind::Bool, String(s)) => {
+                            let value = match *s {
+                                "true" => true,
+                                "false" => false,
+                                _ => s.is_empty(),
+                            };
+
+                            self.bump.alloc(Bool(value))
+                        }
+                        (TypeConversionKind::Bool, Bool(_)) => var,
+                        (TypeConversionKind::Bool, Null) => self.bump.alloc(Bool(false)),
+                        (TypeConversionKind::Bool, Object(_) | Array(_)) => {
+                            self.bump.alloc(Bool(true))
                         }
                     };
 

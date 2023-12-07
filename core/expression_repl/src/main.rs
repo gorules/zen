@@ -1,7 +1,7 @@
 use colored::Colorize;
 use rustyline::config::Configurer;
 use rustyline::{DefaultEditor, Result};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use zen_expression_rewrite::isolate::Isolate;
 
@@ -48,7 +48,20 @@ fn main() -> Result<()> {
         };
 
         let mut isolate = Isolate::default();
-        let result = isolate.run_standard(line.as_str());
+        isolate.inject_env(&json!({
+          "customer": {
+            "email": "hello@gmail.com",
+            "totalSpend": 90,
+            "country": "GB"
+          },
+          "product": {
+            "currency": "GBP",
+            "price": 190,
+            "category": ""
+          }
+        }));
+        isolate.set_reference("customer.totalSpend").unwrap();
+        let result = isolate.run_unary(line.as_str());
 
         match result {
             Ok(res) => println!("{}", res.pretty_print()),

@@ -1,6 +1,7 @@
 use anyhow::Context;
 use bumpalo::Bump;
 use std::ops::Index;
+use std::time::Instant;
 
 use serde_json::{json, Value};
 
@@ -716,6 +717,7 @@ fn test_standard_csv() {
         .delimiter(b';')
         .from_reader(csv_data.as_bytes());
 
+    let start = Instant::now();
     while let Some(maybe_row) = r.records().next() {
         let Ok(row) = maybe_row else {
             continue;
@@ -734,14 +736,18 @@ fn test_standard_csv() {
             isolate.inject_env(&input);
         }
 
-        let result = isolate
-            .run_standard(expression)
-            .context(format!("Expression: {expression}"))
-            .unwrap();
+        for i in 0..10_000 {
+            let result = isolate
+                .run_standard(expression)
+                .context(format!("Expression: {expression}"))
+                .unwrap();
 
-        assert_eq!(
-            result, output,
-            "Expression {expression}. Expected: {output}, got: {result}"
-        );
+            assert_eq!(
+                result, output,
+                "Expression {expression}. Expected: {output}, got: {result}"
+            );
+        }
     }
+
+    println!("{:?}", start.elapsed());
 }

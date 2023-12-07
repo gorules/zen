@@ -5,7 +5,7 @@ use rust_decimal_macros::dec;
 
 use zen_expression_rewrite::ast::Node;
 use zen_expression_rewrite::lexer::Lexer;
-use zen_expression_rewrite::parser::StandardParser;
+use zen_expression_rewrite::parser::parser::Parser;
 
 struct StandardTest {
     src: &'static str,
@@ -287,7 +287,7 @@ fn standard_test() {
 
     for StandardTest { src, result } in tests {
         let tokens = lexer.tokenize(src).unwrap();
-        let unary_parser = StandardParser::try_new(tokens, &bump).unwrap();
+        let unary_parser = Parser::try_new(tokens, &bump).unwrap().standard();
         let parser_result = unary_parser.parse();
         let Ok(ast) = parser_result else {
             assert!(
@@ -313,7 +313,7 @@ fn failure_tests() {
 
     for test in tests {
         let tokens = lexer.tokenize(test).unwrap();
-        let parser = StandardParser::try_new(tokens, &bump).unwrap();
+        let parser = Parser::try_new(tokens, &bump).unwrap().standard();
         let ast = parser.parse();
         assert!(ast.is_err());
 
@@ -323,14 +323,14 @@ fn failure_tests() {
 
 #[test]
 fn failure_tests_2() {
-    let tests: Vec<&str> = Vec::from(["abs(a - b -c)"]);
+    let tests: Vec<&str> = Vec::from(["a + b + c"]);
 
     let mut lexer = Lexer::new();
     let mut bump = Bump::new();
 
     for test in tests {
         let tokens = lexer.tokenize(test).unwrap();
-        let parser = StandardParser::try_new(tokens, &bump).unwrap();
+        let parser = Parser::try_new(tokens, &bump).unwrap().standard();
         let ast = parser.parse();
         assert!(ast.is_ok(), "AST Error: {:?}", ast.unwrap_err());
 

@@ -4,7 +4,7 @@ use rust_decimal_macros::dec;
 
 use zen_expression_rewrite::ast::Node;
 use zen_expression_rewrite::lexer::Lexer;
-use zen_expression_rewrite::parser::UnaryParser;
+use zen_expression_rewrite::parser::parser::Parser;
 
 struct UnaryTest {
     src: &'static str,
@@ -114,7 +114,7 @@ fn unary_test() {
                 operator: "==",
                 left: &Node::Identifier("$"),
                 right: &Node::BuiltIn {
-                    name: "date",
+                    kind: "date",
                     arguments: &[&Node::String("2022-01-01")],
                 },
             },
@@ -125,7 +125,7 @@ fn unary_test() {
                 operator: "==",
                 left: &Node::Identifier("$"),
                 right: &Node::BuiltIn {
-                    name: "time",
+                    kind: "time",
                     arguments: &[&Node::String("14:00:00")],
                 },
             },
@@ -145,8 +145,8 @@ fn unary_test() {
 
     for UnaryTest { src, result } in tests {
         let tokens = lexer.tokenize(src).unwrap();
-        let unary_parser = UnaryParser::try_new(tokens, &bump).unwrap();
-        let ast = unary_parser.parse().unwrap();
+        let parser = Parser::try_new(tokens, &bump).unwrap().standard();
+        let ast = parser.parse().unwrap();
         assert_eq!(ast, result);
 
         bump.reset();
@@ -162,7 +162,7 @@ fn failure_tests() {
 
     for test in tests {
         let tokens = lexer.tokenize(test).unwrap();
-        let unary_parser = UnaryParser::try_new(tokens, &bump).unwrap();
+        let unary_parser = Parser::try_new(tokens, &bump).unwrap().standard();
         let ast = unary_parser.parse();
         assert!(ast.is_err());
 

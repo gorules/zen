@@ -1,7 +1,9 @@
 use crate::lexer::cursor::{Cursor, CursorItem};
 use crate::lexer::error::LexerError;
 use crate::lexer::error::LexerError::{UnexpectedEof, UnmatchedSymbol};
-use crate::lexer::token::{Token, TokenKind};
+use crate::lexer::token::{
+    Bracket, ComparisonOperator, Identifier, LogicalOperator, Operator, Token, TokenKind,
+};
 use crate::{is_token_type, token_type};
 
 type VoidResult = Result<(), LexerError>;
@@ -140,10 +142,11 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
     fn bracket(&mut self) -> VoidResult {
         let (start, _) = self.next()?;
 
+        let value = &self.source[start..=start];
         self.push(Token {
-            kind: TokenKind::Bracket,
+            kind: TokenKind::Bracket(Bracket::try_from(value)?),
             span: (start, start + 1),
-            value: &self.source[start..=start],
+            value,
         });
 
         Ok(())
@@ -157,10 +160,11 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
             end += 1;
         }
 
+        let value = &self.source[start..=end];
         self.push(Token {
-            kind: TokenKind::Operator,
+            kind: TokenKind::Operator(Operator::try_from(value)?),
             span: (start, end + 1),
-            value: &self.source[start..=end],
+            value,
         });
 
         Ok(())
@@ -174,10 +178,11 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
             end += 1;
         }
 
+        let value = &self.source[start..=end];
         self.push(Token {
-            kind: TokenKind::Operator,
+            kind: TokenKind::Operator(Operator::try_from(value)?),
             span: (start, end + 1),
-            value: &self.source[start..=end],
+            value,
         });
 
         Ok(())
@@ -186,10 +191,11 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
     fn operator(&mut self) -> VoidResult {
         let (start, _) = self.next()?;
 
+        let value = &self.source[start..=start];
         self.push(Token {
-            kind: TokenKind::Operator,
+            kind: TokenKind::Operator(Operator::try_from(value)?),
             span: (start, start + 1),
-            value: &self.source[start..=start],
+            value,
         });
 
         Ok(())
@@ -200,7 +206,7 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
             let end = self.cursor.position();
 
             self.push(Token {
-                kind: TokenKind::Operator,
+                kind: TokenKind::Operator(Operator::Comparison(ComparisonOperator::NotIn)),
                 span: (start, end - 1),
                 value: "not in",
             })
@@ -208,7 +214,7 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
             let end = self.cursor.position();
 
             self.push(Token {
-                kind: TokenKind::Operator,
+                kind: TokenKind::Operator(Operator::Logical(LogicalOperator::Not)),
                 span: (start, end),
                 value: "not",
             })
@@ -227,14 +233,34 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
 
         let value = &self.source[start..=end];
         match value {
-            "and" | "or" | "in" => self.push(Token {
-                kind: TokenKind::Operator,
+            "and" => self.push(Token {
+                kind: TokenKind::Operator(Operator::Logical(LogicalOperator::And)),
+                span: (start, end + 1),
+                value,
+            }),
+            "or" => self.push(Token {
+                kind: TokenKind::Operator(Operator::Logical(LogicalOperator::Or)),
+                span: (start, end + 1),
+                value,
+            }),
+            "in" => self.push(Token {
+                kind: TokenKind::Operator(Operator::Comparison(ComparisonOperator::In)),
+                span: (start, end + 1),
+                value,
+            }),
+            "true" => self.push(Token {
+                kind: TokenKind::Boolean(true),
+                span: (start, end + 1),
+                value,
+            }),
+            "false" => self.push(Token {
+                kind: TokenKind::Boolean(false),
                 span: (start, end + 1),
                 value,
             }),
             "not" => self.not(start)?,
             _ => self.push(Token {
-                kind: TokenKind::Identifier,
+                kind: TokenKind::Identifier(Identifier::from(value)),
                 span: (start, end + 1),
                 value,
             }),

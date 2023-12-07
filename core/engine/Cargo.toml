@@ -19,11 +19,11 @@ bincode = { workspace = true, optional = true }
 petgraph = { workspace = true }
 serde_json = { workspace = true, features = ["arbitrary_precision"] }
 serde = { workspace = true, features = ["derive"] }
-serde_v8 = { version = "0.141.0" }
+serde_v8 = { version = "0.144.0" }
 once_cell = { version = "1.18.0" }
 fixedbitset = "0.4.2"
 futures = "0.3.29"
-v8 = { version = "0.81.0" }
+v8 = { version = "0.82.0" }
 zen-expression-rewrite = { path = "../expression-rewrite" }
 
 [dev-dependencies]

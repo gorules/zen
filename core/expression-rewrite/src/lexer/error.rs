@@ -1,3 +1,4 @@
+use strum::ParseError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -10,4 +11,12 @@ pub enum LexerError {
 
     #[error("Unexpected end of file: {symbol} at position {position}")]
     UnexpectedEof { symbol: char, position: usize },
+}
+
+impl From<ParseError> for LexerError {
+    fn from(value: ParseError) -> Self {
+        Self::UnexpectedSymbol {
+            symbol: value.to_string(),
+        }
+    }
 }

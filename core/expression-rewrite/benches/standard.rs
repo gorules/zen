@@ -2,7 +2,7 @@ use bumpalo::Bump;
 use criterion::{criterion_group, criterion_main, Bencher, Criterion};
 
 use zen_expression_rewrite::lexer::Lexer;
-use zen_expression_rewrite::parser::StandardParser;
+use zen_expression_rewrite::parser::parser::Parser;
 
 fn bench_source(b: &mut Bencher, src: &'static str) {
     let mut lexer = Lexer::new();
@@ -11,7 +11,7 @@ fn bench_source(b: &mut Bencher, src: &'static str) {
     let tokens = lexer.tokenize(src).unwrap();
 
     b.iter(|| {
-        let std_parser = StandardParser::try_new(tokens, &bump).unwrap();
+        let std_parser = Parser::try_new(tokens, &bump).unwrap().standard();
         criterion::black_box(std_parser.parse().unwrap());
 
         bump.reset();

@@ -17,7 +17,7 @@ use crate::lexer::token::TokenKind;
 use crate::lexer::Lexer;
 use crate::opcodes::Variable;
 use crate::parser::error::ParserError;
-use crate::parser::{StandardParser, UnaryParser};
+use crate::parser::parser::Parser;
 use crate::vm::{VMError, VM};
 
 type ADefHasher = BuildHasherDefault<AHasher>;
@@ -169,8 +169,9 @@ impl<'a> Isolate<'a> {
             .tokenize(source)
             .map_err(|source| IsolateError::LexerError { source })?;
 
-        let parser = StandardParser::try_new(tokens, bump)
-            .map_err(|source| IsolateError::ParserError { source })?;
+        let parser = Parser::try_new(tokens, bump)
+            .map_err(|source| IsolateError::ParserError { source })?
+            .standard();
 
         let ast = parser
             .parse()
@@ -189,8 +190,6 @@ impl<'a> Isolate<'a> {
         result.try_into().map_err(|_| IsolateError::ValueCastError)
     }
 
-    /// Runs unary test
-    /// If reference identifier is present ($) it will use standard parser
     pub fn run_unary(&mut self, source: &'a str) -> Result<Value, IsolateError> {
         self.bump.reset();
         let bump = self.get_bump();
@@ -200,28 +199,13 @@ impl<'a> Isolate<'a> {
             .tokenize(source)
             .map_err(|source| IsolateError::LexerError { source })?;
 
-        let unary_disallowed = tokens
-            .iter()
-            .any(|token| token.kind == TokenKind::Identifier && token.value == "$");
+        let parser = Parser::try_new(tokens, bump)
+            .map_err(|source| IsolateError::ParserError { source })?
+            .unary();
 
-        let ast = match unary_disallowed {
-            true => {
-                let parser = StandardParser::try_new(tokens, bump)
-                    .map_err(|source| IsolateError::ParserError { source })?;
-
-                parser
-                    .parse()
-                    .map_err(|source| IsolateError::ParserError { source })?
-            }
-            false => {
-                let parser = UnaryParser::try_new(tokens, bump)
-                    .map_err(|source| IsolateError::ParserError { source })?;
-
-                parser
-                    .parse()
-                    .map_err(|source| IsolateError::ParserError { source })?
-            }
-        };
+        let ast = parser
+            .parse()
+            .map_err(|source| IsolateError::ParserError { source })?;
 
         let bytecode = self
             .compiler

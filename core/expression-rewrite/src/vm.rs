@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use bumpalo::collections::Vec as BumpVec;
 use bumpalo::Bump;
 use chrono::NaiveDateTime;
 use chrono::{Datelike, Timelike};
@@ -1110,33 +1111,27 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                 }
                 Opcode::Array => {
                     let size = self.pop()?;
-                    let mut arr = Vec::new();
 
-                    match size {
-                        Number(s) => {
-                            let to = s.round().to_usize().ok_or_else(|| OpcodeErr {
-                                opcode: "Array".into(),
-                                message: "Failed to extract argument".into(),
-                            })?;
+                    let Number(s) = size else {
+                        return Err(OpcodeErr {
+                            opcode: "Array".into(),
+                            message: "Unsupported type".into(),
+                        });
+                    };
 
-                            for _ in 0..to {
-                                arr.push(self.pop()?);
-                            }
-                        }
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "Array".into(),
-                                message: "Unsupported type".into(),
-                            })
-                        }
+                    let to = s.round().to_usize().ok_or_else(|| OpcodeErr {
+                        opcode: "Array".into(),
+                        message: "Failed to extract argument".into(),
+                    })?;
+
+                    let mut arr = BumpVec::with_capacity_in(to, &self.bump);
+                    for _ in 0..to {
+                        arr.push(self.pop()?);
                     }
-
                     arr.reverse();
 
-                    self.stack.push(
-                        self.bump
-                            .alloc(Array(self.bump.alloc_slice_copy(arr.as_slice()))),
-                    );
+                    self.stack
+                        .push(self.bump.alloc(Array(arr.into_bump_slice())));
                 }
                 Opcode::Len => {
                     let current = self.stack.last().ok_or_else(|| OpcodeErr {
@@ -1166,16 +1161,16 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                         });
                     };
 
-                    let mut flat_arr = Vec::new();
+                    let mut flat_arr = BumpVec::new_in(&self.bump);
+                    flat_arr.reserve(arr.len());
+
                     arr.iter().for_each(|&v| match v {
                         Array(arr) => arr.iter().for_each(|&v| flat_arr.push(v)),
                         _ => flat_arr.push(v),
                     });
 
-                    self.stack.push(
-                        self.bump
-                            .alloc(Array(self.bump.alloc_slice_copy(flat_arr.as_slice()))),
-                    )
+                    self.stack
+                        .push(self.bump.alloc(Array(flat_arr.into_bump_slice())))
                 }
                 Opcode::ParseDateTime => {
                     let a = self.pop()?;

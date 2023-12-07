@@ -13,14 +13,12 @@ pub(crate) mod constants;
 #[derive(Debug)]
 pub struct StandardParser<'arena, 'token_ref> {
     iterator: ParserIterator<'arena, 'token_ref>,
-    bump: &'arena Bump,
 }
 
 impl<'arena, 'token_ref> StandardParser<'arena, 'token_ref> {
     pub fn try_new(tokens: &'token_ref [Token<'arena>], bump: &'arena Bump) -> ParserResult<Self> {
         Ok(Self {
             iterator: ParserIterator::try_new(tokens, bump)?,
-            bump,
         })
     }
 

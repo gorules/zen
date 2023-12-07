@@ -24,7 +24,6 @@ serde_json = { workspace = true, features = ["arbitrary_precision"] }
 thiserror = { workspace = true }
 rust_decimal = { workspace = true, features = ["maths-nopanic"] }
 rust_decimal_macros = { workspace = true }
-smallvec = "1.11.2"
 
 [dev-dependencies]
 anyhow = { workspace = true }

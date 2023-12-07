@@ -1,13 +1,13 @@
 use std::cell::Cell;
 use std::fmt::Debug;
 
+use bumpalo::collections::Vec as BumpVec;
 use bumpalo::Bump;
 use rust_decimal::Decimal;
-use smallvec::SmallVec;
 
 use crate::ast::Node;
 use crate::lexer::token::{Token, TokenKind};
-use crate::parser::definitions::{Arity, Associativity};
+use crate::parser::definitions::Arity;
 use crate::parser::error::{ParserError, ParserResult};
 
 type StaticTokenValues = Option<&'static [&'static str]>;
@@ -94,11 +94,6 @@ impl<'arena, 'token_ref> ParserIterator<'arena, 'token_ref> {
         self.token_cmp(kind, values)?;
         self.next()?;
         Ok(())
-    }
-
-    #[allow(dead_code)]
-    pub fn lookup(&self, dx: usize, kind: TokenKind, values: StaticTokenValues) -> bool {
-        self.token_cmp_at_bool(self.position.get() + dx, kind, values)
     }
 
     pub fn lookup_back(&self, dx: usize, kind: TokenKind, values: StaticTokenValues) -> bool {
@@ -192,7 +187,7 @@ impl<'arena, 'token_ref> ParserIterator<'arena, 'token_ref> {
         }
 
         if let Some(vals) = values {
-            if !vals.iter().any(|&c| c == token.value) {
+            if !vals.iter().any(|c| *c == token.value) {
                 return Err(ParserError::UnexpectedToken {
                     expected: format!("{kind:?} {values:?}"),
                     received: format!("{token:?}"),
@@ -218,11 +213,11 @@ impl<'arena, 'token_ref> ParserIterator<'arena, 'token_ref> {
         F: Fn() -> ParserResult<&'arena Node<'arena>>,
     {
         let postfix_token = self.current();
-        let postfix_kind = PostfixTokenKind::from(postfix_token);
+        let postfix_kind = PostfixKind::from(postfix_token);
 
         let processed_token = match postfix_kind {
-            PostfixTokenKind::Other => return Ok(node),
-            PostfixTokenKind::MemberAccess => {
+            PostfixKind::Other => return Ok(node),
+            PostfixKind::MemberAccess => {
                 self.next()?;
                 let property_token = self.current();
                 self.next()?;
@@ -237,7 +232,7 @@ impl<'arena, 'token_ref> ParserIterator<'arena, 'token_ref> {
                 let property = self.node(Node::String(property_token.value))?;
                 self.node(Node::Member { node, property })
             }
-            PostfixTokenKind::PropertyAccess => {
+            PostfixKind::PropertyAccess => {
                 self.next()?;
                 let mut from: Option<&'arena Node<'arena>> = None;
                 let mut to: Option<&'arena Node<'arena>> = None;
@@ -307,7 +302,8 @@ impl<'arena, 'token_ref> ParserIterator<'arena, 'token_ref> {
 
         let identifier_token = self.current();
         self.next()?;
-        if self.token_cmp(TokenKind::Bracket, Some(&["("])).is_err() {
+        let current_token = self.current();
+        if current_token.kind != TokenKind::Bracket || current_token.value != "(" {
             let identifier_node = self.node(Node::Identifier(identifier_token.value))?;
             return self
                 .with_postfix(identifier_node, expression_parser)
@@ -419,11 +415,13 @@ impl<'arena, 'token_ref> ParserIterator<'arena, 'token_ref> {
     where
         F: Fn() -> ParserResult<&'arena Node<'arena>>,
     {
-        if self.expect(TokenKind::Bracket, Some(&["["])).is_err() {
+        let current_token = self.current();
+        if current_token.kind != TokenKind::Bracket || current_token.value != "[" {
             return Ok(None);
         }
 
-        let mut nodes = SmallVec::<[_; 8]>::new();
+        self.next()?;
+        let mut nodes = BumpVec::new_in(self.bump);
         while !(self.current().kind == TokenKind::Bracket && self.current().value == "]") {
             if !nodes.is_empty() {
                 self.expect(TokenKind::Operator, Some(&[","]))?;
@@ -436,7 +434,7 @@ impl<'arena, 'token_ref> ParserIterator<'arena, 'token_ref> {
         }
 
         self.expect(TokenKind::Bracket, Some(&["]"]))?;
-        let node = Node::Array(self.bump.alloc_slice_clone(nodes.as_slice()));
+        let node = Node::Array(nodes.into_bump_slice());
 
         self.with_postfix(self.node(node)?, expression_parser)
             .map(Some)
@@ -452,9 +450,12 @@ impl<'arena, 'token_ref> ParserIterator<'arena, 'token_ref> {
     where
         F: Fn() -> ParserResult<&'arena Node<'arena>>,
     {
-        if self.expect(TokenKind::Operator, Some(&["?"])).is_err() {
+        let current_token = self.current();
+        if current_token.kind != TokenKind::Operator || current_token.value != "?" {
             return Ok(None);
-        };
+        }
+
+        self.next()?;
 
         let on_true = expression_parser()?;
         self.expect(TokenKind::Operator, Some(&[":"]))?;
@@ -516,13 +517,13 @@ fn is_valid_property(token: &Token) -> bool {
 }
 
 #[derive(Debug)]
-enum PostfixTokenKind {
+enum PostfixKind {
     MemberAccess,
     PropertyAccess,
     Other,
 }
 
-impl From<&Token<'_>> for PostfixTokenKind {
+impl From<&Token<'_>> for PostfixKind {
     fn from(token: &Token) -> Self {
         match (&token.kind, token.value) {
             (TokenKind::Bracket, "[") => Self::PropertyAccess,

@@ -31,7 +31,7 @@ fn bench_functions(c: &mut Criterion) {
     });
 
     c.bench_function("isolate/standard", |b| {
-        bench_standard(b, "contains(['ru', 'se'], $)");
+        bench_standard(b, "contains(['ru', 'se', 'b', 'c', 'd', 'e'], $)");
     });
 }
 

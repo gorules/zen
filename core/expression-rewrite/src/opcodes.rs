@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use bumpalo::collections::Vec as BumpVec;
 use bumpalo::Bump;
 use chrono::NaiveDateTime;
 use hashbrown::hash_map::DefaultHashBuilder;
@@ -42,12 +43,12 @@ impl<'a> Variable<'a> {
             }
             Value::Bool(b) => Variable::Bool(*b),
             Value::Array(v) => {
-                let mut arr: Vec<&'a Variable> = Vec::with_capacity(v.len());
+                let mut arr = BumpVec::with_capacity_in(v.len(), bump);
                 for i in v {
-                    arr.push(bump.alloc(Variable::from_serde(i, bump)));
+                    arr.push(&*bump.alloc(Variable::from_serde(i, bump)));
                 }
 
-                Variable::Array(bump.alloc_slice_copy(arr.as_slice()))
+                Variable::Array(arr.into_bump_slice())
             }
             Value::Object(bt) => {
                 let mut tree: hashbrown::HashMap<&'a str, &'a Variable, _, _> =

@@ -10,7 +10,6 @@ use rust_decimal::Decimal;
 use serde_json::{Map, Number, Value};
 
 use crate::helpers::date_time;
-use crate::lexer::token::Bracket;
 use crate::vm::VMError;
 use crate::vm::VMError::{OpcodeErr, ParseDateTimeErr};
 

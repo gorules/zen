@@ -121,6 +121,10 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
         let mut token = self.current();
 
         while let TokenKind::Operator(operator) = &token.kind {
+            if self.is_done() {
+                break;
+            }
+
             if matches!(
                 operator,
                 Operator::Comma

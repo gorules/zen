@@ -287,8 +287,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         }
 
         // Potentially it might be a built in expression
-        let builtin = BuiltInFunction::try_from(identifier_token.value).map_err(|e| {
-            println!("{:?}", e);
+        let builtin = BuiltInFunction::try_from(identifier_token.value).map_err(|_| {
             ParserError::UnknownBuiltIn {
                 token: identifier_token.value.to_string(),
             }

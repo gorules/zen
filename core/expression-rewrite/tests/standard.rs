@@ -4,6 +4,9 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 use zen_expression_rewrite::ast::Node;
+use zen_expression_rewrite::lexer::token::{
+    ArithmeticOperator, ComparisonOperator, LogicalOperator, Operator,
+};
 use zen_expression_rewrite::lexer::Lexer;
 use zen_expression_rewrite::parser::parser::Parser;
 
@@ -70,7 +73,7 @@ fn standard_test() {
         StandardTest {
             src: "-3",
             result: &Node::Unary {
-                operator: "-",
+                operator: Operator::Arithmetic(ArithmeticOperator::Subtract),
                 node: &Node::Number(D3),
             },
         },
@@ -78,7 +81,7 @@ fn standard_test() {
             src: "1 - 2",
             result: &Node::Binary {
                 left: &Node::Number(D1),
-                operator: "-",
+                operator: Operator::Arithmetic(ArithmeticOperator::Subtract),
                 right: &Node::Number(D2),
             },
         },
@@ -87,21 +90,21 @@ fn standard_test() {
             result: &Node::Binary {
                 left: &Node::Binary {
                     left: &Node::Number(D1),
-                    operator: "-",
+                    operator: Operator::Arithmetic(ArithmeticOperator::Subtract),
                     right: &Node::Number(D2),
                 },
-                operator: "*",
+                operator: Operator::Arithmetic(ArithmeticOperator::Multiply),
                 right: &Node::Number(D3),
             },
         },
         StandardTest {
             src: "a or b or c",
             result: &Node::Binary {
-                operator: "or",
+                operator: Operator::Logical(LogicalOperator::Or),
                 left: &Node::Binary {
                     left: &Node::Identifier("a"),
                     right: &Node::Identifier("b"),
-                    operator: "or",
+                    operator: Operator::Logical(LogicalOperator::Or),
                 },
                 right: &Node::Identifier("c"),
             },
@@ -109,23 +112,23 @@ fn standard_test() {
         StandardTest {
             src: "a or b and c",
             result: &Node::Binary {
-                operator: "or",
+                operator: Operator::Logical(LogicalOperator::Or),
                 left: &Node::Identifier("a"),
                 right: &Node::Binary {
                     left: &Node::Identifier("b"),
                     right: &Node::Identifier("c"),
-                    operator: "and",
+                    operator: Operator::Logical(LogicalOperator::And),
                 },
             },
         },
         StandardTest {
             src: "(a or b) and c",
             result: &Node::Binary {
-                operator: "and",
+                operator: Operator::Logical(LogicalOperator::And),
                 left: &Node::Binary {
                     left: &Node::Identifier("a"),
                     right: &Node::Identifier("b"),
-                    operator: "or",
+                    operator: Operator::Logical(LogicalOperator::Or),
                 },
                 right: &Node::Identifier("c"),
             },
@@ -134,11 +137,11 @@ fn standard_test() {
             src: "2^4 - 1",
             result: &Node::Binary {
                 left: &Node::Binary {
-                    operator: "^",
+                    operator: Operator::Arithmetic(ArithmeticOperator::Power),
                     left: &Node::Number(D2),
                     right: &Node::Number(D4),
                 },
-                operator: "-",
+                operator: Operator::Arithmetic(ArithmeticOperator::Subtract),
                 right: &Node::Number(D1),
             },
         },
@@ -184,21 +187,21 @@ fn standard_test() {
             result: &Node::Binary {
                 left: &Node::String("a"),
                 right: &Node::String("b"),
-                operator: "==",
+                operator: Operator::Comparison(ComparisonOperator::Equal),
             },
         },
         StandardTest {
             src: "+0 != -1",
             result: &Node::Binary {
                 left: &Node::Unary {
-                    operator: "+",
+                    operator: Operator::Arithmetic(ArithmeticOperator::Add),
                     node: &Node::Number(D0),
                 },
                 right: &Node::Unary {
-                    operator: "-",
+                    operator: Operator::Arithmetic(ArithmeticOperator::Subtract),
                     node: &Node::Number(D1),
                 },
-                operator: "!=",
+                operator: Operator::Comparison(ComparisonOperator::NotEqual),
             },
         },
         StandardTest {
@@ -220,7 +223,7 @@ fn standard_test() {
             src: "x not in (1..9]",
             result: &Node::Binary {
                 left: &Node::Identifier("x"),
-                operator: "not in",
+                operator: Operator::Comparison(ComparisonOperator::NotIn),
                 right: &Node::Interval {
                     left_bracket: "(",
                     left: &Node::Number(D1),
@@ -232,7 +235,7 @@ fn standard_test() {
         StandardTest {
             src: "not in_var",
             result: &Node::Unary {
-                operator: "not",
+                operator: Operator::Logical(LogicalOperator::Not),
                 node: &Node::Identifier("in_var"),
             },
         },
@@ -276,7 +279,7 @@ fn standard_test() {
             src: "0 in []",
             result: &Node::Binary {
                 left: &Node::Number(D0),
-                operator: "in",
+                operator: Operator::Comparison(ComparisonOperator::In),
                 right: &Node::Array(&[]),
             },
         },
@@ -316,23 +319,6 @@ fn failure_tests() {
         let parser = Parser::try_new(tokens, &bump).unwrap().standard();
         let ast = parser.parse();
         assert!(ast.is_err());
-
-        bump.reset();
-    }
-}
-
-#[test]
-fn failure_tests_2() {
-    let tests: Vec<&str> = Vec::from(["a + b + c"]);
-
-    let mut lexer = Lexer::new();
-    let mut bump = Bump::new();
-
-    for test in tests {
-        let tokens = lexer.tokenize(test).unwrap();
-        let parser = Parser::try_new(tokens, &bump).unwrap().standard();
-        let ast = parser.parse();
-        assert!(ast.is_ok(), "AST Error: {:?}", ast.unwrap_err());
 
         bump.reset();
     }

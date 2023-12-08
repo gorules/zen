@@ -13,7 +13,6 @@ use thiserror::Error;
 
 use crate::compiler::{Compiler, CompilerError};
 use crate::lexer::error::LexerError;
-use crate::lexer::token::TokenKind;
 use crate::lexer::Lexer;
 use crate::opcodes::Variable;
 use crate::parser::error::ParserError;

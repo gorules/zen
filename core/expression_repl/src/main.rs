@@ -61,7 +61,7 @@ fn main() -> Result<()> {
           }
         }));
         isolate.set_reference("customer.totalSpend").unwrap();
-        let result = isolate.run_unary(line.as_str());
+        let result = isolate.run_standard(line.as_str());
 
         match result {
             Ok(res) => println!("{}", res.pretty_print()),

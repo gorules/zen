@@ -1,8 +1,8 @@
 use crate::ast::Node;
-use crate::lexer::token::{Bracket, Identifier, Operator, TokenKind};
+use crate::lexer::token::{Bracket, Identifier, TokenKind};
 use crate::parser::constants::{Associativity, BINARY_OPERATORS, UNARY_OPERATORS};
 use crate::parser::error::ParserError::{FailedToParse, UnexpectedToken};
-use crate::parser::error::{ParserError, ParserResult};
+use crate::parser::error::ParserResult;
 use crate::parser::parser::Parser;
 
 #[derive(Debug)]
@@ -26,6 +26,10 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Standard> {
         let mut token = self.current();
 
         while let TokenKind::Operator(operator) = &token.kind {
+            if self.is_done() {
+                break;
+            }
+
             let Some(op) = BINARY_OPERATORS.get(operator) else {
                 break;
             };

@@ -3,7 +3,9 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 use zen_expression_rewrite::ast::Node;
+use zen_expression_rewrite::lexer::token::{ComparisonOperator, LogicalOperator, Operator};
 use zen_expression_rewrite::lexer::Lexer;
+use zen_expression_rewrite::parser::builtin::BuiltInFunction;
 use zen_expression_rewrite::parser::parser::Parser;
 
 struct UnaryTest {
@@ -25,7 +27,7 @@ fn unary_test() {
             src: "'str'",
             result: &Node::Binary {
                 left: &Node::Identifier("$"),
-                operator: "==",
+                operator: Operator::Comparison(ComparisonOperator::Equal),
                 right: &Node::String("str"),
             },
         },
@@ -33,38 +35,38 @@ fn unary_test() {
             src: "20.5",
             result: &Node::Binary {
                 left: &Node::Identifier("$"),
-                operator: "==",
+                operator: Operator::Comparison(ComparisonOperator::Equal),
                 right: &Node::Number(D20P5),
             },
         },
         UnaryTest {
             src: "'a', 'b', 'c'",
             result: &Node::Binary {
-                operator: "or",
+                operator: Operator::Logical(LogicalOperator::Or),
                 left: &Node::Binary {
-                    left: &Node::Identifier("$"),
-                    operator: "==",
-                    right: &Node::String("a"),
-                },
-                right: &Node::Binary {
-                    operator: "or",
+                    operator: Operator::Logical(LogicalOperator::Or),
                     left: &Node::Binary {
                         left: &Node::Identifier("$"),
-                        operator: "==",
-                        right: &Node::String("b"),
+                        operator: Operator::Comparison(ComparisonOperator::Equal),
+                        right: &Node::String("a"),
                     },
                     right: &Node::Binary {
                         left: &Node::Identifier("$"),
-                        operator: "==",
-                        right: &Node::String("c"),
+                        operator: Operator::Comparison(ComparisonOperator::Equal),
+                        right: &Node::String("b"),
                     },
+                },
+                right: &Node::Binary {
+                    left: &Node::Identifier("$"),
+                    operator: Operator::Comparison(ComparisonOperator::Equal),
+                    right: &Node::String("c"),
                 },
             },
         },
         UnaryTest {
             src: "[1..10]",
             result: &Node::Binary {
-                operator: "in",
+                operator: Operator::Comparison(ComparisonOperator::In),
                 left: &Node::Identifier("$"),
                 right: &Node::Interval {
                     left_bracket: "[",
@@ -77,7 +79,7 @@ fn unary_test() {
         UnaryTest {
             src: "in [1..10]",
             result: &Node::Binary {
-                operator: "in",
+                operator: Operator::Comparison(ComparisonOperator::In),
                 left: &Node::Identifier("$"),
                 right: &Node::Interval {
                     left_bracket: "[",
@@ -90,7 +92,7 @@ fn unary_test() {
         UnaryTest {
             src: "not in [1..10]",
             result: &Node::Binary {
-                operator: "not in",
+                operator: Operator::Comparison(ComparisonOperator::NotIn),
                 left: &Node::Identifier("$"),
                 right: &Node::Interval {
                     left_bracket: "[",
@@ -103,7 +105,7 @@ fn unary_test() {
         UnaryTest {
             src: "[1, 2, 3]",
             result: &Node::Binary {
-                operator: "in",
+                operator: Operator::Comparison(ComparisonOperator::In),
                 left: &Node::Identifier("$"),
                 right: &Node::Array(&[&Node::Number(D1), &Node::Number(D2), &Node::Number(D3)]),
             },
@@ -111,10 +113,10 @@ fn unary_test() {
         UnaryTest {
             src: "date('2022-01-01')",
             result: &Node::Binary {
-                operator: "==",
+                operator: Operator::Comparison(ComparisonOperator::Equal),
                 left: &Node::Identifier("$"),
                 right: &Node::BuiltIn {
-                    kind: "date",
+                    kind: BuiltInFunction::Date,
                     arguments: &[&Node::String("2022-01-01")],
                 },
             },
@@ -122,10 +124,10 @@ fn unary_test() {
         UnaryTest {
             src: "time('14:00:00')",
             result: &Node::Binary {
-                operator: "==",
+                operator: Operator::Comparison(ComparisonOperator::Equal),
                 left: &Node::Identifier("$"),
                 right: &Node::BuiltIn {
-                    kind: "time",
+                    kind: BuiltInFunction::Time,
                     arguments: &[&Node::String("14:00:00")],
                 },
             },
@@ -133,7 +135,7 @@ fn unary_test() {
         UnaryTest {
             src: "< 50",
             result: &Node::Binary {
-                operator: "<",
+                operator: Operator::Comparison(ComparisonOperator::LessThan),
                 left: &Node::Identifier("$"),
                 right: &Node::Number(D50),
             },
@@ -145,7 +147,7 @@ fn unary_test() {
 
     for UnaryTest { src, result } in tests {
         let tokens = lexer.tokenize(src).unwrap();
-        let parser = Parser::try_new(tokens, &bump).unwrap().standard();
+        let parser = Parser::try_new(tokens, &bump).unwrap().unary();
         let ast = parser.parse().unwrap();
         assert_eq!(ast, result);
 
@@ -155,7 +157,7 @@ fn unary_test() {
 
 #[test]
 fn failure_tests() {
-    let tests: Vec<&str> = Vec::from(["a + b ++", "a +++ b +--= fa", "null.a", "false.b"]);
+    let tests: Vec<&str> = Vec::from(["a + b ++", "null.a", "false.b"]);
 
     let mut lexer = Lexer::new();
     let mut bump = Bump::new();

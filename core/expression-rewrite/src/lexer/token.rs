@@ -1,5 +1,6 @@
-use nohash_hasher::IsEnabled;
 use std::hash::{Hash, Hasher};
+
+use nohash_hasher::IsEnabled;
 use strum_macros::{Display, EnumString, EnumVariantNames};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -177,14 +178,3 @@ impl Hash for Operator {
 }
 
 impl IsEnabled for Operator {}
-
-#[cfg(test)]
-mod tests {
-    use crate::lexer::token::{ArithmeticOperator, Bracket, Identifier, Operator, TokenKind};
-    use std::mem::size_of;
-
-    #[test]
-    fn parse_test() {
-        //
-    }
-}

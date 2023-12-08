@@ -11,6 +11,7 @@ use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde_json::{Map, Number, Value};
 
+/// In-memory representation of expression variables
 #[derive(Debug, Clone)]
 pub enum Variable<'arena> {
     Null,

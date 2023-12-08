@@ -1,9 +1,9 @@
 use colored::Colorize;
 use rustyline::config::Configurer;
 use rustyline::{DefaultEditor, Result};
-use serde_json::{json, Value};
+use serde_json::Value;
 
-use zen_expression_rewrite::isolate::Isolate;
+use zen_expression_rewrite::Isolate;
 
 trait PrettyPrint {
     fn pretty_print(&self) -> String;
@@ -47,20 +47,7 @@ fn main() -> Result<()> {
             break;
         };
 
-        let mut isolate = Isolate::default();
-        isolate.inject_env(&json!({
-          "customer": {
-            "email": "hello@gmail.com",
-            "totalSpend": 90,
-            "country": "GB"
-          },
-          "product": {
-            "currency": "GBP",
-            "price": 190,
-            "category": ""
-          }
-        }));
-        isolate.set_reference("customer.totalSpend").unwrap();
+        let mut isolate = Isolate::new();
         let result = isolate.run_standard(line.as_str());
 
         match result {

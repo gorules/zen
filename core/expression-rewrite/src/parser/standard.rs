@@ -1,5 +1,5 @@
-use crate::ast::Node;
-use crate::lexer::token::{Bracket, Identifier, TokenKind};
+use crate::lexer::{Bracket, Identifier, TokenKind};
+use crate::parser::ast::Node;
 use crate::parser::constants::{Associativity, BINARY_OPERATORS, UNARY_OPERATORS};
 use crate::parser::error::ParserError::{FailedToParse, UnexpectedToken};
 use crate::parser::error::ParserResult;

@@ -21,4 +21,4 @@ pub enum ParserError {
     UnsupportedBuiltIn { token: String },
 }
 
-pub type ParserResult<T> = Result<T, ParserError>;
+pub(crate) type ParserResult<T> = Result<T, ParserError>;

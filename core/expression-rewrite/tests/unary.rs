@@ -2,11 +2,8 @@ use bumpalo::Bump;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
-use zen_expression_rewrite::ast::Node;
-use zen_expression_rewrite::lexer::token::{ComparisonOperator, LogicalOperator, Operator};
-use zen_expression_rewrite::lexer::Lexer;
-use zen_expression_rewrite::parser::builtin::BuiltInFunction;
-use zen_expression_rewrite::parser::parser::Parser;
+use zen_expression_rewrite::lexer::{ComparisonOperator, Lexer, LogicalOperator, Operator};
+use zen_expression_rewrite::parser::{BuiltInFunction, Node, Parser};
 
 struct UnaryTest {
     src: &'static str,

@@ -3,9 +3,8 @@ use std::ops::Index;
 use anyhow::Context;
 use bumpalo::Bump;
 use serde_json::{json, Value};
-
-use zen_expression_rewrite::isolate::Isolate;
-use zen_expression_rewrite::opcodes::Variable;
+use zen_expression_rewrite::Isolate;
+use zen_expression_rewrite::vm::Variable;
 
 struct TestEnv {
     env: Value,
@@ -562,10 +561,10 @@ fn isolate_standard_test() {
         },
     ]);
 
-    let mut isolate = Isolate::default();
-
+    let mut isolate = Isolate::new();
+    
     for TestEnv { env, cases } in tests {
-        isolate.inject_env(&env);
+        isolate.set_environment(&env);
 
         for TestCase { expr, result } in cases {
             let isolate_result = isolate.run_standard(expr);
@@ -682,14 +681,14 @@ fn isolate_unary_tests() {
         },
     ]);
 
-    let mut isolate = Isolate::default();
+    let mut isolate = Isolate::new();
     for UnaryTestEnv {
         env,
         cases,
         reference,
     } in tests
     {
-        isolate.inject_env(&env);
+        isolate.set_environment(&env);
         isolate.set_reference(reference).unwrap();
 
         for TestCase { expr, result } in cases {
@@ -713,7 +712,7 @@ fn variable_serde_test() {
 
 #[test]
 fn isolate_test_decimals() {
-    let mut isolate = Isolate::default();
+    let mut isolate = Isolate::new();
     let result = isolate.run_standard("9223372036854775807").unwrap();
 
     assert_eq!(result, Value::from(9223372036854775807i64));
@@ -738,10 +737,10 @@ fn test_standard_csv() {
 
         let output: Value = serde_json5::from_str(output_str).unwrap();
 
-        let mut isolate = Isolate::default();
+        let mut isolate = Isolate::new();
         if !input_str.is_empty() {
             let input: Value = serde_json5::from_str(input_str).unwrap();
-            isolate.inject_env(&input);
+            isolate.set_environment(&input);
         }
 
         let result = isolate
@@ -775,10 +774,10 @@ fn test_unary_csv() {
 
         let output: Value = serde_json5::from_str(output_str).unwrap();
 
-        let mut isolate = Isolate::default();
+        let mut isolate = Isolate::new();
         if !input_str.is_empty() {
             let input: Value = serde_json5::from_str(input_str).unwrap();
-            isolate.inject_env(&input);
+            isolate.set_environment(&input);
         }
 
         let result = isolate

@@ -12,72 +12,17 @@ use serde_json::Value;
 use thiserror::Error;
 
 use crate::compiler::{Compiler, CompilerError};
-use crate::lexer::error::LexerError;
-use crate::lexer::Lexer;
-use crate::opcodes::Variable;
-use crate::parser::error::ParserError;
-use crate::parser::parser::Parser;
-use crate::vm::{VMError, VM};
+use crate::lexer::{Lexer, LexerError};
+use crate::parser::{Parser, ParserError};
+use crate::vm::{VMError, Variable, VM};
 
 type ADefHasher = BuildHasherDefault<AHasher>;
 
-#[derive(Debug, Error)]
-pub enum IsolateError {
-    #[error("Lexer error")]
-    LexerError { source: LexerError },
-
-    #[error("Parser error")]
-    ParserError { source: ParserError },
-
-    #[error("Compiler error")]
-    CompilerError { source: CompilerError },
-
-    #[error("VM error")]
-    VMError { source: VMError },
-
-    #[error("Value cast error")]
-    ValueCastError,
-
-    #[error("Failed to compute reference")]
-    ReferenceError,
-}
-
-impl Serialize for IsolateError {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut map = serializer.serialize_map(None)?;
-
-        match &self {
-            IsolateError::ReferenceError => {
-                map.serialize_entry("type", "referenceError")?;
-            }
-            IsolateError::ValueCastError => {
-                map.serialize_entry("type", "valueCastError")?;
-            }
-            IsolateError::LexerError { source } => {
-                map.serialize_entry("type", "lexerError")?;
-                map.serialize_entry("source", source.to_string().as_str())?;
-            }
-            IsolateError::ParserError { source } => {
-                map.serialize_entry("type", "parserError")?;
-                map.serialize_entry("source", source.to_string().as_str())?;
-            }
-            IsolateError::CompilerError { source } => {
-                map.serialize_entry("type", "compilerError")?;
-                map.serialize_entry("source", source.to_string().as_str())?;
-            }
-            IsolateError::VMError { source } => {
-                map.serialize_entry("type", "vmError")?;
-                map.serialize_entry("source", source.to_string().as_str())?;
-            }
-        }
-
-        map.end()
-    }
-}
-
+/// Isolate is a component that encapsulates an isolated environment for executing expressions.
+///
+/// Rerunning the Isolate allows for efficient memory reuse through an arena allocator.
+/// The arena allocator optimizes memory management by reusing memory blocks for subsequent evaluations,
+/// contributing to improved performance and resource utilization in scenarios where the Isolate is reused multiple times.
 #[derive(Debug)]
 pub struct Isolate<'arena> {
     lexer: Lexer<'arena>,
@@ -91,8 +36,8 @@ pub struct Isolate<'arena> {
     references: HashMap<&'arena str, &'arena Variable<'arena>, ADefHasher>,
 }
 
-impl<'a> Default for Isolate<'a> {
-    fn default() -> Self {
+impl<'a> Isolate<'a> {
+    pub fn new() -> Self {
         Self {
             lexer: Lexer::new(),
             compiler: Compiler::new(),
@@ -105,22 +50,19 @@ impl<'a> Default for Isolate<'a> {
             references: Default::default(),
         }
     }
-}
 
-impl<'a> Isolate<'a> {
-    pub fn inject_env(&mut self, value: &Value) {
+    pub fn with_environment(value: &Value) -> Self {
+        let mut isolate = Isolate::new();
+        isolate.set_environment(value);
+
+        isolate
+    }
+
+    pub fn set_environment(&mut self, value: &Value) {
         let new_environment = Variable::from_serde(value, self.get_reference_bump());
         let current_environment = self.environment.get_mut();
 
         *current_environment = ManuallyDrop::new(new_environment);
-    }
-
-    fn get_bump(&self) -> &'a Bump {
-        unsafe { std::mem::transmute::<&Bump, &'a Bump>(&self.bump) }
-    }
-
-    fn get_reference_bump(&self) -> &'a Bump {
-        unsafe { std::mem::transmute::<&Bump, &'a Bump>(&self.reference_bump) }
     }
 
     pub fn set_reference(&mut self, reference: &'a str) -> Result<(), IsolateError> {
@@ -189,7 +131,7 @@ impl<'a> Isolate<'a> {
         result.try_into().map_err(|_| IsolateError::ValueCastError)
     }
 
-    pub fn run_unary(&mut self, source: &'a str) -> Result<Value, IsolateError> {
+    pub fn run_unary(&mut self, source: &'a str) -> Result<bool, IsolateError> {
         self.bump.reset();
         let bump = self.get_bump();
 
@@ -216,6 +158,78 @@ impl<'a> Isolate<'a> {
             .run(bytecode, bump, &self.environment.get_mut())
             .map_err(|source| IsolateError::VMError { source })?;
 
-        result.try_into().map_err(|_| IsolateError::ValueCastError)
+        result.as_bool().ok_or_else(|| IsolateError::ValueCastError)
+    }
+
+    fn get_bump(&self) -> &'a Bump {
+        unsafe { std::mem::transmute::<&Bump, &'a Bump>(&self.bump) }
+    }
+
+    fn get_reference_bump(&self) -> &'a Bump {
+        unsafe { std::mem::transmute::<&Bump, &'a Bump>(&self.reference_bump) }
+    }
+}
+
+/// Errors which happen within isolate or during evaluation
+#[derive(Debug, Error)]
+pub enum IsolateError {
+    #[error("Lexer error")]
+    LexerError { source: LexerError },
+
+    #[error("Parser error")]
+    ParserError { source: ParserError },
+
+    #[error("Compiler error")]
+    CompilerError { source: CompilerError },
+
+    #[error("VM error")]
+    VMError { source: VMError },
+
+    #[error("Value cast error")]
+    ValueCastError,
+
+    #[error("Failed to compute reference")]
+    ReferenceError,
+
+    #[error("Missing reference")]
+    MissingReference,
+}
+
+impl Serialize for IsolateError {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(None)?;
+
+        match &self {
+            IsolateError::ReferenceError => {
+                map.serialize_entry("type", "referenceError")?;
+            }
+            IsolateError::MissingReference => {
+                map.serialize_entry("type", "missingReference")?;
+            }
+            IsolateError::ValueCastError => {
+                map.serialize_entry("type", "valueCastError")?;
+            }
+            IsolateError::LexerError { source } => {
+                map.serialize_entry("type", "lexerError")?;
+                map.serialize_entry("source", source.to_string().as_str())?;
+            }
+            IsolateError::ParserError { source } => {
+                map.serialize_entry("type", "parserError")?;
+                map.serialize_entry("source", source.to_string().as_str())?;
+            }
+            IsolateError::CompilerError { source } => {
+                map.serialize_entry("type", "compilerError")?;
+                map.serialize_entry("source", source.to_string().as_str())?;
+            }
+            IsolateError::VMError { source } => {
+                map.serialize_entry("type", "vmError")?;
+                map.serialize_entry("source", source.to_string().as_str())?;
+            }
+        }
+
+        map.end()
     }
 }

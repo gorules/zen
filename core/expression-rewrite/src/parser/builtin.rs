@@ -71,7 +71,7 @@ pub enum BuiltInFunction {
 }
 
 impl BuiltInFunction {
-    pub fn arity(&self) -> Arity {
+    pub(crate) fn arity(&self) -> Arity {
         match &self {
             // General
             BuiltInFunction::Len => Arity::Single,

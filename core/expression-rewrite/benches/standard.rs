@@ -2,7 +2,7 @@ use bumpalo::Bump;
 use criterion::{criterion_group, criterion_main, Bencher, Criterion};
 
 use zen_expression_rewrite::lexer::Lexer;
-use zen_expression_rewrite::parser::parser::Parser;
+use zen_expression_rewrite::parser::Parser;
 
 fn bench_source(b: &mut Bencher, src: &'static str) {
     let mut lexer = Lexer::new();

@@ -11,35 +11,17 @@ use regex_lite::Regex;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::{Decimal, MathematicalOps};
 use rust_decimal_macros::dec;
-use thiserror::Error;
+use crate::compiler::{Opcode, TypeCheckKind, TypeConversionKind};
 
-use crate::helpers::{date_time, date_time_end_of, date_time_start_of, time};
-use crate::opcodes::Variable::{Array, Bool, Null, Number, Object, String};
-use crate::opcodes::{IntervalObject, Opcode, TypeCheckKind, TypeConversionKind, Variable};
-use crate::vm::VMError::{OpcodeErr, OpcodeOutOfBounds, ParseDateTimeErr, StackOutOfBounds};
+use crate::vm::error::VMResult;
+use crate::vm::variable::{IntervalObject, Variable};
+
+use crate::vm::variable::Variable::*;
+use crate::vm::error::VMError::*;
+use crate::vm::helpers::{date_time, date_time_end_of, date_time_start_of, time};
 
 const NULL_VAR: &'static Variable = &Null;
 
-#[derive(Debug, Error)]
-pub enum VMError {
-    #[error("Unsupported opcode type")]
-    OpcodeErr {
-        opcode: std::string::String,
-        message: std::string::String,
-    },
-
-    #[error("Opcode out of bounds")]
-    OpcodeOutOfBounds {
-        index: usize,
-        bytecode: std::string::String,
-    },
-
-    #[error("Stack out of bounds")]
-    StackOutOfBounds { stack: std::string::String },
-
-    #[error("Failed to parse date time")]
-    ParseDateTimeErr { timestamp: std::string::String },
-}
 
 #[derive(Debug)]
 pub struct Scope<'arena> {
@@ -68,7 +50,7 @@ impl<'arena> VM<'arena> {
         bytecode: &[Opcode<'arena>],
         bump: &'arena Bump,
         env: &Variable<'arena>,
-    ) -> Result<&Variable, VMError> {
+    ) -> VMResult<&Variable> {
         self.stack.clear();
         self.scopes.clear();
 
@@ -105,7 +87,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
         self.stack.push(self.bump.alloc(var));
     }
 
-    fn pop(&mut self) -> Result<&'arena Variable<'arena>, VMError> {
+    fn pop(&mut self) -> VMResult<&'arena Variable<'arena>> {
         self.stack.pop().ok_or_else(|| StackOutOfBounds {
             stack: format!("{:?}", self.stack),
         })
@@ -115,7 +97,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
         self.stack.push(var);
     }
 
-    pub fn run(&mut self, env: &Variable<'arena>) -> Result<&'arena Variable<'arena>, VMError> {
+    pub fn run(&mut self, env: &Variable<'arena>) -> VMResult<&'arena Variable<'arena>> {
         if self.ip != 0 {
             self.ip = 0;
         }

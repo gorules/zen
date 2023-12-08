@@ -1,6 +1,6 @@
 use rust_decimal::Decimal;
 
-use crate::lexer::token::Operator;
+use crate::lexer::Operator;
 use crate::parser::builtin::BuiltInFunction;
 
 #[derive(Debug, PartialEq, Clone)]

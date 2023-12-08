@@ -8,7 +8,7 @@ use petgraph::visit::{EdgeRef, IntoNeighbors, IntoNodeIdentifiers, Reversed, Vis
 use petgraph::{Incoming, Outgoing};
 use serde_json::{json, Map, Value};
 
-use zen_expression_rewrite::isolate::Isolate;
+use zen_expression_rewrite::Isolate;
 
 use crate::model::{
     DecisionEdge, DecisionNode, DecisionNodeKind, SwitchStatement, SwitchStatementHitPolicy,
@@ -102,8 +102,7 @@ impl GraphWalker {
                 let input_context = json!({ "$": &input_data });
                 merge_json(&mut input_data, &input_context, true);
 
-                let mut isolate = Isolate::default();
-                isolate.inject_env(&input_data);
+                let mut isolate = Isolate::with_environment(&input_data);
 
                 let mut statement_iter = content.statements.iter();
                 let valid_statements: Vec<&SwitchStatement> = match content.hit_policy {

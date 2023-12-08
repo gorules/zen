@@ -3,12 +3,10 @@ use rust_decimal::Decimal;
 
 use rust_decimal_macros::dec;
 
-use zen_expression_rewrite::ast::Node;
-use zen_expression_rewrite::lexer::token::{
-    ArithmeticOperator, ComparisonOperator, LogicalOperator, Operator,
+use zen_expression_rewrite::lexer::{
+    ArithmeticOperator, ComparisonOperator, Lexer, LogicalOperator, Operator,
 };
-use zen_expression_rewrite::lexer::Lexer;
-use zen_expression_rewrite::parser::parser::Parser;
+use zen_expression_rewrite::parser::{Node, Parser};
 
 struct StandardTest {
     src: &'static str,

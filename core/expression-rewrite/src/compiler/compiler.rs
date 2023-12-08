@@ -1,26 +1,11 @@
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use thiserror::Error;
 
-use crate::ast::Node;
-use crate::compiler::CompilerError::{
-    ArgumentNotFound, UnknownBinaryOperator, UnknownUnaryOperator,
-};
-use crate::lexer::token::{ArithmeticOperator, ComparisonOperator, LogicalOperator, Operator};
-use crate::opcodes::{Opcode, TypeCheckKind, TypeConversionKind, Variable};
-use crate::parser::builtin::BuiltInFunction;
-
-#[derive(Debug, Error)]
-pub enum CompilerError {
-    #[error("Unknown unary operator: {operator}")]
-    UnknownUnaryOperator { operator: String },
-
-    #[error("Unknown binary operator: {operator}")]
-    UnknownBinaryOperator { operator: String },
-
-    #[error("Argument not found for builtin {builtin} at index {index}")]
-    ArgumentNotFound { builtin: String, index: usize },
-}
+use crate::compiler::error::{CompilerError, CompilerResult};
+use crate::compiler::{Opcode, TypeCheckKind, TypeConversionKind};
+use crate::lexer::{ArithmeticOperator, ComparisonOperator, LogicalOperator, Operator};
+use crate::parser::{BuiltInFunction, Node};
+use crate::vm::Variable;
 
 #[derive(Debug)]
 pub struct Compiler<'arena> {
@@ -34,10 +19,7 @@ impl<'arena> Compiler<'arena> {
         }
     }
 
-    pub fn compile(
-        &mut self,
-        root: &'arena Node<'arena>,
-    ) -> Result<&[Opcode<'arena>], CompilerError> {
+    pub fn compile(&mut self, root: &'arena Node<'arena>) -> CompilerResult<&[Opcode<'arena>]> {
         self.bytecode.clear();
 
         CompilerInner::new(&mut self.bytecode, root).compile()?;
@@ -59,7 +41,7 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
         Self { root, bytecode }
     }
 
-    pub fn compile(&mut self) -> Result<(), CompilerError> {
+    pub fn compile(&mut self) -> CompilerResult<()> {
         self.compile_node(self.root)?;
         Ok(())
     }
@@ -69,9 +51,9 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
         self.bytecode.len()
     }
 
-    fn emit_loop<F>(&mut self, body: F) -> Result<(), CompilerError>
+    fn emit_loop<F>(&mut self, body: F) -> CompilerResult<()>
     where
-        F: FnOnce(&mut Self) -> Result<(), CompilerError>,
+        F: FnOnce(&mut Self) -> CompilerResult<()>,
     {
         let begin = self.bytecode.len();
         let end = self.emit(Opcode::JumpIfEnd(0));
@@ -112,16 +94,18 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
         builtin: &BuiltInFunction,
         arguments: &[&'arena Node<'arena>],
         index: usize,
-    ) -> Result<usize, CompilerError> {
-        let arg = arguments.get(index).ok_or_else(|| ArgumentNotFound {
-            index,
-            builtin: builtin.to_string(),
-        })?;
+    ) -> CompilerResult<usize> {
+        let arg = arguments
+            .get(index)
+            .ok_or_else(|| CompilerError::ArgumentNotFound {
+                index,
+                builtin: builtin.to_string(),
+            })?;
 
         self.compile_node(arg)
     }
 
-    fn compile_node(&mut self, node: &'arena Node<'arena>) -> Result<usize, CompilerError> {
+    fn compile_node(&mut self, node: &'arena Node<'arena>) -> CompilerResult<usize> {
         match node {
             Node::Null => Ok(self.emit(Opcode::Push(Variable::Null))),
             Node::Bool(v) => Ok(self.emit(Opcode::Push(Variable::Bool(*v)))),
@@ -199,7 +183,7 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                         Ok(self.emit(Opcode::Negate))
                     }
                     Operator::Logical(LogicalOperator::Not) => Ok(self.emit(Opcode::Not)),
-                    _ => Err(UnknownUnaryOperator {
+                    _ => Err(CompilerError::UnknownUnaryOperator {
                         operator: operator.to_string(),
                     }),
                 }
@@ -301,7 +285,7 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                     self.compile_node(right)?;
                     Ok(self.emit(Opcode::Exponent))
                 }
-                _ => Err(UnknownBinaryOperator {
+                _ => Err(CompilerError::UnknownBinaryOperator {
                     operator: operator.to_string(),
                 }),
             },

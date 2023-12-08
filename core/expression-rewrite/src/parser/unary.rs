@@ -1,7 +1,5 @@
-use crate::ast::Node;
-use crate::lexer::token::{
-    Bracket, ComparisonOperator, Identifier, LogicalOperator, Operator, TokenKind,
-};
+use crate::lexer::{Bracket, ComparisonOperator, Identifier, LogicalOperator, Operator, TokenKind};
+use crate::parser::ast::Node;
 use crate::parser::builtin::BuiltInFunction;
 use crate::parser::constants::{Associativity, BINARY_OPERATORS, UNARY_OPERATORS};
 use crate::parser::error::ParserError::{FailedToParse, UnexpectedToken};

@@ -2,8 +2,7 @@ use chrono::{
     DateTime, Datelike, Days, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Utc, Weekday,
 };
 use once_cell::sync::Lazy;
-
-use crate::vm::VMError;
+use crate::vm::error::{VMError, VMResult};
 
 #[allow(clippy::unwrap_used)]
 static ZERO_TIME: Lazy<NaiveTime> = Lazy::new(|| NaiveTime::from_hms_opt(0, 0, 0).unwrap());
@@ -14,7 +13,7 @@ static TIME_HMS: &str = "%H:%M:%S";
 static TIME_HM: &str = "%H:%M";
 static TIME_H: &str = "%H";
 
-pub(crate) fn date_time(str: &str) -> Result<NaiveDateTime, VMError> {
+pub(crate) fn date_time(str: &str) -> VMResult<NaiveDateTime> {
     if str == "now" {
         return Ok(Utc::now().naive_utc());
     }
@@ -29,7 +28,7 @@ pub(crate) fn date_time(str: &str) -> Result<NaiveDateTime, VMError> {
         })
 }
 
-pub(crate) fn time(str: &str) -> Result<NaiveTime, VMError> {
+pub(crate) fn time(str: &str) -> VMResult<NaiveTime> {
     let now = Utc::now();
 
     if str == "now" {

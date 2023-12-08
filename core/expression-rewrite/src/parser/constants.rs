@@ -2,7 +2,8 @@ use nohash_hasher::BuildNoHashHasher;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 
-use crate::lexer::token::{ArithmeticOperator, ComparisonOperator, LogicalOperator, Operator};
+use crate::lexer::{ArithmeticOperator, ComparisonOperator, LogicalOperator, Operator};
+use Associativity::{Left, Right};
 
 type NoHasher = BuildNoHashHasher<Operator>;
 
@@ -35,8 +36,6 @@ macro_rules! hashmap {
         }
     };
 }
-
-use Associativity::{Left, Right};
 
 pub(crate) static BINARY_OPERATORS: Lazy<HashMap<Operator, ParserOperator, NoHasher>> = Lazy::new(
     || {

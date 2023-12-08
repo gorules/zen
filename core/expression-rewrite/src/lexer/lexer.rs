@@ -1,10 +1,10 @@
+use crate::lexer::codes::{is_token_type, token_type};
 use crate::lexer::cursor::{Cursor, CursorItem};
 use crate::lexer::error::LexerError;
 use crate::lexer::error::LexerError::{UnexpectedEof, UnmatchedSymbol};
 use crate::lexer::token::{
     Bracket, ComparisonOperator, Identifier, LogicalOperator, Operator, Token, TokenKind,
 };
-use crate::{is_token_type, token_type};
 
 type VoidResult = Result<(), LexerError>;
 

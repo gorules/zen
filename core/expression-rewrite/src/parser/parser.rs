@@ -6,8 +6,8 @@ use bumpalo::collections::Vec as BumpVec;
 use bumpalo::Bump;
 use rust_decimal::Decimal;
 
-use crate::ast::Node;
-use crate::lexer::token::{Bracket, ComparisonOperator, Identifier, Operator, Token, TokenKind};
+use crate::lexer::{Bracket, ComparisonOperator, Identifier, Operator, Token, TokenKind};
+use crate::parser::ast::Node;
 use crate::parser::builtin::{Arity, BuiltInFunction};
 use crate::parser::error::{ParserError, ParserResult};
 use crate::parser::standard::Standard;
@@ -104,7 +104,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         self.is_done.get()
     }
 
-    pub(super) fn next(&self) -> ParserResult<()> {
+    pub(crate) fn next(&self) -> ParserResult<()> {
         self.position.set(self.position.get() + 1);
 
         if let Some(token) = self.tokens.get(self.position.get()) {

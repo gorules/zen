@@ -1,8 +1,7 @@
-use zen_expression_rewrite::lexer::token::{
-    ArithmeticOperator, Bracket, ComparisonOperator, Identifier, LogicalOperator, Operator, Token,
-    TokenKind,
+use zen_expression_rewrite::lexer::{
+    ArithmeticOperator, Bracket, ComparisonOperator, Identifier, Lexer, LogicalOperator, Operator,
+    Token, TokenKind,
 };
-use zen_expression_rewrite::lexer::Lexer;
 
 struct LexerTest {
     test: &'static str,

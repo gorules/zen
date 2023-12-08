@@ -3,6 +3,7 @@ use std::hash::{Hash, Hasher};
 use nohash_hasher::IsEnabled;
 use strum_macros::{Display, EnumString, EnumVariantNames};
 
+/// Contains information from lexical analysis
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Token<'a> {
     pub span: (usize, usize),
@@ -10,6 +11,7 @@ pub struct Token<'a> {
     pub value: &'a str,
 }
 
+/// Classification of tokens
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum TokenKind {
     Identifier(Identifier),

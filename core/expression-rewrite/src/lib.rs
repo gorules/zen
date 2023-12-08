@@ -35,7 +35,7 @@
 //!     let mut isolate = Isolate::with_environment(&context);
 //!
 //!     // Fast 🚀
-//!     for _ in 0..1000 {
+//!     for _ in 0..1_000 {
 //!         let tax_amount = isolate.run_standard("50 * tax.percentage / 100").unwrap();
 //!         assert_eq!(tax_amount, json!(5));
 //!     }

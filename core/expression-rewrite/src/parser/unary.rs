@@ -87,7 +87,7 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
                 let right_node = self.binary_expression(0)?;
                 left_node = self.node(Node::Binary {
                     left: left_node,
-                    operator: Operator::Comparison(comparison.clone()),
+                    operator: Operator::Comparison(*comparison),
                     right: right_node,
                 });
             }
@@ -147,7 +147,7 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
             };
 
             node_left = self.node(Node::Binary {
-                operator: operator.clone(),
+                operator: *operator,
                 left: node_left,
                 right: node_right,
             });
@@ -186,7 +186,7 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
             self.next()?;
             let expr = self.binary_expression(unary_operator.precedence)?;
             let node = self.node(Node::Unary {
-                operator: operator.clone(),
+                operator: *operator,
                 node: expr,
             });
 

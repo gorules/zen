@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Debug, PartialEq, Eq, Clone, Error)]
 pub enum VMError {
     #[error("Unsupported opcode type")]
     OpcodeErr { opcode: String, message: String },
@@ -13,6 +13,9 @@ pub enum VMError {
 
     #[error("Failed to parse date time")]
     ParseDateTimeErr { timestamp: String },
+
+    #[error("Number conversion error")]
+    NumberConversionError,
 }
 
 pub(crate) type VMResult<T> = Result<T, VMError>;

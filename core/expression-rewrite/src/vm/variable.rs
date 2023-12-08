@@ -10,9 +10,10 @@ use hashbrown::BumpWrapper;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde_json::{Map, Number, Value};
+use strum_macros::Display;
 
 /// In-memory representation of expression variables
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Display)]
 pub enum Variable<'arena> {
     Null,
     Bool(bool),
@@ -37,9 +38,7 @@ impl<'a> Variable<'a> {
     pub fn from_serde(v: &Value, bump: &'a Bump) -> Self {
         match v {
             Value::String(str) => Variable::String(bump.alloc_str(str)),
-            Value::Number(f) => {
-                Variable::Number(Decimal::from_str_exact(f.to_string().as_str()).unwrap())
-            }
+            Value::Number(f) => Variable::Number(Decimal::from_str_exact(f.as_str()).unwrap()),
             Value::Bool(b) => Variable::Bool(*b),
             Value::Array(v) => {
                 let mut arr = BumpVec::with_capacity_in(v.len(), bump);
@@ -93,14 +92,15 @@ impl<'a> Variable<'a> {
 }
 
 impl TryFrom<&Variable<'_>> for Value {
-    type Error = ();
+    type Error = VMError;
 
     fn try_from(value: &Variable<'_>) -> Result<Self, Self::Error> {
         match value {
             Variable::Null => Ok(Value::Null),
             Variable::Bool(b) => Ok(Value::Bool(*b)),
             Variable::Number(n) => Ok(Value::Number(
-                Number::from_str(n.normalize().to_string().as_str()).map_err(|_| ())?,
+                Number::from_str(n.normalize().to_string().as_str())
+                    .map_err(|_| VMError::NumberConversionError)?,
             )),
             Variable::String(s) => Ok(Value::String(s.to_string())),
             Variable::Array(arr) => {
@@ -113,10 +113,8 @@ impl TryFrom<&Variable<'_>> for Value {
             }
             Variable::Object(obj) => {
                 let mut t = Map::new();
-
-                for k in obj.keys() {
-                    let v = *obj.get(k).ok_or(())?;
-                    t.insert(k.to_string(), Value::try_from(v)?);
+                for (key, value) in obj {
+                    t.insert(key.to_string(), Value::try_from(*value)?);
                 }
 
                 Ok(Value::Object(t))

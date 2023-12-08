@@ -2,7 +2,6 @@ use criterion::{criterion_group, criterion_main, Bencher, Criterion};
 use serde_json::Value;
 use zen_expression_rewrite::Isolate;
 
-
 fn bench_source(b: &mut Bencher, source: &'static str) {
     let s: Value = serde_json::from_str(r#"{ "$": "ru" }"#).unwrap();
 
@@ -27,7 +26,7 @@ fn bench_functions(c: &mut Criterion) {
     });
 
     c.bench_function("isolate/standard", |b| {
-        bench_standard(b, "contains(['ru', 'se', 'b', 'c', 'd', 'e'], $)");
+        bench_standard(b, "contains(['ru', 'se'], $)");
     });
 }
 

@@ -3,8 +3,8 @@ use std::ops::Index;
 use anyhow::Context;
 use bumpalo::Bump;
 use serde_json::{json, Value};
-use zen_expression_rewrite::Isolate;
 use zen_expression_rewrite::vm::Variable;
+use zen_expression_rewrite::Isolate;
 
 struct TestEnv {
     env: Value,
@@ -562,7 +562,7 @@ fn isolate_standard_test() {
     ]);
 
     let mut isolate = Isolate::new();
-    
+
     for TestEnv { env, cases } in tests {
         isolate.set_environment(&env);
 

@@ -1,7 +1,7 @@
 use strum::ParseError;
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Debug, PartialEq, Eq, Clone, Error)]
 pub enum LexerError {
     #[error("Unexpected symbol: {symbol}")]
     UnexpectedSymbol { symbol: String },
@@ -20,3 +20,5 @@ impl From<ParseError> for LexerError {
         }
     }
 }
+
+pub(crate) type LexerResult<T> = Result<T, LexerError>;

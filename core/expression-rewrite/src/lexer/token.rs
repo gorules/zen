@@ -1,7 +1,7 @@
 use std::hash::{Hash, Hasher};
 
 use nohash_hasher::IsEnabled;
-use strum_macros::{Display, EnumString, EnumVariantNames};
+use strum_macros::{Display, EnumString};
 
 /// Contains information from lexical analysis
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -12,7 +12,7 @@ pub struct Token<'a> {
 }
 
 /// Classification of tokens
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Display)]
 pub enum TokenKind {
     Identifier(Identifier),
     Boolean(bool),
@@ -22,15 +22,11 @@ pub enum TokenKind {
     Bracket(Bracket),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, EnumVariantNames)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Display)]
 pub enum Identifier {
-    #[strum(serialize = "$")]
-    ContextReference,
-    #[strum(serialize = "#")]
-    CallbackReference,
-    #[strum(serialize = "null")]
-    Null,
-    #[strum(default)]
+    ContextReference,  // $
+    CallbackReference, // #
+    Null,              // null
     Variable,
 }
 
@@ -45,21 +41,16 @@ impl From<&str> for Identifier {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Display, EnumVariantNames)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Display)]
 pub enum Operator {
     Arithmetic(ArithmeticOperator),
     Logical(LogicalOperator),
     Comparison(ComparisonOperator),
-    #[strum(serialize = "..")]
-    Range,
-    #[strum(serialize = ",")]
-    Comma,
-    #[strum(serialize = ":")]
-    Slice,
-    #[strum(serialize = ".")]
-    Dot,
-    #[strum(serialize = "?")]
-    QuestionMark,
+    Range,        // ..
+    Comma,        // ,
+    Slice,        // :
+    Dot,          // .
+    QuestionMark, // ?
 }
 
 impl TryFrom<&str> for Operator {
@@ -80,7 +71,7 @@ impl TryFrom<&str> for Operator {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, EnumString, EnumVariantNames)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Display, EnumString)]
 pub enum ArithmeticOperator {
     #[strum(serialize = "+")]
     Add,
@@ -96,7 +87,7 @@ pub enum ArithmeticOperator {
     Power,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, EnumString, EnumVariantNames)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Display, EnumString)]
 pub enum LogicalOperator {
     #[strum(serialize = "and")]
     And,
@@ -106,7 +97,7 @@ pub enum LogicalOperator {
     Not,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, EnumString)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Display, EnumString)]
 pub enum ComparisonOperator {
     #[strum(serialize = "==")]
     Equal,
@@ -126,7 +117,7 @@ pub enum ComparisonOperator {
     NotIn,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Display, EnumString)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Display, EnumString)]
 pub enum Bracket {
     #[strum(serialize = "(")]
     LeftParenthesis,

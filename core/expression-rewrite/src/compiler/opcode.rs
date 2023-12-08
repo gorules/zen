@@ -1,7 +1,8 @@
 use crate::vm::Variable;
+use strum_macros::Display;
 
 /// Machine code interpreted by VM
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Display)]
 pub enum Opcode<'a> {
     Push(Variable<'a>),
     Pop,
@@ -70,7 +71,7 @@ pub enum Opcode<'a> {
 }
 
 /// Metadata for TypeConversion Opcode
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Display)]
 pub enum TypeConversionKind {
     Number,
     String,
@@ -78,7 +79,7 @@ pub enum TypeConversionKind {
 }
 
 /// Metadata for TypeCheck Opcode
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Display)]
 pub enum TypeCheckKind {
     Numeric,
 }

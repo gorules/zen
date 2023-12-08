@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-#[derive(Debug, PartialEq, Eq, Error)]
+#[derive(Debug, PartialEq, Eq, Clone, Error)]
 pub enum ParserError {
     #[error("Token out of bounds")]
     TokenOutOfBounds,

@@ -45,7 +45,7 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Standard> {
             };
 
             node_left = self.node(Node::Binary {
-                operator: operator.clone(),
+                operator: *operator,
                 left: node_left,
                 right: node_right,
             });
@@ -84,7 +84,7 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Standard> {
             self.next()?;
             let expr = self.binary_expression(unary_operator.precedence)?;
             let node = self.node(Node::Unary {
-                operator: operator.clone(),
+                operator: *operator,
                 node: expr,
             });
 

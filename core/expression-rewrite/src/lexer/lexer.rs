@@ -1,12 +1,10 @@
 use crate::lexer::codes::{is_token_type, token_type};
 use crate::lexer::cursor::{Cursor, CursorItem};
-use crate::lexer::error::LexerError;
 use crate::lexer::error::LexerError::{UnexpectedEof, UnmatchedSymbol};
+use crate::lexer::error::LexerResult;
 use crate::lexer::token::{
     Bracket, ComparisonOperator, Identifier, LogicalOperator, Operator, Token, TokenKind,
 };
-
-type VoidResult = Result<(), LexerError>;
 
 #[derive(Debug, Default)]
 pub struct Lexer<'arena> {
@@ -18,7 +16,7 @@ impl<'arena> Lexer<'arena> {
         Self::default()
     }
 
-    pub fn tokenize(&mut self, source: &'arena str) -> Result<&[Token<'arena>], LexerError> {
+    pub fn tokenize(&mut self, source: &'arena str) -> LexerResult<&[Token<'arena>]> {
         self.tokens.clear();
 
         Scanner::new(source, &mut self.tokens).scan()?;
@@ -41,7 +39,7 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
         }
     }
 
-    pub fn scan(&mut self) -> VoidResult {
+    pub fn scan(&mut self) -> LexerResult<()> {
         while let Some((i, s)) = self.cursor.peek() {
             match s {
                 token_type!("space") => {
@@ -66,7 +64,7 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
         Ok(())
     }
 
-    fn next(&self) -> Result<CursorItem, LexerError> {
+    fn next(&self) -> LexerResult<CursorItem> {
         self.cursor.next().ok_or_else(|| {
             let (a, b) = self.cursor.peek_back().unwrap_or((0, ' '));
 
@@ -81,7 +79,7 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
         self.tokens.push(token);
     }
 
-    fn string(&mut self) -> VoidResult {
+    fn string(&mut self) -> LexerResult<()> {
         let (start, opener) = self.next()?;
         let end: usize;
 
@@ -102,7 +100,7 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
         Ok(())
     }
 
-    fn number(&mut self) -> VoidResult {
+    fn number(&mut self) -> LexerResult<()> {
         let (start, _) = self.next()?;
         let mut end = start;
         let mut fractal = false;
@@ -139,7 +137,7 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
         Ok(())
     }
 
-    fn bracket(&mut self) -> VoidResult {
+    fn bracket(&mut self) -> LexerResult<()> {
         let (start, _) = self.next()?;
 
         let value = &self.source[start..=start];
@@ -152,7 +150,7 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
         Ok(())
     }
 
-    fn dot(&mut self) -> VoidResult {
+    fn dot(&mut self) -> LexerResult<()> {
         let (start, _) = self.next()?;
         let mut end = start;
 
@@ -170,7 +168,7 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
         Ok(())
     }
 
-    fn cmp_operator(&mut self) -> VoidResult {
+    fn cmp_operator(&mut self) -> LexerResult<()> {
         let (start, _) = self.next()?;
         let mut end = start;
 
@@ -188,7 +186,7 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
         Ok(())
     }
 
-    fn operator(&mut self) -> VoidResult {
+    fn operator(&mut self) -> LexerResult<()> {
         let (start, _) = self.next()?;
 
         let value = &self.source[start..=start];
@@ -201,7 +199,7 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
         Ok(())
     }
 
-    fn not(&mut self, start: usize) -> VoidResult {
+    fn not(&mut self, start: usize) -> LexerResult<()> {
         if self.cursor.next_if_is(" in ") {
             let end = self.cursor.position();
 
@@ -223,7 +221,7 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
         Ok(())
     }
 
-    fn identifier(&mut self) -> VoidResult {
+    fn identifier(&mut self) -> LexerResult<()> {
         let (start, _) = self.next()?;
         let mut end = start;
 

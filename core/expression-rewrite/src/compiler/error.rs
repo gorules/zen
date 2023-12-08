@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Debug, PartialEq, Eq, Clone, Error)]
 pub enum CompilerError {
     #[error("Unknown unary operator: {operator}")]
     UnknownUnaryOperator { operator: String },

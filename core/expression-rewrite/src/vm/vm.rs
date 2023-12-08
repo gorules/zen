@@ -549,7 +549,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             message: "Array out of bounds".into(),
                         })?;
 
-                        self.push(Number((*center_num).clone()));
+                        self.push(Number(**center_num));
                     } else {
                         let center_left = num_arr.get(center - 1).ok_or_else(|| OpcodeErr {
                             opcode: "Median".into(),

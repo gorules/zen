@@ -1,8 +1,5 @@
-use std::cell::UnsafeCell;
 use std::collections::HashMap;
 use std::hash::BuildHasherDefault;
-use std::mem::ManuallyDrop;
-use std::ops::{Deref, DerefMut};
 
 use ahash::AHasher;
 use bumpalo::Bump;
@@ -32,7 +29,7 @@ pub struct Isolate<'arena> {
     bump: Bump,
     reference_bump: Bump,
 
-    environment: UnsafeCell<ManuallyDrop<Variable<'arena>>>,
+    environment: Option<&'arena mut Variable<'arena>>,
     references: HashMap<&'arena str, &'arena Variable<'arena>, ADefHasher>,
 }
 
@@ -46,7 +43,7 @@ impl<'a> Isolate<'a> {
             bump: Default::default(),
             reference_bump: Default::default(),
 
-            environment: UnsafeCell::new(ManuallyDrop::new(Variable::Null)),
+            environment: None,
             references: Default::default(),
         }
     }
@@ -59,10 +56,10 @@ impl<'a> Isolate<'a> {
     }
 
     pub fn set_environment(&mut self, value: &Value) {
+        let bump = self.get_reference_bump();
         let new_environment = Variable::from_serde(value, self.get_reference_bump());
-        let current_environment = self.environment.get_mut();
 
-        *current_environment = ManuallyDrop::new(new_environment);
+        self.environment.replace(bump.alloc(new_environment));
     }
 
     pub fn set_reference(&mut self, reference: &'a str) -> Result<(), IsolateError> {
@@ -78,17 +75,13 @@ impl<'a> Isolate<'a> {
             }
         };
 
-        let environment = self.environment.get_mut();
-        let environment_ref = ManuallyDrop::deref(environment);
-        if !matches!(environment_ref, Variable::Object(_)) {
-            let _ = std::mem::replace(
-                environment,
-                ManuallyDrop::new(Variable::empty_object_in(bump)),
-            );
+        let environment = self.environment.as_deref().unwrap_or(&Variable::Null);
+        if !matches!(environment, Variable::Object(_)) {
+            let new_environment = bump.alloc(Variable::empty_object_in(bump));
+            self.environment.replace(new_environment);
         }
 
-        let environment_mut_ref = ManuallyDrop::deref_mut(environment);
-        let Variable::Object(environment_object) = environment_mut_ref else {
+        let Some(Variable::Object(environment_object)) = self.environment else {
             return Err(IsolateError::ReferenceError);
         };
 
@@ -125,7 +118,11 @@ impl<'a> Isolate<'a> {
 
         let result = self
             .vm
-            .run(bytecode, bump, self.environment.get_mut())
+            .run(
+                bytecode,
+                bump,
+                self.environment.as_deref().unwrap_or(&Variable::Null),
+            )
             .map_err(|source| IsolateError::VMError { source })?;
 
         result.try_into().map_err(|_| IsolateError::ValueCastError)
@@ -155,7 +152,11 @@ impl<'a> Isolate<'a> {
 
         let result = self
             .vm
-            .run(bytecode, bump, &self.environment.get_mut())
+            .run(
+                bytecode,
+                bump,
+                self.environment.as_deref().unwrap_or(&Variable::Null),
+            )
             .map_err(|source| IsolateError::VMError { source })?;
 
         result.as_bool().ok_or_else(|| IsolateError::ValueCastError)

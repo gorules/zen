@@ -52,16 +52,11 @@ async fn engine_filesystem_loader() {
 #[tokio::test]
 #[cfg_attr(miri, ignore)]
 async fn engine_closure_loader() {
-    let engine = DecisionEngine::async_loader(|key| {
-        // TODO: Improve once async closures become stable in Rust
-        let mv_key = key.to_string();
-
-        async move {
-            match mv_key.as_str() {
-                "function" => Ok(Arc::new(load_test_data("function.json"))),
-                "table" => Ok(Arc::new(load_test_data("table.json"))),
-                _ => Err(LoaderError::NotFound(mv_key).into()),
-            }
+    let engine = DecisionEngine::async_loader(|key| async {
+        match key.as_str() {
+            "function" => Ok(Arc::new(load_test_data("function.json"))),
+            "table" => Ok(Arc::new(load_test_data("table.json"))),
+            _ => Err(LoaderError::NotFound(key).into()),
         }
     });
 

@@ -1,12 +1,10 @@
 use anyhow::Context;
 use bumpalo::Bump;
-use std::ops::Index;
-use std::time::Instant;
-
 use serde_json::{json, Value};
+use std::ops::Index;
 
-use zen_expression::isolate::Isolate;
-use zen_expression::opcodes::Variable;
+use zen_expression::vm::Variable;
+use zen_expression::Isolate;
 
 struct TestEnv {
     env: Value,
@@ -563,13 +561,23 @@ fn isolate_standard_test() {
         },
     ]);
 
-    let isolate = Isolate::default();
+    let mut isolate = Isolate::new();
 
     for TestEnv { env, cases } in tests {
-        isolate.inject_env(&env);
+        isolate.set_environment(&env);
 
         for TestCase { expr, result } in cases {
-            assert_eq!(result, isolate.run_standard(expr).unwrap(), "{}", expr);
+            let isolate_result = isolate.run_standard(expr);
+            let Ok(response) = isolate_result else {
+                assert!(
+                    false,
+                    "Expression failed: {expr}. Error: {:?}",
+                    isolate_result.unwrap_err()
+                );
+                continue;
+            };
+
+            assert_eq!(result, response, "{}", expr);
         }
     }
 }
@@ -673,14 +681,14 @@ fn isolate_unary_tests() {
         },
     ]);
 
-    let isolate = Isolate::default();
+    let mut isolate = Isolate::new();
     for UnaryTestEnv {
         env,
         cases,
         reference,
     } in tests
     {
-        isolate.inject_env(&env);
+        isolate.set_environment(&env);
         isolate.set_reference(reference).unwrap();
 
         for TestCase { expr, result } in cases {
@@ -704,7 +712,7 @@ fn variable_serde_test() {
 
 #[test]
 fn isolate_test_decimals() {
-    let isolate = Isolate::default();
+    let mut isolate = Isolate::new();
     let result = isolate.run_standard("9223372036854775807").unwrap();
 
     assert_eq!(result, Value::from(9223372036854775807i64));
@@ -717,7 +725,6 @@ fn test_standard_csv() {
         .delimiter(b';')
         .from_reader(csv_data.as_bytes());
 
-    let start = Instant::now();
     while let Some(maybe_row) = r.records().next() {
         let Ok(row) = maybe_row else {
             continue;
@@ -730,24 +737,57 @@ fn test_standard_csv() {
 
         let output: Value = serde_json5::from_str(output_str).unwrap();
 
-        let isolate = Isolate::default();
+        let mut isolate = Isolate::new();
         if !input_str.is_empty() {
             let input: Value = serde_json5::from_str(input_str).unwrap();
-            isolate.inject_env(&input);
+            isolate.set_environment(&input);
         }
 
-        for i in 0..10_000 {
-            let result = isolate
-                .run_standard(expression)
-                .context(format!("Expression: {expression}"))
-                .unwrap();
+        let result = isolate
+            .run_standard(expression)
+            .context(format!("Expression: {expression}"))
+            .unwrap();
 
-            assert_eq!(
-                result, output,
-                "Expression {expression}. Expected: {output}, got: {result}"
-            );
-        }
+        assert_eq!(
+            result, output,
+            "Expression {expression}. Expected: {output}, got: {result}"
+        );
     }
+}
 
-    println!("{:?}", start.elapsed());
+#[test]
+fn test_unary_csv() {
+    let csv_data = include_str!("data/unary.csv");
+    let mut r = csv::ReaderBuilder::new()
+        .delimiter(b';')
+        .from_reader(csv_data.as_bytes());
+
+    while let Some(maybe_row) = r.records().next() {
+        let Ok(row) = maybe_row else {
+            continue;
+        };
+
+        let (expression, input_str, output_str) = (row.index(0), row.index(1), row.index(2));
+        if expression.starts_with("#") {
+            continue;
+        }
+
+        let output: Value = serde_json5::from_str(output_str).unwrap();
+
+        let mut isolate = Isolate::new();
+        if !input_str.is_empty() {
+            let input: Value = serde_json5::from_str(input_str).unwrap();
+            isolate.set_environment(&input);
+        }
+
+        let result = isolate
+            .run_unary(expression)
+            .context(format!("Expression: {expression}"))
+            .unwrap();
+
+        assert_eq!(
+            result, output,
+            "Expression {expression}. Expected: {output}, got: {result}"
+        );
+    }
 }

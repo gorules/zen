@@ -1,49 +1,37 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-
+use crate::lexer::codes::{is_token_type, token_type};
 use crate::lexer::cursor::{Cursor, CursorItem};
-use crate::lexer::error::LexerError;
 use crate::lexer::error::LexerError::{UnexpectedEof, UnmatchedSymbol};
-use crate::lexer::token::{Token, TokenKind};
-use crate::{is_token_type, token_type};
+use crate::lexer::error::LexerResult;
+use crate::lexer::token::{
+    Bracket, ComparisonOperator, Identifier, LogicalOperator, Operator, Token, TokenKind,
+};
 
-type TokenSlice<'a> = Rc<RefCell<Vec<Token<'a>>>>;
-
-type VoidResult = Result<(), LexerError>;
-
-#[derive(Debug)]
-pub struct Lexer<'a> {
-    tokens: TokenSlice<'a>,
+#[derive(Debug, Default)]
+pub struct Lexer<'arena> {
+    tokens: Vec<Token<'arena>>,
 }
 
-impl<'a> Default for Lexer<'a> {
-    fn default() -> Self {
-        Lexer::new()
-    }
-}
-
-impl<'a> Lexer<'a> {
+impl<'arena> Lexer<'arena> {
     pub fn new() -> Self {
-        Self {
-            tokens: Rc::new(RefCell::new(Vec::new())),
-        }
+        Self::default()
     }
 
-    pub fn tokenize(&self, source: &'a str) -> Result<TokenSlice<'a>, LexerError> {
-        self.tokens.borrow_mut().clear();
-        Scanner::new(source, self.tokens.clone()).scan()?;
-        Ok(self.tokens.clone())
+    pub fn tokenize(&mut self, source: &'arena str) -> LexerResult<&[Token<'arena>]> {
+        self.tokens.clear();
+
+        Scanner::new(source, &mut self.tokens).scan()?;
+        Ok(&self.tokens)
     }
 }
 
-struct Scanner<'a> {
-    cursor: Cursor<'a>,
-    tokens: TokenSlice<'a>,
-    source: &'a str,
+struct Scanner<'arena, 'self_ref> {
+    cursor: Cursor<'arena>,
+    tokens: &'self_ref mut Vec<Token<'arena>>,
+    source: &'arena str,
 }
 
-impl<'a> Scanner<'a> {
-    pub fn new(source: &'a str, tokens: TokenSlice<'a>) -> Self {
+impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
+    pub fn new(source: &'arena str, tokens: &'self_ref mut Vec<Token<'arena>>) -> Self {
         Self {
             cursor: Cursor::from(source),
             source,
@@ -51,7 +39,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    pub fn scan(&self) -> VoidResult {
+    pub fn scan(&mut self) -> LexerResult<()> {
         while let Some((i, s)) = self.cursor.peek() {
             match s {
                 token_type!("space") => {
@@ -76,7 +64,7 @@ impl<'a> Scanner<'a> {
         Ok(())
     }
 
-    fn next(&self) -> Result<CursorItem, LexerError> {
+    fn next(&self) -> LexerResult<CursorItem> {
         self.cursor.next().ok_or_else(|| {
             let (a, b) = self.cursor.peek_back().unwrap_or((0, ' '));
 
@@ -87,11 +75,11 @@ impl<'a> Scanner<'a> {
         })
     }
 
-    fn push(&self, token: Token<'a>) {
-        self.tokens.borrow_mut().push(token);
+    fn push(&mut self, token: Token<'arena>) {
+        self.tokens.push(token);
     }
 
-    fn string(&self) -> VoidResult {
+    fn string(&mut self) -> LexerResult<()> {
         let (start, opener) = self.next()?;
         let end: usize;
 
@@ -112,7 +100,7 @@ impl<'a> Scanner<'a> {
         Ok(())
     }
 
-    fn number(&self) -> VoidResult {
+    fn number(&mut self) -> LexerResult<()> {
         let (start, _) = self.next()?;
         let mut end = start;
         let mut fractal = false;
@@ -149,19 +137,20 @@ impl<'a> Scanner<'a> {
         Ok(())
     }
 
-    fn bracket(&self) -> VoidResult {
+    fn bracket(&mut self) -> LexerResult<()> {
         let (start, _) = self.next()?;
 
+        let value = &self.source[start..=start];
         self.push(Token {
-            kind: TokenKind::Bracket,
+            kind: TokenKind::Bracket(Bracket::try_from(value)?),
             span: (start, start + 1),
-            value: &self.source[start..=start],
+            value,
         });
 
         Ok(())
     }
 
-    fn dot(&self) -> VoidResult {
+    fn dot(&mut self) -> LexerResult<()> {
         let (start, _) = self.next()?;
         let mut end = start;
 
@@ -169,16 +158,17 @@ impl<'a> Scanner<'a> {
             end += 1;
         }
 
+        let value = &self.source[start..=end];
         self.push(Token {
-            kind: TokenKind::Operator,
+            kind: TokenKind::Operator(Operator::try_from(value)?),
             span: (start, end + 1),
-            value: &self.source[start..=end],
+            value,
         });
 
         Ok(())
     }
 
-    fn cmp_operator(&self) -> VoidResult {
+    fn cmp_operator(&mut self) -> LexerResult<()> {
         let (start, _) = self.next()?;
         let mut end = start;
 
@@ -186,33 +176,35 @@ impl<'a> Scanner<'a> {
             end += 1;
         }
 
+        let value = &self.source[start..=end];
         self.push(Token {
-            kind: TokenKind::Operator,
+            kind: TokenKind::Operator(Operator::try_from(value)?),
             span: (start, end + 1),
-            value: &self.source[start..=end],
+            value,
         });
 
         Ok(())
     }
 
-    fn operator(&self) -> VoidResult {
+    fn operator(&mut self) -> LexerResult<()> {
         let (start, _) = self.next()?;
 
+        let value = &self.source[start..=start];
         self.push(Token {
-            kind: TokenKind::Operator,
+            kind: TokenKind::Operator(Operator::try_from(value)?),
             span: (start, start + 1),
-            value: &self.source[start..=start],
+            value,
         });
 
         Ok(())
     }
 
-    fn not(&self, start: usize) -> VoidResult {
+    fn not(&mut self, start: usize) -> LexerResult<()> {
         if self.cursor.next_if_is(" in ") {
             let end = self.cursor.position();
 
             self.push(Token {
-                kind: TokenKind::Operator,
+                kind: TokenKind::Operator(Operator::Comparison(ComparisonOperator::NotIn)),
                 span: (start, end - 1),
                 value: "not in",
             })
@@ -220,7 +212,7 @@ impl<'a> Scanner<'a> {
             let end = self.cursor.position();
 
             self.push(Token {
-                kind: TokenKind::Operator,
+                kind: TokenKind::Operator(Operator::Logical(LogicalOperator::Not)),
                 span: (start, end),
                 value: "not",
             })
@@ -229,7 +221,7 @@ impl<'a> Scanner<'a> {
         Ok(())
     }
 
-    fn identifier(&self) -> VoidResult {
+    fn identifier(&mut self) -> LexerResult<()> {
         let (start, _) = self.next()?;
         let mut end = start;
 
@@ -239,14 +231,34 @@ impl<'a> Scanner<'a> {
 
         let value = &self.source[start..=end];
         match value {
-            "and" | "or" | "in" => self.push(Token {
-                kind: TokenKind::Operator,
+            "and" => self.push(Token {
+                kind: TokenKind::Operator(Operator::Logical(LogicalOperator::And)),
+                span: (start, end + 1),
+                value,
+            }),
+            "or" => self.push(Token {
+                kind: TokenKind::Operator(Operator::Logical(LogicalOperator::Or)),
+                span: (start, end + 1),
+                value,
+            }),
+            "in" => self.push(Token {
+                kind: TokenKind::Operator(Operator::Comparison(ComparisonOperator::In)),
+                span: (start, end + 1),
+                value,
+            }),
+            "true" => self.push(Token {
+                kind: TokenKind::Boolean(true),
+                span: (start, end + 1),
+                value,
+            }),
+            "false" => self.push(Token {
+                kind: TokenKind::Boolean(false),
                 span: (start, end + 1),
                 value,
             }),
             "not" => self.not(start)?,
             _ => self.push(Token {
-                kind: TokenKind::Identifier,
+                kind: TokenKind::Identifier(Identifier::from(value)),
                 span: (start, end + 1),
                 value,
             }),

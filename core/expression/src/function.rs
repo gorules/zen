@@ -10,11 +10,11 @@ pub fn evaluate_expression(expression: &str, context: &Value) -> Result<Value, I
 /// Evaluates a unary expression; Required: context must be an object with "$" key.
 pub fn evaluate_unary_expression(expression: &str, context: &Value) -> Result<bool, IsolateError> {
     let Some(context_object) = context.as_object() else {
-        return Err(IsolateError::MissingReference);
+        return Err(IsolateError::MissingContextReference);
     };
 
     if !context_object.contains_key("$") {
-        return Err(IsolateError::MissingReference);
+        return Err(IsolateError::MissingContextReference);
     }
 
     Isolate::with_environment(context).run_unary(expression)

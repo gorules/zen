@@ -7,25 +7,6 @@ use crate::parser::error::{ParserError, ParserResult};
 use crate::parser::parser::Parser;
 use crate::parser::unary::UnaryNodeBehaviour::CompareWithReference;
 
-/// Unary evaluation (or Unary-test evaluation) is used for evaluating expressions to a boolean
-/// value. It's mostly used DecisionTable cells, as it allows for easy to read expressions which
-/// excel at performance and readability.
-///
-/// Unary expressions rely on the context reference ($) - and context reference serves as a value
-/// which we are testing.
-///
-/// Some examples of valid expressions (supposing e.g. $ = 50):
-/// ```js
-/// // For $ = 50
-/// >= 50 or < 100         // evaluates to true
-/// [50..150)              // evaluates to true
-/// (50..150)              // evaluates to true
-///
-/// // For $ = 'hello'
-/// 'hi', 'hello'          // evaluates to true
-/// startsWith($, 'he')    // evaluates to true
-/// endsWith($, 'he')      // evaluates to false
-/// ```
 #[derive(Debug)]
 pub struct Unary;
 

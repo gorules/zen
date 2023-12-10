@@ -6,7 +6,7 @@ use crate::util::json_map::FlatJsonMap;
 use anyhow::{anyhow, Context};
 use serde::Serialize;
 use serde_json::Value;
-use zen_expression_rewrite::Isolate;
+use zen_expression::Isolate;
 
 pub struct ExpressionHandler<'a> {
     trace: bool,

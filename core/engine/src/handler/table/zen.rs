@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use serde::Serialize;
 use serde_json::Value;
-use zen_expression_rewrite::Isolate;
+use zen_expression::Isolate;
 
 use crate::handler::node::{NodeRequest, NodeResponse, NodeResult};
 use crate::handler::table::{RowOutput, RowOutputKind};

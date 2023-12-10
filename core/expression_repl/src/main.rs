@@ -3,7 +3,7 @@ use rustyline::config::Configurer;
 use rustyline::{DefaultEditor, Result};
 use serde_json::Value;
 
-use zen_expression_rewrite::Isolate;
+use zen_expression::Isolate;
 
 trait PrettyPrint {
     fn pretty_print(&self) -> String;

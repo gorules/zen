@@ -8,7 +8,7 @@ use petgraph::visit::{EdgeRef, IntoNeighbors, IntoNodeIdentifiers, Reversed, Vis
 use petgraph::{Incoming, Outgoing};
 use serde_json::{json, Map, Value};
 
-use zen_expression_rewrite::Isolate;
+use zen_expression::Isolate;
 
 use crate::model::{
     DecisionEdge, DecisionNode, DecisionNodeKind, SwitchStatement, SwitchStatementHitPolicy,

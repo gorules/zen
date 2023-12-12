@@ -6,7 +6,6 @@ license = "MIT"
 version = "0.17.0"
 edition = "2021"
 repository = "https://github.com/gorules/zen.git"
-publish = false
 
 [dependencies]
 ahash = { workspace = true }

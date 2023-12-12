@@ -13,7 +13,7 @@ where
 
 impl<F, O> ClosureLoader<F>
 where
-    F: Fn(&str) -> O + Sync + Send,
+    F: Fn(String) -> O + Sync + Send,
     O: Future<Output = LoaderResponse> + Send,
 {
     pub fn new(closure: F) -> Self {
@@ -24,11 +24,11 @@ where
 #[async_trait]
 impl<F, O> DecisionLoader for ClosureLoader<F>
 where
-    F: Fn(&str) -> O + Sync + Send,
+    F: Fn(String) -> O + Sync + Send,
     O: Future<Output = LoaderResponse> + Send,
 {
     async fn load(&self, key: &str) -> LoaderResponse {
         let closure = &self.closure;
-        closure(key).await
+        closure(key.to_string()).await
     }
 }

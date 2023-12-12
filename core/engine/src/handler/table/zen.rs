@@ -3,11 +3,11 @@ use std::collections::HashMap;
 
 use serde::Serialize;
 use serde_json::Value;
+use zen_expression::Isolate;
 
 use crate::handler::node::{NodeRequest, NodeResponse, NodeResult};
 use crate::handler::table::{RowOutput, RowOutputKind};
 use crate::model::{DecisionNodeKind, DecisionTableContent, DecisionTableHitPolicy};
-use zen_expression::isolate::Isolate;
 
 #[derive(Debug, Serialize)]
 struct RowResult {
@@ -18,7 +18,7 @@ struct RowResult {
     output: RowOutput,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct DecisionTableHandler<'a> {
     isolate: Isolate<'a>,
     trace: bool,
@@ -27,18 +27,18 @@ pub struct DecisionTableHandler<'a> {
 impl<'a> DecisionTableHandler<'a> {
     pub fn new(trace: bool) -> Self {
         Self {
-            isolate: Default::default(),
+            isolate: Isolate::new(),
             trace,
         }
     }
 
-    pub async fn handle(&self, request: &'a NodeRequest<'_>) -> NodeResult {
+    pub async fn handle(&mut self, request: &'a NodeRequest<'_>) -> NodeResult {
         let content = match &request.node.kind {
             DecisionNodeKind::DecisionTableNode { content } => Ok(content),
             _ => Err(anyhow!("Unexpected node type")),
         }?;
 
-        self.isolate.inject_env(&request.input);
+        self.isolate.set_environment(&request.input);
 
         match &content.hit_policy {
             DecisionTableHitPolicy::First => self.handle_first_hit(&content).await,
@@ -46,7 +46,7 @@ impl<'a> DecisionTableHandler<'a> {
         }
     }
 
-    async fn handle_first_hit(&self, content: &'a DecisionTableContent) -> NodeResult {
+    async fn handle_first_hit(&mut self, content: &'a DecisionTableContent) -> NodeResult {
         for i in 0..content.rules.len() {
             if let Some(result) = self.evaluate_row(&content, i) {
                 return Ok(NodeResponse {
@@ -67,7 +67,7 @@ impl<'a> DecisionTableHandler<'a> {
         })
     }
 
-    async fn handle_collect(&self, content: &'a DecisionTableContent) -> NodeResult {
+    async fn handle_collect(&mut self, content: &'a DecisionTableContent) -> NodeResult {
         let mut results = Vec::new();
         for i in 0..content.rules.len() {
             if let Some(result) = self.evaluate_row(&content, i) {
@@ -89,7 +89,11 @@ impl<'a> DecisionTableHandler<'a> {
         })
     }
 
-    fn evaluate_row(&self, content: &'a DecisionTableContent, index: usize) -> Option<RowResult> {
+    fn evaluate_row(
+        &mut self,
+        content: &'a DecisionTableContent,
+        index: usize,
+    ) -> Option<RowResult> {
         let rule = content.rules.get(index)?;
         for input in &content.inputs {
             let rule_value = rule.get(input.id.as_str())?;
@@ -108,9 +112,7 @@ impl<'a> DecisionTableHandler<'a> {
             };
 
             self.isolate.set_reference(input_field.as_str()).ok()?;
-            let result = self.isolate.run_unary(rule_value.as_str()).ok()?;
-
-            let is_ok = result.as_bool().unwrap_or(false);
+            let is_ok = self.isolate.run_unary(rule_value.as_str()).ok()?;
             if !is_ok {
                 return None;
             }

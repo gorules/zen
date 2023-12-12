@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-#[derive(Debug, PartialEq, Eq, Error)]
+#[derive(Debug, PartialEq, Eq, Clone, Error)]
 pub enum ParserError {
     #[error("Token out of bounds")]
     TokenOutOfBounds,
@@ -21,4 +21,4 @@ pub enum ParserError {
     UnsupportedBuiltIn { token: String },
 }
 
-pub type ParserResult<T> = Result<T, ParserError>;
+pub(crate) type ParserResult<T> = Result<T, ParserError>;

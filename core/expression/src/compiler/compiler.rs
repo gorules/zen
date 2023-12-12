@@ -1,69 +1,64 @@
-use std::cell::UnsafeCell;
-use std::rc::Rc;
-
-use bumpalo::Bump;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use thiserror::Error;
 
-use crate::ast::Node;
+use crate::compiler::error::{CompilerError, CompilerResult};
+use crate::compiler::{Opcode, TypeCheckKind, TypeConversionKind};
+use crate::lexer::{ArithmeticOperator, ComparisonOperator, LogicalOperator, Operator};
+use crate::parser::{BuiltInFunction, Node};
+use crate::vm::Variable;
 
-use crate::compiler::CompilerError::{
-    ArgumentNotFound, UnknownBinaryOperator, UnknownBuiltIn, UnknownUnaryOperator,
-};
-use crate::opcodes::{Opcode, TypeCheckKind, TypeConversionKind, Variable};
-
-type Bytecode<'a> = Rc<UnsafeCell<Vec<&'a Opcode<'a>>>>;
-
-#[derive(Debug, Error)]
-pub enum CompilerError {
-    #[error("Unknown unary operator: {operator}")]
-    UnknownUnaryOperator { operator: String },
-
-    #[error("Unknown binary operator: {operator}")]
-    UnknownBinaryOperator { operator: String },
-
-    #[error("Unknown builtin: {builtin}")]
-    UnknownBuiltIn { builtin: String },
-
-    #[error("Argument not found for builtin {builtin} at index {index}")]
-    ArgumentNotFound { builtin: String, index: usize },
+#[derive(Debug)]
+pub struct Compiler<'arena> {
+    bytecode: Vec<Opcode<'arena>>,
 }
 
-pub struct Compiler<'a> {
-    root: &'a Node<'a>,
-    bytecode: Bytecode<'a>,
-    bump: &'a Bump,
-}
-
-impl<'a> Compiler<'a> {
-    pub fn new(root: &'a Node<'a>, bytecode: Bytecode<'a>, bump: &'a Bump) -> Self {
+impl<'arena> Compiler<'arena> {
+    pub fn new() -> Self {
         Self {
-            root,
-            bytecode,
-            bump,
+            bytecode: Default::default(),
         }
     }
 
-    pub fn compile(&self) -> Result<(), CompilerError> {
+    pub fn compile(&mut self, root: &'arena Node<'arena>) -> CompilerResult<&[Opcode<'arena>]> {
+        self.bytecode.clear();
+
+        CompilerInner::new(&mut self.bytecode, root).compile()?;
+        Ok(self.bytecode.as_slice())
+    }
+}
+
+#[derive(Debug)]
+struct CompilerInner<'arena, 'bytecode_ref> {
+    root: &'arena Node<'arena>,
+    bytecode: &'bytecode_ref mut Vec<Opcode<'arena>>,
+}
+
+impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
+    pub fn new(
+        bytecode: &'bytecode_ref mut Vec<Opcode<'arena>>,
+        root: &'arena Node<'arena>,
+    ) -> Self {
+        Self { root, bytecode }
+    }
+
+    pub fn compile(&mut self) -> CompilerResult<()> {
         self.compile_node(self.root)?;
         Ok(())
     }
 
-    fn emit(&self, op: Opcode<'a>) -> usize {
-        let bc = unsafe { &mut *self.bytecode.get() };
-        bc.push(self.bump.alloc(op));
-        bc.len()
+    fn emit(&mut self, op: Opcode<'arena>) -> usize {
+        self.bytecode.push(op);
+        self.bytecode.len()
     }
 
-    fn emit_loop<F>(&self, mut body: F) -> Result<(), CompilerError>
+    fn emit_loop<F>(&mut self, body: F) -> CompilerResult<()>
     where
-        F: FnMut() -> Result<(), CompilerError>,
+        F: FnOnce(&mut Self) -> CompilerResult<()>,
     {
-        let begin = unsafe { (*self.bytecode.get()).len() };
+        let begin = self.bytecode.len();
         let end = self.emit(Opcode::JumpIfEnd(0));
 
-        body()?;
+        body(self)?;
 
         self.emit(Opcode::IncrementIt);
         let e = self.emit(Opcode::JumpBackward(self.calc_backward_jump(begin)));
@@ -71,14 +66,14 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn emit_cond<F>(&self, mut body: F)
+    fn emit_cond<F>(&mut self, mut body: F)
     where
-        F: FnMut(),
+        F: FnMut(&mut Self),
     {
         let noop = self.emit(Opcode::JumpIfFalse(0));
         self.emit(Opcode::Pop);
 
-        body();
+        body(self);
 
         let jmp = self.emit(Opcode::Jump(0));
         self.replace(noop, Opcode::JumpIfFalse(jmp - noop));
@@ -86,30 +81,31 @@ impl<'a> Compiler<'a> {
         self.replace(jmp, Opcode::Jump(e - jmp));
     }
 
-    fn replace(&self, at: usize, op: Opcode<'a>) {
-        let bytecode = unsafe { &mut *self.bytecode.get() };
-        let _ = std::mem::replace(&mut bytecode[at - 1], self.bump.alloc(op));
+    fn replace(&mut self, at: usize, op: Opcode<'arena>) {
+        let _ = std::mem::replace(&mut self.bytecode[at - 1], op);
     }
 
     fn calc_backward_jump(&self, to: usize) -> usize {
-        unsafe { (*self.bytecode.get()).len() + 1 - to }
+        self.bytecode.len() + 1 - to
     }
 
     fn compile_argument(
-        &self,
-        name: &str,
-        arguments: &&[&'a Node<'a>],
+        &mut self,
+        builtin: &BuiltInFunction,
+        arguments: &[&'arena Node<'arena>],
         index: usize,
-    ) -> Result<usize, CompilerError> {
-        let arg = arguments.get(index).ok_or_else(|| ArgumentNotFound {
-            index,
-            builtin: name.to_string(),
-        })?;
+    ) -> CompilerResult<usize> {
+        let arg = arguments
+            .get(index)
+            .ok_or_else(|| CompilerError::ArgumentNotFound {
+                index,
+                builtin: builtin.to_string(),
+            })?;
 
         self.compile_node(arg)
     }
 
-    fn compile_node(&self, node: &'a Node<'a>) -> Result<usize, CompilerError> {
+    fn compile_node(&mut self, node: &'arena Node<'arena>) -> CompilerResult<usize> {
         match node {
             Node::Null => Ok(self.emit(Opcode::Push(Variable::Null))),
             Node::Bool(v) => Ok(self.emit(Opcode::Push(Variable::Bool(*v)))),
@@ -182,10 +178,12 @@ impl<'a> Compiler<'a> {
             Node::Unary { node, operator } => {
                 let curr = self.compile_node(node)?;
                 match *operator {
-                    "+" => Ok(curr),
-                    "!" | "not" => Ok(self.emit(Opcode::Not)),
-                    "-" => Ok(self.emit(Opcode::Negate)),
-                    _ => Err(UnknownUnaryOperator {
+                    Operator::Arithmetic(ArithmeticOperator::Add) => Ok(curr),
+                    Operator::Arithmetic(ArithmeticOperator::Subtract) => {
+                        Ok(self.emit(Opcode::Negate))
+                    }
+                    Operator::Logical(LogicalOperator::Not) => Ok(self.emit(Opcode::Not)),
+                    _ => Err(CompilerError::UnknownUnaryOperator {
                         operator: operator.to_string(),
                     }),
                 }
@@ -195,20 +193,20 @@ impl<'a> Compiler<'a> {
                 right,
                 operator,
             } => match *operator {
-                "==" => {
+                Operator::Comparison(ComparisonOperator::Equal) => {
                     self.compile_node(left)?;
                     self.compile_node(right)?;
 
                     Ok(self.emit(Opcode::Equal))
                 }
-                "!=" => {
+                Operator::Comparison(ComparisonOperator::NotEqual) => {
                     self.compile_node(left)?;
                     self.compile_node(right)?;
 
                     self.emit(Opcode::Equal);
                     Ok(self.emit(Opcode::Not))
                 }
-                "or" => {
+                Operator::Logical(LogicalOperator::Or) => {
                     self.compile_node(left)?;
                     let end = self.emit(Opcode::JumpIfTrue(0));
                     self.emit(Opcode::Pop);
@@ -217,7 +215,7 @@ impl<'a> Compiler<'a> {
 
                     Ok(r)
                 }
-                "and" => {
+                Operator::Logical(LogicalOperator::And) => {
                     self.compile_node(left)?;
                     let end = self.emit(Opcode::JumpIfFalse(0));
                     self.emit(Opcode::Pop);
@@ -226,243 +224,254 @@ impl<'a> Compiler<'a> {
 
                     Ok(r)
                 }
-                "in" => {
+                Operator::Comparison(ComparisonOperator::In) => {
                     self.compile_node(left)?;
                     self.compile_node(right)?;
                     Ok(self.emit(Opcode::In))
                 }
-                "not in" => {
+                Operator::Comparison(ComparisonOperator::NotIn) => {
                     self.compile_node(left)?;
                     self.compile_node(right)?;
                     self.emit(Opcode::In);
                     Ok(self.emit(Opcode::Not))
                 }
-                "<" => {
+                Operator::Comparison(ComparisonOperator::LessThan) => {
                     self.compile_node(left)?;
                     self.compile_node(right)?;
                     Ok(self.emit(Opcode::Less))
                 }
-                "<=" => {
+                Operator::Comparison(ComparisonOperator::LessThanOrEqual) => {
                     self.compile_node(left)?;
                     self.compile_node(right)?;
                     Ok(self.emit(Opcode::LessOrEqual))
                 }
-                ">" => {
+                Operator::Comparison(ComparisonOperator::GreaterThan) => {
                     self.compile_node(left)?;
                     self.compile_node(right)?;
                     Ok(self.emit(Opcode::More))
                 }
-                ">=" => {
+                Operator::Comparison(ComparisonOperator::GreaterThanOrEqual) => {
                     self.compile_node(left)?;
                     self.compile_node(right)?;
                     Ok(self.emit(Opcode::MoreOrEqual))
                 }
-                "+" => {
+                Operator::Arithmetic(ArithmeticOperator::Add) => {
                     self.compile_node(left)?;
                     self.compile_node(right)?;
                     Ok(self.emit(Opcode::Add))
                 }
-                "-" => {
+                Operator::Arithmetic(ArithmeticOperator::Subtract) => {
                     self.compile_node(left)?;
                     self.compile_node(right)?;
                     Ok(self.emit(Opcode::Subtract))
                 }
-                "*" => {
+                Operator::Arithmetic(ArithmeticOperator::Multiply) => {
                     self.compile_node(left)?;
                     self.compile_node(right)?;
                     Ok(self.emit(Opcode::Multiply))
                 }
-                "/" => {
+                Operator::Arithmetic(ArithmeticOperator::Divide) => {
                     self.compile_node(left)?;
                     self.compile_node(right)?;
                     Ok(self.emit(Opcode::Divide))
                 }
-                "%" => {
+                Operator::Arithmetic(ArithmeticOperator::Modulus) => {
                     self.compile_node(left)?;
                     self.compile_node(right)?;
                     Ok(self.emit(Opcode::Modulo))
                 }
-                "^" => {
+                Operator::Arithmetic(ArithmeticOperator::Power) => {
                     self.compile_node(left)?;
                     self.compile_node(right)?;
                     Ok(self.emit(Opcode::Exponent))
                 }
-                _ => Err(UnknownBinaryOperator {
+                _ => Err(CompilerError::UnknownBinaryOperator {
                     operator: operator.to_string(),
                 }),
             },
-            Node::BuiltIn { name, arguments } => match *name {
-                "len" => {
-                    self.compile_argument(name, arguments, 0)?;
+            Node::BuiltIn { kind, arguments } => match kind {
+                BuiltInFunction::Len => {
+                    self.compile_argument(kind, arguments, 0)?;
                     self.emit(Opcode::Len);
                     self.emit(Opcode::Rot);
                     Ok(self.emit(Opcode::Pop))
                 }
-                "date" => {
-                    self.compile_argument(name, arguments, 0)?;
+                BuiltInFunction::Date => {
+                    self.compile_argument(kind, arguments, 0)?;
                     Ok(self.emit(Opcode::ParseDateTime))
                 }
-                "time" => {
-                    self.compile_argument(name, arguments, 0)?;
+                BuiltInFunction::Time => {
+                    self.compile_argument(kind, arguments, 0)?;
                     Ok(self.emit(Opcode::ParseTime))
                 }
-                "duration" => {
-                    self.compile_argument(name, arguments, 0)?;
+                BuiltInFunction::Duration => {
+                    self.compile_argument(kind, arguments, 0)?;
                     Ok(self.emit(Opcode::ParseDuration))
                 }
-                "startsWith" => {
-                    self.compile_argument(name, arguments, 0)?;
-                    self.compile_argument(name, arguments, 1)?;
+                BuiltInFunction::StartsWith => {
+                    self.compile_argument(kind, arguments, 0)?;
+                    self.compile_argument(kind, arguments, 1)?;
                     Ok(self.emit(Opcode::StartsWith))
                 }
-                "endsWith" => {
-                    self.compile_argument(name, arguments, 0)?;
-                    self.compile_argument(name, arguments, 1)?;
+                BuiltInFunction::EndsWith => {
+                    self.compile_argument(kind, arguments, 0)?;
+                    self.compile_argument(kind, arguments, 1)?;
                     Ok(self.emit(Opcode::EndsWith))
                 }
-                "contains" => {
-                    self.compile_argument(name, arguments, 0)?;
-                    self.compile_argument(name, arguments, 1)?;
+                BuiltInFunction::Contains => {
+                    self.compile_argument(kind, arguments, 0)?;
+                    self.compile_argument(kind, arguments, 1)?;
                     Ok(self.emit(Opcode::Contains))
                 }
-                "matches" => {
-                    self.compile_argument(name, arguments, 0)?;
-                    self.compile_argument(name, arguments, 1)?;
+                BuiltInFunction::Matches => {
+                    self.compile_argument(kind, arguments, 0)?;
+                    self.compile_argument(kind, arguments, 1)?;
                     Ok(self.emit(Opcode::Matches))
                 }
-                "extract" => {
-                    self.compile_argument(name, arguments, 0)?;
-                    self.compile_argument(name, arguments, 1)?;
+                BuiltInFunction::Extract => {
+                    self.compile_argument(kind, arguments, 0)?;
+                    self.compile_argument(kind, arguments, 1)?;
                     Ok(self.emit(Opcode::Extract))
                 }
-                "flatten" => {
-                    self.compile_argument(name, arguments, 0)?;
+                BuiltInFunction::Flatten => {
+                    self.compile_argument(kind, arguments, 0)?;
                     Ok(self.emit(Opcode::Flatten))
                 }
-                "upper" => {
-                    self.compile_argument(name, arguments, 0)?;
+                BuiltInFunction::Upper => {
+                    self.compile_argument(kind, arguments, 0)?;
                     Ok(self.emit(Opcode::Uppercase))
                 }
-                "lower" => {
-                    self.compile_argument(name, arguments, 0)?;
+                BuiltInFunction::Lower => {
+                    self.compile_argument(kind, arguments, 0)?;
                     Ok(self.emit(Opcode::Lowercase))
                 }
-                "abs" => {
-                    self.compile_argument(name, arguments, 0)?;
+                BuiltInFunction::Abs => {
+                    self.compile_argument(kind, arguments, 0)?;
                     Ok(self.emit(Opcode::Abs))
                 }
-                "avg" => {
-                    self.compile_argument(name, arguments, 0)?;
+                BuiltInFunction::Avg => {
+                    self.compile_argument(kind, arguments, 0)?;
                     Ok(self.emit(Opcode::Average))
                 }
-                "median" => {
-                    self.compile_argument(name, arguments, 0)?;
+                BuiltInFunction::Median => {
+                    self.compile_argument(kind, arguments, 0)?;
                     Ok(self.emit(Opcode::Median))
                 }
-                "mode" => {
-                    self.compile_argument(name, arguments, 0)?;
+                BuiltInFunction::Mode => {
+                    self.compile_argument(kind, arguments, 0)?;
                     Ok(self.emit(Opcode::Mode))
                 }
-                "max" => {
-                    self.compile_argument(name, arguments, 0)?;
+                BuiltInFunction::Max => {
+                    self.compile_argument(kind, arguments, 0)?;
                     Ok(self.emit(Opcode::Max))
                 }
-                "min" => {
-                    self.compile_argument(name, arguments, 0)?;
+                BuiltInFunction::Min => {
+                    self.compile_argument(kind, arguments, 0)?;
                     Ok(self.emit(Opcode::Min))
                 }
-                "sum" => {
-                    self.compile_argument(name, arguments, 0)?;
+                BuiltInFunction::Sum => {
+                    self.compile_argument(kind, arguments, 0)?;
                     Ok(self.emit(Opcode::Sum))
                 }
-                "floor" => {
-                    self.compile_argument(name, arguments, 0)?;
+                BuiltInFunction::Floor => {
+                    self.compile_argument(kind, arguments, 0)?;
                     Ok(self.emit(Opcode::Floor))
                 }
-                "ceil" => {
-                    self.compile_argument(name, arguments, 0)?;
+                BuiltInFunction::Ceil => {
+                    self.compile_argument(kind, arguments, 0)?;
                     Ok(self.emit(Opcode::Ceil))
                 }
-                "round" => {
-                    self.compile_argument(name, arguments, 0)?;
+                BuiltInFunction::Round => {
+                    self.compile_argument(kind, arguments, 0)?;
                     Ok(self.emit(Opcode::Round))
                 }
-                "rand" => {
-                    self.compile_argument(name, arguments, 0)?;
+                BuiltInFunction::Rand => {
+                    self.compile_argument(kind, arguments, 0)?;
                     Ok(self.emit(Opcode::Random))
                 }
-                "string" => {
-                    self.compile_argument(name, arguments, 0)?;
+                BuiltInFunction::String => {
+                    self.compile_argument(kind, arguments, 0)?;
                     Ok(self.emit(Opcode::TypeConversion(TypeConversionKind::String)))
                 }
-                "number" => {
-                    self.compile_argument(name, arguments, 0)?;
+                BuiltInFunction::Number => {
+                    self.compile_argument(kind, arguments, 0)?;
                     Ok(self.emit(Opcode::TypeConversion(TypeConversionKind::Number)))
                 }
-                "isNumeric" => {
-                    self.compile_argument(name, arguments, 0)?;
+                BuiltInFunction::Bool => {
+                    self.compile_argument(kind, arguments, 0)?;
+                    Ok(self.emit(Opcode::TypeConversion(TypeConversionKind::Bool)))
+                }
+                BuiltInFunction::IsNumeric => {
+                    self.compile_argument(kind, arguments, 0)?;
                     Ok(self.emit(Opcode::TypeCheck(TypeCheckKind::Numeric)))
                 }
-                "startOf" | "endOf" => {
-                    self.compile_argument(name, arguments, 0)?;
-                    self.compile_argument(name, arguments, 1)?;
-                    Ok(self.emit(Opcode::DateFunction(name)))
+                BuiltInFunction::StartOf | BuiltInFunction::EndOf => {
+                    self.compile_argument(kind, arguments, 0)?;
+                    self.compile_argument(kind, arguments, 1)?;
+                    Ok(self.emit(Opcode::DateFunction(kind.into())))
                 }
-                "dayOfWeek" | "dayOfMonth" | "dayOfYear" | "weekOfYear" | "monthOfYear"
-                | "monthString" | "weekdayString" | "year" | "dateString" => {
-                    self.compile_argument(name, arguments, 0)?;
-                    Ok(self.emit(Opcode::DateManipulation(name)))
+                BuiltInFunction::DayOfWeek
+                | BuiltInFunction::DayOfMonth
+                | BuiltInFunction::DayOfYear
+                | BuiltInFunction::WeekOfYear
+                | BuiltInFunction::MonthOfYear
+                | BuiltInFunction::MonthString
+                | BuiltInFunction::WeekdayString
+                | BuiltInFunction::Year
+                | BuiltInFunction::DateString => {
+                    self.compile_argument(kind, arguments, 0)?;
+                    Ok(self.emit(Opcode::DateManipulation(kind.into())))
                 }
-                "all" => {
-                    self.compile_argument(name, arguments, 0)?;
+                BuiltInFunction::All => {
+                    self.compile_argument(kind, arguments, 0)?;
                     self.emit(Opcode::Begin);
                     let mut loop_break: usize = 0;
-                    self.emit_loop(|| {
-                        self.compile_argument(name, arguments, 1)?;
-                        loop_break = self.emit(Opcode::JumpIfFalse(0));
-                        self.emit(Opcode::Pop);
+                    self.emit_loop(|c| {
+                        c.compile_argument(kind, arguments, 1)?;
+                        loop_break = c.emit(Opcode::JumpIfFalse(0));
+                        c.emit(Opcode::Pop);
                         Ok(())
                     })?;
                     let e = self.emit(Opcode::Push(Variable::Bool(true)));
                     self.replace(loop_break, Opcode::JumpIfFalse(e - loop_break));
                     Ok(self.emit(Opcode::End))
                 }
-                "none" => {
-                    self.compile_argument(name, arguments, 0)?;
+                BuiltInFunction::None => {
+                    self.compile_argument(kind, arguments, 0)?;
                     self.emit(Opcode::Begin);
                     let mut loop_break: usize = 0;
-                    self.emit_loop(|| {
-                        self.compile_argument(name, arguments, 1)?;
-                        self.emit(Opcode::Not);
-                        loop_break = self.emit(Opcode::JumpIfFalse(0));
-                        self.emit(Opcode::Pop);
+                    self.emit_loop(|c| {
+                        c.compile_argument(kind, arguments, 1)?;
+                        c.emit(Opcode::Not);
+                        loop_break = c.emit(Opcode::JumpIfFalse(0));
+                        c.emit(Opcode::Pop);
                         Ok(())
                     })?;
                     let e = self.emit(Opcode::Push(Variable::Bool(true)));
                     self.replace(loop_break, Opcode::JumpIfFalse(e - loop_break));
                     Ok(self.emit(Opcode::End))
                 }
-                "some" => {
-                    self.compile_argument(name, arguments, 0)?;
+                BuiltInFunction::Some => {
+                    self.compile_argument(kind, arguments, 0)?;
                     self.emit(Opcode::Begin);
                     let mut loop_break: usize = 0;
-                    self.emit_loop(|| {
-                        self.compile_argument(name, arguments, 1)?;
-                        loop_break = self.emit(Opcode::JumpIfTrue(0));
-                        self.emit(Opcode::Pop);
+                    self.emit_loop(|c| {
+                        c.compile_argument(kind, arguments, 1)?;
+                        loop_break = c.emit(Opcode::JumpIfTrue(0));
+                        c.emit(Opcode::Pop);
                         Ok(())
                     })?;
                     let e = self.emit(Opcode::Push(Variable::Bool(false)));
                     self.replace(loop_break, Opcode::JumpIfTrue(e - loop_break));
                     Ok(self.emit(Opcode::End))
                 }
-                "one" => {
-                    self.compile_argument(name, arguments, 0)?;
+                BuiltInFunction::One => {
+                    self.compile_argument(kind, arguments, 0)?;
                     self.emit(Opcode::Begin);
-                    self.emit_loop(|| {
-                        self.compile_argument(name, arguments, 1)?;
-                        self.emit_cond(|| {
-                            self.emit(Opcode::IncrementCount);
+                    self.emit_loop(|c| {
+                        c.compile_argument(kind, arguments, 1)?;
+                        c.emit_cond(|c| {
+                            c.emit(Opcode::IncrementCount);
                         });
                         Ok(())
                     })?;
@@ -471,14 +480,14 @@ impl<'a> Compiler<'a> {
                     self.emit(Opcode::Equal);
                     Ok(self.emit(Opcode::End))
                 }
-                "filter" => {
-                    self.compile_argument(name, arguments, 0)?;
+                BuiltInFunction::Filter => {
+                    self.compile_argument(kind, arguments, 0)?;
                     self.emit(Opcode::Begin);
-                    self.emit_loop(|| {
-                        self.compile_argument(name, arguments, 1)?;
-                        self.emit_cond(|| {
-                            self.emit(Opcode::IncrementCount);
-                            self.emit(Opcode::Pointer);
+                    self.emit_loop(|c| {
+                        c.compile_argument(kind, arguments, 1)?;
+                        c.emit_cond(|c| {
+                            c.emit(Opcode::IncrementCount);
+                            c.emit(Opcode::Pointer);
                         });
                         Ok(())
                     })?;
@@ -486,22 +495,22 @@ impl<'a> Compiler<'a> {
                     self.emit(Opcode::End);
                     Ok(self.emit(Opcode::Array))
                 }
-                "map" => {
-                    self.compile_argument(name, arguments, 0)?;
+                BuiltInFunction::Map => {
+                    self.compile_argument(kind, arguments, 0)?;
                     self.emit(Opcode::Begin);
-                    self.emit_loop(|| {
-                        self.compile_argument(name, arguments, 1)?;
+                    self.emit_loop(|c| {
+                        c.compile_argument(kind, arguments, 1)?;
                         Ok(())
                     })?;
                     self.emit(Opcode::GetLen);
                     self.emit(Opcode::End);
                     Ok(self.emit(Opcode::Array))
                 }
-                "flatMap" => {
-                    self.compile_argument(name, arguments, 0)?;
+                BuiltInFunction::FlatMap => {
+                    self.compile_argument(kind, arguments, 0)?;
                     self.emit(Opcode::Begin);
-                    self.emit_loop(|| {
-                        self.compile_argument(name, arguments, 1)?;
+                    self.emit_loop(|c| {
+                        c.compile_argument(kind, arguments, 1)?;
                         Ok(())
                     })?;
                     self.emit(Opcode::GetLen);
@@ -509,22 +518,19 @@ impl<'a> Compiler<'a> {
                     self.emit(Opcode::Array);
                     Ok(self.emit(Opcode::Flatten))
                 }
-                "count" => {
-                    self.compile_argument(name, arguments, 0)?;
+                BuiltInFunction::Count => {
+                    self.compile_argument(kind, arguments, 0)?;
                     self.emit(Opcode::Begin);
-                    self.emit_loop(|| {
-                        self.compile_argument(name, arguments, 1)?;
-                        self.emit_cond(|| {
-                            self.emit(Opcode::IncrementCount);
+                    self.emit_loop(|c| {
+                        c.compile_argument(kind, arguments, 1)?;
+                        c.emit_cond(|c| {
+                            c.emit(Opcode::IncrementCount);
                         });
                         Ok(())
                     })?;
                     self.emit(Opcode::GetCount);
                     Ok(self.emit(Opcode::End))
                 }
-                _ => Err(UnknownBuiltIn {
-                    builtin: name.to_string(),
-                }),
             },
         }
     }

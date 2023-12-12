@@ -6,7 +6,7 @@ use crate::util::json_map::FlatJsonMap;
 use anyhow::{anyhow, Context};
 use serde::Serialize;
 use serde_json::Value;
-use zen_expression::isolate::Isolate;
+use zen_expression::Isolate;
 
 pub struct ExpressionHandler<'a> {
     trace: bool,
@@ -22,11 +22,11 @@ impl<'a> ExpressionHandler<'a> {
     pub fn new(trace: bool) -> Self {
         Self {
             trace,
-            isolate: Default::default(),
+            isolate: Isolate::new(),
         }
     }
 
-    pub async fn handle(&self, request: &'a NodeRequest<'_>) -> NodeResult {
+    pub async fn handle(&mut self, request: &'a NodeRequest<'_>) -> NodeResult {
         let content = match &request.node.kind {
             DecisionNodeKind::ExpressionNode { content } => Ok(content),
             _ => Err(anyhow!("Unexpected node type")),
@@ -35,7 +35,7 @@ impl<'a> ExpressionHandler<'a> {
         let mut result = FlatJsonMap::with_capacity(content.expressions.len());
         let mut trace_map = self.trace.then(|| HashMap::<&str, ExpressionTrace>::new());
 
-        self.isolate.inject_env(&request.input);
+        self.isolate.set_environment(&request.input);
         for expression in &content.expressions {
             let value = self.evaluate_expression(&expression.value)?;
             if let Some(tmap) = &mut trace_map {
@@ -60,7 +60,7 @@ impl<'a> ExpressionHandler<'a> {
         })
     }
 
-    fn evaluate_expression(&self, expression: &'a str) -> anyhow::Result<Value> {
+    fn evaluate_expression(&mut self, expression: &'a str) -> anyhow::Result<Value> {
         self.isolate
             .run_standard(expression)
             .with_context(|| format!(r#"Failed to evaluate expression: "{expression}""#))

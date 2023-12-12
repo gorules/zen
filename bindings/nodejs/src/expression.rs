@@ -2,21 +2,16 @@ use napi::anyhow::anyhow;
 use napi_derive::napi;
 use serde_json::Value;
 
-use zen_expression::isolate::Isolate;
-
 #[allow(dead_code)]
 #[napi]
 pub async fn evaluate_expression(
     expression: String,
     context: Option<Value>,
 ) -> napi::Result<Value> {
-    let result: Value = napi::tokio::spawn(async move {
-        let isolate = Isolate::default();
-        if let Some(ctx) = context {
-            isolate.inject_env(&ctx);
-        }
+    let ctx = context.unwrap_or(Value::Null);
 
-        isolate.run_standard(expression.as_str())
+    let result: Value = napi::tokio::spawn(async move {
+        zen_expression::evaluate_expression(expression.as_str(), &ctx)
     })
     .await
     .map_err(|_| anyhow!("Hook timed out"))?
@@ -27,20 +22,9 @@ pub async fn evaluate_expression(
 
 #[allow(dead_code)]
 #[napi]
-pub async fn evaluate_unary_expression(expression: String, context: Value) -> napi::Result<Value> {
-    let Some(context_object) = context.as_object() else {
-        return Err(anyhow!("Context must be an object").into());
-    };
-
-    if !context_object.contains_key("$") {
-        return Err(anyhow!("Context must contain '$' reference.").into());
-    }
-
-    let result: Value = napi::tokio::spawn(async move {
-        let isolate = Isolate::default();
-        isolate.inject_env(&context);
-
-        isolate.run_unary(expression.as_str())
+pub async fn evaluate_unary_expression(expression: String, context: Value) -> napi::Result<bool> {
+    let result: bool = napi::tokio::spawn(async move {
+        zen_expression::evaluate_unary_expression(expression.as_str(), &context)
     })
     .await
     .map_err(|_| anyhow!("Hook timed out"))?

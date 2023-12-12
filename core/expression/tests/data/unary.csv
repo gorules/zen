@@ -11,32 +11,92 @@ false;{ "$": false }; true
 < 10;{$: 5};true
 >= 10;{$: 10};true
 <= 5;{$: 5};true
-[-10..0];{$: 5};true
-(-10..0];{$: 5};false
-[-10..0);{$: 5};true
-(-10..0);{$: 5};false
-[-15..-5];{$: 5};false
+[-10..0];{$: 0};true
+(-10..0];{$: -10};false
+[-10..0);{$: -10};true
+(-10..0);{$: 0};false
+[-15..-5];{$: -4.99};false
 [-5..5];{$: 5};true
-[-6..6];{$: 5};false
+[-6..6];{$: 5};true
 [-5..5];{$: 5};true
-[0..0];{$: 5};true
-> 5 and < 10;{$: 5};true
-<= 10 and > 5;{$: 5};true
+[0..0];{$: 5};false
+> 5 and < 10;{$: 5};false
+<= 10 and > 5;{$: 10};true
 >= 10 or < 5;{$: 10};true
 <= 5 or >= 10;{$: 10};true
-[-10..0] and > -5;{$: -5};true
-(-10..0] or > 0;{$: 5};true
+[-10..0] and > -5;{$: -5};false
+[-10..0] and > -5;{$: -4.99};true
+(-10..0] or > 0;{$: -10};false
 [-10..0) and > -5;{$: -5};false
 (-10..0) or > 0;{$: 5};true
-[-15..-5] and <= -10;{$: -5};false
+[-15..-5] and <= -10;{$: -10};true
 [-5..5] or > 0;{$: 5};true
-[-5..5] or < 0;{$: 5};false
+[-5..5] or < 0;{$: 5.01};false
 [-5..5] and > 0;{$: 5};true
-[0..0] and < 5;{$: 5};true
-> 10 or < -5;{$: 5};true
-> 10, < -5;{$: 5};true
-<= -10 and >= -15;{$: -5};true
+[0..0] and < 5;{$: 0};true
+> 10 or < -5;{$: 5};false
+> 10, < -5;{$: 15};true
+<= -10 and >= -15;{$: -5};false
 
-# String
+
+# Numeric expressions
+>= 5 + 2; { "$": 7 }; true
+< 5 * 3; { "$": 15 }; false
+>= 2 * 3; { "$": 6 }; true
+<= 5 / 2; { "$": 2.5 }; true
+!= 10 - 3; { "$": 7 }; false
+5 % 2; { "$": 1 }; true
+abs(-5); { "$": 5 }; true
+floor(4.8); { "$": 4 }; true
+ceil(4.1); { "$": 5 }; true
+round(3.5); { "$": 4 }; true
+max([3, 5, 8]); { "$": 8 }; true
+min([3, 5, 8]); { "$": 3 }; true
+
+# More complex scenarios
+(5 + 3) * 2; { "$": 16 }; true
+(10 - 4) / 2; { "$": 3 }; true
+abs(-5) * (3 + 2); { "$": 25 }; true
+2 ^ 3; { "$": 8 }; true
+max([3, 5, 8]) - min([2, 7, 4]); { "$": 6 }; true
+floor(8.9) + ceil(4.1) * 2; { "$": 18 }; true
+rand(100) >= 0 and rand(100) <= 100; { "$": true }; true
+sum([1, 2, 3, 4, 5]) / len([1, 2, 3, 4, 5]); { "$": 3 }; true
+median([4, 2, 7, 5, 3]); { "$": 4 }; true
+mode([1, 2, 2, 3, 3, 3, 4, 4, 4, 4]); { "$": 4 }; true
+
+# String expressions
 'GB','US';{$: 'US'};true
 'GB','US';{$: 'FR'};false
+'hello' + " " + "world"; { "$": 'hello world' }; true
+len($) == 13; { "$": "Hello, World!" }; true
+lower("Hello, World!"); { "$": "HELLO, WORLD!" }; false
+upper("Hello, World!"); { "$": "HELLO, WORLD!" }; true
+startsWith($, "Hello"); { "$": "Hello, World!" }; true
+startsWith($, "World"); { "$": "Hello, World!" }; false
+endsWith($, "World!"); { "$": "Hello, World!" }; true
+endsWith($, "Hello!"); { "$": "Hello, World!" }; false
+contains($, "lo"); { "$": "Hello, World!" }; true
+contains($, "foo"); { "$": "Hello, World!" }; false
+matches($, "H[a-z]+, W[a-z]+!"); { "$": "Hello, World!" }; true
+matches($, "[0-9]+"); { "$": "Hello, World!" }; false
+
+# String Slice
+$[0:5] == 'sample'; { "$": 'sample_string' }; true
+$[7:12] == 'string'; { "$": 'sample_string' }; true
+$[7:] == 'string'; { "$": 'sample_string' }; true
+$[:5] == 'sample'; { "$": 'sample_string' }; true
+
+# Type conversion
+string(true); { "$": 'true' }; true
+string(false); { "$": 'false' }; true
+string(123); { "$": '123' }; true
+
+number('123.45'); { "$": 123.45 }; true
+number('-56.78'); { "$": -56.78 }; true
+number(true); { "$": 1 }; true
+
+bool('true'); { "$": true }; true
+bool('false'); { "$": false }; true
+bool(1); { "$": true }; true
+bool(0); { "$": false }; true

@@ -34,7 +34,7 @@ impl Default for DecisionEngine<NoopLoader> {
 
 impl<F, O> DecisionEngine<ClosureLoader<F>>
 where
-    F: Fn(&str) -> O + Sync + Send,
+    F: Fn(String) -> O + Sync + Send,
     O: Future<Output = LoaderResponse> + Send,
 {
     pub fn async_loader(loader: F) -> Self {

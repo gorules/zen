@@ -6,20 +6,23 @@ license = "MIT"
 version = "0.16.1"
 edition = "2021"
 repository = "https://github.com/gorules/zen.git"
+publish = false
 
 [dependencies]
 ahash = { workspace = true }
-bumpalo = { workspace = true }
+bumpalo = { workspace = true, features = ["collections"] }
 chrono = { workspace = true }
 hashbrown = { workspace = true, features = ["bumpalo"] }
 humantime = { workspace = true }
 fastrand = { workspace = true }
 once_cell = { workspace = true }
-phf = { workspace = true, features = ["macros"] }
 regex = { workspace = true, optional = true }
 regex-lite = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true, features = ["arbitrary_precision"] }
+strum = { version = "0.25.0" }
+strum_macros = "0.25.3"
+nohash-hasher = "0.2.0"
 thiserror = { workspace = true }
 rust_decimal = { workspace = true, features = ["maths-nopanic"] }
 rust_decimal_macros = { workspace = true }
@@ -37,7 +40,7 @@ regex-lite = ["dep:regex-lite"]
 
 [[bench]]
 harness = false
-name = "unary"
+name = "lexer"
 
 [[bench]]
 harness = false
@@ -45,7 +48,7 @@ name = "standard"
 
 [[bench]]
 harness = false
-name = "lexer"
+name = "unary"
 
 [[bench]]
 harness = false

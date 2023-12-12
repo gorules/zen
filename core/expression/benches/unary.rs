@@ -2,16 +2,15 @@ use bumpalo::Bump;
 use criterion::{criterion_group, criterion_main, Bencher, Criterion};
 
 use zen_expression::lexer::Lexer;
-use zen_expression::parser::UnaryParser;
+use zen_expression::parser::Parser;
 
 fn bench_source(b: &mut Bencher, src: &'static str) {
-    let lexer = Lexer::new();
+    let mut lexer = Lexer::new();
     let mut bump = Bump::new();
-    let t_res = lexer.tokenize(src).unwrap();
-    let tokens = t_res.borrow();
+    let tokens = lexer.tokenize(src).unwrap();
 
     b.iter(|| {
-        let unary_parser = UnaryParser::try_new(tokens.as_ref(), &bump).unwrap();
+        let unary_parser = Parser::try_new(tokens, &bump).unwrap().unary();
         criterion::black_box(unary_parser.parse().unwrap());
 
         bump.reset();

@@ -1,12 +1,12 @@
 use std::cell::Cell;
 
 #[derive(Debug)]
-pub(crate) struct Cursor<'a> {
+pub(super) struct Cursor<'a> {
     chars: &'a [u8],
     current: Cell<usize>,
 }
 
-pub(crate) type CursorItem = (usize, char);
+pub(super) type CursorItem = (usize, char);
 
 impl<'a> From<&'a str> for Cursor<'a> {
     fn from(source: &'a str) -> Self {

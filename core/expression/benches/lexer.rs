@@ -3,7 +3,7 @@ use criterion::{criterion_group, criterion_main, Bencher, Criterion};
 use zen_expression::lexer::Lexer;
 
 fn bench_source(b: &mut Bencher, source: &'static str) {
-    let lexer = Lexer::new();
+    let mut lexer = Lexer::new();
 
     b.iter(|| {
         criterion::black_box(lexer.tokenize(source).unwrap());

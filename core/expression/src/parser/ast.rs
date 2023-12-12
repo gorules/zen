@@ -1,5 +1,8 @@
 use rust_decimal::Decimal;
 
+use crate::lexer::Operator;
+use crate::parser::builtin::BuiltInFunction;
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum Node<'a> {
     Null,
@@ -32,15 +35,15 @@ pub enum Node<'a> {
     },
     Unary {
         node: &'a Node<'a>,
-        operator: &'a str,
+        operator: Operator,
     },
     Binary {
         left: &'a Node<'a>,
-        operator: &'a str,
+        operator: Operator,
         right: &'a Node<'a>,
     },
     BuiltIn {
-        name: &'a str,
+        kind: BuiltInFunction,
         arguments: &'a [&'a Node<'a>],
     },
 }

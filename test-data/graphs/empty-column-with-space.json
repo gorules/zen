@@ -1,0 +1,100 @@
+{
+  "tests": [{
+    "input": {
+      "amount": 10000000
+    },
+    "output": {
+      "output": true
+    }
+  }, {
+    "input": {
+      "amount": 10
+    },
+    "output": {
+      "output": false
+    }
+  }],
+  "contentType": "application/vnd.gorules.decision",
+  "nodes": [
+    {
+      "id": "4e7e6bb9-f128-41e7-8cc5-b9d79670b96a",
+      "type": "inputNode",
+      "position": {
+        "x": 160,
+        "y": 160
+      },
+      "name": "Request"
+    },
+    {
+      "id": "46fbad36-4bbe-44ac-833f-d30e0d37d8d7",
+      "type": "decisionTableNode",
+      "position": {
+        "x": 380,
+        "y": 160
+      },
+      "name": "Amount Check",
+      "content": {
+        "hitPolicy": "first",
+        "inputs": [
+          {
+            "id": "6xj5CMIFv9",
+            "name": "Amount",
+            "type": "expression",
+            "field": "amount"
+          },
+          {
+            "id": "07795ded-cb9b-4165-9b5e-783b066dda61",
+            "type": "expression",
+            "field": "second",
+            "name": "Second"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "rrW6s3l7vU",
+            "name": "Output",
+            "type": "expression",
+            "field": "output"
+          }
+        ],
+        "rules": [
+          {
+            "_id": "fJxWqBVUNk",
+            "6xj5CMIFv9": "> 1_000_000",
+            "07795ded-cb9b-4165-9b5e-783b066dda61": " ",
+            "rrW6s3l7vU": "true"
+          },
+          {
+            "_id": "SY7uwJEPqS",
+            "6xj5CMIFv9": "",
+            "07795ded-cb9b-4165-9b5e-783b066dda61": "",
+            "rrW6s3l7vU": "false"
+          }
+        ]
+      }
+    },
+    {
+      "id": "95aa8f3c-f371-4e48-beb3-0b5775d2a814",
+      "type": "outputNode",
+      "position": {
+        "x": 600,
+        "y": 160
+      },
+      "name": "Response"
+    }
+  ],
+  "edges": [
+    {
+      "id": "d00252c1-9a54-4599-940c-c9c1c3bb6800",
+      "sourceId": "4e7e6bb9-f128-41e7-8cc5-b9d79670b96a",
+      "type": "edge",
+      "targetId": "46fbad36-4bbe-44ac-833f-d30e0d37d8d7"
+    },
+    {
+      "id": "3000e420-4846-4f86-8ed2-f595d204672e",
+      "sourceId": "46fbad36-4bbe-44ac-833f-d30e0d37d8d7",
+      "type": "edge",
+      "targetId": "95aa8f3c-f371-4e48-beb3-0b5775d2a814"
+    }
+  ]
+}

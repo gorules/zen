@@ -97,7 +97,7 @@ impl<'a> DecisionTableHandler<'a> {
         let rule = content.rules.get(index)?;
         for input in &content.inputs {
             let rule_value = rule.get(input.id.as_str())?;
-            if rule_value.is_empty() {
+            if rule_value.trim().is_empty() {
                 continue;
             }
 
@@ -121,7 +121,7 @@ impl<'a> DecisionTableHandler<'a> {
         let mut outputs: RowOutput = Default::default();
         for output in &content.outputs {
             let rule_value = rule.get(output.id.as_str())?;
-            if rule_value.is_empty() {
+            if rule_value.trim().is_empty() {
                 continue;
             }
 

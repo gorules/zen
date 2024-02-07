@@ -11,6 +11,6 @@ static JS_BUNDLE: Bundle = embed! {
 pub(crate) fn create_runtime() -> anyhow::Result<Runtime> {
     let runtime = Runtime::new().context("Failed to create runtime")?;
     runtime.set_loader(JS_BUNDLE, JS_BUNDLE);
-    
+
     Ok(runtime)
 }

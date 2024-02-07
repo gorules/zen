@@ -48,6 +48,7 @@ jobs:
             build: >-
               set -e &&
               rustup target add x86_64-unknown-linux-gnu &&
+              cargo install cargo-patch &&
               cd bindings/nodejs &&
               yarn lerna exec "yarn build --target x86_64-unknown-linux-gnu" --concurrency 1 --stream --no-prefix &&
               strip ./*.node
@@ -72,6 +73,7 @@ jobs:
             docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian-aarch64
             build: >-
               rustup target add aarch64-unknown-linux-gnu &&
+              cargo install cargo-patch &&
               cd bindings/nodejs &&
               yarn lerna exec "yarn build --target aarch64-unknown-linux-gnu" --concurrency 1 --stream --no-prefix &&
               llvm-strip ./*.node

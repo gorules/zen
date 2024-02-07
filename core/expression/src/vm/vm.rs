@@ -13,6 +13,7 @@ use regex_lite::Regex;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::{Decimal, MathematicalOps};
 use rust_decimal_macros::dec;
+use serde_json::Value;
 
 use crate::vm::error::VMResult;
 use crate::vm::variable::{IntervalObject, Variable};
@@ -1280,6 +1281,25 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                         (TypeConversionKind::Bool, Null) => self.bump.alloc(Bool(false)),
                         (TypeConversionKind::Bool, Object(_) | Array(_)) => {
                             self.bump.alloc(Bool(true))
+                        }
+                        (TypeConversionKind::Json, String(s)) => {
+                            let json_value: Value =
+                                serde_json::from_str(s).map_err(|_| OpcodeErr {
+                                    opcode: "TypeConversion".into(),
+                                    message: format!("Failed to deserialize JSON value `{}`", s),
+                                })?;
+
+                            let variable = Variable::from_serde(&json_value, self.bump);
+                            self.bump.alloc(variable)
+                        }
+                        (TypeConversionKind::Json, _) => {
+                            return Err(OpcodeErr {
+                                opcode: "TypeConversion".into(),
+                                message: format!(
+                                    "Type {} cannot be converted to json",
+                                    var.type_name()
+                                ),
+                            })
                         }
                     };
 

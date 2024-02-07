@@ -41,7 +41,7 @@ pub enum BuiltInFunction {
     String,
     Number,
     Bool,
-    // Json,
+    Json,
 
     // Date + time
     Date,
@@ -119,7 +119,7 @@ impl BuiltInFunction {
             BuiltInFunction::String => Arity::Single,
             BuiltInFunction::Number => Arity::Single,
             BuiltInFunction::Bool => Arity::Single,
-            // BuiltInFunction::Json => Arity::Single,
+            BuiltInFunction::Json => Arity::Single,
             BuiltInFunction::IsNumeric => Arity::Single,
 
             // Closure

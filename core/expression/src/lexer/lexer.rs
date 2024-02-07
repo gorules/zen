@@ -83,12 +83,15 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
         let (start, opener) = self.next()?;
         let end: usize;
 
+        let mut is_escaped = false;
         loop {
             let (e, c) = self.next()?;
-            if c == opener {
+            if c == opener && !is_escaped {
                 end = e;
                 break;
             }
+
+            is_escaped = c == '\\' && !is_escaped;
         }
 
         self.push(Token {

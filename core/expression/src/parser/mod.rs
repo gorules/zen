@@ -10,6 +10,7 @@ mod builtin;
 mod constants;
 mod error;
 mod parser;
+mod sanitised_string;
 mod standard;
 mod unary;
 

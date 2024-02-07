@@ -10,6 +10,7 @@ use crate::lexer::{Bracket, ComparisonOperator, Identifier, Operator, Token, Tok
 use crate::parser::ast::Node;
 use crate::parser::builtin::{Arity, BuiltInFunction};
 use crate::parser::error::{ParserError, ParserResult};
+use crate::parser::sanitised_string::SanitisedString;
 use crate::parser::standard::Standard;
 use crate::parser::unary::Unary;
 
@@ -148,7 +149,11 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         }
 
         self.next()?;
-        Ok(Some(self.node(Node::String(current_token.value))))
+
+        let sanitised = SanitisedString::from(current_token.value);
+        Ok(Some(
+            self.node(Node::String(sanitised.into_bump_str(self.bump))),
+        ))
     }
 
     pub(crate) fn bool(&self) -> ParserResult<Option<&'arena Node<'arena>>> {

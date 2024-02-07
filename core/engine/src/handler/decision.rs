@@ -4,6 +4,7 @@ use crate::loader::DecisionLoader;
 use crate::model::DecisionNodeKind;
 use anyhow::{anyhow, Context};
 use async_recursion::async_recursion;
+use rquickjs::Runtime;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -11,14 +12,16 @@ pub struct DecisionHandler<T: DecisionLoader> {
     trace: bool,
     loader: Arc<T>,
     max_depth: u8,
+    js_runtime: Option<Runtime>,
 }
 
 impl<T: DecisionLoader> DecisionHandler<T> {
-    pub fn new(trace: bool, max_depth: u8, loader: Arc<T>) -> Self {
+    pub fn new(trace: bool, max_depth: u8, loader: Arc<T>, js_runtime: Option<Runtime>) -> Self {
         Self {
             trace,
             loader,
             max_depth,
+            js_runtime,
         }
     }
 
@@ -36,7 +39,8 @@ impl<T: DecisionLoader> DecisionHandler<T> {
             loader: self.loader.clone(),
             iteration: request.iteration + 1,
             trace: self.trace,
-        })?;
+        })?
+        .with_runtime(self.js_runtime.clone());
 
         let result = sub_tree
             .evaluate(&request.input)

@@ -1,6 +1,9 @@
+import 'dayjs';
+import 'big';
+
 const log = [];
 
-const console = {
+globalThis.console = {
     log: (...args) => {
         try {
             log.push({
@@ -16,7 +19,7 @@ const console = {
     }
 };
 
-const main = (input) => JSON.stringify({
-    output: handler(input, {moment: __GLOBAL__DAYJS, dayjs: __GLOBAL__DAYJS, Big: Big, env: __GLOBAL__ENV}),
+globalThis.main = (input) => JSON.stringify({
+    output: handler(input, {moment: dayjs, dayjs: dayjs, Big: Big, env: {}}),
     log,
 });

@@ -42,6 +42,7 @@ jobs:
         run: rustup update stable
 
       - name: Build bindings
+        working-directory: bindings/c
         run: cargo build --release --all-features --target=${{ matrix.settings.target }}
 
       - name: List folder

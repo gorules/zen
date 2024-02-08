@@ -4,7 +4,7 @@
 
 ZEN Engine is a cross-platform, Open-Source Business Rules Engine (BRE). It is written in **Rust** and provides native bindings for **NodeJS** and **Python**. ZEN Engine allows to load and execute [JSON Decision Model (JDM)](https://gorules.io/docs/rules-engine/json-decision-model) from JSON files.
 
-<img width="1258" alt="GoRules JSON Decision Model" src="https://github.com/gorules/zen/assets/60513195/41238e35-8a24-4ee2-85b6-4238b6c2b4f6">
+<img width="800" alt="Open-Source Rules Engine" src="https://gorules.io/images/jdm-editor.gif">
 
 An open-source React editor is available on our [JDM Editor](https://github.com/gorules/jdm-editor) repo.
 
@@ -107,7 +107,7 @@ There are 5 main node types in addition to a graph Input Node (Request) and Outp
 
 Tables provide a structured representation of decision-making processes, allowing developers and business users to express complex rules in a clear and concise manner.
 
-<img width="960" alt="Decision Table" src="https://github.com/gorules/zen/assets/60513195/b18f645b-3bdc-4fb6-8fd4-023bee5a8999">
+<img width="960" alt="Decision Table" src="https://gorules.io/images/decision-table.png">
 
 #### Structure
 
@@ -158,8 +158,7 @@ For the input:
 }
 ```
 
-<img width="960" alt="Unary test" src="https://github.com/gorules/zen/assets/60513195/9149b07f-db24-4d50-8db7-1cfe7b3d9dd6">
-
+<img width="960" alt="Decision Table Unary Test" src="https://gorules.io/images/decision-table.png">
 
 This evaluation translates to
 
@@ -210,7 +209,7 @@ For the input:
 }
 ```
 
-<img width="960" alt="Expression" src="https://github.com/gorules/zen/assets/60513195/d92685c4-9ac4-499d-bc15-332f2f9417c3">
+<img width="960" alt="Decision Table Expression" src="https://gorules.io/images/decision-table-expression.png">
 
 ```
 IF time(transaction.createdAt) > time("17:00:00") AND transaction.amount > 1000 THEN {"status": "reject"}
@@ -228,7 +227,7 @@ When a row in the decision table satisfies its specified conditions, the output 
 
 ***Example***
 
-<img width="860" alt="Screenshot 2023-03-10 at 22 57 04" src="https://user-images.githubusercontent.com/60513195/224436208-a2266cec-d0c6-42c7-8607-a4071e6a950b.png">
+<img width="860" alt="Decision Table Output" src="https://gorules.io/images/decision-table-output.png">
 
 And the result would be:
 
@@ -253,7 +252,7 @@ By incorporating the Switch node, decision models become more flexible and conte
 
 The Switch node preserves the incoming data without modification; it forwards the entire context to the output branch(es).
 
-<img width="960" alt="Switch / Branching node" src="https://github.com/gorules/zen/assets/60513195/05c5793c-563e-471b-b487-261b58a84f97">
+<img width="960" alt="Switch / Branching" src="https://gorules.io/images/decision-graph.png">
 
 #### HitPolicy
 There are two HitPolicy options for the switch node, `first` and `collect`.
@@ -293,7 +292,7 @@ The Expression node serves as a tool for transforming input objects into alterna
 
 Note: Any errors within the Expression node will bring the graph to a halt.
 
-<img width="800" alt="Expression node" src="https://github.com/gorules/zen/assets/60513195/225824cc-191a-45bc-b476-b0ffc514d22f">
+<img width="960" alt="Decision Table" src="https://gorules.io/images/expression.png">
 
 ### Decision Node
 
@@ -311,7 +310,7 @@ By incorporating the "Decision" node, developers can modularize decision logic, 
 | darwin-arm64    | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
 | win32-x64-msvc  | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
 
-We do not support linux-musl for now as we are relying on the GoogleV8 engine to run function blocks as isolates.
+We do not support linux-musl currently.
 
 ## Contribution
 

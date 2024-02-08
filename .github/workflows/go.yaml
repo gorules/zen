@@ -1,0 +1,153 @@
+name: Go
+env:
+  WORKING_DIRECTORY: bindings/c
+  MACOSX_DEPLOYMENT_TARGET: '10.13'
+
+on:
+  workflow_dispatch:
+
+permissions: write-all
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - host: macos-latest
+            target: 'x86_64-apple-darwin'
+          - host: macos-latest
+            target: 'aarch64-apple-darwin'
+          - host: ubuntu-latest
+            target: 'x86_64-unknown-linux-gnu'
+          - host: ubuntu-latest
+            target: 'aarch64-unknown-linux-gnu'
+          - host: windows-latest
+            target: 'x86_64-pc-windows-msvc'
+
+    name: ${{ matrix.settings.target }}
+    runs-on: ${{ matrix.settings.host }}
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+          target: ${{ matrix.settings.target }}
+      - uses: marcopolo/cargo@master
+        with:
+          use-cross: true
+          working-directory: bindings/c
+          args: --release --all-features --target=${{ matrix.settings.target }} --locked
+          command: build
+
+      - name: List folder
+        if: ${{ matrix.settings.target != 'x86_64-pc-windows-msvc' }}
+        run: ls -la ../../target/${{ matrix.settings.target }}/release
+
+      - name: List folder Windows
+        if: ${{ matrix.settings.target == 'x86_64-pc-windows-msvc' }}
+        run: dir ..\..\target\${{ matrix.settings.target }}\release
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        if: ${{ matrix.settings.target != 'x86_64-pc-windows-msvc' }}
+        with:
+          name: ${{ matrix.settings.target }}
+          path: target/${{ matrix.settings.target }}/release/libzen_ffi.a
+          if-no-files-found: error
+
+      - name: Upload artifact Windows
+        uses: actions/upload-artifact@v3
+        if: ${{ matrix.settings.target == 'x86_64-pc-windows-msvc' }}
+        with:
+          name: ${{ matrix.settings.target }}
+          path: target/${{ matrix.settings.target }}/release/zen_ffi.lib
+          if-no-files-found: error
+  copy-h:
+    name: Upload H
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: zen_engine.h
+          path: bindings/c/zen_engine.h
+          if-no-files-found: error
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    needs:
+      - build
+      - copy-h
+    steps:
+      - name: Checkout zen-go
+        uses: actions/checkout@v3
+        with:
+          repository: gorules/zen-go
+          persist-credentials: false
+          token: ${{ secrets.PAT }}
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: artifacts
+
+      - name: Move artifacts
+        run: |
+          mv artifacts/aarch64-apple-darwin/libzen_ffi.a deps/darwin_arm64/
+          mv artifacts/x86_64-apple-darwin/libzen_ffi.a deps/darwin_amd64/
+          mv artifacts/aarch64-unknown-linux-gnu/libzen_ffi.a deps/linux_arm64/
+          mv artifacts/x86_64-unknown-linux-gnu/libzen_ffi.a deps/linux_amd64/
+          mv artifacts/x86_64-pc-windows-msvc/zen_ffi.lib deps/windows_amd64/libzen_ffi.lib
+          mv artifacts/zen_engine.h zen_engine.h
+          rm -rf artifacts
+
+      - name: Set branch name
+        run: |
+          echo "BRANCH_NAME=chore/${{ github.run_id }}-${{ github.run_attempt }}" >> $GITHUB_ENV
+
+      - run: git config -l
+
+      - name: Commit
+        run: |
+          BRANCH_NAME="${{ env.BRANCH_NAME }}"
+          git checkout -b $BRANCH_NAME
+          # Setup the committers identity.
+          git config user.email "bot@gorules.io"
+          git config user.name "Bot GoRules"
+          git config http.postBuffer 524288000
+          git config http.lowSpeedTime 600
+          
+          # Commit the changes and push the feature branch to origin
+          git add .
+          git commit -m "chore: update deps"
+      - name: Push changes
+        uses: ad-m/github-push-action@master
+        with:
+          repository: gorules/zen-go
+          github_token: ${{ secrets.PAT }}
+          branch: ${{ env.BRANCH_NAME }}
+      - name: Create PR
+        run: |
+          BRANCH_NAME="${{ env.BRANCH_NAME }}"
+          # Store the PAT in a file that can be accessed by the
+          # GitHub CLI.
+          echo "${{ secrets.PAT }}" > token.txt
+          
+          # Authorize GitHub CLI for the current repository and
+          # create a pull-requests containing the updates.
+          echo "Authorizing for PR"
+          gh auth login --with-token < token.txt
+          gh pr create \
+            --body "" \
+            --title "chore: update deps" \
+            --head "$BRANCH_NAME" \
+            --base "master"

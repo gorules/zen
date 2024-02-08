@@ -4,7 +4,7 @@ use async_trait::async_trait;
 
 use zen_engine::loader::{DecisionLoader, LoaderError, LoaderResponse};
 
-use crate::engine::ZenEngine;
+use crate::engine::{ZenEngine, ZenEngineStruct};
 use crate::loader::{DynamicDecisionLoader, ZenDecisionLoaderResult};
 
 #[derive(Debug, Default)]
@@ -36,11 +36,13 @@ impl DecisionLoader for GoDecisionLoader {
 
 /// Creates a DecisionEngine for using GoLang handler (optional). Caller is responsible for freeing DecisionEngine.  
 #[no_mangle]
-pub extern "C" fn zen_engine_new_with_go_loader(maybe_loader: Option<&usize>) -> *mut ZenEngine {
+pub extern "C" fn zen_engine_new_with_go_loader(
+    maybe_loader: Option<&usize>,
+) -> *mut ZenEngineStruct {
     let loader = GoDecisionLoader::new(maybe_loader.cloned());
     let engine = ZenEngine::with_loader(DynamicDecisionLoader::Go(loader));
 
-    Box::into_raw(Box::new(engine))
+    Box::into_raw(Box::new(engine)) as *mut ZenEngineStruct
 }
 
 #[allow(unused_doc_comments)]

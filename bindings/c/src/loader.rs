@@ -45,11 +45,6 @@ impl ZenDecisionLoaderResult {
             true => None,
         };
 
-        let maybe_content = match self.content.is_null() {
-            false => Some(unsafe { CString::from_raw(self.content) }),
-            true => None,
-        };
-
         if let Some(c_error) = maybe_error {
             return Err(LoaderError::Internal {
                 key: key.to_string(),
@@ -57,6 +52,11 @@ impl ZenDecisionLoaderResult {
             }
             .into());
         }
+
+        let maybe_content = match self.content.is_null() {
+            false => Some(unsafe { CString::from_raw(self.content) }),
+            true => None,
+        };
 
         // If both pointers are null, we are treating it as not found
         let Some(c_content) = maybe_content else {

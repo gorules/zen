@@ -14,7 +14,7 @@ use crate::error::{ZenError, ZenErrorDiscriminants};
 #[repr(C)]
 pub struct ZenResult<T> {
     result: *mut T,
-    error: ZenErrorDiscriminants,
+    error: u8,
     details: *mut c_char,
 }
 
@@ -24,7 +24,7 @@ impl<T> ZenResult<T> {
             Some(data) => {
                 let Ok(cstring_data) = CString::new(data) else {
                     return Self {
-                        error: ZenErrorDiscriminants::StringNullError,
+                        error: ZenErrorDiscriminants::StringNullError as u8,
                         result: null_mut(),
                         details: null_mut(),
                     };
@@ -37,7 +37,7 @@ impl<T> ZenResult<T> {
 
         return Self {
             result: null_mut(),
-            error: ZenErrorDiscriminants::from(error),
+            error: ZenErrorDiscriminants::from(error) as u8,
             details,
         };
     }
@@ -45,7 +45,7 @@ impl<T> ZenResult<T> {
     pub(crate) fn ok(result: *mut T) -> Self {
         return Self {
             result,
-            error: ZenErrorDiscriminants::Zero,
+            error: ZenErrorDiscriminants::Zero as u8,
             details: null_mut(),
         };
     }

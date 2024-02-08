@@ -1,4 +1,4 @@
-use std::ffi::{c_char, c_void, CStr, CString};
+use std::ffi::{c_char, CStr, CString};
 use std::marker::{PhantomData, PhantomPinned};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
@@ -7,47 +7,43 @@ use futures::executor::block_on;
 
 use zen_engine::{DecisionEngine, EvaluationOptions};
 
-use crate::decision::ZenDecision;
+use crate::decision::{ZenDecision, ZenDecisionStruct};
 use crate::error::ZenError;
 use crate::loader::DynamicDecisionLoader;
 use crate::result::ZenResult;
 
-#[repr(C)]
-pub(crate) struct ZenEngine {
-    _data: DecisionEngine<DynamicDecisionLoader>,
-    _marker: PhantomData<(*mut c_void, PhantomPinned)>,
-}
+pub(crate) struct ZenEngine(DecisionEngine<DynamicDecisionLoader>);
 
 impl Deref for ZenEngine {
     type Target = DecisionEngine<DynamicDecisionLoader>;
 
     fn deref(&self) -> &Self::Target {
-        &self._data
+        &self.0
     }
 }
 
 impl DerefMut for ZenEngine {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self._data
+        &mut self.0
     }
 }
 
 impl Default for ZenEngine {
     fn default() -> Self {
-        Self {
-            _data: DecisionEngine::new(DynamicDecisionLoader::default()),
-            _marker: PhantomData,
-        }
+        Self(DecisionEngine::new(DynamicDecisionLoader::default()))
     }
 }
 
 impl ZenEngine {
     pub fn with_loader(loader: DynamicDecisionLoader) -> Self {
-        Self {
-            _data: DecisionEngine::new(loader),
-            _marker: PhantomData,
-        }
+        Self(DecisionEngine::new(loader))
     }
+}
+
+#[repr(C)]
+pub(crate) struct ZenEngineStruct {
+    _data: [u8; 0],
+    _marker: PhantomData<(*mut u8, PhantomPinned)>,
 }
 
 #[repr(C)]
@@ -68,15 +64,15 @@ impl Into<EvaluationOptions> for ZenEngineEvaluationOptions {
 /// Create a new ZenEngine instance, caller is responsible for freeing the returned reference
 /// by calling zen_engine_free.
 #[no_mangle]
-pub extern "C" fn zen_engine_new() -> *mut ZenEngine {
-    Box::into_raw(Box::new(ZenEngine::default()))
+pub extern "C" fn zen_engine_new() -> *mut ZenEngineStruct {
+    Box::into_raw(Box::new(ZenEngine::default())) as *mut ZenEngineStruct
 }
 
 /// Frees the ZenEngine instance reference from the memory
 #[no_mangle]
-pub extern "C" fn zen_engine_free(engine: *mut ZenEngine) {
+pub extern "C" fn zen_engine_free(engine: *mut ZenEngineStruct) {
     if !engine.is_null() {
-        let _ = unsafe { Box::from_raw(engine) };
+        let _ = unsafe { Box::from_raw(engine as *mut ZenEngine) };
     }
 }
 
@@ -84,9 +80,9 @@ pub extern "C" fn zen_engine_free(engine: *mut ZenEngine) {
 /// Caller is responsible for freeing content and ZenResult.
 #[no_mangle]
 pub extern "C" fn zen_engine_create_decision(
-    engine: *const ZenEngine,
+    engine: *const ZenEngineStruct,
     content: *const c_char,
-) -> ZenResult<ZenDecision> {
+) -> ZenResult<ZenDecisionStruct> {
     if engine.is_null() || content.is_null() {
         return ZenResult::error(ZenError::InvalidArgument);
     }
@@ -100,17 +96,18 @@ pub extern "C" fn zen_engine_create_decision(
         return ZenResult::error(ZenError::JsonDeserializationFailed);
     };
 
-    let zen_engine = unsafe { &*engine };
+    let zen_engine = unsafe { &*(engine as *mut ZenEngine) };
     let decision = zen_engine.create_decision(Arc::new(decision_content));
 
-    ZenResult::ok(Box::into_raw(Box::new(decision.into())))
+    let zen_decision = ZenDecision::from(decision);
+    ZenResult::ok(Box::into_raw(Box::new(zen_decision)) as *mut ZenDecisionStruct)
 }
 
 /// Evaluates rules engine using a DecisionEngine reference via loader
 /// Caller is responsible for freeing: key, context and ZenResult.
 #[no_mangle]
 pub extern "C" fn zen_engine_evaluate(
-    engine: *const ZenEngine,
+    engine: *const ZenEngineStruct,
     key: *const c_char,
     context: *const c_char,
     options: ZenEngineEvaluationOptions,
@@ -133,7 +130,7 @@ pub extern "C" fn zen_engine_evaluate(
         return ZenResult::error(ZenError::JsonDeserializationFailed);
     };
 
-    let zen_engine = unsafe { &*engine };
+    let zen_engine = unsafe { &*(engine as *mut ZenEngine) };
 
     let maybe_result =
         block_on(zen_engine.evaluate_with_opts(str_key, &val_context, options.into()));
@@ -154,9 +151,9 @@ pub extern "C" fn zen_engine_evaluate(
 /// Caller is responsible for freeing: key and ZenResult.
 #[no_mangle]
 pub extern "C" fn zen_engine_get_decision(
-    engine: *const ZenEngine,
+    engine: *const ZenEngineStruct,
     key: *const c_char,
-) -> ZenResult<ZenDecision> {
+) -> ZenResult<ZenDecisionStruct> {
     if engine.is_null() || key.is_null() {
         return ZenResult::error(ZenError::InvalidArgument);
     }
@@ -166,11 +163,12 @@ pub extern "C" fn zen_engine_get_decision(
         return ZenResult::error(ZenError::InvalidArgument);
     };
 
-    let zen_engine = unsafe { &*engine };
+    let zen_engine = unsafe { &*(engine as *mut ZenEngine) };
     let decision = match block_on(zen_engine.get_decision(str_key)) {
         Ok(d) => d,
         Err(e) => return ZenResult::from(&e),
     };
 
-    ZenResult::ok(Box::into_raw(Box::new(decision.into())))
+    let zen_decision = ZenDecision::from(decision);
+    ZenResult::ok(Box::into_raw(Box::new(zen_decision)) as *mut ZenDecisionStruct)
 }

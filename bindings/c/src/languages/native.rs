@@ -4,7 +4,7 @@ use async_trait::async_trait;
 
 use zen_engine::loader::{DecisionLoader, LoaderResponse};
 
-use crate::engine::ZenEngine;
+use crate::engine::{ZenEngine, ZenEngineStruct};
 use crate::loader::{DynamicDecisionLoader, ZenDecisionLoaderResult};
 
 pub type ZenDecisionLoaderNativeCallback =
@@ -36,9 +36,9 @@ impl DecisionLoader for NativeDecisionLoader {
 #[no_mangle]
 pub extern "C" fn zen_engine_new_with_native_loader(
     callback: ZenDecisionLoaderNativeCallback,
-) -> *mut ZenEngine {
+) -> *mut ZenEngineStruct {
     let loader = NativeDecisionLoader::new(callback);
     let engine = ZenEngine::with_loader(DynamicDecisionLoader::Native(loader));
 
-    Box::into_raw(Box::new(engine))
+    Box::into_raw(Box::new(engine)) as *mut ZenEngineStruct
 }

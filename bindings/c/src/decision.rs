@@ -40,17 +40,23 @@ impl From<Decision<DynamicDecisionLoader>> for ZenDecision {
     }
 }
 
+#[repr(C)]
+pub(crate) struct ZenDecisionStruct {
+    _data: [u8; 0],
+    _marker: PhantomData<(*mut u8, PhantomPinned)>,
+}
+
 /// Frees ZenDecision
 #[no_mangle]
-pub extern "C" fn zen_engine_decision_free(decision: *mut ZenDecision) {
-    let _ = unsafe { Box::from_raw(decision) };
+pub extern "C" fn zen_decision_free(decision: *mut ZenDecisionStruct) {
+    let _ = unsafe { Box::from_raw(decision as *mut ZenDecision) };
 }
 
 /// Evaluates ZenDecision
 /// Caller is responsible for freeing context and ZenResult.
 #[no_mangle]
 pub extern "C" fn zen_decision_evaluate(
-    decision: *const ZenDecision,
+    decision: *const ZenDecisionStruct,
     context_ptr: *const c_char,
     options: ZenEngineEvaluationOptions,
 ) -> ZenResult<c_char> {
@@ -67,7 +73,7 @@ pub extern "C" fn zen_decision_evaluate(
         return ZenResult::error(ZenError::JsonDeserializationFailed);
     };
 
-    let zen_decision = unsafe { &*decision };
+    let zen_decision = unsafe { &*(decision as *mut ZenDecision) };
     let maybe_result = block_on(zen_decision.evaluate_with_opts(&context, options.into()));
     let result = match maybe_result {
         Ok(r) => r,

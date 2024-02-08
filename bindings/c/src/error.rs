@@ -23,16 +23,14 @@ pub enum ZenError {
 
 impl ZenError {
     pub fn details(&self) -> Option<String> {
-        let json = match &self {
-            ZenError::IsolateError(error) => Some(error.clone()),
-            ZenError::EvaluationError(error) => Some(error.clone()),
-            ZenError::LoaderKeyNotFound { key } => Some(json!({ "key": key })),
+        match &self {
+            ZenError::IsolateError(error) => Some(error.to_string()),
+            ZenError::EvaluationError(error) => Some(error.to_string()),
+            ZenError::LoaderKeyNotFound { key } => Some(json!({ "key": key }).to_string()),
             ZenError::LoaderInternalError { key, message } => {
-                Some(json!({ "key": key, "message": message }))
+                Some(json!({ "key": key, "message": message }).to_string())
             }
             _ => None,
-        };
-
-        json.map(|j| j.to_string())
+        }
     }
 }

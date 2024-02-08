@@ -9,12 +9,18 @@ publish = false
 async-trait = { workspace = true }
 anyhow = { workspace = true }
 libc = "0.2.145"
+serde = { workspace = true }
 serde_json = { workspace = true }
+strum = { version = "0.26.1", features = ["derive"] }
 futures = "0.3.28"
 zen-engine = { path = "../../core/engine" }
+zen-expression = { path = "../../core/expression" }
+
+[lib]
+crate-type = ["staticlib"]
 
 [build-dependencies]
-cbindgen = "0.24.0"
+cbindgen = "0.26.0"
 
 [features]
-cdylib = []
+go = []

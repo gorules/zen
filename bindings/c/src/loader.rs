@@ -1,19 +1,44 @@
+use crate::languages::native::NativeDecisionLoader;
 use anyhow::anyhow;
 use async_trait::async_trait;
 use std::ffi::{c_char, CString};
 use std::sync::Arc;
-use zen_engine::loader::{DecisionLoader, LoaderError, LoaderResponse};
+use zen_engine::loader::{DecisionLoader, LoaderError, LoaderResponse, NoopLoader};
 use zen_engine::model::DecisionContent;
 
-pub type CZenDecisionLoaderCallback = extern "C" fn(key: *const c_char) -> CZenDecisionLoaderResult;
+#[derive(Debug)]
+pub(crate) enum DynamicDecisionLoader {
+    Noop(NoopLoader),
+    Native(NativeDecisionLoader),
+    #[cfg(feature = "go")]
+    Go(crate::languages::go::GoDecisionLoader),
+}
+
+impl Default for DynamicDecisionLoader {
+    fn default() -> Self {
+        Self::Noop(Default::default())
+    }
+}
+
+#[async_trait]
+impl DecisionLoader for DynamicDecisionLoader {
+    async fn load(&self, key: &str) -> LoaderResponse {
+        match self {
+            DynamicDecisionLoader::Noop(loader) => loader.load(key).await,
+            DynamicDecisionLoader::Native(loader) => loader.load(key).await,
+            #[cfg(feature = "go")]
+            DynamicDecisionLoader::Go(loader) => loader.load(key).await,
+        }
+    }
+}
 
 #[repr(C)]
-pub struct CZenDecisionLoaderResult {
+pub struct ZenDecisionLoaderResult {
     content: *mut c_char,
     error: *mut c_char,
 }
 
-impl CZenDecisionLoaderResult {
+impl ZenDecisionLoaderResult {
     pub fn into_loader_response(self, key: &str) -> LoaderResponse {
         let maybe_error = match self.error.is_null() {
             false => Some(unsafe { CString::from_raw(self.error) }),
@@ -35,7 +60,7 @@ impl CZenDecisionLoaderResult {
 
         // If both pointers are null, we are treating it as not found
         let Some(c_content) = maybe_content else {
-            return Err(LoaderError::NotFound(key.to_string()).into())
+            return Err(LoaderError::NotFound(key.to_string()).into());
         };
 
         let content = c_content.into_string().map_err(|e| LoaderError::Internal {
@@ -50,26 +75,5 @@ impl CZenDecisionLoaderResult {
             })?;
 
         Ok(Arc::new(decision_content))
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct CDecisionLoader {
-    callback: CZenDecisionLoaderCallback,
-}
-
-impl CDecisionLoader {
-    pub fn new(callback: CZenDecisionLoaderCallback) -> Self {
-        Self { callback }
-    }
-}
-
-#[async_trait]
-impl DecisionLoader for CDecisionLoader {
-    async fn load(&self, key: &str) -> LoaderResponse {
-        let c_key = CString::new(key).unwrap();
-        let c_content_ptr = (&self.callback)(c_key.as_ptr());
-
-        c_content_ptr.into_loader_response(key)
     }
 }

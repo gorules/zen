@@ -1,4 +1,5 @@
-/// Language specific bindings, loaders and helpers
+/// Language specific bindings and loaders are defined here
+pub(crate) mod native;
 
-#[cfg(not(feature = "cdylib"))]
+#[cfg(feature = "go")]
 pub(crate) mod go;

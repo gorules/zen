@@ -30,3 +30,8 @@ rust_decimal_macros = "1.33.1"
 
 anyhow = "1.0.79"
 thiserror = "1.0.50"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = "symbols"

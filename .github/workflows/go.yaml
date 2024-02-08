@@ -42,7 +42,7 @@ jobs:
         run: rustup update stable
 
       - name: Build bindings
-        run: cargo build --release --all-features --target=${{ matrix.settings.target }} --locked
+        run: cargo build --release --all-features --target=${{ matrix.settings.target }}
 
       - name: List folder
         if: ${{ matrix.settings.target != 'x86_64-pc-windows-msvc' }}

@@ -36,8 +36,7 @@ jobs:
 
       - uses: actions-rs/toolchain@v1
         with:
-          profile: minimal
-          toolchain: nightly
+          toolchain: stable
           override: true
           target: ${{ matrix.settings.target }}
       - uses: marcopolo/cargo@master
@@ -49,7 +48,7 @@ jobs:
 
       - name: List folder
         if: ${{ matrix.settings.target != 'x86_64-pc-windows-msvc' }}
-        run: ls -la ../../target/${{ matrix.settings.target }}/release
+        run: ls -lh ../../target/${{ matrix.settings.target }}/release
 
       - name: List folder Windows
         if: ${{ matrix.settings.target == 'x86_64-pc-windows-msvc' }}
@@ -107,7 +106,7 @@ jobs:
           mv artifacts/aarch64-unknown-linux-gnu/libzen_ffi.a deps/linux_arm64/
           mv artifacts/x86_64-unknown-linux-gnu/libzen_ffi.a deps/linux_amd64/
           mv artifacts/x86_64-pc-windows-msvc/zen_ffi.lib deps/windows_amd64/libzen_ffi.lib
-          mv artifacts/zen_engine.h zen_engine.h
+          mv artifacts/zen_engine.h ./zen_engine.h
           rm -rf artifacts
       - name: Set branch name
         run: |

@@ -67,8 +67,8 @@ jobs:
           name: ${{ matrix.settings.target }}
           path: target/${{ matrix.settings.target }}/release/zen_ffi.lib
           if-no-files-found: error
-  copy-h:
-    name: Upload H
+  copy-common:
+    name: Upload common file
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -76,7 +76,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
-          name: zen_engine.h
+          name: common
           path: bindings/c/zen_engine.h
           if-no-files-found: error
   release:
@@ -99,12 +99,12 @@ jobs:
 
       - name: Move artifacts
         run: |
-          mv -f artifacts/aarch64-apple-darwin/libzen_ffi.a deps/darwin_arm64/
-          mv -f artifacts/x86_64-apple-darwin/libzen_ffi.a deps/darwin_amd64/
-          mv -f artifacts/aarch64-unknown-linux-gnu/libzen_ffi.a deps/linux_arm64/
-          mv -f artifacts/x86_64-unknown-linux-gnu/libzen_ffi.a deps/linux_amd64/
-          mv -f artifacts/x86_64-pc-windows-msvc/zen_ffi.lib deps/windows_amd64/libzen_ffi.lib
-          mv -f artifacts/zen_engine.h ./zen_engine.h
+          mv artifacts/aarch64-apple-darwin/libzen_ffi.a deps/darwin_arm64/
+          mv artifacts/x86_64-apple-darwin/libzen_ffi.a deps/darwin_amd64/
+          mv artifacts/aarch64-unknown-linux-gnu/libzen_ffi.a deps/linux_arm64/
+          mv artifacts/x86_64-unknown-linux-gnu/libzen_ffi.a deps/linux_amd64/
+          mv artifacts/x86_64-pc-windows-msvc/zen_ffi.lib deps/windows_amd64/libzen_ffi.lib
+          mv artifacts/common/zen_engine.h zen_engine.h
           rm -rf artifacts
 
       - name: Set branch name

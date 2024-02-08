@@ -84,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - build
-      - copy-h
+      - copy-common
     steps:
       - name: Checkout zen-go
         uses: actions/checkout@v3

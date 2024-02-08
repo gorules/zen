@@ -45,6 +45,7 @@ jobs:
           target: ${{ matrix.settings.target }}
       - uses: marcopolo/cargo@master
         with:
+          use-cross: true
           working-directory: bindings/c
           args: --release --all-features --target=${{ matrix.settings.target }} --locked
           command: build

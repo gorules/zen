@@ -256,7 +256,7 @@ Note: If there are multiple edges from the same condition, there is no guarantee
 
 ### Functions Node
 
-Function nodes are JavaScript snippets that allow for quick and easy parsing, re-mapping or otherwise modifying the data using JavaScript. Inputs of the node are provided as function's arguments. Functions are executed on top of Google's V8 Engine Isolates that are built into the ZEN Engine.
+Function nodes are JavaScript snippets that allow for quick and easy parsing, re-mapping or otherwise modifying the data using JavaScript. Inputs of the node are provided as function's arguments. Functions are executed on top of QuickJS Engine that is bundled into the ZEN Engine.
 
 Function timeout is set to a 50ms.
 

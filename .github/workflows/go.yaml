@@ -69,8 +69,8 @@ jobs:
           name: ${{ matrix.settings.target }}
           path: target/${{ matrix.settings.target }}/release/zen_ffi.lib
           if-no-files-found: error
-  copy-h:
-    name: Upload H
+  copy-common:
+    name: Upload common file
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -78,7 +78,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
-          name: zen_engine.h
+          name: common
           path: bindings/c/zen_engine.h
           if-no-files-found: error
   release:
@@ -86,7 +86,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - build
-      - copy-h
+      - copy-common
     steps:
       - name: Checkout zen-go
         uses: actions/checkout@v3
@@ -106,11 +106,13 @@ jobs:
           mv artifacts/aarch64-unknown-linux-gnu/libzen_ffi.a deps/linux_arm64/
           mv artifacts/x86_64-unknown-linux-gnu/libzen_ffi.a deps/linux_amd64/
           mv artifacts/x86_64-pc-windows-msvc/zen_ffi.lib deps/windows_amd64/libzen_ffi.lib
-          mv artifacts/zen_engine.h ./zen_engine.h
+          mv artifacts/common/zen_engine.h zen_engine.h
           rm -rf artifacts
+
       - name: Set branch name
         run: |
           echo "BRANCH_NAME=chore/${{ github.run_id }}-${{ github.run_attempt }}" >> $GITHUB_ENV
+
       - run: git config -l
 
       - name: Commit

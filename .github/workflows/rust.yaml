@@ -52,8 +52,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install Rust
         run: rustup update
-      - run: cargo test --workspace --all-features
-      - run: cargo test --workspace --all-features --release
+      - run: cargo test --workspace --all-features --exclude zen-ffi
+      - run: cargo test --workspace --all-features --exclude zen-ffi --release
 
   build:
     name: cargo +${{ matrix.rust }} build

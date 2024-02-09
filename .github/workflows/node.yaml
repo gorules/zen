@@ -36,7 +36,6 @@ jobs:
           - host: windows-latest
             target: 'x86_64-pc-windows-msvc'
             build: |
-              rustup target add x86_64-unknown-linux-gnu
               yarn lerna exec "yarn build --target x86_64-pc-windows-msvc" --concurrency 1 --stream --no-prefix
 
           - host: macos-latest

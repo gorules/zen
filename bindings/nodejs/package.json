@@ -73,7 +73,7 @@
   "scripts": {
     "build": "napi build --platform --release --js index.js --dts index.d.ts",
     "build:debug": "napi build --platform --js index.js --dts index.d.ts",
-    "watch": "cargo watch --ignore '{index.js,index.d.ts}' -- npm run build",
+    "watch": "cargo watch --ignore '{index.js,index.d.ts}' -- npm run build:debug",
     "test": "jest",
     "artifacts": "napi artifacts -d ../../artifacts",
     "prepublishOnly": "napi prepublish",

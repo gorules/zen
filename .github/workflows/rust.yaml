@@ -51,7 +51,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Install Rust
-        run: rustup update
+        run: rustup update stable
       - run: cargo test --workspace --all-features --exclude zen-ffi
       - run: cargo test --workspace --all-features --exclude zen-ffi --release
 
@@ -77,7 +77,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Install Rust
-        run: rustup update
+        run: rustup update stable
       - run: cargo bench --workspace
 
   miri:

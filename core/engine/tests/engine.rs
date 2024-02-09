@@ -101,7 +101,7 @@ async fn engine_errors() {
     match infinite_fn.unwrap_err().deref() {
         EvaluationError::NodeError(e) => {
             assert_eq!(e.node_id, "e0fd96d0-44dc-4f0e-b825-06e56b442d78");
-            assert_eq!(e.source.to_string(), "Timeout exceeded");
+            assert!(e.source.to_string().contains("interrupted"));
         }
         _ => assert!(false, "Wrong error type"),
     }

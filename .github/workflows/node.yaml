@@ -33,30 +33,18 @@ jobs:
       fail-fast: false
       matrix:
         settings:
+          - host: windows-latest
+            target: 'x86_64-pc-windows-msvc'
+            build: |
+              yarn lerna exec "yarn build --target x86_64-pc-windows-msvc" --concurrency 1 --stream --no-prefix
+
           - host: macos-latest
             target: 'x86_64-apple-darwin'
             build: |
-              yarn build &&
+              rustup target add x86_64-apple-darwin
+              yarn lerna exec "yarn build --target x86_64-apple-darwin" --concurrency 1 --stream --no-prefix
               strip -x ./*.node
-          - host: windows-latest
-            build: |
-              yarn build
-            target: 'x86_64-pc-windows-msvc'
-          - host: ubuntu-latest
-            target: 'x86_64-unknown-linux-gnu'
-            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian
-            build: >-
-              set -e &&
-              rustup target add x86_64-unknown-linux-gnu &&
-              cd bindings/nodejs &&
-              yarn lerna exec "yarn build --target x86_64-unknown-linux-gnu" --concurrency 1 --stream --no-prefix &&
-              strip ./*.node
-#          - host: ubuntu-latest
-#            target: 'x86_64-unknown-linux-musl'
-#            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
-#            build: |
-#              cd bindings/nodejs &&
-#              yarn build
+
           - host: macos-latest
             target: 'aarch64-apple-darwin'
             build: |
@@ -67,22 +55,41 @@ jobs:
               export CFLAGS="-isysroot $SYSROOT -isystem $SYSROOT";
               yarn lerna exec "yarn build --target aarch64-apple-darwin" --concurrency 1 --stream --no-prefix
               strip -x ./*.node
+
           - host: ubuntu-latest
-            target: aarch64-unknown-linux-gnu
+            target: 'x86_64-unknown-linux-gnu'
+            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian
+            build: |
+              set -e
+              sudo apt-get update
+              sudo apt-get install -y patch
+              cd bindings/nodejs
+              rustup target add x86_64-unknown-linux-gnu
+              yarn lerna exec "yarn build --target x86_64-unknown-linux-gnu" --concurrency 1 --stream --no-prefix
+              strip ./*.node
+
+          - host: ubuntu-latest
+            target: 'aarch64-unknown-linux-gnu'
             docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian-aarch64
-            build: >-
-              rustup target add aarch64-unknown-linux-gnu &&
-              cd bindings/nodejs &&
-              yarn lerna exec "yarn build --target aarch64-unknown-linux-gnu" --concurrency 1 --stream --no-prefix &&
+            build: |
+              set -e
+              sudo apt-get update
+              sudo apt-get install -y patch
+              cd bindings/nodejs
+              rustup target add aarch64-unknown-linux-gnu
+              yarn lerna exec "yarn build --target aarch64-unknown-linux-gnu" --concurrency 1 --stream --no-prefix
               llvm-strip ./*.node
+
+#          - host: ubuntu-latest
+#            target: 'x86_64-unknown-linux-musl'
+#            build: |
+#              cd bindings/nodejs &&
+#              yarn build
 #          - host: ubuntu-latest
 #            target: 'aarch64-unknown-linux-musl'
-#            downloadTarget: 'aarch64-unknown-linux-musl'
-#            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
 #            build: >-
 #              set -e &&
 #              rustup target add aarch64-unknown-linux-musl &&
-#              cd bindings/nodejs &&
 #              yarn lerna exec "yarn build --target aarch64-unknown-linux-musl" --concurrency 1 --stream --no-prefix
 
     name: stable - ${{ matrix.settings.target }} - node@18
@@ -163,7 +170,7 @@ jobs:
             target: 'x86_64-apple-darwin'
           - host: windows-latest
             target: 'x86_64-pc-windows-msvc'
-        node: ['14', '16', '18']
+        node: ['16', '18', '20']
     runs-on: ${{ matrix.settings.host }}
 
     steps:
@@ -207,7 +214,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['14', '16', '18']
+        node: ['16', '18', '20']
     runs-on: ubuntu-latest
 
     steps:

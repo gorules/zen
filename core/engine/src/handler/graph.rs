@@ -4,6 +4,7 @@ use std::time::Instant;
 
 use anyhow::anyhow;
 use petgraph::algo::is_cyclic_directed;
+use rquickjs::Runtime;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::Value;
@@ -11,6 +12,7 @@ use thiserror::Error;
 
 use crate::handler::decision::DecisionHandler;
 use crate::handler::expression::ExpressionHandler;
+use crate::handler::function::runtime::create_runtime;
 use crate::handler::function::FunctionHandler;
 use crate::handler::node::NodeRequest;
 use crate::handler::table::zen::DecisionTableHandler;
@@ -25,6 +27,7 @@ pub struct DecisionGraph<'a, L: DecisionLoader> {
     trace: bool,
     max_depth: u8,
     iteration: u8,
+    runtime: Option<Runtime>,
 }
 
 pub struct DecisionGraphConfig<'a, T: DecisionLoader> {
@@ -68,7 +71,24 @@ impl<'a, L: DecisionLoader> DecisionGraph<'a, L> {
             trace: config.trace,
             loader: config.loader.clone(),
             max_depth: config.max_depth,
+            runtime: None,
         })
+    }
+
+    pub(crate) fn with_runtime(mut self, runtime: Option<Runtime>) -> Self {
+        self.runtime = runtime;
+        self
+    }
+
+    fn get_or_insert_runtime(&mut self) -> anyhow::Result<Runtime> {
+        if let Some(runtime) = &self.runtime {
+            return Ok(runtime.clone());
+        }
+
+        let runtime = create_runtime()?;
+        self.runtime.replace(runtime.clone());
+
+        Ok(runtime)
     }
 
     pub fn validate(&self) -> Result<(), DecisionGraphValidationError> {
@@ -180,7 +200,12 @@ impl<'a, L: DecisionLoader> DecisionGraph<'a, L> {
                     });
                 }
                 DecisionNodeKind::FunctionNode { .. } => {
-                    let res = FunctionHandler::new(self.trace)
+                    let runtime = self.get_or_insert_runtime().map_err(|e| NodeError {
+                        source: e.into(),
+                        node_id: node.id.clone(),
+                    })?;
+
+                    let res = FunctionHandler::new(self.trace, runtime)
                         .handle(&node_request)
                         .await
                         .map_err(|e| NodeError {
@@ -199,13 +224,18 @@ impl<'a, L: DecisionLoader> DecisionGraph<'a, L> {
                     });
                 }
                 DecisionNodeKind::DecisionNode { .. } => {
-                    let res = DecisionHandler::new(self.trace, self.max_depth, self.loader.clone())
-                        .handle(&node_request)
-                        .await
-                        .map_err(|e| NodeError {
-                            source: e.into(),
-                            node_id: node.id.to_string(),
-                        })?;
+                    let res = DecisionHandler::new(
+                        self.trace,
+                        self.max_depth,
+                        self.loader.clone(),
+                        self.runtime.clone(),
+                    )
+                    .handle(&node_request)
+                    .await
+                    .map_err(|e| NodeError {
+                        source: e.into(),
+                        node_id: node.id.to_string(),
+                    })?;
 
                     walker.set_node_data(nid, res.output.clone());
                     trace!({

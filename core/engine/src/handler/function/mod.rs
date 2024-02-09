@@ -1,27 +1,27 @@
+use std::time::{Duration, Instant};
+
 use anyhow::anyhow;
-use std::time::Duration;
+use rquickjs::Runtime;
+use serde_json::json;
 
-use serde_json::{json, Value};
-
-use crate::handler::function::script::{EvaluateResponse, Script};
+use crate::handler::function::script::Script;
 use crate::handler::node::{NodeRequest, NodeResponse, NodeResult};
 use crate::model::DecisionNodeKind;
 
+mod js_value;
+pub(crate) mod runtime;
 mod script;
-mod vm;
-
-async fn evaluate(source: &str, args: &Value) -> anyhow::Result<EvaluateResponse> {
-    let mut script = Script::new().with_timeout(Duration::from_millis(50));
-    script.call(source, args).await
-}
 
 pub struct FunctionHandler {
     trace: bool,
+    runtime: Runtime,
 }
 
+static MAX_DURATION: Duration = Duration::from_millis(500);
+
 impl FunctionHandler {
-    pub fn new(trace: bool) -> Self {
-        Self { trace }
+    pub fn new(trace: bool, runtime: Runtime) -> Self {
+        Self { trace, runtime }
     }
 
     pub async fn handle(&self, request: &NodeRequest<'_>) -> NodeResult {
@@ -30,11 +30,19 @@ impl FunctionHandler {
             _ => Err(anyhow!("Unexpected node type")),
         }?;
 
-        let result = evaluate(content.as_str(), &request.input).await?;
+        let start = Instant::now();
+        let interrupt_handler = Box::new(move || start.elapsed() > MAX_DURATION);
+        self.runtime.set_interrupt_handler(Some(interrupt_handler));
 
+        let mut script = Script::new(self.runtime.clone());
+        let result_response = script.call(content, &request.input).await;
+
+        self.runtime.set_interrupt_handler(None);
+
+        let response = result_response?;
         Ok(NodeResponse {
-            output: result.output,
-            trace_data: self.trace.then(|| json!({ "log": result.log })),
+            output: response.output,
+            trace_data: self.trace.then(|| json!({ "log": response.log })),
         })
     }
 }

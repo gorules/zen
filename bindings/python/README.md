@@ -292,8 +292,19 @@ By incorporating the "Decision" node, developers can modularize decision logic, 
 
 ## Support matrix
 
-| linux-x64-gnu | linux-arm64-gnu | darwin-x64 | darwin-arm64 | win32-x64-msvc |
-| :------------ | :-------------- | :--------- | :----------- | :------------- |
-| yes           | yes             | yes        | yes          | yes            |
+| Arch            | Rust               | NodeJS             | Python             | Go                 |
+|:----------------|:-------------------|:-------------------|:-------------------|:-------------------|
+| linux-x64-gnu   | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
+| linux-arm64-gnu | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
+| darwin-x64      | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
+| darwin-arm64    | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
+| win32-x64-msvc  | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
 
-We do not support linux-musl for now.
+We do not support linux-musl currently.
+
+## Contribution
+
+JDM standard is growing and we need to keep tight control over its development and roadmap as there are number of
+companies that are using GoRules Zen-Engine and GoRules BRMS.
+For this reason we can't accept any code contributions at this moment, apart from help with documentation and additional
+tests.

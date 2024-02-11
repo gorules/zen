@@ -1,8 +1,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-# NodeJS Rules Engine (ZEN Engine)
+# NodeJS Rules Engine
 
-ZEN Engine is a cross-platform, Open-Source Business Rules Engine (BRE). It is written in **Rust** and provides native bindings for **NodeJS** and **Python**. ZEN Engine allows to load and execute [JSON Decision Model (JDM)](https://gorules.io/docs/rules-engine/json-decision-model) from JSON files.
+ZEN Engine is a cross-platform, Open-Source Business Rules Engine (BRE). It is written in **Rust** and provides native bindings for **NodeJS**, **Python** and **Go**. ZEN Engine allows to load and execute [JSON Decision Model (JDM)](https://gorules.io/docs/rules-engine/json-decision-model) from JSON files.
 
 <img width="800" alt="Open-Source Rules Engine" src="https://gorules.io/images/jdm-editor.gif">
 
@@ -10,10 +10,8 @@ An open-source React editor is available on our [JDM Editor](https://github.com/
 
 ## Usage
 
-ZEN Engine is built as embeddable BRE for your **Rust**, **NodeJS** or **Python** applications.
+ZEN Engine is built as embeddable BRE for your **Rust**, **NodeJS**, **Python** or **Go** applications.
 It parses JDM from JSON content. It is up to you to obtain the JSON content, e.g. from file system, database or service call.
-
-If you are looking for a complete **BRMS**, take a look at self-hosted [GoRules BRMS](https://gorules.io) or [GoRules Cloud](https://gorules.io).
 
 ### Installation
 
@@ -67,6 +65,20 @@ When engine.evaluate is invoked it will call loader and pass a key expecting a c
 In the case above we will assume file `jdm_directory/jdm_graph1.json` exists.
 
 Similar to this example you can also utilise loader to load from different places, for example from REST API, from S3, Database, etc.
+
+### Supported Platforms
+
+List of platforms where Zen Engine is natively available:
+
+* **NodeJS** - [GitHub](https://github.com/gorules/zen/blob/master/bindings/nodejs/README.md) | [Documentation](https://gorules.io/docs/developers/bre/engines/nodejs) | [npmjs](https://www.npmjs.com/package/@gorules/zen-engine)
+* **Python** - [GitHub](https://github.com/gorules/zen/blob/master/bindings/python/README.md) | [Documentation](https://gorules.io/docs/developers/bre/engines/python) | [pypi](https://pypi.org/project/zen-engine/)
+* **Go** - [GitHub](https://github.com/gorules/zen-go) | [Documentation](https://gorules.io/docs/developers/bre/engines/go)
+* **Rust (Core)** - [GitHub](https://github.com/gorules/zen) | [Documentation](https://gorules.io/docs/developers/bre/engines/rust) | [crates.io](https://crates.io/crates/zen-engine)
+
+For a complete **Business Rules Management Systems (BRMS)** solution:
+
+* [Self-hosted BRMS](https://gorules.io)
+* [GoRules Cloud BRMS](https://gorules.io/signin/verify-email)
 
 ## JSON Decision Model (JDM)
 
@@ -253,6 +265,7 @@ Note: If there are multiple edges from the same condition, there is no guarantee
 * Python 0.16.0
 * NodeJS 0.13.0
 * Rust 0.16.0
+* Go 0.1.0
 
 ### Functions Node
 
@@ -290,8 +303,19 @@ By incorporating the "Decision" node, developers can modularize decision logic, 
 
 ## Support matrix
 
-| linux-x64-gnu | linux-arm64-gnu | darwin-x64 | darwin-arm64 | win32-x64-msvc |
-| :------------ | :-------------- | :--------- | :----------- | :------------- |
-| yes           | yes             | yes        | yes          | yes            |
+| Arch            | Rust               | NodeJS             | Python             | Go                 |
+|:----------------|:-------------------|:-------------------|:-------------------|:-------------------|
+| linux-x64-gnu   | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
+| linux-arm64-gnu | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
+| darwin-x64      | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
+| darwin-arm64    | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
+| win32-x64-msvc  | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
 
-We do not support linux-musl for now.
+We do not support linux-musl currently.
+
+## Contribution
+
+JDM standard is growing and we need to keep tight control over its development and roadmap as there are number of
+companies that are using GoRules Zen-Engine and GoRules BRMS.
+For this reason we can't accept any code contributions at this moment, apart from help with documentation and additional
+tests.

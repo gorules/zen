@@ -22,7 +22,7 @@ async fn engine_memory_loader() {
     memory_loader.add("table", load_test_data("table.json"));
     memory_loader.add("function", load_test_data("function.json"));
 
-    let engine = DecisionEngine::new_arc(memory_loader.clone());
+    let engine = DecisionEngine::default().with_loader(memory_loader.clone());
     let table = engine.evaluate("table", &json!({ "input": 12 })).await;
     let function = engine.evaluate("function", &json!({ "input": 12 })).await;
 
@@ -37,7 +37,7 @@ async fn engine_memory_loader() {
 #[tokio::test]
 #[cfg_attr(miri, ignore)]
 async fn engine_filesystem_loader() {
-    let engine = DecisionEngine::new(create_fs_loader());
+    let engine = DecisionEngine::default().with_loader(create_fs_loader().into());
     let table = engine.evaluate("table.json", &json!({ "input": 12 })).await;
     let function = engine
         .evaluate("function.json", &json!({ "input": 12 }))
@@ -52,7 +52,7 @@ async fn engine_filesystem_loader() {
 #[tokio::test]
 #[cfg_attr(miri, ignore)]
 async fn engine_closure_loader() {
-    let engine = DecisionEngine::async_loader(|key| async {
+    let engine = DecisionEngine::default().with_closure_loader(|key| async {
         match key.as_str() {
             "function" => Ok(Arc::new(load_test_data("function.json"))),
             "table" => Ok(Arc::new(load_test_data("table.json"))),
@@ -80,7 +80,7 @@ async fn engine_noop_loader() {
 
 #[tokio::test]
 async fn engine_get_decision() {
-    let engine = DecisionEngine::new(create_fs_loader());
+    let engine = DecisionEngine::default().with_loader(create_fs_loader().into());
 
     assert!(engine.get_decision("table.json").await.is_ok());
     assert!(engine.get_decision("any.json").await.is_err());
@@ -95,7 +95,7 @@ async fn engine_create_decision() {
 #[tokio::test]
 #[cfg_attr(miri, ignore)]
 async fn engine_errors() {
-    let engine = DecisionEngine::new(create_fs_loader());
+    let engine = DecisionEngine::default().with_loader(create_fs_loader().into());
 
     let infinite_fn = engine.evaluate("infinite-function.json", &json!({})).await;
     match infinite_fn.unwrap_err().deref() {
@@ -117,7 +117,7 @@ async fn engine_errors() {
 
 #[tokio::test]
 async fn engine_with_trace() {
-    let engine = DecisionEngine::new(create_fs_loader());
+    let engine = DecisionEngine::default().with_loader(create_fs_loader().into());
 
     let table_r = engine.evaluate("table.json", &json!({ "input": 12 })).await;
     let table_opt_r = engine
@@ -179,7 +179,7 @@ async fn engine_function_imports() {
 
 #[tokio::test]
 async fn engine_switch_node() {
-    let engine = DecisionEngine::new(create_fs_loader());
+    let engine = DecisionEngine::default().with_loader(create_fs_loader().into());
 
     let switch_node_r = engine
         .evaluate("switch-node.json", &json!({ "color": "yellow" }))

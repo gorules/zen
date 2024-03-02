@@ -1,3 +1,4 @@
+use crate::custom_node::CustomNode;
 use crate::decision::ZenDecision;
 use crate::loader::DecisionLoader;
 use napi::anyhow::{anyhow, Context};
@@ -11,7 +12,7 @@ use zen_engine::{DecisionEngine, EvaluationOptions};
 
 #[napi]
 pub struct ZenEngine {
-    graph: Arc<DecisionEngine<DecisionLoader>>,
+    graph: Arc<DecisionEngine<DecisionLoader, CustomNode>>,
 }
 
 #[napi(object)]
@@ -33,6 +34,9 @@ impl Default for ZenEvaluateOptions {
 pub struct ZenEngineOptions {
     #[napi(ts_type = "(key: string) => Promise<Buffer>")]
     pub loader: Option<JsFunction>,
+
+    #[napi(ts_type = "(request: ZenEngineHandlerRequest) => Promise<ZenEngineHandlerResponse>")]
+    pub handler: Option<JsFunction>,
 }
 
 #[napi]
@@ -41,18 +45,26 @@ impl ZenEngine {
     pub fn new(mut env: Env, options: Option<ZenEngineOptions>) -> napi::Result<Self> {
         let Some(opts) = options else {
             return Ok(Self {
-                graph: DecisionEngine::new(DecisionLoader::default()).into(),
+                graph: DecisionEngine::new(
+                    DecisionLoader::default().into(),
+                    CustomNode::default().into(),
+                )
+                .into(),
             });
         };
 
-        let Some(loader_fn) = opts.loader else {
-            return Ok(Self {
-                graph: DecisionEngine::new(DecisionLoader::default()).into(),
-            });
+        let loader = match opts.loader {
+            None => DecisionLoader::default(),
+            Some(loader_fn) => DecisionLoader::try_new(&mut env, loader_fn)?,
+        };
+
+        let custom_handler = match opts.handler {
+            None => CustomNode::default(),
+            Some(custom_fn) => CustomNode::try_new(&mut env, custom_fn)?,
         };
 
         Ok(Self {
-            graph: DecisionEngine::new(DecisionLoader::try_new(&mut env, loader_fn)?).into(),
+            graph: DecisionEngine::new(loader.into(), custom_handler.into()).into(),
         })
     }
 

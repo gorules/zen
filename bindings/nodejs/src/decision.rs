@@ -1,3 +1,4 @@
+use crate::custom_node::CustomNode;
 use crate::engine::ZenEvaluateOptions;
 use crate::loader::DecisionLoader;
 use napi::anyhow::anyhow;
@@ -8,10 +9,10 @@ use std::sync::Arc;
 use zen_engine::{Decision, EvaluationOptions};
 
 #[napi]
-pub struct ZenDecision(pub(crate) Arc<Decision<DecisionLoader>>);
+pub struct ZenDecision(pub(crate) Arc<Decision<DecisionLoader, CustomNode>>);
 
-impl From<Decision<DecisionLoader>> for ZenDecision {
-    fn from(value: Decision<DecisionLoader>) -> Self {
+impl From<Decision<DecisionLoader, CustomNode>> for ZenDecision {
+    fn from(value: Decision<DecisionLoader, CustomNode>) -> Self {
         Self(value.into())
     }
 }

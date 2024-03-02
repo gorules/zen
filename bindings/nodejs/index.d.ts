@@ -9,9 +9,29 @@ export interface ZenEvaluateOptions {
 }
 export interface ZenEngineOptions {
   loader?: (key: string) => Promise<Buffer>
+  handler?: (request: ZenEngineHandlerRequest) => Promise<ZenEngineHandlerResponse>
 }
 export function evaluateExpression(expression: string, context?: any | undefined | null): Promise<any>
 export function evaluateUnaryExpression(expression: string, context: any): Promise<boolean>
+export interface DecisionNode {
+  id: string
+  name: string
+  type: string
+  content: CustomNodeContent
+}
+export interface CustomNodeContent {
+  component: string
+  /** Config is where custom data is kept. Usually in JSON format. */
+  config: any
+}
+export interface ZenEngineHandlerRequest {
+  input: object
+  node: DecisionNode
+}
+export interface ZenEngineHandlerResponse {
+  output: object
+  trace: object
+}
 export class ZenDecision {
   constructor()
   evaluate(context: any, opts?: ZenEvaluateOptions | undefined | null): Promise<any>

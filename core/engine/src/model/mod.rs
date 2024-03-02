@@ -1,12 +1,13 @@
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[cfg(feature = "bincode")]
-use bincode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+pub mod custom_node_adapter;
 
 /// JDM Decision model
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[serde(rename_all = "camelCase")]
 pub struct DecisionContent {
     pub nodes: Vec<DecisionNode>,
@@ -14,7 +15,7 @@ pub struct DecisionContent {
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[serde(rename_all = "camelCase")]
 pub struct DecisionEdge {
     pub id: String,
@@ -24,7 +25,7 @@ pub struct DecisionEdge {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[serde(rename_all = "camelCase")]
 pub struct DecisionNode {
     pub id: String,
@@ -41,7 +42,7 @@ impl PartialEq for DecisionNode {
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[serde(tag = "type")]
 #[serde(rename_all = "camelCase")]
 pub enum DecisionNodeKind {
@@ -52,17 +53,18 @@ pub enum DecisionNodeKind {
     DecisionTableNode { content: DecisionTableContent },
     ExpressionNode { content: ExpressionNodeContent },
     SwitchNode { content: SwitchNodeContent },
+    CustomNode { content: CustomNodeContent },
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[serde(rename_all = "camelCase")]
 pub struct DecisionNodeContent {
     pub key: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[serde(rename_all = "camelCase")]
 pub struct DecisionTableContent {
     pub rules: Vec<HashMap<String, String>>,
@@ -72,7 +74,7 @@ pub struct DecisionTableContent {
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[serde(rename_all = "camelCase")]
 pub enum DecisionTableHitPolicy {
     First,
@@ -80,7 +82,7 @@ pub enum DecisionTableHitPolicy {
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[serde(rename_all = "camelCase")]
 pub struct DecisionTableInputField {
     pub id: String,
@@ -89,7 +91,7 @@ pub struct DecisionTableInputField {
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[serde(rename_all = "camelCase")]
 pub struct DecisionTableOutputField {
     pub id: String,
@@ -98,14 +100,14 @@ pub struct DecisionTableOutputField {
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[serde(rename_all = "camelCase")]
 pub struct ExpressionNodeContent {
     pub expressions: Vec<Expression>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[serde(rename_all = "camelCase")]
 pub struct Expression {
     pub id: String,
@@ -114,7 +116,7 @@ pub struct Expression {
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[serde(rename_all = "camelCase")]
 pub struct SwitchNodeContent {
     #[serde(default)]
@@ -123,7 +125,7 @@ pub struct SwitchNodeContent {
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[serde(rename_all = "camelCase")]
 pub struct SwitchStatement {
     pub id: String,
@@ -131,10 +133,61 @@ pub struct SwitchStatement {
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default)]
-#[cfg_attr(feature = "bincode", derive(Encode, Decode))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[serde(rename_all = "camelCase")]
 pub enum SwitchStatementHitPolicy {
     #[default]
     First,
     Collect,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomNodeContent {
+    pub component: String,
+    pub config: Value,
+}
+
+#[cfg(feature = "bincode")]
+impl ::bincode::Encode for CustomNodeContent {
+    fn encode<__E: ::bincode::enc::Encoder>(
+        &self,
+        encoder: &mut __E,
+    ) -> core::result::Result<(), ::bincode::error::EncodeError> {
+        let config_string = self.config.to_string();
+
+        ::bincode::Encode::encode(&self.component, encoder)?;
+        ::bincode::Encode::encode(config_string.as_bytes(), encoder)?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "bincode")]
+impl ::bincode::Decode for CustomNodeContent {
+    fn decode<__D: ::bincode::de::Decoder>(
+        decoder: &mut __D,
+    ) -> core::result::Result<Self, ::bincode::error::DecodeError> {
+        let component: String = ::bincode::Decode::decode(decoder)?;
+        let config_string: String = ::bincode::Decode::decode(decoder)?;
+
+        let config = serde_json::from_str(config_string.as_str())
+            .map_err(|_| ::bincode::error::DecodeError::Other("failed to deserialize value"))?;
+
+        Ok(Self { component, config })
+    }
+}
+
+#[cfg(feature = "bincode")]
+impl<'__de> ::bincode::BorrowDecode<'__de> for CustomNodeContent {
+    fn borrow_decode<__D: ::bincode::de::BorrowDecoder<'__de>>(
+        decoder: &mut __D,
+    ) -> core::result::Result<Self, ::bincode::error::DecodeError> {
+        let component: String = ::bincode::BorrowDecode::borrow_decode(decoder)?;
+        let config_string: String = ::bincode::BorrowDecode::borrow_decode(decoder)?;
+
+        let config = serde_json::from_str(config_string.as_str())
+            .map_err(|_| ::bincode::error::DecodeError::Other("failed to deserialize value"))?;
+
+        Ok(Self { component, config })
+    }
 }

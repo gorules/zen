@@ -8,6 +8,7 @@ pub enum Opcode<'a> {
     Pop,
     Rot,
     Fetch,
+    FetchRootEnv,
     FetchEnv(&'a str),
     Negate,
     Not,

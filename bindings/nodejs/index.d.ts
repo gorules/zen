@@ -13,6 +13,7 @@ export interface ZenEngineOptions {
 }
 export function evaluateExpression(expression: string, context?: any | undefined | null): Promise<any>
 export function evaluateUnaryExpression(expression: string, context: any): Promise<boolean>
+export function renderTemplate(template: string, context: any): Promise<any>
 export interface DecisionNode {
   id: string
   name: string
@@ -30,7 +31,7 @@ export interface ZenEngineHandlerRequest {
 }
 export interface ZenEngineHandlerResponse {
   output: object
-  trace: object
+  traceData?: object
 }
 export class ZenDecision {
   constructor()

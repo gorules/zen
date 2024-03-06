@@ -165,6 +165,9 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                         });
                     }
                 },
+                Opcode::FetchRootEnv => {
+                    self.push(env.clone());
+                }
                 Opcode::Negate => {
                     let a = self.pop()?;
                     match a {

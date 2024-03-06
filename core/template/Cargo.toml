@@ -1,0 +1,15 @@
+[package]
+authors = ["GoRules Team <bot@gorules.io>"]
+description = "Zen Template Language"
+name = "zen-template"
+license = "MIT"
+version = "0.18.1"
+edition = "2021"
+repository = "https://github.com/gorules/zen.git"
+publish = false
+
+[dependencies]
+zen-expression = { path = "../expression" }
+itertools = "0.12.1"
+serde = { workspace = true }
+serde_json = { workspace = true }

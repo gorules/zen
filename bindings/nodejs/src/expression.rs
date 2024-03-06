@@ -32,3 +32,14 @@ pub async fn evaluate_unary_expression(expression: String, context: Value) -> na
 
     Ok(result)
 }
+
+#[allow(dead_code)]
+#[napi]
+pub async fn render_template(template: String, context: Value) -> napi::Result<Value> {
+    let result: Value =
+        napi::tokio::spawn(async move { zen_template::render(template.as_str(), &context) })
+            .await
+            .map_err(|_| anyhow!("Hook timed out"))?;
+
+    Ok(result)
+}

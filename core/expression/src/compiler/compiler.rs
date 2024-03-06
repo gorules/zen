@@ -112,6 +112,7 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
             Node::Number(v) => Ok(self.emit(Opcode::Push(Variable::Number(*v)))),
             Node::String(v) => Ok(self.emit(Opcode::Push(Variable::String(v)))),
             Node::Pointer => Ok(self.emit(Opcode::Pointer)),
+            Node::Root => Ok(self.emit(Opcode::FetchRootEnv)),
             Node::Array(v) => {
                 v.iter()
                     .try_for_each(|&n| self.compile_node(n).map(|_| ()))?;

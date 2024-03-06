@@ -280,7 +280,11 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         self.next()?;
         let current_token = self.current();
         if current_token.kind != TokenKind::Bracket(Bracket::LeftParenthesis) {
-            let identifier_node = self.node(Node::Identifier(identifier_token.value));
+            let identifier_node = match identifier_token.kind {
+                TokenKind::Identifier(Identifier::RootReference) => self.node(Node::Root),
+                _ => self.node(Node::Identifier(identifier_token.value)),
+            };
+
             return self
                 .with_postfix(identifier_node, expression_parser)
                 .map(Some);

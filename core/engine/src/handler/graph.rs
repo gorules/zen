@@ -158,10 +158,10 @@ impl<'a, L: DecisionLoader, A: CustomNodeAdapter> DecisionGraph<'a, L, A> {
                 };
             }
 
-            let node_request = NodeRequest {
+            let mut node_request = NodeRequest {
                 node,
                 iteration: self.iteration,
-                input: walker.incoming_node_data(&self.graph, nid),
+                input: walker.incoming_node_data(&self.graph, nid, true),
             };
 
             match &node.kind {
@@ -185,6 +185,9 @@ impl<'a, L: DecisionLoader, A: CustomNodeAdapter> DecisionGraph<'a, L, A> {
                         performance: None,
                         trace_data: None,
                     });
+                    if let Some(obj) = node_request.input.as_object_mut() {
+                        obj.remove("$nodes");
+                    }
 
                     return Ok(DecisionGraphResponse {
                         result: node_request.input,

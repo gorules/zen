@@ -27,5 +27,5 @@ pub struct ZenEngineHandlerRequest {
 #[napi(object)]
 pub struct ZenEngineHandlerResponse {
     pub output: JsObject,
-    pub trace: JsObject,
+    pub trace_data: Option<JsObject>,
 }

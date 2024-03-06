@@ -13,6 +13,7 @@ pub enum Node<'a> {
     Array(&'a [&'a Node<'a>]),
     Identifier(&'a str),
     Closure(&'a Node<'a>),
+    Root,
     Member {
         node: &'a Node<'a>,
         property: &'a Node<'a>,

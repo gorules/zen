@@ -1,11 +1,13 @@
-use napi::anyhow::anyhow;
+use napi::anyhow::{anyhow, Context};
 use napi::bindgen_prelude::Promise;
 use napi::threadsafe_function::{ErrorStrategy, ThreadSafeCallContext, ThreadsafeFunction};
 use napi::{Env, JsFunction};
-use serde_json::{json, Value};
+use serde::Serialize;
+use serde_json::Value;
 
-use zen_engine::handler::node::{NodeRequest, NodeResponse, NodeResult};
+use zen_engine::handler::node::{NodeRequest, NodeResult};
 use zen_engine::model::custom_node_adapter::CustomNodeAdapter;
+use zen_engine::model::DecisionNode;
 
 pub(crate) struct CustomNode {
     function: Option<ThreadsafeFunction<Value, ErrorStrategy::Fatal>>,
@@ -30,18 +32,27 @@ impl CustomNode {
     }
 }
 
+#[derive(Serialize)]
+struct FunctionRequestData<'a, 'b> {
+    input: &'a Value,
+    node: &'b DecisionNode,
+}
+
 impl CustomNodeAdapter for CustomNode {
     async fn handle(&self, request: &NodeRequest<'_>) -> NodeResult {
         let Some(function) = &self.function else {
             return Err(anyhow!("Custom function is undefined"));
         };
 
-        let decision_content = serde_json::to_value(request.node).unwrap();
-        let input = request.input.clone();
+        let fn_data = serde_json::to_value(FunctionRequestData {
+            input: &request.input,
+            node: request.node,
+        })
+        .context("Failed to serialize arguments")?;
 
         let promise: Promise<Option<Value>> = function
             .clone()
-            .call_async(json!({"input": input, "node": decision_content}))
+            .call_async(fn_data)
             .await
             .map_err(|err| anyhow!(err.reason))?;
 
@@ -50,9 +61,6 @@ impl CustomNodeAdapter for CustomNode {
             .map_err(|err| anyhow!(err.reason))?
             .unwrap_or(Value::Null);
 
-        Ok(NodeResponse {
-            output: result,
-            trace_data: None,
-        })
+        serde_json::from_value(result).context("Failed to deserialize return data")
     }
 }

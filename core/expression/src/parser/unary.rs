@@ -214,6 +214,7 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
 
         match value {
             Node::Null => CompareWithReference(Equal),
+            Node::Root => CompareWithReference(Equal),
             Node::Bool(_) => CompareWithReference(Equal),
             Node::Number(_) => CompareWithReference(Equal),
             Node::String(_) => CompareWithReference(Equal),

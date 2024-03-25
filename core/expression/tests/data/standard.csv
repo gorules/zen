@@ -246,4 +246,5 @@ isNumeric('string');;false
 isNumeric(true);;false
 
 # Object
-keys(customer);{"customer": {"firstName": "John", "lastName": "Doe"}};["firstName", "lastName"]
+keys(customer);{"customer": {"firstName": "John"}};["firstName"]
+keys(customer);{"customer": {"lastName": "Doe"}};["lastName"]

@@ -162,7 +162,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                         return Err(OpcodeErr {
                             opcode: "FetchEnv".into(),
                             message: "Unsupported type".into(),
-                        })
+                        });
                     }
                 },
                 Opcode::Negate => {
@@ -175,7 +175,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "Negate".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -187,7 +187,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "Not".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -228,7 +228,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "JumpIfTrue".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -248,7 +248,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "JumpIfFalse".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -294,7 +294,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                                             return Err(OpcodeErr {
                                                 opcode: "In".into(),
                                                 message: "Unsupported bracket".into(),
-                                            })
+                                            });
                                         }
                                     };
 
@@ -307,7 +307,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                                             return Err(OpcodeErr {
                                                 opcode: "In".into(),
                                                 message: "Unsupported bracket".into(),
-                                            })
+                                            });
                                         }
                                     };
 
@@ -320,7 +320,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                                     return Err(OpcodeErr {
                                         opcode: "In".into(),
                                         message: "Unsupported type".into(),
-                                    })
+                                    });
                                 }
                             }
                         }
@@ -352,7 +352,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "In".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -366,7 +366,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "Less".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -380,7 +380,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "More".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -394,7 +394,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "LessOrEqual".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -408,7 +408,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "MoreOrEqual".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -421,7 +421,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "Abs".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -434,7 +434,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "Round".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -447,7 +447,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "Ceil".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -460,7 +460,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "Floor".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -480,7 +480,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "Random".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -508,7 +508,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "Average".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -623,7 +623,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                                     return Err(OpcodeErr {
                                         opcode: "Min".into(),
                                         message: "Unsupported array value".into(),
-                                    })
+                                    });
                                 }
                             };
 
@@ -646,7 +646,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "Min".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -666,7 +666,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                                     return Err(OpcodeErr {
                                         opcode: "Max".into(),
                                         message: "Unsupported array value".into(),
-                                    })
+                                    });
                                 }
                             };
 
@@ -689,7 +689,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "Max".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -716,7 +716,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "Sum".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -738,7 +738,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "Add".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -752,7 +752,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "Subtract".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -766,7 +766,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "Multiply".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -780,7 +780,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "Divide".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -794,7 +794,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "Modulo".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -810,7 +810,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "Exponent".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -836,7 +836,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "Interval".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -852,7 +852,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "Uppercase".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -868,7 +868,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "Lowercase".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -896,9 +896,44 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                                 return Err(OpcodeErr {
                                     opcode: "Contains".into(),
                                     message: "Unsupported type".into(),
-                                })
+                                });
                             }
                         },
+                    }
+                }
+                Opcode::Keys => {
+                    let current = self.pop()?;
+
+                    match current {
+                        Array(arr) => {
+                            let indices: Vec<&'arena Variable> = arr
+                                .iter()
+                                .enumerate()
+                                .map(|(index, _)| {
+                                    let number = self.bump.alloc(Number(index.into()));
+                                    return &*number;
+                                })
+                                .collect();
+
+                            self.push(Array(self.bump.alloc_slice_clone(indices.as_slice())));
+                        }
+                        Object(obj) => {
+                            let keys: Vec<&'arena Variable> = obj
+                                .iter()
+                                .map(|(key, _)| {
+                                    let key = self.bump.alloc(String(self.bump.alloc_str(key)));
+                                    return &*key;
+                                })
+                                .collect();
+
+                            self.push(Array(self.bump.alloc_slice_clone(keys.as_slice())));
+                        }
+                        _ => {
+                            return Err(OpcodeErr {
+                                opcode: "Keys".into(),
+                                message: "Unsupported type".into(),
+                            })
+                        }
                     }
                 }
                 Opcode::StartsWith => {
@@ -913,7 +948,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "StartsWith".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -929,7 +964,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "EndsWith".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -1001,7 +1036,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "DateManipulation".into(),
                                 message: "Unsupported operation".into(),
-                            })
+                            });
                         }
                     };
 
@@ -1026,7 +1061,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "DateManipulation".into(),
                                 message: "Unsupported operation".into(),
-                            })
+                            });
                         }
                     }
                     .ok_or_else(|| OpcodeErr {
@@ -1073,7 +1108,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                                     return Err(OpcodeErr {
                                         opcode: "Slice".into(),
                                         message: "Unsupported type".into(),
-                                    })
+                                    });
                                 }
                             }
                         }
@@ -1081,7 +1116,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "Slice".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -1121,7 +1156,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "Len".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     };
 
@@ -1158,7 +1193,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "ParseDateTime".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     };
 
@@ -1176,7 +1211,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "ParseTime".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     };
 
@@ -1199,7 +1234,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "ParseDuration".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     };
 
@@ -1239,7 +1274,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                                     "Type {} cannot be converted to string",
                                     var.type_name()
                                 ),
-                            })
+                            });
                         }
                         (TypeConversionKind::Number, String(str)) => {
                             let parsed_number =
@@ -1262,7 +1297,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                                     "Type {} cannot be converted to number",
                                     var.type_name()
                                 ),
-                            })
+                            });
                         }
                         (TypeConversionKind::Bool, Number(n)) => {
                             self.bump.alloc(Bool(!n.is_zero()))
@@ -1346,7 +1381,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "Pointer".into(),
                                 message: "Unsupported scope type".into(),
-                            })
+                            });
                         }
                     }
                 }
@@ -1363,7 +1398,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "Begin".into(),
                                 message: "Unsupported type".into(),
-                            })
+                            });
                         }
                     }
                 }

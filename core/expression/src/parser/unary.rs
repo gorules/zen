@@ -303,6 +303,7 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                 BuiltInFunction::EndsWith => AsBoolean,
                 BuiltInFunction::Matches => AsBoolean,
                 BuiltInFunction::IsNumeric => AsBoolean,
+                BuiltInFunction::Keys => CompareWithReference(In),
                 BuiltInFunction::All => AsBoolean,
                 BuiltInFunction::Some => AsBoolean,
                 BuiltInFunction::None => AsBoolean,

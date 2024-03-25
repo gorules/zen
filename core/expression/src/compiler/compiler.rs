@@ -405,6 +405,10 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                     self.compile_argument(kind, arguments, 0)?;
                     Ok(self.emit(Opcode::TypeCheck(TypeCheckKind::Numeric)))
                 }
+                BuiltInFunction::Keys => {
+                    self.compile_argument(kind, arguments, 0)?;
+                    Ok(self.emit(Opcode::Keys))
+                }
                 BuiltInFunction::StartOf | BuiltInFunction::EndOf => {
                     self.compile_argument(kind, arguments, 0)?;
                     self.compile_argument(kind, arguments, 1)?;

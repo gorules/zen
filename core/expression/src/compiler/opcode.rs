@@ -44,6 +44,7 @@ pub enum Opcode<'a> {
         right_bracket: &'a str,
     },
     Contains,
+    Keys,
     DateFunction(&'a str),
     DateManipulation(&'a str),
     Uppercase,

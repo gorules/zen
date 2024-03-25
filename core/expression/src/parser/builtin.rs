@@ -59,6 +59,9 @@ pub enum BuiltInFunction {
     StartOf,
     EndOf,
 
+    // Map
+    Keys,
+
     // Closures
     All,
     Some,
@@ -121,6 +124,9 @@ impl BuiltInFunction {
             BuiltInFunction::Bool => Arity::Single,
             // BuiltInFunction::Json => Arity::Single,
             BuiltInFunction::IsNumeric => Arity::Single,
+
+            // Map
+            BuiltInFunction::Keys => Arity::Single,
 
             // Closure
             BuiltInFunction::All => Arity::Closure,

@@ -143,6 +143,7 @@ one([1, 2, 3, 4, 5], # == 6);; false
 none([1, 2, 3, 4, 5], # > 5);; true
 some([1, 2, 3, 4, 5], # > 3);; true
 flatMap([[1, 2], [3, 4], [5, 6]], #);; [1, 2, 3, 4, 5, 6]
+keys([10, 11, 12]);;[0, 1, 2]
 
 # Dates
 date("2023-09-18T12:00:00Z");; 1695038400
@@ -243,3 +244,7 @@ isNumeric('123.123');;true
 isNumeric('123');;true
 isNumeric('string');;false
 isNumeric(true);;false
+
+# Object
+keys(customer);{"customer": {"firstName": "John"}};["firstName"]
+keys(customer);{"customer": {"lastName": "Doe"}};["lastName"]

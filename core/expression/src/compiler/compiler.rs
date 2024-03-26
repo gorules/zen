@@ -401,6 +401,10 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                     self.compile_argument(kind, arguments, 0)?;
                     Ok(self.emit(Opcode::TypeConversion(TypeConversionKind::Bool)))
                 }
+                BuiltInFunction::Json => {
+                    self.compile_argument(kind, arguments, 0)?;
+                    Ok(self.emit(Opcode::TypeConversion(TypeConversionKind::Json)))
+                }
                 BuiltInFunction::IsNumeric => {
                     self.compile_argument(kind, arguments, 0)?;
                     Ok(self.emit(Opcode::TypeCheck(TypeCheckKind::Numeric)))

@@ -1,6 +1,7 @@
 use crate::custom_node::CustomNode;
 use crate::decision::ZenDecision;
 use crate::loader::DecisionLoader;
+use crate::types::ZenEngineResponse;
 use napi::anyhow::{anyhow, Context};
 use napi::bindgen_prelude::Buffer;
 use napi::{tokio, Env, JsFunction};
@@ -36,7 +37,7 @@ pub struct ZenEngineOptions {
     pub loader: Option<JsFunction>,
 
     #[napi(ts_type = "(request: ZenEngineHandlerRequest) => Promise<ZenEngineHandlerResponse>")]
-    pub handler: Option<JsFunction>,
+    pub custom_handler: Option<JsFunction>,
 }
 
 #[napi]
@@ -58,7 +59,7 @@ impl ZenEngine {
             Some(loader_fn) => DecisionLoader::try_new(&mut env, loader_fn)?,
         };
 
-        let custom_handler = match opts.handler {
+        let custom_handler = match opts.custom_handler {
             None => CustomNode::default(),
             Some(custom_fn) => CustomNode::try_new(&mut env, custom_fn)?,
         };
@@ -74,7 +75,7 @@ impl ZenEngine {
         key: String,
         context: Value,
         opts: Option<ZenEvaluateOptions>,
-    ) -> napi::Result<Value> {
+    ) -> napi::Result<ZenEngineResponse> {
         let graph = self.graph.clone();
         let result = tokio::spawn(async move {
             let options = opts.unwrap_or_default();
@@ -94,7 +95,7 @@ impl ZenEngine {
             anyhow!(serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string()))
         })?;
 
-        Ok(serde_json::to_value(&result)?)
+        Ok(ZenEngineResponse::from(result))
     }
 
     #[napi]

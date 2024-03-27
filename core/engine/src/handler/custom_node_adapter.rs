@@ -13,6 +13,6 @@ pub struct NoopCustomNode;
 
 impl CustomNodeAdapter for NoopCustomNode {
     async fn handle(&self, _: &NodeRequest<'_>) -> NodeResult {
-        Err(anyhow!("decision handler not provided"))
+        Err(anyhow!("Custom node handler not provided"))
     }
 }

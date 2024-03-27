@@ -49,6 +49,23 @@ describe('ZenEngine', () => {
     const r = await functionDecision.evaluate({input: 15});
     expect(r.result.output).toEqual(30);
   }, 10000)
+
+  it('Evaluate custom nodes with a handler', async () => {
+    const engine = new ZenEngine({
+      loader,
+      customHandler: async (request) => {
+        const prop1 = request.getField('prop1') as number;
+        const prop1Raw = request.getFieldRaw('prop1');
+
+        expect(prop1).toEqual(15);
+        expect(prop1Raw).toEqual('{{ a + 10 }}')
+        return {output: {data: prop1 + 10}}
+      }
+    });
+
+    const r = await engine.evaluate('custom.json', {a: 5});
+    expect(r.result.data).toEqual(25);
+  });
 })
 
 describe('Expressions', () => {

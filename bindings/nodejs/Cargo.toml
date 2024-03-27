@@ -18,6 +18,7 @@ zen-engine = { path = "../../core/engine" }
 zen-expression = { path = "../../core/expression" }
 zen-template = { path = "../../core/template" }
 serde = { workspace = true, features = ["derive"] }
+json_dotpath = { version = "1.1.0" }
 
 [build-dependencies]
 napi-build = "2.1.2"

@@ -4,13 +4,14 @@ use napi::threadsafe_function::{ErrorStrategy, ThreadSafeCallContext, Threadsafe
 use napi::{Env, JsFunction};
 use serde::Serialize;
 use serde_json::Value;
+use zen_engine::handler::custom_node_adapter::CustomNodeAdapter;
 
+use crate::types::ZenEngineHandlerRequest;
 use zen_engine::handler::node::{NodeRequest, NodeResult};
-use zen_engine::model::custom_node_adapter::CustomNodeAdapter;
 use zen_engine::model::DecisionNode;
 
 pub(crate) struct CustomNode {
-    function: Option<ThreadsafeFunction<Value, ErrorStrategy::Fatal>>,
+    function: Option<ThreadsafeFunction<ZenEngineHandlerRequest, ErrorStrategy::Fatal>>,
 }
 
 impl Default for CustomNode {
@@ -21,8 +22,10 @@ impl Default for CustomNode {
 
 impl CustomNode {
     pub fn try_new(env: &mut Env, function: JsFunction) -> napi::Result<Self> {
-        let mut tsf = function
-            .create_threadsafe_function(0, |cx: ThreadSafeCallContext<Value>| Ok(vec![cx.value]))?;
+        let mut tsf = function.create_threadsafe_function(
+            0,
+            |cx: ThreadSafeCallContext<ZenEngineHandlerRequest>| Ok(vec![cx.value]),
+        )?;
 
         tsf.unref(env)?;
 
@@ -36,6 +39,7 @@ impl CustomNode {
 struct FunctionRequestData<'a, 'b> {
     input: &'a Value,
     node: &'b DecisionNode,
+    iteration: u8,
 }
 
 impl CustomNodeAdapter for CustomNode {
@@ -44,15 +48,15 @@ impl CustomNodeAdapter for CustomNode {
             return Err(anyhow!("Custom function is undefined"));
         };
 
-        let fn_data = serde_json::to_value(FunctionRequestData {
-            input: &request.input,
-            node: request.node,
-        })
-        .context("Failed to serialize arguments")?;
+        let node_data = crate::types::DecisionNode::try_from(request.node.clone()).unwrap();
 
         let promise: Promise<Option<Value>> = function
             .clone()
-            .call_async(fn_data)
+            .call_async(ZenEngineHandlerRequest {
+                input: request.input.clone(),
+                node: node_data,
+                iteration: request.iteration,
+            })
             .await
             .map_err(|err| anyhow!(err.reason))?;
 

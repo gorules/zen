@@ -15,6 +15,7 @@ strum = { version = "0.26.1", features = ["derive"] }
 futures = "0.3.28"
 zen-engine = { path = "../../core/engine" }
 zen-expression = { path = "../../core/expression" }
+zen-template = { path = "../../core/template" }
 
 [lib]
 crate-type = ["staticlib"]
@@ -23,4 +24,5 @@ crate-type = ["staticlib"]
 cbindgen = "0.26.0"
 
 [features]
+default = ["go"]
 go = []

@@ -1,3 +1,4 @@
+use crate::custom_node::PyCustomNode;
 use crate::decision::PyZenDecision;
 use crate::loader::PyDecisionLoader;
 use crate::value::PyValue;
@@ -13,7 +14,7 @@ use zen_engine::{DecisionEngine, EvaluationOptions};
 #[pyclass]
 #[pyo3(name = "ZenEngine")]
 pub struct PyZenEngine {
-    graph: Arc<DecisionEngine<PyDecisionLoader>>,
+    graph: Arc<DecisionEngine<PyDecisionLoader, PyCustomNode>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -34,7 +35,11 @@ impl Default for PyZenEvaluateOptions {
 impl Default for PyZenEngine {
     fn default() -> Self {
         Self {
-            graph: DecisionEngine::new(PyDecisionLoader::default()).into(),
+            graph: DecisionEngine::new(
+                Arc::new(PyDecisionLoader::default()),
+                Arc::new(PyCustomNode::default()),
+            )
+            .into(),
         }
     }
 }
@@ -47,13 +52,22 @@ impl PyZenEngine {
             return Ok(Default::default());
         };
 
-        let Some(loader_any) = options.get_item("loader")? else {
-            return Ok(Default::default());
+        let loader = match options.get_item("loader")? {
+            Some(loader) => Some(Python::with_gil(|py| loader.to_object(py))),
+            None => None,
         };
 
-        let loader = Python::with_gil(|py| loader_any.to_object(py));
+        let custom_node = match options.get_item("custom_handler")? {
+            Some(custom_node) => Some(Python::with_gil(|py| custom_node.to_object(py))),
+            None => None,
+        };
+
         Ok(Self {
-            graph: DecisionEngine::new(PyDecisionLoader::from(loader)).into(),
+            graph: DecisionEngine::new(
+                Arc::new(PyDecisionLoader::from(loader)),
+                Arc::new(PyCustomNode::from(custom_node)),
+            )
+            .into(),
         })
     }
 

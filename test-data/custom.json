@@ -18,9 +18,9 @@
       },
       "name": "customNode 1",
       "content": {
-        "component": "bla",
+        "component": "sum",
         "config": {
-          "hello": "from config"
+          "prop1": "{{ a + 10 }}"
         }
       }
     },

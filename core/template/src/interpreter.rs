@@ -1,6 +1,7 @@
 use std::iter::Peekable;
 use std::slice::Iter;
 
+use crate::error::TemplateRenderError;
 use serde_json::Value;
 use zen_expression::Isolate;
 
@@ -36,23 +37,23 @@ where
 }
 
 impl<'source, 'nodes> Interpreter<'source, 'nodes> {
-    pub(crate) fn collect_for(mut self, context: &Value) -> Value {
+    pub(crate) fn collect_for(mut self, context: &Value) -> Result<Value, TemplateRenderError> {
         self.isolate.set_environment(context);
 
         while let Some(node) = self.cursor.next() {
             match node {
                 Node::Text(data) => self.text(data),
-                Node::Expression(data) => self.expression(data),
+                Node::Expression(data) => self.expression(data)?,
             }
         }
 
         match self.results.len() {
-            0 => Value::Null,
+            0 => Ok(Value::Null),
             1 => {
                 let item = self.results.remove(0);
                 match item {
-                    InterpreterResult::Value(val) => val,
-                    InterpreterResult::String(str) => Value::String(str.to_string()),
+                    InterpreterResult::Value(val) => Ok(val),
+                    InterpreterResult::String(str) => Ok(Value::String(str.to_string())),
                 }
             }
             _ => {
@@ -65,7 +66,7 @@ impl<'source, 'nodes> Interpreter<'source, 'nodes> {
                     })
                     .collect::<String>();
 
-                Value::String(string_data)
+                Ok(Value::String(string_data))
             }
         }
     }
@@ -74,9 +75,10 @@ impl<'source, 'nodes> Interpreter<'source, 'nodes> {
         self.results.push(InterpreterResult::String(data));
     }
 
-    fn expression(&mut self, data: &'source str) {
-        let result = self.isolate.run_standard(data).unwrap();
+    fn expression(&mut self, data: &'source str) -> Result<(), TemplateRenderError> {
+        let result = self.isolate.run_standard(data)?;
         self.results.push(InterpreterResult::Value(result));
+        Ok(())
     }
 }
 

@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use futures::executor::block_on;
 
+use crate::custom_node::DynamicCustomNode;
 use zen_engine::{DecisionEngine, EvaluationOptions};
 
 use crate::decision::{ZenDecision, ZenDecisionStruct};
@@ -12,10 +13,10 @@ use crate::error::ZenError;
 use crate::loader::DynamicDecisionLoader;
 use crate::result::ZenResult;
 
-pub(crate) struct ZenEngine(DecisionEngine<DynamicDecisionLoader>);
+pub(crate) struct ZenEngine(DecisionEngine<DynamicDecisionLoader, DynamicCustomNode>);
 
 impl Deref for ZenEngine {
-    type Target = DecisionEngine<DynamicDecisionLoader>;
+    type Target = DecisionEngine<DynamicDecisionLoader, DynamicCustomNode>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -30,13 +31,16 @@ impl DerefMut for ZenEngine {
 
 impl Default for ZenEngine {
     fn default() -> Self {
-        Self(DecisionEngine::new(DynamicDecisionLoader::default()))
+        Self(DecisionEngine::new(
+            Arc::new(DynamicDecisionLoader::default()),
+            Arc::new(DynamicCustomNode::default()),
+        ))
     }
 }
 
 impl ZenEngine {
-    pub fn with_loader(loader: DynamicDecisionLoader) -> Self {
-        Self(DecisionEngine::new(loader))
+    pub fn new(loader: DynamicDecisionLoader, custom_node: DynamicCustomNode) -> Self {
+        Self(DecisionEngine::new(Arc::new(loader), Arc::new(custom_node)))
     }
 }
 
@@ -88,11 +92,7 @@ pub extern "C" fn zen_engine_create_decision(
     }
 
     let cstr_content = unsafe { CStr::from_ptr(content) };
-    let Ok(str_content) = cstr_content.to_str() else {
-        return ZenResult::error(ZenError::InvalidArgument);
-    };
-
-    let Ok(decision_content) = serde_json::from_str(str_content) else {
+    let Ok(decision_content) = serde_json::from_slice(cstr_content.to_bytes()) else {
         return ZenResult::error(ZenError::JsonDeserializationFailed);
     };
 
@@ -122,11 +122,7 @@ pub extern "C" fn zen_engine_evaluate(
     };
 
     let cstr_context = unsafe { CStr::from_ptr(context) };
-    let Ok(str_context) = cstr_context.to_str() else {
-        return ZenResult::error(ZenError::InvalidArgument);
-    };
-
-    let Ok(val_context) = serde_json::from_str(str_context) else {
+    let Ok(val_context) = serde_json::from_slice(cstr_context.to_bytes()) else {
         return ZenResult::error(ZenError::JsonDeserializationFailed);
     };
 

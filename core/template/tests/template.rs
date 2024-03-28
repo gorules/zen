@@ -1,7 +1,7 @@
+use serde_json::{json, Value};
 use std::ops::Div;
 use std::time::Instant;
-use js_script::render;
-use serde_json::{json, Value};
+use zen_template::render;
 
 #[test]
 fn test_values_types() {
@@ -46,7 +46,7 @@ fn test_values_types() {
 
     for test_case in test_cases {
         assert_eq!(
-            render(test_case.template, &test_case.context),
+            render(test_case.template, &test_case.context).unwrap(),
             test_case.expected
         );
     }
@@ -95,7 +95,7 @@ fn test_interpolation() {
 
     for test_case in test_cases {
         assert_eq!(
-            render(test_case.template, &test_case.context),
+            render(test_case.template, &test_case.context).unwrap(),
             test_case.expected
         );
     }
@@ -105,8 +105,8 @@ fn test_interpolation() {
 fn perf() {
     let context = json!({ "customer": { "firstName": "John", "lastName": "Doe" } });
     let start = Instant::now();
-    for i in 0..100_000 {
-        render("hello world {{ customer }}", &context);
+    for _ in 0..100_000 {
+        render("hello world {{ customer }}", &context).unwrap();
     }
 
     println!("{:?}", start.elapsed().div(100));

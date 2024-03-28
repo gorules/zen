@@ -41,6 +41,11 @@ class ZenEngine(unittest.TestCase):
         r = functionDecision.evaluate({"input": 15})
         self.assertEqual(r["result"]["output"], 30)
 
+    def test_engine_custom_handler(self):
+        engine = zen.ZenEngine({ "loader": loader, "customHandler": custom_handler })
+
+
+
     def test_evaluate_expression(self):
         result = zen.evaluate_expression("sum(a)", { "a": [1, 2, 3, 4] })
         self.assertEqual(result, 10)
@@ -48,6 +53,10 @@ class ZenEngine(unittest.TestCase):
     def test_evaluate_unary_expression(self):
         result = zen.evaluate_unary_expression("'FR', 'ES', 'GB'", { "$": "GB" })
         self.assertEqual(result, True)
+
+    def test_render_template(self):
+        result = zen.render_template("{{{{ a + b }}}}", { "a": 10, "b": 20 })
+        self.assertEqual(result, 30)
 
 # run the test
 unittest.main()

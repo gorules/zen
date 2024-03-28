@@ -14,6 +14,12 @@ impl From<PyObject> for PyDecisionLoader {
     }
 }
 
+impl From<Option<PyObject>> for PyDecisionLoader {
+    fn from(value: Option<PyObject>) -> Self {
+        Self(value)
+    }
+}
+
 impl PyDecisionLoader {
     fn load_element(&self, key: &str) -> Result<Arc<DecisionContent>, anyhow::Error> {
         let Some(object) = &self.0 else {

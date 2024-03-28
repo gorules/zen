@@ -3,22 +3,22 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use crate::engine::EvaluationOptions;
+use crate::handler::custom_node_adapter::{CustomNodeAdapter, NoopCustomNode};
 use crate::handler::graph::{DecisionGraph, DecisionGraphConfig, DecisionGraphResponse};
 use crate::loader::{DecisionLoader, NoopLoader};
-use crate::model::custom_node_adapter::{CustomNodeAdapter, NoopCustomNode};
 use crate::model::DecisionContent;
 use crate::{DecisionGraphValidationError, EvaluationError};
 
 /// Represents a JDM decision which can be evaluated
 #[derive(Debug, Clone)]
-pub struct Decision<Loader, Adapter>
+pub struct Decision<Loader, CustomNode>
 where
     Loader: DecisionLoader,
-    Adapter: CustomNodeAdapter,
+    CustomNode: CustomNodeAdapter,
 {
     content: Arc<DecisionContent>,
     loader: Arc<Loader>,
-    adapter: Arc<Adapter>,
+    adapter: Arc<CustomNode>,
 }
 
 impl From<DecisionContent> for Decision<NoopLoader, NoopCustomNode> {

@@ -19,6 +19,8 @@ pub enum ZenError {
 
     LoaderKeyNotFound { key: String },
     LoaderInternalError { key: String, message: String },
+
+    TemplateEngineError { template: String, message: String },
 }
 
 impl ZenError {
@@ -29,6 +31,9 @@ impl ZenError {
             ZenError::LoaderKeyNotFound { key } => Some(json!({ "key": key }).to_string()),
             ZenError::LoaderInternalError { key, message } => {
                 Some(json!({ "key": key, "message": message }).to_string())
+            }
+            ZenError::TemplateEngineError { template, message } => {
+                Some(json!({ "template": template, "message": message }).to_string())
             }
             _ => None,
         }

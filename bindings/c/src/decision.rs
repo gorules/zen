@@ -6,6 +6,7 @@ use futures::executor::block_on;
 
 use zen_engine::Decision;
 
+use crate::custom_node::DynamicCustomNode;
 use crate::engine::ZenEngineEvaluationOptions;
 use crate::error::ZenError;
 use crate::loader::DynamicDecisionLoader;
@@ -13,12 +14,12 @@ use crate::result::ZenResult;
 
 #[repr(C)]
 pub(crate) struct ZenDecision {
-    _data: Decision<DynamicDecisionLoader>,
+    _data: Decision<DynamicDecisionLoader, DynamicCustomNode>,
     _marker: PhantomData<(*mut c_void, PhantomPinned)>,
 }
 
 impl Deref for ZenDecision {
-    type Target = Decision<DynamicDecisionLoader>;
+    type Target = Decision<DynamicDecisionLoader, DynamicCustomNode>;
 
     fn deref(&self) -> &Self::Target {
         &self._data
@@ -31,8 +32,8 @@ impl DerefMut for ZenDecision {
     }
 }
 
-impl From<Decision<DynamicDecisionLoader>> for ZenDecision {
-    fn from(value: Decision<DynamicDecisionLoader>) -> Self {
+impl From<Decision<DynamicDecisionLoader, DynamicCustomNode>> for ZenDecision {
+    fn from(value: Decision<DynamicDecisionLoader, DynamicCustomNode>) -> Self {
         Self {
             _data: value,
             _marker: PhantomData,

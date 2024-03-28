@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use json_dotpath::DotPaths;
 use napi::anyhow::{anyhow, Context};
-use napi::JsObject;
 use napi_derive::napi;
 use serde_json::Value;
 
@@ -55,8 +54,8 @@ impl From<DecisionGraphResponse> for ZenEngineResponse {
 
 #[napi(object)]
 pub struct ZenEngineHandlerResponse {
-    pub output: JsObject,
-    pub trace_data: Option<JsObject>,
+    pub output: Value,
+    pub trace_data: Option<Value>,
 }
 
 #[derive(Clone)]
@@ -121,10 +120,13 @@ impl ZenEngineHandlerRequest {
             .flatten()
             .context("Failed to find JSON path")?;
         let Value::String(template) = selected_value else {
-            return Ok(selected_value.clone());
+            return Ok(selected_value);
         };
 
-        Ok(zen_template::render(template.as_str(), &self.input))
+        let template_value = zen_template::render(template.as_str(), &self.input)
+            .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?;
+
+        Ok(template_value)
     }
 
     #[napi(ts_return_type = "unknown")]

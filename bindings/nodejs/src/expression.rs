@@ -39,7 +39,8 @@ pub async fn render_template(template: String, context: Value) -> napi::Result<V
     let result: Value =
         napi::tokio::spawn(async move { zen_template::render(template.as_str(), &context) })
             .await
-            .map_err(|_| anyhow!("Hook timed out"))?;
+            .map_err(|_| anyhow!("Hook timed out"))?
+            .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?;
 
     Ok(result)
 }

@@ -1,3 +1,4 @@
+use crate::error::{ParserError, TemplateRenderError};
 use crate::lexer::Token;
 use std::iter::Peekable;
 use std::slice::Iter;
@@ -37,16 +38,16 @@ where
 }
 
 impl<'source, 'tokens> Parser<'source, 'tokens> {
-    pub(crate) fn collect(mut self) -> Vec<Node<'source>> {
+    pub(crate) fn collect(mut self) -> Result<Vec<Node<'source>>, TemplateRenderError> {
         while let Some(token) = self.cursor.next() {
             match token {
                 Token::Text(text) => self.text(text),
-                Token::OpenBracket => self.open_bracket(),
-                Token::CloseBracket => self.close_bracket(),
+                Token::OpenBracket => self.open_bracket()?,
+                Token::CloseBracket => self.close_bracket()?,
             }
         }
 
-        self.nodes
+        Ok(self.nodes)
     }
 
     fn text(&mut self, data: &'source str) {
@@ -56,19 +57,21 @@ impl<'source, 'tokens> Parser<'source, 'tokens> {
         }
     }
 
-    fn open_bracket(&mut self) {
+    fn open_bracket(&mut self) -> Result<(), ParserError> {
         if self.state == ParserState::Expression {
-            panic!("Open bracket");
+            return Err(ParserError::OpenBracket);
         }
 
         self.state = ParserState::Expression;
+        Ok(())
     }
 
-    fn close_bracket(&mut self) {
+    fn close_bracket(&mut self) -> Result<(), ParserError> {
         if self.state != ParserState::Expression {
-            panic!("Close bracket");
+            return Err(ParserError::CloseBracket);
         }
 
         self.state = ParserState::Text;
+        Ok(())
     }
 }

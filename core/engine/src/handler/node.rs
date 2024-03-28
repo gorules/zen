@@ -11,7 +11,7 @@ pub struct NodeResponse {
     pub trace_data: Option<Value>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct NodeRequest<'a> {
     pub input: Value,
     pub iteration: u8,

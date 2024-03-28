@@ -28,8 +28,8 @@ export interface ZenEngineResponse {
   trace?: Record<string, ZenEngineTrace>
 }
 export interface ZenEngineHandlerResponse {
-  output: object
-  traceData?: object
+  output: any
+  traceData?: any
 }
 export interface DecisionNode {
   id: string

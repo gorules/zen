@@ -8,7 +8,7 @@ pub trait CustomNodeAdapter {
     ) -> impl std::future::Future<Output = NodeResult> + Send;
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct NoopCustomNode;
 
 impl CustomNodeAdapter for NoopCustomNode {

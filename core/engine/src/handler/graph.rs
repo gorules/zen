@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize, Serializer};
 use serde_json::Value;
 use thiserror::Error;
 
+use crate::handler::custom_node_adapter::CustomNodeAdapter;
 use crate::handler::decision::DecisionHandler;
 use crate::handler::expression::ExpressionHandler;
 use crate::handler::function::runtime::create_runtime;
@@ -18,7 +19,6 @@ use crate::handler::node::NodeRequest;
 use crate::handler::table::zen::DecisionTableHandler;
 use crate::handler::traversal::{GraphWalker, StableDiDecisionGraph};
 use crate::loader::DecisionLoader;
-use crate::model::custom_node_adapter::CustomNodeAdapter;
 use crate::model::{DecisionContent, DecisionNodeKind};
 use crate::{EvaluationError, NodeError};
 
@@ -379,10 +379,10 @@ pub struct DecisionGraphResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DecisionGraphTrace {
-    input: Value,
-    output: Value,
-    name: String,
-    id: String,
-    performance: Option<String>,
-    trace_data: Option<Value>,
+    pub input: Value,
+    pub output: Value,
+    pub name: String,
+    pub id: String,
+    pub performance: Option<String>,
+    pub trace_data: Option<Value>,
 }

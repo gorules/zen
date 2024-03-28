@@ -4,21 +4,21 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use crate::decision::Decision;
+use crate::handler::custom_node_adapter::{CustomNodeAdapter, NoopCustomNode};
 use crate::handler::graph::DecisionGraphResponse;
 use crate::loader::{ClosureLoader, DecisionLoader, LoaderResponse, LoaderResult, NoopLoader};
-use crate::model::custom_node_adapter::{CustomNodeAdapter, NoopCustomNode};
 use crate::model::DecisionContent;
 use crate::EvaluationError;
 
 /// Structure used for generating and evaluating JDM decisions
 #[derive(Debug, Clone)]
-pub struct DecisionEngine<Loader, Adapter>
+pub struct DecisionEngine<Loader, CustomNode>
 where
     Loader: DecisionLoader,
-    Adapter: CustomNodeAdapter,
+    CustomNode: CustomNodeAdapter,
 {
     loader: Arc<Loader>,
-    adapter: Arc<Adapter>,
+    adapter: Arc<CustomNode>,
 }
 
 #[derive(Debug, Default)]
@@ -41,9 +41,9 @@ impl<L: DecisionLoader, A: CustomNodeAdapter> DecisionEngine<L, A> {
         Self { loader, adapter }
     }
 
-    pub fn with_adapter<Adapter>(self, adapter: Arc<Adapter>) -> DecisionEngine<L, Adapter>
+    pub fn with_adapter<CustomNode>(self, adapter: Arc<CustomNode>) -> DecisionEngine<L, CustomNode>
     where
-        Adapter: CustomNodeAdapter,
+        CustomNode: CustomNodeAdapter,
     {
         DecisionEngine {
             loader: self.loader,

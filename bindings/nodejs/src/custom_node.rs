@@ -1,14 +1,15 @@
-use napi::anyhow::{anyhow, Context};
+use napi::anyhow::anyhow;
 use napi::bindgen_prelude::Promise;
 use napi::threadsafe_function::{ErrorStrategy, ThreadSafeCallContext, ThreadsafeFunction};
 use napi::{Env, JsFunction};
 use serde::Serialize;
 use serde_json::Value;
-use zen_engine::handler::custom_node_adapter::CustomNodeAdapter;
 
-use crate::types::ZenEngineHandlerRequest;
-use zen_engine::handler::node::{NodeRequest, NodeResult};
+use zen_engine::handler::custom_node_adapter::CustomNodeAdapter;
+use zen_engine::handler::node::{NodeRequest, NodeResponse, NodeResult};
 use zen_engine::model::DecisionNode;
+
+use crate::types::{ZenEngineHandlerRequest, ZenEngineHandlerResponse};
 
 pub(crate) struct CustomNode {
     function: Option<ThreadsafeFunction<ZenEngineHandlerRequest, ErrorStrategy::Fatal>>,
@@ -50,7 +51,7 @@ impl CustomNodeAdapter for CustomNode {
 
         let node_data = crate::types::DecisionNode::try_from(request.node.clone()).unwrap();
 
-        let promise: Promise<Option<Value>> = function
+        let promise: Promise<ZenEngineHandlerResponse> = function
             .clone()
             .call_async(ZenEngineHandlerRequest {
                 input: request.input.clone(),
@@ -60,11 +61,11 @@ impl CustomNodeAdapter for CustomNode {
             .await
             .map_err(|err| anyhow!(err.reason))?;
 
-        let result = promise
-            .await
-            .map_err(|err| anyhow!(err.reason))?
-            .unwrap_or(Value::Null);
+        let result = promise.await.map_err(|err| anyhow!(err.reason))?;
 
-        serde_json::from_value(result).context("Failed to deserialize return data")
+        Ok(NodeResponse {
+            output: result.output,
+            trace_data: result.trace_data,
+        })
     }
 }

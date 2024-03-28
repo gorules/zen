@@ -53,6 +53,13 @@ typedef struct ZenDecisionLoaderResult {
 
 typedef struct ZenDecisionLoaderResult (*ZenDecisionLoaderNativeCallback)(const char *key);
 
+typedef struct ZenCustomNodeResult {
+  const char *content;
+  char *error;
+} ZenCustomNodeResult;
+
+typedef struct ZenCustomNodeResult (*ZenCustomNodeNativeCallback)(const char *request);
+
 /**
  * Frees ZenDecision
  */
@@ -100,9 +107,6 @@ struct ZenResult_c_char zen_engine_evaluate(const struct ZenEngineStruct *engine
 struct ZenResult_ZenDecisionStruct zen_engine_get_decision(const struct ZenEngineStruct *engine,
                                                            const char *key);
 
-/**
- * Evaluate expression, responsible for freeing expression and context
- */
 struct ZenResult_c_char zen_evaluate_expression(const char *expression, const char *context);
 
 /**
@@ -113,12 +117,21 @@ struct ZenResult_c_char zen_evaluate_expression(const char *expression, const ch
 struct ZenResult_c_int zen_evaluate_unary_expression(const char *expression, const char *context);
 
 /**
+ * Evaluate unary expression, responsible for freeing expression and context
+ * True = 1
+ * False = 0
+ */
+struct ZenResult_c_char zen_evaluate_template(const char *template_, const char *context);
+
+/**
  * Creates a new ZenEngine instance with loader, caller is responsible for freeing the returned reference
  * by calling zen_engine_free.
  */
-struct ZenEngineStruct *zen_engine_new_with_native_loader(ZenDecisionLoaderNativeCallback callback);
+struct ZenEngineStruct *zen_engine_new_native(ZenDecisionLoaderNativeCallback loader_callback,
+                                              ZenCustomNodeNativeCallback custom_node_callback);
 
 /**
  * Creates a DecisionEngine for using GoLang handler (optional). Caller is responsible for freeing DecisionEngine.
  */
-struct ZenEngineStruct *zen_engine_new_with_go_loader(const uintptr_t *maybe_loader);
+struct ZenEngineStruct *zen_engine_new_golang(const uintptr_t *maybe_loader,
+                                              const uintptr_t *maybe_custom_node);

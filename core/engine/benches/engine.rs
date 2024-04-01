@@ -3,10 +3,12 @@ use criterion::{criterion_group, criterion_main, Bencher, Criterion};
 use futures::executor::block_on;
 use serde_json::{json, Value};
 use std::path::Path;
+use std::sync::Arc;
+use zen_engine::handler::custom_node_adapter::NoopCustomNode;
 use zen_engine::loader::{FilesystemLoader, FilesystemLoaderOptions};
 use zen_engine::DecisionEngine;
 
-fn create_graph() -> DecisionEngine<FilesystemLoader> {
+fn create_graph() -> DecisionEngine<FilesystemLoader, NoopCustomNode> {
     let cargo_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let loader = FilesystemLoader::new(FilesystemLoaderOptions {
         keep_in_memory: true,
@@ -17,7 +19,7 @@ fn create_graph() -> DecisionEngine<FilesystemLoader> {
             .unwrap(),
     });
 
-    DecisionEngine::new(loader)
+    DecisionEngine::new(Arc::new(loader), Arc::new(NoopCustomNode::default()))
 }
 
 fn bench_decision(b: &mut Bencher, key: &str, context: Value) {

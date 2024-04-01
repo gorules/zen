@@ -142,7 +142,7 @@ pub enum SwitchStatementHitPolicy {
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct CustomNodeContent {
-    pub component: String,
+    pub kind: String,
     pub config: Value,
 }
 
@@ -151,10 +151,10 @@ impl ::bincode::Encode for CustomNodeContent {
     fn encode<__E: ::bincode::enc::Encoder>(
         &self,
         encoder: &mut __E,
-    ) -> core::result::Result<(), ::bincode::error::EncodeError> {
+    ) -> Result<(), ::bincode::error::EncodeError> {
         let config_string = self.config.to_string();
 
-        ::bincode::Encode::encode(&self.component, encoder)?;
+        ::bincode::Encode::encode(&self.kind, encoder)?;
         ::bincode::Encode::encode(config_string.as_bytes(), encoder)?;
         Ok(())
     }
@@ -164,14 +164,14 @@ impl ::bincode::Encode for CustomNodeContent {
 impl ::bincode::Decode for CustomNodeContent {
     fn decode<__D: ::bincode::de::Decoder>(
         decoder: &mut __D,
-    ) -> core::result::Result<Self, ::bincode::error::DecodeError> {
-        let component: String = ::bincode::Decode::decode(decoder)?;
+    ) -> Result<Self, ::bincode::error::DecodeError> {
+        let kind: String = ::bincode::Decode::decode(decoder)?;
         let config_string: String = ::bincode::Decode::decode(decoder)?;
 
         let config = serde_json::from_str(config_string.as_str())
             .map_err(|_| ::bincode::error::DecodeError::Other("failed to deserialize value"))?;
 
-        Ok(Self { component, config })
+        Ok(Self { kind, config })
     }
 }
 
@@ -179,13 +179,13 @@ impl ::bincode::Decode for CustomNodeContent {
 impl<'__de> ::bincode::BorrowDecode<'__de> for CustomNodeContent {
     fn borrow_decode<__D: ::bincode::de::BorrowDecoder<'__de>>(
         decoder: &mut __D,
-    ) -> core::result::Result<Self, ::bincode::error::DecodeError> {
-        let component: String = ::bincode::BorrowDecode::borrow_decode(decoder)?;
+    ) -> Result<Self, ::bincode::error::DecodeError> {
+        let kind: String = ::bincode::BorrowDecode::borrow_decode(decoder)?;
         let config_string: String = ::bincode::BorrowDecode::borrow_decode(decoder)?;
 
         let config = serde_json::from_str(config_string.as_str())
             .map_err(|_| ::bincode::error::DecodeError::Other("failed to deserialize value"))?;
 
-        Ok(Self { component, config })
+        Ok(Self { kind, config })
     }
 }

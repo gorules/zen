@@ -1,21 +1,20 @@
 use anyhow::{anyhow, Context};
 use json_dotpath::DotPaths;
 use pyo3::{pyclass, pymethods, PyObject, PyResult, Python, ToPyObject};
-use pythonize::pythonize;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::value::PyValue;
 use zen_engine::handler::node::{NodeRequest, NodeResponse};
-use zen_engine::model::{CustomNodeContent, DecisionNode, DecisionNodeKind};
+use zen_engine::model::{DecisionNode, DecisionNodeKind};
+
+use crate::value::{value_to_object, PyValue};
 
 #[derive(Serialize)]
 struct CustomDecisionNode {
     pub id: String,
     pub name: String,
-    #[serde(rename = "type")]
     pub kind: String,
-    pub content: CustomNodeContent,
+    pub config: Value,
 }
 
 impl TryFrom<DecisionNode> for CustomDecisionNode {
@@ -29,34 +28,34 @@ impl TryFrom<DecisionNode> for CustomDecisionNode {
         return Ok(Self {
             id: value.id,
             name: value.name,
-            kind: String::from("customNode"),
-            content,
+            kind: content.kind,
+            config: content.config,
         });
     }
 }
 
 #[pyclass]
 pub struct PyNodeRequest {
-    #[pyo3(get)]
-    pub iteration: u8,
+    inner_node: CustomDecisionNode,
+    inner_input: Value,
+
     #[pyo3(get)]
     pub input: PyObject,
     #[pyo3(get)]
     pub node: PyObject,
-
-    inner_node: CustomDecisionNode,
-    inner_input: Value,
 }
 
 impl PyNodeRequest {
     pub fn from_request(py: Python, value: &NodeRequest<'_>) -> pythonize::Result<PyNodeRequest> {
+        let inner_node = value.node.clone().try_into().unwrap();
+        let node_val = serde_json::to_value(&inner_node).unwrap();
+
         Ok(Self {
-            iteration: value.iteration,
-            input: pythonize(py, &value.input)?,
-            node: pythonize(py, &value.node)?,
+            input: value_to_object(py, &value.input),
+            node: value_to_object(py, &node_val),
 
             inner_input: value.input.clone(),
-            inner_node: value.node.clone().try_into().unwrap(),
+            inner_node,
         })
     }
 }
@@ -64,7 +63,7 @@ impl PyNodeRequest {
 #[pymethods]
 impl PyNodeRequest {
     fn get_field(&self, py: Python, path: String) -> PyResult<PyObject> {
-        let node_config = &self.inner_node.content.config;
+        let node_config = &self.inner_node.config;
 
         let selected_value: Value = node_config
             .dot_get(path.as_str())
@@ -82,7 +81,7 @@ impl PyNodeRequest {
     }
 
     fn get_field_raw(&self, py: Python, path: String) -> PyResult<PyObject> {
-        let node_config = &self.inner_node.content.config;
+        let node_config = &self.inner_node.config;
 
         let selected_value: Value = node_config
             .dot_get(path.as_str())

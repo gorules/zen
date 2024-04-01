@@ -6,7 +6,7 @@ use std::collections::HashMap;
 #[derive(Clone, Debug)]
 pub struct PyValue(pub Value);
 
-fn value_to_object(val: &Value, py: Python<'_>) -> PyObject {
+pub fn value_to_object(py: Python<'_>, val: &Value) -> PyObject {
     match val {
         Value::Null => py.None(),
         Value::Bool(b) => b.to_object(py),
@@ -18,11 +18,11 @@ fn value_to_object(val: &Value, py: Python<'_>) -> PyObject {
         }
         Value::String(s) => s.to_object(py),
         Value::Array(v) => {
-            let inner: Vec<_> = v.iter().map(|x| value_to_object(x, py)).collect();
+            let inner: Vec<_> = v.iter().map(|x| value_to_object(py, x)).collect();
             inner.to_object(py)
         }
         Value::Object(m) => {
-            let inner: HashMap<_, _> = m.iter().map(|(k, v)| (k, value_to_object(v, py))).collect();
+            let inner: HashMap<_, _> = m.iter().map(|(k, v)| (k, value_to_object(py, v))).collect();
             inner.to_object(py)
         }
     }
@@ -30,6 +30,6 @@ fn value_to_object(val: &Value, py: Python<'_>) -> PyObject {
 
 impl ToPyObject for PyValue {
     fn to_object(&self, py: Python<'_>) -> PyObject {
-        value_to_object(&self.0, py)
+        value_to_object(py, &self.0)
     }
 }

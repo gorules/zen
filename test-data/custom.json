@@ -16,9 +16,9 @@
         "x": 470,
         "y": 240
       },
-      "name": "customNode 1",
+      "name": "customNode1",
       "content": {
-        "component": "sum",
+        "kind": "sum",
         "config": {
           "prop1": "{{ a + 10 }}"
         }

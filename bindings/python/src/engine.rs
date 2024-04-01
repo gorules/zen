@@ -57,7 +57,7 @@ impl PyZenEngine {
             None => None,
         };
 
-        let custom_node = match options.get_item("custom_handler")? {
+        let custom_node = match options.get_item("customHandler")? {
             Some(custom_node) => Some(Python::with_gil(|py| custom_node.to_object(py))),
             None => None,
         };

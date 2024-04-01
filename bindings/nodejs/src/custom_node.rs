@@ -2,12 +2,9 @@ use napi::anyhow::anyhow;
 use napi::bindgen_prelude::Promise;
 use napi::threadsafe_function::{ErrorStrategy, ThreadSafeCallContext, ThreadsafeFunction};
 use napi::{Env, JsFunction};
-use serde::Serialize;
-use serde_json::Value;
 
 use zen_engine::handler::custom_node_adapter::CustomNodeAdapter;
 use zen_engine::handler::node::{NodeRequest, NodeResponse, NodeResult};
-use zen_engine::model::DecisionNode;
 
 use crate::types::{ZenEngineHandlerRequest, ZenEngineHandlerResponse};
 
@@ -36,13 +33,6 @@ impl CustomNode {
     }
 }
 
-#[derive(Serialize)]
-struct FunctionRequestData<'a, 'b> {
-    input: &'a Value,
-    node: &'b DecisionNode,
-    iteration: u8,
-}
-
 impl CustomNodeAdapter for CustomNode {
     async fn handle(&self, request: &NodeRequest<'_>) -> NodeResult {
         let Some(function) = &self.function else {
@@ -56,7 +46,6 @@ impl CustomNodeAdapter for CustomNode {
             .call_async(ZenEngineHandlerRequest {
                 input: request.input.clone(),
                 node: node_data,
-                iteration: request.iteration,
             })
             .await
             .map_err(|err| anyhow!(err.reason))?;

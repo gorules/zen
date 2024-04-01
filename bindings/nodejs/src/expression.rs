@@ -2,45 +2,55 @@ use napi::anyhow::anyhow;
 use napi_derive::napi;
 use serde_json::Value;
 
+#[napi]
+pub fn evaluate_expression_sync(expression: String, context: Option<Value>) -> napi::Result<Value> {
+    let ctx = context.unwrap_or(Value::Null);
+
+    Ok(
+        zen_expression::evaluate_expression(expression.as_str(), &ctx)
+            .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?,
+    )
+}
+
+#[allow(dead_code)]
+#[napi]
+pub fn evaluate_unary_expression_sync(expression: String, context: Value) -> napi::Result<bool> {
+    Ok(
+        zen_expression::evaluate_unary_expression(expression.as_str(), &context)
+            .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?,
+    )
+}
+
+#[allow(dead_code)]
+#[napi]
+pub fn render_template_sync(template: String, context: Value) -> napi::Result<Value> {
+    Ok(zen_template::render(template.as_str(), &context)
+        .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?)
+}
+
 #[allow(dead_code)]
 #[napi]
 pub async fn evaluate_expression(
     expression: String,
     context: Option<Value>,
 ) -> napi::Result<Value> {
-    let ctx = context.unwrap_or(Value::Null);
-
-    let result: Value = napi::tokio::spawn(async move {
-        zen_expression::evaluate_expression(expression.as_str(), &ctx)
-    })
-    .await
-    .map_err(|_| anyhow!("Hook timed out"))?
-    .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?;
-
-    Ok(result)
+    napi::tokio::spawn(async move { evaluate_expression_sync(expression, context) })
+        .await
+        .map_err(|_| anyhow!("Hook timed out"))?
 }
 
 #[allow(dead_code)]
 #[napi]
 pub async fn evaluate_unary_expression(expression: String, context: Value) -> napi::Result<bool> {
-    let result: bool = napi::tokio::spawn(async move {
-        zen_expression::evaluate_unary_expression(expression.as_str(), &context)
-    })
-    .await
-    .map_err(|_| anyhow!("Hook timed out"))?
-    .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?;
-
-    Ok(result)
+    napi::tokio::spawn(async move { evaluate_unary_expression_sync(expression, context) })
+        .await
+        .map_err(|_| anyhow!("Hook timed out"))?
 }
 
 #[allow(dead_code)]
 #[napi]
 pub async fn render_template(template: String, context: Value) -> napi::Result<Value> {
-    let result: Value =
-        napi::tokio::spawn(async move { zen_template::render(template.as_str(), &context) })
-            .await
-            .map_err(|_| anyhow!("Hook timed out"))?
-            .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?;
-
-    Ok(result)
+    napi::tokio::spawn(async move { render_template_sync(template, context) })
+        .await
+        .map_err(|_| anyhow!("Hook timed out"))?
 }

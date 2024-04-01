@@ -11,6 +11,9 @@ export interface ZenEngineOptions {
   loader?: (key: string) => Promise<Buffer>
   customHandler?: (request: ZenEngineHandlerRequest) => Promise<ZenEngineHandlerResponse>
 }
+export function evaluateExpressionSync(expression: string, context?: any | undefined | null): any
+export function evaluateUnaryExpressionSync(expression: string, context: any): boolean
+export function renderTemplateSync(template: string, context: any): any
 export function evaluateExpression(expression: string, context?: any | undefined | null): Promise<any>
 export function evaluateUnaryExpression(expression: string, context: any): Promise<boolean>
 export function renderTemplate(template: string, context: any): Promise<any>
@@ -34,12 +37,7 @@ export interface ZenEngineHandlerResponse {
 export interface DecisionNode {
   id: string
   name: string
-  type: string
-  content: CustomNodeContent
-}
-export interface CustomNodeContent {
-  component: string
-  /** Config is where custom data is kept. Usually in JSON format. */
+  kind: string
   config: any
 }
 export class ZenDecision {
@@ -56,7 +54,6 @@ export class ZenEngine {
 export class ZenEngineHandlerRequest {
   input: any
   node: DecisionNode
-  iteration: number
   constructor()
   getField(path: string): unknown
   getFieldRaw(path: string): unknown

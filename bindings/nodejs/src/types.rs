@@ -63,9 +63,8 @@ pub struct ZenEngineHandlerResponse {
 pub struct DecisionNode {
     pub id: String,
     pub name: String,
-    #[napi(js_name = "type")]
     pub kind: String,
-    pub content: CustomNodeContent,
+    pub config: Value,
 }
 
 impl TryFrom<zen_engine::model::DecisionNode> for DecisionNode {
@@ -79,28 +78,16 @@ impl TryFrom<zen_engine::model::DecisionNode> for DecisionNode {
         Ok(Self {
             id: value.id,
             name: value.name,
-            kind: String::from("customNode"),
-            content: CustomNodeContent {
-                component: content.component,
-                config: content.config,
-            },
+            kind: content.kind,
+            config: content.config,
         })
     }
-}
-
-#[derive(Clone)]
-#[napi(object)]
-pub struct CustomNodeContent {
-    pub component: String,
-    /// Config is where custom data is kept. Usually in JSON format.
-    pub config: Value,
 }
 
 #[napi]
 pub struct ZenEngineHandlerRequest {
     pub input: Value,
     pub node: DecisionNode,
-    pub iteration: u8,
 }
 
 #[napi]
@@ -112,7 +99,7 @@ impl ZenEngineHandlerRequest {
 
     #[napi(ts_return_type = "unknown")]
     pub fn get_field(&self, path: String) -> napi::Result<Value> {
-        let node_config = &self.node.content.config;
+        let node_config = &self.node.config;
 
         let selected_value: Value = node_config
             .dot_get(path.as_str())
@@ -131,7 +118,7 @@ impl ZenEngineHandlerRequest {
 
     #[napi(ts_return_type = "unknown")]
     pub fn get_field_raw(&self, path: String) -> napi::Result<Value> {
-        let node_config = &self.node.content.config;
+        let node_config = &self.node.config;
 
         let selected_value: Value = node_config
             .dot_get(path.as_str())

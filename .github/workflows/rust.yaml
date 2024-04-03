@@ -123,5 +123,8 @@ jobs:
       - name: Publish Expression
         run: cd core/expression && cargo publish
 
+      - name: Publish Template
+        run: cd core/template && cargo publish
+
       - name: Publish Engine
         run: cd core/engine && cargo publish

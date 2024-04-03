@@ -48,12 +48,12 @@ impl DecisionLoader {
             .await
             .map_err(|e| LoaderError::Internal {
             key: key.to_string(),
-            source: e.into(),
+            source: anyhow!(e.reason),
         })?;
 
         let result = promise.await.map_err(|e| LoaderError::Internal {
             key: key.to_string(),
-            source: e.into(),
+            source: anyhow!(e.reason),
         })?;
 
         let Some(buffer) = result else {

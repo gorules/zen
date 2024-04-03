@@ -12,10 +12,12 @@ crate-type = ["cdylib"]
 [dependencies]
 async-trait = { workspace = true }
 anyhow = { workspace = true }
-pyo3 = { version = "0.20.2", features = ["anyhow", "serde"] }
-pythonize = "0.20.0"
+pyo3 = { version = "0.20", features = ["anyhow", "serde"] }
+pythonize = "0.20"
+json_dotpath = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 futures = { workspace = true }
 zen-engine = { path = "../../core/engine" }
 zen-expression = { path = "../../core/expression" }
+zen-template = { path = "../../core/template" }

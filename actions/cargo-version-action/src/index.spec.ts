@@ -7,28 +7,29 @@ import * as path from 'path';
 
 // language=Toml
 const makeToml = ({ version }): string => `
-[package]
-authors = ["GoRules Team <bot@gorules.io>"]
-description = "Business rules engine"
-name = "zen-engine"
-license = "MIT"
-version = "${version}"
-edition = "2021"
-repository = "https://github.com/gorules/zen.git"
+    [package]
+    authors = ["GoRules Team <bot@gorules.io>"]
+    description = "Business rules engine"
+    name = "zen-engine"
+    license = "MIT"
+    version = "${version}"
+    edition = "2021"
+    repository = "https://github.com/gorules/zen.git"
 
-[dependencies]
-async-recursion = "1.0.4"
-anyhow = { workspace = true }
-thiserror = { workspace = true }
-async-trait = { workspace = true }
-bincode = { workspace = true, optional = true }
-serde_json = { workspace = true, features = ["arbitrary_precision"] }
-serde = { version = "1", features = ["derive"] }
-serde_v8 = { version = "0.88.0" }
-once_cell = { version = "1.17.1" }
-futures = "0.3.27"
-v8 = { version = "0.66.0" }
-zen-expression = { path = "../expression", version = "${version}" }
+    [dependencies]
+    async-recursion = "1.0.4"
+    anyhow = { workspace = true }
+    thiserror = { workspace = true }
+    async-trait = { workspace = true }
+    bincode = { workspace = true, optional = true }
+    serde_json = { workspace = true, features = ["arbitrary_precision"] }
+    serde = { version = "1", features = ["derive"] }
+    serde_v8 = { version = "0.88.0" }
+    once_cell = { version = "1.17.1" }
+    futures = "0.3.27"
+    v8 = { version = "0.66.0" }
+    zen-expression = { path = "../expression", version = "${version}" }
+    zen-template = { path = "../template", version = "${version}" }
 `;
 
 describe('GitHub Action', () => {

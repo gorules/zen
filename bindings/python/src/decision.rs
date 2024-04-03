@@ -1,19 +1,23 @@
-use crate::engine::PyZenEvaluateOptions;
-use crate::loader::PyDecisionLoader;
-use crate::value::PyValue;
+use std::sync::Arc;
+
 use anyhow::{anyhow, Context};
 use pyo3::types::PyDict;
 use pyo3::{pyclass, pymethods, PyObject, PyResult, Python, ToPyObject};
 use pythonize::depythonize;
-use std::sync::Arc;
+
 use zen_engine::{Decision, EvaluationOptions};
+
+use crate::custom_node::PyCustomNode;
+use crate::engine::PyZenEvaluateOptions;
+use crate::loader::PyDecisionLoader;
+use crate::value::PyValue;
 
 #[pyclass]
 #[pyo3(name = "ZenDecision")]
-pub struct PyZenDecision(pub(crate) Arc<Decision<PyDecisionLoader>>);
+pub struct PyZenDecision(pub(crate) Arc<Decision<PyDecisionLoader, PyCustomNode>>);
 
-impl From<Decision<PyDecisionLoader>> for PyZenDecision {
-    fn from(value: Decision<PyDecisionLoader>) -> Self {
+impl From<Decision<PyDecisionLoader, PyCustomNode>> for PyZenDecision {
+    fn from(value: Decision<PyDecisionLoader, PyCustomNode>) -> Self {
         Self(value.into())
     }
 }

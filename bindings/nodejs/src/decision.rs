@@ -1,5 +1,7 @@
+use crate::custom_node::CustomNode;
 use crate::engine::ZenEvaluateOptions;
 use crate::loader::DecisionLoader;
+use crate::types::ZenEngineResponse;
 use napi::anyhow::anyhow;
 use napi::tokio;
 use napi_derive::napi;
@@ -8,10 +10,10 @@ use std::sync::Arc;
 use zen_engine::{Decision, EvaluationOptions};
 
 #[napi]
-pub struct ZenDecision(pub(crate) Arc<Decision<DecisionLoader>>);
+pub struct ZenDecision(pub(crate) Arc<Decision<DecisionLoader, CustomNode>>);
 
-impl From<Decision<DecisionLoader>> for ZenDecision {
-    fn from(value: Decision<DecisionLoader>) -> Self {
+impl From<Decision<DecisionLoader, CustomNode>> for ZenDecision {
+    fn from(value: Decision<DecisionLoader, CustomNode>) -> Self {
         Self(value.into())
     }
 }
@@ -28,7 +30,7 @@ impl ZenDecision {
         &self,
         context: Value,
         opts: Option<ZenEvaluateOptions>,
-    ) -> napi::Result<Value> {
+    ) -> napi::Result<ZenEngineResponse> {
         let decision = self.0.clone();
         let result = tokio::spawn(async move {
             let options = opts.unwrap_or_default();
@@ -46,7 +48,7 @@ impl ZenDecision {
             anyhow!(serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string()))
         })?;
 
-        Ok(serde_json::to_value(&result)?)
+        Ok(ZenEngineResponse::from(result))
     }
 
     #[napi]

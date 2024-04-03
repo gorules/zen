@@ -9,17 +9,52 @@ export interface ZenEvaluateOptions {
 }
 export interface ZenEngineOptions {
   loader?: (key: string) => Promise<Buffer>
+  customHandler?: (request: ZenEngineHandlerRequest) => Promise<ZenEngineHandlerResponse>
 }
+export function evaluateExpressionSync(expression: string, context?: any | undefined | null): any
+export function evaluateUnaryExpressionSync(expression: string, context: any): boolean
+export function renderTemplateSync(template: string, context: any): any
 export function evaluateExpression(expression: string, context?: any | undefined | null): Promise<any>
 export function evaluateUnaryExpression(expression: string, context: any): Promise<boolean>
+export function renderTemplate(template: string, context: any): Promise<any>
+export interface ZenEngineTrace {
+  id: string
+  name: string
+  input: any
+  output: any
+  performance?: string
+  traceData?: any
+}
+export interface ZenEngineResponse {
+  performance: string
+  result: any
+  trace?: Record<string, ZenEngineTrace>
+}
+export interface ZenEngineHandlerResponse {
+  output: any
+  traceData?: any
+}
+export interface DecisionNode {
+  id: string
+  name: string
+  kind: string
+  config: any
+}
 export class ZenDecision {
   constructor()
-  evaluate(context: any, opts?: ZenEvaluateOptions | undefined | null): Promise<any>
+  evaluate(context: any, opts?: ZenEvaluateOptions | undefined | null): Promise<ZenEngineResponse>
   validate(): void
 }
 export class ZenEngine {
   constructor(options?: ZenEngineOptions | undefined | null)
-  evaluate(key: string, context: any, opts?: ZenEvaluateOptions | undefined | null): Promise<any>
+  evaluate(key: string, context: any, opts?: ZenEvaluateOptions | undefined | null): Promise<ZenEngineResponse>
   createDecision(content: Buffer): ZenDecision
   getDecision(key: string): Promise<ZenDecision>
+}
+export class ZenEngineHandlerRequest {
+  input: any
+  node: DecisionNode
+  constructor()
+  getField(path: string): unknown
+  getFieldRaw(path: string): unknown
 }

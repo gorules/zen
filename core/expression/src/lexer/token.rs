@@ -25,6 +25,7 @@ pub enum TokenKind {
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Display)]
 pub enum Identifier {
     ContextReference,  // $
+    RootReference,     // $root
     CallbackReference, // #
     Null,              // null
     Variable,
@@ -34,6 +35,7 @@ impl From<&str> for Identifier {
     fn from(value: &str) -> Self {
         match value {
             "$" => Identifier::ContextReference,
+            "$root" => Identifier::RootReference,
             "#" => Identifier::CallbackReference,
             "null" => Identifier::Null,
             _ => Identifier::Variable,

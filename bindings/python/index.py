@@ -6,6 +6,12 @@ def loader(key):
     with open("../../test-data/" + key, "r") as f:
         return f.read()
 
+def custom_handler(request):
+    p1 = request.get_field("prop1")
+    return {
+        "output": { "sum": p1 }
+    }
+
 # The test based on unittest module
 class ZenEngine(unittest.TestCase):
     def test_decision_using_loader(self):
@@ -41,6 +47,16 @@ class ZenEngine(unittest.TestCase):
         r = functionDecision.evaluate({"input": 15})
         self.assertEqual(r["result"]["output"], 30)
 
+    def test_engine_custom_handler(self):
+        engine = zen.ZenEngine({ "loader": loader, "customHandler": custom_handler })
+        r1 = engine.evaluate("custom.json", {"a": 10})
+        r2 = engine.evaluate("custom.json", {"a": 20})
+        r3 = engine.evaluate("custom.json", {"a": 30})
+
+        self.assertEqual(r1["result"]["sum"], 20)
+        self.assertEqual(r2["result"]["sum"], 30)
+        self.assertEqual(r3["result"]["sum"], 40)
+
     def test_evaluate_expression(self):
         result = zen.evaluate_expression("sum(a)", { "a": [1, 2, 3, 4] })
         self.assertEqual(result, 10)
@@ -48,6 +64,10 @@ class ZenEngine(unittest.TestCase):
     def test_evaluate_unary_expression(self):
         result = zen.evaluate_unary_expression("'FR', 'ES', 'GB'", { "$": "GB" })
         self.assertEqual(result, True)
+
+    def test_render_template(self):
+        result = zen.render_template("{{ a + b }}", { "a": 10, "b": 20 })
+        self.assertEqual(result, 30)
 
 # run the test
 unittest.main()

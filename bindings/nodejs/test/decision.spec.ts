@@ -1,4 +1,11 @@
-import {ZenEngine, evaluateExpression, evaluateUnaryExpression} from "../index";
+import {
+  ZenEngine,
+  evaluateExpression,
+  evaluateUnaryExpression,
+  renderTemplate,
+  evaluateExpressionSync,
+  evaluateUnaryExpressionSync, renderTemplateSync
+} from "../index";
 import fs from 'fs/promises';
 import path from 'path';
 import {describe, expect, it, jest} from "@jest/globals";
@@ -49,6 +56,31 @@ describe('ZenEngine', () => {
     const r = await functionDecision.evaluate({input: 15});
     expect(r.result.output).toEqual(30);
   }, 10000)
+
+  it('Evaluate custom nodes with a handler', async () => {
+    const engine = new ZenEngine({
+      loader,
+      customHandler: async (request) => {
+        const prop1 = request.getField('prop1') as number;
+        const prop1Raw = request.getFieldRaw('prop1');
+
+        expect(prop1).toEqual(15);
+        expect(prop1Raw).toEqual('{{ a + 10 }}')
+        expect(request.node).toMatchObject({
+          id: '138b3b11-ff46-450f-9704-3f3c712067b2',
+          name: 'customNode1',
+          kind: 'sum',
+          config: {
+            prop1: '{{ a + 10 }}'
+          }
+        });
+        return {output: {data: prop1 + 10}}
+      }
+    });
+
+    const r = await engine.evaluate('custom.json', {a: 5});
+    expect(r.result.data).toEqual(25);
+  });
 })
 
 describe('Expressions', () => {
@@ -63,6 +95,7 @@ describe('Expressions', () => {
 
     for (const {expression, result, context} of expressions) {
       expect(await evaluateExpression(expression, context)).toEqual(result);
+      expect(evaluateExpressionSync(expression, context)).toEqual(result);
     }
   });
 
@@ -76,6 +109,21 @@ describe('Expressions', () => {
 
     for (const {expression, result, context} of expressions) {
       expect(await evaluateUnaryExpression(expression, context)).toEqual(result);
+      expect(evaluateUnaryExpressionSync(expression, context)).toEqual(result);
+    }
+  });
+
+  it('Renders templates', async () => {
+    const templateCases = [
+      {template: '{{ a + 10 }}', context: {a: 10}, result: 20},
+      {template: '{{ a + 10 }}', context: {a: 15}, result: 25},
+      {template: '{{ a + 10 }}', context: {a: 20}, result: 30},
+      {template: '{{ a + 10 }}', context: {a: 25}, result: 35},
+    ];
+
+    for (const {template, context, result} of templateCases) {
+      expect(await renderTemplate(template, context)).toEqual(result);
+      expect(renderTemplateSync(template, context)).toEqual(result);
     }
   });
 });

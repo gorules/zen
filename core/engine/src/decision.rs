@@ -1,49 +1,69 @@
+use std::sync::Arc;
+
+use serde_json::Value;
+
 use crate::engine::EvaluationOptions;
+use crate::handler::custom_node_adapter::{CustomNodeAdapter, NoopCustomNode};
 use crate::handler::graph::{DecisionGraph, DecisionGraphConfig, DecisionGraphResponse};
 use crate::loader::{DecisionLoader, NoopLoader};
 use crate::model::DecisionContent;
 use crate::{DecisionGraphValidationError, EvaluationError};
-use serde_json::Value;
-use std::sync::Arc;
 
 /// Represents a JDM decision which can be evaluated
 #[derive(Debug, Clone)]
-pub struct Decision<L>
+pub struct Decision<Loader, CustomNode>
 where
-    L: DecisionLoader,
+    Loader: DecisionLoader,
+    CustomNode: CustomNodeAdapter,
 {
     content: Arc<DecisionContent>,
-    loader: Arc<L>,
+    loader: Arc<Loader>,
+    adapter: Arc<CustomNode>,
 }
 
-impl From<DecisionContent> for Decision<NoopLoader> {
+impl From<DecisionContent> for Decision<NoopLoader, NoopCustomNode> {
     fn from(value: DecisionContent) -> Self {
         Self {
             content: value.into(),
             loader: NoopLoader::default().into(),
+            adapter: NoopCustomNode::default().into(),
         }
     }
 }
 
-impl From<Arc<DecisionContent>> for Decision<NoopLoader> {
+impl From<Arc<DecisionContent>> for Decision<NoopLoader, NoopCustomNode> {
     fn from(value: Arc<DecisionContent>) -> Self {
         Self {
             content: value,
             loader: NoopLoader::default().into(),
+            adapter: NoopCustomNode::default().into(),
         }
     }
 }
 
-impl<L> Decision<L>
+impl<L, A> Decision<L, A>
 where
     L: DecisionLoader,
+    A: CustomNodeAdapter,
 {
-    pub fn with_loader<NL>(self, loader: Arc<NL>) -> Decision<NL>
+    pub fn with_loader<Loader>(self, loader: Arc<Loader>) -> Decision<Loader, A>
     where
-        NL: DecisionLoader,
+        Loader: DecisionLoader,
     {
         Decision {
             loader,
+            adapter: self.adapter,
+            content: self.content,
+        }
+    }
+
+    pub fn with_adapter<Adapter>(self, adapter: Arc<Adapter>) -> Decision<L, Adapter>
+    where
+        Adapter: CustomNodeAdapter,
+    {
+        Decision {
+            loader: self.loader,
+            adapter,
             content: self.content,
         }
     }
@@ -66,6 +86,7 @@ where
             max_depth: options.max_depth.unwrap_or(5),
             trace: options.trace.unwrap_or_default(),
             loader: self.loader.clone(),
+            adapter: self.adapter.clone(),
             iteration: 0,
             content: &self.content,
         })?;
@@ -78,6 +99,7 @@ where
             max_depth: 1,
             trace: false,
             loader: self.loader.clone(),
+            adapter: self.adapter.clone(),
             iteration: 0,
             content: &self.content,
         })?;

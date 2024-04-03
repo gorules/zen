@@ -62,12 +62,36 @@ impl GraphWalker {
         self.node_data.get(&node_id)
     }
 
+    pub fn get_all_node_data(&self, g: &StableDiDecisionGraph) -> Value {
+        let node_values: Map<String, Value> = self
+            .node_data
+            .iter()
+            .map(|(idx, value)| {
+                let weight = g.node_weight(*idx).unwrap();
+                (weight.name.clone(), value.clone())
+            })
+            .collect();
+
+        Value::Object(node_values)
+    }
+
     pub fn set_node_data(&mut self, node_id: NodeIndex, value: Value) {
         self.node_data.insert(node_id, value);
     }
 
-    pub fn incoming_node_data(&self, g: &StableDiDecisionGraph, node_id: NodeIndex) -> Value {
-        self.merge_node_data(g.neighbors_directed(node_id, Incoming))
+    pub fn incoming_node_data(
+        &self,
+        g: &StableDiDecisionGraph,
+        node_id: NodeIndex,
+        with_nodes: bool,
+    ) -> Value {
+        let mut value = self.merge_node_data(g.neighbors_directed(node_id, Incoming));
+
+        if let Some(object) = with_nodes.then_some(value.as_object_mut()).flatten() {
+            object.insert("$nodes".to_string(), self.get_all_node_data(g));
+        }
+
+        value
     }
 
     pub fn merge_node_data<I>(&self, iter: I) -> Value
@@ -98,7 +122,7 @@ impl GraphWalker {
             self.ordered.visit(nid);
 
             if let DecisionNodeKind::SwitchNode { content } = &decision_node.kind {
-                let mut input_data = self.incoming_node_data(g, nid);
+                let mut input_data = self.incoming_node_data(g, nid, true);
                 let input_context = json!({ "$": &input_data });
                 merge_json(&mut input_data, &input_context, true);
 

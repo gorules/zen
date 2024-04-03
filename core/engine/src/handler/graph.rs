@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize, Serializer};
 use serde_json::Value;
 use thiserror::Error;
 
+use crate::handler::custom_node_adapter::{CustomNodeAdapter, CustomNodeRequest};
 use crate::handler::decision::DecisionHandler;
 use crate::handler::expression::ExpressionHandler;
 use crate::handler::function::runtime::create_runtime;
@@ -21,8 +22,9 @@ use crate::loader::DecisionLoader;
 use crate::model::{DecisionContent, DecisionNodeKind};
 use crate::{EvaluationError, NodeError};
 
-pub struct DecisionGraph<'a, L: DecisionLoader> {
+pub struct DecisionGraph<'a, L: DecisionLoader, A: CustomNodeAdapter> {
     graph: StableDiDecisionGraph<'a>,
+    adapter: Arc<A>,
     loader: Arc<L>,
     trace: bool,
     max_depth: u8,
@@ -30,17 +32,18 @@ pub struct DecisionGraph<'a, L: DecisionLoader> {
     runtime: Option<Runtime>,
 }
 
-pub struct DecisionGraphConfig<'a, T: DecisionLoader> {
-    pub loader: Arc<T>,
+pub struct DecisionGraphConfig<'a, L: DecisionLoader, A: CustomNodeAdapter> {
+    pub loader: Arc<L>,
+    pub adapter: Arc<A>,
     pub content: &'a DecisionContent,
     pub trace: bool,
     pub iteration: u8,
     pub max_depth: u8,
 }
 
-impl<'a, L: DecisionLoader> DecisionGraph<'a, L> {
+impl<'a, L: DecisionLoader, A: CustomNodeAdapter> DecisionGraph<'a, L, A> {
     pub fn try_new(
-        config: DecisionGraphConfig<'a, L>,
+        config: DecisionGraphConfig<'a, L, A>,
     ) -> Result<Self, DecisionGraphValidationError> {
         let content = config.content;
         let mut graph = StableDiDecisionGraph::new();
@@ -69,7 +72,8 @@ impl<'a, L: DecisionLoader> DecisionGraph<'a, L> {
             graph,
             iteration: config.iteration,
             trace: config.trace,
-            loader: config.loader.clone(),
+            loader: config.loader,
+            adapter: config.adapter,
             max_depth: config.max_depth,
             runtime: None,
         })
@@ -154,13 +158,13 @@ impl<'a, L: DecisionLoader> DecisionGraph<'a, L> {
                 };
             }
 
-            let node_request = NodeRequest {
+            let mut node_request = NodeRequest {
                 node,
                 iteration: self.iteration,
-                input: walker.incoming_node_data(&self.graph, nid),
+                input: walker.incoming_node_data(&self.graph, nid, true),
             };
 
-            match node.kind {
+            match &node.kind {
                 DecisionNodeKind::InputNode => {
                     walker.set_node_data(nid, context.clone());
                     trace!({
@@ -181,6 +185,9 @@ impl<'a, L: DecisionLoader> DecisionGraph<'a, L> {
                         performance: None,
                         trace_data: None,
                     });
+                    if let Some(obj) = node_request.input.as_object_mut() {
+                        obj.remove("$nodes");
+                    }
 
                     return Ok(DecisionGraphResponse {
                         result: node_request.input,
@@ -228,6 +235,7 @@ impl<'a, L: DecisionLoader> DecisionGraph<'a, L> {
                         self.trace,
                         self.max_depth,
                         self.loader.clone(),
+                        self.adapter.clone(),
                         self.runtime.clone(),
                     )
                     .handle(&node_request)
@@ -269,6 +277,26 @@ impl<'a, L: DecisionLoader> DecisionGraph<'a, L> {
                 DecisionNodeKind::ExpressionNode { .. } => {
                     let res = ExpressionHandler::new(self.trace)
                         .handle(&node_request)
+                        .await
+                        .map_err(|e| NodeError {
+                            node_id: node.id.clone(),
+                            source: e.into(),
+                        })?;
+
+                    walker.set_node_data(nid, res.output.clone());
+                    trace!({
+                        input: node_request.input,
+                        output: res.output,
+                        name: node.name.clone(),
+                        id: node.id.clone(),
+                        performance: Some(format!("{:?}", start.elapsed())),
+                        trace_data: res.trace_data,
+                    });
+                }
+                DecisionNodeKind::CustomNode { .. } => {
+                    let res = self
+                        .adapter
+                        .handle(CustomNodeRequest::try_from(&node_request).unwrap())
                         .await
                         .map_err(|e| NodeError {
                             node_id: node.id.clone(),
@@ -351,10 +379,10 @@ pub struct DecisionGraphResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DecisionGraphTrace {
-    input: Value,
-    output: Value,
-    name: String,
-    id: String,
-    performance: Option<String>,
-    trace_data: Option<Value>,
+    pub input: Value,
+    pub output: Value,
+    pub name: String,
+    pub id: String,
+    pub performance: Option<String>,
+    pub trace_data: Option<Value>,
 }

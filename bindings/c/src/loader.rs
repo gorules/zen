@@ -1,7 +1,7 @@
 use crate::languages::native::NativeDecisionLoader;
 use anyhow::anyhow;
 use async_trait::async_trait;
-use std::ffi::{c_char, CString};
+use std::ffi::{c_char, CStr, CString};
 use std::sync::Arc;
 use zen_engine::loader::{DecisionLoader, LoaderError, LoaderResponse, NoopLoader};
 use zen_engine::model::DecisionContent;
@@ -54,7 +54,7 @@ impl ZenDecisionLoaderResult {
         }
 
         let maybe_content = match self.content.is_null() {
-            false => Some(unsafe { CString::from_raw(self.content) }),
+            false => Some(unsafe { CStr::from_ptr(self.content) }),
             true => None,
         };
 
@@ -63,13 +63,8 @@ impl ZenDecisionLoaderResult {
             return Err(LoaderError::NotFound(key.to_string()).into());
         };
 
-        let content = c_content.into_string().map_err(|e| LoaderError::Internal {
-            key: key.to_string(),
-            source: anyhow!(e),
-        })?;
-
-        let decision_content: DecisionContent =
-            serde_json::from_str(&content).map_err(|e| LoaderError::Internal {
+        let decision_content: DecisionContent = serde_json::from_slice(c_content.to_bytes())
+            .map_err(|e| LoaderError::Internal {
                 key: key.to_string(),
                 source: anyhow!(e),
             })?;

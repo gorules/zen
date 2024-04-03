@@ -3,8 +3,8 @@ use pyo3::types::PyDict;
 use pyo3::{PyObject, Python};
 use pythonize::depythonize;
 
-use zen_engine::handler::custom_node_adapter::CustomNodeAdapter;
-use zen_engine::handler::node::{NodeRequest, NodeResponse, NodeResult};
+use zen_engine::handler::custom_node_adapter::{CustomNodeAdapter, CustomNodeRequest};
+use zen_engine::handler::node::{NodeResponse, NodeResult};
 
 use crate::types::PyNodeRequest;
 
@@ -24,7 +24,7 @@ impl From<Option<PyObject>> for PyCustomNode {
 }
 
 impl CustomNodeAdapter for PyCustomNode {
-    async fn handle(&self, request: &NodeRequest<'_>) -> NodeResult {
+    async fn handle(&self, request: CustomNodeRequest<'_>) -> NodeResult {
         let Some(callable) = &self.0 else {
             return Err(anyhow!("Custom node handler not provided"));
         };

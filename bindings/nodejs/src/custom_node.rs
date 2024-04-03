@@ -3,8 +3,8 @@ use napi::bindgen_prelude::Promise;
 use napi::threadsafe_function::{ErrorStrategy, ThreadSafeCallContext, ThreadsafeFunction};
 use napi::{Env, JsFunction};
 
-use zen_engine::handler::custom_node_adapter::CustomNodeAdapter;
-use zen_engine::handler::node::{NodeRequest, NodeResponse, NodeResult};
+use zen_engine::handler::custom_node_adapter::{CustomNodeAdapter, CustomNodeRequest};
+use zen_engine::handler::node::{NodeResponse, NodeResult};
 
 use crate::types::{ZenEngineHandlerRequest, ZenEngineHandlerResponse};
 
@@ -34,12 +34,12 @@ impl CustomNode {
 }
 
 impl CustomNodeAdapter for CustomNode {
-    async fn handle(&self, request: &NodeRequest<'_>) -> NodeResult {
+    async fn handle(&self, request: CustomNodeRequest<'_>) -> NodeResult {
         let Some(function) = &self.function else {
             return Err(anyhow!("Custom function is undefined"));
         };
 
-        let node_data = crate::types::DecisionNode::try_from(request.node.clone()).unwrap();
+        let node_data = crate::types::DecisionNode::from(request.node);
 
         let promise: Promise<ZenEngineHandlerResponse> = function
             .clone()

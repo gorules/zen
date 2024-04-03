@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize, Serializer};
 use serde_json::Value;
 use thiserror::Error;
 
-use crate::handler::custom_node_adapter::CustomNodeAdapter;
+use crate::handler::custom_node_adapter::{CustomNodeAdapter, CustomNodeRequest};
 use crate::handler::decision::DecisionHandler;
 use crate::handler::expression::ExpressionHandler;
 use crate::handler::function::runtime::create_runtime;
@@ -296,7 +296,7 @@ impl<'a, L: DecisionLoader, A: CustomNodeAdapter> DecisionGraph<'a, L, A> {
                 DecisionNodeKind::CustomNode { .. } => {
                     let res = self
                         .adapter
-                        .handle(&node_request)
+                        .handle(CustomNodeRequest::try_from(&node_request).unwrap())
                         .await
                         .map_err(|e| NodeError {
                             node_id: node.id.clone(),

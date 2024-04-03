@@ -4,8 +4,10 @@ use pyo3::{pyclass, pymethods, PyObject, PyResult, Python, ToPyObject};
 use serde::Serialize;
 use serde_json::Value;
 
-use zen_engine::handler::node::{NodeRequest, NodeResponse};
-use zen_engine::model::{DecisionNode, DecisionNodeKind};
+use zen_engine::handler::custom_node_adapter::{
+    CustomDecisionNode as BaseCustomDecisionNode, CustomNodeRequest,
+};
+use zen_engine::handler::node::NodeResponse;
 
 use crate::value::{value_to_object, PyValue};
 
@@ -17,20 +19,14 @@ struct CustomDecisionNode {
     pub config: Value,
 }
 
-impl TryFrom<DecisionNode> for CustomDecisionNode {
-    type Error = ();
-
-    fn try_from(value: DecisionNode) -> Result<Self, Self::Error> {
-        let DecisionNodeKind::CustomNode { content } = value.kind else {
-            return Err(());
-        };
-
-        return Ok(Self {
-            id: value.id,
-            name: value.name,
-            kind: content.kind,
-            config: content.config,
-        });
+impl From<BaseCustomDecisionNode<'_>> for CustomDecisionNode {
+    fn from(value: BaseCustomDecisionNode) -> Self {
+        Self {
+            id: value.id.to_string(),
+            name: value.name.to_string(),
+            kind: value.kind.to_string(),
+            config: value.config.clone(),
+        }
     }
 }
 
@@ -46,8 +42,11 @@ pub struct PyNodeRequest {
 }
 
 impl PyNodeRequest {
-    pub fn from_request(py: Python, value: &NodeRequest<'_>) -> pythonize::Result<PyNodeRequest> {
-        let inner_node = value.node.clone().try_into().unwrap();
+    pub fn from_request(
+        py: Python,
+        value: CustomNodeRequest<'_>,
+    ) -> pythonize::Result<PyNodeRequest> {
+        let inner_node = value.node.into();
         let node_val = serde_json::to_value(&inner_node).unwrap();
 
         Ok(Self {

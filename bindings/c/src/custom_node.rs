@@ -2,8 +2,10 @@ use std::ffi::{c_char, CStr, CString};
 
 use anyhow::anyhow;
 
-use zen_engine::handler::custom_node_adapter::{CustomNodeAdapter, NoopCustomNode};
-use zen_engine::handler::node::{NodeRequest, NodeResponse, NodeResult};
+use zen_engine::handler::custom_node_adapter::{
+    CustomNodeAdapter, CustomNodeRequest, NoopCustomNode,
+};
+use zen_engine::handler::node::{NodeResponse, NodeResult};
 
 use crate::languages::native::NativeCustomNode;
 
@@ -22,7 +24,7 @@ impl Default for DynamicCustomNode {
 }
 
 impl CustomNodeAdapter for DynamicCustomNode {
-    async fn handle(&self, request: &NodeRequest<'_>) -> NodeResult {
+    async fn handle(&self, request: CustomNodeRequest<'_>) -> NodeResult {
         match self {
             DynamicCustomNode::Noop(cn) => cn.handle(request).await,
             DynamicCustomNode::Native(cn) => cn.handle(request).await,

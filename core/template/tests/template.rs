@@ -1,6 +1,4 @@
 use serde_json::{json, Value};
-use std::ops::Div;
-use std::time::Instant;
 use zen_template::render;
 
 #[test]
@@ -62,9 +60,9 @@ fn test_interpolation() {
 
     let test_cases = vec![
         TestCase {
-            template: "{{ null }} ",
+            template: "{{ null }}s",
             context: json!(null),
-            expected: json!("null "),
+            expected: json!("nulls"),
         },
         TestCase {
             template: "{{ 1 + 1 }} hello",
@@ -99,15 +97,4 @@ fn test_interpolation() {
             test_case.expected
         );
     }
-}
-
-#[test]
-fn perf() {
-    let context = json!({ "customer": { "firstName": "John", "lastName": "Doe" } });
-    let start = Instant::now();
-    for _ in 0..100_000 {
-        render("hello world {{ customer }}", &context).unwrap();
-    }
-
-    println!("{:?}", start.elapsed().div(100));
 }

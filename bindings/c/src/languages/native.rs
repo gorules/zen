@@ -1,13 +1,13 @@
-use anyhow::anyhow;
 use std::ffi::{c_char, CString};
 
+use anyhow::anyhow;
 use async_trait::async_trait;
-use zen_engine::handler::custom_node_adapter::CustomNodeAdapter;
-use zen_engine::handler::node::{NodeRequest, NodeResult};
 
-use crate::custom_node::{DynamicCustomNode, ZenCustomNodeResult};
+use zen_engine::handler::custom_node_adapter::{CustomNodeAdapter, CustomNodeRequest};
+use zen_engine::handler::node::NodeResult;
 use zen_engine::loader::{DecisionLoader, LoaderResponse};
 
+use crate::custom_node::{DynamicCustomNode, ZenCustomNodeResult};
 use crate::engine::{ZenEngine, ZenEngineStruct};
 use crate::loader::{DynamicDecisionLoader, ZenDecisionLoaderResult};
 
@@ -49,8 +49,8 @@ impl NativeCustomNode {
 }
 
 impl CustomNodeAdapter for NativeCustomNode {
-    async fn handle(&self, request: &NodeRequest<'_>) -> NodeResult {
-        let Ok(request_value) = serde_json::to_string(request) else {
+    async fn handle(&self, request: CustomNodeRequest<'_>) -> NodeResult {
+        let Ok(request_value) = serde_json::to_string(&request) else {
             return Err(anyhow!("failed to serialize request json"));
         };
 

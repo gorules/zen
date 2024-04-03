@@ -3,8 +3,8 @@ use std::ffi::{c_char, CString};
 use anyhow::anyhow;
 use async_trait::async_trait;
 
-use zen_engine::handler::custom_node_adapter::CustomNodeAdapter;
-use zen_engine::handler::node::{NodeRequest, NodeResult};
+use zen_engine::handler::custom_node_adapter::{CustomNodeAdapter, CustomNodeRequest};
+use zen_engine::handler::node::NodeResult;
 use zen_engine::loader::{DecisionLoader, LoaderError, LoaderResponse};
 
 use crate::custom_node::{DynamicCustomNode, ZenCustomNodeResult};
@@ -50,12 +50,12 @@ impl GoCustomNode {
 }
 
 impl CustomNodeAdapter for GoCustomNode {
-    async fn handle(&self, request: &NodeRequest<'_>) -> NodeResult {
+    async fn handle(&self, request: CustomNodeRequest<'_>) -> NodeResult {
         let Some(handler) = self.handler else {
             return Err(anyhow!("go handler not found"));
         };
 
-        let Ok(request_value) = serde_json::to_string(request) else {
+        let Ok(request_value) = serde_json::to_string(&request) else {
             return Err(anyhow!("failed to serialize request json"));
         };
 

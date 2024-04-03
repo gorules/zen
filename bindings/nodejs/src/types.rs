@@ -5,7 +5,7 @@ use napi::anyhow::{anyhow, Context};
 use napi_derive::napi;
 use serde_json::Value;
 
-use zen_engine::model::DecisionNodeKind;
+use zen_engine::handler::custom_node_adapter::CustomDecisionNode;
 use zen_engine::{DecisionGraphResponse, DecisionGraphTrace};
 
 #[napi(object)]
@@ -67,20 +67,14 @@ pub struct DecisionNode {
     pub config: Value,
 }
 
-impl TryFrom<zen_engine::model::DecisionNode> for DecisionNode {
-    type Error = ();
-
-    fn try_from(value: zen_engine::model::DecisionNode) -> Result<Self, Self::Error> {
-        let DecisionNodeKind::CustomNode { content } = value.kind else {
-            return Err(());
-        };
-
-        Ok(Self {
-            id: value.id,
-            name: value.name,
-            kind: content.kind,
-            config: content.config,
-        })
+impl From<CustomDecisionNode<'_>> for DecisionNode {
+    fn from(value: CustomDecisionNode<'_>) -> Self {
+        Self {
+            id: value.id.to_string(),
+            name: value.name.to_string(),
+            kind: value.kind.to_string(),
+            config: value.config.clone(),
+        }
     }
 }
 

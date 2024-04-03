@@ -29,7 +29,7 @@ const makeToml = ({ version }): string => `
     futures = "0.3.27"
     v8 = { version = "0.66.0" }
     zen-expression = { path = "../expression", version = "${version}" }
-    zen-template = { path = "../template", version = "${version}" }
+    zen-tmpl = { path = "../template", version = "${version}" }
 `;
 
 describe('GitHub Action', () => {

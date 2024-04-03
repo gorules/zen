@@ -11270,12 +11270,12 @@ var toml = __nccwpck_require__(4920);
 
 const versionRegex = /version = "[0-9]+\.[0-9]+\.[0-9]+"$/im;
 const expressionDep = /zen-expression =.*$/im;
-const templateDep = /zen-template =.*$/im;
+const templateDep = /zen-tmpl =.*$/im;
 const updateCargoContents = (contents, { version }) => {
     return contents
         .replace(versionRegex, `version = "${version}"`)
         .replace(expressionDep, `zen-expression = { path = "../expression", version = "${version}" }`)
-        .replace(templateDep, `zen-template = { path = "../template", version = "${version}" }`);
+        .replace(templateDep, `zen-tmpl = { path = "../template", version = "${version}" }`);
 };
 const getCargoVersion = (contents) => {
     var _a;

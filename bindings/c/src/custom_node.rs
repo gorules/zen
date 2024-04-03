@@ -1,4 +1,4 @@
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::{c_char, CString};
 
 use anyhow::anyhow;
 
@@ -36,7 +36,7 @@ impl CustomNodeAdapter for DynamicCustomNode {
 
 #[repr(C)]
 pub struct ZenCustomNodeResult {
-    content: *const c_char,
+    content: *mut c_char,
     error: *mut c_char,
 }
 
@@ -56,7 +56,7 @@ impl ZenCustomNodeResult {
             return Err(anyhow!("response not provided"));
         }
 
-        let content_cstr = unsafe { CStr::from_ptr(self.content) };
+        let content_cstr = unsafe { CString::from_raw(self.content) };
         let node_response: NodeResponse = serde_json::from_slice(content_cstr.to_bytes())
             .map_err(|_| anyhow!("failed to deserialize"))?;
 

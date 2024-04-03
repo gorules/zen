@@ -10,6 +10,7 @@ use zen_engine::{DecisionEngine, EvaluationOptions};
 
 use crate::decision::{ZenDecision, ZenDecisionStruct};
 use crate::error::ZenError;
+use crate::helper::safe_str_from_ptr;
 use crate::loader::DynamicDecisionLoader;
 use crate::result::ZenResult;
 
@@ -116,8 +117,7 @@ pub extern "C" fn zen_engine_evaluate(
         return ZenResult::error(ZenError::InvalidArgument);
     }
 
-    let cstr_key = unsafe { CStr::from_ptr(key) };
-    let Ok(str_key) = cstr_key.to_str() else {
+    let Some(str_key) = safe_str_from_ptr(key) else {
         return ZenResult::error(ZenError::InvalidArgument);
     };
 

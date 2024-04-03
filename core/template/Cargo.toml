@@ -6,10 +6,9 @@ license = "MIT"
 version = "0.18.1"
 edition = "2021"
 repository = "https://github.com/gorules/zen.git"
-publish = false
 
 [dependencies]
-zen-expression = { path = "../expression" }
+zen-expression = { path = "../expression", version = "0.18.1" }
 itertools = "0.12.1"
 thiserror = { workspace = true }
 serde = { workspace = true }

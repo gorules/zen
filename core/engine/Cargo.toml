@@ -26,7 +26,7 @@ futures = { workspace = true }
 rquickjs = { version = "0.4.3", features = ["macro", "loader", "rust-alloc"] }
 itertools = "0.12.1"
 zen-expression = { path = "../expression", version = "0.20.0" }
-zen-template = { path = "../template", version = "0.20.0" }
+zen-tmpl = { path = "../template", version = "0.20.0" }
 
 [dev-dependencies]
 tokio = { version = "1.35.1", features = ["rt", "macros"] }

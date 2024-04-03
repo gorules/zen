@@ -15,7 +15,7 @@ strum = { version = "0.26.1", features = ["derive"] }
 futures = "0.3.28"
 zen-engine = { path = "../../core/engine" }
 zen-expression = { path = "../../core/expression" }
-zen-template = { path = "../../core/template" }
+zen-tmpl = { path = "../../core/template" }
 
 [lib]
 crate-type = ["staticlib"]

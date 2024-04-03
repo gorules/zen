@@ -1,7 +1,7 @@
 [package]
 authors = ["GoRules Team <bot@gorules.io>"]
 description = "Zen Template Language"
-name = "zen-template"
+name = "zen-tmpl"
 license = "MIT"
 version = "0.20.0"
 edition = "2021"

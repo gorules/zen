@@ -73,7 +73,7 @@ impl PyNodeRequest {
             return Ok(PyValue(selected_value).to_object(py));
         };
 
-        let template_value = zen_template::render(template.as_str(), &self.inner_input)
+        let template_value = zen_tmpl::render(template.as_str(), &self.inner_input)
             .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?;
 
         Ok(PyValue(template_value).to_object(py))

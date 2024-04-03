@@ -4,7 +4,7 @@ use anyhow::anyhow;
 use json_dotpath::DotPaths;
 use serde::Serialize;
 use serde_json::Value;
-use zen_template::TemplateRenderError;
+use zen_tmpl::TemplateRenderError;
 
 pub trait CustomNodeAdapter {
     fn handle(
@@ -50,7 +50,7 @@ impl<'a> CustomNodeRequest<'a> {
             return Ok(Some(selected_value));
         };
 
-        let template_value = zen_template::render(template.as_str(), &self.input)?;
+        let template_value = zen_tmpl::render(template.as_str(), &self.input)?;
         Ok(Some(template_value))
     }
 

@@ -54,7 +54,7 @@ typedef struct ZenDecisionLoaderResult {
 typedef struct ZenDecisionLoaderResult (*ZenDecisionLoaderNativeCallback)(const char *key);
 
 typedef struct ZenCustomNodeResult {
-  const char *content;
+  char *content;
   char *error;
 } ZenCustomNodeResult;
 

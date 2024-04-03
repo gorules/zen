@@ -54,7 +54,7 @@ impl ZenDecisionLoaderResult {
         }
 
         let maybe_content = match self.content.is_null() {
-            false => Some(unsafe { CStr::from_ptr(self.content) }),
+            false => Some(unsafe { CString::from_raw(self.content) }),
             true => None,
         };
 

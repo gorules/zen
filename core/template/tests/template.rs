@@ -1,5 +1,5 @@
 use serde_json::{json, Value};
-use zen_template::render;
+use zen_tmpl::render;
 
 #[test]
 fn test_values_types() {

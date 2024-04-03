@@ -104,7 +104,7 @@ impl ZenEngineHandlerRequest {
             return Ok(selected_value);
         };
 
-        let template_value = zen_template::render(template.as_str(), &self.input)
+        let template_value = zen_tmpl::render(template.as_str(), &self.input)
             .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?;
 
         Ok(template_value)

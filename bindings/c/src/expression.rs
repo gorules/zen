@@ -90,7 +90,7 @@ pub extern "C" fn zen_evaluate_template(
         return ZenResult::error(ZenError::JsonDeserializationFailed);
     };
 
-    let result = match zen_template::render(template_str, &context_val) {
+    let result = match zen_tmpl::render(template_str, &context_val) {
         Ok(r) => r,
         Err(err) => {
             return ZenResult::error(ZenError::TemplateEngineError {

@@ -24,7 +24,7 @@ pub fn evaluate_unary_expression_sync(expression: String, context: Value) -> nap
 #[allow(dead_code)]
 #[napi]
 pub fn render_template_sync(template: String, context: Value) -> napi::Result<Value> {
-    Ok(zen_template::render(template.as_str(), &context)
+    Ok(zen_tmpl::render(template.as_str(), &context)
         .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?)
 }
 

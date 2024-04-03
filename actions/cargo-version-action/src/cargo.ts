@@ -6,13 +6,13 @@ type UpdateCargoOptions = {
 
 const versionRegex = /version = "[0-9]+\.[0-9]+\.[0-9]+"$/im;
 const expressionDep = /zen-expression =.*$/im;
-const templateDep = /zen-template =.*$/im;
+const templateDep = /zen-tmpl =.*$/im;
 
 export const updateCargoContents = (contents: string, { version }: UpdateCargoOptions): string => {
   return contents
     .replace(versionRegex, `version = "${version}"`)
     .replace(expressionDep, `zen-expression = { path = "../expression", version = "${version}" }`)
-    .replace(templateDep, `zen-template = { path = "../template", version = "${version}" }`);
+    .replace(templateDep, `zen-tmpl = { path = "../template", version = "${version}" }`);
 };
 
 export const getCargoVersion = (contents: string): string => {

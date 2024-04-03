@@ -16,7 +16,7 @@ serde_json = { workspace = true }
 futures = { workspace = true }
 zen-engine = { path = "../../core/engine" }
 zen-expression = { path = "../../core/expression" }
-zen-template = { path = "../../core/template" }
+zen-tmpl = { path = "../../core/template" }
 serde = { workspace = true, features = ["derive"] }
 json_dotpath = { workspace = true }
 

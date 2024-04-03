@@ -8,7 +8,7 @@ const versionRegex = /version = "[0-9]+\.[0-9]+\.[0-9]+"$/im;
 const expressionDep = /zen-expression =.*$/im;
 const templateDep = /zen-template =.*$/im;
 
-export const updateCargoContents = (contents: string, {version}: UpdateCargoOptions): string => {
+export const updateCargoContents = (contents: string, { version }: UpdateCargoOptions): string => {
   return contents
     .replace(versionRegex, `version = "${version}"`)
     .replace(expressionDep, `zen-expression = { path = "../expression", version = "${version}" }`)

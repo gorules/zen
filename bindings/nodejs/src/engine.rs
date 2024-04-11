@@ -1,10 +1,11 @@
+use crate::content::ZenDecisionContent;
 use crate::custom_node::CustomNode;
 use crate::decision::ZenDecision;
 use crate::loader::DecisionLoader;
 use crate::types::ZenEngineResponse;
 use napi::anyhow::{anyhow, Context};
-use napi::bindgen_prelude::Buffer;
-use napi::{tokio, Env, JsFunction};
+use napi::bindgen_prelude::{Buffer, Either3};
+use napi::{tokio, Env, JsFunction, JsObject};
 use napi_derive::napi;
 use serde_json::Value;
 use std::sync::Arc;
@@ -33,7 +34,7 @@ impl Default for ZenEvaluateOptions {
 
 #[napi(object)]
 pub struct ZenEngineOptions {
-    #[napi(ts_type = "(key: string) => Promise<Buffer>")]
+    #[napi(ts_type = "(key: string) => Promise<Buffer | ZenDecisionContent>")]
     pub loader: Option<JsFunction>,
 
     #[napi(ts_type = "(request: ZenEngineHandlerRequest) => Promise<ZenEngineHandlerResponse>")]
@@ -99,9 +100,21 @@ impl ZenEngine {
     }
 
     #[napi]
-    pub fn create_decision(&self, content: Buffer) -> napi::Result<ZenDecision> {
-        let decision_content: DecisionContent = serde_json::from_slice(content.as_ref())?;
-        let decision = self.graph.create_decision(Arc::new(decision_content));
+    pub fn create_decision(
+        &self,
+        env: Env,
+        content: Either3<&ZenDecisionContent, Buffer, JsObject>,
+    ) -> napi::Result<ZenDecision> {
+        let decision_content: Arc<DecisionContent> = match content {
+            Either3::A(c) => c.inner.clone(),
+            Either3::B(buffer) => Arc::new(serde_json::from_slice(buffer.as_ref())?),
+            Either3::C(obj) => {
+                let serde_val: Value = env.from_js_value(obj)?;
+                Arc::new(serde_json::from_value(serde_val)?)
+            }
+        };
+
+        let decision = self.graph.create_decision(decision_content);
         Ok(ZenDecision::from(decision))
     }
 

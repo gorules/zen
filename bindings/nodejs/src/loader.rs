@@ -1,22 +1,19 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use napi::anyhow::anyhow;
 use napi::bindgen_prelude::{Buffer, Promise};
 use napi::threadsafe_function::{ErrorStrategy, ThreadSafeCallContext, ThreadsafeFunction};
-use napi::{Env, JsFunction};
-
-use std::sync::Arc;
+use napi::{Either, Env, JsFunction};
 
 use zen_engine::loader::{DecisionLoader as DecisionLoaderTrait, LoaderError, LoaderResult};
 use zen_engine::model::DecisionContent;
 
+use crate::content::ZenDecisionContent;
+
+#[derive(Default)]
 pub(crate) struct DecisionLoader {
     function: Option<ThreadsafeFunction<String, ErrorStrategy::Fatal>>,
-}
-
-impl Default for DecisionLoader {
-    fn default() -> Self {
-        Self { function: None }
-    }
 }
 
 impl DecisionLoader {
@@ -42,14 +39,14 @@ impl DecisionLoader {
             .into());
         };
 
-        let promise: Promise<Option<Buffer>> = function
+        let promise: Promise<Option<Either<Buffer, &ZenDecisionContent>>> = function
             .clone()
             .call_async(key.to_string())
             .await
             .map_err(|e| LoaderError::Internal {
-            key: key.to_string(),
-            source: anyhow!(e.reason),
-        })?;
+                key: key.to_string(),
+                source: anyhow!(e.reason),
+            })?;
 
         let result = promise.await.map_err(|e| LoaderError::Internal {
             key: key.to_string(),
@@ -60,13 +57,17 @@ impl DecisionLoader {
             return Err(LoaderError::NotFound(key.to_string()).into());
         };
 
-        let decision_content =
-            serde_json::from_slice(buffer.as_ref()).map_err(|e| LoaderError::Internal {
-                key: key.to_string(),
-                source: e.into(),
-            })?;
+        let decision_content = match buffer {
+            Either::A(buf) => Arc::new(serde_json::from_slice(buf.as_ref()).map_err(|e| {
+                LoaderError::Internal {
+                    key: key.to_string(),
+                    source: e.into(),
+                }
+            })?),
+            Either::B(dc) => dc.inner.clone(),
+        };
 
-        Ok(Arc::new(decision_content))
+        Ok(decision_content)
     }
 }
 

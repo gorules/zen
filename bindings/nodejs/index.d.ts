@@ -8,7 +8,7 @@ export interface ZenEvaluateOptions {
   trace?: boolean
 }
 export interface ZenEngineOptions {
-  loader?: (key: string) => Promise<Buffer>
+  loader?: (key: string) => Promise<Buffer | ZenDecisionContent>
   customHandler?: (request: ZenEngineHandlerRequest) => Promise<ZenEngineHandlerResponse>
 }
 export function evaluateExpressionSync(expression: string, context?: any | undefined | null): any
@@ -40,6 +40,10 @@ export interface DecisionNode {
   kind: string
   config: any
 }
+export class ZenDecisionContent {
+  constructor(content: Buffer | object)
+  toBuffer(): Buffer
+}
 export class ZenDecision {
   constructor()
   evaluate(context: any, opts?: ZenEvaluateOptions | undefined | null): Promise<ZenEngineResponse>
@@ -48,7 +52,7 @@ export class ZenDecision {
 export class ZenEngine {
   constructor(options?: ZenEngineOptions | undefined | null)
   evaluate(key: string, context: any, opts?: ZenEvaluateOptions | undefined | null): Promise<ZenEngineResponse>
-  createDecision(content: Buffer): ZenDecision
+  createDecision(content: ZenDecisionContent | Buffer | object): ZenDecision
   getDecision(key: string): Promise<ZenDecision>
 }
 export class ZenEngineHandlerRequest {

@@ -40,6 +40,7 @@ import fs from 'fs/promises';
 
   const decision = engine.createDecision(content);
   const result = await decision.evaluate({ input: 15 });
+  engine.dispose();
 })();
 ```
 
@@ -58,6 +59,7 @@ const loader = async (key: string) => fs.readFile(path.join(testDataRoot, key))(
     const engine = new ZenEngine({ loader });
 
     const result = await engine.evaluate('jdm_graph1.json', { input: 5 });
+    engine.dispose();
 })();
 ```
 

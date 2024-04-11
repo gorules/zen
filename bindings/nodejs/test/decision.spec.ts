@@ -4,7 +4,7 @@ import {
   evaluateUnaryExpression,
   renderTemplate,
   evaluateExpressionSync,
-  evaluateUnaryExpressionSync, renderTemplateSync
+  evaluateUnaryExpressionSync, renderTemplateSync, ZenDecisionContent
 } from "../index";
 import fs from 'fs/promises';
 import path from 'path';
@@ -80,6 +80,13 @@ describe('ZenEngine', () => {
 
     const r = await engine.evaluate('custom.json', {a: 5});
     expect(r.result.data).toEqual(25);
+  });
+
+  it('Parses ZenDecisionContent', async () => {
+    const decisionContent = new ZenDecisionContent(await loader('table.json'));
+
+    expect(decisionContent).toBeDefined();
+    expect(decisionContent.toBuffer()).toBeDefined();
   });
 })
 

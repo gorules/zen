@@ -1,6 +1,6 @@
 {
   "name": "@gorules/zen-engine",
-  "version": "0.18.0",
+  "version": "0.19.0",
   "main": "index.js",
   "types": "./index.d.ts",
   "license": "MIT",

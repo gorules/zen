@@ -54,6 +54,11 @@ export class ZenEngine {
   evaluate(key: string, context: any, opts?: ZenEvaluateOptions | undefined | null): Promise<ZenEngineResponse>
   createDecision(content: ZenDecisionContent | Buffer | object): ZenDecision
   getDecision(key: string): Promise<ZenDecision>
+  /**
+   * Function used to dispose memory allocated for loaders
+   * In the future, it will likely be removed and made automatic
+   */
+  dispose(): void
 }
 export class ZenEngineHandlerRequest {
   input: any

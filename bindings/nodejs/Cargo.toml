@@ -10,8 +10,8 @@ crate-type = ["cdylib"]
 
 [dependencies]
 async-trait = { workspace = true }
-napi = { version = "2.16", features = ["serde-json", "error_anyhow", "tokio_rt"] }
-napi-derive = "2.16"
+napi = { version = "2.16.2", features = ["serde-json", "error_anyhow", "tokio_rt"] }
+napi-derive = "2.16.2"
 serde_json = { workspace = true }
 futures = { workspace = true }
 zen-engine = { path = "../../core/engine" }

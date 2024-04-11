@@ -1,35 +1,22 @@
 use napi::anyhow::anyhow;
 use napi::bindgen_prelude::Promise;
-use napi::threadsafe_function::{ErrorStrategy, ThreadSafeCallContext, ThreadsafeFunction};
-use napi::{Env, JsFunction};
+use napi::threadsafe_function::{ErrorStrategy, ThreadsafeFunction};
 
 use zen_engine::handler::custom_node_adapter::{CustomNodeAdapter, CustomNodeRequest};
 use zen_engine::handler::node::{NodeResponse, NodeResult};
 
 use crate::types::{ZenEngineHandlerRequest, ZenEngineHandlerResponse};
 
+#[derive(Default)]
 pub(crate) struct CustomNode {
     function: Option<ThreadsafeFunction<ZenEngineHandlerRequest, ErrorStrategy::Fatal>>,
 }
 
-impl Default for CustomNode {
-    fn default() -> Self {
-        Self { function: None }
-    }
-}
-
 impl CustomNode {
-    pub fn try_new(env: &mut Env, function: JsFunction) -> napi::Result<Self> {
-        let mut tsf = function.create_threadsafe_function(
-            0,
-            |cx: ThreadSafeCallContext<ZenEngineHandlerRequest>| Ok(vec![cx.value]),
-        )?;
-
-        tsf.unref(env)?;
-
-        Ok(Self {
+    pub fn new(tsf: ThreadsafeFunction<ZenEngineHandlerRequest, ErrorStrategy::Fatal>) -> Self {
+        Self {
             function: Some(tsf),
-        })
+        }
     }
 }
 

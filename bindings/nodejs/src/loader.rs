@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use napi::anyhow::anyhow;
 use napi::bindgen_prelude::{Buffer, Promise};
-use napi::threadsafe_function::{ErrorStrategy, ThreadSafeCallContext, ThreadsafeFunction};
-use napi::{Either, Env, JsFunction};
+use napi::threadsafe_function::{ErrorStrategy, ThreadsafeFunction};
+use napi::Either;
 
 use zen_engine::loader::{DecisionLoader as DecisionLoaderTrait, LoaderError, LoaderResult};
 use zen_engine::model::DecisionContent;
@@ -17,14 +17,7 @@ pub(crate) struct DecisionLoader {
 }
 
 impl DecisionLoader {
-    pub fn try_new(env: &mut Env, function: JsFunction) -> napi::Result<Self> {
-        let mut tsf =
-            function.create_threadsafe_function(0, |cx: ThreadSafeCallContext<String>| {
-                cx.env.create_string(cx.value.as_str()).map(|v| vec![v])
-            })?;
-
-        tsf.unref(env)?;
-
+    pub fn new(tsf: ThreadsafeFunction<String, ErrorStrategy::Fatal>) -> napi::Result<Self> {
         Ok(Self {
             function: Some(tsf),
         })

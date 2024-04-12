@@ -48,7 +48,7 @@
   },
   "devDependencies": {
     "@jest/globals": "^29.5.0",
-    "@napi-rs/cli": "^2.14.8",
+    "@napi-rs/cli": "^2.18.1",
     "@types/express": "^4.17.17",
     "@types/node": "^18.15.0",
     "babel-jest": "^29.5.0",
@@ -71,7 +71,7 @@
     "url": "git+https://github.com/gorules/zen.git"
   },
   "scripts": {
-    "build": "napi build --platform --release --js index.js --dts index.d.ts",
+    "build": "napi build --dts false --platform --release",
     "build:debug": "napi build --platform --js index.js --dts index.d.ts",
     "watch": "cargo watch --ignore '{index.js,index.d.ts}' -- npm run build:debug",
     "test": "jest",

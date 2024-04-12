@@ -2,6 +2,7 @@ use crate::content::ZenDecisionContent;
 use crate::custom_node::CustomNode;
 use crate::decision::ZenDecision;
 use crate::loader::DecisionLoader;
+use crate::safe_result::SafeResult;
 use crate::types::{ZenEngineHandlerRequest, ZenEngineResponse};
 use napi::anyhow::{anyhow, Context};
 use napi::bindgen_prelude::{Buffer, Either3};
@@ -155,6 +156,21 @@ impl ZenEngine {
             .with_context(|| format!("Failed to find decision with key = {key}"))?;
 
         Ok(ZenDecision::from(decision))
+    }
+
+    #[napi(ts_return_type = "Promise<SafeResult<ZenEngineResponse>>")]
+    pub async fn safe_evaluate(
+        &self,
+        key: String,
+        context: Value,
+        opts: Option<ZenEvaluateOptions>,
+    ) -> SafeResult<ZenEngineResponse> {
+        self.evaluate(key, context, opts).await.into()
+    }
+
+    #[napi(ts_return_type = "Promise<SafeResult<ZenDecision>>")]
+    pub async fn safe_get_decision(&self, key: String) -> SafeResult<ZenDecision> {
+        self.get_decision(key).await.into()
     }
 
     /// Function used to dispose memory allocated for loaders

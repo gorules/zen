@@ -1,6 +1,7 @@
 use crate::custom_node::CustomNode;
 use crate::engine::ZenEvaluateOptions;
 use crate::loader::DecisionLoader;
+use crate::safe_result::SafeResult;
 use crate::types::ZenEngineResponse;
 use napi::anyhow::anyhow;
 use napi::tokio;
@@ -49,6 +50,15 @@ impl ZenDecision {
         })?;
 
         Ok(ZenEngineResponse::from(result))
+    }
+
+    #[napi(ts_return_type = "Promise<SafeResult<ZenEngineResponse>>")]
+    pub async fn safe_evaluate(
+        &self,
+        context: Value,
+        opts: Option<ZenEvaluateOptions>,
+    ) -> SafeResult<ZenEngineResponse> {
+        self.evaluate(context, opts).await.into()
     }
 
     #[napi]

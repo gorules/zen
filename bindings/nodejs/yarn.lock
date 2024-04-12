@@ -605,10 +605,10 @@
     validate-npm-package-name "^4.0.0"
     yargs-parser "20.2.4"
 
-"@napi-rs/cli@^2.14.8":
-  version "2.14.8"
-  resolved "https://registry.yarnpkg.com/@napi-rs/cli/-/cli-2.14.8.tgz#06cca37e149ba4ffb3c3a01617d0f104b27e11c0"
-  integrity sha512-IvA3s8BqohMdUbOkFn7+23u1dhIJZCkA8Xps7DD4SLdCMbcbUF6MUuKiqxuqmVHBFTaxU25sU56WdX3efqGgPw==
+"@napi-rs/cli@^2.18.1":
+  version "2.18.1"
+  resolved "https://registry.yarnpkg.com/@napi-rs/cli/-/cli-2.18.1.tgz#8dc09b28755a6e129c4de35a36e0c048c2070749"
+  integrity sha512-N4iTeip2VSk0RftgDGuk7IBrgOST/WPUSA3lYstILXsNifR3tHugcbLzo04+OtSrMc+ZUPsXo3Jd1t3dlswAlw==
 
 "@nodelib/fs.scandir@2.1.5":
   version "2.1.5"

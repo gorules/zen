@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::Ordering;
 
 use fixedbitset::FixedBitSet;
 use petgraph::data::DataMap;
@@ -8,6 +9,7 @@ use petgraph::visit::{EdgeRef, IntoNeighbors, IntoNodeIdentifiers, Reversed, Vis
 use petgraph::{Incoming, Outgoing};
 use serde_json::{json, Map, Value};
 
+use crate::config::ZEN_CONFIG;
 use zen_expression::Isolate;
 
 use crate::model::{
@@ -21,6 +23,9 @@ pub(crate) struct GraphWalker {
     to_visit: Vec<NodeIndex>,
     node_data: HashMap<NodeIndex, Value>,
     iter: usize,
+    visited_switch_nodes: Vec<NodeIndex>,
+
+    nodes_in_context: bool,
 }
 
 const ITER_MAX: usize = 1_000;
@@ -46,7 +51,10 @@ impl GraphWalker {
             ordered: graph.visit_map(),
             to_visit: Vec::new(),
             node_data: Default::default(),
+            visited_switch_nodes: Default::default(),
             iter: 0,
+
+            nodes_in_context: ZEN_CONFIG.nodes_in_context.load(Ordering::Relaxed),
         }
     }
 
@@ -87,8 +95,10 @@ impl GraphWalker {
     ) -> Value {
         let mut value = self.merge_node_data(g.neighbors_directed(node_id, Incoming));
 
-        if let Some(object) = with_nodes.then_some(value.as_object_mut()).flatten() {
-            object.insert("$nodes".to_string(), self.get_all_node_data(g));
+        if self.nodes_in_context {
+            if let Some(object) = with_nodes.then_some(value.as_object_mut()).flatten() {
+                object.insert("$nodes".to_string(), self.get_all_node_data(g));
+            }
         }
 
         value
@@ -122,48 +132,51 @@ impl GraphWalker {
             self.ordered.visit(nid);
 
             if let DecisionNodeKind::SwitchNode { content } = &decision_node.kind {
-                let mut input_data = self.incoming_node_data(g, nid, true);
-                let input_context = json!({ "$": &input_data });
-                merge_json(&mut input_data, &input_context, true);
+                if !self.visited_switch_nodes.contains(&nid) {
+                    let mut input_data = self.incoming_node_data(g, nid, true);
+                    let input_context = json!({ "$": &input_data });
+                    merge_json(&mut input_data, &input_context, true);
 
-                let mut isolate = Isolate::with_environment(&input_data);
+                    let mut isolate = Isolate::with_environment(&input_data);
 
-                let mut statement_iter = content.statements.iter();
-                let valid_statements: Vec<&SwitchStatement> = match content.hit_policy {
-                    SwitchStatementHitPolicy::First => statement_iter
-                        .find(|&s| switch_statement_evaluate(&mut isolate, &s))
-                        .into_iter()
-                        .collect(),
-                    SwitchStatementHitPolicy::Collect => statement_iter
-                        .filter(|&s| switch_statement_evaluate(&mut isolate, &s))
-                        .collect(),
-                };
+                    let mut statement_iter = content.statements.iter();
+                    let valid_statements: Vec<&SwitchStatement> = match content.hit_policy {
+                        SwitchStatementHitPolicy::First => statement_iter
+                            .find(|&s| switch_statement_evaluate(&mut isolate, &s))
+                            .into_iter()
+                            .collect(),
+                        SwitchStatementHitPolicy::Collect => statement_iter
+                            .filter(|&s| switch_statement_evaluate(&mut isolate, &s))
+                            .collect(),
+                    };
 
-                let valid_statements_trace: Value = valid_statements
-                    .iter()
-                    .map(|&statement| json!({ "id": &statement.id }))
-                    .collect();
-                value = json!({ "statements": valid_statements_trace });
+                    let valid_statements_trace: Value = valid_statements
+                        .iter()
+                        .map(|&statement| json!({ "id": &statement.id }))
+                        .collect();
+                    value = json!({ "statements": valid_statements_trace });
 
-                // Remove all non-valid edges
-                let edges_to_remove: Vec<EdgeIndex> = g
-                    .edges_directed(nid, Outgoing)
-                    .filter(|edge| {
-                        edge.weight().source_handle.as_ref().map_or(true, |handle| {
-                            !valid_statements.iter().any(|s| s.id == *handle)
+                    // Remove all non-valid edges
+                    let edges_to_remove: Vec<EdgeIndex> = g
+                        .edges_directed(nid, Outgoing)
+                        .filter(|edge| {
+                            edge.weight().source_handle.as_ref().map_or(true, |handle| {
+                                !valid_statements.iter().any(|s| s.id == *handle)
+                            })
                         })
-                    })
-                    .map(|edge| edge.id())
-                    .collect();
-                let edges_remove_count = edges_to_remove.len();
-                for edge in edges_to_remove {
-                    remove_edge_recursive(g, edge);
-                }
+                        .map(|edge| edge.id())
+                        .collect();
+                    let edges_remove_count = edges_to_remove.len();
+                    for edge in edges_to_remove {
+                        remove_edge_recursive(g, edge);
+                    }
 
-                // Reset the graph if whole branch has been removed
-                if edges_remove_count > 0 {
-                    self.reset(g);
-                    continue;
+                    self.visited_switch_nodes.push(nid);
+                    // Reset the graph if whole branch has been removed
+                    if edges_remove_count > 0 {
+                        self.reset(g);
+                        continue;
+                    }
                 }
             }
 

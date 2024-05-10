@@ -128,10 +128,12 @@ mod error;
 pub mod handler;
 mod util;
 
+mod config;
 pub mod loader;
 #[path = "model/mod.rs"]
 pub mod model;
 
+pub use config::ZEN_CONFIG;
 pub use decision::Decision;
 pub use engine::{DecisionEngine, EvaluationOptions};
 pub use error::EvaluationError;

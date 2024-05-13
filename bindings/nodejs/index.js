@@ -310,8 +310,9 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { ZenDecisionContent, ZenDecision, ZenEngine, evaluateExpressionSync, evaluateUnaryExpressionSync, renderTemplateSync, evaluateExpression, evaluateUnaryExpression, renderTemplate, ZenEngineHandlerRequest } = nativeBinding
+const { overrideConfig, ZenDecisionContent, ZenDecision, ZenEngine, evaluateExpressionSync, evaluateUnaryExpressionSync, renderTemplateSync, evaluateExpression, evaluateUnaryExpression, renderTemplate, ZenEngineHandlerRequest } = nativeBinding
 
+module.exports.overrideConfig = overrideConfig
 module.exports.ZenDecisionContent = ZenDecisionContent
 module.exports.ZenDecision = ZenDecision
 module.exports.ZenEngine = ZenEngine

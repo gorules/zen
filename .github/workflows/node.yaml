@@ -38,14 +38,14 @@ jobs:
             build: |
               yarn lerna exec "yarn build --target x86_64-pc-windows-msvc" --concurrency 1 --stream --no-prefix
 
-          - host: macos-latest
+          - host: macos-13
             target: 'x86_64-apple-darwin'
             build: |
               rustup target add x86_64-apple-darwin
               yarn lerna exec "yarn build --target x86_64-apple-darwin" --concurrency 1 --stream --no-prefix
               strip -x ./*.node
 
-          - host: macos-latest
+          - host: macos-14
             target: 'aarch64-apple-darwin'
             build: |
               sudo rm -Rf /Library/Developer/CommandLineTools/SDKs/*;
@@ -80,17 +80,17 @@ jobs:
               yarn lerna exec "yarn build --target aarch64-unknown-linux-gnu" --concurrency 1 --stream --no-prefix
               llvm-strip ./*.node
 
-#          - host: ubuntu-latest
-#            target: 'x86_64-unknown-linux-musl'
-#            build: |
-#              cd bindings/nodejs &&
-#              yarn build
-#          - host: ubuntu-latest
-#            target: 'aarch64-unknown-linux-musl'
-#            build: >-
-#              set -e &&
-#              rustup target add aarch64-unknown-linux-musl &&
-#              yarn lerna exec "yarn build --target aarch64-unknown-linux-musl" --concurrency 1 --stream --no-prefix
+    #          - host: ubuntu-latest
+    #            target: 'x86_64-unknown-linux-musl'
+    #            build: |
+    #              cd bindings/nodejs &&
+    #              yarn build
+    #          - host: ubuntu-latest
+    #            target: 'aarch64-unknown-linux-musl'
+    #            build: >-
+    #              set -e &&
+    #              rustup target add aarch64-unknown-linux-musl &&
+    #              yarn lerna exec "yarn build --target aarch64-unknown-linux-musl" --concurrency 1 --stream --no-prefix
 
     name: stable - ${{ matrix.settings.target }} - node@18
     runs-on: ${{ matrix.settings.host }}
@@ -166,11 +166,13 @@ jobs:
       fail-fast: false
       matrix:
         settings:
-          - host: macos-latest
+          - host: macos-13
             target: 'x86_64-apple-darwin'
+          - host: macos-14
+            target: 'aarch64-apple-darwin'
           - host: windows-latest
             target: 'x86_64-pc-windows-msvc'
-        node: ['16', '18', '20']
+        node: [ '16', '18', '20' ]
     runs-on: ${{ matrix.settings.host }}
 
     steps:
@@ -214,7 +216,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['16', '18', '20']
+        node: [ '16', '18', '20' ]
     runs-on: ubuntu-latest
 
     steps:
@@ -293,57 +295,57 @@ jobs:
         run: |
           yarn lerna link
           yarn test
-#  test-linux-aarch64-gnu-binding:
-#    name: Test bindings on aarch64-unknown-linux-gnu - node@${{ matrix.node }}
-#    needs:
-#      - build
-#    defaults:
-#      run:
-#        working-directory: ${{ env.WORKING_DIRECTORY }}
-#    strategy:
-#      fail-fast: false
-#      matrix:
-#        node: ['14', '16', '18']
-#    runs-on: ubuntu-latest
-#
-#    steps:
-#      - uses: actions/checkout@v3
-#      - run: docker run --rm --privileged multiarch/qemu-user-static:register --reset
-#      - name: List directory
-#        run: |
-#          ls -la &&
-#          pwd
-#
-#      - name: Download artifacts
-#        uses: actions/download-artifact@v3
-#        with:
-#          name: bindings-aarch64-unknown-linux-gnu
-#          path: artifacts
-#
-#      - name: Install dependencies
-#        run: |
-#          yarn config set supportedArchitectures.cpu "arm64"
-#          yarn config set supportedArchitectures.libc "glibc"
-#          yarn install --immutable --mode=skip-build
-#      - name: Move artifacts
-#        run: yarn artifacts
-#        shell: bash
-#
-#      - name: List folder
-#        run: ls ./
-#        shell: bash
-#
-#      - name: Setup and run tests
-#        uses: addnab/docker-run-action@v3
-#        with:
-#          image: ghcr.io/napi-rs/napi-rs/nodejs:aarch64-${{ matrix.node }}
-#          options: -v ${{ github.workspace }}:/workspace -w /workspace
-#          run: |
-#            ls -la
-#            cd bindings/nodejs
-#            yarn install
-#            yarn link
-#            yarn test
+  #  test-linux-aarch64-gnu-binding:
+  #    name: Test bindings on aarch64-unknown-linux-gnu - node@${{ matrix.node }}
+  #    needs:
+  #      - build
+  #    defaults:
+  #      run:
+  #        working-directory: ${{ env.WORKING_DIRECTORY }}
+  #    strategy:
+  #      fail-fast: false
+  #      matrix:
+  #        node: ['14', '16', '18']
+  #    runs-on: ubuntu-latest
+  #
+  #    steps:
+  #      - uses: actions/checkout@v3
+  #      - run: docker run --rm --privileged multiarch/qemu-user-static:register --reset
+  #      - name: List directory
+  #        run: |
+  #          ls -la &&
+  #          pwd
+  #
+  #      - name: Download artifacts
+  #        uses: actions/download-artifact@v3
+  #        with:
+  #          name: bindings-aarch64-unknown-linux-gnu
+  #          path: artifacts
+  #
+  #      - name: Install dependencies
+  #        run: |
+  #          yarn config set supportedArchitectures.cpu "arm64"
+  #          yarn config set supportedArchitectures.libc "glibc"
+  #          yarn install --immutable --mode=skip-build
+  #      - name: Move artifacts
+  #        run: yarn artifacts
+  #        shell: bash
+  #
+  #      - name: List folder
+  #        run: ls ./
+  #        shell: bash
+  #
+  #      - name: Setup and run tests
+  #        uses: addnab/docker-run-action@v3
+  #        with:
+  #          image: ghcr.io/napi-rs/napi-rs/nodejs:aarch64-${{ matrix.node }}
+  #          options: -v ${{ github.workspace }}:/workspace -w /workspace
+  #          run: |
+  #            ls -la
+  #            cd bindings/nodejs
+  #            yarn install
+  #            yarn link
+  #            yarn test
 
   release:
     name: Release
@@ -354,9 +356,9 @@ jobs:
     needs:
       - test-linux-x64-gnu-binding
       - test-linux-x64-centos-7
-#      - test-linux-x64-musl-binding
-#      - test-linux-aarch64-gnu-binding
-#      - test-linux-arm-gnueabihf-binding
+      #      - test-linux-x64-musl-binding
+      #      - test-linux-aarch64-gnu-binding
+      #      - test-linux-arm-gnueabihf-binding
       - test-macOS-windows-binding
     steps:
       - uses: actions/checkout@v3

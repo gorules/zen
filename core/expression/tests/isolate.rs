@@ -1,9 +1,10 @@
+use std::ops::Index;
+
 use anyhow::Context;
 use bumpalo::Bump;
 use serde_json::{json, Value};
-use std::ops::Index;
 
-use zen_expression::vm::Variable;
+use zen_expression::variable::ToVariable;
 use zen_expression::Isolate;
 
 struct TestEnv {
@@ -707,7 +708,7 @@ fn variable_serde_test() {
     });
 
     let bump = Bump::new();
-    let _ = Variable::from_serde(&env, &bump);
+    let _ = env.to_variable(&bump);
 }
 
 #[test]

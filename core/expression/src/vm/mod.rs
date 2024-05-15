@@ -2,7 +2,7 @@
 //!
 //! The VM (Virtual Machine) module executes the generated machine-readable opcodes.
 mod error;
-mod helpers;
+pub(crate) mod helpers;
 mod variable;
 mod vm;
 

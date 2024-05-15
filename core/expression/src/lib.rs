@@ -55,6 +55,7 @@ pub mod compiler;
 mod function;
 pub mod lexer;
 pub mod parser;
+pub mod variable;
 pub mod vm;
 
 pub use function::{evaluate_expression, evaluate_unary_expression};

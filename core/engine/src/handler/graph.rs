@@ -188,16 +188,17 @@ impl<'a, L: DecisionLoader, A: CustomNodeAdapter> DecisionGraph<'a, L, A> {
                 }
                 DecisionNodeKind::SwitchNode { .. } => {
                     let input_data = walker.incoming_node_data(&self.graph, nid, false);
-                    walker.set_node_data(nid, input_data.clone());
 
                     trace!({
                         input: input_data.clone(),
-                        output: input_data,
+                        output: input_data.clone(),
                         name: node.name.clone(),
                         id: node.id.clone(),
                         performance: Some(format!("{:?}", start.elapsed())),
                         trace_data: Some(walker_metadata),
                     });
+
+                    walker.set_node_data(nid, input_data);
                 }
                 DecisionNodeKind::FunctionNode { .. } => {
                     let runtime = self.get_or_insert_runtime().map_err(|e| NodeError {

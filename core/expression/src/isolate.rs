@@ -12,7 +12,7 @@ use crate::compiler::{Compiler, CompilerError};
 use crate::lexer::{Lexer, LexerError};
 use crate::parser::{Parser, ParserError};
 use crate::variable::ToVariable;
-use crate::vm::{VMError, Variable, VM};
+use crate::vm::{VMError, Variable, NULL_VAR, VM};
 
 type ADefHasher = BuildHasherDefault<AHasher>;
 
@@ -73,7 +73,6 @@ impl<'a> Isolate<'a> {
 
     pub fn set_reference(&mut self, reference: &'a str) -> Result<(), IsolateError> {
         let bump = self.get_reference_bump();
-
         let reference_value = match self.references.get(reference) {
             Some(value) => value,
             None => {
@@ -84,10 +83,9 @@ impl<'a> Isolate<'a> {
             }
         };
 
-        let environment = self.environment.as_deref().unwrap_or(&Variable::Null);
-        if !matches!(environment, Variable::Object(_)) {
-            let new_environment = bump.alloc(Variable::empty_object(bump));
-            self.environment.replace(new_environment);
+        if !matches!(&mut self.environment, Some(Variable::Object(_))) {
+            self.environment
+                .replace(bump.alloc(Variable::empty_object(bump)));
         }
 
         let Some(Variable::Object(environment_object)) = self.environment else {
@@ -107,6 +105,7 @@ impl<'a> Isolate<'a> {
     pub fn run_standard(&mut self, source: &'a str) -> Result<Value, IsolateError> {
         self.bump.reset();
         let bump = self.get_bump();
+        let environment = self.get_environment();
 
         let tokens = self
             .lexer
@@ -126,14 +125,9 @@ impl<'a> Isolate<'a> {
             .compile(ast)
             .map_err(|source| IsolateError::CompilerError { source })?;
 
-        let ctx = match self.environment {
-            None => bump.alloc(Variable::Null),
-            Some(ref mut v) => unsafe { std::mem::transmute::<&Variable, &'a Variable>(v) },
-        };
-
         let result = self
             .vm
-            .run(bytecode, bump, ctx)
+            .run(bytecode, bump, environment)
             .map_err(|source| IsolateError::VMError { source })?;
 
         Ok(result.to_value())
@@ -142,6 +136,7 @@ impl<'a> Isolate<'a> {
     pub fn run_unary(&mut self, source: &'a str) -> Result<bool, IsolateError> {
         self.bump.reset();
         let bump = self.get_bump();
+        let environment = self.get_environment();
 
         let tokens = self
             .lexer
@@ -161,14 +156,9 @@ impl<'a> Isolate<'a> {
             .compile(ast)
             .map_err(|source| IsolateError::CompilerError { source })?;
 
-        let ctx = match self.environment {
-            None => bump.alloc(Variable::Null),
-            Some(ref mut v) => unsafe { std::mem::transmute::<&Variable, &'a Variable>(v) },
-        };
-
         let result = self
             .vm
-            .run(bytecode, bump, ctx)
+            .run(bytecode, bump, environment)
             .map_err(|source| IsolateError::VMError { source })?;
 
         result.as_bool().ok_or_else(|| IsolateError::ValueCastError)
@@ -180,6 +170,13 @@ impl<'a> Isolate<'a> {
 
     fn get_reference_bump(&self) -> &'a Bump {
         unsafe { std::mem::transmute::<&Bump, &'a Bump>(&self.reference_bump) }
+    }
+
+    fn get_environment(&self) -> &'a Variable<'a> {
+        match &self.environment {
+            None => &NULL_VAR,
+            Some(env) => unsafe { std::mem::transmute::<&Variable, &'a Variable<'a>>(env) },
+        }
     }
 }
 

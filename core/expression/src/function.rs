@@ -19,3 +19,17 @@ pub fn evaluate_unary_expression(expression: &str, context: &Value) -> Result<bo
 
     Isolate::with_environment(context).run_unary(expression)
 }
+
+#[cfg(test)]
+mod test {
+    use crate::evaluate_expression;
+    use serde_json::json;
+
+    #[test]
+    fn bla() {
+        let context = json!({ "tax": { "percentage": 10 } });
+        let tax_amount = evaluate_expression("50 * tax.percentage / 100", &context).unwrap();
+
+        assert_eq!(tax_amount, json!(5));
+    }
+}

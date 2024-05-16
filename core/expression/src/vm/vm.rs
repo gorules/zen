@@ -1,7 +1,5 @@
 use std::collections::HashMap;
 
-use crate::compiler::{Opcode, TypeCheckKind, TypeConversionKind};
-use crate::variable::ToVariable;
 use bumpalo::collections::Vec as BumpVec;
 use bumpalo::collections::{CollectIn, String as BumpString};
 use bumpalo::Bump;
@@ -15,14 +13,15 @@ use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::{Decimal, MathematicalOps};
 use rust_decimal_macros::dec;
 
-use crate::vm::error::VMResult;
-use crate::vm::variable::{IntervalObject, Variable};
-
+use crate::compiler::{Opcode, TypeCheckKind, TypeConversionKind};
+use crate::variable::ToVariable;
 use crate::vm::error::VMError::*;
+use crate::vm::error::VMResult;
 use crate::vm::helpers::{date_time, date_time_end_of, date_time_start_of, time};
 use crate::vm::variable::Variable::*;
+use crate::vm::variable::{IntervalObject, Variable};
 
-const NULL_VAR: &'static Variable = &Null;
+pub(crate) const NULL_VAR: &'static Variable = &Null;
 
 #[derive(Debug)]
 pub struct Scope<'arena> {

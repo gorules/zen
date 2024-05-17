@@ -158,12 +158,6 @@ impl<'a, L: DecisionLoader, A: CustomNodeAdapter> DecisionGraph<'a, L, A> {
                 };
             }
 
-            let mut node_request = NodeRequest {
-                node,
-                iteration: self.iteration,
-                input: walker.incoming_node_data(&self.graph, nid, true),
-            };
-
             match &node.kind {
                 DecisionNodeKind::InputNode => {
                     walker.set_node_data(nid, context.clone());
@@ -185,26 +179,26 @@ impl<'a, L: DecisionLoader, A: CustomNodeAdapter> DecisionGraph<'a, L, A> {
                         performance: None,
                         trace_data: None,
                     });
-                    if let Some(obj) = node_request.input.as_object_mut() {
-                        obj.remove("$nodes");
-                    }
 
                     return Ok(DecisionGraphResponse {
-                        result: node_request.input,
+                        result: walker.incoming_node_data(&self.graph, nid, false),
                         performance: format!("{:?}", root_start.elapsed()),
                         trace: node_traces,
                     });
                 }
                 DecisionNodeKind::SwitchNode { .. } => {
-                    walker.set_node_data(nid, node_request.input.clone());
+                    let input_data = walker.incoming_node_data(&self.graph, nid, false);
+
                     trace!({
-                        input: node_request.input.clone(),
-                        output: node_request.input.clone(),
+                        input: input_data.clone(),
+                        output: input_data.clone(),
                         name: node.name.clone(),
                         id: node.id.clone(),
                         performance: Some(format!("{:?}", start.elapsed())),
                         trace_data: Some(walker_metadata),
                     });
+
+                    walker.set_node_data(nid, input_data);
                 }
                 DecisionNodeKind::FunctionNode { .. } => {
                     let runtime = self.get_or_insert_runtime().map_err(|e| NodeError {
@@ -212,7 +206,12 @@ impl<'a, L: DecisionLoader, A: CustomNodeAdapter> DecisionGraph<'a, L, A> {
                         node_id: node.id.clone(),
                     })?;
 
-                    let res = FunctionHandler::new(self.trace, runtime)
+                    let mut node_request = NodeRequest {
+                        node,
+                        iteration: self.iteration,
+                        input: walker.incoming_node_data(&self.graph, nid, true),
+                    };
+                    let mut res = FunctionHandler::new(self.trace, runtime)
                         .handle(&node_request)
                         .await
                         .map_err(|e| NodeError {
@@ -220,18 +219,27 @@ impl<'a, L: DecisionLoader, A: CustomNodeAdapter> DecisionGraph<'a, L, A> {
                             node_id: node.id.clone(),
                         })?;
 
-                    walker.set_node_data(nid, res.output.clone());
+                    trim_nodes(&mut node_request.input);
+                    trim_nodes(&mut res.output);
+
                     trace!({
                         input: node_request.input,
-                        output: res.output,
+                        output: res.output.clone(),
                         name: node.name.clone(),
                         id: node.id.clone(),
                         performance: Some(format!("{:?}", start.elapsed())),
                         trace_data: res.trace_data,
                     });
+                    walker.set_node_data(nid, res.output);
                 }
                 DecisionNodeKind::DecisionNode { .. } => {
-                    let res = DecisionHandler::new(
+                    let mut node_request = NodeRequest {
+                        node,
+                        iteration: self.iteration,
+                        input: walker.incoming_node_data(&self.graph, nid, true),
+                    };
+
+                    let mut res = DecisionHandler::new(
                         self.trace,
                         self.max_depth,
                         self.loader.clone(),
@@ -245,18 +253,27 @@ impl<'a, L: DecisionLoader, A: CustomNodeAdapter> DecisionGraph<'a, L, A> {
                         node_id: node.id.to_string(),
                     })?;
 
-                    walker.set_node_data(nid, res.output.clone());
+                    trim_nodes(&mut node_request.input);
+                    trim_nodes(&mut res.output);
+
                     trace!({
                         input: node_request.input,
-                        output: res.output,
+                        output: res.output.clone(),
                         name: node.name.clone(),
                         id: node.id.clone(),
                         performance: Some(format!("{:?}", start.elapsed())),
                         trace_data: res.trace_data,
                     });
+                    walker.set_node_data(nid, res.output);
                 }
                 DecisionNodeKind::DecisionTableNode { .. } => {
-                    let res = DecisionTableHandler::new(self.trace)
+                    let mut node_request = NodeRequest {
+                        node,
+                        iteration: self.iteration,
+                        input: walker.incoming_node_data(&self.graph, nid, true),
+                    };
+
+                    let mut res = DecisionTableHandler::new(self.trace)
                         .handle(&node_request)
                         .await
                         .map_err(|e| NodeError {
@@ -264,18 +281,27 @@ impl<'a, L: DecisionLoader, A: CustomNodeAdapter> DecisionGraph<'a, L, A> {
                             source: e.into(),
                         })?;
 
-                    walker.set_node_data(nid, res.output.clone());
+                    trim_nodes(&mut node_request.input);
+                    trim_nodes(&mut res.output);
+
                     trace!({
                         input: node_request.input,
-                        output: res.output,
+                        output: res.output.clone(),
                         name: node.name.clone(),
                         id: node.id.clone(),
                         performance: Some(format!("{:?}", start.elapsed())),
                         trace_data: res.trace_data,
                     });
+                    walker.set_node_data(nid, res.output);
                 }
                 DecisionNodeKind::ExpressionNode { .. } => {
-                    let res = ExpressionHandler::new(self.trace)
+                    let mut node_request = NodeRequest {
+                        node,
+                        iteration: self.iteration,
+                        input: walker.incoming_node_data(&self.graph, nid, true),
+                    };
+
+                    let mut res = ExpressionHandler::new(self.trace)
                         .handle(&node_request)
                         .await
                         .map_err(|e| NodeError {
@@ -283,18 +309,27 @@ impl<'a, L: DecisionLoader, A: CustomNodeAdapter> DecisionGraph<'a, L, A> {
                             source: e.into(),
                         })?;
 
-                    walker.set_node_data(nid, res.output.clone());
+                    trim_nodes(&mut node_request.input);
+                    trim_nodes(&mut res.output);
+
                     trace!({
                         input: node_request.input,
-                        output: res.output,
+                        output: res.output.clone(),
                         name: node.name.clone(),
                         id: node.id.clone(),
                         performance: Some(format!("{:?}", start.elapsed())),
                         trace_data: res.trace_data,
                     });
+                    walker.set_node_data(nid, res.output);
                 }
                 DecisionNodeKind::CustomNode { .. } => {
-                    let res = self
+                    let mut node_request = NodeRequest {
+                        node,
+                        iteration: self.iteration,
+                        input: walker.incoming_node_data(&self.graph, nid, true),
+                    };
+
+                    let mut res = self
                         .adapter
                         .handle(CustomNodeRequest::try_from(&node_request).unwrap())
                         .await
@@ -303,15 +338,18 @@ impl<'a, L: DecisionLoader, A: CustomNodeAdapter> DecisionGraph<'a, L, A> {
                             source: e.into(),
                         })?;
 
-                    walker.set_node_data(nid, res.output.clone());
+                    trim_nodes(&mut node_request.input);
+                    trim_nodes(&mut res.output);
+
                     trace!({
                         input: node_request.input,
-                        output: res.output,
+                        output: res.output.clone(),
                         name: node.name.clone(),
                         id: node.id.clone(),
                         performance: Some(format!("{:?}", start.elapsed())),
                         trace_data: res.trace_data,
                     });
+                    walker.set_node_data(nid, res.output);
                 }
             }
         }
@@ -320,6 +358,12 @@ impl<'a, L: DecisionLoader, A: CustomNodeAdapter> DecisionGraph<'a, L, A> {
             node_id: "".to_string(),
             source: anyhow!("Graph did not halt. Missing output node."),
         })
+    }
+}
+
+fn trim_nodes(val: &mut Value) {
+    if let Some(obj) = val.as_object_mut() {
+        obj.remove("$nodes");
     }
 }
 

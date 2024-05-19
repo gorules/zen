@@ -8,11 +8,12 @@ use serde::{Serialize, Serializer};
 use serde_json::Value;
 use thiserror::Error;
 
+use crate::arena::UnsafeArena;
 use crate::compiler::{Compiler, CompilerError};
 use crate::lexer::{Lexer, LexerError};
 use crate::parser::{Parser, ParserError};
 use crate::variable::ToVariable;
-use crate::vm::{VMError, Variable, NULL_VAR, VM};
+use crate::vm::{VMError, Variable, VM};
 
 type ADefHasher = BuildHasherDefault<AHasher>;
 
@@ -27,8 +28,8 @@ pub struct Isolate<'arena> {
     compiler: Compiler<'arena>,
     vm: VM<'arena>,
 
-    bump: Bump,
-    reference_bump: Bump,
+    bump: UnsafeArena<'arena>,
+    reference_bump: UnsafeArena<'arena>,
 
     environment: Option<&'arena mut Variable<'arena>>,
     references: HashMap<&'arena str, &'arena Variable<'arena>, ADefHasher>,
@@ -41,8 +42,8 @@ impl<'a> Isolate<'a> {
             compiler: Compiler::new(),
             vm: VM::new(),
 
-            bump: Default::default(),
-            reference_bump: Default::default(),
+            bump: UnsafeArena::new(),
+            reference_bump: UnsafeArena::new(),
 
             environment: None,
             references: Default::default(),
@@ -57,7 +58,7 @@ impl<'a> Isolate<'a> {
     }
 
     pub fn set_environment(&mut self, value: &Value) {
-        let bump = self.get_reference_bump();
+        let bump = self.reference_bump.get();
         let new_environment = value.to_variable(bump).unwrap();
 
         self.environment.replace(bump.alloc(new_environment));
@@ -65,14 +66,14 @@ impl<'a> Isolate<'a> {
 
     pub fn update_environment<F>(&mut self, mut updater: F)
     where
-        F: FnMut(&'a Bump, &Option<&'a mut Variable<'a>>),
+        F: FnMut(&'a Bump, &mut Option<&'a mut Variable<'a>>),
     {
-        let bump = self.get_reference_bump();
-        updater(bump, &self.environment);
+        let bump = self.reference_bump.get();
+        updater(bump, &mut self.environment);
     }
 
     pub fn set_reference(&mut self, reference: &'a str) -> Result<(), IsolateError> {
-        let bump = self.get_reference_bump();
+        let bump = self.reference_bump.get();
         let reference_value = match self.references.get(reference) {
             Some(value) => value,
             None => {
@@ -92,7 +93,7 @@ impl<'a> Isolate<'a> {
             return Err(IsolateError::ReferenceError);
         };
 
-        environment_object.insert("$", reference_value.clone());
+        environment_object.insert("$", reference_value.clone_in(bump));
         Ok(())
     }
 
@@ -103,9 +104,8 @@ impl<'a> Isolate<'a> {
     }
 
     pub fn run_standard(&mut self, source: &'a str) -> Result<Value, IsolateError> {
-        self.bump.reset();
-        let bump = self.get_bump();
-        let environment = self.get_environment();
+        self.bump.with_mut(|b| b.reset());
+        let bump = self.bump.get();
 
         let tokens = self
             .lexer
@@ -127,16 +127,19 @@ impl<'a> Isolate<'a> {
 
         let result = self
             .vm
-            .run(bytecode, bump, environment)
+            .run(
+                bytecode,
+                bump,
+                self.environment.as_deref().unwrap_or(&Variable::Null),
+            )
             .map_err(|source| IsolateError::VMError { source })?;
 
         Ok(result.to_value())
     }
 
     pub fn run_unary(&mut self, source: &'a str) -> Result<bool, IsolateError> {
-        self.bump.reset();
-        let bump = self.get_bump();
-        let environment = self.get_environment();
+        self.bump.with_mut(|b| b.reset());
+        let bump = self.bump.get();
 
         let tokens = self
             .lexer
@@ -158,25 +161,14 @@ impl<'a> Isolate<'a> {
 
         let result = self
             .vm
-            .run(bytecode, bump, environment)
+            .run(
+                bytecode,
+                bump,
+                self.environment.as_deref().unwrap_or(&Variable::Null),
+            )
             .map_err(|source| IsolateError::VMError { source })?;
 
         result.as_bool().ok_or_else(|| IsolateError::ValueCastError)
-    }
-
-    fn get_bump(&self) -> &'a Bump {
-        unsafe { std::mem::transmute::<&Bump, &'a Bump>(&self.bump) }
-    }
-
-    fn get_reference_bump(&self) -> &'a Bump {
-        unsafe { std::mem::transmute::<&Bump, &'a Bump>(&self.reference_bump) }
-    }
-
-    fn get_environment(&self) -> &'a Variable<'a> {
-        match &self.environment {
-            None => &NULL_VAR,
-            Some(env) => unsafe { std::mem::transmute::<&Variable, &'a Variable<'a>>(env) },
-        }
     }
 }
 

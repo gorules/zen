@@ -11,7 +11,6 @@ repository = "https://github.com/gorules/zen.git"
 ahash = { workspace = true }
 bumpalo = { workspace = true, features = ["collections"] }
 chrono = { workspace = true }
-hashbrown = { workspace = true, features = ["bumpalo"] }
 humantime = { workspace = true }
 fastrand = { workspace = true }
 once_cell = { workspace = true }
@@ -23,7 +22,7 @@ strum = { version = "0.25.0" }
 strum_macros = "0.25.3"
 nohash-hasher = "0.2.0"
 thiserror = { workspace = true }
-rust_decimal = { workspace = true, features = ["maths-nopanic", "serde-arbitrary-precision"] }
+rust_decimal = { workspace = true, features = ["maths-nopanic"] }
 rust_decimal_macros = { workspace = true }
 strsim = "0.11.1"
 

@@ -17,7 +17,7 @@ use crate::vm::VMError;
 #[allow(unused_imports)]
 pub use conv::ToVariable;
 
-#[derive(Debug, PartialEq, Eq, Display, Clone)]
+#[derive(Debug, PartialEq, Eq, Display)]
 pub enum Variable<'arena> {
     Null,
     Bool(bool),
@@ -89,6 +89,24 @@ impl<'arena> Variable<'arena> {
                     .map(|(k, v)| (k.to_string(), v.to_value()))
                     .collect(),
             ),
+        }
+    }
+
+    pub fn clone_in<'new>(&self, arena: &'new Bump) -> Variable<'new> {
+        match self {
+            Variable::Null => Variable::Null,
+            Variable::Bool(b) => Variable::Bool(*b),
+            Variable::Number(n) => Variable::Number(*n),
+            Variable::String(s) => Variable::String(arena.alloc_str(s)),
+            Variable::Array(arr) => Variable::Array(BumpVec::from_iter_in(
+                arr.iter().map(|v| v.clone_in(arena)),
+                arena,
+            )),
+            Variable::Object(obj) => Variable::Object(BumpMap::from_iter_in(
+                obj.iter()
+                    .map(|(k, v)| (&*arena.alloc_str(k), v.clone_in(arena))),
+                arena,
+            )),
         }
     }
 }

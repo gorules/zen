@@ -3,11 +3,11 @@ use bumpalo::Bump;
 pub use crate::variable::Variable;
 use crate::variable::{BumpMap, ToVariable};
 
-pub(crate) struct IntervalObject<'a> {
-    pub(crate) left_bracket: &'a str,
-    pub(crate) right_bracket: &'a str,
-    pub(crate) left: &'a Variable<'a>,
-    pub(crate) right: &'a Variable<'a>,
+pub(crate) struct IntervalObject<'arena> {
+    pub(crate) left_bracket: &'arena str,
+    pub(crate) right_bracket: &'arena str,
+    pub(crate) left: &'arena Variable<'arena>,
+    pub(crate) right: &'arena Variable<'arena>,
 }
 
 impl<'arena> ToVariable<'arena> for IntervalObject<'arena> {
@@ -19,8 +19,8 @@ impl<'arena> ToVariable<'arena> for IntervalObject<'arena> {
         tree.insert("_symbol", Variable::String("Interval"));
         tree.insert("left_bracket", Variable::String(self.left_bracket));
         tree.insert("right_bracket", Variable::String(self.right_bracket));
-        tree.insert("left", self.left.clone());
-        tree.insert("right", self.right.clone());
+        tree.insert("left", self.left.clone_in(arena));
+        tree.insert("right", self.right.clone_in(arena));
 
         Ok(Variable::Object(tree))
     }

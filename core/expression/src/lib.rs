@@ -51,6 +51,7 @@
 
 mod isolate;
 
+mod arena;
 pub mod compiler;
 mod function;
 pub mod lexer;

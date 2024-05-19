@@ -49,7 +49,7 @@ impl<'arena> VM<'arena> {
         &mut self,
         bytecode: &[Opcode<'arena>],
         bump: &'arena Bump,
-        env: &'arena Variable<'arena>,
+        env: &Variable<'arena>,
     ) -> VMResult<&Variable> {
         self.stack.clear();
         self.scopes.clear();
@@ -97,7 +97,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
         self.stack.push(var);
     }
 
-    pub fn run(&mut self, env: &'arena Variable<'arena>) -> VMResult<&'arena Variable<'arena>> {
+    pub fn run(&mut self, env: &Variable<'arena>) -> VMResult<&'arena Variable<'arena>> {
         if self.ip != 0 {
             self.ip = 0;
         }
@@ -115,7 +115,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
 
             match op {
                 Opcode::Push(v) => {
-                    self.push(v.clone());
+                    self.push(v.clone_in(self.bump));
                 }
                 Opcode::Pop => {
                     self.pop()?;
@@ -156,7 +156,10 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     }
                 }
                 Opcode::FetchEnv(f) => match env {
-                    Object(o) => self.push_ref(o.get(*f).unwrap_or(&NULL_VAR)),
+                    Object(o) => match o.get(*f) {
+                        None => self.push_ref(&NULL_VAR),
+                        Some(v) => self.push(v.clone_in(self.bump)),
+                    },
                     Null => self.push_ref(NULL_VAR),
                     _ => {
                         return Err(OpcodeErr {
@@ -166,7 +169,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     }
                 },
                 Opcode::FetchRootEnv => {
-                    self.push(env.clone());
+                    self.push(env.clone_in(self.bump));
                 }
                 Opcode::Negate => {
                     let a = self.pop()?;
@@ -1135,7 +1138,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                                     })?;
 
                                     self.push(Array(BumpVec::from_iter_in(
-                                        slice.iter().cloned(),
+                                        slice.iter().map(|v| v.clone_in(self.bump)),
                                         self.bump,
                                     )));
                                 }
@@ -1180,7 +1183,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
 
                     let mut arr = BumpVec::with_capacity_in(to, &self.bump);
                     for _ in 0..to {
-                        arr.push(self.pop()?.clone());
+                        arr.push(self.pop()?.clone_in(self.bump));
                     }
                     arr.reverse();
 
@@ -1218,8 +1221,10 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     flat_arr.reserve(arr.len());
 
                     arr.iter().for_each(|v| match v {
-                        Array(arr) => arr.iter().for_each(|v| flat_arr.push(v.clone())),
-                        _ => flat_arr.push(v.clone()),
+                        Array(arr) => arr
+                            .iter()
+                            .for_each(|v| flat_arr.push(v.clone_in(self.bump))),
+                        _ => flat_arr.push(v.clone_in(self.bump)),
                     });
 
                     self.push(Array(flat_arr));

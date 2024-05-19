@@ -2,7 +2,7 @@ use crate::vm::Variable;
 use strum_macros::Display;
 
 /// Machine code interpreted by VM
-#[derive(Debug, PartialEq, Eq, Clone, Display)]
+#[derive(Debug, PartialEq, Eq, Display)]
 pub enum Opcode<'a> {
     Push(Variable<'a>),
     Pop,

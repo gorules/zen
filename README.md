@@ -315,6 +315,8 @@ decision models during execution.
 By incorporating the "Decision" node, developers can modularize decision logic, promoting reusability and
 maintainability in complex systems.
 
+To use the decision node, you would need to publish the decision model and then refer to that in other decision models. 
+
 ## Support matrix
 
 | Arch            | Rust               | NodeJS             | Python             | Go                 |

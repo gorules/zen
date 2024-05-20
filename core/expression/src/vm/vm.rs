@@ -15,11 +15,12 @@ use rust_decimal_macros::dec;
 
 use crate::compiler::{Opcode, TypeCheckKind, TypeConversionKind};
 use crate::variable::ToVariable;
+use crate::variable::Variable;
+use crate::variable::Variable::*;
 use crate::vm::error::VMError::*;
 use crate::vm::error::VMResult;
 use crate::vm::helpers::{date_time, date_time_end_of, date_time_start_of, time};
-use crate::vm::variable::Variable::*;
-use crate::vm::variable::{IntervalObject, Variable};
+use crate::vm::variable::IntervalObject;
 
 pub(crate) const NULL_VAR: &'static Variable = &Null;
 

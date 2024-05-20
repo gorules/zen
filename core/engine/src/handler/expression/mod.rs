@@ -6,6 +6,7 @@ use crate::util::json_map::FlatJsonMap;
 use anyhow::{anyhow, Context};
 use serde::Serialize;
 use serde_json::Value;
+use zen_expression::variable::ToVariable;
 use zen_expression::Isolate;
 
 pub struct ExpressionHandler<'a> {
@@ -47,6 +48,17 @@ impl<'a> ExpressionHandler<'a> {
                 );
             }
 
+            self.isolate.update_environment(|arena, env| {
+                let Some(environment) = env else {
+                    return;
+                };
+
+                let _ = environment.dot_insert(
+                    arena,
+                    &expression.key,
+                    value.to_variable(arena).unwrap(),
+                );
+            });
             result.insert(&expression.key, value);
         }
 

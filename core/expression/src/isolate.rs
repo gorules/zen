@@ -12,8 +12,8 @@ use crate::arena::UnsafeArena;
 use crate::compiler::{Compiler, CompilerError};
 use crate::lexer::{Lexer, LexerError};
 use crate::parser::{Parser, ParserError};
-use crate::variable::ToVariable;
-use crate::vm::{VMError, Variable, VM};
+use crate::variable::{ToVariable, Variable};
+use crate::vm::{VMError, VM};
 
 type ADefHasher = BuildHasherDefault<AHasher>;
 

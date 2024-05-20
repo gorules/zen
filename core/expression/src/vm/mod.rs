@@ -2,7 +2,6 @@
 //!
 //! The VM (Virtual Machine) module executes the generated machine-readable opcodes.
 pub use error::VMError;
-pub use variable::Variable;
 pub use vm::VM;
 
 mod error;

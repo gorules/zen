@@ -109,6 +109,52 @@ impl<'arena> Variable<'arena> {
             )),
         }
     }
+
+    pub fn dot(&self, key: &str) -> Option<&Variable<'arena>> {
+        key.split('.').try_fold(self, |var, part| match var {
+            Variable::Object(obj) => obj.get(part),
+            _ => None,
+        })
+    }
+
+    pub fn dot_mut(&mut self, key: &str) -> Option<&mut Variable<'arena>> {
+        key.split('.').try_fold(self, |var, part| match var {
+            Variable::Object(obj) => obj.get_mut(part),
+            _ => None,
+        })
+    }
+
+    pub fn dot_insert(
+        &mut self,
+        arena: &'arena Bump,
+        key: &str,
+        variable: Variable<'arena>,
+    ) -> Option<&mut Variable<'arena>> {
+        let mut parts: BumpVec<&'arena str> =
+            BumpVec::from_iter_in(key.split('.').map(|p| &*arena.alloc_str(p)), arena);
+        let Some(last_part) = parts.pop() else {
+            return None;
+        };
+
+        let head = parts.iter().try_fold(self, |var, part| match var {
+            Variable::Object(obj) => {
+                if obj.contains_key(part) {
+                    obj.get_mut(part)
+                } else {
+                    obj.insert(part, Self::empty_object(arena));
+                    obj.get_mut(part)
+                }
+            }
+            _ => None,
+        })?;
+
+        let Variable::Object(head_obj) = head else {
+            return None;
+        };
+
+        head_obj.insert(last_part, variable);
+        head_obj.get_mut(last_part)
+    }
 }
 
 impl TryFrom<&Variable<'_>> for NaiveDateTime {

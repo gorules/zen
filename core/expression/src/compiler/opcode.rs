@@ -1,4 +1,4 @@
-use crate::vm::Variable;
+use crate::variable::Variable;
 use strum_macros::Display;
 
 /// Machine code interpreted by VM

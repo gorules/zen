@@ -1,7 +1,6 @@
 use bumpalo::Bump;
 
-pub use crate::variable::Variable;
-use crate::variable::{BumpMap, ToVariable};
+use crate::variable::{BumpMap, ToVariable, Variable};
 
 pub(crate) struct IntervalObject<'arena> {
     pub(crate) left_bracket: &'arena str,

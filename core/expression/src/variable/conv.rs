@@ -42,14 +42,3 @@ impl<'arena> ToVariable<'arena> for Value {
         }
     }
 }
-//
-// impl<'arena, S> ToVariable<'arena> for S
-// where
-//     S: Serialize,
-// {
-//     type Error = ();
-//
-//     fn to_variable(&self, arena: &'arena Bump) -> Result<Variable<'arena>, Self::Error> {
-//         self.serialize(Serialize)
-//     }
-// }

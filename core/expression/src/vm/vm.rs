@@ -10,7 +10,7 @@ use chrono::{Datelike, Timelike};
 use regex::Regex;
 #[cfg(feature = "regex-lite")]
 use regex_lite::Regex;
-use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::{Decimal, MathematicalOps};
 use rust_decimal_macros::dec;
 
@@ -988,6 +988,49 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     })?;
 
                     self.push(Bool(regex.is_match(a)));
+                }
+                Opcode::FuzzyMatch => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+
+                    let String(b) = b else {
+                        return Err(OpcodeErr {
+                            opcode: "FuzzyMatch".into(),
+                            message: "Unsupported type".into(),
+                        });
+                    };
+
+                    match a {
+                        String(a) => {
+                            let sim = strsim::normalized_damerau_levenshtein(a, b);
+                            // This is okay, as NDL will return [0, 1]
+                            self.push(Number(Decimal::from_f64(sim).unwrap_or(dec!(0))));
+                        }
+                        Array(a) => {
+                            let mut sims = BumpVec::with_capacity_in(a.len(), &self.bump);
+                            for v in a.iter() {
+                                let String(s) = v else {
+                                    return Err(OpcodeErr {
+                                        opcode: "FuzzyMatch".into(),
+                                        message: "Unsupported type".into(),
+                                    });
+                                };
+
+                                let sim =
+                                    Decimal::from_f64(strsim::normalized_damerau_levenshtein(s, b))
+                                        .unwrap_or(dec!(0));
+                                sims.push(&*self.bump.alloc(Number(sim)));
+                            }
+
+                            self.push(Array(sims.into_bump_slice()))
+                        }
+                        _ => {
+                            return Err(OpcodeErr {
+                                opcode: "FuzzyMatch".into(),
+                                message: "Unsupported type".into(),
+                            })
+                        }
+                    }
                 }
                 Opcode::Extract => {
                     let b = self.pop()?;

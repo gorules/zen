@@ -25,6 +25,7 @@ nohash-hasher = "0.2.0"
 thiserror = { workspace = true }
 rust_decimal = { workspace = true, features = ["maths-nopanic"] }
 rust_decimal_macros = { workspace = true }
+strsim = "0.11.1"
 
 [dev-dependencies]
 anyhow = { workspace = true }

@@ -329,6 +329,11 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                     self.compile_argument(kind, arguments, 1)?;
                     Ok(self.emit(Opcode::Matches))
                 }
+                BuiltInFunction::FuzzyMatch => {
+                    self.compile_argument(kind, arguments, 0)?;
+                    self.compile_argument(kind, arguments, 1)?;
+                    Ok(self.emit(Opcode::FuzzyMatch))
+                }
                 BuiltInFunction::Extract => {
                     self.compile_argument(kind, arguments, 0)?;
                     self.compile_argument(kind, arguments, 1)?;

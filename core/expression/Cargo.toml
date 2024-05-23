@@ -18,12 +18,12 @@ regex = { workspace = true, optional = true }
 regex-lite = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true, features = ["arbitrary_precision"] }
-strum = { version = "0.25.0" }
-strum_macros = "0.25.3"
-nohash-hasher = "0.2.0"
+strum = { workspace = true }
+strum_macros = { workspace = true }
 thiserror = { workspace = true }
 rust_decimal = { workspace = true, features = ["maths-nopanic"] }
 rust_decimal_macros = { workspace = true }
+nohash-hasher = "0.2.0"
 strsim = "0.11.1"
 
 [dev-dependencies]

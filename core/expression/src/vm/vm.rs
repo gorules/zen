@@ -1017,10 +1017,10 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                                 let sim =
                                     Decimal::from_f64(strsim::normalized_damerau_levenshtein(s, b))
                                         .unwrap_or(dec!(0));
-                                sims.push(&*self.bump.alloc(Number(sim)));
+                                sims.push(Number(sim));
                             }
 
-                            self.push(Array(sims.into_bump_slice()))
+                            self.push(Array(sims))
                         }
                         _ => {
                             return Err(OpcodeErr {

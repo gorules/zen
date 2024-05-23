@@ -22,6 +22,7 @@ pub enum BuiltInFunction {
     EndsWith,
     Matches,
     Extract,
+    FuzzyMatch,
 
     // Math
     Abs,
@@ -88,6 +89,7 @@ impl BuiltInFunction {
             BuiltInFunction::EndsWith => Arity::Dual,
             BuiltInFunction::Matches => Arity::Dual,
             BuiltInFunction::Extract => Arity::Dual,
+            BuiltInFunction::FuzzyMatch => Arity::Dual,
 
             // Math
             BuiltInFunction::Abs => Arity::Single,

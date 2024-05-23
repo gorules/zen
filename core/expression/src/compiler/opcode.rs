@@ -53,6 +53,7 @@ pub enum Opcode<'a> {
     StartsWith,
     EndsWith,
     Matches,
+    FuzzyMatch,
     Extract,
     Slice,
     Array,

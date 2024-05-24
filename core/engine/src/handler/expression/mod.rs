@@ -53,11 +53,9 @@ impl<'a> ExpressionHandler<'a> {
                     return;
                 };
 
-                let _ = environment.dot_insert(
-                    arena,
-                    &expression.key,
-                    value.to_variable(arena).unwrap(),
-                );
+                let key = format!("$.{}", &expression.key);
+                let _ =
+                    environment.dot_insert(arena, key.as_str(), value.to_variable(arena).unwrap());
             });
             result.insert(&expression.key, value);
         }

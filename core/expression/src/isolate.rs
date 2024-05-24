@@ -8,10 +8,12 @@ use serde::{Serialize, Serializer};
 use serde_json::Value;
 use thiserror::Error;
 
+use crate::arena::UnsafeArena;
 use crate::compiler::{Compiler, CompilerError};
 use crate::lexer::{Lexer, LexerError};
 use crate::parser::{Parser, ParserError};
-use crate::vm::{VMError, Variable, VM};
+use crate::variable::{ToVariable, Variable};
+use crate::vm::{VMError, VM};
 
 type ADefHasher = BuildHasherDefault<AHasher>;
 
@@ -26,8 +28,8 @@ pub struct Isolate<'arena> {
     compiler: Compiler<'arena>,
     vm: VM<'arena>,
 
-    bump: Bump,
-    reference_bump: Bump,
+    bump: UnsafeArena<'arena>,
+    reference_bump: UnsafeArena<'arena>,
 
     environment: Option<&'arena mut Variable<'arena>>,
     references: HashMap<&'arena str, &'arena Variable<'arena>, ADefHasher>,
@@ -40,8 +42,8 @@ impl<'a> Isolate<'a> {
             compiler: Compiler::new(),
             vm: VM::new(),
 
-            bump: Default::default(),
-            reference_bump: Default::default(),
+            bump: UnsafeArena::new(),
+            reference_bump: UnsafeArena::new(),
 
             environment: None,
             references: Default::default(),
@@ -56,47 +58,54 @@ impl<'a> Isolate<'a> {
     }
 
     pub fn set_environment(&mut self, value: &Value) {
-        let bump = self.get_reference_bump();
-        let new_environment = Variable::from_serde(value, self.get_reference_bump());
+        let bump = self.reference_bump.get();
+        let new_environment = value.to_variable(bump).unwrap();
 
         self.environment.replace(bump.alloc(new_environment));
     }
 
-    pub fn set_reference(&mut self, reference: &'a str) -> Result<(), IsolateError> {
-        let bump = self.get_reference_bump();
+    pub fn update_environment<F>(&mut self, mut updater: F)
+    where
+        F: FnMut(&'a Bump, &mut Option<&'a mut Variable<'a>>),
+    {
+        let bump = self.reference_bump.get();
+        updater(bump, &mut self.environment);
+    }
 
+    pub fn set_reference(&mut self, reference: &'a str) -> Result<(), IsolateError> {
+        let bump = self.reference_bump.get();
         let reference_value = match self.references.get(reference) {
             Some(value) => value,
             None => {
                 let result = self.run_standard(reference)?;
-                let value = &*bump.alloc(Variable::from_serde(&result, bump));
+                let value = &*bump.alloc(result.to_variable(bump).unwrap());
                 self.references.insert(reference, value);
                 value
             }
         };
 
-        let environment = self.environment.as_deref().unwrap_or(&Variable::Null);
-        if !matches!(environment, Variable::Object(_)) {
-            let new_environment = bump.alloc(Variable::empty_object_in(bump));
-            self.environment.replace(new_environment);
+        if !matches!(&mut self.environment, Some(Variable::Object(_))) {
+            self.environment
+                .replace(bump.alloc(Variable::empty_object(bump)));
         }
 
         let Some(Variable::Object(environment_object)) = self.environment else {
             return Err(IsolateError::ReferenceError);
         };
 
-        environment_object.insert("$", reference_value);
+        environment_object.insert("$", reference_value.clone_in(bump));
         Ok(())
     }
 
     pub fn get_reference(&self, reference: &str) -> Option<Value> {
         let reference_variable = self.references.get(reference)?;
-        (*reference_variable).try_into().ok()
+
+        Some(reference_variable.to_value())
     }
 
     pub fn run_standard(&mut self, source: &'a str) -> Result<Value, IsolateError> {
-        self.bump.reset();
-        let bump = self.get_bump();
+        self.bump.with_mut(|b| b.reset());
+        let bump = self.bump.get();
 
         let tokens = self
             .lexer
@@ -125,12 +134,12 @@ impl<'a> Isolate<'a> {
             )
             .map_err(|source| IsolateError::VMError { source })?;
 
-        result.try_into().map_err(|_| IsolateError::ValueCastError)
+        Ok(result.to_value())
     }
 
     pub fn run_unary(&mut self, source: &'a str) -> Result<bool, IsolateError> {
-        self.bump.reset();
-        let bump = self.get_bump();
+        self.bump.with_mut(|b| b.reset());
+        let bump = self.bump.get();
 
         let tokens = self
             .lexer
@@ -160,14 +169,6 @@ impl<'a> Isolate<'a> {
             .map_err(|source| IsolateError::VMError { source })?;
 
         result.as_bool().ok_or_else(|| IsolateError::ValueCastError)
-    }
-
-    fn get_bump(&self) -> &'a Bump {
-        unsafe { std::mem::transmute::<&Bump, &'a Bump>(&self.bump) }
-    }
-
-    fn get_reference_bump(&self) -> &'a Bump {
-        unsafe { std::mem::transmute::<&Bump, &'a Bump>(&self.reference_bump) }
     }
 }
 

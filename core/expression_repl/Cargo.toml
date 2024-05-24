@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 colored = "2.1.0"
-rustyline = "13.0.0"
+rustyline = "14.0.0"
 serde_json = { workspace = true }
 zen-expression = { path = "../expression", version = "0.21.0" }
 

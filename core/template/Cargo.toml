@@ -9,7 +9,7 @@ repository = "https://github.com/gorules/zen.git"
 
 [dependencies]
 zen-expression = { path = "../expression", version = "0.21.0" }
-itertools = "0.12.1"
+itertools = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

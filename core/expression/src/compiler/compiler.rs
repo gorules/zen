@@ -5,7 +5,7 @@ use crate::compiler::error::{CompilerError, CompilerResult};
 use crate::compiler::{Opcode, TypeCheckKind, TypeConversionKind};
 use crate::lexer::{ArithmeticOperator, ComparisonOperator, LogicalOperator, Operator};
 use crate::parser::{BuiltInFunction, Node};
-use crate::vm::Variable;
+use crate::variable::Variable;
 
 #[derive(Debug)]
 pub struct Compiler<'arena> {

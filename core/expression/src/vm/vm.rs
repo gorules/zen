@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
-use crate::compiler::{Opcode, TypeCheckKind, TypeConversionKind};
-use bumpalo::collections::String as BumpString;
 use bumpalo::collections::Vec as BumpVec;
+use bumpalo::collections::{CollectIn, String as BumpString};
 use bumpalo::Bump;
 use chrono::NaiveDateTime;
 use chrono::{Datelike, Timelike};
@@ -14,14 +13,16 @@ use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::{Decimal, MathematicalOps};
 use rust_decimal_macros::dec;
 
-use crate::vm::error::VMResult;
-use crate::vm::variable::{IntervalObject, Variable};
-
+use crate::compiler::{Opcode, TypeCheckKind, TypeConversionKind};
+use crate::variable::ToVariable;
+use crate::variable::Variable;
+use crate::variable::Variable::*;
 use crate::vm::error::VMError::*;
+use crate::vm::error::VMResult;
 use crate::vm::helpers::{date_time, date_time_end_of, date_time_start_of, time};
-use crate::vm::variable::Variable::*;
+use crate::vm::variable::IntervalObject;
 
-const NULL_VAR: &'static Variable = &Null;
+pub(crate) const NULL_VAR: &'static Variable = &Null;
 
 #[derive(Debug)]
 pub struct Scope<'arena> {
@@ -115,7 +116,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
 
             match op {
                 Opcode::Push(v) => {
-                    self.push(v.clone());
+                    self.push(v.clone_in(self.bump));
                 }
                 Opcode::Pop => {
                     self.pop()?;
@@ -156,7 +157,10 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     }
                 }
                 Opcode::FetchEnv(f) => match env {
-                    Object(o) => self.push_ref(o.get(*f).unwrap_or(&NULL_VAR)),
+                    Object(o) => match o.get(*f) {
+                        None => self.push_ref(&NULL_VAR),
+                        Some(v) => self.push(v.clone_in(self.bump)),
+                    },
                     Null => self.push_ref(NULL_VAR),
                     _ => {
                         return Err(OpcodeErr {
@@ -166,7 +170,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     }
                 },
                 Opcode::FetchRootEnv => {
-                    self.push(env.clone());
+                    self.push(env.clone_in(self.bump));
                 }
                 Opcode::Negate => {
                     let a = self.pop()?;
@@ -833,7 +837,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                                 right: b,
                             };
 
-                            self.push(interval.cast_to_object(self.bump));
+                            self.push(interval.to_variable(self.bump).unwrap());
                         }
                         _ => {
                             return Err(OpcodeErr {
@@ -909,27 +913,21 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
 
                     match current {
                         Array(arr) => {
-                            let indices: Vec<&'arena Variable> = arr
+                            let indices: BumpVec<Variable> = arr
                                 .iter()
                                 .enumerate()
-                                .map(|(index, _)| {
-                                    let number = self.bump.alloc(Number(index.into()));
-                                    return &*number;
-                                })
-                                .collect();
+                                .map(|(index, _)| Number(index.into()))
+                                .collect_in(self.bump);
 
-                            self.push(Array(self.bump.alloc_slice_clone(indices.as_slice())));
+                            self.push(Array(indices));
                         }
                         Object(obj) => {
-                            let keys: Vec<&'arena Variable> = obj
+                            let keys: BumpVec<Variable> = obj
                                 .iter()
-                                .map(|(key, _)| {
-                                    let key = self.bump.alloc(String(self.bump.alloc_str(key)));
-                                    return &*key;
-                                })
-                                .collect();
+                                .map(|(key, _)| String(self.bump.alloc_str(key)))
+                                .collect_in(self.bump);
 
-                            self.push(Array(self.bump.alloc_slice_clone(keys.as_slice())));
+                            self.push(Array(keys));
                         }
                         _ => {
                             return Err(OpcodeErr {
@@ -1019,10 +1017,10 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                                 let sim =
                                     Decimal::from_f64(strsim::normalized_damerau_levenshtein(s, b))
                                         .unwrap_or(dec!(0));
-                                sims.push(&*self.bump.alloc(Number(sim)));
+                                sims.push(Number(sim));
                             }
 
-                            self.push(Array(sims.into_bump_slice()))
+                            self.push(Array(sims))
                         }
                         _ => {
                             return Err(OpcodeErr {
@@ -1055,12 +1053,12 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                                 .iter()
                                 .map(|c| c.map(|c| c.as_str()))
                                 .filter_map(|c| c)
-                                .map(|s| &*self.bump.alloc(String(self.bump.alloc_str(s))))
-                                .collect::<Vec<_>>()
+                                .map(|s| String(self.bump.alloc_str(s)))
+                                .collect_in::<BumpVec<_>>(self.bump)
                         })
-                        .unwrap_or_default();
+                        .unwrap_or_else(|| BumpVec::new_in(self.bump));
 
-                    self.push(Array(self.bump.alloc_slice_clone(captures.as_slice())));
+                    self.push(Array(captures));
                 }
                 Opcode::DateManipulation(operation) => {
                     let timestamp = self.pop()?;
@@ -1140,7 +1138,10 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                                         message: "Index out of range".into(),
                                     })?;
 
-                                    self.push(Array(slice));
+                                    self.push(Array(BumpVec::from_iter_in(
+                                        slice.iter().map(|v| v.clone_in(self.bump)),
+                                        self.bump,
+                                    )));
                                 }
                                 String(s) => {
                                     let slice = s.get(from..=to).ok_or_else(|| OpcodeErr {
@@ -1183,11 +1184,11 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
 
                     let mut arr = BumpVec::with_capacity_in(to, &self.bump);
                     for _ in 0..to {
-                        arr.push(self.pop()?);
+                        arr.push(self.pop()?.clone_in(self.bump));
                     }
                     arr.reverse();
 
-                    self.push(Array(arr.into_bump_slice()));
+                    self.push(Array(arr));
                 }
                 Opcode::Len => {
                     let current = self.stack.last().ok_or_else(|| OpcodeErr {
@@ -1220,12 +1221,14 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     let mut flat_arr = BumpVec::new_in(&self.bump);
                     flat_arr.reserve(arr.len());
 
-                    arr.iter().for_each(|&v| match v {
-                        Array(arr) => arr.iter().for_each(|&v| flat_arr.push(v)),
-                        _ => flat_arr.push(v),
+                    arr.iter().for_each(|v| match v {
+                        Array(arr) => arr
+                            .iter()
+                            .for_each(|v| flat_arr.push(v.clone_in(self.bump))),
+                        _ => flat_arr.push(v.clone_in(self.bump)),
                     });
 
-                    self.push(Array(flat_arr.into_bump_slice()));
+                    self.push(Array(flat_arr));
                 }
                 Opcode::ParseDateTime => {
                     let a = self.pop()?;
@@ -1416,7 +1419,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
 
                     match scope.array {
                         Array(arr) => {
-                            let variable = *arr.get(scope.iter).ok_or_else(|| OpcodeErr {
+                            let variable = arr.get(scope.iter).ok_or_else(|| OpcodeErr {
                                 opcode: "Pointer".into(),
                                 message: "Scope array out of bounds".into(),
                             })?;

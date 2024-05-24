@@ -1,10 +1,13 @@
-use crate::languages::native::NativeDecisionLoader;
+use std::ffi::{c_char, CString};
+use std::sync::Arc;
+
 use anyhow::anyhow;
 use async_trait::async_trait;
-use std::ffi::{c_char, CStr, CString};
-use std::sync::Arc;
+
 use zen_engine::loader::{DecisionLoader, LoaderError, LoaderResponse, NoopLoader};
 use zen_engine::model::DecisionContent;
+
+use crate::languages::native::NativeDecisionLoader;
 
 #[derive(Debug)]
 pub(crate) enum DynamicDecisionLoader {

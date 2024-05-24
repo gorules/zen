@@ -12,7 +12,7 @@ doctest = false
 
 [dependencies]
 async-trait = { workspace = true }
-async-recursion = "1.0.5"
+async-recursion = "1.1.1"
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 bincode = { workspace = true, optional = true }
@@ -24,12 +24,12 @@ json_dotpath = { workspace = true }
 fixedbitset = "0.4.2"
 futures = { workspace = true }
 rquickjs = { version = "0.4.3", features = ["macro", "loader", "rust-alloc"] }
-itertools = "0.12.1"
+itertools = { workspace = true }
 zen-expression = { path = "../expression", version = "0.21.0" }
 zen-tmpl = { path = "../template", version = "0.21.0" }
 
 [dev-dependencies]
-tokio = { version = "1.35.1", features = ["rt", "macros"] }
+tokio = { version = "1.37.0", features = ["rt", "macros"] }
 criterion = { workspace = true, features = ["async_futures"] }
 
 [features]

@@ -1113,7 +1113,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                         message: "Failed to run DateFunction".into(),
                     })?;
 
-                    self.push(Number(s.timestamp().into()));
+                    self.push(Number(s.and_utc().timestamp().into()));
                 }
                 Opcode::Slice => {
                     let from_var = self.pop()?;
@@ -1233,7 +1233,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                 Opcode::ParseDateTime => {
                     let a = self.pop()?;
                     let ts = match a {
-                        String(a) => date_time(a)?.timestamp(),
+                        String(a) => date_time(a)?.and_utc().timestamp(),
                         Number(a) => a.to_i64().ok_or_else(|| OpcodeErr {
                             opcode: "ParseDateTime".into(),
                             message: "Number overflow".into(),

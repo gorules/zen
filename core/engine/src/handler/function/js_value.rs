@@ -82,6 +82,7 @@ impl<'js> FromJs<'js> for JsValue {
             Type::Constructor => json!("[Constructor]"),
             Type::Symbol => json!("[Symbol]"),
             Type::Unknown => json!("[Unknown]"),
+            Type::Promise => json!("[Promise]"),
         };
 
         Ok(JsValue(computed_value))

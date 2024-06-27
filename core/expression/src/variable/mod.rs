@@ -80,7 +80,31 @@ impl<'arena> Variable<'arena> {
             Variable::Null => Value::Null,
             Variable::Bool(b) => Value::Bool(*b),
             Variable::Number(n) => {
-                Value::Number(Number::from_string_unchecked(n.normalize().to_string()))
+                #[cfg(feature = "arbitrary_precision")]
+                {
+                    Value::Number(Number::from_string_unchecked(n.normalize().to_string()))
+                }
+
+                #[cfg(not(feature = "arbitrary_precision"))]
+                {
+                    if let Some(n_uint) = n.to_u64() {
+                        if Decimal::from(n_uint) == *n {
+                            return Value::Number(Number::from(n_uint));
+                        }
+                    }
+
+                    if let Some(n_int) = n.to_i64() {
+                        if Decimal::from(n_int) == *n {
+                            return Value::Number(Number::from(n_int));
+                        }
+                    }
+
+                    if let Some(n_float) = n.to_f64() {
+                        return Value::Number(Number::from_f64(n_float).unwrap())
+                    }
+
+                    Value::Null
+                }
             }
             Variable::String(str) => Value::String(str.to_string()),
             Variable::Array(arr) => Value::Array(arr.iter().map(|i| i.to_value()).collect()),

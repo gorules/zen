@@ -17,11 +17,11 @@ once_cell = { workspace = true }
 regex = { workspace = true, optional = true }
 regex-lite = { workspace = true, optional = true }
 serde = { workspace = true }
-serde_json = { workspace = true, features = ["arbitrary_precision"] }
+serde_json = { workspace = true, features = [] }
 strum = { workspace = true }
 strum_macros = { workspace = true }
 thiserror = { workspace = true }
-rust_decimal = { workspace = true, features = ["maths-nopanic"] }
+rust_decimal = { workspace = true, features = ["maths-nopanic", "serde-with-str"] }
 rust_decimal_macros = { workspace = true }
 nohash-hasher = "0.2.0"
 strsim = "0.11.1"
@@ -36,6 +36,7 @@ serde_json5 = "0.1.0"
 default = ["regex-deprecated"]
 regex-deprecated = ["dep:regex"]
 regex-lite = ["dep:regex-lite"]
+arbitrary_precision = ["serde_json/arbitrary_precision"]
 
 [[bench]]
 harness = false

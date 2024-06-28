@@ -21,3 +21,4 @@ futures = { workspace = true }
 zen-engine = { path = "../../core/engine" }
 zen-expression = { path = "../../core/expression" }
 zen-tmpl = { path = "../../core/template" }
+pyo3-asyncio = { version = "0.20.0", features = ["tokio-runtime"] }

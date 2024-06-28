@@ -50,7 +50,9 @@ impl CustomNodeAdapter for PyCustomNode {
             return result;
         }
 
-        let result = future.expect("Future or result must be present")?.await?;
+        let result = future
+            .ok_or_else(|| anyhow!("Future or result must be present"))??
+            .await?;
 
         let content = Python::with_gil(|py| -> PyResult<_> {
             Ok(extract_custom_node_response(result, py))

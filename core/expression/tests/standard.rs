@@ -281,6 +281,14 @@ fn standard_test() {
                 right: &Node::Array(&[]),
             },
         },
+        StandardTest {
+            src: "25 + 2.5",
+            result: &Node::Binary {
+                left: &Node::Number(D25),
+                right: &Node::Number(D2P5),
+                operator: Operator::Arithmetic(ArithmeticOperator::Add),
+            },
+        },
     ]);
 
     let mut lexer = Lexer::new();

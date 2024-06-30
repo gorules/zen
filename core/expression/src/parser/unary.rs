@@ -279,6 +279,7 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                 BuiltInFunction::String => CompareWithReference(Equal),
                 BuiltInFunction::Number => CompareWithReference(Equal),
                 BuiltInFunction::Bool => CompareWithReference(Equal),
+                BuiltInFunction::Json => CompareWithReference(Equal),
                 BuiltInFunction::Date => CompareWithReference(Equal),
                 BuiltInFunction::Time => CompareWithReference(Equal),
                 BuiltInFunction::Duration => CompareWithReference(Equal),

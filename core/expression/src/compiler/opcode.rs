@@ -79,6 +79,7 @@ pub enum TypeConversionKind {
     Number,
     String,
     Bool,
+    Json,
 }
 
 /// Metadata for TypeCheck Opcode

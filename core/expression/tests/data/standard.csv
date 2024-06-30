@@ -240,6 +240,10 @@ number(123.123);;123.123
 number(123);;123
 number(true);;1
 number(false);;0
+json('true');;true
+json("false");;false
+json('{"hello": "world"}');;{hello: 'world'}
+json('[1, 2, 3, "test"]');;[1, 2, 3, 'test']
 
 # Type check
 isNumeric(123.123);;true

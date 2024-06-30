@@ -1,7 +1,7 @@
 pub use crate::variable::map::BumpMap;
 pub use bumpalo::collections::Vec as BumpVec;
 use bumpalo::Bump;
-use chrono::NaiveDateTime;
+use chrono::{DateTime, NaiveDateTime};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde_json::{Number, Value};
@@ -163,13 +163,14 @@ impl TryFrom<&Variable<'_>> for NaiveDateTime {
     fn try_from(value: &Variable<'_>) -> Result<Self, Self::Error> {
         match value {
             Variable::String(a) => date_time(a),
-            Variable::Number(a) => NaiveDateTime::from_timestamp_opt(
+            Variable::Number(a) => DateTime::from_timestamp(
                 a.to_i64().ok_or_else(|| VMError::OpcodeErr {
                     opcode: "DateManipulation".into(),
                     message: "Failed to extract date".into(),
                 })?,
                 0,
             )
+            .map(|t| t.naive_utc())
             .ok_or_else(|| VMError::ParseDateTimeErr {
                 timestamp: a.to_string(),
             }),

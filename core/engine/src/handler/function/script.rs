@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use anyhow::Context as _;
-use rquickjs::{Context, Ctx, Error as QError, FromJs, Runtime};
+use rquickjs::{Context, Ctx, Error as QError, FromJs, Module, Runtime};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -34,15 +34,14 @@ impl Script {
             serde_json::to_string(args).context("Failed to serialize function arguments")?;
 
         let json_response = context.with(|ctx| -> anyhow::Result<String> {
-            let _ = ctx
-                .clone()
-                .compile("main", "import 'internals'; globalThis.now = Date.now();")
-                .map_err(|e| map_js_error(&ctx, e))?;
-
-            let _ = ctx
-                .globals()
-                .set("log", Vec::<isize>::new())
-                .map_err(|e| map_js_error(&ctx, e))?;
+            Module::evaluate(
+                ctx.clone(),
+                "main",
+                "import 'internals'; globalThis.now = Date.now(); globalThis.log = [];",
+            )
+            .map_err(|e| map_js_error(&ctx, e))?
+            .finish::<()>()
+            .map_err(|e| map_js_error(&ctx, e))?;
 
             ctx.eval::<String, _>(format!("{source};main({args_str})"))
                 .map_err(|e| map_js_error(&ctx, e))

@@ -1,7 +1,7 @@
 use bumpalo::collections::Vec as BumpVec;
 use bumpalo::Bump;
-use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
+use rust_decimal::Decimal;
 use serde_json::Value;
 
 use crate::variable::map::BumpMap;
@@ -23,13 +23,13 @@ impl<'arena> ToVariable<'arena> for Value {
             Value::Number(n) => {
                 #[cfg(feature = "arbitrary_precision")]
                 {
-                    Decimal::from_str_exact(n.as_str()).map_err(|_| ())
+                    Decimal::from_str_exact(n.as_str())
+                        .map_err(|_| ())
                         .map(Variable::Number)
                 }
 
                 #[cfg(not(feature = "arbitrary_precision"))]
                 {
-
                     let decimal = match n.as_u64() {
                         Some(n) => Decimal::from_u64(n).ok_or(())?,
                         None => match n.as_i64() {
@@ -43,7 +43,7 @@ impl<'arena> ToVariable<'arena> for Value {
 
                     Ok(Variable::Number(decimal))
                 }
-            },
+            }
             Value::String(s) => Ok(Variable::String(arena.alloc_str(s.as_str()))),
             Value::Array(arr) => {
                 let mut vec = BumpVec::with_capacity_in(arr.len(), arena);

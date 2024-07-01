@@ -100,7 +100,7 @@ impl<'arena> Variable<'arena> {
                     }
 
                     if let Some(n_float) = n.to_f64() {
-                        return Value::Number(Number::from_f64(n_float).unwrap())
+                        return Value::Number(Number::from_f64(n_float).unwrap());
                     }
 
                     Value::Null

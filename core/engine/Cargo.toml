@@ -3,7 +3,7 @@ authors = ["GoRules Team <bot@gorules.io>"]
 description = "Business rules engine"
 name = "zen-engine"
 license = "MIT"
-version = "0.22.0"
+version = "0.23.0"
 edition = "2021"
 repository = "https://github.com/gorules/zen.git"
 
@@ -25,8 +25,8 @@ fixedbitset = "0.4.2"
 futures = { workspace = true }
 rquickjs = { version = "0.4.3", features = ["macro", "loader", "rust-alloc"] }
 itertools = { workspace = true }
-zen-expression = { path = "../expression", version = "0.22.0" }
-zen-tmpl = { path = "../template", version = "0.22.0" }
+zen-expression = { path = "../expression", version = "0.23.0" }
+zen-tmpl = { path = "../template", version = "0.23.0" }
 
 [dev-dependencies]
 tokio = { version = "1.37.0", features = ["rt", "macros"] }

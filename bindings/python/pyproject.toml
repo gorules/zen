@@ -32,7 +32,7 @@ keywords = ["gorules",
 ]
 
 [project.optional-dependencies]
-dev = ["black", "bumpver", "isort", "pip-tools", "pytest"]
+dev = ["black", "bumpver", "isort", "pip-tools", "pytest", "asyncio"]
 
 [project.urls]
 Homepage = "https://github.com/gorules/zen"

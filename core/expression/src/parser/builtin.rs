@@ -1,4 +1,4 @@
-use strum_macros::{Display, EnumString, IntoStaticStr};
+use strum_macros::{Display, EnumIter, EnumString, IntoStaticStr};
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum Arity {
@@ -7,7 +7,7 @@ pub(crate) enum Arity {
     Dual,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, EnumString, Display, IntoStaticStr)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, EnumString, Display, IntoStaticStr, EnumIter)]
 #[strum(serialize_all = "camelCase")]
 pub enum BuiltInFunction {
     // General

@@ -23,6 +23,7 @@ pub enum BuiltInFunction {
     Matches,
     Extract,
     FuzzyMatch,
+    Split,
 
     // Math
     Abs,
@@ -42,7 +43,7 @@ pub enum BuiltInFunction {
     String,
     Number,
     Bool,
-    // Json,
+    Type,
 
     // Date + time
     Date,
@@ -62,6 +63,7 @@ pub enum BuiltInFunction {
 
     // Map
     Keys,
+    Values,
 
     // Closures
     All,
@@ -90,6 +92,7 @@ impl BuiltInFunction {
             BuiltInFunction::Matches => Arity::Dual,
             BuiltInFunction::Extract => Arity::Dual,
             BuiltInFunction::FuzzyMatch => Arity::Dual,
+            BuiltInFunction::Split => Arity::Dual,
 
             // Math
             BuiltInFunction::Abs => Arity::Single,
@@ -124,11 +127,12 @@ impl BuiltInFunction {
             BuiltInFunction::String => Arity::Single,
             BuiltInFunction::Number => Arity::Single,
             BuiltInFunction::Bool => Arity::Single,
-            // BuiltInFunction::Json => Arity::Single,
             BuiltInFunction::IsNumeric => Arity::Single,
+            BuiltInFunction::Type => Arity::Single,
 
             // Map
             BuiltInFunction::Keys => Arity::Single,
+            BuiltInFunction::Values => Arity::Single,
 
             // Closure
             BuiltInFunction::All => Arity::Closure,

@@ -97,6 +97,8 @@ pub enum LogicalOperator {
     Or,
     #[strum(serialize = "not", serialize = "!")]
     Not,
+    #[strum(serialize = "??")]
+    NullishCoalescing,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Display, EnumString)]
@@ -146,22 +148,23 @@ impl Operator {
                 LogicalOperator::And => 7,
                 LogicalOperator::Or => 8,
                 LogicalOperator::Not => 9,
+                LogicalOperator::NullishCoalescing => 10,
             },
             Operator::Comparison(c) => match c {
-                ComparisonOperator::Equal => 10,
-                ComparisonOperator::NotEqual => 11,
-                ComparisonOperator::LessThan => 12,
-                ComparisonOperator::GreaterThan => 13,
-                ComparisonOperator::LessThanOrEqual => 14,
-                ComparisonOperator::GreaterThanOrEqual => 15,
-                ComparisonOperator::In => 16,
-                ComparisonOperator::NotIn => 17,
+                ComparisonOperator::Equal => 11,
+                ComparisonOperator::NotEqual => 12,
+                ComparisonOperator::LessThan => 13,
+                ComparisonOperator::GreaterThan => 14,
+                ComparisonOperator::LessThanOrEqual => 15,
+                ComparisonOperator::GreaterThanOrEqual => 16,
+                ComparisonOperator::In => 17,
+                ComparisonOperator::NotIn => 18,
             },
-            Operator::Range => 18,
-            Operator::Comma => 19,
-            Operator::Slice => 20,
-            Operator::Dot => 21,
-            Operator::QuestionMark => 22,
+            Operator::Range => 19,
+            Operator::Comma => 20,
+            Operator::Slice => 21,
+            Operator::Dot => 22,
+            Operator::QuestionMark => 23,
         }
     }
 }

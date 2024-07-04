@@ -5,6 +5,7 @@
 
 export interface ZenConfig {
   nodesInContext?: boolean
+  functionTimeout?: number
 }
 export function overrideConfig(config: ZenConfig): void
 export interface ZenEvaluateOptions {

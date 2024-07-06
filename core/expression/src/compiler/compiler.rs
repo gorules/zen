@@ -225,6 +225,15 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
 
                     Ok(r)
                 }
+                Operator::Logical(LogicalOperator::NullishCoalescing) => {
+                    self.compile_node(left)?;
+                    let end = self.emit(Opcode::JumpIfNotNull(0));
+                    self.emit(Opcode::Pop);
+                    let r = self.compile_node(right)?;
+                    self.replace(end, Opcode::JumpIfNotNull(r - end));
+
+                    Ok(r)
+                }
                 Operator::Comparison(ComparisonOperator::In) => {
                     self.compile_node(left)?;
                     self.compile_node(right)?;
@@ -334,6 +343,12 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                     self.compile_argument(kind, arguments, 1)?;
                     Ok(self.emit(Opcode::FuzzyMatch))
                 }
+                BuiltInFunction::Split => {
+                    self.compile_argument(kind, arguments, 0)?;
+                    self.compile_argument(kind, arguments, 1)?;
+
+                    Ok(self.emit(Opcode::Split))
+                }
                 BuiltInFunction::Extract => {
                     self.compile_argument(kind, arguments, 0)?;
                     self.compile_argument(kind, arguments, 1)?;
@@ -411,9 +426,17 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                     self.compile_argument(kind, arguments, 0)?;
                     Ok(self.emit(Opcode::TypeCheck(TypeCheckKind::Numeric)))
                 }
+                BuiltInFunction::Type => {
+                    self.compile_argument(kind, arguments, 0)?;
+                    Ok(self.emit(Opcode::GetType))
+                }
                 BuiltInFunction::Keys => {
                     self.compile_argument(kind, arguments, 0)?;
                     Ok(self.emit(Opcode::Keys))
+                }
+                BuiltInFunction::Values => {
+                    self.compile_argument(kind, arguments, 0)?;
+                    Ok(self.emit(Opcode::Values))
                 }
                 BuiltInFunction::StartOf | BuiltInFunction::EndOf => {
                     self.compile_argument(kind, arguments, 0)?;

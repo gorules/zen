@@ -259,6 +259,19 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                         }
                     }
                 }
+                Opcode::JumpIfNotNull(j) => {
+                    let a = self.stack.last().ok_or_else(|| OpcodeErr {
+                        opcode: "JumpIfNull".into(),
+                        message: "Empty array".into(),
+                    })?;
+
+                    match a {
+                        Null => {}
+                        _ => {
+                            self.ip += j;
+                        }
+                    }
+                }
                 Opcode::JumpBackward(j) => {
                     self.ip -= j;
                 }
@@ -338,6 +351,9 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             });
 
                             self.push(Bool(is_in));
+                        }
+                        (String(a), Object(obj)) => {
+                            self.push(Bool(obj.contains_key(a)));
                         }
                         (Bool(a), Array(arr)) => {
                             let is_in = arr.iter().any(|b| match b {
@@ -937,6 +953,26 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                         }
                     }
                 }
+                Opcode::Values => {
+                    let current = self.pop()?;
+
+                    match current {
+                        Object(obj) => {
+                            let values: BumpVec<Variable> = obj
+                                .iter()
+                                .map(|(_, v)| v.clone_in(self.bump))
+                                .collect_in(self.bump);
+
+                            self.push(Array(values));
+                        }
+                        _ => {
+                            return Err(OpcodeErr {
+                                opcode: "Values".into(),
+                                message: "Unsupported type".into(),
+                            })
+                        }
+                    }
+                }
                 Opcode::StartsWith => {
                     let b = self.pop()?;
                     let a = self.pop()?;
@@ -1027,6 +1063,29 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                                 opcode: "FuzzyMatch".into(),
                                 message: "Unsupported type".into(),
                             })
+                        }
+                    }
+                }
+                Opcode::Split => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+
+                    match (a, b) {
+                        (String(a), String(b)) => {
+                            let arr = BumpVec::from_iter_in(
+                                a.split(b)
+                                    .into_iter()
+                                    .map(|s| String(self.bump.alloc_str(s))),
+                                self.bump,
+                            );
+
+                            self.push(Array(arr));
+                        }
+                        _ => {
+                            return Err(OpcodeErr {
+                                opcode: "Split".into(),
+                                message: "Unsupported type".into(),
+                            });
                         }
                     }
                 }
@@ -1327,7 +1386,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                         }
                         (TypeConversionKind::Number, String(str)) => {
                             let parsed_number =
-                                Decimal::from_str_exact(str).map_err(|_| OpcodeErr {
+                                Decimal::from_str_exact(str.trim()).map_err(|_| OpcodeErr {
                                     opcode: "TypeConversion".into(),
                                     message: "Failed to parse string to number".into(),
                                 })?;
@@ -1352,7 +1411,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             self.bump.alloc(Bool(!n.is_zero()))
                         }
                         (TypeConversionKind::Bool, String(s)) => {
-                            let value = match *s {
+                            let value = match (*s).trim() {
                                 "true" => true,
                                 "false" => false,
                                 _ => s.is_empty(),
@@ -1368,6 +1427,10 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     };
 
                     self.push_ref(converted_var);
+                }
+                Opcode::GetType => {
+                    let var = self.pop()?;
+                    self.push(String(var.type_name()));
                 }
                 Opcode::JumpIfEnd(j) => {
                     let scope = self.scopes.last().ok_or_else(|| OpcodeErr {

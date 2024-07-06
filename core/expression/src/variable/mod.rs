@@ -64,7 +64,7 @@ impl<'arena> Variable<'arena> {
         }
     }
 
-    pub fn type_name(&self) -> &str {
+    pub fn type_name(&self) -> &'static str {
         match self {
             Variable::Null => "null",
             Variable::Bool(_) => "bool",

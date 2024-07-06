@@ -123,6 +123,8 @@ extract("2022-09-18", "(\d{4})-(\d{2})-(\d{2})");; ["2022-09-18", "2022", "09", 
 fuzzyMatch("hello", "hello");; 1
 fuzzyMatch("world", "hello");; 0.2
 fuzzyMatch(["hello", "world"], "hello");;[1, 0.2]
+split("hello1,hello2,hello3", ",");;['hello1', 'hello2', 'hello3']
+map(split("123,456,789", ","), number(#));;[123, 456, 789]
 
 
 # String Slice
@@ -249,6 +251,21 @@ isNumeric('123');;true
 isNumeric('string');;false
 isNumeric(true);;false
 
+# Types
+type('hello');;'string'
+type(123);;'number'
+type(true);;'bool'
+type(null);;'null'
+type([1, 2, 3]);;'array'
+
 # Object
 keys(customer);{"customer": {"firstName": "John"}};["firstName"]
 keys(customer);{"customer": {"lastName": "Doe"}};["lastName"]
+values(customer);{"customer": {"firstName": "John"}};["John"]
+values(customer);{"customer": {"lastName": "Doe"}};["Doe"]
+
+# Nullish coalescing
+null ?? 'hello';;'hello'
+null ?? 123 ?? 321;;123
+null ?? null ?? 321;;321
+false or true ? null ?? 'test' : false;;'test'

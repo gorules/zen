@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Context};
 use pyo3::types::PyDict;
-use pyo3::{pyclass, pymethods, PyObject, PyResult, Python, ToPyObject};
+use pyo3::{pyclass, pymethods, PyAny, PyObject, PyResult, Python, ToPyObject};
 use pythonize::depythonize;
 
 use zen_engine::{Decision, EvaluationOptions};
@@ -46,6 +46,38 @@ impl PyZenDecision {
 
         let value = serde_json::to_value(&result).context("Fail")?;
         Ok(PyValue(value).to_object(py))
+    }
+
+    pub fn async_evaluate<'py>(
+        &'py self,
+        py: Python<'py>,
+        ctx: &PyDict,
+        opts: Option<&PyDict>,
+    ) -> PyResult<&PyAny> {
+        let context = depythonize(ctx).context("Failed to convert dict")?;
+        let options: PyZenEvaluateOptions = if let Some(op) = opts {
+            depythonize(op).context("Failed to convert dict")?
+        } else {
+            Default::default()
+        };
+
+        let decision = self.0.clone();
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let result = futures::executor::block_on(decision.evaluate_with_opts(
+                &context,
+                EvaluationOptions {
+                    max_depth: options.max_depth,
+                    trace: options.trace,
+                },
+            ))
+            .map_err(|e| {
+                anyhow!(serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string()))
+            })?;
+
+            let value = serde_json::to_value(result).context("Failed to serialize result")?;
+
+            Python::with_gil(|py| Ok(PyValue(value).to_object(py)))
+        })
     }
 
     pub fn validate(&self) -> PyResult<()> {

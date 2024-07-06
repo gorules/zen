@@ -304,12 +304,15 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                 BuiltInFunction::EndsWith => AsBoolean,
                 BuiltInFunction::Matches => AsBoolean,
                 BuiltInFunction::FuzzyMatch => CompareWithReference(Equal),
+                BuiltInFunction::Split => CompareWithReference(In),
                 BuiltInFunction::IsNumeric => AsBoolean,
                 BuiltInFunction::Keys => CompareWithReference(In),
+                BuiltInFunction::Values => CompareWithReference(In),
                 BuiltInFunction::All => AsBoolean,
                 BuiltInFunction::Some => AsBoolean,
                 BuiltInFunction::None => AsBoolean,
                 BuiltInFunction::One => AsBoolean,
+                BuiltInFunction::Type => CompareWithReference(Equal),
             },
         }
     }

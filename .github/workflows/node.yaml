@@ -258,43 +258,6 @@ jobs:
             yarn link
             yarn test
 
-  test-linux-x64-centos-7:
-    name: Test bindings on Linux-x64-glibc-2.17
-    needs:
-      - build
-    defaults:
-      run:
-        working-directory: ${{ env.WORKING_DIRECTORY }}
-    runs-on: ubuntu-latest
-    container:
-      image: centos:7
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Install dependencies
-        run: |
-          curl -sL https://rpm.nodesource.com/setup_16.x | bash -
-          yum install nodejs -y
-          npm install -g yarn
-          yarn install --immutable --mode=skip-build
-      - name: Download artifacts
-        uses: actions/download-artifact@v3
-        with:
-          name: bindings-x86_64-unknown-linux-gnu
-          path: artifacts
-
-      - name: Move artifacts
-        run: yarn artifacts
-        shell: bash
-
-      - name: List folder
-        run: ls ./
-        shell: bash
-
-      - name: Test bindings
-        run: |
-          yarn lerna link
-          yarn test
   #  test-linux-aarch64-gnu-binding:
   #    name: Test bindings on aarch64-unknown-linux-gnu - node@${{ matrix.node }}
   #    needs:
@@ -355,7 +318,7 @@ jobs:
         working-directory: ${{ env.WORKING_DIRECTORY }}
     needs:
       - test-linux-x64-gnu-binding
-      - test-linux-x64-centos-7
+      #      - test-linux-x64-centos-7
       #      - test-linux-x64-musl-binding
       #      - test-linux-aarch64-gnu-binding
       #      - test-linux-arm-gnueabihf-binding

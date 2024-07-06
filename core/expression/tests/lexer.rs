@@ -28,6 +28,28 @@ fn lexer_test() {
             }]),
         },
         LexerTest {
+            test: "null ?? 'hello'",
+            result: Vec::from([
+                Token {
+                    kind: TokenKind::Identifier(Identifier::Null),
+                    span: (0, 4),
+                    value: "null",
+                },
+                Token {
+                    kind: TokenKind::Operator(Operator::Logical(
+                        LogicalOperator::NullishCoalescing,
+                    )),
+                    span: (5, 7),
+                    value: "??",
+                },
+                Token {
+                    kind: TokenKind::String,
+                    span: (8, 14),
+                    value: "hello",
+                },
+            ]),
+        },
+        LexerTest {
             test: "'double' 'single' 'abc'",
             result: Vec::from([
                 Token {

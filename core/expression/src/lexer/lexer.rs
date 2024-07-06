@@ -51,6 +51,7 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
                 token_type!("bracket") => self.bracket(),
                 token_type!("cmp_operator") => self.cmp_operator(),
                 token_type!("operator") => self.operator(),
+                token_type!("question_mark") => self.question_mark(),
                 '.' => self.dot(),
                 token_type!("alpha") => self.identifier(),
 
@@ -181,6 +182,26 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
             kind: TokenKind::Operator(Operator::try_from(value)?),
             span: (start, end + 1),
             value,
+        });
+
+        Ok(())
+    }
+
+    fn question_mark(&mut self) -> LexerResult<()> {
+        let (start, _) = self.next()?;
+        let mut kind = TokenKind::Operator(Operator::QuestionMark);
+        let mut end = start;
+
+        if self.cursor.next_if(|c| c == '?').is_some() {
+            kind = TokenKind::Operator(Operator::Logical(LogicalOperator::NullishCoalescing));
+            end += 1;
+        }
+
+        let value = &self.source[start..=end];
+        self.push(Token {
+            kind,
+            value,
+            span: (start, end + 1),
         });
 
         Ok(())

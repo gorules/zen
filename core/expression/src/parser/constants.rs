@@ -56,6 +56,7 @@ pub(crate) static BINARY_OPERATORS: Lazy<HashMap<Operator, ParserOperator, NoHas
             Operator::Arithmetic(ArithmeticOperator::Divide) => ParserOperator { precedence: 60, associativity: Left },
             Operator::Arithmetic(ArithmeticOperator::Modulus) => ParserOperator { precedence: 60, associativity: Left },
             Operator::Arithmetic(ArithmeticOperator::Power) => ParserOperator { precedence: 70, associativity: Right },
+            Operator::Logical(LogicalOperator::NullishCoalescing) => ParserOperator { precedence: 80, associativity: Left },
         }
     },
 );

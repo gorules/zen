@@ -1,5 +1,5 @@
 use itertools::Itertools;
-use rquickjs::{Ctx, Error as QError, FromJs, Type, Value as QValue};
+use rquickjs::{Ctx, Error as QError, FromJs, IntoAtom, IntoJs, Type, Value as QValue};
 use serde_json::{json, Map, Number, Value};
 
 #[derive(Debug)]
@@ -82,8 +82,49 @@ impl<'js> FromJs<'js> for JsValue {
             Type::Constructor => json!("[Constructor]"),
             Type::Symbol => json!("[Symbol]"),
             Type::Unknown => json!("[Unknown]"),
+            Type::Promise => {
+                let promise = v.as_promise().unwrap();
+                let val: JsValue = promise.finish()?;
+                val.0
+            }
         };
 
         Ok(JsValue(computed_value))
+    }
+}
+
+impl<'js> IntoJs<'js> for JsValue {
+    fn into_js(self, ctx: &Ctx<'js>) -> rquickjs::Result<QValue<'js>> {
+        let res = match self.0 {
+            Value::Null => QValue::new_null(ctx.clone()),
+            Value::Bool(b) => QValue::new_bool(ctx.clone(), b),
+            Value::Number(n) => QValue::new_number(
+                ctx.clone(),
+                n.as_f64().ok_or_else(|| rquickjs::Error::IntoJs {
+                    from: "serde::Number",
+                    to: "Number",
+                    message: Some("Number is not finite".to_string()),
+                })?,
+            ),
+            Value::String(str) => str.into_js(ctx)?,
+            Value::Array(arr) => {
+                let qarr = rquickjs::Array::new(ctx.clone())?;
+                for (idx, item) in arr.into_iter().enumerate() {
+                    qarr.set(idx, JsValue(item))?;
+                }
+
+                qarr.into_value()
+            }
+            Value::Object(map) => {
+                let qmap = rquickjs::Object::new(ctx.clone())?;
+                for (key, value) in map.into_iter() {
+                    qmap.set(key.into_atom(ctx)?, JsValue(value))?;
+                }
+
+                qmap.into_value()
+            }
+        };
+
+        Ok(res)
     }
 }

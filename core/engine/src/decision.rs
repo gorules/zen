@@ -13,8 +13,8 @@ use crate::{DecisionGraphValidationError, EvaluationError};
 #[derive(Debug, Clone)]
 pub struct Decision<Loader, CustomNode>
 where
-    Loader: DecisionLoader,
-    CustomNode: CustomNodeAdapter,
+    Loader: DecisionLoader + 'static,
+    CustomNode: CustomNodeAdapter + 'static,
 {
     content: Arc<DecisionContent>,
     loader: Arc<Loader>,

@@ -1,4 +1,5 @@
 use crate::handler::custom_node_adapter::CustomNodeAdapter;
+use crate::handler::function::function::Function;
 use crate::handler::graph::{DecisionGraph, DecisionGraphConfig};
 use crate::handler::node::{NodeRequest, NodeResponse, NodeResult};
 use crate::loader::DecisionLoader;
@@ -7,30 +8,31 @@ use anyhow::{anyhow, Context};
 use async_recursion::async_recursion;
 use rquickjs::Runtime;
 use std::ops::Deref;
+use std::rc::Rc;
 use std::sync::Arc;
 
-pub struct DecisionHandler<L: DecisionLoader, A: CustomNodeAdapter> {
+pub struct DecisionHandler<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> {
     trace: bool,
     loader: Arc<L>,
     adapter: Arc<A>,
     max_depth: u8,
-    js_runtime: Option<Runtime>,
+    js_function: Option<Rc<Function>>,
 }
 
-impl<L: DecisionLoader, A: CustomNodeAdapter> DecisionHandler<L, A> {
+impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionHandler<L, A> {
     pub fn new(
         trace: bool,
         max_depth: u8,
         loader: Arc<L>,
         adapter: Arc<A>,
-        js_runtime: Option<Runtime>,
+        js_function: Option<Rc<Function>>,
     ) -> Self {
         Self {
             trace,
             loader,
             adapter,
             max_depth,
-            js_runtime,
+            js_function,
         }
     }
 
@@ -50,7 +52,7 @@ impl<L: DecisionLoader, A: CustomNodeAdapter> DecisionHandler<L, A> {
             iteration: request.iteration + 1,
             trace: self.trace,
         })?
-        .with_runtime(self.js_runtime.clone());
+        .with_function(self.js_function.clone());
 
         let result = sub_tree
             .evaluate(&request.input)

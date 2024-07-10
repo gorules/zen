@@ -3,13 +3,14 @@ use std::collections::HashSet;
 use std::ops::DerefMut;
 use std::rc::Rc;
 
+use crate::handler::function::module::http::js_http_module;
+use crate::handler::function::module::zen::js_zen_module;
 use rquickjs::loader::{Bundle, Loader, ModuleLoader as MDLoader, Resolver};
 use rquickjs::module::Declared;
 use rquickjs::{embed, Ctx, Error, Module};
 
-use crate::handler::function::module::zen::js_zen_module;
-
 pub(crate) mod console;
+pub(crate) mod http;
 pub(crate) mod zen;
 
 static JS_BUNDLE: Bundle = embed! {
@@ -58,7 +59,7 @@ struct BaseModuleLoader {
 
 impl BaseModuleLoader {
     pub fn new() -> Self {
-        let mut hs = HashSet::from(["zen".to_string()]);
+        let mut hs = HashSet::from(["zen".to_string(), "http".to_string()]);
 
         JS_BUNDLE.iter().for_each(|(key, _)| {
             hs.insert(key.to_string());
@@ -67,7 +68,9 @@ impl BaseModuleLoader {
         Self {
             bundle: JS_BUNDLE,
             defined_modules: RefCell::new(hs),
-            md_loader: MDLoader::default().with_module("zen", js_zen_module),
+            md_loader: MDLoader::default()
+                .with_module("zen", js_zen_module)
+                .with_module("http", js_http_module),
         }
     }
 

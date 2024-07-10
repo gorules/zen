@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::ops::Deref;
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -25,7 +26,8 @@ impl<Loader: DecisionLoader + 'static, Adapter: CustomNodeAdapter + 'static> Run
         ctx: Ctx<'js>,
         event: RuntimeEvent,
     ) -> Pin<Box<dyn Future<Output = FunctionResult> + 'js>> {
-        let loader = self.loader.clone();
+        let loader1 = self.loader.clone();
+        let loader2 = self.loader.clone();
         let adapter = self.adapter.clone();
 
         Box::pin(async move {
@@ -35,13 +37,30 @@ impl<Loader: DecisionLoader + 'static, Adapter: CustomNodeAdapter + 'static> Run
 
             ctx.globals()
                 .set(
+                    "__getContent",
+                    Func::from(Async(move |ctx: Ctx<'js>, key: String| {
+                        let loader = loader1.clone();
+                        async move {
+                            let load_result = loader.load(key.as_str()).await;
+                            let decision_content = load_result.or_throw(&ctx)?;
+
+                            return rquickjs::Result::Ok(JsValue(
+                                serde_json::to_value(decision_content.deref()).unwrap(),
+                            ));
+                        }
+                    })),
+                )
+                .catch(&ctx)?;
+
+            ctx.globals()
+                .set(
                     "__evaluate",
                     Func::from(Async(
                         move |ctx: Ctx<'js>,
                               key: String,
                               context: JsValue,
                               opts: Opt<Object<'js>>| {
-                            let loader = loader.clone();
+                            let loader = loader2.clone();
                             let adapter = adapter.clone();
 
                             async move {
@@ -119,12 +138,20 @@ pub mod zen_module {
     #[rquickjs::function]
     pub fn evaluate<'js>(
         ctx: Ctx<'js>,
-        expression: String,
+        key: String,
         context: JsValue,
         opts: Opt<Object<'js>>,
     ) -> rquickjs::Result<rquickjs::Value<'js>> {
         let s: Function = ctx.globals().get("__evaluate").or_throw(&ctx)?;
-        let result: rquickjs::Value = s.call((expression, context, opts)).or_throw(&ctx)?;
+        let result: rquickjs::Value = s.call((key, context, opts)).or_throw(&ctx)?;
+        Ok(result)
+    }
+
+    #[allow(non_snake_case)]
+    #[rquickjs::function]
+    pub fn get<'js>(ctx: Ctx<'js>, key: String) -> rquickjs::Result<rquickjs::Value<'js>> {
+        let s: Function = ctx.globals().get("__getContent").or_throw(&ctx)?;
+        let result: rquickjs::Value = s.call((key,)).or_throw(&ctx)?;
         Ok(result)
     }
 }

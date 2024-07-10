@@ -3,19 +3,21 @@ use std::collections::HashSet;
 use std::ops::DerefMut;
 use std::rc::Rc;
 
-use crate::handler::function::module::http::js_http_module;
-use crate::handler::function::module::zen::js_zen_module;
 use rquickjs::loader::{Bundle, Loader, ModuleLoader as MDLoader, Resolver};
-use rquickjs::module::Declared;
-use rquickjs::{embed, Ctx, Error, Module};
+use rquickjs::module::{Declared, Exports};
+use rquickjs::{embed, Ctx, Error, Module, Object};
+
+use crate::handler::function::module::http::HttpModule;
+use crate::handler::function::module::zen::ZenModule;
 
 pub(crate) mod console;
 pub(crate) mod http;
 pub(crate) mod zen;
 
 static JS_BUNDLE: Bundle = embed! {
-    "dayjs": "js/dayjs.js",
-    "big": "js/big.js",
+    "dayjs": "js/dayjs.mjs",
+    "big.js": "js/big.mjs",
+    "zod": "js/zod.mjs"
 };
 
 #[derive(Clone)]
@@ -69,8 +71,8 @@ impl BaseModuleLoader {
             bundle: JS_BUNDLE,
             defined_modules: RefCell::new(hs),
             md_loader: MDLoader::default()
-                .with_module("zen", js_zen_module)
-                .with_module("http", js_http_module),
+                .with_module("zen", ZenModule)
+                .with_module("http", HttpModule),
         }
     }
 
@@ -106,4 +108,26 @@ impl Loader for &mut BaseModuleLoader {
             .load(ctx, name)
             .or_else(|_| self.md_loader.load(ctx, name))
     }
+}
+
+pub(crate) fn export_default<'js, F>(
+    ctx: &Ctx<'js>,
+    exports: &Exports<'js>,
+    f: F,
+) -> rquickjs::Result<()>
+where
+    F: FnOnce(&Object<'js>) -> rquickjs::Result<()>,
+{
+    let default = Object::new(ctx.clone())?;
+    f(&default)?;
+
+    for name in default.keys::<String>() {
+        let name = name?;
+        let value: rquickjs::Value = default.get(&name)?;
+        exports.export(name, value)?;
+    }
+
+    exports.export("default", default)?;
+
+    Ok(())
 }

@@ -1,11 +1,13 @@
 use std::str::FromStr;
 
+use crate::handler::function::error::ResultExt;
+use crate::handler::function::module::export_default;
+use crate::handler::function::serde::JsValue;
 use reqwest::header::{HeaderMap, HeaderName};
 use reqwest::Method;
+use rquickjs::module::{Declarations, Exports, ModuleDef};
+use rquickjs::prelude::{Async, Func, Opt};
 use rquickjs::{CatchResultExt, Ctx, FromJs, IntoAtom, IntoJs, Object, Value};
-
-use crate::handler::function::error::ResultExt;
-use crate::handler::function::serde::JsValue;
 
 #[derive(rquickjs::class::Trace)]
 #[rquickjs::class]
@@ -151,75 +153,83 @@ impl<'js> FromJs<'js> for HttpConfig {
     }
 }
 
-#[rquickjs::module(rename_vars = "camelCase")]
-pub mod http_module {
-    use reqwest::Method;
-    use rquickjs::prelude::Opt;
-    use rquickjs::Ctx;
+async fn get<'js>(
+    ctx: Ctx<'js>,
+    url: String,
+    config: Opt<HttpConfig>,
+) -> rquickjs::Result<HttpResponse> {
+    execute_http(ctx, Method::GET, url, None, config.0).await
+}
 
-    use crate::handler::function::module::http::{execute_http, HttpConfig, HttpResponse};
-    use crate::handler::function::serde::JsValue;
+async fn post<'js>(
+    ctx: Ctx<'js>,
+    url: String,
+    data: JsValue,
+    config: Opt<HttpConfig>,
+) -> rquickjs::Result<HttpResponse> {
+    execute_http(ctx, Method::POST, url, Some(data), config.0).await
+}
 
-    #[allow(non_snake_case)]
-    #[rquickjs::function]
-    pub async fn get<'js>(
-        ctx: Ctx<'js>,
-        url: String,
-        config: Opt<HttpConfig>,
-    ) -> rquickjs::Result<HttpResponse> {
-        execute_http(ctx, Method::GET, url, None, config.0).await
+async fn patch<'js>(
+    ctx: Ctx<'js>,
+    url: String,
+    data: JsValue,
+    config: Opt<HttpConfig>,
+) -> rquickjs::Result<HttpResponse> {
+    execute_http(ctx, Method::PATCH, url, Some(data), config.0).await
+}
+
+async fn put<'js>(
+    ctx: Ctx<'js>,
+    url: String,
+    data: JsValue,
+    config: Opt<HttpConfig>,
+) -> rquickjs::Result<HttpResponse> {
+    execute_http(ctx, Method::PUT, url, Some(data), config.0).await
+}
+
+async fn delete<'js>(
+    ctx: Ctx<'js>,
+    url: String,
+    config: Opt<HttpConfig>,
+) -> rquickjs::Result<HttpResponse> {
+    execute_http(ctx, Method::DELETE, url, None, config.0).await
+}
+
+async fn head<'js>(
+    ctx: Ctx<'js>,
+    url: String,
+    config: Opt<HttpConfig>,
+) -> rquickjs::Result<HttpResponse> {
+    execute_http(ctx, Method::DELETE, url, None, config.0).await
+}
+
+pub(crate) struct HttpModule;
+
+impl ModuleDef for HttpModule {
+    fn declare<'js>(decl: &Declarations<'js>) -> rquickjs::Result<()> {
+        decl.declare("get")?;
+        decl.declare("head")?;
+        decl.declare("post")?;
+        decl.declare("patch")?;
+        decl.declare("put")?;
+        decl.declare("delete")?;
+
+        decl.declare("default")?;
+
+        Ok(())
     }
 
-    #[allow(non_snake_case)]
-    #[rquickjs::function]
-    pub async fn post<'js>(
-        ctx: Ctx<'js>,
-        url: String,
-        data: JsValue,
-        config: Opt<HttpConfig>,
-    ) -> rquickjs::Result<HttpResponse> {
-        execute_http(ctx, Method::POST, url, Some(data), config.0).await
-    }
+    fn evaluate<'js>(ctx: &Ctx<'js>, exports: &Exports<'js>) -> rquickjs::Result<()> {
+        export_default(ctx, exports, |default| {
+            default.set("get", Func::from(Async(get)))?;
+            default.set("head", Func::from(Async(head)))?;
+            default.set("post", Func::from(Async(post)))?;
+            default.set("patch", Func::from(Async(patch)))?;
+            default.set("put", Func::from(Async(put)))?;
+            default.set("delete", Func::from(Async(delete)))?;
 
-    #[allow(non_snake_case)]
-    #[rquickjs::function]
-    pub async fn patch<'js>(
-        ctx: Ctx<'js>,
-        url: String,
-        data: JsValue,
-        config: Opt<HttpConfig>,
-    ) -> rquickjs::Result<HttpResponse> {
-        execute_http(ctx, Method::PATCH, url, Some(data), config.0).await
-    }
-
-    #[allow(non_snake_case)]
-    #[rquickjs::function]
-    pub async fn put<'js>(
-        ctx: Ctx<'js>,
-        url: String,
-        data: JsValue,
-        config: Opt<HttpConfig>,
-    ) -> rquickjs::Result<HttpResponse> {
-        execute_http(ctx, Method::PUT, url, Some(data), config.0).await
-    }
-
-    #[allow(non_snake_case)]
-    #[rquickjs::function]
-    pub async fn delete<'js>(
-        ctx: Ctx<'js>,
-        url: String,
-        config: Opt<HttpConfig>,
-    ) -> rquickjs::Result<HttpResponse> {
-        execute_http(ctx, Method::DELETE, url, None, config.0).await
-    }
-
-    #[allow(non_snake_case)]
-    #[rquickjs::function]
-    pub async fn head<'js>(
-        ctx: Ctx<'js>,
-        url: String,
-        config: Opt<HttpConfig>,
-    ) -> rquickjs::Result<HttpResponse> {
-        execute_http(ctx, Method::DELETE, url, None, config.0).await
+            Ok(())
+        })
     }
 }

@@ -3,9 +3,9 @@ use rquickjs::loader::Bundle;
 use rquickjs::{embed, Runtime};
 
 static JS_BUNDLE: Bundle = embed! {
-    "dayjs": "js/dayjs.js",
-    "big": "js/big.js",
-    "internals": "js/internals.js"
+    "dayjs": "js/v1/dayjs.js",
+    "big": "js/v1/big.js",
+    "internals": "js/v1/internals.js"
 };
 
 pub(crate) fn create_runtime() -> anyhow::Result<Runtime> {

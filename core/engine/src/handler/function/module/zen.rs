@@ -3,15 +3,16 @@ use std::ops::Deref;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use rquickjs::prelude::{Async, Func, Opt};
-use rquickjs::{CatchResultExt, Ctx, Object};
-
 use crate::handler::custom_node_adapter::CustomNodeAdapter;
 use crate::handler::function::error::{FunctionResult, ResultExt};
 use crate::handler::function::listener::{RuntimeEvent, RuntimeListener};
+use crate::handler::function::module::export_default;
 use crate::handler::function::serde::JsValue;
 use crate::handler::graph::{DecisionGraph, DecisionGraphConfig};
 use crate::loader::DecisionLoader;
+use rquickjs::module::{Declarations, Exports, ModuleDef};
+use rquickjs::prelude::{Async, Func, Opt};
+use rquickjs::{CatchResultExt, Ctx, Function, Object};
 
 pub(crate) struct ZenListener<Loader, Adapter> {
     pub loader: Arc<Loader>,
@@ -101,57 +102,69 @@ impl<Loader: DecisionLoader + 'static, Adapter: CustomNodeAdapter + 'static> Run
     }
 }
 
-#[rquickjs::module(rename_vars = "camelCase")]
-pub mod zen_module {
-    use crate::handler::function::error::ResultExt;
-    use crate::handler::function::serde::JsValue;
-    use rquickjs::prelude::Opt;
-    use rquickjs::{Ctx, Function, Object};
+fn evaluate_expression<'js>(
+    ctx: Ctx<'js>,
+    expression: String,
+    context: JsValue,
+) -> rquickjs::Result<JsValue> {
+    let s = zen_expression::evaluate_expression(expression.as_str(), &context.0).or_throw(&ctx)?;
 
-    #[allow(non_snake_case)]
-    #[rquickjs::function]
-    pub fn evaluateExpression<'js>(
-        ctx: Ctx<'js>,
-        expression: String,
-        context: JsValue,
-    ) -> rquickjs::Result<JsValue> {
-        let s =
-            zen_expression::evaluate_expression(expression.as_str(), &context.0).or_throw(&ctx)?;
+    Ok(JsValue(s))
+}
 
-        Ok(JsValue(s))
+fn evaluate_unary_expression<'js>(
+    ctx: Ctx<'js>,
+    expression: String,
+    context: JsValue,
+) -> rquickjs::Result<bool> {
+    let s = zen_expression::evaluate_unary_expression(expression.as_str(), &context.0)
+        .or_throw(&ctx)?;
+
+    Ok(s)
+}
+
+fn evaluate<'js>(
+    ctx: Ctx<'js>,
+    key: String,
+    context: JsValue,
+    opts: Opt<Object<'js>>,
+) -> rquickjs::Result<rquickjs::Value<'js>> {
+    let s: Function = ctx.globals().get("__evaluate").or_throw(&ctx)?;
+    let result: rquickjs::Value = s.call((key, context, opts)).or_throw(&ctx)?;
+    Ok(result)
+}
+
+fn get<'js>(ctx: Ctx<'js>, key: String) -> rquickjs::Result<rquickjs::Value<'js>> {
+    let s: Function = ctx.globals().get("__getContent").or_throw(&ctx)?;
+    let result: rquickjs::Value = s.call((key,)).or_throw(&ctx)?;
+    Ok(result)
+}
+
+pub struct ZenModule;
+
+impl ModuleDef for ZenModule {
+    fn declare<'js>(decl: &Declarations<'js>) -> rquickjs::Result<()> {
+        decl.declare("evaluateExpression")?;
+        decl.declare("evaluateUnaryExpression")?;
+        decl.declare("evaluate")?;
+        decl.declare("get")?;
+
+        decl.declare("default")?;
+
+        Ok(())
     }
 
-    #[allow(non_snake_case)]
-    #[rquickjs::function]
-    pub fn evaluateUnaryExpression<'js>(
-        ctx: Ctx<'js>,
-        expression: String,
-        context: JsValue,
-    ) -> rquickjs::Result<bool> {
-        let s = zen_expression::evaluate_unary_expression(expression.as_str(), &context.0)
-            .or_throw(&ctx)?;
+    fn evaluate<'js>(ctx: &Ctx<'js>, exports: &Exports<'js>) -> rquickjs::Result<()> {
+        export_default(ctx, exports, |default| {
+            default.set("evaluateExpression", Func::from(evaluate_expression))?;
+            default.set(
+                "evaluateUnaryExpression",
+                Func::from(evaluate_unary_expression),
+            )?;
+            default.set("evaluate", Func::from(evaluate))?;
+            default.set("get", Func::from(get))?;
 
-        Ok(s)
-    }
-
-    #[allow(non_snake_case)]
-    #[rquickjs::function]
-    pub fn evaluate<'js>(
-        ctx: Ctx<'js>,
-        key: String,
-        context: JsValue,
-        opts: Opt<Object<'js>>,
-    ) -> rquickjs::Result<rquickjs::Value<'js>> {
-        let s: Function = ctx.globals().get("__evaluate").or_throw(&ctx)?;
-        let result: rquickjs::Value = s.call((key, context, opts)).or_throw(&ctx)?;
-        Ok(result)
-    }
-
-    #[allow(non_snake_case)]
-    #[rquickjs::function]
-    pub fn get<'js>(ctx: Ctx<'js>, key: String) -> rquickjs::Result<rquickjs::Value<'js>> {
-        let s: Function = ctx.globals().get("__getContent").or_throw(&ctx)?;
-        let result: rquickjs::Value = s.call((key,)).or_throw(&ctx)?;
-        Ok(result)
+            Ok(())
+        })
     }
 }

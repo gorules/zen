@@ -5,7 +5,7 @@ use serde_json::Value;
 use crate::engine::EvaluationOptions;
 use crate::handler::custom_node_adapter::{CustomNodeAdapter, NoopCustomNode};
 use crate::handler::graph::{DecisionGraph, DecisionGraphConfig, DecisionGraphResponse};
-use crate::loader::{DecisionLoader, NoopLoader};
+use crate::loader::{CachedLoader, DecisionLoader, NoopLoader};
 use crate::model::DecisionContent;
 use crate::{DecisionGraphValidationError, EvaluationError};
 
@@ -85,7 +85,7 @@ where
         let mut decision_graph = DecisionGraph::try_new(DecisionGraphConfig {
             max_depth: options.max_depth.unwrap_or(5),
             trace: options.trace.unwrap_or_default(),
-            loader: self.loader.clone(),
+            loader: Arc::new(CachedLoader::from(self.loader.clone())),
             adapter: self.adapter.clone(),
             iteration: 0,
             content: &self.content,
@@ -98,7 +98,7 @@ where
         let decision_graph = DecisionGraph::try_new(DecisionGraphConfig {
             max_depth: 1,
             trace: false,
-            loader: self.loader.clone(),
+            loader: Arc::new(CachedLoader::from(self.loader.clone())),
             adapter: self.adapter.clone(),
             iteration: 0,
             content: &self.content,

@@ -17,14 +17,6 @@ pub(crate) struct ZenListener<Loader, Adapter> {
     pub adapter: Arc<Adapter>,
 }
 
-impl<Loader: DecisionLoader + 'static, Adapter: CustomNodeAdapter + 'static>
-    ZenListener<Loader, Adapter>
-{
-    pub fn new(loader: Arc<Loader>, adapter: Arc<Adapter>) -> Self {
-        Self { loader, adapter }
-    }
-}
-
 impl<Loader: DecisionLoader + 'static, Adapter: CustomNodeAdapter + 'static> RuntimeListener
     for ZenListener<Loader, Adapter>
 {
@@ -97,6 +89,7 @@ pub mod zen_module {
     use rquickjs::prelude::Opt;
     use rquickjs::{Ctx, Function, Object};
 
+    #[allow(non_snake_case)]
     #[rquickjs::function]
     pub fn evaluateExpression<'js>(
         ctx: Ctx<'js>,
@@ -109,6 +102,7 @@ pub mod zen_module {
         Ok(JsValue(s))
     }
 
+    #[allow(non_snake_case)]
     #[rquickjs::function]
     pub fn evaluateUnaryExpression<'js>(
         ctx: Ctx<'js>,
@@ -121,6 +115,7 @@ pub mod zen_module {
         Ok(s)
     }
 
+    #[allow(non_snake_case)]
     #[rquickjs::function]
     pub fn evaluate<'js>(
         ctx: Ctx<'js>,

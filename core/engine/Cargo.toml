@@ -11,7 +11,6 @@ repository = "https://github.com/gorules/zen.git"
 doctest = false
 
 [dependencies]
-async-trait = { workspace = true }
 async-recursion = "1.1.1"
 anyhow = { workspace = true }
 thiserror = { workspace = true }

@@ -70,7 +70,7 @@
 //! ```
 //!
 //! ## Custom loader
-//! You may create a custom loader for zen engine by implementing `DecisionLoader` trait using async_trait crate.
+//! You may create a custom loader for zen engine by implementing `DecisionLoader` trait.
 //! Here's an example of how MemoryLoader has been implemented.
 //! ```rust
 //! use std::collections::HashMap;
@@ -110,11 +110,11 @@
 //!     }
 //! }
 //!
-//! #[async_trait]
 //! impl DecisionLoader for MemoryLoader {
-//!     async fn load(&self, key: &str) -> LoaderResponse {
+//! fn load<'a>(&'a self, key: &'a str) -> impl Future<Output = LoaderResponse> + 'a {
+//!     async move {
 //!         self.get(&key)
-//!             .ok_or_else(|| LoaderError::NotFound(key.to_string()))
+//!             .ok_or_else(|| LoaderError::NotFound(key.to_string()).into())
 //!     }
 //! }
 //! ```

@@ -1,8 +1,9 @@
+use std::collections::HashMap;
+use std::future::Future;
+use std::sync::{Arc, RwLock};
+
 use crate::loader::{DecisionLoader, LoaderError, LoaderResponse};
 use crate::model::DecisionContent;
-use async_trait::async_trait;
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
 
 /// Loads decisions from in-memory hashmap
 #[derive(Debug, Default)]
@@ -37,10 +38,11 @@ impl MemoryLoader {
     }
 }
 
-#[async_trait]
 impl DecisionLoader for MemoryLoader {
-    async fn load(&self, key: &str) -> LoaderResponse {
-        self.get(&key)
-            .ok_or_else(|| LoaderError::NotFound(key.to_string()).into())
+    fn load<'a>(&'a self, key: &'a str) -> impl Future<Output = LoaderResponse> + 'a {
+        async move {
+            self.get(&key)
+                .ok_or_else(|| LoaderError::NotFound(key.to_string()).into())
+        }
     }
 }

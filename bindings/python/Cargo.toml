@@ -10,7 +10,6 @@ name = "zen"
 crate-type = ["cdylib"]
 
 [dependencies]
-async-trait = { workspace = true }
 anyhow = { workspace = true }
 pyo3 = { version = "0.20", features = ["anyhow", "serde"] }
 pythonize = "0.20"

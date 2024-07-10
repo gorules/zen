@@ -1,8 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashSet;
-use std::future::Future;
 use std::ops::DerefMut;
-use std::pin::Pin;
 use std::rc::Rc;
 
 use rquickjs::loader::{Bundle, Loader, ModuleLoader as MDLoader, Resolver};
@@ -10,7 +8,6 @@ use rquickjs::module::Declared;
 use rquickjs::{embed, Ctx, Error, Module};
 
 use crate::handler::function::module::zen::js_zen_module;
-use crate::handler::node::NodeResult;
 
 pub(crate) mod console;
 pub(crate) mod zen;
@@ -32,13 +29,6 @@ impl ModuleLoader {
     pub fn add_module(&self, module: String) {
         let reference = self.0.borrow_mut();
         reference.add_module(module);
-    }
-
-    pub fn with_evaluate_function<'js, F>(self, func: F) -> Self
-    where
-        F: Fn(Ctx<'js>, &str) -> Pin<Box<dyn Future<Output = NodeResult> + 'js>>,
-    {
-        self
     }
 }
 

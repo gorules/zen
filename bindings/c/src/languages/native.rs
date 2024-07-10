@@ -1,7 +1,6 @@
-use std::ffi::{c_char, CString};
-
 use anyhow::anyhow;
-use async_trait::async_trait;
+use std::ffi::{c_char, CString};
+use std::future::Future;
 
 use zen_engine::handler::custom_node_adapter::{CustomNodeAdapter, CustomNodeRequest};
 use zen_engine::handler::node::NodeResult;
@@ -27,13 +26,14 @@ impl NativeDecisionLoader {
     }
 }
 
-#[async_trait]
 impl DecisionLoader for NativeDecisionLoader {
-    async fn load(&self, key: &str) -> LoaderResponse {
-        let c_key = CString::new(key).unwrap();
-        let c_content_ptr = (&self.callback)(c_key.as_ptr());
+    fn load<'a>(&'a self, key: &'a str) -> impl Future<Output = LoaderResponse> + 'a {
+        async move {
+            let c_key = CString::new(key).unwrap();
+            let c_content_ptr = (&self.callback)(c_key.as_ptr());
 
-        c_content_ptr.into_loader_response(key)
+            c_content_ptr.into_loader_response(key)
+        }
     }
 }
 

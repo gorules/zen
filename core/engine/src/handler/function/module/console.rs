@@ -3,10 +3,10 @@ use std::future::Future;
 use std::pin::Pin;
 use std::time::Instant;
 
-use crate::handler::function::error::FunctionResult;
+use crate::handler::function::error::{FunctionResult, ResultExt};
 use crate::handler::function::listener::{RuntimeEvent, RuntimeListener};
 use rquickjs::prelude::Rest;
-use rquickjs::{Ctx, Value};
+use rquickjs::{Ctx, Object, Value};
 use serde::{Deserialize, Serialize};
 
 #[derive(Default)]
@@ -69,6 +69,12 @@ impl Console {
     }
 
     pub fn log<'js>(&self, ctx: Ctx<'js>, args: Rest<Value<'js>>) -> rquickjs::Result<()> {
+        let config: Object = ctx.globals().get("config").or_throw(&ctx)?;
+        let trace: bool = config.get("trace").or_throw(&ctx)?;
+        if !trace {
+            return Ok(());
+        }
+
         let step1 = args
             .0
             .into_iter()

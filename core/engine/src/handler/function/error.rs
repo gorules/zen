@@ -32,13 +32,14 @@ impl Display for FunctionError {
 }
 
 pub trait ResultExt<T> {
+    #[allow(dead_code)]
     fn or_throw_msg(self, ctx: &Ctx, msg: &str) -> rquickjs::Result<T>;
     fn or_throw(self, ctx: &Ctx) -> rquickjs::Result<T>;
 }
 
 impl<T, E: Display> ResultExt<T> for Result<T, E> {
     fn or_throw_msg(self, ctx: &Ctx, msg: &str) -> rquickjs::Result<T> {
-        self.map_err(|e| {
+        self.map_err(|_| {
             let mut message = String::with_capacity(100);
             message.push_str(msg);
             message.push_str(".");

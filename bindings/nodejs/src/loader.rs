@@ -1,12 +1,14 @@
+use std::future::Future;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use napi::anyhow::anyhow;
 use napi::bindgen_prelude::{Buffer, Promise};
 use napi::threadsafe_function::{ErrorStrategy, ThreadsafeFunction};
 use napi::Either;
 
-use zen_engine::loader::{DecisionLoader as DecisionLoaderTrait, LoaderError, LoaderResult};
+use zen_engine::loader::{
+    DecisionLoader as DecisionLoaderTrait, LoaderError, LoaderResponse, LoaderResult,
+};
 use zen_engine::model::DecisionContent;
 
 use crate::content::ZenDecisionContent;
@@ -64,10 +66,11 @@ impl DecisionLoader {
     }
 }
 
-#[async_trait]
 impl DecisionLoaderTrait for DecisionLoader {
-    async fn load(&self, key: &str) -> LoaderResult<Arc<DecisionContent>> {
-        let decision_content = self.get_key(key).await?;
-        Ok(decision_content)
+    fn load<'a>(&'a self, key: &'a str) -> impl Future<Output = LoaderResponse> + 'a {
+        async move {
+            let decision_content = self.get_key(key).await?;
+            Ok(decision_content)
+        }
     }
 }

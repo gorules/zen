@@ -7,7 +7,6 @@ members = [
 
 [workspace.dependencies]
 ahash = "0.8.6"
-async-trait = "0.1.77"
 bincode = "2.0.0-rc.3"
 bumpalo = "3.14.0"
 chrono = "0.4.31"

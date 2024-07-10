@@ -1,13 +1,14 @@
-use crate::loader::{DecisionLoader, LoaderError, LoaderResponse};
-use async_trait::async_trait;
-
-use crate::model::DecisionContent;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
+use std::future::Future;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
+
+use serde::{Deserialize, Serialize};
+
+use crate::loader::{DecisionLoader, LoaderError, LoaderResponse};
+use crate::model::DecisionContent;
 
 /// Loads decisions based on filesystem root
 #[derive(Debug)]
@@ -79,9 +80,8 @@ impl FilesystemLoader {
     }
 }
 
-#[async_trait]
 impl DecisionLoader for FilesystemLoader {
-    async fn load(&self, key: &str) -> LoaderResponse {
-        self.read_from_file(key)
+    fn load<'a>(&'a self, key: &'a str) -> impl Future<Output = LoaderResponse> + 'a {
+        async move { self.read_from_file(key) }
     }
 }

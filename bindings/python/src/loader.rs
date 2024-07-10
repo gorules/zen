@@ -1,8 +1,10 @@
-use anyhow::anyhow;
-use async_trait::async_trait;
-use pyo3::{PyObject, Python};
+use std::future::Future;
 use std::sync::Arc;
-use zen_engine::loader::{DecisionLoader, LoaderError, LoaderResult};
+
+use anyhow::anyhow;
+use pyo3::{PyObject, Python};
+
+use zen_engine::loader::{DecisionLoader, LoaderError, LoaderResponse};
 use zen_engine::model::DecisionContent;
 
 #[derive(Default)]
@@ -35,15 +37,16 @@ impl PyDecisionLoader {
     }
 }
 
-#[async_trait]
 impl DecisionLoader for PyDecisionLoader {
-    async fn load(&self, key: &str) -> LoaderResult<Arc<DecisionContent>> {
-        self.load_element(key).map_err(|e| {
-            LoaderError::Internal {
-                source: e,
-                key: key.to_string(),
-            }
-            .into()
-        })
+    fn load<'a>(&'a self, key: &'a str) -> impl Future<Output = LoaderResponse> + 'a {
+        async move {
+            self.load_element(key).map_err(|e| {
+                LoaderError::Internal {
+                    source: e,
+                    key: key.to_string(),
+                }
+                .into()
+            })
+        }
     }
 }

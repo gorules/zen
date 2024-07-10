@@ -6,7 +6,6 @@ license = "MIT"
 publish = false
 
 [dependencies]
-async-trait = { workspace = true }
 anyhow = { workspace = true }
 libc = "0.2.155"
 serde = { workspace = true }

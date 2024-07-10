@@ -1,7 +1,6 @@
-use std::ffi::{c_char, CString};
-
 use anyhow::anyhow;
-use async_trait::async_trait;
+use std::ffi::{c_char, CString};
+use std::future::Future;
 
 use zen_engine::handler::custom_node_adapter::{CustomNodeAdapter, CustomNodeRequest};
 use zen_engine::handler::node::NodeResult;
@@ -22,18 +21,19 @@ impl GoDecisionLoader {
     }
 }
 
-#[async_trait]
 impl DecisionLoader for GoDecisionLoader {
-    async fn load(&self, key: &str) -> LoaderResponse {
-        let Some(handler) = &self.handler else {
-            return Err(LoaderError::NotFound(key.to_string()).into());
-        };
+    fn load<'a>(&'a self, key: &'a str) -> impl Future<Output = LoaderResponse> + 'a {
+        async move {
+            let Some(handler) = &self.handler else {
+                return Err(LoaderError::NotFound(key.to_string()).into());
+            };
 
-        let c_key = CString::new(key).unwrap();
-        let c_content_ptr =
-            unsafe { zen_engine_go_loader_callback(handler.clone(), c_key.as_ptr()) };
+            let c_key = CString::new(key).unwrap();
+            let c_content_ptr =
+                unsafe { zen_engine_go_loader_callback(handler.clone(), c_key.as_ptr()) };
 
-        c_content_ptr.into_loader_response(key)
+            c_content_ptr.into_loader_response(key)
+        }
     }
 }
 

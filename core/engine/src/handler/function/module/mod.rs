@@ -15,7 +15,6 @@ pub(crate) mod zen;
 static JS_BUNDLE: Bundle = embed! {
     "dayjs": "js/dayjs.js",
     "big": "js/big.js",
-    "internals": "js/internals.js"
 };
 
 #[derive(Clone)]

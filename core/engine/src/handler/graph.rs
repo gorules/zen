@@ -17,11 +17,13 @@ use crate::handler::function::function::{Function, FunctionConfig};
 use crate::handler::function::module::console::ConsoleListener;
 use crate::handler::function::module::zen::ZenListener;
 use crate::handler::function::FunctionHandler;
+use crate::handler::function_v1;
+use crate::handler::function_v1::runtime::create_runtime;
 use crate::handler::node::NodeRequest;
 use crate::handler::table::zen::DecisionTableHandler;
 use crate::handler::traversal::{GraphWalker, StableDiDecisionGraph};
 use crate::loader::DecisionLoader;
-use crate::model::{DecisionContent, DecisionNodeKind};
+use crate::model::{DecisionContent, DecisionNodeKind, FunctionNodeVersion};
 use crate::{EvaluationError, NodeError};
 
 pub struct DecisionGraph<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> {
@@ -213,7 +215,7 @@ impl<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGr
 
                     walker.set_node_data(nid, input_data);
                 }
-                DecisionNodeKind::FunctionNode { .. } => {
+                DecisionNodeKind::FunctionNode { version, .. } => {
                     let function = self.get_or_insert_function().await.map_err(|e| NodeError {
                         source: e.into(),
                         node_id: node.id.clone(),
@@ -224,14 +226,34 @@ impl<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGr
                         iteration: self.iteration,
                         input: walker.incoming_node_data(&self.graph, nid, true),
                     };
-                    let mut res =
-                        FunctionHandler::new(function, self.trace, self.iteration, self.max_depth)
-                            .handle(&node_request)
-                            .await
-                            .map_err(|e| NodeError {
+                    let mut res = match version {
+                        FunctionNodeVersion::V1 => {
+                            let runtime = create_runtime().map_err(|e| NodeError {
                                 source: e.into(),
                                 node_id: node.id.clone(),
                             })?;
+
+                            function_v1::FunctionHandler::new(self.trace, runtime)
+                                .handle(&node_request)
+                                .await
+                                .map_err(|e| NodeError {
+                                    source: e.into(),
+                                    node_id: node.id.clone(),
+                                })?
+                        }
+                        FunctionNodeVersion::V2 => FunctionHandler::new(
+                            function,
+                            self.trace,
+                            self.iteration,
+                            self.max_depth,
+                        )
+                        .handle(&node_request)
+                        .await
+                        .map_err(|e| NodeError {
+                            source: e.into(),
+                            node_id: node.id.clone(),
+                        })?,
+                    };
 
                     trim_nodes(&mut node_request.input);
                     trim_nodes(&mut res.output);

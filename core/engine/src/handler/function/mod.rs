@@ -12,11 +12,11 @@ use crate::handler::function::serde::JsValue;
 use crate::handler::node::{NodeRequest, NodeResponse, NodeResult};
 use crate::model::DecisionNodeKind;
 
-mod error;
+pub(crate) mod error;
 pub(crate) mod function;
 pub(crate) mod listener;
 pub(crate) mod module;
-mod serde;
+pub(crate) mod serde;
 
 #[derive(Serialize, Deserialize)]
 pub struct FunctionResponse {
@@ -51,7 +51,7 @@ impl FunctionHandler {
 
     pub async fn handle(&self, request: &NodeRequest<'_>) -> NodeResult {
         let content = match &request.node.kind {
-            DecisionNodeKind::FunctionNode { content } => Ok(content),
+            DecisionNodeKind::FunctionNode { content, .. } => Ok(content),
             _ => Err(anyhow!("Unexpected node type")),
         }?;
         let start = std::time::Instant::now();
@@ -70,13 +70,13 @@ impl FunctionHandler {
             .map_err(|e| anyhow!(e.to_string()))?;
 
         self.function
-            .register_module(module_name, content.as_str())
+            .register_module(&module_name, content.as_str())
             .await
             .map_err(|e| anyhow!(e.to_string()))?;
 
         let response = self
             .function
-            .call_handler(module_name, JsValue(request.input.clone()))
+            .call_handler(&module_name, JsValue(request.input.clone()))
             .await
             .map_err(|e| anyhow!(e.to_string()))?;
 

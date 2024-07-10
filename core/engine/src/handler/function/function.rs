@@ -18,7 +18,6 @@ pub struct FunctionConfig {
 pub struct Function {
     rt: Arc<AsyncRuntime>,
     ctx: AsyncContext,
-
     listeners: Vec<Box<dyn RuntimeListener>>,
     module_loader: ModuleLoader,
 }
@@ -68,11 +67,13 @@ impl Function {
         &self.rt
     }
 
-    pub fn suggest_module_name<'a>(&self, id: &'a str, name: &'a str) -> &'a str {
-        if self.module_loader.has_module(name) {
-            id
+    pub fn suggest_module_name<'a>(&self, id: &str, name: &str) -> String {
+        let declarative_name = format!("node:{name}");
+
+        if self.module_loader.has_module(&declarative_name) {
+            format!("node:{id}")
         } else {
-            name
+            declarative_name
         }
     }
 

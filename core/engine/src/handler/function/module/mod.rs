@@ -30,6 +30,11 @@ impl ModuleLoader {
         let reference = self.0.borrow_mut();
         reference.add_module(module);
     }
+
+    pub fn has_module(&self, module: &str) -> bool {
+        let reference = self.0.borrow();
+        reference.has_module(module)
+    }
 }
 
 impl Resolver for ModuleLoader {
@@ -54,7 +59,11 @@ struct BaseModuleLoader {
 
 impl BaseModuleLoader {
     pub fn new() -> Self {
-        let hs = HashSet::from(["zen".to_string()]);
+        let mut hs = HashSet::from(["zen".to_string()]);
+
+        JS_BUNDLE.iter().for_each(|(key, _)| {
+            hs.insert(key.to_string());
+        });
 
         Self {
             bundle: JS_BUNDLE,
@@ -66,6 +75,11 @@ impl BaseModuleLoader {
     pub fn add_module(&self, value: String) {
         let mut modules = self.defined_modules.borrow_mut();
         modules.insert(value);
+    }
+
+    pub fn has_module(&self, value: &str) -> bool {
+        let modules = self.defined_modules.borrow();
+        modules.contains(value)
     }
 }
 

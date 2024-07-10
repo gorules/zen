@@ -68,6 +68,14 @@ impl Function {
         &self.rt
     }
 
+    pub fn suggest_module_name<'a>(&self, id: &'a str, name: &'a str) -> &'a str {
+        if self.module_loader.has_module(name) {
+            id
+        } else {
+            name
+        }
+    }
+
     pub async fn register_module(&self, name: &str, source: &str) -> FunctionResult {
         let maybe_error: Option<FunctionError> = async_with!(&self.ctx => |ctx| {
             if let Err(err) = Module::declare(ctx.clone(), name.as_bytes().to_vec(), source.as_bytes().to_vec()).catch(&ctx) {

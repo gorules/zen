@@ -54,9 +54,11 @@ impl FunctionHandler {
             DecisionNodeKind::FunctionNode { content } => Ok(content),
             _ => Err(anyhow!("Unexpected node type")),
         }?;
-
-        let name = request.node.name.as_str();
         let start = std::time::Instant::now();
+
+        let module_name = self
+            .function
+            .suggest_module_name(request.node.id.as_str(), request.node.name.as_str());
         let interrupt_handler = Box::new(move || start.elapsed() > MAX_DURATION);
         self.function
             .runtime()
@@ -68,13 +70,13 @@ impl FunctionHandler {
             .map_err(|e| anyhow!(e.to_string()))?;
 
         self.function
-            .register_module(name, content.as_str())
+            .register_module(module_name, content.as_str())
             .await
             .map_err(|e| anyhow!(e.to_string()))?;
 
         let response = self
             .function
-            .call_handler(name, JsValue(request.input.clone()))
+            .call_handler(module_name, JsValue(request.input.clone()))
             .await
             .map_err(|e| anyhow!(e.to_string()))?;
 

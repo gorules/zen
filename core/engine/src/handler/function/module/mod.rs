@@ -12,8 +12,8 @@ use rquickjs::{embed, Ctx, Error, Module};
 use crate::handler::function::module::zen::js_zen_module;
 use crate::handler::node::NodeResult;
 
-pub mod console;
-mod zen;
+pub(crate) mod console;
+pub(crate) mod zen;
 
 static JS_BUNDLE: Bundle = embed! {
     "dayjs": "js/dayjs.js",
@@ -100,9 +100,4 @@ impl Loader for &mut BaseModuleLoader {
             .load(ctx, name)
             .or_else(|_| self.md_loader.load(ctx, name))
     }
-}
-
-pub fn throw_js_error<E: ToString>(ctx: Ctx<'_>, e: E) -> rquickjs::Error {
-    let s = e.to_string();
-    ctx.throw(rquickjs::String::from_str(ctx.clone(), &s).unwrap().into())
 }

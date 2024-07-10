@@ -23,7 +23,7 @@ once_cell = { workspace = true }
 json_dotpath = { workspace = true }
 fixedbitset = "0.4.2"
 futures = { workspace = true }
-rquickjs = { version = "0.6.2", features = ["macro", "loader", "rust-alloc", "futures", "either"] }
+rquickjs = { version = "0.6.2", features = ["macro", "loader", "rust-alloc", "futures", "either", "properties"] }
 itertools = { workspace = true }
 zen-expression = { path = "../expression", version = "0.23.0" }
 zen-tmpl = { path = "../template", version = "0.23.0" }

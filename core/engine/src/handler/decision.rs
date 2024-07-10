@@ -1,15 +1,16 @@
+use std::ops::Deref;
+use std::rc::Rc;
+use std::sync::Arc;
+
+use anyhow::{anyhow, Context};
+use async_recursion::async_recursion;
+
 use crate::handler::custom_node_adapter::CustomNodeAdapter;
 use crate::handler::function::function::Function;
 use crate::handler::graph::{DecisionGraph, DecisionGraphConfig};
 use crate::handler::node::{NodeRequest, NodeResponse, NodeResult};
 use crate::loader::DecisionLoader;
 use crate::model::DecisionNodeKind;
-use anyhow::{anyhow, Context};
-use async_recursion::async_recursion;
-use rquickjs::Runtime;
-use std::ops::Deref;
-use std::rc::Rc;
-use std::sync::Arc;
 
 pub struct DecisionHandler<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> {
     trace: bool,

@@ -13,7 +13,9 @@ use thiserror::Error;
 use crate::handler::custom_node_adapter::{CustomNodeAdapter, CustomNodeRequest};
 use crate::handler::decision::DecisionHandler;
 use crate::handler::expression::ExpressionHandler;
-use crate::handler::function::function::Function;
+use crate::handler::function::function::{Function, FunctionConfig};
+use crate::handler::function::module::console::ConsoleListener;
+use crate::handler::function::module::zen::ZenListener;
 use crate::handler::function::FunctionHandler;
 use crate::handler::node::NodeRequest;
 use crate::handler::table::zen::DecisionTableHandler;
@@ -89,9 +91,17 @@ impl<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGr
             return Ok(function.clone());
         }
 
-        let function = Function::create()
-            .await
-            .map_err(|err| anyhow!(err.to_string()))?;
+        let function = Function::create(FunctionConfig {
+            listeners: Some(vec![
+                Box::new(ConsoleListener),
+                Box::new(ZenListener {
+                    loader: self.loader.clone(),
+                    adapter: self.adapter.clone(),
+                }),
+            ]),
+        })
+        .await
+        .map_err(|err| anyhow!(err.to_string()))?;
         let rc_function = Rc::new(function);
         self.runtime.replace(rc_function.clone());
 
@@ -214,19 +224,14 @@ impl<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGr
                         iteration: self.iteration,
                         input: walker.incoming_node_data(&self.graph, nid, true),
                     };
-                    let mut res = FunctionHandler::new(
-                        self.trace,
-                        function,
-                        self.loader.clone(),
-                        self.adapter.clone(),
-                        self.max_depth,
-                    )
-                    .handle(&node_request)
-                    .await
-                    .map_err(|e| NodeError {
-                        source: e.into(),
-                        node_id: node.id.clone(),
-                    })?;
+                    let mut res =
+                        FunctionHandler::new(function, self.trace, self.iteration, self.max_depth)
+                            .handle(&node_request)
+                            .await
+                            .map_err(|e| NodeError {
+                                source: e.into(),
+                                node_id: node.id.clone(),
+                            })?;
 
                     trim_nodes(&mut node_request.input);
                     trim_nodes(&mut res.output);

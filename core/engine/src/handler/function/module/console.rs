@@ -1,11 +1,13 @@
 use std::cell::RefCell;
+use std::future::Future;
+use std::pin::Pin;
 use std::time::Instant;
 
+use crate::handler::function::error::FunctionResult;
+use crate::handler::function::listener::{RuntimeEvent, RuntimeListener};
 use rquickjs::prelude::Rest;
 use rquickjs::{Ctx, Value};
 use serde::{Deserialize, Serialize};
-
-use crate::handler::function::listener::{RuntimeEvent, RuntimeListener};
 
 #[derive(Default)]
 pub struct ConsoleModule;
@@ -13,13 +15,19 @@ pub struct ConsoleModule;
 pub struct ConsoleListener;
 
 impl RuntimeListener for ConsoleListener {
-    fn on_event(&self, ctx: &Ctx, event: &RuntimeEvent) -> rquickjs::Result<()> {
-        match event {
-            RuntimeEvent::Startup => Console::init(ctx)?,
-            RuntimeEvent::SoftReset => Console::init(ctx)?,
-        }
+    fn on_event<'js>(
+        &self,
+        ctx: Ctx<'js>,
+        event: RuntimeEvent,
+    ) -> Pin<Box<dyn Future<Output = FunctionResult> + 'js>> {
+        Box::pin(async move {
+            match event {
+                RuntimeEvent::Startup => Console::init(&ctx)?,
+                RuntimeEvent::SoftReset => Console::init(&ctx)?,
+            }
 
-        Ok(())
+            Ok(())
+        })
     }
 }
 

@@ -1,5 +1,3 @@
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 
 use rquickjs::promise::MaybePromise;
@@ -9,10 +7,13 @@ use serde_json::Value;
 
 use crate::handler::function::error::{FunctionError, FunctionResult};
 use crate::handler::function::listener::{RuntimeEvent, RuntimeListener};
-use crate::handler::function::module::console::{Console, ConsoleListener, Log};
+use crate::handler::function::module::console::{Console, Log};
 use crate::handler::function::module::ModuleLoader;
 use crate::handler::function::serde::JsValue;
-use crate::handler::node::NodeResult;
+
+pub struct FunctionConfig {
+    pub listeners: Option<Vec<Box<dyn RuntimeListener>>>,
+}
 
 pub struct Function {
     rt: Arc<AsyncRuntime>,
@@ -23,7 +24,7 @@ pub struct Function {
 }
 
 impl Function {
-    pub async fn create<'js>() -> FunctionResult<Self> {
+    pub async fn create<'js>(config: FunctionConfig) -> FunctionResult<Self> {
         let module_loader = ModuleLoader::new();
         let rt = Arc::new(AsyncRuntime::new()?);
 
@@ -35,16 +36,16 @@ impl Function {
             rt,
             ctx,
             module_loader,
-            listeners: vec![Box::new(ConsoleListener)],
+            listeners: config.listeners.unwrap_or_default(),
         };
 
         this.dispatch_event(RuntimeEvent::Startup).await?;
         Ok(this)
     }
 
-    fn dispatch_event_inner(&self, ctx: &Ctx, event: RuntimeEvent) -> FunctionResult {
+    async fn dispatch_event_inner(&self, ctx: &Ctx<'_>, event: RuntimeEvent) -> FunctionResult {
         for listener in &self.listeners {
-            if let Err(err) = listener.on_event(&ctx, &event) {
+            if let Err(err) = listener.on_event(ctx.clone(), event.clone()).await {
                 return Err(err.into());
             };
         }
@@ -53,9 +54,10 @@ impl Function {
     }
 
     async fn dispatch_event(&self, event: RuntimeEvent) -> FunctionResult {
-        self.ctx
-            .with(|ctx| self.dispatch_event_inner(&ctx, event))
-            .await
+        async_with!(&self.ctx => |ctx| {
+            self.dispatch_event_inner(&ctx, event).await
+        })
+        .await
     }
 
     pub fn context(&self) -> &AsyncContext {
@@ -88,7 +90,7 @@ impl Function {
         data: JsValue,
     ) -> FunctionResult<HandlerResponse> {
         let k: FunctionResult<HandlerResponse> = async_with!(&self.ctx => |ctx| {
-            self.dispatch_event_inner(&ctx, RuntimeEvent::SoftReset)?;
+            self.dispatch_event_inner(&ctx, RuntimeEvent::SoftReset).await?;
 
             let m: rquickjs::Object = Module::import(&ctx, name).catch(&ctx)?.into_future().await.catch(&ctx)?;
             let handler: rquickjs::Function = m.get("handler").catch(&ctx)?;

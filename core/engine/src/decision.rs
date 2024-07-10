@@ -43,8 +43,8 @@ impl From<Arc<DecisionContent>> for Decision<NoopLoader, NoopCustomNode> {
 
 impl<L, A> Decision<L, A>
 where
-    L: DecisionLoader,
-    A: CustomNodeAdapter,
+    L: DecisionLoader + 'static,
+    A: CustomNodeAdapter + 'static,
 {
     pub fn with_loader<Loader>(self, loader: Arc<Loader>) -> Decision<Loader, A>
     where

@@ -62,7 +62,7 @@ async fn execute_http<'js>(
         )?;
     }
 
-    let data: serde_json::Value = response.json().await.unwrap();
+    let data: serde_json::Value = response.json().await.or_throw(&ctx)?;
 
     Ok(HttpResponse {
         data: JsValue(data).into_js(&ctx)?,

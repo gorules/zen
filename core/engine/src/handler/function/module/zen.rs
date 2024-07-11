@@ -1,7 +1,10 @@
 use std::future::Future;
-use std::ops::Deref;
 use std::pin::Pin;
 use std::sync::Arc;
+
+use rquickjs::module::{Declarations, Exports, ModuleDef};
+use rquickjs::prelude::{Async, Func, Opt};
+use rquickjs::{CatchResultExt, Ctx, Function, Object};
 
 use crate::handler::custom_node_adapter::CustomNodeAdapter;
 use crate::handler::function::error::{FunctionResult, ResultExt};
@@ -10,9 +13,6 @@ use crate::handler::function::module::export_default;
 use crate::handler::function::serde::JsValue;
 use crate::handler::graph::{DecisionGraph, DecisionGraphConfig};
 use crate::loader::DecisionLoader;
-use rquickjs::module::{Declarations, Exports, ModuleDef};
-use rquickjs::prelude::{Async, Func, Opt};
-use rquickjs::{CatchResultExt, Ctx, Function, Object};
 
 pub(crate) struct ZenListener<Loader, Adapter> {
     pub loader: Arc<Loader>,
@@ -27,8 +27,7 @@ impl<Loader: DecisionLoader + 'static, Adapter: CustomNodeAdapter + 'static> Run
         ctx: Ctx<'js>,
         event: RuntimeEvent,
     ) -> Pin<Box<dyn Future<Output = FunctionResult> + 'js>> {
-        let loader1 = self.loader.clone();
-        let loader2 = self.loader.clone();
+        let loader = self.loader.clone();
         let adapter = self.adapter.clone();
 
         Box::pin(async move {
@@ -38,30 +37,13 @@ impl<Loader: DecisionLoader + 'static, Adapter: CustomNodeAdapter + 'static> Run
 
             ctx.globals()
                 .set(
-                    "__getContent",
-                    Func::from(Async(move |ctx: Ctx<'js>, key: String| {
-                        let loader = loader1.clone();
-                        async move {
-                            let load_result = loader.load(key.as_str()).await;
-                            let decision_content = load_result.or_throw(&ctx)?;
-
-                            return rquickjs::Result::Ok(JsValue(
-                                serde_json::to_value(decision_content.deref()).unwrap(),
-                            ));
-                        }
-                    })),
-                )
-                .catch(&ctx)?;
-
-            ctx.globals()
-                .set(
                     "__evaluate",
                     Func::from(Async(
                         move |ctx: Ctx<'js>,
                               key: String,
                               context: JsValue,
                               opts: Opt<Object<'js>>| {
-                            let loader = loader2.clone();
+                            let loader = loader.clone();
                             let adapter = adapter.clone();
 
                             async move {
@@ -89,7 +71,7 @@ impl<Loader: DecisionLoader + 'static, Adapter: CustomNodeAdapter + 'static> Run
                                 let response =
                                     sub_tree.evaluate(&context.0).await.or_throw(&ctx)?;
                                 return rquickjs::Result::Ok(JsValue(
-                                    serde_json::to_value(response).unwrap(),
+                                    serde_json::to_value(response).or_throw(&ctx)?,
                                 ));
                             }
                         },
@@ -134,12 +116,6 @@ fn evaluate<'js>(
     Ok(result)
 }
 
-fn get<'js>(ctx: Ctx<'js>, key: String) -> rquickjs::Result<rquickjs::Value<'js>> {
-    let s: Function = ctx.globals().get("__getContent").or_throw(&ctx)?;
-    let result: rquickjs::Value = s.call((key,)).or_throw(&ctx)?;
-    Ok(result)
-}
-
 pub struct ZenModule;
 
 impl ModuleDef for ZenModule {
@@ -147,7 +123,6 @@ impl ModuleDef for ZenModule {
         decl.declare("evaluateExpression")?;
         decl.declare("evaluateUnaryExpression")?;
         decl.declare("evaluate")?;
-        decl.declare("get")?;
 
         decl.declare("default")?;
 
@@ -162,7 +137,6 @@ impl ModuleDef for ZenModule {
                 Func::from(evaluate_unary_expression),
             )?;
             default.set("evaluate", Func::from(evaluate))?;
-            default.set("get", Func::from(get))?;
 
             Ok(())
         })

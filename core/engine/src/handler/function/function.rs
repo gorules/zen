@@ -5,14 +5,14 @@ use rquickjs::{async_with, AsyncContext, AsyncRuntime, CatchResultExt, Ctx, Modu
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::handler::function::error::{FunctionError, FunctionResult};
+use crate::handler::function::error::{FunctionError, FunctionResult, ResultExt};
 use crate::handler::function::listener::{RuntimeEvent, RuntimeListener};
 use crate::handler::function::module::console::{Console, Log};
 use crate::handler::function::module::ModuleLoader;
 use crate::handler::function::serde::JsValue;
 
 pub struct FunctionConfig {
-    pub listeners: Option<Vec<Box<dyn RuntimeListener>>>,
+    pub(crate) listeners: Option<Vec<Box<dyn RuntimeListener>>>,
 }
 
 pub struct Function {
@@ -107,7 +107,7 @@ impl Function {
             let handler_promise: MaybePromise = handler.call((data, 5)).catch(&ctx)?;
             let handler_result = handler_promise.into_future::<JsValue>().await.catch(&ctx)?;
 
-            let console = Console::from_context(&ctx).unwrap();
+            let console = Console::from_context(&ctx).or_throw(&ctx)?;
             let logs = console.logs.into_inner();
 
             Ok(HandlerResponse { data: handler_result.0, logs })

@@ -9,10 +9,7 @@ use rquickjs::prelude::Rest;
 use rquickjs::{Ctx, Object, Value};
 use serde::{Deserialize, Serialize};
 
-#[derive(Default)]
-pub struct ConsoleModule;
-
-pub struct ConsoleListener;
+pub(crate) struct ConsoleListener;
 
 impl RuntimeListener for ConsoleListener {
     fn on_event<'js>(
@@ -100,7 +97,7 @@ impl Console {
         Ok(())
     }
 
-    pub async fn wait(&self, duration_ms: u64) -> rquickjs::Result<()> {
+    pub async fn sleep(&self, duration_ms: u64) -> rquickjs::Result<()> {
         tokio::time::sleep(Duration::from_millis(duration_ms)).await;
         Ok(())
     }

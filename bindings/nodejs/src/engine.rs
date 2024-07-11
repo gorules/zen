@@ -1,18 +1,22 @@
+use std::sync::Arc;
+
+use napi::anyhow::{anyhow, Context};
+use napi::bindgen_prelude::{Buffer, Either3};
+use napi::threadsafe_function::{ErrorStrategy, ThreadSafeCallContext, ThreadsafeFunction};
+use napi::{Env, JsFunction, JsObject};
+use napi_derive::napi;
+use serde_json::Value;
+
+use zen_engine::model::DecisionContent;
+use zen_engine::{DecisionEngine, EvaluationOptions};
+
 use crate::content::ZenDecisionContent;
 use crate::custom_node::CustomNode;
 use crate::decision::ZenDecision;
 use crate::loader::DecisionLoader;
+use crate::mt::spawn_worker;
 use crate::safe_result::SafeResult;
 use crate::types::{ZenEngineHandlerRequest, ZenEngineResponse};
-use napi::anyhow::{anyhow, Context};
-use napi::bindgen_prelude::{Buffer, Either3};
-use napi::threadsafe_function::{ErrorStrategy, ThreadSafeCallContext, ThreadsafeFunction};
-use napi::{tokio, Env, JsFunction, JsObject};
-use napi_derive::napi;
-use serde_json::Value;
-use std::sync::Arc;
-use zen_engine::model::DecisionContent;
-use zen_engine::{DecisionEngine, EvaluationOptions};
 
 #[napi]
 pub struct ZenEngine {
@@ -107,17 +111,21 @@ impl ZenEngine {
         opts: Option<ZenEvaluateOptions>,
     ) -> napi::Result<ZenEngineResponse> {
         let graph = self.graph.clone();
-        let result = tokio::spawn(async move {
+        let result = spawn_worker(|| {
             let options = opts.unwrap_or_default();
 
-            futures::executor::block_on(graph.evaluate_with_opts(
-                key,
-                &context,
-                EvaluationOptions {
-                    max_depth: options.max_depth,
-                    trace: options.trace,
-                },
-            ))
+            async move {
+                graph
+                    .evaluate_with_opts(
+                        key,
+                        &context,
+                        EvaluationOptions {
+                            max_depth: options.max_depth,
+                            trace: options.trace,
+                        },
+                    )
+                    .await
+            }
         })
         .await
         .map_err(|_| anyhow!("Hook timed out"))?

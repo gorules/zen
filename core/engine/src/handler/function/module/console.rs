@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::future::Future;
 use std::pin::Pin;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::handler::function::error::{FunctionResult, ResultExt};
 use crate::handler::function::listener::{RuntimeEvent, RuntimeListener};
@@ -97,6 +97,11 @@ impl Console {
             ms_since_run: self.created_at.elapsed().as_millis() as usize,
         });
 
+        Ok(())
+    }
+
+    pub async fn wait(&self, duration_ms: u64) -> rquickjs::Result<()> {
+        tokio::time::sleep(Duration::from_millis(duration_ms)).await;
         Ok(())
     }
 }

@@ -9,8 +9,9 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-napi = { version = "2.16.2", features = ["serde-json", "error_anyhow", "tokio_rt"] }
-napi-derive = "2.16.2"
+napi = { version = "2.16", features = ["serde-json", "error_anyhow", "tokio_rt"] }
+napi-derive = "2.16"
+tokio-util = { version = "0.7", features = ["rt"] }
 serde_json = { workspace = true }
 futures = { workspace = true }
 zen-engine = { path = "../../core/engine" }
@@ -20,4 +21,4 @@ serde = { workspace = true, features = ["derive"] }
 json_dotpath = { workspace = true }
 
 [build-dependencies]
-napi-build = "2.1.2"
+napi-build = "2.1"

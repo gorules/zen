@@ -1,23 +1,30 @@
-use std::str::FromStr;
-
-use crate::handler::function::error::ResultExt;
-use crate::handler::function::module::export_default;
-use crate::handler::function::serde::JsValue;
 use reqwest::header::{HeaderMap, HeaderName};
 use reqwest::Method;
 use rquickjs::module::{Declarations, Exports, ModuleDef};
 use rquickjs::prelude::{Async, Func, Opt};
 use rquickjs::{CatchResultExt, Ctx, FromJs, IntoAtom, IntoJs, Object, Value};
+use std::str::FromStr;
+use std::sync::OnceLock;
 
-#[derive(rquickjs::class::Trace)]
-#[rquickjs::class]
+use crate::handler::function::error::ResultExt;
+use crate::handler::function::module::export_default;
+use crate::handler::function::serde::JsValue;
+
 pub(crate) struct HttpResponse<'js> {
-    #[qjs(get)]
     data: Value<'js>,
-    #[qjs(get)]
     headers: Object<'js>,
-    #[qjs(get)]
     status: u16,
+}
+
+impl<'js> IntoJs<'js> for HttpResponse<'js> {
+    fn into_js(self, ctx: &Ctx<'js>) -> rquickjs::Result<Value<'js>> {
+        let object = Object::new(ctx.clone())?;
+        object.set("data", self.data)?;
+        object.set("headers", self.headers)?;
+        object.set("status", self.status)?;
+
+        Ok(object.into_value())
+    }
 }
 
 async fn execute_http<'js>(
@@ -27,7 +34,9 @@ async fn execute_http<'js>(
     data: Option<JsValue>,
     config: Option<HttpConfig>,
 ) -> rquickjs::Result<HttpResponse> {
-    let client = reqwest::Client::new();
+    static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
+    let client = HTTP_CLIENT.get_or_init(|| reqwest::Client::new()).clone();
     let mut builder = client.request(method, url);
     if let Some(data) = data {
         builder = builder.json(&data.0);
@@ -45,10 +54,7 @@ async fn execute_http<'js>(
 
     let response = builder.send().await.or_throw(&ctx)?;
     let status = response.status().as_u16();
-
-    let header_object = rquickjs::Object::new(ctx.clone())
-        .catch(&ctx)
-        .or_throw(&ctx)?;
+    let header_object = Object::new(ctx.clone()).catch(&ctx).or_throw(&ctx)?;
     for (key, value) in response.headers() {
         header_object.set(
             key.as_str().into_atom(&ctx)?,

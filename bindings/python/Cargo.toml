@@ -17,9 +17,8 @@ pythonize = "0.20"
 json_dotpath = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-futures = { workspace = true }
-tokio = { version = "1.38", features = ["rt"] }
-tokio-util = { version = "0.7", features = ["rt"] }
+tokio = { workspace = true, features = ["rt"] }
+tokio-util = { workspace = true, features = ["rt"] }
 zen-engine = { path = "../../core/engine" }
 zen-expression = { path = "../../core/expression" }
 zen-tmpl = { path = "../../core/template" }

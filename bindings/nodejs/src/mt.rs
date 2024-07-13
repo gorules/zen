@@ -5,10 +5,7 @@ use std::thread::available_parallelism;
 use tokio_util::task::LocalPoolHandle;
 
 fn parallelism() -> usize {
-    let available = available_parallelism().map(Into::into).unwrap_or(1);
-    let additional = ((available as f64) * 1.5) as usize;
-
-    available + additional
+    available_parallelism().map(Into::into).unwrap_or(1)
 }
 
 pub(crate) fn worker_pool() -> LocalPoolHandle {

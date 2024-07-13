@@ -152,7 +152,7 @@ async fn engine_function_imports() {
     replace_buffer.read_to_string(&mut replace_data).unwrap();
 
     function_content.nodes.iter_mut().for_each(|node| {
-        if let DecisionNodeKind::FunctionNode { content } = &mut node.kind {
+        if let DecisionNodeKind::FunctionNode { content, .. } = &mut node.kind {
             let _ = std::mem::replace(content, replace_data.clone());
         }
     });

@@ -37,7 +37,7 @@ pub struct FunctionHandler {
     max_depth: u8,
 }
 
-static MAX_DURATION: Duration = Duration::from_millis(500);
+static MAX_DURATION: Duration = Duration::from_millis(5_000);
 
 impl FunctionHandler {
     pub fn new(function: Rc<Function>, trace: bool, iteration: u8, max_depth: u8) -> Self {

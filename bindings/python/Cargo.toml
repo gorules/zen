@@ -12,12 +12,14 @@ crate-type = ["cdylib"]
 [dependencies]
 anyhow = { workspace = true }
 pyo3 = { version = "0.20", features = ["anyhow", "serde"] }
+pyo3-asyncio = { version = "0.20", features = ["tokio-runtime"] }
 pythonize = "0.20"
 json_dotpath = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 futures = { workspace = true }
+tokio = { version = "1.38", features = ["rt"] }
+tokio-util = { version = "0.7", features = ["rt"] }
 zen-engine = { path = "../../core/engine" }
 zen-expression = { path = "../../core/expression" }
 zen-tmpl = { path = "../../core/template" }
-pyo3-asyncio = { version = "0.20.0", features = ["tokio-runtime"] }

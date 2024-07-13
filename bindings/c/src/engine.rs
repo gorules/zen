@@ -3,15 +3,14 @@ use std::marker::{PhantomData, PhantomPinned};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
-use futures::executor::block_on;
-
-use crate::custom_node::DynamicCustomNode;
 use zen_engine::{DecisionEngine, EvaluationOptions};
 
+use crate::custom_node::DynamicCustomNode;
 use crate::decision::{ZenDecision, ZenDecisionStruct};
 use crate::error::ZenError;
 use crate::helper::safe_str_from_ptr;
 use crate::loader::DynamicDecisionLoader;
+use crate::mt::tokio_runtime;
 use crate::result::ZenResult;
 
 pub(crate) struct ZenEngine(DecisionEngine<DynamicDecisionLoader, DynamicCustomNode>);
@@ -128,8 +127,11 @@ pub extern "C" fn zen_engine_evaluate(
 
     let zen_engine = unsafe { &*(engine as *mut ZenEngine) };
 
-    let maybe_result =
-        block_on(zen_engine.evaluate_with_opts(str_key, &val_context, options.into()));
+    let maybe_result = tokio_runtime().block_on(zen_engine.evaluate_with_opts(
+        str_key,
+        &val_context,
+        options.into(),
+    ));
     let result = match maybe_result {
         Ok(r) => r,
         Err(e) => return ZenResult::from(&e),
@@ -160,7 +162,7 @@ pub extern "C" fn zen_engine_get_decision(
     };
 
     let zen_engine = unsafe { &*(engine as *mut ZenEngine) };
-    let decision = match block_on(zen_engine.get_decision(str_key)) {
+    let decision = match tokio_runtime().block_on(zen_engine.get_decision(str_key)) {
         Ok(d) => d,
         Err(e) => return ZenResult::from(&e),
     };

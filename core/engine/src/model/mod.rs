@@ -72,8 +72,8 @@ pub enum DecisionNodeKind {
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[serde(rename_all = "camelCase")]
 pub enum FunctionNodeVersion {
-    V1,
     #[default]
+    V1,
     V2,
 }
 

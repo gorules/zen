@@ -1,14 +1,13 @@
+use serde::Deserialize;
+use serde_json::{json, Value};
 use std::fs;
 use std::io::Read;
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
-
-use serde::Deserialize;
-use serde_json::{json, Value};
-
+use tokio::runtime::Builder;
 use zen_engine::loader::{LoaderError, MemoryLoader};
-use zen_engine::model::{DecisionContent, DecisionNodeKind};
+use zen_engine::model::{DecisionContent, DecisionNodeKind, FunctionNodeContent};
 use zen_engine::{DecisionEngine, EvaluationError, EvaluationOptions};
 
 use crate::support::{create_fs_loader, load_raw_test_data, load_test_data, test_data_root};
@@ -69,25 +68,27 @@ async fn engine_closure_loader() {
     assert_eq!(not_found.unwrap_err().to_string(), "Loader error");
 }
 
-#[tokio::test]
-async fn engine_noop_loader() {
+#[test]
+fn engine_noop_loader() {
+    let rt = Builder::new_current_thread().build().unwrap();
     // Default engine is noop
     let engine = DecisionEngine::default();
-    let result = engine.evaluate("any.json", &json!({})).await;
+    let result = rt.block_on(engine.evaluate("any.json", &json!({})));
 
     assert_eq!(result.unwrap_err().to_string(), "Loader error");
 }
 
-#[tokio::test]
-async fn engine_get_decision() {
+#[test]
+fn engine_get_decision() {
+    let rt = Builder::new_current_thread().build().unwrap();
     let engine = DecisionEngine::default().with_loader(create_fs_loader().into());
 
-    assert!(engine.get_decision("table.json").await.is_ok());
-    assert!(engine.get_decision("any.json").await.is_err());
+    assert!(rt.block_on(engine.get_decision("table.json")).is_ok());
+    assert!(rt.block_on(engine.get_decision("any.json")).is_err());
 }
 
-#[tokio::test]
-async fn engine_create_decision() {
+#[test]
+fn engine_create_decision() {
     let engine = DecisionEngine::default();
     engine.create_decision(load_test_data("table.json").into());
 }
@@ -115,21 +116,20 @@ async fn engine_errors() {
     }
 }
 
-#[tokio::test]
-async fn engine_with_trace() {
+#[test]
+fn engine_with_trace() {
+    let rt = Builder::new_current_thread().build().unwrap();
     let engine = DecisionEngine::default().with_loader(create_fs_loader().into());
 
-    let table_r = engine.evaluate("table.json", &json!({ "input": 12 })).await;
-    let table_opt_r = engine
-        .evaluate_with_opts(
-            "table.json",
-            &json!({ "input": 12 }),
-            EvaluationOptions {
-                trace: Some(true),
-                max_depth: None,
-            },
-        )
-        .await;
+    let table_r = rt.block_on(engine.evaluate("table.json", &json!({ "input": 12 })));
+    let table_opt_r = rt.block_on(engine.evaluate_with_opts(
+        "table.json",
+        &json!({ "input": 12 }),
+        EvaluationOptions {
+            trace: Some(true),
+            max_depth: None,
+        },
+    ));
 
     let table = table_r.unwrap();
     let table_opt = table_opt_r.unwrap();
@@ -153,7 +153,12 @@ async fn engine_function_imports() {
 
     function_content.nodes.iter_mut().for_each(|node| {
         if let DecisionNodeKind::FunctionNode { content, .. } = &mut node.kind {
-            let _ = std::mem::replace(content, replace_data.clone());
+            match content {
+                FunctionNodeContent::Version1(content) => {
+                    let _ = std::mem::replace(content, replace_data.clone());
+                }
+                _ => {}
+            }
         }
     });
 
@@ -177,13 +182,13 @@ async fn engine_function_imports() {
     assert!(result.moment_valid);
 }
 
-#[tokio::test]
-async fn engine_switch_node() {
+#[test]
+fn engine_switch_node() {
+    let rt = Builder::new_current_thread().build().unwrap();
     let engine = DecisionEngine::default().with_loader(create_fs_loader().into());
 
-    let switch_node_r = engine
-        .evaluate("switch-node.json", &json!({ "color": "yellow" }))
-        .await;
+    let switch_node_r =
+        rt.block_on(engine.evaluate("switch-node.json", &json!({ "color": "yellow" })));
 
     let table = switch_node_r.unwrap();
     println!("{table:?}");

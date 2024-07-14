@@ -4,13 +4,13 @@ use std::time::Duration;
 use ::serde::{Deserialize, Serialize};
 use anyhow::anyhow;
 use rquickjs::{async_with, CatchResultExt, Object};
-use serde_json::{json, Value};
+use serde_json::json;
 
 use crate::handler::function::error::FunctionResult;
 use crate::handler::function::function::{Function, HandlerResponse};
 use crate::handler::function::serde::JsValue;
 use crate::handler::node::{NodeRequest, NodeResponse, NodeResult};
-use crate::model::DecisionNodeKind;
+use crate::model::{DecisionNodeKind, FunctionNodeContent};
 
 pub(crate) mod error;
 pub(crate) mod function;
@@ -22,12 +22,6 @@ pub(crate) mod serde;
 pub struct FunctionResponse {
     performance: String,
     data: Option<HandlerResponse>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct Output {
-    lines: Vec<Value>,
-    output: Value,
 }
 
 pub struct FunctionHandler {
@@ -51,7 +45,10 @@ impl FunctionHandler {
 
     pub async fn handle(&self, request: &NodeRequest<'_>) -> NodeResult {
         let content = match &request.node.kind {
-            DecisionNodeKind::FunctionNode { content, .. } => Ok(content),
+            DecisionNodeKind::FunctionNode { content } => match content {
+                FunctionNodeContent::Version2(content) => Ok(content),
+                _ => Err(anyhow!("Unexpected node type")),
+            },
             _ => Err(anyhow!("Unexpected node type")),
         }?;
         let start = std::time::Instant::now();
@@ -70,7 +67,7 @@ impl FunctionHandler {
             .map_err(|e| anyhow!(e.to_string()))?;
 
         self.function
-            .register_module(&module_name, content.as_str())
+            .register_module(&module_name, content.source.as_str())
             .await
             .map_err(|e| anyhow!(e.to_string()))?;
 

@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use crate::handler::function_v1::script::Script;
 use crate::handler::node::{NodeRequest, NodeResponse, NodeResult};
-use crate::model::DecisionNodeKind;
+use crate::model::{DecisionNodeKind, FunctionNodeContent};
 use anyhow::anyhow;
 use rquickjs::Runtime;
 use serde_json::json;
@@ -24,7 +24,10 @@ impl FunctionHandler {
 
     pub async fn handle(&self, request: &NodeRequest<'_>) -> NodeResult {
         let content = match &request.node.kind {
-            DecisionNodeKind::FunctionNode { content, .. } => Ok(content),
+            DecisionNodeKind::FunctionNode { content } => match content {
+                FunctionNodeContent::Version1(content) => Ok(content),
+                _ => Err(anyhow!("Unexpected node type")),
+            },
             _ => Err(anyhow!("Unexpected node type")),
         }?;
 

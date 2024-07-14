@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::future::Future;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use tokio::sync::Mutex;
 
 use crate::loader::{DecisionLoader, LoaderResponse};
 use crate::model::DecisionContent;
@@ -22,7 +24,7 @@ impl<Loader: DecisionLoader + 'static> From<Arc<Loader>> for CachedLoader<Loader
 impl<Loader: DecisionLoader + 'static> DecisionLoader for CachedLoader<Loader> {
     fn load<'a>(&'a self, key: &'a str) -> impl Future<Output = LoaderResponse> + 'a {
         async move {
-            let mut cache = self.cache.lock().unwrap();
+            let mut cache = self.cache.lock().await;
             if let Some(content) = cache.get(key) {
                 return Ok(content.clone());
             }

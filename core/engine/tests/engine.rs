@@ -242,7 +242,7 @@ async fn engine_graph_tests() {
 async fn engine_function_v2() {
     let engine = DecisionEngine::default().with_loader(create_fs_loader().into());
 
-    for _ in 0..100 {
+    for _ in 0..1_000 {
         let function_opt_r = engine
             .evaluate_with_opts(
                 "function-v2.json",

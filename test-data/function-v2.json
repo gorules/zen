@@ -1,0 +1,48 @@
+{
+  "edges": [
+    {
+      "id": "8ec75bf7-5229-4138-8fdc-486c8f82b600",
+      "type": "edge",
+      "sourceId": "c4dbea62-f0b1-421c-a504-a82983cea33a",
+      "targetId": "54b6b317-0681-4f8f-b13a-18c579282500"
+    },
+    {
+      "id": "2d45f4f3-0afe-499f-9bc9-5d247bc036db",
+      "type": "edge",
+      "sourceId": "54b6b317-0681-4f8f-b13a-18c579282500",
+      "targetId": "48984a7a-71c9-4642-adb3-f6ce0a75bcca"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "c4dbea62-f0b1-421c-a504-a82983cea33a",
+      "name": "request",
+      "type": "inputNode",
+      "position": {
+        "x": 100,
+        "y": 95
+      }
+    },
+    {
+      "id": "48984a7a-71c9-4642-adb3-f6ce0a75bcca",
+      "name": "response",
+      "type": "outputNode",
+      "position": {
+        "x": 515,
+        "y": 255
+      }
+    },
+    {
+      "id": "54b6b317-0681-4f8f-b13a-18c579282500",
+      "name": "function1",
+      "type": "functionNode",
+      "content": {
+        "source": "export const handler = async (input) => ({ hello: 'world', multiplied: input.input * 2 })"
+      },
+      "position": {
+        "x": 210,
+        "y": 285
+      }
+    }
+  ]
+}

@@ -236,3 +236,33 @@ async fn engine_graph_tests() {
         }
     }
 }
+
+#[tokio::test]
+#[cfg_attr(miri, ignore)]
+async fn engine_function_v2() {
+    let engine = DecisionEngine::default().with_loader(create_fs_loader().into());
+
+    for _ in 0..100 {
+        let function_opt_r = engine
+            .evaluate_with_opts(
+                "function-v2.json",
+                &json!({ "input": 12 }),
+                EvaluationOptions {
+                    trace: Some(true),
+                    max_depth: None,
+                },
+            )
+            .await;
+
+        assert!(function_opt_r.is_ok(), "function v2 has errored");
+
+        let function_opt = function_opt_r.unwrap();
+        let trace = function_opt.trace.unwrap();
+        assert_eq!(trace.len(), 3); // trace for each node
+
+        assert_eq!(
+            function_opt.result,
+            json!({ "hello": "world", "multiplied": 24 })
+        )
+    }
+}

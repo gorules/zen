@@ -1,15 +1,19 @@
-use crate::custom_node::PyCustomNode;
-use crate::decision::PyZenDecision;
-use crate::loader::PyDecisionLoader;
-use crate::value::PyValue;
+use std::sync::Arc;
+
 use anyhow::{anyhow, Context};
 use pyo3::types::PyDict;
 use pyo3::{pyclass, pymethods, PyAny, PyObject, PyResult, Python, ToPyObject};
 use pythonize::depythonize;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+
 use zen_engine::model::DecisionContent;
 use zen_engine::{DecisionEngine, EvaluationOptions};
+
+use crate::custom_node::PyCustomNode;
+use crate::decision::PyZenDecision;
+use crate::loader::PyDecisionLoader;
+use crate::mt::{spawn_worker, spawn_worker_blocking};
+use crate::value::PyValue;
 
 #[pyclass]
 #[pyo3(name = "ZenEngine")]
@@ -86,16 +90,20 @@ impl PyZenEngine {
         };
 
         let graph = self.graph.clone();
-        let result = futures::executor::block_on(graph.evaluate_with_opts(
-            key,
-            &context,
-            EvaluationOptions {
-                max_depth: options.max_depth,
-                trace: options.trace,
-            },
-        ))
-        .map_err(|e| {
-            anyhow!(serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string()))
+        let result = spawn_worker_blocking(move || async move {
+            graph
+                .evaluate_with_opts(
+                    key,
+                    &context,
+                    EvaluationOptions {
+                        max_depth: options.max_depth,
+                        trace: options.trace,
+                    },
+                )
+                .await
+                .map_err(|e| {
+                    anyhow!(serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string()))
+                })
         })?;
 
         let value = serde_json::to_value(&result).context("Failed to serialize result")?;
@@ -117,23 +125,28 @@ impl PyZenEngine {
         };
 
         let graph = self.graph.clone();
-        pyo3_asyncio::tokio::future_into_py(py, async move {
-            let result = futures::executor::block_on(graph.evaluate_with_opts(
-                key,
-                &context,
-                EvaluationOptions {
-                    max_depth: options.max_depth,
-                    trace: options.trace,
-                },
-            ))
-            .map_err(|e| {
-                anyhow!(serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string()))
-            })?;
+        pyo3_asyncio::tokio::future_into_py(
+            py,
+            spawn_worker(move || async move {
+                let result = graph
+                    .evaluate_with_opts(
+                        key,
+                        &context,
+                        EvaluationOptions {
+                            max_depth: options.max_depth,
+                            trace: options.trace,
+                        },
+                    )
+                    .await
+                    .map_err(|e| {
+                        anyhow!(serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string()))
+                    })?;
 
-            let value = serde_json::to_value(result).context("Failed to serialize result")?;
+                let value = serde_json::to_value(result).context("Failed to serialize result")?;
 
-            Python::with_gil(|py| Ok(PyValue(value).to_object(py)))
-        })
+                Python::with_gil(|py| Ok(PyValue(value).to_object(py)))
+            }),
+        )
     }
 
     pub fn create_decision(&self, content: String) -> PyResult<PyZenDecision> {
@@ -145,8 +158,13 @@ impl PyZenEngine {
     }
 
     pub fn get_decision(&self, key: String) -> PyResult<PyZenDecision> {
-        let decision = futures::executor::block_on(self.graph.get_decision(&key))
-            .context("Failed to find decision with given key")?;
+        let graph = self.graph.clone();
+        let decision = spawn_worker_blocking(move || async move {
+            graph
+                .get_decision(&key)
+                .await
+                .context("Failed to find decision with given key")
+        })?;
 
         Ok(PyZenDecision::from(decision))
     }

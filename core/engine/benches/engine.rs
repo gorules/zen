@@ -1,9 +1,8 @@
-use criterion::async_executor::FuturesExecutor;
 use criterion::{criterion_group, criterion_main, Bencher, Criterion};
-use futures::executor::block_on;
 use serde_json::{json, Value};
 use std::path::Path;
 use std::sync::Arc;
+use tokio::runtime::Runtime;
 use zen_engine::handler::custom_node_adapter::NoopCustomNode;
 use zen_engine::loader::{FilesystemLoader, FilesystemLoaderOptions};
 use zen_engine::DecisionEngine;
@@ -23,18 +22,20 @@ fn create_graph() -> DecisionEngine<FilesystemLoader, NoopCustomNode> {
 }
 
 fn bench_decision(b: &mut Bencher, key: &str, context: Value) {
+    let rt = Runtime::new().unwrap();
     let graph = create_graph();
-    let decision = block_on(graph.get_decision(key)).unwrap();
 
-    b.to_async(FuturesExecutor).iter(|| async {
+    let decision = rt.block_on(graph.get_decision(key)).unwrap();
+    b.to_async(&rt).iter(|| async {
         criterion::black_box(decision.evaluate(&context).await.unwrap());
     });
 }
 
 fn bench_loader(b: &mut Bencher, key: &str, context: Value) {
+    let rt = Runtime::new().unwrap();
     let graph = create_graph();
 
-    b.to_async(FuturesExecutor).iter(|| async {
+    b.to_async(&rt).iter(|| async {
         criterion::black_box(graph.evaluate(key, &context).await.unwrap());
     });
 }

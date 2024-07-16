@@ -1,13 +1,15 @@
-use crate::loader::{DecisionLoader, LoaderError, LoaderResponse};
-use async_trait::async_trait;
-
-use crate::model::DecisionContent;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
+use std::future::Future;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+
+use serde::{Deserialize, Serialize};
+use tokio::sync::RwLock;
+
+use crate::loader::{DecisionLoader, LoaderError, LoaderResponse};
+use crate::model::DecisionContent;
 
 /// Loads decisions based on filesystem root
 #[derive(Debug)]
@@ -41,12 +43,12 @@ impl FilesystemLoader {
         Path::new(&self.root).join(key.as_ref())
     }
 
-    fn read_from_file<K>(&self, key: K) -> LoaderResponse
+    async fn read_from_file<K>(&self, key: K) -> LoaderResponse
     where
         K: AsRef<str>,
     {
         if let Some(memory_refs) = &self.memory_refs {
-            let mref = memory_refs.read().unwrap();
+            let mref = memory_refs.read().await;
             if let Some(decision_content) = mref.get(key.as_ref()) {
                 return Ok(decision_content.clone());
             }
@@ -71,7 +73,7 @@ impl FilesystemLoader {
 
         let ptr = Arc::new(result);
         if let Some(memory_refs) = &self.memory_refs {
-            let mut mref = memory_refs.write().unwrap();
+            let mut mref = memory_refs.write().await;
             mref.insert(key.as_ref().to_string(), ptr.clone());
         }
 
@@ -79,9 +81,8 @@ impl FilesystemLoader {
     }
 }
 
-#[async_trait]
 impl DecisionLoader for FilesystemLoader {
-    async fn load(&self, key: &str) -> LoaderResponse {
-        self.read_from_file(key)
+    fn load<'a>(&'a self, key: &'a str) -> impl Future<Output = LoaderResponse> + 'a {
+        async move { self.read_from_file(key).await }
     }
 }

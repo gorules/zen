@@ -14,8 +14,8 @@ use crate::EvaluationError;
 #[derive(Debug, Clone)]
 pub struct DecisionEngine<Loader, CustomNode>
 where
-    Loader: DecisionLoader,
-    CustomNode: CustomNodeAdapter,
+    Loader: DecisionLoader + 'static,
+    CustomNode: CustomNodeAdapter + 'static,
 {
     loader: Arc<Loader>,
     adapter: Arc<CustomNode>,
@@ -36,7 +36,7 @@ impl Default for DecisionEngine<NoopLoader, NoopCustomNode> {
     }
 }
 
-impl<L: DecisionLoader, A: CustomNodeAdapter> DecisionEngine<L, A> {
+impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionEngine<L, A> {
     pub fn new(loader: Arc<L>, adapter: Arc<A>) -> Self {
         Self { loader, adapter }
     }

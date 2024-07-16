@@ -1,11 +1,10 @@
 use std::fmt::Debug;
 
+use crate::handler::function::serde::JsValue;
 use anyhow::Context as _;
-use rquickjs::{Context, Ctx, Error as QError, FromJs, Runtime};
+use rquickjs::{Context, Ctx, Error as QError, FromJs, Module, Runtime};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-
-use crate::handler::function::js_value::JsValue;
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,10 +33,14 @@ impl Script {
             serde_json::to_string(args).context("Failed to serialize function arguments")?;
 
         let json_response = context.with(|ctx| -> anyhow::Result<String> {
-            let _ = ctx
-                .clone()
-                .compile("main", "import 'internals'; globalThis.now = Date.now();")
-                .map_err(|e| map_js_error(&ctx, e))?;
+            Module::evaluate(
+                ctx.clone(),
+                "main",
+                "import 'internals'; globalThis.now = Date.now();",
+            )
+            .unwrap()
+            .finish::<()>()
+            .unwrap();
 
             let _ = ctx
                 .globals()

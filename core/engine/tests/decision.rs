@@ -2,6 +2,7 @@ use crate::support::{create_fs_loader, load_test_data};
 use serde_json::json;
 use std::ops::Deref;
 use std::sync::Arc;
+use tokio::runtime::Builder;
 use zen_engine::{Decision, DecisionGraphValidationError, EvaluationError};
 
 mod support;
@@ -44,8 +45,9 @@ async fn decision_from_content_recursive() {
     }
 }
 
-#[tokio::test]
-async fn decision_expression_node() {
+#[test]
+fn decision_expression_node() {
+    let rt = Builder::new_current_thread().build().unwrap();
     let decision = Decision::from(load_test_data("expression.json"));
     let context = json!({
         "numbers": [1, 5, 15, 25],
@@ -53,7 +55,7 @@ async fn decision_expression_node() {
         "lastName": "Doe"
     });
 
-    let result = decision.evaluate(&context).await;
+    let result = rt.block_on(decision.evaluate(&context));
     assert_eq!(
         result.unwrap().result,
         json!({
@@ -69,8 +71,8 @@ async fn decision_expression_node() {
     )
 }
 
-#[tokio::test]
-async fn decision_validation() {
+#[test]
+fn decision_validation() {
     let cyclic_decision = Decision::from(load_test_data("error-cyclic.json"));
     let cyclic_error = cyclic_decision.validate().unwrap_err();
     assert!(matches!(

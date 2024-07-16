@@ -2,14 +2,13 @@ use std::ffi::{c_char, c_void, CStr, CString};
 use std::marker::{PhantomData, PhantomPinned};
 use std::ops::{Deref, DerefMut};
 
-use futures::executor::block_on;
-
 use zen_engine::Decision;
 
 use crate::custom_node::DynamicCustomNode;
 use crate::engine::ZenEngineEvaluationOptions;
 use crate::error::ZenError;
 use crate::loader::DynamicDecisionLoader;
+use crate::mt::tokio_runtime;
 use crate::result::ZenResult;
 
 #[repr(C)]
@@ -75,7 +74,8 @@ pub extern "C" fn zen_decision_evaluate(
     };
 
     let zen_decision = unsafe { &*(decision as *mut ZenDecision) };
-    let maybe_result = block_on(zen_decision.evaluate_with_opts(&context, options.into()));
+    let maybe_result =
+        tokio_runtime().block_on(zen_decision.evaluate_with_opts(&context, options.into()));
     let result = match maybe_result {
         Ok(r) => r,
         Err(e) => return ZenResult::from(&e),

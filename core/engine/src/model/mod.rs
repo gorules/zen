@@ -46,12 +46,28 @@ impl PartialEq for DecisionNode {
 pub enum DecisionNodeKind {
     InputNode,
     OutputNode,
-    FunctionNode { content: String },
+    FunctionNode { content: FunctionNodeContent },
     DecisionNode { content: DecisionNodeContent },
     DecisionTableNode { content: DecisionTableContent },
     ExpressionNode { content: ExpressionNodeContent },
     SwitchNode { content: SwitchNodeContent },
     CustomNode { content: CustomNodeContent },
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+#[serde(rename_all = "camelCase")]
+#[serde(untagged)]
+pub enum FunctionNodeContent {
+    Version2(FunctionContent),
+    Version1(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default)]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+#[serde(rename_all = "camelCase")]
+pub struct FunctionContent {
+    pub source: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]

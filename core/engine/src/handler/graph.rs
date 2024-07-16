@@ -1,10 +1,10 @@
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::anyhow;
 use petgraph::algo::is_cyclic_directed;
-use rquickjs::Runtime;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::Value;
@@ -13,26 +13,30 @@ use thiserror::Error;
 use crate::handler::custom_node_adapter::{CustomNodeAdapter, CustomNodeRequest};
 use crate::handler::decision::DecisionHandler;
 use crate::handler::expression::ExpressionHandler;
-use crate::handler::function::runtime::create_runtime;
+use crate::handler::function::function::{Function, FunctionConfig};
+use crate::handler::function::module::console::ConsoleListener;
+use crate::handler::function::module::zen::ZenListener;
 use crate::handler::function::FunctionHandler;
+use crate::handler::function_v1;
+use crate::handler::function_v1::runtime::create_runtime;
 use crate::handler::node::NodeRequest;
 use crate::handler::table::zen::DecisionTableHandler;
 use crate::handler::traversal::{GraphWalker, StableDiDecisionGraph};
 use crate::loader::DecisionLoader;
-use crate::model::{DecisionContent, DecisionNodeKind};
+use crate::model::{DecisionContent, DecisionNodeKind, FunctionNodeContent};
 use crate::{EvaluationError, NodeError};
 
-pub struct DecisionGraph<'a, L: DecisionLoader, A: CustomNodeAdapter> {
+pub struct DecisionGraph<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> {
     graph: StableDiDecisionGraph<'a>,
     adapter: Arc<A>,
     loader: Arc<L>,
     trace: bool,
     max_depth: u8,
     iteration: u8,
-    runtime: Option<Runtime>,
+    runtime: Option<Rc<Function>>,
 }
 
-pub struct DecisionGraphConfig<'a, L: DecisionLoader, A: CustomNodeAdapter> {
+pub struct DecisionGraphConfig<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> {
     pub loader: Arc<L>,
     pub adapter: Arc<A>,
     pub content: &'a DecisionContent,
@@ -41,7 +45,7 @@ pub struct DecisionGraphConfig<'a, L: DecisionLoader, A: CustomNodeAdapter> {
     pub max_depth: u8,
 }
 
-impl<'a, L: DecisionLoader, A: CustomNodeAdapter> DecisionGraph<'a, L, A> {
+impl<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<'a, L, A> {
     pub fn try_new(
         config: DecisionGraphConfig<'a, L, A>,
     ) -> Result<Self, DecisionGraphValidationError> {
@@ -79,20 +83,31 @@ impl<'a, L: DecisionLoader, A: CustomNodeAdapter> DecisionGraph<'a, L, A> {
         })
     }
 
-    pub(crate) fn with_runtime(mut self, runtime: Option<Runtime>) -> Self {
+    pub(crate) fn with_function(mut self, runtime: Option<Rc<Function>>) -> Self {
         self.runtime = runtime;
         self
     }
 
-    fn get_or_insert_runtime(&mut self) -> anyhow::Result<Runtime> {
-        if let Some(runtime) = &self.runtime {
-            return Ok(runtime.clone());
+    async fn get_or_insert_function(&mut self) -> anyhow::Result<Rc<Function>> {
+        if let Some(function) = &self.runtime {
+            return Ok(function.clone());
         }
 
-        let runtime = create_runtime()?;
-        self.runtime.replace(runtime.clone());
+        let function = Function::create(FunctionConfig {
+            listeners: Some(vec![
+                Box::new(ConsoleListener),
+                Box::new(ZenListener {
+                    loader: self.loader.clone(),
+                    adapter: self.adapter.clone(),
+                }),
+            ]),
+        })
+        .await
+        .map_err(|err| anyhow!(err.to_string()))?;
+        let rc_function = Rc::new(function);
+        self.runtime.replace(rc_function.clone());
 
-        Ok(runtime)
+        Ok(rc_function)
     }
 
     pub fn validate(&self) -> Result<(), DecisionGraphValidationError> {
@@ -200,8 +215,8 @@ impl<'a, L: DecisionLoader, A: CustomNodeAdapter> DecisionGraph<'a, L, A> {
 
                     walker.set_node_data(nid, input_data);
                 }
-                DecisionNodeKind::FunctionNode { .. } => {
-                    let runtime = self.get_or_insert_runtime().map_err(|e| NodeError {
+                DecisionNodeKind::FunctionNode { content } => {
+                    let function = self.get_or_insert_function().await.map_err(|e| NodeError {
                         source: e.into(),
                         node_id: node.id.clone(),
                     })?;
@@ -211,13 +226,34 @@ impl<'a, L: DecisionLoader, A: CustomNodeAdapter> DecisionGraph<'a, L, A> {
                         iteration: self.iteration,
                         input: walker.incoming_node_data(&self.graph, nid, true),
                     };
-                    let mut res = FunctionHandler::new(self.trace, runtime)
+                    let mut res = match content {
+                        FunctionNodeContent::Version2(_) => FunctionHandler::new(
+                            function,
+                            self.trace,
+                            self.iteration,
+                            self.max_depth,
+                        )
                         .handle(&node_request)
                         .await
                         .map_err(|e| NodeError {
                             source: e.into(),
                             node_id: node.id.clone(),
-                        })?;
+                        })?,
+                        FunctionNodeContent::Version1(_) => {
+                            let runtime = create_runtime().map_err(|e| NodeError {
+                                source: e.into(),
+                                node_id: node.id.clone(),
+                            })?;
+
+                            function_v1::FunctionHandler::new(self.trace, runtime)
+                                .handle(&node_request)
+                                .await
+                                .map_err(|e| NodeError {
+                                    source: e.into(),
+                                    node_id: node.id.clone(),
+                                })?
+                        }
+                    };
 
                     trim_nodes(&mut node_request.input);
                     trim_nodes(&mut res.output);

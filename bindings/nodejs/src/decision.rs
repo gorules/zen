@@ -1,10 +1,10 @@
 use crate::custom_node::CustomNode;
 use crate::engine::ZenEvaluateOptions;
 use crate::loader::DecisionLoader;
+use crate::mt::spawn_worker;
 use crate::safe_result::SafeResult;
 use crate::types::ZenEngineResponse;
 use napi::anyhow::anyhow;
-use napi::tokio;
 use napi_derive::napi;
 use serde_json::Value;
 use std::sync::Arc;
@@ -33,15 +33,20 @@ impl ZenDecision {
         opts: Option<ZenEvaluateOptions>,
     ) -> napi::Result<ZenEngineResponse> {
         let decision = self.0.clone();
-        let result = tokio::spawn(async move {
+        let result = spawn_worker(move || {
             let options = opts.unwrap_or_default();
-            futures::executor::block_on(decision.evaluate_with_opts(
-                &context,
-                EvaluationOptions {
-                    max_depth: options.max_depth,
-                    trace: options.trace,
-                },
-            ))
+
+            async move {
+                decision
+                    .evaluate_with_opts(
+                        &context,
+                        EvaluationOptions {
+                            max_depth: options.max_depth,
+                            trace: options.trace,
+                        },
+                    )
+                    .await
+            }
         })
         .await
         .map_err(|_| anyhow!("Hook timed out"))?

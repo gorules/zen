@@ -1,8 +1,8 @@
 use std::ffi::{c_char, CString};
+use std::future::Future;
 use std::sync::Arc;
 
 use anyhow::anyhow;
-use async_trait::async_trait;
 
 use zen_engine::loader::{DecisionLoader, LoaderError, LoaderResponse, NoopLoader};
 use zen_engine::model::DecisionContent;
@@ -23,14 +23,15 @@ impl Default for DynamicDecisionLoader {
     }
 }
 
-#[async_trait]
 impl DecisionLoader for DynamicDecisionLoader {
-    async fn load(&self, key: &str) -> LoaderResponse {
-        match self {
-            DynamicDecisionLoader::Noop(loader) => loader.load(key).await,
-            DynamicDecisionLoader::Native(loader) => loader.load(key).await,
-            #[cfg(feature = "go")]
-            DynamicDecisionLoader::Go(loader) => loader.load(key).await,
+    fn load<'a>(&'a self, key: &'a str) -> impl Future<Output = LoaderResponse> + 'a {
+        async move {
+            match self {
+                DynamicDecisionLoader::Noop(loader) => loader.load(key).await,
+                DynamicDecisionLoader::Native(loader) => loader.load(key).await,
+                #[cfg(feature = "go")]
+                DynamicDecisionLoader::Go(loader) => loader.load(key).await,
+            }
         }
     }
 }

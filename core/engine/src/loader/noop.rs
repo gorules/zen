@@ -1,18 +1,21 @@
-use crate::loader::{DecisionLoader, LoaderError, LoaderResponse};
+use std::future::Future;
+
 use anyhow::anyhow;
-use async_trait::async_trait;
+
+use crate::loader::{DecisionLoader, LoaderError, LoaderResponse};
 
 /// Default loader which always fails
 #[derive(Default, Debug)]
 pub struct NoopLoader;
 
-#[async_trait]
 impl DecisionLoader for NoopLoader {
-    async fn load(&self, key: &str) -> LoaderResponse {
-        Err(LoaderError::Internal {
-            key: key.to_string(),
-            source: anyhow!("Loader is no-op"),
+    fn load<'a>(&'a self, key: &'a str) -> impl Future<Output = LoaderResponse> + 'a {
+        async move {
+            Err(LoaderError::Internal {
+                key: key.to_string(),
+                source: anyhow!("Loader is no-op"),
+            }
+            .into())
         }
-        .into())
     }
 }

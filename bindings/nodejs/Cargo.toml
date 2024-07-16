@@ -9,11 +9,10 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-async-trait = { workspace = true }
-napi = { version = "2.16.2", features = ["serde-json", "error_anyhow", "tokio_rt"] }
-napi-derive = "2.16.2"
+napi = { version = "2.16", features = ["serde-json", "error_anyhow", "tokio_rt"] }
+napi-derive = "2.16"
+tokio-util = { workspace = true, features = ["rt"] }
 serde_json = { workspace = true }
-futures = { workspace = true }
 zen-engine = { path = "../../core/engine" }
 zen-expression = { path = "../../core/expression" }
 zen-tmpl = { path = "../../core/template" }
@@ -21,4 +20,4 @@ serde = { workspace = true, features = ["derive"] }
 json_dotpath = { workspace = true }
 
 [build-dependencies]
-napi-build = "2.1.2"
+napi-build = "2.1"

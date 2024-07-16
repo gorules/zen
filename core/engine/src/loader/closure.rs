@@ -1,6 +1,6 @@
-use crate::loader::{DecisionLoader, LoaderResponse};
-use async_trait::async_trait;
 use std::future::Future;
+
+use crate::loader::{DecisionLoader, LoaderResponse};
 
 /// Loads decisions using an async closure
 #[derive(Debug)]
@@ -21,14 +21,15 @@ where
     }
 }
 
-#[async_trait]
 impl<F, O> DecisionLoader for ClosureLoader<F>
 where
     F: Fn(String) -> O + Sync + Send,
     O: Future<Output = LoaderResponse> + Send,
 {
-    async fn load(&self, key: &str) -> LoaderResponse {
-        let closure = &self.closure;
-        closure(key.to_string()).await
+    fn load<'a>(&'a self, key: &'a str) -> impl Future<Output = LoaderResponse> + 'a {
+        async move {
+            let closure = &self.closure;
+            closure(key.to_string()).await
+        }
     }
 }

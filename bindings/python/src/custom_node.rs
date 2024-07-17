@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use either::Either;
-use pyo3::{PyObject, PyResult, Python};
 use pyo3::types::PyDict;
+use pyo3::{PyObject, PyResult, Python};
 use pyo3_asyncio::tokio;
 use pythonize::depythonize;
 

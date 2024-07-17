@@ -2,8 +2,8 @@ use std::future::Future;
 use std::sync::OnceLock;
 use std::thread::available_parallelism;
 
-use ::tokio::task;
 use ::tokio::runtime::Handle;
+use ::tokio::task;
 use pyo3::{IntoPy, PyAny, PyObject, PyResult, Python};
 use pyo3_asyncio::tokio;
 use pyo3_asyncio::TaskLocals;

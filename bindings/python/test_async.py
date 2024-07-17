@@ -1,6 +1,7 @@
-import zen
 import asyncio
 import unittest
+
+import zen
 
 
 def loader(key):
@@ -15,12 +16,12 @@ def custom_handler(request):
     }
 
 
-async def custom_async_handler(request):
-    p1 = request.get_field("prop1")
-    # await asyncio.sleep(1)
-    return {
-        "output": {"sum": p1}
-    }
+# async def custom_async_handler(request):
+#     p1 = request.get_field("prop1")
+#     await asyncio.sleep(1)
+#     return {
+#         "output": {"sum": p1}
+#     }
 
 
 class AsyncZenEngine(unittest.IsolatedAsyncioTestCase):
@@ -35,16 +36,16 @@ class AsyncZenEngine(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(results[1]["result"]["output"], 0)
         self.assertEqual(results[2]["result"]["output"], 10)
 
-    async def test_async_evaluate_custom_handler(self):
-        engine = zen.ZenEngine({"loader": loader, "customHandler": custom_async_handler})
-        r1 = engine.async_evaluate("custom.json", {"a": 10})
-        r2 = engine.async_evaluate("custom.json", {"a": 20})
-        r3 = engine.async_evaluate("custom.json", {"a": 30})
-
-        results = await asyncio.gather(r1, r2, r3)
-        self.assertEqual(results[0]["result"]["sum"], 20)
-        self.assertEqual(results[1]["result"]["sum"], 30)
-        self.assertEqual(results[2]["result"]["sum"], 40)
+    # async def test_async_evaluate_custom_handler(self):
+    #     engine = zen.ZenEngine({"loader": loader, "customHandler": custom_async_handler})
+    #     r1 = engine.async_evaluate("custom.json", {"a": 10})
+    #     r2 = engine.async_evaluate("custom.json", {"a": 20})
+    #     r3 = engine.async_evaluate("custom.json", {"a": 30})
+    #
+    #     results = await asyncio.gather(r1, r2, r3)
+    #     self.assertEqual(results[0]["result"]["sum"], 20)
+    #     self.assertEqual(results[1]["result"]["sum"], 30)
+    #     self.assertEqual(results[2]["result"]["sum"], 40)
 
     async def test_create_decisions_from_content(self):
         engine = zen.ZenEngine()

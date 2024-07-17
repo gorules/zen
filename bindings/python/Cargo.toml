@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 [dependencies]
 anyhow = { workspace = true }
 either = "1.13"
-pyo3 = { version = "0.20", features = ["anyhow", "serde"] }
+pyo3 = { version = "0.20", features = ["anyhow", "serde", "extension-module"] }
 pyo3-asyncio = { version = "0.20", features = ["tokio-runtime"] }
 pythonize = "0.20"
 json_dotpath = { workspace = true }

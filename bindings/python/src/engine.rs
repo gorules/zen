@@ -13,7 +13,7 @@ use zen_engine::{DecisionEngine, EvaluationOptions};
 use crate::custom_node::PyCustomNode;
 use crate::decision::PyZenDecision;
 use crate::loader::PyDecisionLoader;
-use crate::mt::{async_block_on, spawn_worker};
+use crate::mt::spawn_worker;
 use crate::value::PyValue;
 
 #[pyclass]
@@ -129,14 +129,7 @@ impl PyZenEngine {
             Default::default()
         };
 
-        Python::with_gil(|py| println!("Event loop 1: {:?}", tokio::get_current_loop(py)));
-
         let locals = tokio::get_current_locals(py)?;
-
-        async_block_on(locals.clone(), async {
-            Python::with_gil(|py| println!("Event loop 2: {:?}", tokio::get_current_loop(py)));
-        });
-
         let graph = self.graph.clone();
 
         tokio::future_into_py_with_locals(

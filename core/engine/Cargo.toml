@@ -22,7 +22,7 @@ json_dotpath = { workspace = true }
 fixedbitset = "0.4.2"
 tokio = { workspace = true, features = ["sync", "time"] }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
-rquickjs = { git = "https://github.com/stefan-gorules/rquickjs.git", branch = "master", features = ["macro", "loader", "rust-alloc", "futures", "either", "properties"] }
+rquickjs = { version = "0.6.2", features = ["macro", "loader", "rust-alloc", "futures", "either", "properties"] }
 itertools = { workspace = true }
 zen-expression = { path = "../expression", version = "0.24.1" }
 zen-tmpl = { path = "../template", version = "0.24.1" }

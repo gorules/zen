@@ -136,7 +136,6 @@ impl PyZenEngine {
             py,
             locals.clone(),
             spawn_worker(move || async move {
-                Python::with_gil(|py| println!("Event loop 3: {:?}", tokio::get_current_loop(py)));
                 let result = graph
                     .evaluate_with_opts(
                         key,

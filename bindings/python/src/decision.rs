@@ -11,7 +11,6 @@ use zen_engine::{Decision, EvaluationOptions};
 use crate::custom_node::PyCustomNode;
 use crate::engine::PyZenEvaluateOptions;
 use crate::loader::PyDecisionLoader;
-use crate::mt::{spawn_worker, spawn_worker_blocking};
 use crate::value::PyValue;
 
 #[pyclass]
@@ -35,19 +34,15 @@ impl PyZenDecision {
         };
 
         let decision = self.0.clone();
-        let result = spawn_worker_blocking(move || async move {
-            decision
-                .evaluate_with_opts(
-                    &context,
-                    EvaluationOptions {
-                        max_depth: options.max_depth,
-                        trace: options.trace,
-                    },
-                )
-                .await
-                .map_err(|e| {
-                    anyhow!(serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string()))
-                })
+        let result = futures::executor::block_on(decision.evaluate_with_opts(
+            &context,
+            EvaluationOptions {
+                max_depth: options.max_depth,
+                trace: options.trace,
+            },
+        ))
+        .map_err(|e| {
+            anyhow!(serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string()))
         })?;
 
         let value = serde_json::to_value(&result).context("Fail")?;
@@ -68,27 +63,22 @@ impl PyZenDecision {
         };
 
         let decision = self.0.clone();
+        tokio::future_into_py(py, async move {
+            let result = futures::executor::block_on(decision.evaluate_with_opts(
+                &context,
+                EvaluationOptions {
+                    max_depth: options.max_depth,
+                    trace: options.trace,
+                },
+            ))
+            .map_err(|e| {
+                anyhow!(serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string()))
+            })?;
 
-        tokio::future_into_py(
-            py,
-            spawn_worker(move || async move {
-                let result = decision
-                    .evaluate_with_opts(
-                        &context,
-                        EvaluationOptions {
-                            max_depth: options.max_depth,
-                            trace: options.trace,
-                        },
-                    )
-                    .await
-                    .map_err(|e| {
-                        anyhow!(serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string()))
-                    })?;
+            let value = serde_json::to_value(result).context("Failed to serialize result")?;
 
-                let value = serde_json::to_value(result).context("Failed to serialize result")?;
-                Python::with_gil(|py| Ok(PyValue(value).to_object(py)))
-            }),
-        )
+            Python::with_gil(|py| Ok(PyValue(value).to_object(py)))
+        })
     }
 
     pub fn validate(&self) -> PyResult<()> {

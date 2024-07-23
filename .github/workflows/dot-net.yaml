@@ -42,11 +42,13 @@ jobs:
 
       - name: Conditionally modify crate-type for Linux and macOS
         if: runner.os != 'Windows'
+        working-directory: bindings/c
         run: |
           sed -i '' 's/crate-type = \["staticlib"\]/crate-type = ["dylib"]/' Cargo.toml
 
       - name: Conditionally modify crate-type for Windows
         if: runner.os == 'Windows'
+        working-directory: bindings/c
         run: |
           sed -i 's/crate-type = \["staticlib"\]/crate-type = ["dylib"]/' Cargo.toml
         shell: powershell

@@ -1,6 +1,3 @@
-use std::collections::HashMap;
-use std::sync::atomic::Ordering;
-
 use fixedbitset::FixedBitSet;
 use petgraph::data::DataMap;
 use petgraph::matrix_graph::Zero;
@@ -8,13 +5,16 @@ use petgraph::prelude::{EdgeIndex, NodeIndex, StableDiGraph};
 use petgraph::visit::{EdgeRef, IntoNeighbors, IntoNodeIdentifiers, Reversed, VisitMap, Visitable};
 use petgraph::{Incoming, Outgoing};
 use serde_json::{json, Map, Value};
+use std::collections::HashMap;
+use std::sync::atomic::Ordering;
+use std::time::Instant;
 
 use crate::config::ZEN_CONFIG;
-use zen_expression::Isolate;
-
 use crate::model::{
     DecisionEdge, DecisionNode, DecisionNodeKind, SwitchStatement, SwitchStatementHitPolicy,
 };
+use crate::DecisionGraphTrace;
+use zen_expression::Isolate;
 
 pub(crate) type StableDiDecisionGraph<'a> = StableDiGraph<&'a DecisionNode, &'a DecisionEdge>;
 
@@ -117,12 +117,16 @@ impl GraphWalker {
         })
     }
 
-    pub fn next(&mut self, g: &mut StableDiDecisionGraph) -> Option<(NodeIndex, Value)> {
+    pub fn next<F: FnMut(DecisionGraphTrace)>(
+        &mut self,
+        g: &mut StableDiDecisionGraph,
+        mut on_trace: Option<F>,
+    ) -> Option<NodeIndex> {
+        let start = Instant::now();
         if self.iter >= ITER_MAX {
             return None;
         }
         // Take an unvisited element and find which of its neighbors are next
-        let mut value = Value::Null;
         while let Some(nid) = self.to_visit.pop() {
             let decision_node = *g.node_weight(nid)?;
             if self.ordered.is_visited(&nid) {
@@ -154,7 +158,16 @@ impl GraphWalker {
                         .iter()
                         .map(|&statement| json!({ "id": &statement.id }))
                         .collect();
-                    value = json!({ "statements": valid_statements_trace });
+                    if let Some(on_trace) = &mut on_trace {
+                        on_trace(DecisionGraphTrace {
+                            id: decision_node.id.clone(),
+                            name: decision_node.name.clone(),
+                            input: input_data.clone(),
+                            output: input_data.clone(),
+                            performance: Some(format!("{:?}", start.elapsed())),
+                            trace_data: Some(json!({ "statements": valid_statements_trace })),
+                        });
+                    }
 
                     // Remove all non-valid edges
                     let edges_to_remove: Vec<EdgeIndex> = g
@@ -191,7 +204,7 @@ impl GraphWalker {
                 }
             }
 
-            return Some((nid, value));
+            return Some(nid);
         }
 
         None

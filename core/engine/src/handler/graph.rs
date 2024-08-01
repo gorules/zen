@@ -157,7 +157,14 @@ impl<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGr
         let mut walker = GraphWalker::new(&self.graph);
         let mut node_traces = self.trace.then(|| HashMap::default());
 
-        while let Some((nid, walker_metadata)) = walker.next(&mut self.graph) {
+        while let Some(nid) = walker.next(
+            &mut self.graph,
+            self.trace.then_some(|trace: DecisionGraphTrace| {
+                if let Some(nt) = &mut node_traces {
+                    nt.insert(trace.id.clone(), trace);
+                };
+            }),
+        ) {
             if let Some(_) = walker.get_node_data(nid) {
                 continue;
             }
@@ -203,15 +210,6 @@ impl<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGr
                 }
                 DecisionNodeKind::SwitchNode { .. } => {
                     let input_data = walker.incoming_node_data(&self.graph, nid, false);
-
-                    trace!({
-                        input: input_data.clone(),
-                        output: input_data.clone(),
-                        name: node.name.clone(),
-                        id: node.id.clone(),
-                        performance: Some(format!("{:?}", start.elapsed())),
-                        trace_data: Some(walker_metadata),
-                    });
 
                     walker.set_node_data(nid, input_data);
                 }

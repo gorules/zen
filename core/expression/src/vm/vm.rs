@@ -139,7 +139,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                                 opcode: "Fetch".into(),
                                 message: "Failed to convert to usize".into(),
                             })?)
-                                .unwrap_or(&NULL_VAR),
+                            .unwrap_or(&NULL_VAR),
                         ),
                         (String(str), Number(n)) => {
                             let index = n.to_usize().ok_or_else(|| OpcodeErr {
@@ -1100,18 +1100,21 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                         });
                     };
 
-                    let parts = arr.iter().enumerate().map(|(i, var)| match var {
-                        String(str) => Ok(*str),
-                        _ => Err(OpcodeErr {
-                            opcode: "Join".into(),
-                            message: format!("Unexpected type in array on index {i}"),
+                    let parts = arr
+                        .iter()
+                        .enumerate()
+                        .map(|(i, var)| match var {
+                            String(str) => Ok(*str),
+                            _ => Err(OpcodeErr {
+                                opcode: "Join".into(),
+                                message: format!("Unexpected type in array on index {i}"),
+                            }),
                         })
-                    }).collect::<Result<Vec<_>, _>>()?;
+                        .collect::<Result<Vec<_>, _>>()?;
 
-                    let str_capacity = parts.iter().fold(
-                        separator.len() * (parts.len() - 1),
-                        |acc, s| acc + s.len(),
-                    );
+                    let str_capacity = parts
+                        .iter()
+                        .fold(separator.len() * (parts.len() - 1), |acc, s| acc + s.len());
 
                     let mut s = BumpString::with_capacity_in(str_capacity, self.bump);
                     let mut it = parts.iter().peekable();
@@ -1202,10 +1205,10 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             });
                         }
                     }
-                        .ok_or_else(|| OpcodeErr {
-                            opcode: "DateFunction".into(),
-                            message: "Failed to run DateFunction".into(),
-                        })?;
+                    .ok_or_else(|| OpcodeErr {
+                        opcode: "DateFunction".into(),
+                        message: "Failed to run DateFunction".into(),
+                    })?;
 
                     self.push(Number(s.timestamp().into()));
                 }

@@ -6,7 +6,10 @@ use bumpalo::collections::Vec as BumpVec;
 use bumpalo::Bump;
 use rust_decimal::Decimal;
 
-use crate::lexer::{Bracket, ComparisonOperator, Identifier, Operator, QuotationMark, TemplateString, Token, TokenKind};
+use crate::lexer::{
+    Bracket, ComparisonOperator, Identifier, Operator, QuotationMark, TemplateString, Token,
+    TokenKind,
+};
 use crate::parser::ast::Node;
 use crate::parser::builtin::{Arity, BuiltInFunction};
 use crate::parser::error::{ParserError, ParserResult};
@@ -141,7 +144,10 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         Ok(Some(self.node(Node::Number(decimal))))
     }
 
-    pub(crate) fn simple_string(&self, quote_mark: &QuotationMark) -> ParserResult<&'arena Node<'arena>> {
+    pub(crate) fn simple_string(
+        &self,
+        quote_mark: &QuotationMark,
+    ) -> ParserResult<&'arena Node<'arena>> {
         self.expect(TokenKind::QuotationMark(quote_mark.clone()))?;
         let string_value = self.current().value;
 
@@ -151,7 +157,10 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         Ok(self.node(Node::String(string_value)))
     }
 
-    pub(crate) fn template_string<F>(&self, expression_parser: F) -> ParserResult<&'arena Node<'arena>>
+    pub(crate) fn template_string<F>(
+        &self,
+        expression_parser: F,
+    ) -> ParserResult<&'arena Node<'arena>>
     where
         F: Fn() -> ParserResult<&'arena Node<'arena>>,
     {
@@ -169,15 +178,17 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                     TemplateString::ExpressionEnd => {
                         self.next()?;
                     }
-                }
+                },
                 TokenKind::Literal => {
                     nodes.push(self.node(Node::String(current_token.value)));
                     self.next()?;
                 }
-                _ => return Err(ParserError::UnexpectedToken {
-                    expected: "valid template string token".to_string(),
-                    received: format!("{current_token:?}"),
-                })
+                _ => {
+                    return Err(ParserError::UnexpectedToken {
+                        expected: "valid template string token".to_string(),
+                        received: format!("{current_token:?}"),
+                    })
+                }
             }
 
             current_token = self.current();
@@ -520,12 +531,12 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             TokenKind::Number => self.number()?.ok_or_else(|| ParserError::FailedToParse {
                 message: format!("failed to parse number: {:?}", current_token),
             }),
-            TokenKind::QuotationMark(quote_mark) => {
-                match quote_mark {
-                    QuotationMark::SingleQuote | QuotationMark::DoubleQuote => self.simple_string(quote_mark),
-                    QuotationMark::Backtick => self.template_string(&expression_parser),
+            TokenKind::QuotationMark(quote_mark) => match quote_mark {
+                QuotationMark::SingleQuote | QuotationMark::DoubleQuote => {
+                    self.simple_string(quote_mark)
                 }
-            }
+                QuotationMark::Backtick => self.template_string(&expression_parser),
+            },
             TokenKind::Bracket(_) => self
                 .interval(&expression_parser)
                 .transpose()
@@ -542,7 +553,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             }),
             TokenKind::TemplateString(_) => Err(ParserError::FailedToParse {
                 message: format!("unexpected template string token: {:?}", current_token),
-            })
+            }),
         }
     }
 }

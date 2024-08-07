@@ -41,7 +41,7 @@ pub enum QuotationMark {
     #[strum(serialize = "\"")]
     DoubleQuote,
     #[strum(serialize = "`")]
-    Backtick
+    Backtick,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, EnumString, IntoStaticStr)]
@@ -49,7 +49,7 @@ pub enum TemplateString {
     #[strum(serialize = "${")]
     ExpressionStart,
     #[strum(serialize = "}")]
-    ExpressionEnd
+    ExpressionEnd,
 }
 
 impl Display for TemplateString {

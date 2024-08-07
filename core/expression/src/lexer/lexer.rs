@@ -1,4 +1,3 @@
-use crate::lexer::{QuotationMark, TemplateString};
 use crate::lexer::codes::{is_token_type, token_type};
 use crate::lexer::cursor::{Cursor, CursorItem};
 use crate::lexer::error::LexerError::{UnexpectedEof, UnmatchedSymbol};
@@ -6,6 +5,7 @@ use crate::lexer::error::LexerResult;
 use crate::lexer::token::{
     Bracket, ComparisonOperator, Identifier, LogicalOperator, Operator, Token, TokenKind,
 };
+use crate::lexer::{QuotationMark, TemplateString};
 
 #[derive(Debug, Default)]
 pub struct Lexer<'arena> {
@@ -97,7 +97,6 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
             value: QuotationMark::Backtick.into(),
         });
 
-
         let mut in_expression = false;
         let mut str_start = start + 1;
         loop {
@@ -156,7 +155,6 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
                 }
             }
         }
-
 
         Ok(())
     }

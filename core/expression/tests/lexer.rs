@@ -1,4 +1,7 @@
-use zen_expression::lexer::{ArithmeticOperator, Bracket, ComparisonOperator, Identifier, Lexer, LogicalOperator, Operator, QuotationMark, Token, TokenKind};
+use zen_expression::lexer::{
+    ArithmeticOperator, Bracket, ComparisonOperator, Identifier, Lexer, LogicalOperator, Operator,
+    QuotationMark, Token, TokenKind,
+};
 
 struct LexerTest {
     test: &'static str,
@@ -453,6 +456,10 @@ fn lexer_test() {
         let tokens = lexer.tokenize(test);
         assert!(tokens.is_ok());
 
-        assert_eq!(tokens.unwrap(), result.as_slice(), "Expression failed: {test}");
+        assert_eq!(
+            tokens.unwrap(),
+            result.as_slice(),
+            "Expression failed: {test}"
+        );
     }
 }

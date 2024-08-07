@@ -1,7 +1,8 @@
+use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 
 use nohash_hasher::IsEnabled;
-use strum_macros::{Display, EnumString};
+use strum_macros::{Display, EnumString, IntoStaticStr};
 
 /// Contains information from lexical analysis
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -17,9 +18,11 @@ pub enum TokenKind {
     Identifier(Identifier),
     Boolean(bool),
     Number,
-    String,
+    QuotationMark(QuotationMark),
+    Literal,
     Operator(Operator),
     Bracket(Bracket),
+    TemplateString(TemplateString),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Display)]
@@ -29,6 +32,33 @@ pub enum Identifier {
     CallbackReference, // #
     Null,              // null
     Variable,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Display, EnumString, IntoStaticStr)]
+pub enum QuotationMark {
+    #[strum(serialize = "'")]
+    SingleQuote,
+    #[strum(serialize = "\"")]
+    DoubleQuote,
+    #[strum(serialize = "`")]
+    Backtick
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, EnumString, IntoStaticStr)]
+pub enum TemplateString {
+    #[strum(serialize = "${")]
+    ExpressionStart,
+    #[strum(serialize = "}")]
+    ExpressionEnd
+}
+
+impl Display for TemplateString {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            TemplateString::ExpressionStart => ::core::fmt::Display::fmt("${", f),
+            TemplateString::ExpressionEnd => ::core::fmt::Display::fmt("}}", f),
+        }
+    }
 }
 
 impl From<&str> for Identifier {

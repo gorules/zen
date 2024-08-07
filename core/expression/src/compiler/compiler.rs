@@ -125,7 +125,20 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                 self.compile_node(node)?;
                 self.compile_node(property)?;
                 Ok(self.emit(Opcode::Fetch))
-            }
+            },
+            Node::TemplateString(parts) => {
+                parts.iter()
+                    .try_for_each(|&n| {
+                        self.compile_node(n).map(|_| ())?;
+                        self.emit(Opcode::TypeConversion(TypeConversionKind::String));
+                        Ok(())
+                    })?;
+
+                self.emit(Opcode::Push(Variable::Number(Decimal::from(parts.len()))));
+                self.emit(Opcode::Array);
+                self.emit(Opcode::Push(Variable::String("")));
+                Ok(self.emit(Opcode::Join))
+            },
             Node::Slice { node, to, from } => {
                 self.compile_node(node)?;
                 if let Some(t) = to {

@@ -1,3 +1,4 @@
+use crate::lexer::{QuotationMark, TemplateString};
 use crate::lexer::codes::{is_token_type, token_type};
 use crate::lexer::cursor::{Cursor, CursorItem};
 use crate::lexer::error::LexerError::{UnexpectedEof, UnmatchedSymbol};
@@ -40,29 +41,36 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
     }
 
     pub fn scan(&mut self) -> LexerResult<()> {
-        while let Some((i, s)) = self.cursor.peek() {
-            match s {
-                token_type!("space") => {
-                    self.cursor.next();
-                    Ok(())
-                }
-                token_type!("quote") => self.string(),
-                token_type!("digit") => self.number(),
-                token_type!("bracket") => self.bracket(),
-                token_type!("cmp_operator") => self.cmp_operator(),
-                token_type!("operator") => self.operator(),
-                token_type!("question_mark") => self.question_mark(),
-                '.' => self.dot(),
-                token_type!("alpha") => self.identifier(),
-
-                _ => Err(UnmatchedSymbol {
-                    symbol: s,
-                    position: i,
-                }),
-            }?;
+        while let Some(cursor_item) = self.cursor.peek() {
+            self.scan_cursor_item(cursor_item)?;
         }
 
         Ok(())
+    }
+
+    pub(crate) fn scan_cursor_item(&mut self, cursor_item: CursorItem) -> LexerResult<()> {
+        let (i, s) = cursor_item;
+
+        match s {
+            token_type!("space") => {
+                self.cursor.next();
+                Ok(())
+            }
+            '\'' => self.string(QuotationMark::SingleQuote),
+            '"' => self.string(QuotationMark::DoubleQuote),
+            token_type!("digit") => self.number(),
+            token_type!("bracket") => self.bracket(),
+            token_type!("cmp_operator") => self.cmp_operator(),
+            token_type!("operator") => self.operator(),
+            token_type!("question_mark") => self.question_mark(),
+            '`' => self.template_string(),
+            '.' => self.dot(),
+            token_type!("alpha") => self.identifier(),
+            _ => Err(UnmatchedSymbol {
+                symbol: s,
+                position: i,
+            }),
+        }
     }
 
     fn next(&self) -> LexerResult<CursorItem> {
@@ -80,7 +88,80 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
         self.tokens.push(token);
     }
 
-    fn string(&mut self) -> LexerResult<()> {
+    fn template_string(&mut self) -> LexerResult<()> {
+        let (start, _) = self.next()?;
+
+        self.tokens.push(Token {
+            kind: TokenKind::QuotationMark(QuotationMark::Backtick),
+            span: (start, start + 1),
+            value: QuotationMark::Backtick.into(),
+        });
+
+
+        let mut in_expression = false;
+        let mut str_start = start + 1;
+        loop {
+            let (e, c) = self.next()?;
+
+            match (c, in_expression) {
+                ('`', _) => {
+                    if str_start < e {
+                        self.tokens.push(Token {
+                            kind: TokenKind::Literal,
+                            span: (str_start, e),
+                            value: &self.source[str_start..e],
+                        });
+                    }
+
+                    self.tokens.push(Token {
+                        kind: TokenKind::QuotationMark(QuotationMark::Backtick),
+                        span: (e, e + 1),
+                        value: QuotationMark::Backtick.into(),
+                    });
+
+                    break;
+                }
+                ('$', false) => {
+                    in_expression = self.cursor.next_if_is("{");
+                    if in_expression {
+                        self.tokens.push(Token {
+                            kind: TokenKind::Literal,
+                            span: (str_start, e),
+                            value: &self.source[str_start..e],
+                        });
+
+                        self.tokens.push(Token {
+                            kind: TokenKind::TemplateString(TemplateString::ExpressionStart),
+                            span: (e, e + 2),
+                            value: TemplateString::ExpressionStart.into(),
+                        });
+                    }
+                }
+                ('}', true) => {
+                    in_expression = false;
+                    self.tokens.push(Token {
+                        kind: TokenKind::TemplateString(TemplateString::ExpressionEnd),
+                        span: (str_start, e),
+                        value: TemplateString::ExpressionEnd.into(),
+                    });
+
+                    str_start = e + 1;
+                }
+                (_, false) => {
+                    // Continue reading string
+                }
+                (_, true) => {
+                    self.cursor.back();
+                    self.scan_cursor_item((e, c))?;
+                }
+            }
+        }
+
+
+        Ok(())
+    }
+
+    fn string(&mut self, quote_kind: QuotationMark) -> LexerResult<()> {
         let (start, opener) = self.next()?;
         let end: usize;
 
@@ -93,9 +174,21 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
         }
 
         self.push(Token {
-            kind: TokenKind::String,
-            span: (start, end),
+            kind: TokenKind::QuotationMark(quote_kind),
+            span: (start, start + 1),
+            value: quote_kind.into(),
+        });
+
+        self.push(Token {
+            kind: TokenKind::Literal,
+            span: (start + 1, end),
             value: &self.source[start + 1..end],
+        });
+
+        self.push(Token {
+            kind: TokenKind::QuotationMark(quote_kind),
+            span: (end, end + 1),
+            value: quote_kind.into(),
         });
 
         Ok(())

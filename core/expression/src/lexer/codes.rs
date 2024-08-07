@@ -1,6 +1,5 @@
 macro_rules! token_type {
     ("space") => { ' ' | '\n' | '\t' };
-    ("quote") => { '\'' | '"' };
     ("digit") => { '0'..='9' };
     ("bracket") => { '(' | ')' | '[' | ']' };
     ("cmp_operator") => { '>' | '<' | '!' | '=' };

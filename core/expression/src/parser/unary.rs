@@ -218,6 +218,7 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
             Node::Bool(_) => CompareWithReference(Equal),
             Node::Number(_) => CompareWithReference(Equal),
             Node::String(_) => CompareWithReference(Equal),
+            Node::TemplateString(_) => CompareWithReference(Equal),
             Node::Pointer => AsBoolean,
             Node::Array(_) => CompareWithReference(In),
             Node::Identifier(_) => CompareWithReference(Equal),

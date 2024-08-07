@@ -1089,6 +1089,44 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                         }
                     }
                 }
+                Opcode::Join => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+
+                    let (Array(arr), String(separator)) = (a, b) else {
+                        return Err(OpcodeErr {
+                            opcode: "Join".into(),
+                            message: "Unsupported type".into(),
+                        });
+                    };
+
+                    let parts = arr
+                        .iter()
+                        .enumerate()
+                        .map(|(i, var)| match var {
+                            String(str) => Ok(*str),
+                            _ => Err(OpcodeErr {
+                                opcode: "Join".into(),
+                                message: format!("Unexpected type in array on index {i}"),
+                            }),
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+
+                    let str_capacity = parts
+                        .iter()
+                        .fold(separator.len() * (parts.len() - 1), |acc, s| acc + s.len());
+
+                    let mut s = BumpString::with_capacity_in(str_capacity, self.bump);
+                    let mut it = parts.iter().peekable();
+                    while let Some(part) = it.next() {
+                        s.push_str(part);
+                        if it.peek().is_some() {
+                            s.push_str(separator);
+                        }
+                    }
+
+                    self.push(String(s.into_bump_str()));
+                }
                 Opcode::Extract => {
                     let b = self.pop()?;
                     let a = self.pop()?;

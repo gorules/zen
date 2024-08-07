@@ -126,6 +126,11 @@ fuzzyMatch(["hello", "world"], "hello");;[1, 0.2]
 split("hello1,hello2,hello3", ",");;['hello1', 'hello2', 'hello3']
 map(split("123,456,789", ","), number(#));;[123, 456, 789]
 
+# Template string
+`simple template`;;'simple template'
+`sum of numbers ${sum([1, 2, 3])}`;;'sum of numbers 6'
+`reference env: ${a}`;{a:'example'};'reference env: example'
+`uppercase inner ${upper('string')}`;;'uppercase inner STRING'
 
 # String Slice
 string[0:5];{string: 'sample_string'};'sample'

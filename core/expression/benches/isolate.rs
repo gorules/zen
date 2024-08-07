@@ -102,6 +102,10 @@ fn bench_functions(c: &mut Criterion) {
         bench_standard(b, "contains(['ru', 'se'], $)");
     });
 
+    c.bench_function("isolate/template-string", |b| {
+        bench_standard(b, "`first ${1} second ${2} third ${3}`");
+    });
+
     c.bench_function("isolate/csv-standard", |b| {
         bench_csv(
             b,

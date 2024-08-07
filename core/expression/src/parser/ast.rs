@@ -9,6 +9,7 @@ pub enum Node<'a> {
     Bool(bool),
     Number(Decimal),
     String(&'a str),
+    TemplateString(&'a [&'a Node<'a>]),
     Pointer,
     Array(&'a [&'a Node<'a>]),
     Identifier(&'a str),

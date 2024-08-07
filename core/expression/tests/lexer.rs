@@ -1,7 +1,4 @@
-use zen_expression::lexer::{
-    ArithmeticOperator, Bracket, ComparisonOperator, Identifier, Lexer, LogicalOperator, Operator,
-    Token, TokenKind,
-};
+use zen_expression::lexer::{ArithmeticOperator, Bracket, ComparisonOperator, Identifier, Lexer, LogicalOperator, Operator, QuotationMark, Token, TokenKind};
 
 struct LexerTest {
     test: &'static str,
@@ -13,11 +10,23 @@ fn lexer_test() {
     let tests: Vec<LexerTest> = Vec::from([
         LexerTest {
             test: "'hello'",
-            result: Vec::from([Token {
-                kind: TokenKind::String,
-                span: (0, 6),
-                value: "hello",
-            }]),
+            result: Vec::from([
+                Token {
+                    kind: TokenKind::QuotationMark(QuotationMark::SingleQuote),
+                    span: (0, 1),
+                    value: "'",
+                },
+                Token {
+                    kind: TokenKind::Literal,
+                    span: (1, 6),
+                    value: "hello",
+                },
+                Token {
+                    kind: TokenKind::QuotationMark(QuotationMark::SingleQuote),
+                    span: (6, 7),
+                    value: "'",
+                },
+            ]),
         },
         LexerTest {
             test: "null",
@@ -43,29 +52,19 @@ fn lexer_test() {
                     value: "??",
                 },
                 Token {
-                    kind: TokenKind::String,
-                    span: (8, 14),
+                    kind: TokenKind::QuotationMark(QuotationMark::SingleQuote),
+                    span: (8, 9),
+                    value: "'",
+                },
+                Token {
+                    kind: TokenKind::Literal,
+                    span: (9, 14),
                     value: "hello",
                 },
-            ]),
-        },
-        LexerTest {
-            test: "'double' 'single' 'abc'",
-            result: Vec::from([
                 Token {
-                    kind: TokenKind::String,
-                    span: (0, 7),
-                    value: "double",
-                },
-                Token {
-                    kind: TokenKind::String,
-                    span: (9, 16),
-                    value: "single",
-                },
-                Token {
-                    kind: TokenKind::String,
-                    span: (18, 22),
-                    value: "abc",
+                    kind: TokenKind::QuotationMark(QuotationMark::SingleQuote),
+                    span: (14, 15),
+                    value: "'",
                 },
             ]),
         },
@@ -73,39 +72,49 @@ fn lexer_test() {
             test: "'double' 'single' 'abc'",
             result: Vec::from([
                 Token {
-                    kind: TokenKind::String,
-                    span: (0, 7),
+                    kind: TokenKind::QuotationMark(QuotationMark::SingleQuote),
+                    span: (0, 1),
+                    value: "'",
+                },
+                Token {
+                    kind: TokenKind::Literal,
+                    span: (1, 7),
                     value: "double",
                 },
                 Token {
-                    kind: TokenKind::String,
-                    span: (9, 16),
+                    kind: TokenKind::QuotationMark(QuotationMark::SingleQuote),
+                    span: (7, 8),
+                    value: "'",
+                },
+                Token {
+                    kind: TokenKind::QuotationMark(QuotationMark::SingleQuote),
+                    span: (9, 10),
+                    value: "'",
+                },
+                Token {
+                    kind: TokenKind::Literal,
+                    span: (10, 16),
                     value: "single",
                 },
                 Token {
-                    kind: TokenKind::String,
-                    span: (18, 22),
+                    kind: TokenKind::QuotationMark(QuotationMark::SingleQuote),
+                    span: (16, 17),
+                    value: "'",
+                },
+                Token {
+                    kind: TokenKind::QuotationMark(QuotationMark::SingleQuote),
+                    span: (18, 19),
+                    value: "'",
+                },
+                Token {
+                    kind: TokenKind::Literal,
+                    span: (19, 22),
                     value: "abc",
                 },
-            ]),
-        },
-        LexerTest {
-            test: "'double' 'single' 'abc'",
-            result: Vec::from([
                 Token {
-                    kind: TokenKind::String,
-                    span: (0, 7),
-                    value: "double",
-                },
-                Token {
-                    kind: TokenKind::String,
-                    span: (9, 16),
-                    value: "single",
-                },
-                Token {
-                    kind: TokenKind::String,
-                    span: (18, 22),
-                    value: "abc",
+                    kind: TokenKind::QuotationMark(QuotationMark::SingleQuote),
+                    span: (22, 23),
+                    value: "'",
                 },
             ]),
         },
@@ -400,9 +409,19 @@ fn lexer_test() {
                     value: "?",
                 },
                 Token {
-                    kind: TokenKind::String,
-                    span: (22, 28),
+                    kind: TokenKind::QuotationMark(QuotationMark::SingleQuote),
+                    span: (22, 23),
+                    value: "'",
+                },
+                Token {
+                    kind: TokenKind::Literal,
+                    span: (23, 28),
                     value: "hello",
+                },
+                Token {
+                    kind: TokenKind::QuotationMark(QuotationMark::SingleQuote),
+                    span: (28, 29),
+                    value: "'",
                 },
                 Token {
                     kind: TokenKind::Operator(Operator::Slice),
@@ -410,9 +429,19 @@ fn lexer_test() {
                     value: ":",
                 },
                 Token {
-                    kind: TokenKind::String,
-                    span: (35, 41),
+                    kind: TokenKind::QuotationMark(QuotationMark::SingleQuote),
+                    span: (35, 36),
+                    value: "'",
+                },
+                Token {
+                    kind: TokenKind::Literal,
+                    span: (36, 41),
                     value: "world",
+                },
+                Token {
+                    kind: TokenKind::QuotationMark(QuotationMark::SingleQuote),
+                    span: (41, 42),
+                    value: "'",
                 },
             ]),
         },
@@ -424,6 +453,6 @@ fn lexer_test() {
         let tokens = lexer.tokenize(test);
         assert!(tokens.is_ok());
 
-        assert_eq!(tokens.unwrap(), result.as_slice());
+        assert_eq!(tokens.unwrap(), result.as_slice(), "Expression failed: {test}");
     }
 }

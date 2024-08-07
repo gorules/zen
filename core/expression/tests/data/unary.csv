@@ -81,6 +81,12 @@ contains($, "foo"); { "$": "Hello, World!" }; false
 matches($, "H[a-z]+, W[a-z]+!"); { "$": "Hello, World!" }; true
 matches($, "[0-9]+"); { "$": "Hello, World!" }; false
 
+# Template string
+`simple template`;{ $: "simple template" };true
+`sum of numbers ${sum([1, 2, 3])}`;{ $: 'sum of numbers 6' };true
+`reference env: ${a}`;{ $: 'reference env: example', a:'example'};true
+`uppercase inner ${upper('string')}`;{$: 'uppercase inner STRING'};true
+
 # String Slice
 $[0:5] == 'sample'; { "$": 'sample_string' }; true
 $[7:12] == 'string'; { "$": 'sample_string' }; true

@@ -12,6 +12,7 @@ pub enum Node<'a> {
     TemplateString(&'a [&'a Node<'a>]),
     Pointer,
     Array(&'a [&'a Node<'a>]),
+    Object(&'a [(&'a Node<'a>, &'a Node<'a>)]),
     Identifier(&'a str),
     Closure(&'a Node<'a>),
     Root,

@@ -1,11 +1,11 @@
 use crate::lexer::codes::{is_token_type, token_type};
 use crate::lexer::cursor::{Cursor, CursorItem};
-use crate::lexer::error::LexerError::{UnexpectedEof, UnmatchedSymbol};
 use crate::lexer::error::LexerResult;
 use crate::lexer::token::{
     Bracket, ComparisonOperator, Identifier, LogicalOperator, Operator, Token, TokenKind,
 };
-use crate::lexer::{QuotationMark, TemplateString};
+use crate::lexer::{LexerError, QuotationMark, TemplateString};
+use std::str::FromStr;
 
 #[derive(Debug, Default)]
 pub struct Lexer<'arena> {
@@ -66,9 +66,9 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
             '`' => self.template_string(),
             '.' => self.dot(),
             token_type!("alpha") => self.identifier(),
-            _ => Err(UnmatchedSymbol {
+            _ => Err(LexerError::UnmatchedSymbol {
                 symbol: s,
-                position: i,
+                position: i as u32,
             }),
         }
     }
@@ -77,9 +77,9 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
         self.cursor.next().ok_or_else(|| {
             let (a, b) = self.cursor.peek_back().unwrap_or((0, ' '));
 
-            UnexpectedEof {
+            LexerError::UnexpectedEof {
                 symbol: b,
-                position: a,
+                position: a as u32,
             }
         })
     }
@@ -93,7 +93,7 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
 
         self.tokens.push(Token {
             kind: TokenKind::QuotationMark(QuotationMark::Backtick),
-            span: (start, start + 1),
+            span: (start as u32, (start + 1) as u32),
             value: QuotationMark::Backtick.into(),
         });
 
@@ -107,14 +107,14 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
                     if str_start < e {
                         self.tokens.push(Token {
                             kind: TokenKind::Literal,
-                            span: (str_start, e),
+                            span: (str_start as u32, e as u32),
                             value: &self.source[str_start..e],
                         });
                     }
 
                     self.tokens.push(Token {
                         kind: TokenKind::QuotationMark(QuotationMark::Backtick),
-                        span: (e, e + 1),
+                        span: (e as u32, (e + 1) as u32),
                         value: QuotationMark::Backtick.into(),
                     });
 
@@ -125,13 +125,13 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
                     if in_expression {
                         self.tokens.push(Token {
                             kind: TokenKind::Literal,
-                            span: (str_start, e),
+                            span: (str_start as u32, e as u32),
                             value: &self.source[str_start..e],
                         });
 
                         self.tokens.push(Token {
                             kind: TokenKind::TemplateString(TemplateString::ExpressionStart),
-                            span: (e, e + 2),
+                            span: (e as u32, (e + 2) as u32),
                             value: TemplateString::ExpressionStart.into(),
                         });
                     }
@@ -140,7 +140,7 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
                     in_expression = false;
                     self.tokens.push(Token {
                         kind: TokenKind::TemplateString(TemplateString::ExpressionEnd),
-                        span: (str_start, e),
+                        span: (str_start as u32, e as u32),
                         value: TemplateString::ExpressionEnd.into(),
                     });
 
@@ -173,19 +173,19 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
 
         self.push(Token {
             kind: TokenKind::QuotationMark(quote_kind),
-            span: (start, start + 1),
+            span: (start as u32, (start + 1) as u32),
             value: quote_kind.into(),
         });
 
         self.push(Token {
             kind: TokenKind::Literal,
-            span: (start + 1, end),
+            span: ((start + 1) as u32, end as u32),
             value: &self.source[start + 1..end],
         });
 
         self.push(Token {
             kind: TokenKind::QuotationMark(quote_kind),
-            span: (end, end + 1),
+            span: (end as u32, (end + 1) as u32),
             value: quote_kind.into(),
         });
 
@@ -222,7 +222,7 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
 
         self.push(Token {
             kind: TokenKind::Number,
-            span: (start, end + 1),
+            span: (start as u32, (end + 1) as u32),
             value: &self.source[start..=end],
         });
 
@@ -233,9 +233,15 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
         let (start, _) = self.next()?;
 
         let value = &self.source[start..=start];
+        let span = (start as u32, (start + 1) as u32);
         self.push(Token {
-            kind: TokenKind::Bracket(Bracket::try_from(value)?),
-            span: (start, start + 1),
+            kind: TokenKind::Bracket(Bracket::from_str(value).map_err(|_| {
+                LexerError::UnexpectedSymbol {
+                    symbol: value.to_string(),
+                    span,
+                }
+            })?),
+            span,
             value,
         });
 
@@ -251,9 +257,15 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
         }
 
         let value = &self.source[start..=end];
+        let span = (start as u32, (end + 1) as u32);
         self.push(Token {
-            kind: TokenKind::Operator(Operator::try_from(value)?),
-            span: (start, end + 1),
+            kind: TokenKind::Operator(Operator::from_str(value).map_err(|_| {
+                LexerError::UnexpectedSymbol {
+                    symbol: value.to_string(),
+                    span,
+                }
+            })?),
+            span,
             value,
         });
 
@@ -270,8 +282,13 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
 
         let value = &self.source[start..=end];
         self.push(Token {
-            kind: TokenKind::Operator(Operator::try_from(value)?),
-            span: (start, end + 1),
+            kind: TokenKind::Operator(Operator::from_str(value).map_err(|_| {
+                LexerError::UnexpectedSymbol {
+                    symbol: value.to_string(),
+                    span: (start as u32, (end + 1) as u32),
+                }
+            })?),
+            span: (start as u32, (end + 1) as u32),
             value,
         });
 
@@ -292,7 +309,7 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
         self.push(Token {
             kind,
             value,
-            span: (start, end + 1),
+            span: (start as u32, (end + 1) as u32),
         });
 
         Ok(())
@@ -302,9 +319,15 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
         let (start, _) = self.next()?;
 
         let value = &self.source[start..=start];
+        let span = (start as u32, (start + 1) as u32);
         self.push(Token {
-            kind: TokenKind::Operator(Operator::try_from(value)?),
-            span: (start, start + 1),
+            kind: TokenKind::Operator(Operator::from_str(value).map_err(|_| {
+                LexerError::UnexpectedSymbol {
+                    symbol: value.to_string(),
+                    span,
+                }
+            })?),
+            span,
             value,
         });
 
@@ -317,7 +340,7 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
 
             self.push(Token {
                 kind: TokenKind::Operator(Operator::Comparison(ComparisonOperator::NotIn)),
-                span: (start, end - 1),
+                span: (start as u32, (end - 1) as u32),
                 value: "not in",
             })
         } else {
@@ -325,7 +348,7 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
 
             self.push(Token {
                 kind: TokenKind::Operator(Operator::Logical(LogicalOperator::Not)),
-                span: (start, end),
+                span: (start as u32, end as u32),
                 value: "not",
             })
         }
@@ -345,33 +368,35 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
         match value {
             "and" => self.push(Token {
                 kind: TokenKind::Operator(Operator::Logical(LogicalOperator::And)),
-                span: (start, end + 1),
+                span: (start as u32, (end + 1) as u32),
                 value,
             }),
             "or" => self.push(Token {
                 kind: TokenKind::Operator(Operator::Logical(LogicalOperator::Or)),
-                span: (start, end + 1),
+                span: (start as u32, (end + 1) as u32),
                 value,
             }),
             "in" => self.push(Token {
                 kind: TokenKind::Operator(Operator::Comparison(ComparisonOperator::In)),
-                span: (start, end + 1),
+                span: (start as u32, (end + 1) as u32),
                 value,
             }),
             "true" => self.push(Token {
                 kind: TokenKind::Boolean(true),
-                span: (start, end + 1),
+                span: (start as u32, (end + 1) as u32),
                 value,
             }),
             "false" => self.push(Token {
                 kind: TokenKind::Boolean(false),
-                span: (start, end + 1),
+                span: (start as u32, (end + 1) as u32),
                 value,
             }),
             "not" => self.not(start)?,
             _ => self.push(Token {
-                kind: TokenKind::Identifier(Identifier::from(value)),
-                span: (start, end + 1),
+                kind: Identifier::try_from(value)
+                    .map(|identifier| TokenKind::Identifier(identifier))
+                    .unwrap_or(TokenKind::Literal),
+                span: (start as u32, (end + 1) as u32),
                 value,
             }),
         }

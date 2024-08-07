@@ -1,7 +1,7 @@
 use colored::Colorize;
 use rustyline::config::Configurer;
 use rustyline::{DefaultEditor, Result};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use zen_expression::Isolate;
 
@@ -48,11 +48,12 @@ fn main() -> Result<()> {
         };
 
         let mut isolate = Isolate::new();
+        isolate.set_environment(&json!({ "customer": { "firstName": "John", "lastName": "Doe", "age": 20 } }));
         let result = isolate.run_standard(line.as_str());
 
         match result {
             Ok(res) => println!("{}", res.pretty_print()),
-            Err(err) => println!("Error: {}", format!("{:?}", err).red()),
+            Err(err) => println!("Error: {}", err.to_string().red()),
         };
     }
 

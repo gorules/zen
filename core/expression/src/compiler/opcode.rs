@@ -61,6 +61,7 @@ pub enum Opcode<'a> {
     Extract,
     Slice,
     Array,
+    Object,
     Len,
     ParseDateTime,
     ParseTime,

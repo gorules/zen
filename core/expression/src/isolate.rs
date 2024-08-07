@@ -175,16 +175,16 @@ impl<'a> Isolate<'a> {
 /// Errors which happen within isolate or during evaluation
 #[derive(Debug, Error)]
 pub enum IsolateError {
-    #[error("Lexer error")]
+    #[error("Lexer error: {source}")]
     LexerError { source: LexerError },
 
-    #[error("Parser error")]
+    #[error("Parser error: {source}")]
     ParserError { source: ParserError },
 
-    #[error("Compiler error")]
+    #[error("Compiler error: {source}")]
     CompilerError { source: CompilerError },
 
-    #[error("VM error")]
+    #[error("VM error: {source}")]
     VMError { source: VMError },
 
     #[error("Value cast error")]

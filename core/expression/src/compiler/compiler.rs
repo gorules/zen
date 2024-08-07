@@ -119,6 +119,18 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                 self.emit(Opcode::Push(Variable::Number(Decimal::from(v.len()))));
                 Ok(self.emit(Opcode::Array))
             }
+            Node::Object(v) => {
+                v.iter()
+                    .try_for_each(|&(key, value)| {
+                        self.compile_node(key).map(|_| ())?;
+                        self.emit(Opcode::TypeConversion(TypeConversionKind::String));
+                        self.compile_node(value).map(|_| ())?;
+                        Ok(())
+                    })?;
+
+                self.emit(Opcode::Push(Variable::Number(Decimal::from(v.len()))));
+                Ok(self.emit(Opcode::Object))
+            }
             Node::Identifier(v) => Ok(self.emit(Opcode::FetchEnv(v))),
             Node::Closure(v) => self.compile_node(v),
             Node::Member { node, property } => {
@@ -576,7 +588,7 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                     self.emit(Opcode::GetCount);
                     Ok(self.emit(Opcode::End))
                 }
-            },
+            }
         }
     }
 }

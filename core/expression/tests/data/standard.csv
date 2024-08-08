@@ -264,6 +264,9 @@ type(null);;'null'
 type([1, 2, 3]);;'array'
 
 # Object
+{customer: { firstName: "John", lastName: "Doe" }};;{customer: { firstName: "John", lastName: "Doe" }}
+sum(values({a: 1, b: 2, c: 3}));;6
+keys({[`dynamic-${'key'}`]: 123});;['dynamic-key']
 keys(customer);{"customer": {"firstName": "John"}};["firstName"]
 keys(customer);{"customer": {"lastName": "Doe"}};["lastName"]
 values(customer);{"customer": {"firstName": "John"}};["John"]

@@ -1,5 +1,6 @@
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
+use std::str::FromStr;
 
 use nohash_hasher::IsEnabled;
 use strum_macros::{Display, EnumString, IntoStaticStr};
@@ -7,7 +8,7 @@ use strum_macros::{Display, EnumString, IntoStaticStr};
 /// Contains information from lexical analysis
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Token<'a> {
-    pub span: (usize, usize),
+    pub span: (u32, u32),
     pub kind: TokenKind,
     pub value: &'a str,
 }
@@ -25,13 +26,16 @@ pub enum TokenKind {
     TemplateString(TemplateString),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Display)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Display, EnumString, IntoStaticStr)]
 pub enum Identifier {
-    ContextReference,  // $
-    RootReference,     // $root
-    CallbackReference, // #
-    Null,              // null
-    Variable,
+    #[strum(serialize = "$")]
+    ContextReference,
+    #[strum(serialize = "$root")]
+    RootReference,
+    #[strum(serialize = "#")]
+    CallbackReference,
+    #[strum(serialize = "null")]
+    Null,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Display, EnumString, IntoStaticStr)]
@@ -61,18 +65,6 @@ impl Display for TemplateString {
     }
 }
 
-impl From<&str> for Identifier {
-    fn from(value: &str) -> Self {
-        match value {
-            "$" => Identifier::ContextReference,
-            "$root" => Identifier::RootReference,
-            "#" => Identifier::CallbackReference,
-            "null" => Identifier::Null,
-            _ => Identifier::Variable,
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Display)]
 pub enum Operator {
     Arithmetic(ArithmeticOperator),
@@ -85,10 +77,10 @@ pub enum Operator {
     QuestionMark, // ?
 }
 
-impl TryFrom<&str> for Operator {
-    type Error = strum::ParseError;
+impl FromStr for Operator {
+    type Err = strum::ParseError;
 
-    fn try_from(operator: &str) -> Result<Self, Self::Error> {
+    fn from_str(operator: &str) -> Result<Self, Self::Err> {
         match operator {
             ".." => Ok(Operator::Range),
             "," => Ok(Operator::Comma),
@@ -151,7 +143,7 @@ pub enum ComparisonOperator {
     NotIn,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Display, EnumString)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, EnumString, IntoStaticStr)]
 pub enum Bracket {
     #[strum(serialize = "(")]
     LeftParenthesis,
@@ -161,6 +153,23 @@ pub enum Bracket {
     LeftSquareBracket,
     #[strum(serialize = "]")]
     RightSquareBracket,
+    #[strum(serialize = "{")]
+    LeftCurlyBracket,
+    #[strum(serialize = "}")]
+    RightCurlyBracket,
+}
+
+impl Display for Bracket {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            Bracket::LeftParenthesis => ::core::fmt::Display::fmt("(", f),
+            Bracket::RightParenthesis => ::core::fmt::Display::fmt(")", f),
+            Bracket::LeftSquareBracket => ::core::fmt::Display::fmt("[", f),
+            Bracket::RightSquareBracket => ::core::fmt::Display::fmt("]", f),
+            Bracket::LeftCurlyBracket => ::core::fmt::Display::fmt("{", f),
+            Bracket::RightCurlyBracket => ::core::fmt::Display::fmt("}}", f),
+        }
+    }
 }
 
 impl Operator {

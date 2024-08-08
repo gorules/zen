@@ -127,8 +127,9 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         let token = self.current();
         if token.kind != kind {
             return Err(ParserError::UnexpectedToken {
-                expected: format!("{kind:?}"),
-                received: format!("{token:?}"),
+                expected: kind.to_string(),
+                received: token.kind.to_string(),
+                span: token.span,
             });
         }
 
@@ -185,8 +186,9 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 }
                 _ => {
                     return Err(ParserError::UnexpectedToken {
-                        expected: "valid template string token".to_string(),
-                        received: format!("{current_token:?}"),
+                        expected: "Valid TemplateString token".to_string(),
+                        received: current_token.kind.to_string(),
+                        span: current_token.span,
                     })
                 }
             }
@@ -245,8 +247,9 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
 
                 if !is_valid_property(property_token) {
                     return Err(ParserError::UnexpectedToken {
-                        expected: "member identifier token".to_string(),
-                        received: format!("{postfix_token:?}"),
+                        expected: "valid property".to_string(),
+                        received: postfix_token.kind.to_string(),
+                        span: postfix_token.span,
                     });
                 }
 
@@ -320,9 +323,12 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
     where
         F: Fn() -> ParserResult<&'arena Node<'arena>>,
     {
-        let TokenKind::Identifier(_) = &self.current().kind else {
-            return Ok(None);
-        };
+        match &self.current().kind {
+            TokenKind::Identifier(_) | TokenKind::Literal => {
+                // ok
+            }
+            _ => return Ok(None),
+        }
 
         let identifier_token = self.current();
         self.next()?;
@@ -338,10 +344,11 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 .map(Some);
         }
 
-        // Potentially it might be a built in expression
+        // Potentially it might be a built-in expression
         let builtin = BuiltInFunction::try_from(identifier_token.value).map_err(|_| {
             ParserError::UnknownBuiltIn {
-                token: identifier_token.value.to_string(),
+                name: identifier_token.value.to_string(),
+                span: identifier_token.span,
             }
         })?;
 
@@ -477,6 +484,112 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             .map(Some)
     }
 
+    pub(crate) fn object<F>(&self, expression_parser: F) -> ParserResult<&'arena Node<'arena>>
+    where
+        F: Fn() -> ParserResult<&'arena Node<'arena>>,
+    {
+        self.expect(TokenKind::Bracket(Bracket::LeftCurlyBracket))?;
+        let mut key_value_pairs = BumpVec::new_in(self.bump);
+
+        loop {
+            let key = self.object_key(&expression_parser)?;
+            self.expect(TokenKind::Operator(Operator::Slice))?;
+            let value = expression_parser()?;
+
+            key_value_pairs.push((key, value));
+
+            let current_token = self.current();
+            match current_token.kind {
+                TokenKind::Operator(Operator::Comma) => {
+                    self.expect(TokenKind::Operator(Operator::Comma))?;
+                }
+                TokenKind::Bracket(Bracket::RightCurlyBracket) => break,
+                _ => {
+                    return Err(ParserError::UnexpectedToken {
+                        expected: "RightCurlyBracket or Comma".to_string(),
+                        received: current_token.kind.to_string(),
+                        span: current_token.span,
+                    })
+                }
+            }
+        }
+
+        self.expect(TokenKind::Bracket(Bracket::RightCurlyBracket))?;
+        Ok(self.node(Node::Object(key_value_pairs.into_bump_slice())))
+    }
+
+    pub(crate) fn object_key<F>(&self, expression_parser: F) -> ParserResult<&'arena Node<'arena>>
+    where
+        F: Fn() -> ParserResult<&'arena Node<'arena>>,
+    {
+        let key_token = self.current();
+
+        let key = match key_token.kind {
+            TokenKind::Identifier(identifier) => {
+                self.next()?;
+                self.node(Node::String(identifier.into()))
+            }
+            TokenKind::Boolean(boolean) => match boolean {
+                true => {
+                    self.next()?;
+                    self.node(Node::String("true"))
+                }
+                false => {
+                    self.next()?;
+                    self.node(Node::String("false"))
+                }
+            },
+            TokenKind::Number => {
+                self.next()?;
+                self.node(Node::String(key_token.value))
+            }
+            TokenKind::Literal => {
+                self.next()?;
+                self.node(Node::String(key_token.value))
+            }
+            TokenKind::Bracket(bracket) => match bracket {
+                Bracket::LeftSquareBracket => {
+                    self.expect(TokenKind::Bracket(Bracket::LeftSquareBracket))?;
+                    let token = expression_parser()?;
+                    self.expect(TokenKind::Bracket(Bracket::RightSquareBracket))?;
+
+                    token
+                }
+                _ => {
+                    return Err(ParserError::FailedToParse {
+                        message: "Operator is not supported as object key".to_string(),
+                        span: key_token.span,
+                    })
+                }
+            },
+            TokenKind::QuotationMark(qm) => match qm {
+                QuotationMark::SingleQuote => self.simple_string(&QuotationMark::SingleQuote)?,
+                QuotationMark::DoubleQuote => self.simple_string(&QuotationMark::DoubleQuote)?,
+                QuotationMark::Backtick => {
+                    return Err(ParserError::FailedToParse {
+                        message: "TemplateString expression not supported as object key"
+                            .to_string(),
+                        span: key_token.span,
+                    })
+                }
+            },
+            TokenKind::TemplateString(_) => {
+                return Err(ParserError::FailedToParse {
+                    message: "TemplateString expression not supported as object key".to_string(),
+                    span: key_token.span,
+                })
+            }
+            TokenKind::Operator(_) => {
+                return Err(ParserError::FailedToParse {
+                    message: "Operator is not supported as object key".to_string(),
+                    span: key_token.span,
+                })
+            }
+        };
+
+        Ok(key)
+    }
+
     /// Conditional
     /// condition_node ? on_true : on_false
     pub(crate) fn conditional<F>(
@@ -516,20 +629,31 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         match &current_token.kind {
             TokenKind::Identifier(identifier) => match identifier {
                 Identifier::Null => self.null()?.ok_or_else(|| ParserError::FailedToParse {
-                    message: format!("failed to parse null identifier: {:?}", current_token),
+                    message: "Failed to parse null identifier".to_string(),
+                    span: current_token.span,
                 }),
                 _ => {
                     self.identifier(&expression_parser)?
                         .ok_or_else(|| ParserError::FailedToParse {
-                            message: format!("failed to parse identifier: {:?}", current_token),
+                            message: "Failed to parse identifier".to_string(),
+                            span: current_token.span,
                         })
                 }
             },
+            TokenKind::Literal => {
+                self.identifier(&expression_parser)?
+                    .ok_or_else(|| ParserError::FailedToParse {
+                        message: "Failed to parse literal".to_string(),
+                        span: current_token.span,
+                    })
+            }
             TokenKind::Boolean(_) => self.bool()?.ok_or_else(|| ParserError::FailedToParse {
-                message: format!("failed to parse boolean: {:?}", current_token),
+                message: "Failed to parse boolean".to_string(),
+                span: current_token.span,
             }),
             TokenKind::Number => self.number()?.ok_or_else(|| ParserError::FailedToParse {
-                message: format!("failed to parse number: {:?}", current_token),
+                message: "Failed to parse number".to_string(),
+                span: current_token.span,
             }),
             TokenKind::QuotationMark(quote_mark) => match quote_mark {
                 QuotationMark::SingleQuote | QuotationMark::DoubleQuote => {
@@ -537,22 +661,38 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 }
                 QuotationMark::Backtick => self.template_string(&expression_parser),
             },
-            TokenKind::Bracket(_) => self
-                .interval(&expression_parser)
-                .transpose()
-                .or_else(|| self.array(&expression_parser).transpose())
-                .transpose()?
-                .ok_or_else(|| ParserError::FailedToParse {
-                    message: format!("unexpected bracket: {:?}", current_token),
+            TokenKind::Bracket(bracket) => match bracket {
+                Bracket::LeftParenthesis
+                | Bracket::RightParenthesis
+                | Bracket::RightSquareBracket => {
+                    self.interval(&expression_parser)?
+                        .ok_or_else(|| ParserError::FailedToParse {
+                            message: "Failed to parse interval".to_string(),
+                            span: current_token.span,
+                        })
+                }
+                Bracket::LeftSquareBracket => self
+                    .interval(&expression_parser)
+                    .transpose()
+                    .or_else(|| self.array(&expression_parser).transpose())
+                    .transpose()?
+                    .ok_or_else(|| ParserError::FailedToParse {
+                        message: "Invalid bracket".to_string(),
+                        span: current_token.span,
+                    }),
+                Bracket::LeftCurlyBracket => self.object(&expression_parser),
+                Bracket::RightCurlyBracket => Err(ParserError::FailedToParse {
+                    message: "Unexpected RightCurlyBracket token".to_string(),
+                    span: current_token.span,
                 }),
+            },
             TokenKind::Operator(_) => Err(ParserError::FailedToParse {
-                message: format!("unexpected operator token: {:?}", current_token),
-            }),
-            TokenKind::Literal => Err(ParserError::FailedToParse {
-                message: format!("unexpected literal token: {:?}", current_token),
+                message: "Unexpected Operator token".to_string(),
+                span: current_token.span,
             }),
             TokenKind::TemplateString(_) => Err(ParserError::FailedToParse {
-                message: format!("unexpected template string token: {:?}", current_token),
+                message: "Unexpected TemplateString token".to_string(),
+                span: current_token.span,
             }),
         }
     }
@@ -561,6 +701,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
 fn is_valid_property(token: &Token) -> bool {
     match &token.kind {
         TokenKind::Identifier(_) => true,
+        TokenKind::Literal => true,
         TokenKind::Operator(operator) => match operator {
             Operator::Logical(_) => true,
             Operator::Comparison(comparison) => matches!(comparison, ComparisonOperator::In),

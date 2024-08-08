@@ -3,22 +3,14 @@ use thiserror::Error;
 
 #[derive(Debug, PartialEq, Eq, Clone, Error)]
 pub enum LexerError {
-    #[error("Unexpected symbol: {symbol}")]
-    UnexpectedSymbol { symbol: String },
+    #[error("Unexpected symbol: {symbol} at ({}, {})", span.0, span.1)]
+    UnexpectedSymbol { symbol: String, span: (u32, u32) },
 
-    #[error("Unmatched symbol: {symbol} at position {position}")]
-    UnmatchedSymbol { symbol: char, position: usize },
+    #[error("Unmatched symbol: {symbol} at {position}")]
+    UnmatchedSymbol { symbol: char, position: u32 },
 
-    #[error("Unexpected end of file: {symbol} at position {position}")]
-    UnexpectedEof { symbol: char, position: usize },
-}
-
-impl From<ParseError> for LexerError {
-    fn from(value: ParseError) -> Self {
-        Self::UnexpectedSymbol {
-            symbol: value.to_string(),
-        }
-    }
+    #[error("Unexpected EOF: {symbol} at {position}")]
+    UnexpectedEof { symbol: char, position: u32 },
 }
 
 pub(crate) type LexerResult<T> = Result<T, LexerError>;

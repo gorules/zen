@@ -14,9 +14,9 @@ use rust_decimal::{Decimal, MathematicalOps};
 use rust_decimal_macros::dec;
 
 use crate::compiler::{Opcode, TypeCheckKind, TypeConversionKind};
-use crate::variable::ToVariable;
 use crate::variable::Variable;
 use crate::variable::Variable::*;
+use crate::variable::{BumpMap, ToVariable};
 use crate::vm::error::VMError::*;
 use crate::vm::error::VMResult;
 use crate::vm::helpers::{date_time, date_time_end_of, date_time_start_of, time};
@@ -1266,7 +1266,6 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                 }
                 Opcode::Array => {
                     let size = self.pop()?;
-
                     let Number(s) = size else {
                         return Err(OpcodeErr {
                             opcode: "Array".into(),
@@ -1286,6 +1285,35 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     arr.reverse();
 
                     self.push(Array(arr));
+                }
+                Opcode::Object => {
+                    let size = self.pop()?;
+                    let Number(s) = size else {
+                        return Err(OpcodeErr {
+                            opcode: "Array".into(),
+                            message: "Unsupported type".into(),
+                        });
+                    };
+
+                    let to = s.round().to_usize().ok_or_else(|| OpcodeErr {
+                        opcode: "Array".into(),
+                        message: "Failed to extract argument".into(),
+                    })?;
+
+                    let mut map = BumpMap::with_capacity_in(to, &self.bump);
+                    for _ in 0..to {
+                        let value = self.pop()?;
+                        let String(key) = self.pop()? else {
+                            return Err(OpcodeErr {
+                                opcode: "Object".into(),
+                                message: "Unexpected key value".to_string(),
+                            });
+                        };
+
+                        map.insert(&*self.bump.alloc_str(key), value.clone_in(self.bump));
+                    }
+
+                    self.push(Object(map));
                 }
                 Opcode::Len => {
                     let current = self.stack.last().ok_or_else(|| OpcodeErr {

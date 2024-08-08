@@ -18,7 +18,8 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
         if !self.is_done() {
             let token = self.current();
             return Err(FailedToParse {
-                message: format!("Unterminated token {} on {:?}", token.value, token.span),
+                message: format!("Unterminated token {}", token.value),
+                span: token.span,
             });
         }
 
@@ -159,8 +160,9 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
         if let TokenKind::Operator(operator) = &token.kind {
             let Some(unary_operator) = UNARY_OPERATORS.get(operator) else {
                 return Err(UnexpectedToken {
-                    expected: "Unary token".to_string(),
-                    received: format!("{token:?}"),
+                    expected: "UnaryOperator".to_string(),
+                    received: token.kind.to_string(),
+                    span: token.span,
                 });
             };
 
@@ -219,6 +221,7 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
             Node::Number(_) => CompareWithReference(Equal),
             Node::String(_) => CompareWithReference(Equal),
             Node::TemplateString(_) => CompareWithReference(Equal),
+            Node::Object(_) => CompareWithReference(Equal),
             Node::Pointer => AsBoolean,
             Node::Array(_) => CompareWithReference(In),
             Node::Identifier(_) => CompareWithReference(Equal),

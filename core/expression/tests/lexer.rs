@@ -150,7 +150,7 @@ fn lexer_test() {
                     value: "1_000_000",
                 },
                 Token {
-                    kind: TokenKind::Identifier(Identifier::Variable),
+                    kind: TokenKind::Literal,
                     span: (25, 28),
                     value: "_42",
                 },
@@ -170,7 +170,7 @@ fn lexer_test() {
             test: "a and orb().val",
             result: Vec::from([
                 Token {
-                    kind: TokenKind::Identifier(Identifier::Variable),
+                    kind: TokenKind::Literal,
                     span: (0, 1),
                     value: "a",
                 },
@@ -180,7 +180,7 @@ fn lexer_test() {
                     value: "and",
                 },
                 Token {
-                    kind: TokenKind::Identifier(Identifier::Variable),
+                    kind: TokenKind::Literal,
                     span: (6, 9),
                     value: "orb",
                 },
@@ -200,7 +200,7 @@ fn lexer_test() {
                     value: ".",
                 },
                 Token {
-                    kind: TokenKind::Identifier(Identifier::Variable),
+                    kind: TokenKind::Literal,
                     span: (12, 15),
                     value: "val",
                 },
@@ -210,7 +210,7 @@ fn lexer_test() {
             test: "foo.bar",
             result: Vec::from([
                 Token {
-                    kind: TokenKind::Identifier(Identifier::Variable),
+                    kind: TokenKind::Literal,
                     span: (0, 3),
                     value: "foo",
                 },
@@ -220,7 +220,7 @@ fn lexer_test() {
                     value: ".",
                 },
                 Token {
-                    kind: TokenKind::Identifier(Identifier::Variable),
+                    kind: TokenKind::Literal,
                     span: (4, 7),
                     value: "bar",
                 },
@@ -230,7 +230,7 @@ fn lexer_test() {
             test: "foo .bar == .baz",
             result: Vec::from([
                 Token {
-                    kind: TokenKind::Identifier(Identifier::Variable),
+                    kind: TokenKind::Literal,
                     span: (0, 3),
                     value: "foo",
                 },
@@ -240,7 +240,7 @@ fn lexer_test() {
                     value: ".",
                 },
                 Token {
-                    kind: TokenKind::Identifier(Identifier::Variable),
+                    kind: TokenKind::Literal,
                     span: (5, 8),
                     value: "bar",
                 },
@@ -255,7 +255,7 @@ fn lexer_test() {
                     value: ".",
                 },
                 Token {
-                    kind: TokenKind::Identifier(Identifier::Variable),
+                    kind: TokenKind::Literal,
                     span: (13, 16),
                     value: "baz",
                 },
@@ -265,7 +265,7 @@ fn lexer_test() {
             test: "func()",
             result: Vec::from([
                 Token {
-                    kind: TokenKind::Identifier(Identifier::Variable),
+                    kind: TokenKind::Literal,
                     span: (0, 4),
                     value: "func",
                 },
@@ -290,7 +290,7 @@ fn lexer_test() {
                     value: "not",
                 },
                 Token {
-                    kind: TokenKind::Identifier(Identifier::Variable),
+                    kind: TokenKind::Literal,
                     span: (4, 7),
                     value: "abc",
                 },
@@ -300,7 +300,7 @@ fn lexer_test() {
                     value: "not in",
                 },
                 Token {
-                    kind: TokenKind::Identifier(Identifier::Variable),
+                    kind: TokenKind::Literal,
                     span: (15, 16),
                     value: "i",
                 },
@@ -340,7 +340,7 @@ fn lexer_test() {
                     value: "not",
                 },
                 Token {
-                    kind: TokenKind::Identifier(Identifier::Variable),
+                    kind: TokenKind::Literal,
                     span: (4, 10),
                     value: "in_var",
                 },
@@ -380,7 +380,7 @@ fn lexer_test() {
             test: "product.price > 500 ? 'hello'  :   'world'",
             result: Vec::from([
                 Token {
-                    kind: TokenKind::Identifier(Identifier::Variable),
+                    kind: TokenKind::Literal,
                     span: (0, 7),
                     value: "product",
                 },
@@ -390,7 +390,7 @@ fn lexer_test() {
                     value: ".",
                 },
                 Token {
-                    kind: TokenKind::Identifier(Identifier::Variable),
+                    kind: TokenKind::Literal,
                     span: (8, 13),
                     value: "price",
                 },

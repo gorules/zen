@@ -528,25 +528,25 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             TokenKind::Identifier(identifier) => {
                 self.next()?;
                 self.node(Node::String(identifier.into()))
-            },
+            }
             TokenKind::Boolean(boolean) => match boolean {
                 true => {
                     self.next()?;
                     self.node(Node::String("true"))
-                },
+                }
                 false => {
                     self.next()?;
                     self.node(Node::String("false"))
-                },
+                }
             },
             TokenKind::Number => {
                 self.next()?;
                 self.node(Node::String(key_token.value))
-            },
+            }
             TokenKind::Literal => {
                 self.next()?;
                 self.node(Node::String(key_token.value))
-            },
+            }
             TokenKind::Bracket(bracket) => match bracket {
                 Bracket::LeftSquareBracket => {
                     self.expect(TokenKind::Bracket(Bracket::LeftSquareBracket))?;

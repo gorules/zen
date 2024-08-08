@@ -8,12 +8,9 @@ pub enum ParserError {
         received: String,
         span: (u32, u32),
     },
-    
+
     #[error("Failed to parse: {message} at ({}, {})", span.0, span.1)]
-    FailedToParse {
-        message: String,
-        span: (u32, u32),
-    },
+    FailedToParse { message: String, span: (u32, u32) },
 
     #[error("Unknown built in: {name} at ({}, {})", span.0, span.1)]
     UnknownBuiltIn { name: String, span: (u32, u32) },

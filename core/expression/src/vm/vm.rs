@@ -14,9 +14,9 @@ use rust_decimal::{Decimal, MathematicalOps};
 use rust_decimal_macros::dec;
 
 use crate::compiler::{Opcode, TypeCheckKind, TypeConversionKind};
-use crate::variable::{BumpMap, ToVariable};
 use crate::variable::Variable;
 use crate::variable::Variable::*;
+use crate::variable::{BumpMap, ToVariable};
 use crate::vm::error::VMError::*;
 use crate::vm::error::VMResult;
 use crate::vm::helpers::{date_time, date_time_end_of, date_time_start_of, time};
@@ -1307,7 +1307,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             return Err(OpcodeErr {
                                 opcode: "Object".into(),
                                 message: "Unexpected key value".to_string(),
-                            })
+                            });
                         };
 
                         map.insert(&*self.bump.alloc_str(key), value.clone_in(self.bump));

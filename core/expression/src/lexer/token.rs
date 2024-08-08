@@ -167,7 +167,7 @@ impl Display for Bracket {
             Bracket::LeftSquareBracket => ::core::fmt::Display::fmt("[", f),
             Bracket::RightSquareBracket => ::core::fmt::Display::fmt("]", f),
             Bracket::LeftCurlyBracket => ::core::fmt::Display::fmt("{", f),
-            Bracket::RightCurlyBracket => ::core::fmt::Display::fmt("}}", f)
+            Bracket::RightCurlyBracket => ::core::fmt::Display::fmt("}}", f),
         }
     }
 }

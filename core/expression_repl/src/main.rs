@@ -48,7 +48,9 @@ fn main() -> Result<()> {
         };
 
         let mut isolate = Isolate::new();
-        isolate.set_environment(&json!({ "customer": { "firstName": "John", "lastName": "Doe", "age": 20 } }));
+        isolate.set_environment(
+            &json!({ "customer": { "firstName": "John", "lastName": "Doe", "age": 20 } }),
+        );
         let result = isolate.run_standard(line.as_str());
 
         match result {

@@ -271,6 +271,7 @@ keys(customer);{"customer": {"firstName": "John"}};["firstName"]
 keys(customer);{"customer": {"lastName": "Doe"}};["lastName"]
 values(customer);{"customer": {"firstName": "John"}};["John"]
 values(customer);{"customer": {"lastName": "Doe"}};["Doe"]
+{};;{}
 
 # Nullish coalescing
 null ?? 'hello';;'hello'

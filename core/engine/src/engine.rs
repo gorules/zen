@@ -112,4 +112,12 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionEngine
         let content = self.loader.load(key).await?;
         Ok(self.create_decision(content))
     }
+
+    pub fn loader(&self) -> &L {
+        self.loader.as_ref()
+    }
+
+    pub fn adapter(&self) -> &A {
+        self.adapter.as_ref()
+    }
 }

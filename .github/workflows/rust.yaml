@@ -51,7 +51,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Install Rust
-        run: rustup update stable
+        run: rustup install 1.80
       - run: cargo test --workspace --all-features --exclude zen-ffi
       - run: cargo test --workspace --all-features --exclude zen-ffi --release
 

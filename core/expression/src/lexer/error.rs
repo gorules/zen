@@ -1,4 +1,3 @@
-use strum::ParseError;
 use thiserror::Error;
 
 #[derive(Debug, PartialEq, Eq, Clone, Error)]

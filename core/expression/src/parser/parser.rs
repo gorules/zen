@@ -489,7 +489,12 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         F: Fn() -> ParserResult<&'arena Node<'arena>>,
     {
         self.expect(TokenKind::Bracket(Bracket::LeftCurlyBracket))?;
+
         let mut key_value_pairs = BumpVec::new_in(self.bump);
+        if let TokenKind::Bracket(Bracket::RightCurlyBracket) = self.current().kind {
+            self.next()?;
+            return Ok(self.node(Node::Object(key_value_pairs.into_bump_slice())));
+        }
 
         loop {
             let key = self.object_key(&expression_parser)?;

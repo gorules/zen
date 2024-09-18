@@ -588,6 +588,7 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                     Ok(self.emit(Opcode::End))
                 }
             },
+            Node::Error(_) => Err(CompilerError::UnexpectedErrorNode),
         }
     }
 }

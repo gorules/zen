@@ -10,9 +10,9 @@ use crate::lexer::{
     Bracket, ComparisonOperator, Identifier, Operator, QuotationMark, TemplateString, Token,
     TokenKind,
 };
-use crate::parser::ast::Node;
+use crate::parser::ast::{AstNodeError, Node};
 use crate::parser::builtin::{Arity, BuiltInFunction};
-use crate::parser::error::{ParserError, ParserResult};
+use crate::parser::error::ParserError;
 use crate::parser::standard::Standard;
 use crate::parser::unary::Unary;
 
@@ -22,9 +22,8 @@ pub struct BaseParser;
 #[derive(Debug)]
 pub struct Parser<'arena, 'token_ref, Flavor> {
     tokens: &'token_ref [Token<'arena>],
-    current: Cell<&'token_ref Token<'arena>>,
+    current: Cell<Option<&'token_ref Token<'arena>>>,
     pub(crate) bump: &'arena Bump,
-    is_done: Cell<bool>,
     position: Cell<usize>,
     depth: Cell<u8>,
     marker_flavor: PhantomData<Flavor>,
@@ -36,7 +35,7 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, BaseParser> {
         tokens: &'token_ref [Token<'arena>],
         bump: &'arena Bump,
     ) -> Result<Self, ParserError> {
-        let current = tokens.get(0).ok_or(ParserError::TokenOutOfBounds)?;
+        let current = tokens.get(0);
         let has_range_operator = tokens
             .iter()
             .any(|t| t.kind == TokenKind::Operator(Operator::Range));
@@ -47,7 +46,6 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, BaseParser> {
             current: Cell::new(current),
             depth: Cell::new(0),
             position: Cell::new(0),
-            is_done: Cell::new(false),
             has_range_operator,
             marker_flavor: PhantomData,
         })
@@ -60,7 +58,6 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, BaseParser> {
             current: self.current,
             depth: self.depth,
             position: self.position,
-            is_done: self.is_done,
             has_range_operator: self.has_range_operator,
             marker_flavor: PhantomData,
         }
@@ -73,7 +70,6 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, BaseParser> {
             current: self.current,
             depth: self.depth,
             position: self.position,
-            is_done: self.is_done,
             has_range_operator: self.has_range_operator,
             marker_flavor: PhantomData,
         }
@@ -81,7 +77,7 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, BaseParser> {
 }
 
 impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
-    pub(crate) fn current(&self) -> &Token<'arena> {
+    pub(crate) fn current(&self) -> Option<&Token<'arena>> {
         self.current.get()
     }
 
@@ -89,14 +85,13 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         self.position.get()
     }
 
-    fn set_position(&self, position: usize) -> ParserResult<()> {
-        let Some(token) = self.tokens.get(position) else {
-            return Err(ParserError::TokenOutOfBounds);
-        };
+    fn set_position(&self, position: usize) -> bool {
+        let target_token = self.tokens.get(position);
 
         self.position.set(position);
-        self.current.set(token);
-        Ok(())
+        self.current.set(target_token);
+
+        target_token.is_some()
     }
 
     pub(crate) fn depth(&self) -> u8 {
@@ -104,88 +99,149 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
     }
 
     pub(crate) fn is_done(&self) -> bool {
-        self.is_done.get()
+        self.current.get().is_none()
     }
 
-    pub(crate) fn next(&self) -> ParserResult<()> {
-        self.position.set(self.position.get() + 1);
-
-        if let Some(token) = self.tokens.get(self.position.get()) {
-            self.current.set(token);
-            Ok(())
-        } else {
-            if self.is_done.get() {
-                return Err(ParserError::TokenOutOfBounds);
-            }
-
-            self.is_done.set(true);
-            Ok(())
-        }
+    pub(crate) fn node(&self, node: Node<'arena>) -> &'arena Node<'arena> {
+        self.bump.alloc(node)
     }
 
-    pub(crate) fn expect(&self, kind: TokenKind) -> Result<(), ParserError> {
+    pub(crate) fn error(&self, error: AstNodeError) -> &'arena Node<'arena> {
+        self.node(Node::Error(error))
+    }
+
+    pub(crate) fn next(&self) {
+        let new_position = self.position.get() + 1;
+
+        self.position.set(new_position);
+        self.current.set(self.tokens.get(new_position));
+    }
+
+    pub(crate) fn expect(&self, kind: TokenKind) -> Option<&'arena Node<'arena>> {
         let token = self.current();
-        if token.kind != kind {
-            return Err(ParserError::UnexpectedToken {
+        if token.is_some_and(|t| t.kind == kind) {
+            self.next();
+            return None;
+        }
+
+        Some(
+            self.error(AstNodeError::UnexpectedToken {
                 expected: kind.to_string(),
-                received: token.kind.to_string(),
+                received: token
+                    .map(|t| t.kind.to_string())
+                    .unwrap_or_else(|| "None".to_string()),
+                span: token.map(|t| t.span).unwrap_or((0, 0)),
+            }),
+        )
+    }
+
+    pub(crate) fn number(&self) -> &'arena Node<'arena> {
+        let Some(token) = self.current() else {
+            return self.error(AstNodeError::MissingToken {
+                expected: "Number".to_string(),
+                position: self.position(),
+            });
+        };
+
+        let Ok(decimal) = Decimal::from_str_exact(token.value) else {
+            return self.error(AstNodeError::InvalidNumber {
+                number: token.value.to_string(),
+                span: token.span,
+            });
+        };
+
+        self.next();
+        self.node(Node::Number(decimal))
+    }
+
+    pub(crate) fn bool(&self) -> &'arena Node<'arena> {
+        let Some(token) = self.current() else {
+            return self.error(AstNodeError::MissingToken {
+                expected: "Boolean".to_string(),
+                position: self.position(),
+            });
+        };
+
+        let TokenKind::Boolean(boolean) = token.kind else {
+            return self.error(AstNodeError::InvalidBoolean {
+                boolean: token.value.to_string(),
+                span: token.span,
+            });
+        };
+
+        self.next();
+        self.node(Node::Bool(boolean))
+    }
+
+    pub(crate) fn null(&self) -> &'arena Node<'arena> {
+        let Some(token) = self.current() else {
+            return self.error(AstNodeError::MissingToken {
+                expected: "Null".to_string(),
+                position: self.position(),
+            });
+        };
+
+        if token.kind != TokenKind::Identifier(Identifier::Null) {
+            return self.error(AstNodeError::UnexpectedIdentifier {
+                expected: "Null".to_string(),
+                received: token.value.to_string(),
                 span: token.span,
             });
         }
 
-        self.next()
+        self.next();
+        self.node(Node::Null)
     }
 
-    pub(crate) fn number(&self) -> ParserResult<Option<&'arena Node<'arena>>> {
-        let Ok(decimal) = Decimal::from_str_exact(self.current().value) else {
-            return Ok(None);
+    pub(crate) fn simple_string(&self, quote_mark: &QuotationMark) -> &'arena Node<'arena> {
+        if let Some(error_node) = self.expect(TokenKind::QuotationMark(quote_mark.clone())) {
+            return error_node;
+        }
+
+        let string_value = self.current().map(|s| s.value);
+
+        let error_literal = self.expect(TokenKind::Literal);
+        let error_mark_end = self.expect(TokenKind::QuotationMark(quote_mark.clone()));
+
+        error_literal
+            .or(error_mark_end)
+            .or(string_value.map(|s| self.node(Node::String(s))))
+            .unwrap_or_else(|| self.error(AstNodeError::Invalid))
+    }
+
+    pub(crate) fn template_string<F>(&self, expression_parser: F) -> &'arena Node<'arena>
+    where
+        F: Fn() -> &'arena Node<'arena>,
+    {
+        if let Some(error_node) = self.expect(TokenKind::QuotationMark(QuotationMark::Backtick)) {
+            return error_node;
+        }
+
+        let Some(mut current_token) = self.current() else {
+            return self.error(AstNodeError::MissingToken {
+                expected: "Backtick (`)".to_string(),
+                position: self.position(),
+            });
         };
 
-        self.next()?;
-        Ok(Some(self.node(Node::Number(decimal))))
-    }
-
-    pub(crate) fn simple_string(
-        &self,
-        quote_mark: &QuotationMark,
-    ) -> ParserResult<&'arena Node<'arena>> {
-        self.expect(TokenKind::QuotationMark(quote_mark.clone()))?;
-        let string_value = self.current().value;
-
-        self.expect(TokenKind::Literal)?;
-        self.expect(TokenKind::QuotationMark(quote_mark.clone()))?;
-
-        Ok(self.node(Node::String(string_value)))
-    }
-
-    pub(crate) fn template_string<F>(
-        &self,
-        expression_parser: F,
-    ) -> ParserResult<&'arena Node<'arena>>
-    where
-        F: Fn() -> ParserResult<&'arena Node<'arena>>,
-    {
-        self.expect(TokenKind::QuotationMark(QuotationMark::Backtick))?;
-
-        let mut current_token = self.current();
         let mut nodes = BumpVec::new_in(self.bump);
         while TokenKind::QuotationMark(QuotationMark::Backtick) != current_token.kind {
             match current_token.kind {
                 TokenKind::TemplateString(template) => match template {
                     TemplateString::ExpressionStart => {
-                        self.next()?;
-                        nodes.push(expression_parser()?);
+                        self.next();
+                        nodes.push(expression_parser());
                     }
                     TemplateString::ExpressionEnd => {
-                        self.next()?;
+                        self.next();
                     }
                 },
                 TokenKind::Literal => {
                     nodes.push(self.node(Node::String(current_token.value)));
-                    self.next()?;
+                    self.next();
                 }
                 _ => {
-                    return Err(ParserError::UnexpectedToken {
+                    return self.error(AstNodeError::UnexpectedToken {
                         expected: "Valid TemplateString token".to_string(),
                         received: current_token.kind.to_string(),
                         span: current_token.span,
@@ -193,170 +249,173 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 }
             }
 
-            current_token = self.current();
+            if let Some(ct) = self.current() {
+                current_token = ct;
+            } else {
+                break;
+            }
         }
 
-        self.expect(TokenKind::QuotationMark(QuotationMark::Backtick))?;
-
-        Ok(self.node(Node::TemplateString(nodes.into_bump_slice())))
-    }
-
-    pub(crate) fn bool(&self) -> ParserResult<Option<&'arena Node<'arena>>> {
-        let current_token = self.current();
-        let TokenKind::Boolean(boolean) = current_token.kind else {
-            return Ok(None);
+        if let Some(err) = self.expect(TokenKind::QuotationMark(QuotationMark::Backtick)) {
+            return err;
         };
 
-        self.next()?;
-        Ok(Some(self.node(Node::Bool(boolean))))
+        self.node(Node::TemplateString(nodes.into_bump_slice()))
     }
-
-    pub(crate) fn null(&self) -> ParserResult<Option<&'arena Node<'arena>>> {
-        let current_token = self.current();
-        if current_token.kind != TokenKind::Identifier(Identifier::Null) {
-            return Ok(None);
-        }
-
-        self.next()?;
-        Ok(Some(self.node(Node::Null)))
-    }
-
-    pub(crate) fn node(&self, node: Node<'arena>) -> &'arena Node<'arena> {
-        self.bump.alloc(node)
-    }
-
-    // Higher level constructs
 
     pub(crate) fn with_postfix<F>(
         &self,
         node: &'arena Node<'arena>,
         expression_parser: F,
-    ) -> ParserResult<&'arena Node<'arena>>
+    ) -> &'arena Node<'arena>
     where
-        F: Fn() -> ParserResult<&'arena Node<'arena>>,
+        F: Fn() -> &'arena Node<'arena>,
     {
-        let postfix_token = self.current();
+        let Some(postfix_token) = self.current() else {
+            return node;
+        };
+
         let postfix_kind = PostfixKind::from(postfix_token);
 
         let processed_token = match postfix_kind {
-            PostfixKind::Other => return Ok(node),
+            PostfixKind::Other => return node,
             PostfixKind::MemberAccess => {
-                self.next()?;
+                self.next();
                 let property_token = self.current();
-                self.next()?;
+                self.next();
 
-                if !is_valid_property(property_token) {
-                    return Err(ParserError::UnexpectedToken {
-                        expected: "valid property".to_string(),
-                        received: postfix_token.kind.to_string(),
-                        span: postfix_token.span,
-                    });
-                }
+                let property = match property_token {
+                    None => self.error(AstNodeError::Invalid),
+                    Some(t) => match is_valid_property(t) {
+                        true => self.node(Node::String(t.value)),
+                        false => self.error(AstNodeError::InvalidProperty {
+                            property: t.value.to_string(),
+                            span: t.span,
+                        }),
+                    },
+                };
 
-                let property = self.node(Node::String(property_token.value));
-                Ok(self.node(Node::Member { node, property }))
+                self.node(Node::Member { node, property })
             }
             PostfixKind::PropertyAccess => {
-                self.next()?;
+                self.next();
                 let mut from: Option<&'arena Node<'arena>> = None;
                 let mut to: Option<&'arena Node<'arena>> = None;
 
-                let mut c = self.current();
+                let Some(mut c) = self.current() else {
+                    return self.error(AstNodeError::Invalid);
+                };
+
                 if c.kind == TokenKind::Operator(Operator::Slice) {
-                    self.next()?;
-                    c = self.current();
+                    self.next();
+
+                    let Some(cc) = self.current() else {
+                        return self.error(AstNodeError::Invalid);
+                    };
+                    c = cc;
 
                     if c.kind != TokenKind::Bracket(Bracket::RightSquareBracket) {
-                        to = Some(expression_parser()?);
+                        to = Some(expression_parser());
                     }
 
-                    self.expect(TokenKind::Bracket(Bracket::RightSquareBracket))?;
-                    Ok(self.node(Node::Slice { node, to, from }))
+                    self.expect(TokenKind::Bracket(Bracket::RightSquareBracket));
+                    self.node(Node::Slice { node, to, from })
                 } else {
-                    from = Some(expression_parser()?);
-                    c = self.current();
+                    from = Some(expression_parser());
+                    let Some(cc) = self.current() else {
+                        return self.error(AstNodeError::Invalid);
+                    };
+                    c = cc;
 
                     if c.kind == TokenKind::Operator(Operator::Slice) {
-                        self.next()?;
-                        c = self.current();
+                        self.next();
+                        let Some(cc) = self.current() else {
+                            return self.error(AstNodeError::Invalid);
+                        };
+                        c = cc;
 
                         if c.kind != TokenKind::Bracket(Bracket::RightSquareBracket) {
-                            to = Some(expression_parser()?);
+                            to = Some(expression_parser());
                         }
 
-                        self.expect(TokenKind::Bracket(Bracket::RightSquareBracket))?;
-                        Ok(self.node(Node::Slice { node, from, to }))
+                        self.expect(TokenKind::Bracket(Bracket::RightSquareBracket));
+                        self.node(Node::Slice { node, from, to })
                     } else {
                         // Slice operator [:] was not found,
                         // it should be just an index node.
-                        self.expect(TokenKind::Bracket(Bracket::RightSquareBracket))?;
-                        Ok(self.node(Node::Member {
+                        self.expect(TokenKind::Bracket(Bracket::RightSquareBracket));
+                        self.node(Node::Member {
                             node,
-                            property: from.ok_or(ParserError::MemoryFailure)?,
-                        }))
+                            property: from.unwrap_or_else(|| self.error(AstNodeError::Invalid)),
+                        })
                     }
                 }
             }
-        }?;
+        };
 
         self.with_postfix(processed_token, expression_parser)
     }
 
     /// Closure
-    pub(crate) fn closure<F>(&self, expression_parser: F) -> ParserResult<&'arena Node<'arena>>
+    pub(crate) fn closure<F>(&self, expression_parser: F) -> &'arena Node<'arena>
     where
-        F: Fn() -> ParserResult<&'arena Node<'arena>>,
+        F: Fn() -> &'arena Node<'arena>,
     {
         self.depth.set(self.depth.get() + 1);
-        let node = expression_parser()?;
+        let node = expression_parser();
         self.depth.set(self.depth.get() - 1);
 
-        Ok(self.node(Node::Closure(node)))
+        self.node(Node::Closure(node))
     }
 
     /// Identifier expression
     /// Either <Identifier> or <Identifier Expression>
-    pub(crate) fn identifier<F>(
-        &self,
-        expression_parser: F,
-    ) -> ParserResult<Option<&'arena Node<'arena>>>
+    pub(crate) fn identifier<F>(&self, expression_parser: F) -> &'arena Node<'arena>
     where
-        F: Fn() -> ParserResult<&'arena Node<'arena>>,
+        F: Fn() -> &'arena Node<'arena>,
     {
-        match &self.current().kind {
+        let Some(token) = self.current() else {
+            return self.error(AstNodeError::MissingToken {
+                expected: "Identifier".to_string(),
+                position: self.position(),
+            });
+        };
+
+        match token.kind {
             TokenKind::Identifier(_) | TokenKind::Literal => {
                 // ok
             }
-            _ => return Ok(None),
+            _ => return self.error(AstNodeError::Invalid),
         }
 
-        let identifier_token = self.current();
-        self.next()?;
+        let Some(identifier_token) = self.current() else {
+            return self.error(AstNodeError::Invalid);
+        };
+        self.next();
+
         let current_token = self.current();
-        if current_token.kind != TokenKind::Bracket(Bracket::LeftParenthesis) {
+        if current_token.map(|t| t.kind) != Some(TokenKind::Bracket(Bracket::LeftParenthesis)) {
             let identifier_node = match identifier_token.kind {
                 TokenKind::Identifier(Identifier::RootReference) => self.node(Node::Root),
                 _ => self.node(Node::Identifier(identifier_token.value)),
             };
 
-            return self
-                .with_postfix(identifier_node, expression_parser)
-                .map(Some);
+            return self.with_postfix(identifier_node, expression_parser);
         }
 
         // Potentially it might be a built-in expression
-        let builtin = BuiltInFunction::try_from(identifier_token.value).map_err(|_| {
-            ParserError::UnknownBuiltIn {
+        let Ok(builtin) = BuiltInFunction::try_from(identifier_token.value) else {
+            return self.error(AstNodeError::UnknownBuiltIn {
                 name: identifier_token.value.to_string(),
                 span: identifier_token.span,
-            }
-        })?;
+            });
+        };
 
-        self.next()?;
+        self.next();
         let builtin_node = match builtin.arity() {
             Arity::Single => {
-                let arg = expression_parser()?;
-                self.expect(TokenKind::Bracket(Bracket::RightParenthesis))?;
+                let arg = expression_parser();
+                self.expect(TokenKind::Bracket(Bracket::RightParenthesis));
 
                 Node::BuiltIn {
                     kind: builtin,
@@ -364,10 +423,10 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 }
             }
             Arity::Dual => {
-                let arg1 = expression_parser()?;
-                self.expect(TokenKind::Operator(Operator::Comma))?;
-                let arg2 = expression_parser()?;
-                self.expect(TokenKind::Bracket(Bracket::RightParenthesis))?;
+                let arg1 = expression_parser();
+                self.expect(TokenKind::Operator(Operator::Comma));
+                let arg2 = expression_parser();
+                self.expect(TokenKind::Bracket(Bracket::RightParenthesis));
 
                 Node::BuiltIn {
                     kind: builtin,
@@ -375,10 +434,10 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 }
             }
             Arity::Closure => {
-                let arg1 = expression_parser()?;
-                self.expect(TokenKind::Operator(Operator::Comma))?;
-                let arg2 = self.closure(&expression_parser)?;
-                self.expect(TokenKind::Bracket(Bracket::RightParenthesis))?;
+                let arg1 = expression_parser();
+                self.expect(TokenKind::Operator(Operator::Comma));
+                let arg2 = self.closure(&expression_parser);
+                self.expect(TokenKind::Bracket(Bracket::RightParenthesis));
 
                 Node::BuiltIn {
                     kind: builtin,
@@ -388,57 +447,55 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         };
 
         self.with_postfix(self.node(builtin_node), expression_parser)
-            .map(Some)
     }
 
     /// Interval node
-    pub(crate) fn interval<F>(
-        &self,
-        expression_parser: F,
-    ) -> ParserResult<Option<&'arena Node<'arena>>>
+    pub(crate) fn interval<F>(&self, expression_parser: F) -> Option<&'arena Node<'arena>>
     where
-        F: Fn() -> ParserResult<&'arena Node<'arena>>,
+        F: Fn() -> &'arena Node<'arena>,
     {
         // Performance optimisation: skip if expression does not contain an interval for faster evaluation
         if !self.has_range_operator {
-            return Ok(None);
+            return None;
         }
 
-        let TokenKind::Bracket(_) = &self.current().kind else {
-            return Ok(None);
+        let TokenKind::Bracket(_) = &self.current()?.kind else {
+            return None;
         };
 
         let initial_position = self.position();
-        let left_bracket = self.current().value;
+        let left_bracket = self.current()?.value;
 
-        let TokenKind::Bracket(_) = &self.current().kind else {
-            self.set_position(initial_position)?;
-            return Ok(None);
-        };
-        self.next()?;
-
-        let Ok(left) = expression_parser() else {
-            self.set_position(initial_position)?;
-            return Ok(None);
+        let TokenKind::Bracket(_) = &self.current()?.kind else {
+            self.set_position(initial_position);
+            return None;
         };
 
-        if let Err(_) = self.expect(TokenKind::Operator(Operator::Range)) {
-            self.set_position(initial_position)?;
-            return Ok(None);
+        self.next();
+        let left = expression_parser();
+        if left.has_error() {
+            self.set_position(initial_position);
+            return None;
         };
 
-        let Ok(right) = expression_parser() else {
-            self.set_position(initial_position)?;
-            return Ok(None);
+        if let Some(_) = self.expect(TokenKind::Operator(Operator::Range)) {
+            self.set_position(initial_position);
+            return None;
         };
 
-        let right_bracket = self.current().value;
-
-        let TokenKind::Bracket(_) = &self.current().kind else {
-            self.set_position(initial_position)?;
-            return Ok(None);
+        let right = expression_parser();
+        if right.has_error() {
+            self.set_position(initial_position);
+            return None;
         };
-        self.next()?;
+
+        let right_bracket = self.current()?.value;
+        let TokenKind::Bracket(_) = &self.current()?.kind else {
+            self.set_position(initial_position);
+            return None;
+        };
+
+        self.next();
 
         let interval_node = self.node(Node::Interval {
             left_bracket,
@@ -447,131 +504,142 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             right_bracket,
         });
 
-        self.with_postfix(interval_node, expression_parser)
-            .map(Some)
+        Some(self.with_postfix(interval_node, expression_parser))
     }
 
     /// Array nodes
-    pub(crate) fn array<F>(
-        &self,
-        expression_parser: F,
-    ) -> ParserResult<Option<&'arena Node<'arena>>>
+    pub(crate) fn array<F>(&self, expression_parser: F) -> &'arena Node<'arena>
     where
-        F: Fn() -> ParserResult<&'arena Node<'arena>>,
+        F: Fn() -> &'arena Node<'arena>,
     {
-        let current_token = self.current();
+        let Some(current_token) = self.current() else {
+            return self.error(AstNodeError::MissingToken {
+                expected: "Array".to_string(),
+                position: self.position(),
+            });
+        };
+
         if current_token.kind != TokenKind::Bracket(Bracket::LeftSquareBracket) {
-            return Ok(None);
+            return self.error(AstNodeError::UnexpectedToken {
+                expected: TokenKind::Bracket(Bracket::LeftSquareBracket).to_string(),
+                received: current_token.kind.to_string(),
+                span: current_token.span,
+            });
         }
 
-        self.next()?;
+        self.next();
         let mut nodes = BumpVec::new_in(self.bump);
-        while !(self.current().kind == TokenKind::Bracket(Bracket::RightSquareBracket)) {
+        while !(self.current().map(|t| t.kind)
+            == Some(TokenKind::Bracket(Bracket::RightSquareBracket)))
+        {
             if !nodes.is_empty() {
-                self.expect(TokenKind::Operator(Operator::Comma))?;
-                if self.current().kind == TokenKind::Bracket(Bracket::RightSquareBracket) {
+                self.expect(TokenKind::Operator(Operator::Comma));
+                if self.current().map(|t| t.kind)
+                    == Some(TokenKind::Bracket(Bracket::RightSquareBracket))
+                {
                     break;
                 }
             }
 
-            nodes.push(expression_parser()?);
+            nodes.push(expression_parser());
         }
 
-        self.expect(TokenKind::Bracket(Bracket::RightSquareBracket))?;
+        self.expect(TokenKind::Bracket(Bracket::RightSquareBracket));
         let node = Node::Array(nodes.into_bump_slice());
 
         self.with_postfix(self.node(node), expression_parser)
-            .map(Some)
     }
 
-    pub(crate) fn object<F>(&self, expression_parser: F) -> ParserResult<&'arena Node<'arena>>
+    pub(crate) fn object<F>(&self, expression_parser: F) -> &'arena Node<'arena>
     where
-        F: Fn() -> ParserResult<&'arena Node<'arena>>,
+        F: Fn() -> &'arena Node<'arena>,
     {
-        self.expect(TokenKind::Bracket(Bracket::LeftCurlyBracket))?;
+        if let Some(err_node) = self.expect(TokenKind::Bracket(Bracket::LeftCurlyBracket)) {
+            return err_node;
+        };
 
         let mut key_value_pairs = BumpVec::new_in(self.bump);
-        if let TokenKind::Bracket(Bracket::RightCurlyBracket) = self.current().kind {
-            self.next()?;
-            return Ok(self.node(Node::Object(key_value_pairs.into_bump_slice())));
+        if let Some(TokenKind::Bracket(Bracket::RightCurlyBracket)) = self.current().map(|t| t.kind)
+        {
+            self.next();
+            return self.node(Node::Object(key_value_pairs.into_bump_slice()));
         }
 
         loop {
-            let key = self.object_key(&expression_parser)?;
-            self.expect(TokenKind::Operator(Operator::Slice))?;
-            let value = expression_parser()?;
+            let key = self.object_key(&expression_parser);
+            self.expect(TokenKind::Operator(Operator::Slice));
+            let value = expression_parser();
 
             key_value_pairs.push((key, value));
 
-            let current_token = self.current();
+            let Some(current_token) = self.current() else {
+                break;
+            };
+
             match current_token.kind {
                 TokenKind::Operator(Operator::Comma) => {
-                    self.expect(TokenKind::Operator(Operator::Comma))?;
+                    self.expect(TokenKind::Operator(Operator::Comma));
                 }
                 TokenKind::Bracket(Bracket::RightCurlyBracket) => break,
-                _ => {
-                    return Err(ParserError::UnexpectedToken {
-                        expected: "RightCurlyBracket or Comma".to_string(),
-                        received: current_token.kind.to_string(),
-                        span: current_token.span,
-                    })
-                }
+                _ => return self.error(AstNodeError::Invalid),
             }
         }
 
-        self.expect(TokenKind::Bracket(Bracket::RightCurlyBracket))?;
-        Ok(self.node(Node::Object(key_value_pairs.into_bump_slice())))
+        self.expect(TokenKind::Bracket(Bracket::RightCurlyBracket));
+        self.node(Node::Object(key_value_pairs.into_bump_slice()))
     }
 
-    pub(crate) fn object_key<F>(&self, expression_parser: F) -> ParserResult<&'arena Node<'arena>>
+    pub(crate) fn object_key<F>(&self, expression_parser: F) -> &'arena Node<'arena>
     where
-        F: Fn() -> ParserResult<&'arena Node<'arena>>,
+        F: Fn() -> &'arena Node<'arena>,
     {
-        let key_token = self.current();
+        let Some(key_token) = self.current() else {
+            return self.error(AstNodeError::Invalid);
+        };
 
         let key = match key_token.kind {
             TokenKind::Identifier(identifier) => {
-                self.next()?;
+                self.next();
                 self.node(Node::String(identifier.into()))
             }
             TokenKind::Boolean(boolean) => match boolean {
                 true => {
-                    self.next()?;
+                    self.next();
                     self.node(Node::String("true"))
                 }
                 false => {
-                    self.next()?;
+                    self.next();
                     self.node(Node::String("false"))
                 }
             },
             TokenKind::Number => {
-                self.next()?;
+                self.next();
                 self.node(Node::String(key_token.value))
             }
             TokenKind::Literal => {
-                self.next()?;
+                self.next();
                 self.node(Node::String(key_token.value))
             }
             TokenKind::Bracket(bracket) => match bracket {
                 Bracket::LeftSquareBracket => {
-                    self.expect(TokenKind::Bracket(Bracket::LeftSquareBracket))?;
-                    let token = expression_parser()?;
-                    self.expect(TokenKind::Bracket(Bracket::RightSquareBracket))?;
+                    self.expect(TokenKind::Bracket(Bracket::LeftSquareBracket));
+                    let token = expression_parser();
+                    self.expect(TokenKind::Bracket(Bracket::RightSquareBracket));
 
                     token
                 }
                 _ => {
-                    return Err(ParserError::FailedToParse {
+                    return self.error(AstNodeError::Custom {
                         message: "Operator is not supported as object key".to_string(),
                         span: key_token.span,
                     })
                 }
             },
             TokenKind::QuotationMark(qm) => match qm {
-                QuotationMark::SingleQuote => self.simple_string(&QuotationMark::SingleQuote)?,
-                QuotationMark::DoubleQuote => self.simple_string(&QuotationMark::DoubleQuote)?,
+                QuotationMark::SingleQuote => self.simple_string(&QuotationMark::SingleQuote),
+                QuotationMark::DoubleQuote => self.simple_string(&QuotationMark::DoubleQuote),
                 QuotationMark::Backtick => {
-                    return Err(ParserError::FailedToParse {
+                    return self.error(AstNodeError::Custom {
                         message: "TemplateString expression not supported as object key"
                             .to_string(),
                         span: key_token.span,
@@ -579,20 +647,20 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 }
             },
             TokenKind::TemplateString(_) => {
-                return Err(ParserError::FailedToParse {
+                return self.error(AstNodeError::Custom {
                     message: "TemplateString expression not supported as object key".to_string(),
                     span: key_token.span,
                 })
             }
             TokenKind::Operator(_) => {
-                return Err(ParserError::FailedToParse {
+                return self.error(AstNodeError::Custom {
                     message: "Operator is not supported as object key".to_string(),
                     span: key_token.span,
                 })
             }
         };
 
-        Ok(key)
+        key
     }
 
     /// Conditional
@@ -601,20 +669,22 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         &self,
         condition: &'arena Node<'arena>,
         expression_parser: F,
-    ) -> ParserResult<Option<&'arena Node<'arena>>>
+    ) -> Option<&'arena Node<'arena>>
     where
-        F: Fn() -> ParserResult<&'arena Node<'arena>>,
+        F: Fn() -> &'arena Node<'arena>,
     {
-        let current_token = self.current();
+        let Some(current_token) = self.current() else {
+            return None;
+        };
         if current_token.kind != TokenKind::Operator(Operator::QuestionMark) {
-            return Ok(None);
+            return None;
         }
 
-        self.next()?;
+        self.next();
 
-        let on_true = expression_parser()?;
-        self.expect(TokenKind::Operator(Operator::Slice))?;
-        let on_false = expression_parser()?;
+        let on_true = expression_parser();
+        self.expect(TokenKind::Operator(Operator::Slice));
+        let on_false = expression_parser();
 
         let conditional_node = Node::Conditional {
             condition,
@@ -622,44 +692,26 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             on_false,
         };
 
-        Ok(Some(self.node(conditional_node)))
+        Some(self.node(conditional_node))
     }
 
     /// Literal - number, string, array etc.
-    pub(crate) fn literal<F>(&self, expression_parser: F) -> ParserResult<&'arena Node<'arena>>
+    pub(crate) fn literal<F>(&self, expression_parser: F) -> &'arena Node<'arena>
     where
-        F: Fn() -> ParserResult<&'arena Node<'arena>>,
+        F: Fn() -> &'arena Node<'arena>,
     {
-        let current_token = self.current();
+        let Some(current_token) = self.current() else {
+            return self.error(AstNodeError::Invalid);
+        };
+
         match &current_token.kind {
             TokenKind::Identifier(identifier) => match identifier {
-                Identifier::Null => self.null()?.ok_or_else(|| ParserError::FailedToParse {
-                    message: "Failed to parse null identifier".to_string(),
-                    span: current_token.span,
-                }),
-                _ => {
-                    self.identifier(&expression_parser)?
-                        .ok_or_else(|| ParserError::FailedToParse {
-                            message: "Failed to parse identifier".to_string(),
-                            span: current_token.span,
-                        })
-                }
+                Identifier::Null => self.null(),
+                _ => self.identifier(&expression_parser),
             },
-            TokenKind::Literal => {
-                self.identifier(&expression_parser)?
-                    .ok_or_else(|| ParserError::FailedToParse {
-                        message: "Failed to parse literal".to_string(),
-                        span: current_token.span,
-                    })
-            }
-            TokenKind::Boolean(_) => self.bool()?.ok_or_else(|| ParserError::FailedToParse {
-                message: "Failed to parse boolean".to_string(),
-                span: current_token.span,
-            }),
-            TokenKind::Number => self.number()?.ok_or_else(|| ParserError::FailedToParse {
-                message: "Failed to parse number".to_string(),
-                span: current_token.span,
-            }),
+            TokenKind::Literal => self.identifier(&expression_parser),
+            TokenKind::Boolean(_) => self.bool(),
+            TokenKind::Number => self.number(),
             TokenKind::QuotationMark(quote_mark) => match quote_mark {
                 QuotationMark::SingleQuote | QuotationMark::DoubleQuote => {
                     self.simple_string(quote_mark)
@@ -669,33 +721,23 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             TokenKind::Bracket(bracket) => match bracket {
                 Bracket::LeftParenthesis
                 | Bracket::RightParenthesis
-                | Bracket::RightSquareBracket => {
-                    self.interval(&expression_parser)?
-                        .ok_or_else(|| ParserError::FailedToParse {
-                            message: "Failed to parse interval".to_string(),
-                            span: current_token.span,
-                        })
-                }
+                | Bracket::RightSquareBracket => self
+                    .interval(&expression_parser)
+                    .unwrap_or_else(|| self.error(AstNodeError::Invalid)),
                 Bracket::LeftSquareBracket => self
                     .interval(&expression_parser)
-                    .transpose()
-                    .or_else(|| self.array(&expression_parser).transpose())
-                    .transpose()?
-                    .ok_or_else(|| ParserError::FailedToParse {
-                        message: "Invalid bracket".to_string(),
-                        span: current_token.span,
-                    }),
+                    .unwrap_or_else(|| self.array(&expression_parser)),
                 Bracket::LeftCurlyBracket => self.object(&expression_parser),
-                Bracket::RightCurlyBracket => Err(ParserError::FailedToParse {
+                Bracket::RightCurlyBracket => self.error(AstNodeError::Custom {
                     message: "Unexpected RightCurlyBracket token".to_string(),
                     span: current_token.span,
                 }),
             },
-            TokenKind::Operator(_) => Err(ParserError::FailedToParse {
+            TokenKind::Operator(_) => self.error(AstNodeError::Custom {
                 message: "Unexpected Operator token".to_string(),
                 span: current_token.span,
             }),
-            TokenKind::TemplateString(_) => Err(ParserError::FailedToParse {
+            TokenKind::TemplateString(_) => self.error(AstNodeError::Custom {
                 message: "Unexpected TemplateString token".to_string(),
                 span: current_token.span,
             }),

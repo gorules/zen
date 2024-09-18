@@ -780,11 +780,12 @@ fn test_standard_csv() {
             isolate.set_environment(&input);
         }
 
-        let result = isolate
+        let maybe_result = isolate
             .run_standard(expression)
-            .context(format!("Expression: {expression}"))
-            .unwrap();
+            .context(format!("Expression: {expression}"));
+        assert!(maybe_result.is_ok(), "{}", maybe_result.unwrap_err());
 
+        let result = maybe_result.unwrap();
         assert_eq!(
             result, output,
             "Expression {expression}. Expected: {output}, got: {result}"

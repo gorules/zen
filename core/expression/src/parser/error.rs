@@ -1,4 +1,5 @@
 use thiserror::Error;
+use crate::parser::ast::AstNodeError;
 
 #[derive(Debug, PartialEq, Eq, Clone, Error)]
 pub enum ParserError {
@@ -14,10 +15,7 @@ pub enum ParserError {
 
     #[error("Unknown built in: {name} at ({}, {})", span.0, span.1)]
     UnknownBuiltIn { name: String, span: (u32, u32) },
-
-    #[error("Unsupported built in: {name} at ({}, {})", span.0, span.1)]
-    UnsupportedBuiltIn { name: String, span: (u32, u32) },
-
+    
     #[error("Token out of bounds")]
     TokenOutOfBounds,
 
@@ -26,3 +24,4 @@ pub enum ParserError {
 }
 
 pub(crate) type ParserResult<T> = Result<T, ParserError>;
+pub(crate) type AstResult<T> = Result<T, AstNodeError>;

@@ -1,6 +1,7 @@
 use crate::lexer::Operator;
 use crate::parser::builtin::BuiltInFunction;
 use rust_decimal::Decimal;
+use std::cell::Cell;
 use thiserror::Error;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -55,9 +56,11 @@ pub enum Node<'a> {
 impl<'a> Node<'a> {
     pub fn walk<F>(&self, mut func: F)
     where
-        F: FnMut(&Self),
+        F: FnMut(&Self) + Clone,
     {
-        func(self);
+        {
+            func(self);
+        };
 
         match self {
             Node::Error(_) => {}
@@ -68,51 +71,51 @@ impl<'a> Node<'a> {
             Node::Pointer => {}
             Node::Identifier(_) => {}
             Node::Root => {}
-            Node::TemplateString(parts) => parts.iter().for_each(|n| func(n)),
-            Node::Array(parts) => parts.iter().for_each(|n| func(n)),
+            Node::TemplateString(parts) => parts.iter().for_each(|n| n.walk(func.clone())),
+            Node::Array(parts) => parts.iter().for_each(|n| n.walk(func.clone())),
             Node::Object(obj) => obj.iter().for_each(|(k, v)| {
-                func(k);
-                func(v);
+                k.walk(func.clone());
+                v.walk(func.clone());
             }),
-            Node::Closure(closure) => func(closure),
+            Node::Closure(closure) => closure.walk(func.clone()),
             Node::Member { node, property } => {
-                func(node);
-                func(property);
+                node.walk(func.clone());
+                property.walk(func.clone());
             }
             Node::Slice { node, to, from } => {
-                func(node);
+                node.walk(func.clone());
                 if let Some(to) = to {
-                    func(to);
+                    to.walk(func.clone());
                 }
 
                 if let Some(from) = from {
-                    func(from);
+                    from.walk(func.clone());
                 }
             }
-            Node::Interval { right, left, .. } => {
-                func(right);
-                func(left);
+            Node::Interval { left, right, .. } => {
+                left.walk(func.clone());
+                right.walk(func.clone());
+            }
+            Node::Unary { node, .. } => {
+                node.walk(func);
+            }
+            Node::Binary { left, right, .. } => {
+                left.walk(func.clone());
+                right.walk(func.clone());
+            }
+            Node::BuiltIn { arguments, .. } => {
+                arguments.iter().for_each(|n| n.walk(func.clone()));
             }
             Node::Conditional {
                 on_true,
                 condition,
                 on_false,
             } => {
-                func(condition);
-                func(on_true);
-                func(on_false);
+                condition.walk(func.clone());
+                on_true.walk(func.clone());
+                on_false.walk(func.clone());
             }
-            Node::Unary { node, .. } => {
-                func(node);
-            }
-            Node::Binary { left, right, .. } => {
-                func(left);
-                func(right);
-            }
-            Node::BuiltIn { arguments, .. } => {
-                arguments.iter().for_each(|n| func(n));
-            }
-        }
+        };
     }
 
     pub fn is_error(&self) -> bool {
@@ -121,16 +124,16 @@ impl<'a> Node<'a> {
             _ => false,
         }
     }
-    
+
     pub fn has_error(&self) -> bool {
-        let mut has_error = false;
+        let has_error = Cell::new(false);
         self.walk(|n| {
             if n.is_error() {
-                has_error = true
+                has_error.set(true);
             }
         });
-        
-        has_error
+
+        has_error.get()
     }
 }
 

@@ -80,6 +80,10 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
     pub(crate) fn current(&self) -> Option<&Token<'arena>> {
         self.current.get()
     }
+    
+    pub(crate) fn current_kind(&self) -> Option<&TokenKind> {
+        self.current.get().map(|token| &token.kind)
+    }
 
     fn position(&self) -> usize {
         self.position.get()

@@ -163,7 +163,7 @@ fn failure_tests() {
         let tokens = lexer.tokenize(test).unwrap();
         let unary_parser = Parser::try_new(tokens, &bump).unwrap().standard();
         let ast = unary_parser.parse();
-        assert!(ast.is_err());
+        assert!(ast.is_err() || ast.unwrap().has_error());
 
         bump.reset();
     }

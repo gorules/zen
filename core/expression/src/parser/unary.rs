@@ -14,7 +14,6 @@ const ROOT_NODE: Node<'static> = Node::Identifier("$");
 impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
     pub fn parse(&self) -> ParserResult<&'arena Node<'arena>> {
         let result = self.root_expression();
-        println!("{:?}", result);
         if !self.is_done() {
             return match self.current() {
                 None => Err(ParserError::TokenOutOfBounds),
@@ -59,22 +58,15 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
 
     fn expression_pair(&self) -> &'arena Node<'arena> {
         let mut left_node = &ROOT_NODE;
-        let Some(initial_token) = self.current() else {
-            return left_node;
-        };
 
-        if let TokenKind::Operator(Operator::Comparison(_)) = &initial_token.kind {
+        if let Some(TokenKind::Operator(Operator::Comparison(_))) = self.current_kind() {
             // Skips
         } else {
             left_node = self.binary_expression(0);
         }
 
-        let Some(current_token) = self.current() else {
-            return left_node;
-        };
-
-        match &current_token.kind {
-            TokenKind::Operator(Operator::Comparison(comparison)) => {
+        match self.current_kind() {
+            Some(TokenKind::Operator(Operator::Comparison(comparison))) => {
                 self.next();
                 let right_node = self.binary_expression(0);
                 left_node = self.node(Node::Binary {

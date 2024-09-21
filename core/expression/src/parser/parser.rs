@@ -1,10 +1,12 @@
-use std::cell::Cell;
-use std::fmt::Debug;
-use std::marker::PhantomData;
-
 use bumpalo::collections::Vec as BumpVec;
 use bumpalo::Bump;
+use nohash_hasher::BuildNoHashHasher;
 use rust_decimal::Decimal;
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
+use std::fmt::Debug;
+use std::marker::PhantomData;
+use std::ops::Deref;
 
 use crate::lexer::{
     Bracket, ComparisonOperator, Identifier, Operator, QuotationMark, TemplateString, Token,
@@ -15,6 +17,7 @@ use crate::parser::builtin::{Arity, BuiltInFunction};
 use crate::parser::error::ParserError;
 use crate::parser::standard::Standard;
 use crate::parser::unary::Unary;
+use crate::parser::NodeMetadata;
 
 #[derive(Debug)]
 pub struct BaseParser;
@@ -28,6 +31,8 @@ pub struct Parser<'arena, 'token_ref, Flavor> {
     depth: Cell<u8>,
     marker_flavor: PhantomData<Flavor>,
     has_range_operator: bool,
+    pub(crate) node_metadata:
+        Option<RefCell<HashMap<usize, NodeMetadata, BuildNoHashHasher<usize>>>>,
 }
 
 impl<'arena, 'token_ref> Parser<'arena, 'token_ref, BaseParser> {
@@ -47,6 +52,7 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, BaseParser> {
             depth: Cell::new(0),
             position: Cell::new(0),
             has_range_operator,
+            node_metadata: None,
             marker_flavor: PhantomData,
         })
     }
@@ -59,6 +65,7 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, BaseParser> {
             depth: self.depth,
             position: self.position,
             has_range_operator: self.has_range_operator,
+            node_metadata: self.node_metadata,
             marker_flavor: PhantomData,
         }
     }
@@ -71,18 +78,55 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, BaseParser> {
             depth: self.depth,
             position: self.position,
             has_range_operator: self.has_range_operator,
+            node_metadata: self.node_metadata,
             marker_flavor: PhantomData,
         }
     }
 }
 
 impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
+    pub fn with_metadata(mut self) -> Parser<'arena, 'token_ref, Flavor> {
+        self.node_metadata = Some(Default::default());
+        self
+    }
+
+    fn get_metadata(&self, node: &'arena Node<'arena>) -> Option<NodeMetadata> {
+        let Some(node_metadata) = &self.node_metadata else {
+            return None;
+        };
+
+        let nm = node_metadata.borrow();
+        let address = node as *const Node as usize;
+
+        nm.get(&address).cloned()
+    }
     pub(crate) fn current(&self) -> Option<&Token<'arena>> {
         self.current.get()
     }
-    
+
     pub(crate) fn current_kind(&self) -> Option<&TokenKind> {
         self.current.get().map(|token| &token.kind)
+    }
+
+    fn token_start(&self) -> u32 {
+        match self.current() {
+            None => self.tokens.last().map(|t| t.span.1).unwrap_or_default(),
+            Some(t) => t.span.0,
+        }
+    }
+
+    fn token_end(&self) -> u32 {
+        match self.current() {
+            None => self.tokens.last().map(|t| t.span.1).unwrap_or_default(),
+            Some(t) => t.span.1,
+        }
+    }
+
+    fn prev_token_end(&self) -> u32 {
+        match self.tokens.get(self.position() - 1) {
+            None => self.token_start(),
+            Some(t) => t.span.1,
+        }
     }
 
     fn position(&self) -> usize {
@@ -106,12 +150,32 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         self.current.get().is_none()
     }
 
-    pub(crate) fn node(&self, node: Node<'arena>) -> &'arena Node<'arena> {
-        self.bump.alloc(node)
+    pub(crate) fn node<F>(&self, node: Node<'arena>, gen_metadata: F) -> &'arena Node<'arena>
+    where
+        F: FnOnce(MetadataHelper<'_, 'arena>) -> NodeMetadata,
+    {
+        let node = self.bump.alloc(node);
+        if let Some(node_metadata) = &self.node_metadata {
+            let metadata = {
+                let nm = node_metadata.borrow();
+                gen_metadata(MetadataHelper {
+                    node_metadata: nm.deref(),
+                    arena: PhantomData::<&'arena ()>,
+                })
+            };
+
+            let mut nm = node_metadata.borrow_mut();
+            nm.insert(node as *const Node as usize, metadata);
+        };
+
+        node
     }
 
     pub(crate) fn error(&self, error: AstNodeError) -> &'arena Node<'arena> {
-        self.node(Node::Error(error))
+        // TODO
+        self.node(Node::Error(Box::new(error)), |_| NodeMetadata {
+            span: (0, 0),
+        })
     }
 
     pub(crate) fn next(&self) {
@@ -155,7 +219,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         };
 
         self.next();
-        self.node(Node::Number(decimal))
+        self.node(Node::Number(decimal), |_| NodeMetadata { span: token.span })
     }
 
     pub(crate) fn bool(&self) -> &'arena Node<'arena> {
@@ -174,7 +238,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         };
 
         self.next();
-        self.node(Node::Bool(boolean))
+        self.node(Node::Bool(boolean), |_| NodeMetadata { span: token.span })
     }
 
     pub(crate) fn null(&self) -> &'arena Node<'arena> {
@@ -194,7 +258,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         }
 
         self.next();
-        self.node(Node::Null)
+        self.node(Node::Null, |_| NodeMetadata { span: token.span })
     }
 
     pub(crate) fn simple_string(&self, quote_mark: &QuotationMark) -> &'arena Node<'arena> {
@@ -202,14 +266,15 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             return error_node;
         }
 
-        let string_value = self.current().map(|s| s.value);
+        let string_value = self.current();
 
         let error_literal = self.expect(TokenKind::Literal);
         let error_mark_end = self.expect(TokenKind::QuotationMark(quote_mark.clone()));
 
         error_literal
             .or(error_mark_end)
-            .or(string_value.map(|s| self.node(Node::String(s))))
+            .or(string_value
+                .map(|t| self.node(Node::String(t.value), |_| NodeMetadata { span: t.span })))
             .unwrap_or_else(|| self.error(AstNodeError::Invalid))
     }
 
@@ -228,6 +293,8 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             });
         };
 
+        let mut span = (current_token.span.0, 0u32);
+
         let mut nodes = BumpVec::new_in(self.bump);
         while TokenKind::QuotationMark(QuotationMark::Backtick) != current_token.kind {
             match current_token.kind {
@@ -241,7 +308,11 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                     }
                 },
                 TokenKind::Literal => {
-                    nodes.push(self.node(Node::String(current_token.value)));
+                    nodes.push(
+                        self.node(Node::String(current_token.value), |_| NodeMetadata {
+                            span: current_token.span,
+                        }),
+                    );
                     self.next();
                 }
                 _ => {
@@ -255,6 +326,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
 
             if let Some(ct) = self.current() {
                 current_token = ct;
+                span.1 = ct.span.1;
             } else {
                 break;
             }
@@ -264,7 +336,9 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             return err;
         };
 
-        self.node(Node::TemplateString(nodes.into_bump_slice()))
+        self.node(Node::TemplateString(nodes.into_bump_slice()), |_| {
+            NodeMetadata { span }
+        })
     }
 
     pub(crate) fn with_postfix<F>(
@@ -279,6 +353,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             return node;
         };
 
+        let start_token = postfix_token;
         let postfix_kind = PostfixKind::from(postfix_token);
 
         let processed_token = match postfix_kind {
@@ -291,7 +366,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 let property = match property_token {
                     None => self.error(AstNodeError::Invalid),
                     Some(t) => match is_valid_property(t) {
-                        true => self.node(Node::String(t.value)),
+                        true => self.node(Node::String(t.value), |_| NodeMetadata { span: t.span }),
                         false => self.error(AstNodeError::InvalidProperty {
                             property: t.value.to_string(),
                             span: t.span,
@@ -299,7 +374,9 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                     },
                 };
 
-                self.node(Node::Member { node, property })
+                self.node(Node::Member { node, property }, |h| NodeMetadata {
+                    span: h.span(node, property).unwrap_or_default(),
+                })
             }
             PostfixKind::PropertyAccess => {
                 self.next();
@@ -323,7 +400,12 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                     }
 
                     self.expect(TokenKind::Bracket(Bracket::RightSquareBracket));
-                    self.node(Node::Slice { node, to, from })
+                    self.node(Node::Slice { node, to, from }, |h| NodeMetadata {
+                        span: (
+                            h.metadata(node).map(|m| m.span.0).unwrap_or_default(),
+                            self.prev_token_end(),
+                        ),
+                    })
                 } else {
                     from = Some(expression_parser());
                     let Some(cc) = self.current() else {
@@ -343,15 +425,22 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                         }
 
                         self.expect(TokenKind::Bracket(Bracket::RightSquareBracket));
-                        self.node(Node::Slice { node, from, to })
+                        self.node(Node::Slice { node, from, to }, |_| NodeMetadata {
+                            span: (start_token.span.0, self.prev_token_end()),
+                        })
                     } else {
                         // Slice operator [:] was not found,
                         // it should be just an index node.
                         self.expect(TokenKind::Bracket(Bracket::RightSquareBracket));
-                        self.node(Node::Member {
-                            node,
-                            property: from.unwrap_or_else(|| self.error(AstNodeError::Invalid)),
-                        })
+                        self.node(
+                            Node::Member {
+                                node,
+                                property: from.unwrap_or_else(|| self.error(AstNodeError::Invalid)),
+                            },
+                            |_| NodeMetadata {
+                                span: (start_token.span.0, self.prev_token_end()),
+                            },
+                        )
                     }
                 }
             }
@@ -369,7 +458,9 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         let node = expression_parser();
         self.depth.set(self.depth.get() - 1);
 
-        self.node(Node::Closure(node))
+        self.node(Node::Closure(node), |_| {
+            NodeMetadata { span: (0, 0) }
+        })
     }
 
     /// Identifier expression
@@ -389,7 +480,11 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             TokenKind::Identifier(_) | TokenKind::Literal => {
                 // ok
             }
-            _ => return self.error(AstNodeError::Invalid),
+            _ => {
+                return self.node(Node::Error(Box::new(AstNodeError::Invalid)), |_| {
+                    NodeMetadata { span: token.span }
+                })
+            }
         }
 
         let Some(identifier_token) = self.current() else {
@@ -400,8 +495,14 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         let current_token = self.current();
         if current_token.map(|t| t.kind) != Some(TokenKind::Bracket(Bracket::LeftParenthesis)) {
             let identifier_node = match identifier_token.kind {
-                TokenKind::Identifier(Identifier::RootReference) => self.node(Node::Root),
-                _ => self.node(Node::Identifier(identifier_token.value)),
+                TokenKind::Identifier(Identifier::RootReference) => {
+                    self.node(Node::Root, |_| NodeMetadata {
+                        span: identifier_token.span,
+                    })
+                }
+                _ => self.node(Node::Identifier(identifier_token.value), |_| NodeMetadata {
+                    span: identifier_token.span,
+                }),
             };
 
             return self.with_postfix(identifier_node, expression_parser);
@@ -450,7 +551,12 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             }
         };
 
-        self.with_postfix(self.node(builtin_node), expression_parser)
+        self.with_postfix(
+            self.node(builtin_node, |_| NodeMetadata {
+                span: (identifier_token.span.0, self.position() as u32),
+            }),
+            expression_parser,
+        )
     }
 
     /// Interval node
@@ -501,12 +607,17 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
 
         self.next();
 
-        let interval_node = self.node(Node::Interval {
-            left_bracket,
-            left,
-            right,
-            right_bracket,
-        });
+        let interval_node = self.node(
+            Node::Interval {
+                left_bracket,
+                left,
+                right,
+                right_bracket,
+            },
+            |_| NodeMetadata {
+                span: (initial_position as u32, self.position() as u32),
+            },
+        );
 
         Some(self.with_postfix(interval_node, expression_parser))
     }
@@ -551,13 +662,19 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         self.expect(TokenKind::Bracket(Bracket::RightSquareBracket));
         let node = Node::Array(nodes.into_bump_slice());
 
-        self.with_postfix(self.node(node), expression_parser)
+        self.with_postfix(
+            self.node(node, |_| NodeMetadata {
+                span: (current_token.span.0, self.prev_token_end()),
+            }),
+            expression_parser,
+        )
     }
 
     pub(crate) fn object<F>(&self, expression_parser: F) -> &'arena Node<'arena>
     where
         F: Fn() -> &'arena Node<'arena>,
     {
+        let span_start = self.token_start();
         if let Some(err_node) = self.expect(TokenKind::Bracket(Bracket::LeftCurlyBracket)) {
             return err_node;
         };
@@ -566,7 +683,11 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         if let Some(TokenKind::Bracket(Bracket::RightCurlyBracket)) = self.current().map(|t| t.kind)
         {
             self.next();
-            return self.node(Node::Object(key_value_pairs.into_bump_slice()));
+            return self.node(Node::Object(key_value_pairs.into_bump_slice()), |_| {
+                NodeMetadata {
+                    span: (span_start, self.prev_token_end()),
+                }
+            });
         }
 
         loop {
@@ -590,7 +711,11 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         }
 
         self.expect(TokenKind::Bracket(Bracket::RightCurlyBracket));
-        self.node(Node::Object(key_value_pairs.into_bump_slice()))
+        self.node(Node::Object(key_value_pairs.into_bump_slice()), |_| {
+            NodeMetadata {
+                span: (span_start, self.prev_token_end()),
+            }
+        })
     }
 
     pub(crate) fn object_key<F>(&self, expression_parser: F) -> &'arena Node<'arena>
@@ -604,25 +729,35 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         let key = match key_token.kind {
             TokenKind::Identifier(identifier) => {
                 self.next();
-                self.node(Node::String(identifier.into()))
+                self.node(Node::String(identifier.into()), |_| NodeMetadata {
+                    span: key_token.span,
+                })
             }
             TokenKind::Boolean(boolean) => match boolean {
                 true => {
                     self.next();
-                    self.node(Node::String("true"))
+                    self.node(Node::String("true"), |_| NodeMetadata {
+                        span: key_token.span,
+                    })
                 }
                 false => {
                     self.next();
-                    self.node(Node::String("false"))
+                    self.node(Node::String("false"), |_| NodeMetadata {
+                        span: key_token.span,
+                    })
                 }
             },
             TokenKind::Number => {
                 self.next();
-                self.node(Node::String(key_token.value))
+                self.node(Node::String(key_token.value), |_| NodeMetadata {
+                    span: key_token.span,
+                })
             }
             TokenKind::Literal => {
                 self.next();
-                self.node(Node::String(key_token.value))
+                self.node(Node::String(key_token.value), |_| NodeMetadata {
+                    span: key_token.span,
+                })
             }
             TokenKind::Bracket(bracket) => match bracket {
                 Bracket::LeftSquareBracket => {
@@ -696,7 +831,9 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             on_false,
         };
 
-        Some(self.node(conditional_node))
+        Some(self.node(conditional_node, |_| NodeMetadata {
+            span: (current_token.span.0, self.prev_token_end()),
+        }))
     }
 
     /// Literal - number, string, array etc.
@@ -776,5 +913,28 @@ impl From<&Token<'_>> for PostfixKind {
             TokenKind::Operator(Operator::Dot) => Self::MemberAccess,
             _ => Self::Other,
         }
+    }
+}
+
+pub(crate) struct MetadataHelper<'a, 'arena> {
+    node_metadata: &'a HashMap<usize, NodeMetadata, BuildNoHashHasher<usize>>,
+    arena: PhantomData<&'arena ()>,
+}
+
+impl<'a, 'arena> MetadataHelper<'a, 'arena> {
+    pub(crate) fn span(
+        &self,
+        left: &'arena Node<'arena>,
+        right: &'arena Node<'arena>,
+    ) -> Option<(u32, u32)> {
+        Some((self.metadata(left)?.span.0, self.metadata(right)?.span.1))
+    }
+
+    pub(crate) fn metadata(&self, n: &'arena Node<'arena>) -> Option<&NodeMetadata> {
+        self.node_metadata.get(&self.address(n))
+    }
+
+    fn address(&self, n: &'arena Node<'arena>) -> usize {
+        n as *const Node as usize
     }
 }

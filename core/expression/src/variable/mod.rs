@@ -11,11 +11,13 @@ mod conv;
 mod de;
 mod map;
 mod ser;
+mod types;
 
 use crate::vm::helpers::date_time;
 use crate::vm::VMError;
-#[allow(unused_imports)]
+
 pub use conv::ToVariable;
+pub use types::VariableType;
 
 #[derive(Debug, PartialEq, Eq, Display)]
 pub enum Variable<'arena> {
@@ -163,6 +165,7 @@ impl TryFrom<&Variable<'_>> for NaiveDateTime {
     fn try_from(value: &Variable<'_>) -> Result<Self, Self::Error> {
         match value {
             Variable::String(a) => date_time(a),
+            #[allow(deprecated)]
             Variable::Number(a) => NaiveDateTime::from_timestamp_opt(
                 a.to_i64().ok_or_else(|| VMError::OpcodeErr {
                     opcode: "DateManipulation".into(),

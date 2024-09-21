@@ -1,27 +1,22 @@
 use crate::lexer::{Bracket, Identifier, TokenKind};
 use crate::parser::ast::{AstNodeError, Node};
 use crate::parser::constants::{Associativity, BINARY_OPERATORS, UNARY_OPERATORS};
-use crate::parser::error::ParserError;
-use crate::parser::error::ParserResult;
 use crate::parser::parser::Parser;
+use crate::parser::result::ParserResult;
+use crate::parser::NodeMetadata;
 
 #[derive(Debug)]
 pub struct Standard;
 
 impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Standard> {
-    pub fn parse(&self) -> ParserResult<&'arena Node<'arena>> {
-        let result = self.binary_expression(0);
-        if !self.is_done() {
-            return match self.current() {
-                None => Err(ParserError::TokenOutOfBounds),
-                Some(token) => Err(ParserError::FailedToParse {
-                    message: format!("Unterminated token {}", token.kind),
-                    span: token.span,
-                }),
-            };
-        }
+    pub fn parse(&self) -> ParserResult<'arena> {
+        let root = self.binary_expression(0);
 
-        Ok(result)
+        ParserResult {
+            root,
+            is_complete: self.is_done(),
+            metadata: self.node_metadata.clone().map(|t| t.into_inner()),
+        }
     }
 
     fn binary_expression(&self, precedence: u8) -> &'arena Node<'arena> {
@@ -49,11 +44,16 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Standard> {
                 _ => self.binary_expression(op.precedence),
             };
 
-            node_left = self.node(Node::Binary {
-                operator: *operator,
-                left: node_left,
-                right: node_right,
-            });
+            node_left = self.node(
+                Node::Binary {
+                    operator: *operator,
+                    left: node_left,
+                    right: node_right,
+                },
+                |h| NodeMetadata {
+                    span: h.span(node_left, node_right).unwrap_or_default(),
+                },
+            );
 
             let Some(t) = self.current() else {
                 break;
@@ -73,14 +73,14 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Standard> {
     }
 
     fn unary_expression(&self) -> &'arena Node<'arena> {
-        let Some(mut token) = self.current() else {
+        let Some(token) = self.current() else {
             return self.error(AstNodeError::Invalid);
         };
 
         if self.depth() > 0 && token.kind == TokenKind::Identifier(Identifier::CallbackReference) {
             self.next();
 
-            let node = self.node(Node::Pointer);
+            let node = self.node(Node::Pointer, |_| NodeMetadata { span: token.span });
             return self.with_postfix(node, || self.binary_expression(0));
         }
 
@@ -95,10 +95,18 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Standard> {
 
             self.next();
             let expr = self.binary_expression(unary_operator.precedence);
-            let node = self.node(Node::Unary {
-                operator: *operator,
-                node: expr,
-            });
+            let node = self.node(
+                Node::Unary {
+                    operator: *operator,
+                    node: expr,
+                },
+                |h| NodeMetadata {
+                    span: (
+                        token.span.0,
+                        h.metadata(expr).map(|n| n.span.1).unwrap_or_default(),
+                    ),
+                },
+            );
 
             return node;
         }

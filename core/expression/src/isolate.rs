@@ -116,13 +116,14 @@ impl<'a> Isolate<'a> {
             .map_err(|source| IsolateError::ParserError { source })?
             .standard();
 
-        let ast = parser
-            .parse()
+        let parser_result = parser.parse();
+        parser_result
+            .error()
             .map_err(|source| IsolateError::ParserError { source })?;
 
         let bytecode = self
             .compiler
-            .compile(ast)
+            .compile(parser_result.root)
             .map_err(|source| IsolateError::CompilerError { source })?;
 
         let result = self
@@ -150,13 +151,14 @@ impl<'a> Isolate<'a> {
             .map_err(|source| IsolateError::ParserError { source })?
             .unary();
 
-        let ast = parser
-            .parse()
+        let parser_result = parser.parse();
+        parser_result
+            .error()
             .map_err(|source| IsolateError::ParserError { source })?;
 
         let bytecode = self
             .compiler
-            .compile(ast)
+            .compile(parser_result.root)
             .map_err(|source| IsolateError::CompilerError { source })?;
 
         let result = self

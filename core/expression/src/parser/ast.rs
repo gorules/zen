@@ -50,7 +50,7 @@ pub enum Node<'a> {
         kind: BuiltInFunction,
         arguments: &'a [&'a Node<'a>],
     },
-    Error(AstNodeError),
+    Error(Box<AstNodeError>),
 }
 
 impl<'a> Node<'a> {
@@ -118,22 +118,19 @@ impl<'a> Node<'a> {
         };
     }
 
-    pub fn is_error(&self) -> bool {
-        match self {
-            Node::Error(_) => true,
-            _ => false,
-        }
-    }
-
-    pub fn has_error(&self) -> bool {
-        let has_error = Cell::new(false);
+    pub fn first_error(&self) -> Option<AstNodeError> {
+        let error = Cell::new(None);
         self.walk(|n| {
-            if n.is_error() {
-                has_error.set(true);
+            if let Node::Error(err) = n {
+                error.set(Some(*err.clone()))
             }
         });
 
-        has_error.get()
+        error.into_inner()
+    }
+
+    pub fn has_error(&self) -> bool {
+        self.first_error().is_some()
     }
 }
 

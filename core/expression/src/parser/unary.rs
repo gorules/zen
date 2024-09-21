@@ -2,9 +2,9 @@ use crate::lexer::{Bracket, ComparisonOperator, Identifier, LogicalOperator, Ope
 use crate::parser::ast::{AstNodeError, Node};
 use crate::parser::builtin::BuiltInFunction;
 use crate::parser::constants::{Associativity, BINARY_OPERATORS, UNARY_OPERATORS};
-use crate::parser::error::{ParserError, ParserResult};
 use crate::parser::parser::Parser;
 use crate::parser::unary::UnaryNodeBehaviour::CompareWithReference;
+use crate::parser::{NodeMetadata, ParserResult};
 
 #[derive(Debug)]
 pub struct Unary;
@@ -12,19 +12,14 @@ pub struct Unary;
 const ROOT_NODE: Node<'static> = Node::Identifier("$");
 
 impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
-    pub fn parse(&self) -> ParserResult<&'arena Node<'arena>> {
-        let result = self.root_expression();
-        if !self.is_done() {
-            return match self.current() {
-                None => Err(ParserError::TokenOutOfBounds),
-                Some(token) => Err(ParserError::FailedToParse {
-                    message: format!("Unterminated token {}", token.kind),
-                    span: token.span,
-                }),
-            };
-        }
+    pub fn parse(&self) -> ParserResult<'arena> {
+        let root = self.root_expression();
 
-        Ok(result)
+        ParserResult {
+            root,
+            is_complete: self.is_done(),
+            metadata: None,
+        }
     }
 
     fn root_expression(&self) -> &'arena Node<'arena> {
@@ -46,11 +41,16 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
 
             self.next();
             let right_node = self.expression_pair();
-            left_node = self.node(Node::Binary {
-                left: left_node,
-                operator: join_operator,
-                right: right_node,
-            });
+            left_node = self.node(
+                Node::Binary {
+                    left: left_node,
+                    operator: join_operator,
+                    right: right_node,
+                },
+                |h| NodeMetadata {
+                    span: h.span(left_node, right_node).unwrap_or_default(),
+                },
+            );
         }
 
         left_node
@@ -69,27 +69,38 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
             Some(TokenKind::Operator(Operator::Comparison(comparison))) => {
                 self.next();
                 let right_node = self.binary_expression(0);
-                left_node = self.node(Node::Binary {
-                    left: left_node,
-                    operator: Operator::Comparison(*comparison),
-                    right: right_node,
-                });
+                left_node = self.node(
+                    Node::Binary {
+                        left: left_node,
+                        operator: Operator::Comparison(*comparison),
+                        right: right_node,
+                    },
+                    |h| NodeMetadata {
+                        span: h.span(left_node, right_node).unwrap_or_default(),
+                    },
+                );
             }
             _ => {
                 let behaviour = UnaryNodeBehaviour::from(left_node);
                 match behaviour {
                     CompareWithReference(comparator) => {
-                        left_node = self.node(Node::Binary {
-                            left: &ROOT_NODE,
-                            operator: Operator::Comparison(comparator),
-                            right: left_node,
-                        })
+                        left_node = self.node(
+                            Node::Binary {
+                                left: &ROOT_NODE,
+                                operator: Operator::Comparison(comparator),
+                                right: left_node,
+                            },
+                            |_| NodeMetadata { span: (0, 0) },
+                        )
                     }
                     UnaryNodeBehaviour::AsBoolean => {
-                        left_node = self.node(Node::BuiltIn {
-                            kind: BuiltInFunction::Bool,
-                            arguments: self.bump.alloc_slice_clone(&[left_node]),
-                        })
+                        left_node = self.node(
+                            Node::BuiltIn {
+                                kind: BuiltInFunction::Bool,
+                                arguments: self.bump.alloc_slice_clone(&[left_node]),
+                            },
+                            |_| NodeMetadata { span: (0, 0) },
+                        )
                     }
                 }
             }
@@ -136,7 +147,7 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
                 operator: *operator,
                 left: node_left,
                 right: node_right,
-            });
+            }, |_| { NodeMetadata { span: (0, 0) } });
 
             let Some(t) = self.current() else {
                 break;
@@ -163,7 +174,7 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
         if self.depth() > 0 && token.kind == TokenKind::Identifier(Identifier::CallbackReference) {
             self.next();
 
-            let node = self.node(Node::Pointer);
+            let node = self.node(Node::Pointer, |_| { NodeMetadata { span: token.span } });
             return self.with_postfix(node, || self.binary_expression(0));
         }
 
@@ -181,7 +192,7 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
             let node = self.node(Node::Unary {
                 operator: *operator,
                 node: expr,
-            });
+            }, |_| { NodeMetadata { span: (0, 0) } });
 
             return node;
         }

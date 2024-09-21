@@ -553,7 +553,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
 
         self.with_postfix(
             self.node(builtin_node, |_| NodeMetadata {
-                span: (identifier_token.span.0, self.position() as u32),
+                span: (identifier_token.span.0, self.prev_token_end()),
             }),
             expression_parser,
         )

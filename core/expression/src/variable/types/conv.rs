@@ -58,7 +58,7 @@ impl From<Vec<Value>> for VariableType {
                 None => Some(VariableType::from(b)),
             });
 
-        result_type.unwrap_or(VariableType::Any)
+        VariableType::Array(Rc::new(result_type.unwrap_or(VariableType::Any)))
     }
 }
 
@@ -75,7 +75,7 @@ impl From<&Vec<Value>> for VariableType {
                 None => Some(VariableType::from(b)),
             });
 
-        result_type.unwrap_or(VariableType::Any)
+        VariableType::Array(Rc::new(result_type.unwrap_or(VariableType::Any)))
     }
 }
 

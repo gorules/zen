@@ -2,9 +2,10 @@ use crate::lexer::Operator;
 use crate::parser::builtin::BuiltInFunction;
 use rust_decimal::Decimal;
 use std::cell::Cell;
+use strum_macros::IntoStaticStr;
 use thiserror::Error;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, IntoStaticStr)]
 pub enum Node<'a> {
     Null,
     Bool(bool),

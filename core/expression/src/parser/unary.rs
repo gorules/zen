@@ -18,7 +18,7 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
         ParserResult {
             root,
             is_complete: self.is_done(),
-            metadata: None,
+            metadata: self.node_metadata.clone().map(|t| t.into_inner()),
         }
     }
 

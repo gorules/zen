@@ -40,7 +40,7 @@ impl PrettyPrint for Value {
 fn main() -> Result<()> {
     let mut rl = DefaultEditor::new()?;
     rl.set_auto_add_history(true);
-
+    
     loop {
         let readline = rl.readline("> ");
         let Ok(line) = readline else {
@@ -51,10 +51,10 @@ fn main() -> Result<()> {
         isolate.set_environment(
             &json!({ "customer": { "firstName": "John", "lastName": "Doe", "age": 20 }, "hello": true, "$": 10 }),
         );
-        let result = isolate.run_unary(line.as_str());
+        let result = isolate.run_standard(line.as_str());
 
         match result {
-            Ok(res) => println!("{}", res),
+            Ok(res) => println!("{}", res.pretty_print()),
             Err(err) => println!("Error: {}", err.to_string().red()),
         };
     }

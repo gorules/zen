@@ -32,8 +32,8 @@ impl Display for VariableType {
             VariableType::Bool => write!(f, "bool"),
             VariableType::String => write!(f, "string"),
             VariableType::Number => write!(f, "number"),
-            VariableType::Constant(c) => write!(f, "constant({})", c.to_string()),
-            VariableType::Array(_) => write!(f, "array"),
+            VariableType::Constant(c) => write!(f, "{c}"),
+            VariableType::Array(v) => write!(f, "{v}[]"),
             VariableType::Object(_) => write!(f, "object"),
         }
     }

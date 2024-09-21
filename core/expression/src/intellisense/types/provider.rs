@@ -80,18 +80,23 @@ impl TypesProvider {
             Node::Pointer => V(scope.pointer_data.clone()),
             Node::Root => V(scope.root_data.clone()),
 
-            Node::Slice { node, to, from } => {
-                if let Some(t) = to {
-                    let to_type = self.determine(t, scope.clone(), false);
-                    if !to_type.satisfies(&VariableType::Number) {
-                        self.set_error(node, format!("Expected a number, found {to_type}"));
-                    }
-                }
-
+            Node::Slice { node, from, to } => {
                 if let Some(f) = from {
                     let from_type = self.determine(f, scope.clone(), false);
                     if !from_type.satisfies(&VariableType::Number) {
-                        self.set_error(node, format!("Expected a number, found {from_type}"));
+                        self.set_error(node, format!("Invalid slice index: expected a `number`, but found `{from_type}`."));
+                    }
+                }
+
+                if let Some(t) = to {
+                    let to_type = self.determine(t, scope.clone(), false);
+                    if !to_type.satisfies(&VariableType::Number) {
+                        self.set_error(
+                            node,
+                            format!(
+                                "Invalid slice index: expected a `number`, but found `{to_type}`."
+                            ),
+                        );
                     }
                 }
 
@@ -104,11 +109,13 @@ impl TypesProvider {
                         Value::String(_) => V(VariableType::String),
                         Value::Array(inner) => match VariableType::from(inner).array_item() {
                             Some(item) => TypeInfo::from(item),
-                            None => Error("Expected an array".to_string()),
+                            None => Error("Array expected".to_string()),
                         },
-                        _ => Error("Operation only allowed on string and arrays".to_string()),
+                        _ => {
+                            Error("Slice operation is only allowed on `string | any[]`".to_string())
+                        }
                     },
-                    _ => Error("Operation only allowed on string and arrays".to_string()),
+                    _ => Error("Slice operation is only allowed on `string | any[]`".to_string()),
                 }
             }
 
@@ -154,7 +161,7 @@ impl TypesProvider {
                         if !property_type.satisfies(&VariableType::Number) {
                             self.set_error(
                                 property,
-                                format!("Expected a number, found {property_type}"),
+                                format!("Expression of type `{property_type}` cannot be used to index `{node_type}`."),
                             );
                         }
 
@@ -164,7 +171,7 @@ impl TypesProvider {
                         if !property_type.satisfies(&VariableType::String) {
                             self.set_error(
                                 property,
-                                format!("Expected a string, found {property_type}"),
+                                format!("Expression of type `{property_type}` cannot be used to index `{node_type}`."),
                             );
                         }
 
@@ -181,7 +188,7 @@ impl TypesProvider {
                             if !property_type.satisfies(&VariableType::Number) {
                                 self.set_error(
                                     property,
-                                    format!("Expected a number, found {property_type}"),
+                                    format!("Expression of type `{property_type}` cannot be used to index `{node_type}`."),
                                 );
                             }
 
@@ -194,7 +201,7 @@ impl TypesProvider {
                             if !property_type.satisfies(&VariableType::String) {
                                 self.set_error(
                                     property,
-                                    format!("Expected a string, found {property_type}"),
+                                    format!("Expression of type `{property_type}` cannot be used to index `{node_type}`."),
                                 );
                             }
 
@@ -207,21 +214,9 @@ impl TypesProvider {
                                     .unwrap_or(VariableType::Any)),
                             }
                         }
-                        Value::String(property_name) => match scope.current_data {
-                            VariableType::Object(obj) => {
-                                let data = obj
-                                    .get(property_name)
-                                    .cloned()
-                                    .unwrap_or(Rc::new(VariableType::Any));
-                                self.set_type(node, data.clone().into());
-
-                                TypeInfo::from(data.get(&property_type))
-                            }
-                            _ => V(VariableType::Any),
-                        },
-                        _ => Error(format!("Unexpected member access on type {c}.")),
+                        _ => Error(format!("Expression of type `{property_type}` cannot be used to index `{node_type}`.")),
                     },
-                    _ => Error(format!("Unexpected member access on type {node_type}.")),
+                    _ => Error(format!("Expression of type `{property_type}` cannot be used to index `{node_type}`.")),
                 }
             }
             Node::Binary {
@@ -240,7 +235,7 @@ impl TypesProvider {
                             (VariableType::Any, _) => V(VariableType::Any),
                             (_, VariableType::Any) => V(VariableType::Any),
                             _ => Error(format!(
-                                "Expected number or string, found {left_type} and {right_type}"
+                                "Operator `{operator}` cannot be applied to types `{left_type}` and `{right_type}`."
                             )),
                         },
                         ArithmeticOperator::Subtract
@@ -252,7 +247,7 @@ impl TypesProvider {
                             (VariableType::Any, _) => V(VariableType::Number),
                             (_, VariableType::Any) => V(VariableType::Number),
                             _ => Error(format!(
-                                "Expected number, found {left_type} and {right_type}"
+                                "Operator `{operator}` cannot be applied to types `{left_type}` and `{right_type}`."
                             )),
                         },
                     },
@@ -263,7 +258,7 @@ impl TypesProvider {
                                 (VariableType::Any, _) => V(VariableType::Bool),
                                 (_, VariableType::Any) => V(VariableType::Bool),
                                 _ => Error(format!(
-                                    "Expected bool, found {left_type} and {right_type}"
+                                    "Operator `{operator}` cannot be applied to types `{left_type}` and `{right_type}`."
                                 )),
                             }
                         }
@@ -280,7 +275,7 @@ impl TypesProvider {
                             (VariableType::Any, _) => V(VariableType::Bool),
                             (_, VariableType::Any) => V(VariableType::Bool),
                             _ => Error(format!(
-                                "Expected a number, found {left_type} and {right_type}"
+                                "Operator `{operator}` cannot be applied to types `{left_type}` and `{right_type}`."
                             )),
                         },
                         ComparisonOperator::In | ComparisonOperator::NotIn => match (left_type.kind.as_ref(), right_type.kind.as_ref()) {
@@ -289,7 +284,7 @@ impl TypesProvider {
                             (VariableType::Any, _) => V(VariableType::Bool),
                             (_, VariableType::Any) => V(VariableType::Bool),
                             _ => Error(format!(
-                                "Expected a number or string for key and object or array as target, found {left_type} and {right_type}"
+                                "Operator `{operator}` cannot be applied to types `{left_type}` and `{right_type}`."
                             ))
                         }
                     },
@@ -303,7 +298,10 @@ impl TypesProvider {
             } => {
                 let condition_type = self.determine(condition, scope.clone(), false);
                 if !condition_type.satisfies(&VariableType::Bool) {
-                    self.set_error(condition, "Expected a bool".to_string());
+                    self.set_error(
+                        condition,
+                        format!("Ternary operator cannot be applied to type `{condition_type}`."),
+                    );
                 }
 
                 let true_type = self.determine(on_true, scope.clone(), false);
@@ -318,7 +316,7 @@ impl TypesProvider {
                     Operator::Arithmetic(arith) => match arith {
                         ArithmeticOperator::Add | ArithmeticOperator::Subtract => {
                             if !node_type.satisfies(&VariableType::Number) {
-                                self.set_error(node, "Expected a number".to_string())
+                                self.set_error(node, format!("Operator `{operator}` cannot be applied to type `{node_type}`."))
                             }
 
                             V(VariableType::Number)
@@ -326,12 +324,12 @@ impl TypesProvider {
                         ArithmeticOperator::Multiply
                         | ArithmeticOperator::Divide
                         | ArithmeticOperator::Modulus
-                        | ArithmeticOperator::Power => Error("Unexpected operator".to_string()),
+                        | ArithmeticOperator::Power => Error("Unsupported operator".to_string()),
                     },
                     Operator::Logical(logical) => match logical {
                         LogicalOperator::Not => {
                             if !node_type.satisfies(&VariableType::Bool) {
-                                self.set_error(node, "Expected a bool".to_string())
+                                self.set_error(node, format!("Operator `{operator}` cannot be applied to type `{node_type}`."))
                             }
 
                             V(VariableType::Bool)
@@ -339,7 +337,7 @@ impl TypesProvider {
                         LogicalOperator::And
                         | LogicalOperator::Or
                         | LogicalOperator::NullishCoalescing => {
-                            Error("Unexpected operator".to_string())
+                            Error("Unsupported operator".to_string())
                         }
                     },
                     Operator::Comparison(_)
@@ -347,18 +345,24 @@ impl TypesProvider {
                     | Operator::Comma
                     | Operator::Slice
                     | Operator::Dot
-                    | Operator::QuestionMark => Error("Unexpected operator".to_string()),
+                    | Operator::QuestionMark => Error("Unsupported operator".to_string()),
                 }
             }
             Node::Interval { left, right, .. } => {
                 let left_type = self.determine(left, scope.clone(), false);
                 if !left_type.satisfies(&VariableType::Number) {
-                    self.set_error(left, "Expected a number".to_string())
+                    self.set_error(
+                        left,
+                        format!("Interval cannot be created from type `{left_type}`."),
+                    )
                 }
 
                 let right_type = self.determine(right, scope.clone(), false);
                 if !right_type.satisfies(&VariableType::Number) {
-                    self.set_error(right, "Expected a number".to_string())
+                    self.set_error(
+                        right,
+                        format!("Interval cannot be created from type `{right_type}`."),
+                    )
                 }
 
                 V(VariableType::Any)
@@ -377,7 +381,10 @@ impl TypesProvider {
                 if type_list.len() != arg_len {
                     self.set_type(
                         node,
-                        Error(format!("Function required {arg_len} arguments")),
+                        Error(format!(
+                            "Expected {arg_len} arguments, but got {}.",
+                            type_list.len()
+                        )),
                     );
                 }
 
@@ -402,7 +409,7 @@ impl TypesProvider {
                             && !type_list[0]
                                 .satisfies(&VariableType::Array(VariableType::Any.into()))
                         {
-                            self.set_error(arguments[0], "String or array expected".to_string())
+                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `string | any[]`.", type_list[0]));
                         }
 
                         V(VariableType::Number)
@@ -416,17 +423,17 @@ impl TypesProvider {
                             }
                             (VariableType::Array(vt), b) => {
                                 if !b.satisfies(&vt) {
-                                    self.set_error(arguments[1], "Invalid item type".to_string())
+                                    self.set_error(arguments[1], format!("Argument of type `{b}` is not assignable to parameter of type `{vt}`."));
                                 }
                             }
-                            _ => self.set_error(node, "Unsupported type".to_string()),
+                            _ => self.set_error(node, "Unsupported call signature.".to_string()),
                         }
 
                         V(VariableType::Bool)
                     }
                     BuiltInFunction::Upper | BuiltInFunction::Lower => {
                         if !type_list[0].satisfies(&VariableType::String) {
-                            self.set_error(arguments[0], "String expected".to_string())
+                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `string`.", type_list[0]));
                         }
 
                         V(VariableType::String)
@@ -435,22 +442,22 @@ impl TypesProvider {
                     | BuiltInFunction::EndsWith
                     | BuiltInFunction::Matches => {
                         if !type_list[0].satisfies(&VariableType::String) {
-                            self.set_error(arguments[0], "String expected".to_string())
+                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `string`.", type_list[0]));
                         }
 
                         if !type_list[1].satisfies(&VariableType::String) {
-                            self.set_error(arguments[1], "String expected".to_string())
+                            self.set_error(arguments[1], format!("Argument of type `{}` is not assignable to parameter of type `string`.", type_list[1]));
                         }
 
                         V(VariableType::Bool)
                     }
                     BuiltInFunction::Extract | BuiltInFunction::Split => {
                         if !type_list[0].satisfies(&VariableType::String) {
-                            self.set_error(arguments[0], "String expected".to_string())
+                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `string`.", type_list[0]));
                         }
 
                         if !type_list[1].satisfies(&VariableType::String) {
-                            self.set_error(arguments[1], "String expected".to_string())
+                            self.set_error(arguments[1], format!("Argument of type `{}` is not assignable to parameter of type `string`.", type_list[1]));
                         }
 
                         V(VariableType::Array(Rc::new(VariableType::String)))
@@ -460,11 +467,11 @@ impl TypesProvider {
                             && !type_list[0]
                                 .satisfies(&VariableType::Array(Rc::new(VariableType::String)))
                         {
-                            self.set_error(arguments[0], "String expected".to_string())
+                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `string | string[]`.", type_list[0]));
                         }
 
                         if !type_list[1].satisfies(&VariableType::String) {
-                            self.set_error(arguments[1], "String expected".to_string())
+                            self.set_error(arguments[1], format!("Argument of type `{}` is not assignable to parameter of type `string`.", type_list[1]));
                         }
 
                         V(VariableType::Bool)
@@ -475,7 +482,7 @@ impl TypesProvider {
                     | BuiltInFunction::Ceil
                     | BuiltInFunction::Round => {
                         if !type_list[0].satisfies(&VariableType::Number) {
-                            self.set_error(arguments[0], "Number expected".to_string())
+                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `number`.", type_list[0]));
                         }
 
                         V(VariableType::Number)
@@ -489,7 +496,7 @@ impl TypesProvider {
                         if !type_list[0]
                             .satisfies(&VariableType::Array(Rc::new(VariableType::Number)))
                         {
-                            self.set_error(arguments[0], "Number[] expected".to_string())
+                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `number[]`.", type_list[0]));
                         }
 
                         V(VariableType::Number)
@@ -503,14 +510,14 @@ impl TypesProvider {
                         if !type_list[0].satisfies(&VariableType::Number)
                             || !type_list[0].satisfies(&VariableType::String)
                         {
-                            self.set_error(arguments[0], "Number or string expected".to_string())
+                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `number | string`.", type_list[0]));
                         }
 
                         V(VariableType::Number)
                     }
                     BuiltInFunction::Time | BuiltInFunction::Duration => {
                         if !type_list[0].satisfies(&VariableType::String) {
-                            self.set_error(arguments[0], "String expected".to_string())
+                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `string`.", type_list[0]));
                         }
 
                         V(VariableType::Number)
@@ -522,7 +529,7 @@ impl TypesProvider {
                     | BuiltInFunction::WeekOfYear
                     | BuiltInFunction::MonthOfYear => {
                         if !type_list[0].satisfies(&VariableType::Number) {
-                            self.set_error(arguments[1], "Number expected".to_string())
+                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `number`.", type_list[0]));
                         }
 
                         V(VariableType::Number)
@@ -531,25 +538,25 @@ impl TypesProvider {
                     | BuiltInFunction::DateString
                     | BuiltInFunction::WeekdayString => {
                         if !type_list[0].satisfies(&VariableType::Number) {
-                            self.set_error(arguments[0], "Number expected".to_string())
+                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `number`.", type_list[0]));
                         }
 
                         V(VariableType::String)
                     }
                     BuiltInFunction::StartOf | BuiltInFunction::EndOf => {
                         if !type_list[0].satisfies(&VariableType::Number) {
-                            self.set_error(arguments[0], "Number expected".to_string())
+                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `number`.", type_list[0]));
                         }
 
                         if !type_list[1].satisfies(&VariableType::String) {
-                            self.set_error(arguments[1], "Unit expected".to_string())
+                            self.set_error(arguments[1], format!("Argument of type `{}` is not assignable to parameter of type `string`.", type_list[1]));
                         }
 
                         V(VariableType::Number)
                     }
                     BuiltInFunction::Keys => {
                         if !type_list[0].satisfies_object() {
-                            self.set_error(arguments[0], "Object expected".to_string())
+                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `object`.", type_list[0]));
                         }
 
                         V(VariableType::Array(Rc::new(VariableType::String)))
@@ -564,84 +571,120 @@ impl TypesProvider {
                                 V(s.into())
                             }
                             _ => {
-                                self.set_error(arguments[0], "Object expected".to_string());
+                                self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `object`.", type_list[0]));
                                 V(VariableType::Array(VariableType::Any.into()))
                             }
                         },
                         _ => {
-                            self.set_error(arguments[0], "Object expected".to_string());
+                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `object`", type_list[0]));
                             V(VariableType::Array(VariableType::Any.into()))
                         }
                     },
                     BuiltInFunction::All => {
                         if !type_list[0].satisfies_array() {
-                            self.set_error(arguments[0], "Array expected".to_string())
+                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `any[]`.", type_list[0]));
                         }
 
                         if !type_list[1].satisfies(&VariableType::Bool) {
-                            self.set_error(arguments[1], "Boolean expected".to_string())
+                            self.set_error(
+                                arguments[1],
+                                format!(
+                                    "Callback must return a `bool`, but its return type is `{}`.",
+                                    type_list[1]
+                                ),
+                            );
                         }
 
                         V(VariableType::Bool)
                     }
                     BuiltInFunction::Some => {
                         if !type_list[0].satisfies_array() {
-                            self.set_error(arguments[0], "Array expected".to_string())
+                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `any[]`.", type_list[0]));
                         }
 
                         if !type_list[1].satisfies(&VariableType::Bool) {
-                            self.set_error(arguments[1], "Boolean expected".to_string())
+                            self.set_error(
+                                arguments[1],
+                                format!(
+                                    "Callback must return a `bool`, but its return type is `{}`.",
+                                    type_list[1]
+                                ),
+                            );
                         }
 
                         V(VariableType::Bool)
                     }
                     BuiltInFunction::None => {
                         if !type_list[0].satisfies_array() {
-                            self.set_error(arguments[0], "Array expected".to_string())
+                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `any[]`.", type_list[0]));
                         }
 
                         if !type_list[1].satisfies(&VariableType::Bool) {
-                            self.set_error(arguments[1], "Boolean expected".to_string())
+                            self.set_error(
+                                arguments[1],
+                                format!(
+                                    "Callback must return a `bool`, but its return type is `{}`.",
+                                    type_list[1]
+                                ),
+                            );
                         }
 
                         V(VariableType::Bool)
                     }
                     BuiltInFunction::Filter => {
                         if !type_list[0].satisfies_array() {
-                            self.set_error(arguments[0], "Array expected".to_string())
+                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `any[]`.", type_list[0]));
                         }
 
                         if !type_list[1].satisfies(&VariableType::Bool) {
-                            self.set_error(arguments[1], "Boolean expected".to_string())
+                            self.set_error(
+                                arguments[1],
+                                format!(
+                                    "Callback must return a `bool`, but its return type is `{}`.",
+                                    type_list[1]
+                                ),
+                            );
                         }
 
                         TypeInfo::from(type_list[0].clone())
                     }
                     BuiltInFunction::Map => {
                         if !type_list[0].satisfies_array() {
-                            self.set_error(arguments[0], "Array expected".to_string())
+                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `any[]`.", type_list[0]));
                         }
 
                         V(VariableType::Array(type_list[1].clone()))
                     }
                     BuiltInFunction::Count => {
                         if !type_list[0].satisfies_array() {
-                            self.set_error(arguments[0], "Array expected".to_string())
+                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `any[]`.", type_list[0]));
                         }
 
                         if !type_list[1].satisfies(&VariableType::Bool) {
-                            self.set_error(arguments[1], "Boolean expected".to_string())
+                            self.set_error(
+                                arguments[1],
+                                format!(
+                                    "Callback must return a `bool`, but its return type is `{}`.",
+                                    type_list[1]
+                                ),
+                            );
                         }
 
                         V(VariableType::Number)
                     }
                     BuiltInFunction::One => {
                         if !type_list[0].satisfies_array() {
-                            self.set_error(arguments[0], "Array expected".to_string())
+                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `any[]`.", type_list[0]));
                         }
 
                         if !type_list[1].satisfies(&VariableType::Bool) {
-                            self.set_error(arguments[1], "Boolean expected".to_string())
+                            self.set_error(
+                                arguments[1],
+                                format!(
+                                    "Callback must return a `bool`, but its return type is `{}`.",
+                                    type_list[1]
+                                ),
+                            );
                         }
 
                         V(VariableType::Bool)

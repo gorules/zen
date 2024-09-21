@@ -173,9 +173,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
 
     pub(crate) fn error(&self, error: AstNodeError) -> &'arena Node<'arena> {
         // TODO
-        self.node(Node::Error(Box::new(error)), |_| NodeMetadata {
-            span: (0, 0),
-        })
+        self.node(Node::Error(error), |_| NodeMetadata { span: (0, 0) })
     }
 
     pub(crate) fn next(&self) {
@@ -483,8 +481,8 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 // ok
             }
             _ => {
-                return self.node(Node::Error(Box::new(AstNodeError::Invalid)), |_| {
-                    NodeMetadata { span: token.span }
+                return self.node(Node::Error(AstNodeError::Invalid), |_| NodeMetadata {
+                    span: token.span,
                 })
             }
         }

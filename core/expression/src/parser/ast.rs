@@ -51,7 +51,7 @@ pub enum Node<'a> {
         kind: BuiltInFunction,
         arguments: &'a [&'a Node<'a>],
     },
-    Error(Box<AstNodeError>),
+    Error(AstNodeError),
 }
 
 impl<'a> Node<'a> {
@@ -123,7 +123,7 @@ impl<'a> Node<'a> {
         let error = Cell::new(None);
         self.walk(|n| {
             if let Node::Error(err) = n {
-                error.set(Some(*err.clone()))
+                error.set(Some(err.clone()))
             }
         });
 

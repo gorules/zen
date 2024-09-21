@@ -40,7 +40,7 @@ impl PrettyPrint for Value {
 fn main() -> Result<()> {
     let mut rl = DefaultEditor::new()?;
     rl.set_auto_add_history(true);
-    
+
     loop {
         let readline = rl.readline("> ");
         let Ok(line) = readline else {

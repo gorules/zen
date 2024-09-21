@@ -143,11 +143,14 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
                 _ => self.binary_expression(op.precedence),
             };
 
-            node_left = self.node(Node::Binary {
-                operator: *operator,
-                left: node_left,
-                right: node_right,
-            }, |_| { NodeMetadata { span: (0, 0) } });
+            node_left = self.node(
+                Node::Binary {
+                    operator: *operator,
+                    left: node_left,
+                    right: node_right,
+                },
+                |_| NodeMetadata { span: (0, 0) },
+            );
 
             let Some(t) = self.current() else {
                 break;
@@ -174,7 +177,7 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
         if self.depth() > 0 && token.kind == TokenKind::Identifier(Identifier::CallbackReference) {
             self.next();
 
-            let node = self.node(Node::Pointer, |_| { NodeMetadata { span: token.span } });
+            let node = self.node(Node::Pointer, |_| NodeMetadata { span: token.span });
             return self.with_postfix(node, || self.binary_expression(0));
         }
 
@@ -189,10 +192,13 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
 
             self.next();
             let expr = self.binary_expression(unary_operator.precedence);
-            let node = self.node(Node::Unary {
-                operator: *operator,
-                node: expr,
-            }, |_| { NodeMetadata { span: (0, 0) } });
+            let node = self.node(
+                Node::Unary {
+                    operator: *operator,
+                    node: expr,
+                },
+                |_| NodeMetadata { span: (0, 0) },
+            );
 
             return node;
         }

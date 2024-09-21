@@ -581,9 +581,9 @@ impl TypesProvider {
                         if !type_list[1].satisfies(&VariableType::Bool) {
                             self.set_error(arguments[1], "Boolean expected".to_string())
                         }
-                        
+
                         V(VariableType::Bool)
-                    },
+                    }
                     BuiltInFunction::Some => {
                         if !type_list[0].satisfies_array() {
                             self.set_error(arguments[0], "Array expected".to_string())
@@ -592,9 +592,9 @@ impl TypesProvider {
                         if !type_list[1].satisfies(&VariableType::Bool) {
                             self.set_error(arguments[1], "Boolean expected".to_string())
                         }
-                        
+
                         V(VariableType::Bool)
-                    },
+                    }
                     BuiltInFunction::None => {
                         if !type_list[0].satisfies_array() {
                             self.set_error(arguments[0], "Array expected".to_string())
@@ -603,9 +603,9 @@ impl TypesProvider {
                         if !type_list[1].satisfies(&VariableType::Bool) {
                             self.set_error(arguments[1], "Boolean expected".to_string())
                         }
-                        
+
                         V(VariableType::Bool)
-                    },
+                    }
                     BuiltInFunction::Filter => {
                         if !type_list[0].satisfies_array() {
                             self.set_error(arguments[0], "Array expected".to_string())
@@ -614,16 +614,16 @@ impl TypesProvider {
                         if !type_list[1].satisfies(&VariableType::Bool) {
                             self.set_error(arguments[1], "Boolean expected".to_string())
                         }
-                        
+
                         TypeInfo::from(type_list[0].clone())
-                    },
+                    }
                     BuiltInFunction::Map => {
                         if !type_list[0].satisfies_array() {
                             self.set_error(arguments[0], "Array expected".to_string())
                         }
-                        
+
                         V(VariableType::Array(type_list[1].clone()))
-                    },
+                    }
                     BuiltInFunction::Count => {
                         if !type_list[0].satisfies_array() {
                             self.set_error(arguments[0], "Array expected".to_string())
@@ -632,9 +632,9 @@ impl TypesProvider {
                         if !type_list[1].satisfies(&VariableType::Bool) {
                             self.set_error(arguments[1], "Boolean expected".to_string())
                         }
-                        
+
                         V(VariableType::Number)
-                    },
+                    }
                     BuiltInFunction::One => {
                         if !type_list[0].satisfies_array() {
                             self.set_error(arguments[0], "Array expected".to_string())
@@ -643,9 +643,9 @@ impl TypesProvider {
                         if !type_list[1].satisfies(&VariableType::Bool) {
                             self.set_error(arguments[1], "Boolean expected".to_string())
                         }
-                        
+
                         V(VariableType::Bool)
-                    },
+                    }
                     BuiltInFunction::FlatMap => V(VariableType::Any),
                     BuiltInFunction::Flatten => V(VariableType::Any),
                 }

@@ -455,13 +455,13 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         F: Fn() -> &'arena Node<'arena>,
     {
         let start = self.token_start();
-        
+
         self.depth.set(self.depth.get() + 1);
         let node = expression_parser();
         self.depth.set(self.depth.get() - 1);
 
-        self.node(Node::Closure(node), |_| {
-            NodeMetadata { span: (start, self.prev_token_end()) }
+        self.node(Node::Closure(node), |_| NodeMetadata {
+            span: (start, self.prev_token_end()),
         })
     }
 

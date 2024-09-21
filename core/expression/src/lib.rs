@@ -54,11 +54,11 @@ mod isolate;
 mod arena;
 pub mod compiler;
 mod function;
+pub mod intellisense;
 pub mod lexer;
 pub mod parser;
 pub mod variable;
 pub mod vm;
-pub mod intellisense;
 
 pub use function::{evaluate_expression, evaluate_unary_expression};
 pub use isolate::{Isolate, IsolateError};

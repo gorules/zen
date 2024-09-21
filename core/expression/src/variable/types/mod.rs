@@ -1,10 +1,10 @@
 mod conv;
 mod util;
 
+use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::rc::Rc;
-use serde::Serialize;
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 pub enum VariableType {

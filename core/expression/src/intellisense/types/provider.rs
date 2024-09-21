@@ -397,57 +397,255 @@ impl TypesProvider {
                 }
 
                 match kind {
-                    BuiltInFunction::Len => V(VariableType::Number),
-                    BuiltInFunction::Contains => V(VariableType::Bool),
-                    BuiltInFunction::Upper | BuiltInFunction::Lower => V(VariableType::String),
-                    BuiltInFunction::StartsWith | BuiltInFunction::EndsWith => {
+                    BuiltInFunction::Len => {
+                        if !type_list[0].satisfies(&VariableType::String)
+                            && !type_list[0]
+                                .satisfies(&VariableType::Array(VariableType::Any.into()))
+                        {
+                            self.set_error(arguments[0], "String or array expected".to_string())
+                        }
+
+                        V(VariableType::Number)
+                    }
+                    BuiltInFunction::Contains => {
+                        match (type_list[0].omit_const(), type_list[1].omit_const()) {
+                            (VariableType::String, VariableType::String)
+                            | (VariableType::Any, _)
+                            | (_, VariableType::Any) => {
+                                // ok
+                            }
+                            (VariableType::Array(vt), b) => {
+                                if !b.satisfies(&vt) {
+                                    self.set_error(arguments[1], "Invalid item type".to_string())
+                                }
+                            }
+                            _ => self.set_error(node, "Unsupported type".to_string()),
+                        }
+
                         V(VariableType::Bool)
                     }
-                    BuiltInFunction::Matches => V(VariableType::Bool),
-                    BuiltInFunction::Extract => {
+                    BuiltInFunction::Upper | BuiltInFunction::Lower => {
+                        if !type_list[0].satisfies(&VariableType::String) {
+                            self.set_error(arguments[0], "String expected".to_string())
+                        }
+
+                        V(VariableType::String)
+                    }
+                    BuiltInFunction::StartsWith
+                    | BuiltInFunction::EndsWith
+                    | BuiltInFunction::Matches => {
+                        if !type_list[0].satisfies(&VariableType::String) {
+                            self.set_error(arguments[0], "String expected".to_string())
+                        }
+
+                        if !type_list[1].satisfies(&VariableType::String) {
+                            self.set_error(arguments[1], "String expected".to_string())
+                        }
+
+                        V(VariableType::Bool)
+                    }
+                    BuiltInFunction::Extract | BuiltInFunction::Split => {
+                        if !type_list[0].satisfies(&VariableType::String) {
+                            self.set_error(arguments[0], "String expected".to_string())
+                        }
+
+                        if !type_list[1].satisfies(&VariableType::String) {
+                            self.set_error(arguments[1], "String expected".to_string())
+                        }
+
                         V(VariableType::Array(Rc::new(VariableType::String)))
                     }
-                    BuiltInFunction::FuzzyMatch => V(VariableType::Bool),
-                    BuiltInFunction::Split => V(VariableType::Array(Rc::new(VariableType::String))),
-                    BuiltInFunction::Abs => V(VariableType::Number),
-                    BuiltInFunction::Sum => V(VariableType::Number),
-                    BuiltInFunction::Avg => V(VariableType::Number),
-                    BuiltInFunction::Min => V(VariableType::Number),
-                    BuiltInFunction::Max => V(VariableType::Number),
-                    BuiltInFunction::Rand => V(VariableType::Number),
-                    BuiltInFunction::Median => V(VariableType::Number),
-                    BuiltInFunction::Mode => V(VariableType::Number),
-                    BuiltInFunction::Floor => V(VariableType::Number),
-                    BuiltInFunction::Ceil => V(VariableType::Number),
-                    BuiltInFunction::Round => V(VariableType::Number),
+                    BuiltInFunction::FuzzyMatch => {
+                        if !type_list[0].satisfies(&VariableType::String)
+                            && !type_list[0]
+                                .satisfies(&VariableType::Array(Rc::new(VariableType::String)))
+                        {
+                            self.set_error(arguments[0], "String expected".to_string())
+                        }
+
+                        if !type_list[1].satisfies(&VariableType::String) {
+                            self.set_error(arguments[1], "String expected".to_string())
+                        }
+
+                        V(VariableType::Bool)
+                    }
+                    BuiltInFunction::Abs
+                    | BuiltInFunction::Rand
+                    | BuiltInFunction::Floor
+                    | BuiltInFunction::Ceil
+                    | BuiltInFunction::Round => {
+                        if !type_list[0].satisfies(&VariableType::Number) {
+                            self.set_error(arguments[0], "Number expected".to_string())
+                        }
+
+                        V(VariableType::Number)
+                    }
+                    BuiltInFunction::Sum
+                    | BuiltInFunction::Avg
+                    | BuiltInFunction::Min
+                    | BuiltInFunction::Max
+                    | BuiltInFunction::Median
+                    | BuiltInFunction::Mode => {
+                        if !type_list[0]
+                            .satisfies(&VariableType::Array(Rc::new(VariableType::Number)))
+                        {
+                            self.set_error(arguments[0], "Number[] expected".to_string())
+                        }
+
+                        V(VariableType::Number)
+                    }
                     BuiltInFunction::IsNumeric => V(VariableType::Bool),
                     BuiltInFunction::String => V(VariableType::String),
                     BuiltInFunction::Number => V(VariableType::Number),
                     BuiltInFunction::Bool => V(VariableType::Bool),
                     BuiltInFunction::Type => V(VariableType::String),
-                    BuiltInFunction::Date => V(VariableType::Number),
-                    BuiltInFunction::Time => V(VariableType::Number),
-                    BuiltInFunction::Duration => V(VariableType::Number),
-                    BuiltInFunction::Year => V(VariableType::Number),
-                    BuiltInFunction::DayOfWeek => V(VariableType::Number),
-                    BuiltInFunction::DayOfMonth => V(VariableType::Number),
-                    BuiltInFunction::DayOfYear => V(VariableType::Number),
-                    BuiltInFunction::WeekOfYear => V(VariableType::Number),
-                    BuiltInFunction::MonthOfYear => V(VariableType::Number),
-                    BuiltInFunction::MonthString => V(VariableType::String),
-                    BuiltInFunction::DateString => V(VariableType::String),
-                    BuiltInFunction::WeekdayString => V(VariableType::String),
-                    BuiltInFunction::StartOf => V(VariableType::Number),
-                    BuiltInFunction::EndOf => V(VariableType::Number),
-                    BuiltInFunction::Keys => V(VariableType::String),
-                    BuiltInFunction::Values => V(VariableType::Array(VariableType::Any.into())),
-                    BuiltInFunction::All => V(VariableType::Bool),
-                    BuiltInFunction::Some => V(VariableType::Bool),
-                    BuiltInFunction::None => V(VariableType::Bool),
-                    BuiltInFunction::Filter => TypeInfo::from(type_list[0].clone()),
-                    BuiltInFunction::Map => V(VariableType::Array(type_list[1].clone())),
-                    BuiltInFunction::Count => V(VariableType::Number),
-                    BuiltInFunction::One => V(VariableType::Bool),
+                    BuiltInFunction::Date => {
+                        if !type_list[0].satisfies(&VariableType::Number)
+                            || !type_list[0].satisfies(&VariableType::String)
+                        {
+                            self.set_error(arguments[0], "Number or string expected".to_string())
+                        }
+
+                        V(VariableType::Number)
+                    }
+                    BuiltInFunction::Time | BuiltInFunction::Duration => {
+                        if !type_list[0].satisfies(&VariableType::String) {
+                            self.set_error(arguments[0], "String expected".to_string())
+                        }
+
+                        V(VariableType::Number)
+                    }
+                    BuiltInFunction::Year
+                    | BuiltInFunction::DayOfWeek
+                    | BuiltInFunction::DayOfMonth
+                    | BuiltInFunction::DayOfYear
+                    | BuiltInFunction::WeekOfYear
+                    | BuiltInFunction::MonthOfYear => {
+                        if !type_list[0].satisfies(&VariableType::Number) {
+                            self.set_error(arguments[1], "Number expected".to_string())
+                        }
+
+                        V(VariableType::Number)
+                    }
+                    BuiltInFunction::MonthString
+                    | BuiltInFunction::DateString
+                    | BuiltInFunction::WeekdayString => {
+                        if !type_list[0].satisfies(&VariableType::Number) {
+                            self.set_error(arguments[0], "Number expected".to_string())
+                        }
+
+                        V(VariableType::String)
+                    }
+                    BuiltInFunction::StartOf | BuiltInFunction::EndOf => {
+                        if !type_list[0].satisfies(&VariableType::Number) {
+                            self.set_error(arguments[0], "Number expected".to_string())
+                        }
+
+                        if !type_list[1].satisfies(&VariableType::String) {
+                            self.set_error(arguments[1], "Unit expected".to_string())
+                        }
+
+                        V(VariableType::Number)
+                    }
+                    BuiltInFunction::Keys => {
+                        if !type_list[0].satisfies_object() {
+                            self.set_error(arguments[0], "Object expected".to_string())
+                        }
+
+                        V(VariableType::Array(Rc::new(VariableType::String)))
+                    }
+                    BuiltInFunction::Values => match type_list[0].as_ref() {
+                        VariableType::Any | VariableType::Object(_) => {
+                            V(VariableType::Array(VariableType::Any.into()))
+                        }
+                        VariableType::Constant(c) => match c.as_ref() {
+                            Value::Object(obj) => {
+                                let s: Vec<Value> = obj.values().cloned().collect();
+                                V(s.into())
+                            }
+                            _ => {
+                                self.set_error(arguments[0], "Object expected".to_string());
+                                V(VariableType::Array(VariableType::Any.into()))
+                            }
+                        },
+                        _ => {
+                            self.set_error(arguments[0], "Object expected".to_string());
+                            V(VariableType::Array(VariableType::Any.into()))
+                        }
+                    },
+                    BuiltInFunction::All => {
+                        if !type_list[0].satisfies_array() {
+                            self.set_error(arguments[0], "Array expected".to_string())
+                        }
+
+                        if !type_list[1].satisfies(&VariableType::Bool) {
+                            self.set_error(arguments[1], "Boolean expected".to_string())
+                        }
+                        
+                        V(VariableType::Bool)
+                    },
+                    BuiltInFunction::Some => {
+                        if !type_list[0].satisfies_array() {
+                            self.set_error(arguments[0], "Array expected".to_string())
+                        }
+
+                        if !type_list[1].satisfies(&VariableType::Bool) {
+                            self.set_error(arguments[1], "Boolean expected".to_string())
+                        }
+                        
+                        V(VariableType::Bool)
+                    },
+                    BuiltInFunction::None => {
+                        if !type_list[0].satisfies_array() {
+                            self.set_error(arguments[0], "Array expected".to_string())
+                        }
+
+                        if !type_list[1].satisfies(&VariableType::Bool) {
+                            self.set_error(arguments[1], "Boolean expected".to_string())
+                        }
+                        
+                        V(VariableType::Bool)
+                    },
+                    BuiltInFunction::Filter => {
+                        if !type_list[0].satisfies_array() {
+                            self.set_error(arguments[0], "Array expected".to_string())
+                        }
+
+                        if !type_list[1].satisfies(&VariableType::Bool) {
+                            self.set_error(arguments[1], "Boolean expected".to_string())
+                        }
+                        
+                        TypeInfo::from(type_list[0].clone())
+                    },
+                    BuiltInFunction::Map => {
+                        if !type_list[0].satisfies_array() {
+                            self.set_error(arguments[0], "Array expected".to_string())
+                        }
+                        
+                        V(VariableType::Array(type_list[1].clone()))
+                    },
+                    BuiltInFunction::Count => {
+                        if !type_list[0].satisfies_array() {
+                            self.set_error(arguments[0], "Array expected".to_string())
+                        }
+
+                        if !type_list[1].satisfies(&VariableType::Bool) {
+                            self.set_error(arguments[1], "Boolean expected".to_string())
+                        }
+                        
+                        V(VariableType::Number)
+                    },
+                    BuiltInFunction::One => {
+                        if !type_list[0].satisfies_array() {
+                            self.set_error(arguments[0], "Array expected".to_string())
+                        }
+
+                        if !type_list[1].satisfies(&VariableType::Bool) {
+                            self.set_error(arguments[1], "Boolean expected".to_string())
+                        }
+                        
+                        V(VariableType::Bool)
+                    },
                     BuiltInFunction::FlatMap => V(VariableType::Any),
                     BuiltInFunction::Flatten => V(VariableType::Any),
                 }

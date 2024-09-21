@@ -22,10 +22,10 @@ impl VariableType {
         }
     }
 
-    pub fn omit_const(self) -> VariableType {
+    pub fn omit_const(&self) -> VariableType {
         match self {
             VariableType::Constant(v) => VariableType::from(v.as_ref()),
-            _ => self,
+            _ => self.clone(),
         }
     }
 
@@ -72,6 +72,28 @@ impl VariableType {
                 self_kind.satisfies(constraint)
             }
             (_, _) => false,
+        }
+    }
+
+    pub fn satisfies_array(&self) -> bool {
+        match self {
+            VariableType::Any |VariableType::Array(_)  => true,
+            VariableType::Constant(c) => match c.as_ref() {
+                Value::Array(_) => true,
+                _ => false
+            }
+            _ => false,
+        }
+    }
+
+    pub fn satisfies_object(&self) -> bool {
+        match self {
+            VariableType::Any |VariableType::Object(_)  => true,
+            VariableType::Constant(c) => match c.as_ref() {
+                Value::Object(_) => true,
+                _ => false
+            }
+            _ => false,
         }
     }
 

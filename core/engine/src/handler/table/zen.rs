@@ -150,17 +150,17 @@ impl<'a> DecisionTableHandler<'a> {
         if let Some(description) = rule.get("_description") {
             expressions.insert("_description".to_string(), description.clone());
         }
-        
+
         for input in &content.inputs {
             let rule_value = rule.get(input.id.as_str())?;
             let Some(input_field) = &input.field else {
                 continue;
             };
-            
+
             if let Some(reference) = self.isolate.get_reference(input_field.as_str()) {
                 reference_map.insert(input_field.clone(), reference);
             }
-            
+
             let input_identifier = format!("{input_field}[{}]", &input.id);
             expressions.insert(input_identifier, rule_value.clone());
         }

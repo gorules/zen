@@ -174,7 +174,7 @@ pub enum AstNodeError {
         span: (u32, u32),
     },
 
-    #[error("Unexpected identifier: {received} at ({}, {}); Expected {expected}.", span.0, span.1)]
+    #[error("Unexpected token: {received} at ({}, {}); Expected {expected}.", span.0, span.1)]
     UnexpectedToken {
         received: String,
         expected: String,

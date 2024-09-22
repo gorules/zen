@@ -63,6 +63,7 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
 
     fn expression_pair(&self) -> &'arena Node<'arena> {
         let mut left_node = &ROOT_NODE;
+        let current_token = self.current();
 
         if let Some(TokenKind::Operator(Operator::Comparison(_))) = self.current_kind() {
             // Skips
@@ -81,7 +82,10 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
                         right: right_node,
                     },
                     |h| NodeMetadata {
-                        span: h.span(left_node, right_node).unwrap_or_default(),
+                        span: (
+                            current_token.map(|t| t.span.0).unwrap_or_default(),
+                            h.metadata(right_node).map(|n| n.span.1).unwrap_or_default(),
+                        ),
                     },
                 );
             }
@@ -95,7 +99,12 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
                                 operator: Operator::Comparison(comparator),
                                 right: left_node,
                             },
-                            |_| NodeMetadata { span: (0, 0) },
+                            |h| NodeMetadata {
+                                span: (
+                                    current_token.map(|t| t.span.0).unwrap_or_default(),
+                                    h.metadata(left_node).map(|n| n.span.1).unwrap_or_default(),
+                                ),
+                            },
                         )
                     }
                     UnaryNodeBehaviour::AsBoolean => {
@@ -104,7 +113,12 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
                                 kind: BuiltInFunction::Bool,
                                 arguments: self.bump.alloc_slice_clone(&[left_node]),
                             },
-                            |_| NodeMetadata { span: (0, 0) },
+                            |h| NodeMetadata {
+                                span: (
+                                    current_token.map(|t| t.span.0).unwrap_or_default(),
+                                    h.metadata(left_node).map(|n| n.span.1).unwrap_or_default(),
+                                ),
+                            },
                         )
                     }
                 }
@@ -154,7 +168,9 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
                     left: node_left,
                     right: node_right,
                 },
-                |_| NodeMetadata { span: (0, 0) },
+                |h| NodeMetadata {
+                    span: h.span(node_left, node_right).unwrap_or_default(),
+                },
             );
 
             let Some(t) = self.current() else {
@@ -202,7 +218,12 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
                     operator: *operator,
                     node: expr,
                 },
-                |_| NodeMetadata { span: (0, 0) },
+                |h| NodeMetadata {
+                    span: (
+                        token.span.0,
+                        h.metadata(expr).map(|n| n.span.1).unwrap_or_default(),
+                    ),
+                },
             );
 
             return node;

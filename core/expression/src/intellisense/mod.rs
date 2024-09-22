@@ -63,7 +63,10 @@ impl<'arena> IntelliSense<'arena> {
             let typ = type_data.get_type(node);
 
             r.push(IntelliSenseToken {
-                span: metadata.get(&addr).map(|s| s.span).unwrap_or_default(),
+                span: node
+                    .span()
+                    .or_else(|| metadata.get(&addr).map(|s| s.span))
+                    .unwrap_or_default(),
                 node_kind: node.into(),
                 error: typ.map(|t| t.error.clone()).flatten(),
                 kind: typ

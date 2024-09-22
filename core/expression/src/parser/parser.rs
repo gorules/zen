@@ -19,6 +19,14 @@ use crate::parser::standard::Standard;
 use crate::parser::unary::Unary;
 use crate::parser::NodeMetadata;
 
+macro_rules! expect {
+    ($self:ident, $token:expr) => {
+        if let Some(error_node) = $self.expect($token) {
+            return error_node;
+        }
+    };
+}
+
 #[derive(Debug)]
 pub struct BaseParser;
 
@@ -90,16 +98,6 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         self
     }
 
-    fn get_metadata(&self, node: &'arena Node<'arena>) -> Option<NodeMetadata> {
-        let Some(node_metadata) = &self.node_metadata else {
-            return None;
-        };
-
-        let nm = node_metadata.borrow();
-        let address = node as *const Node as usize;
-
-        nm.get(&address).cloned()
-    }
     pub(crate) fn current(&self) -> Option<&Token<'arena>> {
         self.current.get()
     }
@@ -115,6 +113,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         }
     }
 
+    #[allow(dead_code)]
     fn token_end(&self) -> u32 {
         match self.current() {
             None => self.tokens.last().map(|t| t.span.1).unwrap_or_default(),
@@ -122,7 +121,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         }
     }
 
-    fn prev_token_end(&self) -> u32 {
+    pub(crate) fn prev_token_end(&self) -> u32 {
         match self.tokens.get(self.position() - 1) {
             None => self.token_start(),
             Some(t) => t.span.1,
@@ -172,8 +171,23 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
     }
 
     pub(crate) fn error(&self, error: AstNodeError) -> &'arena Node<'arena> {
-        // TODO
-        self.node(Node::Error(error), |_| NodeMetadata { span: (0, 0) })
+        self.node(Node::Error { error, node: None }, |_| NodeMetadata {
+            span: (self.prev_token_end(), self.prev_token_end()),
+        })
+    }
+
+    pub(crate) fn error_with_node(
+        &self,
+        error: AstNodeError,
+        node: &'arena Node<'arena>,
+    ) -> &'arena Node<'arena> {
+        self.node(
+            Node::Error {
+                error,
+                node: Some(node),
+            },
+            |_| NodeMetadata { span: (0, 0) },
+        )
     }
 
     pub(crate) fn next(&self) {
@@ -260,10 +274,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
     }
 
     pub(crate) fn simple_string(&self, quote_mark: &QuotationMark) -> &'arena Node<'arena> {
-        if let Some(error_node) = self.expect(TokenKind::QuotationMark(quote_mark.clone())) {
-            return error_node;
-        }
-
+        expect!(self, TokenKind::QuotationMark(quote_mark.clone()));
         let string_value = self.current();
 
         let error_literal = self.expect(TokenKind::Literal);
@@ -273,16 +284,24 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             .or(error_mark_end)
             .or(string_value
                 .map(|t| self.node(Node::String(t.value), |_| NodeMetadata { span: t.span })))
-            .unwrap_or_else(|| self.error(AstNodeError::Invalid))
+            .unwrap_or_else(|| {
+                self.error(AstNodeError::Custom {
+                    message: format!(
+                        "Failed to parse string `{}`",
+                        string_value.map(|s| s.value).unwrap_or_default()
+                    ),
+                    span: string_value
+                        .map(|s| s.span)
+                        .unwrap_or((self.prev_token_end(), self.prev_token_end())),
+                })
+            })
     }
 
     pub(crate) fn template_string<F>(&self, expression_parser: F) -> &'arena Node<'arena>
     where
         F: Fn() -> &'arena Node<'arena>,
     {
-        if let Some(error_node) = self.expect(TokenKind::QuotationMark(QuotationMark::Backtick)) {
-            return error_node;
-        }
+        expect!(self, TokenKind::QuotationMark(QuotationMark::Backtick));
 
         let Some(mut current_token) = self.current() else {
             return self.error(AstNodeError::MissingToken {
@@ -330,10 +349,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             }
         }
 
-        if let Some(err) = self.expect(TokenKind::QuotationMark(QuotationMark::Backtick)) {
-            return err;
-        };
-
+        expect!(self, TokenKind::QuotationMark(QuotationMark::Backtick));
         self.node(Node::TemplateString(nodes.into_bump_slice()), |_| {
             NodeMetadata { span }
         })
@@ -351,7 +367,6 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             return node;
         };
 
-        let start_token = postfix_token;
         let postfix_kind = PostfixKind::from(postfix_token);
 
         let processed_token = match postfix_kind {
@@ -362,13 +377,22 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 self.next();
 
                 let property = match property_token {
-                    None => self.error(AstNodeError::Invalid),
+                    None => self.error_with_node(
+                        AstNodeError::Custom {
+                            message: "Expected a property".to_string(),
+                            span: (self.prev_token_end(), self.prev_token_end()),
+                        },
+                        node,
+                    ),
                     Some(t) => match is_valid_property(t) {
                         true => self.node(Node::String(t.value), |_| NodeMetadata { span: t.span }),
-                        false => self.error(AstNodeError::InvalidProperty {
-                            property: t.value.to_string(),
-                            span: t.span,
-                        }),
+                        false => self.error_with_node(
+                            AstNodeError::InvalidProperty {
+                                property: t.value.to_string(),
+                                span: t.span,
+                            },
+                            node,
+                        ),
                     },
                 };
 
@@ -382,14 +406,26 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 let mut to: Option<&'arena Node<'arena>> = None;
 
                 let Some(mut c) = self.current() else {
-                    return self.error(AstNodeError::Invalid);
+                    return self.error_with_node(
+                        AstNodeError::Custom {
+                            message: "Expected a property".to_string(),
+                            span: (self.prev_token_end(), self.prev_token_end()),
+                        },
+                        node,
+                    );
                 };
 
                 if c.kind == TokenKind::Operator(Operator::Slice) {
                     self.next();
 
                     let Some(cc) = self.current() else {
-                        return self.error(AstNodeError::Invalid);
+                        return self.error_with_node(
+                            AstNodeError::Custom {
+                                message: "Unexpected token".to_string(),
+                                span: (self.prev_token_end(), self.prev_token_end()),
+                            },
+                            node,
+                        );
                     };
                     c = cc;
 
@@ -397,7 +433,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                         to = Some(expression_parser());
                     }
 
-                    self.expect(TokenKind::Bracket(Bracket::RightSquareBracket));
+                    expect!(self, TokenKind::Bracket(Bracket::RightSquareBracket));
                     self.node(Node::Slice { node, to, from }, |h| NodeMetadata {
                         span: (
                             h.metadata(node).map(|m| m.span.0).unwrap_or_default(),
@@ -405,16 +441,39 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                         ),
                     })
                 } else {
-                    from = Some(expression_parser());
+                    let from_node = expression_parser();
+                    from = Some(from_node);
                     let Some(cc) = self.current() else {
-                        return self.error(AstNodeError::Invalid);
+                        return self.error_with_node(
+                            AstNodeError::Custom {
+                                message: "Unexpected token".to_string(),
+                                span: (self.prev_token_end(), self.prev_token_end()),
+                            },
+                            self.node(
+                                Node::Member {
+                                    node,
+                                    property: from_node,
+                                },
+                                |h| NodeMetadata {
+                                    span: h.span(node, from_node).unwrap_or_default(),
+                                },
+                            ),
+                        );
                     };
                     c = cc;
 
                     if c.kind == TokenKind::Operator(Operator::Slice) {
                         self.next();
                         let Some(cc) = self.current() else {
-                            return self.error(AstNodeError::Invalid);
+                            return self.error_with_node(
+                                AstNodeError::Custom {
+                                    message: "Invalid slice syntax".to_string(),
+                                    span: (self.prev_token_end(), self.prev_token_end()),
+                                },
+                                self.node(Node::Slice { node, from, to }, |h| NodeMetadata {
+                                    span: h.span(node, from_node).unwrap_or_default(),
+                                }),
+                            );
                         };
                         c = cc;
 
@@ -422,21 +481,35 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                             to = Some(expression_parser());
                         }
 
-                        self.expect(TokenKind::Bracket(Bracket::RightSquareBracket));
-                        self.node(Node::Slice { node, from, to }, |_| NodeMetadata {
-                            span: (start_token.span.0, self.prev_token_end()),
+                        expect!(self, TokenKind::Bracket(Bracket::RightSquareBracket));
+                        self.node(Node::Slice { node, from, to }, |h| NodeMetadata {
+                            span: (
+                                h.metadata(node).map(|m| m.span.0).unwrap_or_default(),
+                                self.prev_token_end(),
+                            ),
                         })
                     } else {
                         // Slice operator [:] was not found,
                         // it should be just an index node.
-                        self.expect(TokenKind::Bracket(Bracket::RightSquareBracket));
+                        expect!(self, TokenKind::Bracket(Bracket::RightSquareBracket));
                         self.node(
                             Node::Member {
                                 node,
-                                property: from.unwrap_or_else(|| self.error(AstNodeError::Invalid)),
+                                property: from.unwrap_or_else(|| {
+                                    return self.error_with_node(
+                                        AstNodeError::Custom {
+                                            message: "Invalid index property".to_string(),
+                                            span: (self.prev_token_end(), self.prev_token_end()),
+                                        },
+                                        node,
+                                    );
+                                }),
                             },
-                            |_| NodeMetadata {
-                                span: (start_token.span.0, self.prev_token_end()),
+                            |h| NodeMetadata {
+                                span: (
+                                    h.metadata(node).map(|m| m.span.0).unwrap_or_default(),
+                                    self.prev_token_end(),
+                                ),
                             },
                         )
                     }
@@ -481,14 +554,18 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 // ok
             }
             _ => {
-                return self.node(Node::Error(AstNodeError::Invalid), |_| NodeMetadata {
+                return self.error(AstNodeError::Custom {
+                    message: format!("Expected an `identifier`, received `{}`.", token.kind),
                     span: token.span,
-                })
+                });
             }
         }
 
         let Some(identifier_token) = self.current() else {
-            return self.error(AstNodeError::Invalid);
+            return self.error(AstNodeError::Custom {
+                message: "Expected an `identifier`.".to_string(),
+                span: (self.prev_token_end(), self.prev_token_end()),
+            });
         };
         self.next();
 
@@ -540,6 +617,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             }
             Arity::Closure => {
                 let arg1 = expression_parser();
+
                 self.expect(TokenKind::Operator(Operator::Comma));
                 let arg2 = self.closure(&expression_parser);
                 self.expect(TokenKind::Bracket(Bracket::RightParenthesis));
@@ -648,7 +726,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             == Some(TokenKind::Bracket(Bracket::RightSquareBracket)))
         {
             if !nodes.is_empty() {
-                self.expect(TokenKind::Operator(Operator::Comma));
+                expect!(self, TokenKind::Operator(Operator::Comma));
                 if self.current().map(|t| t.kind)
                     == Some(TokenKind::Bracket(Bracket::RightSquareBracket))
                 {
@@ -659,7 +737,8 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             nodes.push(expression_parser());
         }
 
-        self.expect(TokenKind::Bracket(Bracket::RightSquareBracket));
+        expect!(self, TokenKind::Bracket(Bracket::RightSquareBracket));
+
         let node = Node::Array(nodes.into_bump_slice());
 
         self.with_postfix(
@@ -675,9 +754,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         F: Fn() -> &'arena Node<'arena>,
     {
         let span_start = self.token_start();
-        if let Some(err_node) = self.expect(TokenKind::Bracket(Bracket::LeftCurlyBracket)) {
-            return err_node;
-        };
+        expect!(self, TokenKind::Bracket(Bracket::LeftCurlyBracket));
 
         let mut key_value_pairs = BumpVec::new_in(self.bump);
         if let Some(TokenKind::Bracket(Bracket::RightCurlyBracket)) = self.current().map(|t| t.kind)
@@ -692,7 +769,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
 
         loop {
             let key = self.object_key(&expression_parser);
-            self.expect(TokenKind::Operator(Operator::Slice));
+            expect!(self, TokenKind::Operator(Operator::Slice));
             let value = expression_parser();
 
             key_value_pairs.push((key, value));
@@ -703,14 +780,19 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
 
             match current_token.kind {
                 TokenKind::Operator(Operator::Comma) => {
-                    self.expect(TokenKind::Operator(Operator::Comma));
+                    expect!(self, TokenKind::Operator(Operator::Comma));
                 }
                 TokenKind::Bracket(Bracket::RightCurlyBracket) => break,
-                _ => return self.error(AstNodeError::Invalid),
+                _ => {
+                    return self.error(AstNodeError::Custom {
+                        message: "Invalid object syntax".to_string(),
+                        span: current_token.span,
+                    })
+                }
             }
         }
 
-        self.expect(TokenKind::Bracket(Bracket::RightCurlyBracket));
+        expect!(self, TokenKind::Bracket(Bracket::RightCurlyBracket));
         self.node(Node::Object(key_value_pairs.into_bump_slice()), |_| {
             NodeMetadata {
                 span: (span_start, self.prev_token_end()),
@@ -723,7 +805,10 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         F: Fn() -> &'arena Node<'arena>,
     {
         let Some(key_token) = self.current() else {
-            return self.error(AstNodeError::Invalid);
+            return self.error(AstNodeError::Custom {
+                message: "Expected an object key".to_string(),
+                span: (self.prev_token_end(), self.prev_token_end()),
+            });
         };
 
         let key = match key_token.kind {
@@ -761,9 +846,9 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             }
             TokenKind::Bracket(bracket) => match bracket {
                 Bracket::LeftSquareBracket => {
-                    self.expect(TokenKind::Bracket(Bracket::LeftSquareBracket));
+                    expect!(self, TokenKind::Bracket(Bracket::LeftSquareBracket));
                     let token = expression_parser();
-                    self.expect(TokenKind::Bracket(Bracket::RightSquareBracket));
+                    expect!(self, TokenKind::Bracket(Bracket::RightSquareBracket));
 
                     token
                 }
@@ -822,7 +907,10 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         self.next();
 
         let on_true = expression_parser();
-        self.expect(TokenKind::Operator(Operator::Slice));
+        if let Some(error_node) = self.expect(TokenKind::Operator(Operator::Slice)) {
+            return Some(error_node);
+        }
+
         let on_false = expression_parser();
 
         let conditional_node = Node::Conditional {
@@ -842,7 +930,10 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         F: Fn() -> &'arena Node<'arena>,
     {
         let Some(current_token) = self.current() else {
-            return self.error(AstNodeError::Invalid);
+            return self.error(AstNodeError::Custom {
+                message: "Expected a literal".to_string(),
+                span: (self.prev_token_end(), self.prev_token_end()),
+            });
         };
 
         match &current_token.kind {
@@ -862,9 +953,14 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             TokenKind::Bracket(bracket) => match bracket {
                 Bracket::LeftParenthesis
                 | Bracket::RightParenthesis
-                | Bracket::RightSquareBracket => self
-                    .interval(&expression_parser)
-                    .unwrap_or_else(|| self.error(AstNodeError::Invalid)),
+                | Bracket::RightSquareBracket => {
+                    self.interval(&expression_parser).unwrap_or_else(|| {
+                        self.error(AstNodeError::Custom {
+                            message: "Invalid syntax".to_string(),
+                            span: (self.prev_token_end(), self.prev_token_end()),
+                        })
+                    })
+                }
                 Bracket::LeftSquareBracket => self
                     .interval(&expression_parser)
                     .unwrap_or_else(|| self.array(&expression_parser)),

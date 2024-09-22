@@ -17,6 +17,7 @@ pub enum Node<'a> {
     Object(&'a [(&'a Node<'a>, &'a Node<'a>)]),
     Identifier(&'a str),
     Closure(&'a Node<'a>),
+    Parenthesized(&'a Node<'a>),
     Root,
     Member {
         node: &'a Node<'a>,
@@ -51,7 +52,10 @@ pub enum Node<'a> {
         kind: BuiltInFunction,
         arguments: &'a [&'a Node<'a>],
     },
-    Error(AstNodeError),
+    Error {
+        node: Option<&'a Node<'a>>,
+        error: AstNodeError,
+    },
 }
 
 impl<'a> Node<'a> {
@@ -64,7 +68,6 @@ impl<'a> Node<'a> {
         };
 
         match self {
-            Node::Error(_) => {}
             Node::Null => {}
             Node::Bool(_) => {}
             Node::Number(_) => {}
@@ -72,6 +75,11 @@ impl<'a> Node<'a> {
             Node::Pointer => {}
             Node::Identifier(_) => {}
             Node::Root => {}
+            Node::Error { node, .. } => {
+                if let Some(n) = node {
+                    n.walk(func.clone())
+                }
+            }
             Node::TemplateString(parts) => parts.iter().for_each(|n| n.walk(func.clone())),
             Node::Array(parts) => parts.iter().for_each(|n| n.walk(func.clone())),
             Node::Object(obj) => obj.iter().for_each(|(k, v)| {
@@ -79,6 +87,7 @@ impl<'a> Node<'a> {
                 v.walk(func.clone());
             }),
             Node::Closure(closure) => closure.walk(func.clone()),
+            Node::Parenthesized(c) => c.walk(func.clone()),
             Node::Member { node, property } => {
                 node.walk(func.clone());
                 property.walk(func.clone());
@@ -120,18 +129,36 @@ impl<'a> Node<'a> {
     }
 
     pub fn first_error(&self) -> Option<AstNodeError> {
-        let error = Cell::new(None);
+        let error_cell = Cell::new(None);
         self.walk(|n| {
-            if let Node::Error(err) = n {
-                error.set(Some(err.clone()))
+            if let Node::Error { error, .. } = n {
+                error_cell.set(Some(error.clone()))
             }
         });
 
-        error.into_inner()
+        error_cell.into_inner()
     }
 
     pub fn has_error(&self) -> bool {
         self.first_error().is_some()
+    }
+
+    pub(crate) fn span(&self) -> Option<(u32, u32)> {
+        match self {
+            Node::Error { error, .. } => match error {
+                AstNodeError::UnknownBuiltIn { span, .. } => Some(span.clone()),
+                AstNodeError::UnexpectedIdentifier { span, .. } => Some(span.clone()),
+                AstNodeError::UnexpectedToken { span, .. } => Some(span.clone()),
+                AstNodeError::InvalidNumber { span, .. } => Some(span.clone()),
+                AstNodeError::InvalidBoolean { span, .. } => Some(span.clone()),
+                AstNodeError::InvalidProperty { span, .. } => Some(span.clone()),
+                AstNodeError::MissingToken { position, .. } => {
+                    Some((*position as u32, *position as u32))
+                }
+                AstNodeError::Custom { span, .. } => Some(span.clone()),
+            },
+            _ => None,
+        }
     }
 }
 
@@ -168,7 +195,4 @@ pub enum AstNodeError {
 
     #[error("{message} at ({}, {})", span.0, span.1)]
     Custom { message: String, span: (u32, u32) },
-
-    #[error("Invalid")]
-    Invalid,
 }

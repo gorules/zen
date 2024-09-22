@@ -36,7 +36,12 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
                 }
                 TokenKind::Operator(Operator::Logical(LogicalOperator::Or))
                 | TokenKind::Operator(Operator::Comma) => Operator::Logical(LogicalOperator::Or),
-                _ => return self.error(AstNodeError::Invalid),
+                _ => {
+                    return self.error(AstNodeError::Custom {
+                        message: format!("Invalid join operator `{}`", current_token.kind),
+                        span: current_token.span,
+                    })
+                }
             };
 
             self.next();
@@ -208,9 +213,18 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
         }
 
         if token.kind == TokenKind::Bracket(Bracket::LeftParenthesis) {
+            let p_start = self.current().map(|s| s.span.0);
+
             self.next();
-            let expr = self.binary_expression(0);
-            self.expect(TokenKind::Bracket(Bracket::RightParenthesis));
+            let binary_node = self.binary_expression(0);
+            if let Some(error_node) = self.expect(TokenKind::Bracket(Bracket::RightParenthesis)) {
+                return error_node;
+            };
+
+            let expr = self.node(Node::Parenthesized(binary_node), |_| NodeMetadata {
+                span: (p_start.unwrap_or_default(), self.prev_token_end()),
+            });
+
             return self.with_postfix(expr, || self.binary_expression(0));
         }
 
@@ -269,6 +283,7 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                 }
             }
             Node::Unary { node, .. } => UnaryNodeBehaviour::from(*node),
+            Node::Parenthesized(n) => UnaryNodeBehaviour::from(*n),
             Node::Binary {
                 left,
                 operator,
@@ -345,7 +360,7 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                 BuiltInFunction::One => AsBoolean,
                 BuiltInFunction::Type => CompareWithReference(Equal),
             },
-            Node::Error(_) => AsBoolean,
+            Node::Error { .. } => AsBoolean,
         }
     }
 }

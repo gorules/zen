@@ -86,11 +86,11 @@ fn standard_test() {
         StandardTest {
             src: "(1 - 2) * 3",
             result: &Node::Binary {
-                left: &Node::Binary {
+                left: &Node::Parenthesized(&Node::Binary {
                     left: &Node::Number(D1),
                     operator: Operator::Arithmetic(ArithmeticOperator::Subtract),
                     right: &Node::Number(D2),
-                },
+                }),
                 operator: Operator::Arithmetic(ArithmeticOperator::Multiply),
                 right: &Node::Number(D3),
             },
@@ -123,11 +123,11 @@ fn standard_test() {
             src: "(a or b) and c",
             result: &Node::Binary {
                 operator: Operator::Logical(LogicalOperator::And),
-                left: &Node::Binary {
+                left: &Node::Parenthesized(&Node::Binary {
                     left: &Node::Identifier("a"),
                     right: &Node::Identifier("b"),
                     operator: Operator::Logical(LogicalOperator::Or),
-                },
+                }),
                 right: &Node::Identifier("c"),
             },
         },

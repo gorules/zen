@@ -229,11 +229,11 @@ impl TypesProvider {
 
                 match operator {
                     Operator::Arithmetic(arith) => match arith {
-                        ArithmeticOperator::Add => match (left_type.kind.as_ref(), right_type.kind.as_ref()) {
+                        ArithmeticOperator::Add => match (left_type.omit_const(), right_type.omit_const()) {
                             (VariableType::Number, VariableType::Number) => V(VariableType::Number),
                             (VariableType::String, VariableType::String) => V(VariableType::String),
-                            (VariableType::Any, _) => V(VariableType::Any),
-                            (_, VariableType::Any) => V(VariableType::Any),
+                            (VariableType::Any, VariableType::Number | VariableType::String) => V(VariableType::Any),
+                            (VariableType::Number | VariableType::String, VariableType::Any) => V(VariableType::Any),
                             _ => Error(format!(
                                 "Operator `{operator}` cannot be applied to types `{left_type}` and `{right_type}`."
                             )),
@@ -242,10 +242,8 @@ impl TypesProvider {
                         | ArithmeticOperator::Multiply
                         | ArithmeticOperator::Divide
                         | ArithmeticOperator::Modulus
-                        | ArithmeticOperator::Power => match (left_type.kind.as_ref(), &right_type.kind.as_ref()) {
-                            (VariableType::Number, VariableType::Number) => V(VariableType::Number),
-                            (VariableType::Any, _) => V(VariableType::Number),
-                            (_, VariableType::Any) => V(VariableType::Number),
+                        | ArithmeticOperator::Power => match (left_type.omit_const(), right_type.omit_const()) {
+                            (VariableType::Number | VariableType::Any, VariableType::Number | VariableType::Any) => V(VariableType::Number),
                             _ => Error(format!(
                                 "Operator `{operator}` cannot be applied to types `{left_type}` and `{right_type}`."
                             )),
@@ -253,10 +251,8 @@ impl TypesProvider {
                     },
                     Operator::Logical(l) => match l {
                         LogicalOperator::And | LogicalOperator::Or | LogicalOperator::Not => {
-                            match (left_type.kind.as_ref(), &right_type.kind.as_ref()) {
-                                (VariableType::Bool, VariableType::Bool) => V(VariableType::Bool),
-                                (VariableType::Any, _) => V(VariableType::Bool),
-                                (_, VariableType::Any) => V(VariableType::Bool),
+                            match (left_type.omit_const(), right_type.omit_const()) {
+                                (VariableType::Bool | VariableType::Any, VariableType::Bool | VariableType::Any) => V(VariableType::Bool),
                                 _ => Error(format!(
                                     "Operator `{operator}` cannot be applied to types `{left_type}` and `{right_type}`."
                                 )),
@@ -270,10 +266,8 @@ impl TypesProvider {
                         ComparisonOperator::LessThan
                         | ComparisonOperator::GreaterThan
                         | ComparisonOperator::LessThanOrEqual
-                        | ComparisonOperator::GreaterThanOrEqual => match (left_type.kind.as_ref(), right_type.kind.as_ref()) {
-                            (VariableType::Number, VariableType::Number) => V(VariableType::Bool),
-                            (VariableType::Any, _) => V(VariableType::Bool),
-                            (_, VariableType::Any) => V(VariableType::Bool),
+                        | ComparisonOperator::GreaterThanOrEqual => match (left_type.omit_const(), right_type.omit_const()) {
+                            (VariableType::Number | VariableType::Any, VariableType::Number | VariableType::Any) => V(VariableType::Bool),
                             _ => Error(format!(
                                 "Operator `{operator}` cannot be applied to types `{left_type}` and `{right_type}`."
                             )),
@@ -694,7 +688,20 @@ impl TypesProvider {
                 }
             }
             Node::Closure(c) => self.determine(c, scope.clone(), false),
-            Node::Error(_) => V(VariableType::Any),
+            Node::Parenthesized(c) => self.determine(c, scope.clone(), false),
+            Node::Error { node, error } => match node {
+                None => TypeInfo {
+                    kind: Rc::new(VariableType::Any),
+                    error: Some(error.to_string()),
+                },
+                Some(n) => {
+                    let typ = self.determine(n, scope.clone(), false);
+                    TypeInfo {
+                        kind: typ.kind,
+                        error: Some(error.to_string()),
+                    }
+                }
+            },
         };
 
         self.set_type(node, node_type.clone());

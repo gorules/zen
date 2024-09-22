@@ -74,7 +74,10 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Standard> {
 
     fn unary_expression(&self) -> &'arena Node<'arena> {
         let Some(token) = self.current() else {
-            return self.error(AstNodeError::Invalid);
+            return self.error(AstNodeError::Custom {
+                message: "Unexpected end of unary expression".to_string(),
+                span: (self.prev_token_end(), self.prev_token_end()),
+            });
         };
 
         if self.depth() > 0 && token.kind == TokenKind::Identifier(Identifier::CallbackReference) {
@@ -116,9 +119,18 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Standard> {
         }
 
         if token.kind == TokenKind::Bracket(Bracket::LeftParenthesis) {
+            let p_start = self.current().map(|s| s.span.0);
+
             self.next();
-            let expr = self.binary_expression(0);
-            self.expect(TokenKind::Bracket(Bracket::RightParenthesis));
+            let binary_node = self.binary_expression(0);
+            if let Some(error_node) = self.expect(TokenKind::Bracket(Bracket::RightParenthesis)) {
+                return error_node;
+            };
+
+            let expr = self.node(Node::Parenthesized(binary_node), |_| NodeMetadata {
+                span: (p_start.unwrap_or_default(), self.prev_token_end()),
+            });
+
             return self.with_postfix(expr, || self.binary_expression(0));
         }
 

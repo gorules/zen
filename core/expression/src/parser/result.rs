@@ -22,7 +22,7 @@ impl<'a> ParserResult<'a> {
 
         match self.root.first_error() {
             None => Ok(()),
-            Some(err) => Err(ParserError::NodeError(err)),
+            Some(err) => Err(ParserError::NodeError(err.to_string())),
         }
     }
 }

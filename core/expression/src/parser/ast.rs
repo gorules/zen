@@ -54,7 +54,7 @@ pub enum Node<'a> {
     },
     Error {
         node: Option<&'a Node<'a>>,
-        error: AstNodeError,
+        error: AstNodeError<'a>,
     },
 }
 
@@ -163,36 +163,36 @@ impl<'a> Node<'a> {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Error)]
-pub enum AstNodeError {
+pub enum AstNodeError<'a> {
     #[error("Unknown built in: {name} at ({}, {})", span.0, span.1)]
-    UnknownBuiltIn { name: String, span: (u32, u32) },
+    UnknownBuiltIn { name: &'a str, span: (u32, u32) },
 
     #[error("Unexpected identifier: {received} at ({}, {}); Expected {expected}.", span.0, span.1)]
     UnexpectedIdentifier {
-        received: String,
-        expected: String,
+        received: &'a str,
+        expected: &'a str,
         span: (u32, u32),
     },
 
     #[error("Unexpected token: {received} at ({}, {}); Expected {expected}.", span.0, span.1)]
     UnexpectedToken {
-        received: String,
-        expected: String,
+        received: &'a str,
+        expected: &'a str,
         span: (u32, u32),
     },
 
     #[error("Invalid number: {number} at ({}, {})", span.0, span.1)]
-    InvalidNumber { number: String, span: (u32, u32) },
+    InvalidNumber { number: &'a str, span: (u32, u32) },
 
     #[error("Invalid boolean: {boolean} at ({}, {})", span.0, span.1)]
-    InvalidBoolean { boolean: String, span: (u32, u32) },
+    InvalidBoolean { boolean: &'a str, span: (u32, u32) },
 
     #[error("Invalid property: {property} at ({}, {})", span.0, span.1)]
-    InvalidProperty { property: String, span: (u32, u32) },
+    InvalidProperty { property: &'a str, span: (u32, u32) },
 
     #[error("Missing expected token: {expected} at {position}")]
-    MissingToken { expected: String, position: usize },
+    MissingToken { expected: &'a str, position: usize },
 
     #[error("{message} at ({}, {})", span.0, span.1)]
-    Custom { message: String, span: (u32, u32) },
+    Custom { message: &'a str, span: (u32, u32) },
 }

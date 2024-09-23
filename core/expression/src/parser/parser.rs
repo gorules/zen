@@ -26,6 +26,12 @@ macro_rules! expect {
         }
     };
 }
+macro_rules! afmt {
+    ($self:expr, $($arg:tt)*) => {{
+        let formatted = format!($($arg)*);
+        $self.bump.alloc_str(formatted.as_str())
+    }}
+}
 
 #[derive(Debug)]
 pub struct BaseParser;
@@ -170,7 +176,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         node
     }
 
-    pub(crate) fn error(&self, error: AstNodeError) -> &'arena Node<'arena> {
+    pub(crate) fn error(&self, error: AstNodeError<'arena>) -> &'arena Node<'arena> {
         self.node(Node::Error { error, node: None }, |_| NodeMetadata {
             span: (self.prev_token_end(), self.prev_token_end()),
         })
@@ -178,7 +184,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
 
     pub(crate) fn error_with_node(
         &self,
-        error: AstNodeError,
+        error: AstNodeError<'arena>,
         node: &'arena Node<'arena>,
     ) -> &'arena Node<'arena> {
         self.node(
@@ -206,10 +212,10 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
 
         Some(
             self.error(AstNodeError::UnexpectedToken {
-                expected: kind.to_string(),
+                expected: afmt!(self, "{kind}"),
                 received: token
-                    .map(|t| t.kind.to_string())
-                    .unwrap_or_else(|| "None".to_string()),
+                    .map(|t| afmt!(self, "{}", t.kind))
+                    .unwrap_or_else(|| afmt!(self, "None")),
                 span: token.map(|t| t.span).unwrap_or((0, 0)),
             }),
         )
@@ -218,14 +224,14 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
     pub(crate) fn number(&self) -> &'arena Node<'arena> {
         let Some(token) = self.current() else {
             return self.error(AstNodeError::MissingToken {
-                expected: "Number".to_string(),
+                expected: afmt!(self, "Number"),
                 position: self.position(),
             });
         };
 
         let Ok(decimal) = Decimal::from_str_exact(token.value) else {
             return self.error(AstNodeError::InvalidNumber {
-                number: token.value.to_string(),
+                number: afmt!(self, "{}", token.value),
                 span: token.span,
             });
         };
@@ -237,14 +243,14 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
     pub(crate) fn bool(&self) -> &'arena Node<'arena> {
         let Some(token) = self.current() else {
             return self.error(AstNodeError::MissingToken {
-                expected: "Boolean".to_string(),
+                expected: afmt!(self, "Boolean"),
                 position: self.position(),
             });
         };
 
         let TokenKind::Boolean(boolean) = token.kind else {
             return self.error(AstNodeError::InvalidBoolean {
-                boolean: token.value.to_string(),
+                boolean: afmt!(self, "{}", token.value),
                 span: token.span,
             });
         };
@@ -256,15 +262,15 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
     pub(crate) fn null(&self) -> &'arena Node<'arena> {
         let Some(token) = self.current() else {
             return self.error(AstNodeError::MissingToken {
-                expected: "Null".to_string(),
+                expected: afmt!(self, "Null"),
                 position: self.position(),
             });
         };
 
         if token.kind != TokenKind::Identifier(Identifier::Null) {
             return self.error(AstNodeError::UnexpectedIdentifier {
-                expected: "Null".to_string(),
-                received: token.value.to_string(),
+                expected: afmt!(self, "Null"),
+                received: afmt!(self, "{}", token.value),
                 span: token.span,
             });
         }
@@ -286,7 +292,8 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 .map(|t| self.node(Node::String(t.value), |_| NodeMetadata { span: t.span })))
             .unwrap_or_else(|| {
                 self.error(AstNodeError::Custom {
-                    message: format!(
+                    message: afmt!(
+                        self,
                         "Failed to parse string `{}`",
                         string_value.map(|s| s.value).unwrap_or_default()
                     ),
@@ -305,7 +312,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
 
         let Some(mut current_token) = self.current() else {
             return self.error(AstNodeError::MissingToken {
-                expected: "Backtick (`)".to_string(),
+                expected: afmt!(self, "Backtick (`)"),
                 position: self.position(),
             });
         };
@@ -334,8 +341,8 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 }
                 _ => {
                     return self.error(AstNodeError::UnexpectedToken {
-                        expected: "Valid TemplateString token".to_string(),
-                        received: current_token.kind.to_string(),
+                        expected: afmt!(self, "Valid TemplateString token"),
+                        received: afmt!(self, "{}", current_token.kind),
                         span: current_token.span,
                     })
                 }
@@ -379,7 +386,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 let property = match property_token {
                     None => self.error_with_node(
                         AstNodeError::Custom {
-                            message: "Expected a property".to_string(),
+                            message: afmt!(self, "Expected a property"),
                             span: (self.prev_token_end(), self.prev_token_end()),
                         },
                         node,
@@ -388,7 +395,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                         true => self.node(Node::String(t.value), |_| NodeMetadata { span: t.span }),
                         false => self.error_with_node(
                             AstNodeError::InvalidProperty {
-                                property: t.value.to_string(),
+                                property: afmt!(self, "{}", t.value),
                                 span: t.span,
                             },
                             node,
@@ -408,7 +415,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 let Some(mut c) = self.current() else {
                     return self.error_with_node(
                         AstNodeError::Custom {
-                            message: "Expected a property".to_string(),
+                            message: afmt!(self, "Expected a property"),
                             span: (self.prev_token_end(), self.prev_token_end()),
                         },
                         node,
@@ -421,7 +428,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                     let Some(cc) = self.current() else {
                         return self.error_with_node(
                             AstNodeError::Custom {
-                                message: "Unexpected token".to_string(),
+                                message: afmt!(self, "Unexpected token"),
                                 span: (self.prev_token_end(), self.prev_token_end()),
                             },
                             node,
@@ -446,7 +453,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                     let Some(cc) = self.current() else {
                         return self.error_with_node(
                             AstNodeError::Custom {
-                                message: "Unexpected token".to_string(),
+                                message: afmt!(self, "Unexpected token"),
                                 span: (self.prev_token_end(), self.prev_token_end()),
                             },
                             self.node(
@@ -467,7 +474,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                         let Some(cc) = self.current() else {
                             return self.error_with_node(
                                 AstNodeError::Custom {
-                                    message: "Invalid slice syntax".to_string(),
+                                    message: afmt!(self, "Invalid slice syntax"),
                                     span: (self.prev_token_end(), self.prev_token_end()),
                                 },
                                 self.node(Node::Slice { node, from, to }, |h| NodeMetadata {
@@ -498,7 +505,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                                 property: from.unwrap_or_else(|| {
                                     return self.error_with_node(
                                         AstNodeError::Custom {
-                                            message: "Invalid index property".to_string(),
+                                            message: afmt!(self, "Invalid index property"),
                                             span: (self.prev_token_end(), self.prev_token_end()),
                                         },
                                         node,
@@ -544,7 +551,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
     {
         let Some(token) = self.current() else {
             return self.error(AstNodeError::MissingToken {
-                expected: "Identifier".to_string(),
+                expected: afmt!(self, "Identifier"),
                 position: self.position(),
             });
         };
@@ -555,7 +562,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             }
             _ => {
                 return self.error(AstNodeError::Custom {
-                    message: format!("Expected an `identifier`, received `{}`.", token.kind),
+                    message: afmt!(self, "Expected an `identifier`, received `{}`.", token.kind),
                     span: token.span,
                 });
             }
@@ -563,7 +570,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
 
         let Some(identifier_token) = self.current() else {
             return self.error(AstNodeError::Custom {
-                message: "Expected an `identifier`.".to_string(),
+                message: afmt!(self, "Expected an `identifier`."),
                 span: (self.prev_token_end(), self.prev_token_end()),
             });
         };
@@ -588,7 +595,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         // Potentially it might be a built-in expression
         let Ok(builtin) = BuiltInFunction::try_from(identifier_token.value) else {
             return self.error(AstNodeError::UnknownBuiltIn {
-                name: identifier_token.value.to_string(),
+                name: afmt!(self, "{}", identifier_token.value),
                 span: identifier_token.span,
             });
         };
@@ -707,15 +714,15 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
     {
         let Some(current_token) = self.current() else {
             return self.error(AstNodeError::MissingToken {
-                expected: "Array".to_string(),
+                expected: afmt!(self, "Array"),
                 position: self.position(),
             });
         };
 
         if current_token.kind != TokenKind::Bracket(Bracket::LeftSquareBracket) {
             return self.error(AstNodeError::UnexpectedToken {
-                expected: TokenKind::Bracket(Bracket::LeftSquareBracket).to_string(),
-                received: current_token.kind.to_string(),
+                expected: afmt!(self, "{}", TokenKind::Bracket(Bracket::LeftSquareBracket)),
+                received: afmt!(self, "{}", current_token.kind),
                 span: current_token.span,
             });
         }
@@ -785,7 +792,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 TokenKind::Bracket(Bracket::RightCurlyBracket) => break,
                 _ => {
                     return self.error(AstNodeError::Custom {
-                        message: "Invalid object syntax".to_string(),
+                        message: afmt!(self, "Invalid object syntax"),
                         span: current_token.span,
                     })
                 }
@@ -806,7 +813,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
     {
         let Some(key_token) = self.current() else {
             return self.error(AstNodeError::Custom {
-                message: "Expected an object key".to_string(),
+                message: afmt!(self, "Expected an object key"),
                 span: (self.prev_token_end(), self.prev_token_end()),
             });
         };
@@ -854,7 +861,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 }
                 _ => {
                     return self.error(AstNodeError::Custom {
-                        message: "Operator is not supported as object key".to_string(),
+                        message: afmt!(self, "Operator is not supported as object key"),
                         span: key_token.span,
                     })
                 }
@@ -864,21 +871,26 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 QuotationMark::DoubleQuote => self.simple_string(&QuotationMark::DoubleQuote),
                 QuotationMark::Backtick => {
                     return self.error(AstNodeError::Custom {
-                        message: "TemplateString expression not supported as object key"
-                            .to_string(),
+                        message: afmt!(
+                            self,
+                            "TemplateString expression not supported as object key"
+                        ),
                         span: key_token.span,
                     })
                 }
             },
             TokenKind::TemplateString(_) => {
                 return self.error(AstNodeError::Custom {
-                    message: "TemplateString expression not supported as object key".to_string(),
+                    message: afmt!(
+                        self,
+                        "TemplateString expression not supported as object key"
+                    ),
                     span: key_token.span,
                 })
             }
             TokenKind::Operator(_) => {
                 return self.error(AstNodeError::Custom {
-                    message: "Operator is not supported as object key".to_string(),
+                    message: afmt!(self, "Operator is not supported as object key"),
                     span: key_token.span,
                 })
             }
@@ -931,7 +943,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
     {
         let Some(current_token) = self.current() else {
             return self.error(AstNodeError::Custom {
-                message: "Expected a literal".to_string(),
+                message: afmt!(self, "Expected a literal"),
                 span: (self.prev_token_end(), self.prev_token_end()),
             });
         };
@@ -956,7 +968,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 | Bracket::RightSquareBracket => {
                     self.interval(&expression_parser).unwrap_or_else(|| {
                         self.error(AstNodeError::Custom {
-                            message: "Invalid syntax".to_string(),
+                            message: afmt!(self, "Invalid syntax"),
                             span: (self.prev_token_end(), self.prev_token_end()),
                         })
                     })
@@ -966,16 +978,16 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                     .unwrap_or_else(|| self.array(&expression_parser)),
                 Bracket::LeftCurlyBracket => self.object(&expression_parser),
                 Bracket::RightCurlyBracket => self.error(AstNodeError::Custom {
-                    message: "Unexpected RightCurlyBracket token".to_string(),
+                    message: afmt!(self, "Unexpected RightCurlyBracket token"),
                     span: current_token.span,
                 }),
             },
             TokenKind::Operator(_) => self.error(AstNodeError::Custom {
-                message: "Unexpected Operator token".to_string(),
+                message: afmt!(self, "Unexpected Operator token"),
                 span: current_token.span,
             }),
             TokenKind::TemplateString(_) => self.error(AstNodeError::Custom {
-                message: "Unexpected TemplateString token".to_string(),
+                message: afmt!(self, "Unexpected TemplateString token"),
                 span: current_token.span,
             }),
         }

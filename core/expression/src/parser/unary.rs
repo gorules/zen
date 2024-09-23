@@ -38,7 +38,9 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
                 | TokenKind::Operator(Operator::Comma) => Operator::Logical(LogicalOperator::Or),
                 _ => {
                     return self.error(AstNodeError::Custom {
-                        message: format!("Invalid join operator `{}`", current_token.kind),
+                        message: self.bump.alloc_str(
+                            format!("Invalid join operator `{}`", current_token.kind).as_str(),
+                        ),
                         span: current_token.span,
                     })
                 }
@@ -205,8 +207,8 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
         if let TokenKind::Operator(operator) = &token.kind {
             let Some(unary_operator) = UNARY_OPERATORS.get(operator) else {
                 return self.error(AstNodeError::UnexpectedToken {
-                    expected: "UnaryOperator".to_string(),
-                    received: token.kind.to_string(),
+                    expected: self.bump.alloc_str("UnaryOperator"),
+                    received: self.bump.alloc_str(token.kind.to_string().as_str()),
                     span: token.span,
                 });
             };

@@ -502,7 +502,7 @@ impl TypesProvider {
                     BuiltInFunction::Type => V(VariableType::String),
                     BuiltInFunction::Date => {
                         if !type_list[0].satisfies(&VariableType::Number)
-                            || !type_list[0].satisfies(&VariableType::String)
+                            && !type_list[0].satisfies(&VariableType::String)
                         {
                             self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `number | string`.", type_list[0]));
                         }

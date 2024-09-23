@@ -1,11 +1,10 @@
 use crate::lexer::{Bracket, ComparisonOperator, Identifier, LogicalOperator, Operator, TokenKind};
-use crate::parser::ast::Node;
+use crate::parser::ast::{AstNodeError, Node};
 use crate::parser::builtin::BuiltInFunction;
 use crate::parser::constants::{Associativity, BINARY_OPERATORS, UNARY_OPERATORS};
-use crate::parser::error::ParserError::{FailedToParse, UnexpectedToken};
-use crate::parser::error::{ParserError, ParserResult};
 use crate::parser::parser::Parser;
 use crate::parser::unary::UnaryNodeBehaviour::CompareWithReference;
+use crate::parser::{NodeMetadata, ParserResult};
 
 #[derive(Debug)]
 pub struct Unary;
@@ -13,23 +12,24 @@ pub struct Unary;
 const ROOT_NODE: Node<'static> = Node::Identifier("$");
 
 impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
-    pub fn parse(&self) -> ParserResult<&'arena Node<'arena>> {
-        let result = self.root_expression()?;
-        if !self.is_done() {
-            let token = self.current();
-            return Err(FailedToParse {
-                message: format!("Unterminated token {}", token.value),
-                span: token.span,
-            });
-        }
+    pub fn parse(&self) -> ParserResult<'arena> {
+        let root = self.root_expression();
 
-        return Ok(result);
+        ParserResult {
+            root,
+            is_complete: self.is_done(),
+            metadata: self.node_metadata.clone().map(|t| t.into_inner()),
+        }
     }
 
-    fn root_expression(&self) -> ParserResult<&'arena Node<'arena>> {
-        let mut left_node = self.expression_pair()?;
+    fn root_expression(&self) -> &'arena Node<'arena> {
+        let mut left_node = self.expression_pair();
+
         while !self.is_done() {
-            let current_token = self.current();
+            let Some(current_token) = self.current() else {
+                break;
+            };
+
             let join_operator = match &current_token.kind {
                 TokenKind::Operator(Operator::Logical(LogicalOperator::And)) => {
                     Operator::Logical(LogicalOperator::And)
@@ -37,68 +37,104 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
                 TokenKind::Operator(Operator::Logical(LogicalOperator::Or))
                 | TokenKind::Operator(Operator::Comma) => Operator::Logical(LogicalOperator::Or),
                 _ => {
-                    return Err(ParserError::MemoryFailure);
+                    return self.error(AstNodeError::Custom {
+                        message: self.bump.alloc_str(
+                            format!("Invalid join operator `{}`", current_token.kind).as_str(),
+                        ),
+                        span: current_token.span,
+                    })
                 }
             };
 
-            self.next()?;
-            let right_node = self.expression_pair()?;
-            left_node = self.node(Node::Binary {
-                left: left_node,
-                operator: join_operator,
-                right: right_node,
-            });
+            self.next();
+            let right_node = self.expression_pair();
+            left_node = self.node(
+                Node::Binary {
+                    left: left_node,
+                    operator: join_operator,
+                    right: right_node,
+                },
+                |h| NodeMetadata {
+                    span: h.span(left_node, right_node).unwrap_or_default(),
+                },
+            );
         }
 
-        Ok(left_node)
+        left_node
     }
 
-    fn expression_pair(&self) -> ParserResult<&'arena Node<'arena>> {
+    fn expression_pair(&self) -> &'arena Node<'arena> {
         let mut left_node = &ROOT_NODE;
-        let initial_token = self.current();
-        if let TokenKind::Operator(Operator::Comparison(_)) = &initial_token.kind {
+        let current_token = self.current();
+
+        if let Some(TokenKind::Operator(Operator::Comparison(_))) = self.current_kind() {
             // Skips
         } else {
-            left_node = self.binary_expression(0)?;
+            left_node = self.binary_expression(0);
         }
 
-        let current_token = self.current();
-        match &current_token.kind {
-            TokenKind::Operator(Operator::Comparison(comparison)) => {
-                self.next()?;
-                let right_node = self.binary_expression(0)?;
-                left_node = self.node(Node::Binary {
-                    left: left_node,
-                    operator: Operator::Comparison(*comparison),
-                    right: right_node,
-                });
+        match self.current_kind() {
+            Some(TokenKind::Operator(Operator::Comparison(comparison))) => {
+                self.next();
+                let right_node = self.binary_expression(0);
+                left_node = self.node(
+                    Node::Binary {
+                        left: left_node,
+                        operator: Operator::Comparison(*comparison),
+                        right: right_node,
+                    },
+                    |h| NodeMetadata {
+                        span: (
+                            current_token.map(|t| t.span.0).unwrap_or_default(),
+                            h.metadata(right_node).map(|n| n.span.1).unwrap_or_default(),
+                        ),
+                    },
+                );
             }
             _ => {
                 let behaviour = UnaryNodeBehaviour::from(left_node);
                 match behaviour {
                     CompareWithReference(comparator) => {
-                        left_node = self.node(Node::Binary {
-                            left: &ROOT_NODE,
-                            operator: Operator::Comparison(comparator),
-                            right: left_node,
-                        })
+                        left_node = self.node(
+                            Node::Binary {
+                                left: &ROOT_NODE,
+                                operator: Operator::Comparison(comparator),
+                                right: left_node,
+                            },
+                            |h| NodeMetadata {
+                                span: (
+                                    current_token.map(|t| t.span.0).unwrap_or_default(),
+                                    h.metadata(left_node).map(|n| n.span.1).unwrap_or_default(),
+                                ),
+                            },
+                        )
                     }
                     UnaryNodeBehaviour::AsBoolean => {
-                        left_node = self.node(Node::BuiltIn {
-                            kind: BuiltInFunction::Bool,
-                            arguments: self.bump.alloc_slice_clone(&[left_node]),
-                        })
+                        left_node = self.node(
+                            Node::BuiltIn {
+                                kind: BuiltInFunction::Bool,
+                                arguments: self.bump.alloc_slice_clone(&[left_node]),
+                            },
+                            |h| NodeMetadata {
+                                span: (
+                                    current_token.map(|t| t.span.0).unwrap_or_default(),
+                                    h.metadata(left_node).map(|n| n.span.1).unwrap_or_default(),
+                                ),
+                            },
+                        )
                     }
                 }
             }
         }
 
-        Ok(left_node)
+        left_node
     }
 
-    fn binary_expression(&self, precedence: u8) -> ParserResult<&'arena Node<'arena>> {
-        let mut node_left = self.unary_expression()?;
-        let mut token = self.current();
+    fn binary_expression(&self, precedence: u8) -> &'arena Node<'arena> {
+        let mut node_left = self.unary_expression();
+        let Some(mut token) = self.current() else {
+            return node_left;
+        };
 
         while let TokenKind::Operator(operator) = &token.kind {
             if self.is_done() {
@@ -122,68 +158,96 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
                 break;
             }
 
-            self.next()?;
+            self.next();
             let node_right = match op.associativity {
-                Associativity::Left => self.binary_expression(op.precedence + 1)?,
-                _ => self.binary_expression(op.precedence)?,
+                Associativity::Left => self.binary_expression(op.precedence + 1),
+                _ => self.binary_expression(op.precedence),
             };
 
-            node_left = self.node(Node::Binary {
-                operator: *operator,
-                left: node_left,
-                right: node_right,
-            });
-            token = self.current();
+            node_left = self.node(
+                Node::Binary {
+                    operator: *operator,
+                    left: node_left,
+                    right: node_right,
+                },
+                |h| NodeMetadata {
+                    span: h.span(node_left, node_right).unwrap_or_default(),
+                },
+            );
+
+            let Some(t) = self.current() else {
+                break;
+            };
+            token = t;
         }
 
         if precedence == 0 {
             if let Some(conditional_node) =
-                self.conditional(node_left, || self.binary_expression(0))?
+                self.conditional(node_left, || self.binary_expression(0))
             {
                 node_left = conditional_node;
             }
         }
 
-        Ok(node_left)
+        node_left
     }
 
-    fn unary_expression(&self) -> ParserResult<&'arena Node<'arena>> {
-        let token = self.current();
+    fn unary_expression(&self) -> &'arena Node<'arena> {
+        let Some(token) = self.current() else {
+            return self.literal(|| self.binary_expression(0));
+        };
 
         if self.depth() > 0 && token.kind == TokenKind::Identifier(Identifier::CallbackReference) {
-            self.next()?;
+            self.next();
 
-            let node = self.node(Node::Pointer);
+            let node = self.node(Node::Pointer, |_| NodeMetadata { span: token.span });
             return self.with_postfix(node, || self.binary_expression(0));
         }
 
         if let TokenKind::Operator(operator) = &token.kind {
             let Some(unary_operator) = UNARY_OPERATORS.get(operator) else {
-                return Err(UnexpectedToken {
-                    expected: "UnaryOperator".to_string(),
-                    received: token.kind.to_string(),
+                return self.error(AstNodeError::UnexpectedToken {
+                    expected: self.bump.alloc_str("UnaryOperator"),
+                    received: self.bump.alloc_str(token.kind.to_string().as_str()),
                     span: token.span,
                 });
             };
 
-            self.next()?;
-            let expr = self.binary_expression(unary_operator.precedence)?;
-            let node = self.node(Node::Unary {
-                operator: *operator,
-                node: expr,
-            });
+            self.next();
+            let expr = self.binary_expression(unary_operator.precedence);
+            let node = self.node(
+                Node::Unary {
+                    operator: *operator,
+                    node: expr,
+                },
+                |h| NodeMetadata {
+                    span: (
+                        token.span.0,
+                        h.metadata(expr).map(|n| n.span.1).unwrap_or_default(),
+                    ),
+                },
+            );
 
-            return Ok(node);
+            return node;
         }
 
-        if let Some(interval_node) = self.interval(|| self.binary_expression(0))? {
-            return Ok(interval_node);
+        if let Some(interval_node) = self.interval(|| self.binary_expression(0)) {
+            return interval_node;
         }
 
         if token.kind == TokenKind::Bracket(Bracket::LeftParenthesis) {
-            self.next()?;
-            let expr = self.binary_expression(0)?;
-            self.expect(TokenKind::Bracket(Bracket::RightParenthesis))?;
+            let p_start = self.current().map(|s| s.span.0);
+
+            self.next();
+            let binary_node = self.binary_expression(0);
+            if let Some(error_node) = self.expect(TokenKind::Bracket(Bracket::RightParenthesis)) {
+                return error_node;
+            };
+
+            let expr = self.node(Node::Parenthesized(binary_node), |_| NodeMetadata {
+                span: (p_start.unwrap_or_default(), self.prev_token_end()),
+            });
+
             return self.with_postfix(expr, || self.binary_expression(0));
         }
 
@@ -235,13 +299,14 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                 let a = UnaryNodeBehaviour::from(*on_true);
                 let b = UnaryNodeBehaviour::from(*on_false);
 
-                return if a == b {
+                if a == b {
                     a
                 } else {
                     CompareWithReference(Equal)
-                };
+                }
             }
             Node::Unary { node, .. } => UnaryNodeBehaviour::from(*node),
+            Node::Parenthesized(n) => UnaryNodeBehaviour::from(*n),
             Node::Binary {
                 left,
                 operator,
@@ -251,11 +316,11 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                     let a = UnaryNodeBehaviour::from(*left);
                     let b = UnaryNodeBehaviour::from(*right);
 
-                    return if a == b {
+                    if a == b {
                         a
                     } else {
                         CompareWithReference(Equal)
-                    };
+                    }
                 }
                 Operator::Logical(_) => AsBoolean,
                 Operator::Comparison(_) => AsBoolean,
@@ -318,6 +383,7 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                 BuiltInFunction::One => AsBoolean,
                 BuiltInFunction::Type => CompareWithReference(Equal),
             },
+            Node::Error { .. } => AsBoolean,
         }
     }
 }

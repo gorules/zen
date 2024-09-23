@@ -145,8 +145,10 @@ fn unary_test() {
     for UnaryTest { src, result } in tests {
         let tokens = lexer.tokenize(src).unwrap();
         let parser = Parser::try_new(tokens, &bump).unwrap().unary();
-        let ast = parser.parse().unwrap();
-        assert_eq!(ast, result);
+        let parser_result = parser.parse();
+
+        assert!(parser_result.error().is_ok(), "Parser failed");
+        assert_eq!(parser_result.root, result);
 
         bump.reset();
     }
@@ -162,8 +164,12 @@ fn failure_tests() {
     for test in tests {
         let tokens = lexer.tokenize(test).unwrap();
         let unary_parser = Parser::try_new(tokens, &bump).unwrap().standard();
-        let ast = unary_parser.parse();
-        assert!(ast.is_err());
+        let parser_result = unary_parser.parse();
+
+        assert!(
+            parser_result.error().is_err(),
+            "Parsing expected to fail for: {test}"
+        );
 
         bump.reset();
     }

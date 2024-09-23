@@ -86,11 +86,11 @@ fn standard_test() {
         StandardTest {
             src: "(1 - 2) * 3",
             result: &Node::Binary {
-                left: &Node::Binary {
+                left: &Node::Parenthesized(&Node::Binary {
                     left: &Node::Number(D1),
                     operator: Operator::Arithmetic(ArithmeticOperator::Subtract),
                     right: &Node::Number(D2),
-                },
+                }),
                 operator: Operator::Arithmetic(ArithmeticOperator::Multiply),
                 right: &Node::Number(D3),
             },
@@ -123,11 +123,11 @@ fn standard_test() {
             src: "(a or b) and c",
             result: &Node::Binary {
                 operator: Operator::Logical(LogicalOperator::And),
-                left: &Node::Binary {
+                left: &Node::Parenthesized(&Node::Binary {
                     left: &Node::Identifier("a"),
                     right: &Node::Identifier("b"),
                     operator: Operator::Logical(LogicalOperator::Or),
-                },
+                }),
                 right: &Node::Identifier("c"),
             },
         },
@@ -298,17 +298,19 @@ fn standard_test() {
         let tokens = lexer.tokenize(src).unwrap();
         let unary_parser = Parser::try_new(tokens, &bump).unwrap().standard();
         let parser_result = unary_parser.parse();
-        let Ok(ast) = parser_result else {
-            assert!(
-                false,
-                "Failed on expression: {}. Error: {:?}.",
-                src,
-                parser_result.unwrap_err()
-            );
-            return;
-        };
+        // let Ok(ast) = parser_result else {
+        //     assert!(
+        //         false,
+        //         "Failed on expression: {}. Error: {:?}.",
+        //         src,
+        //         parser_result.unwrap_err()
+        //     );
+        //     return;
+        // };
 
-        assert_eq!(ast, result, "Failed on expression: {}", src);
+        assert!(parser_result.error().is_ok(), "Expression failed: {src}");
+        assert_eq!(parser_result.root, result, "Failed on expression: {}", src);
+
         bump.reset();
     }
 }
@@ -323,8 +325,9 @@ fn failure_tests() {
     for test in tests {
         let tokens = lexer.tokenize(test).unwrap();
         let parser = Parser::try_new(tokens, &bump).unwrap().standard();
-        let ast = parser.parse();
-        assert!(ast.is_err());
+        let parser_result = parser.parse();
+
+        assert!(parser_result.error().is_err(), "{parser_result:?}");
 
         bump.reset();
     }

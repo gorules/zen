@@ -54,6 +54,7 @@ mod isolate;
 mod arena;
 pub mod compiler;
 mod function;
+pub mod intellisense;
 pub mod lexer;
 pub mod parser;
 pub mod variable;

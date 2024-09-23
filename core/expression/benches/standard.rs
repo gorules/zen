@@ -12,7 +12,7 @@ fn bench_source(b: &mut Bencher, src: &'static str) {
 
     b.iter(|| {
         let std_parser = Parser::try_new(tokens, &bump).unwrap().standard();
-        criterion::black_box(std_parser.parse().unwrap());
+        criterion::black_box(std_parser.parse());
 
         bump.reset();
     });

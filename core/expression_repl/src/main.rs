@@ -49,7 +49,7 @@ fn main() -> Result<()> {
 
         let mut isolate = Isolate::new();
         isolate.set_environment(
-            &json!({ "customer": { "firstName": "John", "lastName": "Doe", "age": 20 } }),
+            &json!({ "customer": { "firstName": "John", "lastName": "Doe", "age": 20 }, "hello": true, "$": 10 }),
         );
         let result = isolate.run_standard(line.as_str());
 

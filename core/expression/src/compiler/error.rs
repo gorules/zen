@@ -10,6 +10,9 @@ pub enum CompilerError {
 
     #[error("Argument not found for builtin {builtin} at index {index}")]
     ArgumentNotFound { builtin: String, index: usize },
+
+    #[error("Unexpected error node")]
+    UnexpectedErrorNode,
 }
 
 pub(crate) type CompilerResult<T> = Result<T, CompilerError>;

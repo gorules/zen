@@ -11,7 +11,7 @@ fn bench_source(b: &mut Bencher, src: &'static str) {
 
     b.iter(|| {
         let unary_parser = Parser::try_new(tokens, &bump).unwrap().unary();
-        criterion::black_box(unary_parser.parse().unwrap());
+        criterion::black_box(unary_parser.parse());
 
         bump.reset();
     })

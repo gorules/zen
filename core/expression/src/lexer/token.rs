@@ -65,7 +65,7 @@ impl Display for TemplateString {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Display)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Operator {
     Arithmetic(ArithmeticOperator),
     Logical(LogicalOperator),
@@ -75,6 +75,21 @@ pub enum Operator {
     Slice,        // :
     Dot,          // .
     QuestionMark, // ?
+}
+
+impl Display for Operator {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Operator::Arithmetic(a) => write!(f, "{a}"),
+            Operator::Logical(l) => write!(f, "{l}"),
+            Operator::Comparison(c) => write!(f, "{c}"),
+            Operator::Range => write!(f, ".."),
+            Operator::Comma => write!(f, ","),
+            Operator::Slice => write!(f, ":"),
+            Operator::Dot => write!(f, "."),
+            Operator::QuestionMark => write!(f, "?"),
+        }
+    }
 }
 
 impl FromStr for Operator {

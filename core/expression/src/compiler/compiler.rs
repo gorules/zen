@@ -132,6 +132,7 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
             }
             Node::Identifier(v) => Ok(self.emit(Opcode::FetchEnv(v))),
             Node::Closure(v) => self.compile_node(v),
+            Node::Parenthesized(v) => self.compile_node(v),
             Node::Member { node, property } => {
                 self.compile_node(node)?;
                 self.compile_node(property)?;
@@ -588,6 +589,7 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                     Ok(self.emit(Opcode::End))
                 }
             },
+            Node::Error { .. } => Err(CompilerError::UnexpectedErrorNode),
         }
     }
 }

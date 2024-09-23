@@ -1210,6 +1210,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                         message: "Failed to run DateFunction".into(),
                     })?;
 
+                    #[allow(deprecated)]
                     self.push(Number(s.timestamp().into()));
                 }
                 Opcode::Slice => {
@@ -1358,6 +1359,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                 Opcode::ParseDateTime => {
                     let a = self.pop()?;
                     let ts = match a {
+                        #[allow(deprecated)]
                         String(a) => date_time(a)?.timestamp(),
                         Number(a) => a.to_i64().ok_or_else(|| OpcodeErr {
                             opcode: "ParseDateTime".into(),

@@ -1,9 +1,7 @@
-use bumpalo::Bump;
-use serde::{Serialize, Serializer};
+use crate::variable::Variable;
+use serde::{ser, Serialize, Serializer};
 
-use crate::variable::{ser, Variable};
-
-impl<'arena> Serialize for Variable<'arena> {
+impl Serialize for Variable {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -13,20 +11,14 @@ impl<'arena> Serialize for Variable<'arena> {
             Variable::Bool(v) => serializer.serialize_bool(*v),
             Variable::Number(v) => ser::Serialize::serialize(v, serializer),
             Variable::String(v) => serializer.serialize_str(v),
-            Variable::Array(v) => serializer.collect_seq(v.iter()),
-            Variable::Object(v) => serializer.collect_map(v.iter()),
+            Variable::Array(v) => {
+                let borrowed = v.borrow();
+                serializer.collect_seq(borrowed.iter())
+            }
+            Variable::Object(v) => {
+                let borrowed = v.borrow();
+                serializer.collect_map(borrowed.iter())
+            }
         }
-    }
-}
-
-#[allow(dead_code)]
-pub struct VariableSerializer<'arena> {
-    arena: &'arena Bump,
-}
-
-impl<'arena> VariableSerializer<'arena> {
-    #[allow(dead_code)]
-    pub fn new_in(arena: &'arena Bump) -> Self {
-        Self { arena }
     }
 }

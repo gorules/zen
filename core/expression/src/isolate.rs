@@ -1,18 +1,15 @@
-use std::collections::HashMap;
-use std::hash::BuildHasherDefault;
-
 use ahash::AHasher;
-use bumpalo::Bump;
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
-use serde_json::Value;
+use std::collections::HashMap;
+use std::hash::BuildHasherDefault;
 use thiserror::Error;
 
 use crate::arena::UnsafeArena;
 use crate::compiler::{Compiler, CompilerError};
 use crate::lexer::{Lexer, LexerError};
 use crate::parser::{Parser, ParserError};
-use crate::variable::{ToVariable, Variable};
+use crate::variable::Variable;
 use crate::vm::{VMError, VM};
 
 type ADefHasher = BuildHasherDefault<AHasher>;
@@ -26,13 +23,12 @@ type ADefHasher = BuildHasherDefault<AHasher>;
 pub struct Isolate<'arena> {
     lexer: Lexer<'arena>,
     compiler: Compiler<'arena>,
-    vm: VM<'arena>,
+    vm: VM,
 
     bump: UnsafeArena<'arena>,
-    reference_bump: UnsafeArena<'arena>,
 
-    environment: Option<&'arena mut Variable<'arena>>,
-    references: HashMap<&'arena str, &'arena Variable<'arena>, ADefHasher>,
+    environment: Option<Variable>,
+    references: HashMap<String, Variable, ADefHasher>,
 }
 
 impl<'a> Isolate<'a> {
@@ -43,67 +39,60 @@ impl<'a> Isolate<'a> {
             vm: VM::new(),
 
             bump: UnsafeArena::new(),
-            reference_bump: UnsafeArena::new(),
 
             environment: None,
             references: Default::default(),
         }
     }
 
-    pub fn with_environment(value: &Value) -> Self {
+    pub fn with_environment(variable: Variable) -> Self {
         let mut isolate = Isolate::new();
-        isolate.set_environment(value);
+        isolate.set_environment(variable);
 
         isolate
     }
 
-    pub fn set_environment(&mut self, value: &Value) {
-        let bump = self.reference_bump.get();
-        let new_environment = value.to_variable(bump).unwrap();
-
-        self.environment.replace(bump.alloc(new_environment));
+    pub fn set_environment(&mut self, variable: Variable) {
+        self.environment.replace(variable);
     }
 
     pub fn update_environment<F>(&mut self, mut updater: F)
     where
-        F: FnMut(&'a Bump, &mut Option<&'a mut Variable<'a>>),
+        F: FnMut(Option<&mut Variable>),
     {
-        let bump = self.reference_bump.get();
-        updater(bump, &mut self.environment);
+        updater(self.environment.as_mut());
     }
 
     pub fn set_reference(&mut self, reference: &'a str) -> Result<(), IsolateError> {
-        let bump = self.reference_bump.get();
         let reference_value = match self.references.get(reference) {
-            Some(value) => value,
+            Some(value) => value.clone(),
             None => {
                 let result = self.run_standard(reference)?;
-                let value = &*bump.alloc(result.to_variable(bump).unwrap());
-                self.references.insert(reference, value);
-                value
+                self.references
+                    .insert(reference.to_string(), result.clone());
+                result
             }
         };
 
         if !matches!(&mut self.environment, Some(Variable::Object(_))) {
-            self.environment
-                .replace(bump.alloc(Variable::empty_object(bump)));
+            self.environment.replace(Variable::empty_object());
         }
 
-        let Some(Variable::Object(environment_object)) = self.environment else {
+        let Some(Variable::Object(environment_object_ref)) = &self.environment else {
             return Err(IsolateError::ReferenceError);
         };
 
-        environment_object.insert("$", reference_value.clone_in(bump));
+        let mut environment_object = environment_object_ref.borrow_mut();
+        environment_object.insert("$".to_string(), reference_value);
+
         Ok(())
     }
 
-    pub fn get_reference(&self, reference: &str) -> Option<Value> {
-        let reference_variable = self.references.get(reference)?;
-
-        Some(reference_variable.to_value())
+    pub fn get_reference(&self, reference: &str) -> Option<Variable> {
+        self.references.get(reference).cloned()
     }
 
-    pub fn run_standard(&mut self, source: &'a str) -> Result<Value, IsolateError> {
+    pub fn run_standard(&mut self, source: &'a str) -> Result<Variable, IsolateError> {
         self.bump.with_mut(|b| b.reset());
         let bump = self.bump.get();
 
@@ -128,14 +117,10 @@ impl<'a> Isolate<'a> {
 
         let result = self
             .vm
-            .run(
-                bytecode,
-                bump,
-                self.environment.as_deref().unwrap_or(&Variable::Null),
-            )
+            .run(bytecode, self.environment.clone().unwrap_or(Variable::Null))
             .map_err(|source| IsolateError::VMError { source })?;
 
-        Ok(result.to_value())
+        Ok(result)
     }
 
     pub fn run_unary(&mut self, source: &'a str) -> Result<bool, IsolateError> {
@@ -163,11 +148,7 @@ impl<'a> Isolate<'a> {
 
         let result = self
             .vm
-            .run(
-                bytecode,
-                bump,
-                self.environment.as_deref().unwrap_or(&Variable::Null),
-            )
+            .run(bytecode, self.environment.clone().unwrap_or(Variable::Null))
             .map_err(|source| IsolateError::VMError { source })?;
 
         result.as_bool().ok_or_else(|| IsolateError::ValueCastError)

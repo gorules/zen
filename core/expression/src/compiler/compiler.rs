@@ -1,5 +1,6 @@
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use std::rc::Rc;
 
 use crate::compiler::error::{CompilerError, CompilerResult};
 use crate::compiler::{Opcode, TypeCheckKind, TypeConversionKind};
@@ -110,7 +111,7 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
             Node::Null => Ok(self.emit(Opcode::Push(Variable::Null))),
             Node::Bool(v) => Ok(self.emit(Opcode::Push(Variable::Bool(*v)))),
             Node::Number(v) => Ok(self.emit(Opcode::Push(Variable::Number(*v)))),
-            Node::String(v) => Ok(self.emit(Opcode::Push(Variable::String(v)))),
+            Node::String(v) => Ok(self.emit(Opcode::Push(Variable::String(Rc::from(*v))))),
             Node::Pointer => Ok(self.emit(Opcode::Pointer)),
             Node::Root => Ok(self.emit(Opcode::FetchRootEnv)),
             Node::Array(v) => {
@@ -147,7 +148,7 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
 
                 self.emit(Opcode::Push(Variable::Number(Decimal::from(parts.len()))));
                 self.emit(Opcode::Array);
-                self.emit(Opcode::Push(Variable::String("")));
+                self.emit(Opcode::Push(Variable::String(Rc::from(""))));
                 Ok(self.emit(Opcode::Join))
             }
             Node::Slice { node, to, from } => {

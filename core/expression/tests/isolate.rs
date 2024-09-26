@@ -1,10 +1,9 @@
 use std::ops::Index;
 
 use anyhow::Context;
-use bumpalo::Bump;
 use serde_json::{json, Value};
 
-use zen_expression::variable::ToVariable;
+use zen_expression::variable::Variable;
 use zen_expression::Isolate;
 
 struct TestEnv {
@@ -601,7 +600,7 @@ fn isolate_standard_test() {
     let mut isolate = Isolate::new();
 
     for TestEnv { env, cases } in tests {
-        isolate.set_environment(&env);
+        isolate.set_environment(env.into());
 
         for TestCase { expr, result } in cases {
             let isolate_result = isolate.run_standard(expr);
@@ -614,7 +613,7 @@ fn isolate_standard_test() {
                 continue;
             };
 
-            assert_eq!(result, response, "{}", expr);
+            assert_eq!(Variable::from(result), response, "{}", expr);
         }
     }
 }
@@ -725,7 +724,7 @@ fn isolate_unary_tests() {
         reference,
     } in tests
     {
-        isolate.set_environment(&env);
+        isolate.set_environment(env.into());
         isolate.set_reference(reference).unwrap();
 
         for TestCase { expr, result } in cases {
@@ -735,24 +734,11 @@ fn isolate_unary_tests() {
 }
 
 #[test]
-fn variable_serde_test() {
-    let env = json!({
-        "customer": {
-            "groups": ["admin", "user"],
-            "purchaseAmounts": [100, 200, 400, 800]
-        },
-    });
-
-    let bump = Bump::new();
-    let _ = env.to_variable(&bump);
-}
-
-#[test]
 fn isolate_test_decimals() {
     let mut isolate = Isolate::new();
     let result = isolate.run_standard("9223372036854775807").unwrap();
 
-    assert_eq!(result, Value::from(9223372036854775807i64));
+    assert_eq!(result.to_value(), Value::from(9223372036854775807i64));
 }
 
 #[test]
@@ -777,7 +763,7 @@ fn test_standard_csv() {
         let mut isolate = Isolate::new();
         if !input_str.is_empty() {
             let input: Value = serde_json5::from_str(input_str).unwrap();
-            isolate.set_environment(&input);
+            isolate.set_environment(input.into());
         }
 
         let maybe_result = isolate
@@ -786,9 +772,10 @@ fn test_standard_csv() {
         assert!(maybe_result.is_ok(), "{}", maybe_result.unwrap_err());
 
         let result = maybe_result.unwrap();
+        let var_output = Variable::from(output);
         assert_eq!(
-            result, output,
-            "Expression {expression}. Expected: {output}, got: {result}"
+            result, var_output,
+            "Expression {expression}. Expected: {var_output}, got: {result}"
         );
     }
 }
@@ -815,7 +802,7 @@ fn test_unary_csv() {
         let mut isolate = Isolate::new();
         if !input_str.is_empty() {
             let input: Value = serde_json5::from_str(input_str).unwrap();
-            isolate.set_environment(&input);
+            isolate.set_environment(input.into());
         }
 
         let result = isolate

@@ -3,15 +3,14 @@ mod interpreter;
 mod lexer;
 mod parser;
 
-use serde_json::Value;
-
 use crate::interpreter::Interpreter;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
+use zen_expression::variable::Variable;
 
 pub use crate::error::{ParserError, TemplateRenderError};
 
-pub fn render(template: &str, context: &Value) -> Result<Value, TemplateRenderError> {
+pub fn render(template: &str, context: Variable) -> Result<Variable, TemplateRenderError> {
     let tokens = Lexer::from(template.trim()).collect();
     let nodes = Parser::from(tokens.as_slice()).collect()?;
 

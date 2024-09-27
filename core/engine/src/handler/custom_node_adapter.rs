@@ -4,13 +4,14 @@ use anyhow::anyhow;
 use json_dotpath::DotPaths;
 use serde::Serialize;
 use serde_json::Value;
+use zen_expression::variable::Variable;
 use zen_tmpl::TemplateRenderError;
 
 pub trait CustomNodeAdapter {
     fn handle(
         &self,
         request: CustomNodeRequest<'_>,
-    ) -> impl std::future::Future<Output = NodeResult> + Send;
+    ) -> impl std::future::Future<Output = NodeResult>;
 }
 
 #[derive(Default, Debug)]
@@ -25,7 +26,7 @@ impl CustomNodeAdapter for NoopCustomNode {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CustomNodeRequest<'a> {
-    pub input: &'a Value,
+    pub input: Variable,
     pub node: CustomDecisionNode<'a>,
 }
 
@@ -34,27 +35,27 @@ impl<'a> TryFrom<&'a NodeRequest<'a>> for CustomNodeRequest<'a> {
 
     fn try_from(value: &'a NodeRequest<'a>) -> Result<Self, Self::Error> {
         Ok(Self {
-            input: &value.input,
+            input: value.input.clone(),
             node: value.node.try_into()?,
         })
     }
 }
 
 impl<'a> CustomNodeRequest<'a> {
-    pub fn get_field(&self, path: &str) -> Result<Option<Value>, TemplateRenderError> {
+    pub fn get_field(&self, path: &str) -> Result<Option<Variable>, TemplateRenderError> {
         let Some(selected_value) = self.get_field_raw(path) else {
             return Ok(None);
         };
 
-        let Value::String(template) = selected_value else {
+        let Variable::String(template) = selected_value else {
             return Ok(Some(selected_value));
         };
 
-        let template_value = zen_tmpl::render(template.as_str(), &self.input)?;
+        let template_value = zen_tmpl::render(template.as_ref(), self.input.clone())?;
         Ok(Some(template_value))
     }
 
-    fn get_field_raw(&self, path: &str) -> Option<Value> {
+    fn get_field_raw(&self, path: &str) -> Option<Variable> {
         self.node.config.dot_get(path).ok().flatten()
     }
 }

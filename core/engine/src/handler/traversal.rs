@@ -1,11 +1,11 @@
+use ahash::HashMap;
 use fixedbitset::FixedBitSet;
 use petgraph::data::DataMap;
 use petgraph::matrix_graph::Zero;
 use petgraph::prelude::{EdgeIndex, NodeIndex, StableDiGraph};
 use petgraph::visit::{EdgeRef, IntoNeighbors, IntoNodeIdentifiers, Reversed, VisitMap, Visitable};
 use petgraph::{Incoming, Outgoing};
-use serde_json::{json, Map, Value};
-use std::collections::HashMap;
+use serde_json::json;
 use std::sync::atomic::Ordering;
 use std::time::Instant;
 
@@ -14,6 +14,7 @@ use crate::model::{
     DecisionEdge, DecisionNode, DecisionNodeKind, SwitchStatement, SwitchStatementHitPolicy,
 };
 use crate::DecisionGraphTrace;
+use zen_expression::variable::Variable;
 use zen_expression::Isolate;
 
 pub(crate) type StableDiDecisionGraph<'a> = StableDiGraph<&'a DecisionNode, &'a DecisionEdge>;
@@ -21,7 +22,7 @@ pub(crate) type StableDiDecisionGraph<'a> = StableDiGraph<&'a DecisionNode, &'a 
 pub(crate) struct GraphWalker {
     ordered: FixedBitSet,
     to_visit: Vec<NodeIndex>,
-    node_data: HashMap<NodeIndex, Value>,
+    node_data: HashMap<NodeIndex, Variable>,
     iter: usize,
     visited_switch_nodes: Vec<NodeIndex>,
 
@@ -66,12 +67,12 @@ impl GraphWalker {
         self.iter += 1;
     }
 
-    pub fn get_node_data(&self, node_id: NodeIndex) -> Option<&Value> {
-        self.node_data.get(&node_id)
+    pub fn get_node_data(&self, node_id: NodeIndex) -> Option<Variable> {
+        self.node_data.get(&node_id).cloned()
     }
 
-    pub fn get_all_node_data(&self, g: &StableDiDecisionGraph) -> Value {
-        let node_values: Map<String, Value> = self
+    pub fn get_all_node_data(&self, g: &StableDiDecisionGraph) -> Variable {
+        let node_values = self
             .node_data
             .iter()
             .map(|(idx, value)| {
@@ -80,10 +81,10 @@ impl GraphWalker {
             })
             .collect();
 
-        Value::Object(node_values)
+        Variable::from_object(node_values)
     }
 
-    pub fn set_node_data(&mut self, node_id: NodeIndex, value: Value) {
+    pub fn set_node_data(&mut self, node_id: NodeIndex, value: Variable) {
         self.node_data.insert(node_id, value);
     }
 
@@ -92,11 +93,12 @@ impl GraphWalker {
         g: &StableDiDecisionGraph,
         node_id: NodeIndex,
         with_nodes: bool,
-    ) -> Value {
-        let mut value = self.merge_node_data(g.neighbors_directed(node_id, Incoming));
+    ) -> Variable {
+        let value = self.merge_node_data(g.neighbors_directed(node_id, Incoming));
 
         if self.nodes_in_context {
-            if let Some(object) = with_nodes.then_some(value.as_object_mut()).flatten() {
+            if let Some(object_ref) = with_nodes.then_some(value.as_object()).flatten() {
+                let mut object = object_ref.borrow_mut();
                 object.insert("$nodes".to_string(), self.get_all_node_data(g));
             }
         }
@@ -104,16 +106,14 @@ impl GraphWalker {
         value
     }
 
-    pub fn merge_node_data<I>(&self, iter: I) -> Value
+    pub fn merge_node_data<I>(&self, iter: I) -> Variable
     where
         I: Iterator<Item = NodeIndex>,
     {
-        let default_map = Value::Object(Map::new());
-        iter.fold(Value::Object(Map::new()), |mut prev, curr| {
+        let default_map = Variable::empty_object();
+        iter.fold(Variable::empty_object(), |mut prev, curr| {
             let data = self.node_data.get(&curr).unwrap_or(&default_map);
-
-            merge_json(&mut prev, data, true);
-            prev
+            prev.merge(data)
         })
     }
 
@@ -138,10 +138,10 @@ impl GraphWalker {
             if let DecisionNodeKind::SwitchNode { content } = &decision_node.kind {
                 if !self.visited_switch_nodes.contains(&nid) {
                     let mut input_data = self.incoming_node_data(g, nid, true);
-                    let input_context = json!({ "$": &input_data });
-                    merge_json(&mut input_data, &input_context, true);
+                    let input_context = json!({ "$": &input_data }).into();
+                    input_data.merge(&input_context);
 
-                    let mut isolate = Isolate::with_environment(&input_data);
+                    let mut isolate = Isolate::with_environment(input_data.clone());
 
                     let mut statement_iter = content.statements.iter();
                     let valid_statements: Vec<&SwitchStatement> = match content.hit_policy {
@@ -154,10 +154,13 @@ impl GraphWalker {
                             .collect(),
                     };
 
-                    let valid_statements_trace: Value = valid_statements
-                        .iter()
-                        .map(|&statement| json!({ "id": &statement.id }))
-                        .collect();
+                    let valid_statements_trace = Variable::from_array(
+                        valid_statements
+                            .iter()
+                            .map(|&statement| Variable::from(json!({ "id": &statement.id })))
+                            .collect(),
+                    );
+
                     if let Some(on_trace) = &mut on_trace {
                         on_trace(DecisionGraphTrace {
                             id: decision_node.id.clone(),
@@ -165,7 +168,9 @@ impl GraphWalker {
                             input: input_data.clone(),
                             output: input_data.clone(),
                             performance: Some(format!("{:?}", start.elapsed())),
-                            trace_data: Some(json!({ "statements": valid_statements_trace })),
+                            trace_data: Some(
+                                json!({ "statements": valid_statements_trace }).into(),
+                            ),
                         });
                     }
 
@@ -263,27 +268,5 @@ fn remove_edge_recursive(g: &mut StableDiDecisionGraph, edge_id: EdgeIndex) {
         if g.edges(source_nid).count().is_zero() {
             g.remove_node(source_nid);
         }
-    }
-}
-
-fn merge_json(doc: &mut Value, patch: &Value, top_level: bool) {
-    if !patch.is_object() && !patch.is_array() && top_level {
-        return;
-    }
-
-    if doc.is_object() && patch.is_object() {
-        let map = doc.as_object_mut().unwrap();
-        for (key, value) in patch.as_object().unwrap() {
-            if value.is_null() {
-                map.remove(key.as_str());
-            } else {
-                merge_json(map.entry(key.as_str()).or_insert(Value::Null), value, false);
-            }
-        }
-    } else if doc.is_array() && patch.is_array() {
-        let arr = doc.as_array_mut().unwrap();
-        arr.extend(patch.as_array().unwrap().clone());
-    } else {
-        *doc = patch.clone();
     }
 }

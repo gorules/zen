@@ -2,11 +2,9 @@ use crate::handler::node::{NodeRequest, NodeResponse, NodeResult};
 use crate::model::DecisionNodeKind;
 use std::collections::HashMap;
 
-use crate::util::json_map::FlatJsonMap;
 use anyhow::{anyhow, Context};
 use serde::Serialize;
-use serde_json::Value;
-use zen_expression::variable::ToVariable;
+use zen_expression::variable::Variable;
 use zen_expression::Isolate;
 
 pub struct ExpressionHandler<'a> {
@@ -33,10 +31,10 @@ impl<'a> ExpressionHandler<'a> {
             _ => Err(anyhow!("Unexpected node type")),
         }?;
 
-        let mut result = FlatJsonMap::with_capacity(content.expressions.len());
+        let result = Variable::empty_object();
         let mut trace_map = self.trace.then(|| HashMap::<&str, ExpressionTrace>::new());
 
-        self.isolate.set_environment(&request.input);
+        self.isolate.set_environment(request.input.clone());
         for expression in &content.expressions {
             let value = self.evaluate_expression(&expression.value)?;
             if let Some(tmap) = &mut trace_map {
@@ -48,21 +46,20 @@ impl<'a> ExpressionHandler<'a> {
                 );
             }
 
-            self.isolate.update_environment(|arena, env| {
+            self.isolate.update_environment(|env| {
                 let Some(environment) = env else {
                     return;
                 };
 
                 let key = format!("$.{}", &expression.key);
-                let _ =
-                    environment.dot_insert(arena, key.as_str(), value.to_variable(arena).unwrap());
+                let _ = environment.dot_insert(key.as_str(), value.clone());
             });
-            result.insert(&expression.key, value);
+
+            result.dot_insert(&expression.key, value);
         }
 
-        let output = result.to_json().context("Conversion to JSON failed")?;
         Ok(NodeResponse {
-            output,
+            output: result,
             trace_data: trace_map
                 .map(|tm| serde_json::to_value(tm))
                 .transpose()
@@ -70,7 +67,7 @@ impl<'a> ExpressionHandler<'a> {
         })
     }
 
-    fn evaluate_expression(&mut self, expression: &'a str) -> anyhow::Result<Value> {
+    fn evaluate_expression(&mut self, expression: &'a str) -> anyhow::Result<Variable> {
         self.isolate
             .run_standard(expression)
             .with_context(|| format!(r#"Failed to evaluate expression: "{expression}""#))

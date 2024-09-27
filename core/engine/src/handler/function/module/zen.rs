@@ -2,10 +2,6 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use rquickjs::module::{Declarations, Exports, ModuleDef};
-use rquickjs::prelude::{Async, Func, Opt};
-use rquickjs::{CatchResultExt, Ctx, Function, Object};
-
 use crate::handler::custom_node_adapter::CustomNodeAdapter;
 use crate::handler::function::error::{FunctionResult, ResultExt};
 use crate::handler::function::listener::{RuntimeEvent, RuntimeListener};
@@ -13,6 +9,9 @@ use crate::handler::function::module::export_default;
 use crate::handler::function::serde::JsValue;
 use crate::handler::graph::{DecisionGraph, DecisionGraphConfig};
 use crate::loader::DecisionLoader;
+use rquickjs::module::{Declarations, Exports, ModuleDef};
+use rquickjs::prelude::{Async, Func, Opt};
+use rquickjs::{CatchResultExt, Ctx, Function, Object};
 
 pub(crate) struct ZenListener<Loader, Adapter> {
     pub loader: Arc<Loader>,
@@ -68,11 +67,10 @@ impl<Loader: DecisionLoader + 'static, Adapter: CustomNodeAdapter + 'static> Run
                                 })
                                 .or_throw(&ctx)?;
 
-                                let response =
-                                    sub_tree.evaluate(&context.0).await.or_throw(&ctx)?;
-                                return rquickjs::Result::Ok(JsValue(
-                                    serde_json::to_value(response).or_throw(&ctx)?,
-                                ));
+                                let response = sub_tree.evaluate(context.0).await.or_throw(&ctx)?;
+                                let k = serde_json::to_value(response).or_throw(&ctx)?.into();
+
+                                return rquickjs::Result::Ok(JsValue(k));
                             }
                         },
                     )),
@@ -89,7 +87,7 @@ fn evaluate_expression<'js>(
     expression: String,
     context: JsValue,
 ) -> rquickjs::Result<JsValue> {
-    let s = zen_expression::evaluate_expression(expression.as_str(), &context.0).or_throw(&ctx)?;
+    let s = zen_expression::evaluate_expression(expression.as_str(), context.0).or_throw(&ctx)?;
 
     Ok(JsValue(s))
 }
@@ -99,8 +97,8 @@ fn evaluate_unary_expression<'js>(
     expression: String,
     context: JsValue,
 ) -> rquickjs::Result<bool> {
-    let s = zen_expression::evaluate_unary_expression(expression.as_str(), &context.0)
-        .or_throw(&ctx)?;
+    let s =
+        zen_expression::evaluate_unary_expression(expression.as_str(), context.0).or_throw(&ctx)?;
 
     Ok(s)
 }

@@ -14,9 +14,9 @@ async fn decision_from_content() {
     let decision = Decision::from(table_content);
 
     let context = json!({ "input": 5 });
-    let result = decision.evaluate(&context).await;
+    let result = decision.evaluate(context.into()).await;
 
-    assert_eq!(result.unwrap().result, json!({"output": 0}));
+    assert_eq!(result.unwrap().result, json!({"output": 0}).into());
 }
 
 #[tokio::test]
@@ -26,7 +26,7 @@ async fn decision_from_content_recursive() {
     let decision = Decision::from(recursive_content);
 
     let context = json!({});
-    let result = decision.evaluate(&context).await;
+    let result = decision.evaluate(context.clone().into()).await;
     match result.unwrap_err().deref() {
         EvaluationError::NodeError(e) => {
             assert_eq!(e.node_id, "0b8dcf6b-fc04-47cb-bf82-bda764e6c09b");
@@ -36,7 +36,7 @@ async fn decision_from_content_recursive() {
     }
 
     let with_loader = decision.with_loader(Arc::new(create_fs_loader()));
-    let new_result = with_loader.evaluate(&context).await;
+    let new_result = with_loader.evaluate(context.clone().into()).await;
     match new_result.unwrap_err().deref() {
         EvaluationError::NodeError(e) => {
             assert_eq!(e.source.to_string(), "Depth limit exceeded")
@@ -55,7 +55,7 @@ fn decision_expression_node() {
         "lastName": "Doe"
     });
 
-    let result = rt.block_on(decision.evaluate(&context));
+    let result = rt.block_on(decision.evaluate(context.into()));
     assert_eq!(
         result.unwrap().result,
         json!({
@@ -68,6 +68,7 @@ fn decision_expression_node() {
                 }
             }
         })
+        .into()
     )
 }
 

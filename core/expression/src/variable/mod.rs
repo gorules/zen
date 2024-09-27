@@ -1,14 +1,13 @@
 pub use crate::variable::map::BumpMap;
 use ahash::HashMap;
 pub use bumpalo::collections::Vec as BumpVec;
-use chrono::NaiveDateTime;
-use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde_json::Value;
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
+use std::fmt::{Display, Formatter};
+use std::ops::Deref;
 use std::rc::Rc;
-use strum_macros::Display;
 
 mod conv;
 mod de;
@@ -16,12 +15,11 @@ mod map;
 mod ser;
 mod types;
 
-use crate::vm::helpers::date_time;
-use crate::vm::VMError;
+pub use de::VariableDeserializer;
 pub use types::VariableType;
 
 pub type RcCell<T> = Rc<RefCell<T>>;
-#[derive(Debug, PartialEq, Eq, Clone, Display)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Variable {
     Null,
     Bool(bool),
@@ -69,6 +67,13 @@ impl Variable {
         }
     }
 
+    pub fn is_array(&self) -> bool {
+        match self {
+            Variable::Array(_) => true,
+            _ => false,
+        }
+    }
+
     pub fn as_object(&self) -> Option<RcCell<HashMap<String, Variable>>> {
         match self {
             Variable::Object(obj) => Some(obj.clone()),
@@ -76,9 +81,23 @@ impl Variable {
         }
     }
 
+    pub fn is_object(&self) -> bool {
+        match self {
+            Variable::Object(_) => true,
+            _ => false,
+        }
+    }
+
     pub fn as_bool(&self) -> Option<bool> {
         match self {
             Variable::Bool(b) => Some(*b),
+            _ => None,
+        }
+    }
+
+    pub fn as_number(&self) -> Option<Decimal> {
+        match self {
+            Variable::Number(n) => Some(*n),
             _ => None,
         }
     }
@@ -109,7 +128,7 @@ impl Variable {
             })
     }
 
-    pub fn dot_insert(&mut self, key: &str, variable: Variable) -> Option<Variable> {
+    pub fn dot_insert(&self, key: &str, variable: Variable) -> Option<Variable> {
         let mut parts = Vec::from_iter(key.split('.'));
         let Some(last_part) = parts.pop() else {
             return None;
@@ -133,29 +152,74 @@ impl Variable {
         let mut head_obj_ref = head_obj.borrow_mut();
         head_obj_ref.insert(last_part.to_string(), variable)
     }
+
+    pub fn merge(&mut self, patch: &Variable) -> Variable {
+        merge_variables(self, patch, true);
+
+        self.clone()
+    }
 }
 
-impl TryFrom<&Variable> for NaiveDateTime {
-    type Error = VMError;
+fn merge_variables(doc: &mut Variable, patch: &Variable, top_level: bool) {
+    if !patch.is_object() && !patch.is_array() && top_level {
+        return;
+    }
 
-    fn try_from(value: &Variable) -> Result<Self, Self::Error> {
-        match value {
-            Variable::String(a) => date_time(a),
-            #[allow(deprecated)]
-            Variable::Number(a) => NaiveDateTime::from_timestamp_opt(
-                a.to_i64().ok_or_else(|| VMError::OpcodeErr {
-                    opcode: "DateManipulation".into(),
-                    message: "Failed to extract date".into(),
-                })?,
-                0,
-            )
-            .ok_or_else(|| VMError::ParseDateTimeErr {
-                timestamp: a.to_string(),
-            }),
-            _ => Err(VMError::OpcodeErr {
-                opcode: "DateManipulation".into(),
-                message: "Unsupported type".into(),
-            }),
+    if doc.is_object() && patch.is_object() {
+        let map_ref = doc.as_object().unwrap();
+        let mut map = map_ref.borrow_mut();
+
+        let patch_ref = patch.as_object().unwrap();
+        let patch = patch_ref.borrow();
+        for (key, value) in patch.deref() {
+            if value == &Variable::Null {
+                map.remove(key.as_str());
+            } else {
+                let entry = map.entry(key.to_string()).or_insert(Variable::Null);
+                merge_variables(entry, value, false)
+            }
+        }
+    } else if doc.is_array() && patch.is_array() {
+        let arr_ref = doc.as_array().unwrap();
+        let mut arr = arr_ref.borrow_mut();
+
+        let patch_ref = patch.as_array().unwrap();
+        let patch = patch_ref.borrow();
+        arr.extend(patch.clone());
+    } else {
+        *doc = patch.clone();
+    }
+}
+
+impl Display for Variable {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Variable::Null => write!(f, "null"),
+            Variable::Bool(b) => match *b {
+                true => write!(f, "true"),
+                false => write!(f, "false"),
+            },
+            Variable::Number(n) => write!(f, "{n}"),
+            Variable::String(s) => write!(f, "\"{s}\""),
+            Variable::Array(arr) => {
+                let arr = arr.borrow();
+                let s = arr
+                    .iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<String>>()
+                    .join(",");
+                write!(f, "[{s}]")
+            }
+            Variable::Object(obj) => {
+                let obj = obj.borrow();
+                let s = obj
+                    .iter()
+                    .map(|(k, v)| format!("\"{k}\":{v}"))
+                    .collect::<Vec<String>>()
+                    .join(",");
+
+                write!(f, "{{{s}}}")
+            }
         }
     }
 }

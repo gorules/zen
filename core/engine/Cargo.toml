@@ -11,6 +11,7 @@ repository = "https://github.com/gorules/zen.git"
 doctest = false
 
 [dependencies]
+ahash = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 bincode = { workspace = true, optional = true }
@@ -19,6 +20,7 @@ serde_json = { workspace = true, features = ["arbitrary_precision"] }
 serde = { workspace = true, features = ["derive"] }
 once_cell = { workspace = true }
 json_dotpath = { workspace = true }
+rust_decimal = { workspace = true, features = ["maths-nopanic"] }
 fixedbitset = "0.4.2"
 tokio = { workspace = true, features = ["sync", "time"] }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }

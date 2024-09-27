@@ -1,18 +1,17 @@
+use ahash::HashMap;
 use anyhow::{anyhow, Context};
-use std::collections::HashMap;
-
-use serde::Serialize;
-use serde_json::Value;
-use zen_expression::Isolate;
 
 use crate::handler::node::{NodeRequest, NodeResponse, NodeResult};
 use crate::handler::table::{RowOutput, RowOutputKind};
 use crate::model::{DecisionNodeKind, DecisionTableContent, DecisionTableHitPolicy};
+use serde::Serialize;
+use zen_expression::variable::Variable;
+use zen_expression::Isolate;
 
 #[derive(Debug, Serialize)]
 struct RowResult {
     rule: Option<HashMap<String, String>>,
-    reference_map: Option<HashMap<String, Value>>,
+    reference_map: Option<HashMap<String, Variable>>,
     index: usize,
     #[serde(skip)]
     output: RowOutput,
@@ -38,7 +37,7 @@ impl<'a> DecisionTableHandler<'a> {
             _ => Err(anyhow!("Unexpected node type")),
         }?;
 
-        self.isolate.set_environment(&request.input);
+        self.isolate.set_environment(request.input.clone());
 
         match &content.hit_policy {
             DecisionTableHitPolicy::First => self.handle_first_hit(&content).await,
@@ -62,7 +61,7 @@ impl<'a> DecisionTableHandler<'a> {
         }
 
         Ok(NodeResponse {
-            output: Value::Null,
+            output: Variable::Null,
             trace_data: None,
         })
     }
@@ -81,7 +80,7 @@ impl<'a> DecisionTableHandler<'a> {
         }
 
         Ok(NodeResponse {
-            output: serde_json::to_value(&outputs).context("Failed to parse table row output")?,
+            output: Variable::from_array(outputs),
             trace_data: self
                 .trace
                 .then(|| serde_json::to_value(&results).context("Failed to parse trace data"))
@@ -126,7 +125,7 @@ impl<'a> DecisionTableHandler<'a> {
             }
 
             let res = self.isolate.run_standard(rule_value).ok()?;
-            outputs.push(&output.field, RowOutputKind::Value(res));
+            outputs.push(&output.field, RowOutputKind::Variable(res));
         }
 
         if !self.trace {
@@ -144,7 +143,7 @@ impl<'a> DecisionTableHandler<'a> {
         };
 
         let mut expressions: HashMap<String, String> = Default::default();
-        let mut reference_map: HashMap<String, Value> = Default::default();
+        let mut reference_map: HashMap<String, Variable> = Default::default();
 
         expressions.insert("_id".to_string(), rule_id.clone());
         if let Some(description) = rule.get("_description") {

@@ -1,11 +1,11 @@
 pub mod zen;
 
-use crate::util::json_map::{FlatJsonMap, JsonMapError};
-use serde_json::Value;
+use crate::util::json_map::JsonMapError;
+use zen_expression::variable::Variable;
 
 #[derive(Debug, Clone)]
 pub(crate) enum RowOutputKind {
-    Value(Value),
+    Variable(Variable),
 }
 
 #[derive(Debug, Default)]
@@ -20,15 +20,17 @@ impl RowOutput {
         self.output.push((key.into(), value))
     }
 
-    pub async fn to_json(&self) -> Result<Value, JsonMapError> {
-        let map: Vec<(String, Value)> = self
-            .output
-            .iter()
-            .map(|(key, kind)| match kind {
-                RowOutputKind::Value(value) => (key.clone(), value.clone()),
-            })
-            .collect();
+    pub async fn to_json(&self) -> Result<Variable, JsonMapError> {
+        let object = Variable::empty_object();
 
-        FlatJsonMap::from(map).to_json()
+        for (key, kind) in &self.output {
+            match kind {
+                RowOutputKind::Variable(variable) => {
+                    object.dot_insert(key.as_str(), variable.clone());
+                }
+            }
+        }
+
+        Ok(object)
     }
 }

@@ -1,16 +1,16 @@
 use std::iter::Peekable;
+use std::rc::Rc;
 use std::slice::Iter;
 
 use crate::error::TemplateRenderError;
-use serde_json::Value;
-use zen_expression::Isolate;
-
 use crate::parser::Node;
+use zen_expression::variable::Variable;
+use zen_expression::Isolate;
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum InterpreterResult<'a> {
     String(&'a str),
-    Value(Value),
+    Variable(Variable),
 }
 
 #[derive(Debug)]
@@ -37,7 +37,10 @@ where
 }
 
 impl<'source, 'nodes> Interpreter<'source, 'nodes> {
-    pub(crate) fn collect_for(mut self, context: &Value) -> Result<Value, TemplateRenderError> {
+    pub(crate) fn collect_for(
+        mut self,
+        context: Variable,
+    ) -> Result<Variable, TemplateRenderError> {
         self.isolate.set_environment(context);
 
         while let Some(node) = self.cursor.next() {
@@ -48,12 +51,12 @@ impl<'source, 'nodes> Interpreter<'source, 'nodes> {
         }
 
         match self.results.len() {
-            0 => Ok(Value::Null),
+            0 => Ok(Variable::Null),
             1 => {
                 let item = self.results.remove(0);
                 match item {
-                    InterpreterResult::Value(val) => Ok(val),
-                    InterpreterResult::String(str) => Ok(Value::String(str.to_string())),
+                    InterpreterResult::Variable(val) => Ok(val),
+                    InterpreterResult::String(str) => Ok(Variable::String(Rc::from(str))),
                 }
             }
             _ => {
@@ -62,11 +65,11 @@ impl<'source, 'nodes> Interpreter<'source, 'nodes> {
                     .into_iter()
                     .map(|item| match item {
                         InterpreterResult::String(str) => str.to_string(),
-                        InterpreterResult::Value(value) => value_to_string(value),
+                        InterpreterResult::Variable(value) => var_to_string(value),
                     })
                     .collect::<String>();
 
-                Ok(Value::String(string_data))
+                Ok(Variable::String(Rc::from(string_data.as_str())))
             }
         }
     }
@@ -77,21 +80,14 @@ impl<'source, 'nodes> Interpreter<'source, 'nodes> {
 
     fn expression(&mut self, data: &'source str) -> Result<(), TemplateRenderError> {
         let result = self.isolate.run_standard(data)?;
-        self.results.push(InterpreterResult::Value(result));
+        self.results.push(InterpreterResult::Variable(result));
         Ok(())
     }
 }
 
-fn value_to_string(value: Value) -> String {
-    match value {
-        Value::Null => String::from("null"),
-        Value::Bool(b) => match b {
-            true => String::from("true"),
-            false => String::from("false"),
-        },
-        Value::Number(n) => n.to_string(),
-        Value::String(s) => s,
-        Value::Array(arr) => Value::Array(arr).to_string(),
-        Value::Object(obj) => Value::Object(obj).to_string(),
+fn var_to_string(var: Variable) -> String {
+    match var {
+        Variable::String(s) => s.to_string(),
+        _ => var.to_string(),
     }
 }

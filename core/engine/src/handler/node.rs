@@ -3,17 +3,18 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt::{Display, Formatter};
 use thiserror::Error;
+use zen_expression::variable::Variable;
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeResponse {
-    pub output: Value,
+    pub output: Variable,
     pub trace_data: Option<Value>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct NodeRequest<'a> {
-    pub input: Value,
+    pub input: Variable,
     pub iteration: u8,
     pub node: &'a DecisionNode,
 }

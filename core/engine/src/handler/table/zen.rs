@@ -37,7 +37,7 @@ impl<'a> DecisionTableHandler<'a> {
             _ => Err(anyhow!("Unexpected node type")),
         }?;
 
-        self.isolate.set_environment(request.input.clone());
+        self.isolate.set_environment(request.input.depth_clone(1));
 
         match &content.hit_policy {
             DecisionTableHitPolicy::First => self.handle_first_hit(&content).await,

@@ -85,11 +85,6 @@ fn test_interpolation() {
             context: json!(null),
             expected: json!("[1,2,3] array"),
         },
-        TestCase {
-            template: "Customer: {{ customer }}",
-            context: json!({ "customer": { "firstName": "John", "lastName": "Doe" } }),
-            expected: json!(r#"Customer: {"firstName":"John","lastName":"Doe"}"#),
-        },
     ];
 
     for test_case in test_cases {

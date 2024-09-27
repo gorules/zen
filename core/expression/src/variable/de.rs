@@ -55,10 +55,7 @@ impl<'de> Visitor<'de> for VariableVisitor {
     where
         E: Error,
     {
-        match Decimal::from_str_exact(v) {
-            Ok(d) => Ok(Variable::Number(d)),
-            Err(_) => Ok(Variable::String(Rc::from(v))),
-        }
+        Ok(Variable::String(Rc::from(v)))
     }
 
     fn visit_unit<E>(self) -> Result<Self::Value, E>
@@ -85,8 +82,21 @@ impl<'de> Visitor<'de> for VariableVisitor {
         A: MapAccess<'de>,
     {
         let mut m = HashMap::with_capacity(map.size_hint().unwrap_or_default());
+        let mut first = true;
         while let Some((key, value)) = map.next_entry_seed(PhantomData, VariableDeserializer)? {
+            if first && key == "$serde_json::private::Number" {
+                return Ok(Variable::Number(
+                    Decimal::from_str_exact(
+                        value
+                            .as_str()
+                            .ok_or_else(|| Error::custom("failed to deserialize number"))?,
+                    )
+                    .map_err(|_| Error::custom("invalid number"))?,
+                ));
+            }
+
             m.insert(key, value);
+            first = false;
         }
 
         Ok(Variable::from_object(m))
@@ -106,11 +116,10 @@ impl<'de> DeserializeSeed<'de> for VariableDeserializer {
     }
 }
 
-
 impl<'de> Deserialize<'de> for Variable {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: Deserializer<'de>
+        D: Deserializer<'de>,
     {
         deserializer.deserialize_any(VariableVisitor)
     }

@@ -18,17 +18,17 @@ pub fn evaluate_expression(
         .context("Failed to convert context")?
         .unwrap_or(Value::Null);
 
-    let result = zen_expression::evaluate_expression(expression.as_str(), &context)
+    let result = zen_expression::evaluate_expression(expression.as_str(), context.into())
         .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?;
 
-    Ok(PyValue(result).to_object(py))
+    Ok(PyValue(result.to_value()).to_object(py))
 }
 
 #[pyfunction]
 pub fn evaluate_unary_expression(expression: String, ctx: &PyDict) -> PyResult<bool> {
     let context: Value = depythonize(ctx).context("Failed to convert context")?;
 
-    let result = zen_expression::evaluate_unary_expression(expression.as_str(), &context)
+    let result = zen_expression::evaluate_unary_expression(expression.as_str(), context.into())
         .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?;
 
     Ok(result)
@@ -38,8 +38,8 @@ pub fn evaluate_unary_expression(expression: String, ctx: &PyDict) -> PyResult<b
 pub fn render_template(py: Python, template: String, ctx: &PyDict) -> PyResult<PyObject> {
     let context: Value = depythonize(ctx).context("Failed to convert context")?;
 
-    let result = zen_tmpl::render(template.as_str(), &context)
+    let result = zen_tmpl::render(template.as_str(), context.into())
         .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?;
 
-    Ok(PyValue(result).to_object(py))
+    Ok(PyValue(result.to_value()).to_object(py))
 }

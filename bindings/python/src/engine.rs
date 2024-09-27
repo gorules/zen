@@ -6,7 +6,7 @@ use pyo3::{pyclass, pymethods, PyAny, PyObject, PyResult, Python, ToPyObject};
 use pyo3_asyncio::tokio;
 use pythonize::depythonize;
 use serde::{Deserialize, Serialize};
-
+use serde_json::Value;
 use zen_engine::model::DecisionContent;
 use zen_engine::{DecisionEngine, EvaluationOptions};
 
@@ -82,7 +82,7 @@ impl PyZenEngine {
         ctx: &PyDict,
         opts: Option<&PyDict>,
     ) -> PyResult<PyObject> {
-        let context = depythonize(ctx).context("Failed to convert dict")?;
+        let context: Value = depythonize(ctx).context("Failed to convert dict")?;
         let options: PyZenEvaluateOptions = if let Some(op) = opts {
             depythonize(op).context("Failed to convert dict")?
         } else {
@@ -92,7 +92,7 @@ impl PyZenEngine {
         let graph = self.graph.clone();
         let result = futures::executor::block_on(graph.evaluate_with_opts(
             key,
-            &context,
+            context.into(),
             EvaluationOptions {
                 max_depth: options.max_depth,
                 trace: options.trace,
@@ -113,7 +113,7 @@ impl PyZenEngine {
         ctx: &PyDict,
         opts: Option<&PyDict>,
     ) -> PyResult<&PyAny> {
-        let context = depythonize(ctx).context("Failed to convert dict")?;
+        let context: Value = depythonize(ctx).context("Failed to convert dict")?;
         let options: PyZenEvaluateOptions = if let Some(op) = opts {
             depythonize(op).context("Failed to convert dict")?
         } else {
@@ -124,7 +124,7 @@ impl PyZenEngine {
         tokio::future_into_py(py, async move {
             let result = futures::executor::block_on(graph.evaluate_with_opts(
                 key,
-                &context,
+                context.into(),
                 EvaluationOptions {
                     max_depth: options.max_depth,
                     trace: options.trace,
@@ -148,7 +148,7 @@ impl PyZenEngine {
         Ok(PyZenDecision::from(decision))
     }
 
-    pub fn get_decision<'py>(&'py self, py: Python<'py>, key: String) -> PyResult<PyZenDecision> {
+    pub fn get_decision<'py>(&'py self, _py: Python<'py>, key: String) -> PyResult<PyZenDecision> {
         let decision = futures::executor::block_on(self.graph.get_decision(&key))
             .context("Failed to find decision with given key")?;
 

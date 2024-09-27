@@ -1,8 +1,8 @@
+use serde_json::Value;
 use std::ffi::{c_char, CStr, CString};
 use std::marker::{PhantomData, PhantomPinned};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
-
 use zen_engine::{DecisionEngine, EvaluationOptions};
 
 use crate::custom_node::DynamicCustomNode;
@@ -121,7 +121,7 @@ pub extern "C" fn zen_engine_evaluate(
     };
 
     let cstr_context = unsafe { CStr::from_ptr(context) };
-    let Ok(val_context) = serde_json::from_slice(cstr_context.to_bytes()) else {
+    let Ok(val_context) = serde_json::from_slice::<Value>(cstr_context.to_bytes()) else {
         return ZenResult::error(ZenError::JsonDeserializationFailed);
     };
 
@@ -129,7 +129,7 @@ pub extern "C" fn zen_engine_evaluate(
 
     let maybe_result = tokio_runtime().block_on(zen_engine.evaluate_with_opts(
         str_key,
-        &val_context,
+        val_context.into(),
         options.into(),
     ));
     let result = match maybe_result {

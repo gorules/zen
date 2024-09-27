@@ -5,7 +5,7 @@ use pyo3::types::PyDict;
 use pyo3::{pyclass, pymethods, PyAny, PyObject, PyResult, Python, ToPyObject};
 use pyo3_asyncio::tokio;
 use pythonize::depythonize;
-
+use serde_json::Value;
 use zen_engine::{Decision, EvaluationOptions};
 
 use crate::custom_node::PyCustomNode;
@@ -26,7 +26,7 @@ impl From<Decision<PyDecisionLoader, PyCustomNode>> for PyZenDecision {
 #[pymethods]
 impl PyZenDecision {
     pub fn evaluate(&self, py: Python, ctx: &PyDict, opts: Option<&PyDict>) -> PyResult<PyObject> {
-        let context = depythonize(ctx).context("Failed to convert dict")?;
+        let context: Value = depythonize(ctx).context("Failed to convert dict")?;
         let options: PyZenEvaluateOptions = if let Some(op) = opts {
             depythonize(op).context("Failed to convert dict")?
         } else {
@@ -35,7 +35,7 @@ impl PyZenDecision {
 
         let decision = self.0.clone();
         let result = futures::executor::block_on(decision.evaluate_with_opts(
-            &context,
+            context.into(),
             EvaluationOptions {
                 max_depth: options.max_depth,
                 trace: options.trace,
@@ -55,7 +55,7 @@ impl PyZenDecision {
         ctx: &PyDict,
         opts: Option<&PyDict>,
     ) -> PyResult<&PyAny> {
-        let context = depythonize(ctx).context("Failed to convert dict")?;
+        let context: Value = depythonize(ctx).context("Failed to convert dict")?;
         let options: PyZenEvaluateOptions = if let Some(op) = opts {
             depythonize(op).context("Failed to convert dict")?
         } else {
@@ -65,7 +65,7 @@ impl PyZenDecision {
         let decision = self.0.clone();
         tokio::future_into_py(py, async move {
             let result = futures::executor::block_on(decision.evaluate_with_opts(
-                &context,
+                context.into(),
                 EvaluationOptions {
                     max_depth: options.max_depth,
                     trace: options.trace,

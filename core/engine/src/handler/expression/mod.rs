@@ -34,7 +34,7 @@ impl<'a> ExpressionHandler<'a> {
         let result = Variable::empty_object();
         let mut trace_map = self.trace.then(|| HashMap::<&str, ExpressionTrace>::new());
 
-        self.isolate.set_environment(request.input.clone());
+        self.isolate.set_environment(request.input.depth_clone(1));
         for expression in &content.expressions {
             let value = self.evaluate_expression(&expression.value)?;
             if let Some(tmap) = &mut trace_map {

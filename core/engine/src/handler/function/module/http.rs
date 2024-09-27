@@ -1,3 +1,6 @@
+use crate::handler::function::error::ResultExt;
+use crate::handler::function::module::export_default;
+use crate::handler::function::serde::JsValue;
 use reqwest::header::{HeaderMap, HeaderName};
 use reqwest::Method;
 use rquickjs::module::{Declarations, Exports, ModuleDef};
@@ -6,9 +9,6 @@ use rquickjs::{CatchResultExt, Ctx, FromJs, IntoAtom, IntoJs, Object, Value};
 use std::str::FromStr;
 use std::sync::OnceLock;
 use zen_expression::variable::Variable;
-use crate::handler::function::error::ResultExt;
-use crate::handler::function::module::export_default;
-use crate::handler::function::serde::JsValue;
 
 pub(crate) struct HttpResponse<'js> {
     data: Value<'js>,

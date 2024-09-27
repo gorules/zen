@@ -1,7 +1,3 @@
-use std::rc::Rc;
-use std::sync::Arc;
-use std::time::Instant;
-use ahash::{HashMap, HashMapExt};
 use crate::handler::custom_node_adapter::{CustomNodeAdapter, CustomNodeRequest};
 use crate::handler::decision::DecisionHandler;
 use crate::handler::expression::ExpressionHandler;
@@ -17,11 +13,15 @@ use crate::handler::traversal::{GraphWalker, StableDiDecisionGraph};
 use crate::loader::DecisionLoader;
 use crate::model::{DecisionContent, DecisionNodeKind, FunctionNodeContent};
 use crate::{EvaluationError, NodeError};
+use ahash::{HashMap, HashMapExt};
 use anyhow::anyhow;
 use petgraph::algo::is_cyclic_directed;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::Value;
+use std::rc::Rc;
+use std::sync::Arc;
+use std::time::Instant;
 use thiserror::Error;
 use zen_expression::variable::Variable;
 
@@ -255,8 +255,8 @@ impl<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGr
                         }
                     };
 
-                    // trim_nodes(&mut node_request.input);
-                    // trim_nodes(&mut res.output);
+                    node_request.input.dot_remove("$nodes");
+                    res.output.dot_remove("$nodes");
 
                     trace!({
                         input: node_request.input,
@@ -289,8 +289,8 @@ impl<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGr
                         node_id: node.id.to_string(),
                     })?;
 
-                    // trim_nodes(&mut node_request.input);
-                    // trim_nodes(&mut res.output);
+                    node_request.input.dot_remove("$nodes");
+                    res.output.dot_remove("$nodes");
 
                     trace!({
                         input: node_request.input,
@@ -317,8 +317,8 @@ impl<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGr
                             source: e.into(),
                         })?;
 
-                    // trim_nodes(&mut node_request.input);
-                    // trim_nodes(&mut res.output);
+                    node_request.input.dot_remove("$nodes");
+                    res.output.dot_remove("$nodes");
 
                     trace!({
                         input: node_request.input,
@@ -345,8 +345,8 @@ impl<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGr
                             source: e.into(),
                         })?;
 
-                    // trim_nodes(&mut node_request.input);
-                    // trim_nodes(&mut res.output);
+                    node_request.input.dot_remove("$nodes");
+                    res.output.dot_remove("$nodes");
 
                     trace!({
                         input: node_request.input,
@@ -374,8 +374,8 @@ impl<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGr
                             source: e.into(),
                         })?;
 
-                    // trim_nodes(&mut node_request.input);
-                    // trim_nodes(&mut res.output);
+                    node_request.input.dot_remove("$nodes");
+                    res.output.dot_remove("$nodes");
 
                     trace!({
                         input: node_request.input,

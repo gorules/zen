@@ -4,12 +4,12 @@ use pyo3::{pyclass, pymethods, PyObject, PyResult, Python, ToPyObject};
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::value::{value_to_object, PyValue};
 use zen_engine::handler::custom_node_adapter::{
     CustomDecisionNode as BaseCustomDecisionNode, CustomNodeRequest,
 };
 use zen_engine::handler::node::NodeResponse;
-
-use crate::value::{value_to_object, PyValue};
+use zen_expression::Variable;
 
 #[derive(Serialize)]
 struct CustomDecisionNode {
@@ -50,10 +50,10 @@ impl PyNodeRequest {
         let node_val = serde_json::to_value(&inner_node).unwrap();
 
         Ok(Self {
-            input: value_to_object(py, &value.input),
+            input: value_to_object(py, &value.input.to_value()),
             node: value_to_object(py, &node_val),
 
-            inner_input: value.input.clone(),
+            inner_input: value.input.to_value(),
             inner_node,
         })
     }
@@ -73,10 +73,10 @@ impl PyNodeRequest {
             return Ok(PyValue(selected_value).to_object(py));
         };
 
-        let template_value = zen_tmpl::render(template.as_str(), &self.inner_input)
+        let template_value = zen_tmpl::render(template.as_str(), Variable::from(&self.inner_input))
             .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?;
 
-        Ok(PyValue(template_value).to_object(py))
+        Ok(PyValue(template_value.to_value()).to_object(py))
     }
 
     fn get_field_raw(&self, py: Python, path: String) -> PyResult<PyObject> {
@@ -102,7 +102,7 @@ pub struct PyNodeResponse {
 impl From<NodeResponse> for PyNodeResponse {
     fn from(value: NodeResponse) -> Self {
         Self {
-            output: value.output,
+            output: value.output.to_value(),
             trace_data: value.trace_data,
         }
     }
@@ -111,7 +111,7 @@ impl From<NodeResponse> for PyNodeResponse {
 impl From<PyNodeResponse> for NodeResponse {
     fn from(value: PyNodeResponse) -> Self {
         Self {
-            output: value.output,
+            output: value.output.into(),
             trace_data: value.trace_data,
         }
     }

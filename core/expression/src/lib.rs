@@ -13,9 +13,10 @@
 //! # Example
 //! Evaluate expression using isolate:
 //! ```
-//! use zen_expression::{evaluate_expression, json};
+//! use zen_expression::evaluate_expression;
 //! use zen_expression::variable::Variable;
 //! use rust_decimal_macros::dec;
+//! use serde_json::json;
 //!
 //! fn main() {
 //!     let context = json!({ "tax": { "percentage": 10 } });
@@ -30,9 +31,10 @@
 //! will re-use allocated memory from previous evaluations, drastically improving performance.
 //!
 //! ```
-//! use zen_expression::{Isolate, json};
+//! use zen_expression::Isolate;
 //! use zen_expression::variable::Variable;
 //! use rust_decimal_macros::dec;
+//! use serde_json::json;
 //!
 //! fn main() {
 //!     let context = json!({ "tax": { "percentage": 10 } });

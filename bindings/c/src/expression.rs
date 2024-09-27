@@ -1,7 +1,7 @@
 use std::ffi::CString;
 
 use libc::{c_char, c_int};
-
+use serde_json::Value;
 use zen_expression::{evaluate_expression, evaluate_unary_expression};
 
 use crate::error::ZenError;
@@ -21,11 +21,11 @@ pub extern "C" fn zen_evaluate_expression(
         return ZenResult::error(ZenError::InvalidArgument);
     };
 
-    let Ok(context_val) = serde_json::from_slice(context_cstr.to_bytes()) else {
+    let Ok(context_val) = serde_json::from_slice::<Value>(context_cstr.to_bytes()) else {
         return ZenResult::error(ZenError::JsonDeserializationFailed);
     };
 
-    let maybe_result = evaluate_expression(expression_str, &context_val);
+    let maybe_result = evaluate_expression(expression_str, context_val.into());
     let result = match maybe_result {
         Ok(r) => r,
         Err(err) => return ZenResult::from(&err),
@@ -55,11 +55,11 @@ pub extern "C" fn zen_evaluate_unary_expression(
         return ZenResult::error(ZenError::InvalidArgument);
     };
 
-    let Ok(context_val) = serde_json::from_slice(context_cstr.to_bytes()) else {
+    let Ok(context_val) = serde_json::from_slice::<Value>(context_cstr.to_bytes()) else {
         return ZenResult::error(ZenError::JsonDeserializationFailed);
     };
 
-    let maybe_result = evaluate_unary_expression(expression_str, &context_val);
+    let maybe_result = evaluate_unary_expression(expression_str, context_val.into());
     let result = match maybe_result {
         Ok(r) => r,
         Err(err) => return ZenResult::from(&err),
@@ -86,11 +86,11 @@ pub extern "C" fn zen_evaluate_template(
         return ZenResult::error(ZenError::InvalidArgument);
     };
 
-    let Ok(context_val) = serde_json::from_slice(context_cstr.to_bytes()) else {
+    let Ok(context_val) = serde_json::from_slice::<Value>(context_cstr.to_bytes()) else {
         return ZenResult::error(ZenError::JsonDeserializationFailed);
     };
 
-    let result = match zen_tmpl::render(template_str, &context_val) {
+    let result = match zen_tmpl::render(template_str, context_val.into()) {
         Ok(r) => r,
         Err(err) => {
             return ZenResult::error(ZenError::TemplateEngineError {

@@ -94,8 +94,9 @@ impl GraphWalker {
         node_id: NodeIndex,
         with_nodes: bool,
     ) -> Variable {
-        let value = self.merge_node_data(g.neighbors_directed(node_id, Incoming));
-
+        let value = self
+            .merge_node_data(g.neighbors_directed(node_id, Incoming))
+            .depth_clone(1);
         if self.nodes_in_context {
             if let Some(object_ref) = with_nodes.then_some(value.as_object()).flatten() {
                 let mut object = object_ref.borrow_mut();
@@ -137,11 +138,12 @@ impl GraphWalker {
 
             if let DecisionNodeKind::SwitchNode { content } = &decision_node.kind {
                 if !self.visited_switch_nodes.contains(&nid) {
-                    let mut input_data = self.incoming_node_data(g, nid, true);
-                    let input_context = json!({ "$": &input_data }).into();
-                    input_data.merge(&input_context);
+                    let input_data = self.incoming_node_data(g, nid, true);
 
-                    let mut isolate = Isolate::with_environment(input_data.clone());
+                    let env = input_data.depth_clone(1);
+                    env.dot_insert("$", input_data.depth_clone(1));
+
+                    let mut isolate = Isolate::with_environment(env);
 
                     let mut statement_iter = content.statements.iter();
                     let valid_statements: Vec<&SwitchStatement> = match content.hit_policy {
@@ -161,12 +163,14 @@ impl GraphWalker {
                             .collect(),
                     );
 
+                    input_data.dot_remove("$nodes");
+
                     if let Some(on_trace) = &mut on_trace {
                         on_trace(DecisionGraphTrace {
                             id: decision_node.id.clone(),
                             name: decision_node.name.clone(),
-                            input: input_data.clone(),
-                            output: input_data.clone(),
+                            input: input_data.shallow_clone(),
+                            output: input_data.shallow_clone(),
                             performance: Some(format!("{:?}", start.elapsed())),
                             trace_data: Some(
                                 json!({ "statements": valid_statements_trace }).into(),

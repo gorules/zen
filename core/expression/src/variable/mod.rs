@@ -18,7 +18,7 @@ mod types;
 pub use de::VariableDeserializer;
 pub use types::VariableType;
 
-pub type RcCell<T> = Rc<RefCell<T>>;
+pub(crate) type RcCell<T> = Rc<RefCell<T>>;
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Variable {
     Null,

@@ -33,7 +33,7 @@
 //! use zen_expression::{Isolate, json};
 //! use zen_expression::variable::Variable;
 //! use rust_decimal_macros::dec;
-//! 
+//!
 //! fn main() {
 //!     let context = json!({ "tax": { "percentage": 10 } });
 //!     let mut isolate = Isolate::with_environment(context.into());
@@ -66,4 +66,4 @@ pub mod vm;
 
 pub use function::{evaluate_expression, evaluate_unary_expression};
 pub use isolate::{Isolate, IsolateError};
-pub use serde_json::json;
+pub use variable::Variable;

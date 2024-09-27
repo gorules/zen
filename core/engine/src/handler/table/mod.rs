@@ -1,6 +1,5 @@
 pub mod zen;
 
-use crate::util::json_map::JsonMapError;
 use zen_expression::variable::Variable;
 
 #[derive(Debug, Clone)]
@@ -20,7 +19,7 @@ impl RowOutput {
         self.output.push((key.into(), value))
     }
 
-    pub async fn to_json(&self) -> Result<Variable, JsonMapError> {
+    pub async fn to_json(&self) -> Variable {
         let object = Variable::empty_object();
 
         for (key, kind) in &self.output {
@@ -31,6 +30,6 @@ impl RowOutput {
             }
         }
 
-        Ok(object)
+        object
     }
 }

@@ -49,7 +49,7 @@ impl<'a> DecisionTableHandler<'a> {
         for i in 0..content.rules.len() {
             if let Some(result) = self.evaluate_row(&content, i) {
                 return Ok(NodeResponse {
-                    output: result.output.to_json().await?,
+                    output: result.output.to_json().await,
                     trace_data: self
                         .trace
                         .then(|| {
@@ -76,7 +76,7 @@ impl<'a> DecisionTableHandler<'a> {
 
         let mut outputs = Vec::with_capacity(results.len());
         for res in &results {
-            outputs.push(res.output.to_json().await?);
+            outputs.push(res.output.to_json().await);
         }
 
         Ok(NodeResponse {

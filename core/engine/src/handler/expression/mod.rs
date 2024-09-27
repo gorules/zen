@@ -1,6 +1,6 @@
 use crate::handler::node::{NodeRequest, NodeResponse, NodeResult};
 use crate::model::DecisionNodeKind;
-use std::collections::HashMap;
+use ahash::{HashMap, HashMapExt};
 
 use anyhow::{anyhow, Context};
 use serde::Serialize;

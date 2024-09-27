@@ -118,13 +118,14 @@ impl ZenEngine {
                 graph
                     .evaluate_with_opts(
                         key,
-                        &context,
+                        context.into(),
                         EvaluationOptions {
                             max_depth: options.max_depth,
                             trace: options.trace,
                         },
                     )
                     .await
+                    .map(ZenEngineResponse::from)
             }
         })
         .await
@@ -133,7 +134,7 @@ impl ZenEngine {
             anyhow!(serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string()))
         })?;
 
-        Ok(ZenEngineResponse::from(result))
+        Ok(result)
     }
 
     #[napi]

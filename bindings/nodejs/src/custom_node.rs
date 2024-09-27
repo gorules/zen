@@ -31,7 +31,7 @@ impl CustomNodeAdapter for CustomNode {
         let promise: Promise<ZenEngineHandlerResponse> = function
             .clone()
             .call_async(ZenEngineHandlerRequest {
-                input: request.input.clone(),
+                input: request.input.to_value(),
                 node: node_data,
             })
             .await
@@ -40,7 +40,7 @@ impl CustomNodeAdapter for CustomNode {
         let result = promise.await.map_err(|err| anyhow!(err.reason))?;
 
         Ok(NodeResponse {
-            output: result.output,
+            output: result.output.into(),
             trace_data: result.trace_data,
         })
     }

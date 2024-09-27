@@ -7,8 +7,9 @@ pub fn evaluate_expression_sync(expression: String, context: Option<Value>) -> n
     let ctx = context.unwrap_or(Value::Null);
 
     Ok(
-        zen_expression::evaluate_expression(expression.as_str(), &ctx)
-            .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?,
+        zen_expression::evaluate_expression(expression.as_str(), ctx.into())
+            .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?
+            .to_value(),
     )
 }
 
@@ -16,7 +17,7 @@ pub fn evaluate_expression_sync(expression: String, context: Option<Value>) -> n
 #[napi]
 pub fn evaluate_unary_expression_sync(expression: String, context: Value) -> napi::Result<bool> {
     Ok(
-        zen_expression::evaluate_unary_expression(expression.as_str(), &context)
+        zen_expression::evaluate_unary_expression(expression.as_str(), context.into())
             .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?,
     )
 }
@@ -24,8 +25,9 @@ pub fn evaluate_unary_expression_sync(expression: String, context: Value) -> nap
 #[allow(dead_code)]
 #[napi]
 pub fn render_template_sync(template: String, context: Value) -> napi::Result<Value> {
-    Ok(zen_tmpl::render(template.as_str(), &context)
-        .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?)
+    Ok(zen_tmpl::render(template.as_str(), context.into())
+        .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?
+        .to_value())
 }
 
 #[allow(dead_code)]

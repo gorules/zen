@@ -1,15 +1,16 @@
-use std::fmt::Debug;
-
 use crate::handler::function::serde::JsValue;
 use anyhow::Context as _;
 use rquickjs::{Context, Ctx, Error as QError, FromJs, Module, Runtime};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::fmt::Debug;
+use std::rc::Rc;
+use zen_expression::variable::Variable;
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EvaluateResponse {
-    pub output: Value,
+    pub output: Variable,
     pub log: Vec<Value>,
 }
 
@@ -58,7 +59,7 @@ impl Script {
 fn map_js_error(ctx: &Ctx, e: QError) -> anyhow::Error {
     let error = JsValue::from_js(&ctx, ctx.catch())
         .map(|v| v.0)
-        .unwrap_or(Value::String(e.to_string()));
+        .unwrap_or(Variable::String(Rc::from(e.to_string().as_str())));
 
     anyhow::Error::msg(error.to_string())
 }

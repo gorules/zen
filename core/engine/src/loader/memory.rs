@@ -1,9 +1,8 @@
-use std::collections::HashMap;
-use std::future::Future;
-use std::sync::{Arc, RwLock};
-
 use crate::loader::{DecisionLoader, LoaderError, LoaderResponse};
 use crate::model::DecisionContent;
+use ahash::HashMap;
+use std::future::Future;
+use std::sync::{Arc, RwLock};
 
 /// Loads decisions from in-memory hashmap
 #[derive(Debug, Default)]

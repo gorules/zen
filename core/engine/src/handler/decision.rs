@@ -64,7 +64,7 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionHandle
             .with_function(self.js_function.clone());
 
             let result = sub_tree
-                .evaluate(&request.input)
+                .evaluate(request.input.clone())
                 .await
                 .map_err(|e| e.source)?;
 

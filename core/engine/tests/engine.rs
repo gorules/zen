@@ -1,5 +1,6 @@
+use crate::support::{create_fs_loader, load_raw_test_data, load_test_data, test_data_root};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::json;
 use std::fs;
 use std::io::Read;
 use std::ops::Deref;
@@ -8,9 +9,8 @@ use std::sync::Arc;
 use tokio::runtime::Builder;
 use zen_engine::loader::{LoaderError, MemoryLoader};
 use zen_engine::model::{DecisionContent, DecisionNodeKind, FunctionNodeContent};
+use zen_engine::Variable;
 use zen_engine::{DecisionEngine, EvaluationError, EvaluationOptions};
-
-use crate::support::{create_fs_loader, load_raw_test_data, load_test_data, test_data_root};
 
 mod support;
 
@@ -22,14 +22,18 @@ async fn engine_memory_loader() {
     memory_loader.add("function", load_test_data("function.json"));
 
     let engine = DecisionEngine::default().with_loader(memory_loader.clone());
-    let table = engine.evaluate("table", &json!({ "input": 12 })).await;
-    let function = engine.evaluate("function", &json!({ "input": 12 })).await;
+    let table = engine
+        .evaluate("table", json!({ "input": 12 }).into())
+        .await;
+    let function = engine
+        .evaluate("function", json!({ "input": 12 }).into())
+        .await;
 
     memory_loader.remove("function");
-    let not_found = engine.evaluate("function", &json!({})).await;
+    let not_found = engine.evaluate("function", json!({}).into()).await;
 
-    assert_eq!(table.unwrap().result, json!({"output": 10}));
-    assert_eq!(function.unwrap().result, json!({"output": 24}));
+    assert_eq!(table.unwrap().result, json!({"output": 10}).into());
+    assert_eq!(function.unwrap().result, json!({"output": 24}).into());
     assert_eq!(not_found.unwrap_err().to_string(), "Loader error");
 }
 
@@ -37,14 +41,16 @@ async fn engine_memory_loader() {
 #[cfg_attr(miri, ignore)]
 async fn engine_filesystem_loader() {
     let engine = DecisionEngine::default().with_loader(create_fs_loader().into());
-    let table = engine.evaluate("table.json", &json!({ "input": 12 })).await;
-    let function = engine
-        .evaluate("function.json", &json!({ "input": 12 }))
+    let table = engine
+        .evaluate("table.json", json!({ "input": 12 }).into())
         .await;
-    let not_found = engine.evaluate("invalid_file", &json!({})).await;
+    let function = engine
+        .evaluate("function.json", json!({ "input": 12 }).into())
+        .await;
+    let not_found = engine.evaluate("invalid_file", json!({}).into()).await;
 
-    assert_eq!(table.unwrap().result, json!({"output": 10}));
-    assert_eq!(function.unwrap().result, json!({"output": 24}));
+    assert_eq!(table.unwrap().result, json!({"output": 10}).into());
+    assert_eq!(function.unwrap().result, json!({"output": 24}).into());
     assert_eq!(not_found.unwrap_err().to_string(), "Loader error");
 }
 
@@ -59,12 +65,16 @@ async fn engine_closure_loader() {
         }
     });
 
-    let table = engine.evaluate("table", &json!({ "input": 12 })).await;
-    let function = engine.evaluate("function", &json!({ "input": 12 })).await;
-    let not_found = engine.evaluate("invalid_file", &json!({})).await;
+    let table = engine
+        .evaluate("table", json!({ "input": 12 }).into())
+        .await;
+    let function = engine
+        .evaluate("function", json!({ "input": 12 }).into())
+        .await;
+    let not_found = engine.evaluate("invalid_file", json!({}).into()).await;
 
-    assert_eq!(table.unwrap().result, json!({"output": 10}));
-    assert_eq!(function.unwrap().result, json!({"output": 24}));
+    assert_eq!(table.unwrap().result, json!({"output": 10}).into());
+    assert_eq!(function.unwrap().result, json!({"output": 24}).into());
     assert_eq!(not_found.unwrap_err().to_string(), "Loader error");
 }
 
@@ -73,7 +83,7 @@ fn engine_noop_loader() {
     let rt = Builder::new_current_thread().build().unwrap();
     // Default engine is noop
     let engine = DecisionEngine::default();
-    let result = rt.block_on(engine.evaluate("any.json", &json!({})));
+    let result = rt.block_on(engine.evaluate("any.json", json!({}).into()));
 
     assert_eq!(result.unwrap_err().to_string(), "Loader error");
 }
@@ -98,7 +108,9 @@ fn engine_create_decision() {
 async fn engine_errors() {
     let engine = DecisionEngine::default().with_loader(create_fs_loader().into());
 
-    let infinite_fn = engine.evaluate("infinite-function.json", &json!({})).await;
+    let infinite_fn = engine
+        .evaluate("infinite-function.json", json!({}).into())
+        .await;
     match infinite_fn.unwrap_err().deref() {
         EvaluationError::NodeError(e) => {
             assert_eq!(e.node_id, "e0fd96d0-44dc-4f0e-b825-06e56b442d78");
@@ -107,7 +119,9 @@ async fn engine_errors() {
         _ => assert!(false, "Wrong error type"),
     }
 
-    let recursive = engine.evaluate("recursive-table1.json", &json!({})).await;
+    let recursive = engine
+        .evaluate("recursive-table1.json", json!({}).into())
+        .await;
     match recursive.unwrap_err().deref() {
         EvaluationError::NodeError(e) => {
             assert_eq!(e.source.to_string(), "Depth limit exceeded")
@@ -121,10 +135,10 @@ fn engine_with_trace() {
     let rt = Builder::new_current_thread().build().unwrap();
     let engine = DecisionEngine::default().with_loader(create_fs_loader().into());
 
-    let table_r = rt.block_on(engine.evaluate("table.json", &json!({ "input": 12 })));
+    let table_r = rt.block_on(engine.evaluate("table.json", json!({ "input": 12 }).into()));
     let table_opt_r = rt.block_on(engine.evaluate_with_opts(
         "table.json",
-        &json!({ "input": 12 }),
+        json!({ "input": 12 }).into(),
         EvaluationOptions {
             trace: Some(true),
             max_depth: None,
@@ -163,7 +177,7 @@ async fn engine_function_imports() {
     });
 
     let decision = DecisionEngine::default().create_decision(function_content.into());
-    let response = decision.evaluate(&json!({})).await.unwrap();
+    let response = decision.evaluate(json!({}).into()).await.unwrap();
 
     #[derive(Deserialize, Debug)]
     #[serde(rename_all = "camelCase")]
@@ -174,7 +188,7 @@ async fn engine_function_imports() {
         moment_valid: bool,
     }
 
-    let result = serde_json::from_value::<GraphResult>(response.result).unwrap();
+    let result = serde_json::from_value::<GraphResult>(response.result.to_value()).unwrap();
 
     assert!(result.bigjs_tests.iter().all(|v| *v));
     assert!(result.bigjs_valid);
@@ -182,13 +196,13 @@ async fn engine_function_imports() {
     assert!(result.moment_valid);
 }
 
-#[test]
-fn engine_switch_node() {
-    let rt = Builder::new_current_thread().build().unwrap();
+#[tokio::test]
+async fn engine_switch_node() {
     let engine = DecisionEngine::default().with_loader(create_fs_loader().into());
 
-    let switch_node_r =
-        rt.block_on(engine.evaluate("switch-node.json", &json!({ "color": "yellow" })));
+    let switch_node_r = engine
+        .evaluate("switch-node.json", json!({ "color": "yellow" }).into())
+        .await;
 
     let table = switch_node_r.unwrap();
     println!("{table:?}");
@@ -200,8 +214,8 @@ async fn engine_graph_tests() {
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]
     struct TestCase {
-        input: Value,
-        output: Value,
+        input: Variable,
+        output: Variable,
     }
 
     #[derive(Deserialize)]
@@ -227,8 +241,9 @@ async fn engine_graph_tests() {
 
         let decision = engine.create_decision(test_data.decision_content.into());
         for test_case in test_data.tests {
-            let result = decision.evaluate(&test_case.input).await.unwrap().result;
-            let input = test_case.input;
+            let input = test_case.input.clone();
+            let result = decision.evaluate(input.clone()).await.unwrap().result;
+
             assert_eq!(
                 test_case.output, result,
                 "Decision file: {file_name}.\nInput:\n {input:#?}"
@@ -246,7 +261,7 @@ async fn engine_function_v2() {
         let function_opt_r = engine
             .evaluate_with_opts(
                 "function-v2.json",
-                &json!({ "input": 12 }),
+                json!({ "input": 12 }).into(),
                 EvaluationOptions {
                     trace: Some(true),
                     max_depth: None,
@@ -262,7 +277,7 @@ async fn engine_function_v2() {
 
         assert_eq!(
             function_opt.result,
-            json!({ "hello": "world", "multiplied": 24 })
+            json!({ "hello": "world", "multiplied": 24 }).into()
         )
     }
 }

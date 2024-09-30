@@ -1,15 +1,14 @@
 use std::sync::Arc;
 
-use rquickjs::promise::MaybePromise;
-use rquickjs::{async_with, AsyncContext, AsyncRuntime, CatchResultExt, Ctx, Module};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-
 use crate::handler::function::error::{FunctionError, FunctionResult, ResultExt};
 use crate::handler::function::listener::{RuntimeEvent, RuntimeListener};
 use crate::handler::function::module::console::{Console, Log};
 use crate::handler::function::module::ModuleLoader;
 use crate::handler::function::serde::JsValue;
+use rquickjs::promise::MaybePromise;
+use rquickjs::{async_with, AsyncContext, AsyncRuntime, CatchResultExt, Ctx, Module};
+use serde::{Deserialize, Serialize};
+use zen_expression::variable::Variable;
 
 pub struct FunctionConfig {
     pub(crate) listeners: Option<Vec<Box<dyn RuntimeListener>>>,
@@ -49,7 +48,7 @@ impl Function {
             };
         }
 
-        return Ok(());
+        Ok(())
     }
 
     async fn dispatch_event(&self, event: RuntimeEvent) -> FunctionResult {
@@ -121,5 +120,5 @@ impl Function {
 #[derive(Serialize, Deserialize)]
 pub struct HandlerResponse {
     pub logs: Vec<Log>,
-    pub data: Value,
+    pub data: Variable,
 }

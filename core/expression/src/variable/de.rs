@@ -1,22 +1,17 @@
-use std::fmt::Formatter;
-use std::marker::PhantomData;
-
-use bumpalo::collections::Vec as BumpVec;
-use bumpalo::Bump;
+use crate::variable::Variable;
+use ahash::{HashMap, HashMapExt};
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
 use serde::de::{DeserializeSeed, Error, MapAccess, SeqAccess, Unexpected, Visitor};
-use serde::Deserializer;
+use serde::{Deserialize, Deserializer};
+use std::fmt::Formatter;
+use std::marker::PhantomData;
+use std::rc::Rc;
 
-use crate::variable::map::BumpMap;
-use crate::variable::Variable;
+struct VariableVisitor;
 
-struct VariableVisitor<'arena> {
-    arena: &'arena Bump,
-}
-
-impl<'arena, 'de: 'arena> Visitor<'de> for VariableVisitor<'arena> {
-    type Value = Variable<'arena>;
+impl<'de> Visitor<'de> for VariableVisitor {
+    type Value = Variable;
 
     fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
         formatter.write_str("A valid type")
@@ -60,10 +55,7 @@ impl<'arena, 'de: 'arena> Visitor<'de> for VariableVisitor<'arena> {
     where
         E: Error,
     {
-        match Decimal::from_str_exact(v) {
-            Ok(d) => Ok(Variable::Number(d)),
-            Err(_) => Ok(Variable::String(self.arena.alloc_str(v))),
-        }
+        Ok(Variable::String(Rc::from(v)))
     }
 
     fn visit_unit<E>(self) -> Result<Self::Value, E>
@@ -77,47 +69,58 @@ impl<'arena, 'de: 'arena> Visitor<'de> for VariableVisitor<'arena> {
     where
         A: SeqAccess<'de>,
     {
-        let mut vec = BumpVec::with_capacity_in(seq.size_hint().unwrap_or_default(), self.arena);
-        while let Some(value) = seq.next_element_seed(VariableDeserializer { arena: self.arena })? {
+        let mut vec = Vec::with_capacity(seq.size_hint().unwrap_or_default());
+        while let Some(value) = seq.next_element_seed(VariableDeserializer)? {
             vec.push(value);
         }
 
-        Ok(Variable::Array(vec))
+        Ok(Variable::from_array(vec))
     }
 
     fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
     where
         A: MapAccess<'de>,
     {
-        let mut m = BumpMap::with_capacity_in(map.size_hint().unwrap_or_default(), self.arena);
-        while let Some((key, value)) =
-            map.next_entry_seed(PhantomData, VariableDeserializer { arena: self.arena })?
-        {
-            m.insert(&*self.arena.alloc_str(key), value);
+        let mut m = HashMap::with_capacity(map.size_hint().unwrap_or_default());
+        let mut first = true;
+        while let Some((key, value)) = map.next_entry_seed(PhantomData, VariableDeserializer)? {
+            if first && key == "$serde_json::private::Number" {
+                return Ok(Variable::Number(
+                    Decimal::from_str_exact(
+                        value
+                            .as_str()
+                            .ok_or_else(|| Error::custom("failed to deserialize number"))?,
+                    )
+                    .map_err(|_| Error::custom("invalid number"))?,
+                ));
+            }
+
+            m.insert(key, value);
+            first = false;
         }
 
-        Ok(Variable::Object(m))
+        Ok(Variable::from_object(m))
     }
 }
 
-pub struct VariableDeserializer<'arena> {
-    arena: &'arena Bump,
-}
+pub struct VariableDeserializer;
 
-impl<'arena> VariableDeserializer<'arena> {
-    #[allow(dead_code)]
-    pub fn new_in(arena: &'arena Bump) -> Self {
-        Self { arena }
-    }
-}
-
-impl<'arena, 'de: 'arena> DeserializeSeed<'de> for VariableDeserializer<'arena> {
-    type Value = Variable<'arena>;
+impl<'de> DeserializeSeed<'de> for VariableDeserializer {
+    type Value = Variable;
 
     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_any(VariableVisitor { arena: self.arena })
+        deserializer.deserialize_any(VariableVisitor)
+    }
+}
+
+impl<'de> Deserialize<'de> for Variable {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_any(VariableVisitor)
     }
 }

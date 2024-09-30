@@ -39,13 +39,14 @@ impl ZenDecision {
             async move {
                 decision
                     .evaluate_with_opts(
-                        &context,
+                        context.into(),
                         EvaluationOptions {
                             max_depth: options.max_depth,
                             trace: options.trace,
                         },
                     )
                     .await
+                    .map(ZenEngineResponse::from)
             }
         })
         .await
@@ -54,7 +55,7 @@ impl ZenDecision {
             anyhow!(serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string()))
         })?;
 
-        Ok(ZenEngineResponse::from(result))
+        Ok(result)
     }
 
     #[napi(ts_return_type = "Promise<SafeResult<ZenEngineResponse>>")]

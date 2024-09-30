@@ -122,13 +122,11 @@
 #![deny(clippy::unwrap_used)]
 #![allow(clippy::module_inception)]
 
+mod config;
 mod decision;
 mod engine;
 mod error;
 pub mod handler;
-mod util;
-
-mod config;
 pub mod loader;
 #[path = "model/mod.rs"]
 pub mod model;
@@ -141,3 +139,4 @@ pub use handler::graph::DecisionGraphResponse;
 pub use handler::graph::DecisionGraphTrace;
 pub use handler::graph::DecisionGraphValidationError;
 pub use handler::node::NodeError;
+pub use zen_expression::Variable;

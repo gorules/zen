@@ -1,7 +1,6 @@
-use std::collections::HashMap;
+use ahash::{HashMap, HashMapExt};
 use std::future::Future;
 use std::sync::Arc;
-
 use tokio::sync::Mutex;
 
 use crate::loader::{DecisionLoader, LoaderResponse};

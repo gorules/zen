@@ -7,6 +7,7 @@ use serde_json::Value;
 
 use zen_engine::handler::custom_node_adapter::CustomDecisionNode;
 use zen_engine::{DecisionGraphResponse, DecisionGraphTrace};
+use zen_expression::Variable;
 
 #[napi(object)]
 pub struct ZenEngineTrace {
@@ -23,8 +24,8 @@ impl From<DecisionGraphTrace> for ZenEngineTrace {
         Self {
             id: value.id,
             name: value.name,
-            input: value.input,
-            output: value.output,
+            input: value.input.to_value(),
+            output: value.output.to_value(),
             performance: value.performance,
             trace_data: value.trace_data,
         }
@@ -42,7 +43,7 @@ impl From<DecisionGraphResponse> for ZenEngineResponse {
     fn from(value: DecisionGraphResponse) -> Self {
         Self {
             performance: value.performance,
-            result: value.result,
+            result: value.result.to_value(),
             trace: value.trace.map(|opt| {
                 opt.into_iter()
                     .map(|(key, value)| (key, ZenEngineTrace::from(value)))
@@ -104,10 +105,10 @@ impl ZenEngineHandlerRequest {
             return Ok(selected_value);
         };
 
-        let template_value = zen_tmpl::render(template.as_str(), &self.input)
+        let template_value = zen_tmpl::render(template.as_str(), Variable::from(&self.input))
             .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?;
 
-        Ok(template_value)
+        Ok(template_value.to_value())
     }
 
     #[napi(ts_return_type = "unknown")]

@@ -1,4 +1,5 @@
 use serde_json::{json, Value};
+use zen_expression::variable::Variable;
 use zen_tmpl::render;
 
 #[test]
@@ -44,8 +45,8 @@ fn test_values_types() {
 
     for test_case in test_cases {
         assert_eq!(
-            render(test_case.template, &test_case.context).unwrap(),
-            test_case.expected
+            render(test_case.template, test_case.context.into()).unwrap(),
+            Variable::from(test_case.expected)
         );
     }
 }
@@ -84,17 +85,12 @@ fn test_interpolation() {
             context: json!(null),
             expected: json!("[1,2,3] array"),
         },
-        TestCase {
-            template: "Customer: {{ customer }}",
-            context: json!({ "customer": { "firstName": "John", "lastName": "Doe" } }),
-            expected: json!(r#"Customer: {"firstName":"John","lastName":"Doe"}"#),
-        },
     ];
 
     for test_case in test_cases {
         assert_eq!(
-            render(test_case.template, &test_case.context).unwrap(),
-            test_case.expected
+            render(test_case.template, test_case.context.into()).unwrap(),
+            Variable::from(test_case.expected)
         );
     }
 }

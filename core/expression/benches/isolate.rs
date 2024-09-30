@@ -2,23 +2,23 @@ use std::ops::Index;
 
 use criterion::{criterion_group, criterion_main, Bencher, Criterion};
 use csv::StringRecord;
-use serde_json::Value;
 
+use zen_expression::variable::Variable;
 use zen_expression::Isolate;
 
 fn bench_unary(b: &mut Bencher, source: &'static str) {
-    let s: Value = serde_json::from_str(r#"{ "$": "ru" }"#).unwrap();
+    let s = serde_json::from_str(r#"{ "$": "ru" }"#).unwrap();
 
-    let mut isolate = Isolate::with_environment(&s);
+    let mut isolate = Isolate::with_environment(s);
     b.iter(|| {
         criterion::black_box(isolate.run_unary(source).unwrap());
     })
 }
 
 fn bench_standard(b: &mut Bencher, source: &'static str) {
-    let s: Value = serde_json::from_str(r#"{ "$": "ru" }"#).unwrap();
+    let s = serde_json::from_str(r#"{ "$": "ru" }"#).unwrap();
 
-    let mut isolate = Isolate::with_environment(&s);
+    let mut isolate = Isolate::with_environment(s);
     b.iter(|| {
         criterion::black_box(isolate.run_standard(source).unwrap());
     })
@@ -42,7 +42,7 @@ fn bench_csv(b: &mut Bencher, kind: BenchmarkKind, csv_data: &'static str) {
 
     struct TestCase {
         expression: String,
-        environment: Option<Value>,
+        environment: Option<Variable>,
     }
 
     let test_cases: Vec<TestCase> = rows
@@ -78,7 +78,7 @@ fn bench_csv(b: &mut Bencher, kind: BenchmarkKind, csv_data: &'static str) {
         } in &test_cases
         {
             if let Some(env) = environment {
-                isolate.set_environment(env);
+                isolate.set_environment(env.clone());
             }
 
             match kind {

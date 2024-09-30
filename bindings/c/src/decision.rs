@@ -1,7 +1,7 @@
+use serde_json::Value;
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::marker::{PhantomData, PhantomPinned};
 use std::ops::{Deref, DerefMut};
-
 use zen_engine::Decision;
 
 use crate::custom_node::DynamicCustomNode;
@@ -69,13 +69,13 @@ pub extern "C" fn zen_decision_evaluate(
         return ZenResult::error(ZenError::InvalidArgument);
     };
 
-    let Ok(context) = serde_json::from_str(str_context) else {
+    let Ok(context) = serde_json::from_str::<Value>(str_context) else {
         return ZenResult::error(ZenError::JsonDeserializationFailed);
     };
 
     let zen_decision = unsafe { &*(decision as *mut ZenDecision) };
     let maybe_result =
-        tokio_runtime().block_on(zen_decision.evaluate_with_opts(&context, options.into()));
+        tokio_runtime().block_on(zen_decision.evaluate_with_opts(context.into(), options.into()));
     let result = match maybe_result {
         Ok(r) => r,
         Err(e) => return ZenResult::from(&e),

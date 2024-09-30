@@ -1,8 +1,11 @@
-use std::collections::HashMap;
-
-use bumpalo::collections::Vec as BumpVec;
-use bumpalo::collections::{CollectIn, String as BumpString};
-use bumpalo::Bump;
+use crate::compiler::{Opcode, TypeCheckKind, TypeConversionKind};
+use crate::variable::Variable;
+use crate::variable::Variable::*;
+use crate::vm::error::VMError::*;
+use crate::vm::error::VMResult;
+use crate::vm::helpers::{date_time, date_time_end_of, date_time_start_of, time};
+use crate::vm::variable::IntervalObject;
+use ahash::{HashMap, HashMapExt};
 use chrono::NaiveDateTime;
 use chrono::{Datelike, Timelike};
 #[cfg(not(feature = "regex-lite"))]
@@ -12,33 +15,25 @@ use regex_lite::Regex;
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::{Decimal, MathematicalOps};
 use rust_decimal_macros::dec;
-
-use crate::compiler::{Opcode, TypeCheckKind, TypeConversionKind};
-use crate::variable::Variable;
-use crate::variable::Variable::*;
-use crate::variable::{BumpMap, ToVariable};
-use crate::vm::error::VMError::*;
-use crate::vm::error::VMResult;
-use crate::vm::helpers::{date_time, date_time_end_of, date_time_start_of, time};
-use crate::vm::variable::IntervalObject;
-
-pub(crate) const NULL_VAR: &'static Variable = &Null;
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::string::String as StdString;
 
 #[derive(Debug)]
-pub struct Scope<'arena> {
-    array: &'arena Variable<'arena>,
+pub struct Scope {
+    array: Variable,
     len: usize,
     iter: usize,
     count: usize,
 }
 
 #[derive(Debug)]
-pub struct VM<'arena> {
-    scopes: Vec<Scope<'arena>>,
-    stack: Vec<&'arena Variable<'arena>>,
+pub struct VM {
+    scopes: Vec<Scope>,
+    stack: Vec<Variable>,
 }
 
-impl<'arena> VM<'arena> {
+impl VM {
     pub fn new() -> Self {
         Self {
             scopes: Default::default(),
@@ -46,59 +41,47 @@ impl<'arena> VM<'arena> {
         }
     }
 
-    pub fn run(
-        &mut self,
-        bytecode: &[Opcode<'arena>],
-        bump: &'arena Bump,
-        env: &Variable<'arena>,
-    ) -> VMResult<&Variable> {
+    pub fn run(&mut self, bytecode: &[Opcode], env: Variable) -> VMResult<Variable> {
         self.stack.clear();
         self.scopes.clear();
 
-        let s = VMInner::new(bytecode, &mut self.stack, &mut self.scopes, bump).run(env);
+        let s = VMInner::new(bytecode, &mut self.stack, &mut self.scopes).run(env);
         Ok(s?)
     }
 }
 
 struct VMInner<'arena, 'parent_ref, 'bytecode_ref> {
-    scopes: &'parent_ref mut Vec<Scope<'arena>>,
-    stack: &'parent_ref mut Vec<&'arena Variable<'arena>>,
+    scopes: &'parent_ref mut Vec<Scope>,
+    stack: &'parent_ref mut Vec<Variable>,
     bytecode: &'bytecode_ref [Opcode<'arena>],
-    bump: &'arena Bump,
     ip: usize,
 }
 
 impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_ref> {
     pub fn new(
         bytecode: &'bytecode_ref [Opcode<'arena>],
-        stack: &'parent_ref mut Vec<&'arena Variable<'arena>>,
-        scopes: &'parent_ref mut Vec<Scope<'arena>>,
-        bump: &'arena Bump,
+        stack: &'parent_ref mut Vec<Variable>,
+        scopes: &'parent_ref mut Vec<Scope>,
     ) -> Self {
         Self {
+            ip: 0,
             scopes,
             stack,
-            ip: 0,
             bytecode,
-            bump,
         }
     }
 
-    fn push(&mut self, var: Variable<'arena>) {
-        self.stack.push(self.bump.alloc(var));
+    fn push(&mut self, var: Variable) {
+        self.stack.push(var);
     }
 
-    fn pop(&mut self) -> VMResult<&'arena Variable<'arena>> {
+    fn pop(&mut self) -> VMResult<Variable> {
         self.stack.pop().ok_or_else(|| StackOutOfBounds {
             stack: format!("{:?}", self.stack),
         })
     }
 
-    fn push_ref(&mut self, var: &'arena Variable<'arena>) {
-        self.stack.push(var);
-    }
-
-    pub fn run(&mut self, env: &Variable<'arena>) -> VMResult<&'arena Variable<'arena>> {
+    pub fn run(&mut self, env: Variable) -> VMResult<Variable> {
         if self.ip != 0 {
             self.ip = 0;
         }
@@ -116,7 +99,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
 
             match op {
                 Opcode::Push(v) => {
-                    self.push(v.clone_in(self.bump));
+                    self.push(v.clone());
                 }
                 Opcode::Pop => {
                     self.pop()?;
@@ -132,15 +115,20 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
 
                     match (a, b) {
                         (Object(o), String(s)) => {
-                            self.push_ref(o.get(*s).unwrap_or(&NULL_VAR));
+                            let obj = o.borrow();
+                            self.push(obj.get(s.as_ref()).cloned().unwrap_or(Null));
                         }
-                        (Array(arr), Number(n)) => self.push_ref(
-                            arr.get(n.to_usize().ok_or_else(|| OpcodeErr {
-                                opcode: "Fetch".into(),
-                                message: "Failed to convert to usize".into(),
-                            })?)
-                            .unwrap_or(&NULL_VAR),
-                        ),
+                        (Array(a), Number(n)) => {
+                            let arr = a.borrow();
+                            self.push(
+                                arr.get(n.to_usize().ok_or_else(|| OpcodeErr {
+                                    opcode: "Fetch".into(),
+                                    message: "Failed to convert to usize".into(),
+                                })?)
+                                .cloned()
+                                .unwrap_or(Null),
+                            )
+                        }
                         (String(str), Number(n)) => {
                             let index = n.to_usize().ok_or_else(|| OpcodeErr {
                                 opcode: "Fetch".into(),
@@ -148,20 +136,23 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             })?;
 
                             if let Some(slice) = str.get(index..index + 1) {
-                                self.push(String(self.bump.alloc_str(slice)));
+                                self.push(String(Rc::from(slice)));
                             } else {
-                                self.push_ref(&NULL_VAR)
+                                self.push(Null)
                             };
                         }
-                        _ => self.push_ref(&NULL_VAR),
+                        _ => self.push(Null),
                     }
                 }
-                Opcode::FetchEnv(f) => match env {
-                    Object(o) => match o.get(*f) {
-                        None => self.push_ref(&NULL_VAR),
-                        Some(v) => self.push(v.clone_in(self.bump)),
-                    },
-                    Null => self.push_ref(NULL_VAR),
+                Opcode::FetchEnv(f) => match &env {
+                    Object(o) => {
+                        let obj = o.borrow();
+                        match obj.get(*f) {
+                            None => self.push(Null),
+                            Some(v) => self.push(v.clone()),
+                        }
+                    }
+                    Null => self.push(Null),
                     _ => {
                         return Err(OpcodeErr {
                             opcode: "FetchEnv".into(),
@@ -170,13 +161,13 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     }
                 },
                 Opcode::FetchRootEnv => {
-                    self.push(env.clone_in(self.bump));
+                    self.push(env.clone());
                 }
                 Opcode::Negate => {
                     let a = self.pop()?;
                     match a {
                         Number(n) => {
-                            self.push(Number(-*n));
+                            self.push(Number(-n));
                         }
                         _ => {
                             return Err(OpcodeErr {
@@ -189,7 +180,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                 Opcode::Not => {
                     let a = self.pop()?;
                     match a {
-                        Bool(b) => self.push(Bool(!(*b))),
+                        Bool(b) => self.push(Bool(!b)),
                         _ => {
                             return Err(OpcodeErr {
                                 opcode: "Not".into(),
@@ -279,10 +270,11 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     let b = self.pop()?;
                     let a = self.pop()?;
 
-                    match (a, b) {
-                        (Number(a), Array(arr)) => {
+                    match (a, &b) {
+                        (Number(a), Array(b)) => {
+                            let arr = b.borrow();
                             let is_in = arr.iter().any(|b| match b {
-                                Number(b) => a == b,
+                                Number(b) => a == *b,
                                 _ => false,
                             });
 
@@ -299,7 +291,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                                 (Number(l), Number(r)) => {
                                     let mut is_open = false;
 
-                                    let first = match interval.left_bracket {
+                                    let first = match interval.left_bracket.as_ref() {
                                         "[" => l <= v,
                                         "(" => l < v,
                                         "]" => {
@@ -318,7 +310,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                                         }
                                     };
 
-                                    let second = match interval.right_bracket {
+                                    let second = match interval.right_bracket.as_ref() {
                                         "]" => r >= v,
                                         ")" => r > v,
                                         "[" => r <= v,
@@ -344,26 +336,30 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                                 }
                             }
                         }
-                        (String(a), Array(arr)) => {
+                        (String(a), Array(b)) => {
+                            let arr = b.borrow();
                             let is_in = arr.iter().any(|b| match b {
-                                String(b) => a == b,
+                                String(b) => &a == b,
                                 _ => false,
                             });
 
                             self.push(Bool(is_in));
                         }
-                        (String(a), Object(obj)) => {
-                            self.push(Bool(obj.contains_key(a)));
+                        (String(a), Object(b)) => {
+                            let obj = b.borrow();
+                            self.push(Bool(obj.contains_key(a.as_ref())));
                         }
-                        (Bool(a), Array(arr)) => {
+                        (Bool(a), Array(b)) => {
+                            let arr = b.borrow();
                             let is_in = arr.iter().any(|b| match b {
-                                Bool(b) => a == b,
+                                Bool(b) => a == *b,
                                 _ => false,
                             });
 
                             self.push(Bool(is_in));
                         }
-                        (Null, Array(arr)) => {
+                        (Null, Array(b)) => {
+                            let arr = b.borrow();
                             let is_in = arr.iter().any(|b| match b {
                                 Null => true,
                                 _ => false,
@@ -384,7 +380,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     let a = self.pop()?;
 
                     match (a, b) {
-                        (Number(a), Number(b)) => self.push(Bool(*a < *b)),
+                        (Number(a), Number(b)) => self.push(Bool(a < b)),
                         _ => {
                             return Err(OpcodeErr {
                                 opcode: "Less".into(),
@@ -398,7 +394,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     let a = self.pop()?;
 
                     match (a, b) {
-                        (Number(a), Number(b)) => self.push(Bool(*a > *b)),
+                        (Number(a), Number(b)) => self.push(Bool(a > b)),
                         _ => {
                             return Err(OpcodeErr {
                                 opcode: "More".into(),
@@ -412,7 +408,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     let a = self.pop()?;
 
                     match (a, b) {
-                        (Number(a), Number(b)) => self.push(Bool(*a <= *b)),
+                        (Number(a), Number(b)) => self.push(Bool(a <= b)),
                         _ => {
                             return Err(OpcodeErr {
                                 opcode: "LessOrEqual".into(),
@@ -426,7 +422,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     let a = self.pop()?;
 
                     match (a, b) {
-                        (Number(a), Number(b)) => self.push(Bool(*a >= *b)),
+                        (Number(a), Number(b)) => self.push(Bool(a >= b)),
                         _ => {
                             return Err(OpcodeErr {
                                 opcode: "MoreOrEqual".into(),
@@ -511,8 +507,9 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     let var = self.pop()?;
 
                     match var {
-                        Array(arr) => {
+                        Array(a) => {
                             let mut sum = Decimal::ZERO;
+                            let arr = a.borrow();
                             arr.iter().try_for_each(|a| match a {
                                 Number(a) => {
                                     sum += a;
@@ -536,17 +533,18 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     }
                 }
                 Opcode::Median => {
-                    let Array(arr) = self.pop()? else {
+                    let Array(a) = self.pop()? else {
                         return Err(OpcodeErr {
                             opcode: "Median".into(),
                             message: "Unsupported type".into(),
                         });
                     };
 
+                    let arr = a.borrow();
                     let mut num_arr = arr
                         .iter()
                         .map(|n| match n {
-                            Number(num) => Ok(num),
+                            Number(num) => Ok(*num),
                             _ => Err(OpcodeErr {
                                 opcode: "Median".into(),
                                 message: "Unsupported type".into(),
@@ -570,7 +568,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             message: "Array out of bounds".into(),
                         })?;
 
-                        self.push(Number(**center_num));
+                        self.push(Number(*center_num));
                     } else {
                         let center_left = num_arr.get(center - 1).ok_or_else(|| OpcodeErr {
                             opcode: "Median".into(),
@@ -582,22 +580,23 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             message: "Array out of bounds".into(),
                         })?;
 
-                        let median = ((**center_left) + (**center_right)) / dec!(2);
+                        let median = ((*center_left) + (*center_right)) / dec!(2);
                         self.push(Number(median));
                     }
                 }
                 Opcode::Mode => {
-                    let Array(arr) = self.pop()? else {
+                    let Array(a) = self.pop()? else {
                         return Err(OpcodeErr {
                             opcode: "Mode".into(),
                             message: "Unsupported type".into(),
                         });
                     };
 
+                    let arr = a.borrow();
                     let num_arr = arr
                         .iter()
                         .map(|n| match n {
-                            Number(num) => Ok(num),
+                            Number(num) => Ok(*num),
                             _ => Err(OpcodeErr {
                                 opcode: "Mode".into(),
                                 message: "Unsupported type".into(),
@@ -614,7 +613,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
 
                     let mut map = HashMap::new();
                     num_arr.iter().for_each(|n| {
-                        let count = map.entry(**n).or_insert(0);
+                        let count = map.entry(*n).or_insert(0);
                         *count += 1;
                     });
 
@@ -634,7 +633,8 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     let var = self.pop()?;
 
                     match var {
-                        Array(arr) => {
+                        Array(a) => {
+                            let arr = a.borrow();
                             let first_item = arr.get(0).ok_or_else(|| OpcodeErr {
                                 opcode: "Min".into(),
                                 message: "Empty array".into(),
@@ -677,7 +677,8 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     let var = self.pop()?;
 
                     match var {
-                        Array(arr) => {
+                        Array(a) => {
+                            let arr = a.borrow();
                             let first_item = arr.get(0).ok_or_else(|| OpcodeErr {
                                 opcode: "Max".into(),
                                 message: "Empty array".into(),
@@ -720,8 +721,9 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     let var = self.pop()?;
 
                     match var {
-                        Array(arr) => {
+                        Array(a) => {
                             let mut sum = Decimal::ZERO;
+                            let arr = a.borrow();
                             arr.iter().try_for_each(|a| match a {
                                 Number(a) => {
                                     sum += a;
@@ -750,12 +752,12 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     match (a, b) {
                         (Number(a), Number(b)) => self.push(Number(a + b)),
                         (String(a), String(b)) => {
-                            let mut str1 =
-                                BumpString::with_capacity_in(a.len() + b.len(), self.bump);
-                            str1.push_str(a);
-                            str1.push_str(b);
+                            let mut c = StdString::with_capacity(a.len() + b.len());
 
-                            self.push(String(str1.into_bump_str()));
+                            c.push_str(a.as_ref());
+                            c.push_str(b.as_ref());
+
+                            self.push(String(Rc::from(c.as_str())));
                         }
                         _ => {
                             return Err(OpcodeErr {
@@ -827,7 +829,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
 
                     match (a, b) {
                         (Number(a), Number(b)) => {
-                            self.push(Number(a.powd(*b)));
+                            self.push(Number(a.powd(b)));
                         }
                         _ => {
                             return Err(OpcodeErr {
@@ -844,16 +846,16 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     let b = self.pop()?;
                     let a = self.pop()?;
 
-                    match (a, b) {
+                    match (&a, &b) {
                         (Number(_), Number(_)) => {
                             let interval = IntervalObject {
-                                left_bracket,
-                                right_bracket,
+                                left_bracket: Rc::from(*left_bracket),
+                                right_bracket: Rc::from(*right_bracket),
                                 left: a,
                                 right: b,
                             };
 
-                            self.push(interval.to_variable(self.bump).unwrap());
+                            self.push(interval.to_variable());
                         }
                         _ => {
                             return Err(OpcodeErr {
@@ -868,8 +870,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
 
                     match a {
                         String(a) => {
-                            let str = a.to_uppercase();
-                            self.push(String(self.bump.alloc_str(&str)));
+                            self.push(String(a.to_uppercase().into()));
                         }
                         _ => {
                             return Err(OpcodeErr {
@@ -883,10 +884,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     let a = self.pop()?;
 
                     match a {
-                        String(a) => {
-                            let str = a.to_lowercase();
-                            self.push(String(self.bump.alloc_str(&str)));
-                        }
+                        String(a) => self.push(String(a.to_lowercase().into())),
                         _ => {
                             return Err(OpcodeErr {
                                 opcode: "Lowercase".into(),
@@ -899,51 +897,52 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     let b = self.pop()?;
                     let a = self.pop()?;
 
-                    match (a, b) {
+                    match (a, &b) {
                         (String(a), String(b)) => {
-                            self.push(Bool(a.contains(b)));
+                            self.push(Bool(a.contains(b.as_ref())));
                         }
-                        _ => match a {
-                            Array(arr) => {
-                                let is_in = arr.iter().any(|a| match (a, b) {
-                                    (Number(a), Number(b)) => a == b,
-                                    (String(a), String(b)) => a == b,
-                                    (Bool(a), Bool(b)) => a == b,
-                                    (Null, Null) => true,
-                                    _ => false,
-                                });
+                        (Array(a), _) => {
+                            let arr = a.borrow();
+                            let is_in = arr.iter().any(|a| match (a, &b) {
+                                (Number(a), Number(b)) => a == b,
+                                (String(a), String(b)) => a == b,
+                                (Bool(a), Bool(b)) => a == b,
+                                (Null, Null) => true,
+                                _ => false,
+                            });
 
-                                self.push(Bool(is_in));
-                            }
-                            _ => {
-                                return Err(OpcodeErr {
-                                    opcode: "Contains".into(),
-                                    message: "Unsupported type".into(),
-                                });
-                            }
-                        },
+                            self.push(Bool(is_in));
+                        }
+                        _ => {
+                            return Err(OpcodeErr {
+                                opcode: "Contains".into(),
+                                message: "Unsupported type".into(),
+                            });
+                        }
                     }
                 }
                 Opcode::Keys => {
                     let current = self.pop()?;
 
                     match current {
-                        Array(arr) => {
-                            let indices: BumpVec<Variable> = arr
+                        Array(a) => {
+                            let arr = a.borrow();
+                            let indices = arr
                                 .iter()
                                 .enumerate()
                                 .map(|(index, _)| Number(index.into()))
-                                .collect_in(self.bump);
+                                .collect();
 
-                            self.push(Array(indices));
+                            self.push(Array(Rc::new(RefCell::new(indices))));
                         }
-                        Object(obj) => {
-                            let keys: BumpVec<Variable> = obj
+                        Object(a) => {
+                            let obj = a.borrow();
+                            let keys = obj
                                 .iter()
-                                .map(|(key, _)| String(self.bump.alloc_str(key)))
-                                .collect_in(self.bump);
+                                .map(|(key, _)| String(Rc::from(key.as_str())))
+                                .collect();
 
-                            self.push(Array(keys));
+                            self.push(Array(Rc::new(RefCell::new(keys))));
                         }
                         _ => {
                             return Err(OpcodeErr {
@@ -957,13 +956,11 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     let current = self.pop()?;
 
                     match current {
-                        Object(obj) => {
-                            let values: BumpVec<Variable> = obj
-                                .iter()
-                                .map(|(_, v)| v.clone_in(self.bump))
-                                .collect_in(self.bump);
+                        Object(a) => {
+                            let obj = a.borrow();
+                            let values: Vec<Variable> = obj.values().cloned().collect();
 
-                            self.push(Array(values));
+                            self.push(Array(Rc::new(RefCell::new(values))));
                         }
                         _ => {
                             return Err(OpcodeErr {
@@ -979,7 +976,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
 
                     match (a, b) {
                         (String(a), String(b)) => {
-                            self.push(Bool(a.starts_with(b)));
+                            self.push(Bool(a.starts_with(b.as_ref())));
                         }
                         _ => {
                             return Err(OpcodeErr {
@@ -995,7 +992,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
 
                     match (a, b) {
                         (String(a), String(b)) => {
-                            self.push(Bool(a.ends_with(b)));
+                            self.push(Bool(a.ends_with(b.as_ref())));
                         }
                         _ => {
                             return Err(OpcodeErr {
@@ -1016,12 +1013,12 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                         });
                     };
 
-                    let regex = Regex::new(b).map_err(|_| OpcodeErr {
+                    let regex = Regex::new(b.as_ref()).map_err(|_| OpcodeErr {
                         opcode: "Matches".into(),
                         message: "Invalid regular expression".into(),
                     })?;
 
-                    self.push(Bool(regex.is_match(a)));
+                    self.push(Bool(regex.is_match(a.as_ref())));
                 }
                 Opcode::FuzzyMatch => {
                     let b = self.pop()?;
@@ -1036,12 +1033,14 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
 
                     match a {
                         String(a) => {
-                            let sim = strsim::normalized_damerau_levenshtein(a, b);
+                            let sim =
+                                strsim::normalized_damerau_levenshtein(a.as_ref(), b.as_ref());
                             // This is okay, as NDL will return [0, 1]
                             self.push(Number(Decimal::from_f64(sim).unwrap_or(dec!(0))));
                         }
-                        Array(a) => {
-                            let mut sims = BumpVec::with_capacity_in(a.len(), &self.bump);
+                        Array(_a) => {
+                            let a = _a.borrow();
+                            let mut sims = Vec::with_capacity(a.len());
                             for v in a.iter() {
                                 let String(s) = v else {
                                     return Err(OpcodeErr {
@@ -1050,13 +1049,14 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                                     });
                                 };
 
-                                let sim =
-                                    Decimal::from_f64(strsim::normalized_damerau_levenshtein(s, b))
-                                        .unwrap_or(dec!(0));
+                                let sim = Decimal::from_f64(
+                                    strsim::normalized_damerau_levenshtein(s.as_ref(), b.as_ref()),
+                                )
+                                .unwrap_or(dec!(0));
                                 sims.push(Number(sim));
                             }
 
-                            self.push(Array(sims))
+                            self.push(Variable::from_array(sims))
                         }
                         _ => {
                             return Err(OpcodeErr {
@@ -1072,14 +1072,13 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
 
                     match (a, b) {
                         (String(a), String(b)) => {
-                            let arr = BumpVec::from_iter_in(
-                                a.split(b)
+                            let arr = Vec::from_iter(
+                                a.split(b.as_ref())
                                     .into_iter()
-                                    .map(|s| String(self.bump.alloc_str(s))),
-                                self.bump,
+                                    .map(|s| String(s.to_string().into())),
                             );
 
-                            self.push(Array(arr));
+                            self.push(Variable::from_array(arr));
                         }
                         _ => {
                             return Err(OpcodeErr {
@@ -1093,18 +1092,19 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     let b = self.pop()?;
                     let a = self.pop()?;
 
-                    let (Array(arr), String(separator)) = (a, b) else {
+                    let (Array(a), String(separator)) = (a, &b) else {
                         return Err(OpcodeErr {
                             opcode: "Join".into(),
                             message: "Unsupported type".into(),
                         });
                     };
 
+                    let arr = a.borrow();
                     let parts = arr
                         .iter()
                         .enumerate()
                         .map(|(i, var)| match var {
-                            String(str) => Ok(*str),
+                            String(str) => Ok(str.clone()),
                             _ => Err(OpcodeErr {
                                 opcode: "Join".into(),
                                 message: format!("Unexpected type in array on index {i}"),
@@ -1116,16 +1116,16 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                         .iter()
                         .fold(separator.len() * (parts.len() - 1), |acc, s| acc + s.len());
 
-                    let mut s = BumpString::with_capacity_in(str_capacity, self.bump);
-                    let mut it = parts.iter().peekable();
+                    let mut s = StdString::with_capacity(str_capacity);
+                    let mut it = parts.into_iter().peekable();
                     while let Some(part) = it.next() {
-                        s.push_str(part);
+                        s.push_str(part.as_ref());
                         if it.peek().is_some() {
                             s.push_str(separator);
                         }
                     }
 
-                    self.push(String(s.into_bump_str()));
+                    self.push(String(Rc::from(s)));
                 }
                 Opcode::Extract => {
                     let b = self.pop()?;
@@ -1138,29 +1138,29 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                         });
                     };
 
-                    let regex = Regex::new(b).map_err(|_| OpcodeErr {
+                    let regex = Regex::new(b.as_ref()).map_err(|_| OpcodeErr {
                         opcode: "Matches".into(),
                         message: "Invalid regular expression".into(),
                     })?;
 
                     let captures = regex
-                        .captures(a)
+                        .captures(a.as_ref())
                         .map(|capture| {
                             capture
                                 .iter()
                                 .map(|c| c.map(|c| c.as_str()))
                                 .filter_map(|c| c)
-                                .map(|s| String(self.bump.alloc_str(s)))
-                                .collect_in::<BumpVec<_>>(self.bump)
+                                .map(|s| String(Rc::from(s)))
+                                .collect()
                         })
-                        .unwrap_or_else(|| BumpVec::new_in(self.bump));
+                        .unwrap_or_default();
 
-                    self.push(Array(captures));
+                    self.push(Variable::from_array(captures));
                 }
                 Opcode::DateManipulation(operation) => {
                     let timestamp = self.pop()?;
 
-                    let time: NaiveDateTime = timestamp.try_into()?;
+                    let time: NaiveDateTime = (&timestamp).try_into()?;
                     let var = match *operation {
                         "year" => Number(time.year().into()),
                         "dayOfWeek" => Number(time.weekday().number_from_monday().into()),
@@ -1168,11 +1168,9 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                         "dayOfYear" => Number(time.ordinal().into()),
                         "weekOfYear" => Number(time.iso_week().week().into()),
                         "monthOfYear" => Number(time.month().into()),
-                        "monthString" => {
-                            String(self.bump.alloc_str(&time.format("%b").to_string()))
-                        }
-                        "weekdayString" => String(self.bump.alloc_str(&time.weekday().to_string())),
-                        "dateString" => String(self.bump.alloc_str(&time.to_string())),
+                        "monthString" => String(Rc::from(time.format("%b").to_string())),
+                        "weekdayString" => String(Rc::from(time.weekday().to_string())),
+                        "dateString" => String(Rc::from(time.to_string())),
                         _ => {
                             return Err(OpcodeErr {
                                 opcode: "DateManipulation".into(),
@@ -1187,8 +1185,8 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     let unit_var = self.pop()?;
                     let timestamp = self.pop()?;
 
-                    let date_time: NaiveDateTime = timestamp.try_into()?;
-                    let String(unit_name) = *unit_var else {
+                    let date_time: NaiveDateTime = (&timestamp).try_into()?;
+                    let String(unit_name) = unit_var else {
                         return Err(OpcodeErr {
                             opcode: "DateFunction".into(),
                             message: "Unknown date function".into(),
@@ -1196,8 +1194,8 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     };
 
                     let s = match *name {
-                        "startOf" => date_time_start_of(date_time, unit_name.try_into()?),
-                        "endOf" => date_time_end_of(date_time, unit_name.try_into()?),
+                        "startOf" => date_time_start_of(date_time, unit_name.as_ref().try_into()?),
+                        "endOf" => date_time_end_of(date_time, unit_name.as_ref().try_into()?),
                         _ => {
                             return Err(OpcodeErr {
                                 opcode: "DateManipulation".into(),
@@ -1230,16 +1228,14 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             })?;
 
                             match current {
-                                Array(arr) => {
+                                Array(a) => {
+                                    let arr = a.borrow();
                                     let slice = arr.get(from..=to).ok_or_else(|| OpcodeErr {
                                         opcode: "Slice".into(),
                                         message: "Index out of range".into(),
                                     })?;
 
-                                    self.push(Array(BumpVec::from_iter_in(
-                                        slice.iter().map(|v| v.clone_in(self.bump)),
-                                        self.bump,
-                                    )));
+                                    self.push(Variable::from_array(slice.to_vec()));
                                 }
                                 String(s) => {
                                     let slice = s.get(from..=to).ok_or_else(|| OpcodeErr {
@@ -1247,7 +1243,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                                         message: "Index out of range".into(),
                                     })?;
 
-                                    self.push(String(slice));
+                                    self.push(String(Rc::from(slice)));
                                 }
                                 _ => {
                                     return Err(OpcodeErr {
@@ -1279,13 +1275,13 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                         message: "Failed to extract argument".into(),
                     })?;
 
-                    let mut arr = BumpVec::with_capacity_in(to, &self.bump);
+                    let mut arr = Vec::with_capacity(to);
                     for _ in 0..to {
-                        arr.push(self.pop()?.clone_in(self.bump));
+                        arr.push(self.pop()?);
                     }
                     arr.reverse();
 
-                    self.push(Array(arr));
+                    self.push(Variable::from_array(arr));
                 }
                 Opcode::Object => {
                     let size = self.pop()?;
@@ -1301,7 +1297,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                         message: "Failed to extract argument".into(),
                     })?;
 
-                    let mut map = BumpMap::with_capacity_in(to, &self.bump);
+                    let mut map = HashMap::with_capacity(to);
                     for _ in 0..to {
                         let value = self.pop()?;
                         let String(key) = self.pop()? else {
@@ -1311,10 +1307,10 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                             });
                         };
 
-                        map.insert(&*self.bump.alloc_str(key), value.clone_in(self.bump));
+                        map.insert(key.to_string(), value);
                     }
 
-                    self.push(Object(map));
+                    self.push(Variable::from_object(map));
                 }
                 Opcode::Len => {
                     let current = self.stack.last().ok_or_else(|| OpcodeErr {
@@ -1324,7 +1320,10 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
 
                     let len = match current {
                         String(s) => s.len(),
-                        Array(s) => s.len(),
+                        Array(s) => {
+                            let arr = s.borrow();
+                            arr.len()
+                        }
                         _ => {
                             return Err(OpcodeErr {
                                 opcode: "Len".into(),
@@ -1337,30 +1336,31 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                 }
                 Opcode::Flatten => {
                     let current = self.pop()?;
-                    let Array(arr) = current else {
+                    let Array(a) = current else {
                         return Err(OpcodeErr {
                             opcode: "Flatten".into(),
                             message: "Unsupported type".into(),
                         });
                     };
 
-                    let mut flat_arr = BumpVec::new_in(&self.bump);
-                    flat_arr.reserve(arr.len());
+                    let arr = a.borrow();
 
+                    let mut flat_arr = Vec::with_capacity(arr.len());
                     arr.iter().for_each(|v| match v {
-                        Array(arr) => arr
-                            .iter()
-                            .for_each(|v| flat_arr.push(v.clone_in(self.bump))),
-                        _ => flat_arr.push(v.clone_in(self.bump)),
+                        Array(b) => {
+                            let arr = b.borrow();
+                            arr.iter().for_each(|v| flat_arr.push(v.clone()))
+                        }
+                        _ => flat_arr.push(v.clone()),
                     });
 
-                    self.push(Array(flat_arr));
+                    self.push(Variable::from_array(flat_arr));
                 }
                 Opcode::ParseDateTime => {
                     let a = self.pop()?;
                     let ts = match a {
                         #[allow(deprecated)]
-                        String(a) => date_time(a)?.timestamp(),
+                        String(a) => date_time(a.as_ref())?.timestamp(),
                         Number(a) => a.to_i64().ok_or_else(|| OpcodeErr {
                             opcode: "ParseDateTime".into(),
                             message: "Number overflow".into(),
@@ -1378,7 +1378,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                 Opcode::ParseTime => {
                     let a = self.pop()?;
                     let ts = match a {
-                        String(a) => time(a)?.num_seconds_from_midnight(),
+                        String(a) => time(a.as_ref())?.num_seconds_from_midnight(),
                         Number(a) => a.to_u32().ok_or_else(|| OpcodeErr {
                             opcode: "ParseTime".into(),
                             message: "Number overflow".into(),
@@ -1397,7 +1397,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     let a = self.pop()?;
 
                     let dur = match a {
-                        String(a) => humantime::parse_duration(a)
+                        String(a) => humantime::parse_duration(a.as_ref())
                             .map_err(|_| ParseDateTimeErr {
                                 timestamp: a.to_string(),
                             })?
@@ -1421,7 +1421,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
 
                     let is_equal = match (check, var) {
                         (TypeCheckKind::Numeric, String(str)) => {
-                            Decimal::from_str_exact(str).is_ok()
+                            Decimal::from_str_exact(str.as_ref()).is_ok()
                         }
                         (TypeCheckKind::Numeric, Number(_)) => true,
                         (TypeCheckKind::Numeric, _) => false,
@@ -1432,17 +1432,15 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                 Opcode::TypeConversion(conversion) => {
                     let var = self.pop()?;
 
-                    let make_string = |val: &str| self.bump.alloc(String(self.bump.alloc_str(val)));
-
-                    let converted_var = match (conversion, var) {
+                    let converted_var = match (conversion, &var) {
                         (TypeConversionKind::String, String(_)) => var,
                         (TypeConversionKind::String, Number(num)) => {
-                            make_string(num.to_string().as_str())
+                            String(Rc::from(num.to_string().as_str()))
                         }
                         (TypeConversionKind::String, Bool(v)) => {
-                            make_string(v.to_string().as_str())
+                            String(Rc::from(v.to_string().as_str()))
                         }
-                        (TypeConversionKind::String, Null) => make_string("null"),
+                        (TypeConversionKind::String, Null) => String(Rc::from("null")),
                         (TypeConversionKind::String, _) => {
                             return Err(OpcodeErr {
                                 opcode: "TypeConversion".into(),
@@ -1459,12 +1457,12 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                                     message: "Failed to parse string to number".into(),
                                 })?;
 
-                            self.bump.alloc(Number(parsed_number))
+                            Number(parsed_number)
                         }
                         (TypeConversionKind::Number, Number(_)) => var,
                         (TypeConversionKind::Number, Bool(v)) => {
                             let number = if *v { dec!(1) } else { dec!(0) };
-                            self.bump.alloc(Number(number))
+                            Number(number)
                         }
                         (TypeConversionKind::Number, _) => {
                             return Err(OpcodeErr {
@@ -1475,9 +1473,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                                 ),
                             });
                         }
-                        (TypeConversionKind::Bool, Number(n)) => {
-                            self.bump.alloc(Bool(!n.is_zero()))
-                        }
+                        (TypeConversionKind::Bool, Number(n)) => Bool(!n.is_zero()),
                         (TypeConversionKind::Bool, String(s)) => {
                             let value = match (*s).trim() {
                                 "true" => true,
@@ -1485,20 +1481,18 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                                 _ => s.is_empty(),
                             };
 
-                            self.bump.alloc(Bool(value))
+                            Bool(value)
                         }
                         (TypeConversionKind::Bool, Bool(_)) => var,
-                        (TypeConversionKind::Bool, Null) => self.bump.alloc(Bool(false)),
-                        (TypeConversionKind::Bool, Object(_) | Array(_)) => {
-                            self.bump.alloc(Bool(true))
-                        }
+                        (TypeConversionKind::Bool, Null) => Bool(false),
+                        (TypeConversionKind::Bool, Object(_) | Array(_)) => Bool(true),
                     };
 
-                    self.push_ref(converted_var);
+                    self.push(converted_var);
                 }
                 Opcode::GetType => {
                     let var = self.pop()?;
-                    self.push(String(var.type_name()));
+                    self.push(String(Rc::from(var.type_name())));
                 }
                 Opcode::JumpIfEnd(j) => {
                     let scope = self.scopes.last().ok_or_else(|| OpcodeErr {
@@ -1548,14 +1542,17 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                         message: "Empty scope".into(),
                     })?;
 
-                    match scope.array {
-                        Array(arr) => {
-                            let variable = arr.get(scope.iter).ok_or_else(|| OpcodeErr {
-                                opcode: "Pointer".into(),
-                                message: "Scope array out of bounds".into(),
-                            })?;
+                    match &scope.array {
+                        Array(a) => {
+                            let a_cloned = a.clone();
+                            let arr = a_cloned.borrow();
+                            let variable =
+                                arr.get(scope.iter).cloned().ok_or_else(|| OpcodeErr {
+                                    opcode: "Pointer".into(),
+                                    message: "Scope array out of bounds".into(),
+                                })?;
 
-                            self.push_ref(variable);
+                            self.push(variable);
                         }
                         _ => {
                             return Err(OpcodeErr {
@@ -1567,18 +1564,26 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                 }
                 Opcode::Begin => {
                     let a = self.pop()?;
-                    match a {
-                        Array(arr) => self.scopes.push(Scope {
+                    let arr_len = match &a {
+                        Array(a) => {
+                            let arr = a.borrow();
+                            Some(arr.len())
+                        }
+                        _ => None,
+                    };
+
+                    match arr_len {
+                        Some(len) => self.scopes.push(Scope {
                             array: a,
                             count: 0,
-                            len: arr.len(),
+                            len,
                             iter: 0,
                         }),
-                        _ => {
+                        None => {
                             return Err(OpcodeErr {
                                 opcode: "Begin".into(),
                                 message: "Unsupported type".into(),
-                            });
+                            })
                         }
                     }
                 }

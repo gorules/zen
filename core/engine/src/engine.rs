@@ -1,14 +1,13 @@
 use std::future::Future;
 use std::sync::Arc;
 
-use serde_json::Value;
-
 use crate::decision::Decision;
 use crate::handler::custom_node_adapter::{CustomNodeAdapter, NoopCustomNode};
 use crate::handler::graph::DecisionGraphResponse;
 use crate::loader::{ClosureLoader, DecisionLoader, LoaderResponse, LoaderResult, NoopLoader};
 use crate::model::DecisionContent;
 use crate::EvaluationError;
+use zen_expression::variable::Variable;
 
 /// Structure used for generating and evaluating JDM decisions
 #[derive(Debug, Clone)]
@@ -76,7 +75,7 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionEngine
     pub async fn evaluate<K>(
         &self,
         key: K,
-        context: &Value,
+        context: Variable,
     ) -> Result<DecisionGraphResponse, Box<EvaluationError>>
     where
         K: AsRef<str>,
@@ -89,7 +88,7 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionEngine
     pub async fn evaluate_with_opts<K>(
         &self,
         key: K,
-        context: &Value,
+        context: Variable,
         options: EvaluationOptions,
     ) -> Result<DecisionGraphResponse, Box<EvaluationError>>
     where

@@ -1,18 +1,17 @@
+use ahash::HashMap;
 use anyhow::{anyhow, Context};
-use std::collections::HashMap;
-
-use serde::Serialize;
-use serde_json::Value;
-use zen_expression::Isolate;
 
 use crate::handler::node::{NodeRequest, NodeResponse, NodeResult};
 use crate::handler::table::{RowOutput, RowOutputKind};
 use crate::model::{DecisionNodeKind, DecisionTableContent, DecisionTableHitPolicy};
+use serde::Serialize;
+use zen_expression::variable::Variable;
+use zen_expression::Isolate;
 
 #[derive(Debug, Serialize)]
 struct RowResult {
     rule: Option<HashMap<String, String>>,
-    reference_map: Option<HashMap<String, Value>>,
+    reference_map: Option<HashMap<String, Variable>>,
     index: usize,
     #[serde(skip)]
     output: RowOutput,
@@ -38,7 +37,7 @@ impl<'a> DecisionTableHandler<'a> {
             _ => Err(anyhow!("Unexpected node type")),
         }?;
 
-        self.isolate.set_environment(&request.input);
+        self.isolate.set_environment(request.input.depth_clone(1));
 
         match &content.hit_policy {
             DecisionTableHitPolicy::First => self.handle_first_hit(&content).await,
@@ -50,7 +49,7 @@ impl<'a> DecisionTableHandler<'a> {
         for i in 0..content.rules.len() {
             if let Some(result) = self.evaluate_row(&content, i) {
                 return Ok(NodeResponse {
-                    output: result.output.to_json().await?,
+                    output: result.output.to_json().await,
                     trace_data: self
                         .trace
                         .then(|| {
@@ -62,7 +61,7 @@ impl<'a> DecisionTableHandler<'a> {
         }
 
         Ok(NodeResponse {
-            output: Value::Null,
+            output: Variable::Null,
             trace_data: None,
         })
     }
@@ -77,11 +76,11 @@ impl<'a> DecisionTableHandler<'a> {
 
         let mut outputs = Vec::with_capacity(results.len());
         for res in &results {
-            outputs.push(res.output.to_json().await?);
+            outputs.push(res.output.to_json().await);
         }
 
         Ok(NodeResponse {
-            output: serde_json::to_value(&outputs).context("Failed to parse table row output")?,
+            output: Variable::from_array(outputs),
             trace_data: self
                 .trace
                 .then(|| serde_json::to_value(&results).context("Failed to parse trace data"))
@@ -101,20 +100,19 @@ impl<'a> DecisionTableHandler<'a> {
                 continue;
             }
 
-            let Some(input_field) = &input.field else {
-                let result = self.isolate.run_standard(rule_value.as_str()).ok()?;
-                let is_ok = result.as_bool().unwrap_or(false);
-                if !is_ok {
-                    return None;
+            match &input.field {
+                None => {
+                    let result = self.isolate.run_standard(rule_value.as_str()).ok()?;
+                    if !result.as_bool().unwrap_or(false) {
+                        return None;
+                    }
                 }
-
-                continue;
-            };
-
-            self.isolate.set_reference(input_field.as_str()).ok()?;
-            let is_ok = self.isolate.run_unary(rule_value.as_str()).ok()?;
-            if !is_ok {
-                return None;
+                Some(field) => {
+                    self.isolate.set_reference(field.as_str()).ok()?;
+                    if !self.isolate.run_unary(rule_value.as_str()).ok()? {
+                        return None;
+                    }
+                }
             }
         }
 
@@ -126,7 +124,7 @@ impl<'a> DecisionTableHandler<'a> {
             }
 
             let res = self.isolate.run_standard(rule_value).ok()?;
-            outputs.push(&output.field, RowOutputKind::Value(res));
+            outputs.push(&output.field, RowOutputKind::Variable(res));
         }
 
         if !self.trace {
@@ -144,7 +142,7 @@ impl<'a> DecisionTableHandler<'a> {
         };
 
         let mut expressions: HashMap<String, String> = Default::default();
-        let mut reference_map: HashMap<String, Value> = Default::default();
+        let mut reference_map: HashMap<String, Variable> = Default::default();
 
         expressions.insert("_id".to_string(), rule_id.clone());
         if let Some(description) = rule.get("_description") {

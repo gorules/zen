@@ -1,44 +1,50 @@
-use bumpalo::Bump;
+use crate::variable::Variable;
+use ahash::{HashMap, HashMapExt};
+use std::rc::Rc;
 
-use crate::variable::{BumpMap, ToVariable, Variable};
-
-pub(crate) struct IntervalObject<'arena> {
-    pub(crate) left_bracket: &'arena str,
-    pub(crate) right_bracket: &'arena str,
-    pub(crate) left: &'arena Variable<'arena>,
-    pub(crate) right: &'arena Variable<'arena>,
+pub(crate) struct IntervalObject {
+    pub(crate) left_bracket: Rc<str>,
+    pub(crate) right_bracket: Rc<str>,
+    pub(crate) left: Variable,
+    pub(crate) right: Variable,
 }
 
-impl<'arena> ToVariable<'arena> for IntervalObject<'arena> {
-    type Error = ();
+impl IntervalObject {
+    pub fn to_variable(&self) -> Variable {
+        let mut tree = HashMap::new();
 
-    fn to_variable(&self, arena: &'arena Bump) -> Result<Variable<'arena>, Self::Error> {
-        let mut tree = BumpMap::new_in(arena);
+        tree.insert(
+            "_symbol".to_string(),
+            Variable::String("Interval".to_string().into()),
+        );
+        tree.insert(
+            "left_bracket".to_string(),
+            Variable::String(self.left_bracket.clone()),
+        );
+        tree.insert(
+            "right_bracket".to_string(),
+            Variable::String(self.right_bracket.clone()),
+        );
+        tree.insert("left".to_string(), self.left.clone());
+        tree.insert("right".to_string(), self.right.clone());
 
-        tree.insert("_symbol", Variable::String("Interval"));
-        tree.insert("left_bracket", Variable::String(self.left_bracket));
-        tree.insert("right_bracket", Variable::String(self.right_bracket));
-        tree.insert("left", self.left.clone_in(arena));
-        tree.insert("right", self.right.clone_in(arena));
-
-        Ok(Variable::Object(tree))
+        Variable::from_object(tree)
     }
-}
 
-impl<'a> IntervalObject<'a> {
-    pub(crate) fn try_from_object(var: &'a Variable<'a>) -> Option<IntervalObject> {
+    pub(crate) fn try_from_object(var: Variable) -> Option<IntervalObject> {
         let Variable::Object(tree) = var else {
             return None;
         };
 
-        if tree.get("_symbol")?.as_str()? != "Interval" {
+        let tree_ref = tree.borrow();
+        if tree_ref.get("_symbol")?.as_str()? != "Interval" {
             return None;
         }
 
-        let left_bracket = tree.get("left_bracket")?.as_str()?;
-        let right_bracket = tree.get("right_bracket")?.as_str()?;
-        let left = tree.get("left")?;
-        let right = tree.get("right")?;
+        let left_bracket = tree_ref.get("left_bracket")?.as_rc_str()?;
+        let right_bracket = tree_ref.get("right_bracket")?.as_rc_str()?;
+        let left = tree_ref.get("left")?.clone();
+        let right = tree_ref.get("right")?.clone();
 
         Some(Self {
             left_bracket,

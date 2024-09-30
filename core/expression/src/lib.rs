@@ -13,13 +13,16 @@
 //! # Example
 //! Evaluate expression using isolate:
 //! ```
-//! use zen_expression::{evaluate_expression, json};
+//! use zen_expression::evaluate_expression;
+//! use zen_expression::variable::Variable;
+//! use rust_decimal_macros::dec;
+//! use serde_json::json;
 //!
 //! fn main() {
 //!     let context = json!({ "tax": { "percentage": 10 } });
-//!     let tax_amount = evaluate_expression("50 * tax.percentage / 100", &context).unwrap();
+//!     let tax_amount = evaluate_expression("50 * tax.percentage / 100", context.into()).unwrap();
 //!
-//!     assert_eq!(tax_amount, json!(5));
+//!     assert_eq!(tax_amount, Variable::Number(dec!(5)));
 //! }
 //! ```
 //!
@@ -28,16 +31,19 @@
 //! will re-use allocated memory from previous evaluations, drastically improving performance.
 //!
 //! ```
-//! use zen_expression::{Isolate, json};
+//! use zen_expression::Isolate;
+//! use zen_expression::variable::Variable;
+//! use rust_decimal_macros::dec;
+//! use serde_json::json;
 //!
 //! fn main() {
 //!     let context = json!({ "tax": { "percentage": 10 } });
-//!     let mut isolate = Isolate::with_environment(&context);
+//!     let mut isolate = Isolate::with_environment(context.into());
 //!
 //!     // Fast 🚀
 //!     for _ in 0..1_000 {
 //!         let tax_amount = isolate.run_standard("50 * tax.percentage / 100").unwrap();
-//!         assert_eq!(tax_amount, json!(5));
+//!         assert_eq!(tax_amount, Variable::Number(dec!(5)));
 //!     }
 //! }
 //! ```
@@ -62,4 +68,4 @@ pub mod vm;
 
 pub use function::{evaluate_expression, evaluate_unary_expression};
 pub use isolate::{Isolate, IsolateError};
-pub use serde_json::json;
+pub use variable::Variable;

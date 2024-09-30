@@ -1,67 +1,101 @@
-pub use crate::variable::map::BumpMap;
-pub use bumpalo::collections::Vec as BumpVec;
-use bumpalo::Bump;
-use chrono::NaiveDateTime;
-use rust_decimal::prelude::ToPrimitive;
+use ahash::HashMap;
+use rust_decimal::prelude::Zero;
 use rust_decimal::Decimal;
-use serde_json::{Number, Value};
-use strum_macros::Display;
+use serde_json::Value;
+use std::cell::RefCell;
+use std::collections::hash_map::Entry;
+use std::fmt::{Debug, Display, Formatter};
+use std::ops::Deref;
+use std::rc::Rc;
 
 mod conv;
 mod de;
-mod map;
 mod ser;
 mod types;
 
-use crate::vm::helpers::date_time;
-use crate::vm::VMError;
-
-pub use conv::ToVariable;
+pub use de::VariableDeserializer;
 pub use types::VariableType;
 
-#[derive(Debug, PartialEq, Eq, Display)]
-pub enum Variable<'arena> {
+pub(crate) type RcCell<T> = Rc<RefCell<T>>;
+#[derive(PartialEq, Eq)]
+pub enum Variable {
     Null,
     Bool(bool),
     Number(Decimal),
-    String(&'arena str),
-    Array(BumpVec<'arena, Variable<'arena>>),
-    Object(BumpMap<'arena, &'arena str, Variable<'arena>>),
+    String(Rc<str>),
+    Array(RcCell<Vec<Variable>>),
+    Object(RcCell<HashMap<String, Variable>>),
 }
 
-impl<'arena> Variable<'arena> {
-    pub fn empty_object(arena: &'arena Bump) -> Self {
-        Variable::Object(BumpMap::new_in(arena))
+impl Variable {
+    pub fn from_array(arr: Vec<Variable>) -> Self {
+        Self::Array(Rc::new(RefCell::new(arr)))
     }
 
-    pub fn empty_array(arena: &'arena Bump) -> Self {
-        Variable::Array(BumpVec::new_in(arena))
+    pub fn from_object(obj: HashMap<String, Variable>) -> Self {
+        Self::Object(Rc::new(RefCell::new(obj)))
     }
 
-    pub fn as_str(&self) -> Option<&'arena str> {
+    pub fn empty_object() -> Self {
+        Variable::Object(Default::default())
+    }
+
+    pub fn empty_array() -> Self {
+        Variable::Array(Default::default())
+    }
+
+    pub fn as_str(&self) -> Option<&str> {
         match self {
-            Variable::String(s) => Some(*s),
+            Variable::String(s) => Some(s.as_ref()),
             _ => None,
         }
     }
 
-    pub fn as_array(&self) -> Option<&BumpVec<'arena, Variable<'arena>>> {
+    pub fn as_rc_str(&self) -> Option<Rc<str>> {
         match self {
-            Variable::Array(arr) => Some(arr),
+            Variable::String(s) => Some(s.clone()),
             _ => None,
         }
     }
 
-    pub fn as_object(&self) -> Option<&BumpMap<'arena, &'arena str, Variable<'arena>>> {
+    pub fn as_array(&self) -> Option<RcCell<Vec<Variable>>> {
         match self {
-            Variable::Object(obj) => Some(obj),
+            Variable::Array(arr) => Some(arr.clone()),
             _ => None,
+        }
+    }
+
+    pub fn is_array(&self) -> bool {
+        match self {
+            Variable::Array(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn as_object(&self) -> Option<RcCell<HashMap<String, Variable>>> {
+        match self {
+            Variable::Object(obj) => Some(obj.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn is_object(&self) -> bool {
+        match self {
+            Variable::Object(_) => true,
+            _ => false,
         }
     }
 
     pub fn as_bool(&self) -> Option<bool> {
         match self {
             Variable::Bool(b) => Some(*b),
+            _ => None,
+        }
+    }
+
+    pub fn as_number(&self) -> Option<Decimal> {
+        match self {
+            Variable::Number(n) => Some(*n),
             _ => None,
         }
     }
@@ -78,108 +112,188 @@ impl<'arena> Variable<'arena> {
     }
 
     pub fn to_value(&self) -> Value {
-        match self {
-            Variable::Null => Value::Null,
-            Variable::Bool(b) => Value::Bool(*b),
-            Variable::Number(n) => {
-                Value::Number(Number::from_string_unchecked(n.normalize().to_string()))
-            }
-            Variable::String(str) => Value::String(str.to_string()),
-            Variable::Array(arr) => Value::Array(arr.iter().map(|i| i.to_value()).collect()),
-            Variable::Object(obj) => Value::Object(
-                obj.iter()
-                    .map(|(k, v)| (k.to_string(), v.to_value()))
-                    .collect(),
-            ),
-        }
+        Value::from(self.shallow_clone())
     }
 
-    pub fn clone_in<'new>(&self, arena: &'new Bump) -> Variable<'new> {
+    pub fn dot(&self, key: &str) -> Option<Variable> {
+        key.split('.')
+            .try_fold(self.shallow_clone(), |var, part| match var {
+                Variable::Object(obj) => {
+                    let reference = obj.borrow();
+                    reference.get(part).map(|v| v.shallow_clone())
+                }
+                _ => None,
+            })
+    }
+
+    fn dot_head(&self, key: &str) -> Option<Variable> {
+        let mut parts = Vec::from_iter(key.split('.'));
+        parts.pop();
+
+        parts
+            .iter()
+            .try_fold(self.shallow_clone(), |var, part| match var {
+                Variable::Object(obj) => {
+                    let mut obj_ref = obj.borrow_mut();
+                    Some(match obj_ref.entry(part.to_string()) {
+                        Entry::Occupied(occ) => occ.get().shallow_clone(),
+                        Entry::Vacant(vac) => vac.insert(Self::empty_object()).shallow_clone(),
+                    })
+                }
+                _ => None,
+            })
+    }
+    pub fn dot_remove(&self, key: &str) -> Option<Variable> {
+        let last_part = key.split('.').last()?;
+        let head = self.dot_head(key)?;
+        let Variable::Object(object_ref) = head else {
+            return None;
+        };
+
+        let mut object = object_ref.borrow_mut();
+        object.remove(last_part)
+    }
+
+    pub fn dot_insert(&self, key: &str, variable: Variable) -> Option<Variable> {
+        let last_part = key.split('.').last()?;
+        let head = self.dot_head(key)?;
+        let Variable::Object(object_ref) = head else {
+            return None;
+        };
+
+        let mut object = object_ref.borrow_mut();
+        object.insert(last_part.to_string(), variable)
+    }
+
+    pub fn merge(&mut self, patch: &Variable) -> Variable {
+        merge_variables(self, patch, true);
+
+        self.shallow_clone()
+    }
+
+    pub fn shallow_clone(&self) -> Self {
         match self {
             Variable::Null => Variable::Null,
             Variable::Bool(b) => Variable::Bool(*b),
             Variable::Number(n) => Variable::Number(*n),
-            Variable::String(s) => Variable::String(arena.alloc_str(s)),
-            Variable::Array(arr) => Variable::Array(BumpVec::from_iter_in(
-                arr.iter().map(|v| v.clone_in(arena)),
-                arena,
-            )),
-            Variable::Object(obj) => Variable::Object(BumpMap::from_iter_in(
-                obj.iter()
-                    .map(|(k, v)| (&*arena.alloc_str(k), v.clone_in(arena))),
-                arena,
-            )),
+            Variable::String(s) => Variable::String(s.clone()),
+            Variable::Array(a) => Variable::Array(a.clone()),
+            Variable::Object(o) => Variable::Object(o.clone()),
         }
     }
 
-    pub fn dot(&self, key: &str) -> Option<&Variable<'arena>> {
-        key.split('.').try_fold(self, |var, part| match var {
-            Variable::Object(obj) => obj.get(part),
-            _ => None,
-        })
-    }
-
-    pub fn dot_mut(&mut self, key: &str) -> Option<&mut Variable<'arena>> {
-        key.split('.').try_fold(self, |var, part| match var {
-            Variable::Object(obj) => obj.get_mut(part),
-            _ => None,
-        })
-    }
-
-    pub fn dot_insert(
-        &mut self,
-        arena: &'arena Bump,
-        key: &str,
-        variable: Variable<'arena>,
-    ) -> Option<&mut Variable<'arena>> {
-        let mut parts: BumpVec<&'arena str> =
-            BumpVec::from_iter_in(key.split('.').map(|p| &*arena.alloc_str(p)), arena);
-        let Some(last_part) = parts.pop() else {
-            return None;
-        };
-
-        let head = parts.iter().try_fold(self, |var, part| match var {
-            Variable::Object(obj) => {
-                if obj.contains_key(part) {
-                    obj.get_mut(part)
-                } else {
-                    obj.insert(part, Self::empty_object(arena));
-                    obj.get_mut(part)
-                }
+    pub fn deep_clone(&self) -> Self {
+        match self {
+            Variable::Array(a) => {
+                let arr = a.borrow();
+                Variable::from_array(arr.iter().map(|v| v.deep_clone()).collect())
             }
-            _ => None,
-        })?;
+            Variable::Object(o) => {
+                let obj = o.borrow();
+                Variable::from_object(
+                    obj.iter()
+                        .map(|(k, v)| (k.to_string(), v.deep_clone()))
+                        .collect(),
+                )
+            }
+            _ => self.shallow_clone(),
+        }
+    }
 
-        let Variable::Object(head_obj) = head else {
-            return None;
-        };
-
-        head_obj.insert(last_part, variable);
-        head_obj.get_mut(last_part)
+    pub fn depth_clone(&self, depth: usize) -> Self {
+        match depth.is_zero() {
+            true => self.shallow_clone(),
+            false => match self {
+                Variable::Array(a) => {
+                    let arr = a.borrow();
+                    Variable::from_array(arr.iter().map(|v| v.depth_clone(depth - 1)).collect())
+                }
+                Variable::Object(o) => {
+                    let obj = o.borrow();
+                    Variable::from_object(
+                        obj.iter()
+                            .map(|(k, v)| (k.to_string(), v.depth_clone(depth - 1)))
+                            .collect(),
+                    )
+                }
+                _ => self.shallow_clone(),
+            },
+        }
     }
 }
 
-impl TryFrom<&Variable<'_>> for NaiveDateTime {
-    type Error = VMError;
+impl Clone for Variable {
+    fn clone(&self) -> Self {
+        self.shallow_clone()
+    }
+}
 
-    fn try_from(value: &Variable<'_>) -> Result<Self, Self::Error> {
-        match value {
-            Variable::String(a) => date_time(a),
-            #[allow(deprecated)]
-            Variable::Number(a) => NaiveDateTime::from_timestamp_opt(
-                a.to_i64().ok_or_else(|| VMError::OpcodeErr {
-                    opcode: "DateManipulation".into(),
-                    message: "Failed to extract date".into(),
-                })?,
-                0,
-            )
-            .ok_or_else(|| VMError::ParseDateTimeErr {
-                timestamp: a.to_string(),
-            }),
-            _ => Err(VMError::OpcodeErr {
-                opcode: "DateManipulation".into(),
-                message: "Unsupported type".into(),
-            }),
+fn merge_variables(doc: &mut Variable, patch: &Variable, top_level: bool) {
+    if !patch.is_object() && !patch.is_array() && top_level {
+        return;
+    }
+
+    if doc.is_object() && patch.is_object() {
+        let map_ref = doc.as_object().unwrap();
+        let mut map = map_ref.borrow_mut();
+
+        let patch_ref = patch.as_object().unwrap();
+        let patch = patch_ref.borrow();
+        for (key, value) in patch.deref() {
+            if value == &Variable::Null {
+                map.remove(key.as_str());
+            } else {
+                let entry = map.entry(key.to_string()).or_insert(Variable::Null);
+                merge_variables(entry, value, false)
+            }
         }
+    } else if doc.is_array() && patch.is_array() {
+        let arr_ref = doc.as_array().unwrap();
+        let mut arr = arr_ref.borrow_mut();
+
+        let patch_ref = patch.as_array().unwrap();
+        let patch = patch_ref.borrow();
+        arr.extend(patch.iter().map(|s| s.shallow_clone()));
+    } else {
+        *doc = patch.shallow_clone();
+    }
+}
+
+impl Display for Variable {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Variable::Null => write!(f, "null"),
+            Variable::Bool(b) => match *b {
+                true => write!(f, "true"),
+                false => write!(f, "false"),
+            },
+            Variable::Number(n) => write!(f, "{n}"),
+            Variable::String(s) => write!(f, "\"{s}\""),
+            Variable::Array(arr) => {
+                let arr = arr.borrow();
+                let s = arr
+                    .iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<String>>()
+                    .join(",");
+                write!(f, "[{s}]")
+            }
+            Variable::Object(obj) => {
+                let obj = obj.borrow();
+                let s = obj
+                    .iter()
+                    .map(|(k, v)| format!("\"{k}\":{v}"))
+                    .collect::<Vec<String>>()
+                    .join(",");
+
+                write!(f, "{{{s}}}")
+            }
+        }
+    }
+}
+
+impl Debug for Variable {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
     }
 }

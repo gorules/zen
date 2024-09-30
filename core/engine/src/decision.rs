@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
-use serde_json::Value;
-
 use crate::engine::EvaluationOptions;
 use crate::handler::custom_node_adapter::{CustomNodeAdapter, NoopCustomNode};
 use crate::handler::graph::{DecisionGraph, DecisionGraphConfig, DecisionGraphResponse};
 use crate::loader::{CachedLoader, DecisionLoader, NoopLoader};
 use crate::model::DecisionContent;
 use crate::{DecisionGraphValidationError, EvaluationError};
+use zen_expression::variable::Variable;
 
 /// Represents a JDM decision which can be evaluated
 #[derive(Debug, Clone)]
@@ -71,7 +70,7 @@ where
     /// Evaluates a decision using an in-memory reference stored in struct
     pub async fn evaluate(
         &self,
-        context: &Value,
+        context: Variable,
     ) -> Result<DecisionGraphResponse, Box<EvaluationError>> {
         self.evaluate_with_opts(context, Default::default()).await
     }
@@ -79,7 +78,7 @@ where
     /// Evaluates a decision using in-memory reference with advanced options
     pub async fn evaluate_with_opts(
         &self,
-        context: &Value,
+        context: Variable,
         options: EvaluationOptions,
     ) -> Result<DecisionGraphResponse, Box<EvaluationError>> {
         let mut decision_graph = DecisionGraph::try_new(DecisionGraphConfig {

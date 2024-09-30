@@ -1,3 +1,6 @@
+use crate::handler::function::error::ResultExt;
+use crate::handler::function::module::export_default;
+use crate::handler::function::serde::JsValue;
 use reqwest::header::{HeaderMap, HeaderName};
 use reqwest::Method;
 use rquickjs::module::{Declarations, Exports, ModuleDef};
@@ -5,10 +8,7 @@ use rquickjs::prelude::{Async, Func, Opt};
 use rquickjs::{CatchResultExt, Ctx, FromJs, IntoAtom, IntoJs, Object, Value};
 use std::str::FromStr;
 use std::sync::OnceLock;
-
-use crate::handler::function::error::ResultExt;
-use crate::handler::function::module::export_default;
-use crate::handler::function::serde::JsValue;
+use zen_expression::variable::Variable;
 
 pub(crate) struct HttpResponse<'js> {
     data: Value<'js>,
@@ -62,7 +62,7 @@ async fn execute_http<'js>(
         )?;
     }
 
-    let data: serde_json::Value = response.json().await.or_throw(&ctx)?;
+    let data: Variable = response.json().await.or_throw(&ctx)?;
 
     Ok(HttpResponse {
         data: JsValue(data).into_js(&ctx)?,
@@ -91,12 +91,12 @@ impl<'js> FromJs<'js> for HttpConfig {
 
                 let value = JsValue::from_js(ctx, value)?;
                 let str_value = match value.0 {
-                    serde_json::Value::Null => None,
-                    serde_json::Value::Bool(b) => Some(b.to_string()),
-                    serde_json::Value::Number(n) => Some(n.to_string()),
-                    serde_json::Value::String(s) => Some(s),
-                    serde_json::Value::Array(_) => None,
-                    serde_json::Value::Object(_) => None,
+                    Variable::Null => None,
+                    Variable::Bool(b) => Some(b.to_string()),
+                    Variable::Number(n) => Some(n.to_string()),
+                    Variable::String(s) => Some(s.to_string()),
+                    Variable::Array(_) => None,
+                    Variable::Object(_) => None,
                 };
 
                 let key_value = key.to_string()?;
@@ -121,12 +121,12 @@ impl<'js> FromJs<'js> for HttpConfig {
 
                 let value = JsValue::from_js(ctx, value)?;
                 let str_value = match value.0 {
-                    serde_json::Value::Null => None,
-                    serde_json::Value::Bool(b) => Some(b.to_string()),
-                    serde_json::Value::Number(n) => Some(n.to_string()),
-                    serde_json::Value::String(s) => Some(s),
-                    serde_json::Value::Array(_) => None,
-                    serde_json::Value::Object(_) => None,
+                    Variable::Null => None,
+                    Variable::Bool(b) => Some(b.to_string()),
+                    Variable::Number(n) => Some(n.to_string()),
+                    Variable::String(s) => Some(s.to_string()),
+                    Variable::Array(_) => None,
+                    Variable::Object(_) => None,
                 };
 
                 let key = key.to_string()?;

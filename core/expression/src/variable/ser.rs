@@ -16,10 +16,6 @@ impl Serialize for Variable {
                     return serializer.serialize_f64(float);
                 }
 
-                if let Some(integer) = v.to_i128() {
-                    return serializer.serialize_i128(integer);
-                }
-
                 let string_value = v.to_string();
 
                 let mut map = serializer.serialize_map(Some(1))?;

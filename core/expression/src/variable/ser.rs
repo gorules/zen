@@ -1,5 +1,6 @@
 use crate::variable::Variable;
 use rust_decimal::prelude::ToPrimitive;
+use serde::ser::SerializeStruct;
 use serde::{ser, Serialize, Serializer};
 
 impl Serialize for Variable {
@@ -19,10 +20,11 @@ impl Serialize for Variable {
                     return serializer.serialize_i128(integer);
                 }
 
-                Err(ser::Error::custom(format!(
-                    "failed to serialize number: {:?}",
-                    v
-                )))
+                let str = v.to_string();
+
+                let mut s = serializer.serialize_struct("$serde_json::private::Number", 1)?;
+                s.serialize_field("$serde_json::private::Number", &str)?;
+                s.end()
             }
             Variable::String(v) => serializer.serialize_str(v),
             Variable::Array(v) => {

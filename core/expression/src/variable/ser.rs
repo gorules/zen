@@ -1,7 +1,7 @@
 use crate::variable::Variable;
 use rust_decimal::prelude::ToPrimitive;
 use serde::ser::SerializeStruct;
-use serde::{ser, Serialize, Serializer};
+use serde::{Serialize, Serializer};
 
 impl Serialize for Variable {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>

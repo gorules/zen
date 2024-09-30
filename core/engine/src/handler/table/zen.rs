@@ -100,20 +100,19 @@ impl<'a> DecisionTableHandler<'a> {
                 continue;
             }
 
-            let Some(input_field) = &input.field else {
-                let result = self.isolate.run_standard(rule_value.as_str()).ok()?;
-                let is_ok = result.as_bool().unwrap_or(false);
-                if !is_ok {
-                    return None;
+            match &input.field {
+                None => {
+                    let result = self.isolate.run_standard(rule_value.as_str()).ok()?;
+                    if !result.as_bool().unwrap_or(false) {
+                        return None;
+                    }
                 }
-
-                continue;
-            };
-
-            self.isolate.set_reference(input_field.as_str()).ok()?;
-            let is_ok = self.isolate.run_unary(rule_value.as_str()).ok()?;
-            if !is_ok {
-                return None;
+                Some(field) => {
+                    self.isolate.set_reference(field.as_str()).ok()?;
+                    if !self.isolate.run_unary(rule_value.as_str()).ok()? {
+                        return None;
+                    }
+                }
             }
         }
 

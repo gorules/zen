@@ -6,6 +6,7 @@ use petgraph::prelude::{EdgeIndex, NodeIndex, StableDiGraph};
 use petgraph::visit::{EdgeRef, IntoNeighbors, IntoNodeIdentifiers, Reversed, VisitMap, Visitable};
 use petgraph::{Incoming, Outgoing};
 use serde_json::json;
+use std::rc::Rc;
 use std::sync::atomic::Ordering;
 use std::time::Instant;
 
@@ -159,7 +160,15 @@ impl GraphWalker {
                     let valid_statements_trace = Variable::from_array(
                         valid_statements
                             .iter()
-                            .map(|&statement| Variable::from(json!({ "id": &statement.id })))
+                            .map(|&statement| {
+                                let v = Variable::empty_object();
+                                v.dot_insert(
+                                    "id",
+                                    Variable::String(Rc::from(statement.id.as_str())),
+                                );
+
+                                v
+                            })
                             .collect(),
                     );
 

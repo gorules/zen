@@ -1,6 +1,4 @@
-pub use crate::variable::map::BumpMap;
 use ahash::HashMap;
-pub use bumpalo::collections::Vec as BumpVec;
 use rust_decimal::prelude::Zero;
 use rust_decimal::Decimal;
 use serde_json::Value;
@@ -12,7 +10,6 @@ use std::rc::Rc;
 
 mod conv;
 mod de;
-mod map;
 mod ser;
 mod types;
 

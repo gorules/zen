@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, Bencher, Criterion};
-use serde_json::{json, Value};
+use serde_json::json;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::runtime::Runtime;

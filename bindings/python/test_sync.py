@@ -1,4 +1,7 @@
+import json
+import os.path
 import unittest
+import glob
 
 import zen
 
@@ -7,6 +10,9 @@ def loader(key):
     with open("../../test-data/" + key, "r") as f:
         return f.read()
 
+def graph_loader(key):
+    with open("../../test-data/graphs/" + key, "r") as f:
+        return f.read()
 
 def custom_handler(request):
     p1 = request.get_field("prop1")
@@ -72,6 +78,23 @@ class ZenEngine(unittest.TestCase):
         result = zen.render_template("{{ a + b }}", {"a": 10, "b": 20})
         self.assertEqual(result, 30)
 
+    def test_evaluate_graphs(self):
+        engine = zen.ZenEngine({"loader": graph_loader})
+        json_files = glob.glob("../../test-data/graphs/*.json")
+
+        for json_file in json_files:
+            with open(json_file, "r") as f:
+                json_contents = json.loads(f.read())
+
+            for test_case in json_contents["tests"]:
+                key = os.path.basename(json_file)
+
+                engine_response = engine.evaluate(key, test_case["input"])
+                decision = engine.get_decision(key)
+                decision_response = decision.evaluate(test_case["input"])
+
+                self.assertEqual(engine_response["result"], test_case["output"])
+                self.assertEqual(decision_response["result"], test_case["output"])
 
 if __name__ == '__main__':
     unittest.main()

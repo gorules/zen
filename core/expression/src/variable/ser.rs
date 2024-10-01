@@ -1,5 +1,5 @@
+use crate::variable::de::NUMBER_TOKEN;
 use crate::variable::Variable;
-use rust_decimal::prelude::ToPrimitive;
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
@@ -12,18 +12,10 @@ impl Serialize for Variable {
             Variable::Null => serializer.serialize_unit(),
             Variable::Bool(v) => serializer.serialize_bool(*v),
             Variable::Number(v) => {
-                if let Some(float) = v.to_f64() {
-                    return serializer.serialize_f64(float);
-                }
+                let str = v.normalize().to_string();
 
-                if let Some(integer) = v.to_i128() {
-                    return serializer.serialize_i128(integer);
-                }
-
-                let str = v.to_string();
-
-                let mut s = serializer.serialize_struct("$serde_json::private::Number", 1)?;
-                s.serialize_field("$serde_json::private::Number", &str)?;
+                let mut s = serializer.serialize_struct(NUMBER_TOKEN, 1)?;
+                s.serialize_field(NUMBER_TOKEN, &str)?;
                 s.end()
             }
             Variable::String(v) => serializer.serialize_str(v),

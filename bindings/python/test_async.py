@@ -1,4 +1,7 @@
 import asyncio
+import glob
+import json
+import os.path
 import unittest
 
 import zen
@@ -6,6 +9,11 @@ import zen
 
 def loader(key):
     with open("../../test-data/" + key, "r") as f:
+        return f.read()
+
+
+def graph_loader(key):
+    with open("../../test-data/graphs/" + key, "r") as f:
         return f.read()
 
 
@@ -55,6 +63,24 @@ class AsyncZenEngine(unittest.IsolatedAsyncioTestCase):
 
         r = await functionDecision.async_evaluate({"input": 15})
         self.assertEqual(r["result"]["output"], 30)
+
+    async def test_evaluate_graphs(self):
+        engine = zen.ZenEngine({"loader": graph_loader})
+        json_files = glob.glob("../../test-data/graphs/*.json")
+
+        for json_file in json_files:
+            with open(json_file, "r") as f:
+                json_contents = json.loads(f.read())
+
+            for test_case in json_contents["tests"]:
+                key = os.path.basename(json_file)
+
+                engine_response = await engine.async_evaluate(key, test_case["input"])
+                decision = engine.get_decision(key)
+                decision_response = await decision.async_evaluate(test_case["input"])
+
+                self.assertEqual(engine_response["result"], test_case["output"])
+                self.assertEqual(decision_response["result"], test_case["output"])
 
 
 if __name__ == '__main__':

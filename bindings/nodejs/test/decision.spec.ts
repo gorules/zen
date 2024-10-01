@@ -9,6 +9,7 @@ import {
 import fs from 'fs/promises';
 import path from 'path';
 import {describe, expect, it, jest} from "@jest/globals";
+import assert from "assert";
 
 const testDataRoot = path.join(__dirname, '../../../', 'test-data');
 
@@ -94,6 +95,47 @@ describe('ZenEngine', () => {
     expect(decisionContent).toBeDefined();
     expect(decisionContent.toBuffer()).toBeDefined();
   });
+
+  it('Passes graph tests', async () => {
+    type TestCase = {
+      input: Record<string, unknown>;
+      output: Record<string, unknown>;
+    }
+
+    type Graph = {
+      tests: TestCase[];
+    }
+
+    const graphsRoot = path.join(testDataRoot, 'graphs');
+    const loader = async (key: string) => fs.readFile(path.join(graphsRoot, key));
+
+    const engine = new ZenEngine({loader});
+
+    const entries = await fs.readdir(graphsRoot);
+    for (const entry of entries) {
+      if (!entry.endsWith('.json')) continue;
+
+      const fileContents = await fs.readFile(path.join(graphsRoot, entry));
+      const fileData: Graph = JSON.parse(fileContents.toString('utf8'));
+
+      for (const testCase of fileData.tests) {
+        const engineResponse = await engine.safeEvaluate(entry, testCase.input);
+
+        const decision = await engine.safeGetDecision(entry);
+        assert.ok(decision.success, 'Decision must exist');
+
+        const decisionResponse = await decision.data.safeEvaluate(testCase.input);
+
+        assert.ok(engineResponse.success, 'Engine response must be ok');
+        assert.ok(decisionResponse.success, 'Decision response must be ok');
+
+        expect(engineResponse.data.result).toMatchObject(testCase.output);
+        expect(decisionResponse.data.result).toMatchObject(testCase.output);
+      }
+    }
+
+    engine.dispose();
+  })
 })
 
 describe('Expressions', () => {

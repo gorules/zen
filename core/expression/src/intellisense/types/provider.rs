@@ -232,7 +232,7 @@ impl TypesProvider {
                         ArithmeticOperator::Add => match (left_type.omit_const(), right_type.omit_const()) {
                             (VariableType::Number, VariableType::Number) => V(VariableType::Number),
                             (VariableType::String, VariableType::String) => V(VariableType::String),
-                            (VariableType::Any, VariableType::Number | VariableType::String) => V(VariableType::Any),
+                            (VariableType::Any, VariableType::Number | VariableType::String | VariableType::Any) => V(VariableType::Any),
                             (VariableType::Number | VariableType::String, VariableType::Any) => V(VariableType::Any),
                             _ => Error(format!(
                                 "Operator `{operator}` cannot be applied to types `{left_type}` and `{right_type}`."

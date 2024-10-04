@@ -76,9 +76,9 @@ impl GraphWalker {
         let node_values = self
             .node_data
             .iter()
-            .map(|(idx, value)| {
-                let weight = g.node_weight(*idx).unwrap();
-                (weight.name.clone(), value.clone())
+            .filter_map(|(idx, value)| {
+                let weight = g.node_weight(*idx)?;
+                Some((weight.name.clone(), value.clone()))
             })
             .collect();
 

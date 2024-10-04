@@ -235,9 +235,12 @@ fn merge_variables(doc: &mut Variable, patch: &Variable, top_level: bool) {
 
     if doc.is_object() && patch.is_object() {
         let map_ref = doc.as_object().unwrap();
-        let mut map = map_ref.borrow_mut();
-
         let patch_ref = patch.as_object().unwrap();
+        if Rc::ptr_eq(&map_ref, &patch_ref) {
+            return;
+        }
+
+        let mut map = map_ref.borrow_mut();
         let patch = patch_ref.borrow();
         for (key, value) in patch.deref() {
             if value == &Variable::Null {
@@ -249,9 +252,12 @@ fn merge_variables(doc: &mut Variable, patch: &Variable, top_level: bool) {
         }
     } else if doc.is_array() && patch.is_array() {
         let arr_ref = doc.as_array().unwrap();
-        let mut arr = arr_ref.borrow_mut();
-
         let patch_ref = patch.as_array().unwrap();
+        if Rc::ptr_eq(&arr_ref, &patch_ref) {
+            return;
+        }
+
+        let mut arr = arr_ref.borrow_mut();
         let patch = patch_ref.borrow();
         arr.extend(patch.iter().map(|s| s.shallow_clone()));
     } else {

@@ -1,17 +1,17 @@
-use std::future::Future;
-use std::ops::Deref;
-use std::pin::Pin;
-use std::rc::Rc;
-use std::sync::Arc;
-
-use anyhow::{anyhow, Context};
-
 use crate::handler::custom_node_adapter::CustomNodeAdapter;
 use crate::handler::function::function::Function;
 use crate::handler::graph::{DecisionGraph, DecisionGraphConfig};
 use crate::handler::node::{NodeRequest, NodeResponse, NodeResult};
 use crate::loader::DecisionLoader;
-use crate::model::DecisionNodeKind;
+use crate::model::{DecisionNodeKind, TransformExecutionMode};
+use anyhow::{anyhow, Context};
+use serde_json::Value;
+use std::future::Future;
+use std::ops::Deref;
+use std::pin::Pin;
+use std::rc::Rc;
+use std::sync::Arc;
+use zen_expression::{Isolate, Variable};
 
 pub struct DecisionHandler<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> {
     trace: bool,
@@ -52,6 +52,8 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionHandle
                 _ => Err(anyhow!("Unexpected node type")),
             }?;
 
+            let mut isolate = Isolate::new();
+
             let sub_decision = self.loader.load(&content.key).await?;
             let mut sub_tree = DecisionGraph::try_new(DecisionGraphConfig {
                 content: sub_decision.deref(),
@@ -63,19 +65,68 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionHandle
             })?
             .with_function(self.js_function.clone());
 
-            let result = sub_tree
-                .evaluate(request.input.clone())
-                .await
-                .map_err(|e| e.source)?;
+            let input_data = match &content.transform_attributes.input_field {
+                None => request.input.clone(),
+                Some(input_field) => {
+                    isolate.set_environment(request.input.clone());
+                    isolate.run_standard(input_field.as_str())?
+                }
+            };
+
+            let mut trace_data: Option<Value> = None;
+            let mut output_data = match &content.transform_attributes.execution_mode {
+                TransformExecutionMode::Single => {
+                    let response = sub_tree
+                        .evaluate(request.input.clone())
+                        .await
+                        .map_err(|e| e.source)?;
+
+                    if self.trace {
+                        trace_data.replace(
+                            serde_json::to_value(response.trace)
+                                .context("Failed to serialize trace")?,
+                        );
+                    }
+
+                    response.result
+                }
+                TransformExecutionMode::Loop => {
+                    let input_array_ref = input_data.as_array().context("Expected an array")?;
+                    let input_array = input_array_ref.borrow();
+
+                    let mut output_array = Vec::with_capacity(input_array.len());
+                    let mut trace_datum = Vec::with_capacity(input_array.len());
+                    for input in input_array.iter() {
+                        let response = sub_tree
+                            .evaluate(input.clone())
+                            .await
+                            .map_err(|e| e.source)?;
+
+                        output_array.push(response.result);
+                        trace_datum.push(response.trace);
+                    }
+
+                    if self.trace {
+                        trace_data.replace(
+                            serde_json::to_value(trace_datum)
+                                .context("Failed to parse trace data")?,
+                        );
+                    }
+
+                    Variable::from_array(output_array)
+                }
+            };
+
+            if let Some(output_path) = &content.transform_attributes.output_path {
+                let new_output_data = Variable::empty_object();
+                new_output_data.dot_insert(output_path.as_str(), output_data);
+
+                output_data = new_output_data;
+            }
 
             Ok(NodeResponse {
-                output: result.result,
-                trace_data: self
-                    .trace
-                    .then(|| {
-                        serde_json::to_value(result.trace).context("Failed to parse trace data")
-                    })
-                    .transpose()?,
+                output: output_data,
+                trace_data,
             })
         })
     }

@@ -74,6 +74,8 @@ pub struct FunctionContent {
 #[serde(rename_all = "camelCase")]
 pub struct DecisionNodeContent {
     pub key: String,
+    #[serde(flatten)]
+    pub transform_attributes: TransformAttributes,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -152,6 +154,25 @@ pub enum SwitchStatementHitPolicy {
     #[default]
     First,
     Collect,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default)]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+#[serde(rename_all = "camelCase")]
+pub struct TransformAttributes {
+    pub input_field: Option<String>,
+    pub output_path: Option<String>,
+    #[serde(default)]
+    pub execution_mode: TransformExecutionMode,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default)]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
+#[serde(rename_all = "camelCase")]
+pub enum TransformExecutionMode {
+    #[default]
+    Single,
+    Loop,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default)]

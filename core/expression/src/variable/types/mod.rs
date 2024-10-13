@@ -4,6 +4,7 @@ mod util;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Display;
+use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -35,6 +36,26 @@ impl Display for VariableType {
             VariableType::Constant(c) => write!(f, "{c}"),
             VariableType::Array(v) => write!(f, "{v}[]"),
             VariableType::Object(_) => write!(f, "object"),
+        }
+    }
+}
+
+impl Hash for VariableType {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match &self {
+            VariableType::Any => 0.hash(state),
+            VariableType::Null => 1.hash(state),
+            VariableType::Bool => 2.hash(state),
+            VariableType::String => 3.hash(state),
+            VariableType::Number => 4.hash(state),
+            VariableType::Constant(c) => c.hash(state),
+            VariableType::Array(arr) => arr.hash(state),
+            VariableType::Object(obj) => {
+                let mut pairs: Vec<_> = obj.iter().collect();
+                pairs.sort_by_key(|i| i.0);
+
+                Hash::hash(&pairs, state);
+            }
         }
     }
 }

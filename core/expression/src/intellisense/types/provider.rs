@@ -59,6 +59,8 @@ impl TypesProvider {
             error: Some(error),
         };
 
+        let mut on_fly_error: Option<String> = None;
+
         let node_type = match node {
             Node::Null => V(VariableType::Null),
             Node::Bool(b) => match detailed {
@@ -261,8 +263,24 @@ impl TypesProvider {
                         LogicalOperator::NullishCoalescing => TypeInfo::from(right_type.kind),
                     },
                     Operator::Comparison(comp) => match comp {
-                        ComparisonOperator::Equal => V(VariableType::Bool),
-                        ComparisonOperator::NotEqual => V(VariableType::Bool),
+                        ComparisonOperator::Equal => {
+                            if !left_type.omit_const().satisfies(&right_type.omit_const()) {
+                                on_fly_error.replace(format!(
+                                    "Hint: Expression will always evaluate to `false` because `{left_type}` != `{right_type}`."
+                                ));
+                            }
+
+                            V(VariableType::Bool)
+                        },
+                        ComparisonOperator::NotEqual => {
+                            if !left_type.omit_const().satisfies(&right_type.omit_const()) {
+                                on_fly_error.replace(format!(
+                                    "Hint: Expression will always evaluate to `true` because `{left_type}` != `{right_type}`."
+                                ));
+                            }
+
+                            V(VariableType::Bool)
+                        },
                         ComparisonOperator::LessThan
                         | ComparisonOperator::GreaterThan
                         | ComparisonOperator::LessThanOrEqual
@@ -273,8 +291,21 @@ impl TypesProvider {
                             )),
                         },
                         ComparisonOperator::In | ComparisonOperator::NotIn => match (left_type.kind.as_ref(), right_type.kind.as_ref()) {
-                            (_, VariableType::Array(_)) => V(VariableType::Bool),
-                            (_, VariableType::Object(_)) => V(VariableType::Bool),
+                            (_, VariableType::Array(inner_type)) => {
+                                if !left_type.omit_const().satisfies(&inner_type.omit_const()) {
+                                    let expected = match comp {
+                                        ComparisonOperator::In => "false",
+                                        _ => "true"
+                                    };
+
+                                    on_fly_error.replace(format!(
+                                        "Hint: Expression will always evaluate to `{expected}`. because array contains element of type `{inner_type}`, and `{left_type}` != `{inner_type}`."
+                                    ));
+                                }
+
+                                V(VariableType::Bool)
+                            },
+                            (VariableType::String, VariableType::Object(_)) => V(VariableType::Bool),
                             (VariableType::Any, _) => V(VariableType::Bool),
                             (_, VariableType::Any) => V(VariableType::Bool),
                             _ => Error(format!(
@@ -702,6 +733,15 @@ impl TypesProvider {
                     }
                 }
             },
+        };
+
+        let node_type = match on_fly_error {
+            None => node_type,
+            Some(error) => {
+                let mut nt = node_type.clone();
+                nt.error.replace(error);
+                nt
+            }
         };
 
         self.set_type(node, node_type.clone());

@@ -288,8 +288,11 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
 
         error_literal
             .or(error_mark_end)
-            .or(string_value
-                .map(|t| self.node(Node::String(t.value), |_| NodeMetadata { span: t.span })))
+            .or(string_value.map(|t| {
+                self.node(Node::String(t.value), |_| NodeMetadata {
+                    span: (t.span.0 - 1, t.span.1 + 1),
+                })
+            }))
             .unwrap_or_else(|| {
                 self.error(AstNodeError::Custom {
                     message: afmt!(
@@ -317,7 +320,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             });
         };
 
-        let mut span = (current_token.span.0, 0u32);
+        let mut span = (current_token.span.0 - 1, 0u32);
 
         let mut nodes = BumpVec::new_in(self.bump);
         while TokenKind::QuotationMark(QuotationMark::Backtick) != current_token.kind {

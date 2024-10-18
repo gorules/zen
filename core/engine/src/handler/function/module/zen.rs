@@ -58,7 +58,7 @@ impl<Loader: DecisionLoader + 'static, Adapter: CustomNodeAdapter + 'static> Run
                                 let load_result = loader.load(key.as_str()).await;
                                 let decision_content = load_result.or_throw(&ctx)?;
                                 let mut sub_tree = DecisionGraph::try_new(DecisionGraphConfig {
-                                    content: &decision_content,
+                                    content: decision_content,
                                     max_depth,
                                     loader,
                                     adapter,

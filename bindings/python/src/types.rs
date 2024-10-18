@@ -3,6 +3,7 @@ use json_dotpath::DotPaths;
 use pyo3::{pyclass, pymethods, PyObject, PyResult, Python, ToPyObject};
 use serde::Serialize;
 use serde_json::Value;
+use std::sync::Arc;
 
 use crate::value::{value_to_object, PyValue};
 use zen_engine::handler::custom_node_adapter::{
@@ -16,15 +17,15 @@ struct CustomDecisionNode {
     pub id: String,
     pub name: String,
     pub kind: String,
-    pub config: Value,
+    pub config: Arc<Value>,
 }
 
-impl From<BaseCustomDecisionNode<'_>> for CustomDecisionNode {
+impl From<BaseCustomDecisionNode> for CustomDecisionNode {
     fn from(value: BaseCustomDecisionNode) -> Self {
         Self {
-            id: value.id.to_string(),
-            name: value.name.to_string(),
-            kind: value.kind.to_string(),
+            id: value.id,
+            name: value.name,
+            kind: value.kind,
             config: value.config.clone(),
         }
     }
@@ -42,10 +43,7 @@ pub struct PyNodeRequest {
 }
 
 impl PyNodeRequest {
-    pub fn from_request(
-        py: Python,
-        value: CustomNodeRequest<'_>,
-    ) -> pythonize::Result<PyNodeRequest> {
+    pub fn from_request(py: Python, value: CustomNodeRequest) -> pythonize::Result<PyNodeRequest> {
         let inner_node = value.node.into();
         let node_val = serde_json::to_value(&inner_node).unwrap();
 

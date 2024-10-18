@@ -128,7 +128,11 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
     }
 
     pub(crate) fn prev_token_end(&self) -> u32 {
-        match self.tokens.get(self.position() - 1) {
+        let Some(pos) = self.position().checked_sub(1) else {
+            return self.token_start();
+        };
+
+        match self.tokens.get(pos) {
             None => self.token_start(),
             Some(t) => t.span.1,
         }

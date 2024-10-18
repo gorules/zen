@@ -49,7 +49,7 @@ impl NativeCustomNode {
 }
 
 impl CustomNodeAdapter for NativeCustomNode {
-    async fn handle(&self, request: CustomNodeRequest<'_>) -> NodeResult {
+    async fn handle(&self, request: CustomNodeRequest) -> NodeResult {
         let Ok(request_value) = serde_json::to_string(&request) else {
             return Err(anyhow!("failed to serialize request json"));
         };

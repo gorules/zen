@@ -21,7 +21,7 @@ impl CustomNode {
 }
 
 impl CustomNodeAdapter for CustomNode {
-    async fn handle(&self, request: CustomNodeRequest<'_>) -> NodeResult {
+    async fn handle(&self, request: CustomNodeRequest) -> NodeResult {
         let Some(function) = &self.function else {
             return Err(anyhow!("Custom function is undefined"));
         };

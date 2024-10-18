@@ -1,10 +1,12 @@
 use ahash::HashMap;
 use anyhow::{anyhow, Context};
+use std::sync::Arc;
 
 use crate::handler::node::{NodeRequest, NodeResponse, NodeResult};
 use crate::handler::table::{RowOutput, RowOutputKind};
 use crate::model::{DecisionNodeKind, DecisionTableContent, DecisionTableHitPolicy};
 use serde::Serialize;
+use tokio::sync::Mutex;
 use zen_expression::variable::Variable;
 use zen_expression::Isolate;
 
@@ -18,12 +20,32 @@ struct RowResult {
 }
 
 #[derive(Debug)]
-pub struct DecisionTableHandler<'a> {
+pub struct DecisionTableHandler {
+    trace: bool,
+}
+
+impl DecisionTableHandler {
+    pub fn new(trace: bool) -> Self {
+        Self { trace }
+    }
+
+    pub async fn handle(&mut self, request: NodeRequest) -> NodeResult {
+        let content = match &request.node.kind {
+            DecisionNodeKind::DecisionTableNode { content } => Ok(content),
+            _ => Err(anyhow!("Unexpected node type")),
+        }?;
+
+        let inner_handler = DecisionTableHandlerInner::new(self.trace);
+        inner_handler.handle(request.input, content).await
+    }
+}
+
+struct DecisionTableHandlerInner<'a> {
     isolate: Isolate<'a>,
     trace: bool,
 }
 
-impl<'a> DecisionTableHandler<'a> {
+impl<'a> DecisionTableHandlerInner<'a> {
     pub fn new(trace: bool) -> Self {
         Self {
             isolate: Isolate::new(),
@@ -31,18 +53,24 @@ impl<'a> DecisionTableHandler<'a> {
         }
     }
 
-    pub async fn handle(&mut self, request: &'a NodeRequest<'_>) -> NodeResult {
-        let content = match &request.node.kind {
-            DecisionNodeKind::DecisionTableNode { content } => Ok(content),
-            _ => Err(anyhow!("Unexpected node type")),
-        }?;
+    pub async fn handle(self, input: Variable, content: &'a DecisionTableContent) -> NodeResult {
+        let self_mutex = Arc::new(Mutex::new(self));
 
-        self.isolate.set_environment(request.input.depth_clone(1));
+        content
+            .transform_attributes
+            .run_with(input, |input| {
+                let self_mutex = self_mutex.clone();
+                async move {
+                    let mut self_ref = self_mutex.lock().await;
 
-        match &content.hit_policy {
-            DecisionTableHitPolicy::First => self.handle_first_hit(&content).await,
-            DecisionTableHitPolicy::Collect => self.handle_collect(&content).await,
-        }
+                    self_ref.isolate.set_environment(input);
+                    match &content.hit_policy {
+                        DecisionTableHitPolicy::First => self_ref.handle_first_hit(&content).await,
+                        DecisionTableHitPolicy::Collect => self_ref.handle_collect(&content).await,
+                    }
+                }
+            })
+            .await
     }
 
     async fn handle_first_hit(&mut self, content: &'a DecisionTableContent) -> NodeResult {

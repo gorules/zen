@@ -8,6 +8,7 @@ use petgraph::{Incoming, Outgoing};
 use serde_json::json;
 use std::rc::Rc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use std::time::Instant;
 
 use crate::config::ZEN_CONFIG;
@@ -18,7 +19,7 @@ use crate::DecisionGraphTrace;
 use zen_expression::variable::Variable;
 use zen_expression::Isolate;
 
-pub(crate) type StableDiDecisionGraph<'a> = StableDiGraph<&'a DecisionNode, &'a DecisionEdge>;
+pub(crate) type StableDiDecisionGraph = StableDiGraph<Arc<DecisionNode>, Arc<DecisionEdge>>;
 
 pub(crate) struct GraphWalker {
     ordered: FixedBitSet,
@@ -70,6 +71,20 @@ impl GraphWalker {
 
     pub fn get_node_data(&self, node_id: NodeIndex) -> Option<Variable> {
         self.node_data.get(&node_id).cloned()
+    }
+
+    pub fn ending_variables(&self, g: &StableDiDecisionGraph) -> Variable {
+        g.node_indices()
+            .filter(|nid| {
+                self.ordered.is_visited(nid)
+                    && g.neighbors_directed(*nid, Outgoing).count().is_zero()
+            })
+            .fold(Variable::empty_object(), |mut acc, curr| {
+                match self.node_data.get(&curr) {
+                    None => acc,
+                    Some(data) => acc.merge(data),
+                }
+            })
     }
 
     pub fn get_all_node_data(&self, g: &StableDiDecisionGraph) -> Variable {
@@ -130,7 +145,7 @@ impl GraphWalker {
         }
         // Take an unvisited element and find which of its neighbors are next
         while let Some(nid) = self.to_visit.pop() {
-            let decision_node = *g.node_weight(nid)?;
+            let decision_node = g.node_weight(nid)?.clone();
             if self.ordered.is_visited(&nid) {
                 continue;
             }

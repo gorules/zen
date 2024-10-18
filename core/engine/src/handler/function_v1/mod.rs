@@ -22,7 +22,7 @@ impl FunctionHandler {
         Self { trace, runtime }
     }
 
-    pub async fn handle(&self, request: &NodeRequest<'_>) -> NodeResult {
+    pub async fn handle(&self, request: NodeRequest) -> NodeResult {
         let content = match &request.node.kind {
             DecisionNodeKind::FunctionNode { content } => match content {
                 FunctionNodeContent::Version1(content) => Ok(content),

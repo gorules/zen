@@ -25,8 +25,8 @@ use std::time::Instant;
 use thiserror::Error;
 use zen_expression::variable::Variable;
 
-pub struct DecisionGraph<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> {
-    graph: StableDiDecisionGraph<'a>,
+pub struct DecisionGraph<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> {
+    graph: StableDiDecisionGraph,
     adapter: Arc<A>,
     loader: Arc<L>,
     trace: bool,
@@ -35,18 +35,18 @@ pub struct DecisionGraph<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter +
     runtime: Option<Rc<Function>>,
 }
 
-pub struct DecisionGraphConfig<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> {
+pub struct DecisionGraphConfig<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> {
     pub loader: Arc<L>,
     pub adapter: Arc<A>,
-    pub content: &'a DecisionContent,
+    pub content: Arc<DecisionContent>,
     pub trace: bool,
     pub iteration: u8,
     pub max_depth: u8,
 }
 
-impl<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<'a, L, A> {
+impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<L, A> {
     pub fn try_new(
-        config: DecisionGraphConfig<'a, L, A>,
+        config: DecisionGraphConfig<L, A>,
     ) -> Result<Self, DecisionGraphValidationError> {
         let content = config.content;
         let mut graph = StableDiDecisionGraph::new();
@@ -54,7 +54,7 @@ impl<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGr
 
         for node in &content.nodes {
             let node_id = node.id.clone();
-            let node_index = graph.add_node(node);
+            let node_index = graph.add_node(node.clone());
 
             index_map.insert(node_id, node_index);
         }
@@ -68,7 +68,7 @@ impl<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGr
                 DecisionGraphValidationError::MissingNode(edge.target_id.to_string())
             })?;
 
-            graph.add_edge(source_index.clone(), target_index.clone(), edge);
+            graph.add_edge(source_index.clone(), target_index.clone(), edge.clone());
         }
 
         Ok(Self {
@@ -114,13 +114,6 @@ impl<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGr
         if input_count != 1 {
             return Err(DecisionGraphValidationError::InvalidInputCount(
                 input_count as u32,
-            ));
-        }
-
-        let output_count = self.node_kind_count(DecisionNodeKind::OutputNode);
-        if output_count < 1 {
-            return Err(DecisionGraphValidationError::InvalidOutputCount(
-                output_count as u32,
             ));
         }
 
@@ -171,7 +164,7 @@ impl<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGr
                 continue;
             }
 
-            let node = self.graph[nid];
+            let node = (&self.graph[nid]).clone();
             let start = Instant::now();
 
             macro_rules! trace {
@@ -222,7 +215,7 @@ impl<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGr
                     })?;
 
                     let node_request = NodeRequest {
-                        node,
+                        node: node.clone(),
                         iteration: self.iteration,
                         input: walker.incoming_node_data(&self.graph, nid, true),
                     };
@@ -233,7 +226,7 @@ impl<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGr
                             self.iteration,
                             self.max_depth,
                         )
-                        .handle(&node_request)
+                        .handle(node_request.clone())
                         .await
                         .map_err(|e| NodeError {
                             source: e.into(),
@@ -246,7 +239,7 @@ impl<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGr
                             })?;
 
                             function_v1::FunctionHandler::new(self.trace, runtime)
-                                .handle(&node_request)
+                                .handle(node_request.clone())
                                 .await
                                 .map_err(|e| NodeError {
                                     source: e.into(),
@@ -270,7 +263,7 @@ impl<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGr
                 }
                 DecisionNodeKind::DecisionNode { .. } => {
                     let node_request = NodeRequest {
-                        node,
+                        node: node.clone(),
                         iteration: self.iteration,
                         input: walker.incoming_node_data(&self.graph, nid, true),
                     };
@@ -282,7 +275,7 @@ impl<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGr
                         self.adapter.clone(),
                         self.runtime.clone(),
                     )
-                    .handle(&node_request)
+                    .handle(node_request.clone())
                     .await
                     .map_err(|e| NodeError {
                         source: e.into(),
@@ -302,15 +295,15 @@ impl<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGr
                     });
                     walker.set_node_data(nid, res.output);
                 }
-                DecisionNodeKind::DecisionTableNode { .. } => {
+                DecisionNodeKind::DecisionTableNode { content } => {
                     let node_request = NodeRequest {
-                        node,
+                        node: node.clone(),
                         iteration: self.iteration,
                         input: walker.incoming_node_data(&self.graph, nid, true),
                     };
 
-                    let res = DecisionTableHandler::new(self.trace)
-                        .handle(&node_request)
+                    let mut res = DecisionTableHandler::new(self.trace)
+                        .handle(node_request.clone())
                         .await
                         .map_err(|e| NodeError {
                             node_id: node.id.clone(),
@@ -319,6 +312,11 @@ impl<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGr
 
                     node_request.input.dot_remove("$nodes");
                     res.output.dot_remove("$nodes");
+
+                    if content.pass_through {
+                        let mut base = node_request.input.clone();
+                        res.output = base.merge(&res.output)
+                    }
 
                     trace!({
                         input: node_request.input,
@@ -330,15 +328,15 @@ impl<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGr
                     });
                     walker.set_node_data(nid, res.output);
                 }
-                DecisionNodeKind::ExpressionNode { .. } => {
+                DecisionNodeKind::ExpressionNode { content } => {
                     let node_request = NodeRequest {
-                        node,
+                        node: node.clone(),
                         iteration: self.iteration,
                         input: walker.incoming_node_data(&self.graph, nid, true),
                     };
 
-                    let res = ExpressionHandler::new(self.trace)
-                        .handle(&node_request)
+                    let mut res = ExpressionHandler::new(self.trace)
+                        .handle(node_request.clone())
                         .await
                         .map_err(|e| NodeError {
                             node_id: node.id.clone(),
@@ -347,6 +345,11 @@ impl<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGr
 
                     node_request.input.dot_remove("$nodes");
                     res.output.dot_remove("$nodes");
+
+                    if content.pass_through {
+                        let mut base = node_request.input.clone();
+                        res.output = base.merge(&res.output)
+                    }
 
                     trace!({
                         input: node_request.input,
@@ -360,14 +363,14 @@ impl<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGr
                 }
                 DecisionNodeKind::CustomNode { .. } => {
                     let node_request = NodeRequest {
-                        node,
+                        node: node.clone(),
                         iteration: self.iteration,
                         input: walker.incoming_node_data(&self.graph, nid, true),
                     };
 
                     let res = self
                         .adapter
-                        .handle(CustomNodeRequest::try_from(&node_request).unwrap())
+                        .handle(CustomNodeRequest::try_from(node_request.clone()).unwrap())
                         .await
                         .map_err(|e| NodeError {
                             node_id: node.id.clone(),
@@ -390,9 +393,10 @@ impl<'a, L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGr
             }
         }
 
-        Err(NodeError {
-            node_id: "".to_string(),
-            source: anyhow!("Graph did not halt. Missing output node."),
+        Ok(DecisionGraphResponse {
+            result: walker.ending_variables(&self.graph),
+            performance: format!("{:?}", root_start.elapsed()),
+            trace: node_traces,
         })
     }
 }

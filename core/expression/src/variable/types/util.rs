@@ -62,7 +62,7 @@ impl VariableType {
             (VariableType::Bool, VariableType::Bool) => true,
             (VariableType::String, VariableType::String) => true,
             (VariableType::Number, VariableType::Number) => true,
-            (VariableType::Array(a1), VariableType::Array(a2)) => a1 == a2,
+            (VariableType::Array(a1), VariableType::Array(a2)) => a1.satisfies(a2),
             (VariableType::Object(o1), VariableType::Object(o2)) => o1
                 .iter()
                 .all(|(k, v)| o2.get(k).is_some_and(|tv| v.satisfies(tv))),

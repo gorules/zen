@@ -32,7 +32,7 @@ fn extract_custom_node_response(py: Python<'_>, result: PyObject) -> NodeResult 
 }
 
 impl CustomNodeAdapter for PyCustomNode {
-    async fn handle(&self, request: CustomNodeRequest<'_>) -> NodeResult {
+    async fn handle(&self, request: CustomNodeRequest) -> NodeResult {
         let Some(callable) = &self.0 else {
             return Err(anyhow!("Custom node handler not provided"));
         };

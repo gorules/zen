@@ -10,7 +10,6 @@ use std::pin::Pin;
 use std::rc::Rc;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use zen_expression::Isolate;
 
 pub struct DecisionHandler<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> {
     trace: bool,

@@ -261,14 +261,14 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
                     });
                     walker.set_node_data(nid, res.output);
                 }
-                DecisionNodeKind::DecisionNode { .. } => {
+                DecisionNodeKind::DecisionNode { content } => {
                     let node_request = NodeRequest {
                         node: node.clone(),
                         iteration: self.iteration,
                         input: walker.incoming_node_data(&self.graph, nid, true),
                     };
 
-                    let res = DecisionHandler::new(
+                    let mut res = DecisionHandler::new(
                         self.trace,
                         self.max_depth,
                         self.loader.clone(),
@@ -284,6 +284,11 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
 
                     node_request.input.dot_remove("$nodes");
                     res.output.dot_remove("$nodes");
+
+                    if content.pass_through {
+                        let mut base = node_request.input.clone();
+                        res.output = base.merge(&res.output)
+                    }
 
                     trace!({
                         input: node_request.input,
@@ -312,6 +317,7 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
 
                     node_request.input.dot_remove("$nodes");
                     res.output.dot_remove("$nodes");
+                    res.output.dot_remove("$");
 
                     if content.pass_through {
                         let mut base = node_request.input.clone();

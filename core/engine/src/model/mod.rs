@@ -75,6 +75,8 @@ pub struct FunctionContent {
 #[serde(rename_all = "camelCase")]
 pub struct DecisionNodeContent {
     pub key: String,
+    #[serde(default)]
+    pub pass_through: bool,
     #[serde(flatten)]
     pub transform_attributes: TransformAttributes,
 }

@@ -229,6 +229,11 @@ impl Clone for Variable {
 }
 
 fn merge_variables(doc: &mut Variable, patch: &Variable, top_level: bool) {
+    if patch.is_array() && top_level {
+        *doc = patch.shallow_clone();
+        return;
+    }
+
     if !patch.is_object() && top_level {
         return;
     }

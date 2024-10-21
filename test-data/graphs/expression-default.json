@@ -1,0 +1,93 @@
+{
+  "tests": [
+    {
+      "input": {
+        "a": 1,
+        "b": 2,
+        "extra": "This should not pass through"
+      },
+      "output": {
+        "sum": 3
+      }
+    },
+    {
+      "input": {
+        "a": 5,
+        "b": 3,
+        "sum": 100
+      },
+      "output": {
+        "sum": 8
+      }
+    },
+    {
+      "input": {
+        "a": 10,
+        "b": 20,
+        "c": 30,
+        "d": 40
+      },
+      "output": {
+        "sum": 30
+      }
+    },
+    {
+      "input": {
+        "a": 7,
+        "b": 3,
+        "passThrough": "This should not appear in output"
+      },
+      "output": {
+        "sum": 10
+      }
+    },
+    {
+      "input": {
+        "a": -5,
+        "b": 5,
+        "negative": true
+      },
+      "output": {
+        "sum": 0
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "id": "deced339-bace-452a-8db0-777f038bffe8",
+      "name": "request",
+      "position": {
+        "x": 145,
+        "y": 235
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "d54641c2-5f24-4140-a9c4-8453542a622a",
+            "key": "sum",
+            "value": "a + b"
+          }
+        ],
+        "passThrough": false
+      },
+      "id": "6b9cfc7e-4776-4b3f-8a19-c2a4d7874770",
+      "name": "expression1",
+      "position": {
+        "x": 475,
+        "y": 235
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "639f3a3a-7545-4e98-aa79-7a9bd9644af1",
+      "sourceId": "deced339-bace-452a-8db0-777f038bffe8",
+      "type": "edge",
+      "targetId": "6b9cfc7e-4776-4b3f-8a19-c2a4d7874770"
+    }
+  ]
+}

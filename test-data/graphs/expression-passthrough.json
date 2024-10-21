@@ -1,0 +1,108 @@
+{
+  "tests": [
+    {
+      "input": {
+        "a": 1,
+        "b": 2,
+        "sum": []
+      },
+      "output": {
+        "a": 1,
+        "b": 2,
+        "sum": 3
+      }
+    },
+    {
+      "input": {
+        "a": 5,
+        "b": 3,
+        "sum": 100
+      },
+      "output": {
+        "a": 5,
+        "b": 3,
+        "sum": 8
+      }
+    },
+    {
+      "input": {
+        "a": 10,
+        "b": 20,
+        "extra": "This should pass through"
+      },
+      "output": {
+        "a": 10,
+        "b": 20,
+        "sum": 30,
+        "extra": "This should pass through"
+      }
+    },
+    {
+      "input": {
+        "a": 7,
+        "b": 3,
+        "sum": "Original",
+        "passThrough": "Test"
+      },
+      "output": {
+        "a": 7,
+        "b": 3,
+        "sum": 10,
+        "passThrough": "Test"
+      }
+    },
+    {
+      "input": {
+        "a": 1,
+        "b": 1,
+        "c": 3,
+        "d": 4
+      },
+      "output": {
+        "a": 1,
+        "b": 1,
+        "c": 3,
+        "d": 4,
+        "sum": 2
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "id": "deced339-bace-452a-8db0-777f038bffe8",
+      "name": "request",
+      "position": {
+        "x": 145,
+        "y": 235
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "d54641c2-5f24-4140-a9c4-8453542a622a",
+            "key": "sum",
+            "value": "a + b"
+          }
+        ],
+        "passThrough": true
+      },
+      "id": "6b9cfc7e-4776-4b3f-8a19-c2a4d7874770",
+      "name": "expression1",
+      "position": {
+        "x": 475,
+        "y": 235
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "639f3a3a-7545-4e98-aa79-7a9bd9644af1",
+      "sourceId": "deced339-bace-452a-8db0-777f038bffe8",
+      "type": "edge",
+      "targetId": "6b9cfc7e-4776-4b3f-8a19-c2a4d7874770"
+    }
+  ]
+}

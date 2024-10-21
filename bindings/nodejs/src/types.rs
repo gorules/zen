@@ -1,9 +1,9 @@
-use std::collections::HashMap;
-
 use json_dotpath::DotPaths;
 use napi::anyhow::{anyhow, Context};
 use napi_derive::napi;
 use serde_json::Value;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use zen_engine::handler::custom_node_adapter::CustomDecisionNode;
 use zen_engine::{DecisionGraphResponse, DecisionGraphTrace};
@@ -65,16 +65,16 @@ pub struct DecisionNode {
     pub id: String,
     pub name: String,
     pub kind: String,
-    pub config: Value,
+    pub config: Arc<Value>,
 }
 
-impl From<CustomDecisionNode<'_>> for DecisionNode {
-    fn from(value: CustomDecisionNode<'_>) -> Self {
+impl From<CustomDecisionNode> for DecisionNode {
+    fn from(value: CustomDecisionNode) -> Self {
         Self {
-            id: value.id.to_string(),
-            name: value.name.to_string(),
-            kind: value.kind.to_string(),
-            config: value.config.clone(),
+            id: value.id,
+            name: value.name,
+            kind: value.kind,
+            config: value.config,
         }
     }
 }

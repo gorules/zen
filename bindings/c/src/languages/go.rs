@@ -50,7 +50,7 @@ impl GoCustomNode {
 }
 
 impl CustomNodeAdapter for GoCustomNode {
-    async fn handle(&self, request: CustomNodeRequest<'_>) -> NodeResult {
+    async fn handle(&self, request: CustomNodeRequest) -> NodeResult {
         let Some(handler) = self.handler else {
             return Err(anyhow!("go handler not found"));
         };

@@ -8,7 +8,7 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::runtime::Builder;
 use zen_engine::loader::{LoaderError, MemoryLoader};
-use zen_engine::model::{DecisionContent, DecisionNodeKind, FunctionNodeContent};
+use zen_engine::model::{DecisionContent, DecisionNode, DecisionNodeKind, FunctionNodeContent};
 use zen_engine::Variable;
 use zen_engine::{DecisionEngine, EvaluationError, EvaluationOptions};
 
@@ -158,24 +158,36 @@ fn engine_with_trace() {
 #[tokio::test]
 #[cfg_attr(miri, ignore)]
 async fn engine_function_imports() {
-    let mut function_content = load_test_data("function.json");
+    let function_content = load_test_data("function.json");
 
     let imports_js_path = Path::new("js").join("imports.js");
     let mut replace_buffer = load_raw_test_data(imports_js_path.to_str().unwrap());
     let mut replace_data = String::new();
     replace_buffer.read_to_string(&mut replace_data).unwrap();
 
-    function_content.nodes.iter_mut().for_each(|node| {
-        if let DecisionNodeKind::FunctionNode { content, .. } = &mut node.kind {
-            match content {
-                FunctionNodeContent::Version1(content) => {
-                    let _ = std::mem::replace(content, replace_data.clone());
-                }
-                _ => {}
-            }
-        }
-    });
+    let new_nodes = function_content
+        .nodes
+        .into_iter()
+        .map(|node| match &node.kind {
+            DecisionNodeKind::FunctionNode { .. } => {
+                let new_kind = DecisionNodeKind::FunctionNode {
+                    content: FunctionNodeContent::Version1(replace_data.clone()),
+                };
 
+                Arc::new(DecisionNode {
+                    id: node.id.clone(),
+                    name: node.name.clone(),
+                    kind: new_kind,
+                })
+            }
+            _ => node,
+        })
+        .collect::<Vec<_>>();
+
+    let function_content = DecisionContent {
+        edges: function_content.edges,
+        nodes: new_nodes,
+    };
     let decision = DecisionEngine::default().create_decision(function_content.into());
     let response = decision.evaluate(json!({}).into()).await.unwrap();
 

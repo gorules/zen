@@ -4,44 +4,43 @@ use anyhow::anyhow;
 use json_dotpath::DotPaths;
 use serde::Serialize;
 use serde_json::Value;
+use std::ops::Deref;
+use std::sync::Arc;
 use zen_expression::variable::Variable;
 use zen_tmpl::TemplateRenderError;
 
 pub trait CustomNodeAdapter {
-    fn handle(
-        &self,
-        request: CustomNodeRequest<'_>,
-    ) -> impl std::future::Future<Output = NodeResult>;
+    fn handle(&self, request: CustomNodeRequest) -> impl std::future::Future<Output = NodeResult>;
 }
 
 #[derive(Default, Debug)]
 pub struct NoopCustomNode;
 
 impl CustomNodeAdapter for NoopCustomNode {
-    async fn handle(&self, _: CustomNodeRequest<'_>) -> NodeResult {
+    async fn handle(&self, _: CustomNodeRequest) -> NodeResult {
         Err(anyhow!("Custom node handler not provided"))
     }
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CustomNodeRequest<'a> {
+pub struct CustomNodeRequest {
     pub input: Variable,
-    pub node: CustomDecisionNode<'a>,
+    pub node: CustomDecisionNode,
 }
 
-impl<'a> TryFrom<&'a NodeRequest<'a>> for CustomNodeRequest<'a> {
+impl TryFrom<NodeRequest> for CustomNodeRequest {
     type Error = ();
 
-    fn try_from(value: &'a NodeRequest<'a>) -> Result<Self, Self::Error> {
+    fn try_from(value: NodeRequest) -> Result<Self, Self::Error> {
         Ok(Self {
             input: value.input.clone(),
-            node: value.node.try_into()?,
+            node: value.node.deref().try_into()?,
         })
     }
 }
 
-impl<'a> CustomNodeRequest<'a> {
+impl CustomNodeRequest {
     pub fn get_field(&self, path: &str) -> Result<Option<Variable>, TemplateRenderError> {
         let Some(selected_value) = self.get_field_raw(path) else {
             return Ok(None);
@@ -62,26 +61,26 @@ impl<'a> CustomNodeRequest<'a> {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CustomDecisionNode<'a> {
-    pub id: &'a str,
-    pub name: &'a str,
-    pub kind: &'a str,
-    pub config: &'a Value,
+pub struct CustomDecisionNode {
+    pub id: String,
+    pub name: String,
+    pub kind: String,
+    pub config: Arc<Value>,
 }
 
-impl<'a> TryFrom<&'a DecisionNode> for CustomDecisionNode<'a> {
+impl TryFrom<&DecisionNode> for CustomDecisionNode {
     type Error = ();
 
-    fn try_from(value: &'a DecisionNode) -> Result<Self, Self::Error> {
+    fn try_from(value: &DecisionNode) -> Result<Self, Self::Error> {
         let DecisionNodeKind::CustomNode { content } = &value.kind else {
             return Err(());
         };
 
         Ok(Self {
-            id: &value.id,
-            name: &value.name,
-            kind: &content.kind,
-            config: &content.config,
+            id: value.id.clone(),
+            name: value.name.clone(),
+            kind: content.kind.clone(),
+            config: content.config.clone(),
         })
     }
 }

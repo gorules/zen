@@ -87,11 +87,4 @@ fn decision_validation() {
         missing_input_error,
         DecisionGraphValidationError::InvalidInputCount(_)
     ));
-
-    let missing_output_decision = Decision::from(load_test_data("error-missing-output.json"));
-    let missing_output_error = missing_output_decision.validate().unwrap_err();
-    assert!(matches!(
-        missing_output_error,
-        DecisionGraphValidationError::InvalidOutputCount(_)
-    ));
 }

@@ -75,8 +75,6 @@ pub struct FunctionContent {
 #[serde(rename_all = "camelCase")]
 pub struct DecisionNodeContent {
     pub key: String,
-    #[serde(default)]
-    pub pass_through: bool,
     #[serde(flatten)]
     pub transform_attributes: TransformAttributes,
 }
@@ -89,8 +87,6 @@ pub struct DecisionTableContent {
     pub inputs: Vec<DecisionTableInputField>,
     pub outputs: Vec<DecisionTableOutputField>,
     pub hit_policy: DecisionTableHitPolicy,
-    #[serde(default)]
-    pub pass_through: bool,
     #[serde(flatten)]
     pub transform_attributes: TransformAttributes,
 }
@@ -127,8 +123,6 @@ pub struct DecisionTableOutputField {
 #[serde(rename_all = "camelCase")]
 pub struct ExpressionNodeContent {
     pub expressions: Vec<Expression>,
-    #[serde(default)]
-    pub pass_through: bool,
     #[serde(flatten)]
     pub transform_attributes: TransformAttributes,
 }
@@ -178,6 +172,8 @@ pub struct TransformAttributes {
     pub output_path: Option<String>,
     #[serde(default)]
     pub execution_mode: TransformExecutionMode,
+    #[serde(default)]
+    pub pass_through: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default)]

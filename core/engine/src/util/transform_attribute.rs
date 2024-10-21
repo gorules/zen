@@ -6,22 +6,39 @@ use std::future::Future;
 use zen_expression::{Isolate, Variable};
 
 impl TransformAttributes {
-    pub(crate) async fn run_with<F, Fut>(&self, input: Variable, evaluate: F) -> NodeResult
+    pub(crate) async fn run_with<F, Fut>(&self, node_input: Variable, evaluate: F) -> NodeResult
     where
         F: Fn(Variable) -> Fut,
         Fut: Future<Output = NodeResult>,
     {
         let input = match &self.input_field {
-            None => input.clone(),
+            None => node_input.clone(),
             Some(input_field) => {
                 let mut isolate = Isolate::new();
-                isolate.set_environment(input.clone());
+                isolate.set_environment(node_input.clone());
+                let calculated_input = isolate.run_standard(input_field.as_str())?;
 
-                let new_input = isolate.run_standard(input_field.as_str())?;
-                let nodes = input.dot("$nodes").unwrap_or(Variable::empty_object());
-                new_input.dot_insert("$nodes", nodes);
+                let nodes = node_input.dot("$nodes").unwrap_or(Variable::Null);
+                match &calculated_input {
+                    Variable::Array(arr) => {
+                        let arr = arr.borrow();
+                        let s: Vec<_> = arr
+                            .iter()
+                            .map(|v| {
+                                let new_v = v.depth_clone(1);
+                                new_v.dot_insert("$nodes", nodes.clone());
+                                new_v
+                            })
+                            .collect();
 
-                new_input
+                        Variable::from_array(s)
+                    }
+                    _ => {
+                        let new_input = calculated_input.depth_clone(1);
+                        new_input.dot_insert("$nodes", nodes);
+                        new_input
+                    }
+                }
             }
         };
 
@@ -33,6 +50,7 @@ impl TransformAttributes {
                     trace_data.replace(td);
                 }
 
+                response.output.dot_remove("$nodes");
                 response.output
             }
             TransformExecutionMode::Loop => {
@@ -42,12 +60,17 @@ impl TransformAttributes {
                 let mut output_array = Vec::with_capacity(input_array.len());
                 let mut trace_datum = Vec::with_capacity(input_array.len());
                 for input in input_array.iter() {
-                    let response = evaluate(input.clone()).await?;
-
-                    output_array.push(response.output);
+                    let mut response = evaluate(input.clone()).await?;
                     if let Some(td) = response.trace_data {
                         trace_datum.push(td);
                     }
+
+                    if self.pass_through {
+                        response.output = input.clone().merge(&response.output);
+                    }
+
+                    response.output.dot_remove("$nodes");
+                    output_array.push(response.output);
                 }
 
                 trace_data.replace(Value::Array(trace_datum));
@@ -60,6 +83,11 @@ impl TransformAttributes {
             new_output.dot_insert(output_path.as_str(), output);
 
             output = new_output;
+        }
+
+        if self.pass_through {
+            let mut node_input = node_input;
+            output = node_input.merge(&output)
         }
 
         Ok(NodeResponse { output, trace_data })

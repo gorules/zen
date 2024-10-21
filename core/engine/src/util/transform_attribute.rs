@@ -16,7 +16,12 @@ impl TransformAttributes {
             Some(input_field) => {
                 let mut isolate = Isolate::new();
                 isolate.set_environment(input.clone());
-                isolate.run_standard(input_field.as_str())?
+
+                let new_input = isolate.run_standard(input_field.as_str())?;
+                let nodes = input.dot("$nodes").unwrap_or(Variable::empty_object());
+                new_input.dot_insert("$nodes", nodes);
+
+                new_input
             }
         };
 

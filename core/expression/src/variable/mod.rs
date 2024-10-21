@@ -229,7 +229,7 @@ impl Clone for Variable {
 }
 
 fn merge_variables(doc: &mut Variable, patch: &Variable, top_level: bool) {
-    if !patch.is_object() && !patch.is_array() && top_level {
+    if !patch.is_object() && top_level {
         return;
     }
 
@@ -250,16 +250,6 @@ fn merge_variables(doc: &mut Variable, patch: &Variable, top_level: bool) {
                 merge_variables(entry, value, false)
             }
         }
-    } else if doc.is_array() && patch.is_array() {
-        let arr_ref = doc.as_array().unwrap();
-        let patch_ref = patch.as_array().unwrap();
-        if Rc::ptr_eq(&arr_ref, &patch_ref) {
-            return;
-        }
-
-        let mut arr = arr_ref.borrow_mut();
-        let patch = patch_ref.borrow();
-        arr.extend(patch.iter().map(|s| s.shallow_clone()));
     } else {
         *doc = patch.shallow_clone();
     }

@@ -66,7 +66,7 @@ impl TransformAttributes {
                     }
 
                     if self.pass_through {
-                        response.output = input.clone().merge(&response.output);
+                        response.output = input.clone().merge_clone(&response.output);
                     }
 
                     response.output.dot_remove("$nodes");
@@ -87,7 +87,7 @@ impl TransformAttributes {
 
         if self.pass_through {
             let mut node_input = node_input;
-            output = node_input.merge(&output)
+            output = node_input.merge_clone(&output)
         }
 
         Ok(NodeResponse { output, trace_data })

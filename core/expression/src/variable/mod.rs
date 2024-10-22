@@ -166,9 +166,16 @@ impl Variable {
     }
 
     pub fn merge(&mut self, patch: &Variable) -> Variable {
-        merge_variables(self, patch, true);
+        let _ = merge_variables(self, patch, true, MergeStrategy::InPlace);
 
         self.shallow_clone()
+    }
+
+    pub fn merge_clone(&mut self, patch: &Variable) -> Variable {
+        let mut new_self = self.shallow_clone();
+
+        let _ = merge_variables(&mut new_self, patch, true, MergeStrategy::CloneOnWrite);
+        new_self
     }
 
     pub fn shallow_clone(&self) -> Self {
@@ -228,35 +235,96 @@ impl Clone for Variable {
     }
 }
 
-fn merge_variables(doc: &mut Variable, patch: &Variable, top_level: bool) {
+#[derive(Copy, Clone)]
+enum MergeStrategy {
+    InPlace,
+    CloneOnWrite,
+}
+
+fn merge_variables(
+    doc: &mut Variable,
+    patch: &Variable,
+    top_level: bool,
+    strategy: MergeStrategy,
+) -> bool {
     if patch.is_array() && top_level {
         *doc = patch.shallow_clone();
-        return;
+        return true;
     }
 
     if !patch.is_object() && top_level {
-        return;
+        return false;
     }
 
     if doc.is_object() && patch.is_object() {
-        let map_ref = doc.as_object().unwrap();
+        let doc_ref = doc.as_object().unwrap();
         let patch_ref = patch.as_object().unwrap();
-        if Rc::ptr_eq(&map_ref, &patch_ref) {
-            return;
+        if Rc::ptr_eq(&doc_ref, &patch_ref) {
+            return false;
         }
 
-        let mut map = map_ref.borrow_mut();
         let patch = patch_ref.borrow();
-        for (key, value) in patch.deref() {
-            if value == &Variable::Null {
-                map.remove(key.as_str());
-            } else {
-                let entry = map.entry(key.to_string()).or_insert(Variable::Null);
-                merge_variables(entry, value, false)
+        match strategy {
+            MergeStrategy::InPlace => {
+                let mut map = doc_ref.borrow_mut();
+                for (key, value) in patch.deref() {
+                    if value == &Variable::Null {
+                        map.remove(key.as_str());
+                    } else {
+                        let entry = map.entry(key.to_string()).or_insert(Variable::Null);
+                        merge_variables(entry, value, false, strategy);
+                    }
+                }
+
+                return true;
+            }
+            MergeStrategy::CloneOnWrite => {
+                let mut changed = false;
+                let mut new_map = None;
+
+                for (key, value) in patch.deref() {
+                    // Get or create the new map if we haven't yet
+                    let map = if let Some(ref mut m) = new_map {
+                        m
+                    } else {
+                        let m = doc_ref.borrow().clone();
+                        new_map = Some(m);
+                        new_map.as_mut().unwrap()
+                    };
+
+                    if value == &Variable::Null {
+                        // Remove null values
+                        if map.remove(key.as_str()).is_some() {
+                            changed = true;
+                        }
+                    } else {
+                        // Handle nested merging
+                        let entry = map.entry(key.to_string()).or_insert(Variable::Null);
+                        if merge_variables(entry, value, false, strategy) {
+                            changed = true;
+                        }
+                    }
+                }
+
+                // Only update doc if changes were made
+                if changed {
+                    if let Some(new_map) = new_map {
+                        *doc = Variable::Object(Rc::new(RefCell::new(new_map)));
+                    }
+                    return true;
+                }
+
+                return false;
             }
         }
     } else {
-        *doc = patch.shallow_clone();
+        let new_value = patch.shallow_clone();
+        if *doc != new_value {
+            *doc = new_value;
+            return true;
+        }
+
+        return false;
     }
 }
 

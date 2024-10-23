@@ -36,7 +36,9 @@ impl DecisionTableHandler {
         }?;
 
         let inner_handler = DecisionTableHandlerInner::new(self.trace);
-        inner_handler.handle(request.input, content).await
+        inner_handler
+            .handle(request.input.depth_clone(1), content)
+            .await
     }
 }
 

@@ -264,7 +264,7 @@ impl TypesProvider {
                     },
                     Operator::Comparison(comp) => match comp {
                         ComparisonOperator::Equal => {
-                            if !left_type.omit_const().satisfies(&right_type.omit_const()) {
+                            if !left_type.omit_const().satisfies(&right_type.omit_const()) && !left_type.is_null() && !right_type.is_null() {
                                 on_fly_error.replace(format!(
                                     "Hint: Expression will always evaluate to `false` because `{left_type}` != `{right_type}`."
                                 ));
@@ -273,7 +273,7 @@ impl TypesProvider {
                             V(VariableType::Bool)
                         },
                         ComparisonOperator::NotEqual => {
-                            if !left_type.omit_const().satisfies(&right_type.omit_const()) {
+                            if !left_type.omit_const().satisfies(&right_type.omit_const()) && !left_type.is_null() && !right_type.is_null() {
                                 on_fly_error.replace(format!(
                                     "Hint: Expression will always evaluate to `true` because `{left_type}` != `{right_type}`."
                                 ));

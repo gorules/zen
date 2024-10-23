@@ -149,6 +149,13 @@ impl VariableType {
             (_, _) => VariableType::Any,
         }
     }
+
+    pub fn is_null(&self) -> bool {
+        match self {
+            VariableType::Null => true,
+            _ => false,
+        }
+    }
 }
 
 #[cfg(test)]

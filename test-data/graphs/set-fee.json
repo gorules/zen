@@ -1,0 +1,243 @@
+{
+  "tests": [
+    {
+      "input": {
+        "country": "US",
+        "currency": "EUR",
+        "amount": 100
+      },
+      "output": {
+        "cat_2": 4,
+        "currency": "EUR",
+        "percent": 4,
+        "cat_1": 3,
+        "country": "US",
+        "fee": 0.6,
+        "amount": 100
+      }
+    },
+    {
+      "input": {
+        "country": "US",
+        "currency": "USD",
+        "amount": 110
+      },
+      "output": {
+        "percent": 1,
+        "amount": 110,
+        "currency": "USD",
+        "fee": 0.5,
+        "country": "US"
+      }
+    },
+    {
+      "input": {
+        "country": "CA",
+        "currency": "AUD",
+        "amount": 110
+      },
+      "output": {
+        "currency": "AUD",
+        "percent": 3,
+        "country": "CA",
+        "cat_1": 3,
+        "fee": 0.7,
+        "amount": 110,
+        "cat_2": 4
+      }
+    }
+  ],
+  "contentType": "application/vnd.gorules.decision",
+  "nodes": [
+    {
+      "id": "e0f3612a-6019-4647-a682-4f3019b67fce",
+      "name": "request",
+      "type": "inputNode",
+      "position": {
+        "x": 165,
+        "y": 120
+      }
+    },
+    {
+      "id": "3a801d19-b611-4163-bfdd-f247a689a275",
+      "name": "pricing",
+      "type": "decisionTableNode",
+      "content": {
+        "rules": [
+          {
+            "_id": "6d08b48b-fe57-4efe-8d97-1bce5fcc75e8",
+            "1a981ce1-aa27-460c-a875-250d93d5cdbb": "0.5",
+            "6c6ac20d-cb40-4af9-b8f2-b5fc409467b6": "country == 'US' and currency == 'USD'",
+            "d4cb5b78-e7a2-4214-8e0c-0f5499d51395": "1"
+          },
+          {
+            "_id": "9d9103e9-a4e6-4a28-b4a1-49e19839727f",
+            "1a981ce1-aa27-460c-a875-250d93d5cdbb": "1",
+            "6c6ac20d-cb40-4af9-b8f2-b5fc409467b6": "country == 'US' and currency == 'CAD'",
+            "d4cb5b78-e7a2-4214-8e0c-0f5499d51395": ""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "6c6ac20d-cb40-4af9-b8f2-b5fc409467b6",
+            "name": "Input"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "1a981ce1-aa27-460c-a875-250d93d5cdbb",
+            "name": "Fee",
+            "field": "fee"
+          },
+          {
+            "id": "d4cb5b78-e7a2-4214-8e0c-0f5499d51395",
+            "name": "Percent",
+            "field": "percent"
+          }
+        ],
+        "hitPolicy": "first",
+        "passThrough": true
+      },
+      "position": {
+        "x": 430,
+        "y": 120
+      }
+    },
+    {
+      "id": "bf832d94-d01d-4842-a60b-3db28375bccb",
+      "name": "fee set?",
+      "type": "switchNode",
+      "content": {
+        "hitPolicy": "first",
+        "statements": [
+          {
+            "id": "94664df3-8233-4019-8381-affec373bffe",
+            "condition": "percent == null",
+            "isDefault": false
+          },
+          {
+            "id": "718244e6-9471-4d20-af18-fce456d36f7e",
+            "condition": "",
+            "isDefault": true
+          }
+        ]
+      },
+      "position": {
+        "x": 710,
+        "y": 120
+      }
+    },
+    {
+      "id": "09ecc83e-f89b-491b-9bfb-39311323ab94",
+      "name": "vars",
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "f7e02818-b2aa-4659-9095-4dbebda02a64",
+            "key": "cat_1",
+            "value": "3"
+          },
+          {
+            "id": "7cebe9d1-5b10-44c3-8f74-36faafa1bde1",
+            "key": "cat_2",
+            "value": "4"
+          }
+        ],
+        "passThrough": true
+      },
+      "position": {
+        "x": 985,
+        "y": 120
+      }
+    },
+    {
+      "id": "5e3c541a-7cf3-4765-b4c0-e20d07510379",
+      "name": "set percent",
+      "type": "decisionTableNode",
+      "content": {
+        "rules": [
+          {
+            "_id": "34388171-596a-4159-bc8b-493a9858e992",
+            "da65cb09-9dd2-4a08-af3c-f59569f999e2": "currency == 'AUD'",
+            "c706d872-d774-461c-bd4e-0e26dc6f6f5f": "cat_1",
+            "bbedc722-3422-40f0-bbd1-15d407d9b348": "0.7"
+          },
+          {
+            "_id": "dbe9b32c-73be-4d16-b67e-fcc087a38a86",
+            "da65cb09-9dd2-4a08-af3c-f59569f999e2": "currency == 'EUR'",
+            "c706d872-d774-461c-bd4e-0e26dc6f6f5f": "cat_2",
+            "bbedc722-3422-40f0-bbd1-15d407d9b348": "0.6"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "da65cb09-9dd2-4a08-af3c-f59569f999e2",
+            "name": "Input"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "c706d872-d774-461c-bd4e-0e26dc6f6f5f",
+            "name": "Percent",
+            "field": "percent"
+          },
+          {
+            "id": "bbedc722-3422-40f0-bbd1-15d407d9b348",
+            "field": "fee",
+            "name": "Fee"
+          }
+        ],
+        "hitPolicy": "first",
+        "passThrough": true
+      },
+      "position": {
+        "x": 1260,
+        "y": 120
+      }
+    },
+    {
+      "id": "1a8c6564-c566-44ff-b07a-bce27d7f5a02",
+      "name": "response",
+      "type": "outputNode",
+      "position": {
+        "x": 985,
+        "y": 225
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "540ab38b-c0b1-4147-8826-c764766738a5",
+      "type": "edge",
+      "sourceId": "3a801d19-b611-4163-bfdd-f247a689a275",
+      "targetId": "bf832d94-d01d-4842-a60b-3db28375bccb"
+    },
+    {
+      "id": "47000d98-4e3c-4276-a479-6febfe4740cb",
+      "type": "edge",
+      "sourceId": "e0f3612a-6019-4647-a682-4f3019b67fce",
+      "targetId": "3a801d19-b611-4163-bfdd-f247a689a275"
+    },
+    {
+      "id": "b577da62-7398-46d0-a8ce-8ca23f08e20a",
+      "type": "edge",
+      "sourceId": "bf832d94-d01d-4842-a60b-3db28375bccb",
+      "targetId": "09ecc83e-f89b-491b-9bfb-39311323ab94",
+      "sourceHandle": "94664df3-8233-4019-8381-affec373bffe"
+    },
+    {
+      "id": "2032b991-a0d0-4ba3-859d-7e1a805c7d8b",
+      "type": "edge",
+      "sourceId": "09ecc83e-f89b-491b-9bfb-39311323ab94",
+      "targetId": "5e3c541a-7cf3-4765-b4c0-e20d07510379"
+    },
+    {
+      "id": "2361a49d-2c8d-4763-b638-057640b80dfb",
+      "type": "edge",
+      "sourceId": "bf832d94-d01d-4842-a60b-3db28375bccb",
+      "targetId": "1a8c6564-c566-44ff-b07a-bce27d7f5a02",
+      "sourceHandle": "718244e6-9471-4d20-af18-fce456d36f7e"
+    }
+  ]
+}

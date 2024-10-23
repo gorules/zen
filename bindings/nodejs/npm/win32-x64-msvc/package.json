@@ -1,6 +1,6 @@
 {
   "name": "@gorules/zen-engine-win32-x64-msvc",
-  "version": "0.31.0",
+  "version": "0.32.0",
   "os": [
     "win32"
   ],

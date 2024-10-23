@@ -1,0 +1,94 @@
+{
+  "tests": [
+    {
+      "input": {
+        "customer": {
+          "firstName": "John",
+          "lastName": "Doe",
+          "age": 30
+        },
+        "order": {
+          "id": "ORD-001",
+          "total": 100
+        }
+      },
+      "output": {
+        "customer": {
+          "firstName": "John",
+          "lastName": "Doe",
+          "age": 30,
+          "fullName": "John Doe"
+        },
+        "order": {
+          "id": "ORD-001",
+          "total": 100
+        }
+      }
+    },
+    {
+      "input": {
+        "customer": {
+          "firstName": "Jane",
+          "lastName": "Smith",
+          "age": 25
+        },
+        "order": {
+          "id": "ORD-002",
+          "total": 150
+        }
+      },
+      "output": {
+        "customer": {
+          "firstName": "Jane",
+          "lastName": "Smith",
+          "age": 25,
+          "fullName": "Jane Smith"
+        },
+        "order": {
+          "id": "ORD-002",
+          "total": 150
+        }
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "id": "input-node",
+      "name": "request",
+      "position": {
+        "x": 100,
+        "y": 100
+      }
+    },
+    {
+      "type": "expressionNode",
+      "id": "expression-node-1",
+      "name": "customerFullName",
+      "position": {
+        "x": 300,
+        "y": 100
+      },
+      "content": {
+        "inputField": "customer",
+        "outputPath": "customer",
+        "expressions": [
+          {
+            "id": "07795ded-cb9b-4165-9b5e-783b066dda61",
+            "key": "fullName",
+            "value": "`${firstName} ${lastName}`"
+          }
+        ],
+        "passThrough": true
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-1",
+      "sourceId": "input-node",
+      "targetId": "expression-node-1",
+      "type": "edge"
+    }
+  ]
+}

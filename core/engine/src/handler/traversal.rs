@@ -3,11 +3,12 @@ use fixedbitset::FixedBitSet;
 use petgraph::data::DataMap;
 use petgraph::matrix_graph::Zero;
 use petgraph::prelude::{EdgeIndex, NodeIndex, StableDiGraph};
-use petgraph::visit::{EdgeRef, IntoNeighbors, IntoNodeIdentifiers, Reversed, VisitMap, Visitable};
+use petgraph::visit::{EdgeRef, IntoNodeIdentifiers, VisitMap, Visitable};
 use petgraph::{Incoming, Outgoing};
 use serde_json::json;
 use std::rc::Rc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use std::time::Instant;
 
 use crate::config::ZEN_CONFIG;
@@ -18,7 +19,7 @@ use crate::DecisionGraphTrace;
 use zen_expression::variable::Variable;
 use zen_expression::Isolate;
 
-pub(crate) type StableDiDecisionGraph<'a> = StableDiGraph<&'a DecisionNode, &'a DecisionEdge>;
+pub(crate) type StableDiDecisionGraph = StableDiGraph<Arc<DecisionNode>, Arc<DecisionEdge>>;
 
 pub(crate) struct GraphWalker {
     ordered: FixedBitSet,
@@ -43,8 +44,8 @@ impl GraphWalker {
         // find all initial nodes (nodes without incoming edges)
         self.to_visit
             .extend(g.node_identifiers().filter(move |&nid| {
-                g.neighbors_directed(nid, Incoming).count().is_zero()
-                    && !g.neighbors_directed(nid, Outgoing).count().is_zero()
+                g.node_weight(nid)
+                    .is_some_and(|n| n.kind == DecisionNodeKind::InputNode)
             }));
     }
 
@@ -70,6 +71,20 @@ impl GraphWalker {
 
     pub fn get_node_data(&self, node_id: NodeIndex) -> Option<Variable> {
         self.node_data.get(&node_id).cloned()
+    }
+
+    pub fn ending_variables(&self, g: &StableDiDecisionGraph) -> Variable {
+        g.node_indices()
+            .filter(|nid| {
+                self.ordered.is_visited(nid)
+                    && g.neighbors_directed(*nid, Outgoing).count().is_zero()
+            })
+            .fold(Variable::empty_object(), |mut acc, curr| {
+                match self.node_data.get(&curr) {
+                    None => acc,
+                    Some(data) => acc.merge(data),
+                }
+            })
     }
 
     pub fn get_all_node_data(&self, g: &StableDiDecisionGraph) -> Variable {
@@ -130,8 +145,15 @@ impl GraphWalker {
         }
         // Take an unvisited element and find which of its neighbors are next
         while let Some(nid) = self.to_visit.pop() {
-            let decision_node = *g.node_weight(nid)?;
+            let decision_node = g.node_weight(nid)?.clone();
             if self.ordered.is_visited(&nid) {
+                continue;
+            }
+
+            if !self.all_dependencies_resolved(g, nid) {
+                self.to_visit.push(nid);
+                self.to_visit
+                    .extend(self.get_unresolved_dependencies(g, nid));
                 continue;
             }
 
@@ -211,21 +233,28 @@ impl GraphWalker {
                 }
             }
 
-            for neigh in g.neighbors(nid) {
-                // Look at each neighbor, and those that only have incoming edges
-                // from the already ordered list, they are the next to visit.
-                if Reversed(&*g)
-                    .neighbors(neigh)
-                    .all(|b| self.ordered.is_visited(&b))
-                {
-                    self.to_visit.push(neigh);
-                }
-            }
+            let successors = g.neighbors_directed(nid, Outgoing);
+            self.to_visit.extend(successors);
 
             return Some(nid);
         }
 
         None
+    }
+
+    fn all_dependencies_resolved(&self, g: &StableDiDecisionGraph, nid: NodeIndex) -> bool {
+        g.neighbors_directed(nid, Incoming)
+            .all(|dep| self.ordered.is_visited(&dep))
+    }
+
+    fn get_unresolved_dependencies(
+        &self,
+        g: &StableDiDecisionGraph,
+        nid: NodeIndex,
+    ) -> Vec<NodeIndex> {
+        g.neighbors_directed(nid, Incoming)
+            .filter(|dep| !self.ordered.is_visited(dep))
+            .collect()
     }
 }
 

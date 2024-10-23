@@ -82,12 +82,12 @@ where
         options: EvaluationOptions,
     ) -> Result<DecisionGraphResponse, Box<EvaluationError>> {
         let mut decision_graph = DecisionGraph::try_new(DecisionGraphConfig {
+            content: self.content.clone(),
             max_depth: options.max_depth.unwrap_or(5),
             trace: options.trace.unwrap_or_default(),
             loader: Arc::new(CachedLoader::from(self.loader.clone())),
             adapter: self.adapter.clone(),
             iteration: 0,
-            content: &self.content,
         })?;
 
         Ok(decision_graph.evaluate(context).await?)
@@ -95,12 +95,12 @@ where
 
     pub fn validate(&self) -> Result<(), DecisionGraphValidationError> {
         let decision_graph = DecisionGraph::try_new(DecisionGraphConfig {
+            content: self.content.clone(),
             max_depth: 1,
             trace: false,
             loader: Arc::new(CachedLoader::from(self.loader.clone())),
             adapter: self.adapter.clone(),
             iteration: 0,
-            content: &self.content,
         })?;
 
         decision_graph.validate()

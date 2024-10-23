@@ -1,0 +1,94 @@
+{
+  "tests": [
+    {
+      "input": {
+        "cart": {
+          "items": [
+            {
+              "name": "Apple",
+              "price": 0.5,
+              "quantity": 3
+            },
+            {
+              "name": "Banana",
+              "price": 0.3,
+              "quantity": 5
+            },
+            {
+              "name": "Orange",
+              "price": 0.7,
+              "quantity": 2
+            }
+          ],
+          "customerId": "CUST-001"
+        }
+      },
+      "output": {
+        "cart": {
+          "items": [
+            {
+              "name": "Apple",
+              "price": 0.5,
+              "quantity": 3,
+              "totalPrice": 1.5
+            },
+            {
+              "name": "Banana",
+              "price": 0.3,
+              "quantity": 5,
+              "totalPrice": 1.5
+            },
+            {
+              "name": "Orange",
+              "price": 0.7,
+              "quantity": 2,
+              "totalPrice": 1.4
+            }
+          ],
+          "customerId": "CUST-001"
+        }
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "id": "input-node",
+      "name": "request",
+      "position": {
+        "x": 100,
+        "y": 100
+      }
+    },
+    {
+      "type": "expressionNode",
+      "id": "expression-node-1",
+      "name": "calculateItemTotal",
+      "position": {
+        "x": 300,
+        "y": 100
+      },
+      "content": {
+        "inputField": "cart.items",
+        "outputPath": "cart.items",
+        "executionMode": "loop",
+        "expressions": [
+          {
+            "id": "total-price-exp",
+            "key": "totalPrice",
+            "value": "price * quantity"
+          }
+        ],
+        "passThrough": true
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-1",
+      "sourceId": "input-node",
+      "targetId": "expression-node-1",
+      "type": "edge"
+    }
+  ]
+}

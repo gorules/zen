@@ -24,7 +24,7 @@ impl Default for DynamicCustomNode {
 }
 
 impl CustomNodeAdapter for DynamicCustomNode {
-    async fn handle(&self, request: CustomNodeRequest<'_>) -> NodeResult {
+    async fn handle(&self, request: CustomNodeRequest) -> NodeResult {
         match self {
             DynamicCustomNode::Noop(cn) => cn.handle(request).await,
             DynamicCustomNode::Native(cn) => cn.handle(request).await,

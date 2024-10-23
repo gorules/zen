@@ -1,14 +1,15 @@
 use ahash::HashMap;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
+use std::sync::Arc;
 
 /// JDM Decision model
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[serde(rename_all = "camelCase")]
 pub struct DecisionContent {
-    pub nodes: Vec<DecisionNode>,
-    pub edges: Vec<DecisionEdge>,
+    pub nodes: Vec<Arc<DecisionNode>>,
+    pub edges: Vec<Arc<DecisionEdge>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -86,6 +87,8 @@ pub struct DecisionTableContent {
     pub inputs: Vec<DecisionTableInputField>,
     pub outputs: Vec<DecisionTableOutputField>,
     pub hit_policy: DecisionTableHitPolicy,
+    #[serde(flatten)]
+    pub transform_attributes: TransformAttributes,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -102,6 +105,7 @@ pub enum DecisionTableHitPolicy {
 pub struct DecisionTableInputField {
     pub id: String,
     pub name: String,
+    #[serde(default, deserialize_with = "empty_string_is_none")]
     pub field: Option<String>,
 }
 
@@ -119,6 +123,8 @@ pub struct DecisionTableOutputField {
 #[serde(rename_all = "camelCase")]
 pub struct ExpressionNodeContent {
     pub expressions: Vec<Expression>,
+    #[serde(flatten)]
+    pub transform_attributes: TransformAttributes,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -160,10 +166,14 @@ pub enum SwitchStatementHitPolicy {
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[serde(rename_all = "camelCase")]
 pub struct TransformAttributes {
+    #[serde(default, deserialize_with = "empty_string_is_none")]
     pub input_field: Option<String>,
+    #[serde(default, deserialize_with = "empty_string_is_none")]
     pub output_path: Option<String>,
     #[serde(default)]
     pub execution_mode: TransformExecutionMode,
+    #[serde(default)]
+    pub pass_through: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default)]
@@ -179,7 +189,7 @@ pub enum TransformExecutionMode {
 #[serde(rename_all = "camelCase")]
 pub struct CustomNodeContent {
     pub kind: String,
-    pub config: Value,
+    pub config: Arc<Value>,
 }
 
 #[cfg(feature = "bincode")]
@@ -223,5 +233,23 @@ impl<'__de> ::bincode::BorrowDecode<'__de> for CustomNodeContent {
             .map_err(|_| ::bincode::error::DecodeError::Other("failed to deserialize value"))?;
 
         Ok(Self { kind, config })
+    }
+}
+
+fn empty_string_is_none<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrNull {
+        String(String),
+        Null,
+    }
+
+    match StringOrNull::deserialize(deserializer)? {
+        StringOrNull::String(s) if s.trim().is_empty() => Ok(None),
+        StringOrNull::String(s) => Ok(Some(s)),
+        StringOrNull::Null => Ok(None),
     }
 }

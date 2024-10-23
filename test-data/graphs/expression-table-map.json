@@ -1,0 +1,313 @@
+{
+  "tests": [
+    {
+      "input": {
+        "customer": {
+          "name": "John Doe",
+          "country": "US"
+        },
+        "items": [
+          {
+            "name": "Laptop",
+            "amount": 1000,
+            "group": "electronics"
+          },
+          {
+            "name": "Mouse",
+            "amount": 50,
+            "group": "accessories"
+          }
+        ]
+      },
+      "output": {
+        "customer": {
+          "country": "US",
+          "name": "John Doe"
+        },
+        "exprItems": [
+          {
+            "amount": 50,
+            "discount": 5,
+            "group": "accessories",
+            "name": "Mouse"
+          }
+        ],
+        "exprItemsSum": 50,
+        "items": [
+          {
+            "amount": 1000,
+            "group": "electronics",
+            "name": "Laptop"
+          },
+          {
+            "amount": 50,
+            "group": "accessories",
+            "name": "Mouse"
+          }
+        ],
+        "tblItems": [
+          {
+            "amount": 1000,
+            "group": "electronics",
+            "name": "Laptop"
+          },
+          {
+            "amount": 50,
+            "discount": 5,
+            "group": "accessories",
+            "name": "Mouse"
+          }
+        ],
+        "tblItemsSum": 1050
+      }
+    },
+    {
+      "input": {
+        "customer": {
+          "name": "John Doe",
+          "country": "US"
+        },
+        "items": [
+          {
+            "name": "Laptop",
+            "amount": 1000,
+            "group": "electronics"
+          },
+          {
+            "name": "Mouse",
+            "amount": 50,
+            "group": "accessories_new"
+          }
+        ]
+      },
+      "output": {
+        "customer": {
+          "country": "US",
+          "name": "John Doe"
+        },
+        "exprItems": [],
+        "exprItemsSum": 0,
+        "items": [
+          {
+            "amount": 1000,
+            "group": "electronics",
+            "name": "Laptop"
+          },
+          {
+            "amount": 50,
+            "group": "accessories_new",
+            "name": "Mouse"
+          }
+        ],
+        "tblItems": [
+          {
+            "amount": 1000,
+            "group": "electronics",
+            "name": "Laptop"
+          },
+          {
+            "amount": 50,
+            "group": "accessories_new",
+            "name": "Mouse"
+          }
+        ],
+        "tblItemsSum": 1050
+      }
+    },
+    {
+      "input": {
+        "customer": {
+          "name": "John Doe",
+          "country": "US"
+        },
+        "items": [
+          {
+            "name": "Laptop",
+            "amount": 1000,
+            "group": "electronics"
+          },
+          {
+            "name": "Mouse",
+            "amount": 51,
+            "group": "accessories"
+          }
+        ]
+      },
+      "output": {
+        "customer": {
+          "country": "US",
+          "name": "John Doe"
+        },
+        "exprItems": [
+          {
+            "amount": 51,
+            "discount": 5,
+            "group": "accessories",
+            "name": "Mouse"
+          }
+        ],
+        "exprItemsSum": 51,
+        "items": [
+          {
+            "amount": 1000,
+            "group": "electronics",
+            "name": "Laptop"
+          },
+          {
+            "amount": 51,
+            "group": "accessories",
+            "name": "Mouse"
+          }
+        ],
+        "tblItems": [
+          {
+            "amount": 1000,
+            "group": "electronics",
+            "name": "Laptop"
+          },
+          {
+            "amount": 51,
+            "discount": 5,
+            "group": "accessories",
+            "name": "Mouse"
+          }
+        ],
+        "tblItemsSum": 1051
+      }
+    }
+  ],
+  "contentType": "application/vnd.gorules.decision",
+  "nodes": [
+    {
+      "id": "be2a55f4-cdd8-482e-b53c-a947cbb7d7a0",
+      "name": "request",
+      "type": "inputNode",
+      "position": {
+        "x": 125,
+        "y": 265
+      }
+    },
+    {
+      "id": "b8ebb212-e290-4131-9703-0bb7b1fd2328",
+      "name": "table",
+      "type": "decisionTableNode",
+      "content": {
+        "rules": [
+          {
+            "_id": "fd81538a-7451-4eb7-a25c-01c3afbebbdf",
+            "e06432d2-4609-425b-ad99-9ca27db08130": "5",
+            "e9090e94-051c-4c27-be58-baac03041c2b": "amount > 40 and group == 'accessories' and $nodes.request.customer.country == 'US'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "e9090e94-051c-4c27-be58-baac03041c2b",
+            "name": "Input"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "e06432d2-4609-425b-ad99-9ca27db08130",
+            "name": "Discount",
+            "field": "discount"
+          }
+        ],
+        "hitPolicy": "first",
+        "inputField": "items",
+        "outputPath": "tblItems",
+        "passThrough": true,
+        "executionMode": "loop"
+      },
+      "position": {
+        "x": 490,
+        "y": 170
+      }
+    },
+    {
+      "id": "5f56e61b-5687-4758-8524-8121df13b2ba",
+      "name": "expr",
+      "type": "expressionNode",
+      "content": {
+        "inputField": "filter(items,#.group == 'accessories')",
+        "outputPath": "exprItems",
+        "expressions": [
+          {
+            "id": "fcec4ba0-0279-46f5-99c4-fe4bfb6d842c",
+            "key": "discount",
+            "value": "amount > 40 and group == 'accessories' ? 5 : 0"
+          }
+        ],
+        "passThrough": true,
+        "executionMode": "loop"
+      },
+      "position": {
+        "x": 490,
+        "y": 265
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "504955cc-8ea1-4cf1-a53b-1bf874dd51b1",
+            "key": "tblItemsSum",
+            "value": "sum(map(tblItems, #.amount))"
+          }
+        ],
+        "passThrough": true
+      },
+      "id": "8ceca45e-e6ff-4613-984c-5846e53c5a39",
+      "name": "sum",
+      "position": {
+        "x": 785,
+        "y": 170
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "504955cc-8ea1-4cf1-a53b-1bf874dd51b1",
+            "key": "exprItemsSum",
+            "value": "sum(map(exprItems, #.amount))"
+          }
+        ],
+        "passThrough": true
+      },
+      "id": "3814877d-0169-45dc-b4f5-5f9eade2e4f1",
+      "name": "sum",
+      "position": {
+        "x": 785,
+        "y": 265
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "565a3028-2cd3-4d35-b46a-c5a776776d9e",
+      "type": "edge",
+      "sourceId": "be2a55f4-cdd8-482e-b53c-a947cbb7d7a0",
+      "targetId": "5f56e61b-5687-4758-8524-8121df13b2ba"
+    },
+    {
+      "id": "b2f6aff4-2e3e-4e49-a8ff-c4b63f65e71e",
+      "type": "edge",
+      "sourceId": "be2a55f4-cdd8-482e-b53c-a947cbb7d7a0",
+      "targetId": "b8ebb212-e290-4131-9703-0bb7b1fd2328"
+    },
+    {
+      "id": "69267b59-5f70-4cd2-825b-c1920901ac56",
+      "sourceId": "b8ebb212-e290-4131-9703-0bb7b1fd2328",
+      "type": "edge",
+      "targetId": "8ceca45e-e6ff-4613-984c-5846e53c5a39"
+    },
+    {
+      "id": "01303153-a825-43d0-8127-73e4bac1514e",
+      "sourceId": "5f56e61b-5687-4758-8524-8121df13b2ba",
+      "type": "edge",
+      "targetId": "3814877d-0169-45dc-b4f5-5f9eade2e4f1"
+    }
+  ]
+}

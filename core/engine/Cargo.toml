@@ -14,7 +14,6 @@ doctest = false
 ahash = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
-bincode = { workspace = true, optional = true }
 petgraph = { workspace = true }
 serde_json = { workspace = true, features = ["arbitrary_precision"] }
 serde = { workspace = true, features = ["derive", "rc"] }
@@ -28,13 +27,11 @@ rquickjs = { version = "0.6.2", features = ["macro", "loader", "rust-alloc", "fu
 itertools = { workspace = true }
 zen-expression = { path = "../expression", version = "0.33.0" }
 zen-tmpl = { path = "../template", version = "0.33.0" }
+jsonschema = { version = "0.25.0" }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 criterion = { workspace = true, features = ["async_tokio"] }
-
-[features]
-bincode = ["dep:bincode"]
 
 [[bench]]
 harness = false

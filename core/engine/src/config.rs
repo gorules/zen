@@ -13,7 +13,7 @@ impl Default for ZenConfig {
     fn default() -> Self {
         Self {
             nodes_in_context: AtomicBool::new(true),
-            function_timeout: AtomicU64::new(500),
+            function_timeout: AtomicU64::new(5_000),
         }
     }
 }

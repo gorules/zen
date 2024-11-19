@@ -36,6 +36,3 @@ thiserror = "1.0.63"
 lto = true
 codegen-units = 1
 strip = "symbols"
-
-[patch.crates-io]
-rquickjs-core = { git = "https://github.com/stefan-gorules/rquickjs.git", branch = "master" }

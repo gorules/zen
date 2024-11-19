@@ -92,6 +92,10 @@ impl<'a> Isolate<'a> {
         self.references.get(reference).cloned()
     }
 
+    pub fn clear_references(&mut self) {
+        self.references.clear();
+    }
+
     pub fn run_standard(&mut self, source: &'a str) -> Result<Variable, IsolateError> {
         self.bump.with_mut(|b| b.reset());
         let bump = self.bump.get();

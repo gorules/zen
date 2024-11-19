@@ -65,6 +65,7 @@ impl<'a> DecisionTableHandlerInner<'a> {
                 async move {
                     let mut self_ref = self_mutex.lock().await;
 
+                    self_ref.isolate.clear_references();
                     self_ref.isolate.set_environment(input);
                     match &content.hit_policy {
                         DecisionTableHitPolicy::First => self_ref.handle_first_hit(&content).await,

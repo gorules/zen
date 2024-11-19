@@ -1,0 +1,93 @@
+{
+  "tests": [
+    {
+      "input": {
+        "items": [
+          {
+            "hello": "foo"
+          },
+          {
+            "hello": "koo"
+          }
+        ]
+      },
+      "output": {
+        "res": [
+          {
+            "world": "bar"
+          },
+          {
+            "world": "error"
+          }
+        ]
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "id": "da3ed838-ab74-4f55-a703-2d1b7e507722",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 200
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "78f3629d-f7eb-4fdb-94b1-c4be9f7bd534",
+            "6d27354e-56ff-4b25-9160-5fb428c98a5d": "\"foo\"",
+            "4428496f-ee81-4298-a50e-c8093bb619d7": "\"bar\""
+          },
+          {
+            "_id": "582b14c8-df87-4c83-8954-4904dc811a98",
+            "6d27354e-56ff-4b25-9160-5fb428c98a5d": "",
+            "4428496f-ee81-4298-a50e-c8093bb619d7": "\"error\""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "6d27354e-56ff-4b25-9160-5fb428c98a5d",
+            "name": "Input",
+            "field": "hello"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "4428496f-ee81-4298-a50e-c8093bb619d7",
+            "name": "Output",
+            "field": "world"
+          }
+        ],
+        "passThrough": false,
+        "inputField": "items",
+        "outputPath": "res",
+        "executionMode": "loop"
+      },
+      "id": "668e8acb-5b42-4bd6-b399-cbe790df7532",
+      "name": "decisionTable1",
+      "position": {
+        "x": 405,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "a1c444c9-d464-4991-a548-452dfcb659d3",
+      "sourceId": "da3ed838-ab74-4f55-a703-2d1b7e507722",
+      "type": "edge",
+      "targetId": "668e8acb-5b42-4bd6-b399-cbe790df7532"
+    }
+  ],
+  "settings": {
+    "validation": {
+      "inputSchema": null,
+      "outputSchema": null
+    }
+  }
+}

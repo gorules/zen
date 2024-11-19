@@ -35,7 +35,7 @@ pub struct Log {
     ms_since_run: usize,
 }
 
-#[derive(rquickjs::class::Trace, Clone)]
+#[derive(rquickjs::class::Trace, rquickjs::JsLifetime, Clone)]
 #[rquickjs::class]
 pub struct Console {
     #[qjs(skip_trace)]

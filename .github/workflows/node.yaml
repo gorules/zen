@@ -10,7 +10,7 @@ env:
 on:
   push:
     branches:
-      - feat/musl
+      - master
     tags-ignore:
       - '**'
     paths:

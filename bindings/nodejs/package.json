@@ -66,6 +66,7 @@
     "url": "https://github.com/gorules/zen/issues"
   },
   "publishConfig": {
+    "access": "public",
     "registry": "https://registry.npmjs.org/"
   },
   "repository": {

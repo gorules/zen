@@ -312,8 +312,8 @@ By incorporating the "Decision" node, developers can modularize decision logic, 
 | darwin-x64      | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
 | darwin-arm64    | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
 | win32-x64-msvc  | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
-
-We do not support linux-musl currently.
+| linux-x64-musl  | :x:                | :heavy_check_mark: | :x:                | :x:                |
+| linux-arm64-musl| :x:                | :heavy_check_mark: | :x:                | :x:                |
 
 ## Contribution
 

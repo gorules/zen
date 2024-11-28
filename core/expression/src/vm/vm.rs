@@ -880,6 +880,21 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                         }
                     }
                 }
+                Opcode::Trim => {
+                    let a = self.pop()?;
+
+                    match a {
+                        String(a) => {
+                            self.push(String(a.trim().into()));
+                        }
+                        _ => {
+                            return Err(OpcodeErr {
+                                opcode: "Trim".into(),
+                                message: "Unsupported type".into(),
+                            });
+                        }
+                    }
+                }
                 Opcode::Lowercase => {
                     let a = self.pop()?;
 

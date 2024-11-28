@@ -18,6 +18,7 @@ pub enum BuiltInFunction {
     // String
     Upper,
     Lower,
+    Trim,
     StartsWith,
     EndsWith,
     Matches,
@@ -87,6 +88,7 @@ impl BuiltInFunction {
             // String
             BuiltInFunction::Upper => Arity::Single,
             BuiltInFunction::Lower => Arity::Single,
+            BuiltInFunction::Trim => Arity::Single,
             BuiltInFunction::StartsWith => Arity::Dual,
             BuiltInFunction::EndsWith => Arity::Dual,
             BuiltInFunction::Matches => Arity::Dual,

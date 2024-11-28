@@ -59,6 +59,7 @@ pub enum Opcode<'a> {
     Join,
     Split,
     Extract,
+    Trim,
     Slice,
     Array,
     Object,

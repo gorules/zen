@@ -331,6 +331,10 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                     self.emit(Opcode::Rot);
                     Ok(self.emit(Opcode::Pop))
                 }
+                BuiltInFunction::Trim => {
+                    self.compile_argument(kind, arguments, 0)?;
+                    Ok(self.emit(Opcode::Trim))
+                }
                 BuiltInFunction::Date => {
                     self.compile_argument(kind, arguments, 0)?;
                     Ok(self.emit(Opcode::ParseDateTime))

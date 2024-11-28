@@ -243,6 +243,27 @@ fn isolate_standard_test() {
             ]),
         },
         TestEnv {
+            env: json!({ "customer": { "firstName": " John", "middleName": " \n Dan    \n", "lastName": "Doe " } }),
+            cases: Vec::from([
+                TestCase {
+                    expr: r#"trim(customer.firstName) + " " + trim(customer.lastName)"#,
+                    result: json!("John Doe"),
+                },
+                TestCase {
+                    expr: "trim(customer.firstName) == 'John'",
+                    result: json!(true),
+                },
+                TestCase {
+                    expr: "trim(customer.middleName) == 'Dan'",
+                    result: json!(true),
+                },
+                TestCase {
+                    expr: "trim(customer.lastName) == 'Doe'",
+                    result: json!(true),
+                },
+            ]),
+        },
+        TestEnv {
             env: json!({
                 "customer": {
                     "groups": ["admin", "user"],

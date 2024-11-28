@@ -334,6 +334,7 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                 BuiltInFunction::Len => CompareWithReference(Equal),
                 BuiltInFunction::Upper => CompareWithReference(Equal),
                 BuiltInFunction::Lower => CompareWithReference(Equal),
+                BuiltInFunction::Trim => CompareWithReference(Equal),
                 BuiltInFunction::Abs => CompareWithReference(Equal),
                 BuiltInFunction::Sum => CompareWithReference(Equal),
                 BuiltInFunction::Avg => CompareWithReference(Equal),

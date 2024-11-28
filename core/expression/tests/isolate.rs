@@ -243,7 +243,7 @@ fn isolate_standard_test() {
             ]),
         },
         TestEnv {
-            env: json!({ "customer": { "firstName": " John", "middleName": " Dan    ", "lastName": "Doe " } }),
+            env: json!({ "customer": { "firstName": " John", "middleName": " \n Dan    \n", "lastName": "Doe " } }),
             cases: Vec::from([
                 TestCase {
                     expr: r#"trim(customer.firstName) + " " + trim(customer.lastName)"#,

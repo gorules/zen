@@ -111,6 +111,9 @@ true ? 10 == 20 : false ? 30 == 40 : true ? 50 == 60 : 70 == 80;;false
 len("Hello, World!");; 13
 lower("Hello, World!");; "hello, world!"
 upper("Hello, World!");; "HELLO, WORLD!"
+trim("HELLO, WORLD!");; "HELLO, WORLD!"
+trim("  HELLO, WORLD!");; "HELLO, WORLD!"
+trim("HELLO, WORLD!  ");; "HELLO, WORLD!"
 startsWith("Hello, World!", "Hello");; true
 startsWith("Hello, World!", "World");; false
 endsWith("Hello, World!", "World!");; true

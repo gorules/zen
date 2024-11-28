@@ -456,9 +456,7 @@ impl TypesProvider {
 
                         V(VariableType::Bool)
                     }
-                    BuiltInFunction::Upper
-                    | BuiltInFunction::Lower
-                    | BuiltInFunction::Trim => {
+                    BuiltInFunction::Upper | BuiltInFunction::Lower | BuiltInFunction::Trim => {
                         if !type_list[0].satisfies(&VariableType::String) {
                             self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `string`.", type_list[0]));
                         }

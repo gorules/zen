@@ -12,16 +12,16 @@ for target in "${TARGETS[@]}"; do
     
     case $target in
         "x86_64-unknown-linux-gnu")
-            PACKAGES="gcc-x86-64-linux-gnu"
-            CC="x86_64-linux-gnu-gcc"
+            DOCKER_PLATFORM="linux/amd64"
+            PACKAGES="build-essential"
             ;;
         "aarch64-unknown-linux-gnu")
+            DOCKER_PLATFORM="linux/amd64"
             PACKAGES="gcc-aarch64-linux-gnu"
-            CC="aarch64-linux-gnu-gcc"
             ;;
         "x86_64-unknown-linux-musl")
+            DOCKER_PLATFORM="linux/amd64"
             PACKAGES="musl-tools"
-            CC="musl-gcc"
             ;;
         *)
             echo "Unknown target: $target"
@@ -29,18 +29,14 @@ for target in "${TARGETS[@]}"; do
             ;;
     esac
 
-    docker run --rm -v "$(pwd)":/workspace -w /workspace/bindings/c rust:latest bash -c "\
+    docker run --rm --platform $DOCKER_PLATFORM \
+        -v "$(pwd)":/workspace \
+        -w /workspace/bindings/c \
+        rust:1.70 bash -c "\
         apt-get update && \
         apt-get install -y $PACKAGES && \
         rustup target add $target && \
         QUICKJS_SYSTEM_MALLOC=1 \
         QUICKJS_DISABLE_ATOMICS=1 \
-        CC=$CC \
-        RUSTFLAGS='-C target-feature=+crt-static' \
-        cargo clean && \
-        QUICKJS_SYSTEM_MALLOC=1 \
-        QUICKJS_DISABLE_ATOMICS=1 \
-        CC=$CC \
-        RUSTFLAGS='-C target-feature=+crt-static' \
         cargo build --target $target --release --no-default-features"
 done

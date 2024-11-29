@@ -32,7 +32,7 @@ for target in "${TARGETS[@]}"; do
     docker run --rm --platform $DOCKER_PLATFORM \
         -v "$(pwd)":/workspace \
         -w /workspace/bindings/c \
-        rust:1.70 bash -c "\
+        rust:1.73 bash -c "\
         apt-get update && \
         apt-get install -y $PACKAGES && \
         rustup target add $target && \

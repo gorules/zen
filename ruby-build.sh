@@ -10,7 +10,6 @@ set -e
 for target in "${TARGETS[@]}"; do
     echo "Building for $target..."
     
-    # Different package requirements for different targets
     case $target in
         "x86_64-unknown-linux-gnu")
             PACKAGES="gcc-x86-64-linux-gnu"
@@ -34,5 +33,14 @@ for target in "${TARGETS[@]}"; do
         apt-get update && \
         apt-get install -y $PACKAGES && \
         rustup target add $target && \
-        CC=$CC cargo build --target $target --release --no-default-features"
+        QUICKJS_SYSTEM_MALLOC=1 \
+        QUICKJS_DISABLE_ATOMICS=1 \
+        CC=$CC \
+        RUSTFLAGS='-C target-feature=+crt-static' \
+        cargo clean && \
+        QUICKJS_SYSTEM_MALLOC=1 \
+        QUICKJS_DISABLE_ATOMICS=1 \
+        CC=$CC \
+        RUSTFLAGS='-C target-feature=+crt-static' \
+        cargo build --target $target --release --no-default-features"
 done

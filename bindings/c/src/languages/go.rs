@@ -89,6 +89,7 @@ pub extern "C" fn zen_engine_new_golang(
 }
 
 #[allow(unused_doc_comments)]
+#[cfg(feature = "go")]
 /// cbindgen:ignore
 extern "C" {
     fn zen_engine_go_loader_callback(cb_ptr: usize, key: *const c_char) -> ZenDecisionLoaderResult;
@@ -96,4 +97,18 @@ extern "C" {
         cb_ptr: usize,
         request: *const c_char,
     ) -> ZenCustomNodeResult;
+}
+
+#[allow(unused_doc_comments)]
+#[cfg(not(feature = "go"))]
+extern "C" {
+    fn zen_engine_go_loader_callback(cb_ptr: usize, key: *const c_char) -> ZenDecisionLoaderResult {
+        unimplemented!()
+    }
+    fn zen_engine_go_custom_node_callback(
+        cb_ptr: usize,
+        request: *const c_char,
+    ) -> ZenCustomNodeResult {
+        unimplemented!()
+    }
 }

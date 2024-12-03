@@ -1,0 +1,125 @@
+{
+  "tests": [
+    {
+      "input": {},
+      "output": {
+        "nodeData": {}
+      }
+    }
+  ],
+  "contentType": "application/vnd.gorules.decision",
+  "nodes": [
+    {
+      "type": "inputNode",
+      "id": "2a8241f2-a808-4030-afd3-94ba60d93291",
+      "name": "request",
+      "position": {
+        "x": 140,
+        "y": 250
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "a3ba7858-4894-449b-ace1-a0e3350000bc",
+            "key": "L1.carbon_accounting.score_commentary",
+            "value": "\"There is likely to be\""
+          },
+          {
+            "id": "0bc66e11-9e4a-4356-8ec8-e9054a825645",
+            "key": "L1.carbon_accounting.score_label",
+            "value": "\"Moderate risk\""
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "d0435b70-ad45-4de8-9086-2477d66344b9",
+      "name": "expression1",
+      "position": {
+        "x": 525,
+        "y": 140
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "528cb7cc-b9c2-419d-bcc9-10063a98fc0a",
+            "key": "L1",
+            "value": "{}"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "d438419f-c54a-49b4-b2a0-3bb626b0617f",
+      "name": "expression2",
+      "position": {
+        "x": 525,
+        "y": 315
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "bd33b380-11e6-4799-81fc-d93a8d42eb07",
+            "key": "nodeData",
+            "value": "$nodes.expression2.L1"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "07f6fe29-bfcc-457f-8c84-a7594e5627e2",
+      "name": "expression3",
+      "position": {
+        "x": 870,
+        "y": 225
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "ddafa3cd-e2db-4dc2-a419-d687e2f3ae15",
+      "sourceId": "2a8241f2-a808-4030-afd3-94ba60d93291",
+      "targetId": "d0435b70-ad45-4de8-9086-2477d66344b9",
+      "type": "edge"
+    },
+    {
+      "id": "012d920a-0013-42ef-866a-d196d2f4a33d",
+      "sourceId": "2a8241f2-a808-4030-afd3-94ba60d93291",
+      "targetId": "d438419f-c54a-49b4-b2a0-3bb626b0617f",
+      "type": "edge"
+    },
+    {
+      "id": "7fa7b662-b9df-40e3-8f7e-63489aa08e2e",
+      "sourceId": "d0435b70-ad45-4de8-9086-2477d66344b9",
+      "targetId": "07f6fe29-bfcc-457f-8c84-a7594e5627e2",
+      "type": "edge"
+    },
+    {
+      "id": "3be68d2c-f5ab-4b91-a7fe-c609c6e2ecd7",
+      "sourceId": "d438419f-c54a-49b4-b2a0-3bb626b0617f",
+      "targetId": "07f6fe29-bfcc-457f-8c84-a7594e5627e2",
+      "type": "edge"
+    }
+  ],
+  "settings": {
+    "validation": {
+      "inputSchema": null,
+      "outputSchema": null
+    }
+  }
+}

@@ -10,6 +10,12 @@ execute [JSON Decision Model (JDM)](https://gorules.io/docs/rules-engine/json-de
 
 An open-source React editor is available on our [JDM Editor](https://github.com/gorules/jdm-editor) repo.
 
+## TMP: building ruby instructions
+
+```
+cargo build --release --no-default-features --target aarch64-apple-darwin
+```
+
 ## Usage
 
 ZEN Engine is built as embeddable BRE for your **Rust**, **NodeJS**, **Python** or **Go** applications.

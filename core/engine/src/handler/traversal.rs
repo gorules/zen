@@ -130,7 +130,7 @@ impl GraphWalker {
         let default_map = Variable::empty_object();
         iter.fold(Variable::empty_object(), |mut prev, curr| {
             let data = self.node_data.get(&curr).unwrap_or(&default_map);
-            prev.merge(data)
+            prev.merge_clone(data)
         })
     }
 

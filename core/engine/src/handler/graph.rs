@@ -154,8 +154,9 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
 
         while let Some(nid) = walker.next(
             &mut self.graph,
-            self.trace.then_some(|trace: DecisionGraphTrace| {
+            self.trace.then_some(|mut trace: DecisionGraphTrace| {
                 if let Some(nt) = &mut node_traces {
+                    trace.order = nt.len() as u32;
                     nt.insert(trace.id.clone(), trace);
                 };
             }),
@@ -168,10 +169,19 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
             let start = Instant::now();
 
             macro_rules! trace {
-                ($data: tt) => {
+                ({ $($field:ident: $value:expr),* $(,)? }) => {
                     if let Some(nt) = &mut node_traces {
-                        nt.insert(node.id.clone(), DecisionGraphTrace $data);
-                    };
+                        nt.insert(
+                            node.id.clone(),
+                            DecisionGraphTrace {
+                                name: node.name.clone(),
+                                id: node.id.clone(),
+                                performance: Some(format!("{:.1?}", start.elapsed())),
+                                order: nt.len() as u32,
+                                $($field: $value,)*
+                            }
+                        );
+                    }
                 };
             }
 
@@ -181,9 +191,6 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
                     trace!({
                         input: Variable::Null,
                         output: Variable::Null,
-                        name: node.name.clone(),
-                        id: node.id.clone(),
-                        performance: None,
                         trace_data: None,
                     });
                 }
@@ -191,9 +198,6 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
                     trace!({
                         input: Variable::Null,
                         output: Variable::Null,
-                        name: node.name.clone(),
-                        id: node.id.clone(),
-                        performance: None,
                         trace_data: None,
                     });
 
@@ -254,9 +258,6 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
                     trace!({
                         input: node_request.input,
                         output: res.output.clone(),
-                        name: node.name.clone(),
-                        id: node.id.clone(),
-                        performance: Some(format!("{:?}", start.elapsed())),
                         trace_data: res.trace_data,
                     });
                     walker.set_node_data(nid, res.output);
@@ -288,9 +289,6 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
                     trace!({
                         input: node_request.input,
                         output: res.output.clone(),
-                        name: node.name.clone(),
-                        id: node.id.clone(),
-                        performance: Some(format!("{:?}", start.elapsed())),
                         trace_data: res.trace_data,
                     });
                     walker.set_node_data(nid, res.output);
@@ -317,9 +315,6 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
                     trace!({
                         input: node_request.input,
                         output: res.output.clone(),
-                        name: node.name.clone(),
-                        id: node.id.clone(),
-                        performance: Some(format!("{:?}", start.elapsed())),
                         trace_data: res.trace_data,
                     });
                     walker.set_node_data(nid, res.output);
@@ -345,9 +340,6 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
                     trace!({
                         input: node_request.input,
                         output: res.output.clone(),
-                        name: node.name.clone(),
-                        id: node.id.clone(),
-                        performance: Some(format!("{:?}", start.elapsed())),
                         trace_data: res.trace_data,
                     });
                     walker.set_node_data(nid, res.output);
@@ -374,9 +366,6 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
                     trace!({
                         input: node_request.input,
                         output: res.output.clone(),
-                        name: node.name.clone(),
-                        id: node.id.clone(),
-                        performance: Some(format!("{:?}", start.elapsed())),
                         trace_data: res.trace_data,
                     });
                     walker.set_node_data(nid, res.output);
@@ -454,4 +443,5 @@ pub struct DecisionGraphTrace {
     pub id: String,
     pub performance: Option<String>,
     pub trace_data: Option<Value>,
+    pub order: u32,
 }

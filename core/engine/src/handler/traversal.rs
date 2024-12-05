@@ -202,6 +202,7 @@ impl GraphWalker {
                             name: decision_node.name.clone(),
                             input: input_data.shallow_clone(),
                             output: input_data.shallow_clone(),
+                            order: 0,
                             performance: Some(format!("{:?}", start.elapsed())),
                             trace_data: Some(
                                 json!({ "statements": valid_statements_trace }).into(),

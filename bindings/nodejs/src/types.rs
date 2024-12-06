@@ -17,6 +17,7 @@ pub struct ZenEngineTrace {
     pub output: Value,
     pub performance: Option<String>,
     pub trace_data: Option<Value>,
+    pub order: u32,
 }
 
 impl From<DecisionGraphTrace> for ZenEngineTrace {
@@ -28,6 +29,7 @@ impl From<DecisionGraphTrace> for ZenEngineTrace {
             output: value.output.to_value(),
             performance: value.performance,
             trace_data: value.trace_data,
+            order: value.order,
         }
     }
 }

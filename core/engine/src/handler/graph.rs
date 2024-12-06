@@ -203,7 +203,7 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
 
                     return Ok(DecisionGraphResponse {
                         result: walker.incoming_node_data(&self.graph, nid, false),
-                        performance: format!("{:?}", root_start.elapsed()),
+                        performance: format!("{:.1?}", root_start.elapsed()),
                         trace: node_traces,
                     });
                 }

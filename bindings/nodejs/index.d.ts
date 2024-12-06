@@ -26,9 +26,9 @@ export interface ZenEngineTrace {
   name: string
   input: any
   output: any
-  order: number;
   performance?: string
   traceData?: any
+  order: number
 }
 export interface ZenEngineResponse {
   performance: string

@@ -28,6 +28,7 @@ export interface ZenEngineTrace {
   output: any
   performance?: string
   traceData?: any
+  order: number
 }
 export interface ZenEngineResponse {
   performance: string

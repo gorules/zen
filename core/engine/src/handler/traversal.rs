@@ -203,7 +203,7 @@ impl GraphWalker {
                             input: input_data.shallow_clone(),
                             output: input_data.shallow_clone(),
                             order: 0,
-                            performance: Some(format!("{:?}", start.elapsed())),
+                            performance: Some(format!("{:.1?}", start.elapsed())),
                             trace_data: Some(
                                 json!({ "statements": valid_statements_trace }).into(),
                             ),

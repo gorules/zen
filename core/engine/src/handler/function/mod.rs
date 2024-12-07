@@ -94,7 +94,7 @@ impl FunctionHandler {
                 });
 
                 Err(anyhow!(PartialTraceError {
-                    message: format!("{:?}", e),
+                    message: e.to_string(),
                     trace: Some(json!({ "log": log })),
                 }))
             }

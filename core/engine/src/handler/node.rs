@@ -25,11 +25,24 @@ pub struct NodeError {
     pub node_id: String,
     #[source]
     pub source: anyhow::Error,
+    pub trace: Option<Value>,
 }
 
 impl Display for NodeError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self)
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct PartialTraceError {
+    pub trace: Option<Value>,
+    pub message: String,
+}
+
+impl Display for PartialTraceError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
     }
 }
 

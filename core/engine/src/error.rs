@@ -34,6 +34,10 @@ impl Serialize for EvaluationError {
                 map.serialize_entry("type", "NodeError")?;
                 map.serialize_entry("nodeId", &err.node_id)?;
                 map.serialize_entry("source", &err.source.to_string())?;
+
+                if let Some(trace) = &err.trace {
+                    map.serialize_entry("trace", &trace)?;
+                }
             }
             EvaluationError::LoaderError(err) => {
                 map.serialize_entry("type", "LoaderError")?;

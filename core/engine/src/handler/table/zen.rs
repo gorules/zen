@@ -1,5 +1,5 @@
 use ahash::HashMap;
-use anyhow::{anyhow, Context};
+use anyhow::anyhow;
 use std::sync::Arc;
 
 use crate::handler::node::{NodeRequest, NodeResponse, NodeResult};
@@ -83,10 +83,8 @@ impl<'a> DecisionTableHandlerInner<'a> {
                     output: result.output.to_json().await,
                     trace_data: self
                         .trace
-                        .then(|| {
-                            serde_json::to_value(&result).context("Failed to parse trace data")
-                        })
-                        .transpose()?,
+                        .then(|| serde_json::to_value(&result).ok())
+                        .flatten(),
                 });
             }
         }
@@ -114,8 +112,8 @@ impl<'a> DecisionTableHandlerInner<'a> {
             output: Variable::from_array(outputs),
             trace_data: self
                 .trace
-                .then(|| serde_json::to_value(&results).context("Failed to parse trace data"))
-                .transpose()?,
+                .then(|| serde_json::to_value(&results).ok())
+                .flatten(),
         })
     }
 

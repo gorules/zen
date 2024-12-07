@@ -7,7 +7,7 @@ use crate::handler::function::module::zen::ZenListener;
 use crate::handler::function::FunctionHandler;
 use crate::handler::function_v1;
 use crate::handler::function_v1::runtime::create_runtime;
-use crate::handler::node::NodeRequest;
+use crate::handler::node::{NodeRequest, PartialTraceError};
 use crate::handler::table::zen::DecisionTableHandler;
 use crate::handler::traversal::{GraphWalker, StableDiDecisionGraph};
 use crate::loader::DecisionLoader;
@@ -140,12 +140,14 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
         self.validate().map_err(|e| NodeError {
             node_id: "".to_string(),
             source: anyhow!(e),
+            trace: None,
         })?;
 
         if self.iteration >= self.max_depth {
             return Err(NodeError {
                 node_id: "".to_string(),
                 source: anyhow!(EvaluationError::DepthLimitExceeded),
+                trace: None,
             });
         }
 
@@ -216,6 +218,7 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
                     let function = self.get_or_insert_function().await.map_err(|e| NodeError {
                         source: e.into(),
                         node_id: node.id.clone(),
+                        trace: error_trace(&node_traces),
                     })?;
 
                     let node_request = NodeRequest {
@@ -232,14 +235,26 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
                         )
                         .handle(node_request.clone())
                         .await
-                        .map_err(|e| NodeError {
-                            source: e.into(),
-                            node_id: node.id.clone(),
+                        .map_err(|e| {
+                            if let Some(detailed_err) = e.downcast_ref::<PartialTraceError>() {
+                                trace!({
+                                    input: node_request.input.clone(),
+                                    output: Variable::Null,
+                                    trace_data: detailed_err.trace.clone(),
+                                });
+                            }
+
+                            NodeError {
+                                source: e.into(),
+                                node_id: node.id.clone(),
+                                trace: error_trace(&node_traces),
+                            }
                         })?,
                         FunctionNodeContent::Version1(_) => {
                             let runtime = create_runtime().map_err(|e| NodeError {
                                 source: e.into(),
                                 node_id: node.id.clone(),
+                                trace: error_trace(&node_traces),
                             })?;
 
                             function_v1::FunctionHandler::new(self.trace, runtime)
@@ -248,6 +263,7 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
                                 .map_err(|e| NodeError {
                                     source: e.into(),
                                     node_id: node.id.clone(),
+                                    trace: error_trace(&node_traces),
                                 })?
                         }
                     };
@@ -281,6 +297,7 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
                     .map_err(|e| NodeError {
                         source: e.into(),
                         node_id: node.id.to_string(),
+                        trace: error_trace(&node_traces),
                     })?;
 
                     node_request.input.dot_remove("$nodes");
@@ -306,6 +323,7 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
                         .map_err(|e| NodeError {
                             node_id: node.id.clone(),
                             source: e.into(),
+                            trace: error_trace(&node_traces),
                         })?;
 
                     node_request.input.dot_remove("$nodes");
@@ -329,9 +347,20 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
                     let res = ExpressionHandler::new(self.trace)
                         .handle(node_request.clone())
                         .await
-                        .map_err(|e| NodeError {
-                            node_id: node.id.clone(),
-                            source: e.into(),
+                        .map_err(|e| {
+                            if let Some(detailed_err) = e.downcast_ref::<PartialTraceError>() {
+                                trace!({
+                                    input: node_request.input.clone(),
+                                    output: Variable::Null,
+                                    trace_data: detailed_err.trace.clone(),
+                                });
+                            }
+
+                            NodeError {
+                                node_id: node.id.clone(),
+                                source: e.into(),
+                                trace: error_trace(&node_traces),
+                            }
                         })?;
 
                     node_request.input.dot_remove("$nodes");
@@ -358,6 +387,7 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
                         .map_err(|e| NodeError {
                             node_id: node.id.clone(),
                             source: e.into(),
+                            trace: error_trace(&node_traces),
                         })?;
 
                     node_request.input.dot_remove("$nodes");
@@ -444,4 +474,11 @@ pub struct DecisionGraphTrace {
     pub performance: Option<String>,
     pub trace_data: Option<Value>,
     pub order: u32,
+}
+
+pub(crate) fn error_trace(trace: &Option<HashMap<String, DecisionGraphTrace>>) -> Option<Value> {
+    trace
+        .as_ref()
+        .map(|s| serde_json::to_value(s).ok())
+        .flatten()
 }

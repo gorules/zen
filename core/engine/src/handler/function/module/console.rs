@@ -31,8 +31,8 @@ impl RuntimeListener for ConsoleListener {
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Log {
-    lines: Vec<String>,
-    ms_since_run: usize,
+    pub lines: Vec<String>,
+    pub ms_since_run: usize,
 }
 
 #[derive(rquickjs::class::Trace, rquickjs::JsLifetime, Clone)]

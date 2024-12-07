@@ -3,12 +3,12 @@ authors = ["GoRules Team <bot@gorules.io>"]
 description = "Zen Template Language"
 name = "zen-tmpl"
 license = "MIT"
-version = "0.36.1"
+version = "0.37.0"
 edition = "2021"
 repository = "https://github.com/gorules/zen.git"
 
 [dependencies]
-zen-expression = { path = "../expression", version = "0.36.1" }
+zen-expression = { path = "../expression", version = "0.37.0" }
 itertools = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }

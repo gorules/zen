@@ -115,6 +115,16 @@ impl Function {
 
         Ok(k?)
     }
+
+    pub(crate) async fn extract_logs(&self) -> Vec<Log> {
+        let logs: Option<Vec<Log>> = async_with!(&self.ctx => |ctx| {
+            let console = Console::from_context(&ctx).ok()?;
+            Some(console.logs.into_inner())
+        })
+        .await;
+
+        logs.unwrap_or_default()
+    }
 }
 
 #[derive(Serialize, Deserialize)]

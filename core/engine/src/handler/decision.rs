@@ -71,6 +71,7 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionHandle
                     async move {
                         let mut sub_tree_ref = sub_tree_mutex.lock().await;
 
+                        sub_tree_ref.reset_graph();
                         sub_tree_ref
                             .evaluate(input)
                             .await

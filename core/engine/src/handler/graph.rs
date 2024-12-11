@@ -26,6 +26,7 @@ use thiserror::Error;
 use zen_expression::variable::Variable;
 
 pub struct DecisionGraph<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> {
+    initial_graph: StableDiDecisionGraph,
     graph: StableDiDecisionGraph,
     adapter: Arc<A>,
     loader: Arc<L>,
@@ -72,6 +73,7 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
         }
 
         Ok(Self {
+            initial_graph: graph.clone(),
             graph,
             iteration: config.iteration,
             trace: config.trace,
@@ -85,6 +87,10 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
     pub(crate) fn with_function(mut self, runtime: Option<Rc<Function>>) -> Self {
         self.runtime = runtime;
         self
+    }
+
+    pub(crate) fn reset_graph(&mut self) {
+        self.graph = self.initial_graph.clone();
     }
 
     async fn get_or_insert_function(&mut self) -> anyhow::Result<Rc<Function>> {

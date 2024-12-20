@@ -45,7 +45,7 @@ impl GraphWalker {
         self.to_visit
             .extend(g.node_identifiers().filter(move |&nid| {
                 g.node_weight(nid)
-                    .is_some_and(|n| n.kind == DecisionNodeKind::InputNode)
+                    .is_some_and(|n| matches!(n.kind, DecisionNodeKind::InputNode { content: _ }))
             }));
     }
 

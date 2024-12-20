@@ -21,7 +21,6 @@ const makeToml = ({ version }): string => `
     anyhow = { workspace = true }
     thiserror = { workspace = true }
     async-trait = { workspace = true }
-    bincode = { workspace = true, optional = true }
     serde_json = { workspace = true, features = ["arbitrary_precision"] }
     serde = { version = "1", features = ["derive"] }
     serde_v8 = { version = "0.88.0" }

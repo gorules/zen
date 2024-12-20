@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Generated schema for Root",
+  "type": "object",
+  "properties": {
+    "color": {
+      "enum": [
+        "red",
+        "blue",
+        "green"
+      ]
+    },
+    "customer": {
+      "type": "object",
+      "properties": {
+        "firstName": {
+          "description": "Customer first name",
+          "type": "string",
+          "minimum": 1
+        },
+        "lastName": {
+          "description": "Customer last name",
+          "type": "string",
+          "minimum": 1
+        },
+        "email": {
+          "description": "Customer email",
+          "type": "string",
+          "format": "email"
+        },
+        "age": {
+          "description": "Customer age",
+          "type": "number",
+          "minimum": 18
+        }
+      },
+      "required": [
+        "firstName",
+        "lastName",
+        "email",
+        "age"
+      ]
+    }
+  },
+  "required": [
+    "color",
+    "customer"
+  ]
+}

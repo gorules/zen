@@ -23,9 +23,9 @@ pub struct NodeRequest {
 #[derive(Error, Debug)]
 pub struct NodeError {
     pub node_id: String,
+    pub trace: Option<Value>,
     #[source]
     pub source: anyhow::Error,
-    pub trace: Option<Value>,
 }
 
 impl Display for NodeError {

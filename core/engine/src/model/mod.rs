@@ -9,23 +9,6 @@ use std::sync::Arc;
 pub struct DecisionContent {
     pub nodes: Vec<Arc<DecisionNode>>,
     pub edges: Vec<Arc<DecisionEdge>>,
-
-    #[serde(default)]
-    pub settings: Arc<DecisionSettings>,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct DecisionSettings {
-    #[serde(default)]
-    pub validation: DecisionValidation,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct DecisionValidation {
-    pub input_schema: Option<Value>,
-    pub output_schema: Option<Value>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -57,14 +40,44 @@ impl PartialEq for DecisionNode {
 #[serde(tag = "type")]
 #[serde(rename_all = "camelCase")]
 pub enum DecisionNodeKind {
-    InputNode,
-    OutputNode,
-    FunctionNode { content: FunctionNodeContent },
-    DecisionNode { content: DecisionNodeContent },
-    DecisionTableNode { content: DecisionTableContent },
-    ExpressionNode { content: ExpressionNodeContent },
-    SwitchNode { content: SwitchNodeContent },
-    CustomNode { content: CustomNodeContent },
+    InputNode {
+        #[serde(default)]
+        content: InputNodeContent,
+    },
+    OutputNode {
+        #[serde(default)]
+        content: OutputNodeContent,
+    },
+    FunctionNode {
+        content: FunctionNodeContent,
+    },
+    DecisionNode {
+        content: DecisionNodeContent,
+    },
+    DecisionTableNode {
+        content: DecisionTableContent,
+    },
+    ExpressionNode {
+        content: ExpressionNodeContent,
+    },
+    SwitchNode {
+        content: SwitchNodeContent,
+    },
+    CustomNode {
+        content: CustomNodeContent,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct InputNodeContent {
+    pub schema: Option<Value>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct OutputNodeContent {
+    pub schema: Option<Value>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]

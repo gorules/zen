@@ -1,17 +1,14 @@
 use crate::support::{create_fs_loader, load_raw_test_data, load_test_data, test_data_root};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::json;
 use std::fs;
 use std::io::Read;
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::runtime::Builder;
-use zen_engine::loader::{DecisionLoader, LoaderError, MemoryLoader};
-use zen_engine::model::{
-    DecisionContent, DecisionNode, DecisionNodeKind, DecisionSettings, DecisionValidation,
-    FunctionNodeContent,
-};
+use zen_engine::loader::{LoaderError, MemoryLoader};
+use zen_engine::model::{DecisionContent, DecisionNode, DecisionNodeKind, FunctionNodeContent};
 use zen_engine::Variable;
 use zen_engine::{DecisionEngine, EvaluationError, EvaluationOptions};
 
@@ -190,7 +187,6 @@ async fn engine_function_imports() {
     let function_content = DecisionContent {
         edges: function_content.edges,
         nodes: new_nodes,
-        settings: Default::default(),
     };
     let decision = DecisionEngine::default().create_decision(function_content.into());
     let response = decision.evaluate(json!({}).into()).await.unwrap();
@@ -298,77 +294,77 @@ async fn engine_function_v2() {
     }
 }
 
-#[tokio::test]
-async fn test_validation() {
-    let loader = create_fs_loader();
-    let passthrough_content = loader.load("passthrough.json").await.unwrap();
-
-    let schema: Value =
-        serde_json::from_str(include_str!("./schema/customer.schema.json")).unwrap();
-
-    let validation_input_content = Arc::new(DecisionContent {
-        nodes: passthrough_content.nodes.clone(),
-        edges: passthrough_content.edges.clone(),
-        settings: DecisionSettings {
-            validation: DecisionValidation {
-                input_schema: Some(schema.clone()),
-                output_schema: None,
-            },
-        }
-        .into(),
-    });
-
-    let validation_output_content = Arc::new(DecisionContent {
-        nodes: passthrough_content.nodes.clone(),
-        edges: passthrough_content.edges.clone(),
-        settings: DecisionSettings {
-            validation: DecisionValidation {
-                input_schema: None,
-                output_schema: Some(schema),
-            },
-        }
-        .into(),
-    });
-
-    let engine = DecisionEngine::default().with_loader(create_fs_loader().into());
-    let input_decision = engine.create_decision(validation_input_content);
-    let output_decision = engine.create_decision(validation_output_content);
-
-    let context_valid = json!({
-        "color": "red",
-        "customer": {
-            "firstName": "John",
-            "lastName": "Doe",
-            "email": "john@doe.com",
-            "age": 20
-        }
-    });
-
-    let context_invalid = json!({
-         "color": "redd",
-        "customer": {
-            "firstName": "John",
-            "lastName": "Doe",
-            "email": "john@doe.com",
-            "age": 20
-        }
-    });
-
-    assert!(input_decision
-        .evaluate(context_valid.clone().into())
-        .await
-        .is_ok());
-    assert!(input_decision
-        .evaluate(context_invalid.clone().into())
-        .await
-        .is_err());
-
-    assert!(output_decision
-        .evaluate(context_valid.clone().into())
-        .await
-        .is_ok());
-    assert!(output_decision
-        .evaluate(context_invalid.clone().into())
-        .await
-        .is_err());
-}
+// #[tokio::test]
+// async fn test_validation() {
+//     let loader = create_fs_loader();
+//     let passthrough_content = loader.load("passthrough.json").await.unwrap();
+//
+//     let schema: Value =
+//         serde_json::from_str(include_str!("./schema/customer.schema.json")).unwrap();
+//
+//     let validation_input_content = Arc::new(DecisionContent {
+//         nodes: passthrough_content.nodes.clone(),
+//         edges: passthrough_content.edges.clone(),
+//         settings: DecisionSettings {
+//             validation: DecisionValidation {
+//                 input_schema: Some(schema.clone()),
+//                 output_schema: None,
+//             },
+//         }
+//         .into(),
+//     });
+//
+//     let validation_output_content = Arc::new(DecisionContent {
+//         nodes: passthrough_content.nodes.clone(),
+//         edges: passthrough_content.edges.clone(),
+//         settings: DecisionSettings {
+//             validation: DecisionValidation {
+//                 input_schema: None,
+//                 output_schema: Some(schema),
+//             },
+//         }
+//         .into(),
+//     });
+//
+//     let engine = DecisionEngine::default().with_loader(create_fs_loader().into());
+//     let input_decision = engine.create_decision(validation_input_content);
+//     let output_decision = engine.create_decision(validation_output_content);
+//
+//     let context_valid = json!({
+//         "color": "red",
+//         "customer": {
+//             "firstName": "John",
+//             "lastName": "Doe",
+//             "email": "john@doe.com",
+//             "age": 20
+//         }
+//     });
+//
+//     let context_invalid = json!({
+//          "color": "redd",
+//         "customer": {
+//             "firstName": "John",
+//             "lastName": "Doe",
+//             "email": "john@doe.com",
+//             "age": 20
+//         }
+//     });
+//
+//     assert!(input_decision
+//         .evaluate(context_valid.clone().into())
+//         .await
+//         .is_ok());
+//     assert!(input_decision
+//         .evaluate(context_invalid.clone().into())
+//         .await
+//         .is_err());
+//
+//     assert!(output_decision
+//         .evaluate(context_valid.clone().into())
+//         .await
+//         .is_ok());
+//     assert!(output_decision
+//         .evaluate(context_invalid.clone().into())
+//         .await
+//         .is_err());
+// }

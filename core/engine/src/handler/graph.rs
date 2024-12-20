@@ -218,7 +218,10 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
 
                         let context_json = context.to_value();
                         validator.validate(&context_json).map_err(|e| NodeError {
-                            source: Into::<Box<EvaluationError>>::into(e).into(),
+                            source: anyhow!(serde_json::to_value(
+                                Into::<Box<EvaluationError>>::into(e)
+                            )
+                            .unwrap_or_default()),
                             node_id: node.id.clone(),
                             trace: error_trace(&node_traces),
                         })?;
@@ -250,7 +253,10 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
                         validator
                             .validate(&incoming_data_json)
                             .map_err(|e| NodeError {
-                                source: Into::<Box<EvaluationError>>::into(e).into(),
+                                source: anyhow!(serde_json::to_value(
+                                    Into::<Box<EvaluationError>>::into(e)
+                                )
+                                .unwrap_or_default()),
                                 node_id: node.id.clone(),
                                 trace: error_trace(&node_traces),
                             })?;

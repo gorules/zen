@@ -241,7 +241,7 @@ async fn engine_graph_tests() {
     let engine = DecisionEngine::default();
 
     let graphs_path = Path::new(test_data_root().as_str()).join("graphs");
-    let file_list = std::fs::read_dir(graphs_path).unwrap();
+    let file_list = fs::read_dir(graphs_path).unwrap();
     for maybe_file in file_list {
         let Ok(file) = maybe_file else {
             panic!("Failed to read DirEntry {maybe_file:?}");
@@ -294,77 +294,48 @@ async fn engine_function_v2() {
     }
 }
 
-// #[tokio::test]
-// async fn test_validation() {
-//     let loader = create_fs_loader();
-//     let passthrough_content = loader.load("passthrough.json").await.unwrap();
-//
-//     let schema: Value =
-//         serde_json::from_str(include_str!("./schema/customer.schema.json")).unwrap();
-//
-//     let validation_input_content = Arc::new(DecisionContent {
-//         nodes: passthrough_content.nodes.clone(),
-//         edges: passthrough_content.edges.clone(),
-//         settings: DecisionSettings {
-//             validation: DecisionValidation {
-//                 input_schema: Some(schema.clone()),
-//                 output_schema: None,
-//             },
-//         }
-//         .into(),
-//     });
-//
-//     let validation_output_content = Arc::new(DecisionContent {
-//         nodes: passthrough_content.nodes.clone(),
-//         edges: passthrough_content.edges.clone(),
-//         settings: DecisionSettings {
-//             validation: DecisionValidation {
-//                 input_schema: None,
-//                 output_schema: Some(schema),
-//             },
-//         }
-//         .into(),
-//     });
-//
-//     let engine = DecisionEngine::default().with_loader(create_fs_loader().into());
-//     let input_decision = engine.create_decision(validation_input_content);
-//     let output_decision = engine.create_decision(validation_output_content);
-//
-//     let context_valid = json!({
-//         "color": "red",
-//         "customer": {
-//             "firstName": "John",
-//             "lastName": "Doe",
-//             "email": "john@doe.com",
-//             "age": 20
-//         }
-//     });
-//
-//     let context_invalid = json!({
-//          "color": "redd",
-//         "customer": {
-//             "firstName": "John",
-//             "lastName": "Doe",
-//             "email": "john@doe.com",
-//             "age": 20
-//         }
-//     });
-//
-//     assert!(input_decision
-//         .evaluate(context_valid.clone().into())
-//         .await
-//         .is_ok());
-//     assert!(input_decision
-//         .evaluate(context_invalid.clone().into())
-//         .await
-//         .is_err());
-//
-//     assert!(output_decision
-//         .evaluate(context_valid.clone().into())
-//         .await
-//         .is_ok());
-//     assert!(output_decision
-//         .evaluate(context_invalid.clone().into())
-//         .await
-//         .is_err());
-// }
+#[tokio::test]
+async fn test_validation() {
+    let engine = DecisionEngine::default().with_loader(create_fs_loader().into());
+
+    let context_valid = json!({
+        "color": "red",
+        "customer": {
+            "firstName": "John",
+            "lastName": "Doe",
+            "email": "john@doe.com",
+            "age": 20
+        }
+    });
+
+    let context_invalid = json!({
+         "color": "redd",
+        "customer": {
+            "firstName": "John",
+            "lastName": "Doe",
+            "email": "john@doe.com",
+            "age": 20
+        }
+    });
+
+    assert!(engine
+        .evaluate("customer-input-schema.json", context_valid.clone().into())
+        .await
+        .is_ok());
+    assert!(engine
+        .evaluate("customer-input-schema.json", context_invalid.clone().into())
+        .await
+        .is_err());
+
+    assert!(engine
+        .evaluate("customer-output-schema.json", context_valid.clone().into())
+        .await
+        .is_ok());
+    assert!(engine
+        .evaluate(
+            "customer-output-schema.json",
+            context_invalid.clone().into()
+        )
+        .await
+        .is_err());
+}

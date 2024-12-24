@@ -71,13 +71,15 @@ pub enum DecisionNodeKind {
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct InputNodeContent {
-    pub schema: Option<Value>,
+    #[serde(default, deserialize_with = "empty_string_is_none")]
+    pub schema: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct OutputNodeContent {
-    pub schema: Option<Value>,
+    #[serde(default, deserialize_with = "empty_string_is_none")]
+    pub schema: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]

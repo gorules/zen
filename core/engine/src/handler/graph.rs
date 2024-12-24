@@ -205,10 +205,15 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
                         trace_data: None,
                     });
 
-                    if let Some(json_schema) = &content.schema {
+                    if let Some(json_schema) = content
+                        .schema
+                        .as_ref()
+                        .map(|s| serde_json::from_str::<Value>(&s).ok())
+                        .flatten()
+                    {
                         let validator = self
                             .validator_cache
-                            .get_or_insert(node.id.as_str(), json_schema)
+                            .get_or_insert(node.id.as_str(), &json_schema)
                             .await
                             .map_err(|e| NodeError {
                                 source: e.into(),
@@ -238,10 +243,15 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
                         trace_data: None,
                     });
 
-                    if let Some(json_schema) = &content.schema {
+                    if let Some(json_schema) = content
+                        .schema
+                        .as_ref()
+                        .map(|s| serde_json::from_str::<Value>(&s).ok())
+                        .flatten()
+                    {
                         let validator = self
                             .validator_cache
-                            .get_or_insert(node.id.as_str(), json_schema)
+                            .get_or_insert(node.id.as_str(), &json_schema)
                             .await
                             .map_err(|e| NodeError {
                                 source: e.into(),

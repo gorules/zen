@@ -64,6 +64,7 @@ impl<Loader: DecisionLoader + 'static, Adapter: CustomNodeAdapter + 'static> Run
                                     adapter,
                                     iteration: iteration + 1,
                                     trace,
+                                    validator_cache: None,
                                 })
                                 .or_throw(&ctx)?;
 

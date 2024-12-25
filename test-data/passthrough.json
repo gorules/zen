@@ -1,0 +1,31 @@
+{
+  "contentType": "application/vnd.gorules.decision",
+  "nodes": [
+    {
+      "type": "inputNode",
+      "id": "4354dede-b4ed-4a57-9b80-45c1e33e2326",
+      "name": "request",
+      "position": {
+        "x": 90,
+        "y": 200
+      }
+    },
+    {
+      "type": "outputNode",
+      "id": "27e18970-f565-43eb-859e-568c9f53b7a8",
+      "name": "response",
+      "position": {
+        "x": 510,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "4c036317-bc39-4ad2-a825-adbfd4ca2df6",
+      "sourceId": "4354dede-b4ed-4a57-9b80-45c1e33e2326",
+      "type": "edge",
+      "targetId": "27e18970-f565-43eb-859e-568c9f53b7a8"
+    }
+  ]
+}

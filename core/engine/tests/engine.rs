@@ -241,7 +241,7 @@ async fn engine_graph_tests() {
     let engine = DecisionEngine::default();
 
     let graphs_path = Path::new(test_data_root().as_str()).join("graphs");
-    let file_list = std::fs::read_dir(graphs_path).unwrap();
+    let file_list = fs::read_dir(graphs_path).unwrap();
     for maybe_file in file_list {
         let Ok(file) = maybe_file else {
             panic!("Failed to read DirEntry {maybe_file:?}");
@@ -292,4 +292,50 @@ async fn engine_function_v2() {
             json!({ "hello": "world", "multiplied": 24 }).into()
         )
     }
+}
+
+#[tokio::test]
+async fn test_validation() {
+    let engine = DecisionEngine::default().with_loader(create_fs_loader().into());
+
+    let context_valid = json!({
+        "color": "red",
+        "customer": {
+            "firstName": "John",
+            "lastName": "Doe",
+            "email": "john@doe.com",
+            "age": 20
+        }
+    });
+
+    let context_invalid = json!({
+         "color": "redd",
+        "customer": {
+            "firstName": "John",
+            "lastName": "Doe",
+            "email": "john@doe.com",
+            "age": 20
+        }
+    });
+
+    assert!(engine
+        .evaluate("customer-input-schema.json", context_valid.clone().into())
+        .await
+        .is_ok());
+    assert!(engine
+        .evaluate("customer-input-schema.json", context_invalid.clone().into())
+        .await
+        .is_err());
+
+    assert!(engine
+        .evaluate("customer-output-schema.json", context_valid.clone().into())
+        .await
+        .is_ok());
+    assert!(engine
+        .evaluate(
+            "customer-output-schema.json",
+            context_invalid.clone().into()
+        )
+        .await
+        .is_err());
 }

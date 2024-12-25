@@ -1,11 +1,11 @@
-use std::sync::Arc;
-
 use crate::engine::EvaluationOptions;
 use crate::handler::custom_node_adapter::{CustomNodeAdapter, NoopCustomNode};
 use crate::handler::graph::{DecisionGraph, DecisionGraphConfig, DecisionGraphResponse};
 use crate::loader::{CachedLoader, DecisionLoader, NoopLoader};
 use crate::model::DecisionContent;
+use crate::util::validator_cache::ValidatorCache;
 use crate::{DecisionGraphValidationError, EvaluationError};
+use std::sync::Arc;
 use zen_expression::variable::Variable;
 
 /// Represents a JDM decision which can be evaluated
@@ -18,6 +18,8 @@ where
     content: Arc<DecisionContent>,
     loader: Arc<Loader>,
     adapter: Arc<CustomNode>,
+
+    validator_cache: ValidatorCache,
 }
 
 impl From<DecisionContent> for Decision<NoopLoader, NoopCustomNode> {
@@ -26,6 +28,8 @@ impl From<DecisionContent> for Decision<NoopLoader, NoopCustomNode> {
             content: value.into(),
             loader: NoopLoader::default().into(),
             adapter: NoopCustomNode::default().into(),
+
+            validator_cache: Default::default(),
         }
     }
 }
@@ -36,6 +40,8 @@ impl From<Arc<DecisionContent>> for Decision<NoopLoader, NoopCustomNode> {
             content: value,
             loader: NoopLoader::default().into(),
             adapter: NoopCustomNode::default().into(),
+
+            validator_cache: Default::default(),
         }
     }
 }
@@ -53,6 +59,7 @@ where
             loader,
             adapter: self.adapter,
             content: self.content,
+            validator_cache: self.validator_cache,
         }
     }
 
@@ -64,6 +71,7 @@ where
             loader: self.loader,
             adapter,
             content: self.content,
+            validator_cache: self.validator_cache,
         }
     }
 
@@ -88,9 +96,12 @@ where
             loader: Arc::new(CachedLoader::from(self.loader.clone())),
             adapter: self.adapter.clone(),
             iteration: 0,
+            validator_cache: Some(self.validator_cache.clone()),
         })?;
 
-        Ok(decision_graph.evaluate(context).await?)
+        let response = decision_graph.evaluate(context).await?;
+
+        Ok(response)
     }
 
     pub fn validate(&self) -> Result<(), DecisionGraphValidationError> {
@@ -101,6 +112,7 @@ where
             loader: Arc::new(CachedLoader::from(self.loader.clone())),
             adapter: self.adapter.clone(),
             iteration: 0,
+            validator_cache: Some(self.validator_cache.clone()),
         })?;
 
         decision_graph.validate()

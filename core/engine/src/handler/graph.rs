@@ -20,6 +20,7 @@ use petgraph::algo::is_cyclic_directed;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::Value;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
@@ -211,9 +212,10 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
                         .map(|s| serde_json::from_str::<Value>(&s).ok())
                         .flatten()
                     {
+                        let validator_key = create_validator_cache_key(&json_schema);
                         let validator = self
                             .validator_cache
-                            .get_or_insert(node.id.as_str(), &json_schema)
+                            .get_or_insert(validator_key, &json_schema)
                             .await
                             .map_err(|e| NodeError {
                                 source: e.into(),
@@ -249,9 +251,10 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
                         .map(|s| serde_json::from_str::<Value>(&s).ok())
                         .flatten()
                     {
+                        let validator_key = create_validator_cache_key(&json_schema);
                         let validator = self
                             .validator_cache
-                            .get_or_insert(node.id.as_str(), &json_schema)
+                            .get_or_insert(validator_key, &json_schema)
                             .await
                             .map_err(|e| NodeError {
                                 source: e.into(),
@@ -551,4 +554,10 @@ pub(crate) fn error_trace(trace: &Option<HashMap<String, DecisionGraphTrace>>) -
         .as_ref()
         .map(|s| serde_json::to_value(s).ok())
         .flatten()
+}
+
+fn create_validator_cache_key(content: &Value) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    content.hash(&mut hasher);
+    hasher.finish()
 }

@@ -56,7 +56,7 @@ impl FunctionHandler {
 
         let module_name = self
             .function
-            .suggest_module_name(request.node.id.as_str(), request.node.name.as_str());
+            .suggest_module_name(request.node.id.as_str(), &content.source);
         let interrupt_handler = Box::new(move || start.elapsed() > MAX_DURATION);
         self.function
             .runtime()

@@ -13,7 +13,10 @@ impl From<Value> for Variable {
             Value::Null => Variable::Null,
             Value::Bool(b) => Variable::Bool(b),
             Value::Number(n) => {
-                Variable::Number(Decimal::from_str_exact(n.as_str()).expect("Allowed number"))
+                return match n.as_str() {
+                    x if !x.contains("e") => Variable::Number(Decimal::from_str_exact(x).expect("Allowed Number")),
+                    y => Variable::Number(Decimal::from_scientific(y).expect("Allowed Number"))
+                };
             }
             Value::String(s) => Variable::String(Rc::from(s.as_str())),
             Value::Array(arr) => {

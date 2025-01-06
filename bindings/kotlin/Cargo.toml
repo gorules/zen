@@ -1,0 +1,26 @@
+[package]
+name = "zen-kotlin"
+version = "0.34.1"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"
+
+[dependencies]
+uniffi = { version = "0.28.3", features = ["tokio"] }
+serde_json = { workspace = true }
+zen-engine = { path = "../../core/engine" }
+zen-expression = { path = "../../core/expression" }
+zen-tmpl = { path = "../../core/template" }
+serde = { workspace = true, features = ["derive"] }
+async-trait = "0.1.83"
+tokio = "1.42.0"
+
+[build-dependencies]
+uniffi = { version = "0.28.3", features = ["build"] }

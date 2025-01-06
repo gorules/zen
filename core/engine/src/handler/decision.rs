@@ -4,6 +4,7 @@ use crate::handler::graph::{DecisionGraph, DecisionGraphConfig};
 use crate::handler::node::{NodeRequest, NodeResponse, NodeResult};
 use crate::loader::DecisionLoader;
 use crate::model::DecisionNodeKind;
+use crate::util::validator_cache::ValidatorCache;
 use anyhow::anyhow;
 use std::future::Future;
 use std::pin::Pin;
@@ -17,6 +18,7 @@ pub struct DecisionHandler<L: DecisionLoader + 'static, A: CustomNodeAdapter + '
     adapter: Arc<A>,
     max_depth: u8,
     js_function: Option<Rc<Function>>,
+    validator_cache: ValidatorCache,
 }
 
 impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionHandler<L, A> {
@@ -26,6 +28,7 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionHandle
         loader: Arc<L>,
         adapter: Arc<A>,
         js_function: Option<Rc<Function>>,
+        validator_cache: ValidatorCache,
     ) -> Self {
         Self {
             trace,
@@ -33,6 +36,7 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionHandle
             adapter,
             max_depth,
             js_function,
+            validator_cache,
         }
     }
 
@@ -58,6 +62,7 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionHandle
                 adapter: self.adapter.clone(),
                 iteration: request.iteration + 1,
                 trace: self.trace,
+                validator_cache: Some(self.validator_cache.clone()),
             })?
             .with_function(self.js_function.clone());
 
@@ -71,6 +76,7 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionHandle
                     async move {
                         let mut sub_tree_ref = sub_tree_mutex.lock().await;
 
+                        sub_tree_ref.reset_graph();
                         sub_tree_ref
                             .evaluate(input)
                             .await

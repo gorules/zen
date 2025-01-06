@@ -8,8 +8,9 @@ use serde_json::json;
 
 use crate::handler::function::error::FunctionResult;
 use crate::handler::function::function::{Function, HandlerResponse};
+use crate::handler::function::module::console::Log;
 use crate::handler::function::serde::JsValue;
-use crate::handler::node::{NodeRequest, NodeResponse, NodeResult};
+use crate::handler::node::{NodeRequest, NodeResponse, NodeResult, PartialTraceError};
 use crate::model::{DecisionNodeKind, FunctionNodeContent};
 
 pub(crate) mod error;
@@ -55,7 +56,7 @@ impl FunctionHandler {
 
         let module_name = self
             .function
-            .suggest_module_name(request.node.id.as_str(), request.node.name.as_str());
+            .suggest_module_name(request.node.id.as_str(), &content.source);
         let interrupt_handler = Box::new(move || start.elapsed() > MAX_DURATION);
         self.function
             .runtime()
@@ -71,18 +72,33 @@ impl FunctionHandler {
             .await
             .map_err(|e| anyhow!(e.to_string()))?;
 
-        let response = self
+        let response_result = self
             .function
             .call_handler(&module_name, JsValue(request.input.clone()))
-            .await
-            .map_err(|e| anyhow!(e.to_string()))?;
+            .await;
 
-        self.function.runtime().set_interrupt_handler(None).await;
+        match response_result {
+            Ok(response) => {
+                self.function.runtime().set_interrupt_handler(None).await;
 
-        Ok(NodeResponse {
-            output: response.data,
-            trace_data: self.trace.then(|| json!({ "log": response.logs })),
-        })
+                Ok(NodeResponse {
+                    output: response.data,
+                    trace_data: self.trace.then(|| json!({ "log": response.logs })),
+                })
+            }
+            Err(e) => {
+                let mut log = self.function.extract_logs().await;
+                log.push(Log {
+                    lines: vec![json!(e.to_string()).to_string()],
+                    ms_since_run: start.elapsed().as_millis() as usize,
+                });
+
+                Err(anyhow!(PartialTraceError {
+                    message: e.to_string(),
+                    trace: Some(json!({ "log": log })),
+                }))
+            }
+        }
     }
 
     async fn attach_globals(&self) -> FunctionResult {

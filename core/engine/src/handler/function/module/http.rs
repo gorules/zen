@@ -33,7 +33,7 @@ async fn execute_http<'js>(
     url: String,
     data: Option<JsValue>,
     config: Option<HttpConfig>,
-) -> rquickjs::Result<HttpResponse> {
+) -> rquickjs::Result<HttpResponse<'js>> {
     static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 
     let client = HTTP_CLIENT.get_or_init(|| reqwest::Client::new()).clone();
@@ -163,7 +163,7 @@ async fn get<'js>(
     ctx: Ctx<'js>,
     url: String,
     config: Opt<HttpConfig>,
-) -> rquickjs::Result<HttpResponse> {
+) -> rquickjs::Result<HttpResponse<'js>> {
     execute_http(ctx, Method::GET, url, None, config.0).await
 }
 
@@ -172,7 +172,7 @@ async fn post<'js>(
     url: String,
     data: JsValue,
     config: Opt<HttpConfig>,
-) -> rquickjs::Result<HttpResponse> {
+) -> rquickjs::Result<HttpResponse<'js>> {
     execute_http(ctx, Method::POST, url, Some(data), config.0).await
 }
 
@@ -181,7 +181,7 @@ async fn patch<'js>(
     url: String,
     data: JsValue,
     config: Opt<HttpConfig>,
-) -> rquickjs::Result<HttpResponse> {
+) -> rquickjs::Result<HttpResponse<'js>> {
     execute_http(ctx, Method::PATCH, url, Some(data), config.0).await
 }
 
@@ -190,7 +190,7 @@ async fn put<'js>(
     url: String,
     data: JsValue,
     config: Opt<HttpConfig>,
-) -> rquickjs::Result<HttpResponse> {
+) -> rquickjs::Result<HttpResponse<'js>> {
     execute_http(ctx, Method::PUT, url, Some(data), config.0).await
 }
 
@@ -198,7 +198,7 @@ async fn delete<'js>(
     ctx: Ctx<'js>,
     url: String,
     config: Opt<HttpConfig>,
-) -> rquickjs::Result<HttpResponse> {
+) -> rquickjs::Result<HttpResponse<'js>> {
     execute_http(ctx, Method::DELETE, url, None, config.0).await
 }
 
@@ -206,7 +206,7 @@ async fn head<'js>(
     ctx: Ctx<'js>,
     url: String,
     config: Opt<HttpConfig>,
-) -> rquickjs::Result<HttpResponse> {
+) -> rquickjs::Result<HttpResponse<'js>> {
     execute_http(ctx, Method::DELETE, url, None, config.0).await
 }
 

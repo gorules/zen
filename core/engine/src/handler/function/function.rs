@@ -1,3 +1,4 @@
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
 
 use crate::handler::function::error::{FunctionError, FunctionResult, ResultExt};
@@ -66,11 +67,12 @@ impl Function {
         &self.rt
     }
 
-    pub fn suggest_module_name<'a>(&self, id: &str, name: &str) -> String {
+    pub fn suggest_module_name<'a>(&self, name: &str, source: &str) -> String {
         let declarative_name = format!("node:{name}");
 
         if self.module_loader.has_module(&declarative_name) {
-            format!("node:{id}")
+            let content_hash = create_content_hash(source);
+            format!("node:{name}.{content_hash:x}")
         } else {
             declarative_name
         }
@@ -115,10 +117,26 @@ impl Function {
 
         Ok(k?)
     }
+
+    pub(crate) async fn extract_logs(&self) -> Vec<Log> {
+        let logs: Option<Vec<Log>> = async_with!(&self.ctx => |ctx| {
+            let console = Console::from_context(&ctx).ok()?;
+            Some(console.logs.into_inner())
+        })
+        .await;
+
+        logs.unwrap_or_default()
+    }
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct HandlerResponse {
     pub logs: Vec<Log>,
     pub data: Variable,
+}
+
+fn create_content_hash(content: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    content.hash(&mut hasher);
+    hasher.finish()
 }

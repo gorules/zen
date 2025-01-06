@@ -3,7 +3,7 @@ authors = ["GoRules Team <bot@gorules.io>"]
 description = "Business rules engine"
 name = "zen-engine"
 license = "MIT"
-version = "0.36.1"
+version = "0.39.0"
 edition = "2021"
 repository = "https://github.com/gorules/zen.git"
 
@@ -14,27 +14,24 @@ doctest = false
 ahash = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
-bincode = { workspace = true, optional = true }
 petgraph = { workspace = true }
 serde_json = { workspace = true, features = ["arbitrary_precision"] }
 serde = { workspace = true, features = ["derive", "rc"] }
 once_cell = { workspace = true }
 json_dotpath = { workspace = true }
 rust_decimal = { workspace = true, features = ["maths-nopanic"] }
-fixedbitset = "0.4.2"
+fixedbitset = "0.5.7"
 tokio = { workspace = true, features = ["sync", "time"] }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 rquickjs = { version = "0.8.1", features = ["macro", "loader", "rust-alloc", "futures", "either", "properties"] }
 itertools = { workspace = true }
-zen-expression = { path = "../expression", version = "0.36.1" }
-zen-tmpl = { path = "../template", version = "0.36.1" }
+jsonschema = "0.26.2"
+zen-expression = { path = "../expression", version = "0.39.0" }
+zen-tmpl = { path = "../template", version = "0.39.0" }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 criterion = { workspace = true, features = ["async_tokio"] }
-
-[features]
-bincode = ["dep:bincode"]
 
 [[bench]]
 harness = false

@@ -1,0 +1,34 @@
+{
+  "contentType": "application/vnd.gorules.decision",
+  "nodes": [
+    {
+      "type": "inputNode",
+      "id": "4354dede-b4ed-4a57-9b80-45c1e33e2326",
+      "name": "request",
+      "position": {
+        "x": 90,
+        "y": 200
+      }
+    },
+    {
+      "type": "outputNode",
+      "id": "27e18970-f565-43eb-859e-568c9f53b7a8",
+      "name": "response",
+      "content": {
+        "schema": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"title\":\"Generated schema for Root\",\"type\":\"object\",\"properties\":{\"color\":{\"enum\":[\"red\",\"blue\",\"green\"]},\"customer\":{\"type\":\"object\",\"properties\":{\"firstName\":{\"description\":\"Customer first name\",\"type\":\"string\",\"minimum\":1},\"lastName\":{\"description\":\"Customer last name\",\"type\":\"string\",\"minimum\":1},\"email\":{\"description\":\"Customer email\",\"type\":\"string\",\"format\":\"email\"},\"age\":{\"description\":\"Customer age\",\"type\":\"number\",\"minimum\":18}},\"required\":[\"firstName\",\"lastName\",\"email\",\"age\"]}},\"required\":[\"color\",\"customer\"]}"
+      },
+      "position": {
+        "x": 510,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "4c036317-bc39-4ad2-a825-adbfd4ca2df6",
+      "sourceId": "4354dede-b4ed-4a57-9b80-45c1e33e2326",
+      "type": "edge",
+      "targetId": "27e18970-f565-43eb-859e-568c9f53b7a8"
+    }
+  ]
+}

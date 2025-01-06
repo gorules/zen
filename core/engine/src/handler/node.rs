@@ -23,6 +23,7 @@ pub struct NodeRequest {
 #[derive(Error, Debug)]
 pub struct NodeError {
     pub node_id: String,
+    pub trace: Option<Value>,
     #[source]
     pub source: anyhow::Error,
 }
@@ -30,6 +31,18 @@ pub struct NodeError {
 impl Display for NodeError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self)
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct PartialTraceError {
+    pub trace: Option<Value>,
+    pub message: String,
+}
+
+impl Display for PartialTraceError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
     }
 }
 

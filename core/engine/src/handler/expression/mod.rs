@@ -1,4 +1,4 @@
-use crate::handler::node::{NodeRequest, NodeResponse, NodeResult};
+use crate::handler::node::{NodeRequest, NodeResponse, NodeResult, PartialTraceError};
 use crate::model::{DecisionNodeKind, ExpressionNodeContent};
 use ahash::{HashMap, HashMapExt};
 use std::sync::Arc;
@@ -71,8 +71,12 @@ impl<'a> ExpressionHandlerInner<'a> {
             let value = self
                 .isolate
                 .run_standard(&expression.value)
-                .with_context(|| {
-                    format!(r#"Failed to evaluate expression: "{}""#, &expression.value)
+                .with_context(|| PartialTraceError {
+                    trace: trace_map
+                        .as_ref()
+                        .map(|s| serde_json::to_value(s).ok())
+                        .flatten(),
+                    message: format!(r#"Failed to evaluate expression: "{}""#, &expression.value),
                 })?;
             if let Some(tmap) = &mut trace_map {
                 tmap.insert(
@@ -97,10 +101,7 @@ impl<'a> ExpressionHandlerInner<'a> {
 
         Ok(NodeResponse {
             output: result,
-            trace_data: trace_map
-                .map(|tm| serde_json::to_value(tm))
-                .transpose()
-                .context("Failed to serialize trace data")?,
+            trace_data: trace_map.map(|tm| serde_json::to_value(tm).ok()).flatten(),
         })
     }
 }

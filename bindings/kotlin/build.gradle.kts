@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "io.gorules"
-version = "0.36.1"
+version = "0.39.0"
 
 dependencies {
     implementation("net.java.dev.jna:jna:5.15.0")

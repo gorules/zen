@@ -1,6 +1,6 @@
 [package]
 name = "zen-kotlin"
-version = "0.34.1"
+version = "0.39.0"
 edition = "2021"
 license = "MIT"
 publish = false

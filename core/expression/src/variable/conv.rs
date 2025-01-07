@@ -14,8 +14,10 @@ impl From<Value> for Variable {
             Value::Bool(b) => Variable::Bool(b),
             Value::Number(n) => {
                 return match n.as_str() {
-                    x if !x.contains("e") => Variable::Number(Decimal::from_str_exact(x).expect("Allowed number")),
-                    y => Variable::Number(Decimal::from_scientific(y).expect("Allowed number"))
+                    x if !x.contains("e") => {
+                        Variable::Number(Decimal::from_str_exact(x).expect("Allowed number"))
+                    }
+                    y => Variable::Number(Decimal::from_scientific(y).expect("Allowed number")),
                 };
             }
             Value::String(s) => Variable::String(Rc::from(s.as_str())),
@@ -38,8 +40,10 @@ impl From<&Value> for Variable {
             Value::Bool(b) => Variable::Bool(*b),
             Value::Number(n) => {
                 return match n.as_str() {
-                    x if !x.contains("e") => Variable::Number(Decimal::from_str_exact(x).expect("Allowed number")),
-                    y => Variable::Number(Decimal::from_scientific(y).expect("Allowed number"))
+                    x if !x.contains("e") => {
+                        Variable::Number(Decimal::from_str_exact(x).expect("Allowed number"))
+                    }
+                    y => Variable::Number(Decimal::from_scientific(y).expect("Allowed number")),
                 };
             }
             Value::String(s) => Variable::String(Rc::from(s.as_str())),

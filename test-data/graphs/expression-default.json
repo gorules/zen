@@ -50,6 +50,16 @@
       "output": {
         "sum": 0
       }
+    },
+    {
+      "input": {
+        "a": 1.2e6,
+        "b": 1.2e6,
+        "negative": true
+      },
+      "output": {
+        "sum": 2.4e6
+      }
     }
   ],
   "nodes": [

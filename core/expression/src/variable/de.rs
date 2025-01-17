@@ -87,14 +87,11 @@ impl<'de> Visitor<'de> for VariableVisitor {
         let mut first = true;
         while let Some((key, value)) = map.next_entry_seed(PhantomData, VariableDeserializer)? {
             if first && key == NUMBER_TOKEN {
-                return Ok(Variable::Number(
-                    Decimal::from_str_exact(
-                        value
-                            .as_str()
-                            .ok_or_else(|| Error::custom("failed to deserialize number"))?,
-                    )
-                    .map_err(|_| Error::custom("invalid number"))?,
-                ));
+                let s = value.as_str().ok_or_else(|| Error::custom("failed to deserialize number"))?;
+                return Ok(Variable::Number(match s {
+                    x if !x.contains("e") => Decimal::from_str_exact(x),
+                    y => Decimal::from_scientific(y)
+                }.map_err(|_| Error::custom("invalid number"))?));
             }
 
             m.insert(key, value);

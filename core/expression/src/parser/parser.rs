@@ -233,7 +233,11 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             });
         };
 
-        let Ok(decimal) = Decimal::from_str_exact(token.value) else {
+        let dec = match token.value {
+            x if !x.contains('e') => Decimal::from_str_exact(x),
+            y => Decimal::from_scientific(y)
+        };
+        let Ok(decimal) = dec else {
             return self.error(AstNodeError::InvalidNumber {
                 number: afmt!(self, "{}", token.value),
                 span: token.span,

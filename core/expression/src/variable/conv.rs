@@ -13,12 +13,13 @@ impl From<Value> for Variable {
             Value::Null => Variable::Null,
             Value::Bool(b) => Variable::Bool(b),
             Value::Number(n) => {
-                return Variable::Number(match n.as_str() {
-                    x if !x.contains("e") => {
-                        Decimal::from_str_exact(x)
+                return Variable::Number(
+                    match n.as_str() {
+                        x if !x.contains("e") => Decimal::from_str_exact(x),
+                        y => Decimal::from_scientific(y),
                     }
-                    y => Decimal::from_scientific(y),
-                }.expect("Allowed number"));
+                    .expect("Allowed number"),
+                );
             }
             Value::String(s) => Variable::String(Rc::from(s.as_str())),
             Value::Array(arr) => {
@@ -39,10 +40,13 @@ impl From<&Value> for Variable {
             Value::Null => Variable::Null,
             Value::Bool(b) => Variable::Bool(*b),
             Value::Number(n) => {
-                return Variable::Number(match n.as_str() {
-                    x if !x.contains("e") => Decimal::from_str_exact(x),
-                    y => Decimal::from_scientific(y),
-                }.expect("Allowed number"));
+                return Variable::Number(
+                    match n.as_str() {
+                        x if !x.contains("e") => Decimal::from_str_exact(x),
+                        y => Decimal::from_scientific(y),
+                    }
+                    .expect("Allowed number"),
+                );
             }
             Value::String(s) => Variable::String(Rc::from(s.as_str())),
             Value::Array(arr) => Variable::from_array(arr.iter().map(Variable::from).collect()),

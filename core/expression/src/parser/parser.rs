@@ -235,7 +235,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
 
         let dec = match token.value {
             x if !x.contains('e') => Decimal::from_str_exact(x),
-            y => Decimal::from_scientific(y)
+            y => Decimal::from_scientific(y),
         };
         let Ok(decimal) = dec else {
             return self.error(AstNodeError::InvalidNumber {

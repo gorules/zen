@@ -317,7 +317,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
 
     pub(crate) fn template_string<F>(&self, expression_parser: F) -> &'arena Node<'arena>
     where
-        F: Fn() -> &'arena Node<'arena>,
+        F: Fn(ParserContext) -> &'arena Node<'arena>,
     {
         expect!(self, TokenKind::QuotationMark(QuotationMark::Backtick));
 
@@ -336,7 +336,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 TokenKind::TemplateString(template) => match template {
                     TemplateString::ExpressionStart => {
                         self.next();
-                        nodes.push(expression_parser());
+                        nodes.push(expression_parser(ParserContext::Global));
                     }
                     TemplateString::ExpressionEnd => {
                         self.next();
@@ -379,7 +379,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         expression_parser: F,
     ) -> &'arena Node<'arena>
     where
-        F: Fn() -> &'arena Node<'arena>,
+        F: Fn(ParserContext) -> &'arena Node<'arena>,
     {
         let Some(postfix_token) = self.current() else {
             return node;
@@ -448,7 +448,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                     c = cc;
 
                     if c.kind != TokenKind::Bracket(Bracket::RightSquareBracket) {
-                        to = Some(expression_parser());
+                        to = Some(expression_parser(ParserContext::Global));
                     }
 
                     expect!(self, TokenKind::Bracket(Bracket::RightSquareBracket));
@@ -459,7 +459,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                         ),
                     })
                 } else {
-                    let from_node = expression_parser();
+                    let from_node = expression_parser(ParserContext::Global);
                     from = Some(from_node);
                     let Some(cc) = self.current() else {
                         return self.error_with_node(
@@ -496,7 +496,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                         c = cc;
 
                         if c.kind != TokenKind::Bracket(Bracket::RightSquareBracket) {
-                            to = Some(expression_parser());
+                            to = Some(expression_parser(ParserContext::Global));
                         }
 
                         expect!(self, TokenKind::Bracket(Bracket::RightSquareBracket));
@@ -541,12 +541,12 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
     /// Closure
     pub(crate) fn closure<F>(&self, expression_parser: F) -> &'arena Node<'arena>
     where
-        F: Fn() -> &'arena Node<'arena>,
+        F: Fn(ParserContext) -> &'arena Node<'arena>,
     {
         let start = self.token_start();
 
         self.depth.set(self.depth.get() + 1);
-        let node = expression_parser();
+        let node = expression_parser(ParserContext::Closure);
         self.depth.set(self.depth.get() - 1);
 
         self.node(Node::Closure(node), |_| NodeMetadata {
@@ -558,7 +558,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
     /// Either <Identifier> or <Identifier Expression>
     pub(crate) fn identifier<F>(&self, expression_parser: F) -> &'arena Node<'arena>
     where
-        F: Fn() -> &'arena Node<'arena>,
+        F: Fn(ParserContext) -> &'arena Node<'arena>,
     {
         let Some(token) = self.current() else {
             return self.error(AstNodeError::MissingToken {
@@ -614,7 +614,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         self.next();
         let builtin_node = match builtin.arity() {
             Arity::Single => {
-                let arg = expression_parser();
+                let arg = expression_parser(ParserContext::Global);
                 self.expect(TokenKind::Bracket(Bracket::RightParenthesis));
 
                 Node::BuiltIn {
@@ -623,9 +623,9 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 }
             }
             Arity::Dual => {
-                let arg1 = expression_parser();
+                let arg1 = expression_parser(ParserContext::Global);
                 self.expect(TokenKind::Operator(Operator::Comma));
-                let arg2 = expression_parser();
+                let arg2 = expression_parser(ParserContext::Global);
                 self.expect(TokenKind::Bracket(Bracket::RightParenthesis));
 
                 Node::BuiltIn {
@@ -634,7 +634,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 }
             }
             Arity::Closure => {
-                let arg1 = expression_parser();
+                let arg1 = expression_parser(ParserContext::Global);
 
                 self.expect(TokenKind::Operator(Operator::Comma));
                 let arg2 = self.closure(&expression_parser);
@@ -658,7 +658,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
     /// Interval node
     pub(crate) fn interval<F>(&self, expression_parser: F) -> Option<&'arena Node<'arena>>
     where
-        F: Fn() -> &'arena Node<'arena>,
+        F: Fn(ParserContext) -> &'arena Node<'arena>,
     {
         // Performance optimisation: skip if expression does not contain an interval for faster evaluation
         if !self.has_range_operator {
@@ -678,7 +678,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         };
 
         self.next();
-        let left = expression_parser();
+        let left = expression_parser(ParserContext::Global);
         if left.has_error() {
             self.set_position(initial_position);
             return None;
@@ -689,7 +689,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             return None;
         };
 
-        let right = expression_parser();
+        let right = expression_parser(ParserContext::Global);
         if right.has_error() {
             self.set_position(initial_position);
             return None;
@@ -721,7 +721,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
     /// Array nodes
     pub(crate) fn array<F>(&self, expression_parser: F) -> &'arena Node<'arena>
     where
-        F: Fn() -> &'arena Node<'arena>,
+        F: Fn(ParserContext) -> &'arena Node<'arena>,
     {
         let Some(current_token) = self.current() else {
             return self.error(AstNodeError::MissingToken {
@@ -752,7 +752,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 }
             }
 
-            nodes.push(expression_parser());
+            nodes.push(expression_parser(ParserContext::Global));
         }
 
         expect!(self, TokenKind::Bracket(Bracket::RightSquareBracket));
@@ -769,7 +769,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
 
     pub(crate) fn object<F>(&self, expression_parser: F) -> &'arena Node<'arena>
     where
-        F: Fn() -> &'arena Node<'arena>,
+        F: Fn(ParserContext) -> &'arena Node<'arena>,
     {
         let span_start = self.token_start();
         expect!(self, TokenKind::Bracket(Bracket::LeftCurlyBracket));
@@ -788,7 +788,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         loop {
             let key = self.object_key(&expression_parser);
             expect!(self, TokenKind::Operator(Operator::Slice));
-            let value = expression_parser();
+            let value = expression_parser(ParserContext::Global);
 
             key_value_pairs.push((key, value));
 
@@ -820,7 +820,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
 
     pub(crate) fn object_key<F>(&self, expression_parser: F) -> &'arena Node<'arena>
     where
-        F: Fn() -> &'arena Node<'arena>,
+        F: Fn(ParserContext) -> &'arena Node<'arena>,
     {
         let Some(key_token) = self.current() else {
             return self.error(AstNodeError::Custom {
@@ -865,7 +865,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             TokenKind::Bracket(bracket) => match bracket {
                 Bracket::LeftSquareBracket => {
                     expect!(self, TokenKind::Bracket(Bracket::LeftSquareBracket));
-                    let token = expression_parser();
+                    let token = expression_parser(ParserContext::Global);
                     expect!(self, TokenKind::Bracket(Bracket::RightSquareBracket));
 
                     token
@@ -918,7 +918,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         expression_parser: F,
     ) -> Option<&'arena Node<'arena>>
     where
-        F: Fn() -> &'arena Node<'arena>,
+        F: Fn(ParserContext) -> &'arena Node<'arena>,
     {
         let Some(current_token) = self.current() else {
             return None;
@@ -929,12 +929,12 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
 
         self.next();
 
-        let on_true = expression_parser();
+        let on_true = expression_parser(ParserContext::Global);
         if let Some(error_node) = self.expect(TokenKind::Operator(Operator::Slice)) {
             return Some(error_node);
         }
 
-        let on_false = expression_parser();
+        let on_false = expression_parser(ParserContext::Global);
 
         let conditional_node = Node::Conditional {
             condition,
@@ -950,7 +950,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
     /// Literal - number, string, array etc.
     pub(crate) fn literal<F>(&self, expression_parser: F) -> &'arena Node<'arena>
     where
-        F: Fn() -> &'arena Node<'arena>,
+        F: Fn(ParserContext) -> &'arena Node<'arena>,
     {
         let Some(current_token) = self.current() else {
             return self.error(AstNodeError::Custom {
@@ -1056,4 +1056,10 @@ impl<'a, 'arena> MetadataHelper<'a, 'arena> {
     fn address(&self, n: &'arena Node<'arena>) -> usize {
         n as *const Node as usize
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ParserContext {
+    Global,
+    Closure,
 }

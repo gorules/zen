@@ -64,6 +64,7 @@ rand(100) >= 0 and rand(100) <= 100; { "$": true }; true
 sum([1, 2, 3, 4, 5]) / len([1, 2, 3, 4, 5]); { "$": 3 }; true
 median([4, 2, 7, 5, 3]); { "$": 4 }; true
 mode([1, 2, 2, 3, 3, 3, 4, 4, 4, 4]); { "$": 4 }; true
+some($, # > 10 and # < 20); { "$": [1, 2, 3, 15] }; true
 
 # String expressions
 'GB','US';{$: 'US'};true

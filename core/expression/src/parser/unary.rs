@@ -2,7 +2,7 @@ use crate::lexer::{Bracket, ComparisonOperator, Identifier, LogicalOperator, Ope
 use crate::parser::ast::{AstNodeError, Node};
 use crate::parser::builtin::BuiltInFunction;
 use crate::parser::constants::{Associativity, BINARY_OPERATORS, UNARY_OPERATORS};
-use crate::parser::parser::Parser;
+use crate::parser::parser::{Parser, ParserContext};
 use crate::parser::unary::UnaryNodeBehaviour::CompareWithReference;
 use crate::parser::{NodeMetadata, ParserResult};
 
@@ -70,13 +70,13 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
         if let Some(TokenKind::Operator(Operator::Comparison(_))) = self.current_kind() {
             // Skips
         } else {
-            left_node = self.binary_expression(0);
+            left_node = self.binary_expression(0, ParserContext::Global);
         }
 
         match self.current_kind() {
             Some(TokenKind::Operator(Operator::Comparison(comparison))) => {
                 self.next();
-                let right_node = self.binary_expression(0);
+                let right_node = self.binary_expression(0, ParserContext::Global);
                 left_node = self.node(
                     Node::Binary {
                         left: left_node,
@@ -130,7 +130,7 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
         left_node
     }
 
-    fn binary_expression(&self, precedence: u8) -> &'arena Node<'arena> {
+    fn binary_expression(&self, precedence: u8, ctx: ParserContext) -> &'arena Node<'arena> {
         let mut node_left = self.unary_expression();
         let Some(mut token) = self.current() else {
             return node_left;
@@ -141,12 +141,14 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
                 break;
             }
 
-            if matches!(
-                operator,
-                Operator::Comma
-                    | Operator::Logical(LogicalOperator::And)
-                    | Operator::Logical(LogicalOperator::Or)
-            ) {
+            if ctx == ParserContext::Global
+                && matches!(
+                    operator,
+                    Operator::Comma
+                        | Operator::Logical(LogicalOperator::And)
+                        | Operator::Logical(LogicalOperator::Or)
+                )
+            {
                 break;
             }
 
@@ -160,8 +162,10 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
 
             self.next();
             let node_right = match op.associativity {
-                Associativity::Left => self.binary_expression(op.precedence + 1),
-                _ => self.binary_expression(op.precedence),
+                Associativity::Left => {
+                    self.binary_expression(op.precedence + 1, ParserContext::Global)
+                }
+                _ => self.binary_expression(op.precedence, ParserContext::Global),
             };
 
             node_left = self.node(
@@ -183,7 +187,7 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
 
         if precedence == 0 {
             if let Some(conditional_node) =
-                self.conditional(node_left, || self.binary_expression(0))
+                self.conditional(node_left, |c| self.binary_expression(0, c))
             {
                 node_left = conditional_node;
             }
@@ -194,14 +198,14 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
 
     fn unary_expression(&self) -> &'arena Node<'arena> {
         let Some(token) = self.current() else {
-            return self.literal(|| self.binary_expression(0));
+            return self.literal(|c| self.binary_expression(0, c));
         };
 
         if self.depth() > 0 && token.kind == TokenKind::Identifier(Identifier::CallbackReference) {
             self.next();
 
             let node = self.node(Node::Pointer, |_| NodeMetadata { span: token.span });
-            return self.with_postfix(node, || self.binary_expression(0));
+            return self.with_postfix(node, |c| self.binary_expression(0, c));
         }
 
         if let TokenKind::Operator(operator) = &token.kind {
@@ -214,7 +218,7 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
             };
 
             self.next();
-            let expr = self.binary_expression(unary_operator.precedence);
+            let expr = self.binary_expression(unary_operator.precedence, ParserContext::Global);
             let node = self.node(
                 Node::Unary {
                     operator: *operator,
@@ -231,7 +235,7 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
             return node;
         }
 
-        if let Some(interval_node) = self.interval(|| self.binary_expression(0)) {
+        if let Some(interval_node) = self.interval(|c| self.binary_expression(0, c)) {
             return interval_node;
         }
 
@@ -239,7 +243,7 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
             let p_start = self.current().map(|s| s.span.0);
 
             self.next();
-            let binary_node = self.binary_expression(0);
+            let binary_node = self.binary_expression(0, ParserContext::Global);
             if let Some(error_node) = self.expect(TokenKind::Bracket(Bracket::RightParenthesis)) {
                 return error_node;
             };
@@ -248,10 +252,10 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
                 span: (p_start.unwrap_or_default(), self.prev_token_end()),
             });
 
-            return self.with_postfix(expr, || self.binary_expression(0));
+            return self.with_postfix(expr, |c| self.binary_expression(0, c));
         }
 
-        self.literal(|| self.binary_expression(0))
+        self.literal(|c| self.binary_expression(0, c))
     }
 }
 

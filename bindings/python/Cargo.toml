@@ -11,6 +11,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 anyhow = { workspace = true }
+bumpalo = "3"
 either = "1.13"
 pyo3 = { version = "0.20", features = ["anyhow", "serde"] }
 pyo3-asyncio = { version = "0.20", features = ["tokio-runtime"] }

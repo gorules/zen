@@ -1,10 +1,14 @@
-from typing import Any, Optional, TypedDict
+from typing import Any, Optional, TypedDict, Literal
 from collections.abc import Awaitable
 
 class EvaluateResponse(TypedDict):
     performance: str
     result: dict
     trace: dict
+
+class ValidationResponse(TypedDict):
+    type: Literal["lexerError","parserError", "compilerError"]
+    source: str
 
 class ZenEngine:
     def __init__(self, maybe_options: Optional[dict] = None) -> None: ...
@@ -27,5 +31,9 @@ class ZenDecision:
 def evaluate_expression(expression: str, ctx: Optional[dict] = None) -> Any: ...
 
 def evaluate_unary_expression(expression: str, ctx: dict) -> bool: ...
+
+def validate_expression(expression: str) -> Optional[ValidationResponse]: ...
+
+def validate_unary_expression(expression: str) -> Optional[ValidationResponse]: ...
 
 def render_template(template: str, ctx: dict) -> Any: ...

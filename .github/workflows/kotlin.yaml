@@ -1,6 +1,6 @@
 name: Kotlin
 env:
-  WORKING_DIRECTORY: bindings/kotlin
+  WORKING_DIRECTORY: bindings/uniffi
 
 on:
   push:
@@ -9,13 +9,13 @@ on:
     tags-ignore:
       - '**'
     paths:
-      - 'bindings/kotlin/**'
+      - '../../bindings/uniffi/**'
       - 'core/**'
       - 'test-data/**'
       - '.github/workflows/kotlin.yaml'
   pull_request:
     paths:
-      - 'bindings/kotlin/**'
+      - '../../bindings/uniffi/**'
       - 'core/**'
       - 'test-data/**'
       - '.github/workflows/kotlin.yaml'

@@ -1,15 +1,16 @@
-use crate::variable::Variable;
+use crate::StoredVariable;
+use std::sync::Arc;
 use strum_macros::Display;
 
 /// Machine code interpreted by VM
-#[derive(Debug, PartialEq, Eq, Display)]
-pub enum Opcode<'a> {
-    Push(Variable),
+#[derive(Debug, PartialEq, Eq, Clone, Display)]
+pub enum Opcode {
+    Push(StoredVariable),
     Pop,
     Rot,
     Fetch,
     FetchRootEnv,
-    FetchEnv(&'a str),
+    FetchEnv(Arc<str>),
     Negate,
     Not,
     Equal,
@@ -42,14 +43,14 @@ pub enum Opcode<'a> {
     Modulo,
     Exponent,
     Interval {
-        left_bracket: &'a str,
-        right_bracket: &'a str,
+        left_bracket: Arc<str>,
+        right_bracket: Arc<str>,
     },
     Contains,
     Keys,
     Values,
-    DateFunction(&'a str),
-    DateManipulation(&'a str),
+    DateFunction(Arc<str>),
+    DateManipulation(Arc<str>),
     Uppercase,
     Lowercase,
     StartsWith,

@@ -68,4 +68,4 @@ pub mod vm;
 
 pub use function::{evaluate_expression, evaluate_unary_expression};
 pub use isolate::{Isolate, IsolateError};
-pub use variable::Variable;
+pub use variable::{StoredVariable, Variable};

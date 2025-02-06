@@ -6,7 +6,7 @@ use std::hash::BuildHasherDefault;
 use thiserror::Error;
 
 use crate::arena::UnsafeArena;
-use crate::compiler::{Compiler, CompilerError};
+use crate::compiler::{Compiler, CompilerError, Opcode};
 use crate::lexer::{Lexer, LexerError};
 use crate::parser::{Parser, ParserError};
 use crate::variable::Variable;
@@ -22,7 +22,7 @@ type ADefHasher = BuildHasherDefault<AHasher>;
 #[derive(Debug)]
 pub struct Isolate<'arena> {
     lexer: Lexer<'arena>,
-    compiler: Compiler<'arena>,
+    compiler: Compiler,
     vm: VM,
 
     bump: UnsafeArena<'arena>,
@@ -119,6 +119,41 @@ impl<'a> Isolate<'a> {
             .compile(parser_result.root)
             .map_err(|source| IsolateError::CompilerError { source })?;
 
+        let result = self
+            .vm
+            .run(bytecode, self.environment.clone().unwrap_or(Variable::Null))
+            .map_err(|source| IsolateError::VMError { source })?;
+
+        Ok(result)
+    }
+
+    pub fn compile_standard(&mut self, source: &'a str) -> Result<Vec<Opcode>, IsolateError> {
+        self.bump.with_mut(|b| b.reset());
+        let bump = self.bump.get();
+
+        let tokens = self
+            .lexer
+            .tokenize(source)
+            .map_err(|source| IsolateError::LexerError { source })?;
+
+        let parser = Parser::try_new(tokens, bump)
+            .map_err(|source| IsolateError::ParserError { source })?
+            .standard();
+
+        let parser_result = parser.parse();
+        parser_result
+            .error()
+            .map_err(|source| IsolateError::ParserError { source })?;
+
+        let bytecode = self
+            .compiler
+            .compile(parser_result.root)
+            .map_err(|source| IsolateError::CompilerError { source })?;
+
+        Ok(bytecode.to_vec())
+    }
+
+    pub fn run_compiled(&mut self, bytecode: &[Opcode]) -> Result<Variable, IsolateError> {
         let result = self
             .vm
             .run(bytecode, self.environment.clone().unwrap_or(Variable::Null))

@@ -50,16 +50,16 @@ impl VM {
     }
 }
 
-struct VMInner<'arena, 'parent_ref, 'bytecode_ref> {
+struct VMInner<'parent_ref, 'bytecode_ref> {
     scopes: &'parent_ref mut Vec<Scope>,
     stack: &'parent_ref mut Vec<Variable>,
-    bytecode: &'bytecode_ref [Opcode<'arena>],
+    bytecode: &'bytecode_ref [Opcode],
     ip: usize,
 }
 
-impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_ref> {
+impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
     pub fn new(
-        bytecode: &'bytecode_ref [Opcode<'arena>],
+        bytecode: &'bytecode_ref [Opcode],
         stack: &'parent_ref mut Vec<Variable>,
         scopes: &'parent_ref mut Vec<Scope>,
     ) -> Self {
@@ -99,7 +99,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
 
             match op {
                 Opcode::Push(v) => {
-                    self.push(v.clone());
+                    self.push(v.clone().into());
                 }
                 Opcode::Pop => {
                     self.pop()?;
@@ -147,7 +147,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                 Opcode::FetchEnv(f) => match &env {
                     Object(o) => {
                         let obj = o.borrow();
-                        match obj.get(*f) {
+                        match obj.get(f.as_ref()) {
                             None => self.push(Null),
                             Some(v) => self.push(v.clone()),
                         }
@@ -849,8 +849,8 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     match (&a, &b) {
                         (Number(_), Number(_)) => {
                             let interval = IntervalObject {
-                                left_bracket: Rc::from(*left_bracket),
-                                right_bracket: Rc::from(*right_bracket),
+                                left_bracket: Rc::from(left_bracket.as_ref()),
+                                right_bracket: Rc::from(right_bracket.as_ref()),
                                 left: a,
                                 right: b,
                             };
@@ -1176,7 +1176,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     let timestamp = self.pop()?;
 
                     let time: NaiveDateTime = (&timestamp).try_into()?;
-                    let var = match *operation {
+                    let var = match operation.as_ref() {
                         "year" => Number(time.year().into()),
                         "dayOfWeek" => Number(time.weekday().number_from_monday().into()),
                         "dayOfMonth" => Number(time.day().into()),
@@ -1208,7 +1208,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                         });
                     };
 
-                    let s = match *name {
+                    let s = match name.as_ref() {
                         "startOf" => date_time_start_of(date_time, unit_name.as_ref().try_into()?),
                         "endOf" => date_time_end_of(date_time, unit_name.as_ref().try_into()?),
                         _ => {

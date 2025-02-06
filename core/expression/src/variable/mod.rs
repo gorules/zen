@@ -11,9 +11,11 @@ use std::rc::Rc;
 mod conv;
 mod de;
 mod ser;
+mod stored;
 mod types;
 
 pub use de::VariableDeserializer;
+pub use stored::StoredVariable;
 pub use types::VariableType;
 
 pub(crate) type RcCell<T> = Rc<RefCell<T>>;

@@ -666,9 +666,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         };
 
         let initial_position = self.position();
-        let left_bracket = self.current()?.value;
-
-        let TokenKind::Bracket(_) = &self.current()?.kind else {
+        let TokenKind::Bracket(left_bracket) = &self.current()?.kind else {
             self.set_position(initial_position);
             return None;
         };
@@ -691,8 +689,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             return None;
         };
 
-        let right_bracket = self.current()?.value;
-        let TokenKind::Bracket(_) = &self.current()?.kind else {
+        let TokenKind::Bracket(right_bracket) = &self.current()?.kind else {
             self.set_position(initial_position);
             return None;
         };
@@ -701,10 +698,10 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
 
         let interval_node = self.node(
             Node::Interval {
-                left_bracket,
                 left,
                 right,
-                right_bracket,
+                left_bracket: *left_bracket,
+                right_bracket: *right_bracket,
             },
             |_| NodeMetadata {
                 span: (initial_position as u32, self.position() as u32),

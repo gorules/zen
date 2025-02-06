@@ -1,11 +1,15 @@
-use crate::StoredVariable;
+use crate::lexer::Bracket;
+use rust_decimal::Decimal;
 use std::sync::Arc;
 use strum_macros::Display;
 
 /// Machine code interpreted by VM
 #[derive(Debug, PartialEq, Eq, Clone, Display)]
 pub enum Opcode {
-    Push(StoredVariable),
+    PushNull,
+    PushBool(bool),
+    PushString(Arc<str>),
+    PushNumber(Decimal),
     Pop,
     Rot,
     Fetch,
@@ -14,12 +18,7 @@ pub enum Opcode {
     Negate,
     Not,
     Equal,
-    Jump(usize),
-    JumpIfTrue(usize),
-    JumpIfFalse(usize),
-    JumpIfNotNull(usize),
-    JumpIfEnd(usize),
-    JumpBackward(usize),
+    Jump(Jump, u32),
     In,
     Less,
     More,
@@ -43,8 +42,8 @@ pub enum Opcode {
     Modulo,
     Exponent,
     Interval {
-        left_bracket: Arc<str>,
-        right_bracket: Arc<str>,
+        left_bracket: Bracket,
+        right_bracket: Bracket,
     },
     Contains,
     Keys,
@@ -79,6 +78,16 @@ pub enum Opcode {
     GetType,
     TypeConversion(TypeConversionKind),
     TypeCheck(TypeCheckKind),
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Display)]
+pub enum Jump {
+    Forward,
+    Backward,
+    IfTrue,
+    IfFalse,
+    IfNotNull,
+    IfEnd,
 }
 
 /// Metadata for TypeConversion Opcode

@@ -31,13 +31,12 @@ jobs:
         working-directory: ${{ env.WORKING_DIRECTORY }}
     strategy:
       matrix:
-#        target: [x86_64, x86, aarch64, armv7, s390x, ppc64le]
-        target: [x86_64, aarch64]
+        target: [ x86_64, aarch64 ]
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: '3.13'
 
       - name: Build wheels
         uses: stefan-gorules/maturin-action@main
@@ -50,9 +49,9 @@ jobs:
             apt install -y patch 
 
       - name: Upload wheels
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: wheels
+          name: wheels-linux-${{ matrix.target }}
           path: dist
 
   windows:
@@ -62,12 +61,12 @@ jobs:
         working-directory: ${{ env.WORKING_DIRECTORY }}
     strategy:
       matrix:
-        target: [x64]
+        target: [ x64 ]
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: '3.13'
           architecture: ${{ matrix.target }}
       - name: Build wheels
         uses: PyO3/maturin-action@v1
@@ -76,9 +75,9 @@ jobs:
           args: --release --out dist --find-interpreter -m bindings/python/Cargo.toml
           sccache: 'true'
       - name: Upload wheels
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: wheels
+          name: wheels-windows-${{ matrix.target }}
           path: dist
 
   macos:
@@ -88,12 +87,12 @@ jobs:
         working-directory: ${{ env.WORKING_DIRECTORY }}
     strategy:
       matrix:
-        target: [x86_64, aarch64]
+        target: [ x86_64, aarch64 ]
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: '3.13'
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -101,9 +100,9 @@ jobs:
           args: --release --out dist --find-interpreter -m bindings/python/Cargo.toml
           sccache: 'true'
       - name: Upload wheels
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: wheels
+          name: wheels-macos-${{ matrix.target }}
           path: dist
 
   sdist:
@@ -113,16 +112,19 @@ jobs:
         working-directory: ${{ env.WORKING_DIRECTORY }}
     steps:
       - uses: actions/checkout@v3
-
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.13'
+          
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:
           command: sdist
           args: --out dist -m bindings/python/Cargo.toml
       - name: Upload sdist
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: wheels
+          name: wheels-sdist
           path: dist
 
   release:
@@ -131,12 +133,9 @@ jobs:
     defaults:
       run:
         working-directory: ${{ env.WORKING_DIRECTORY }}
-#    if: "startsWith(github.ref, 'refs/tags/')"
-    needs: [linux, windows, macos, sdist]
-#    needs: [linux, sdist]
-#    needs: [linux]
+    needs: [ linux, windows, macos, sdist ]
     steps:
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
           name: wheels
       - name: Publish to PyPI

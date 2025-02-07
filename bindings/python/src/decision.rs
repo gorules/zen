@@ -4,6 +4,7 @@ use anyhow::{anyhow, Context};
 use pyo3::types::PyDict;
 use pyo3::{pyclass, pymethods, Bound, IntoPyObjectExt, Py, PyAny, PyResult, Python};
 use pyo3_async_runtimes::tokio;
+use pyo3_async_runtimes::tokio::re_exports::runtime::Runtime;
 use pythonize::depythonize;
 use serde_json::Value;
 use zen_engine::{Decision, EvaluationOptions};
@@ -40,16 +41,19 @@ impl PyZenDecision {
         };
 
         let decision = self.0.clone();
-        let result = futures::executor::block_on(decision.evaluate_with_opts(
-            context.into(),
-            EvaluationOptions {
-                max_depth: options.max_depth,
-                trace: options.trace,
-            },
-        ))
-        .map_err(|e| {
-            anyhow!(serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string()))
-        })?;
+
+        let rt = Runtime::new()?;
+        let result = rt
+            .block_on(decision.evaluate_with_opts(
+                context.into(),
+                EvaluationOptions {
+                    max_depth: options.max_depth,
+                    trace: options.trace,
+                },
+            ))
+            .map_err(|e| {
+                anyhow!(serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string()))
+            })?;
 
         let value = serde_json::to_value(&result).context("Fail")?;
         PyValue(value).into_py_any(py)

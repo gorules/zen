@@ -2,6 +2,7 @@ import asyncio
 import glob
 import json
 import os.path
+import time
 import unittest
 
 import zen
@@ -54,6 +55,18 @@ class AsyncZenEngine(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(results[0]["result"]["sum"], 20)
         self.assertEqual(results[1]["result"]["sum"], 30)
         self.assertEqual(results[2]["result"]["sum"], 40)
+
+    async def test_async_sleep_function(self):
+        engine = zen.ZenEngine({"loader": loader, "customHandler": custom_async_handler})
+
+        await engine.async_evaluate("sleep-function.json", {})
+        self.assertTrue(True)
+
+    async def test_async_http_function(self):
+        engine = zen.ZenEngine({"loader": loader, "customHandler": custom_async_handler})
+
+        await engine.async_evaluate("http-function.json", {})
+        self.assertTrue(True)
 
     async def test_create_decisions_from_content(self):
         engine = zen.ZenEngine()

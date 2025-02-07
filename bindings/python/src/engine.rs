@@ -5,6 +5,7 @@ use pyo3::prelude::PyDictMethods;
 use pyo3::types::PyDict;
 use pyo3::{pyclass, pymethods, Bound, IntoPyObjectExt, Py, PyAny, PyResult, Python};
 use pyo3_async_runtimes::tokio;
+use pyo3_async_runtimes::tokio::re_exports::runtime::Runtime;
 use pythonize::depythonize;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -92,18 +93,20 @@ impl PyZenEngine {
             Default::default()
         };
 
+        let rt = Runtime::new()?;
         let graph = self.graph.clone();
-        let result = futures::executor::block_on(graph.evaluate_with_opts(
-            key,
-            context.into(),
-            EvaluationOptions {
-                max_depth: options.max_depth,
-                trace: options.trace,
-            },
-        ))
-        .map_err(|e| {
-            anyhow!(serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string()))
-        })?;
+        let result = rt
+            .block_on(graph.evaluate_with_opts(
+                key,
+                context.into(),
+                EvaluationOptions {
+                    max_depth: options.max_depth,
+                    trace: options.trace,
+                },
+            ))
+            .map_err(|e| {
+                anyhow!(serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string()))
+            })?;
 
         let value = serde_json::to_value(&result).context("Failed to serialize result")?;
         PyValue(value).into_py_any(py)

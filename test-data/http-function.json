@@ -1,0 +1,34 @@
+{
+  "contentType": "application/vnd.gorules.decision",
+  "nodes": [
+    {
+      "type": "inputNode",
+      "id": "2d560c7d-3528-43ed-88d8-28f4d8ef17be",
+      "name": "request",
+      "position": {
+        "x": 295,
+        "y": 175
+      }
+    },
+    {
+      "type": "functionNode",
+      "content": {
+        "source": "import zen from 'zen';\nimport http from 'http';\n\n/** @type {Handler} **/\nexport const handler = async (input) => {\n  const r = await http.get('https://fakestoreapi.com/products/1');\n\n  return r;\n};\n"
+      },
+      "id": "66cb12f4-4cdd-4422-850b-4534f959407d",
+      "name": "function1",
+      "position": {
+        "x": 600,
+        "y": 175
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "b65ca09a-a010-4fc2-bca1-f7cf21a0ddc3",
+      "sourceId": "2d560c7d-3528-43ed-88d8-28f4d8ef17be",
+      "type": "edge",
+      "targetId": "66cb12f4-4cdd-4422-850b-4534f959407d"
+    }
+  ]
+}

@@ -52,7 +52,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wheels-linux-${{ matrix.target }}
-          path: dist
+          path: wheels
 
   windows:
     runs-on: windows-latest
@@ -78,7 +78,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wheels-windows-${{ matrix.target }}
-          path: dist
+          path: wheels
 
   macos:
     runs-on: macos-latest
@@ -103,7 +103,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wheels-macos-${{ matrix.target }}
-          path: dist
+          path: wheels
 
   sdist:
     runs-on: ubuntu-latest
@@ -115,7 +115,7 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: '3.13'
-          
+
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:
@@ -125,7 +125,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wheels-sdist
-          path: dist
+          path: wheels
 
   release:
     name: Release
@@ -137,7 +137,8 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: wheels
+          path: wheels
+          
       - name: Publish to PyPI
         if: "startsWith(github.event.head_commit.message, 'chore(release): publish python')"
         uses: PyO3/maturin-action@v1

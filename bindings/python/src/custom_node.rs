@@ -1,8 +1,8 @@
 use anyhow::anyhow;
 use either::Either;
 use pyo3::types::PyDict;
-use pyo3::{PyObject, PyResult, Python};
-use pyo3_asyncio::tokio;
+use pyo3::{Bound, IntoPyObjectExt, Py, PyAny, PyObject, PyResult, Python};
+use pyo3_async_runtimes::tokio;
 use pythonize::depythonize;
 
 use zen_engine::handler::custom_node_adapter::{CustomNodeAdapter, CustomNodeRequest};
@@ -11,10 +11,10 @@ use zen_engine::handler::node::{NodeResponse, NodeResult};
 use crate::types::PyNodeRequest;
 
 #[derive(Default)]
-pub(crate) struct PyCustomNode(Option<PyObject>);
+pub(crate) struct PyCustomNode(Option<Py<PyAny>>);
 
-impl From<PyObject> for PyCustomNode {
-    fn from(value: PyObject) -> Self {
+impl From<Py<PyAny>> for PyCustomNode {
+    fn from(value: Py<PyAny>) -> Self {
         Self(Some(value))
     }
 }
@@ -26,8 +26,8 @@ impl From<Option<PyObject>> for PyCustomNode {
 }
 
 fn extract_custom_node_response(py: Python<'_>, result: PyObject) -> NodeResult {
-    let dict = result.extract::<&PyDict>(py)?;
-    let response: NodeResponse = depythonize(dict)?;
+    let dict = result.extract::<Bound<'_, PyDict>>(py)?;
+    let response: NodeResponse = depythonize(&dict)?;
     Ok(response)
 }
 
@@ -45,7 +45,7 @@ impl CustomNodeAdapter for PyCustomNode {
                 return Ok(Either::Left(extract_custom_node_response(py, result)));
             }
 
-            let result_future = tokio::into_future(result.as_ref(py))?;
+            let result_future = tokio::into_future(result.into_bound_py_any(py)?)?;
             return Ok(Either::Right(result_future));
         });
 

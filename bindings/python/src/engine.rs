@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context};
+use pyo3::prelude::PyDictMethods;
 use pyo3::types::PyDict;
-use pyo3::{pyclass, pymethods, PyAny, PyObject, PyResult, Python, ToPyObject};
-use pyo3_asyncio::tokio;
+use pyo3::{pyclass, pymethods, Bound, IntoPyObjectExt, Py, PyAny, PyResult, Python};
+use pyo3_async_runtimes::tokio;
 use pythonize::depythonize;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -51,18 +52,19 @@ impl Default for PyZenEngine {
 #[pymethods]
 impl PyZenEngine {
     #[new]
-    pub fn new(maybe_options: Option<&PyDict>) -> PyResult<Self> {
+    #[pyo3(signature = (maybe_options=None))]
+    pub fn new(maybe_options: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
         let Some(options) = maybe_options else {
             return Ok(Default::default());
         };
 
         let loader = match options.get_item("loader")? {
-            Some(loader) => Some(Python::with_gil(|py| loader.to_object(py))),
+            Some(loader) => Some(Python::with_gil(|py| loader.into_py_any(py))?),
             None => None,
         };
 
         let custom_node = match options.get_item("customHandler")? {
-            Some(custom_node) => Some(Python::with_gil(|py| custom_node.to_object(py))),
+            Some(custom_node) => Some(Python::with_gil(|py| custom_node.into_py_any(py))?),
             None => None,
         };
 
@@ -75,13 +77,14 @@ impl PyZenEngine {
         })
     }
 
+    #[pyo3(signature = (key, ctx, opts=None))]
     pub fn evaluate(
         &self,
         py: Python,
         key: String,
-        ctx: &PyDict,
-        opts: Option<&PyDict>,
-    ) -> PyResult<PyObject> {
+        ctx: &Bound<'_, PyDict>,
+        opts: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
         let context: Value = depythonize(ctx).context("Failed to convert dict")?;
         let options: PyZenEvaluateOptions = if let Some(op) = opts {
             depythonize(op).context("Failed to convert dict")?
@@ -103,16 +106,17 @@ impl PyZenEngine {
         })?;
 
         let value = serde_json::to_value(&result).context("Failed to serialize result")?;
-        Ok(PyValue(value).to_object(py))
+        PyValue(value).into_py_any(py)
     }
 
+    #[pyo3(signature = (key, ctx, opts=None))]
     pub fn async_evaluate<'py>(
         &'py self,
         py: Python<'py>,
         key: String,
-        ctx: &PyDict,
-        opts: Option<&PyDict>,
-    ) -> PyResult<&PyAny> {
+        ctx: &Bound<'_, PyDict>,
+        opts: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
         let context: Value = depythonize(ctx).context("Failed to convert dict")?;
         let options: PyZenEvaluateOptions = if let Some(op) = opts {
             depythonize(op).context("Failed to convert dict")?
@@ -121,7 +125,7 @@ impl PyZenEngine {
         };
 
         let graph = self.graph.clone();
-        tokio::future_into_py(py, async move {
+        let result = tokio::future_into_py(py, async move {
             let result = futures::executor::block_on(graph.evaluate_with_opts(
                 key,
                 context.into(),
@@ -136,8 +140,10 @@ impl PyZenEngine {
 
             let value = serde_json::to_value(result).context("Failed to serialize result")?;
 
-            Python::with_gil(|py| Ok(PyValue(value).to_object(py)))
-        })
+            Python::with_gil(|py| PyValue(value).into_py_any(py))
+        })?;
+
+        Ok(result.unbind())
     }
 
     pub fn create_decision(&self, content: String) -> PyResult<PyZenDecision> {

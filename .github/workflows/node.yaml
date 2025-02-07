@@ -160,7 +160,7 @@ jobs:
         shell: bash
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: bindings-${{ matrix.settings.target }}
           path: bindings/nodejs/*.node
@@ -203,7 +203,7 @@ jobs:
         run: yarn install --immutable --mode=skip-build
 
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: bindings-${{ matrix.settings.target }}
           path: artifacts
@@ -245,7 +245,7 @@ jobs:
         run: yarn install --immutable --mode=skip-build
 
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: bindings-x86_64-unknown-linux-gnu
           path: artifacts
@@ -296,7 +296,7 @@ jobs:
         run: yarn install --immutable --mode=skip-build
 
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: bindings-x86_64-unknown-linux-musl
           path: artifacts
@@ -354,7 +354,7 @@ jobs:
       - run: docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
 
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: bindings-aarch64-unknown-linux-musl
           path: artifacts
@@ -399,7 +399,7 @@ jobs:
   #          pwd
   #
   #      - name: Download artifacts
-  #        uses: actions/download-artifact@v3
+  #        uses: actions/download-artifact@v4
   #        with:
   #          name: bindings-aarch64-unknown-linux-gnu
   #          path: artifacts
@@ -461,7 +461,7 @@ jobs:
         run: yarn install --immutable --mode=skip-build
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: artifacts
 

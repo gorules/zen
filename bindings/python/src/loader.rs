@@ -2,13 +2,13 @@ use std::future::Future;
 use std::sync::Arc;
 
 use anyhow::anyhow;
-use pyo3::{PyObject, Python};
+use pyo3::{Py, PyAny, PyObject, Python};
 
 use zen_engine::loader::{DecisionLoader, LoaderError, LoaderResponse};
 use zen_engine::model::DecisionContent;
 
 #[derive(Default)]
-pub(crate) struct PyDecisionLoader(Option<PyObject>);
+pub(crate) struct PyDecisionLoader(Option<Py<PyAny>>);
 
 impl From<PyObject> for PyDecisionLoader {
     fn from(value: PyObject) -> Self {
@@ -16,8 +16,8 @@ impl From<PyObject> for PyDecisionLoader {
     }
 }
 
-impl From<Option<PyObject>> for PyDecisionLoader {
-    fn from(value: Option<PyObject>) -> Self {
+impl From<Option<Py<PyAny>>> for PyDecisionLoader {
+    fn from(value: Option<Py<PyAny>>) -> Self {
         Self(value)
     }
 }

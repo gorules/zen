@@ -4,7 +4,8 @@ use anyhow::{anyhow, Context};
 use pyo3::prelude::PyDictMethods;
 use pyo3::types::PyDict;
 use pyo3::{pyclass, pymethods, Bound, IntoPyObjectExt, Py, PyAny, PyResult, Python};
-use pyo3_async_runtimes::tokio;
+use pyo3_async_runtimes::tokio::get_current_locals;
+use pyo3_async_runtimes::{tokio, TaskLocals};
 use pythonize::depythonize;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -14,12 +15,13 @@ use zen_engine::{DecisionEngine, EvaluationOptions};
 use crate::custom_node::PyCustomNode;
 use crate::decision::PyZenDecision;
 use crate::loader::PyDecisionLoader;
+use crate::mt::{block_on, worker_pool};
 use crate::value::PyValue;
 
 #[pyclass]
 #[pyo3(name = "ZenEngine")]
 pub struct PyZenEngine {
-    graph: Arc<DecisionEngine<PyDecisionLoader, PyCustomNode>>,
+    engine: Arc<DecisionEngine<PyDecisionLoader, PyCustomNode>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -40,11 +42,10 @@ impl Default for PyZenEvaluateOptions {
 impl Default for PyZenEngine {
     fn default() -> Self {
         Self {
-            graph: DecisionEngine::new(
+            engine: Arc::new(DecisionEngine::new(
                 Arc::new(PyDecisionLoader::default()),
                 Arc::new(PyCustomNode::default()),
-            )
-            .into(),
+            )),
         }
     }
 }
@@ -53,7 +54,7 @@ impl Default for PyZenEngine {
 impl PyZenEngine {
     #[new]
     #[pyo3(signature = (maybe_options=None))]
-    pub fn new(maybe_options: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
+    pub fn new(py: Python, maybe_options: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
         let Some(options) = maybe_options else {
             return Ok(Default::default());
         };
@@ -68,12 +69,16 @@ impl PyZenEngine {
             None => None,
         };
 
+        let task_locals = TaskLocals::with_running_loop(py)
+            .ok()
+            .map(|s| s.copy_context(py).ok())
+            .flatten();
+
         Ok(Self {
-            graph: DecisionEngine::new(
+            engine: Arc::new(DecisionEngine::new(
                 Arc::new(PyDecisionLoader::from(loader)),
-                Arc::new(PyCustomNode::from(custom_node)),
-            )
-            .into(),
+                Arc::new(PyCustomNode::new(custom_node, task_locals)),
+            )),
         })
     }
 
@@ -92,8 +97,7 @@ impl PyZenEngine {
             Default::default()
         };
 
-        let graph = self.graph.clone();
-        let result = futures::executor::block_on(graph.evaluate_with_opts(
+        let result = block_on(self.engine.evaluate_with_opts(
             key,
             context.into(),
             EvaluationOptions {
@@ -124,21 +128,28 @@ impl PyZenEngine {
             Default::default()
         };
 
-        let graph = self.graph.clone();
-        let result = tokio::future_into_py(py, async move {
-            let result = futures::executor::block_on(graph.evaluate_with_opts(
-                key,
-                context.into(),
-                EvaluationOptions {
-                    max_depth: options.max_depth,
-                    trace: options.trace,
-                },
-            ))
-            .map_err(|e| {
-                anyhow!(serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string()))
-            })?;
-
-            let value = serde_json::to_value(result).context("Failed to serialize result")?;
+        let engine = self.engine.clone();
+        let result = tokio::future_into_py_with_locals(py, get_current_locals(py)?, async move {
+            let value = worker_pool()
+                .spawn_pinned(move || async move {
+                    engine
+                        .evaluate_with_opts(
+                            key,
+                            context.into(),
+                            EvaluationOptions {
+                                max_depth: options.max_depth,
+                                trace: options.trace,
+                            },
+                        )
+                        .await
+                        .map(serde_json::to_value)
+                })
+                .await
+                .context("Failed to join threads")?
+                .map_err(|e| {
+                    anyhow!(serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string()))
+                })?
+                .context("Failed to serialize result")?;
 
             Python::with_gil(|py| PyValue(value).into_py_any(py))
         })?;
@@ -150,12 +161,12 @@ impl PyZenEngine {
         let decision_content: DecisionContent =
             serde_json::from_str(&content).context("Failed to serialize decision content")?;
 
-        let decision = self.graph.create_decision(decision_content.into());
+        let decision = self.engine.create_decision(decision_content.into());
         Ok(PyZenDecision::from(decision))
     }
 
     pub fn get_decision<'py>(&'py self, _py: Python<'py>, key: String) -> PyResult<PyZenDecision> {
-        let decision = futures::executor::block_on(self.graph.get_decision(&key))
+        let decision = block_on(self.engine.get_decision(&key))
             .context("Failed to find decision with given key")?;
 
         Ok(PyZenDecision::from(decision))

@@ -2,7 +2,7 @@ use anyhow::anyhow;
 use either::Either;
 use pyo3::types::PyDict;
 use pyo3::{Bound, IntoPyObjectExt, Py, PyAny, PyObject, PyResult, Python};
-use pyo3_async_runtimes::tokio;
+use pyo3_async_runtimes::TaskLocals;
 use pythonize::depythonize;
 
 use zen_engine::handler::custom_node_adapter::{CustomNodeAdapter, CustomNodeRequest};
@@ -11,17 +11,17 @@ use zen_engine::handler::node::{NodeResponse, NodeResult};
 use crate::types::PyNodeRequest;
 
 #[derive(Default)]
-pub(crate) struct PyCustomNode(Option<Py<PyAny>>);
-
-impl From<Py<PyAny>> for PyCustomNode {
-    fn from(value: Py<PyAny>) -> Self {
-        Self(Some(value))
-    }
+pub(crate) struct PyCustomNode {
+    callback: Option<Py<PyAny>>,
+    task_locals: Option<TaskLocals>,
 }
 
-impl From<Option<PyObject>> for PyCustomNode {
-    fn from(value: Option<PyObject>) -> Self {
-        Self(value)
+impl PyCustomNode {
+    pub fn new(callback: Option<Py<PyAny>>, task_locals: Option<TaskLocals>) -> Self {
+        Self {
+            callback,
+            task_locals,
+        }
     }
 }
 
@@ -33,7 +33,7 @@ fn extract_custom_node_response(py: Python<'_>, result: PyObject) -> NodeResult 
 
 impl CustomNodeAdapter for PyCustomNode {
     async fn handle(&self, request: CustomNodeRequest) -> NodeResult {
-        let Some(callable) = &self.0 else {
+        let Some(callable) = &self.callback else {
             return Err(anyhow!("Custom node handler not provided"));
         };
 
@@ -45,8 +45,16 @@ impl CustomNodeAdapter for PyCustomNode {
                 return Ok(Either::Left(extract_custom_node_response(py, result)));
             }
 
-            let result_future = tokio::into_future(result.into_bound_py_any(py)?)?;
-            return Ok(Either::Right(result_future));
+            let Some(task_locals) = &self.task_locals else {
+                Err(anyhow!("Task locals are required in async context"))?
+            };
+
+            let result_future = pyo3_async_runtimes::into_future_with_locals(
+                task_locals,
+                result.into_bound_py_any(py)?,
+            )?;
+
+            Ok(Either::Right(result_future))
         });
 
         match maybe_result? {

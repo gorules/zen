@@ -78,6 +78,18 @@ class ZenEngine(unittest.TestCase):
         result = zen.render_template("{{ a + b }}", {"a": 10, "b": 20})
         self.assertEqual(result, 30)
 
+    def test_sleep_function(self):
+        engine = zen.ZenEngine({"loader": loader, "customHandler": custom_handler})
+
+        engine.evaluate("sleep-function.json", {})
+        self.assertTrue(True)
+
+    def test_http_function(self):
+        engine = zen.ZenEngine({"loader": loader, "customHandler": custom_handler})
+
+        engine.evaluate("http-function.json", {})
+        self.assertTrue(True)
+
     def test_evaluate_graphs(self):
         engine = zen.ZenEngine({"loader": graph_loader})
         json_files = glob.glob("../../test-data/graphs/*.json")

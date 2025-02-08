@@ -136,7 +136,8 @@ jobs:
     needs: [ linux, windows, macos, sdist ]
     steps:
       - uses: actions/download-artifact@v4
-        pattern: wheels-*
+        with:
+          pattern: wheels-*
 
       - name: Publish to PyPI
         if: "startsWith(github.event.head_commit.message, 'chore(release): publish python')"

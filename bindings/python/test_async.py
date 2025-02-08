@@ -27,7 +27,7 @@ def custom_handler(request):
 
 async def custom_async_handler(request):
     p1 = request.get_field("prop1")
-    await asyncio.sleep(0.25)
+    await asyncio.sleep(0.1)
     return {
         "output": {"sum": p1}
     }

@@ -40,7 +40,7 @@ mod test {
     use serde_json::json;
 
     #[test]
-    fn bla() {
+    fn example() {
         let context = json!({ "tax": { "percentage": 10 } });
         let tax_amount = evaluate_expression("50 * tax.percentage / 100", context.into()).unwrap();
 

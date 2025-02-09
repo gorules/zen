@@ -1,8 +1,9 @@
 use crate::compiler::error::{CompilerError, CompilerResult};
-use crate::compiler::opcode::Jump;
+use crate::compiler::opcode::{FetchFastTarget, Jump};
 use crate::compiler::{Opcode, TypeCheckKind, TypeConversionKind};
 use crate::lexer::{ArithmeticOperator, ComparisonOperator, LogicalOperator, Operator};
 use crate::parser::{BuiltInFunction, Node};
+use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::sync::Arc;
@@ -109,6 +110,35 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
         self.compile_node(arg)
     }
 
+    fn compile_member_fast(&mut self, node: &'arena Node<'arena>) -> Option<Vec<FetchFastTarget>> {
+        match node {
+            Node::Root => Some(vec![FetchFastTarget::Root]),
+            Node::Identifier(v) => Some(vec![
+                FetchFastTarget::Root,
+                FetchFastTarget::String(Arc::from(*v)),
+            ]),
+            Node::Member { node, property } => {
+                let mut path = self.compile_member_fast(node)?;
+                match property {
+                    Node::String(v) => {
+                        path.push(FetchFastTarget::String(Arc::from(*v)));
+                        Some(path)
+                    }
+                    Node::Number(v) => {
+                        if let Some(idx) = v.to_u32() {
+                            path.push(FetchFastTarget::Number(idx));
+                            Some(path)
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
     fn compile_node(&mut self, node: &'arena Node<'arena>) -> CompilerResult<usize> {
         match node {
             Node::Null => Ok(self.emit(Opcode::PushNull)),
@@ -137,10 +167,17 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
             Node::Identifier(v) => Ok(self.emit(Opcode::FetchEnv(Arc::from(*v)))),
             Node::Closure(v) => self.compile_node(v),
             Node::Parenthesized(v) => self.compile_node(v),
-            Node::Member { node, property } => {
-                self.compile_node(node)?;
-                self.compile_node(property)?;
-                Ok(self.emit(Opcode::Fetch))
+            Node::Member {
+                node: n,
+                property: p,
+            } => {
+                if let Some(path) = self.compile_member_fast(node) {
+                    Ok(self.emit(Opcode::FetchFast(path)))
+                } else {
+                    self.compile_node(n)?;
+                    self.compile_node(p)?;
+                    Ok(self.emit(Opcode::Fetch))
+                }
             }
             Node::TemplateString(parts) => {
                 parts.iter().try_for_each(|&n| {

@@ -4,15 +4,20 @@ use crate::{IsolateError, Variable};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
+#[derive(Debug, Clone)]
 pub struct Standard;
+
+#[derive(Debug, Clone)]
 pub struct Unary;
 
+#[derive(Debug, Clone)]
 pub enum ExpressionKind {
     Standard,
     Unary,
 }
 
 /// Compiled expression
+#[derive(Debug, Clone)]
 pub struct Expression<Kind> {
     bytecode: Arc<Vec<Opcode>>,
     _marker: PhantomData<Kind>,
@@ -38,10 +43,10 @@ impl Expression<Standard> {
 
     pub fn evaluate(&self, context: Variable) -> Result<Variable, IsolateError> {
         let mut vm = VM::new();
-        self.evaluate_in(context, &mut vm)
+        self.evaluate_with(context, &mut vm)
     }
 
-    pub fn evaluate_in(&self, context: Variable, vm: &mut VM) -> Result<Variable, IsolateError> {
+    pub fn evaluate_with(&self, context: Variable, vm: &mut VM) -> Result<Variable, IsolateError> {
         let output = vm.run(self.bytecode.as_slice(), context)?;
         Ok(output)
     }

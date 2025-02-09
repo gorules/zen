@@ -1,4 +1,4 @@
-use crate::compiler::{Jump, Opcode, TypeCheckKind, TypeConversionKind};
+use crate::compiler::{FetchFastTarget, Jump, Opcode, TypeCheckKind, TypeConversionKind};
 use crate::lexer::Bracket;
 use crate::variable::Variable;
 use crate::variable::Variable::*;
@@ -145,6 +145,27 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                         }
                         _ => self.push(Null),
                     }
+                }
+                Opcode::FetchFast(path) => {
+                    let variable = path.iter().fold(Null, |v, p| match p {
+                        FetchFastTarget::Root => env.clone(),
+                        FetchFastTarget::String(key) => match v {
+                            Object(obj) => {
+                                let obj_ref = obj.borrow();
+                                obj_ref.get(key.as_ref()).cloned().unwrap_or(Null)
+                            }
+                            _ => Null,
+                        },
+                        FetchFastTarget::Number(num) => match v {
+                            Array(arr) => {
+                                let arr_ref = arr.borrow();
+                                arr_ref.get(*num as usize).cloned().unwrap_or(Null)
+                            }
+                            _ => Null,
+                        },
+                    });
+
+                    self.push(variable);
                 }
                 Opcode::FetchEnv(f) => match &env {
                     Object(o) => {

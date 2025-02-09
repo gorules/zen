@@ -3,6 +3,13 @@ use rust_decimal::Decimal;
 use std::sync::Arc;
 use strum_macros::Display;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FetchFastTarget {
+    Root,
+    String(Arc<str>),
+    Number(u32),
+}
+
 /// Machine code interpreted by VM
 #[derive(Debug, PartialEq, Eq, Clone, Display)]
 pub enum Opcode {
@@ -15,6 +22,7 @@ pub enum Opcode {
     Fetch,
     FetchRootEnv,
     FetchEnv(Arc<str>),
+    FetchFast(Vec<FetchFastTarget>),
     Negate,
     Not,
     Equal,

@@ -25,6 +25,10 @@ impl Compiler {
         CompilerInner::new(&mut self.bytecode, root).compile()?;
         Ok(self.bytecode.as_slice())
     }
+
+    pub fn get_bytecode(&self) -> &[Opcode] {
+        self.bytecode.as_slice()
+    }
 }
 
 #[derive(Debug)]

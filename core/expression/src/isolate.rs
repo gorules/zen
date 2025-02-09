@@ -3,14 +3,17 @@ use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 use std::collections::HashMap;
 use std::hash::BuildHasherDefault;
+use std::sync::Arc;
 use thiserror::Error;
 
 use crate::arena::UnsafeArena;
-use crate::compiler::{Compiler, CompilerError, Opcode};
+use crate::compiler::{Compiler, CompilerError};
+use crate::expression::{Standard, Unary};
 use crate::lexer::{Lexer, LexerError};
 use crate::parser::{Parser, ParserError};
 use crate::variable::Variable;
 use crate::vm::{VMError, VM};
+use crate::{Expression, ExpressionKind};
 
 type ADefHasher = BuildHasherDefault<AHasher>;
 
@@ -96,99 +99,60 @@ impl<'a> Isolate<'a> {
         self.references.clear();
     }
 
+    fn run_internal(&mut self, source: &'a str, kind: ExpressionKind) -> Result<(), IsolateError> {
+        self.bump.with_mut(|b| b.reset());
+        let bump = self.bump.get();
+
+        let tokens = self.lexer.tokenize(source)?;
+
+        let base_parser = Parser::try_new(tokens, bump)?;
+        let parser_result = match kind {
+            ExpressionKind::Unary => base_parser.unary().parse(),
+            ExpressionKind::Standard => base_parser.standard().parse(),
+        };
+
+        parser_result.error()?;
+
+        self.compiler.compile(parser_result.root)?;
+
+        Ok(())
+    }
+
+    pub fn compile_standard(
+        &mut self,
+        source: &'a str,
+    ) -> Result<Expression<Standard>, IsolateError> {
+        self.run_internal(source, ExpressionKind::Standard)?;
+        let bytecode = self.compiler.get_bytecode().to_vec();
+
+        Ok(Expression::new_standard(Arc::new(bytecode)))
+    }
+
     pub fn run_standard(&mut self, source: &'a str) -> Result<Variable, IsolateError> {
-        self.bump.with_mut(|b| b.reset());
-        let bump = self.bump.get();
+        self.run_internal(source, ExpressionKind::Standard)?;
 
-        let tokens = self
-            .lexer
-            .tokenize(source)
-            .map_err(|source| IsolateError::LexerError { source })?;
-
-        let parser = Parser::try_new(tokens, bump)
-            .map_err(|source| IsolateError::ParserError { source })?
-            .standard();
-
-        let parser_result = parser.parse();
-        parser_result
-            .error()
-            .map_err(|source| IsolateError::ParserError { source })?;
-
-        let bytecode = self
-            .compiler
-            .compile(parser_result.root)
-            .map_err(|source| IsolateError::CompilerError { source })?;
-
+        let bytecode = self.compiler.get_bytecode();
         let result = self
             .vm
-            .run(bytecode, self.environment.clone().unwrap_or(Variable::Null))
-            .map_err(|source| IsolateError::VMError { source })?;
+            .run(bytecode, self.environment.clone().unwrap_or(Variable::Null))?;
 
         Ok(result)
     }
 
-    pub fn compile_standard(&mut self, source: &'a str) -> Result<Vec<Opcode>, IsolateError> {
-        self.bump.with_mut(|b| b.reset());
-        let bump = self.bump.get();
+    pub fn compile_unary(&mut self, source: &'a str) -> Result<Expression<Unary>, IsolateError> {
+        self.run_internal(source, ExpressionKind::Unary)?;
+        let bytecode = self.compiler.get_bytecode().to_vec();
 
-        let tokens = self
-            .lexer
-            .tokenize(source)
-            .map_err(|source| IsolateError::LexerError { source })?;
-
-        let parser = Parser::try_new(tokens, bump)
-            .map_err(|source| IsolateError::ParserError { source })?
-            .standard();
-
-        let parser_result = parser.parse();
-        parser_result
-            .error()
-            .map_err(|source| IsolateError::ParserError { source })?;
-
-        let bytecode = self
-            .compiler
-            .compile(parser_result.root)
-            .map_err(|source| IsolateError::CompilerError { source })?;
-
-        Ok(bytecode.to_vec())
-    }
-
-    pub fn run_compiled(&mut self, bytecode: &[Opcode]) -> Result<Variable, IsolateError> {
-        let result = self
-            .vm
-            .run(bytecode, self.environment.clone().unwrap_or(Variable::Null))
-            .map_err(|source| IsolateError::VMError { source })?;
-
-        Ok(result)
+        Ok(Expression::new_unary(Arc::new(bytecode)))
     }
 
     pub fn run_unary(&mut self, source: &'a str) -> Result<bool, IsolateError> {
-        self.bump.with_mut(|b| b.reset());
-        let bump = self.bump.get();
+        self.run_internal(source, ExpressionKind::Unary)?;
 
-        let tokens = self
-            .lexer
-            .tokenize(source)
-            .map_err(|source| IsolateError::LexerError { source })?;
-
-        let parser = Parser::try_new(tokens, bump)
-            .map_err(|source| IsolateError::ParserError { source })?
-            .unary();
-
-        let parser_result = parser.parse();
-        parser_result
-            .error()
-            .map_err(|source| IsolateError::ParserError { source })?;
-
-        let bytecode = self
-            .compiler
-            .compile(parser_result.root)
-            .map_err(|source| IsolateError::CompilerError { source })?;
-
+        let bytecode = self.compiler.get_bytecode();
         let result = self
             .vm
-            .run(bytecode, self.environment.clone().unwrap_or(Variable::Null))
-            .map_err(|source| IsolateError::VMError { source })?;
+            .run(bytecode, self.environment.clone().unwrap_or(Variable::Null))?;
 
         result.as_bool().ok_or_else(|| IsolateError::ValueCastError)
     }
@@ -255,5 +219,29 @@ impl Serialize for IsolateError {
         }
 
         map.end()
+    }
+}
+
+impl From<LexerError> for IsolateError {
+    fn from(source: LexerError) -> Self {
+        IsolateError::LexerError { source }
+    }
+}
+
+impl From<ParserError> for IsolateError {
+    fn from(source: ParserError) -> Self {
+        IsolateError::ParserError { source }
+    }
+}
+
+impl From<VMError> for IsolateError {
+    fn from(source: VMError) -> Self {
+        IsolateError::VMError { source }
+    }
+}
+
+impl From<CompilerError> for IsolateError {
+    fn from(source: CompilerError) -> Self {
+        IsolateError::CompilerError { source }
     }
 }

@@ -1,6 +1,9 @@
 use crate::decision::PyZenDecision;
 use crate::engine::PyZenEngine;
-use crate::expression::{evaluate_expression, evaluate_unary_expression, render_template};
+use crate::expression::{
+    compile_expression, compile_unary_expression, evaluate_expression, evaluate_unary_expression,
+    render_template, PyExpression,
+};
 use pyo3::prelude::PyModuleMethods;
 use pyo3::types::PyModule;
 use pyo3::{pymodule, wrap_pyfunction, Bound, PyResult, Python};
@@ -13,14 +16,18 @@ mod loader;
 mod mt;
 mod types;
 mod value;
+mod variable;
 
 #[pymodule]
 fn zen(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyZenEngine>()?;
     m.add_class::<PyZenDecision>()?;
+    m.add_class::<PyExpression>()?;
     m.add_function(wrap_pyfunction!(evaluate_expression, m)?)?;
     m.add_function(wrap_pyfunction!(evaluate_unary_expression, m)?)?;
     m.add_function(wrap_pyfunction!(render_template, m)?)?;
+    m.add_function(wrap_pyfunction!(compile_expression, m)?)?;
+    m.add_function(wrap_pyfunction!(compile_unary_expression, m)?)?;
 
     Ok(())
 }

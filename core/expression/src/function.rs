@@ -1,5 +1,6 @@
+use crate::expression::{Standard, Unary};
 use crate::variable::Variable;
-use crate::{Isolate, IsolateError};
+use crate::{Expression, Isolate, IsolateError};
 
 /// Evaluates a standard expression
 pub fn evaluate_expression(expression: &str, context: Variable) -> Result<Variable, IsolateError> {
@@ -23,13 +24,23 @@ pub fn evaluate_unary_expression(
     Isolate::with_environment(context).run_unary(expression)
 }
 
+/// Compiles a standard expression
+pub fn compile_expression(expression: &str) -> Result<Expression<Standard>, IsolateError> {
+    Isolate::new().compile_standard(expression)
+}
+
+/// Compiles an unary expression
+pub fn compile_unary_expression(expression: &str) -> Result<Expression<Unary>, IsolateError> {
+    Isolate::new().compile_unary(expression)
+}
+
 #[cfg(test)]
 mod test {
     use crate::evaluate_expression;
     use serde_json::json;
 
     #[test]
-    fn bla() {
+    fn example() {
         let context = json!({ "tax": { "percentage": 10 } });
         let tax_amount = evaluate_expression("50 * tax.percentage / 100", context.into()).unwrap();
 

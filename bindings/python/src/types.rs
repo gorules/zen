@@ -6,6 +6,7 @@ use serde_json::Value;
 use std::sync::Arc;
 
 use crate::value::{value_to_object, PyValue};
+use crate::variable::PyVariable;
 use zen_engine::handler::custom_node_adapter::{
     CustomDecisionNode as BaseCustomDecisionNode, CustomNodeRequest,
 };
@@ -74,7 +75,7 @@ impl PyNodeRequest {
         let template_value = zen_tmpl::render(template.as_str(), Variable::from(&self.inner_input))
             .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?;
 
-        PyValue(template_value.to_value()).into_py_any(py)
+        PyVariable(template_value).into_py_any(py)
     }
 
     fn get_field_raw(&self, py: Python, path: String) -> PyResult<Py<PyAny>> {

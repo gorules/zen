@@ -1,44 +1,45 @@
-use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
-use std::rc::Rc;
-
 use crate::compiler::error::{CompilerError, CompilerResult};
+use crate::compiler::opcode::{FetchFastTarget, Jump};
 use crate::compiler::{Opcode, TypeCheckKind, TypeConversionKind};
 use crate::lexer::{ArithmeticOperator, ComparisonOperator, LogicalOperator, Operator};
 use crate::parser::{BuiltInFunction, Node};
-use crate::variable::Variable;
+use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
+use std::sync::Arc;
 
 #[derive(Debug)]
-pub struct Compiler<'arena> {
-    bytecode: Vec<Opcode<'arena>>,
+pub struct Compiler {
+    bytecode: Vec<Opcode>,
 }
 
-impl<'arena> Compiler<'arena> {
+impl Compiler {
     pub fn new() -> Self {
         Self {
             bytecode: Default::default(),
         }
     }
 
-    pub fn compile(&mut self, root: &'arena Node<'arena>) -> CompilerResult<&[Opcode<'arena>]> {
+    pub fn compile(&mut self, root: &Node) -> CompilerResult<&[Opcode]> {
         self.bytecode.clear();
 
         CompilerInner::new(&mut self.bytecode, root).compile()?;
         Ok(self.bytecode.as_slice())
+    }
+
+    pub fn get_bytecode(&self) -> &[Opcode] {
+        self.bytecode.as_slice()
     }
 }
 
 #[derive(Debug)]
 struct CompilerInner<'arena, 'bytecode_ref> {
     root: &'arena Node<'arena>,
-    bytecode: &'bytecode_ref mut Vec<Opcode<'arena>>,
+    bytecode: &'bytecode_ref mut Vec<Opcode>,
 }
 
 impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
-    pub fn new(
-        bytecode: &'bytecode_ref mut Vec<Opcode<'arena>>,
-        root: &'arena Node<'arena>,
-    ) -> Self {
+    pub fn new(bytecode: &'bytecode_ref mut Vec<Opcode>, root: &'arena Node<'arena>) -> Self {
         Self { root, bytecode }
     }
 
@@ -47,7 +48,7 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
         Ok(())
     }
 
-    fn emit(&mut self, op: Opcode<'arena>) -> usize {
+    fn emit(&mut self, op: Opcode) -> usize {
         self.bytecode.push(op);
         self.bytecode.len()
     }
@@ -57,13 +58,16 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
         F: FnOnce(&mut Self) -> CompilerResult<()>,
     {
         let begin = self.bytecode.len();
-        let end = self.emit(Opcode::JumpIfEnd(0));
+        let end = self.emit(Opcode::Jump(Jump::IfEnd, 0));
 
         body(self)?;
 
         self.emit(Opcode::IncrementIt);
-        let e = self.emit(Opcode::JumpBackward(self.calc_backward_jump(begin)));
-        self.replace(end, Opcode::JumpIfEnd(e - end));
+        let e = self.emit(Opcode::Jump(
+            Jump::Backward,
+            self.calc_backward_jump(begin) as u32,
+        ));
+        self.replace(end, Opcode::Jump(Jump::IfEnd, (e - end) as u32));
         Ok(())
     }
 
@@ -71,18 +75,18 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
     where
         F: FnMut(&mut Self),
     {
-        let noop = self.emit(Opcode::JumpIfFalse(0));
+        let noop = self.emit(Opcode::Jump(Jump::IfFalse, 0));
         self.emit(Opcode::Pop);
 
         body(self);
 
-        let jmp = self.emit(Opcode::Jump(0));
-        self.replace(noop, Opcode::JumpIfFalse(jmp - noop));
+        let jmp = self.emit(Opcode::Jump(Jump::Forward, 0));
+        self.replace(noop, Opcode::Jump(Jump::IfFalse, (jmp - noop) as u32));
         let e = self.emit(Opcode::Pop);
-        self.replace(jmp, Opcode::Jump(e - jmp));
+        self.replace(jmp, Opcode::Jump(Jump::Forward, (e - jmp) as u32));
     }
 
-    fn replace(&mut self, at: usize, op: Opcode<'arena>) {
+    fn replace(&mut self, at: usize, op: Opcode) {
         let _ = std::mem::replace(&mut self.bytecode[at - 1], op);
     }
 
@@ -106,18 +110,47 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
         self.compile_node(arg)
     }
 
+    fn compile_member_fast(&mut self, node: &'arena Node<'arena>) -> Option<Vec<FetchFastTarget>> {
+        match node {
+            Node::Root => Some(vec![FetchFastTarget::Root]),
+            Node::Identifier(v) => Some(vec![
+                FetchFastTarget::Root,
+                FetchFastTarget::String(Arc::from(*v)),
+            ]),
+            Node::Member { node, property } => {
+                let mut path = self.compile_member_fast(node)?;
+                match property {
+                    Node::String(v) => {
+                        path.push(FetchFastTarget::String(Arc::from(*v)));
+                        Some(path)
+                    }
+                    Node::Number(v) => {
+                        if let Some(idx) = v.to_u32() {
+                            path.push(FetchFastTarget::Number(idx));
+                            Some(path)
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
     fn compile_node(&mut self, node: &'arena Node<'arena>) -> CompilerResult<usize> {
         match node {
-            Node::Null => Ok(self.emit(Opcode::Push(Variable::Null))),
-            Node::Bool(v) => Ok(self.emit(Opcode::Push(Variable::Bool(*v)))),
-            Node::Number(v) => Ok(self.emit(Opcode::Push(Variable::Number(*v)))),
-            Node::String(v) => Ok(self.emit(Opcode::Push(Variable::String(Rc::from(*v))))),
+            Node::Null => Ok(self.emit(Opcode::PushNull)),
+            Node::Bool(v) => Ok(self.emit(Opcode::PushBool(*v))),
+            Node::Number(v) => Ok(self.emit(Opcode::PushNumber(*v))),
+            Node::String(v) => Ok(self.emit(Opcode::PushString(Arc::from(*v)))),
             Node::Pointer => Ok(self.emit(Opcode::Pointer)),
             Node::Root => Ok(self.emit(Opcode::FetchRootEnv)),
             Node::Array(v) => {
                 v.iter()
                     .try_for_each(|&n| self.compile_node(n).map(|_| ()))?;
-                self.emit(Opcode::Push(Variable::Number(Decimal::from(v.len()))));
+                self.emit(Opcode::PushNumber(Decimal::from(v.len())));
                 Ok(self.emit(Opcode::Array))
             }
             Node::Object(v) => {
@@ -128,16 +161,23 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                     Ok(())
                 })?;
 
-                self.emit(Opcode::Push(Variable::Number(Decimal::from(v.len()))));
+                self.emit(Opcode::PushNumber(Decimal::from(v.len())));
                 Ok(self.emit(Opcode::Object))
             }
-            Node::Identifier(v) => Ok(self.emit(Opcode::FetchEnv(v))),
+            Node::Identifier(v) => Ok(self.emit(Opcode::FetchEnv(Arc::from(*v)))),
             Node::Closure(v) => self.compile_node(v),
             Node::Parenthesized(v) => self.compile_node(v),
-            Node::Member { node, property } => {
-                self.compile_node(node)?;
-                self.compile_node(property)?;
-                Ok(self.emit(Opcode::Fetch))
+            Node::Member {
+                node: n,
+                property: p,
+            } => {
+                if let Some(path) = self.compile_member_fast(node) {
+                    Ok(self.emit(Opcode::FetchFast(path)))
+                } else {
+                    self.compile_node(n)?;
+                    self.compile_node(p)?;
+                    Ok(self.emit(Opcode::Fetch))
+                }
             }
             Node::TemplateString(parts) => {
                 parts.iter().try_for_each(|&n| {
@@ -146,9 +186,9 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                     Ok(())
                 })?;
 
-                self.emit(Opcode::Push(Variable::Number(Decimal::from(parts.len()))));
+                self.emit(Opcode::PushNumber(Decimal::from(parts.len())));
                 self.emit(Opcode::Array);
-                self.emit(Opcode::Push(Variable::String(Rc::from(""))));
+                self.emit(Opcode::PushString(Arc::from("")));
                 Ok(self.emit(Opcode::Join))
             }
             Node::Slice { node, to, from } => {
@@ -157,14 +197,14 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                     self.compile_node(t)?;
                 } else {
                     self.emit(Opcode::Len);
-                    self.emit(Opcode::Push(Variable::Number(dec!(1))));
+                    self.emit(Opcode::PushNumber(dec!(1)));
                     self.emit(Opcode::Subtract);
                 }
 
                 if let Some(f) = from {
                     self.compile_node(f)?;
                 } else {
-                    self.emit(Opcode::Push(Variable::Number(dec!(0))));
+                    self.emit(Opcode::PushNumber(dec!(0)));
                 }
 
                 Ok(self.emit(Opcode::Slice))
@@ -178,8 +218,8 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                 self.compile_node(left)?;
                 self.compile_node(right)?;
                 Ok(self.emit(Opcode::Interval {
-                    left_bracket,
-                    right_bracket,
+                    left_bracket: *left_bracket,
+                    right_bracket: *right_bracket,
                 }))
             }
             Node::Conditional {
@@ -188,16 +228,19 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                 on_false,
             } => {
                 self.compile_node(condition)?;
-                let otherwise = self.emit(Opcode::JumpIfFalse(0));
+                let otherwise = self.emit(Opcode::Jump(Jump::IfFalse, 0));
 
                 self.emit(Opcode::Pop);
                 self.compile_node(on_true)?;
-                let end = self.emit(Opcode::Jump(0));
+                let end = self.emit(Opcode::Jump(Jump::Forward, 0));
 
-                self.replace(otherwise, Opcode::JumpIfFalse(end - otherwise));
+                self.replace(
+                    otherwise,
+                    Opcode::Jump(Jump::IfFalse, (end - otherwise) as u32),
+                );
                 self.emit(Opcode::Pop);
                 let b = self.compile_node(on_false)?;
-                self.replace(end, Opcode::Jump(b - end));
+                self.replace(end, Opcode::Jump(Jump::Forward, (b - end) as u32));
 
                 Ok(b)
             }
@@ -234,28 +277,28 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                 }
                 Operator::Logical(LogicalOperator::Or) => {
                     self.compile_node(left)?;
-                    let end = self.emit(Opcode::JumpIfTrue(0));
+                    let end = self.emit(Opcode::Jump(Jump::IfTrue, 0));
                     self.emit(Opcode::Pop);
                     let r = self.compile_node(right)?;
-                    self.replace(end, Opcode::JumpIfTrue(r - end));
+                    self.replace(end, Opcode::Jump(Jump::IfTrue, (r - end) as u32));
 
                     Ok(r)
                 }
                 Operator::Logical(LogicalOperator::And) => {
                     self.compile_node(left)?;
-                    let end = self.emit(Opcode::JumpIfFalse(0));
+                    let end = self.emit(Opcode::Jump(Jump::IfFalse, 0));
                     self.emit(Opcode::Pop);
                     let r = self.compile_node(right)?;
-                    self.replace(end, Opcode::JumpIfFalse(r - end));
+                    self.replace(end, Opcode::Jump(Jump::IfFalse, (r - end) as u32));
 
                     Ok(r)
                 }
                 Operator::Logical(LogicalOperator::NullishCoalescing) => {
                     self.compile_node(left)?;
-                    let end = self.emit(Opcode::JumpIfNotNull(0));
+                    let end = self.emit(Opcode::Jump(Jump::IfNotNull, 0));
                     self.emit(Opcode::Pop);
                     let r = self.compile_node(right)?;
-                    self.replace(end, Opcode::JumpIfNotNull(r - end));
+                    self.replace(end, Opcode::Jump(Jump::IfNotNull, (r - end) as u32));
 
                     Ok(r)
                 }
@@ -470,7 +513,11 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                 BuiltInFunction::StartOf | BuiltInFunction::EndOf => {
                     self.compile_argument(kind, arguments, 0)?;
                     self.compile_argument(kind, arguments, 1)?;
-                    Ok(self.emit(Opcode::DateFunction(kind.into())))
+                    Ok(
+                        self.emit(Opcode::DateFunction(Arc::from(Into::<&'static str>::into(
+                            kind,
+                        )))),
+                    )
                 }
                 BuiltInFunction::DayOfWeek
                 | BuiltInFunction::DayOfMonth
@@ -482,7 +529,9 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                 | BuiltInFunction::Year
                 | BuiltInFunction::DateString => {
                     self.compile_argument(kind, arguments, 0)?;
-                    Ok(self.emit(Opcode::DateManipulation(kind.into())))
+                    Ok(self.emit(Opcode::DateManipulation(Arc::from(
+                        Into::<&'static str>::into(kind),
+                    ))))
                 }
                 BuiltInFunction::All => {
                     self.compile_argument(kind, arguments, 0)?;
@@ -490,12 +539,15 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                     let mut loop_break: usize = 0;
                     self.emit_loop(|c| {
                         c.compile_argument(kind, arguments, 1)?;
-                        loop_break = c.emit(Opcode::JumpIfFalse(0));
+                        loop_break = c.emit(Opcode::Jump(Jump::IfFalse, 0));
                         c.emit(Opcode::Pop);
                         Ok(())
                     })?;
-                    let e = self.emit(Opcode::Push(Variable::Bool(true)));
-                    self.replace(loop_break, Opcode::JumpIfFalse(e - loop_break));
+                    let e = self.emit(Opcode::PushBool(true));
+                    self.replace(
+                        loop_break,
+                        Opcode::Jump(Jump::IfFalse, (e - loop_break) as u32),
+                    );
                     Ok(self.emit(Opcode::End))
                 }
                 BuiltInFunction::None => {
@@ -505,12 +557,15 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                     self.emit_loop(|c| {
                         c.compile_argument(kind, arguments, 1)?;
                         c.emit(Opcode::Not);
-                        loop_break = c.emit(Opcode::JumpIfFalse(0));
+                        loop_break = c.emit(Opcode::Jump(Jump::IfFalse, 0));
                         c.emit(Opcode::Pop);
                         Ok(())
                     })?;
-                    let e = self.emit(Opcode::Push(Variable::Bool(true)));
-                    self.replace(loop_break, Opcode::JumpIfFalse(e - loop_break));
+                    let e = self.emit(Opcode::PushBool(true));
+                    self.replace(
+                        loop_break,
+                        Opcode::Jump(Jump::IfFalse, (e - loop_break) as u32),
+                    );
                     Ok(self.emit(Opcode::End))
                 }
                 BuiltInFunction::Some => {
@@ -519,12 +574,15 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                     let mut loop_break: usize = 0;
                     self.emit_loop(|c| {
                         c.compile_argument(kind, arguments, 1)?;
-                        loop_break = c.emit(Opcode::JumpIfTrue(0));
+                        loop_break = c.emit(Opcode::Jump(Jump::IfTrue, 0));
                         c.emit(Opcode::Pop);
                         Ok(())
                     })?;
-                    let e = self.emit(Opcode::Push(Variable::Bool(false)));
-                    self.replace(loop_break, Opcode::JumpIfTrue(e - loop_break));
+                    let e = self.emit(Opcode::PushBool(false));
+                    self.replace(
+                        loop_break,
+                        Opcode::Jump(Jump::IfTrue, (e - loop_break) as u32),
+                    );
                     Ok(self.emit(Opcode::End))
                 }
                 BuiltInFunction::One => {
@@ -538,7 +596,7 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                         Ok(())
                     })?;
                     self.emit(Opcode::GetCount);
-                    self.emit(Opcode::Push(Variable::Number(dec!(1))));
+                    self.emit(Opcode::PushNumber(dec!(1)));
                     self.emit(Opcode::Equal);
                     Ok(self.emit(Opcode::End))
                 }

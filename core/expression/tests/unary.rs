@@ -2,7 +2,7 @@ use bumpalo::Bump;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
-use zen_expression::lexer::{ComparisonOperator, Lexer, LogicalOperator, Operator};
+use zen_expression::lexer::{Bracket, ComparisonOperator, Lexer, LogicalOperator, Operator};
 use zen_expression::parser::{BuiltInFunction, Node, Parser};
 
 struct UnaryTest {
@@ -66,8 +66,8 @@ fn unary_test() {
                 operator: Operator::Comparison(ComparisonOperator::In),
                 left: &Node::Identifier("$"),
                 right: &Node::Interval {
-                    left_bracket: "[",
-                    right_bracket: "]",
+                    left_bracket: Bracket::LeftSquareBracket,
+                    right_bracket: Bracket::RightSquareBracket,
                     left: &Node::Number(D1),
                     right: &Node::Number(D10),
                 },
@@ -79,8 +79,8 @@ fn unary_test() {
                 operator: Operator::Comparison(ComparisonOperator::In),
                 left: &Node::Identifier("$"),
                 right: &Node::Interval {
-                    left_bracket: "[",
-                    right_bracket: "]",
+                    left_bracket: Bracket::LeftSquareBracket,
+                    right_bracket: Bracket::RightSquareBracket,
                     left: &Node::Number(D1),
                     right: &Node::Number(D10),
                 },
@@ -92,8 +92,8 @@ fn unary_test() {
                 operator: Operator::Comparison(ComparisonOperator::NotIn),
                 left: &Node::Identifier("$"),
                 right: &Node::Interval {
-                    left_bracket: "[",
-                    right_bracket: "]",
+                    left_bracket: Bracket::LeftSquareBracket,
+                    right_bracket: Bracket::RightSquareBracket,
                     left: &Node::Number(D1),
                     right: &Node::Number(D10),
                 },

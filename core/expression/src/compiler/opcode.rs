@@ -1,24 +1,32 @@
-use crate::variable::Variable;
+use crate::lexer::Bracket;
+use rust_decimal::Decimal;
+use std::sync::Arc;
 use strum_macros::Display;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FetchFastTarget {
+    Root,
+    String(Arc<str>),
+    Number(u32),
+}
+
 /// Machine code interpreted by VM
-#[derive(Debug, PartialEq, Eq, Display)]
-pub enum Opcode<'a> {
-    Push(Variable),
+#[derive(Debug, PartialEq, Eq, Clone, Display)]
+pub enum Opcode {
+    PushNull,
+    PushBool(bool),
+    PushString(Arc<str>),
+    PushNumber(Decimal),
     Pop,
     Rot,
     Fetch,
     FetchRootEnv,
-    FetchEnv(&'a str),
+    FetchEnv(Arc<str>),
+    FetchFast(Vec<FetchFastTarget>),
     Negate,
     Not,
     Equal,
-    Jump(usize),
-    JumpIfTrue(usize),
-    JumpIfFalse(usize),
-    JumpIfNotNull(usize),
-    JumpIfEnd(usize),
-    JumpBackward(usize),
+    Jump(Jump, u32),
     In,
     Less,
     More,
@@ -42,14 +50,14 @@ pub enum Opcode<'a> {
     Modulo,
     Exponent,
     Interval {
-        left_bracket: &'a str,
-        right_bracket: &'a str,
+        left_bracket: Bracket,
+        right_bracket: Bracket,
     },
     Contains,
     Keys,
     Values,
-    DateFunction(&'a str),
-    DateManipulation(&'a str),
+    DateFunction(Arc<str>),
+    DateManipulation(Arc<str>),
     Uppercase,
     Lowercase,
     StartsWith,
@@ -78,6 +86,16 @@ pub enum Opcode<'a> {
     GetType,
     TypeConversion(TypeConversionKind),
     TypeCheck(TypeCheckKind),
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Display)]
+pub enum Jump {
+    Forward,
+    Backward,
+    IfTrue,
+    IfFalse,
+    IfNotNull,
+    IfEnd,
 }
 
 /// Metadata for TypeConversion Opcode

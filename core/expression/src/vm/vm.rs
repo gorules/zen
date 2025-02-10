@@ -1,4 +1,5 @@
-use crate::compiler::{Opcode, TypeCheckKind, TypeConversionKind};
+use crate::compiler::{FetchFastTarget, Jump, Opcode, TypeCheckKind, TypeConversionKind};
+use crate::lexer::Bracket;
 use crate::variable::Variable;
 use crate::variable::Variable::*;
 use crate::vm::error::VMError::*;
@@ -50,16 +51,16 @@ impl VM {
     }
 }
 
-struct VMInner<'arena, 'parent_ref, 'bytecode_ref> {
+struct VMInner<'parent_ref, 'bytecode_ref> {
     scopes: &'parent_ref mut Vec<Scope>,
     stack: &'parent_ref mut Vec<Variable>,
-    bytecode: &'bytecode_ref [Opcode<'arena>],
-    ip: usize,
+    bytecode: &'bytecode_ref [Opcode],
+    ip: u32,
 }
 
-impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_ref> {
+impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
     pub fn new(
-        bytecode: &'bytecode_ref [Opcode<'arena>],
+        bytecode: &'bytecode_ref [Opcode],
         stack: &'parent_ref mut Vec<Variable>,
         scopes: &'parent_ref mut Vec<Scope>,
     ) -> Self {
@@ -86,21 +87,22 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
             self.ip = 0;
         }
 
-        while self.ip < self.bytecode.len() {
+        while self.ip < self.bytecode.len() as u32 {
             let op = self
                 .bytecode
-                .get(self.ip)
+                .get(self.ip as usize)
                 .ok_or_else(|| OpcodeOutOfBounds {
                     bytecode: format!("{:?}", self.bytecode),
-                    index: self.ip,
+                    index: self.ip as usize,
                 })?;
 
             self.ip += 1;
 
             match op {
-                Opcode::Push(v) => {
-                    self.push(v.clone());
-                }
+                Opcode::PushNull => self.push(Null),
+                Opcode::PushBool(b) => self.push(Bool(*b)),
+                Opcode::PushNumber(n) => self.push(Number(*n)),
+                Opcode::PushString(s) => self.push(String(Rc::from(s.as_ref()))),
                 Opcode::Pop => {
                     self.pop()?;
                 }
@@ -144,10 +146,31 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                         _ => self.push(Null),
                     }
                 }
+                Opcode::FetchFast(path) => {
+                    let variable = path.iter().fold(Null, |v, p| match p {
+                        FetchFastTarget::Root => env.clone(),
+                        FetchFastTarget::String(key) => match v {
+                            Object(obj) => {
+                                let obj_ref = obj.borrow();
+                                obj_ref.get(key.as_ref()).cloned().unwrap_or(Null)
+                            }
+                            _ => Null,
+                        },
+                        FetchFastTarget::Number(num) => match v {
+                            Array(arr) => {
+                                let arr_ref = arr.borrow();
+                                arr_ref.get(*num as usize).cloned().unwrap_or(Null)
+                            }
+                            _ => Null,
+                        },
+                    });
+
+                    self.push(variable);
+                }
                 Opcode::FetchEnv(f) => match &env {
                     Object(o) => {
                         let obj = o.borrow();
-                        match obj.get(*f) {
+                        match obj.get(f.as_ref()) {
                             None => self.push(Null),
                             Some(v) => self.push(v.clone()),
                         }
@@ -210,62 +233,72 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                         }
                     }
                 }
-                Opcode::Jump(j) => self.ip += j,
-                Opcode::JumpIfTrue(j) => {
-                    let a = self.stack.last().ok_or_else(|| OpcodeErr {
-                        opcode: "JumpIfTrue".into(),
-                        message: "Undefined object key".into(),
-                    })?;
-                    match a {
-                        Bool(a) => {
-                            if *a {
+                Opcode::Jump(kind, j) => match kind {
+                    Jump::Forward => self.ip += j,
+                    Jump::Backward => self.ip -= j,
+                    Jump::IfTrue => {
+                        let a = self.stack.last().ok_or_else(|| OpcodeErr {
+                            opcode: "JumpIfTrue".into(),
+                            message: "Undefined object key".into(),
+                        })?;
+                        match a {
+                            Bool(a) => {
+                                if *a {
+                                    self.ip += j;
+                                }
+                            }
+                            _ => {
+                                return Err(OpcodeErr {
+                                    opcode: "JumpIfTrue".into(),
+                                    message: "Unsupported type".into(),
+                                });
+                            }
+                        }
+                    }
+                    Jump::IfFalse => {
+                        let a = self.stack.last().ok_or_else(|| OpcodeErr {
+                            opcode: "JumpIfFalse".into(),
+                            message: "Empty array".into(),
+                        })?;
+
+                        match a {
+                            Bool(a) => {
+                                if !*a {
+                                    self.ip += j;
+                                }
+                            }
+                            _ => {
+                                return Err(OpcodeErr {
+                                    opcode: "JumpIfFalse".into(),
+                                    message: "Unsupported type".into(),
+                                });
+                            }
+                        }
+                    }
+                    Jump::IfNotNull => {
+                        let a = self.stack.last().ok_or_else(|| OpcodeErr {
+                            opcode: "JumpIfNull".into(),
+                            message: "Empty array".into(),
+                        })?;
+
+                        match a {
+                            Null => {}
+                            _ => {
                                 self.ip += j;
                             }
                         }
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "JumpIfTrue".into(),
-                                message: "Unsupported type".into(),
-                            });
-                        }
                     }
-                }
-                Opcode::JumpIfFalse(j) => {
-                    let a = self.stack.last().ok_or_else(|| OpcodeErr {
-                        opcode: "JumpIfFalse".into(),
-                        message: "Empty array".into(),
-                    })?;
+                    Jump::IfEnd => {
+                        let scope = self.scopes.last().ok_or_else(|| OpcodeErr {
+                            opcode: "JumpIfEnd".into(),
+                            message: "Empty stack".into(),
+                        })?;
 
-                    match a {
-                        Bool(a) => {
-                            if !*a {
-                                self.ip += j;
-                            }
-                        }
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "JumpIfFalse".into(),
-                                message: "Unsupported type".into(),
-                            });
-                        }
-                    }
-                }
-                Opcode::JumpIfNotNull(j) => {
-                    let a = self.stack.last().ok_or_else(|| OpcodeErr {
-                        opcode: "JumpIfNull".into(),
-                        message: "Empty array".into(),
-                    })?;
-
-                    match a {
-                        Null => {}
-                        _ => {
+                        if scope.iter >= scope.len {
                             self.ip += j;
                         }
                     }
-                }
-                Opcode::JumpBackward(j) => {
-                    self.ip -= j;
-                }
+                },
                 Opcode::In => {
                     let b = self.pop()?;
                     let a = self.pop()?;
@@ -291,35 +324,35 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                                 (Number(l), Number(r)) => {
                                     let mut is_open = false;
 
-                                    let first = match interval.left_bracket.as_ref() {
-                                        "[" => l <= v,
-                                        "(" => l < v,
-                                        "]" => {
-                                            is_open = true;
-                                            l >= v
-                                        }
-                                        ")" => {
+                                    let first = match interval.left_bracket {
+                                        Bracket::LeftParenthesis => l < v,
+                                        Bracket::LeftSquareBracket => l <= v,
+                                        Bracket::RightParenthesis => {
                                             is_open = true;
                                             l > v
                                         }
+                                        Bracket::RightSquareBracket => {
+                                            is_open = true;
+                                            l >= v
+                                        }
                                         _ => {
                                             return Err(OpcodeErr {
                                                 opcode: "In".into(),
                                                 message: "Unsupported bracket".into(),
-                                            });
+                                            })
                                         }
                                     };
 
-                                    let second = match interval.right_bracket.as_ref() {
-                                        "]" => r >= v,
-                                        ")" => r > v,
-                                        "[" => r <= v,
-                                        "(" => r < v,
+                                    let second = match interval.right_bracket {
+                                        Bracket::RightParenthesis => r > v,
+                                        Bracket::RightSquareBracket => r >= v,
+                                        Bracket::LeftParenthesis => r < v,
+                                        Bracket::LeftSquareBracket => r <= v,
                                         _ => {
                                             return Err(OpcodeErr {
                                                 opcode: "In".into(),
                                                 message: "Unsupported bracket".into(),
-                                            });
+                                            })
                                         }
                                     };
 
@@ -849,8 +882,8 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     match (&a, &b) {
                         (Number(_), Number(_)) => {
                             let interval = IntervalObject {
-                                left_bracket: Rc::from(*left_bracket),
-                                right_bracket: Rc::from(*right_bracket),
+                                left_bracket: *left_bracket,
+                                right_bracket: *right_bracket,
                                 left: a,
                                 right: b,
                             };
@@ -1176,7 +1209,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                     let timestamp = self.pop()?;
 
                     let time: NaiveDateTime = (&timestamp).try_into()?;
-                    let var = match *operation {
+                    let var = match operation.as_ref() {
                         "year" => Number(time.year().into()),
                         "dayOfWeek" => Number(time.weekday().number_from_monday().into()),
                         "dayOfMonth" => Number(time.day().into()),
@@ -1208,7 +1241,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                         });
                     };
 
-                    let s = match *name {
+                    let s = match name.as_ref() {
                         "startOf" => date_time_start_of(date_time, unit_name.as_ref().try_into()?),
                         "endOf" => date_time_end_of(date_time, unit_name.as_ref().try_into()?),
                         _ => {
@@ -1508,16 +1541,6 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'arena, 'parent_ref, 'bytecode_
                 Opcode::GetType => {
                     let var = self.pop()?;
                     self.push(String(Rc::from(var.type_name())));
-                }
-                Opcode::JumpIfEnd(j) => {
-                    let scope = self.scopes.last().ok_or_else(|| OpcodeErr {
-                        opcode: "JumpIfEnd".into(),
-                        message: "Empty stack".into(),
-                    })?;
-
-                    if scope.iter >= scope.len {
-                        self.ip += j;
-                    }
                 }
                 Opcode::IncrementIt => {
                     let scope = self.scopes.last_mut().ok_or_else(|| OpcodeErr {

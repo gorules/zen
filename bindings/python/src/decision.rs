@@ -1,5 +1,10 @@
 use std::sync::Arc;
 
+use crate::custom_node::PyCustomNode;
+use crate::engine::PyZenEvaluateOptions;
+use crate::loader::PyDecisionLoader;
+use crate::mt::worker_pool;
+use crate::value::PyValue;
 use anyhow::{anyhow, Context};
 use pyo3::types::PyDict;
 use pyo3::{pyclass, pymethods, Bound, IntoPyObjectExt, Py, PyAny, PyResult, Python};
@@ -9,12 +14,7 @@ use pyo3_async_runtimes::tokio::re_exports::runtime::Runtime;
 use pythonize::depythonize;
 use serde_json::Value;
 use zen_engine::{Decision, EvaluationOptions};
-
-use crate::custom_node::PyCustomNode;
-use crate::engine::PyZenEvaluateOptions;
-use crate::loader::PyDecisionLoader;
-use crate::mt::worker_pool;
-use crate::value::PyValue;
+use zen_expression::Variable;
 
 #[pyclass]
 #[pyo3(name = "ZenDecision")]
@@ -35,7 +35,7 @@ impl PyZenDecision {
         ctx: &Bound<'_, PyDict>,
         opts: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Py<PyAny>> {
-        let context: Value = depythonize(ctx).context("Failed to convert dict")?;
+        let context: Variable = depythonize(ctx).context("Failed to convert dict")?;
         let options: PyZenEvaluateOptions = if let Some(op) = opts {
             depythonize(op).context("Failed to convert dict")?
         } else {
@@ -47,7 +47,7 @@ impl PyZenDecision {
         let rt = Runtime::new()?;
         let result = rt
             .block_on(decision.evaluate_with_opts(
-                context.into(),
+                context,
                 EvaluationOptions {
                     max_depth: options.max_depth,
                     trace: options.trace,

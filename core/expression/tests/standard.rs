@@ -4,7 +4,7 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 use zen_expression::lexer::{
-    ArithmeticOperator, ComparisonOperator, Lexer, LogicalOperator, Operator,
+    ArithmeticOperator, Bracket, ComparisonOperator, Lexer, LogicalOperator, Operator,
 };
 use zen_expression::parser::{Node, Parser};
 
@@ -30,10 +30,10 @@ fn standard_test() {
         StandardTest {
             src: ")10..25(",
             result: &Node::Interval {
-                left_bracket: ")",
+                left_bracket: Bracket::RightParenthesis,
+                right_bracket: Bracket::LeftParenthesis,
                 left: &Node::Number(D10),
                 right: &Node::Number(D25),
-                right_bracket: "(",
             },
         },
         StandardTest {
@@ -223,10 +223,10 @@ fn standard_test() {
                 left: &Node::Identifier("x"),
                 operator: Operator::Comparison(ComparisonOperator::NotIn),
                 right: &Node::Interval {
-                    left_bracket: "(",
+                    left_bracket: Bracket::LeftParenthesis,
                     left: &Node::Number(D1),
                     right: &Node::Number(D9),
-                    right_bracket: "]",
+                    right_bracket: Bracket::RightSquareBracket,
                 },
             },
         },

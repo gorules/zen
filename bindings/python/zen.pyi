@@ -42,14 +42,5 @@ def compile_expression(expression: str) -> Expression: ...
 
 def compile_unary_expression(expression: str) -> Expression: ...
 
-
-class ExpressionResult(TypedDict):
-    success: bool
-    result: Optional[Any]
-    error: Optional[str]
-
-
 class Expression:
     def evaluate(self, ctx: Optional[dict] = None) -> Any: ...
-
-    def evaluate_many(self, ctxs: list[dict]) -> list[ExpressionResult]: ...

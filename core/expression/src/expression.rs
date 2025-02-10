@@ -66,10 +66,10 @@ impl Expression<Unary> {
 
     pub fn evaluate(&self, context: Variable) -> Result<bool, IsolateError> {
         let mut vm = VM::new();
-        self.evaluate_in(context, &mut vm)
+        self.evaluate_with(context, &mut vm)
     }
 
-    pub fn evaluate_in(&self, context: Variable, vm: &mut VM) -> Result<bool, IsolateError> {
+    pub fn evaluate_with(&self, context: Variable, vm: &mut VM) -> Result<bool, IsolateError> {
         let Some(context_object_ref) = context.as_object() else {
             return Err(IsolateError::MissingContextReference);
         };

@@ -110,7 +110,9 @@ impl PyExpression {
             .map(|context| {
                 let result = match &self.expression {
                     Either::Left(standard) => standard.evaluate_with(context, &mut vm),
-                    Either::Right(unary) => unary.evaluate_in(context, &mut vm).map(Variable::Bool),
+                    Either::Right(unary) => {
+                        unary.evaluate_with(context, &mut vm).map(Variable::Bool)
+                    }
                 };
 
                 match result {

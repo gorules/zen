@@ -67,10 +67,16 @@ impl<'a> DecisionTableHandlerInner<'a> {
 
                     self_ref.isolate.clear_references();
                     self_ref.isolate.set_environment(input);
-                    match &content.hit_policy {
+                    let output = match &content.hit_policy {
                         DecisionTableHitPolicy::First => self_ref.handle_first_hit(&content).await,
                         DecisionTableHitPolicy::Collect => self_ref.handle_collect(&content).await,
-                    }
+                    };
+
+                    if let Ok(ok) = &output {
+                        ok.output.dot_remove("$");
+                    };
+
+                    output
                 }
             })
             .await

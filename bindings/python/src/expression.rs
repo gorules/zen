@@ -1,18 +1,11 @@
 use crate::variable::PyVariable;
 use anyhow::{anyhow, Context};
-use bumpalo::Bump;
 use either::Either;
-use pyo3::types::PyDict;
+use pyo3::types::{PyAnyMethods, PyDict};
 use pyo3::{pyclass, pyfunction, pymethods, Bound, IntoPyObjectExt, Py, PyAny, PyResult, Python};
 use pythonize::depythonize;
-use serde_json::Value;
-use zen_expression::compiler::Compiler;
-use zen_expression::lexer::Lexer;
-use zen_expression::parser::Parser;
-use zen_expression::IsolateError;
-
-use crate::value::PyValue;
 use zen_expression::expression::{Standard, Unary};
+use zen_expression::validate::{get_error, get_unary_error, ValidationError};
 use zen_expression::{Expression, Variable};
 
 #[pyfunction]
@@ -107,99 +100,24 @@ impl PyExpression {
 }
 
 #[pyfunction]
-pub fn validate_expression(py: Python, expression: String) -> PyResult<PyObject> {
+pub fn validate_expression(py: Python, expression: String) -> PyResult<Option<Py<PyDict>>> {
     let Some(err) = get_error(expression.as_str()) else {
-        return Ok(py.None());
+        return Ok(None);
     };
-    return Ok(PyValue(err).to_object(py));
+    return Ok(Some(convert_error_to_dict(py, &err)));
 }
 
 #[pyfunction]
-pub fn validate_unary_expression(py: Python, expression: String) -> PyResult<PyObject> {
+pub fn validate_unary_expression(py: Python, expression: String) -> PyResult<Option<Py<PyDict>>> {
     let Some(err) = get_unary_error(expression.as_str()) else {
-        return Ok(py.None());
+        return Ok(None);
     };
-    return Ok(PyValue(err).to_object(py));
+    return Ok(Some(convert_error_to_dict(py, &err)));
 }
 
-fn get_unary_error(expression: &str) -> Option<Value> {
-    let mut lexer = Lexer::new();
-    let tokens = match lexer.tokenize(expression) {
-        Err(e) => {
-            return serde_json::to_value(IsolateError::LexerError { source: e })
-                .ok()
-                .into()
-        }
-        Ok(tokens) => tokens,
-    };
-
-    let bump = Bump::new();
-    let parser = match Parser::try_new(tokens, &bump) {
-        Err(e) => {
-            return serde_json::to_value(IsolateError::ParserError { source: e })
-                .ok()
-                .into()
-        }
-        Ok(p) => p.unary(),
-    };
-
-    let parser_result = parser.parse();
-    match parser_result.error() {
-        Err(e) => {
-            return serde_json::to_value(IsolateError::ParserError { source: e })
-                .ok()
-                .into()
-        }
-        Ok(n) => n,
-    };
-
-    let mut compiler = Compiler::new();
-    if let Err(e) = compiler.compile(parser_result.root) {
-        return serde_json::to_value(IsolateError::CompilerError { source: e })
-            .ok()
-            .into();
-    }
-
-    None
-}
-
-fn get_error(expression: &str) -> Option<Value> {
-    let mut lexer = Lexer::new();
-    let tokens = match lexer.tokenize(expression) {
-        Err(e) => {
-            return serde_json::to_value(IsolateError::LexerError { source: e })
-                .ok()
-                .into()
-        }
-        Ok(tokens) => tokens,
-    };
-
-    let bump = Bump::new();
-    let parser = match Parser::try_new(tokens, &bump) {
-        Err(e) => {
-            return serde_json::to_value(IsolateError::ParserError { source: e })
-                .ok()
-                .into()
-        }
-        Ok(p) => p.standard(),
-    };
-
-    let parser_result = parser.parse();
-    match parser_result.error() {
-        Err(e) => {
-            return serde_json::to_value(IsolateError::ParserError { source: e })
-                .ok()
-                .into()
-        }
-        Ok(n) => n,
-    };
-
-    let mut compiler = Compiler::new();
-    if let Err(e) = compiler.compile(parser_result.root) {
-        return serde_json::to_value(IsolateError::CompilerError { source: e })
-            .ok()
-            .into();
-    }
-
-    None
+fn convert_error_to_dict(py: Python, err: &ValidationError) -> Py<PyDict> {
+    let dict = PyDict::new(py);
+    dict.set_item("type", &err.error_type).unwrap();
+    dict.set_item("source", &err.source).unwrap();
+    return dict.unbind();
 }

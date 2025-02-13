@@ -64,6 +64,7 @@ mod function;
 pub mod intellisense;
 pub mod lexer;
 pub mod parser;
+pub mod validate;
 pub mod variable;
 pub mod vm;
 

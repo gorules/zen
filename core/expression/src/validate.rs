@@ -7,7 +7,7 @@ pub struct ValidationError {
     pub source: String,
 }
 
-pub fn get_unary_error(expression: &str) -> Option<ValidationError> {
+pub fn validate_unary_expression(expression: &str) -> Option<ValidationError> {
     let mut lexer = Lexer::new();
     let tokens = match lexer.tokenize(expression) {
         Err(e) => {
@@ -52,7 +52,7 @@ pub fn get_unary_error(expression: &str) -> Option<ValidationError> {
     None
 }
 
-pub fn get_error(expression: &str) -> Option<ValidationError> {
+pub fn validate_expression(expression: &str) -> Option<ValidationError> {
     let mut lexer = Lexer::new();
     let tokens = match lexer.tokenize(expression) {
         Err(e) => {

@@ -1,11 +1,12 @@
 use anyhow::{anyhow, Context};
 use json_dotpath::DotPaths;
-use pyo3::{pyclass, pymethods, PyObject, PyResult, Python, ToPyObject};
+use pyo3::{pyclass, pymethods, IntoPyObjectExt, Py, PyAny, PyResult, Python};
 use serde::Serialize;
 use serde_json::Value;
 use std::sync::Arc;
 
 use crate::value::{value_to_object, PyValue};
+use crate::variable::PyVariable;
 use zen_engine::handler::custom_node_adapter::{
     CustomDecisionNode as BaseCustomDecisionNode, CustomNodeRequest,
 };
@@ -37,9 +38,9 @@ pub struct PyNodeRequest {
     inner_input: Value,
 
     #[pyo3(get)]
-    pub input: PyObject,
+    pub input: Py<PyAny>,
     #[pyo3(get)]
-    pub node: PyObject,
+    pub node: Py<PyAny>,
 }
 
 impl PyNodeRequest {
@@ -48,8 +49,8 @@ impl PyNodeRequest {
         let node_val = serde_json::to_value(&inner_node).unwrap();
 
         Ok(Self {
-            input: value_to_object(py, &value.input.to_value()),
-            node: value_to_object(py, &node_val),
+            input: value_to_object(py, &value.input.to_value())?.unbind(),
+            node: value_to_object(py, &node_val)?.unbind(),
 
             inner_input: value.input.to_value(),
             inner_node,
@@ -59,7 +60,7 @@ impl PyNodeRequest {
 
 #[pymethods]
 impl PyNodeRequest {
-    fn get_field(&self, py: Python, path: String) -> PyResult<PyObject> {
+    fn get_field(&self, py: Python, path: String) -> PyResult<Py<PyAny>> {
         let node_config = &self.inner_node.config;
 
         let selected_value: Value = node_config
@@ -68,16 +69,16 @@ impl PyNodeRequest {
             .flatten()
             .context("Failed to find JSON path")?;
         let Value::String(template) = selected_value else {
-            return Ok(PyValue(selected_value).to_object(py));
+            return PyValue(selected_value).into_py_any(py);
         };
 
         let template_value = zen_tmpl::render(template.as_str(), Variable::from(&self.inner_input))
             .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?;
 
-        Ok(PyValue(template_value.to_value()).to_object(py))
+        PyVariable(template_value).into_py_any(py)
     }
 
-    fn get_field_raw(&self, py: Python, path: String) -> PyResult<PyObject> {
+    fn get_field_raw(&self, py: Python, path: String) -> PyResult<Py<PyAny>> {
         let node_config = &self.inner_node.config;
 
         let selected_value: Value = node_config
@@ -86,7 +87,7 @@ impl PyNodeRequest {
             .flatten()
             .context("Failed to find JSON path")?;
 
-        Ok(PyValue(selected_value).to_object(py))
+        PyValue(selected_value).into_py_any(py)
     }
 }
 

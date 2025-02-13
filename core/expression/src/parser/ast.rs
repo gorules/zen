@@ -1,4 +1,4 @@
-use crate::lexer::Operator;
+use crate::lexer::{Bracket, Operator};
 use crate::parser::builtin::BuiltInFunction;
 use rust_decimal::Decimal;
 use std::cell::Cell;
@@ -31,8 +31,8 @@ pub enum Node<'a> {
     Interval {
         left: &'a Node<'a>,
         right: &'a Node<'a>,
-        left_bracket: &'a str,
-        right_bracket: &'a str,
+        left_bracket: Bracket,
+        right_bracket: Bracket,
     },
     Conditional {
         condition: &'a Node<'a>,

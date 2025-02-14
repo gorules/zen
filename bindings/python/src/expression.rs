@@ -110,7 +110,10 @@ pub fn py_validate_expression(py: Python, expression: String) -> PyResult<Option
 
 #[pyfunction]
 #[pyo3(name = "validate_unary_expression")]
-pub fn py_validate_unary_expression(py: Python, expression: String) -> PyResult<Option<Py<PyDict>>> {
+pub fn py_validate_unary_expression(
+    py: Python,
+    expression: String,
+) -> PyResult<Option<Py<PyDict>>> {
     let Some(err) = validate_unary_expression(expression.as_str()) else {
         return Ok(None);
     };

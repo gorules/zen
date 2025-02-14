@@ -2,7 +2,7 @@ use crate::decision::PyZenDecision;
 use crate::engine::PyZenEngine;
 use crate::expression::{
     compile_expression, compile_unary_expression, evaluate_expression, evaluate_unary_expression,
-    render_template, py_validate_expression, py_validate_unary_expression, PyExpression,
+    py_validate_expression, py_validate_unary_expression, render_template, PyExpression,
 };
 use pyo3::prelude::PyModuleMethods;
 use pyo3::types::PyModule;

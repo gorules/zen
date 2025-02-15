@@ -1,10 +1,11 @@
 use crate::variable::PyVariable;
 use anyhow::{anyhow, Context};
 use either::Either;
-use pyo3::types::PyDict;
+use pyo3::types::{PyAnyMethods, PyDict};
 use pyo3::{pyclass, pyfunction, pymethods, Bound, IntoPyObjectExt, Py, PyAny, PyResult, Python};
 use pythonize::depythonize;
 use zen_expression::expression::{Standard, Unary};
+use zen_expression::validate::{validate_expression, validate_unary_expression, ValidationError};
 use zen_expression::{Expression, Variable};
 
 #[pyfunction]
@@ -96,4 +97,32 @@ impl PyExpression {
 
         PyVariable(result).into_py_any(py)
     }
+}
+
+#[pyfunction]
+#[pyo3(name = "validate_expression")]
+pub fn py_validate_expression(py: Python, expression: String) -> PyResult<Option<Py<PyDict>>> {
+    let Some(err) = validate_expression(expression.as_str()) else {
+        return Ok(None);
+    };
+    return Ok(Some(convert_error_to_dict(py, &err)));
+}
+
+#[pyfunction]
+#[pyo3(name = "validate_unary_expression")]
+pub fn py_validate_unary_expression(
+    py: Python,
+    expression: String,
+) -> PyResult<Option<Py<PyDict>>> {
+    let Some(err) = validate_unary_expression(expression.as_str()) else {
+        return Ok(None);
+    };
+    return Ok(Some(convert_error_to_dict(py, &err)));
+}
+
+fn convert_error_to_dict(py: Python, err: &ValidationError) -> Py<PyDict> {
+    let dict = PyDict::new(py);
+    dict.set_item("type", &err.error_type).unwrap();
+    dict.set_item("source", &err.source).unwrap();
+    return dict.unbind();
 }

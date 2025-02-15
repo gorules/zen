@@ -1,5 +1,5 @@
 from collections.abc import Awaitable
-from typing import Any, Optional, TypedDict
+from typing import Any, Optional, TypedDict, Literal
 
 
 class EvaluateResponse(TypedDict):
@@ -42,5 +42,18 @@ def compile_expression(expression: str) -> Expression: ...
 
 def compile_unary_expression(expression: str) -> Expression: ...
 
+
 class Expression:
     def evaluate(self, ctx: Optional[dict] = None) -> Any: ...
+
+
+def validate_expression(expression: str) -> Optional[ValidationResponse]: ...
+
+
+def validate_unary_expression(expression: str) -> Optional[ValidationResponse]: ...
+
+
+class ValidationResponse(TypedDict):
+    type: Literal["lexerError","parserError", "compilerError"]
+    source: str
+

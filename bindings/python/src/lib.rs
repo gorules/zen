@@ -2,7 +2,7 @@ use crate::decision::PyZenDecision;
 use crate::engine::PyZenEngine;
 use crate::expression::{
     compile_expression, compile_unary_expression, evaluate_expression, evaluate_unary_expression,
-    render_template, PyExpression,
+    py_validate_expression, py_validate_unary_expression, render_template, PyExpression,
 };
 use pyo3::prelude::PyModuleMethods;
 use pyo3::types::PyModule;
@@ -28,6 +28,8 @@ fn zen(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(render_template, m)?)?;
     m.add_function(wrap_pyfunction!(compile_expression, m)?)?;
     m.add_function(wrap_pyfunction!(compile_unary_expression, m)?)?;
+    m.add_function(wrap_pyfunction!(py_validate_expression, m)?)?;
+    m.add_function(wrap_pyfunction!(py_validate_unary_expression, m)?)?;
 
     Ok(())
 }

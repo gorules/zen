@@ -54,6 +54,5 @@ def validate_unary_expression(expression: str) -> Optional[ValidationResponse]: 
 
 
 class ValidationResponse(TypedDict):
-    type: Literal["lexerError","parserError", "compilerError"]
+    type: Literal["lexerError", "parserError", "compilerError"]
     source: str
-

@@ -5,7 +5,6 @@ build-backend = "maturin"
 [project]
 name = "zen-engine"
 requires-python = ">=3.7"
-version = "0.40.0"
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",

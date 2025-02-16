@@ -1,15 +1,14 @@
 use crate::variable::PyVariable;
-use anyhow::{anyhow, Context};
+use anyhow::anyhow;
 use either::Either;
-use pyo3::types::PyDict;
-use pyo3::{pyclass, pyfunction, pymethods, Bound, IntoPyObjectExt, Py, PyAny, PyResult, Python};
-use pythonize::{depythonize, pythonize};
+use pyo3::{pyclass, pyfunction, pymethods, IntoPyObjectExt, Py, PyAny, PyResult, Python};
+use pythonize::pythonize;
 use zen_expression::expression::{Standard, Unary};
 use zen_expression::{Expression, Variable};
 
 #[pyfunction]
-pub fn compile_expression(expression: String) -> PyResult<PyExpression> {
-    let expr = zen_expression::compile_expression(expression.as_str())
+pub fn compile_expression(expression: &str) -> PyResult<PyExpression> {
+    let expr = zen_expression::compile_expression(expression)
         .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?;
 
     Ok(PyExpression {
@@ -18,8 +17,8 @@ pub fn compile_expression(expression: String) -> PyResult<PyExpression> {
 }
 
 #[pyfunction]
-pub fn compile_unary_expression(expression: String) -> PyResult<PyExpression> {
-    let expr = zen_expression::compile_unary_expression(expression.as_str())
+pub fn compile_unary_expression(expression: &str) -> PyResult<PyExpression> {
+    let expr = zen_expression::compile_unary_expression(expression)
         .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?;
 
     Ok(PyExpression {
@@ -31,42 +30,28 @@ pub fn compile_unary_expression(expression: String) -> PyResult<PyExpression> {
 #[pyo3(signature = (expression, ctx=None))]
 pub fn evaluate_expression(
     py: Python,
-    expression: String,
-    ctx: Option<&Bound<'_, PyDict>>,
+    expression: &str,
+    ctx: Option<PyVariable>,
 ) -> PyResult<Py<PyAny>> {
-    let context = ctx
-        .map(|ctx| depythonize(ctx))
-        .transpose()
-        .context("Failed to convert context")?
-        .unwrap_or(Variable::Null);
+    let context = ctx.map(|c| c.into_inner()).unwrap_or(Variable::Null);
 
-    let result = zen_expression::evaluate_expression(expression.as_str(), context)
+    let result = zen_expression::evaluate_expression(expression, context)
         .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?;
 
     PyVariable(result).into_py_any(py)
 }
 
 #[pyfunction]
-pub fn evaluate_unary_expression(expression: String, ctx: &Bound<'_, PyDict>) -> PyResult<bool> {
-    let context: Variable = depythonize(ctx).context("Failed to convert context")?;
-
-    let result = zen_expression::evaluate_unary_expression(expression.as_str(), context)
+pub fn evaluate_unary_expression(expression: &str, ctx: PyVariable) -> PyResult<bool> {
+    let result = zen_expression::evaluate_unary_expression(expression, ctx.into_inner())
         .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?;
 
     Ok(result)
 }
 
 #[pyfunction]
-pub fn render_template(
-    py: Python,
-    template: String,
-    ctx: &Bound<'_, PyDict>,
-) -> PyResult<Py<PyAny>> {
-    let context: Variable = depythonize(ctx)
-        .context("Failed to convert context")
-        .unwrap_or(Variable::Null);
-
-    let result = zen_tmpl::render(template.as_str(), context)
+pub fn render_template(py: Python, template: &str, ctx: PyVariable) -> PyResult<Py<PyAny>> {
+    let result = zen_tmpl::render(template, ctx.into_inner())
         .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?;
 
     PyVariable(result).into_py_any(py)
@@ -79,13 +64,8 @@ pub struct PyExpression {
 #[pymethods]
 impl PyExpression {
     #[pyo3(signature = (ctx=None))]
-    pub fn evaluate(&self, py: Python, ctx: Option<&Bound<'_, PyDict>>) -> PyResult<Py<PyAny>> {
-        let context = ctx
-            .map(|ctx| depythonize(ctx))
-            .transpose()
-            .context("Failed to convert context")?
-            .unwrap_or(Variable::Null);
-
+    pub fn evaluate(&self, py: Python, ctx: Option<PyVariable>) -> PyResult<Py<PyAny>> {
+        let context = ctx.map(|c| c.into_inner()).unwrap_or(Variable::Null);
         let maybe_result = match &self.expression {
             Either::Left(standard) => standard.evaluate(context),
             Either::Right(unary) => unary.evaluate(context).map(Variable::Bool),
@@ -99,8 +79,8 @@ impl PyExpression {
 }
 
 #[pyfunction]
-pub fn validate_expression(py: Python, expression: String) -> PyResult<Option<Py<PyAny>>> {
-    let Err(error) = zen_expression::validate::validate_expression(expression.as_str()) else {
+pub fn validate_expression(py: Python, expression: &str) -> PyResult<Option<Py<PyAny>>> {
+    let Err(error) = zen_expression::validate::validate_expression(expression) else {
         return Ok(None);
     };
 
@@ -108,8 +88,8 @@ pub fn validate_expression(py: Python, expression: String) -> PyResult<Option<Py
 }
 
 #[pyfunction]
-pub fn validate_unary_expression(py: Python, expression: String) -> PyResult<Option<Py<PyAny>>> {
-    let Err(error) = zen_expression::validate::validate_expression(expression.as_str()) else {
+pub fn validate_unary_expression(py: Python, expression: &str) -> PyResult<Option<Py<PyAny>>> {
+    let Err(error) = zen_expression::validate::validate_expression(expression) else {
         return Ok(None);
     };
 

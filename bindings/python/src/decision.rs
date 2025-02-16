@@ -5,16 +5,14 @@ use crate::engine::PyZenEvaluateOptions;
 use crate::loader::PyDecisionLoader;
 use crate::mt::worker_pool;
 use crate::value::PyValue;
+use crate::variable::PyVariable;
 use anyhow::{anyhow, Context};
-use pyo3::types::PyDict;
-use pyo3::{pyclass, pymethods, Bound, IntoPyObjectExt, Py, PyAny, PyResult, Python};
+use pyo3::{pyclass, pymethods, IntoPyObjectExt, Py, PyAny, PyResult, Python};
 use pyo3_async_runtimes::tokio;
 use pyo3_async_runtimes::tokio::get_current_locals;
 use pyo3_async_runtimes::tokio::re_exports::runtime::Runtime;
-use pythonize::depythonize;
 use serde_json::Value;
 use zen_engine::{Decision, EvaluationOptions};
-use zen_expression::Variable;
 
 #[pyclass]
 #[pyo3(name = "ZenDecision")]
@@ -32,22 +30,16 @@ impl PyZenDecision {
     pub fn evaluate(
         &self,
         py: Python,
-        ctx: &Bound<'_, PyDict>,
-        opts: Option<&Bound<'_, PyDict>>,
+        ctx: PyVariable,
+        opts: Option<PyZenEvaluateOptions>,
     ) -> PyResult<Py<PyAny>> {
-        let context: Variable = depythonize(ctx).context("Failed to convert dict")?;
-        let options: PyZenEvaluateOptions = if let Some(op) = opts {
-            depythonize(op).context("Failed to convert dict")?
-        } else {
-            Default::default()
-        };
-
+        let options = opts.unwrap_or_default();
         let decision = self.0.clone();
 
         let rt = Runtime::new()?;
         let result = rt
             .block_on(decision.evaluate_with_opts(
-                context,
+                ctx.into_inner(),
                 EvaluationOptions {
                     max_depth: options.max_depth,
                     trace: options.trace,
@@ -65,15 +57,11 @@ impl PyZenDecision {
     pub fn async_evaluate<'py>(
         &'py self,
         py: Python<'py>,
-        ctx: &Bound<'_, PyDict>,
-        opts: Option<&Bound<'_, PyDict>>,
+        ctx: PyValue,
+        opts: Option<PyZenEvaluateOptions>,
     ) -> PyResult<Py<PyAny>> {
-        let context: Value = depythonize(ctx).context("Failed to convert dict")?;
-        let options: PyZenEvaluateOptions = if let Some(op) = opts {
-            depythonize(op).context("Failed to convert dict")?
-        } else {
-            Default::default()
-        };
+        let context: Value = ctx.0;
+        let options = opts.unwrap_or_default();
 
         let decision = self.0.clone();
         let result = tokio::future_into_py_with_locals(py, get_current_locals(py)?, async move {

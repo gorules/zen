@@ -8,7 +8,7 @@ import unittest
 import zen
 
 
-def loader(key):
+async def loader(key):
     with open("../../test-data/" + key, "r") as f:
         return f.read()
 

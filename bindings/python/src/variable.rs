@@ -1,12 +1,20 @@
-use pyo3::prelude::{PyDictMethods, PyListMethods};
-use pyo3::types::{PyDict, PyList};
-use pyo3::{Bound, IntoPyObject, IntoPyObjectExt, PyAny, PyErr, PyResult, Python};
+use anyhow::Context;
+use pyo3::prelude::{PyAnyMethods, PyBytesMethods, PyDictMethods, PyListMethods, PyStringMethods};
+use pyo3::types::{PyBytes, PyDict, PyList, PyString};
+use pyo3::{Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, PyAny, PyErr, PyResult, Python};
+use pythonize::depythonize;
 use rust_decimal::prelude::ToPrimitive;
 use zen_expression::Variable;
 
 #[repr(transparent)]
 #[derive(Clone, Debug)]
 pub struct PyVariable(pub Variable);
+
+impl PyVariable {
+    pub fn into_inner(self) -> Variable {
+        self.0
+    }
+}
 
 pub fn variable_to_object<'py>(py: Python<'py>, val: &Variable) -> PyResult<Bound<'py, PyAny>> {
     match val {
@@ -47,5 +55,26 @@ impl<'py> IntoPyObject<'py> for PyVariable {
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         variable_to_object(py, &self.0)
+    }
+}
+
+impl<'py> FromPyObject<'py> for PyVariable {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        if let Ok(s) = ob.downcast::<PyString>() {
+            let str_slice = s.to_str()?;
+
+            let var = serde_json::from_str(str_slice).context("Invalid JSON")?;
+            return Ok(PyVariable(var));
+        }
+
+        if let Ok(b) = ob.downcast::<PyBytes>() {
+            let bytes = b.as_bytes();
+
+            let var = serde_json::from_slice(bytes).context("Invalid JSON")?;
+            return Ok(PyVariable(var));
+        }
+
+        let var = depythonize(ob)?;
+        Ok(PyVariable(var))
     }
 }

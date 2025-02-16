@@ -60,11 +60,11 @@ impl PyNodeRequest {
 
 #[pymethods]
 impl PyNodeRequest {
-    fn get_field(&self, py: Python, path: String) -> PyResult<Py<PyAny>> {
+    fn get_field(&self, py: Python, path: &str) -> PyResult<Py<PyAny>> {
         let node_config = &self.inner_node.config;
 
         let selected_value: Value = node_config
-            .dot_get(path.as_str())
+            .dot_get(path)
             .ok()
             .flatten()
             .context("Failed to find JSON path")?;
@@ -78,11 +78,11 @@ impl PyNodeRequest {
         PyVariable(template_value).into_py_any(py)
     }
 
-    fn get_field_raw(&self, py: Python, path: String) -> PyResult<Py<PyAny>> {
+    fn get_field_raw(&self, py: Python, path: &str) -> PyResult<Py<PyAny>> {
         let node_config = &self.inner_node.config;
 
         let selected_value: Value = node_config
-            .dot_get(path.as_str())
+            .dot_get(path)
             .ok()
             .flatten()
             .context("Failed to find JSON path")?;

@@ -59,13 +59,18 @@ mod isolate;
 
 mod arena;
 pub mod compiler;
+pub mod expression;
 mod function;
 pub mod intellisense;
 pub mod lexer;
 pub mod parser;
+pub mod validate;
 pub mod variable;
 pub mod vm;
 
-pub use function::{evaluate_expression, evaluate_unary_expression};
+pub use expression::{Expression, ExpressionKind};
+pub use function::{
+    compile_expression, compile_unary_expression, evaluate_expression, evaluate_unary_expression,
+};
 pub use isolate::{Isolate, IsolateError};
 pub use variable::Variable;

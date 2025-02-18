@@ -3,7 +3,7 @@ use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 
 use nohash_hasher::IsEnabled;
-use strum_macros::{Display, EnumString, IntoStaticStr};
+use strum_macros::{Display, EnumIter, EnumString, FromRepr, IntoStaticStr};
 
 /// Contains information from lexical analysis
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -158,7 +158,7 @@ pub enum ComparisonOperator {
     NotIn,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, EnumString, IntoStaticStr)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, EnumString, IntoStaticStr, EnumIter, FromRepr)]
 pub enum Bracket {
     #[strum(serialize = "(")]
     LeftParenthesis,

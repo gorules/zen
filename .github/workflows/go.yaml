@@ -55,7 +55,7 @@ jobs:
         run: dir ..\..\target\${{ matrix.settings.target }}\release
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: ${{ matrix.settings.target != 'x86_64-pc-windows-msvc' }}
         with:
           name: ${{ matrix.settings.target }}
@@ -63,7 +63,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload artifact Windows
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: ${{ matrix.settings.target == 'x86_64-pc-windows-msvc' }}
         with:
           name: ${{ matrix.settings.target }}
@@ -76,7 +76,7 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: common
           path: bindings/c/zen_engine.h
@@ -95,7 +95,7 @@ jobs:
           persist-credentials: false
           token: ${{ secrets.PAT }}
       - name: Download all artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: artifacts
 

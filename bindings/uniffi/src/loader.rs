@@ -1,10 +1,10 @@
 use crate::error::ZenError;
+use crate::types::JsonBuffer;
 use std::future::Future;
 use std::sync::Arc;
 use uniffi::deps::anyhow::anyhow;
 use zen_engine::loader::{DecisionLoader, LoaderError, LoaderResponse};
 use zen_engine::model::DecisionContent;
-use crate::types::JsonBuffer;
 
 #[uniffi::export(callback_interface)]
 #[async_trait::async_trait]
@@ -33,9 +33,9 @@ impl DecisionLoader for ZenDecisionLoaderCallbackWrapper {
 
             let decision_content: DecisionContent = serde_json::from_slice(&maybe_raw.unwrap().0)
                 .map_err(|e| LoaderError::Internal {
-                    key: key.to_string(),
-                    source: anyhow!(e),
-                })?;
+                key: key.to_string(),
+                source: anyhow!(e),
+            })?;
 
             Ok(Arc::new(decision_content))
         }

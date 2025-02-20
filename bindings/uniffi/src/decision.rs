@@ -7,7 +7,7 @@ use serde_json::Value;
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::task;
-use zen_engine::{Decision, DecisionGraphValidationError, EvaluationOptions};
+use zen_engine::{Decision, EvaluationOptions};
 
 #[derive(uniffi::Object)]
 pub struct ZenDecision {

@@ -2,7 +2,6 @@ use crate::error::ZenError;
 use crate::types::JsonBuffer;
 use serde_json::Value;
 use tokio::task;
-use uniffi::deps::anyhow::anyhow;
 
 #[uniffi::export()]
 pub fn evaluate_expression_sync(

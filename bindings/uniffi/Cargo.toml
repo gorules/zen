@@ -13,14 +13,14 @@ name = "uniffi-bindgen"
 path = "uniffi-bindgen.rs"
 
 [dependencies]
-uniffi = { version = "0.28.3", features = ["tokio"] }
+uniffi = { version = "0.29.0", features = ["tokio"] }
 serde_json = { workspace = true }
 zen-engine = { path = "../../core/engine" }
 zen-expression = { path = "../../core/expression" }
 zen-tmpl = { path = "../../core/template" }
 serde = { workspace = true, features = ["derive"] }
-async-trait = "0.1.83"
-tokio = "1.42.0"
+async-trait = "0.1"
+tokio = "1.43"
 
 [build-dependencies]
-uniffi = { version = "0.28.3", features = ["build"] }
+uniffi = { version = "0.29.0", features = ["build"] }

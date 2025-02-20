@@ -102,6 +102,9 @@ jobs:
         with:
           path: build/generated/main/resources
 
+      - name: Move artifacts
+        run: mv ../../build ./
+
       - name: List resources
         run: ls -lh .
 

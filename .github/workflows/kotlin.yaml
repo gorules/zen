@@ -68,6 +68,7 @@ jobs:
       - name: Build
         uses: houseabsolute/actions-rust-cross@v1
         with:
+          working-directory: bindings/uniffi
           target: ${{ matrix.settings.target }}
           args: "--lib --release"
           strip: true

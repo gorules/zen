@@ -105,6 +105,12 @@ jobs:
       - name: List resources
         run: ls -lh .
 
+      - name: PWD
+        run: pwd
+
+      - name: List resources
+        run: ls -lh ../../
+
       - name: Generate Kotlin sources
         run: |
           cargo run \

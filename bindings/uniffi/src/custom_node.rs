@@ -1,11 +1,10 @@
 use crate::error::ZenError;
-use crate::types::{DecisionNode, JsonBuffer, ZenEngineHandlerRequest, ZenEngineHandlerResponse};
+use crate::types::{DecisionNode, ZenEngineHandlerRequest, ZenEngineHandlerResponse};
 use serde_json::Value;
 use uniffi::deps::anyhow::anyhow;
 use zen_engine::handler::custom_node_adapter::{CustomNodeAdapter, CustomNodeRequest};
 use zen_engine::handler::node::{NodeResponse, NodeResult};
 use zen_expression::Variable;
-use crate::loader::ZenDecisionLoaderCallback;
 
 #[uniffi::export(callback_interface)]
 #[async_trait::async_trait]
@@ -20,7 +19,10 @@ pub struct NoopCustomNodeCallback;
 
 #[async_trait::async_trait]
 impl ZenCustomNodeCallback for NoopCustomNodeCallback {
-    async fn handle(&self, key: ZenEngineHandlerRequest) -> Result<ZenEngineHandlerResponse, ZenError> {
+    async fn handle(
+        &self,
+        key: ZenEngineHandlerRequest,
+    ) -> Result<ZenEngineHandlerResponse, ZenError> {
         Err(ZenError::Zero)
     }
 }

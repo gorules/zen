@@ -1,27 +1,17 @@
-use crate::custom_node::{NoopCustomNodeCallback, ZenCustomNodeCallback, ZenCustomNodeCallbackWrapper};
+use crate::custom_node::{
+    NoopCustomNodeCallback, ZenCustomNodeCallback, ZenCustomNodeCallbackWrapper,
+};
 use crate::decision::ZenDecision;
 use crate::error::ZenError;
 use crate::loader::{
     NoopDecisionLoader, ZenDecisionLoaderCallback, ZenDecisionLoaderCallbackWrapper,
 };
-use crate::types::{
-    JsonBuffer, ZenEngineHandlerRequest, ZenEngineHandlerResponse, ZenEngineResponse,
-};
-use async_trait::async_trait;
+use crate::types::{JsonBuffer, ZenEngineResponse};
 use serde_json::Value;
-use std::future::Future;
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::task;
-use uniffi::deps::anyhow::anyhow;
-use zen_engine::handler::custom_node_adapter::{
-    CustomNodeAdapter, CustomNodeRequest, NoopCustomNode,
-};
-use zen_engine::handler::node::NodeResult;
-use zen_engine::loader::{DecisionLoader, NoopLoader};
-use zen_engine::model::DecisionContent;
 use zen_engine::{DecisionEngine, EvaluationOptions};
-use zen_expression::parser::Node;
 
 #[derive(uniffi::Object)]
 pub(crate) struct ZenEngine {
@@ -56,7 +46,7 @@ impl ZenEngine {
                     loader.unwrap_or_else(|| Box::new(NoopDecisionLoader)),
                 )),
                 Arc::new(ZenCustomNodeCallbackWrapper(
-                    custom_node.unwrap_or_else(|| Box::new(NoopCustomNodeCallback))
+                    custom_node.unwrap_or_else(|| Box::new(NoopCustomNodeCallback)),
                 )),
             )),
         }

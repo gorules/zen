@@ -51,7 +51,7 @@ jobs:
             extension: "so"
             lib_dir: 'linux-aarch64'
 
-    name: stable - ${{ matrix.settings.target }} - kotlin@17
+    name: UniFFI - ${{ matrix.settings.target }}
     runs-on: ${{ matrix.settings.host }}
 
     steps:

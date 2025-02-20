@@ -3,7 +3,7 @@ use zen_engine::ZEN_CONFIG;
 
 #[derive(uniffi::Record)]
 pub struct ZenConfig {
-    pub nodes_in_context: Option<bool>
+    pub nodes_in_context: Option<bool>,
 }
 
 #[uniffi::export]

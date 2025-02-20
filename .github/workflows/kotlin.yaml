@@ -81,7 +81,7 @@ jobs:
         run: cargo build --lib --release --target ${{ matrix.settings.target }}
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.settings.lib_dir }}
           path: ./../target/release/libzen_kotlin.${{ matrix.settings.extension }}
@@ -119,7 +119,7 @@ jobs:
         uses: gradle/gradle-build-action@v2
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: build/generated/main/resources
 

@@ -3,6 +3,8 @@ env:
   WORKING_DIRECTORY: bindings/uniffi
 
 on:
+  # Temporary allow on workflow dispatch
+  workflow_dispatch:
   push:
     branches:
       - master
@@ -89,7 +91,7 @@ jobs:
     defaults:
       run:
         working-directory: ${{ env.WORKING_DIRECTORY }}
-    needs: [build]
+    needs: [ build ]
 
     steps:
       - uses: actions/checkout@v3
@@ -127,13 +129,13 @@ jobs:
             --bin uniffi-bindgen \
             --features "uniffi/cli" \
             -- generate \ 
-            --library build/generated/resources/libs/libzen_kotlin.dylib \
+            --library build/generated/resources/libs/libzen_kotlin.so \
             --language kotlin \
             --out-dir build/generated/main/kotlin
 
-#    TODO
-#      - name: Setup Maven Repository credentials
-#        run:
+      #    TODO
+      #      - name: Setup Maven Repository credentials
+      #        run:
 
       - name: Publish Maven Artifact
         run: ./gradlew publish

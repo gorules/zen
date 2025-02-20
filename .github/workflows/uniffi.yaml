@@ -32,23 +32,23 @@ jobs:
         settings:
           - host: windows-latest
             target: 'x86_64-pc-windows-msvc'
-            extension: "dll"
+            output: 'zen_uniffi.dll'
             lib_dir: 'win32-x86-64'
-          - host: macos-13
+          - host: macos-latest
             target: 'x86_64-apple-darwin'
-            extension: "dylib"
+            output: 'libzen_uniffi.dylib'
             lib_dir: 'darwin'
-          - host: macos-14
+          - host: macos-latest
             target: 'aarch64-apple-darwin'
-            extension: "dylib"
+            output: 'libzen_uniffi.dylib'
             lib_dir: 'darwin-aarch64'
           - host: ubuntu-latest
             target: 'x86_64-unknown-linux-gnu'
-            extension: "so"
+            output: 'libzen_uniffi.so'
             lib_dir: 'linux-x86-64'
           - host: ubuntu-latest
             target: 'aarch64-unknown-linux-gnu'
-            extension: "so"
+            output: 'libzen_uniffi.so'
             lib_dir: 'linux-aarch64'
 
     name: UniFFI - ${{ matrix.settings.target }}
@@ -67,13 +67,14 @@ jobs:
         with:
           working-directory: ${{ env.UNIFFI_DIRECTORY }}
           target: ${{ matrix.settings.target }}
-          args: "--lib --release"
+          args: '--lib --release'
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.settings.lib_dir }}
-          path: target/${{ matrix.settings.target }}/release/libzen_uniffi.${{ matrix.settings.extension }}
+          path: target/${{ matrix.settings.target }}/release/${{ matrix.settings.output }}
+          if-no-files-found: error
 
   release:
     runs-on: ubuntu-latest

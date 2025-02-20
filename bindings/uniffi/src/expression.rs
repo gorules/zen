@@ -65,7 +65,7 @@ pub async fn evaluate_expression(
 ) -> Result<JsonBuffer, ZenError> {
     task::spawn_blocking(move || evaluate_expression_sync(expression, context))
         .await
-        .map_err(|e| ZenError::ExecutionTaskSpawnError)?
+        .map_err(|_| ZenError::ExecutionTaskSpawnError)?
 }
 
 #[allow(dead_code)]
@@ -76,7 +76,7 @@ pub async fn evaluate_unary_expression(
 ) -> Result<bool, ZenError> {
     task::spawn_blocking(move || evaluate_unary_expression_sync(expression, context))
         .await
-        .map_err(|e| ZenError::ExecutionTaskSpawnError)?
+        .map_err(|_| ZenError::ExecutionTaskSpawnError)?
 }
 
 #[allow(dead_code)]
@@ -87,5 +87,5 @@ pub async fn render_template(
 ) -> Result<JsonBuffer, ZenError> {
     task::spawn_blocking(move || render_template_sync(template, context))
         .await
-        .map_err(|e| ZenError::ExecutionTaskSpawnError)?
+        .map_err(|_| ZenError::ExecutionTaskSpawnError)?
 }

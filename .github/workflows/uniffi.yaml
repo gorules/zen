@@ -102,8 +102,8 @@ jobs:
         with:
           path: build/generated/main/resources
 
-      - name: List resoruces
-        run: ls -lh build/generated/main/resources
+      - name: List resources
+        run: ls -lh .
 
       - name: Generate Kotlin sources
         run: |

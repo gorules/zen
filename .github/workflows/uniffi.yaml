@@ -101,13 +101,16 @@ jobs:
         with:
           path: build/generated/main/resources
 
+      - name: List resoruces
+        run: ls -lh build/generated/main/resources
+
       - name: Generate Kotlin sources
         run: |
           cargo run \
             --bin uniffi-bindgen \
             --features "uniffi/cli" \
-            -- generate \ 
-            --library build/generated/resources/libs/libzen_uniffi.so \
+            -- generate \
+            --library build/generated/main/resources/linux-x86-64/libzen_uniffi.so \
             --language kotlin \
             --out-dir build/generated/main/kotlin
 

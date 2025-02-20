@@ -21,7 +21,7 @@ pub struct NoopCustomNodeCallback;
 impl ZenCustomNodeCallback for NoopCustomNodeCallback {
     async fn handle(
         &self,
-        key: ZenEngineHandlerRequest,
+        _: ZenEngineHandlerRequest,
     ) -> Result<ZenEngineHandlerResponse, ZenError> {
         Err(ZenError::Zero)
     }

@@ -16,7 +16,7 @@ pub struct NoopDecisionLoader;
 
 #[async_trait::async_trait]
 impl ZenDecisionLoaderCallback for NoopDecisionLoader {
-    async fn load(&self, key: String) -> Result<JsonBuffer, ZenError> {
+    async fn load(&self, _: String) -> Result<JsonBuffer, ZenError> {
         Err(ZenError::Zero)
     }
 }

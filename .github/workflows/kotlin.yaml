@@ -79,7 +79,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.settings.lib_dir }}
-          path: ./../target/release/libzen_kotlin.${{ matrix.settings.extension }}
+          path: target/release/libzen_kotlin.${{ matrix.settings.extension }}
 
   release:
     runs-on: ubuntu-latest

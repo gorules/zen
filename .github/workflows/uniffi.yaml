@@ -1,4 +1,4 @@
-name: Kotlin
+name: UniFFI
 env:
   UNIFFI_DIRECTORY: bindings/uniffi
 
@@ -14,13 +14,13 @@ on:
       - '../../bindings/uniffi/**'
       - 'core/**'
       - 'test-data/**'
-      - '.github/workflows/kotlin.yaml'
+      - '.github/workflows/uniffi.yaml'
   pull_request:
     paths:
       - '../../bindings/uniffi/**'
       - 'core/**'
       - 'test-data/**'
-      - '.github/workflows/kotlin.yaml'
+      - '.github/workflows/uniffi.yaml'
 
 jobs:
   build:
@@ -69,17 +69,11 @@ jobs:
           target: ${{ matrix.settings.target }}
           args: "--lib --release"
 
-      - name: List release files
-        run: ls -lh target/release
-      
-      #        shell: bash
-      #        run: cargo build --lib --release --target ${{ matrix.settings.target }}
-
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.settings.lib_dir }}
-          path: target/release/libzen_kotlin.${{ matrix.settings.extension }}
+          path: target/${{ matrix.settings.target }}/release/libzen_uniffi.${{ matrix.settings.extension }}
 
   release:
     runs-on: ubuntu-latest
@@ -113,13 +107,9 @@ jobs:
             --bin uniffi-bindgen \
             --features "uniffi/cli" \
             -- generate \ 
-            --library build/generated/resources/libs/libzen_kotlin.so \
+            --library build/generated/resources/libs/libzen_uniffi.so \
             --language kotlin \
             --out-dir build/generated/main/kotlin
-
-      #    TODO
-      #      - name: Setup Maven Repository credentials
-      #        run:
 
       - name: Publish Maven Artifact
         run: ./gradlew publish

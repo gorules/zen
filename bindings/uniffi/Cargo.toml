@@ -1,5 +1,5 @@
 [package]
-name = "zen-kotlin"
+name = "zen-uniffi"
 version = "0.39.0"
 edition = "2021"
 license = "MIT"

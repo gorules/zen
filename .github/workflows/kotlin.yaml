@@ -71,7 +71,6 @@ jobs:
           working-directory: bindings/uniffi
           target: ${{ matrix.settings.target }}
           args: "--lib --release"
-          strip: true
       
       #        shell: bash
       #        run: cargo build --lib --release --target ${{ matrix.settings.target }}

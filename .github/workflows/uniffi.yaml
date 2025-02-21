@@ -105,15 +105,6 @@ jobs:
       - name: Move artifacts
         run: mv ../../build ./
 
-      - name: List resources
-        run: ls -lh .
-
-      - name: PWD
-        run: pwd
-
-      - name: List resources
-        run: ls -lh ../../
-
       - name: Generate Kotlin sources
         run: |
           cargo run \
@@ -125,4 +116,9 @@ jobs:
             --out-dir build/generated/main/kotlin
 
       - name: Publish Maven Artifact
+        env:
+          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
+          MAVEN_GPG_SIGNING_KEY: ${{ secrets.MAVEN_GPG_SIGNING_KEY }}
+          MAVEN_GPG_SIGNING_PASSWORD: ${{ MAVEN_GPG_SIGNING_PASSWORD }}
         run: ./gradlew publish

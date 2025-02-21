@@ -120,5 +120,5 @@ jobs:
           MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
           MAVEN_GPG_SIGNING_KEY: ${{ secrets.MAVEN_GPG_SIGNING_KEY }}
-          MAVEN_GPG_SIGNING_PASSWORD: ${{ MAVEN_GPG_SIGNING_PASSWORD }}
+          MAVEN_GPG_SIGNING_PASSWORD: ${{ secrets.MAVEN_GPG_SIGNING_PASSWORD }}
         run: ./gradlew publish

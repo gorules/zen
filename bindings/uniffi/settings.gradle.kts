@@ -1,1 +1,1 @@
-rootProject.name = "zen_kotlin"
+rootProject.name = "zen-engine"

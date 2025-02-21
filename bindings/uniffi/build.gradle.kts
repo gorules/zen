@@ -78,7 +78,7 @@ signing {
     val signingPassword = System.getenv("MAVEN_GPG_SIGNING_PASSWORD")
 
     if (signingKeyBase64 != null && signingPassword != null) {
-        val signingKey = Base64.getDecoder().decode(signingKeyBase64).toString()
+        val signingKey = Base64.getDecoder().decode(signingKeyBase64).toString(Charsets.UTF_8)
         useInMemoryPgpKeys(signingKey, signingPassword)
         sign(publishing.publications["mavenJava"])
     }

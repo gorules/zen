@@ -79,7 +79,7 @@ jobs:
   release-kotlin:
     runs-on: ubuntu-latest
     needs: [ build ]
-    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
+    #    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
     defaults:
       run:
         working-directory: ${{ env.UNIFFI_DIRECTORY }}
@@ -115,10 +115,16 @@ jobs:
             --language kotlin \
             --out-dir build/generated/main/kotlin
 
-      - name: Publish Maven Artifact
-        env:
-          SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
-          SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
-          GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
-          GPG_SIGNING_PASSPHRASE: ${{ secrets.GPG_SIGNING_PASSPHRASE }}
-        run: ./gradlew publishAllPublicationsToCentralPortal
+      - name: List current dir
+        run: ls -a .
+
+      - name: Print dependency tree
+        run: tree build
+
+#      - name: Publish Maven Artifact
+#        env:
+#          SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
+#          SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+#          GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
+#          GPG_SIGNING_PASSPHRASE: ${{ secrets.GPG_SIGNING_PASSPHRASE }}
+#        run: ./gradlew publishAllPublicationsToCentralPortal

@@ -1,4 +1,3 @@
-import org.jreleaser.model.Active
 import java.util.*
 
 group = "io.gorules"
@@ -7,7 +6,8 @@ version = "0.1.0"
 plugins {
     kotlin("jvm") version "2.1.0"
     id("maven-publish")
-    id("org.jreleaser") version "1.16.0"
+    id("signing")
+    id("com.gradleup.nmcp") version "0.0.9"
 }
 
 dependencies {
@@ -54,6 +54,10 @@ publishing {
                         name = "GoRules Team"
                         email = "hi@gorules.io"
                     }
+                    organization {
+                        name = "GoRules"
+                        url = "https://gorules.io"
+                    }
                 }
 
                 scm {
@@ -67,37 +71,28 @@ publishing {
     }
 }
 
-jreleaser {
-    signing {
-        active = Active.ALWAYS
-        armored = true
+signing {
+    val signingKeyBase64 = providers.environmentVariable("GPG_SIGNING_KEY")
+    val signingPassphrase = providers.environmentVariable("GPG_SIGNING_PASSPHRASE")
 
-        val signingKeyBase64 = providers.environmentVariable("GPG_SIGNING_KEY")
-        val signingPassphrase = providers.environmentVariable("GPG_SIGNING_PASSPHRASE")
+    if (signingKeyBase64.isPresent and signingPassphrase.isPresent) {
+        val signingKey = Base64.getDecoder().decode(signingKeyBase64.get()).toString(Charsets.UTF_8)
 
-        if (signingKeyBase64.isPresent && signingPassphrase.isPresent) {
-            val signingKey = Base64.getDecoder().decode(signingKeyBase64.get()).toString(Charsets.UTF_8)
-
-            secretKey.set(signingKey)
-            passphrase.set(signingPassphrase.get())
-        }
+        useInMemoryPgpKeys(signingKey, signingPassphrase.get())
+        sign(publishing.publications["mavenJava"])
     }
-    deploy {
-        maven {
-            mavenCentral {
-                create("sonatype") {
-                    active = Active.ALWAYS
-                    url = "https://central.sonatype.com/api/v1/publisher"
-                    stagingRepository("target/staging-deploy")
+}
 
-                    val remoteUsername = providers.environmentVariable("OSSRH_USERNAME")
-                    val remotePassword = providers.environmentVariable("OSSRH_PASSWORD")
-                    if (remoteUsername.isPresent && remotePassword.isPresent) {
-                        username.set(remoteUsername.get())
-                        password.set(remotePassword.get())
-                    }
-                }
-            }
+nmcp {
+    publish("mavenJava") {
+        publicationType = "USER_MANAGED"
+
+        val remoteUsername = providers.environmentVariable("OSSRH_USERNAME")
+        val remotePassword = providers.environmentVariable("OSSRH_PASSWORD")
+
+        if (remoteUsername.isPresent && remotePassword.isPresent) {
+            username.set(remoteUsername.get())
+            password.set(remotePassword.get())
         }
     }
 }

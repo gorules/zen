@@ -121,6 +121,9 @@ jobs:
       - name: Print dependency tree
         run: tree build
 
+      - name: Print outer folder
+        run: tree ../../build
+
 #      - name: Publish Maven Artifact
 #        env:
 #          SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}

@@ -110,7 +110,6 @@ jobs:
         run: |
           cargo run \
             --bin uniffi-bindgen \
-            --features "uniffi/cli" \
             -- generate \
             --library build/generated/main/resources/linux-x86-64/libzen_uniffi.so \
             --language kotlin \

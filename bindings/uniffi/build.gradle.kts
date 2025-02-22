@@ -1,7 +1,15 @@
+import org.tomlj.Toml
 import java.util.*
 
 group = "io.gorules"
-version = "0.1.0"
+version = loadCargoVersion()
+
+buildscript {
+    dependencies {
+        classpath("org.tomlj:tomlj:1.1.1")
+    }
+}
+
 
 plugins {
     kotlin("jvm") version "2.1.0"
@@ -95,4 +103,11 @@ nmcp {
             password.set(remotePassword.get())
         }
     }
+}
+
+fun loadCargoVersion(): String {
+    val cargoFile = file("${projectDir}/Cargo.toml")
+    val result = Toml.parse(cargoFile.toPath())
+    return result.getTable("package")?.getString("version")
+        ?: throw GradleException("Version not found in Cargo.toml")
 }

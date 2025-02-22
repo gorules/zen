@@ -107,22 +107,13 @@ jobs:
         run: mv ../../build ./
 
       - name: Generate Kotlin sources
-        run: |
-          cargo run \
-            --bin uniffi-bindgen \
-            -- generate \
-            --library build/generated/main/resources/linux-x86-64/libzen_uniffi.so \
-            --language kotlin \
-            --out-dir build/generated/main/kotlin
+        run: cargo run --bin uniffi-bindgen -- generate --library build/generated/main/resources/linux-x86-64/libzen_uniffi.so --language kotlin --out-dir build/generated/main/kotlin
 
       - name: List current dir
         run: ls -a .
 
       - name: Print dependency tree
         run: tree build
-
-      - name: Print outer folder
-        run: tree ../../build
 
 #      - name: Publish Maven Artifact
 #        env:

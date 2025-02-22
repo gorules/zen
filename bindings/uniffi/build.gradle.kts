@@ -87,8 +87,8 @@ nmcp {
     publish("mavenJava") {
         publicationType = "USER_MANAGED"
 
-        val remoteUsername = providers.environmentVariable("OSSRH_USERNAME")
-        val remotePassword = providers.environmentVariable("OSSRH_PASSWORD")
+        val remoteUsername = providers.environmentVariable("SONATYPE_USERNAME")
+        val remotePassword = providers.environmentVariable("SONATYPE_PASSWORD")
 
         if (remoteUsername.isPresent && remotePassword.isPresent) {
             username.set(remoteUsername.get())

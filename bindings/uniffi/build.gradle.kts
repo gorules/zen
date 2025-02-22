@@ -1,3 +1,4 @@
+import org.jreleaser.model.Active
 import java.util.*
 
 group = "io.gorules"
@@ -6,8 +7,7 @@ version = "0.1.0"
 plugins {
     kotlin("jvm") version "2.1.0"
     id("maven-publish")
-    id("signing")
-    id("io.github.gradle-nexus.publish-plugin") version "2.0.0"
+    id("org.jreleaser") version "1.16.0"
 }
 
 dependencies {
@@ -67,28 +67,36 @@ publishing {
     }
 }
 
-signing {
-    val signingKeyBase64 = providers.environmentVariable("GPG_SIGNING_KEY")
-    val signingPassphrase = providers.environmentVariable("GPG_SIGNING_PASSPHRASE")
+jreleaser {
+    signing {
+        active = Active.ALWAYS
+        armored = true
 
-    if (signingKeyBase64.isPresent && signingPassphrase.isPresent) {
-        val signingKey = Base64.getDecoder().decode(signingKeyBase64.get()).toString(Charsets.UTF_8)
-        useInMemoryPgpKeys(signingKey, signingPassphrase.get())
-        sign(publishing.publications["mavenJava"])
+        val signingKeyBase64 = providers.environmentVariable("GPG_SIGNING_KEY")
+        val signingPassphrase = providers.environmentVariable("GPG_SIGNING_PASSPHRASE")
+
+        if (signingKeyBase64.isPresent && signingPassphrase.isPresent) {
+            val signingKey = Base64.getDecoder().decode(signingKeyBase64.get()).toString(Charsets.UTF_8)
+
+            secretKey.set(signingKey)
+            passphrase.set(signingPassphrase.get())
+        }
     }
-}
+    deploy {
+        maven {
+            mavenCentral {
+                create("sonatype") {
+                    active = Active.ALWAYS
+                    url = "https://central.sonatype.com/api/v1/publisher"
+                    stagingRepository("target/staging-deploy")
 
-nexusPublishing {
-    repositories {
-        sonatype {
-            nexusUrl.set(uri("https://s01.oss.sonatype.org/service/local/"))
-            snapshotRepositoryUrl.set(uri("https://s01.oss.sonatype.org/content/repositories/snapshots/"))
-
-            val remoteUsername = providers.environmentVariable("OSSRH_USERNAME")
-            val remotePassword = providers.environmentVariable("OSSRH_PASSWORD")
-            if (remoteUsername.isPresent && remotePassword.isPresent) {
-                username.set(remoteUsername.get())
-                password.set(remotePassword.get())
+                    val remoteUsername = providers.environmentVariable("OSSRH_USERNAME")
+                    val remotePassword = providers.environmentVariable("OSSRH_PASSWORD")
+                    if (remoteUsername.isPresent && remotePassword.isPresent) {
+                        username.set(remoteUsername.get())
+                        password.set(remotePassword.get())
+                    }
+                }
             }
         }
     }

@@ -14,6 +14,8 @@ plugins {
     kotlin("jvm") version "2.1.0"
     id("maven-publish")
     id("signing")
+    id("org.jetbrains.dokka") version "2.0.0"
+    id("org.jetbrains.dokka-javadoc") version "2.0.0"
     id("com.gradleup.nmcp") version "0.0.9"
 }
 
@@ -37,11 +39,21 @@ sourceSets {
     }
 }
 
+tasks {
+    val javadocJar by creating(Jar::class) {
+        dependsOn(dokkaGeneratePublicationJavadoc)
+        archiveClassifier.set("javadoc")
+
+        from(dokkaGeneratePublicationJavadoc.get())
+    }
+}
+
 publishing {
     publications {
         create<MavenPublication>("mavenJava") {
             from(components["java"])
             artifact(tasks["kotlinSourcesJar"])
+            artifact(tasks["javadocJar"])
 
             pom {
                 name = "GoRules ZEN Engine"

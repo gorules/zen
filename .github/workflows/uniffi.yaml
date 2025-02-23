@@ -89,8 +89,6 @@ jobs:
 
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
-        with:
-          target: ${{ matrix.settings.target }}
 
       - name: Validate Gradle wrapper jar
         uses: gradle/wrapper-validation-action@v1
@@ -106,18 +104,12 @@ jobs:
       - name: Move artifacts
         run: mv ../../build ./
 
-      - name: List pwd
-        run: pwd
-
       - name: Generate Kotlin sources
         run: |
           cargo run --bin uniffi-bindgen -- generate \
-            --library build/generated/main/resources/linux-aarch64/libzen_uniffi.so \
+            --library build/generated/main/resources/linux-x86-64/libzen_uniffi.so \
             --language kotlin \
             --out-dir build/generated/main/kotlin
-
-      - name: List current dir
-        run: ls -a .
 
       - name: Print dependency tree
         run: tree build

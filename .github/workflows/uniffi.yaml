@@ -110,7 +110,11 @@ jobs:
         run: pwd
 
       - name: Generate Kotlin sources
-        run: cargo run --bin uniffi-bindgen -- generate --library build/generated/main/resources/linux-x86-64/libzen_uniffi.so --language kotlin --out-dir $(pwd)/build/generated/main/kotlin
+        run: |
+          cargo run --bin uniffi-bindgen -- generate \
+            --library build/generated/main/resources/linux-aarch64/libzen_uniffi.so \
+            --language kotlin \
+            --out-dir build/generated/main/kotlin
 
       - name: List current dir
         run: ls -a .

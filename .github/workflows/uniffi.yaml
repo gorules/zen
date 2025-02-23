@@ -37,7 +37,7 @@ jobs:
           #          - host: macos-latest
           #            target: 'x86_64-apple-darwin'
           #            output: 'libzen_uniffi.dylib'
-          #            lib_dir: 'darwin'
+          #            lib_dir: 'darwin-x86-64'
           #          - host: macos-latest
           #            target: 'aarch64-apple-darwin'
           #            output: 'libzen_uniffi.dylib'
@@ -107,7 +107,7 @@ jobs:
       - name: Generate Kotlin sources
         run: |
           cargo run --bin uniffi-bindgen -- generate \
-            --library build/generated/main/resources/linux-x86-64/libzen_uniffiaaa.so \
+            --library build/generated/main/resources/linux-x86-64/libzen_uniffi.so \
             --language kotlin \
             --out-dir build/generated/main/kotlin
 

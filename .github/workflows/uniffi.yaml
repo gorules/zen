@@ -3,8 +3,6 @@ env:
   UNIFFI_DIRECTORY: bindings/uniffi
 
 on:
-  # Temporary allow on workflow dispatch
-  workflow_dispatch:
   push:
     branches:
       - master
@@ -114,10 +112,10 @@ jobs:
       - name: Print dependency tree
         run: tree build
 
-#      - name: Publish Maven Artifact
-#        env:
-#          SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
-#          SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
-#          GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
-#          GPG_SIGNING_PASSPHRASE: ${{ secrets.GPG_SIGNING_PASSPHRASE }}
-#        run: ./gradlew publishAllPublicationsToCentralPortal
+      - name: Publish Maven Artifact
+        env:
+          SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
+          SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+          GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
+          GPG_SIGNING_PASSPHRASE: ${{ secrets.GPG_SIGNING_PASSPHRASE }}
+        run: ./gradlew publishAllPublicationsToCentralPortal

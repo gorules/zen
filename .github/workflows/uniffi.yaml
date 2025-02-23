@@ -30,18 +30,18 @@ jobs:
       fail-fast: true
       matrix:
         settings:
-          #          - host: windows-latest
-          #            target: 'x86_64-pc-windows-msvc'
-          #            output: 'zen_uniffi.dll'
-          #            lib_dir: 'win32-x86-64'
-          #          - host: macos-latest
-          #            target: 'x86_64-apple-darwin'
-          #            output: 'libzen_uniffi.dylib'
-          #            lib_dir: 'darwin-x86-64'
-          #          - host: macos-latest
-          #            target: 'aarch64-apple-darwin'
-          #            output: 'libzen_uniffi.dylib'
-          #            lib_dir: 'darwin-aarch64'
+          - host: windows-latest
+            target: 'x86_64-pc-windows-msvc'
+            output: 'zen_uniffi.dll'
+            lib_dir: 'win32-x86-64'
+          - host: macos-latest
+            target: 'x86_64-apple-darwin'
+            output: 'libzen_uniffi.dylib'
+            lib_dir: 'darwin-x86-64'
+          - host: macos-latest
+            target: 'aarch64-apple-darwin'
+            output: 'libzen_uniffi.dylib'
+            lib_dir: 'darwin-aarch64'
           - host: ubuntu-latest
             target: 'x86_64-unknown-linux-gnu'
             output: 'libzen_uniffi.so'
@@ -107,7 +107,7 @@ jobs:
       - name: Generate Kotlin sources
         run: |
           cargo run --bin uniffi-bindgen -- generate \
-            --library build/generated/main/resources/linux-x86-64/libzen_uniffi.so \
+            --library build/generated/main/resources/darwin-x86-64/libzen_uniffi.dylib \
             --language kotlin \
             --out-dir build/generated/main/kotlin
 

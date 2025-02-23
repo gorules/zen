@@ -109,7 +109,7 @@ jobs:
             --language kotlin \
             --out-dir build/generated/main/kotlin
 
-      - name: Print dependency tree
+      - name: Print directory tree
         run: tree build
 
       - name: Publish Maven Artifact

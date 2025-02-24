@@ -33,7 +33,6 @@ impl CustomNodeAdapter for ZenCustomNodeCallbackWrapper {
     async fn handle(&self, request: CustomNodeRequest) -> NodeResult {
         let input = request
             .input
-            .to_value()
             .try_into()
             .map_err(|err: ZenError| anyhow!(err))?;
 
@@ -45,16 +44,13 @@ impl CustomNodeAdapter for ZenCustomNodeCallbackWrapper {
             .await
             .map_err(|err| anyhow!(err.details()))?;
 
-        let output: Value = result
+        let output: Variable = result
             .output
             .try_into()
             .map_err(|err: ZenError| anyhow!(err))?;
 
         let trace_data: Option<Value> = result.trace_data.and_then(|trace| trace.try_into().ok());
 
-        Ok(NodeResponse {
-            output: Variable::from(output),
-            trace_data,
-        })
+        Ok(NodeResponse { output, trace_data })
     }
 }

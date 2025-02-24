@@ -3,6 +3,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use zen_engine::handler::custom_node_adapter::CustomDecisionNode;
 use zen_engine::{DecisionGraphResponse, DecisionGraphTrace};
+use zen_expression::Variable;
 
 pub struct JsonBuffer(pub Vec<u8>);
 uniffi::custom_newtype!(JsonBuffer, Vec<u8>);
@@ -15,11 +16,29 @@ impl TryFrom<JsonBuffer> for Value {
     }
 }
 
+impl TryFrom<JsonBuffer> for Variable {
+    type Error = ZenError;
+
+    fn try_from(value: JsonBuffer) -> Result<Self, Self::Error> {
+        serde_json::from_slice(&value.0).map_err(|_| ZenError::JsonDeserializationFailed)
+    }
+}
+
 impl TryFrom<Value> for JsonBuffer {
     type Error = ZenError;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         serde_json::to_vec(&value)
+            .map(|v| JsonBuffer(v))
+            .map_err(|_| ZenError::JsonSerializationFailed)
+    }
+}
+
+impl TryFrom<Variable> for JsonBuffer {
+    type Error = ZenError;
+
+    fn try_from(var: Variable) -> Result<Self, Self::Error> {
+        serde_json::to_vec(&var)
             .map(|v| JsonBuffer(v))
             .map_err(|_| ZenError::JsonSerializationFailed)
     }

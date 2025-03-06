@@ -70,7 +70,7 @@ pub mod vm;
 
 pub use expression::{Expression, ExpressionKind};
 pub use function::{
-    compile_expression, compile_unary_expression, evaluate_expression, evaluate_unary_expression,
+    compile_expression, compile_unary_expression, evaluate_expression, evaluate_unary_expression, extract_expression_identifiers
 };
 pub use isolate::{Isolate, IsolateError};
 pub use variable::Variable;

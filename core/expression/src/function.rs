@@ -34,6 +34,11 @@ pub fn compile_unary_expression(expression: &str) -> Result<Expression<Unary>, I
     Isolate::new().compile_unary(expression)
 }
 
+/// List the identifiers used by an expression
+pub fn extract_expression_identifiers(expression: &str) -> Result<Vec<String>, IsolateError> {
+    Isolate::with_environment(Variable::Null).extract_identifiers(expression)
+}
+
 #[cfg(test)]
 mod test {
     use crate::evaluate_expression;

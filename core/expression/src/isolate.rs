@@ -1,16 +1,18 @@
+use std::cell::RefCell;
 use ahash::AHasher;
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
-use std::collections::HashMap;
+use std::collections::{HashMap};
 use std::hash::BuildHasherDefault;
 use std::sync::Arc;
+use std::rc::Rc;
 use thiserror::Error;
 
 use crate::arena::UnsafeArena;
 use crate::compiler::{Compiler, CompilerError};
 use crate::expression::{Standard, Unary};
 use crate::lexer::{Lexer, LexerError};
-use crate::parser::{Parser, ParserError};
+use crate::parser::{Node, Parser, ParserError};
 use crate::variable::Variable;
 use crate::vm::{VMError, VM};
 use crate::{Expression, ExpressionKind};
@@ -155,6 +157,36 @@ impl<'a> Isolate<'a> {
             .run(bytecode, self.environment.clone().unwrap_or(Variable::Null))?;
 
         result.as_bool().ok_or_else(|| IsolateError::ValueCastError)
+    }
+
+    pub fn extract_identifiers(&mut self, source: &'a str) -> Result<Vec<String>, IsolateError> {
+        self.bump.with_mut(|b| b.reset());
+        let bump = self.bump.get();
+
+        let tokens = self
+            .lexer
+            .tokenize(source)
+            .map_err(|source| IsolateError::LexerError { source })?;
+
+        let parser = Parser::try_new(tokens, bump)
+            .map_err(|source| IsolateError::ParserError { source })?
+            .standard();
+
+        let parser_result = parser.parse();
+        parser_result
+            .error()
+            .map_err(|source| IsolateError::ParserError { source })?;
+
+        let identifiers = Rc::new(RefCell::new(Vec::new()));
+
+        parser_result.root.walk(|node| {
+            let identifiers = Rc::clone(&identifiers);
+            if let Node::Identifier(name) = node {
+                identifiers.borrow_mut().push(name.to_string());
+            }
+        });
+
+        Ok(Rc::try_unwrap(identifiers).unwrap().into_inner())
     }
 }
 

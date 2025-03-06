@@ -1,6 +1,6 @@
 use napi::anyhow::anyhow;
 use napi_derive::napi;
-use serde_json::Value;
+use serde_json::{json, Value};
 
 #[napi]
 pub fn evaluate_expression_sync(expression: String, context: Option<Value>) -> napi::Result<Value> {
@@ -11,6 +11,12 @@ pub fn evaluate_expression_sync(expression: String, context: Option<Value>) -> n
             .map_err(|e| anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string())))?
             .to_value(),
     )
+}
+
+#[napi]
+pub fn list_expression_identifiers_sync(expression: String) -> napi::Result<Value> {
+    let identifiers = zen_expression::extract_expression_identifiers(expression.as_str());
+    Ok(json!(identifiers))
 }
 
 #[allow(dead_code)]

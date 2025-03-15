@@ -16,6 +16,9 @@ pub enum VMError {
 
     #[error("Number conversion error")]
     NumberConversionError,
+
+    #[error("Undefined numerical operation")]
+    OpcodeUndefinedNumericalOperation { opcode: String, message: String },
 }
 
 pub(crate) type VMResult<T> = Result<T, VMError>;

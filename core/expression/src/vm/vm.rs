@@ -833,6 +833,12 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                     let a = self.pop()?;
 
                     match (a, b) {
+                        (_, Number(a)) if a == Decimal::ZERO => {
+                            return Err(OpcodeUndefinedNumericalOperation {
+                                opcode: "Divide".into(),
+                                message: "Division by zero".into(),
+                            });
+                        }
                         (Number(a), Number(b)) => self.push(Number(a / b)),
                         _ => {
                             return Err(OpcodeErr {

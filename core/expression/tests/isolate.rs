@@ -763,6 +763,17 @@ fn isolate_test_decimals() {
 }
 
 #[test]
+fn test_divide_by_zero() {
+    let mut isolate = Isolate::new();
+    let result_err = isolate.run_unary("1 / 0").unwrap_err();
+    assert_eq!(
+        result_err.to_string(),
+        "VM error: Undefined numerical operation",
+        "Expression error: {result_err:?}"
+    );
+}
+
+#[test]
 fn test_standard_csv() {
     let csv_data = include_str!("data/standard.csv");
     let mut r = csv::ReaderBuilder::new()

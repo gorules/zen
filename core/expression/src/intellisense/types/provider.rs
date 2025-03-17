@@ -6,6 +6,7 @@ use crate::variable::VariableType;
 use serde_json::{Number, Value};
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::str::FromStr;
 
 #[derive(Debug)]
 pub struct TypesProvider {
@@ -68,9 +69,16 @@ impl TypesProvider {
                 false => V(VariableType::Bool),
             },
             Node::Number(n) => match detailed {
+                #[cfg(feature = "arbitrary_precision")]
                 true => Const(Value::Number(Number::from_string_unchecked(
                     n.normalize().to_string(),
                 ))),
+                #[cfg(not(feature = "arbitrary_precision"))]
+                true => Const(Value::Number(
+                    Number::from_str(n.normalize().to_string().as_str())
+                        .map_err(|_| "Invalid number")
+                        .unwrap(),
+                )),
                 false => V(VariableType::Number),
             },
             Node::String(s) => match detailed {

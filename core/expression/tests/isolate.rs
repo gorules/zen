@@ -98,6 +98,42 @@ fn isolate_standard_test() {
         },
         TestEnv {
             env: json!({
+                "a": 3.14f64,
+                "b": 2,
+                "c": 3.141592653589793f64,
+                "d": 18446744073709551615u64,
+                "e": 9_223_372_036_854_775_807i64,
+
+            }),
+            cases: Vec::from([
+                TestCase {
+                    expr: "a",
+                    result: json!(3.14),
+                },
+                TestCase {
+                    expr: "b",
+                    result: json!(2),
+                },
+                TestCase {
+                    expr: "e",
+                    result: json!(9_223_372_036_854_775_807i64),
+                },
+                TestCase {
+                    expr: "a + b",
+                    result: json!(5.14),
+                },
+                TestCase {
+                    expr: "(b + c) - (c + b)",
+                    result: json!(0),
+                },
+                TestCase {
+                    expr: "d",
+                    result: json!(18446744073709551615u64),
+                },
+            ]),
+        },
+        TestEnv {
+            env: json!({
                 "a": 3,
                 "b": 6,
                 "c": 1,

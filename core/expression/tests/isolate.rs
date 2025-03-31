@@ -62,6 +62,22 @@ fn isolate_standard_test() {
         },
         TestEnv {
             env: json!({
+                "a": 1,
+                "b": 0
+            }),
+            cases: Vec::from([
+                TestCase {
+                    expr: "a / b",
+                    result: json!(null),
+                },
+                TestCase {
+                    expr: "b / a",
+                    result: json!(0),
+                }
+            ])
+        },
+        TestEnv {
+            env: json!({
                 "a": 3.14f64,
                 "b": 2,
                 "c": 3.141592653589793f64,

@@ -833,17 +833,10 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                     let a = self.pop()?;
 
                     match (a, b) {
-                        (Number(a), Number(b)) => {
-                            match a.checked_div(b) {
-                                Some(result) => self.push(Number(result)),
-                                None => {
-                                    return Err(OpcodeUndefinedNumericalOperation {
-                                        opcode: "Divide".into(),
-                                        message: "Undefined division operation".into(),
-                                    });
-                                }
-                            }
-                        },
+                        (Number(a), Number(b)) => self.push(match a.checked_div(b) {
+                            None => Null,
+                            Some(i) => Number(i)
+                        }),
                         _ => {
                             return Err(OpcodeErr {
                                 opcode: "Divide".into(),

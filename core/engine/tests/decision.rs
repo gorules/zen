@@ -88,3 +88,16 @@ fn decision_validation() {
         DecisionGraphValidationError::InvalidInputCount(_)
     ));
 }
+
+#[tokio::test]
+#[cfg_attr(miri, ignore)]
+async fn nulls_are_preserved_when_merging_incoming_nodes() {
+    let table_content = load_test_data("test-null.json");
+    let decision = Decision::from(table_content);
+
+    let context = json!({ "b": null, "c": { "d": null } });
+    let result = decision.evaluate(context.into()).await;
+
+    assert_eq!(result.unwrap().result, json!({ "b": null, "c": { "d": null } }).into());
+}
+

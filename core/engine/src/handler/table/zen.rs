@@ -186,6 +186,8 @@ impl<'a> DecisionTableHandlerInner<'a> {
 
             if let Some(reference) = self.isolate.get_reference(input_field.as_str()) {
                 reference_map.insert(input_field.clone(), reference);
+            } else if let Some(reference) = self.isolate.run_standard(input_field.as_str()).ok() {
+                reference_map.insert(input_field.clone(), reference);
             }
 
             let input_identifier = format!("{input_field}[{}]", &input.id);

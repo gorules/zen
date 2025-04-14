@@ -202,7 +202,7 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
                 DecisionNodeKind::InputNode { content } => {
                     trace!({
                         input: Variable::Null,
-                        output: Variable::Null,
+                        output: context.clone(),
                         trace_data: None,
                     });
 

@@ -24,7 +24,7 @@
         "aarch64-apple-darwin"
       ]
     },
-    "npmClient": "pnpm"
+    "npmClient": "yarn"
   },
   "keywords": [
     "gorules",

@@ -2,7 +2,7 @@
   "packages": [
     "./"
   ],
-  "npmClient": "pnpm",
+  "npmClient": "yarn",
   "version": "independent",
   "command": {
     "version": {

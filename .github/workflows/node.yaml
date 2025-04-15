@@ -36,13 +36,13 @@ jobs:
           - host: windows-latest
             target: 'x86_64-pc-windows-msvc'
             build: |
-              pnpm build --target x86_64-pc-windows-msvc
+              yarn lerna exec "yarn build --target x86_64-pc-windows-msvc" --concurrency 1 --stream --no-prefix
 
           - host: macos-13
             target: 'x86_64-apple-darwin'
             build: |
               rustup target add x86_64-apple-darwin
-              pnpm build --target x86_64-apple-darwin
+              yarn lerna exec "yarn build --target x86_64-apple-darwin" --concurrency 1 --stream --no-prefix
               strip -x ./*.node
 
           - host: macos-14
@@ -53,7 +53,7 @@ jobs:
               export CXX=$(xcrun -f clang++);
               SYSROOT=$(xcrun --sdk macosx --show-sdk-path);
               export CFLAGS="-isysroot $SYSROOT -isystem $SYSROOT";
-              pnpm build --target aarch64-apple-darwin
+              yarn lerna exec "yarn build --target aarch64-apple-darwin" --concurrency 1 --stream --no-prefix
               strip -x ./*.node
 
           - host: ubuntu-latest
@@ -65,7 +65,7 @@ jobs:
               sudo apt-get install -y patch
               cd bindings/nodejs
               rustup target add x86_64-unknown-linux-gnu
-              pnpm build --target x86_64-unknown-linux-gnu
+              yarn lerna exec "yarn build --target x86_64-unknown-linux-gnu" --concurrency 1 --stream --no-prefix
               strip ./*.node
 
           - host: ubuntu-latest
@@ -77,7 +77,7 @@ jobs:
               sudo apt-get install -y patch
               cd bindings/nodejs
               rustup target add aarch64-unknown-linux-gnu
-              pnpm build --target aarch64-unknown-linux-gnu
+              yarn lerna exec "yarn build --target aarch64-unknown-linux-gnu" --concurrency 1 --stream --no-prefix
               llvm-strip ./*.node
 
           - host: ubuntu-latest
@@ -87,7 +87,7 @@ jobs:
               set -e
               cd bindings/nodejs
               rustup target add x86_64-unknown-linux-musl
-              pnpm build --target x86_64-unknown-linux-musl
+              yarn lerna exec "yarn build --target x86_64-unknown-linux-musl" --concurrency 1 --stream --no-prefix
               strip ./*.node
 
           - host: ubuntu-latest
@@ -100,7 +100,7 @@ jobs:
               export CC_aarch64_unknown_linux_musl=aarch64-linux-musl-gcc
               export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-musl-gcc
               rustup target add aarch64-unknown-linux-musl
-              pnpm build --target aarch64-unknown-linux-musl
+              yarn lerna exec "yarn build --target aarch64-unknown-linux-musl" --concurrency 1 --stream --no-prefix
               /aarch64-linux-musl-cross/bin/aarch64-linux-musl-strip *.node
 
     name: stable - ${{ matrix.settings.target }} - node@18
@@ -112,16 +112,14 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup node
+        uses: actions/setup-node@v3
         if: ${{ !matrix.settings.docker }}
         with:
-          node-version: 22
-
-      - uses: pnpm/action-setup@v3
-        with:
-          version: 9
-          run_install: true
+          node-version: 18
+          check-latest: true
+          cache: yarn
+          cache-dependency-path: 'bindings/nodejs/yarn.lock'
 
       - name: Install
         uses: dtolnay/rust-toolchain@stable
@@ -144,6 +142,9 @@ jobs:
         run: ${{ matrix.settings.setup }}
         if: ${{ matrix.settings.setup }}
         shell: bash
+
+      - name: 'Install dependencies'
+        run: yarn install --immutable --mode=skip-build
 
       - name: Build in docker
         uses: addnab/docker-run-action@v3
@@ -190,16 +191,16 @@ jobs:
         with:
           submodules: true
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        if: ${{ matrix.node }}
+      - name: Setup node
+        uses: actions/setup-node@v3
         with:
-          node-version: 22
+          node-version: ${{ matrix.node }}
+          check-latest: true
+          cache: yarn
+          cache-dependency-path: 'bindings/nodejs/yarn.lock'
 
-      - uses: pnpm/action-setup@v3
-        with:
-          version: 9
-          run_install: true
+      - name: Install dependencies
+        run: yarn install --immutable --mode=skip-build
 
       - name: Download artifacts
         uses: actions/download-artifact@v4
@@ -208,13 +209,14 @@ jobs:
           path: artifacts
 
       - name: Move artifacts
-        run: pnpm artifacts
+        run: yarn artifacts
         shell: bash
 
       - name: Test bindings
         run: |
-          pnpm install
-          pnpm test
+          yarn install
+          yarn link
+          yarn test
   test-linux-x64-gnu-binding:
     name: Test bindings on Linux-x64-gnu - node@${{ matrix.node }}
     needs:
@@ -231,16 +233,16 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        if: ${{ matrix.node }}
+      - name: Setup node
+        uses: actions/setup-node@v3
         with:
-          node-version: 22
+          node-version: ${{ matrix.node }}
+          check-latest: true
+          cache: yarn
+          cache-dependency-path: 'bindings/nodejs/yarn.lock'
 
-      - uses: pnpm/action-setup@v3
-        with:
-          version: 9
-          run_install: true
+      - name: Install dependencies
+        run: yarn install --immutable --mode=skip-build
 
       - name: Download artifacts
         uses: actions/download-artifact@v4
@@ -249,7 +251,7 @@ jobs:
           path: artifacts
 
       - name: Move artifacts
-        run: pnpm artifacts
+        run: yarn artifacts
         shell: bash
 
       - name: List folder
@@ -263,8 +265,9 @@ jobs:
           options: -v ${{ github.workspace }}:/workspace
           run: |
             cd workspace/bindings/nodejs
-            pnpm install
-            pnpm test
+            yarn install
+            yarn link
+            yarn test
   test-linux-x64-musl-binding:
     name: Test bindings on Linux-x64-musl - node@${{ matrix.node }}
     needs:
@@ -281,16 +284,16 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        if: ${{ matrix.node }}
+      - name: Setup node
+        uses: actions/setup-node@v3
         with:
-          node-version: 22
+          node-version: ${{ matrix.node }}
+          check-latest: true
+          cache: yarn
+          cache-dependency-path: 'bindings/nodejs/yarn.lock'
 
-      - uses: pnpm/action-setup@v3
-        with:
-          version: 9
-          run_install: true
+      - name: Install dependencies
+        run: yarn install --immutable --mode=skip-build
 
       - name: Download artifacts
         uses: actions/download-artifact@v4
@@ -299,7 +302,7 @@ jobs:
           path: artifacts
 
       - name: Move artifacts
-        run: pnpm artifacts
+        run: yarn artifacts
         shell: bash
 
       - name: List folder
@@ -313,8 +316,9 @@ jobs:
           options: -v ${{ github.workspace }}:/workspace
           run: |
             cd workspace/bindings/nodejs
-            pnpm install
-            pnpm test
+            yarn install
+            yarn link
+            yarn test
   test-linux-aarch64-musl-binding:
     name: Test bindings on Linux-aarch64-musl - node@${{ matrix.node }}
     needs:
@@ -330,23 +334,19 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        if: ${{ matrix.node }}
+      - name: Setup node
+        uses: actions/setup-node@v3
         with:
-          node-version: 22
+          node-version: ${{ matrix.node }}
+          check-latest: true
+          cache: yarn
+          cache-dependency-path: 'bindings/nodejs/yarn.lock'
 
-      - uses: pnpm/action-setup@v3
-        with:
-          version: 9
-
-      - name: Node
+      - name: Install dependencies
         run: |
-          pnpm config set supportedArchitectures.cpu "arm64"
-          pnpm config set supportedArchitectures.libc "musl"
-          pnpm install --frozen-lockfile
-
+          yarn config set supportedArchitectures.cpu "arm64"
+          yarn config set supportedArchitectures.libc "musl"
+          yarn install --immutable --mode=skip-build
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
         with:
@@ -360,7 +360,7 @@ jobs:
           path: artifacts
 
       - name: Move artifacts
-        run: pnpm artifacts
+        run: yarn artifacts
         shell: bash
 
       - name: List folder
@@ -374,8 +374,9 @@ jobs:
           image: node:${{ matrix.node }}-alpine
           run: |
             cd workspace/bindings/nodejs
-            pnpm install
-            pnpm test
+            yarn install
+            yarn link
+            yarn test
   #  test-linux-aarch64-gnu-binding:
   #    name: Test bindings on aarch64-unknown-linux-gnu - node@${{ matrix.node }}
   #    needs:
@@ -445,16 +446,19 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        if: ${{ matrix.node }}
+      - name: Setup node
+        uses: actions/setup-node@v3
         with:
-          node-version: 22
+          node-version: 18
+          check-latest: true
+          cache: yarn
+          cache-dependency-path: 'bindings/nodejs/yarn.lock'
+          registry-url: 'https://registry.npmjs.org'
+          # Organisation
+          scope: '@gorules'
 
-      - uses: pnpm/action-setup@v3
-        with:
-          version: 9
-          run_install: true
+      - name: 'Install dependencies'
+        run: yarn install --immutable --mode=skip-build
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -465,7 +469,7 @@ jobs:
         run: cp ../../LICENSE .
 
       - name: Move artifacts
-        run: pnpm artifacts
+        run: yarn artifacts
 
       - name: List folder
         run: ls ./
@@ -473,7 +477,7 @@ jobs:
 
       - name: Lerna publish
         if: "startsWith(github.event.head_commit.message, 'chore(release): publish nodejs')"
-        run: pnpm lerna publish from-package --no-verify-access --yes
+        run: yarn lerna publish from-package --no-verify-access --yes
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

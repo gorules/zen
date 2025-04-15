@@ -10,6 +10,7 @@
     "index.d.ts",
     "README.md"
   ],
+  "packageManager": "yarn",
   "napi": {
     "name": "zen-engine",
     "triples": {

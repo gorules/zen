@@ -7,7 +7,7 @@ publish = false
 
 [dependencies]
 anyhow = { workspace = true }
-libc = "0.2.155"
+libc = "0.2"
 serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true, features = ["derive"] }
@@ -20,7 +20,7 @@ zen-tmpl = { path = "../../core/template" }
 crate-type = ["staticlib"]
 
 [build-dependencies]
-cbindgen = "0.26.0"
+cbindgen = "0.28"
 
 [features]
 default = ["go"]

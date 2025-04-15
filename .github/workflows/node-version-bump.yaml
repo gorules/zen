@@ -36,19 +36,18 @@ jobs:
           git config user.name "Bot"
           git config user.email "bot@gorules.io"
 
-      - name: Setup node
-        uses: actions/setup-node@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: 18
-          check-latest: true
-          cache: yarn
-          cache-dependency-path: 'bindings/nodejs/yarn.lock'
+          node-version: 22
 
-      - name: 'Install dependencies'
-        run: yarn install --immutable --mode=skip-build
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+          run_install: true
 
       - name: Lerna version
-        run: yarn lerna version ${{ github.event.inputs.version }} --tag-version-prefix="nodejs-" --no-push --yes
+        run: pnpm lerna version ${{ github.event.inputs.version }} --tag-version-prefix="nodejs-" --no-push --yes
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -57,4 +56,4 @@ jobs:
       - name: Push changes
         uses: ad-m/github-push-action@v0.6.0
         with:
-          github_token: ${{ secrets.PAT}}
+          github_token: ${{ secrets.PAT }}

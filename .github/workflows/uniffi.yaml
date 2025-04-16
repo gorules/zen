@@ -1,0 +1,121 @@
+name: UniFFI
+env:
+  UNIFFI_DIRECTORY: bindings/uniffi
+
+on:
+  push:
+    branches:
+      - master
+    tags-ignore:
+      - '**'
+    paths:
+      - '../../bindings/uniffi/**'
+      - 'core/**'
+      - 'test-data/**'
+      - '.github/workflows/uniffi.yaml'
+  pull_request:
+    paths:
+      - '../../bindings/uniffi/**'
+      - 'core/**'
+      - 'test-data/**'
+      - '.github/workflows/uniffi.yaml'
+
+jobs:
+  build:
+    if: "!contains(github.event.head_commit.message, 'skip ci')"
+
+    strategy:
+      fail-fast: true
+      matrix:
+        settings:
+          - host: windows-latest
+            target: 'x86_64-pc-windows-msvc'
+            output: 'zen_uniffi.dll'
+            lib_dir: 'win32-x86-64'
+          - host: macos-latest
+            target: 'x86_64-apple-darwin'
+            output: 'libzen_uniffi.dylib'
+            lib_dir: 'darwin-x86-64'
+          - host: macos-latest
+            target: 'aarch64-apple-darwin'
+            output: 'libzen_uniffi.dylib'
+            lib_dir: 'darwin-aarch64'
+          - host: ubuntu-latest
+            target: 'x86_64-unknown-linux-gnu'
+            output: 'libzen_uniffi.so'
+            lib_dir: 'linux-x86-64'
+          - host: ubuntu-latest
+            target: 'aarch64-unknown-linux-gnu'
+            output: 'libzen_uniffi.so'
+            lib_dir: 'linux-aarch64'
+
+    name: UniFFI - ${{ matrix.settings.target }}
+    runs-on: ${{ matrix.settings.host }}
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          target: ${{ matrix.settings.target }}
+
+      - name: Build
+        uses: houseabsolute/actions-rust-cross@v1
+        with:
+          working-directory: ${{ env.UNIFFI_DIRECTORY }}
+          target: ${{ matrix.settings.target }}
+          args: '--lib --release'
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.settings.lib_dir }}
+          path: target/${{ matrix.settings.target }}/release/${{ matrix.settings.output }}
+          if-no-files-found: error
+
+  release-kotlin:
+    runs-on: ubuntu-latest
+    needs: [ build ]
+    #    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
+    defaults:
+      run:
+        working-directory: ${{ env.UNIFFI_DIRECTORY }}
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Validate Gradle wrapper jar
+        uses: gradle/wrapper-validation-action@v1
+
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v2
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: build/generated/main/resources
+
+      - name: Move artifacts
+        run: mv ../../build ./
+
+      - name: Generate Kotlin sources
+        run: |
+          cargo run --bin uniffi-bindgen -- generate \
+            --library build/generated/main/resources/darwin-x86-64/libzen_uniffi.dylib \
+            --language kotlin \
+            --out-dir build/generated/main/kotlin
+
+      - name: Print directory tree
+        run: tree build
+
+      - name: Publish Maven Artifact
+        env:
+          SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
+          SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+          GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
+          GPG_SIGNING_PASSPHRASE: ${{ secrets.GPG_SIGNING_PASSPHRASE }}
+        run: ./gradlew publishAllPublicationsToCentralPortal

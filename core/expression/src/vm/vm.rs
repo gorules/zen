@@ -1468,9 +1468,11 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                     let var = self.pop()?;
 
                     let is_equal = match (check, var) {
-                        (TypeCheckKind::Numeric, String(str)) => {
-                            Decimal::from_str_exact(str.as_ref()).is_ok()
+                        (TypeCheckKind::Numeric, String(str)) => match str.as_ref() {
+                            x if !x.contains("e") => Decimal::from_str_exact(x),
+                            y => Decimal::from_scientific(y),
                         }
+                        .is_ok(),
                         (TypeCheckKind::Numeric, Number(_)) => true,
                         (TypeCheckKind::Numeric, _) => false,
                     };
@@ -1499,11 +1501,14 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                             });
                         }
                         (TypeConversionKind::Number, String(str)) => {
-                            let parsed_number =
-                                Decimal::from_str_exact(str.trim()).map_err(|_| OpcodeErr {
-                                    opcode: "TypeConversion".into(),
-                                    message: "Failed to parse string to number".into(),
-                                })?;
+                            let dec = match str.trim() {
+                                x if !x.contains("e") => Decimal::from_str_exact(x),
+                                y => Decimal::from_scientific(y),
+                            };
+                            let parsed_number = dec.map_err(|_| OpcodeErr {
+                                opcode: "TypeConversion".into(),
+                                message: "Failed to parse string to number".into(),
+                            })?;
 
                             Number(parsed_number)
                         }

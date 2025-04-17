@@ -268,12 +268,8 @@ fn merge_variables(
             MergeStrategy::InPlace => {
                 let mut map = doc_ref.borrow_mut();
                 for (key, value) in patch.deref() {
-                    if value == &Variable::Null {
-                        map.remove(key.as_str());
-                    } else {
-                        let entry = map.entry(key.to_string()).or_insert(Variable::Null);
-                        merge_variables(entry, value, false, strategy);
-                    }
+                    let entry = map.entry(key.to_string()).or_insert(Variable::Null);
+                    merge_variables(entry, value, false, strategy);
                 }
 
                 return true;
@@ -292,17 +288,10 @@ fn merge_variables(
                         new_map.as_mut().unwrap()
                     };
 
-                    if value == &Variable::Null {
-                        // Remove null values
-                        if map.remove(key.as_str()).is_some() {
-                            changed = true;
-                        }
-                    } else {
-                        // Handle nested merging
-                        let entry = map.entry(key.to_string()).or_insert(Variable::Null);
-                        if merge_variables(entry, value, false, strategy) {
-                            changed = true;
-                        }
+                    // Handle nested merging
+                    let entry = map.entry(key.to_string()).or_insert(Variable::Null);
+                    if merge_variables(entry, value, false, strategy) {
+                        changed = true;
                     }
                 }
 

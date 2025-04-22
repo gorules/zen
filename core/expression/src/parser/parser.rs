@@ -220,7 +220,9 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 received: token
                     .map(|t| afmt!(self, "{}", t.kind))
                     .unwrap_or_else(|| afmt!(self, "None")),
-                span: token.map(|t| t.span).unwrap_or((0, 0)),
+                span: token
+                    .map(|t| t.span)
+                    .unwrap_or((self.token_end(), self.token_end())),
             }),
         )
     }
@@ -611,7 +613,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         let builtin_node = match builtin.arity() {
             Arity::Single => {
                 let arg = expression_parser(ParserContext::Global);
-                self.expect(TokenKind::Bracket(Bracket::RightParenthesis));
+                expect!(self, TokenKind::Bracket(Bracket::RightParenthesis));
 
                 Node::BuiltIn {
                     kind: builtin,
@@ -620,9 +622,9 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             }
             Arity::Dual => {
                 let arg1 = expression_parser(ParserContext::Global);
-                self.expect(TokenKind::Operator(Operator::Comma));
+                expect!(self, TokenKind::Operator(Operator::Comma));
                 let arg2 = expression_parser(ParserContext::Global);
-                self.expect(TokenKind::Bracket(Bracket::RightParenthesis));
+                expect!(self, TokenKind::Bracket(Bracket::RightParenthesis));
 
                 Node::BuiltIn {
                     kind: builtin,
@@ -632,9 +634,9 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             Arity::Closure => {
                 let arg1 = expression_parser(ParserContext::Global);
 
-                self.expect(TokenKind::Operator(Operator::Comma));
+                expect!(self, TokenKind::Operator(Operator::Comma));
                 let arg2 = self.closure(&expression_parser);
-                self.expect(TokenKind::Bracket(Bracket::RightParenthesis));
+                expect!(self, TokenKind::Bracket(Bracket::RightParenthesis));
 
                 Node::BuiltIn {
                     kind: builtin,

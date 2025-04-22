@@ -276,6 +276,12 @@ values(customer);{"customer": {"firstName": "John"}};["John"]
 values(customer);{"customer": {"lastName": "Doe"}};["Doe"]
 {};;{}
 
+# Interval iterator
+map([0..3], #);[0, 1, 2, 3]
+map((0..3], #);[1, 2, 3]
+map([0..3), #);[0, 1, 2]
+map((0..3), #);[1, 2]
+
 # Nullish coalescing
 null ?? 'hello';;'hello'
 null ?? 123 ?? 321;;123

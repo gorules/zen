@@ -93,7 +93,7 @@ impl<'a> ExpressionHandlerInner<'a> {
                 };
 
                 let key = format!("$.{}", &expression.key);
-                let _ = environment.dot_insert(key.as_str(), value.clone());
+                let _ = environment.dot_insert(key.as_str(), value.depth_clone(2));
             });
 
             result.dot_insert(&expression.key, value);

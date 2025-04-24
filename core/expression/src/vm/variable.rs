@@ -55,4 +55,24 @@ impl IntervalObject {
             left,
         })
     }
+
+    pub(crate) fn to_array(&self) -> Option<Vec<Variable>> {
+        let start = match &self.left_bracket {
+            Bracket::LeftParenthesis => self.left.as_number()?.to_usize()? + 1,
+            Bracket::LeftSquareBracket => self.left.as_number()?.to_usize()?,
+            _ => return None,
+        };
+
+        let end = match &self.right_bracket {
+            Bracket::RightParenthesis => self.right.as_number()?.to_usize()? - 1,
+            Bracket::RightSquareBracket => self.right.as_number()?.to_usize()?,
+            _ => return None,
+        };
+
+        let list = (start..=end)
+            .map(|n| Variable::Number(Decimal::from(n)))
+            .collect::<Vec<_>>();
+
+        Some(list)
+    }
 }

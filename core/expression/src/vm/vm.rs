@@ -1601,29 +1601,39 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                     }
                 }
                 Opcode::Begin => {
-                    let a = self.pop()?;
-                    let arr_len = match &a {
+                    let var = self.pop()?;
+                    let maybe_scope = match &var {
                         Array(a) => {
                             let arr = a.borrow();
-                            Some(arr.len())
-                        }
-                        _ => None,
-                    };
-
-                    match arr_len {
-                        Some(len) => self.scopes.push(Scope {
-                            array: a,
-                            count: 0,
-                            len,
-                            iter: 0,
-                        }),
-                        None => {
-                            return Err(OpcodeErr {
-                                opcode: "Begin".into(),
-                                message: "Unsupported type".into(),
+                            Some(Scope {
+                                len: arr.len(),
+                                array: var.clone(),
+                                count: 0,
+                                iter: 0,
                             })
                         }
-                    }
+                        _ => match IntervalObject::try_from_object(var)
+                            .map(|s| s.to_array())
+                            .flatten()
+                        {
+                            None => None,
+                            Some(arr) => Some(Scope {
+                                len: arr.len(),
+                                array: Variable::from_array(arr),
+                                count: 0,
+                                iter: 0,
+                            }),
+                        },
+                    };
+
+                    let Some(scope) = maybe_scope else {
+                        return Err(OpcodeErr {
+                            opcode: "Begin".into(),
+                            message: "Unsupported type".into(),
+                        });
+                    };
+
+                    self.scopes.push(scope);
                 }
                 Opcode::End => {
                     self.scopes.pop();

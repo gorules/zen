@@ -1,8 +1,10 @@
 use crate::compiler::error::{CompilerError, CompilerResult};
 use crate::compiler::opcode::{FetchFastTarget, Jump};
-use crate::compiler::{Opcode, TypeCheckKind, TypeConversionKind};
+use crate::compiler::{Opcode, TypeConversionKind};
+use crate::functions::registry::FunctionRegistry;
+use crate::functions::{ClosureFunction, FunctionKind};
 use crate::lexer::{ArithmeticOperator, ComparisonOperator, LogicalOperator, Operator};
-use crate::parser::{BuiltInFunction, Node};
+use crate::parser::Node;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -96,7 +98,7 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
 
     fn compile_argument(
         &mut self,
-        builtin: &BuiltInFunction,
+        function_kind: &FunctionKind,
         arguments: &[&'arena Node<'arena>],
         index: usize,
     ) -> CompilerResult<usize> {
@@ -104,7 +106,7 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
             .get(index)
             .ok_or_else(|| CompilerError::ArgumentNotFound {
                 index,
-                builtin: builtin.to_string(),
+                function: function_kind.to_string(),
             })?;
 
         self.compile_node(arg)
@@ -367,290 +369,152 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                     operator: operator.to_string(),
                 }),
             },
-            Node::BuiltIn { kind, arguments } => match kind {
-                BuiltInFunction::Len => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    self.emit(Opcode::Len);
-                    self.emit(Opcode::Rot);
-                    Ok(self.emit(Opcode::Pop))
-                }
-                BuiltInFunction::Trim => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    Ok(self.emit(Opcode::Trim))
-                }
-                BuiltInFunction::Date => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    Ok(self.emit(Opcode::ParseDateTime))
-                }
-                BuiltInFunction::Time => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    Ok(self.emit(Opcode::ParseTime))
-                }
-                BuiltInFunction::Duration => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    Ok(self.emit(Opcode::ParseDuration))
-                }
-                BuiltInFunction::StartsWith => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    self.compile_argument(kind, arguments, 1)?;
-                    Ok(self.emit(Opcode::StartsWith))
-                }
-                BuiltInFunction::EndsWith => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    self.compile_argument(kind, arguments, 1)?;
-                    Ok(self.emit(Opcode::EndsWith))
-                }
-                BuiltInFunction::Contains => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    self.compile_argument(kind, arguments, 1)?;
-                    Ok(self.emit(Opcode::Contains))
-                }
-                BuiltInFunction::Matches => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    self.compile_argument(kind, arguments, 1)?;
-                    Ok(self.emit(Opcode::Matches))
-                }
-                BuiltInFunction::FuzzyMatch => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    self.compile_argument(kind, arguments, 1)?;
-                    Ok(self.emit(Opcode::FuzzyMatch))
-                }
-                BuiltInFunction::Split => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    self.compile_argument(kind, arguments, 1)?;
+            Node::FunctionCall { kind, arguments } => match kind {
+                FunctionKind::Internal(_) | FunctionKind::Deprecated(_) => {
+                    let function = FunctionRegistry::get_definition(kind).ok_or_else(|| {
+                        CompilerError::UnknownFunction {
+                            name: kind.to_string(),
+                        }
+                    })?;
 
-                    Ok(self.emit(Opcode::Split))
-                }
-                BuiltInFunction::Extract => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    self.compile_argument(kind, arguments, 1)?;
-                    Ok(self.emit(Opcode::Extract))
-                }
-                BuiltInFunction::Flatten => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    Ok(self.emit(Opcode::Flatten))
-                }
-                BuiltInFunction::Upper => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    Ok(self.emit(Opcode::Uppercase))
-                }
-                BuiltInFunction::Lower => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    Ok(self.emit(Opcode::Lowercase))
-                }
-                BuiltInFunction::Abs => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    Ok(self.emit(Opcode::Abs))
-                }
-                BuiltInFunction::Avg => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    Ok(self.emit(Opcode::Average))
-                }
-                BuiltInFunction::Median => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    Ok(self.emit(Opcode::Median))
-                }
-                BuiltInFunction::Mode => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    Ok(self.emit(Opcode::Mode))
-                }
-                BuiltInFunction::Max => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    Ok(self.emit(Opcode::Max))
-                }
-                BuiltInFunction::Min => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    Ok(self.emit(Opcode::Min))
-                }
-                BuiltInFunction::Sum => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    Ok(self.emit(Opcode::Sum))
-                }
-                BuiltInFunction::Floor => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    Ok(self.emit(Opcode::Floor))
-                }
-                BuiltInFunction::Ceil => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    Ok(self.emit(Opcode::Ceil))
-                }
-                BuiltInFunction::Round => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    Ok(self.emit(Opcode::Round))
-                }
-                BuiltInFunction::Rand => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    Ok(self.emit(Opcode::Random))
-                }
-                BuiltInFunction::String => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    Ok(self.emit(Opcode::TypeConversion(TypeConversionKind::String)))
-                }
-                BuiltInFunction::Number => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    Ok(self.emit(Opcode::TypeConversion(TypeConversionKind::Number)))
-                }
-                BuiltInFunction::Bool => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    Ok(self.emit(Opcode::TypeConversion(TypeConversionKind::Bool)))
-                }
-                BuiltInFunction::IsNumeric => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    Ok(self.emit(Opcode::TypeCheck(TypeCheckKind::Numeric)))
-                }
-                BuiltInFunction::Type => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    Ok(self.emit(Opcode::GetType))
-                }
-                BuiltInFunction::Keys => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    Ok(self.emit(Opcode::Keys))
-                }
-                BuiltInFunction::Values => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    Ok(self.emit(Opcode::Values))
-                }
-                BuiltInFunction::StartOf | BuiltInFunction::EndOf => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    self.compile_argument(kind, arguments, 1)?;
-                    Ok(
-                        self.emit(Opcode::DateFunction(Arc::from(Into::<&'static str>::into(
-                            kind,
-                        )))),
-                    )
-                }
-                BuiltInFunction::DayOfWeek
-                | BuiltInFunction::DayOfMonth
-                | BuiltInFunction::DayOfYear
-                | BuiltInFunction::WeekOfYear
-                | BuiltInFunction::MonthOfYear
-                | BuiltInFunction::MonthString
-                | BuiltInFunction::WeekdayString
-                | BuiltInFunction::Year
-                | BuiltInFunction::DateString => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    Ok(self.emit(Opcode::DateManipulation(Arc::from(
-                        Into::<&'static str>::into(kind),
-                    ))))
-                }
-                BuiltInFunction::All => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    self.emit(Opcode::Begin);
-                    let mut loop_break: usize = 0;
-                    self.emit_loop(|c| {
-                        c.compile_argument(kind, arguments, 1)?;
-                        loop_break = c.emit(Opcode::Jump(Jump::IfFalse, 0));
-                        c.emit(Opcode::Pop);
-                        Ok(())
-                    })?;
-                    let e = self.emit(Opcode::PushBool(true));
-                    self.replace(
-                        loop_break,
-                        Opcode::Jump(Jump::IfFalse, (e - loop_break) as u32),
-                    );
-                    Ok(self.emit(Opcode::End))
-                }
-                BuiltInFunction::None => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    self.emit(Opcode::Begin);
-                    let mut loop_break: usize = 0;
-                    self.emit_loop(|c| {
-                        c.compile_argument(kind, arguments, 1)?;
-                        c.emit(Opcode::Not);
-                        loop_break = c.emit(Opcode::Jump(Jump::IfFalse, 0));
-                        c.emit(Opcode::Pop);
-                        Ok(())
-                    })?;
-                    let e = self.emit(Opcode::PushBool(true));
-                    self.replace(
-                        loop_break,
-                        Opcode::Jump(Jump::IfFalse, (e - loop_break) as u32),
-                    );
-                    Ok(self.emit(Opcode::End))
-                }
-                BuiltInFunction::Some => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    self.emit(Opcode::Begin);
-                    let mut loop_break: usize = 0;
-                    self.emit_loop(|c| {
-                        c.compile_argument(kind, arguments, 1)?;
-                        loop_break = c.emit(Opcode::Jump(Jump::IfTrue, 0));
-                        c.emit(Opcode::Pop);
-                        Ok(())
-                    })?;
-                    let e = self.emit(Opcode::PushBool(false));
-                    self.replace(
-                        loop_break,
-                        Opcode::Jump(Jump::IfTrue, (e - loop_break) as u32),
-                    );
-                    Ok(self.emit(Opcode::End))
-                }
-                BuiltInFunction::One => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    self.emit(Opcode::Begin);
-                    self.emit_loop(|c| {
-                        c.compile_argument(kind, arguments, 1)?;
-                        c.emit_cond(|c| {
-                            c.emit(Opcode::IncrementCount);
+                    let min_params = function.required_parameters();
+                    let max_params = min_params + function.optional_parameters();
+                    if arguments.len() < min_params || arguments.len() > max_params {
+                        return Err(CompilerError::InvalidFunctionCall {
+                            name: kind.to_string(),
+                            message: "Not allowed number of arguments".to_string(),
                         });
-                        Ok(())
-                    })?;
-                    self.emit(Opcode::GetCount);
-                    self.emit(Opcode::PushNumber(dec!(1)));
-                    self.emit(Opcode::Equal);
-                    Ok(self.emit(Opcode::End))
+                    }
+
+                    for i in 0..arguments.len() {
+                        self.compile_argument(kind, arguments, i)?;
+                    }
+
+                    Ok(self.emit(Opcode::CallFunction {
+                        kind: kind.clone(),
+                        arg_count: arguments.len() as u32,
+                    }))
                 }
-                BuiltInFunction::Filter => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    self.emit(Opcode::Begin);
-                    self.emit_loop(|c| {
-                        c.compile_argument(kind, arguments, 1)?;
-                        c.emit_cond(|c| {
-                            c.emit(Opcode::IncrementCount);
-                            c.emit(Opcode::Pointer);
-                        });
-                        Ok(())
-                    })?;
-                    self.emit(Opcode::GetCount);
-                    self.emit(Opcode::End);
-                    Ok(self.emit(Opcode::Array))
-                }
-                BuiltInFunction::Map => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    self.emit(Opcode::Begin);
-                    self.emit_loop(|c| {
-                        c.compile_argument(kind, arguments, 1)?;
-                        Ok(())
-                    })?;
-                    self.emit(Opcode::GetLen);
-                    self.emit(Opcode::End);
-                    Ok(self.emit(Opcode::Array))
-                }
-                BuiltInFunction::FlatMap => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    self.emit(Opcode::Begin);
-                    self.emit_loop(|c| {
-                        c.compile_argument(kind, arguments, 1)?;
-                        Ok(())
-                    })?;
-                    self.emit(Opcode::GetLen);
-                    self.emit(Opcode::End);
-                    self.emit(Opcode::Array);
-                    Ok(self.emit(Opcode::Flatten))
-                }
-                BuiltInFunction::Count => {
-                    self.compile_argument(kind, arguments, 0)?;
-                    self.emit(Opcode::Begin);
-                    self.emit_loop(|c| {
-                        c.compile_argument(kind, arguments, 1)?;
-                        c.emit_cond(|c| {
-                            c.emit(Opcode::IncrementCount);
-                        });
-                        Ok(())
-                    })?;
-                    self.emit(Opcode::GetCount);
-                    Ok(self.emit(Opcode::End))
-                }
+                FunctionKind::Closure(c) => match c {
+                    ClosureFunction::All => {
+                        self.compile_argument(kind, arguments, 0)?;
+                        self.emit(Opcode::Begin);
+                        let mut loop_break: usize = 0;
+                        self.emit_loop(|c| {
+                            c.compile_argument(kind, arguments, 1)?;
+                            loop_break = c.emit(Opcode::Jump(Jump::IfFalse, 0));
+                            c.emit(Opcode::Pop);
+                            Ok(())
+                        })?;
+                        let e = self.emit(Opcode::PushBool(true));
+                        self.replace(
+                            loop_break,
+                            Opcode::Jump(Jump::IfFalse, (e - loop_break) as u32),
+                        );
+                        Ok(self.emit(Opcode::End))
+                    }
+                    ClosureFunction::None => {
+                        self.compile_argument(kind, arguments, 0)?;
+                        self.emit(Opcode::Begin);
+                        let mut loop_break: usize = 0;
+                        self.emit_loop(|c| {
+                            c.compile_argument(kind, arguments, 1)?;
+                            c.emit(Opcode::Not);
+                            loop_break = c.emit(Opcode::Jump(Jump::IfFalse, 0));
+                            c.emit(Opcode::Pop);
+                            Ok(())
+                        })?;
+                        let e = self.emit(Opcode::PushBool(true));
+                        self.replace(
+                            loop_break,
+                            Opcode::Jump(Jump::IfFalse, (e - loop_break) as u32),
+                        );
+                        Ok(self.emit(Opcode::End))
+                    }
+                    ClosureFunction::Some => {
+                        self.compile_argument(kind, arguments, 0)?;
+                        self.emit(Opcode::Begin);
+                        let mut loop_break: usize = 0;
+                        self.emit_loop(|c| {
+                            c.compile_argument(kind, arguments, 1)?;
+                            loop_break = c.emit(Opcode::Jump(Jump::IfTrue, 0));
+                            c.emit(Opcode::Pop);
+                            Ok(())
+                        })?;
+                        let e = self.emit(Opcode::PushBool(false));
+                        self.replace(
+                            loop_break,
+                            Opcode::Jump(Jump::IfTrue, (e - loop_break) as u32),
+                        );
+                        Ok(self.emit(Opcode::End))
+                    }
+                    ClosureFunction::One => {
+                        self.compile_argument(kind, arguments, 0)?;
+                        self.emit(Opcode::Begin);
+                        self.emit_loop(|c| {
+                            c.compile_argument(kind, arguments, 1)?;
+                            c.emit_cond(|c| {
+                                c.emit(Opcode::IncrementCount);
+                            });
+                            Ok(())
+                        })?;
+                        self.emit(Opcode::GetCount);
+                        self.emit(Opcode::PushNumber(dec!(1)));
+                        self.emit(Opcode::Equal);
+                        Ok(self.emit(Opcode::End))
+                    }
+                    ClosureFunction::Filter => {
+                        self.compile_argument(kind, arguments, 0)?;
+                        self.emit(Opcode::Begin);
+                        self.emit_loop(|c| {
+                            c.compile_argument(kind, arguments, 1)?;
+                            c.emit_cond(|c| {
+                                c.emit(Opcode::IncrementCount);
+                                c.emit(Opcode::Pointer);
+                            });
+                            Ok(())
+                        })?;
+                        self.emit(Opcode::GetCount);
+                        self.emit(Opcode::End);
+                        Ok(self.emit(Opcode::Array))
+                    }
+                    ClosureFunction::Map => {
+                        self.compile_argument(kind, arguments, 0)?;
+                        self.emit(Opcode::Begin);
+                        self.emit_loop(|c| {
+                            c.compile_argument(kind, arguments, 1)?;
+                            Ok(())
+                        })?;
+                        self.emit(Opcode::GetLen);
+                        self.emit(Opcode::End);
+                        Ok(self.emit(Opcode::Array))
+                    }
+                    ClosureFunction::FlatMap => {
+                        self.compile_argument(kind, arguments, 0)?;
+                        self.emit(Opcode::Begin);
+                        self.emit_loop(|c| {
+                            c.compile_argument(kind, arguments, 1)?;
+                            Ok(())
+                        })?;
+                        self.emit(Opcode::GetLen);
+                        self.emit(Opcode::End);
+                        self.emit(Opcode::Array);
+                        Ok(self.emit(Opcode::Flatten))
+                    }
+                    ClosureFunction::Count => {
+                        self.compile_argument(kind, arguments, 0)?;
+                        self.emit(Opcode::Begin);
+                        self.emit_loop(|c| {
+                            c.compile_argument(kind, arguments, 1)?;
+                            c.emit_cond(|c| {
+                                c.emit(Opcode::IncrementCount);
+                            });
+                            Ok(())
+                        })?;
+                        self.emit(Opcode::GetCount);
+                        Ok(self.emit(Opcode::End))
+                    }
+                },
             },
             Node::Error { .. } => Err(CompilerError::UnexpectedErrorNode),
         }

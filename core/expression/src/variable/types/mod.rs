@@ -17,6 +17,13 @@ pub enum VariableType {
     Constant(Rc<serde_json::Value>),
     Array(Rc<VariableType>),
     Object(HashMap<String, Rc<VariableType>>),
+    Closure(Rc<VariableType>),
+}
+
+impl VariableType {
+    pub fn array(self) -> Self {
+        Self::Array(Rc::new(self))
+    }
 }
 
 impl Default for VariableType {
@@ -36,6 +43,7 @@ impl Display for VariableType {
             VariableType::Constant(c) => write!(f, "{c}"),
             VariableType::Array(v) => write!(f, "{v}[]"),
             VariableType::Object(_) => write!(f, "object"),
+            VariableType::Closure(rt) => write!(f, "() => {rt}"),
         }
     }
 }
@@ -48,6 +56,7 @@ impl Hash for VariableType {
             VariableType::Bool => 2.hash(state),
             VariableType::String => 3.hash(state),
             VariableType::Number => 4.hash(state),
+            VariableType::Closure(rt) => rt.hash(state),
             VariableType::Constant(c) => c.hash(state),
             VariableType::Array(arr) => arr.hash(state),
             VariableType::Object(obj) => {

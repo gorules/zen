@@ -2,7 +2,7 @@ use thiserror::Error;
 
 #[derive(Debug, PartialEq, Eq, Clone, Error)]
 pub enum VMError {
-    #[error("Unsupported opcode type in '{opcode}'")]
+    #[error("Opcode {opcode}: {message}")]
     OpcodeErr { opcode: String, message: String },
 
     #[error("Opcode out of bounds")]

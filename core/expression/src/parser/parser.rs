@@ -1,3 +1,13 @@
+use crate::functions::FunctionKind;
+use crate::lexer::{
+    Bracket, ComparisonOperator, Identifier, Operator, QuotationMark, TemplateString, Token,
+    TokenKind,
+};
+use crate::parser::ast::{AstNodeError, Node};
+use crate::parser::error::ParserError;
+use crate::parser::standard::Standard;
+use crate::parser::unary::Unary;
+use crate::parser::NodeMetadata;
 use bumpalo::collections::Vec as BumpVec;
 use bumpalo::Bump;
 use nohash_hasher::BuildNoHashHasher;
@@ -7,17 +17,6 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::Deref;
-
-use crate::lexer::{
-    Bracket, ComparisonOperator, Identifier, Operator, QuotationMark, TemplateString, Token,
-    TokenKind,
-};
-use crate::parser::ast::{AstNodeError, Node};
-use crate::parser::builtin::{Arity, BuiltInFunction};
-use crate::parser::error::ParserError;
-use crate::parser::standard::Standard;
-use crate::parser::unary::Unary;
-use crate::parser::NodeMetadata;
 
 macro_rules! expect {
     ($self:ident, $token:expr) => {
@@ -602,7 +601,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         }
 
         // Potentially it might be a built-in expression
-        let Ok(builtin) = BuiltInFunction::try_from(identifier_token.value) else {
+        let Ok(function) = FunctionKind::try_from(identifier_token.value) else {
             return self.error(AstNodeError::UnknownBuiltIn {
                 name: afmt!(self, "{}", identifier_token.value),
                 span: identifier_token.span,
@@ -610,43 +609,44 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         };
 
         self.next();
-        let builtin_node = match builtin.arity() {
-            Arity::Single => {
-                let arg = expression_parser(ParserContext::Global);
-                expect!(self, TokenKind::Bracket(Bracket::RightParenthesis));
-
-                Node::BuiltIn {
-                    kind: builtin,
-                    arguments: self.bump.alloc_slice_copy(&[arg]),
-                }
-            }
-            Arity::Dual => {
+        let function_node = match function {
+            FunctionKind::Closure(_) => {
                 let arg1 = expression_parser(ParserContext::Global);
-                expect!(self, TokenKind::Operator(Operator::Comma));
-                let arg2 = expression_parser(ParserContext::Global);
-                expect!(self, TokenKind::Bracket(Bracket::RightParenthesis));
-
-                Node::BuiltIn {
-                    kind: builtin,
-                    arguments: self.bump.alloc_slice_copy(&[arg1, arg2]),
-                }
-            }
-            Arity::Closure => {
-                let arg1 = expression_parser(ParserContext::Global);
-
                 expect!(self, TokenKind::Operator(Operator::Comma));
                 let arg2 = self.closure(&expression_parser);
                 expect!(self, TokenKind::Bracket(Bracket::RightParenthesis));
 
-                Node::BuiltIn {
-                    kind: builtin,
+                Node::FunctionCall {
+                    kind: function,
                     arguments: self.bump.alloc_slice_copy(&[arg1, arg2]),
+                }
+            }
+            _ => {
+                let mut arguments = BumpVec::new_in(&self.bump);
+                loop {
+                    if self.current_kind() == Some(&TokenKind::Bracket(Bracket::RightParenthesis)) {
+                        break;
+                    }
+
+                    arguments.push(expression_parser(ParserContext::Global));
+                    if self.current_kind() != Some(&TokenKind::Operator(Operator::Comma)) {
+                        break;
+                    }
+
+                    expect!(self, TokenKind::Operator(Operator::Comma));
+                }
+
+                expect!(self, TokenKind::Bracket(Bracket::RightParenthesis));
+
+                Node::FunctionCall {
+                    kind: function,
+                    arguments: arguments.into_bump_slice(),
                 }
             }
         };
 
         self.with_postfix(
-            self.node(builtin_node, |_| NodeMetadata {
+            self.node(function_node, |_| NodeMetadata {
                 span: (identifier_token.span.0, self.prev_token_end()),
             }),
             expression_parser,

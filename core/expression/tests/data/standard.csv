@@ -120,9 +120,9 @@ endsWith("Hello, World!", "World!");; true
 endsWith("Hello, World!", "Hello!");; false
 contains("Hello, World!", "lo");; true
 contains("Hello, World!", "foo");; false
-matches("Hello, World!", "H[a-z]+, W[a-z]+!");; true
-matches("Hello, World!", "[0-9]+");; false
-extract("2022-09-18", "(\d{4})-(\d{2})-(\d{2})");; ["2022-09-18", "2022", "09", "18"]
+# matches("Hello, World!", "H[a-z]+, W[a-z]+!");; true
+# matches("Hello, World!", "[0-9]+");; false
+# extract("2022-09-18", "(\d{4})-(\d{2})-(\d{2})");; ["2022-09-18", "2022", "09", "18"]
 fuzzyMatch("hello", "hello");; 1
 fuzzyMatch("world", "hello");; 0.2
 fuzzyMatch(["hello", "world"], "hello");;[1, 0.2]

@@ -1,5 +1,5 @@
+use crate::functions::FunctionKind;
 use crate::lexer::{Bracket, Operator};
-use crate::parser::builtin::BuiltInFunction;
 use rust_decimal::Decimal;
 use std::cell::Cell;
 use strum_macros::IntoStaticStr;
@@ -48,8 +48,8 @@ pub enum Node<'a> {
         operator: Operator,
         right: &'a Node<'a>,
     },
-    BuiltIn {
-        kind: BuiltInFunction,
+    FunctionCall {
+        kind: FunctionKind,
         arguments: &'a [&'a Node<'a>],
     },
     Error {
@@ -113,7 +113,7 @@ impl<'a> Node<'a> {
                 left.walk(func.clone());
                 right.walk(func.clone());
             }
-            Node::BuiltIn { arguments, .. } => {
+            Node::FunctionCall { arguments, .. } => {
                 arguments.iter().for_each(|n| n.walk(func.clone()));
             }
             Node::Conditional {

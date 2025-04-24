@@ -59,8 +59,9 @@ mod isolate;
 
 mod arena;
 pub mod compiler;
+mod exports;
 pub mod expression;
-mod function;
+pub mod functions;
 pub mod intellisense;
 pub mod lexer;
 pub mod parser;
@@ -68,9 +69,9 @@ pub mod validate;
 pub mod variable;
 pub mod vm;
 
-pub use expression::{Expression, ExpressionKind};
-pub use function::{
+pub use exports::{
     compile_expression, compile_unary_expression, evaluate_expression, evaluate_unary_expression,
 };
+pub use expression::{Expression, ExpressionKind};
 pub use isolate::{Isolate, IsolateError};
 pub use variable::Variable;

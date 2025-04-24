@@ -1,4 +1,6 @@
-use crate::compiler::{FetchFastTarget, Jump, Opcode, TypeCheckKind, TypeConversionKind};
+use crate::compiler::{FetchFastTarget, Jump, Opcode, TypeConversionKind};
+use crate::functions::registry::FunctionRegistry;
+use crate::functions::Arguments;
 use crate::lexer::Bracket;
 use crate::variable::Variable;
 use crate::variable::Variable::*;
@@ -9,14 +11,11 @@ use crate::vm::variable::IntervalObject;
 use ahash::{HashMap, HashMapExt};
 use chrono::NaiveDateTime;
 use chrono::{Datelike, Timelike};
-#[cfg(not(feature = "regex-lite"))]
-use regex::Regex;
 #[cfg(feature = "regex-lite")]
 use regex_lite::Regex;
-use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
+use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::{Decimal, MathematicalOps};
 use rust_decimal_macros::dec;
-use std::cell::RefCell;
 use std::rc::Rc;
 use std::string::String as StdString;
 
@@ -105,11 +104,6 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                 Opcode::PushString(s) => self.push(String(Rc::from(s.as_ref()))),
                 Opcode::Pop => {
                     self.pop()?;
-                }
-                Opcode::Rot => {
-                    let b = self.stack.len() - 1;
-                    let a = self.stack.len() - 2;
-                    self.stack.swap(a, b);
                 }
                 Opcode::Fetch => {
                     let b = self.pop()?;
@@ -464,320 +458,6 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                         }
                     }
                 }
-                Opcode::Abs => {
-                    let a = self.pop()?;
-
-                    match a {
-                        Number(a) => self.push(Number(a.abs())),
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "Abs".into(),
-                                message: "Unsupported type".into(),
-                            });
-                        }
-                    }
-                }
-                Opcode::Round => {
-                    let var = self.pop()?;
-
-                    match var {
-                        Number(a) => self.push(Number(a.round())),
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "Round".into(),
-                                message: "Unsupported type".into(),
-                            });
-                        }
-                    }
-                }
-                Opcode::Ceil => {
-                    let var = self.pop()?;
-
-                    match var {
-                        Number(a) => self.push(Number(a.ceil())),
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "Ceil".into(),
-                                message: "Unsupported type".into(),
-                            });
-                        }
-                    }
-                }
-                Opcode::Floor => {
-                    let var = self.pop()?;
-
-                    match var {
-                        Number(a) => self.push(Number(a.floor())),
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "Floor".into(),
-                                message: "Unsupported type".into(),
-                            });
-                        }
-                    }
-                }
-                Opcode::Random => {
-                    let var = self.pop()?;
-                    match var {
-                        Number(a) => {
-                            let upper_range = a.round().to_i64().ok_or_else(|| OpcodeErr {
-                                opcode: "Random".into(),
-                                message: "Failed to determine upper range".into(),
-                            })?;
-
-                            let random_number = fastrand::i64(0..=upper_range);
-                            self.push(Number(Decimal::from(random_number)));
-                        }
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "Random".into(),
-                                message: "Unsupported type".into(),
-                            });
-                        }
-                    }
-                }
-                Opcode::Average => {
-                    let var = self.pop()?;
-
-                    match var {
-                        Array(a) => {
-                            let mut sum = Decimal::ZERO;
-                            let arr = a.borrow();
-                            arr.iter().try_for_each(|a| match a {
-                                Number(a) => {
-                                    sum += a;
-                                    Ok(())
-                                }
-                                _ => Err(OpcodeErr {
-                                    opcode: "Average".into(),
-                                    message: "Invalid array value".into(),
-                                }),
-                            })?;
-
-                            let avg = sum / Decimal::from(arr.len());
-                            self.push(Number(avg));
-                        }
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "Average".into(),
-                                message: "Unsupported type".into(),
-                            });
-                        }
-                    }
-                }
-                Opcode::Median => {
-                    let Array(a) = self.pop()? else {
-                        return Err(OpcodeErr {
-                            opcode: "Median".into(),
-                            message: "Unsupported type".into(),
-                        });
-                    };
-
-                    let arr = a.borrow();
-                    let mut num_arr = arr
-                        .iter()
-                        .map(|n| match n {
-                            Number(num) => Ok(*num),
-                            _ => Err(OpcodeErr {
-                                opcode: "Median".into(),
-                                message: "Unsupported type".into(),
-                            }),
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-
-                    if num_arr.len() == 0 {
-                        return Err(OpcodeErr {
-                            opcode: "Median".into(),
-                            message: "Array is empty".into(),
-                        });
-                    }
-
-                    num_arr.sort();
-
-                    let center = num_arr.len() / 2;
-                    if num_arr.len() % 2 == 1 {
-                        let center_num = num_arr.get(center).ok_or_else(|| OpcodeErr {
-                            opcode: "Median".into(),
-                            message: "Array out of bounds".into(),
-                        })?;
-
-                        self.push(Number(*center_num));
-                    } else {
-                        let center_left = num_arr.get(center - 1).ok_or_else(|| OpcodeErr {
-                            opcode: "Median".into(),
-                            message: "Array out of bounds".into(),
-                        })?;
-
-                        let center_right = num_arr.get(center).ok_or_else(|| OpcodeErr {
-                            opcode: "Median".into(),
-                            message: "Array out of bounds".into(),
-                        })?;
-
-                        let median = ((*center_left) + (*center_right)) / dec!(2);
-                        self.push(Number(median));
-                    }
-                }
-                Opcode::Mode => {
-                    let Array(a) = self.pop()? else {
-                        return Err(OpcodeErr {
-                            opcode: "Mode".into(),
-                            message: "Unsupported type".into(),
-                        });
-                    };
-
-                    let arr = a.borrow();
-                    let num_arr = arr
-                        .iter()
-                        .map(|n| match n {
-                            Number(num) => Ok(*num),
-                            _ => Err(OpcodeErr {
-                                opcode: "Mode".into(),
-                                message: "Unsupported type".into(),
-                            }),
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-
-                    if num_arr.len() == 0 {
-                        return Err(OpcodeErr {
-                            opcode: "Mode".into(),
-                            message: "Array is empty".into(),
-                        });
-                    }
-
-                    let mut map = HashMap::new();
-                    num_arr.iter().for_each(|n| {
-                        let count = map.entry(*n).or_insert(0);
-                        *count += 1;
-                    });
-
-                    let maybe_mode = map
-                        .iter()
-                        .max_by_key(|&(_, count)| *count)
-                        .map(|(val, _)| val);
-
-                    let mode = maybe_mode.ok_or_else(|| OpcodeErr {
-                        opcode: "Mode".into(),
-                        message: "Failed to find most common element".into(),
-                    })?;
-
-                    self.push(Number(*mode));
-                }
-                Opcode::Min => {
-                    let var = self.pop()?;
-
-                    match var {
-                        Array(a) => {
-                            let arr = a.borrow();
-                            let first_item = arr.get(0).ok_or_else(|| OpcodeErr {
-                                opcode: "Min".into(),
-                                message: "Empty array".into(),
-                            })?;
-
-                            let mut min: Decimal = match first_item {
-                                Number(a) => *a,
-                                _ => {
-                                    return Err(OpcodeErr {
-                                        opcode: "Min".into(),
-                                        message: "Unsupported array value".into(),
-                                    });
-                                }
-                            };
-
-                            arr.iter().try_for_each(|a| match a {
-                                Number(a) => {
-                                    if *a < min {
-                                        min = *a;
-                                    }
-                                    Ok(())
-                                }
-                                _ => Err(OpcodeErr {
-                                    opcode: "Min".into(),
-                                    message: "Unsupported array value".into(),
-                                }),
-                            })?;
-
-                            self.push(Number(min));
-                        }
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "Min".into(),
-                                message: "Unsupported type".into(),
-                            });
-                        }
-                    }
-                }
-                Opcode::Max => {
-                    let var = self.pop()?;
-
-                    match var {
-                        Array(a) => {
-                            let arr = a.borrow();
-                            let first_item = arr.get(0).ok_or_else(|| OpcodeErr {
-                                opcode: "Max".into(),
-                                message: "Empty array".into(),
-                            })?;
-
-                            let mut max: Decimal = match first_item {
-                                Number(a) => *a,
-                                _ => {
-                                    return Err(OpcodeErr {
-                                        opcode: "Max".into(),
-                                        message: "Unsupported array value".into(),
-                                    });
-                                }
-                            };
-
-                            arr.iter().try_for_each(|a| match a {
-                                Number(a) => {
-                                    if *a > max {
-                                        max = *a;
-                                    }
-                                    Ok(())
-                                }
-                                _ => Err(OpcodeErr {
-                                    opcode: "Max".into(),
-                                    message: "Unsupported array value".into(),
-                                }),
-                            })?;
-
-                            self.push(Number(max));
-                        }
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "Max".into(),
-                                message: "Unsupported type".into(),
-                            });
-                        }
-                    }
-                }
-                Opcode::Sum => {
-                    let var = self.pop()?;
-
-                    match var {
-                        Array(a) => {
-                            let mut sum = Decimal::ZERO;
-                            let arr = a.borrow();
-                            arr.iter().try_for_each(|a| match a {
-                                Number(a) => {
-                                    sum += a;
-                                    Ok(())
-                                }
-                                _ => Err(OpcodeErr {
-                                    opcode: "Sum".into(),
-                                    message: "Unsupported array value".into(),
-                                }),
-                            })?;
-
-                            self.push(Number(sum));
-                        }
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "Sum".into(),
-                                message: "Unsupported type".into(),
-                            });
-                        }
-                    }
-                }
                 Opcode::Add => {
                     let b = self.pop()?;
                     let a = self.pop()?;
@@ -898,244 +578,6 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                         }
                     }
                 }
-                Opcode::Uppercase => {
-                    let a = self.pop()?;
-
-                    match a {
-                        String(a) => {
-                            self.push(String(a.to_uppercase().into()));
-                        }
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "Uppercase".into(),
-                                message: "Unsupported type".into(),
-                            });
-                        }
-                    }
-                }
-                Opcode::Trim => {
-                    let a = self.pop()?;
-
-                    match a {
-                        String(a) => {
-                            self.push(String(a.trim().into()));
-                        }
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "Trim".into(),
-                                message: "Unsupported type".into(),
-                            });
-                        }
-                    }
-                }
-                Opcode::Lowercase => {
-                    let a = self.pop()?;
-
-                    match a {
-                        String(a) => self.push(String(a.to_lowercase().into())),
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "Lowercase".into(),
-                                message: "Unsupported type".into(),
-                            });
-                        }
-                    }
-                }
-                Opcode::Contains => {
-                    let b = self.pop()?;
-                    let a = self.pop()?;
-
-                    match (a, &b) {
-                        (String(a), String(b)) => {
-                            self.push(Bool(a.contains(b.as_ref())));
-                        }
-                        (Array(a), _) => {
-                            let arr = a.borrow();
-                            let is_in = arr.iter().any(|a| match (a, &b) {
-                                (Number(a), Number(b)) => a == b,
-                                (String(a), String(b)) => a == b,
-                                (Bool(a), Bool(b)) => a == b,
-                                (Null, Null) => true,
-                                _ => false,
-                            });
-
-                            self.push(Bool(is_in));
-                        }
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "Contains".into(),
-                                message: "Unsupported type".into(),
-                            });
-                        }
-                    }
-                }
-                Opcode::Keys => {
-                    let current = self.pop()?;
-
-                    match current {
-                        Array(a) => {
-                            let arr = a.borrow();
-                            let indices = arr
-                                .iter()
-                                .enumerate()
-                                .map(|(index, _)| Number(index.into()))
-                                .collect();
-
-                            self.push(Array(Rc::new(RefCell::new(indices))));
-                        }
-                        Object(a) => {
-                            let obj = a.borrow();
-                            let keys = obj
-                                .iter()
-                                .map(|(key, _)| String(Rc::from(key.as_str())))
-                                .collect();
-
-                            self.push(Array(Rc::new(RefCell::new(keys))));
-                        }
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "Keys".into(),
-                                message: "Unsupported type".into(),
-                            })
-                        }
-                    }
-                }
-                Opcode::Values => {
-                    let current = self.pop()?;
-
-                    match current {
-                        Object(a) => {
-                            let obj = a.borrow();
-                            let values: Vec<Variable> = obj.values().cloned().collect();
-
-                            self.push(Array(Rc::new(RefCell::new(values))));
-                        }
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "Values".into(),
-                                message: "Unsupported type".into(),
-                            })
-                        }
-                    }
-                }
-                Opcode::StartsWith => {
-                    let b = self.pop()?;
-                    let a = self.pop()?;
-
-                    match (a, b) {
-                        (String(a), String(b)) => {
-                            self.push(Bool(a.starts_with(b.as_ref())));
-                        }
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "StartsWith".into(),
-                                message: "Unsupported type".into(),
-                            });
-                        }
-                    }
-                }
-                Opcode::EndsWith => {
-                    let b = self.pop()?;
-                    let a = self.pop()?;
-
-                    match (a, b) {
-                        (String(a), String(b)) => {
-                            self.push(Bool(a.ends_with(b.as_ref())));
-                        }
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "EndsWith".into(),
-                                message: "Unsupported type".into(),
-                            });
-                        }
-                    }
-                }
-                Opcode::Matches => {
-                    let b = self.pop()?;
-                    let a = self.pop()?;
-
-                    let (String(a), String(b)) = (a, b) else {
-                        return Err(OpcodeErr {
-                            opcode: "Matches".into(),
-                            message: "Unsupported type".into(),
-                        });
-                    };
-
-                    let regex = Regex::new(b.as_ref()).map_err(|_| OpcodeErr {
-                        opcode: "Matches".into(),
-                        message: "Invalid regular expression".into(),
-                    })?;
-
-                    self.push(Bool(regex.is_match(a.as_ref())));
-                }
-                Opcode::FuzzyMatch => {
-                    let b = self.pop()?;
-                    let a = self.pop()?;
-
-                    let String(b) = b else {
-                        return Err(OpcodeErr {
-                            opcode: "FuzzyMatch".into(),
-                            message: "Unsupported type".into(),
-                        });
-                    };
-
-                    match a {
-                        String(a) => {
-                            let sim =
-                                strsim::normalized_damerau_levenshtein(a.as_ref(), b.as_ref());
-                            // This is okay, as NDL will return [0, 1]
-                            self.push(Number(Decimal::from_f64(sim).unwrap_or(dec!(0))));
-                        }
-                        Array(_a) => {
-                            let a = _a.borrow();
-                            let mut sims = Vec::with_capacity(a.len());
-                            for v in a.iter() {
-                                let String(s) = v else {
-                                    return Err(OpcodeErr {
-                                        opcode: "FuzzyMatch".into(),
-                                        message: "Unsupported type".into(),
-                                    });
-                                };
-
-                                let sim = Decimal::from_f64(
-                                    strsim::normalized_damerau_levenshtein(s.as_ref(), b.as_ref()),
-                                )
-                                .unwrap_or(dec!(0));
-                                sims.push(Number(sim));
-                            }
-
-                            self.push(Variable::from_array(sims))
-                        }
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "FuzzyMatch".into(),
-                                message: "Unsupported type".into(),
-                            })
-                        }
-                    }
-                }
-                Opcode::Split => {
-                    let b = self.pop()?;
-                    let a = self.pop()?;
-
-                    match (a, b) {
-                        (String(a), String(b)) => {
-                            let arr = Vec::from_iter(
-                                a.split(b.as_ref())
-                                    .into_iter()
-                                    .map(|s| String(s.to_string().into())),
-                            );
-
-                            self.push(Variable::from_array(arr));
-                        }
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "Split".into(),
-                                message: "Unsupported type".into(),
-                            });
-                        }
-                    }
-                }
                 Opcode::Join => {
                     let b = self.pop()?;
                     let a = self.pop()?;
@@ -1174,36 +616,6 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                     }
 
                     self.push(String(Rc::from(s)));
-                }
-                Opcode::Extract => {
-                    let b = self.pop()?;
-                    let a = self.pop()?;
-
-                    let (String(a), String(b)) = (a, b) else {
-                        return Err(OpcodeErr {
-                            opcode: "Matches".into(),
-                            message: "Unsupported type".into(),
-                        });
-                    };
-
-                    let regex = Regex::new(b.as_ref()).map_err(|_| OpcodeErr {
-                        opcode: "Matches".into(),
-                        message: "Invalid regular expression".into(),
-                    })?;
-
-                    let captures = regex
-                        .captures(a.as_ref())
-                        .map(|capture| {
-                            capture
-                                .iter()
-                                .map(|c| c.map(|c| c.as_str()))
-                                .filter_map(|c| c)
-                                .map(|s| String(Rc::from(s)))
-                                .collect()
-                        })
-                        .unwrap_or_default();
-
-                    self.push(Variable::from_array(captures));
                 }
                 Opcode::DateManipulation(operation) => {
                     let timestamp = self.pop()?;
@@ -1464,19 +876,6 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
 
                     self.push(Number(dur.into()));
                 }
-                Opcode::TypeCheck(check) => {
-                    let var = self.pop()?;
-
-                    let is_equal = match (check, var) {
-                        (TypeCheckKind::Numeric, String(str)) => {
-                            Decimal::from_str_exact(str.as_ref()).is_ok()
-                        }
-                        (TypeCheckKind::Numeric, Number(_)) => true,
-                        (TypeCheckKind::Numeric, _) => false,
-                    };
-
-                    self.push(Bool(is_equal));
-                }
                 Opcode::TypeConversion(conversion) => {
                     let var = self.pop()?;
 
@@ -1537,10 +936,6 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                     };
 
                     self.push(converted_var);
-                }
-                Opcode::GetType => {
-                    let var = self.pop()?;
-                    self.push(String(Rc::from(var.type_name())));
                 }
                 Opcode::IncrementIt => {
                     let scope = self.scopes.last_mut().ok_or_else(|| OpcodeErr {
@@ -1637,6 +1032,24 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                 }
                 Opcode::End => {
                     self.scopes.pop();
+                }
+                Opcode::CallFunction { kind, arg_count } => {
+                    let function =
+                        FunctionRegistry::get_definition(kind).ok_or_else(|| OpcodeErr {
+                            opcode: "CallFunction".into(),
+                            message: format!("Function `{kind}` not found"),
+                        })?;
+
+                    let params_start = self.stack.len().saturating_sub(*arg_count as usize);
+                    let result = function
+                        .call(Arguments(&self.stack[params_start..]))
+                        .map_err(|err| OpcodeErr {
+                            opcode: "CallFunction".into(),
+                            message: format!("Function `{kind}` failed: {err}"),
+                        })?;
+
+                    self.stack.drain(params_start..);
+                    self.push(result);
                 }
             }
         }

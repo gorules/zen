@@ -6,7 +6,6 @@
 //! - Standard, designed for comprehensive expression evaluation yielding any result
 //! - Unary, specifically created for truthy tests with exclusive boolean outcomes
 mod ast;
-mod builtin;
 mod constants;
 mod error;
 mod parser;
@@ -14,10 +13,7 @@ mod result;
 mod standard;
 mod unary;
 
-pub(crate) use builtin::Arity;
-
 pub use ast::Node;
-pub use builtin::BuiltInFunction;
 pub use error::ParserError;
 pub use parser::Parser;
 pub use result::{NodeMetadata, ParserResult};

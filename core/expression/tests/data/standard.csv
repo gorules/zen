@@ -287,3 +287,149 @@ null ?? 'hello';;'hello'
 null ?? 123 ?? 321;;123
 null ?? null ?? 321;;321
 false or true ? null ?? 'test' : false;;'test'
+
+# Array indexing and dot notation
+data.items[0] == 'a';{"data":{"items":["a","b","c"]}};true
+data.items[1] == 'b';{"data":{"items":["a","b","c"]}};true
+
+# Array functions
+len(['a', 'b', 'c']);;3
+contains(['a', 'b', 'c'], 'b');;true
+contains(['a', 'b', 'c'], 'd');;false
+some(['a', 'b', 'c'], # == 'b');;true
+some(['a', 'b', 'c'], # == 'd');;false
+all(['a', 'b', 'c'], # in ['a', 'b', 'c', 'd']);;true
+all(['a', 'b', 'c'], # in ['a', 'b']);;false
+filter(['a', 'b', 'c', 'd'], # in ['a', 'c']);;['a', 'c']
+map(['a', 'b', 'c'], # + '!');;['a!', 'b!', 'c!']
+
+# Array combinations
+map(filter([1, 2, 3, 4, 5], # > 2), # * 2);;[6, 8, 10]
+len(filter([1, 2, 3, 4, 5], # % 2 == 0));;2
+sum(filter([1, 2, 3, 4, 5], # % 2 == 0));;6
+sum(map(filter([1, 2, 3, 4, 5], # > 3), # ^ 2));;41
+
+# Complex array operations
+some(map([1, 2, 3], # * 2), # > 5);;true
+all(map([1, 2, 3], # + 2), # > 2);;true
+contains(map([1, 2, 3], # * 2), 6);;true
+contains(values({a: 1, b: 2, c: 3}), 2);;true
+
+# Array with objects
+map([{id: 1, name: 'John'}, {id: 2, name: 'Jane'}], #.id);;[1, 2]
+filter([{id: 1, name: 'John'}, {id: 2, name: 'Jane'}], #.id > 1);;[{id: 2, name: 'Jane'}]
+map(filter([{id: 1, name: 'John'}, {id: 2, name: 'Jane'}], #.id > 1), #.name);;['Jane']
+
+# String concatenation
+'Hello' + ' ' + 'World' + '!';;'Hello World!'
+'User: ' + user.name;{"user":{"name":"John"}};'User: John'
+
+# String functions
+len('Hello');;5
+upper('Hello');;'HELLO'
+lower('HELLO');;'hello'
+trim('  hello  ');;'hello'
+startsWith('Hello World', 'Hell');;true
+endsWith('Hello World', 'orld');;true
+contains('Hello World', 'lo Wo');;true
+matches('123-456-7890', '[0-9]{3}-[0-9]{3}-[0-9]{4}');;true
+extract('2023-10-15', '([0-9]{4})-([0-9]{2})-([0-9]{2})');; ["2023-10-15", "2023", "10", "15"]
+
+# String formatting
+`User ${user.name} is ${user.age} years old`;{"user":{"name":"John","age":30}};'User John is 30 years old'
+`Total: ${sum([1, 2, 3])}`;;'Total: 6'
+`${score > 70 ? 'Pass' : 'Fail'}`;{"score":85};'Pass'
+
+# Nested object access
+user.address.city;{"user":{"address":{"city":"New York"}}};'New York'
+user.contacts[0].phone;{"user":{"contacts":[{"phone":"123-456-7890"}]}};'123-456-7890'
+
+# Dynamic keys
+{[`key-${value}`]: 123};{"value":"test"};{"key-test":123}
+{[user.id]: user.name};{"user":{"id":"u123","name":"John"}};{"u123":"John"}
+
+# Date arithmetic
+date('2023-10-15') + duration('1d');;1697414400
+date('2023-10-15') - duration('7d');;1696723200
+dateString(date('2023-10-15') + duration('1d'));;'2023-10-16 00:00:00'
+dateString(date('2023-10-15') - duration('7d'));;'2023-10-08 00:00:00'
+
+# Date comparisons
+date('2023-10-15') > date('2023-10-14');;true
+date('2023-10-15') < date('2023-10-16');;true
+date('2023-10-15') + duration('1d') == date('2023-10-16');;true
+
+# Date parts
+year(date('2023-10-15'));;2023
+monthOfYear(date('2023-10-15'));;10
+dayOfMonth(date('2023-10-15'));;15
+dayOfWeek(date('2023-10-15'));;7
+weekOfYear(date('2023-10-15'));;41
+
+# Date formatting
+dateString(date('2023-10-15'));;'2023-10-15 00:00:00'
+dateString(date('2023-10-15') + duration('12h'));;'2023-10-15 12:00:00'
+
+# Ternary operators
+score > 70 ? 'Pass' : 'Fail';{"score":85};'Pass'
+score > 70 ? 'Pass' : 'Fail';{"score":60};'Fail'
+score > 90 ? 'A' : score > 80 ? 'B' : score > 70 ? 'C' : 'D';{"score":85};'B'
+
+# Null handling
+user.name ?? 'Guest';{"user":{"name":"John"}};'John'
+user.name ?? 'Guest';{"user":{}};'Guest'
+(user.address.city) ?? 'Unknown';{"user":{"address":{"city":"New York"}}};'New York'
+(user.address.city) ?? 'Unknown';{"user":{}};'Unknown'
+
+# Type conversions
+string(123);;'123'
+string(true);;'true'
+number('123');;123
+number('12.3');;12.3
+number(true);;1
+number(false);;0
+bool(1);;true
+bool(0);;false
+bool('true');;true
+bool('false');;false
+
+# Complex nested expressions
+len(filter(map([1, 2, 3, 4, 5], # * 2), # > 5));;3
+sum(map(filter([{id: 1, val: 10}, {id: 2, val: 20}, {id: 3, val: 30}], #.id > 1), #.val));;50
+
+# Data transformation
+map(items, {id: #.id, fullName: #.firstName + ' ' + #.lastName});{"items":[{"id":1,"firstName":"John","lastName":"Doe"},{"id":2,"firstName":"Jane","lastName":"Smith"}]};[{"id":1,"fullName":"John Doe"},{"id":2,"fullName":"Jane Smith"}]
+
+# Array-based conditions
+some(user.permissions, # == 'edit');{"user":{"permissions":["view","edit","delete"]}};true
+all(items, #.price > 10);{"items":[{"price":15},{"price":20},{"price":25}]};true
+all(items, #.price > 10);{"items":[{"price":15},{"price":5},{"price":25}]};false
+
+# Statistical calculations
+avg(map(items, #.price));{"items":[{"price":10},{"price":20},{"price":30}]};20
+max(map(items, #.qty * #.price));{"items":[{"qty":2,"price":10},{"qty":1,"price":20},{"qty":3,"price":15}]};45
+
+# Closures and the # symbol
+map([1, 2, 3], # * 2);;[2, 4, 6]
+filter([1, 2, 3, 4, 5], # % 2 == 0);;[2, 4]
+some([1, 2, 3], # > 2);;true
+all([1, 2, 3], # > 0);;true
+count([1, 2, 2, 3, 3, 3], # == 3);;3
+one([1, 2, 3], # == 2);;true
+none([1, 2, 3], # > 3);;true
+
+# Nested closures
+filter(map([1, 2, 3, 4], # * 2), # > 5);;[6, 8]
+map(filter([1, 2, 3, 4], # % 2 == 0), # * 3);;[6, 12]
+
+# Range tests
+x in [1..10];{"x":5};true
+x in [1..10];{"x":0};false
+x in (1..10);{"x":1};false
+x in (1..10);{"x":5};true
+x not in [1..10];{"x":11};true
+x not in [1..10];{"x":5};false
+
+# Interval iterator
+map([0..5], # * 2);;[0, 2, 4, 6, 8, 10]
+filter([0..10], # % 2 == 0);;[0, 2, 4, 6, 8, 10]

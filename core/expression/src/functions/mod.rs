@@ -1,13 +1,14 @@
 pub use crate::functions::arguments::Arguments;
 pub use crate::functions::deprecated::DeprecatedFunction;
 pub use crate::functions::internal::InternalFunction;
+pub use crate::functions::registry::{FunctionDefinition, FunctionRegistry, FunctionTypecheck};
 use std::fmt::Display;
 use strum_macros::{Display, EnumIter, EnumString, IntoStaticStr};
 
 pub(crate) mod arguments;
 pub(crate) mod defs;
 mod deprecated;
-mod internal;
+pub(crate) mod internal;
 pub(crate) mod registry;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -38,7 +39,7 @@ impl Display for FunctionKind {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Display, EnumString, EnumIter, IntoStaticStr, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Hash, Display, EnumString, EnumIter, IntoStaticStr, Clone, Copy)]
 #[strum(serialize_all = "camelCase")]
 pub enum ClosureFunction {
     All,

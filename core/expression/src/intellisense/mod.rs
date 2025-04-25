@@ -52,7 +52,6 @@ impl<'arena> IntelliSense<'arena> {
             IntelliSenseScope {
                 pointer_data: data,
                 root_data: data,
-                current_data: data,
             },
         );
 
@@ -98,7 +97,6 @@ impl<'arena> IntelliSense<'arena> {
             IntelliSenseScope {
                 pointer_data: data,
                 root_data: data,
-                current_data: data,
             },
         );
 

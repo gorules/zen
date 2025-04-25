@@ -25,10 +25,6 @@ pub enum Opcode {
     FetchRootEnv,
     FetchEnv(Arc<str>),
     FetchFast(Vec<FetchFastTarget>),
-    CallFunction {
-        kind: FunctionKind,
-        arg_count: u32,
-    },
     Negate,
     Not,
     Equal,
@@ -44,19 +40,10 @@ pub enum Opcode {
     Divide,
     Modulo,
     Exponent,
-    Interval {
-        left_bracket: Bracket,
-        right_bracket: Bracket,
-    },
-    DateFunction(Arc<str>),
-    DateManipulation(Arc<str>),
     Slice,
     Array,
     Object,
     Len,
-    ParseDateTime,
-    ParseTime,
-    ParseDuration,
     IncrementIt,
     IncrementCount,
     GetCount,
@@ -64,7 +51,14 @@ pub enum Opcode {
     Pointer,
     Begin,
     End,
-    TypeConversion(TypeConversionKind),
+    CallFunction {
+        kind: FunctionKind,
+        arg_count: u32,
+    },
+    Interval {
+        left_bracket: Bracket,
+        right_bracket: Bracket,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Display)]
@@ -75,18 +69,4 @@ pub enum Jump {
     IfFalse,
     IfNotNull,
     IfEnd,
-}
-
-/// Metadata for TypeConversion Opcode
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Display)]
-pub enum TypeConversionKind {
-    Number,
-    String,
-    Bool,
-}
-
-/// Metadata for TypeCheck Opcode
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Display)]
-pub enum TypeCheckKind {
-    Numeric,
 }

@@ -1,21 +1,15 @@
-use crate::compiler::{FetchFastTarget, Jump, Opcode, TypeConversionKind};
+use crate::compiler::{FetchFastTarget, Jump, Opcode};
 use crate::functions::registry::FunctionRegistry;
-use crate::functions::Arguments;
+use crate::functions::{internal, Arguments};
 use crate::lexer::Bracket;
 use crate::variable::Variable;
 use crate::variable::Variable::*;
 use crate::vm::error::VMError::*;
 use crate::vm::error::VMResult;
-use crate::vm::helpers::{date_time, date_time_end_of, date_time_start_of, time};
 use crate::vm::variable::IntervalObject;
 use ahash::{HashMap, HashMapExt};
-use chrono::NaiveDateTime;
-use chrono::{Datelike, Timelike};
-#[cfg(feature = "regex-lite")]
-use regex_lite::Regex;
 use rust_decimal::prelude::ToPrimitive;
-use rust_decimal::{Decimal, MathematicalOps};
-use rust_decimal_macros::dec;
+use rust_decimal::MathematicalOps;
 use std::rc::Rc;
 use std::string::String as StdString;
 
@@ -617,60 +611,6 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
 
                     self.push(String(Rc::from(s)));
                 }
-                Opcode::DateManipulation(operation) => {
-                    let timestamp = self.pop()?;
-
-                    let time: NaiveDateTime = (&timestamp).try_into()?;
-                    let var = match operation.as_ref() {
-                        "year" => Number(time.year().into()),
-                        "dayOfWeek" => Number(time.weekday().number_from_monday().into()),
-                        "dayOfMonth" => Number(time.day().into()),
-                        "dayOfYear" => Number(time.ordinal().into()),
-                        "weekOfYear" => Number(time.iso_week().week().into()),
-                        "monthOfYear" => Number(time.month().into()),
-                        "monthString" => String(Rc::from(time.format("%b").to_string())),
-                        "weekdayString" => String(Rc::from(time.weekday().to_string())),
-                        "dateString" => String(Rc::from(time.to_string())),
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "DateManipulation".into(),
-                                message: "Unsupported operation".into(),
-                            });
-                        }
-                    };
-
-                    self.push(var);
-                }
-                Opcode::DateFunction(name) => {
-                    let unit_var = self.pop()?;
-                    let timestamp = self.pop()?;
-
-                    let date_time: NaiveDateTime = (&timestamp).try_into()?;
-                    let String(unit_name) = unit_var else {
-                        return Err(OpcodeErr {
-                            opcode: "DateFunction".into(),
-                            message: "Unknown date function".into(),
-                        });
-                    };
-
-                    let s = match name.as_ref() {
-                        "startOf" => date_time_start_of(date_time, unit_name.as_ref().try_into()?),
-                        "endOf" => date_time_end_of(date_time, unit_name.as_ref().try_into()?),
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "DateManipulation".into(),
-                                message: "Unsupported operation".into(),
-                            });
-                        }
-                    }
-                    .ok_or_else(|| OpcodeErr {
-                        opcode: "DateFunction".into(),
-                        message: "Failed to run DateFunction".into(),
-                    })?;
-
-                    #[allow(deprecated)]
-                    self.push(Number(s.timestamp().into()));
-                }
                 Opcode::Slice => {
                     let from_var = self.pop()?;
                     let to_var = self.pop()?;
@@ -778,21 +718,15 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                         message: "Empty stack".into(),
                     })?;
 
-                    let len = match current {
-                        String(s) => s.len(),
-                        Array(s) => {
-                            let arr = s.borrow();
-                            arr.len()
-                        }
-                        _ => {
-                            return Err(OpcodeErr {
+                    let len_var =
+                        internal::imp::len(Arguments(&[current.clone()])).map_err(|err| {
+                            OpcodeErr {
                                 opcode: "Len".into(),
-                                message: "Unsupported type".into(),
-                            });
-                        }
-                    };
+                                message: err.to_string(),
+                            }
+                        })?;
 
-                    self.push(Number(len.into()));
+                    self.push(len_var);
                 }
                 Opcode::Flatten => {
                     let current = self.pop()?;
@@ -815,127 +749,6 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                     });
 
                     self.push(Variable::from_array(flat_arr));
-                }
-                Opcode::ParseDateTime => {
-                    let a = self.pop()?;
-                    let ts = match a {
-                        #[allow(deprecated)]
-                        String(a) => date_time(a.as_ref())?.timestamp(),
-                        Number(a) => a.to_i64().ok_or_else(|| OpcodeErr {
-                            opcode: "ParseDateTime".into(),
-                            message: "Number overflow".into(),
-                        })?,
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "ParseDateTime".into(),
-                                message: "Unsupported type".into(),
-                            });
-                        }
-                    };
-
-                    self.push(Number(ts.into()));
-                }
-                Opcode::ParseTime => {
-                    let a = self.pop()?;
-                    let ts = match a {
-                        String(a) => time(a.as_ref())?.num_seconds_from_midnight(),
-                        Number(a) => a.to_u32().ok_or_else(|| OpcodeErr {
-                            opcode: "ParseTime".into(),
-                            message: "Number overflow".into(),
-                        })?,
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "ParseTime".into(),
-                                message: "Unsupported type".into(),
-                            });
-                        }
-                    };
-
-                    self.push(Number(ts.into()));
-                }
-                Opcode::ParseDuration => {
-                    let a = self.pop()?;
-
-                    let dur = match a {
-                        String(a) => humantime::parse_duration(a.as_ref())
-                            .map_err(|_| ParseDateTimeErr {
-                                timestamp: a.to_string(),
-                            })?
-                            .as_secs(),
-                        Number(n) => n.to_u64().ok_or_else(|| OpcodeErr {
-                            opcode: "ParseDuration".into(),
-                            message: "Number overflow".into(),
-                        })?,
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "ParseDuration".into(),
-                                message: "Unsupported type".into(),
-                            });
-                        }
-                    };
-
-                    self.push(Number(dur.into()));
-                }
-                Opcode::TypeConversion(conversion) => {
-                    let var = self.pop()?;
-
-                    let converted_var = match (conversion, &var) {
-                        (TypeConversionKind::String, String(_)) => var,
-                        (TypeConversionKind::String, Number(num)) => {
-                            String(Rc::from(num.to_string().as_str()))
-                        }
-                        (TypeConversionKind::String, Bool(v)) => {
-                            String(Rc::from(v.to_string().as_str()))
-                        }
-                        (TypeConversionKind::String, Null) => String(Rc::from("null")),
-                        (TypeConversionKind::String, _) => {
-                            return Err(OpcodeErr {
-                                opcode: "TypeConversion".into(),
-                                message: format!(
-                                    "Type {} cannot be converted to string",
-                                    var.type_name()
-                                ),
-                            });
-                        }
-                        (TypeConversionKind::Number, String(str)) => {
-                            let parsed_number =
-                                Decimal::from_str_exact(str.trim()).map_err(|_| OpcodeErr {
-                                    opcode: "TypeConversion".into(),
-                                    message: "Failed to parse string to number".into(),
-                                })?;
-
-                            Number(parsed_number)
-                        }
-                        (TypeConversionKind::Number, Number(_)) => var,
-                        (TypeConversionKind::Number, Bool(v)) => {
-                            let number = if *v { dec!(1) } else { dec!(0) };
-                            Number(number)
-                        }
-                        (TypeConversionKind::Number, _) => {
-                            return Err(OpcodeErr {
-                                opcode: "TypeConversion".into(),
-                                message: format!(
-                                    "Type {} cannot be converted to number",
-                                    var.type_name()
-                                ),
-                            });
-                        }
-                        (TypeConversionKind::Bool, Number(n)) => Bool(!n.is_zero()),
-                        (TypeConversionKind::Bool, String(s)) => {
-                            let value = match (*s).trim() {
-                                "true" => true,
-                                "false" => false,
-                                _ => s.is_empty(),
-                            };
-
-                            Bool(value)
-                        }
-                        (TypeConversionKind::Bool, Bool(_)) => var,
-                        (TypeConversionKind::Bool, Null) => Bool(false),
-                        (TypeConversionKind::Bool, Object(_) | Array(_)) => Bool(true),
-                    };
-
-                    self.push(converted_var);
                 }
                 Opcode::IncrementIt => {
                     let scope = self.scopes.last_mut().ok_or_else(|| OpcodeErr {

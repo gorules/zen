@@ -9,7 +9,7 @@ use rust_decimal::prelude::ToPrimitive;
 use std::rc::Rc;
 use strum_macros::{Display, EnumIter, EnumString, IntoStaticStr};
 
-#[derive(Debug, PartialEq, Eq, Display, EnumString, EnumIter, IntoStaticStr, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Hash, Display, EnumString, EnumIter, IntoStaticStr, Clone, Copy)]
 #[strum(serialize_all = "camelCase")]
 pub enum DeprecatedFunction {
     Date,

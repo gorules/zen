@@ -1,8 +1,8 @@
 use crate::compiler::error::{CompilerError, CompilerResult};
 use crate::compiler::opcode::{FetchFastTarget, Jump};
-use crate::compiler::{Opcode, TypeConversionKind};
+use crate::compiler::Opcode;
 use crate::functions::registry::FunctionRegistry;
-use crate::functions::{ClosureFunction, FunctionKind};
+use crate::functions::{ClosureFunction, FunctionKind, InternalFunction};
 use crate::lexer::{ArithmeticOperator, ComparisonOperator, LogicalOperator, Operator};
 use crate::parser::Node;
 use rust_decimal::prelude::ToPrimitive;
@@ -158,7 +158,10 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
             Node::Object(v) => {
                 v.iter().try_for_each(|&(key, value)| {
                     self.compile_node(key).map(|_| ())?;
-                    self.emit(Opcode::TypeConversion(TypeConversionKind::String));
+                    self.emit(Opcode::CallFunction {
+                        arg_count: 1,
+                        kind: FunctionKind::Internal(InternalFunction::String),
+                    });
                     self.compile_node(value).map(|_| ())?;
                     Ok(())
                 })?;
@@ -184,7 +187,10 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
             Node::TemplateString(parts) => {
                 parts.iter().try_for_each(|&n| {
                     self.compile_node(n).map(|_| ())?;
-                    self.emit(Opcode::TypeConversion(TypeConversionKind::String));
+                    self.emit(Opcode::CallFunction {
+                        arg_count: 1,
+                        kind: FunctionKind::Internal(InternalFunction::String),
+                    });
                     Ok(())
                 })?;
 
@@ -382,7 +388,7 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                     if arguments.len() < min_params || arguments.len() > max_params {
                         return Err(CompilerError::InvalidFunctionCall {
                             name: kind.to_string(),
-                            message: "Not allowed number of arguments".to_string(),
+                            message: "Invalid number of arguments".to_string(),
                         });
                     }
 

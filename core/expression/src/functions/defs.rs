@@ -1,7 +1,10 @@
 use crate::functions::arguments::Arguments;
 use crate::functions::registry::FunctionDefinition;
+use crate::functions::FunctionTypecheck;
 use crate::variable::VariableType;
 use crate::Variable;
+use std::collections::HashSet;
+use std::rc::Rc;
 
 #[derive(Clone)]
 pub struct FunctionSignature {
@@ -33,9 +36,12 @@ impl FunctionDefinition for StaticFunction {
         0
     }
 
-    fn check_types(&self, args: &[VariableType]) -> Result<VariableType, String> {
+    fn check_types(&self, args: &[Rc<VariableType>]) -> FunctionTypecheck {
+        let mut typecheck = FunctionTypecheck::default();
+        typecheck.return_type = self.signature.return_type.clone();
+
         if args.len() != self.required_parameters() {
-            return Err(format!(
+            typecheck.general = Some(format!(
                 "Expected `{}` arguments, got `{}`.",
                 self.required_parameters(),
                 args.len()
@@ -49,20 +55,32 @@ impl FunctionDefinition for StaticFunction {
             .enumerate()
         {
             if !arg.satisfies(expected_type) {
-                return Err(format!(
-                    "Argument {} of type `{}` is not assignable to parameter of type `{}`.",
-                    i + 1,
-                    arg,
-                    expected_type
+                typecheck.arguments.push((
+                    i,
+                    format!(
+                        "Argument of type `{arg}` is not assignable to parameter of type `{expected_type}`.",
+                    ),
                 ));
             }
         }
 
-        Ok(self.signature.return_type.clone())
+        typecheck
     }
 
     fn call(&self, args: Arguments) -> anyhow::Result<Variable> {
         (&self.implementation)(args)
+    }
+
+    fn param_type(&self, index: usize) -> String {
+        self.signature
+            .parameters
+            .get(index)
+            .map(|x| x.to_string())
+            .unwrap_or_else(|| "never".to_string())
+    }
+
+    fn return_type(&self) -> String {
+        self.signature.return_type.to_string()
     }
 }
 
@@ -93,9 +111,11 @@ impl FunctionDefinition for CompositeFunction {
         max - required_params
     }
 
-    fn check_types(&self, args: &[VariableType]) -> Result<VariableType, String> {
+    fn check_types(&self, args: &[Rc<VariableType>]) -> FunctionTypecheck {
+        let mut typecheck = FunctionTypecheck::default();
         if self.signatures.is_empty() {
-            return Err("No implementation".to_string());
+            typecheck.general = Some("No implementation".to_string());
+            return typecheck;
         }
 
         let required_params = self.required_parameters();
@@ -103,10 +123,10 @@ impl FunctionDefinition for CompositeFunction {
         let total_params = required_params + optional_params;
 
         if args.len() < required_params || args.len() > total_params {
-            return Err(format!(
+            typecheck.general = Some(format!(
                 "Expected `{required_params} - {total_params}` arguments, got `{}`.",
                 args.len()
-            ));
+            ))
         }
 
         for signature in &self.signatures {
@@ -114,9 +134,9 @@ impl FunctionDefinition for CompositeFunction {
                 .iter()
                 .zip(signature.parameters.iter())
                 .all(|(arg, param)| arg.satisfies(param));
-
             if all_match {
-                return Ok(signature.return_type.clone());
+                typecheck.return_type = signature.return_type.clone();
+                return typecheck;
             }
         }
 
@@ -128,23 +148,81 @@ impl FunctionDefinition for CompositeFunction {
                 .collect();
 
             if !possible_types.iter().any(|param| arg.satisfies(param)) {
-                let type_union = possible_types
-                    .iter()
-                    .map(|t| t.to_string())
-                    .collect::<Vec<_>>()
-                    .join(" | ");
-
-                return Err(format!(
-                    "Argument of type `{}` is not assignable to parameter of type `{}`.",
-                    arg, type_union
-                ));
+                let type_union = self.param_type(i);
+                typecheck.arguments.push((
+                    i,
+                    format!(
+                        "Argument of type `{arg}` is not assignable to parameter of type `{type_union}`.",
+                    ),
+                ))
             }
         }
 
-        Err("No overload of function matches the argument types.".to_string())
+        let available_signatures = self
+            .signatures
+            .iter()
+            .map(|sig| {
+                let param_list = sig
+                    .parameters
+                    .iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("`({param_list}) -> {}`", sig.return_type)
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        typecheck.general = Some(format!("No function overload matches provided arguments. Available overloads:\n{available_signatures}"));
+
+        typecheck
     }
 
     fn call(&self, args: Arguments) -> anyhow::Result<Variable> {
         (&self.implementation)(args)
+    }
+
+    fn param_type(&self, index: usize) -> String {
+        let possible_types: Vec<String> = self
+            .signatures
+            .iter()
+            .filter_map(|sig| sig.parameters.get(index))
+            .map(|x| x.to_string())
+            .collect();
+        if possible_types.is_empty() {
+            return String::from("never");
+        }
+
+        let is_optional = possible_types.len() != self.signatures.len();
+        let possible_types: Vec<String> = possible_types
+            .into_iter()
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        let type_union = possible_types.join(" | ");
+        if is_optional {
+            return format!("Optional<{type_union}>");
+        }
+
+        type_union
+    }
+
+    fn return_type(&self) -> String {
+        let possible_types: Vec<String> = self
+            .signatures
+            .iter()
+            .map(|sig| sig.return_type.clone())
+            .map(|x| x.to_string())
+            .collect();
+        if possible_types.is_empty() {
+            return String::from("never");
+        }
+
+        possible_types
+            .into_iter()
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>()
+            .join(" | ")
     }
 }

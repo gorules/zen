@@ -195,7 +195,9 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 error,
                 node: Some(node),
             },
-            |_| NodeMetadata { span: (0, 0) },
+            |_| NodeMetadata {
+                span: node.span().unwrap_or_default(),
+            },
         )
     }
 
@@ -401,13 +403,16 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                     ),
                     Some(t) => match is_valid_property(t) {
                         true => self.node(Node::String(t.value), |_| NodeMetadata { span: t.span }),
-                        false => self.error_with_node(
-                            AstNodeError::InvalidProperty {
-                                property: afmt!(self, "{}", t.value),
-                                span: t.span,
-                            },
-                            node,
-                        ),
+                        false => {
+                            self.set_position(self.position() - 1);
+                            self.error_with_node(
+                                AstNodeError::InvalidProperty {
+                                    property: afmt!(self, "{}", t.value),
+                                    span: t.span,
+                                },
+                                node,
+                            )
+                        }
                     },
                 };
 
@@ -611,14 +616,21 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         self.next();
         let function_node = match function {
             FunctionKind::Closure(_) => {
-                let arg1 = expression_parser(ParserContext::Global);
-                expect!(self, TokenKind::Operator(Operator::Comma));
-                let arg2 = self.closure(&expression_parser);
-                expect!(self, TokenKind::Bracket(Bracket::RightParenthesis));
+                let mut arguments = BumpVec::new_in(&self.bump);
+
+                arguments.push(expression_parser(ParserContext::Global));
+                if let Some(error) = self.expect(TokenKind::Operator(Operator::Comma)) {
+                    arguments.push(error);
+                };
+
+                arguments.push(self.closure(&expression_parser));
+                if let Some(error) = self.expect(TokenKind::Bracket(Bracket::RightParenthesis)) {
+                    arguments.push(error);
+                }
 
                 Node::FunctionCall {
                     kind: function,
-                    arguments: self.bump.alloc_slice_copy(&[arg1, arg2]),
+                    arguments: self.bump.alloc_slice_copy(arguments.into_bump_slice()),
                 }
             }
             _ => {
@@ -633,10 +645,15 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                         break;
                     }
 
-                    expect!(self, TokenKind::Operator(Operator::Comma));
+                    if let Some(error) = self.expect(TokenKind::Operator(Operator::Comma)) {
+                        arguments.push(error);
+                        break;
+                    }
                 }
 
-                expect!(self, TokenKind::Bracket(Bracket::RightParenthesis));
+                if let Some(error) = self.expect(TokenKind::Bracket(Bracket::RightParenthesis)) {
+                    arguments.push(error);
+                }
 
                 Node::FunctionCall {
                     kind: function,
@@ -805,7 +822,15 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             }
         }
 
-        expect!(self, TokenKind::Bracket(Bracket::RightCurlyBracket));
+        if let Some(error) = self.expect(TokenKind::Bracket(Bracket::RightCurlyBracket)) {
+            key_value_pairs.push((
+                self.node(Node::Null, |_| NodeMetadata {
+                    span: error.span().unwrap_or_default(),
+                }),
+                error,
+            ));
+        };
+
         self.node(Node::Object(key_value_pairs.into_bump_slice()), |_| {
             NodeMetadata {
                 span: (span_start, self.prev_token_end()),

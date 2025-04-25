@@ -395,10 +395,25 @@ impl TypesProvider {
                 V(VariableType::Any)
             }
             Node::FunctionCall { arguments, kind } => {
-                let type_list: Vec<Rc<VariableType>> = arguments
+                let mut type_list: Vec<Rc<VariableType>> = arguments
                     .iter()
                     .map(|n| self.determine(n, scope.clone(), false).kind)
                     .collect();
+
+                if let FunctionKind::Closure(_) = kind {
+                    let ptr_type = type_list[0].array_item().unwrap_or_default();
+                    let new_type = self.determine(
+                        arguments[1],
+                        IntelliSenseScope {
+                            pointer_data: &ptr_type,
+                            current_data: scope.current_data,
+                            root_data: scope.root_data,
+                        },
+                        false,
+                    );
+
+                    type_list[1] = new_type.kind;
+                }
 
                 match kind {
                     FunctionKind::Internal(_) | FunctionKind::Deprecated(_) => {

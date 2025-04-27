@@ -334,7 +334,6 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                 Operator::Dot => AsBoolean,
                 Operator::QuestionMark => AsBoolean,
             },
-            // TODO
             Node::FunctionCall { kind, .. } => match kind {
                 FunctionKind::Internal(i) => match i {
                     InternalFunction::Len => CompareWithReference(Equal),

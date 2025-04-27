@@ -336,6 +336,12 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                     TemplateString::ExpressionStart => {
                         self.next();
                         nodes.push(expression_parser(ParserContext::Global));
+
+                        if let Some(error) =
+                            self.expect(TokenKind::TemplateString(TemplateString::ExpressionEnd))
+                        {
+                            nodes.push(error);
+                        }
                     }
                     TemplateString::ExpressionEnd => {
                         self.next();

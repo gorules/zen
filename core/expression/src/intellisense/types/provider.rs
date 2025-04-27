@@ -79,7 +79,13 @@ impl TypesProvider {
                 true => Const(Value::String(s.to_string())),
                 false => V(VariableType::String),
             },
-            Node::TemplateString(_) => V(VariableType::String),
+            Node::TemplateString(parts) => {
+                parts.iter().for_each(|n| {
+                    self.determine(n, scope.clone(), false);
+                });
+
+                V(VariableType::String)
+            }
 
             Node::Pointer => V(scope.pointer_data.clone()),
             Node::Root => V(scope.root_data.clone()),

@@ -36,19 +36,15 @@ jobs:
           git config user.name "Bot"
           git config user.email "bot@gorules.io"
 
-      - name: Setup node
-        uses: actions/setup-node@v3
+      - uses: actions/setup-python@v4
         with:
-          node-version: 18
-          check-latest: true
-          cache: yarn
-          cache-dependency-path: 'bindings/nodejs/yarn.lock'
+          python-version: '3.10'
 
       - name: 'Install dependencies'
-        run: yarn install --immutable --mode=skip-build
+        run: pip install --upgrade bump2version
 
-      - name: Lerna version
-        run: yarn lerna version ${{ github.event.inputs.version }} --tag-version-prefix="nodejs-" --no-push --yes
+      - name: Bumpversion
+        run: bumpversion ${{ github.event.inputs.version }} --allow-dirty --tag-name "nodejs-v{new_version}"
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

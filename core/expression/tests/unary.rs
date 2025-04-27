@@ -1,9 +1,9 @@
 use bumpalo::Bump;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-
+use zen_expression::functions::{DeprecatedFunction, FunctionKind};
 use zen_expression::lexer::{Bracket, ComparisonOperator, Lexer, LogicalOperator, Operator};
-use zen_expression::parser::{BuiltInFunction, Node, Parser};
+use zen_expression::parser::{Node, Parser};
 
 struct UnaryTest {
     src: &'static str,
@@ -112,8 +112,8 @@ fn unary_test() {
             result: &Node::Binary {
                 operator: Operator::Comparison(ComparisonOperator::Equal),
                 left: &Node::Identifier("$"),
-                right: &Node::BuiltIn {
-                    kind: BuiltInFunction::Date,
+                right: &Node::FunctionCall {
+                    kind: FunctionKind::Deprecated(DeprecatedFunction::Date),
                     arguments: &[&Node::String("2022-01-01")],
                 },
             },
@@ -123,8 +123,8 @@ fn unary_test() {
             result: &Node::Binary {
                 operator: Operator::Comparison(ComparisonOperator::Equal),
                 left: &Node::Identifier("$"),
-                right: &Node::BuiltIn {
-                    kind: BuiltInFunction::Time,
+                right: &Node::FunctionCall {
+                    kind: FunctionKind::Deprecated(DeprecatedFunction::Time),
                     arguments: &[&Node::String("14:00:00")],
                 },
             },

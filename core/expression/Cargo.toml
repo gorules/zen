@@ -8,6 +8,7 @@ edition = "2021"
 repository = "https://github.com/gorules/zen.git"
 
 [dependencies]
+anyhow = { workspace = true }
 ahash = { workspace = true }
 bumpalo = { workspace = true, features = ["collections"] }
 chrono = { workspace = true }
@@ -27,7 +28,6 @@ nohash-hasher = "0.2.0"
 strsim = "0.11"
 
 [dev-dependencies]
-anyhow = { workspace = true }
 criterion = { workspace = true }
 csv = "1"
 serde_json5 = "0.2"

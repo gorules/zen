@@ -1,7 +1,9 @@
+use crate::functions::registry::FunctionRegistry;
+use crate::functions::{ClosureFunction, FunctionKind};
 use crate::intellisense::scope::IntelliSenseScope;
 use crate::intellisense::types::type_info::TypeInfo;
 use crate::lexer::{ArithmeticOperator, ComparisonOperator, LogicalOperator, Operator};
-use crate::parser::{Arity, BuiltInFunction, Node};
+use crate::parser::Node;
 use crate::variable::VariableType;
 use serde_json::{Number, Value};
 use std::collections::HashMap;
@@ -77,7 +79,13 @@ impl TypesProvider {
                 true => Const(Value::String(s.to_string())),
                 false => V(VariableType::String),
             },
-            Node::TemplateString(_) => V(VariableType::String),
+            Node::TemplateString(parts) => {
+                parts.iter().for_each(|n| {
+                    self.determine(n, scope.clone(), false);
+                });
+
+                V(VariableType::String)
+            }
 
             Node::Pointer => V(scope.pointer_data.clone()),
             Node::Root => V(scope.root_data.clone()),
@@ -392,28 +400,13 @@ impl TypesProvider {
 
                 V(VariableType::Any)
             }
-            Node::BuiltIn { arguments, kind } => {
+            Node::FunctionCall { arguments, kind } => {
                 let mut type_list: Vec<Rc<VariableType>> = arguments
                     .iter()
                     .map(|n| self.determine(n, scope.clone(), false).kind)
                     .collect();
 
-                let arg_len = match kind.arity() {
-                    Arity::Single => 1,
-                    Arity::Closure | Arity::Dual => 2,
-                };
-
-                if type_list.len() != arg_len {
-                    self.set_type(
-                        node,
-                        Error(format!(
-                            "Expected {arg_len} arguments, but got {}.",
-                            type_list.len()
-                        )),
-                    );
-                }
-
-                if kind.arity() == Arity::Closure {
+                if let FunctionKind::Closure(_) = kind {
                     let ptr_type = type_list[0].array_item().unwrap_or_default();
                     let new_type = self.determine(
                         arguments[1],
@@ -429,293 +422,133 @@ impl TypesProvider {
                 }
 
                 match kind {
-                    BuiltInFunction::Len => {
-                        if !type_list[0].satisfies(&VariableType::String)
-                            && !type_list[0]
-                                .satisfies(&VariableType::Array(VariableType::Any.into()))
-                        {
-                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `string | any[]`.", type_list[0]));
+                    FunctionKind::Internal(_) | FunctionKind::Deprecated(_) => {
+                        let Some(def) = FunctionRegistry::get_definition(kind) else {
+                            return V(VariableType::Any);
+                        };
+
+                        let typecheck = def.check_types(type_list.as_slice());
+                        for (i, arg_error) in typecheck.arguments {
+                            self.set_error(arguments[i], arg_error);
                         }
 
-                        V(VariableType::Number)
+                        TypeInfo {
+                            kind: Rc::new(typecheck.return_type),
+                            error: typecheck.general,
+                        }
                     }
-                    BuiltInFunction::Contains => {
-                        match (type_list[0].omit_const(), type_list[1].omit_const()) {
-                            (VariableType::String, VariableType::String)
-                            | (VariableType::Any, _)
-                            | (_, VariableType::Any) => {
-                                // ok
+                    FunctionKind::Closure(c) => match c {
+                        ClosureFunction::All => {
+                            if !type_list[0].satisfies_array() {
+                                self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `any[]`.", type_list[0]));
                             }
-                            (VariableType::Array(vt), b) => {
-                                if !b.satisfies(&vt) {
-                                    self.set_error(arguments[1], format!("Argument of type `{b}` is not assignable to parameter of type `{vt}`."));
-                                }
+
+                            if !type_list[1].satisfies(&VariableType::Bool) {
+                                self.set_error(
+                                    arguments[1],
+                                    format!(
+                                        "Callback must return a `bool`, but its return type is `{}`.",
+                                        type_list[1]
+                                    ),
+                                );
                             }
-                            _ => self.set_error(node, "Unsupported call signature.".to_string()),
-                        }
 
-                        V(VariableType::Bool)
-                    }
-                    BuiltInFunction::Upper | BuiltInFunction::Lower | BuiltInFunction::Trim => {
-                        if !type_list[0].satisfies(&VariableType::String) {
-                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `string`.", type_list[0]));
+                            V(VariableType::Bool)
                         }
-
-                        V(VariableType::String)
-                    }
-                    BuiltInFunction::StartsWith
-                    | BuiltInFunction::EndsWith
-                    | BuiltInFunction::Matches => {
-                        if !type_list[0].satisfies(&VariableType::String) {
-                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `string`.", type_list[0]));
-                        }
-
-                        if !type_list[1].satisfies(&VariableType::String) {
-                            self.set_error(arguments[1], format!("Argument of type `{}` is not assignable to parameter of type `string`.", type_list[1]));
-                        }
-
-                        V(VariableType::Bool)
-                    }
-                    BuiltInFunction::Extract | BuiltInFunction::Split => {
-                        if !type_list[0].satisfies(&VariableType::String) {
-                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `string`.", type_list[0]));
-                        }
-
-                        if !type_list[1].satisfies(&VariableType::String) {
-                            self.set_error(arguments[1], format!("Argument of type `{}` is not assignable to parameter of type `string`.", type_list[1]));
-                        }
-
-                        V(VariableType::Array(Rc::new(VariableType::String)))
-                    }
-                    BuiltInFunction::FuzzyMatch => {
-                        if !type_list[0].satisfies(&VariableType::String)
-                            && !type_list[0]
-                                .satisfies(&VariableType::Array(Rc::new(VariableType::String)))
-                        {
-                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `string | string[]`.", type_list[0]));
-                        }
-
-                        if !type_list[1].satisfies(&VariableType::String) {
-                            self.set_error(arguments[1], format!("Argument of type `{}` is not assignable to parameter of type `string`.", type_list[1]));
-                        }
-
-                        V(VariableType::Bool)
-                    }
-                    BuiltInFunction::Abs
-                    | BuiltInFunction::Rand
-                    | BuiltInFunction::Floor
-                    | BuiltInFunction::Ceil
-                    | BuiltInFunction::Round => {
-                        if !type_list[0].satisfies(&VariableType::Number) {
-                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `number`.", type_list[0]));
-                        }
-
-                        V(VariableType::Number)
-                    }
-                    BuiltInFunction::Sum
-                    | BuiltInFunction::Avg
-                    | BuiltInFunction::Min
-                    | BuiltInFunction::Max
-                    | BuiltInFunction::Median
-                    | BuiltInFunction::Mode => {
-                        if !type_list[0]
-                            .satisfies(&VariableType::Array(Rc::new(VariableType::Number)))
-                        {
-                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `number[]`.", type_list[0]));
-                        }
-
-                        V(VariableType::Number)
-                    }
-                    BuiltInFunction::IsNumeric => V(VariableType::Bool),
-                    BuiltInFunction::String => V(VariableType::String),
-                    BuiltInFunction::Number => V(VariableType::Number),
-                    BuiltInFunction::Bool => V(VariableType::Bool),
-                    BuiltInFunction::Type => V(VariableType::String),
-                    BuiltInFunction::Date => {
-                        if !type_list[0].satisfies(&VariableType::Number)
-                            && !type_list[0].satisfies(&VariableType::String)
-                        {
-                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `number | string`.", type_list[0]));
-                        }
-
-                        V(VariableType::Number)
-                    }
-                    BuiltInFunction::Time | BuiltInFunction::Duration => {
-                        if !type_list[0].satisfies(&VariableType::String) {
-                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `string`.", type_list[0]));
-                        }
-
-                        V(VariableType::Number)
-                    }
-                    BuiltInFunction::Year
-                    | BuiltInFunction::DayOfWeek
-                    | BuiltInFunction::DayOfMonth
-                    | BuiltInFunction::DayOfYear
-                    | BuiltInFunction::WeekOfYear
-                    | BuiltInFunction::MonthOfYear => {
-                        if !type_list[0].satisfies(&VariableType::Number) {
-                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `number`.", type_list[0]));
-                        }
-
-                        V(VariableType::Number)
-                    }
-                    BuiltInFunction::MonthString
-                    | BuiltInFunction::DateString
-                    | BuiltInFunction::WeekdayString => {
-                        if !type_list[0].satisfies(&VariableType::Number) {
-                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `number`.", type_list[0]));
-                        }
-
-                        V(VariableType::String)
-                    }
-                    BuiltInFunction::StartOf | BuiltInFunction::EndOf => {
-                        if !type_list[0].satisfies(&VariableType::Number) {
-                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `number`.", type_list[0]));
-                        }
-
-                        if !type_list[1].satisfies(&VariableType::String) {
-                            self.set_error(arguments[1], format!("Argument of type `{}` is not assignable to parameter of type `string`.", type_list[1]));
-                        }
-
-                        V(VariableType::Number)
-                    }
-                    BuiltInFunction::Keys => {
-                        if !type_list[0].satisfies_object() {
-                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `object`.", type_list[0]));
-                        }
-
-                        V(VariableType::Array(Rc::new(VariableType::String)))
-                    }
-                    BuiltInFunction::Values => match type_list[0].as_ref() {
-                        VariableType::Any | VariableType::Object(_) => {
-                            V(VariableType::Array(VariableType::Any.into()))
-                        }
-                        VariableType::Constant(c) => match c.as_ref() {
-                            Value::Object(obj) => {
-                                let s: Vec<Value> = obj.values().cloned().collect();
-                                V(s.into())
+                        ClosureFunction::Some => {
+                            if !type_list[0].satisfies_array() {
+                                self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `any[]`.", type_list[0]));
                             }
-                            _ => {
-                                self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `object`.", type_list[0]));
-                                V(VariableType::Array(VariableType::Any.into()))
+
+                            if !type_list[1].satisfies(&VariableType::Bool) {
+                                self.set_error(
+                                    arguments[1],
+                                    format!(
+                                        "Callback must return a `bool`, but its return type is `{}`.",
+                                        type_list[1]
+                                    ),
+                                );
                             }
-                        },
-                        _ => {
-                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `object`", type_list[0]));
-                            V(VariableType::Array(VariableType::Any.into()))
+
+                            V(VariableType::Bool)
                         }
+                        ClosureFunction::None => {
+                            if !type_list[0].satisfies_array() {
+                                self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `any[]`.", type_list[0]));
+                            }
+
+                            if !type_list[1].satisfies(&VariableType::Bool) {
+                                self.set_error(
+                                    arguments[1],
+                                    format!(
+                                        "Callback must return a `bool`, but its return type is `{}`.",
+                                        type_list[1]
+                                    ),
+                                );
+                            }
+
+                            V(VariableType::Bool)
+                        }
+                        ClosureFunction::Filter => {
+                            if !type_list[0].satisfies_array() {
+                                self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `any[]`.", type_list[0]));
+                            }
+
+                            if !type_list[1].satisfies(&VariableType::Bool) {
+                                self.set_error(
+                                    arguments[1],
+                                    format!(
+                                        "Callback must return a `bool`, but its return type is `{}`.",
+                                        type_list[1]
+                                    ),
+                                );
+                            }
+
+                            TypeInfo::from(type_list[0].clone())
+                        }
+                        ClosureFunction::Map => {
+                            if !type_list[0].satisfies_array() {
+                                self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `any[]`.", type_list[0]));
+                            }
+
+                            V(VariableType::Array(type_list[1].clone()))
+                        }
+                        ClosureFunction::Count => {
+                            if !type_list[0].satisfies_array() {
+                                self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `any[]`.", type_list[0]));
+                            }
+
+                            if !type_list[1].satisfies(&VariableType::Bool) {
+                                self.set_error(
+                                    arguments[1],
+                                    format!(
+                                        "Callback must return a `bool`, but its return type is `{}`.",
+                                        type_list[1]
+                                    ),
+                                );
+                            }
+
+                            V(VariableType::Number)
+                        }
+                        ClosureFunction::One => {
+                            if !type_list[0].satisfies_array() {
+                                self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `any[]`.", type_list[0]));
+                            }
+
+                            if !type_list[1].satisfies(&VariableType::Bool) {
+                                self.set_error(
+                                    arguments[1],
+                                    format!(
+                                        "Callback must return a `bool`, but its return type is `{}`.",
+                                        type_list[1]
+                                    ),
+                                );
+                            }
+
+                            V(VariableType::Bool)
+                        }
+                        ClosureFunction::FlatMap => V(VariableType::Any),
                     },
-                    BuiltInFunction::All => {
-                        if !type_list[0].satisfies_array() {
-                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `any[]`.", type_list[0]));
-                        }
-
-                        if !type_list[1].satisfies(&VariableType::Bool) {
-                            self.set_error(
-                                arguments[1],
-                                format!(
-                                    "Callback must return a `bool`, but its return type is `{}`.",
-                                    type_list[1]
-                                ),
-                            );
-                        }
-
-                        V(VariableType::Bool)
-                    }
-                    BuiltInFunction::Some => {
-                        if !type_list[0].satisfies_array() {
-                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `any[]`.", type_list[0]));
-                        }
-
-                        if !type_list[1].satisfies(&VariableType::Bool) {
-                            self.set_error(
-                                arguments[1],
-                                format!(
-                                    "Callback must return a `bool`, but its return type is `{}`.",
-                                    type_list[1]
-                                ),
-                            );
-                        }
-
-                        V(VariableType::Bool)
-                    }
-                    BuiltInFunction::None => {
-                        if !type_list[0].satisfies_array() {
-                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `any[]`.", type_list[0]));
-                        }
-
-                        if !type_list[1].satisfies(&VariableType::Bool) {
-                            self.set_error(
-                                arguments[1],
-                                format!(
-                                    "Callback must return a `bool`, but its return type is `{}`.",
-                                    type_list[1]
-                                ),
-                            );
-                        }
-
-                        V(VariableType::Bool)
-                    }
-                    BuiltInFunction::Filter => {
-                        if !type_list[0].satisfies_array() {
-                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `any[]`.", type_list[0]));
-                        }
-
-                        if !type_list[1].satisfies(&VariableType::Bool) {
-                            self.set_error(
-                                arguments[1],
-                                format!(
-                                    "Callback must return a `bool`, but its return type is `{}`.",
-                                    type_list[1]
-                                ),
-                            );
-                        }
-
-                        TypeInfo::from(type_list[0].clone())
-                    }
-                    BuiltInFunction::Map => {
-                        if !type_list[0].satisfies_array() {
-                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `any[]`.", type_list[0]));
-                        }
-
-                        V(VariableType::Array(type_list[1].clone()))
-                    }
-                    BuiltInFunction::Count => {
-                        if !type_list[0].satisfies_array() {
-                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `any[]`.", type_list[0]));
-                        }
-
-                        if !type_list[1].satisfies(&VariableType::Bool) {
-                            self.set_error(
-                                arguments[1],
-                                format!(
-                                    "Callback must return a `bool`, but its return type is `{}`.",
-                                    type_list[1]
-                                ),
-                            );
-                        }
-
-                        V(VariableType::Number)
-                    }
-                    BuiltInFunction::One => {
-                        if !type_list[0].satisfies_array() {
-                            self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `any[]`.", type_list[0]));
-                        }
-
-                        if !type_list[1].satisfies(&VariableType::Bool) {
-                            self.set_error(
-                                arguments[1],
-                                format!(
-                                    "Callback must return a `bool`, but its return type is `{}`.",
-                                    type_list[1]
-                                ),
-                            );
-                        }
-
-                        V(VariableType::Bool)
-                    }
-                    BuiltInFunction::FlatMap => V(VariableType::Any),
-                    BuiltInFunction::Flatten => V(VariableType::Any),
                 }
             }
             Node::Closure(c) => self.determine(c, scope.clone(), false),

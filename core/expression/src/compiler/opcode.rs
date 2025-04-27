@@ -1,3 +1,4 @@
+use crate::functions::FunctionKind;
 use crate::lexer::Bracket;
 use rust_decimal::Decimal;
 use std::sync::Arc;
@@ -18,7 +19,8 @@ pub enum Opcode {
     PushString(Arc<str>),
     PushNumber(Decimal),
     Pop,
-    Rot,
+    Flatten,
+    Join,
     Fetch,
     FetchRootEnv,
     FetchEnv(Arc<str>),
@@ -32,49 +34,16 @@ pub enum Opcode {
     More,
     LessOrEqual,
     MoreOrEqual,
-    Abs,
-    Average,
-    Median,
-    Mode,
-    Min,
-    Max,
-    Round,
-    Floor,
-    Ceil,
-    Sum,
-    Random,
     Add,
     Subtract,
     Multiply,
     Divide,
     Modulo,
     Exponent,
-    Interval {
-        left_bracket: Bracket,
-        right_bracket: Bracket,
-    },
-    Contains,
-    Keys,
-    Values,
-    DateFunction(Arc<str>),
-    DateManipulation(Arc<str>),
-    Uppercase,
-    Lowercase,
-    StartsWith,
-    EndsWith,
-    Matches,
-    FuzzyMatch,
-    Join,
-    Split,
-    Extract,
-    Trim,
     Slice,
     Array,
     Object,
     Len,
-    ParseDateTime,
-    ParseTime,
-    ParseDuration,
     IncrementIt,
     IncrementCount,
     GetCount,
@@ -82,10 +51,14 @@ pub enum Opcode {
     Pointer,
     Begin,
     End,
-    Flatten,
-    GetType,
-    TypeConversion(TypeConversionKind),
-    TypeCheck(TypeCheckKind),
+    CallFunction {
+        kind: FunctionKind,
+        arg_count: u32,
+    },
+    Interval {
+        left_bracket: Bracket,
+        right_bracket: Bracket,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Display)]
@@ -96,18 +69,4 @@ pub enum Jump {
     IfFalse,
     IfNotNull,
     IfEnd,
-}
-
-/// Metadata for TypeConversion Opcode
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Display)]
-pub enum TypeConversionKind {
-    Number,
-    String,
-    Bool,
-}
-
-/// Metadata for TypeCheck Opcode
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Display)]
-pub enum TypeCheckKind {
-    Numeric,
 }

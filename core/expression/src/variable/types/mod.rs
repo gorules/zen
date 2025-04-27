@@ -19,6 +19,12 @@ pub enum VariableType {
     Object(HashMap<String, Rc<VariableType>>),
 }
 
+impl VariableType {
+    pub fn array(self) -> Self {
+        Self::Array(Rc::new(self))
+    }
+}
+
 impl Default for VariableType {
     fn default() -> Self {
         VariableType::Null

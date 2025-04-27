@@ -1,3 +1,13 @@
+use crate::functions::FunctionKind;
+use crate::lexer::{
+    Bracket, ComparisonOperator, Identifier, Operator, QuotationMark, TemplateString, Token,
+    TokenKind,
+};
+use crate::parser::ast::{AstNodeError, Node};
+use crate::parser::error::ParserError;
+use crate::parser::standard::Standard;
+use crate::parser::unary::Unary;
+use crate::parser::NodeMetadata;
 use bumpalo::collections::Vec as BumpVec;
 use bumpalo::Bump;
 use nohash_hasher::BuildNoHashHasher;
@@ -7,17 +17,6 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::Deref;
-
-use crate::lexer::{
-    Bracket, ComparisonOperator, Identifier, Operator, QuotationMark, TemplateString, Token,
-    TokenKind,
-};
-use crate::parser::ast::{AstNodeError, Node};
-use crate::parser::builtin::{Arity, BuiltInFunction};
-use crate::parser::error::ParserError;
-use crate::parser::standard::Standard;
-use crate::parser::unary::Unary;
-use crate::parser::NodeMetadata;
 
 macro_rules! expect {
     ($self:ident, $token:expr) => {
@@ -196,7 +195,9 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 error,
                 node: Some(node),
             },
-            |_| NodeMetadata { span: (0, 0) },
+            |_| NodeMetadata {
+                span: node.span().unwrap_or_default(),
+            },
         )
     }
 
@@ -335,6 +336,12 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                     TemplateString::ExpressionStart => {
                         self.next();
                         nodes.push(expression_parser(ParserContext::Global));
+
+                        if let Some(error) =
+                            self.expect(TokenKind::TemplateString(TemplateString::ExpressionEnd))
+                        {
+                            nodes.push(error);
+                        }
                     }
                     TemplateString::ExpressionEnd => {
                         self.next();
@@ -402,13 +409,16 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                     ),
                     Some(t) => match is_valid_property(t) {
                         true => self.node(Node::String(t.value), |_| NodeMetadata { span: t.span }),
-                        false => self.error_with_node(
-                            AstNodeError::InvalidProperty {
-                                property: afmt!(self, "{}", t.value),
-                                span: t.span,
-                            },
-                            node,
-                        ),
+                        false => {
+                            self.set_position(self.position() - 1);
+                            self.error_with_node(
+                                AstNodeError::InvalidProperty {
+                                    property: afmt!(self, "{}", t.value),
+                                    span: t.span,
+                                },
+                                node,
+                            )
+                        }
                     },
                 };
 
@@ -602,7 +612,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         }
 
         // Potentially it might be a built-in expression
-        let Ok(builtin) = BuiltInFunction::try_from(identifier_token.value) else {
+        let Ok(function) = FunctionKind::try_from(identifier_token.value) else {
             return self.error(AstNodeError::UnknownBuiltIn {
                 name: afmt!(self, "{}", identifier_token.value),
                 span: identifier_token.span,
@@ -610,43 +620,56 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         };
 
         self.next();
-        let builtin_node = match builtin.arity() {
-            Arity::Single => {
-                let arg = expression_parser(ParserContext::Global);
-                expect!(self, TokenKind::Bracket(Bracket::RightParenthesis));
+        let function_node = match function {
+            FunctionKind::Closure(_) => {
+                let mut arguments = BumpVec::new_in(&self.bump);
 
-                Node::BuiltIn {
-                    kind: builtin,
-                    arguments: self.bump.alloc_slice_copy(&[arg]),
+                arguments.push(expression_parser(ParserContext::Global));
+                if let Some(error) = self.expect(TokenKind::Operator(Operator::Comma)) {
+                    arguments.push(error);
+                };
+
+                arguments.push(self.closure(&expression_parser));
+                if let Some(error) = self.expect(TokenKind::Bracket(Bracket::RightParenthesis)) {
+                    arguments.push(error);
+                }
+
+                Node::FunctionCall {
+                    kind: function,
+                    arguments: self.bump.alloc_slice_copy(arguments.into_bump_slice()),
                 }
             }
-            Arity::Dual => {
-                let arg1 = expression_parser(ParserContext::Global);
-                expect!(self, TokenKind::Operator(Operator::Comma));
-                let arg2 = expression_parser(ParserContext::Global);
-                expect!(self, TokenKind::Bracket(Bracket::RightParenthesis));
+            _ => {
+                let mut arguments = BumpVec::new_in(&self.bump);
+                loop {
+                    if self.current_kind() == Some(&TokenKind::Bracket(Bracket::RightParenthesis)) {
+                        break;
+                    }
 
-                Node::BuiltIn {
-                    kind: builtin,
-                    arguments: self.bump.alloc_slice_copy(&[arg1, arg2]),
+                    arguments.push(expression_parser(ParserContext::Global));
+                    if self.current_kind() != Some(&TokenKind::Operator(Operator::Comma)) {
+                        break;
+                    }
+
+                    if let Some(error) = self.expect(TokenKind::Operator(Operator::Comma)) {
+                        arguments.push(error);
+                        break;
+                    }
                 }
-            }
-            Arity::Closure => {
-                let arg1 = expression_parser(ParserContext::Global);
 
-                expect!(self, TokenKind::Operator(Operator::Comma));
-                let arg2 = self.closure(&expression_parser);
-                expect!(self, TokenKind::Bracket(Bracket::RightParenthesis));
+                if let Some(error) = self.expect(TokenKind::Bracket(Bracket::RightParenthesis)) {
+                    arguments.push(error);
+                }
 
-                Node::BuiltIn {
-                    kind: builtin,
-                    arguments: self.bump.alloc_slice_copy(&[arg1, arg2]),
+                Node::FunctionCall {
+                    kind: function,
+                    arguments: arguments.into_bump_slice(),
                 }
             }
         };
 
         self.with_postfix(
-            self.node(builtin_node, |_| NodeMetadata {
+            self.node(function_node, |_| NodeMetadata {
                 span: (identifier_token.span.0, self.prev_token_end()),
             }),
             expression_parser,
@@ -805,7 +828,15 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             }
         }
 
-        expect!(self, TokenKind::Bracket(Bracket::RightCurlyBracket));
+        if let Some(error) = self.expect(TokenKind::Bracket(Bracket::RightCurlyBracket)) {
+            key_value_pairs.push((
+                self.node(Node::Null, |_| NodeMetadata {
+                    span: error.span().unwrap_or_default(),
+                }),
+                error,
+            ));
+        };
+
         self.node(Node::Object(key_value_pairs.into_bump_slice()), |_| {
             NodeMetadata {
                 span: (span_start, self.prev_token_end()),

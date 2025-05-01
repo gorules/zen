@@ -1,4 +1,6 @@
-use crate::functions::{ClosureFunction, DeprecatedFunction, FunctionKind, InternalFunction};
+use crate::functions::{
+    ClosureFunction, DateMethod, DeprecatedFunction, FunctionKind, InternalFunction, MethodKind,
+};
 use crate::lexer::{Bracket, ComparisonOperator, Identifier, LogicalOperator, Operator, TokenKind};
 use crate::parser::ast::{AstNodeError, Node};
 use crate::parser::constants::{Associativity, BINARY_OPERATORS, UNARY_OPERATORS};
@@ -366,6 +368,7 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                     InternalFunction::Keys => CompareWithReference(In),
                     InternalFunction::Values => CompareWithReference(In),
                     InternalFunction::Type => CompareWithReference(Equal),
+                    InternalFunction::Date => CompareWithReference(Equal),
                 },
                 FunctionKind::Deprecated(d) => match d {
                     DeprecatedFunction::Date => CompareWithReference(Equal),
@@ -392,6 +395,13 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                     ClosureFunction::Map => CompareWithReference(In),
                     ClosureFunction::FlatMap => CompareWithReference(In),
                     ClosureFunction::Count => CompareWithReference(Equal),
+                },
+            },
+            Node::MethodCall { kind, .. } => match kind {
+                MethodKind::DateMethod(dm) => match dm {
+                    DateMethod::Add => CompareWithReference(Equal),
+                    DateMethod::Sub => CompareWithReference(Equal),
+                    DateMethod::Format => CompareWithReference(Equal),
                 },
             },
             Node::Error { .. } => AsBoolean,

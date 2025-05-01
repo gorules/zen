@@ -3,6 +3,7 @@ use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 use std::collections::HashMap;
 use std::hash::BuildHasherDefault;
+use std::rc::Rc;
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -86,7 +87,7 @@ impl<'a> Isolate<'a> {
         };
 
         let mut environment_object = environment_object_ref.borrow_mut();
-        environment_object.insert("$".to_string(), reference_value);
+        environment_object.insert(Rc::from("$"), reference_value);
 
         Ok(())
     }

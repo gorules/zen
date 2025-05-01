@@ -1,12 +1,13 @@
 use crate::functions::registry::FunctionRegistry;
-use crate::functions::{ClosureFunction, FunctionKind};
+use crate::functions::{ClosureFunction, FunctionKind, MethodRegistry};
 use crate::intellisense::scope::IntelliSenseScope;
 use crate::intellisense::types::type_info::TypeInfo;
 use crate::lexer::{ArithmeticOperator, ComparisonOperator, LogicalOperator, Operator};
 use crate::parser::Node;
 use crate::variable::VariableType;
-use serde_json::{Number, Value};
 use std::collections::HashMap;
+use std::iter::once;
+use std::ops::Deref;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -20,7 +21,7 @@ impl TypesProvider {
             types: HashMap::new(),
         };
 
-        s.determine(root, scope, false);
+        s.determine(root, scope);
         s
     }
 
@@ -50,11 +51,11 @@ impl TypesProvider {
         });
     }
 
-    fn determine(&mut self, node: &Node, scope: IntelliSenseScope, detailed: bool) -> TypeInfo {
+    fn determine(&mut self, node: &Node, scope: IntelliSenseScope) -> TypeInfo {
         #[allow(non_snake_case)]
         let V = |vt: VariableType| TypeInfo::from(vt);
         #[allow(non_snake_case)]
-        let Const = |v: Value| TypeInfo::from(VariableType::Constant(Rc::new(v)));
+        let Const = |v: &str| TypeInfo::from(VariableType::Const(Rc::from(v)));
         #[allow(non_snake_case)]
         let Error = |error: String| TypeInfo {
             kind: Rc::from(VariableType::Any),
@@ -65,23 +66,12 @@ impl TypesProvider {
 
         let node_type = match node {
             Node::Null => V(VariableType::Null),
-            Node::Bool(b) => match detailed {
-                true => Const(Value::Bool(*b)),
-                false => V(VariableType::Bool),
-            },
-            Node::Number(n) => match detailed {
-                true => Const(Value::Number(Number::from_string_unchecked(
-                    n.normalize().to_string(),
-                ))),
-                false => V(VariableType::Number),
-            },
-            Node::String(s) => match detailed {
-                true => Const(Value::String(s.to_string())),
-                false => V(VariableType::String),
-            },
+            Node::Bool(_) => V(VariableType::Bool),
+            Node::Number(_) => V(VariableType::Number),
+            Node::String(s) => Const(*s),
             Node::TemplateString(parts) => {
                 parts.iter().for_each(|n| {
-                    self.determine(n, scope.clone(), false);
+                    self.determine(n, scope.clone());
                 });
 
                 V(VariableType::String)
@@ -92,14 +82,14 @@ impl TypesProvider {
 
             Node::Slice { node, from, to } => {
                 if let Some(f) = from {
-                    let from_type = self.determine(f, scope.clone(), false);
+                    let from_type = self.determine(f, scope.clone());
                     if !from_type.satisfies(&VariableType::Number) {
                         self.set_error(node, format!("Invalid slice index: expected a `number`, but found `{from_type}`."));
                     }
                 }
 
                 if let Some(t) = to {
-                    let to_type = self.determine(t, scope.clone(), false);
+                    let to_type = self.determine(t, scope.clone());
                     if !to_type.satisfies(&VariableType::Number) {
                         self.set_error(
                             node,
@@ -110,21 +100,13 @@ impl TypesProvider {
                     }
                 }
 
-                let node_type = self.determine(node, scope.clone(), false);
+                let node_type = self.determine(node, scope.clone());
                 match node_type.kind.as_ref() {
                     VariableType::Any => V(VariableType::Any),
-                    VariableType::String => V(VariableType::String),
                     VariableType::Array(inner) => TypeInfo::from(inner.clone()),
-                    VariableType::Constant(c) => match c.as_ref() {
-                        Value::String(_) => V(VariableType::String),
-                        Value::Array(inner) => match VariableType::from(inner).array_item() {
-                            Some(item) => TypeInfo::from(item),
-                            None => Error("Array expected".to_string()),
-                        },
-                        _ => {
-                            Error("Slice operation is only allowed on `string | any[]`".to_string())
-                        }
-                    },
+                    VariableType::String | VariableType::Enum(_) | VariableType::Const(_) => {
+                        V(VariableType::String)
+                    }
                     _ => Error("Slice operation is only allowed on `string | any[]`".to_string()),
                 }
             }
@@ -132,7 +114,7 @@ impl TypesProvider {
             Node::Array(items) => {
                 let mut type_list: Vec<Rc<VariableType>> = items
                     .iter()
-                    .map(|n| self.determine(n, scope.clone(), false).kind)
+                    .map(|n| self.determine(n, scope.clone()).kind)
                     .collect();
                 let first = type_list.pop();
                 let all_same = type_list.iter().all(|t| Some(t) == first.as_ref());
@@ -147,22 +129,20 @@ impl TypesProvider {
                 let obj_type = obj
                     .iter()
                     .filter_map(|(k, v)| {
-                        let key_type = self.determine(k, scope.clone(), true);
+                        let key_type = self.determine(k, scope.clone());
                         Some((
-                            key_type.kind.as_const_str()?.to_string(),
-                            self.determine(v, scope.clone(), false).kind,
+                            key_type.kind.as_const_str()?,
+                            self.determine(v, scope.clone()).kind,
                         ))
                     })
                     .collect();
 
                 V(VariableType::Object(obj_type))
             }
-            Node::Identifier(i) => TypeInfo::from(scope.root_data.get(&VariableType::Constant(
-                Rc::from(Value::String(i.to_string())),
-            ))),
+            Node::Identifier(i) => TypeInfo::from(scope.root_data.get(i)),
             Node::Member { node, property } => {
-                let node_type = self.determine(node, scope.clone(), true);
-                let property_type = self.determine(property, scope.clone(), true);
+                let node_type = self.determine(node, scope.clone());
+                let property_type = self.determine(property, scope.clone());
 
                 match node_type.kind.as_ref() {
                     VariableType::Any => V(VariableType::Any),
@@ -188,44 +168,10 @@ impl TypesProvider {
                         match property_type.as_const_str() {
                             None => V(VariableType::Any),
                             Some(key) => TypeInfo::from(
-                                obj.get(key).cloned().unwrap_or(Rc::new(VariableType::Any)),
+                                obj.get(&key).cloned().unwrap_or(Rc::new(VariableType::Any)),
                             ),
                         }
                     }
-                    VariableType::Constant(c) => match c.as_ref() {
-                        Value::Null => V(VariableType::Null),
-                        Value::Array(arr) => {
-                            if !property_type.satisfies(&VariableType::Number) {
-                                self.set_error(
-                                    property,
-                                    format!("Expression of type `{property_type}` cannot be used to index `{node_type}`."),
-                                );
-                            }
-
-                            match VariableType::from(arr).array_item() {
-                                Some(item) => TypeInfo::from(item),
-                                None => Error("Expected an array".to_string()),
-                            }
-                        }
-                        Value::Object(obj) => {
-                            if !property_type.satisfies(&VariableType::String) {
-                                self.set_error(
-                                    property,
-                                    format!("Expression of type `{property_type}` cannot be used to index `{node_type}`."),
-                                );
-                            }
-
-                            match property_type.as_const_str() {
-                                None => V(VariableType::Any),
-                                Some(key) => V(obj
-                                    .get(key)
-                                    .cloned()
-                                    .map(VariableType::from)
-                                    .unwrap_or(VariableType::Any)),
-                            }
-                        }
-                        _ => Error(format!("Expression of type `{property_type}` cannot be used to index `{node_type}`.")),
-                    },
                     _ => Error(format!("Expression of type `{property_type}` cannot be used to index `{node_type}`.")),
                 }
             }
@@ -234,12 +180,12 @@ impl TypesProvider {
                 right,
                 operator,
             } => {
-                let left_type = self.determine(left, scope.clone(), false);
-                let right_type = self.determine(right, scope.clone(), false);
+                let left_type = self.determine(left, scope.clone());
+                let right_type = self.determine(right, scope.clone());
 
                 match operator {
                     Operator::Arithmetic(arith) => match arith {
-                        ArithmeticOperator::Add => match (left_type.omit_const(), right_type.omit_const()) {
+                        ArithmeticOperator::Add => match (left_type.deref(), right_type.deref()) {
                             (VariableType::Number, VariableType::Number) => V(VariableType::Number),
                             (VariableType::String, VariableType::String) => V(VariableType::String),
                             (VariableType::Any, VariableType::Number | VariableType::String | VariableType::Any) => V(VariableType::Any),
@@ -252,7 +198,7 @@ impl TypesProvider {
                         | ArithmeticOperator::Multiply
                         | ArithmeticOperator::Divide
                         | ArithmeticOperator::Modulus
-                        | ArithmeticOperator::Power => match (left_type.omit_const(), right_type.omit_const()) {
+                        | ArithmeticOperator::Power => match (left_type.deref(), right_type.deref()) {
                             (VariableType::Number | VariableType::Any, VariableType::Number | VariableType::Any) => V(VariableType::Number),
                             _ => Error(format!(
                                 "Operator `{operator}` cannot be applied to types `{left_type}` and `{right_type}`."
@@ -261,7 +207,7 @@ impl TypesProvider {
                     },
                     Operator::Logical(l) => match l {
                         LogicalOperator::And | LogicalOperator::Or | LogicalOperator::Not => {
-                            match (left_type.omit_const(), right_type.omit_const()) {
+                            match (left_type.deref(), right_type.deref()) {
                                 (VariableType::Bool | VariableType::Any, VariableType::Bool | VariableType::Any) => V(VariableType::Bool),
                                 _ => Error(format!(
                                     "Operator `{operator}` cannot be applied to types `{left_type}` and `{right_type}`."
@@ -272,7 +218,7 @@ impl TypesProvider {
                     },
                     Operator::Comparison(comp) => match comp {
                         ComparisonOperator::Equal => {
-                            if !left_type.omit_const().satisfies(&right_type.omit_const()) && !left_type.is_null() && !right_type.is_null() {
+                            if !left_type.satisfies(&right_type) && !left_type.is_null() && !right_type.is_null() {
                                 on_fly_error.replace(format!(
                                     "Hint: Expression will always evaluate to `false` because `{left_type}` != `{right_type}`."
                                 ));
@@ -281,7 +227,7 @@ impl TypesProvider {
                             V(VariableType::Bool)
                         },
                         ComparisonOperator::NotEqual => {
-                            if !left_type.omit_const().satisfies(&right_type.omit_const()) && !left_type.is_null() && !right_type.is_null() {
+                            if !left_type.satisfies(&right_type) && !left_type.is_null() && !right_type.is_null() {
                                 on_fly_error.replace(format!(
                                     "Hint: Expression will always evaluate to `true` because `{left_type}` != `{right_type}`."
                                 ));
@@ -292,15 +238,15 @@ impl TypesProvider {
                         ComparisonOperator::LessThan
                         | ComparisonOperator::GreaterThan
                         | ComparisonOperator::LessThanOrEqual
-                        | ComparisonOperator::GreaterThanOrEqual => match (left_type.omit_const(), right_type.omit_const()) {
+                        | ComparisonOperator::GreaterThanOrEqual => match (left_type.deref(), right_type.deref()) {
                             (VariableType::Number | VariableType::Any, VariableType::Number | VariableType::Any) => V(VariableType::Bool),
                             _ => Error(format!(
                                 "Operator `{operator}` cannot be applied to types `{left_type}` and `{right_type}`."
                             )),
                         },
-                        ComparisonOperator::In | ComparisonOperator::NotIn => match (left_type.kind.as_ref(), right_type.kind.as_ref()) {
+                        ComparisonOperator::In | ComparisonOperator::NotIn => match (left_type.deref(), right_type.deref()) {
                             (_, VariableType::Array(inner_type)) => {
-                                if !left_type.omit_const().satisfies(&inner_type.omit_const()) {
+                                if !left_type.satisfies(&inner_type) {
                                     let expected = match comp {
                                         ComparisonOperator::In => "false",
                                         _ => "true"
@@ -313,6 +259,7 @@ impl TypesProvider {
 
                                 V(VariableType::Bool)
                             },
+                            (VariableType::Number, VariableType::Interval) => V(VariableType::Bool),
                             (VariableType::String, VariableType::Object(_)) => V(VariableType::Bool),
                             (VariableType::Any, _) => V(VariableType::Bool),
                             (_, VariableType::Any) => V(VariableType::Bool),
@@ -329,7 +276,7 @@ impl TypesProvider {
                 on_true,
                 on_false,
             } => {
-                let condition_type = self.determine(condition, scope.clone(), false);
+                let condition_type = self.determine(condition, scope.clone());
                 if !condition_type.satisfies(&VariableType::Bool) {
                     self.set_error(
                         condition,
@@ -337,13 +284,13 @@ impl TypesProvider {
                     );
                 }
 
-                let true_type = self.determine(on_true, scope.clone(), false);
-                let false_type = self.determine(on_false, scope.clone(), false);
+                let true_type = self.determine(on_true, scope.clone());
+                let false_type = self.determine(on_false, scope.clone());
 
                 V(true_type.kind.merge(false_type.kind.as_ref()))
             }
             Node::Unary { node, operator } => {
-                let node_type = self.determine(node, scope.clone(), false);
+                let node_type = self.determine(node, scope.clone());
 
                 match operator {
                     Operator::Arithmetic(arith) => match arith {
@@ -382,7 +329,7 @@ impl TypesProvider {
                 }
             }
             Node::Interval { left, right, .. } => {
-                let left_type = self.determine(left, scope.clone(), false);
+                let left_type = self.determine(left, scope.clone());
                 if !left_type.satisfies(&VariableType::Number) {
                     self.set_error(
                         left,
@@ -390,7 +337,7 @@ impl TypesProvider {
                     )
                 }
 
-                let right_type = self.determine(right, scope.clone(), false);
+                let right_type = self.determine(right, scope.clone());
                 if !right_type.satisfies(&VariableType::Number) {
                     self.set_error(
                         right,
@@ -398,12 +345,12 @@ impl TypesProvider {
                     )
                 }
 
-                V(VariableType::Any)
+                V(VariableType::Interval)
             }
             Node::FunctionCall { arguments, kind } => {
                 let mut type_list: Vec<Rc<VariableType>> = arguments
                     .iter()
-                    .map(|n| self.determine(n, scope.clone(), false).kind)
+                    .map(|n| self.determine(n, scope.clone()).kind)
                     .collect();
 
                 if let FunctionKind::Closure(_) = kind {
@@ -415,7 +362,6 @@ impl TypesProvider {
                             current_data: scope.current_data,
                             root_data: scope.root_data,
                         },
-                        false,
                     );
 
                     type_list[1] = new_type.kind;
@@ -437,12 +383,24 @@ impl TypesProvider {
                             error: typecheck.general,
                         }
                     }
-                    FunctionKind::Closure(c) => match c {
-                        ClosureFunction::All => {
-                            if !type_list[0].satisfies_array() {
-                                self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `any[]`.", type_list[0]));
-                            }
+                    FunctionKind::Closure(c) => {
+                        if !type_list[0].is_iterable() {
+                            self.set_error(
+                                arguments[0],
+                                format!("Argument of type `{}` is not `iterable`.", type_list[0]),
+                            );
+                        }
 
+                        // Boolean callbacks
+                        if matches!(
+                            c,
+                            ClosureFunction::All
+                                | ClosureFunction::None
+                                | ClosureFunction::Some
+                                | ClosureFunction::One
+                                | ClosureFunction::Filter
+                                | ClosureFunction::Count
+                        ) {
                             if !type_list[1].satisfies(&VariableType::Bool) {
                                 self.set_error(
                                     arguments[1],
@@ -452,114 +410,62 @@ impl TypesProvider {
                                     ),
                                 );
                             }
-
-                            V(VariableType::Bool)
                         }
-                        ClosureFunction::Some => {
-                            if !type_list[0].satisfies_array() {
-                                self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `any[]`.", type_list[0]));
-                            }
 
-                            if !type_list[1].satisfies(&VariableType::Bool) {
-                                self.set_error(
-                                    arguments[1],
-                                    format!(
-                                        "Callback must return a `bool`, but its return type is `{}`.",
-                                        type_list[1]
-                                    ),
-                                );
-                            }
-
-                            V(VariableType::Bool)
+                        match c {
+                            ClosureFunction::All => V(VariableType::Bool),
+                            ClosureFunction::Some => V(VariableType::Bool),
+                            ClosureFunction::None => V(VariableType::Bool),
+                            ClosureFunction::One => V(VariableType::Bool),
+                            ClosureFunction::Filter => TypeInfo::from(type_list[0].clone()),
+                            ClosureFunction::Count => V(VariableType::Number),
+                            ClosureFunction::Map => V(VariableType::Array(type_list[1].clone())),
+                            ClosureFunction::FlatMap => V(VariableType::Any),
                         }
-                        ClosureFunction::None => {
-                            if !type_list[0].satisfies_array() {
-                                self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `any[]`.", type_list[0]));
-                            }
-
-                            if !type_list[1].satisfies(&VariableType::Bool) {
-                                self.set_error(
-                                    arguments[1],
-                                    format!(
-                                        "Callback must return a `bool`, but its return type is `{}`.",
-                                        type_list[1]
-                                    ),
-                                );
-                            }
-
-                            V(VariableType::Bool)
-                        }
-                        ClosureFunction::Filter => {
-                            if !type_list[0].satisfies_array() {
-                                self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `any[]`.", type_list[0]));
-                            }
-
-                            if !type_list[1].satisfies(&VariableType::Bool) {
-                                self.set_error(
-                                    arguments[1],
-                                    format!(
-                                        "Callback must return a `bool`, but its return type is `{}`.",
-                                        type_list[1]
-                                    ),
-                                );
-                            }
-
-                            TypeInfo::from(type_list[0].clone())
-                        }
-                        ClosureFunction::Map => {
-                            if !type_list[0].satisfies_array() {
-                                self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `any[]`.", type_list[0]));
-                            }
-
-                            V(VariableType::Array(type_list[1].clone()))
-                        }
-                        ClosureFunction::Count => {
-                            if !type_list[0].satisfies_array() {
-                                self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `any[]`.", type_list[0]));
-                            }
-
-                            if !type_list[1].satisfies(&VariableType::Bool) {
-                                self.set_error(
-                                    arguments[1],
-                                    format!(
-                                        "Callback must return a `bool`, but its return type is `{}`.",
-                                        type_list[1]
-                                    ),
-                                );
-                            }
-
-                            V(VariableType::Number)
-                        }
-                        ClosureFunction::One => {
-                            if !type_list[0].satisfies_array() {
-                                self.set_error(arguments[0], format!("Argument of type `{}` is not assignable to parameter of type `any[]`.", type_list[0]));
-                            }
-
-                            if !type_list[1].satisfies(&VariableType::Bool) {
-                                self.set_error(
-                                    arguments[1],
-                                    format!(
-                                        "Callback must return a `bool`, but its return type is `{}`.",
-                                        type_list[1]
-                                    ),
-                                );
-                            }
-
-                            V(VariableType::Bool)
-                        }
-                        ClosureFunction::FlatMap => V(VariableType::Any),
-                    },
+                    }
                 }
             }
-            Node::Closure(c) => self.determine(c, scope.clone(), false),
-            Node::Parenthesized(c) => self.determine(c, scope.clone(), false),
+            Node::MethodCall {
+                this,
+                arguments,
+                kind,
+            } => {
+                let this_type = self.determine(this, scope.clone());
+                let type_list: Vec<Rc<VariableType>> = once(this_type.kind)
+                    .chain(
+                        arguments
+                            .iter()
+                            .map(|n| self.determine(n, scope.clone()).kind),
+                    )
+                    .collect();
+
+                let Some(def) = MethodRegistry::get_definition(kind) else {
+                    return V(VariableType::Any);
+                };
+
+                let typecheck = def.check_types(type_list.as_slice());
+                for (i, arg_error) in typecheck.arguments {
+                    if i == 0 {
+                        self.set_error(this, arg_error);
+                    } else {
+                        self.set_error(arguments[i - 1], arg_error);
+                    }
+                }
+
+                TypeInfo {
+                    kind: Rc::new(typecheck.return_type),
+                    error: typecheck.general,
+                }
+            }
+            Node::Closure(c) => self.determine(c, scope.clone()),
+            Node::Parenthesized(c) => self.determine(c, scope.clone()),
             Node::Error { node, error } => match node {
                 None => TypeInfo {
                     kind: Rc::new(VariableType::Any),
                     error: Some(error.to_string()),
                 },
                 Some(n) => {
-                    let typ = self.determine(n, scope.clone(), false);
+                    let typ = self.determine(n, scope.clone());
                     TypeInfo {
                         kind: typ.kind,
                         error: Some(error.to_string()),

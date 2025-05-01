@@ -25,7 +25,7 @@ impl<'a> From<Cow<'a, Value>> for VariableType {
 
                 VariableType::Object(
                     obj.into_iter()
-                        .map(|(k, v)| (k, Rc::new(v.into())))
+                        .map(|(k, v)| (Rc::from(k.as_str()), Rc::new(v.into())))
                         .collect(),
                 )
             }

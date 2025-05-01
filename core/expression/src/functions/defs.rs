@@ -1,10 +1,24 @@
 use crate::functions::arguments::Arguments;
-use crate::functions::registry::FunctionDefinition;
-use crate::functions::FunctionTypecheck;
 use crate::variable::VariableType;
 use crate::Variable;
 use std::collections::HashSet;
 use std::rc::Rc;
+
+pub trait FunctionDefinition {
+    fn required_parameters(&self) -> usize;
+    fn optional_parameters(&self) -> usize;
+    fn check_types(&self, args: &[Rc<VariableType>]) -> FunctionTypecheck;
+    fn call(&self, args: Arguments) -> anyhow::Result<Variable>;
+    fn param_type(&self, index: usize) -> String;
+    fn return_type(&self) -> String;
+}
+
+#[derive(Debug, Default)]
+pub struct FunctionTypecheck {
+    pub general: Option<String>,
+    pub arguments: Vec<(usize, String)>,
+    pub return_type: VariableType,
+}
 
 #[derive(Clone)]
 pub struct FunctionSignature {

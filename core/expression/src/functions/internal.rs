@@ -1,5 +1,6 @@
-use crate::functions::defs::{CompositeFunction, FunctionSignature, StaticFunction};
-use crate::functions::registry::FunctionDefinition;
+use crate::functions::defs::{
+    CompositeFunction, FunctionDefinition, FunctionSignature, StaticFunction,
+};
 use std::rc::Rc;
 use strum_macros::{Display, EnumIter, EnumString, IntoStaticStr};
 
@@ -45,6 +46,9 @@ pub enum InternalFunction {
     // Map
     Keys,
     Values,
+
+    #[strum(serialize = "d")]
+    Date,
 }
 
 impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
@@ -244,6 +248,20 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
                     VT::Any.array(),
                 ),
             }),
+
+            IF::Date => Rc::new(CompositeFunction {
+                implementation: imp::date,
+                signatures: vec![
+                    FunctionSignature {
+                        parameters: vec![],
+                        return_type: VT::Bool,
+                    },
+                    FunctionSignature {
+                        parameters: vec![VT::Any],
+                        return_type: VT::Bool,
+                    },
+                ],
+            }),
         };
 
         s
@@ -252,6 +270,7 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
 
 pub(crate) mod imp {
     use crate::functions::arguments::Arguments;
+    use crate::vm::VmDate;
     use crate::Variable as V;
     use anyhow::{anyhow, Context};
     #[cfg(not(feature = "regex-lite"))]
@@ -465,7 +484,7 @@ pub(crate) mod imp {
             V::Null => false,
             V::Bool(v) => *v,
             V::Number(n) => !n.is_zero(),
-            V::Array(_) | V::Object(_) => true,
+            V::Array(_) | V::Object(_) | V::Dynamic(_) => true,
             V::String(s) => match (*s).trim() {
                 "true" => true,
                 "false" => false,
@@ -607,10 +626,7 @@ pub(crate) mod imp {
             }
             V::Object(a) => {
                 let obj = a.borrow();
-                let keys = obj
-                    .iter()
-                    .map(|(key, _)| V::String(Rc::from(key.as_str())))
-                    .collect();
+                let keys = obj.iter().map(|(key, _)| V::String(key.clone())).collect();
 
                 V::from_array(keys)
             }
@@ -628,5 +644,15 @@ pub(crate) mod imp {
         let values: Vec<_> = obj.values().cloned().collect();
 
         Ok(V::from_array(values))
+    }
+
+    pub fn date(args: Arguments) -> anyhow::Result<V> {
+        let a = args.ovar(0);
+        let date_time = match a {
+            None => VmDate::now(),
+            Some(v) => VmDate::new(v.clone()),
+        };
+
+        Ok(V::Dynamic(Rc::new(date_time)))
     }
 }

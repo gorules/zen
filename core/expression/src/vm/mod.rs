@@ -4,7 +4,11 @@
 pub use error::VMError;
 pub use vm::VM;
 
+pub(crate) mod date;
 mod error;
 pub(crate) mod helpers;
-mod variable;
+mod interval;
 mod vm;
+
+pub(crate) use date::VmDate;
+pub(crate) use interval::VmInterval;

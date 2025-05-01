@@ -1,4 +1,4 @@
-use crate::functions::FunctionKind;
+use crate::functions::{FunctionKind, MethodKind};
 use crate::lexer::Bracket;
 use rust_decimal::Decimal;
 use std::sync::Arc;
@@ -53,6 +53,10 @@ pub enum Opcode {
     End,
     CallFunction {
         kind: FunctionKind,
+        arg_count: u32,
+    },
+    CallMethod {
+        kind: MethodKind,
         arg_count: u32,
     },
     Interval {

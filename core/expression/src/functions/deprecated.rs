@@ -1,6 +1,5 @@
 use crate::functions::arguments::Arguments;
-use crate::functions::defs::{FunctionSignature, StaticFunction};
-use crate::functions::registry::FunctionDefinition;
+use crate::functions::defs::{FunctionDefinition, FunctionSignature, StaticFunction};
 use crate::vm::helpers::{date_time, date_time_end_of, date_time_start_of, time};
 use crate::Variable as V;
 use anyhow::{anyhow, Context};

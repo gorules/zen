@@ -6,6 +6,7 @@ use serde::de::{DeserializeSeed, Error, MapAccess, SeqAccess, Unexpected, Visito
 use serde::{Deserialize, Deserializer};
 use std::fmt::Formatter;
 use std::marker::PhantomData;
+use std::ops::Deref;
 use std::rc::Rc;
 
 struct VariableVisitor;
@@ -85,8 +86,11 @@ impl<'de> Visitor<'de> for VariableVisitor {
     {
         let mut m = HashMap::with_capacity(map.size_hint().unwrap_or_default());
         let mut first = true;
-        while let Some((key, value)) = map.next_entry_seed(PhantomData, VariableDeserializer)? {
-            if first && key == NUMBER_TOKEN {
+
+        while let Some((key, value)) =
+            map.next_entry_seed(PhantomData::<Rc<str>>, VariableDeserializer)?
+        {
+            if first && key.deref() == NUMBER_TOKEN {
                 return Ok(Variable::Number(
                     Decimal::from_str_exact(
                         value

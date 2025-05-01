@@ -47,7 +47,7 @@ fn bench_functions(c: &mut Criterion) {
     });
 
     c.bench_function("decision/table", |b| {
-        bench_decision(b, "function-v2.json", json!({ "input": 15 }).into());
+        bench_decision(b, "table.json", json!({ "input": 15 }).into());
     });
 }
 

@@ -2,7 +2,7 @@ use crate::compiler::error::{CompilerError, CompilerResult};
 use crate::compiler::opcode::{FetchFastTarget, Jump};
 use crate::compiler::Opcode;
 use crate::functions::registry::FunctionRegistry;
-use crate::functions::{ClosureFunction, FunctionKind, InternalFunction};
+use crate::functions::{ClosureFunction, FunctionKind, InternalFunction, MethodRegistry};
 use crate::lexer::{ArithmeticOperator, ComparisonOperator, LogicalOperator, Operator};
 use crate::parser::Node;
 use rust_decimal::prelude::ToPrimitive;
@@ -96,9 +96,9 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
         self.bytecode.len() + 1 - to
     }
 
-    fn compile_argument(
+    fn compile_argument<T: ToString>(
         &mut self,
-        function_kind: &FunctionKind,
+        function_kind: T,
         arguments: &[&'arena Node<'arena>],
         index: usize,
     ) -> CompilerResult<usize> {
@@ -522,6 +522,37 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                     }
                 },
             },
+            Node::MethodCall {
+                kind,
+                this,
+                arguments,
+            } => {
+                let method = MethodRegistry::get_definition(kind).ok_or_else(|| {
+                    CompilerError::UnknownFunction {
+                        name: kind.to_string(),
+                    }
+                })?;
+
+                self.compile_node(this)?;
+
+                let min_params = method.required_parameters() - 1;
+                let max_params = min_params + method.optional_parameters();
+                if arguments.len() < min_params || arguments.len() > max_params {
+                    return Err(CompilerError::InvalidMethodCall {
+                        name: kind.to_string(),
+                        message: "Invalid number of arguments".to_string(),
+                    });
+                }
+
+                for i in 0..arguments.len() {
+                    self.compile_argument(kind, arguments, i)?;
+                }
+
+                Ok(self.emit(Opcode::CallMethod {
+                    kind: kind.clone(),
+                    arg_count: arguments.len() as u32,
+                }))
+            }
             Node::Error { .. } => Err(CompilerError::UnexpectedErrorNode),
         }
     }

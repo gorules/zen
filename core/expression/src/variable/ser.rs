@@ -27,6 +27,7 @@ impl Serialize for Variable {
                 let borrowed = v.borrow();
                 serializer.collect_map(borrowed.iter())
             }
+            Variable::Dynamic(d) => serializer.serialize_str(d.to_string().as_str()),
         }
     }
 }

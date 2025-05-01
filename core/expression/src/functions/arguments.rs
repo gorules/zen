@@ -1,9 +1,10 @@
-use crate::variable::RcCell;
+use crate::variable::{DynamicVariable, RcCell};
 use crate::Variable;
 use ahash::HashMap;
 use anyhow::Context;
 use rust_decimal::Decimal;
 use std::ops::Deref;
+use std::rc::Rc;
 
 pub struct Arguments<'a>(pub &'a [Variable]);
 
@@ -85,7 +86,10 @@ impl<'a> Arguments<'a> {
             .with_context(|| format!("Argument on {pos} position is not a valid array"))
     }
 
-    pub fn oobject(&self, pos: usize) -> anyhow::Result<Option<RcCell<HashMap<String, Variable>>>> {
+    pub fn oobject(
+        &self,
+        pos: usize,
+    ) -> anyhow::Result<Option<RcCell<HashMap<Rc<str>, Variable>>>> {
         match self.ovar(pos) {
             Some(v) => v
                 .as_object()
@@ -95,8 +99,20 @@ impl<'a> Arguments<'a> {
         }
     }
 
-    pub fn object(&self, pos: usize) -> anyhow::Result<RcCell<HashMap<String, Variable>>> {
+    pub fn object(&self, pos: usize) -> anyhow::Result<RcCell<HashMap<Rc<str>, Variable>>> {
         self.oobject(pos)?
             .with_context(|| format!("Argument on {pos} position is not a valid object"))
+    }
+
+    pub fn odynamic<T: DynamicVariable + 'static>(&self, pos: usize) -> anyhow::Result<Option<&T>> {
+        match self.ovar(pos) {
+            None => Ok(None),
+            Some(s) => Ok(s.dynamic::<T>()),
+        }
+    }
+
+    pub fn dynamic<T: DynamicVariable + 'static>(&self, pos: usize) -> anyhow::Result<&T> {
+        self.odynamic(pos)?
+            .with_context(|| format!("Argument on {pos} position is not a valid dynamic"))
     }
 }

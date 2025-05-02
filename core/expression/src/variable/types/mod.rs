@@ -20,7 +20,7 @@ pub enum VariableType {
     Object(HashMap<Rc<str>, Rc<VariableType>>),
 
     Const(Rc<str>),
-    Enum(Vec<Rc<str>>),
+    Enum(Option<Rc<str>>, Vec<Rc<str>>),
 }
 
 impl VariableType {
@@ -46,7 +46,11 @@ impl Display for VariableType {
             VariableType::Date => write!(f, "date"),
             VariableType::Interval => write!(f, "interval"),
             VariableType::Const(c) => write!(f, "\"{c}\""),
-            VariableType::Enum(e) => {
+            VariableType::Enum(name, e) => {
+                if let Some(name) = name {
+                    return name.fmt(f);
+                }
+
                 let mut first = true;
                 for s in e.iter() {
                     if !first {
@@ -81,8 +85,9 @@ impl Hash for VariableType {
                 7.hash(state);
                 c.hash(state)
             }
-            VariableType::Enum(e) => {
+            VariableType::Enum(name, e) => {
                 8.hash(state);
+                name.hash(state);
                 e.hash(state)
             }
             VariableType::Array(arr) => {

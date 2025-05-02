@@ -1,6 +1,7 @@
 use crate::functions::defs::{
     CompositeFunction, FunctionDefinition, FunctionSignature, StaticFunction,
 };
+use crate::vm::date::DurationUnit;
 use std::rc::Rc;
 use strum_macros::{Display, EnumIter, EnumString, IntoStaticStr};
 
@@ -37,13 +38,15 @@ impl From<&DateMethod> for Rc<dyn FunctionDefinition> {
         use crate::variable::VariableType as VT;
         use DateMethod as DM;
 
+        let unit_vt = DurationUnit::variable_type();
+
         let op_signature = vec![
             FunctionSignature {
                 parameters: vec![VT::Date, VT::String],
                 return_type: VT::Date,
             },
             FunctionSignature {
-                parameters: vec![VT::Date, VT::Number, VT::String],
+                parameters: vec![VT::Date, VT::Number, unit_vt.clone()],
                 return_type: VT::Date,
             },
         ];
@@ -54,7 +57,7 @@ impl From<&DateMethod> for Rc<dyn FunctionDefinition> {
                 return_type: VT::Date,
             },
             FunctionSignature {
-                parameters: vec![VT::Date, VT::Date, VT::String],
+                parameters: vec![VT::Date, VT::Date, unit_vt.clone()],
                 return_type: VT::Date,
             },
         ];
@@ -84,14 +87,14 @@ impl From<&DateMethod> for Rc<dyn FunctionDefinition> {
             DM::StartOf => Rc::new(StaticFunction {
                 implementation: imp::start_of,
                 signature: FunctionSignature {
-                    parameters: vec![VT::Date, VT::String],
+                    parameters: vec![VT::Date, unit_vt.clone()],
                     return_type: VT::Date,
                 },
             }),
             DM::EndOf => Rc::new(StaticFunction {
                 implementation: imp::end_of,
                 signature: FunctionSignature {
-                    parameters: vec![VT::Date, VT::String],
+                    parameters: vec![VT::Date, unit_vt.clone()],
                     return_type: VT::Date,
                 },
             }),

@@ -1,3 +1,6 @@
+use crate::variable::VariableType;
+use std::rc::Rc;
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum DurationUnit {
     Second,
@@ -11,6 +14,21 @@ pub(crate) enum DurationUnit {
 }
 
 impl DurationUnit {
+    pub fn variable_type() -> VariableType {
+        VariableType::Enum(
+            Some(Rc::from("DurationUnit")),
+            vec![
+                "seconds", "second", "secs", "sec", "s", "minutes", "minute", "min", "mins", "m",
+                "hours", "hour", "hr", "hrs", "h", "days", "day", "d", "weeks", "week", "w",
+                "months", "month", "mo", "M", "quarters", "quarter", "qtr", "q", "years", "year",
+                "y",
+            ]
+            .into_iter()
+            .map(Into::into)
+            .collect(),
+        )
+    }
+
     pub fn parse(unit: &str) -> Option<Self> {
         match unit {
             "seconds" | "second" | "secs" | "sec" | "s" => Some(Self::Second),

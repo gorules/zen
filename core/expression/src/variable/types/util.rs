@@ -42,12 +42,16 @@ impl VariableType {
                 .all(|(k, v)| o2.get(k).is_some_and(|tv| v.satisfies(tv))),
 
             (VariableType::Const(c1), VariableType::Const(c2)) => c1 == c2,
-            (VariableType::Const(c), VariableType::Enum(e)) => e.contains(c),
+            (VariableType::Const(c), VariableType::Enum(_, e)) => e.iter().any(|e| e == c),
             (VariableType::Const(_), VariableType::String) => true,
+            (VariableType::String, VariableType::Const(_)) => true,
 
-            (VariableType::Enum(e1), VariableType::Enum(e2)) => e1.iter().all(|c| e2.contains(c)),
-            (VariableType::Enum(e), VariableType::Const(c)) => e.iter().all(|i| i == c),
-            (VariableType::Enum(_), VariableType::String) => true,
+            (VariableType::Enum(_, e1), VariableType::Enum(_, e2)) => {
+                e1.iter().all(|c| e2.contains(c))
+            }
+            (VariableType::Enum(_, e), VariableType::Const(c)) => e.iter().all(|i| i == c),
+            (VariableType::Enum(_, _), VariableType::String) => true,
+            (VariableType::String, VariableType::Enum(_, _)) => true,
 
             (_, _) => false,
         }
@@ -78,6 +82,13 @@ impl VariableType {
         match self {
             VariableType::Null => true,
             _ => false,
+        }
+    }
+
+    pub fn widen(&self) -> Self {
+        match self {
+            VariableType::Const(_) | VariableType::Enum(_, _) => VariableType::String,
+            _ => self.clone(),
         }
     }
 
@@ -120,43 +131,50 @@ impl VariableType {
                 VariableType::Object(merged)
             }
 
-            (VariableType::Const(c), VariableType::Enum(values)) => {
+            (VariableType::Const(c), VariableType::Enum(_, values)) => {
                 let mut merged = values.clone();
                 if !merged.contains(c) {
                     merged.push(c.clone());
                 }
-                VariableType::Enum(merged)
+
+                VariableType::Enum(None, merged)
             }
             (VariableType::Const(c1), VariableType::Const(c2)) => {
                 if Rc::ptr_eq(c1, c2) || c1 == c2 {
                     VariableType::Const(c1.clone())
                 } else {
-                    VariableType::Enum(vec![c1.clone(), c2.clone()])
+                    VariableType::Enum(None, vec![c1.clone(), c2.clone()])
                 }
             }
             (VariableType::Const(_), VariableType::String)
             | (VariableType::String, VariableType::Const(_)) => VariableType::String,
 
-            (VariableType::Enum(a), VariableType::Enum(b)) => {
+            (VariableType::Enum(n1, a), VariableType::Enum(n2, b)) => {
                 let mut merged = a.clone();
                 for val in b {
                     if !merged.contains(val) {
                         merged.push(val.clone());
                     }
                 }
-                VariableType::Enum(merged)
+
+                let name = match (n1, n2) {
+                    (Some(n1), Some(n2)) => Some(Rc::<str>::from(format!("{} | {}", n1, n2))),
+                    _ => None,
+                };
+
+                VariableType::Enum(name, merged)
             }
 
-            (VariableType::Enum(values), VariableType::Const(c)) => {
+            (VariableType::Enum(_, values), VariableType::Const(c)) => {
                 let mut merged = values.clone();
                 if !merged.contains(c) {
                     merged.push(c.clone());
                 }
-                VariableType::Enum(merged)
+                VariableType::Enum(None, merged)
             }
 
-            (VariableType::Enum(_), VariableType::String)
-            | (VariableType::String, VariableType::Enum(_)) => VariableType::String,
+            (VariableType::Enum(_, _), VariableType::String)
+            | (VariableType::String, VariableType::Enum(_, _)) => VariableType::String,
 
             (_, _) => VariableType::Any,
         }

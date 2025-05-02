@@ -254,11 +254,11 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
                 signatures: vec![
                     FunctionSignature {
                         parameters: vec![],
-                        return_type: VT::Bool,
+                        return_type: VT::Date,
                     },
                     FunctionSignature {
                         parameters: vec![VT::Any],
-                        return_type: VT::Bool,
+                        return_type: VT::Date,
                     },
                 ],
             }),

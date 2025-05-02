@@ -64,7 +64,7 @@ impl TypesProvider {
 
         let mut on_fly_error: Option<String> = None;
 
-        let node_type = match node {
+        let mut node_type = match node {
             Node::Null => V(VariableType::Null),
             Node::Bool(_) => V(VariableType::Bool),
             Node::Number(_) => V(VariableType::Number),
@@ -101,12 +101,10 @@ impl TypesProvider {
                 }
 
                 let node_type = self.determine(node, scope.clone());
-                match node_type.kind.as_ref() {
+                match node_type.kind.widen() {
                     VariableType::Any => V(VariableType::Any),
                     VariableType::Array(inner) => TypeInfo::from(inner.clone()),
-                    VariableType::String | VariableType::Enum(_) | VariableType::Const(_) => {
-                        V(VariableType::String)
-                    }
+                    VariableType::String => V(VariableType::String),
                     _ => Error("Slice operation is only allowed on `string | any[]`".to_string()),
                 }
             }
@@ -185,7 +183,7 @@ impl TypesProvider {
 
                 match operator {
                     Operator::Arithmetic(arith) => match arith {
-                        ArithmeticOperator::Add => match (left_type.deref(), right_type.deref()) {
+                        ArithmeticOperator::Add => match (left_type.widen(), right_type.widen()) {
                             (VariableType::Number, VariableType::Number) => V(VariableType::Number),
                             (VariableType::String, VariableType::String) => V(VariableType::String),
                             (VariableType::Any, VariableType::Number | VariableType::String | VariableType::Any) => V(VariableType::Any),
@@ -244,7 +242,7 @@ impl TypesProvider {
                                 "Operator `{operator}` cannot be applied to types `{left_type}` and `{right_type}`."
                             )),
                         },
-                        ComparisonOperator::In | ComparisonOperator::NotIn => match (left_type.deref(), right_type.deref()) {
+                        ComparisonOperator::In | ComparisonOperator::NotIn => match (left_type.widen(), right_type.widen()) {
                             (_, VariableType::Array(inner_type)) => {
                                 if !left_type.satisfies(&inner_type) {
                                     let expected = match comp {
@@ -474,14 +472,9 @@ impl TypesProvider {
             },
         };
 
-        let node_type = match on_fly_error {
-            None => node_type,
-            Some(error) => {
-                let mut nt = node_type.clone();
-                nt.error.replace(error);
-                nt
-            }
-        };
+        if let Some(error) = on_fly_error {
+            node_type.error.replace(error);
+        }
 
         self.set_type(node, node_type.clone());
         node_type

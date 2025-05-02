@@ -9,8 +9,10 @@ pub trait FunctionDefinition {
     fn optional_parameters(&self) -> usize;
     fn check_types(&self, args: &[Rc<VariableType>]) -> FunctionTypecheck;
     fn call(&self, args: Arguments) -> anyhow::Result<Variable>;
-    fn param_type(&self, index: usize) -> String;
-    fn return_type(&self) -> String;
+    fn param_type(&self, index: usize) -> Option<VariableType>;
+    fn param_type_str(&self, index: usize) -> String;
+    fn return_type(&self) -> VariableType;
+    fn return_type_str(&self) -> String;
 }
 
 #[derive(Debug, Default)]
@@ -85,7 +87,11 @@ impl FunctionDefinition for StaticFunction {
         (&self.implementation)(args)
     }
 
-    fn param_type(&self, index: usize) -> String {
+    fn param_type(&self, index: usize) -> Option<VariableType> {
+        self.signature.parameters.get(index).cloned()
+    }
+
+    fn param_type_str(&self, index: usize) -> String {
         self.signature
             .parameters
             .get(index)
@@ -93,7 +99,11 @@ impl FunctionDefinition for StaticFunction {
             .unwrap_or_else(|| "never".to_string())
     }
 
-    fn return_type(&self) -> String {
+    fn return_type(&self) -> VariableType {
+        self.signature.return_type.clone()
+    }
+
+    fn return_type_str(&self) -> String {
         self.signature.return_type.to_string()
     }
 }
@@ -162,7 +172,7 @@ impl FunctionDefinition for CompositeFunction {
                 .collect();
 
             if !possible_types.iter().any(|param| arg.satisfies(param)) {
-                let type_union = self.param_type(i);
+                let type_union = self.param_type_str(i);
                 typecheck.arguments.push((
                     i,
                     format!(
@@ -195,7 +205,15 @@ impl FunctionDefinition for CompositeFunction {
         (&self.implementation)(args)
     }
 
-    fn param_type(&self, index: usize) -> String {
+    fn param_type(&self, index: usize) -> Option<VariableType> {
+        self.signatures
+            .iter()
+            .filter_map(|sig| sig.parameters.get(index))
+            .cloned()
+            .reduce(|a, b| a.merge(&b))
+    }
+
+    fn param_type_str(&self, index: usize) -> String {
         let possible_types: Vec<String> = self
             .signatures
             .iter()
@@ -221,7 +239,16 @@ impl FunctionDefinition for CompositeFunction {
         type_union
     }
 
-    fn return_type(&self) -> String {
+    fn return_type(&self) -> VariableType {
+        self.signatures
+            .iter()
+            .map(|sig| &sig.return_type)
+            .cloned()
+            .reduce(|a, b| a.merge(&b))
+            .unwrap_or(VariableType::Null)
+    }
+
+    fn return_type_str(&self) -> String {
         let possible_types: Vec<String> = self
             .signatures
             .iter()

@@ -53,4 +53,11 @@ impl Duration {
             seconds: self.seconds.neg(),
         }
     }
+
+    pub fn day() -> Self {
+        Self {
+            seconds: DurationUnit::Day.as_secs().unwrap_or_default() as i64,
+            ..Default::default()
+        }
+    }
 }

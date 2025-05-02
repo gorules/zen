@@ -52,6 +52,14 @@ impl VmDate {
         Self(Some(Utc::now()))
     }
 
+    pub fn yesterday() -> Self {
+        Self::now().sub(Duration::day())
+    }
+
+    pub fn tomorrow() -> Self {
+        Self::now().add(Duration::day())
+    }
+
     /// Create a new VmDate from the current time
     pub fn new(var: Variable) -> Self {
         Self(helper::parse_date(var))

@@ -34,67 +34,67 @@ impl From<&DeprecatedFunction> for Rc<dyn FunctionDefinition> {
 
         let s: Rc<dyn FunctionDefinition> = match value {
             DF::Date => Rc::new(StaticFunction {
-                implementation: imp::parse_date,
+                implementation: Rc::new(imp::parse_date),
                 signature: FunctionSignature::single(VT::Any, VT::Number),
             }),
 
             DF::Time => Rc::new(StaticFunction {
-                implementation: imp::parse_time,
+                implementation: Rc::new(imp::parse_time),
                 signature: FunctionSignature::single(VT::Any, VT::Number),
             }),
 
             DF::Duration => Rc::new(StaticFunction {
-                implementation: imp::parse_duration,
+                implementation: Rc::new(imp::parse_duration),
                 signature: FunctionSignature::single(VT::Any, VT::Number),
             }),
 
             DF::Year => Rc::new(StaticFunction {
-                implementation: imp::year,
+                implementation: Rc::new(imp::year),
                 signature: FunctionSignature::single(VT::Any, VT::Number),
             }),
 
             DF::DayOfWeek => Rc::new(StaticFunction {
-                implementation: imp::day_of_week,
+                implementation: Rc::new(imp::day_of_week),
                 signature: FunctionSignature::single(VT::Any, VT::Number),
             }),
 
             DF::DayOfMonth => Rc::new(StaticFunction {
-                implementation: imp::day_of_month,
+                implementation: Rc::new(imp::day_of_month),
                 signature: FunctionSignature::single(VT::Any, VT::Number),
             }),
 
             DF::DayOfYear => Rc::new(StaticFunction {
-                implementation: imp::day_of_year,
+                implementation: Rc::new(imp::day_of_year),
                 signature: FunctionSignature::single(VT::Any, VT::Number),
             }),
 
             DF::WeekOfYear => Rc::new(StaticFunction {
-                implementation: imp::week_of_year,
+                implementation: Rc::new(imp::week_of_year),
                 signature: FunctionSignature::single(VT::Any, VT::Number),
             }),
 
             DF::MonthOfYear => Rc::new(StaticFunction {
-                implementation: imp::month_of_year,
+                implementation: Rc::new(imp::month_of_year),
                 signature: FunctionSignature::single(VT::Any, VT::Number),
             }),
 
             DF::MonthString => Rc::new(StaticFunction {
-                implementation: imp::month_string,
+                implementation: Rc::new(imp::month_string),
                 signature: FunctionSignature::single(VT::Any, VT::String),
             }),
 
             DF::DateString => Rc::new(StaticFunction {
-                implementation: imp::date_string,
+                implementation: Rc::new(imp::date_string),
                 signature: FunctionSignature::single(VT::Any, VT::String),
             }),
 
             DF::WeekdayString => Rc::new(StaticFunction {
-                implementation: imp::weekday_string,
+                implementation: Rc::new(imp::weekday_string),
                 signature: FunctionSignature::single(VT::Any, VT::String),
             }),
 
             DF::StartOf => Rc::new(StaticFunction {
-                implementation: imp::start_of,
+                implementation: Rc::new(imp::start_of),
                 signature: FunctionSignature {
                     parameters: vec![VT::Any, VT::String],
                     return_type: VT::Number,
@@ -102,7 +102,7 @@ impl From<&DeprecatedFunction> for Rc<dyn FunctionDefinition> {
             }),
 
             DF::EndOf => Rc::new(StaticFunction {
-                implementation: imp::end_of,
+                implementation: Rc::new(imp::end_of),
                 signature: FunctionSignature {
                     parameters: vec![VT::Any, VT::String],
                     return_type: VT::Number,

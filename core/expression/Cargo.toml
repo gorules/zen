@@ -12,6 +12,7 @@ anyhow = { workspace = true }
 ahash = { workspace = true }
 bumpalo = { workspace = true, features = ["collections"] }
 chrono = { workspace = true }
+chrono-tz = "0.10"
 humantime = { workspace = true }
 fastrand = { workspace = true }
 once_cell = { workspace = true }
@@ -26,6 +27,7 @@ rust_decimal = { workspace = true, features = ["maths-nopanic"] }
 rust_decimal_macros = { workspace = true }
 nohash-hasher = "0.2.0"
 strsim = "0.11"
+iana-time-zone = "0.1"
 
 [dev-dependencies]
 criterion = { workspace = true }

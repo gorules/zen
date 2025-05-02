@@ -10,11 +10,11 @@ use strum_macros::{Display, EnumIter, EnumString, IntoStaticStr};
 pub enum DateMethod {
     Add,
     Sub,
+    Set,
     Format,
     StartOf,
     EndOf,
     Diff,
-    // IsValid - TODO?
 
     // Compare
     IsSame,
@@ -22,15 +22,53 @@ pub enum DateMethod {
     IsAfter,
     IsSameOrBefore,
     IsSameOrAfter,
+
     // Getters
-    // Second,
-    // Minute,
-    // Hour,
-    // Day,
-    // Week,
-    // Month,
-    // Quarter,
-    // Year,
+    Second,
+    Minute,
+    Hour,
+    Day,
+    DayOfYear,
+    Week,
+    Weekday,
+    Month,
+    Quarter,
+    Year,
+    Timestamp,
+
+    IsValid,
+    IsYesterday,
+    IsToday,
+    IsTomorrow,
+    IsLeapYear,
+}
+
+enum CompareOperation {
+    IsSame,
+    IsBefore,
+    IsAfter,
+    IsSameOrBefore,
+    IsSameOrAfter,
+}
+
+enum GetterOperation {
+    Second,
+    Minute,
+    Hour,
+    Day,
+    Weekday,
+    DayOfYear,
+    Week,
+    Month,
+    Quarter,
+    Year,
+    Timestamp,
+
+    IsValid,
+    IsYesterday,
+    IsToday,
+    IsTomorrow,
+    IsLeapYear,
 }
 
 impl From<&DateMethod> for Rc<dyn FunctionDefinition> {
@@ -64,15 +102,22 @@ impl From<&DateMethod> for Rc<dyn FunctionDefinition> {
 
         match value {
             DM::Add => Rc::new(CompositeFunction {
-                implementation: imp::add,
+                implementation: Rc::new(imp::add),
                 signatures: op_signature.clone(),
             }),
             DM::Sub => Rc::new(CompositeFunction {
-                implementation: imp::sub,
+                implementation: Rc::new(imp::sub),
                 signatures: op_signature.clone(),
             }),
+            DM::Set => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::set),
+                signature: FunctionSignature {
+                    parameters: vec![VT::Date, VT::Number, unit_vt.clone()],
+                    return_type: VT::Date,
+                },
+            }),
             DM::Format => Rc::new(CompositeFunction {
-                implementation: imp::format,
+                implementation: Rc::new(imp::format),
                 signatures: vec![
                     FunctionSignature {
                         parameters: vec![VT::Date],
@@ -85,61 +130,70 @@ impl From<&DateMethod> for Rc<dyn FunctionDefinition> {
                 ],
             }),
             DM::StartOf => Rc::new(StaticFunction {
-                implementation: imp::start_of,
+                implementation: Rc::new(imp::start_of),
                 signature: FunctionSignature {
                     parameters: vec![VT::Date, unit_vt.clone()],
                     return_type: VT::Date,
                 },
             }),
             DM::EndOf => Rc::new(StaticFunction {
-                implementation: imp::end_of,
+                implementation: Rc::new(imp::end_of),
                 signature: FunctionSignature {
                     parameters: vec![VT::Date, unit_vt.clone()],
                     return_type: VT::Date,
                 },
             }),
             DM::Diff => Rc::new(CompositeFunction {
-                implementation: imp::diff,
+                implementation: Rc::new(imp::diff),
                 signatures: compare_signature.clone(),
             }),
-            DateMethod::IsSame => Rc::new(CompositeFunction {
-                implementation: imp::is_same,
-                signatures: compare_signature.clone(),
-            }),
-            DateMethod::IsBefore => Rc::new(CompositeFunction {
-                implementation: imp::is_before,
-                signatures: compare_signature.clone(),
-            }),
-            DateMethod::IsAfter => Rc::new(CompositeFunction {
-                implementation: imp::is_after,
-                signatures: compare_signature.clone(),
-            }),
-            DateMethod::IsSameOrBefore => Rc::new(CompositeFunction {
-                implementation: imp::is_same_or_before,
-                signatures: compare_signature.clone(),
-            }),
-            DateMethod::IsSameOrAfter => Rc::new(CompositeFunction {
-                implementation: imp::is_same_or_after,
-                signatures: compare_signature.clone(),
-            }),
+            DateMethod::IsSame => imp::compare_using(CompareOperation::IsSame),
+            DateMethod::IsBefore => imp::compare_using(CompareOperation::IsBefore),
+            DateMethod::IsAfter => imp::compare_using(CompareOperation::IsAfter),
+            DateMethod::IsSameOrBefore => imp::compare_using(CompareOperation::IsSameOrBefore),
+            DateMethod::IsSameOrAfter => imp::compare_using(CompareOperation::IsSameOrAfter),
+
+            DateMethod::Second => imp::getter(GetterOperation::Second),
+            DateMethod::Minute => imp::getter(GetterOperation::Minute),
+            DateMethod::Hour => imp::getter(GetterOperation::Hour),
+            DateMethod::Day => imp::getter(GetterOperation::Day),
+            DateMethod::Weekday => imp::getter(GetterOperation::Weekday),
+            DateMethod::DayOfYear => imp::getter(GetterOperation::DayOfYear),
+            DateMethod::Week => imp::getter(GetterOperation::Week),
+            DateMethod::Month => imp::getter(GetterOperation::Month),
+            DateMethod::Quarter => imp::getter(GetterOperation::Quarter),
+            DateMethod::Year => imp::getter(GetterOperation::Year),
+            DateMethod::Timestamp => imp::getter(GetterOperation::Timestamp),
+
+            DateMethod::IsValid => imp::getter(GetterOperation::IsValid),
+            DateMethod::IsYesterday => imp::getter(GetterOperation::IsYesterday),
+            DateMethod::IsToday => imp::getter(GetterOperation::IsToday),
+            DateMethod::IsTomorrow => imp::getter(GetterOperation::IsTomorrow),
+            DateMethod::IsLeapYear => imp::getter(GetterOperation::IsLeapYear),
         }
     }
 }
 
 mod imp {
     use crate::functions::arguments::Arguments;
+    use crate::functions::date_method::{CompareOperation, GetterOperation};
+    use crate::functions::defs::{
+        CompositeFunction, FunctionDefinition, FunctionSignature, StaticFunction,
+    };
+    use crate::variable::VariableType as VT;
     use crate::vm::date::{Duration, DurationUnit};
     use crate::vm::VmDate;
-    use crate::{Variable as V, Variable};
+    use crate::Variable as V;
     use anyhow::{anyhow, Context};
-    use rust_decimal::prelude::FromPrimitive;
+    use chrono::{Datelike, Timelike};
+    use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
     use rust_decimal::Decimal;
     use std::rc::Rc;
 
     fn __internal_extract_duration(args: &Arguments, from: usize) -> anyhow::Result<Duration> {
         match args.var(from)? {
-            Variable::String(s) => Ok(Duration::parse(s.as_ref())?),
-            Variable::Number(n) => {
+            V::String(s) => Ok(Duration::parse(s.as_ref())?),
+            V::Number(n) => {
                 let unit = __internal_extract_duration_unit(args, from + 1)?;
                 Ok(Duration::from_unit(*n, unit).context("Invalid duration unit")?)
             }
@@ -185,6 +239,17 @@ mod imp {
         Ok(V::Dynamic(Rc::new(date_time)))
     }
 
+    pub fn set(args: Arguments) -> anyhow::Result<V> {
+        let this = args.dynamic::<VmDate>(0)?;
+        let value = args.number(1)?;
+        let unit = __internal_extract_duration_unit(&args, 2)?;
+
+        let value_u32 = value.to_u32().context("Invalid duration value")?;
+
+        let date_time = this.set(value_u32, unit);
+        Ok(V::Dynamic(Rc::new(date_time)))
+    }
+
     pub fn format(args: Arguments) -> anyhow::Result<V> {
         let this = args.dynamic::<VmDate>(0)?;
         let format = args.ostr(1)?;
@@ -218,50 +283,108 @@ mod imp {
             .diff(&date_time, maybe_unit)
             .and_then(Decimal::from_i64)
         {
-            Some(n) => Variable::Number(n),
-            None => Variable::Null,
+            Some(n) => V::Number(n),
+            None => V::Null,
         };
 
         Ok(var)
     }
 
-    pub fn is_before(args: Arguments) -> anyhow::Result<V> {
-        let this = args.dynamic::<VmDate>(0)?;
-        let date_time = VmDate::new(args.var(1)?.clone());
-        let maybe_unit = __internal_extract_duration_unit_opt(&args, 2)?;
+    pub fn compare_using(op: CompareOperation) -> Rc<dyn FunctionDefinition> {
+        Rc::new(CompositeFunction {
+            signatures: vec![
+                FunctionSignature {
+                    parameters: vec![VT::Date, VT::Date],
+                    return_type: VT::Date,
+                },
+                FunctionSignature {
+                    parameters: vec![VT::Date, VT::Date, DurationUnit::variable_type()],
+                    return_type: VT::Date,
+                },
+            ],
+            implementation: Rc::new(move |args: Arguments| -> anyhow::Result<V> {
+                let this = args.dynamic::<VmDate>(0)?;
+                let date_time = VmDate::new(args.var(1)?.clone());
+                let maybe_unit = __internal_extract_duration_unit_opt(&args, 2)?;
 
-        Ok(V::Bool(this.is_before(&date_time, maybe_unit)))
+                let check = match op {
+                    CompareOperation::IsSame => this.is_same(&date_time, maybe_unit),
+                    CompareOperation::IsBefore => this.is_before(&date_time, maybe_unit),
+                    CompareOperation::IsAfter => this.is_after(&date_time, maybe_unit),
+                    CompareOperation::IsSameOrBefore => {
+                        this.is_same_or_before(&date_time, maybe_unit)
+                    }
+                    CompareOperation::IsSameOrAfter => {
+                        this.is_same_or_after(&date_time, maybe_unit)
+                    }
+                };
+
+                Ok(V::Bool(check))
+            }),
+        })
     }
 
-    pub fn is_after(args: Arguments) -> anyhow::Result<V> {
-        let this = args.dynamic::<VmDate>(0)?;
-        let date_time = VmDate::new(args.var(1)?.clone());
-        let maybe_unit = __internal_extract_duration_unit_opt(&args, 2)?;
+    pub fn getter(op: GetterOperation) -> Rc<dyn FunctionDefinition> {
+        Rc::new(StaticFunction {
+            signature: FunctionSignature {
+                parameters: vec![VT::Date],
+                return_type: match op {
+                    GetterOperation::Second
+                    | GetterOperation::Minute
+                    | GetterOperation::Hour
+                    | GetterOperation::Day
+                    | GetterOperation::Weekday
+                    | GetterOperation::DayOfYear
+                    | GetterOperation::Week
+                    | GetterOperation::Month
+                    | GetterOperation::Quarter
+                    | GetterOperation::Year
+                    | GetterOperation::Timestamp => VT::Number,
+                    GetterOperation::IsValid
+                    | GetterOperation::IsYesterday
+                    | GetterOperation::IsToday
+                    | GetterOperation::IsTomorrow
+                    | GetterOperation::IsLeapYear => VT::Bool,
+                },
+            },
+            implementation: Rc::new(move |args: Arguments| -> anyhow::Result<V> {
+                let this = args.dynamic::<VmDate>(0)?;
+                if let GetterOperation::IsValid = op {
+                    return Ok(V::Bool(this.is_valid()));
+                }
 
-        Ok(V::Bool(this.is_after(&date_time, maybe_unit)))
-    }
+                let Some(dt) = this.0 else {
+                    return Ok(V::Null);
+                };
 
-    pub fn is_same(args: Arguments) -> anyhow::Result<V> {
-        let this = args.dynamic::<VmDate>(0)?;
-        let date_time = VmDate::new(args.var(1)?.clone());
-        let maybe_unit = __internal_extract_duration_unit_opt(&args, 2)?;
-
-        Ok(V::Bool(this.is_same(&date_time, maybe_unit)))
-    }
-
-    pub fn is_same_or_after(args: Arguments) -> anyhow::Result<V> {
-        let this = args.dynamic::<VmDate>(0)?;
-        let date_time = VmDate::new(args.var(1)?.clone());
-        let maybe_unit = __internal_extract_duration_unit_opt(&args, 2)?;
-
-        Ok(V::Bool(this.is_same_or_after(&date_time, maybe_unit)))
-    }
-
-    pub fn is_same_or_before(args: Arguments) -> anyhow::Result<V> {
-        let this = args.dynamic::<VmDate>(0)?;
-        let date_time = VmDate::new(args.var(1)?.clone());
-        let maybe_unit = __internal_extract_duration_unit_opt(&args, 2)?;
-
-        Ok(V::Bool(this.is_same_or_before(&date_time, maybe_unit)))
+                Ok(match op {
+                    GetterOperation::Second => V::Number(dt.second().into()),
+                    GetterOperation::Minute => V::Number(dt.minute().into()),
+                    GetterOperation::Hour => V::Number(dt.hour().into()),
+                    GetterOperation::Day => V::Number(dt.day().into()),
+                    GetterOperation::Weekday => {
+                        V::Number(dt.weekday().num_days_from_sunday().into())
+                    }
+                    GetterOperation::DayOfYear => V::Number(dt.ordinal().into()),
+                    GetterOperation::Week => V::Number(dt.iso_week().week().into()),
+                    GetterOperation::Month => V::Number(dt.month().into()),
+                    GetterOperation::Quarter => V::Number(dt.quarter().into()),
+                    GetterOperation::Year => V::Number(dt.year().into()),
+                    GetterOperation::Timestamp => V::Number(dt.timestamp_millis().into()),
+                    // Boolean
+                    GetterOperation::IsValid => V::Bool(true),
+                    GetterOperation::IsYesterday => {
+                        V::Bool(this.is_same(&VmDate::yesterday(), Some(DurationUnit::Day)))
+                    }
+                    GetterOperation::IsToday => {
+                        V::Bool(this.is_same(&VmDate::now(), Some(DurationUnit::Day)))
+                    }
+                    GetterOperation::IsTomorrow => {
+                        V::Bool(this.is_same(&VmDate::tomorrow(), Some(DurationUnit::Day)))
+                    }
+                    GetterOperation::IsLeapYear => V::Bool(dt.date_naive().leap_year()),
+                })
+            }),
+        })
     }
 }

@@ -40,7 +40,7 @@ impl FunctionSignature {
 #[derive(Clone)]
 pub struct StaticFunction {
     pub signature: FunctionSignature,
-    pub implementation: fn(Arguments) -> anyhow::Result<Variable>,
+    pub implementation: Rc<dyn Fn(Arguments) -> anyhow::Result<Variable>>,
 }
 
 impl FunctionDefinition for StaticFunction {
@@ -111,7 +111,7 @@ impl FunctionDefinition for StaticFunction {
 #[derive(Clone)]
 pub struct CompositeFunction {
     pub signatures: Vec<FunctionSignature>,
-    pub implementation: fn(Arguments) -> anyhow::Result<Variable>,
+    pub implementation: Rc<dyn Fn(Arguments) -> anyhow::Result<Variable>>,
 }
 
 impl FunctionDefinition for CompositeFunction {

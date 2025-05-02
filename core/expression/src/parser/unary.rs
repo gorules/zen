@@ -402,6 +402,8 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                     DateMethod::Add => CompareWithReference(Equal),
                     DateMethod::Sub => CompareWithReference(Equal),
                     DateMethod::Format => CompareWithReference(Equal),
+                    // TODO
+                    _ => CompareWithReference(Equal),
                 },
             },
             Node::Error { .. } => AsBoolean,

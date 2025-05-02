@@ -2,15 +2,10 @@ use crate::variable::DynamicVariable;
 pub(crate) use crate::vm::date::duration::Duration;
 pub(crate) use crate::vm::date::duration_unit::DurationUnit;
 use crate::Variable;
-use chrono::{
-    DateTime, Datelike, LocalResult, Months, NaiveDate, NaiveDateTime, SecondsFormat, TimeDelta,
-    TimeZone, Utc,
-};
-use rust_decimal::prelude::ToPrimitive;
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::Value;
 use std::any::Any;
 use std::fmt::{Display, Formatter};
-use std::ops::{Add, Deref};
 
 // Duration is a modified copy of `humantime`
 mod duration;
@@ -46,49 +41,10 @@ impl Display for VmDate {
     }
 }
 
-fn parse_date(var: Variable) -> Option<DateTime<Utc>> {
-    match var {
-        Variable::Null => Some(Utc::now()),
-        Variable::Number(n) => {
-            let n_i64 = n.to_i64()?;
-            let date_time = match Utc.timestamp_millis_opt(n_i64) {
-                LocalResult::Single(date_time) => date_time,
-                LocalResult::Ambiguous(date_time, _) => date_time,
-                LocalResult::None => return None,
-            };
-
-            Some(date_time)
-        }
-        Variable::String(str) => DateTime::parse_from_rfc3339(str.deref())
-            .ok()
-            .map(|date_time| date_time.to_utc())
-            .or_else(|| {
-                NaiveDateTime::parse_from_str(str.deref(), "%Y-%m-%d %H:%M:%S")
-                    .ok()
-                    .or_else(|| NaiveDateTime::parse_from_str(str.deref(), "%Y-%m-%d %H:%M").ok())
-                    .or_else(|| {
-                        NaiveDate::parse_from_str(str.deref(), "%Y-%m-%d")
-                            .ok()?
-                            .and_hms_opt(0, 0, 0)
-                    })
-                    .map(|dt| dt.and_utc())
-            }),
-        Variable::Dynamic(d) => match d.as_any().downcast_ref::<VmDate>() {
-            Some(d) => d.0.clone(),
-            None => None,
-        },
-        _ => None,
+impl From<Option<DateTime<Utc>>> for VmDate {
+    fn from(value: Option<DateTime<Utc>>) -> Self {
+        Self(value)
     }
-}
-
-fn add_duration(mut date_time: DateTime<Utc>, duration: Duration) -> Option<DateTime<Utc>> {
-    date_time = date_time.add(TimeDelta::seconds(duration.seconds));
-    date_time = match duration.months < 0 {
-        true => date_time.checked_sub_months(Months::new(duration.months.unsigned_abs()))?,
-        false => date_time.checked_add_months(Months::new(duration.months.unsigned_abs()))?,
-    };
-
-    date_time.with_year(date_time.year() + duration.years)
 }
 
 impl VmDate {
@@ -96,29 +52,13 @@ impl VmDate {
         Self(Some(Utc::now()))
     }
 
-    pub fn invalid() -> Self {
-        Self(None)
-    }
-
     /// Create a new VmDate from the current time
     pub fn new(var: Variable) -> Self {
-        Self(parse_date(var))
+        Self(helper::parse_date(var))
     }
 
-    pub fn add(&self, duration: Duration) -> Self {
-        let Some(date_time) = &self.0 else {
-            return Self(None);
-        };
-
-        Self(add_duration(date_time.clone(), duration))
-    }
-
-    pub fn sub(&self, duration: Duration) -> Self {
-        let Some(date_time) = &self.0 else {
-            return Self(None);
-        };
-
-        Self(add_duration(date_time.clone(), duration.negate()))
+    pub fn is_valid(&self) -> bool {
+        self.0.is_some()
     }
 
     pub fn format(&self, format: Option<&str>) -> String {
@@ -132,439 +72,325 @@ impl VmDate {
         }
     }
 
-    // pub fn is_after(&self, other: &VmDate, unit: Option<DateUnit>) -> bool {
-    //     self.0 > other.0
-    // }
-    //
-    // /// Check if this date is before another date
-    // pub fn is_before(&self, other: &VmDate) -> bool {
-    //     self.0 < other.0
-    // }
-    //
-    // /// Check if this date is the same as another date, optionally to a specific unit of precision
-    // pub fn is_same(&self, other: &VmDate, unit: Option<DateUnit>) -> bool {
-    //     match unit {
-    //         None => self.0 == other.0,
-    //         Some(DateUnit::Year) => self.0.year() == other.0.year(),
-    //         Some(DateUnit::Month) => {
-    //             self.0.year() == other.0.year() && self.0.month() == other.0.month()
-    //         }
-    //         Some(DateUnit::Day) => {
-    //             self.0.year() == other.0.year()
-    //                 && self.0.month() == other.0.month()
-    //                 && self.0.day() == other.0.day()
-    //         }
-    //         Some(DateUnit::Hour) => {
-    //             self.0.year() == other.0.year()
-    //                 && self.0.month() == other.0.month()
-    //                 && self.0.day() == other.0.day()
-    //                 && self.0.hour() == other.0.hour()
-    //         }
-    //         Some(DateUnit::Minute) => {
-    //             self.0.year() == other.0.year()
-    //                 && self.0.month() == other.0.month()
-    //                 && self.0.day() == other.0.day()
-    //                 && self.0.hour() == other.0.hour()
-    //                 && self.0.minute() == other.0.minute()
-    //         }
-    //         Some(DateUnit::Second) => {
-    //             self.0.year() == other.0.year()
-    //                 && self.0.month() == other.0.month()
-    //                 && self.0.day() == other.0.day()
-    //                 && self.0.hour() == other.0.hour()
-    //                 && self.0.minute() == other.0.minute()
-    //                 && self.0.second() == other.0.second()
-    //         }
-    //         Some(DateUnit::Millisecond) => self.0 == other.0,
-    //         Some(DateUnit::Week) => {
-    //             // ISO week number
-    //             self.0.year() == other.0.year()
-    //                 && self.0.iso_week().week() == other.0.iso_week().week()
-    //         }
-    //         Some(DateUnit::Quarter) => {
-    //             self.0.year() == other.0.year()
-    //                 && (self.0.month() - 1) / 3 == (other.0.month() - 1) / 3
-    //         }
-    //     }
-    // }
-    //
-    // /// Calculate the difference between two dates in the specified unit
-    // pub fn diff(&self, other: &VmDate, unit: DateUnit) -> i64 {
-    //     match unit {
-    //         DateUnit::Millisecond => {
-    //             let duration = self.0 - other.0;
-    //             duration.num_milliseconds()
-    //         }
-    //         DateUnit::Second => {
-    //             let duration = self.0 - other.0;
-    //             duration.num_seconds()
-    //         }
-    //         DateUnit::Minute => {
-    //             let duration = self.0 - other.0;
-    //             duration.num_minutes()
-    //         }
-    //         DateUnit::Hour => {
-    //             let duration = self.0 - other.0;
-    //             duration.num_hours()
-    //         }
-    //         DateUnit::Day => {
-    //             let duration = self.0 - other.0;
-    //             duration.num_days()
-    //         }
-    //         DateUnit::Week => {
-    //             let duration = self.0 - other.0;
-    //             duration.num_days() / 7
-    //         }
-    //         DateUnit::Month => {
-    //             let year_diff = self.0.year() - other.0.year();
-    //             let month_diff = self.0.month() as i32 - other.0.month() as i32;
-    //             (year_diff * 12 + month_diff) as i64
-    //         }
-    //         DateUnit::Quarter => {
-    //             let year_diff = self.0.year() - other.0.year();
-    //             let quarter_diff = (self.0.month() - 1) / 3 - (other.0.month() - 1) / 3;
-    //             (year_diff * 4 + quarter_diff as i32) as i64
-    //         }
-    //         DateUnit::Year => (self.0.year() - other.0.year()) as i64,
-    //     }
-    // }
-    //
-    //
-    // /// Format the date according to the specified format string
-    // pub fn format(&self, fmt: &str) -> String {
-    //     self.0.format(fmt).to_string()
-    // }
-    //
-    // /// Get the start of the time unit (beginning of day, month, etc.)
-    // pub fn start_of(&self, unit: DateUnit) -> Self {
-    //     let naive = self.0.naive_local();
-    //
-    //     match unit {
-    //         DateUnit::Millisecond => Self(self.0.clone()),
-    //         DateUnit::Second => {
-    //             let new_datetime = chrono::NaiveDateTime::new(
-    //                 naive.date(),
-    //                 chrono::NaiveTime::from_hms_opt(naive.hour(), naive.minute(), naive.second())
-    //                     .unwrap(),
-    //             );
-    //             Self(DateTime::from_naive_local_datetime(new_datetime).unwrap())
-    //         }
-    //         DateUnit::Minute => {
-    //             let new_datetime = chrono::NaiveDateTime::new(
-    //                 naive.date(),
-    //                 chrono::NaiveTime::from_hms_opt(naive.hour(), naive.minute(), 0).unwrap(),
-    //             );
-    //             Self(DateTime::from_naive_local_datetime(new_datetime).unwrap())
-    //         }
-    //         DateUnit::Hour => {
-    //             let new_datetime = chrono::NaiveDateTime::new(
-    //                 naive.date(),
-    //                 chrono::NaiveTime::from_hms_opt(naive.hour(), 0, 0).unwrap(),
-    //             );
-    //             Self(DateTime::from_naive_local_datetime(new_datetime).unwrap())
-    //         }
-    //         DateUnit::Day => {
-    //             let new_datetime = chrono::NaiveDateTime::new(
-    //                 naive.date(),
-    //                 chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
-    //             );
-    //             Self(DateTime::from_naive_local_datetime(new_datetime).unwrap())
-    //         }
-    //         DateUnit::Week => {
-    //             // Start of the ISO week (Monday)
-    //             let day_of_week = naive.weekday().num_days_from_monday();
-    //             let days_to_subtract = day_of_week as i64;
-    //
-    //             let start_of_week = naive
-    //                 .date()
-    //                 .checked_sub_signed(chrono::Duration::days(days_to_subtract))
-    //                 .unwrap();
-    //
-    //             let new_datetime = chrono::NaiveDateTime::new(
-    //                 start_of_week,
-    //                 chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
-    //             );
-    //
-    //             Self(DateTime::from_naive_local_datetime(new_datetime).unwrap())
-    //         }
-    //         DateUnit::Month => {
-    //             let new_date =
-    //                 chrono::NaiveDate::from_ymd_opt(naive.year(), naive.month(), 1).unwrap();
-    //
-    //             let new_datetime = chrono::NaiveDateTime::new(
-    //                 new_date,
-    //                 chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
-    //             );
-    //
-    //             Self(DateTime::from_naive_local_datetime(new_datetime).unwrap())
-    //         }
-    //         DateUnit::Quarter => {
-    //             let quarter_month = (naive.month() - 1) / 3 * 3 + 1;
-    //
-    //             let new_date =
-    //                 chrono::NaiveDate::from_ymd_opt(naive.year(), quarter_month, 1).unwrap();
-    //
-    //             let new_datetime = chrono::NaiveDateTime::new(
-    //                 new_date,
-    //                 chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
-    //             );
-    //
-    //             Self(DateTime::from_naive_local_datetime(new_datetime).unwrap())
-    //         }
-    //         DateUnit::Year => {
-    //             let new_date = chrono::NaiveDate::from_ymd_opt(naive.year(), 1, 1).unwrap();
-    //
-    //             let new_datetime = chrono::NaiveDateTime::new(
-    //                 new_date,
-    //                 chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
-    //             );
-    //
-    //             Self(DateTime::from_naive_local_datetime(new_datetime).unwrap())
-    //         }
-    //     }
-    // }
-    //
-    // /// Get the end of the time unit (end of day, month, etc.)
-    // pub fn end_of(&self, unit: DateUnit) -> Self {
-    //     match unit {
-    //         DateUnit::Millisecond => Self(self.0.clone()),
-    //         DateUnit::Second => {
-    //             let naive = self.0.naive_local();
-    //             let new_datetime = chrono::NaiveDateTime::new(
-    //                 naive.date(),
-    //                 chrono::NaiveTime::from_hms_milli_opt(
-    //                     naive.hour(),
-    //                     naive.minute(),
-    //                     naive.second(),
-    //                     999,
-    //                 )
-    //                     .unwrap(),
-    //             );
-    //             Self(DateTime::from_naive_local_datetime(new_datetime).unwrap())
-    //         }
-    //         DateUnit::Minute => {
-    //             let naive = self.0.naive_local();
-    //             let new_datetime = chrono::NaiveDateTime::new(
-    //                 naive.date(),
-    //                 chrono::NaiveTime::from_hms_milli_opt(naive.hour(), naive.minute(), 59, 999)
-    //                     .unwrap(),
-    //             );
-    //             Self(DateTime::from_naive_local_datetime(new_datetime).unwrap())
-    //         }
-    //         DateUnit::Hour => {
-    //             let naive = self.0.naive_local();
-    //             let new_datetime = chrono::NaiveDateTime::new(
-    //                 naive.date(),
-    //                 chrono::NaiveTime::from_hms_milli_opt(naive.hour(), 59, 59, 999).unwrap(),
-    //             );
-    //             Self(DateTime::from_naive_local_datetime(new_datetime).unwrap())
-    //         }
-    //         DateUnit::Day => {
-    //             let naive = self.0.naive_local();
-    //             let new_datetime = chrono::NaiveDateTime::new(
-    //                 naive.date(),
-    //                 chrono::NaiveTime::from_hms_milli_opt(23, 59, 59, 999).unwrap(),
-    //             );
-    //             Self(DateTime::from_naive_local_datetime(new_datetime).unwrap())
-    //         }
-    //         DateUnit::Week => {
-    //             // End of the ISO week (Sunday)
-    //             let day_of_week = naive.weekday().num_days_from_monday();
-    //             let days_to_add = 6 - day_of_week as i64;
-    //
-    //             let end_of_week = naive
-    //                 .date()
-    //                 .checked_add_signed(chrono::Duration::days(days_to_add))
-    //                 .unwrap();
-    //
-    //             let new_datetime = chrono::NaiveDateTime::new(
-    //                 end_of_week,
-    //                 chrono::NaiveTime::from_hms_milli_opt(23, 59, 59, 999).unwrap(),
-    //             );
-    //
-    //             Self(DateTime::from_naive_local_datetime(new_datetime).unwrap())
-    //         }
-    //         DateUnit::Month => {
-    //             let naive = self.0.naive_local();
-    //             let days_in_month = get_days_in_month(naive.year(), naive.month());
-    //
-    //             let new_date =
-    //                 chrono::NaiveDate::from_ymd_opt(naive.year(), naive.month(), days_in_month)
-    //                     .unwrap();
-    //
-    //             let new_datetime = chrono::NaiveDateTime::new(
-    //                 new_date,
-    //                 chrono::NaiveTime::from_hms_milli_opt(23, 59, 59, 999).unwrap(),
-    //             );
-    //
-    //             Self(DateTime::from_naive_local_datetime(new_datetime).unwrap())
-    //         }
-    //         DateUnit::Quarter => {
-    //             let naive = self.0.naive_local();
-    //             let quarter_month = (naive.month() - 1) / 3 * 3 + 3;
-    //
-    //             let days_in_month = get_days_in_month(naive.year(), quarter_month);
-    //
-    //             let new_date =
-    //                 chrono::NaiveDate::from_ymd_opt(naive.year(), quarter_month, days_in_month)
-    //                     .unwrap();
-    //
-    //             let new_datetime = chrono::NaiveDateTime::new(
-    //                 new_date,
-    //                 chrono::NaiveTime::from_hms_milli_opt(23, 59, 59, 999).unwrap(),
-    //             );
-    //
-    //             Self(DateTime::from_naive_local_datetime(new_datetime).unwrap())
-    //         }
-    //         DateUnit::Year => {
-    //             let naive = self.0.naive_local();
-    //             let new_date = chrono::NaiveDate::from_ymd_opt(naive.year(), 12, 31).unwrap();
-    //
-    //             let new_datetime = chrono::NaiveDateTime::new(
-    //                 new_date,
-    //                 chrono::NaiveTime::from_hms_milli_opt(23, 59, 59, 999).unwrap(),
-    //             );
-    //
-    //             Self(DateTime::from_naive_local_datetime(new_datetime).unwrap())
-    //         }
-    //     }
-    // }
-    //
-    // /// Get a specific component of the date
-    // pub fn get(&self, unit: DateUnit) -> i64 {
-    //     match unit {
-    //         DateUnit::Second => self.0.second() as i64,
-    //         DateUnit::Minute => self.0.minute() as i64,
-    //         DateUnit::Hour => self.0.hour() as i64,
-    //         DateUnit::Day => self.0.day() as i64,
-    //         DateUnit::Week => self.0.iso_week().week() as i64,
-    //         DateUnit::Month => self.0.month() as i64,
-    //         DateUnit::Year => self.0.year() as i64,
-    //     }
-    // }
-    //
-    // /// Set a specific component of the date
-    // pub fn set(&self, unit: DateUnit, value: i64) -> Self {
-    //     let naive = self.0.naive_local();
-    //
-    //     match unit {
-    //         DateUnit::Millisecond => {
-    //             let new_time = chrono::NaiveTime::from_hms_milli_opt(
-    //                 naive.hour(),
-    //                 naive.minute(),
-    //                 naive.second(),
-    //                 value as u32,
-    //             )
-    //                 .unwrap();
-    //
-    //             let new_datetime = chrono::NaiveDateTime::new(naive.date(), new_time);
-    //             Self(DateTime::from_naive_local_datetime(new_datetime).unwrap())
-    //         }
-    //         DateUnit::Second => {
-    //             let new_time = chrono::NaiveTime::from_hms_milli_opt(
-    //                 naive.hour(),
-    //                 naive.minute(),
-    //                 value as u32,
-    //                 naive.timestamp_subsec_millis(),
-    //             )
-    //                 .unwrap();
-    //
-    //             let new_datetime = chrono::NaiveDateTime::new(naive.date(), new_time);
-    //             Self(DateTime::from_naive_local_datetime(new_datetime).unwrap())
-    //         }
-    //         DateUnit::Minute => {
-    //             let new_time = chrono::NaiveTime::from_hms_milli_opt(
-    //                 naive.hour(),
-    //                 value as u32,
-    //                 naive.second(),
-    //                 naive.timestamp_subsec_millis(),
-    //             )
-    //                 .unwrap();
-    //
-    //             let new_datetime = chrono::NaiveDateTime::new(naive.date(), new_time);
-    //             Self(DateTime::from_naive_local_datetime(new_datetime).unwrap())
-    //         }
-    //         DateUnit::Hour => {
-    //             let new_time = chrono::NaiveTime::from_hms_milli_opt(
-    //                 value as u32,
-    //                 naive.minute(),
-    //                 naive.second(),
-    //                 naive.timestamp_subsec_millis(),
-    //             )
-    //                 .unwrap();
-    //
-    //             let new_datetime = chrono::NaiveDateTime::new(naive.date(), new_time);
-    //             Self(DateTime::from_naive_local_datetime(new_datetime).unwrap())
-    //         }
-    //         DateUnit::Day => {
-    //             // Ensure the day is valid for the month
-    //             let max_day = get_days_in_month(naive.year(), naive.month());
-    //             let day = std::cmp::min(value as u32, max_day);
-    //
-    //             let new_date =
-    //                 chrono::NaiveDate::from_ymd_opt(naive.year(), naive.month(), day).unwrap();
-    //
-    //             let new_datetime = chrono::NaiveDateTime::new(new_date, naive.time());
-    //             Self(DateTime::from_naive_local_datetime(new_datetime).unwrap())
-    //         }
-    //         DateUnit::Week => {
-    //             // Setting week is not straightforward in chrono
-    //             // This is a simplified approach assuming ISO week
-    //             let current_week = naive.iso_week().week() as i64;
-    //             let diff_weeks = value - current_week;
-    //             self.add(diff_weeks * 7, DateUnit::Day)
-    //         }
-    //         DateUnit::Month => {
-    //             let month = std::cmp::min(std::cmp::max(value, 1), 12) as u32;
-    //             let max_day = get_days_in_month(naive.year(), month);
-    //             let day = std::cmp::min(naive.day(), max_day);
-    //
-    //             let new_date = chrono::NaiveDate::from_ymd_opt(naive.year(), month, day).unwrap();
-    //
-    //             let new_datetime = chrono::NaiveDateTime::new(new_date, naive.time());
-    //             Self(DateTime::from_naive_local_datetime(new_datetime).unwrap())
-    //         }
-    //         DateUnit::Quarter => {
-    //             let quarter = std::cmp::min(std::cmp::max(value, 1), 4) as u32;
-    //             let month = (quarter - 1) * 3 + 1;
-    //             self.set(DateUnit::Month, month as i64)
-    //         }
-    //         DateUnit::Year => {
-    //             let year = value as i32;
-    //             let month = naive.month();
-    //
-    //             // Handle Feb 29 in non-leap years
-    //             let mut day = naive.day();
-    //             if month == 2 && day == 29 && !is_leap_year(year) {
-    //                 day = 28;
-    //             }
-    //
-    //             let new_date = chrono::NaiveDate::from_ymd_opt(year, month, day).unwrap();
-    //
-    //             let new_datetime = chrono::NaiveDateTime::new(new_date, naive.time());
-    //             Self(DateTime::from_naive_local_datetime(new_datetime).unwrap())
-    //         }
-    //     }
-    // }
+    pub fn add(&self, duration: Duration) -> Self {
+        let Some(date_time) = &self.0 else {
+            return Self(None);
+        };
+
+        Self(helper::add_duration(date_time.clone(), duration))
+    }
+
+    pub fn sub(&self, duration: Duration) -> Self {
+        let Some(date_time) = &self.0 else {
+            return Self(None);
+        };
+
+        Self(helper::add_duration(date_time.clone(), duration.negate()))
+    }
+
+    pub fn start_of(&self, unit: DurationUnit) -> Self {
+        let Some(date_time) = &self.0 else {
+            return Self(None);
+        };
+
+        Self(helper::start_of(date_time.clone(), unit))
+    }
+
+    pub fn end_of(&self, unit: DurationUnit) -> Self {
+        let Some(date_time) = &self.0 else {
+            return Self(None);
+        };
+
+        Self(helper::end_of(date_time.clone(), unit))
+    }
+
+    pub fn diff(&self, date_time: &Self, unit: Option<DurationUnit>) -> Option<i64> {
+        let (dt1, dt2) = match (self.0.clone(), date_time.0) {
+            (Some(a), Some(b)) => (a, b),
+            _ => return None,
+        };
+
+        helper::diff(dt1, dt2, unit)
+    }
+
+    pub fn set(&self, value: u32, unit: DurationUnit) -> Self {
+        let Some(date_time) = self.0.clone() else {
+            return Self(None);
+        };
+
+        Self(helper::set(date_time, value, unit))
+    }
+
+    pub fn is_same(&self, other: &Self, unit: Option<DurationUnit>) -> bool {
+        let (dt1, dt2) = match (self.0.clone(), other.0) {
+            (Some(a), Some(b)) => (a, b),
+            _ => return false,
+        };
+
+        helper::is_same(dt1, dt2, unit).unwrap_or(false)
+    }
+
+    pub fn is_before(&self, other: &Self, unit: Option<DurationUnit>) -> bool {
+        let (dt1, dt2) = match (self.0.clone(), other.0) {
+            (Some(a), Some(b)) => (a, b),
+            _ => return false,
+        };
+
+        helper::is_before(dt1, dt2, unit).unwrap_or(false)
+    }
+
+    pub fn is_after(&self, other: &Self, unit: Option<DurationUnit>) -> bool {
+        let (dt1, dt2) = match (self.0.clone(), other.0) {
+            (Some(a), Some(b)) => (a, b),
+            _ => return false,
+        };
+
+        helper::is_after(dt1, dt2, unit).unwrap_or(false)
+    }
+
+    pub fn is_same_or_before(&self, other: &Self, unit: Option<DurationUnit>) -> bool {
+        self.is_before(other, unit) || self.is_same(other, unit)
+    }
+
+    pub fn is_same_or_after(&self, other: &Self, unit: Option<DurationUnit>) -> bool {
+        self.is_after(other, unit) || self.is_same(other, unit)
+    }
 }
 
-// Helper function to determine if a year is a leap year
-fn is_leap_year(year: i32) -> bool {
-    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
-}
+mod helper {
+    use crate::vm::date::{Duration, DurationUnit};
+    use crate::vm::VmDate;
+    use crate::Variable;
+    use chrono::{
+        DateTime, Datelike, Days, LocalResult, Month, Months, NaiveDate, NaiveDateTime, TimeDelta,
+        TimeZone, Timelike, Utc,
+    };
+    use rust_decimal::prelude::ToPrimitive;
+    use std::ops::{Add, Deref};
 
-// Helper function to get the number of days in a month
-fn get_days_in_month(year: i32, month: u32) -> u32 {
-    match month {
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        4 | 6 | 9 | 11 => 30,
-        2 => {
-            if is_leap_year(year) {
-                29
-            } else {
-                28
+    pub fn parse_date(var: Variable) -> Option<DateTime<Utc>> {
+        match var {
+            Variable::Null => Some(Utc::now()),
+            Variable::Number(n) => {
+                let n_i64 = n.to_i64()?;
+                let date_time = match Utc.timestamp_millis_opt(n_i64) {
+                    LocalResult::Single(date_time) => date_time,
+                    LocalResult::Ambiguous(date_time, _) => date_time,
+                    LocalResult::None => return None,
+                };
+
+                Some(date_time)
             }
+            Variable::String(str) => DateTime::parse_from_rfc3339(str.deref())
+                .ok()
+                .map(|date_time| date_time.to_utc())
+                .or_else(|| {
+                    NaiveDateTime::parse_from_str(str.deref(), "%Y-%m-%d %H:%M:%S")
+                        .ok()
+                        .or_else(|| {
+                            NaiveDateTime::parse_from_str(str.deref(), "%Y-%m-%d %H:%M").ok()
+                        })
+                        .or_else(|| {
+                            NaiveDate::parse_from_str(str.deref(), "%Y-%m-%d")
+                                .ok()?
+                                .and_hms_opt(0, 0, 0)
+                        })
+                        .map(|dt| dt.and_utc())
+                }),
+            Variable::Dynamic(d) => match d.as_any().downcast_ref::<VmDate>() {
+                Some(d) => d.0.clone(),
+                None => None,
+            },
+            _ => None,
         }
-        _ => panic!("Invalid month: {}", month),
+    }
+
+    pub fn add_duration(mut date_time: DateTime<Utc>, duration: Duration) -> Option<DateTime<Utc>> {
+        date_time = date_time.add(TimeDelta::seconds(duration.seconds));
+        date_time = match duration.months < 0 {
+            true => date_time.checked_sub_months(Months::new(duration.months.unsigned_abs()))?,
+            false => date_time.checked_add_months(Months::new(duration.months.unsigned_abs()))?,
+        };
+
+        date_time.with_year(date_time.year() + duration.years)
+    }
+
+    pub fn start_of(date_time: DateTime<Utc>, unit: DurationUnit) -> Option<DateTime<Utc>> {
+        Some(match unit {
+            DurationUnit::Second => date_time.with_nanosecond(0)?,
+            DurationUnit::Minute => date_time.with_second(0)?.with_nanosecond(0)?,
+            DurationUnit::Hour => date_time
+                .with_minute(0)?
+                .with_second(0)?
+                .with_nanosecond(0)?,
+            DurationUnit::Day => date_time
+                .with_hour(0)?
+                .with_minute(0)?
+                .with_second(0)?
+                .with_nanosecond(0)?,
+            DurationUnit::Week => {
+                let weekday = date_time.weekday().num_days_from_monday();
+
+                date_time
+                    .checked_sub_days(Days::new(weekday.to_u64()?))?
+                    .with_hour(0)?
+                    .with_minute(0)?
+                    .with_second(0)?
+                    .with_nanosecond(0)?
+            }
+            DurationUnit::Month => date_time
+                .with_day0(0)?
+                .with_hour(0)?
+                .with_minute(0)?
+                .with_second(0)?
+                .with_nanosecond(0)?,
+            DurationUnit::Quarter => date_time
+                .with_month0((date_time.quarter() - 1) * 3)?
+                .with_day0(0)?
+                .with_hour(0)?
+                .with_minute(0)?
+                .with_second(0)?
+                .with_nanosecond(0)?,
+            DurationUnit::Year => date_time
+                .with_month0(0)?
+                .with_day0(0)?
+                .with_hour(0)?
+                .with_minute(0)?
+                .with_second(0)?
+                .with_nanosecond(0)?,
+        })
+    }
+
+    pub fn end_of(mut date_time: DateTime<Utc>, unit: DurationUnit) -> Option<DateTime<Utc>> {
+        date_time = date_time.with_nanosecond(999_999_999)?;
+
+        Some(match unit {
+            DurationUnit::Second => date_time,
+            DurationUnit::Minute => date_time.with_second(59)?,
+            DurationUnit::Hour => date_time.with_minute(59)?.with_second(59)?,
+            DurationUnit::Day => date_time.with_hour(23)?.with_minute(59)?.with_second(59)?,
+            DurationUnit::Week => {
+                let weekday = date_time.weekday().num_days_from_sunday();
+
+                date_time
+                    .checked_add_days(Days::new(weekday.to_u64()?))?
+                    .with_hour(23)?
+                    .with_minute(59)?
+                    .with_second(59)?
+            }
+            DurationUnit::Month => {
+                let month = Month::try_from(date_time.month().to_u8()?).ok()?;
+                let days_in_month = month.num_days(date_time.year())?.to_u32()?;
+
+                date_time
+                    .with_day(days_in_month)?
+                    .with_hour(23)?
+                    .with_minute(59)?
+                    .with_second(59)?
+            }
+            DurationUnit::Quarter => {
+                let new_month_index = date_time.quarter() * 3;
+                let month = Month::try_from(new_month_index.to_u8()?).ok()?;
+                let days_in_month = month.num_days(date_time.year())?.to_u32()?;
+
+                date_time
+                    .with_month(month.number_from_month())?
+                    .with_day(days_in_month)?
+                    .with_hour(23)?
+                    .with_minute(59)?
+                    .with_second(59)?
+            }
+            DurationUnit::Year => {
+                let year = date_time.year();
+                let month = Month::try_from(date_time.month().to_u8()?).ok()?;
+                let days_in_month = month.num_days(year)?.to_u32()?;
+
+                date_time
+                    .with_month(12)?
+                    .with_day(days_in_month)?
+                    .with_hour(23)?
+                    .with_minute(59)?
+                    .with_second(59)?
+            }
+        })
+    }
+
+    pub fn diff(
+        a: DateTime<Utc>,
+        b: DateTime<Utc>,
+        maybe_unit: Option<DurationUnit>,
+    ) -> Option<i64> {
+        let Some(unit) = maybe_unit else {
+            return Some(a.timestamp_millis() - b.timestamp_millis());
+        };
+
+        if let Some(unit_secs) = unit.as_secs() {
+            let secs = (a.timestamp_millis() - b.timestamp_millis()) / 1_000;
+            return secs.checked_mul(unit_secs.to_i64()?);
+        }
+
+        let year_diff = a.year().to_i64()?.checked_sub(b.year().to_i64()?)?;
+
+        match unit {
+            DurationUnit::Month => {
+                let month_diff = a.month().to_i64()?.checked_sub(b.month().to_i64()?)?;
+                Some(year_diff * 12 + month_diff)
+            }
+            DurationUnit::Year => Some(year_diff),
+            _ => None,
+        }
+    }
+
+    pub fn set(date_time: DateTime<Utc>, value: u32, unit: DurationUnit) -> Option<DateTime<Utc>> {
+        match unit {
+            DurationUnit::Second => date_time.with_second(value),
+            DurationUnit::Minute => date_time.with_minute(value),
+            DurationUnit::Hour => date_time.with_hour(value),
+            DurationUnit::Day => date_time.with_day(value),
+            DurationUnit::Month => date_time.with_month(value),
+            DurationUnit::Year => date_time.with_year(value.to_i32()?),
+            // Noops
+            DurationUnit::Week | DurationUnit::Quarter => Some(date_time),
+        }
+    }
+
+    pub fn is_same(a: DateTime<Utc>, b: DateTime<Utc>, unit: Option<DurationUnit>) -> Option<bool> {
+        match unit {
+            Some(unit) => {
+                let start_a = start_of(a, unit.clone())?;
+                let end_a = end_of(a, unit.clone())?;
+
+                Some(start_a <= b && b <= end_a)
+            }
+            None => Some(a.timestamp_millis() == b.timestamp_millis()),
+        }
+    }
+
+    pub fn is_before(
+        a: DateTime<Utc>,
+        b: DateTime<Utc>,
+        unit: Option<DurationUnit>,
+    ) -> Option<bool> {
+        match unit {
+            Some(unit) => {
+                let end_a = end_of(a, unit)?;
+                Some(end_a < b)
+            }
+            None => Some(a < b),
+        }
+    }
+
+    pub fn is_after(
+        a: DateTime<Utc>,
+        b: DateTime<Utc>,
+        unit: Option<DurationUnit>,
+    ) -> Option<bool> {
+        match unit {
+            Some(unit) => {
+                let start_b = start_of(b, unit)?;
+                Some(a > start_b)
+            }
+            None => Some(a > b),
+        }
     }
 }

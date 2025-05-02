@@ -1,3 +1,4 @@
+#[derive(Debug, Clone, Copy)]
 pub(crate) enum DurationUnit {
     Second,
     Minute,
@@ -5,6 +6,7 @@ pub(crate) enum DurationUnit {
     Day,
     Week,
     Month,
+    Quarter,
     Year,
 }
 
@@ -17,6 +19,7 @@ impl DurationUnit {
             "days" | "day" | "d" => Some(Self::Day),
             "weeks" | "week" | "w" => Some(Self::Week),
             "months" | "month" | "mo" | "M" => Some(Self::Month),
+            "quarters" | "quarter" | "qtr" | "q" => Some(Self::Quarter),
             "years" | "year" | "y" => Some(Self::Year),
             _ => None,
         }
@@ -30,6 +33,7 @@ impl DurationUnit {
             DurationUnit::Day => Some(86_400),
             DurationUnit::Week => Some(86_400 * 7),
             // Calendar units
+            DurationUnit::Quarter => None,
             DurationUnit::Month => None,
             DurationUnit::Year => None,
         }

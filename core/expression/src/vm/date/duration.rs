@@ -34,6 +34,10 @@ impl Duration {
                 months: n.to_i32()?,
                 ..Default::default()
             }),
+            DurationUnit::Quarter => Some(Duration {
+                months: n.to_i32()? * 3,
+                ..Default::default()
+            }),
             DurationUnit::Year => Some(Duration {
                 years: n.to_i32()?,
                 ..Default::default()

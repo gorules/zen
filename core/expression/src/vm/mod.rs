@@ -11,4 +11,3 @@ mod interval;
 mod vm;
 
 pub(crate) use date::VmDate;
-pub(crate) use interval::VmInterval;

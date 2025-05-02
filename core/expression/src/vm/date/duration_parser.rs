@@ -60,6 +60,9 @@ impl DurationParser<'_> {
         })?;
 
         match unit {
+            DurationUnit::Quarter => {
+                self.duration.months = n.to_i32().ok_or(DurationParseError::NumberOverflow)? * 3
+            }
             DurationUnit::Month => {
                 self.duration.months = n.to_i32().ok_or(DurationParseError::NumberOverflow)?
             }

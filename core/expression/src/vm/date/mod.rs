@@ -2,7 +2,8 @@ use crate::variable::DynamicVariable;
 pub(crate) use crate::vm::date::duration::Duration;
 pub(crate) use crate::vm::date::duration_unit::DurationUnit;
 use crate::Variable;
-use chrono::{DateTime, SecondsFormat, Utc};
+use chrono::{DateTime, SecondsFormat};
+use chrono_tz::Tz;
 use serde_json::Value;
 use std::any::Any;
 use std::fmt::{Display, Formatter};
@@ -13,7 +14,7 @@ mod duration_parser;
 mod duration_unit;
 
 #[derive(Debug, Clone)]
-pub(crate) struct VmDate(pub Option<DateTime<Utc>>);
+pub(crate) struct VmDate(pub Option<DateTime<Tz>>);
 
 impl DynamicVariable for VmDate {
     fn type_name(&self) -> &'static str {
@@ -41,15 +42,15 @@ impl Display for VmDate {
     }
 }
 
-impl From<Option<DateTime<Utc>>> for VmDate {
-    fn from(value: Option<DateTime<Utc>>) -> Self {
+impl From<Option<DateTime<Tz>>> for VmDate {
+    fn from(value: Option<DateTime<Tz>>) -> Self {
         Self(value)
     }
 }
 
 impl VmDate {
     pub fn now() -> Self {
-        Self(Some(Utc::now()))
+        Self(Some(helper::now()))
     }
 
     pub fn yesterday() -> Self {
@@ -61,12 +62,20 @@ impl VmDate {
     }
 
     /// Create a new VmDate from the current time
-    pub fn new(var: Variable) -> Self {
-        Self(helper::parse_date(var))
+    pub fn new(var: Variable, tz_opt: Option<Tz>) -> Self {
+        Self(helper::parse_date(var, tz_opt))
     }
 
     pub fn is_valid(&self) -> bool {
         self.0.is_some()
+    }
+
+    pub fn tz(&self, timezone: Tz) -> Self {
+        let Some(date_time) = &self.0 else {
+            return self.clone();
+        };
+
+        Self(Some(date_time.with_timezone(&timezone)))
     }
 
     pub fn format(&self, format: Option<&str>) -> String {
@@ -173,15 +182,34 @@ mod helper {
         DateTime, Datelike, Days, LocalResult, Month, Months, NaiveDate, NaiveDateTime, TimeDelta,
         TimeZone, Timelike, Utc,
     };
+    use chrono_tz::Tz;
     use rust_decimal::prelude::ToPrimitive;
     use std::ops::{Add, Deref};
+    use std::str::FromStr;
 
-    pub fn parse_date(var: Variable) -> Option<DateTime<Utc>> {
+    fn tz() -> Tz {
+        iana_time_zone::get_timezone()
+            .ok()
+            .and_then(|tz| Tz::from_str(&tz).ok())
+            .unwrap_or_else(|| Tz::UTC)
+    }
+
+    pub fn now() -> DateTime<Tz> {
+        now_tz(tz())
+    }
+
+    pub fn now_tz(tz: Tz) -> DateTime<Tz> {
+        Utc::now().with_timezone(&tz)
+    }
+
+    pub fn parse_date(var: Variable, tz_opt: Option<Tz>) -> Option<DateTime<Tz>> {
+        let tz = tz_opt.unwrap_or_else(|| tz());
+
         match var {
-            Variable::Null => Some(Utc::now()),
+            Variable::Null => Some(now()),
             Variable::Number(n) => {
                 let n_i64 = n.to_i64()?;
-                let date_time = match Utc.timestamp_millis_opt(n_i64) {
+                let date_time = match tz.timestamp_millis_opt(n_i64) {
                     LocalResult::Single(date_time) => date_time,
                     LocalResult::Ambiguous(date_time, _) => date_time,
                     LocalResult::None => return None,
@@ -191,7 +219,7 @@ mod helper {
             }
             Variable::String(str) => DateTime::parse_from_rfc3339(str.deref())
                 .ok()
-                .map(|date_time| date_time.to_utc())
+                .map(|date_time| tz.from_local_datetime(&date_time.naive_local()).earliest())
                 .or_else(|| {
                     NaiveDateTime::parse_from_str(str.deref(), "%Y-%m-%d %H:%M:%S")
                         .ok()
@@ -203,8 +231,10 @@ mod helper {
                                 .ok()?
                                 .and_hms_opt(0, 0, 0)
                         })
-                        .map(|dt| dt.and_utc())
-                }),
+                        .map(|dt| tz.from_local_datetime(&dt).earliest())
+                })
+                .or_else(|| Some(Tz::from_str(&str.deref()).ok().map(now_tz)))
+                .flatten(),
             Variable::Dynamic(d) => match d.as_any().downcast_ref::<VmDate>() {
                 Some(d) => d.0.clone(),
                 None => None,
@@ -213,7 +243,7 @@ mod helper {
         }
     }
 
-    pub fn add_duration(mut date_time: DateTime<Utc>, duration: Duration) -> Option<DateTime<Utc>> {
+    pub fn add_duration(mut date_time: DateTime<Tz>, duration: Duration) -> Option<DateTime<Tz>> {
         date_time = date_time.add(TimeDelta::seconds(duration.seconds));
         date_time = match duration.months < 0 {
             true => date_time.checked_sub_months(Months::new(duration.months.unsigned_abs()))?,
@@ -223,7 +253,7 @@ mod helper {
         date_time.with_year(date_time.year() + duration.years)
     }
 
-    pub fn start_of(date_time: DateTime<Utc>, unit: DurationUnit) -> Option<DateTime<Utc>> {
+    pub fn start_of(date_time: DateTime<Tz>, unit: DurationUnit) -> Option<DateTime<Tz>> {
         Some(match unit {
             DurationUnit::Second => date_time.with_nanosecond(0)?,
             DurationUnit::Minute => date_time.with_second(0)?.with_nanosecond(0)?,
@@ -269,7 +299,7 @@ mod helper {
         })
     }
 
-    pub fn end_of(mut date_time: DateTime<Utc>, unit: DurationUnit) -> Option<DateTime<Utc>> {
+    pub fn end_of(mut date_time: DateTime<Tz>, unit: DurationUnit) -> Option<DateTime<Tz>> {
         date_time = date_time.with_nanosecond(999_999_999)?;
 
         Some(match unit {
@@ -323,11 +353,7 @@ mod helper {
         })
     }
 
-    pub fn diff(
-        a: DateTime<Utc>,
-        b: DateTime<Utc>,
-        maybe_unit: Option<DurationUnit>,
-    ) -> Option<i64> {
+    pub fn diff(a: DateTime<Tz>, b: DateTime<Tz>, maybe_unit: Option<DurationUnit>) -> Option<i64> {
         let Some(unit) = maybe_unit else {
             return Some(a.timestamp_millis() - b.timestamp_millis());
         };
@@ -349,7 +375,7 @@ mod helper {
         }
     }
 
-    pub fn set(date_time: DateTime<Utc>, value: u32, unit: DurationUnit) -> Option<DateTime<Utc>> {
+    pub fn set(date_time: DateTime<Tz>, value: u32, unit: DurationUnit) -> Option<DateTime<Tz>> {
         match unit {
             DurationUnit::Second => date_time.with_second(value),
             DurationUnit::Minute => date_time.with_minute(value),
@@ -362,7 +388,7 @@ mod helper {
         }
     }
 
-    pub fn is_same(a: DateTime<Utc>, b: DateTime<Utc>, unit: Option<DurationUnit>) -> Option<bool> {
+    pub fn is_same(a: DateTime<Tz>, b: DateTime<Tz>, unit: Option<DurationUnit>) -> Option<bool> {
         match unit {
             Some(unit) => {
                 let start_a = start_of(a, unit.clone())?;
@@ -374,11 +400,7 @@ mod helper {
         }
     }
 
-    pub fn is_before(
-        a: DateTime<Utc>,
-        b: DateTime<Utc>,
-        unit: Option<DurationUnit>,
-    ) -> Option<bool> {
+    pub fn is_before(a: DateTime<Tz>, b: DateTime<Tz>, unit: Option<DurationUnit>) -> Option<bool> {
         match unit {
             Some(unit) => {
                 let end_a = end_of(a, unit)?;
@@ -388,11 +410,7 @@ mod helper {
         }
     }
 
-    pub fn is_after(
-        a: DateTime<Utc>,
-        b: DateTime<Utc>,
-        unit: Option<DurationUnit>,
-    ) -> Option<bool> {
+    pub fn is_after(a: DateTime<Tz>, b: DateTime<Tz>, unit: Option<DurationUnit>) -> Option<bool> {
         match unit {
             Some(unit) => {
                 let start_b = start_of(b, unit)?;

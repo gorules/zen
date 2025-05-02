@@ -260,6 +260,10 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
                         parameters: vec![VT::Any],
                         return_type: VT::Date,
                     },
+                    FunctionSignature {
+                        parameters: vec![VT::Any, VT::String],
+                        return_type: VT::Date,
+                    },
                 ],
             }),
         };
@@ -273,6 +277,7 @@ pub(crate) mod imp {
     use crate::vm::VmDate;
     use crate::Variable as V;
     use anyhow::{anyhow, Context};
+    use chrono_tz::Tz;
     #[cfg(not(feature = "regex-lite"))]
     use regex::Regex;
     #[cfg(feature = "regex-lite")]
@@ -282,6 +287,7 @@ pub(crate) mod imp {
     use rust_decimal_macros::dec;
     use std::collections::BTreeMap;
     use std::rc::Rc;
+    use std::str::FromStr;
 
     fn __internal_number_array(args: &Arguments, pos: usize) -> anyhow::Result<Vec<Decimal>> {
         let a = args.array(pos)?;
@@ -647,10 +653,15 @@ pub(crate) mod imp {
     }
 
     pub fn date(args: Arguments) -> anyhow::Result<V> {
-        let a = args.ovar(0);
-        let date_time = match a {
+        let provided = args.ovar(0);
+        let tz = args
+            .ostr(1)?
+            .map(|v| Tz::from_str(v).context("Invalid timezone"))
+            .transpose()?;
+
+        let date_time = match provided {
+            Some(v) => VmDate::new(v.clone(), tz),
             None => VmDate::now(),
-            Some(v) => VmDate::new(v.clone()),
         };
 
         Ok(V::Dynamic(Rc::new(date_time)))

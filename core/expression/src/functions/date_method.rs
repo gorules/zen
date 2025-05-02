@@ -15,6 +15,7 @@ pub enum DateMethod {
     StartOf,
     EndOf,
     Diff,
+    Tz,
 
     // Compare
     IsSame,
@@ -35,6 +36,7 @@ pub enum DateMethod {
     Quarter,
     Year,
     Timestamp,
+    OffsetName,
 
     IsValid,
     IsYesterday,
@@ -63,6 +65,7 @@ enum GetterOperation {
     Quarter,
     Year,
     Timestamp,
+    OffsetName,
 
     IsValid,
     IsYesterday,
@@ -116,6 +119,13 @@ impl From<&DateMethod> for Rc<dyn FunctionDefinition> {
                     return_type: VT::Date,
                 },
             }),
+            DM::Tz => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::tz),
+                signature: FunctionSignature {
+                    parameters: vec![VT::Date, VT::String],
+                    return_type: VT::Date,
+                },
+            }),
             DM::Format => Rc::new(CompositeFunction {
                 implementation: Rc::new(imp::format),
                 signatures: vec![
@@ -164,6 +174,7 @@ impl From<&DateMethod> for Rc<dyn FunctionDefinition> {
             DateMethod::Quarter => imp::getter(GetterOperation::Quarter),
             DateMethod::Year => imp::getter(GetterOperation::Year),
             DateMethod::Timestamp => imp::getter(GetterOperation::Timestamp),
+            DateMethod::OffsetName => imp::getter(GetterOperation::OffsetName),
 
             DateMethod::IsValid => imp::getter(GetterOperation::IsValid),
             DateMethod::IsYesterday => imp::getter(GetterOperation::IsYesterday),
@@ -186,9 +197,11 @@ mod imp {
     use crate::Variable as V;
     use anyhow::{anyhow, Context};
     use chrono::{Datelike, Timelike};
+    use chrono_tz::Tz;
     use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
     use rust_decimal::Decimal;
     use std::rc::Rc;
+    use std::str::FromStr;
 
     fn __internal_extract_duration(args: &Arguments, from: usize) -> anyhow::Result<Duration> {
         match args.var(from)? {
@@ -276,7 +289,7 @@ mod imp {
 
     pub fn diff(args: Arguments) -> anyhow::Result<V> {
         let this = args.dynamic::<VmDate>(0)?;
-        let date_time = VmDate::new(args.var(1)?.clone());
+        let date_time = VmDate::new(args.var(1)?.clone(), None);
         let maybe_unit = __internal_extract_duration_unit_opt(&args, 2)?;
 
         let var = match this
@@ -288,6 +301,14 @@ mod imp {
         };
 
         Ok(var)
+    }
+
+    pub fn tz(args: Arguments) -> anyhow::Result<V> {
+        let this = args.dynamic::<VmDate>(0)?;
+        let tz_str = args.str(1)?;
+
+        let timezone = Tz::from_str(tz_str).context("Invalid timezone")?;
+        Ok(V::Dynamic(Rc::new(this.tz(timezone))))
     }
 
     pub fn compare_using(op: CompareOperation) -> Rc<dyn FunctionDefinition> {
@@ -304,7 +325,7 @@ mod imp {
             ],
             implementation: Rc::new(move |args: Arguments| -> anyhow::Result<V> {
                 let this = args.dynamic::<VmDate>(0)?;
-                let date_time = VmDate::new(args.var(1)?.clone());
+                let date_time = VmDate::new(args.var(1)?.clone(), None);
                 let maybe_unit = __internal_extract_duration_unit_opt(&args, 2)?;
 
                 let check = match op {
@@ -345,6 +366,7 @@ mod imp {
                     | GetterOperation::IsToday
                     | GetterOperation::IsTomorrow
                     | GetterOperation::IsLeapYear => VT::Bool,
+                    GetterOperation::OffsetName => VT::String,
                 },
             },
             implementation: Rc::new(move |args: Arguments| -> anyhow::Result<V> {
@@ -383,6 +405,8 @@ mod imp {
                         V::Bool(this.is_same(&VmDate::tomorrow(), Some(DurationUnit::Day)))
                     }
                     GetterOperation::IsLeapYear => V::Bool(dt.date_naive().leap_year()),
+                    // String
+                    GetterOperation::OffsetName => V::String(Rc::from(dt.timezone().name())),
                 })
             }),
         })

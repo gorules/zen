@@ -7,4 +7,4 @@ mod opcode;
 
 pub use compiler::Compiler;
 pub use error::CompilerError;
-pub use opcode::{FetchFastTarget, Jump, Opcode};
+pub use opcode::{Compare, FetchFastTarget, Jump, Opcode};

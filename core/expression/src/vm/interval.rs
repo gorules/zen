@@ -1,5 +1,6 @@
 use crate::lexer::Bracket;
 use crate::variable::DynamicVariable;
+use crate::vm::VmDate;
 use crate::Variable;
 use anyhow::anyhow;
 use rust_decimal::prelude::ToPrimitive;
@@ -8,12 +9,12 @@ use serde_json::Value;
 use std::any::Any;
 use std::fmt::{Display, Formatter};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) struct VmInterval {
     pub left_bracket: Bracket,
     pub right_bracket: Bracket,
-    pub left: Decimal,
-    pub right: Decimal,
+    pub left: VmIntervalData,
+    pub right: VmIntervalData,
 }
 
 impl DynamicVariable for VmInterval {
@@ -32,15 +33,20 @@ impl DynamicVariable for VmInterval {
 
 impl VmInterval {
     pub fn to_array(&self) -> Option<Vec<Variable>> {
+        let (left, right) = match (&self.left, &self.right) {
+            (VmIntervalData::Number(l), VmIntervalData::Number(r)) => (*l, *r),
+            _ => return None,
+        };
+
         let start = match &self.left_bracket {
-            Bracket::LeftParenthesis => self.left.to_i64()? + 1,
-            Bracket::LeftSquareBracket => self.left.to_i64()?,
+            Bracket::LeftParenthesis => left.to_i64()? + 1,
+            Bracket::LeftSquareBracket => left.to_i64()?,
             _ => return None,
         };
 
         let end = match &self.right_bracket {
-            Bracket::RightParenthesis => self.right.to_i64()? - 1,
-            Bracket::RightSquareBracket => self.right.to_i64()?,
+            Bracket::RightParenthesis => right.to_i64()? - 1,
+            Bracket::RightSquareBracket => right.to_i64()?,
             _ => return None,
         };
 
@@ -51,30 +57,30 @@ impl VmInterval {
         Some(list)
     }
 
-    pub fn includes(&self, v: Decimal) -> anyhow::Result<bool> {
+    pub fn includes(&self, v: VmIntervalData) -> anyhow::Result<bool> {
         let mut is_open = false;
-        let l = self.left;
-        let r = self.right;
+        let l = &self.left;
+        let r = &self.right;
 
         let first = match &self.left_bracket {
-            Bracket::LeftParenthesis => l < v,
-            Bracket::LeftSquareBracket => l <= v,
+            Bracket::LeftParenthesis => l < &v,
+            Bracket::LeftSquareBracket => l <= &v,
             Bracket::RightParenthesis => {
                 is_open = true;
-                l > v
+                l > &v
             }
             Bracket::RightSquareBracket => {
                 is_open = true;
-                l >= v
+                l >= &v
             }
             _ => return Err(anyhow!("Unsupported bracket")),
         };
 
         let second = match &self.right_bracket {
-            Bracket::RightParenthesis => r > v,
-            Bracket::RightSquareBracket => r >= v,
-            Bracket::LeftParenthesis => r < v,
-            Bracket::LeftSquareBracket => r <= v,
+            Bracket::RightParenthesis => r > &v,
+            Bracket::RightSquareBracket => r >= &v,
+            Bracket::LeftParenthesis => r < &v,
+            Bracket::LeftSquareBracket => r <= &v,
             _ => return Err(anyhow!("Unsupported bracket")),
         };
 
@@ -92,5 +98,20 @@ impl Display for VmInterval {
             "{}{}..{}{}",
             self.left_bracket, self.left, self.right, self.right_bracket
         )
+    }
+}
+
+#[derive(Debug, Clone, PartialOrd, PartialEq, Ord, Eq)]
+pub(crate) enum VmIntervalData {
+    Number(Decimal),
+    Date(VmDate),
+}
+
+impl Display for VmIntervalData {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VmIntervalData::Number(n) => write!(f, "{n}"),
+            VmIntervalData::Date(d) => write!(f, "{d}"),
+        }
     }
 }

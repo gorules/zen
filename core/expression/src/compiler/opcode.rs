@@ -30,10 +30,7 @@ pub enum Opcode {
     Equal,
     Jump(Jump, u32),
     In,
-    Less,
-    More,
-    LessOrEqual,
-    MoreOrEqual,
+    Compare(Compare),
     Add,
     Subtract,
     Multiply,
@@ -73,4 +70,12 @@ pub enum Jump {
     IfFalse,
     IfNotNull,
     IfEnd,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Display)]
+pub enum Compare {
+    More,
+    Less,
+    MoreOrEqual,
+    LessOrEqual,
 }

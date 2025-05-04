@@ -1,6 +1,6 @@
 use crate::compiler::error::{CompilerError, CompilerResult};
 use crate::compiler::opcode::{FetchFastTarget, Jump};
-use crate::compiler::Opcode;
+use crate::compiler::{Compare, Opcode};
 use crate::functions::registry::FunctionRegistry;
 use crate::functions::{ClosureFunction, FunctionKind, InternalFunction, MethodRegistry};
 use crate::lexer::{ArithmeticOperator, ComparisonOperator, LogicalOperator, Operator};
@@ -324,22 +324,22 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                 Operator::Comparison(ComparisonOperator::LessThan) => {
                     self.compile_node(left)?;
                     self.compile_node(right)?;
-                    Ok(self.emit(Opcode::Less))
+                    Ok(self.emit(Opcode::Compare(Compare::Less)))
                 }
                 Operator::Comparison(ComparisonOperator::LessThanOrEqual) => {
                     self.compile_node(left)?;
                     self.compile_node(right)?;
-                    Ok(self.emit(Opcode::LessOrEqual))
+                    Ok(self.emit(Opcode::Compare(Compare::LessOrEqual)))
                 }
                 Operator::Comparison(ComparisonOperator::GreaterThan) => {
                     self.compile_node(left)?;
                     self.compile_node(right)?;
-                    Ok(self.emit(Opcode::More))
+                    Ok(self.emit(Opcode::Compare(Compare::More)))
                 }
                 Operator::Comparison(ComparisonOperator::GreaterThanOrEqual) => {
                     self.compile_node(left)?;
                     self.compile_node(right)?;
-                    Ok(self.emit(Opcode::MoreOrEqual))
+                    Ok(self.emit(Opcode::Compare(Compare::MoreOrEqual)))
                 }
                 Operator::Arithmetic(ArithmeticOperator::Add) => {
                     self.compile_node(left)?;

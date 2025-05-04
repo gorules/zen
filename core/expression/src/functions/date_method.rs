@@ -384,9 +384,7 @@ mod imp {
                     GetterOperation::Minute => V::Number(dt.minute().into()),
                     GetterOperation::Hour => V::Number(dt.hour().into()),
                     GetterOperation::Day => V::Number(dt.day().into()),
-                    GetterOperation::Weekday => {
-                        V::Number(dt.weekday().num_days_from_sunday().into())
-                    }
+                    GetterOperation::Weekday => V::Number(dt.weekday().number_from_monday().into()),
                     GetterOperation::DayOfYear => V::Number(dt.ordinal().into()),
                     GetterOperation::Week => V::Number(dt.iso_week().week().into()),
                     GetterOperation::Month => V::Number(dt.month().into()),

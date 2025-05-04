@@ -1,4 +1,4 @@
-use crate::compiler::{FetchFastTarget, Jump, Opcode};
+use crate::compiler::{Compare, FetchFastTarget, Jump, Opcode};
 use crate::functions::arguments::Arguments;
 use crate::functions::registry::FunctionRegistry;
 use crate::functions::{internal, MethodRegistry};
@@ -6,7 +6,7 @@ use crate::variable::Variable;
 use crate::variable::Variable::*;
 use crate::vm::error::VMError::*;
 use crate::vm::error::VMResult;
-use crate::vm::interval::VmInterval;
+use crate::vm::interval::{VmInterval, VmIntervalData};
 use ahash::{HashMap, HashMapExt};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::MathematicalOps;
@@ -216,6 +216,12 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                         (Null, Null) => {
                             self.push(Bool(true));
                         }
+                        (Dynamic(a), Dynamic(b)) => {
+                            let a = a.as_date();
+                            let b = b.as_date();
+
+                            self.push(Bool(a.is_some() && b.is_some() && a == b));
+                        }
                         _ => {
                             self.push(Bool(false));
                         }
@@ -309,10 +315,50 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                                 });
                             };
 
-                            self.push(Bool(i.includes(v).map_err(|err| OpcodeErr {
-                                opcode: "In".into(),
-                                message: err.to_string(),
-                            })?));
+                            self.push(Bool(i.includes(VmIntervalData::Number(v)).map_err(
+                                |err| OpcodeErr {
+                                    opcode: "In".into(),
+                                    message: err.to_string(),
+                                },
+                            )?));
+                        }
+                        (Dynamic(d), Dynamic(i)) => {
+                            let Some(d) = d.as_date() else {
+                                return Err(OpcodeErr {
+                                    opcode: "In".into(),
+                                    message: "Unsupported type".into(),
+                                });
+                            };
+
+                            let Some(i) = i.as_any().downcast_ref::<VmInterval>() else {
+                                return Err(OpcodeErr {
+                                    opcode: "In".into(),
+                                    message: "Unsupported type".into(),
+                                });
+                            };
+
+                            self.push(Bool(i.includes(VmIntervalData::Date(d.clone())).map_err(
+                                |err| OpcodeErr {
+                                    opcode: "In".into(),
+                                    message: err.to_string(),
+                                },
+                            )?));
+                        }
+                        (Dynamic(a), Array(arr)) => {
+                            let Some(a) = a.as_date() else {
+                                return Err(OpcodeErr {
+                                    opcode: "In".into(),
+                                    message: "Unsupported type".into(),
+                                });
+                            };
+
+                            let arr = arr.borrow();
+                            let is_in = arr.iter().any(|b| match b {
+                                Dynamic(b) => Some(a) == b.as_date(),
+                                _ => false,
+                            });
+
+                            self.push(Bool(is_in));
                         }
                         (String(a), Array(b)) => {
                             let arr = b.borrow();
@@ -353,57 +399,37 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                         }
                     }
                 }
-                Opcode::Less => {
+                Opcode::Compare(comparison) => {
                     let b = self.pop()?;
                     let a = self.pop()?;
 
-                    match (a, b) {
-                        (Number(a), Number(b)) => self.push(Bool(a < b)),
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "Less".into(),
-                                message: "Unsupported type".into(),
-                            });
+                    fn compare<T: Ord>(a: &T, b: &T, comparison: &Compare) -> bool {
+                        match comparison {
+                            Compare::More => a > b,
+                            Compare::MoreOrEqual => a >= b,
+                            Compare::Less => a < b,
+                            Compare::LessOrEqual => a <= b,
                         }
                     }
-                }
-                Opcode::More => {
-                    let b = self.pop()?;
-                    let a = self.pop()?;
 
                     match (a, b) {
-                        (Number(a), Number(b)) => self.push(Bool(a > b)),
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "More".into(),
-                                message: "Unsupported type".into(),
-                            });
+                        (Number(a), Number(b)) => self.push(Bool(compare(&a, &b, comparison))),
+                        (Dynamic(a), Dynamic(b)) => {
+                            let (a, b) = match (a.as_date(), b.as_date()) {
+                                (Some(a), Some(b)) => (a, b),
+                                _ => {
+                                    return Err(OpcodeErr {
+                                        opcode: "Compare".into(),
+                                        message: "Unsupported type".into(),
+                                    })
+                                }
+                            };
+
+                            self.push(Bool(compare(a, b, comparison)));
                         }
-                    }
-                }
-                Opcode::LessOrEqual => {
-                    let b = self.pop()?;
-                    let a = self.pop()?;
-
-                    match (a, b) {
-                        (Number(a), Number(b)) => self.push(Bool(a <= b)),
                         _ => {
                             return Err(OpcodeErr {
-                                opcode: "LessOrEqual".into(),
-                                message: "Unsupported type".into(),
-                            });
-                        }
-                    }
-                }
-                Opcode::MoreOrEqual => {
-                    let b = self.pop()?;
-                    let a = self.pop()?;
-
-                    match (a, b) {
-                        (Number(a), Number(b)) => self.push(Bool(a >= b)),
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "MoreOrEqual".into(),
+                                opcode: "Compare".into(),
                                 message: "Unsupported type".into(),
                             });
                         }
@@ -515,8 +541,28 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                             let interval = VmInterval {
                                 left_bracket: *left_bracket,
                                 right_bracket: *right_bracket,
-                                left: *a,
-                                right: *b,
+                                left: VmIntervalData::Number(*a),
+                                right: VmIntervalData::Number(*b),
+                            };
+
+                            self.push(Dynamic(Rc::new(interval)));
+                        }
+                        (Dynamic(a), Dynamic(b)) => {
+                            let (a, b) = match (a.as_date(), b.as_date()) {
+                                (Some(a), Some(b)) => (a, b),
+                                _ => {
+                                    return Err(OpcodeErr {
+                                        opcode: "Interval".into(),
+                                        message: "Unsupported type".into(),
+                                    })
+                                }
+                            };
+
+                            let interval = VmInterval {
+                                left_bracket: *left_bracket,
+                                right_bracket: *right_bracket,
+                                left: VmIntervalData::Date(a.clone()),
+                                right: VmIntervalData::Date(b.clone()),
                             };
 
                             self.push(Dynamic(Rc::new(interval)));

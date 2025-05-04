@@ -13,7 +13,7 @@ mod duration;
 mod duration_parser;
 mod duration_unit;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialOrd, PartialEq, Ord, Eq)]
 pub(crate) struct VmDate(pub Option<DateTime<Tz>>);
 
 impl DynamicVariable for VmDate {
@@ -176,7 +176,6 @@ impl VmDate {
 
 mod helper {
     use crate::vm::date::{Duration, DurationUnit};
-    use crate::vm::VmDate;
     use crate::Variable;
     use chrono::{
         DateTime, Datelike, Days, LocalResult, Month, Months, NaiveDate, NaiveDateTime, TimeDelta,
@@ -235,7 +234,7 @@ mod helper {
                 })
                 .or_else(|| Some(Tz::from_str(&str.deref()).ok().map(now_tz)))
                 .flatten(),
-            Variable::Dynamic(d) => match d.as_any().downcast_ref::<VmDate>() {
+            Variable::Dynamic(d) => match d.as_date() {
                 Some(d) => d.0.clone(),
                 None => None,
             },
@@ -418,5 +417,11 @@ mod helper {
             }
             None => Some(a > b),
         }
+    }
+}
+
+impl dyn DynamicVariable {
+    pub(crate) fn as_date(&self) -> Option<&VmDate> {
+        self.as_any().downcast_ref::<VmDate>()
     }
 }

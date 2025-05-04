@@ -628,7 +628,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
 
     /// Identifier expression
     /// Either <Identifier> or <Identifier Expression>
-    pub(crate) fn identifier<F>(&self, expression_parser: F) -> &'arena Node<'arena>
+    pub(crate) fn identifier<F>(&self, expression_parser: &F) -> &'arena Node<'arena>
     where
         F: Fn(ParserContext) -> &'arena Node<'arena>,
     {
@@ -672,7 +672,12 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 }),
             };
 
-            return self.with_postfix(identifier_node, expression_parser);
+            let identifier_with_postfix = self.with_postfix(identifier_node, &expression_parser);
+            if let Some(&TokenKind::Operator(Operator::Assign)) = self.current_kind() {
+                return self.assigned_object(identifier_with_postfix, expression_parser);
+            }
+
+            return identifier_with_postfix;
         }
 
         // Potentially it might be a built-in expression
@@ -846,6 +851,76 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 span: (current_token.span.0, self.prev_token_end()),
             }),
             expression_parser,
+        )
+    }
+
+    pub(crate) fn assigned_object<F>(
+        &self,
+        starting_key: &'arena Node<'arena>,
+        expression_parser: &F,
+    ) -> &'arena Node<'arena>
+    where
+        F: Fn(ParserContext) -> &'arena Node<'arena>,
+    {
+        let transform_key = |n: &'arena Node<'arena>| -> &'arena Node<'arena> {
+            let mut keys = BumpVec::new_in(&self.bump);
+            if n.member_key(&mut keys).is_none() {
+                return self.error_with_node(
+                    AstNodeError::Custom {
+                        span: n.span().unwrap_or_default(),
+                        message: self.bump.alloc_str("Failed to resolve"),
+                    },
+                    n,
+                );
+            }
+
+            self.node(
+                Node::String(self.bump.alloc_str(keys.join(".").as_str())),
+                |_| NodeMetadata {
+                    span: n.span().unwrap_or_default(),
+                },
+            )
+        };
+
+        let span_start = self.token_start();
+        expect!(self, TokenKind::Operator(Operator::Assign));
+
+        let mut key_value_pairs = BumpVec::new_in(self.bump);
+        let value = expression_parser(ParserContext::Global);
+
+        key_value_pairs.push((transform_key(starting_key), value));
+
+        loop {
+            if let None = self.current() {
+                break;
+            }
+
+            expect!(self, TokenKind::Operator(Operator::Semi));
+            let Some(identifier_token) = self.current() else {
+                break;
+            };
+
+            let identifier_node =
+                self.node(Node::Identifier(identifier_token.value), |_| NodeMetadata {
+                    span: identifier_token.span,
+                });
+            self.next();
+            let key_node = self.with_postfix(identifier_node, expression_parser);
+
+            expect!(self, TokenKind::Operator(Operator::Assign));
+
+            let value = expression_parser(ParserContext::Global);
+            key_value_pairs.push((transform_key(key_node), value));
+        }
+
+        self.node(
+            Node::AssignedObject(
+                self.bump
+                    .alloc(Node::Object(key_value_pairs.into_bump_slice())),
+            ),
+            |_| NodeMetadata {
+                span: (span_start, self.prev_token_end()),
+            },
         )
     }
 

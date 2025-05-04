@@ -144,26 +144,40 @@ impl Variable {
             })
     }
 
-    fn dot_head(&self, key: &str) -> Option<Variable> {
+    fn dot_head(&self, key: &str, detach: bool) -> Option<Variable> {
         let mut parts = Vec::from_iter(key.split('.'));
         parts.pop();
 
-        parts
-            .iter()
-            .try_fold(self.shallow_clone(), |var, part| match var {
-                Variable::Object(obj) => {
-                    let mut obj_ref = obj.borrow_mut();
-                    Some(match obj_ref.entry(Rc::from(*part)) {
-                        Entry::Occupied(occ) => occ.get().shallow_clone(),
-                        Entry::Vacant(vac) => vac.insert(Self::empty_object()).shallow_clone(),
-                    })
-                }
-                _ => None,
-            })
+        let clone = |v: &Variable| -> Variable {
+            if detach {
+                v.depth_clone(1)
+            } else {
+                v.shallow_clone()
+            }
+        };
+
+        parts.iter().try_fold(clone(self), |var, part| match var {
+            Variable::Object(obj) => {
+                let mut obj_ref = obj.borrow_mut();
+                Some(match obj_ref.entry(Rc::from(*part)) {
+                    Entry::Occupied(mut occ) => {
+                        let var = occ.get();
+                        if !detach || var.is_object() {
+                            clone(var)
+                        } else {
+                            occ.insert(Variable::empty_object())
+                        }
+                    }
+                    Entry::Vacant(vac) => clone(vac.insert(Self::empty_object())),
+                })
+            }
+            _ => None,
+        })
     }
+
     pub fn dot_remove(&self, key: &str) -> Option<Variable> {
         let last_part = key.split('.').last()?;
-        let head = self.dot_head(key)?;
+        let head = self.dot_head(key, false)?;
         let Variable::Object(object_ref) = head else {
             return None;
         };
@@ -174,13 +188,25 @@ impl Variable {
 
     pub fn dot_insert(&self, key: &str, variable: Variable) -> Option<Variable> {
         let last_part = key.split('.').last()?;
-        let head = self.dot_head(key)?;
+        let head = self.dot_head(key, false)?;
         let Variable::Object(object_ref) = head else {
             return None;
         };
 
         let mut object = object_ref.borrow_mut();
         object.insert(Rc::from(last_part), variable)
+    }
+
+    pub fn dot_insert_detached(&self, key: &str, variable: Variable) -> Option<Variable> {
+        let last_part = key.split('.').last()?;
+        let detached_head = self.dot_head(key, true)?;
+        let Variable::Object(object_ref) = detached_head.shallow_clone() else {
+            return None;
+        };
+
+        let mut object = object_ref.borrow_mut();
+        object.insert(Rc::from(last_part), variable);
+        Some(detached_head)
     }
 
     pub fn merge(&mut self, patch: &Variable) -> Variable {

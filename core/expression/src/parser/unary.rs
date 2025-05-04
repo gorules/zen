@@ -292,6 +292,7 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
             Node::String(_) => CompareWithReference(Equal),
             Node::TemplateString(_) => CompareWithReference(Equal),
             Node::Object(_) => CompareWithReference(Equal),
+            Node::AssignedObject(_) => CompareWithReference(Equal),
             Node::Pointer => AsBoolean,
             Node::Array(_) => CompareWithReference(In),
             Node::Identifier(_) => CompareWithReference(Equal),
@@ -335,6 +336,8 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                 Operator::Comma => AsBoolean,
                 Operator::Dot => AsBoolean,
                 Operator::QuestionMark => AsBoolean,
+                Operator::Assign => AsBoolean,
+                Operator::Semi => AsBoolean,
             },
             Node::FunctionCall { kind, .. } => match kind {
                 FunctionKind::Internal(i) => match i {

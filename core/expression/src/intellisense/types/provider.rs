@@ -137,6 +137,7 @@ impl TypesProvider {
 
                 V(VariableType::Object(obj_type))
             }
+            Node::AssignedObject(inner) => self.determine(inner, scope),
             Node::Identifier(i) => TypeInfo::from(scope.root_data.get(i)),
             Node::Member { node, property } => {
                 let node_type = self.determine(node, scope.clone());
@@ -324,7 +325,9 @@ impl TypesProvider {
                     | Operator::Comma
                     | Operator::Slice
                     | Operator::Dot
-                    | Operator::QuestionMark => Error("Unsupported operator".to_string()),
+                    | Operator::QuestionMark
+                    | Operator::Assign
+                    | Operator::Semi => Error("Unsupported operator".to_string()),
                 }
             }
             Node::Interval { left, right, .. } => {

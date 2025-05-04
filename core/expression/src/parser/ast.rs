@@ -1,5 +1,6 @@
 use crate::functions::{FunctionKind, MethodKind};
 use crate::lexer::{Bracket, Operator};
+use bumpalo::collections::Vec as BumpVec;
 use rust_decimal::Decimal;
 use std::cell::Cell;
 use strum_macros::IntoStaticStr;
@@ -15,6 +16,7 @@ pub enum Node<'a> {
     Pointer,
     Array(&'a [&'a Node<'a>]),
     Object(&'a [(&'a Node<'a>, &'a Node<'a>)]),
+    AssignedObject(&'a Node<'a>),
     Identifier(&'a str),
     Closure(&'a Node<'a>),
     Parenthesized(&'a Node<'a>),
@@ -91,6 +93,9 @@ impl<'a> Node<'a> {
                 k.walk(func.clone());
                 v.walk(func.clone());
             }),
+            Node::AssignedObject(inner) => {
+                inner.walk(func.clone());
+            }
             Node::Closure(closure) => closure.walk(func.clone()),
             Node::Parenthesized(c) => c.walk(func.clone()),
             Node::Member { node, property } => {
@@ -169,6 +174,33 @@ impl<'a> Node<'a> {
                 }
                 AstNodeError::Custom { span, .. } => Some(span.clone()),
             },
+            _ => None,
+        }
+    }
+
+    pub(crate) fn member_key(&self, vec: &mut BumpVec<&'a str>) -> Option<()> {
+        match self {
+            Node::Member { node, property } => {
+                node.member_key(vec)?;
+
+                let property_key = match property {
+                    Node::String(key) => Some(*key),
+                    Node::Identifier(key) => Some(*key),
+                    Node::Root => Some("$root"),
+                    _ => None,
+                }?;
+
+                vec.push(property_key);
+                Some(())
+            }
+            Node::Identifier(name) => {
+                vec.push(name);
+                Some(())
+            }
+            Node::Root => {
+                vec.push("$root");
+                Some(())
+            }
             _ => None,
         }
     }

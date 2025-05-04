@@ -116,7 +116,7 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
         match node {
             Node::Root => Some(vec![FetchFastTarget::Root]),
             Node::Identifier(v) => Some(vec![
-                FetchFastTarget::Root,
+                FetchFastTarget::Begin,
                 FetchFastTarget::String(Arc::from(*v)),
             ]),
             Node::Member { node, property } => {

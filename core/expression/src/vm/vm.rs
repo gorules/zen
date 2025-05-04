@@ -139,6 +139,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                 Opcode::FetchFast(path) => {
                     let variable = path.iter().fold(Null, |v, p| match p {
                         FetchFastTarget::Root => root_env.clone(),
+                        FetchFastTarget::Begin => env.clone(),
                         FetchFastTarget::String(key) => match v {
                             Object(obj) => {
                                 let obj_ref = obj.borrow();

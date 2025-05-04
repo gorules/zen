@@ -7,6 +7,7 @@ use strum_macros::Display;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FetchFastTarget {
     Root,
+    Begin,
     String(Arc<str>),
     Number(u32),
 }

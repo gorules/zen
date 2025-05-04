@@ -91,12 +91,13 @@ impl<'js> FromJs<'js> for HttpConfig {
 
                 let value = JsValue::from_js(ctx, value)?;
                 let str_value = match value.0 {
-                    Variable::Null => None,
                     Variable::Bool(b) => Some(b.to_string()),
                     Variable::Number(n) => Some(n.to_string()),
                     Variable::String(s) => Some(s.to_string()),
+                    Variable::Null => None,
                     Variable::Array(_) => None,
                     Variable::Object(_) => None,
+                    Variable::Dynamic(_) => None,
                 };
 
                 let key_value = key.to_string()?;
@@ -121,12 +122,13 @@ impl<'js> FromJs<'js> for HttpConfig {
 
                 let value = JsValue::from_js(ctx, value)?;
                 let str_value = match value.0 {
-                    Variable::Null => None,
                     Variable::Bool(b) => Some(b.to_string()),
                     Variable::Number(n) => Some(n.to_string()),
                     Variable::String(s) => Some(s.to_string()),
+                    Variable::Null => None,
                     Variable::Array(_) => None,
                     Variable::Object(_) => None,
+                    Variable::Dynamic(_) => None,
                 };
 
                 let key = key.to_string()?;

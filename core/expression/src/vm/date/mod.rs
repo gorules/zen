@@ -359,8 +359,8 @@ mod helper {
         };
 
         if let Some(unit_secs) = unit.as_secs() {
-            let secs = (a.timestamp_millis() - b.timestamp_millis()) / 1_000;
-            return secs.checked_mul(unit_secs.to_i64()?);
+            let secs = a.timestamp() - b.timestamp();
+            return secs.checked_div(unit_secs.to_i64()?);
         }
 
         let year_diff = a.year().to_i64()?.checked_sub(b.year().to_i64()?)?;

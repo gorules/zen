@@ -2,7 +2,7 @@ use anyhow::Context;
 use pyo3::prelude::{PyAnyMethods, PyBytesMethods, PyDictMethods, PyListMethods, PyStringMethods};
 use pyo3::types::{PyBytes, PyDict, PyList, PyString};
 use pyo3::{Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, PyAny, PyErr, PyResult, Python};
-use pythonize::depythonize;
+use pythonize::{depythonize, pythonize};
 use rust_decimal::prelude::ToPrimitive;
 use zen_expression::Variable;
 
@@ -40,11 +40,12 @@ pub fn variable_to_object<'py>(py: Python<'py>, val: &Variable) -> PyResult<Boun
             let dict = PyDict::new(py);
             let b = m.borrow();
             for (key, value) in b.iter() {
-                dict.set_item(key, variable_to_object(py, value)?)?;
+                dict.set_item(String::from(key.as_ref()), variable_to_object(py, value)?)?;
             }
 
             dict.into_bound_py_any(py)
         }
+        Variable::Dynamic(d) => Ok(pythonize(py, &d.to_value())?),
     }
 }
 

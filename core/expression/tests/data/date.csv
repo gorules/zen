@@ -1,0 +1,115 @@
+expression (string);input (json 5);output (json 5)
+
+# Date function basics
+d('2023-10-15');;'2023-10-15T00:00:00Z'
+d('2023-10-15 14:30');;'2023-10-15T14:30:00Z'
+d('2023-10-15 14:30:45');;'2023-10-15T14:30:45Z'
+d('2023-10-15', 'Europe/Berlin');;'2023-10-15T00:00:00+02:00'
+d('2023-10-15 14:30', 'Europe/Berlin');;'2023-10-15T14:30:00+02:00'
+d('2023-10-15 14:30:45', 'Europe/Berlin');;'2023-10-15T14:30:45+02:00'
+d('Europe/Berlin').isValid() and d('Europe/Berlin').isToday();;true
+
+# Date manipulation
+d('2023-10-15').add('1d');;'2023-10-16T00:00:00Z'
+d('2023-10-15').add('1d 5h');;'2023-10-16T05:00:00Z'
+d('2023-10-15').add(1, 'd');;'2023-10-16T00:00:00Z'
+d('2023-10-15').sub('2d');;'2023-10-13T00:00:00Z'
+d('2023-10-15').sub(1, 'M');;'2023-09-15T00:00:00Z'
+
+# Date comparisons
+d('2023-10-15').isBefore(d('2023-10-16'));;true
+d('2023-10-15').isBefore(d('2023-10-15'));;false
+d('2023-10-15').isAfter(d('2023-10-14'));;true
+d('2023-10-15').isAfter(d('2023-10-15'));;false
+d('2023-10-15').isSame(d('2023-10-15'));;true
+d('2023-10-15').isSame(d('2023-10-16'));;false
+d('2023-10-15').isSameOrBefore(d('2023-10-15'));;true
+d('2023-10-15').isSameOrBefore(d('2023-10-16'));;true
+d('2023-10-15').isSameOrBefore(d('2023-10-14'));;false
+d('2023-10-15').isSameOrAfter(d('2023-10-15'));;true
+d('2023-10-15').isSameOrAfter(d('2023-10-14'));;true
+d('2023-10-15').isSameOrAfter(d('2023-10-16'));;false
+
+# Date getters
+d('2023-10-15').year();;2023
+d('2023-10-15').month();;10
+d('2023-10-15').day();;15
+d('2023-10-15').weekday();;0
+d('2023-10-15').hour();;0
+d('2023-10-15').minute();;0
+d('2023-10-15').second();;0
+d('2023-10-15').dayOfYear();;288
+d('2023-01-01').dayOfYear();;1
+d('2023-12-31').dayOfYear();;365
+d('2024-12-31').dayOfYear();;366
+d('2023-10-15').quarter();;4
+d('2023-01-15').quarter();;1
+d('2023-04-15').quarter();;2
+d('2023-07-15').quarter();;3
+d('2023-10-15').timestamp();;1697328000000
+d('2023-10-15', 'Europe/Berlin').offsetName();;'Europe/Berlin'
+d('2023-10-15', 'America/Los_Angeles').offsetName();;'America/Los_Angeles'
+d('2023-10-15').isLeapYear();;false
+d('2024-10-15').isLeapYear();;true
+d('2000-10-15').isLeapYear();;true
+d('1900-10-15').isLeapYear();;false
+
+# Date setters
+d('2023-10-15').set(2024, 'year');;'2024-10-15T00:00:00Z'
+d('2023-10-15').set(5, 'month');;'2023-05-15T00:00:00Z'
+d('2023-10-15').set(20, 'day');;'2023-10-20T00:00:00Z'
+d('2023-10-15T10:30:00Z').set(15, 'hour');;'2023-10-15T15:30:00Z'
+d('2023-10-15T10:30:00Z').set(45, 'minute');;'2023-10-15T10:45:00Z'
+d('2023-10-15T10:30:00Z').set(30, 'second');;'2023-10-15T10:30:30Z'
+
+# Special date checks
+d().isSame(d(), 'day');;true
+d('2023-10-15').startOf('day');;'2023-10-15T00:00:00Z'
+d('2023-10-15T10:30:45Z').startOf('hour');;'2023-10-15T10:00:00Z'
+d('2023-10-15').endOf('day');;'2023-10-15T23:59:59Z'
+d('2023-10-15T10:30:45Z').endOf('hour');;'2023-10-15T10:59:59Z'
+d('2023-10-15').startOf('month');;'2023-10-01T00:00:00Z'
+d('2023-10-15').endOf('month');;'2023-10-31T23:59:59Z'
+d('2023-10-15').startOf('year');;'2023-01-01T00:00:00Z'
+d('2023-10-15').endOf('year');;'2023-12-31T23:59:59Z'
+d('2023-10-15').startOf('week');;'2023-10-09T00:00:00Z'
+d('2023-10-15').endOf('week');;'2023-10-15T23:59:59Z'
+d('2023-10-15').startOf('quarter');;'2023-10-01T00:00:00Z'
+d('2023-10-15').endOf('quarter');;'2023-12-31T23:59:59Z'
+d('2023-03-15').startOf('quarter');;'2023-01-01T00:00:00Z'
+d('2023-03-15').endOf('quarter');;'2023-03-31T23:59:59Z'
+d('2023-06-15').startOf('quarter');;'2023-04-01T00:00:00Z'
+d('2023-06-15').endOf('quarter');;'2023-06-30T23:59:59Z'
+d('2023-09-15').startOf('quarter');;'2023-07-01T00:00:00Z'
+d('2023-09-15').endOf('quarter');;'2023-09-30T23:59:59Z'
+
+# Timezone operations
+d('2023-10-15T00:00:00Z').tz('America/New_York');;'2023-10-14T20:00:00-04:00'
+d('2023-10-15T00:00:00Z').tz('Europe/London');;'2023-10-15T01:00:00+01:00'
+d('2023-10-15T00:00:00+00:00').tz('UTC');;'2023-10-15T00:00:00Z'
+d('2023-10-15T12:00:00+02:00', 'Etc/GMT-2').tz('UTC');;'2023-10-15T10:00:00Z'
+
+# Relative date methods
+d().sub(1, 'd').isYesterday();;true
+d().add(1, 'd').isTomorrow();;true
+d('2023-10-15').isToday();;false
+
+# Difference calculations
+d('2023-10-15').diff(d('2023-10-10'), 'day');;5
+d('2023-10-15T10:00:00Z').diff(d('2023-10-15T08:30:00Z'), 'hour');;1
+d('2023-10-15').diff(d('2023-09-15'), 'month');;1
+d('2023-12-31').diff(d('2023-01-01'), 'year');;0
+d('2023-12-31').diff(d('2022-01-01'), 'year');;1
+
+# Formatting
+d('2023-10-15').format('%Y-%m-%d');;'2023-10-15'
+d('2023-10-15').format('%Y/%m/%d');;'2023/10/15'
+d('2023-10-15T14:30:45Z').format('%A, %B %d %Y, %H:%M:%S');;'Sunday, October 15 2023, 14:30:45'
+d('2023-10-15T14:30:45Z').format('%a %b %d %H:%M');;'Sun Oct 15 14:30'
+d('2023-10-15T14:30:45Z').format('Day %j of year %Y');;'Day 288 of year 2023'
+d('2023-10-15T14:30:45.123Z').format('%H:%M:%S.%f');;'14:30:45.123000000'
+
+# Date validations
+d('foo').isValid();;false
+d('2023-13-01').isValid();;false
+d('2023-02-30').isValid();;false

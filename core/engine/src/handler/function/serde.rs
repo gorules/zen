@@ -125,6 +125,7 @@ impl<'js> IntoJs<'js> for JsValue {
 
                 qmap.into_value()
             }
+            Variable::Dynamic(d) => d.to_string().into_js(ctx)?,
         };
 
         Ok(res)

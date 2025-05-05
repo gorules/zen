@@ -4,9 +4,10 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 impl VariableType {
-    pub fn array_item(&self) -> Option<Rc<VariableType>> {
+    pub fn iterator(&self) -> Option<Rc<VariableType>> {
         match self {
             VariableType::Array(item) => Some(item.clone()),
+            VariableType::Interval => Some(Rc::new(VariableType::Number)),
             _ => None,
         }
     }
@@ -35,6 +36,8 @@ impl VariableType {
             (VariableType::String, VariableType::String) => true,
             (VariableType::Number, VariableType::Number) => true,
             (VariableType::Date, VariableType::Date) => true,
+            (VariableType::Number, VariableType::Date) => true,
+            (_, VariableType::Date) if self.widen().is_string() => true,
             (VariableType::Interval, VariableType::Interval) => true,
             (VariableType::Array(a1), VariableType::Array(a2)) => a1.satisfies(a2),
             (VariableType::Object(o1), VariableType::Object(o2)) => o1
@@ -67,6 +70,13 @@ impl VariableType {
     pub fn is_iterable(&self) -> bool {
         match self {
             VariableType::Any | VariableType::Interval | VariableType::Array(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_string(&self) -> bool {
+        match self {
+            VariableType::String => true,
             _ => false,
         }
     }

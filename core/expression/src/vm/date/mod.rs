@@ -205,7 +205,6 @@ mod helper {
         let tz = tz_opt.unwrap_or_else(|| tz());
 
         match var {
-            Variable::Null => Some(now()),
             Variable::Number(n) => {
                 let n_i64 = n.to_i64()?;
                 let date_time = match tz.timestamp_millis_opt(n_i64) {

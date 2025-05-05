@@ -237,6 +237,7 @@ impl TypesProvider {
                         | ComparisonOperator::GreaterThan
                         | ComparisonOperator::LessThanOrEqual
                         | ComparisonOperator::GreaterThanOrEqual => match (left_type.deref(), right_type.deref()) {
+                            (VariableType::Date | VariableType::Any, VariableType::Date | VariableType::Any) => V(VariableType::Bool),
                             (VariableType::Number | VariableType::Any, VariableType::Number | VariableType::Any) => V(VariableType::Bool),
                             _ => Error(format!(
                                 "Operator `{operator}` cannot be applied to types `{left_type}` and `{right_type}`."
@@ -257,7 +258,7 @@ impl TypesProvider {
 
                                 V(VariableType::Bool)
                             },
-                            (VariableType::Number, VariableType::Interval) => V(VariableType::Bool),
+                            (VariableType::Number | VariableType::Date, VariableType::Interval) => V(VariableType::Bool),
                             (VariableType::String, VariableType::Object(_)) => V(VariableType::Bool),
                             (VariableType::Any, _) => V(VariableType::Bool),
                             (_, VariableType::Any) => V(VariableType::Bool),
@@ -328,7 +329,9 @@ impl TypesProvider {
             }
             Node::Interval { left, right, .. } => {
                 let left_type = self.determine(left, scope.clone());
-                if !left_type.satisfies(&VariableType::Number) {
+                if !left_type.satisfies(&VariableType::Number)
+                    && !left_type.satisfies(&VariableType::Date)
+                {
                     self.set_error(
                         left,
                         format!("Interval cannot be created from type `{left_type}`."),
@@ -336,7 +339,9 @@ impl TypesProvider {
                 }
 
                 let right_type = self.determine(right, scope.clone());
-                if !right_type.satisfies(&VariableType::Number) {
+                if !right_type.satisfies(&VariableType::Number)
+                    && !right_type.satisfies(&VariableType::Date)
+                {
                     self.set_error(
                         right,
                         format!("Interval cannot be created from type `{right_type}`."),
@@ -352,7 +357,7 @@ impl TypesProvider {
                     .collect();
 
                 if let FunctionKind::Closure(_) = kind {
-                    let ptr_type = type_list[0].array_item().unwrap_or_default();
+                    let ptr_type = type_list[0].iterator().unwrap_or_default();
                     let new_type = self.determine(
                         arguments[1],
                         IntelliSenseScope {

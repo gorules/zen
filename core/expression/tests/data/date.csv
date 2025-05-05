@@ -111,6 +111,7 @@ d('2023-10-15T14:30:45Z').format('Day %j of year %Y');;'Day 288 of year 2023'
 d('2023-10-15T14:30:45.123Z').format('%H:%M:%S.%f');;'14:30:45.123000000'
 
 # Date validations
+d(null).isValid();;false
 d('foo').isValid();;false
 d('2023-13-01').isValid();;false
 d('2023-02-30').isValid();;false

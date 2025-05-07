@@ -2,10 +2,11 @@ use crate::variable::Variable;
 use crate::vm::helpers::date_time;
 use crate::vm::VMError;
 use chrono::NaiveDateTime;
-use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
 use serde_json::{Number, Value};
 use std::rc::Rc;
+use std::str::FromStr;
 
 impl From<Value> for Variable {
     fn from(value: Value) -> Self {
@@ -13,7 +14,26 @@ impl From<Value> for Variable {
             Value::Null => Variable::Null,
             Value::Bool(b) => Variable::Bool(b),
             Value::Number(n) => {
-                Variable::Number(Decimal::from_str_exact(n.as_str()).expect("Allowed number"))
+                #[cfg(feature = "arbitrary_precision")]
+                {
+                    Variable::Number(Decimal::from_str_exact(n.as_str()).expect("Allowed number"))
+                }
+
+                #[cfg(not(feature = "arbitrary_precision"))]
+                {
+                    let decimal = match n.as_u64() {
+                        Some(n) => Decimal::from_u64(n).expect("Allowed number"),
+                        None => match n.as_i64() {
+                            Some(n) => Decimal::from(n),
+                            None => match n.as_f64() {
+                                Some(n) => Decimal::from_f64(n).expect("Allowed number"),
+                                None => panic!("Invalid number"),
+                            },
+                        },
+                    };
+
+                    Variable::Number(decimal)
+                }
             }
             Value::String(s) => Variable::String(Rc::from(s.as_str())),
             Value::Array(arr) => {
@@ -34,7 +54,26 @@ impl From<&Value> for Variable {
             Value::Null => Variable::Null,
             Value::Bool(b) => Variable::Bool(*b),
             Value::Number(n) => {
-                Variable::Number(Decimal::from_str_exact(n.as_str()).expect("Allowed number"))
+                #[cfg(feature = "arbitrary_precision")]
+                {
+                    Variable::Number(Decimal::from_str_exact(n.as_str()).expect("Allowed number"))
+                }
+
+                #[cfg(not(feature = "arbitrary_precision"))]
+                {
+                    let decimal = match n.as_u64() {
+                        Some(n) => Decimal::from_u64(n).expect("Allowed number"),
+                        None => match n.as_i64() {
+                            Some(n) => Decimal::from(n),
+                            None => match n.as_f64() {
+                                Some(n) => Decimal::from_f64(n).expect("Allowed number"),
+                                None => panic!("Invalid number"),
+                            },
+                        },
+                    };
+
+                    Variable::Number(decimal)
+                }
             }
             Value::String(s) => Variable::String(Rc::from(s.as_str())),
             Value::Array(arr) => Variable::from_array(arr.iter().map(Variable::from).collect()),
@@ -52,7 +91,20 @@ impl From<Variable> for Value {
         match value {
             Variable::Null => Value::Null,
             Variable::Bool(b) => Value::Bool(b),
-            Variable::Number(n) => Value::Number(Number::from_string_unchecked(n.to_string())),
+            Variable::Number(n) => {
+                #[cfg(feature = "arbitrary_precision")]
+                {
+                    Value::Number(Number::from_string_unchecked(n.to_string()))
+                }
+                #[cfg(not(feature = "arbitrary_precision"))]
+                {
+                    Value::Number(
+                        Number::from_str(n.normalize().to_string().as_str())
+                            .map_err(|_| "Invalid number")
+                            .unwrap(),
+                    )
+                }
+            }
             Variable::String(s) => Value::String(s.to_string()),
             Variable::Array(arr) => {
                 let vec = Rc::try_unwrap(arr)

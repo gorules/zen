@@ -115,7 +115,7 @@ impl From<&DateMethod> for Rc<dyn FunctionDefinition> {
             DM::Set => Rc::new(StaticFunction {
                 implementation: Rc::new(imp::set),
                 signature: FunctionSignature {
-                    parameters: vec![VT::Date, VT::Number, unit_vt.clone()],
+                    parameters: vec![VT::Date, unit_vt.clone(), VT::Number],
                     return_type: VT::Date,
                 },
             }),
@@ -254,8 +254,8 @@ mod imp {
 
     pub fn set(args: Arguments) -> anyhow::Result<V> {
         let this = args.dynamic::<VmDate>(0)?;
-        let value = args.number(1)?;
-        let unit = __internal_extract_duration_unit(&args, 2)?;
+        let unit = __internal_extract_duration_unit(&args, 1)?;
+        let value = args.number(2)?;
 
         let value_u32 = value.to_u32().context("Invalid duration value")?;
 

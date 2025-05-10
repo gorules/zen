@@ -16,7 +16,7 @@ pub enum Node<'a> {
     Pointer,
     Array(&'a [&'a Node<'a>]),
     Object(&'a [(&'a Node<'a>, &'a Node<'a>)]),
-    AssignedObject(&'a Node<'a>),
+    Assignments(&'a [(&'a Node<'a>, &'a Node<'a>)]),
     Identifier(&'a str),
     Closure(&'a Node<'a>),
     Parenthesized(&'a Node<'a>),
@@ -89,13 +89,10 @@ impl<'a> Node<'a> {
             }
             Node::TemplateString(parts) => parts.iter().for_each(|n| n.walk(func.clone())),
             Node::Array(parts) => parts.iter().for_each(|n| n.walk(func.clone())),
-            Node::Object(obj) => obj.iter().for_each(|(k, v)| {
+            Node::Object(obj) | Node::Assignments(obj) => obj.iter().for_each(|(k, v)| {
                 k.walk(func.clone());
                 v.walk(func.clone());
             }),
-            Node::AssignedObject(inner) => {
-                inner.walk(func.clone());
-            }
             Node::Closure(closure) => closure.walk(func.clone()),
             Node::Parenthesized(c) => c.walk(func.clone()),
             Node::Member { node, property } => {
@@ -185,7 +182,6 @@ impl<'a> Node<'a> {
 
                 let property_key = match property {
                     Node::String(key) => Some(*key),
-                    Node::Identifier(key) => Some(*key),
                     Node::Root => Some("$root"),
                     _ => None,
                 }?;

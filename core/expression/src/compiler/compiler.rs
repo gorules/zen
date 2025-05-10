@@ -169,11 +169,7 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                 self.emit(Opcode::PushNumber(Decimal::from(v.len())));
                 Ok(self.emit(Opcode::Object))
             }
-            Node::AssignedObject(inner) => {
-                let Node::Object(v) = inner else {
-                    return Err(CompilerError::UnexpectedAssignedObject);
-                };
-
+            Node::Assignments(v) => {
                 self.emit(Opcode::AssignedObjectBegin);
                 v.iter().try_for_each(|&(key, value)| {
                     self.compile_node(key).map(|_| ())?;
@@ -182,6 +178,7 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
 
                     Ok(())
                 })?;
+
                 Ok(self.emit(Opcode::AssignedObjectEnd))
             }
             Node::Identifier(v) => Ok(self.emit(Opcode::FetchEnv(Arc::from(*v)))),

@@ -63,7 +63,7 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Standard> {
 
         if precedence == 0 {
             if let Some(conditional_node) =
-                self.conditional(node_left, |_| self.binary_expression(0))
+                self.conditional(node_left, &|_| self.binary_expression(0))
             {
                 node_left = conditional_node;
             }
@@ -84,7 +84,8 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Standard> {
             self.next();
 
             let node = self.node(Node::Pointer, |_| NodeMetadata { span: token.span });
-            return self.with_postfix(node, |_| self.binary_expression(0));
+            let (n, _) = self.with_postfix(node, &|_| self.binary_expression(0));
+            return n;
         }
 
         if let TokenKind::Operator(operator) = &token.kind {
@@ -114,7 +115,7 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Standard> {
             return node;
         }
 
-        if let Some(interval_node) = self.interval(|_| self.binary_expression(0)) {
+        if let Some(interval_node) = self.interval(&|_| self.binary_expression(0)) {
             return interval_node;
         }
 
@@ -131,9 +132,10 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Standard> {
                 span: (p_start.unwrap_or_default(), self.prev_token_end()),
             });
 
-            return self.with_postfix(expr, |_| self.binary_expression(0));
+            let (n, _) = self.with_postfix(expr, &|_| self.binary_expression(0));
+            return n;
         }
 
-        self.literal(|_| self.binary_expression(0))
+        self.literal(&|_| self.binary_expression(0))
     }
 }

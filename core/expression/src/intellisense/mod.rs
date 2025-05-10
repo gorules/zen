@@ -8,6 +8,9 @@ use serde::Serialize;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+pub use crate::intellisense::dependency::{DependencyProvider, DependencyProviderResponse};
+
+mod dependency;
 mod scope;
 mod types;
 

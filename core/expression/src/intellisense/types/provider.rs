@@ -123,7 +123,7 @@ impl TypesProvider {
                 }
             }
 
-            Node::Object(obj) => {
+            Node::Object(obj) | Node::Assignments(obj) => {
                 let obj_type = obj
                     .iter()
                     .filter_map(|(k, v)| {
@@ -137,7 +137,6 @@ impl TypesProvider {
 
                 V(VariableType::Object(obj_type))
             }
-            Node::AssignedObject(inner) => self.determine(inner, scope),
             Node::Identifier(i) => TypeInfo::from(scope.root_data.get(i)),
             Node::Member { node, property } => {
                 let node_type = self.determine(node, scope.clone());

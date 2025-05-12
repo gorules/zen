@@ -1,6 +1,3 @@
-use std::ops::Index;
-
-use anyhow::Context;
 use serde_json::{json, Value};
 
 use zen_expression::variable::Variable;
@@ -754,86 +751,106 @@ fn isolate_unary_tests() {
     }
 }
 
-#[test]
-fn isolate_test_decimals() {
-    let mut isolate = Isolate::new();
-    let result = isolate.run_standard("9223372036854775807").unwrap();
+#[cfg(test)]
+mod test {
+    use anyhow::Context;
+    use serde_json::Value;
+    use std::env;
+    use std::ops::Index;
+    use zen_expression::Isolate;
 
-    assert_eq!(result.to_value(), Value::from(9223372036854775807i64));
-}
+    fn test_csv_standard(csv_data: &str) {
+        let mut r = csv::ReaderBuilder::new()
+            .delimiter(b';')
+            .from_reader(csv_data.as_bytes());
 
-#[test]
-fn test_standard_csv() {
-    let csv_data = include_str!("data/standard.csv");
-    let mut r = csv::ReaderBuilder::new()
-        .delimiter(b';')
-        .from_reader(csv_data.as_bytes());
+        while let Some(maybe_row) = r.records().next() {
+            let Ok(row) = maybe_row else {
+                continue;
+            };
 
-    while let Some(maybe_row) = r.records().next() {
-        let Ok(row) = maybe_row else {
-            continue;
-        };
+            let (expression, input_str, output_str) = (row.index(0), row.index(1), row.index(2));
+            if expression.starts_with("#") {
+                continue;
+            }
 
-        let (expression, input_str, output_str) = (row.index(0), row.index(1), row.index(2));
-        if expression.starts_with("#") {
-            continue;
+            let output: Value = serde_json5::from_str(output_str).unwrap();
+
+            let mut isolate = Isolate::new();
+            if !input_str.is_empty() {
+                let input: Value = serde_json5::from_str(input_str).unwrap();
+                isolate.set_environment(input.into());
+            }
+
+            let maybe_result = isolate
+                .run_standard(expression)
+                .context(format!("Expression: {expression}"));
+            assert!(maybe_result.is_ok(), "{}", maybe_result.unwrap_err());
+
+            let result = maybe_result.unwrap().to_value();
+            assert_eq!(
+                result, output,
+                "Expression {expression}. Expected: {output}, got: {result}"
+            );
         }
-
-        let output: Value = serde_json5::from_str(output_str).unwrap();
-
-        let mut isolate = Isolate::new();
-        if !input_str.is_empty() {
-            let input: Value = serde_json5::from_str(input_str).unwrap();
-            isolate.set_environment(input.into());
-        }
-
-        let maybe_result = isolate
-            .run_standard(expression)
-            .context(format!("Expression: {expression}"));
-        assert!(maybe_result.is_ok(), "{}", maybe_result.unwrap_err());
-
-        let result = maybe_result.unwrap();
-        let var_output = Variable::from(output);
-        assert_eq!(
-            result, var_output,
-            "Expression {expression}. Expected: {var_output}, got: {result}"
-        );
     }
-}
 
-#[test]
-fn test_unary_csv() {
-    let csv_data = include_str!("data/unary.csv");
-    let mut r = csv::ReaderBuilder::new()
-        .delimiter(b';')
-        .from_reader(csv_data.as_bytes());
-
-    while let Some(maybe_row) = r.records().next() {
-        let Ok(row) = maybe_row else {
-            continue;
-        };
-
-        let (expression, input_str, output_str) = (row.index(0), row.index(1), row.index(2));
-        if expression.starts_with("#") {
-            continue;
-        }
-
-        let output: Value = serde_json5::from_str(output_str).unwrap();
-
+    #[test]
+    fn isolate_test_decimals() {
         let mut isolate = Isolate::new();
-        if !input_str.is_empty() {
-            let input: Value = serde_json5::from_str(input_str).unwrap();
-            isolate.set_environment(input.into());
+        let result = isolate.run_standard("9223372036854775807").unwrap();
+
+        assert_eq!(result.to_value(), Value::from(9223372036854775807i64));
+    }
+
+    #[test]
+    fn test_standard_csv() {
+        let csv_data = include_str!("data/standard.csv");
+        test_csv_standard(csv_data);
+    }
+
+    #[test]
+    fn test_dates_csv() {
+        env::set_var("TZ", "UTC");
+
+        let csv_data = include_str!("data/date.csv");
+        test_csv_standard(csv_data);
+    }
+
+    #[test]
+    fn test_unary_csv() {
+        let csv_data = include_str!("data/unary.csv");
+        let mut r = csv::ReaderBuilder::new()
+            .delimiter(b';')
+            .from_reader(csv_data.as_bytes());
+
+        while let Some(maybe_row) = r.records().next() {
+            let Ok(row) = maybe_row else {
+                continue;
+            };
+
+            let (expression, input_str, output_str) = (row.index(0), row.index(1), row.index(2));
+            if expression.starts_with("#") {
+                continue;
+            }
+
+            let output: Value = serde_json5::from_str(output_str).unwrap();
+
+            let mut isolate = Isolate::new();
+            if !input_str.is_empty() {
+                let input: Value = serde_json5::from_str(input_str).unwrap();
+                isolate.set_environment(input.into());
+            }
+
+            let result = isolate
+                .run_unary(expression)
+                .context(format!("Expression: {expression}"))
+                .unwrap();
+
+            assert_eq!(
+                result, output,
+                "Expression {expression}. Expected: {output}, got: {result}"
+            );
         }
-
-        let result = isolate
-            .run_unary(expression)
-            .context(format!("Expression: {expression}"))
-            .unwrap();
-
-        assert_eq!(
-            result, output,
-            "Expression {expression}. Expected: {output}, got: {result}"
-        );
     }
 }

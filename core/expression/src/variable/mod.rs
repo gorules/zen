@@ -2,6 +2,7 @@ use ahash::HashMap;
 use rust_decimal::prelude::Zero;
 use rust_decimal::Decimal;
 use serde_json::Value;
+use std::any::Any;
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::fmt::{Debug, Display, Formatter};
@@ -17,22 +18,31 @@ pub use de::VariableDeserializer;
 pub use types::VariableType;
 
 pub(crate) type RcCell<T> = Rc<RefCell<T>>;
-#[derive(PartialEq, Eq)]
+
 pub enum Variable {
     Null,
     Bool(bool),
     Number(Decimal),
     String(Rc<str>),
     Array(RcCell<Vec<Variable>>),
-    Object(RcCell<HashMap<String, Variable>>),
+    Object(RcCell<HashMap<Rc<str>, Variable>>),
+    Dynamic(Rc<dyn DynamicVariable>),
+}
+
+pub trait DynamicVariable: Display {
+    fn type_name(&self) -> &'static str;
+
+    fn as_any(&self) -> &dyn Any;
+
+    fn to_value(&self) -> Value;
 }
 
 impl Variable {
-    pub fn from_array(arr: Vec<Variable>) -> Self {
+    pub fn from_array(arr: Vec<Self>) -> Self {
         Self::Array(Rc::new(RefCell::new(arr)))
     }
 
-    pub fn from_object(obj: HashMap<String, Variable>) -> Self {
+    pub fn from_object(obj: HashMap<Rc<str>, Self>) -> Self {
         Self::Object(Rc::new(RefCell::new(obj)))
     }
 
@@ -72,7 +82,7 @@ impl Variable {
         }
     }
 
-    pub fn as_object(&self) -> Option<RcCell<HashMap<String, Variable>>> {
+    pub fn as_object(&self) -> Option<RcCell<HashMap<Rc<str>, Variable>>> {
         match self {
             Variable::Object(obj) => Some(obj.clone()),
             _ => None,
@@ -108,6 +118,14 @@ impl Variable {
             Variable::String(_) => "string",
             Variable::Array(_) => "array",
             Variable::Object(_) => "object",
+            Variable::Dynamic(d) => d.type_name(),
+        }
+    }
+
+    pub fn dynamic<T: DynamicVariable + 'static>(&self) -> Option<&T> {
+        match self {
+            Variable::Dynamic(d) => d.as_any().downcast_ref::<T>(),
+            _ => None,
         }
     }
 
@@ -135,7 +153,7 @@ impl Variable {
             .try_fold(self.shallow_clone(), |var, part| match var {
                 Variable::Object(obj) => {
                     let mut obj_ref = obj.borrow_mut();
-                    Some(match obj_ref.entry(part.to_string()) {
+                    Some(match obj_ref.entry(Rc::from(*part)) {
                         Entry::Occupied(occ) => occ.get().shallow_clone(),
                         Entry::Vacant(vac) => vac.insert(Self::empty_object()).shallow_clone(),
                     })
@@ -162,7 +180,7 @@ impl Variable {
         };
 
         let mut object = object_ref.borrow_mut();
-        object.insert(last_part.to_string(), variable)
+        object.insert(Rc::from(last_part), variable)
     }
 
     pub fn merge(&mut self, patch: &Variable) -> Variable {
@@ -186,6 +204,7 @@ impl Variable {
             Variable::String(s) => Variable::String(s.clone()),
             Variable::Array(a) => Variable::Array(a.clone()),
             Variable::Object(o) => Variable::Object(o.clone()),
+            Variable::Dynamic(d) => Variable::Dynamic(d.clone()),
         }
     }
 
@@ -199,7 +218,7 @@ impl Variable {
                 let obj = o.borrow();
                 Variable::from_object(
                     obj.iter()
-                        .map(|(k, v)| (k.to_string(), v.deep_clone()))
+                        .map(|(k, v)| (k.clone(), v.deep_clone()))
                         .collect(),
                 )
             }
@@ -219,7 +238,7 @@ impl Variable {
                     let obj = o.borrow();
                     Variable::from_object(
                         obj.iter()
-                            .map(|(k, v)| (k.to_string(), v.depth_clone(depth - 1)))
+                            .map(|(k, v)| (k.clone(), v.depth_clone(depth - 1)))
                             .collect(),
                     )
                 }
@@ -269,9 +288,9 @@ fn merge_variables(
                 let mut map = doc_ref.borrow_mut();
                 for (key, value) in patch.deref() {
                     if value == &Variable::Null {
-                        map.remove(key.as_str());
+                        map.remove(key);
                     } else {
-                        let entry = map.entry(key.to_string()).or_insert(Variable::Null);
+                        let entry = map.entry(key.clone()).or_insert(Variable::Null);
                         merge_variables(entry, value, false, strategy);
                     }
                 }
@@ -294,12 +313,12 @@ fn merge_variables(
 
                     if value == &Variable::Null {
                         // Remove null values
-                        if map.remove(key.as_str()).is_some() {
+                        if map.remove(key).is_some() {
                             changed = true;
                         }
                     } else {
                         // Handle nested merging
-                        let entry = map.entry(key.to_string()).or_insert(Variable::Null);
+                        let entry = map.entry(key.clone()).or_insert(Variable::Null);
                         if merge_variables(entry, value, false, strategy) {
                             changed = true;
                         }
@@ -357,6 +376,7 @@ impl Display for Variable {
 
                 write!(f, "{{{s}}}")
             }
+            Variable::Dynamic(d) => write!(f, "{d}"),
         }
     }
 }
@@ -366,3 +386,20 @@ impl Debug for Variable {
         write!(f, "{}", self)
     }
 }
+
+impl PartialEq for Variable {
+    fn eq(&self, other: &Self) -> bool {
+        match (&self, &other) {
+            (Variable::Null, Variable::Null) => true,
+            (Variable::Bool(b1), Variable::Bool(b2)) => b1 == b2,
+            (Variable::Number(n1), Variable::Number(n2)) => n1 == n2,
+            (Variable::String(s1), Variable::String(s2)) => s1 == s2,
+            (Variable::Array(a1), Variable::Array(a2)) => a1 == a2,
+            (Variable::Object(obj1), Variable::Object(obj2)) => obj1 == obj2,
+            (Variable::Dynamic(d1), Variable::Dynamic(d2)) => Rc::ptr_eq(d1, d2),
+            _ => false,
+        }
+    }
+}
+
+impl Eq for Variable {}

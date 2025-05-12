@@ -19,6 +19,9 @@ pub enum CompilerError {
 
     #[error("Invalid function call `{name}`: {message}")]
     InvalidFunctionCall { name: String, message: String },
+
+    #[error("Invalid  method call `{name}`: {message}")]
+    InvalidMethodCall { name: String, message: String },
 }
 
 pub(crate) type CompilerResult<T> = Result<T, CompilerError>;

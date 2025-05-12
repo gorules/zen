@@ -1,4 +1,4 @@
-use crate::functions::FunctionKind;
+use crate::functions::{FunctionKind, MethodKind};
 use crate::lexer::{
     Bracket, ComparisonOperator, Identifier, Operator, QuotationMark, TemplateString, Token,
     TokenKind,
@@ -378,6 +378,62 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         })
     }
 
+    pub(crate) fn method_call<F>(
+        &self,
+        node: &'arena Node,
+        method_name: &Token,
+        expression_parser: F,
+    ) -> &'arena Node<'arena>
+    where
+        F: Fn(ParserContext) -> &'arena Node<'arena>,
+    {
+        let Some(method_kind) = MethodKind::try_from(method_name.value).ok() else {
+            return self.error(AstNodeError::UnknownMethod {
+                name: afmt!(self, "{}", method_name.value),
+                span: method_name.span,
+            });
+        };
+
+        expect!(self, TokenKind::Bracket(Bracket::LeftParenthesis));
+
+        let mut arguments = BumpVec::new_in(&self.bump);
+        loop {
+            if self.current_kind() == Some(&TokenKind::Bracket(Bracket::RightParenthesis)) {
+                break;
+            }
+
+            arguments.push(expression_parser(ParserContext::Global));
+            if self.current_kind() != Some(&TokenKind::Operator(Operator::Comma)) {
+                break;
+            }
+
+            if let Some(error) = self.expect(TokenKind::Operator(Operator::Comma)) {
+                arguments.push(error);
+                break;
+            }
+        }
+
+        if let Some(error) = self.expect(TokenKind::Bracket(Bracket::RightParenthesis)) {
+            arguments.push(error);
+        }
+
+        let method_node = self.node(
+            Node::MethodCall {
+                this: node,
+                kind: method_kind,
+                arguments: arguments.into_bump_slice(),
+            },
+            |h| NodeMetadata {
+                span: (
+                    h.metadata(node).map(|m| m.span.0).unwrap_or_default(),
+                    self.prev_token_end(),
+                ),
+            },
+        );
+
+        self.with_postfix(method_node, expression_parser)
+    }
+
     pub(crate) fn with_postfix<F>(
         &self,
         node: &'arena Node<'arena>,
@@ -408,7 +464,15 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                         node,
                     ),
                     Some(t) => match is_valid_property(t) {
-                        true => self.node(Node::String(t.value), |_| NodeMetadata { span: t.span }),
+                        true => {
+                            if self.current_kind()
+                                == Some(&TokenKind::Bracket(Bracket::LeftParenthesis))
+                            {
+                                return self.method_call(node, t, expression_parser);
+                            }
+
+                            self.node(Node::String(t.value), |_| NodeMetadata { span: t.span })
+                        }
                         false => {
                             self.set_position(self.position() - 1);
                             self.error_with_node(

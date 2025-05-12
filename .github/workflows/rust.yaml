@@ -86,7 +86,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Install Rust
-        run: rustup toolchain install nightly-2024-07-13 --component miri && rustup default nightly-2024-07-13
+        run: rustup toolchain install nightly-2025-05-08 --component miri && rustup default nightly-2025-05-08
       - run: cargo miri test --workspace --all-features
         env:
           MIRIFLAGS: -Zmiri-strict-provenance -Zmiri-symbolic-alignment-check -Zmiri-disable-isolation

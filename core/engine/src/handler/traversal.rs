@@ -93,7 +93,7 @@ impl GraphWalker {
             .iter()
             .filter_map(|(idx, value)| {
                 let weight = g.node_weight(*idx)?;
-                Some((weight.name.clone(), value.clone()))
+                Some((Rc::from(weight.name.as_str()), value.clone()))
             })
             .collect();
 
@@ -116,7 +116,7 @@ impl GraphWalker {
         if self.nodes_in_context {
             if let Some(object_ref) = with_nodes.then_some(value.as_object()).flatten() {
                 let mut object = object_ref.borrow_mut();
-                object.insert("$nodes".to_string(), self.get_all_node_data(g));
+                object.insert(Rc::from("$nodes"), self.get_all_node_data(g));
             }
         }
 

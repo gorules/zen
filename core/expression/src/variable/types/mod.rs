@@ -3,7 +3,7 @@ mod util;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fmt::Display;
+use std::fmt::{Display, Write};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
@@ -14,9 +14,13 @@ pub enum VariableType {
     Bool,
     String,
     Number,
-    Constant(Rc<serde_json::Value>),
+    Date,
+    Interval,
     Array(Rc<VariableType>),
-    Object(HashMap<String, Rc<VariableType>>),
+    Object(HashMap<Rc<str>, Rc<VariableType>>),
+
+    Const(Rc<str>),
+    Enum(Option<Rc<str>>, Vec<Rc<str>>),
 }
 
 impl VariableType {
@@ -39,7 +43,28 @@ impl Display for VariableType {
             VariableType::Bool => write!(f, "bool"),
             VariableType::String => write!(f, "string"),
             VariableType::Number => write!(f, "number"),
-            VariableType::Constant(c) => write!(f, "{c}"),
+            VariableType::Date => write!(f, "date"),
+            VariableType::Interval => write!(f, "interval"),
+            VariableType::Const(c) => write!(f, "\"{c}\""),
+            VariableType::Enum(name, e) => {
+                if let Some(name) = name {
+                    return name.fmt(f);
+                }
+
+                let mut first = true;
+                for s in e.iter() {
+                    if !first {
+                        f.write_str(" | ")?;
+                    }
+
+                    f.write_char('"')?;
+                    f.write_str(s)?;
+                    f.write_char('"')?;
+                    first = false;
+                }
+
+                Ok(())
+            }
             VariableType::Array(v) => write!(f, "{v}[]"),
             VariableType::Object(_) => write!(f, "object"),
         }
@@ -54,9 +79,24 @@ impl Hash for VariableType {
             VariableType::Bool => 2.hash(state),
             VariableType::String => 3.hash(state),
             VariableType::Number => 4.hash(state),
-            VariableType::Constant(c) => c.hash(state),
-            VariableType::Array(arr) => arr.hash(state),
+            VariableType::Date => 5.hash(state),
+            VariableType::Interval => 6.hash(state),
+            VariableType::Const(c) => {
+                7.hash(state);
+                c.hash(state)
+            }
+            VariableType::Enum(name, e) => {
+                8.hash(state);
+                name.hash(state);
+                e.hash(state)
+            }
+            VariableType::Array(arr) => {
+                9.hash(state);
+                arr.hash(state)
+            }
             VariableType::Object(obj) => {
+                10.hash(state);
+
                 let mut pairs: Vec<_> = obj.iter().collect();
                 pairs.sort_by_key(|i| i.0);
 

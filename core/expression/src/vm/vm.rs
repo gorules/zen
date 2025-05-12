@@ -1,12 +1,12 @@
-use crate::compiler::{FetchFastTarget, Jump, Opcode};
+use crate::compiler::{Compare, FetchFastTarget, Jump, Opcode};
+use crate::functions::arguments::Arguments;
 use crate::functions::registry::FunctionRegistry;
-use crate::functions::{internal, Arguments};
-use crate::lexer::Bracket;
+use crate::functions::{internal, MethodRegistry};
 use crate::variable::Variable;
 use crate::variable::Variable::*;
 use crate::vm::error::VMError::*;
 use crate::vm::error::VMResult;
-use crate::vm::variable::IntervalObject;
+use crate::vm::interval::{VmInterval, VmIntervalData};
 use ahash::{HashMap, HashMapExt};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::MathematicalOps;
@@ -216,6 +216,12 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                         (Null, Null) => {
                             self.push(Bool(true));
                         }
+                        (Dynamic(a), Dynamic(b)) => {
+                            let a = a.as_date();
+                            let b = b.as_date();
+
+                            self.push(Bool(a.is_some() && b.is_some() && a == b));
+                        }
                         _ => {
                             self.push(Bool(false));
                         }
@@ -301,61 +307,58 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
 
                             self.push(Bool(is_in));
                         }
-                        (Number(v), Object(_)) => {
-                            let interval =
-                                IntervalObject::try_from_object(b).ok_or_else(|| OpcodeErr {
+                        (Number(v), Dynamic(d)) => {
+                            let Some(i) = d.as_any().downcast_ref::<VmInterval>() else {
+                                return Err(OpcodeErr {
                                     opcode: "In".into(),
-                                    message: "Failed to deconstruct interval".into(),
-                                })?;
+                                    message: "Unsupported type".into(),
+                                });
+                            };
 
-                            match (interval.left, interval.right) {
-                                (Number(l), Number(r)) => {
-                                    let mut is_open = false;
+                            self.push(Bool(i.includes(VmIntervalData::Number(v)).map_err(
+                                |err| OpcodeErr {
+                                    opcode: "In".into(),
+                                    message: err.to_string(),
+                                },
+                            )?));
+                        }
+                        (Dynamic(d), Dynamic(i)) => {
+                            let Some(d) = d.as_date() else {
+                                return Err(OpcodeErr {
+                                    opcode: "In".into(),
+                                    message: "Unsupported type".into(),
+                                });
+                            };
 
-                                    let first = match interval.left_bracket {
-                                        Bracket::LeftParenthesis => l < v,
-                                        Bracket::LeftSquareBracket => l <= v,
-                                        Bracket::RightParenthesis => {
-                                            is_open = true;
-                                            l > v
-                                        }
-                                        Bracket::RightSquareBracket => {
-                                            is_open = true;
-                                            l >= v
-                                        }
-                                        _ => {
-                                            return Err(OpcodeErr {
-                                                opcode: "In".into(),
-                                                message: "Unsupported bracket".into(),
-                                            })
-                                        }
-                                    };
+                            let Some(i) = i.as_any().downcast_ref::<VmInterval>() else {
+                                return Err(OpcodeErr {
+                                    opcode: "In".into(),
+                                    message: "Unsupported type".into(),
+                                });
+                            };
 
-                                    let second = match interval.right_bracket {
-                                        Bracket::RightParenthesis => r > v,
-                                        Bracket::RightSquareBracket => r >= v,
-                                        Bracket::LeftParenthesis => r < v,
-                                        Bracket::LeftSquareBracket => r <= v,
-                                        _ => {
-                                            return Err(OpcodeErr {
-                                                opcode: "In".into(),
-                                                message: "Unsupported bracket".into(),
-                                            })
-                                        }
-                                    };
+                            self.push(Bool(i.includes(VmIntervalData::Date(d.clone())).map_err(
+                                |err| OpcodeErr {
+                                    opcode: "In".into(),
+                                    message: err.to_string(),
+                                },
+                            )?));
+                        }
+                        (Dynamic(a), Array(arr)) => {
+                            let Some(a) = a.as_date() else {
+                                return Err(OpcodeErr {
+                                    opcode: "In".into(),
+                                    message: "Unsupported type".into(),
+                                });
+                            };
 
-                                    let open_stmt = is_open && (first || second);
-                                    let closed_stmt = !is_open && first && second;
+                            let arr = arr.borrow();
+                            let is_in = arr.iter().any(|b| match b {
+                                Dynamic(b) => Some(a) == b.as_date(),
+                                _ => false,
+                            });
 
-                                    self.push(Bool(open_stmt || closed_stmt));
-                                }
-                                _ => {
-                                    return Err(OpcodeErr {
-                                        opcode: "In".into(),
-                                        message: "Unsupported type".into(),
-                                    });
-                                }
-                            }
+                            self.push(Bool(is_in));
                         }
                         (String(a), Array(b)) => {
                             let arr = b.borrow();
@@ -396,57 +399,37 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                         }
                     }
                 }
-                Opcode::Less => {
+                Opcode::Compare(comparison) => {
                     let b = self.pop()?;
                     let a = self.pop()?;
 
-                    match (a, b) {
-                        (Number(a), Number(b)) => self.push(Bool(a < b)),
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "Less".into(),
-                                message: "Unsupported type".into(),
-                            });
+                    fn compare<T: Ord>(a: &T, b: &T, comparison: &Compare) -> bool {
+                        match comparison {
+                            Compare::More => a > b,
+                            Compare::MoreOrEqual => a >= b,
+                            Compare::Less => a < b,
+                            Compare::LessOrEqual => a <= b,
                         }
                     }
-                }
-                Opcode::More => {
-                    let b = self.pop()?;
-                    let a = self.pop()?;
 
                     match (a, b) {
-                        (Number(a), Number(b)) => self.push(Bool(a > b)),
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "More".into(),
-                                message: "Unsupported type".into(),
-                            });
+                        (Number(a), Number(b)) => self.push(Bool(compare(&a, &b, comparison))),
+                        (Dynamic(a), Dynamic(b)) => {
+                            let (a, b) = match (a.as_date(), b.as_date()) {
+                                (Some(a), Some(b)) => (a, b),
+                                _ => {
+                                    return Err(OpcodeErr {
+                                        opcode: "Compare".into(),
+                                        message: "Unsupported type".into(),
+                                    })
+                                }
+                            };
+
+                            self.push(Bool(compare(a, b, comparison)));
                         }
-                    }
-                }
-                Opcode::LessOrEqual => {
-                    let b = self.pop()?;
-                    let a = self.pop()?;
-
-                    match (a, b) {
-                        (Number(a), Number(b)) => self.push(Bool(a <= b)),
                         _ => {
                             return Err(OpcodeErr {
-                                opcode: "LessOrEqual".into(),
-                                message: "Unsupported type".into(),
-                            });
-                        }
-                    }
-                }
-                Opcode::MoreOrEqual => {
-                    let b = self.pop()?;
-                    let a = self.pop()?;
-
-                    match (a, b) {
-                        (Number(a), Number(b)) => self.push(Bool(a >= b)),
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "MoreOrEqual".into(),
+                                opcode: "Compare".into(),
                                 message: "Unsupported type".into(),
                             });
                         }
@@ -554,15 +537,35 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                     let a = self.pop()?;
 
                     match (&a, &b) {
-                        (Number(_), Number(_)) => {
-                            let interval = IntervalObject {
+                        (Number(a), Number(b)) => {
+                            let interval = VmInterval {
                                 left_bracket: *left_bracket,
                                 right_bracket: *right_bracket,
-                                left: a,
-                                right: b,
+                                left: VmIntervalData::Number(*a),
+                                right: VmIntervalData::Number(*b),
                             };
 
-                            self.push(interval.to_variable());
+                            self.push(Dynamic(Rc::new(interval)));
+                        }
+                        (Dynamic(a), Dynamic(b)) => {
+                            let (a, b) = match (a.as_date(), b.as_date()) {
+                                (Some(a), Some(b)) => (a, b),
+                                _ => {
+                                    return Err(OpcodeErr {
+                                        opcode: "Interval".into(),
+                                        message: "Unsupported type".into(),
+                                    })
+                                }
+                            };
+
+                            let interval = VmInterval {
+                                left_bracket: *left_bracket,
+                                right_bracket: *right_bracket,
+                                left: VmIntervalData::Date(a.clone()),
+                                right: VmIntervalData::Date(b.clone()),
+                            };
+
+                            self.push(Dynamic(Rc::new(interval)));
                         }
                         _ => {
                             return Err(OpcodeErr {
@@ -707,7 +710,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                             });
                         };
 
-                        map.insert(key.to_string(), value);
+                        map.insert(key.clone(), value);
                     }
 
                     self.push(Variable::from_object(map));
@@ -820,10 +823,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                                 iter: 0,
                             })
                         }
-                        _ => match IntervalObject::try_from_object(var)
-                            .map(|s| s.to_array())
-                            .flatten()
-                        {
+                        _ => match var.dynamic::<VmInterval>().map(|s| s.to_array()).flatten() {
                             None => None,
                             Some(arr) => Some(Scope {
                                 len: arr.len(),
@@ -859,6 +859,23 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                         .map_err(|err| OpcodeErr {
                             opcode: "CallFunction".into(),
                             message: format!("Function `{kind}` failed: {err}"),
+                        })?;
+
+                    self.stack.drain(params_start..);
+                    self.push(result);
+                }
+                Opcode::CallMethod { kind, arg_count } => {
+                    let method = MethodRegistry::get_definition(kind).ok_or_else(|| OpcodeErr {
+                        opcode: "CallMethod".into(),
+                        message: format!("Method `{kind}` not found"),
+                    })?;
+
+                    let params_start = self.stack.len().saturating_sub(*arg_count as usize) - 1;
+                    let result = method
+                        .call(Arguments(&self.stack[params_start..]))
+                        .map_err(|err| OpcodeErr {
+                            opcode: "CallMethod".into(),
+                            message: format!("Method `{kind}` failed: {err}"),
                         })?;
 
                     self.stack.drain(params_start..);

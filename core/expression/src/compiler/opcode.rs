@@ -1,4 +1,4 @@
-use crate::functions::FunctionKind;
+use crate::functions::{FunctionKind, MethodKind};
 use crate::lexer::Bracket;
 use rust_decimal::Decimal;
 use std::sync::Arc;
@@ -30,10 +30,7 @@ pub enum Opcode {
     Equal,
     Jump(Jump, u32),
     In,
-    Less,
-    More,
-    LessOrEqual,
-    MoreOrEqual,
+    Compare(Compare),
     Add,
     Subtract,
     Multiply,
@@ -55,6 +52,10 @@ pub enum Opcode {
         kind: FunctionKind,
         arg_count: u32,
     },
+    CallMethod {
+        kind: MethodKind,
+        arg_count: u32,
+    },
     Interval {
         left_bracket: Bracket,
         right_bracket: Bracket,
@@ -69,4 +70,12 @@ pub enum Jump {
     IfFalse,
     IfNotNull,
     IfEnd,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Display)]
+pub enum Compare {
+    More,
+    Less,
+    MoreOrEqual,
+    LessOrEqual,
 }

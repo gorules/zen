@@ -1,4 +1,4 @@
-use crate::functions::FunctionKind;
+use crate::functions::{FunctionKind, MethodKind};
 use crate::lexer::{Bracket, Operator};
 use rust_decimal::Decimal;
 use std::cell::Cell;
@@ -50,6 +50,11 @@ pub enum Node<'a> {
     },
     FunctionCall {
         kind: FunctionKind,
+        arguments: &'a [&'a Node<'a>],
+    },
+    MethodCall {
+        kind: MethodKind,
+        this: &'a Node<'a>,
         arguments: &'a [&'a Node<'a>],
     },
     Error {
@@ -116,6 +121,12 @@ impl<'a> Node<'a> {
             Node::FunctionCall { arguments, .. } => {
                 arguments.iter().for_each(|n| n.walk(func.clone()));
             }
+            Node::MethodCall {
+                this, arguments, ..
+            } => {
+                this.walk(func.clone());
+                arguments.iter().for_each(|n| n.walk(func.clone()));
+            }
             Node::Conditional {
                 on_true,
                 condition,
@@ -147,6 +158,7 @@ impl<'a> Node<'a> {
         match self {
             Node::Error { error, .. } => match error {
                 AstNodeError::UnknownBuiltIn { span, .. } => Some(span.clone()),
+                AstNodeError::UnknownMethod { span, .. } => Some(span.clone()),
                 AstNodeError::UnexpectedIdentifier { span, .. } => Some(span.clone()),
                 AstNodeError::UnexpectedToken { span, .. } => Some(span.clone()),
                 AstNodeError::InvalidNumber { span, .. } => Some(span.clone()),
@@ -164,8 +176,11 @@ impl<'a> Node<'a> {
 
 #[derive(Debug, PartialEq, Eq, Clone, Error)]
 pub enum AstNodeError<'a> {
-    #[error("Unknown built in: {name} at ({}, {})", span.0, span.1)]
+    #[error("Unknown function `{name}` at ({}, {})", span.0, span.1)]
     UnknownBuiltIn { name: &'a str, span: (u32, u32) },
+
+    #[error("Unknown method `{name}` at ({}, {})", span.0, span.1)]
+    UnknownMethod { name: &'a str, span: (u32, u32) },
 
     #[error("Unexpected identifier: {received} at ({}, {}); Expected {expected}.", span.0, span.1)]
     UnexpectedIdentifier {

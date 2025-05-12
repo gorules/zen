@@ -21,7 +21,7 @@ impl From<Value> for Variable {
             }
             Value::Object(obj) => Variable::from_object(
                 obj.into_iter()
-                    .map(|(k, v)| (k, Variable::from(v)))
+                    .map(|(k, v)| (Rc::from(k.as_str()), Variable::from(v)))
                     .collect(),
             ),
         }
@@ -40,7 +40,7 @@ impl From<&Value> for Variable {
             Value::Array(arr) => Variable::from_array(arr.iter().map(Variable::from).collect()),
             Value::Object(obj) => Variable::from_object(
                 obj.iter()
-                    .map(|(k, v)| (k.clone(), Variable::from(v)))
+                    .map(|(k, v)| (Rc::from(k.as_str()), Variable::from(v)))
                     .collect(),
             ),
         }
@@ -72,8 +72,13 @@ impl From<Variable> for Value {
                         borrowed.clone()
                     });
 
-                Value::Object(hmap.into_iter().map(|(k, v)| (k, Value::from(v))).collect())
+                Value::Object(
+                    hmap.into_iter()
+                        .map(|(k, v)| (k.to_string(), Value::from(v)))
+                        .collect(),
+                )
             }
+            Variable::Dynamic(d) => d.to_value(),
         }
     }
 }

@@ -1,5 +1,6 @@
-use crate::functions::defs::{CompositeFunction, FunctionSignature, StaticFunction};
-use crate::functions::registry::FunctionDefinition;
+use crate::functions::defs::{
+    CompositeFunction, FunctionDefinition, FunctionSignature, StaticFunction,
+};
 use std::rc::Rc;
 use strum_macros::{Display, EnumIter, EnumString, IntoStaticStr};
 
@@ -45,6 +46,9 @@ pub enum InternalFunction {
     // Map
     Keys,
     Values,
+
+    #[strum(serialize = "d")]
+    Date,
 }
 
 impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
@@ -54,7 +58,7 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
 
         let s: Rc<dyn FunctionDefinition> = match value {
             IF::Len => Rc::new(CompositeFunction {
-                implementation: imp::len,
+                implementation: Rc::new(imp::len),
                 signatures: vec![
                     FunctionSignature::single(VT::String, VT::Number),
                     FunctionSignature::single(VT::Any.array(), VT::Number),
@@ -62,7 +66,7 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
             }),
 
             IF::Contains => Rc::new(CompositeFunction {
-                implementation: imp::contains,
+                implementation: Rc::new(imp::contains),
                 signatures: vec![
                     FunctionSignature {
                         parameters: vec![VT::String, VT::String],
@@ -76,27 +80,27 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
             }),
 
             IF::Flatten => Rc::new(StaticFunction {
-                implementation: imp::flatten,
+                implementation: Rc::new(imp::flatten),
                 signature: FunctionSignature::single(VT::Any.array(), VT::Any.array()),
             }),
 
             IF::Upper => Rc::new(StaticFunction {
-                implementation: imp::upper,
+                implementation: Rc::new(imp::upper),
                 signature: FunctionSignature::single(VT::String, VT::String),
             }),
 
             IF::Lower => Rc::new(StaticFunction {
-                implementation: imp::lower,
+                implementation: Rc::new(imp::lower),
                 signature: FunctionSignature::single(VT::String, VT::String),
             }),
 
             IF::Trim => Rc::new(StaticFunction {
-                implementation: imp::trim,
+                implementation: Rc::new(imp::trim),
                 signature: FunctionSignature::single(VT::String, VT::String),
             }),
 
             IF::StartsWith => Rc::new(StaticFunction {
-                implementation: imp::starts_with,
+                implementation: Rc::new(imp::starts_with),
                 signature: FunctionSignature {
                     parameters: vec![VT::String, VT::String],
                     return_type: VT::Bool,
@@ -104,7 +108,7 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
             }),
 
             IF::EndsWith => Rc::new(StaticFunction {
-                implementation: imp::ends_with,
+                implementation: Rc::new(imp::ends_with),
                 signature: FunctionSignature {
                     parameters: vec![VT::String, VT::String],
                     return_type: VT::Bool,
@@ -112,7 +116,7 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
             }),
 
             IF::Matches => Rc::new(StaticFunction {
-                implementation: imp::matches,
+                implementation: Rc::new(imp::matches),
                 signature: FunctionSignature {
                     parameters: vec![VT::String, VT::String],
                     return_type: VT::Bool,
@@ -120,7 +124,7 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
             }),
 
             IF::Extract => Rc::new(StaticFunction {
-                implementation: imp::extract,
+                implementation: Rc::new(imp::extract),
                 signature: FunctionSignature {
                     parameters: vec![VT::String, VT::String],
                     return_type: VT::String.array(),
@@ -128,7 +132,7 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
             }),
 
             IF::Split => Rc::new(StaticFunction {
-                implementation: imp::split,
+                implementation: Rc::new(imp::split),
                 signature: FunctionSignature {
                     parameters: vec![VT::String, VT::String],
                     return_type: VT::String.array(),
@@ -136,7 +140,7 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
             }),
 
             IF::FuzzyMatch => Rc::new(CompositeFunction {
-                implementation: imp::fuzzy_match,
+                implementation: Rc::new(imp::fuzzy_match),
                 signatures: vec![
                     FunctionSignature {
                         parameters: vec![VT::String, VT::String],
@@ -150,87 +154,87 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
             }),
 
             IF::Abs => Rc::new(StaticFunction {
-                implementation: imp::abs,
+                implementation: Rc::new(imp::abs),
                 signature: FunctionSignature::single(VT::Number, VT::Number),
             }),
 
             IF::Rand => Rc::new(StaticFunction {
-                implementation: imp::rand,
+                implementation: Rc::new(imp::rand),
                 signature: FunctionSignature::single(VT::Number, VT::Number),
             }),
 
             IF::Floor => Rc::new(StaticFunction {
-                implementation: imp::floor,
+                implementation: Rc::new(imp::floor),
                 signature: FunctionSignature::single(VT::Number, VT::Number),
             }),
 
             IF::Ceil => Rc::new(StaticFunction {
-                implementation: imp::ceil,
+                implementation: Rc::new(imp::ceil),
                 signature: FunctionSignature::single(VT::Number, VT::Number),
             }),
 
             IF::Round => Rc::new(StaticFunction {
-                implementation: imp::round,
+                implementation: Rc::new(imp::round),
                 signature: FunctionSignature::single(VT::Number, VT::Number),
             }),
 
             IF::Sum => Rc::new(StaticFunction {
-                implementation: imp::sum,
+                implementation: Rc::new(imp::sum),
                 signature: FunctionSignature::single(VT::Number.array(), VT::Number),
             }),
 
             IF::Avg => Rc::new(StaticFunction {
-                implementation: imp::avg,
+                implementation: Rc::new(imp::avg),
                 signature: FunctionSignature::single(VT::Number.array(), VT::Number),
             }),
 
             IF::Min => Rc::new(StaticFunction {
-                implementation: imp::min,
+                implementation: Rc::new(imp::min),
                 signature: FunctionSignature::single(VT::Number.array(), VT::Number),
             }),
 
             IF::Max => Rc::new(StaticFunction {
-                implementation: imp::max,
+                implementation: Rc::new(imp::max),
                 signature: FunctionSignature::single(VT::Number.array(), VT::Number),
             }),
 
             IF::Median => Rc::new(StaticFunction {
-                implementation: imp::median,
+                implementation: Rc::new(imp::median),
                 signature: FunctionSignature::single(VT::Number.array(), VT::Number),
             }),
 
             IF::Mode => Rc::new(StaticFunction {
-                implementation: imp::mode,
+                implementation: Rc::new(imp::mode),
                 signature: FunctionSignature::single(VT::Number.array(), VT::Number),
             }),
 
             IF::Type => Rc::new(StaticFunction {
-                implementation: imp::to_type,
+                implementation: Rc::new(imp::to_type),
                 signature: FunctionSignature::single(VT::Any, VT::String),
             }),
 
             IF::String => Rc::new(StaticFunction {
-                implementation: imp::to_string,
+                implementation: Rc::new(imp::to_string),
                 signature: FunctionSignature::single(VT::Any, VT::String),
             }),
 
             IF::Bool => Rc::new(StaticFunction {
-                implementation: imp::to_bool,
+                implementation: Rc::new(imp::to_bool),
                 signature: FunctionSignature::single(VT::Any, VT::Bool),
             }),
 
             IF::IsNumeric => Rc::new(StaticFunction {
-                implementation: imp::is_numeric,
+                implementation: Rc::new(imp::is_numeric),
                 signature: FunctionSignature::single(VT::Any, VT::Bool),
             }),
 
             IF::Number => Rc::new(StaticFunction {
-                implementation: imp::to_number,
+                implementation: Rc::new(imp::to_number),
                 signature: FunctionSignature::single(VT::Any, VT::String),
             }),
 
             IF::Keys => Rc::new(CompositeFunction {
-                implementation: imp::keys,
+                implementation: Rc::new(imp::keys),
                 signatures: vec![
                     FunctionSignature::single(VT::Object(Default::default()), VT::String.array()),
                     FunctionSignature::single(VT::Any.array(), VT::Number.array()),
@@ -238,11 +242,29 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
             }),
 
             IF::Values => Rc::new(StaticFunction {
-                implementation: imp::values,
+                implementation: Rc::new(imp::values),
                 signature: FunctionSignature::single(
                     VT::Object(Default::default()),
                     VT::Any.array(),
                 ),
+            }),
+
+            IF::Date => Rc::new(CompositeFunction {
+                implementation: Rc::new(imp::date),
+                signatures: vec![
+                    FunctionSignature {
+                        parameters: vec![],
+                        return_type: VT::Date,
+                    },
+                    FunctionSignature {
+                        parameters: vec![VT::Any],
+                        return_type: VT::Date,
+                    },
+                    FunctionSignature {
+                        parameters: vec![VT::Any, VT::String],
+                        return_type: VT::Date,
+                    },
+                ],
             }),
         };
 
@@ -252,8 +274,10 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
 
 pub(crate) mod imp {
     use crate::functions::arguments::Arguments;
+    use crate::vm::VmDate;
     use crate::Variable as V;
     use anyhow::{anyhow, Context};
+    use chrono_tz::Tz;
     #[cfg(not(feature = "regex-lite"))]
     use regex::Regex;
     #[cfg(feature = "regex-lite")]
@@ -263,6 +287,7 @@ pub(crate) mod imp {
     use rust_decimal_macros::dec;
     use std::collections::BTreeMap;
     use std::rc::Rc;
+    use std::str::FromStr;
 
     fn __internal_number_array(args: &Arguments, pos: usize) -> anyhow::Result<Vec<Decimal>> {
         let a = args.array(pos)?;
@@ -465,7 +490,7 @@ pub(crate) mod imp {
             V::Null => false,
             V::Bool(v) => *v,
             V::Number(n) => !n.is_zero(),
-            V::Array(_) | V::Object(_) => true,
+            V::Array(_) | V::Object(_) | V::Dynamic(_) => true,
             V::String(s) => match (*s).trim() {
                 "true" => true,
                 "false" => false,
@@ -607,10 +632,7 @@ pub(crate) mod imp {
             }
             V::Object(a) => {
                 let obj = a.borrow();
-                let keys = obj
-                    .iter()
-                    .map(|(key, _)| V::String(Rc::from(key.as_str())))
-                    .collect();
+                let keys = obj.iter().map(|(key, _)| V::String(key.clone())).collect();
 
                 V::from_array(keys)
             }
@@ -628,5 +650,20 @@ pub(crate) mod imp {
         let values: Vec<_> = obj.values().cloned().collect();
 
         Ok(V::from_array(values))
+    }
+
+    pub fn date(args: Arguments) -> anyhow::Result<V> {
+        let provided = args.ovar(0);
+        let tz = args
+            .ostr(1)?
+            .map(|v| Tz::from_str(v).context("Invalid timezone"))
+            .transpose()?;
+
+        let date_time = match provided {
+            Some(v) => VmDate::new(v.clone(), tz),
+            None => VmDate::now(),
+        };
+
+        Ok(V::Dynamic(Rc::new(date_time)))
     }
 }

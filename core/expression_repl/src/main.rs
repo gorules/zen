@@ -35,6 +35,7 @@ impl PrettyPrint for Variable {
 
                 format!("{{ {} }}", elements)
             }
+            Variable::Dynamic(d) => d.to_string(),
         }
     }
 }

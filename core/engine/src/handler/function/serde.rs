@@ -58,9 +58,12 @@ impl<'js> FromJs<'js> for JsValue {
                     .or_throw_msg(ctx, "failed to convert to object")?;
 
                 let mut js_object = HashMap::with_capacity(object.len());
-                for p in object.props() {
+                for p in object.props::<String, QValue>() {
                     let (k, v) = p.or_throw(ctx)?;
-                    js_object.insert(k, JsValue::from_js(ctx, v).or_throw(ctx)?.0);
+                    js_object.insert(
+                        Rc::from(k.as_str()),
+                        JsValue::from_js(ctx, v).or_throw(ctx)?.0,
+                    );
                 }
 
                 Variable::from_object(js_object)
@@ -122,6 +125,7 @@ impl<'js> IntoJs<'js> for JsValue {
 
                 qmap.into_value()
             }
+            Variable::Dynamic(d) => d.to_string().into_js(ctx)?,
         };
 
         Ok(res)

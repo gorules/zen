@@ -338,11 +338,11 @@ mod helper {
             }
             DurationUnit::Year => {
                 let year = date_time.year();
-                let month = Month::try_from(12).ok()?;
+                let month = Month::December;
                 let days_in_month = month.num_days(year)?.to_u32()?;
 
                 date_time
-                    .with_month(12)?
+                    .with_month(month.number_from_month())?
                     .with_day(days_in_month)?
                     .with_hour(23)?
                     .with_minute(59)?

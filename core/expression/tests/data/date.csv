@@ -30,6 +30,32 @@ d('2023-10-15').isSameOrAfter(d('2023-10-15'));;true
 d('2023-10-15').isSameOrAfter(d('2023-10-14'));;true
 d('2023-10-15').isSameOrAfter(d('2023-10-16'));;false
 
+d('2025-02-01').isAfter(d('2025-01-05'), 'year');;false
+d('2025-02-01').isAfter(d('2024-12-31'), 'year');;true
+d('2025-02-01').isBefore(d('2025-03-01'), 'year');;false
+d('2025-02-01').isBefore(d('2026-01-01'), 'year');;true
+d('2025-02-01').isSame(d('2025-12-31'), 'year');;true
+d('2025-02-01').isSame(d('2026-01-01'), 'year');;false
+
+d('2025-02-15').isAfter(d('2025-01-05'), 'month');;true
+d('2025-02-15').isAfter(d('2025-02-05'), 'month');;false
+d('2025-02-15').isBefore(d('2025-03-01'), 'month');;true
+d('2025-02-15').isBefore(d('2025-02-28'), 'month');;false
+d('2025-02-15').isSame(d('2025-02-28'), 'month');;true
+d('2025-02-15').isSame(d('2025-03-01'), 'month');;false
+d('2025-04-15').isAfter(d('2025-01-01'), 'quarter');;true
+d('2025-02-15').isAfter(d('2025-03-31'), 'quarter');;false
+d('2025-02-15').isBefore(d('2025-04-01'), 'quarter');;true
+d('2025-02-15').isBefore(d('2025-03-31'), 'quarter');;false
+d('2025-02-15').isSame(d('2025-03-15'), 'quarter');;true
+d('2025-02-15').isSame(d('2025-04-01'), 'quarter');;false
+d('2025-02-15').isAfter(d('2025-02-14'), 'day');;true
+d('2025-02-15').isAfter(d('2025-02-15'), 'day');;false
+d('2025-02-15').isBefore(d('2025-02-16'), 'day');;true
+d('2025-02-15').isBefore(d('2025-02-15'), 'day');;false
+d('2025-02-15').isSame(d('2025-02-15 12:00:00'), 'day');;true
+d('2025-02-15').isSame(d('2025-02-16'), 'day');;false
+
 # Date getters
 d('2023-10-15').year();;2023
 d('2023-10-15').month();;10

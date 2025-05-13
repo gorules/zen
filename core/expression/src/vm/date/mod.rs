@@ -338,11 +338,11 @@ mod helper {
             }
             DurationUnit::Year => {
                 let year = date_time.year();
-                let month = Month::try_from(date_time.month().to_u8()?).ok()?;
+                let month = Month::December;
                 let days_in_month = month.num_days(year)?.to_u32()?;
 
                 date_time
-                    .with_month(12)?
+                    .with_month(month.number_from_month())?
                     .with_day(days_in_month)?
                     .with_hour(23)?
                     .with_minute(59)?
@@ -411,8 +411,8 @@ mod helper {
     pub fn is_after(a: DateTime<Tz>, b: DateTime<Tz>, unit: Option<DurationUnit>) -> Option<bool> {
         match unit {
             Some(unit) => {
-                let start_b = start_of(b, unit)?;
-                Some(a > start_b)
+                let start_a = start_of(a, unit)?;
+                Some(b < start_a)
             }
             None => Some(a > b),
         }

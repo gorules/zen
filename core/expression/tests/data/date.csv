@@ -43,7 +43,7 @@ d('2025-02-15').isBefore(d('2025-03-01'), 'month');;true
 d('2025-02-15').isBefore(d('2025-02-28'), 'month');;false
 d('2025-02-15').isSame(d('2025-02-28'), 'month');;true
 d('2025-02-15').isSame(d('2025-03-01'), 'month');;false
-d('2025-02-15').isAfter(d('2025-01-01'), 'quarter');;true
+d('2025-04-15').isAfter(d('2025-01-01'), 'quarter');;true
 d('2025-02-15').isAfter(d('2025-03-31'), 'quarter');;false
 d('2025-02-15').isBefore(d('2025-04-01'), 'quarter');;true
 d('2025-02-15').isBefore(d('2025-03-31'), 'quarter');;false

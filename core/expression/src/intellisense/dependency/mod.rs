@@ -1,4 +1,5 @@
 use crate::functions::FunctionKind;
+use crate::lexer::{LogicalOperator, Operator};
 use crate::parser::Node;
 use ahash::HashSet;
 use bumpalo::collections::String as BumpString;
@@ -7,12 +8,27 @@ use bumpalo::Bump;
 use serde::Serialize;
 use std::rc::Rc;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct DependencyProviderResponse {
-    provides: HashSet<Rc<str>>,
-    dependencies: HashSet<Rc<str>>,
-    confidence: ConfidenceLevel,
+    pub provides: HashSet<Rc<str>>,
+    pub dependencies: HashSet<Rc<str>>,
+    pub resolution: DependencyResolution,
+}
+
+impl DependencyProviderResponse {
+    pub fn merge(mut self, other: Self) -> Self {
+        self.provides.extend(other.provides);
+        self.dependencies.extend(other.dependencies);
+        self.resolution = match (self.resolution, other.resolution) {
+            (DependencyResolution::Static, DependencyResolution::Static) => {
+                DependencyResolution::Static
+            }
+            _ => DependencyResolution::Dynamic,
+        };
+
+        self
+    }
 }
 
 impl From<DependencyProvider<'_>> for DependencyProviderResponse {
@@ -20,7 +36,7 @@ impl From<DependencyProvider<'_>> for DependencyProviderResponse {
         Self {
             provides: value.provides,
             dependencies: value.dependencies,
-            confidence: value.confidence,
+            resolution: value.resolution,
         }
     }
 }
@@ -29,13 +45,14 @@ impl From<DependencyProvider<'_>> for DependencyProviderResponse {
 pub struct DependencyProvider<'arena> {
     dependencies: HashSet<Rc<str>>,
     provides: HashSet<Rc<str>>,
-    confidence: ConfidenceLevel,
+    resolution: DependencyResolution,
     arena: &'arena Bump,
 }
 
-#[derive(Debug, Copy, Clone, Serialize)]
+#[derive(Debug, Copy, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
-enum ConfidenceLevel {
+pub enum DependencyResolution {
+    #[default]
     Static,
     Dynamic,
 }
@@ -45,7 +62,7 @@ impl<'arena> DependencyProvider<'arena> {
         let mut provider = Self {
             provides: Default::default(),
             dependencies: Default::default(),
-            confidence: ConfidenceLevel::Static,
+            resolution: DependencyResolution::Static,
             arena,
         };
 
@@ -62,7 +79,7 @@ impl<'arena> DependencyProvider<'arena> {
     }
 
     fn set_dynamic(&mut self) {
-        self.confidence = ConfidenceLevel::Dynamic;
+        self.resolution = DependencyResolution::Dynamic;
     }
 
     fn determine(&mut self, node: &Node<'arena>, scope: &Scope<'arena>) -> DetermineResult<'arena> {
@@ -190,11 +207,21 @@ impl<'arena> DependencyProvider<'arena> {
 
                 D::None
             }
-            Node::Binary { left, right, .. } => {
-                self.determine(left, scope);
+            Node::Binary {
+                left,
+                right,
+                operator,
+            } => {
+                let left = self.determine(left, scope);
                 self.determine(right, scope);
 
-                D::None
+                match operator {
+                    Operator::Logical(l) => match l {
+                        LogicalOperator::NullishCoalescing => left,
+                        _ => D::None,
+                    },
+                    _ => D::None,
+                }
             }
             Node::Unary { node, .. } => {
                 self.determine(node, scope);
@@ -202,8 +229,8 @@ impl<'arena> DependencyProvider<'arena> {
                 D::None
             }
             Node::Interval { left, right, .. } => {
-                self.determine(left, scope);
-                self.determine(right, scope);
+                self.determine(left, &scope.root());
+                self.determine(right, &scope.root());
 
                 D::None
             }
@@ -242,25 +269,20 @@ impl<'arena> DependencyProvider<'arena> {
                             full_target.into_bump_str()
                         }
                         _ => {
+                            if let Node::Interval { .. } = target {
+                                return D::None;
+                            };
+
                             self.set_dynamic();
                             return D::None;
                         }
                     };
 
-                    let mut scp = scope.property();
+                    let mut scp = scope.root();
                     scp.current_pointer = Some(target_ref);
+                    self.determine(closure, &scp);
 
-                    let closure_ref = self.determine(closure, &scp);
-                    match closure_ref {
-                        DetermineResult::None | DetermineResult::Str(_) | DetermineResult::Root => {
-                            self.set_dynamic();
-                            D::None
-                        }
-                        DetermineResult::Ref(r) => {
-                            self.dependencies.insert(Rc::from(r));
-                            D::None
-                        }
-                    }
+                    D::None
                 }
             },
             Node::MethodCall {

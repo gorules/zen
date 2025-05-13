@@ -130,6 +130,7 @@ pub mod handler;
 pub mod loader;
 #[path = "model/mod.rs"]
 pub mod model;
+mod policy;
 mod util;
 
 pub use config::ZEN_CONFIG;

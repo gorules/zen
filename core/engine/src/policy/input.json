@@ -1,0 +1,38 @@
+{
+  "customer": {
+    "firstName": "John",
+    "lastName": "Smith",
+    "age": 25,
+    "email": "john.smith@example.com",
+    "address": {
+      "street": "123 Main St",
+      "city": "Austin",
+      "state": "TX",
+      "zipCode": "78701"
+    },
+    "residencyYears": 3,
+    "income": 75000,
+    "creditScore": 720,
+    "employmentStatus": "FULL_TIME",
+    "existingCustomer": true,
+    "accountHistory": {
+      "accountAge": 24,
+      "paymentsMissed": 0,
+      "averageBalance": 3500
+    },
+    "productInterests": [
+      "MORTGAGE",
+      "INVESTMENT",
+      "INSURANCE"
+    ],
+    "riskProfile": "MEDIUM"
+  },
+  "application": {
+    "type": "LOAN",
+    "requestedAmount": 25000,
+    "purpose": "HOME_IMPROVEMENT",
+    "term": 60,
+    "submissionDate": "2025-04-15T14:30:00Z",
+    "channel": "ONLINE"
+  }
+}

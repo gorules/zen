@@ -1,0 +1,129 @@
+{
+  "files": [
+    {
+      "type": "policy",
+      "content": {
+        "expressions": [
+          {
+            "name": "Eligibility Determination",
+            "outcome": "customer.eligible = true",
+            "conditions": {
+              "type": "all",
+              "items": [
+                {
+                  "type": "simple",
+                  "expression": "customer.age >= 21"
+                },
+                {
+                  "type": "simple",
+                  "expression": "customer.creditScore >= 650"
+                },
+                {
+                  "type": "simple",
+                  "expression": "customer.residencyYears >= 2"
+                }
+              ]
+            }
+          },
+          {
+            "name": "Premium Status Assignment",
+            "outcome": "customer.premiumStatus = true",
+            "conditions": {
+              "type": "any",
+              "items": [
+                {
+                  "type": "all",
+                  "items": [
+                    {
+                      "type": "simple",
+                      "expression": "customer.creditScore > 750"
+                    },
+                    {
+                      "type": "simple",
+                      "expression": "customer.income > 100000"
+                    }
+                  ]
+                },
+                {
+                  "type": "all",
+                  "items": [
+                    {
+                      "type": "simple",
+                      "expression": "customer.existingCustomer == true"
+                    },
+                    {
+                      "type": "simple",
+                      "expression": "customer.accountHistory.accountAge > 36"
+                    },
+                    {
+                      "type": "simple",
+                      "expression": "customer.accountHistory.paymentsMissed == 0"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "name": "Interest Rate Calculation",
+            "outcome": "application.interestRate = customer.premiumStatus ? 3.9 : 5.5",
+            "conditions": {
+              "type": "all",
+              "items": [
+                {
+                  "type": "simple",
+                  "expression": "application.type == 'LOAN'"
+                },
+                {
+                  "type": "simple",
+                  "expression": "customer.creditScore >= 700"
+                }
+              ]
+            }
+          },
+          {
+            "name": "Maximum Loan Calculation",
+            "outcome": "application.maxApprovedAmount = customer.income * 0.4",
+            "conditions": {
+              "type": "simple",
+              "expression": "application.type == 'LOAN'"
+            }
+          },
+          {
+            "name": "Risk Score Calculation",
+            "outcome": "customer.riskScore = 100 - (customer.age / 10) - (customer.creditScore / 10)",
+            "conditions": {
+              "type": "any",
+              "items": [
+                {
+                  "type": "simple",
+                  "expression": "customer.riskProfile == 'MEDIUM'"
+                },
+                {
+                  "type": "simple",
+                  "expression": "customer.riskProfile == 'HIGH'"
+                }
+              ]
+            }
+          },
+          {
+            "name": "Approval Status Determination",
+            "outcome": "application.approved = application.requestedAmount <= application.maxApprovedAmount",
+            "conditions": {
+              "type": "simple",
+              "expression": "customer.eligible == true"
+            }
+          },
+          {
+            "name": "Final Term Calculation",
+            "outcome": "application.finalTerm = application.approved ? application.term : 0",
+            "conditions": {
+              "type": "simple",
+              "expression": "application.type == 'LOAN'"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

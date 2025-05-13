@@ -8,7 +8,9 @@ use serde::Serialize;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-pub use crate::intellisense::dependency::{DependencyProvider, DependencyProviderResponse};
+pub use crate::intellisense::dependency::{
+    DependencyProvider, DependencyProviderResponse, DependencyResolution,
+};
 
 mod dependency;
 mod scope;
@@ -123,6 +125,39 @@ impl<'arena> IntelliSense<'arena> {
 
         self.arena.with_mut(|a| a.reset());
         Some(results.into_inner())
+    }
+
+    pub fn dependencies(&mut self, source: &'arena str) -> Option<DependencyProviderResponse> {
+        let arena = self.arena.get();
+
+        let tokens = self.lexer.tokenize(source).ok()?;
+        let parser = Parser::try_new(tokens, &arena).map(|p| p.standard()).ok()?;
+
+        let parser_result = parser.with_metadata().parse();
+        let ast = parser_result.root;
+
+        let results = DependencyProvider::generate(ast, arena);
+
+        self.arena.with_mut(|a| a.reset());
+        Some(results)
+    }
+
+    pub fn dependencies_unary(
+        &mut self,
+        source: &'arena str,
+    ) -> Option<DependencyProviderResponse> {
+        let arena = self.arena.get();
+
+        let tokens = self.lexer.tokenize(source).ok()?;
+        let parser = Parser::try_new(tokens, &arena).map(|p| p.unary()).ok()?;
+
+        let parser_result = parser.with_metadata().parse();
+        let ast = parser_result.root;
+
+        let results = DependencyProvider::generate(ast, arena);
+
+        self.arena.with_mut(|a| a.reset());
+        Some(results)
     }
 }
 

@@ -3,6 +3,7 @@ use rustyline::config::Configurer;
 use rustyline::{DefaultEditor, Result};
 use serde_json::json;
 
+use zen_expression::intellisense::IntelliSense;
 use zen_expression::{Isolate, Variable};
 
 trait PrettyPrint {
@@ -55,6 +56,9 @@ fn main() -> Result<()> {
             json!({ "customer": { "firstName": "John", "lastName": "Doe", "age": 20 }, "hello": true, "$": 10 }).into(),
         );
         let result = isolate.run_standard(line.as_str());
+
+        let mut is = IntelliSense::new();
+        println!("{:?}", is.dependencies(line.as_str()));
 
         match result {
             Ok(res) => println!("{}", res.pretty_print()),

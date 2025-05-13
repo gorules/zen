@@ -35,6 +35,7 @@ pub enum InternalFunction {
     Floor,
     Ceil,
     Round,
+    Trunc,
 
     // Type
     IsNumeric,
@@ -173,9 +174,32 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
                 signature: FunctionSignature::single(VT::Number, VT::Number),
             }),
 
-            IF::Round => Rc::new(StaticFunction {
+            IF::Round => Rc::new(CompositeFunction {
                 implementation: Rc::new(imp::round),
-                signature: FunctionSignature::single(VT::Number, VT::Number),
+                signatures: vec![
+                    FunctionSignature {
+                        parameters: vec![VT::Number],
+                        return_type: VT::Number,
+                    },
+                    FunctionSignature {
+                        parameters: vec![VT::Number, VT::Number],
+                        return_type: VT::Number,
+                    },
+                ],
+            }),
+
+            IF::Trunc => Rc::new(CompositeFunction {
+                implementation: Rc::new(imp::trunc),
+                signatures: vec![
+                    FunctionSignature {
+                        parameters: vec![VT::Number],
+                        return_type: VT::Number,
+                    },
+                    FunctionSignature {
+                        parameters: vec![VT::Number, VT::Number],
+                        return_type: VT::Number,
+                    },
+                ],
             }),
 
             IF::Sum => Rc::new(StaticFunction {
@@ -404,7 +428,24 @@ pub(crate) mod imp {
 
     pub fn round(args: Arguments) -> anyhow::Result<V> {
         let a = args.number(0)?;
-        Ok(V::Number(a.round()))
+        let dp = args
+            .onumber(1)?
+            .map(|v| v.to_u32().context("Invalid number of decimal places"))
+            .transpose()?
+            .unwrap_or(0);
+
+        Ok(V::Number(a.round_dp(dp)))
+    }
+
+    pub fn trunc(args: Arguments) -> anyhow::Result<V> {
+        let a = args.number(0)?;
+        let dp = args
+            .onumber(1)?
+            .map(|v| v.to_u32().context("Invalid number of decimal places"))
+            .transpose()?
+            .unwrap_or(0);
+
+        Ok(V::Number(a.trunc_with_scale(dp)))
     }
 
     pub fn rand(args: Arguments) -> anyhow::Result<V> {

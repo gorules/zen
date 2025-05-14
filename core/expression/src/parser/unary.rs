@@ -353,6 +353,7 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                     InternalFunction::Floor => CompareWithReference(Equal),
                     InternalFunction::Ceil => CompareWithReference(Equal),
                     InternalFunction::Round => CompareWithReference(Equal),
+                    InternalFunction::Trunc => CompareWithReference(Equal),
                     InternalFunction::String => CompareWithReference(Equal),
                     InternalFunction::Number => CompareWithReference(Equal),
                     InternalFunction::Bool => CompareWithReference(Equal),

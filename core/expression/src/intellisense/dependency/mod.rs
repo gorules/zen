@@ -8,7 +8,7 @@ use bumpalo::Bump;
 use serde::Serialize;
 use std::rc::Rc;
 
-#[derive(Debug, Serialize, Default)]
+#[derive(Debug, Serialize, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct DependencyProviderResponse {
     pub provides: HashSet<Rc<str>>,
@@ -78,6 +78,15 @@ impl<'arena> DependencyProvider<'arena> {
         DependencyProviderResponse::from(provider)
     }
 
+    fn duplicate(&self) -> DependencyProvider<'arena> {
+        Self {
+            provides: Default::default(),
+            dependencies: Default::default(),
+            resolution: DependencyResolution::Static,
+            arena: self.arena,
+        }
+    }
+
     fn set_dynamic(&mut self) {
         self.resolution = DependencyResolution::Dynamic;
     }
@@ -95,8 +104,17 @@ impl<'arena> DependencyProvider<'arena> {
                         continue;
                     };
 
+                    // Will contain only dependencies, which need to be filtered for existing provides
+                    let mut local_provider = self.duplicate();
+                    local_provider.determine(v, scope);
+                    self.dependencies.extend(
+                        local_provider
+                            .dependencies
+                            .into_iter()
+                            .filter(|d| !self.provides.contains(d)),
+                    );
+
                     self.provides.insert(Rc::from(*key));
-                    self.determine(v, scope);
                 }
 
                 D::None

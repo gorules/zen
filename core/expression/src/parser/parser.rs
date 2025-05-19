@@ -700,7 +700,9 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             let (identifier_with_postfix, combination) =
                 self.with_postfix(identifier_node, &expression_parser);
             if let Some(&TokenKind::Operator(Operator::Assign)) = self.current_kind() {
-                if combination != PostfixCombination::Property {
+                if combination != PostfixCombination::Property
+                    && combination != PostfixCombination::Inherit
+                {
                     return self.error_with_node(
                         AstNodeError::Custom {
                             span: identifier_with_postfix.span().unwrap_or_default(),
@@ -945,7 +947,9 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 });
             self.next();
             let (key_node, combination) = self.with_postfix(identifier_node, expression_parser);
-            if combination != PostfixCombination::Property {
+            if combination != PostfixCombination::Property
+                && combination != PostfixCombination::Inherit
+            {
                 return self.error_with_node(
                     AstNodeError::Custom {
                         span: key_node.span().unwrap_or_default(),

@@ -55,7 +55,7 @@ impl PolicyRuleCondition {
     pub fn to_vec(&self) -> Vec<&str> {
         match self {
             PolicyRuleCondition::Simple { expression } => once(expression.as_str())
-                .chain(self.to_vec().into_iter())
+                // .chain(self.to_vec().into_iter())
                 .collect(),
             PolicyRuleCondition::All { items }
             | PolicyRuleCondition::Any { items }

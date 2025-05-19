@@ -1,9 +1,9 @@
 {
-  "files": [
+  "documents": [
     {
-      "type": "policy",
+      "type": "ruleSet",
       "content": {
-        "expressions": [
+        "rules": [
           {
             "name": "Eligibility Determination",
             "outcome": "customer.eligible = true",
@@ -120,6 +120,14 @@
             "conditions": {
               "type": "simple",
               "expression": "application.type == 'LOAN'"
+            }
+          },
+          {
+            "name": "Final Term Calculation",
+            "outcome": "some_new_field = 123",
+            "conditions": {
+              "type": "simple",
+              "expression": "customer.finalTerm == 0"
             }
           }
         ]

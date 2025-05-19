@@ -92,17 +92,6 @@ impl From<&DateMethod> for Rc<dyn FunctionDefinition> {
             },
         ];
 
-        let compare_signature = vec![
-            FunctionSignature {
-                parameters: vec![VT::Date, VT::Date],
-                return_type: VT::Date,
-            },
-            FunctionSignature {
-                parameters: vec![VT::Date, VT::Date, unit_vt.clone()],
-                return_type: VT::Date,
-            },
-        ];
-
         match value {
             DM::Add => Rc::new(CompositeFunction {
                 implementation: Rc::new(imp::add),
@@ -131,11 +120,11 @@ impl From<&DateMethod> for Rc<dyn FunctionDefinition> {
                 signatures: vec![
                     FunctionSignature {
                         parameters: vec![VT::Date],
-                        return_type: VT::Date,
+                        return_type: VT::String,
                     },
                     FunctionSignature {
                         parameters: vec![VT::Date, VT::String],
-                        return_type: VT::Date,
+                        return_type: VT::String,
                     },
                 ],
             }),
@@ -155,7 +144,16 @@ impl From<&DateMethod> for Rc<dyn FunctionDefinition> {
             }),
             DM::Diff => Rc::new(CompositeFunction {
                 implementation: Rc::new(imp::diff),
-                signatures: compare_signature.clone(),
+                signatures: vec![
+                    FunctionSignature {
+                        parameters: vec![VT::Date, VT::Date],
+                        return_type: VT::Number,
+                    },
+                    FunctionSignature {
+                        parameters: vec![VT::Date, VT::Date, unit_vt.clone()],
+                        return_type: VT::Number,
+                    },
+                ],
             }),
             DateMethod::IsSame => imp::compare_using(CompareOperation::IsSame),
             DateMethod::IsBefore => imp::compare_using(CompareOperation::IsBefore),

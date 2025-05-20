@@ -8,8 +8,8 @@ use crate::vm::error::VMError::*;
 use crate::vm::error::VMResult;
 use crate::vm::interval::{VmInterval, VmIntervalData};
 use ahash::{HashMap, HashMapExt};
-use rust_decimal::prelude::ToPrimitive;
-use rust_decimal::MathematicalOps;
+use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
+use rust_decimal::{Decimal, MathematicalOps};
 use std::rc::Rc;
 use std::string::String as StdString;
 
@@ -519,7 +519,15 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
 
                     match (a, b) {
                         (Number(a), Number(b)) => {
-                            self.push(Number(a.powd(b)));
+                            let result = a
+                                .checked_powd(b)
+                                .or_else(|| Decimal::from_f64(a.to_f64()?.powf(b.to_f64()?)))
+                                .ok_or_else(|| OpcodeErr {
+                                    opcode: "Exponent".into(),
+                                    message: "Failed to calculate exponent".into(),
+                                })?;
+
+                            self.push(Number(result));
                         }
                         _ => {
                             return Err(OpcodeErr {

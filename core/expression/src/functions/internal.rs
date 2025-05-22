@@ -254,7 +254,7 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
 
             IF::Number => Rc::new(StaticFunction {
                 implementation: Rc::new(imp::to_number),
-                signature: FunctionSignature::single(VT::Any, VT::String),
+                signature: FunctionSignature::single(VT::Any, VT::Number),
             }),
 
             IF::Keys => Rc::new(CompositeFunction {

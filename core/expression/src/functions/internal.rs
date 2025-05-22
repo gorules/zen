@@ -212,14 +212,20 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
                 signature: FunctionSignature::single(VT::Number.array(), VT::Number),
             }),
 
-            IF::Min => Rc::new(StaticFunction {
+            IF::Min => Rc::new(CompositeFunction {
                 implementation: Rc::new(imp::min),
-                signature: FunctionSignature::single(VT::Number.array(), VT::Number),
+                signatures: vec![
+                    FunctionSignature::single(VT::Number.array(), VT::Number),
+                    FunctionSignature::single(VT::Date.array(), VT::Date),
+                ],
             }),
 
-            IF::Max => Rc::new(StaticFunction {
+            IF::Max => Rc::new(CompositeFunction {
                 implementation: Rc::new(imp::max),
-                signature: FunctionSignature::single(VT::Number.array(), VT::Number),
+                signatures: vec![
+                    FunctionSignature::single(VT::Number.array(), VT::Number),
+                    FunctionSignature::single(VT::Date.array(), VT::Date),
+                ],
             }),
 
             IF::Median => Rc::new(StaticFunction {
@@ -299,7 +305,7 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
 pub(crate) mod imp {
     use crate::functions::arguments::Arguments;
     use crate::vm::VmDate;
-    use crate::Variable as V;
+    use crate::{Variable as V, Variable};
     use anyhow::{anyhow, Context};
     use chrono_tz::Tz;
     #[cfg(not(feature = "regex-lite"))]
@@ -321,6 +327,39 @@ pub(crate) mod imp {
             .map(|v| v.as_number())
             .collect::<Option<Vec<_>>>()
             .context("Expected a number array")
+    }
+
+    enum Either<A, B> {
+        Left(A),
+        Right(B),
+    }
+
+    fn __internal_number_or_date_array(
+        args: &Arguments,
+        pos: usize,
+    ) -> anyhow::Result<Either<Vec<Decimal>, Vec<VmDate>>> {
+        let a = args.array(pos)?;
+        let arr = a.borrow();
+
+        let is_number = arr.first().map(|v| v.as_number()).flatten().is_some();
+        if is_number {
+            Ok(Either::Left(
+                arr.iter()
+                    .map(|v| v.as_number())
+                    .collect::<Option<Vec<_>>>()
+                    .context("Expected a number array")?,
+            ))
+        } else {
+            Ok(Either::Right(
+                arr.iter()
+                    .map(|v| match v {
+                        Variable::Dynamic(d) => d.as_date().cloned(),
+                        _ => None,
+                    })
+                    .collect::<Option<Vec<_>>>()
+                    .context("Expected a number array")?,
+            ))
+        }
     }
 
     pub fn starts_with(args: Arguments) -> anyhow::Result<V> {
@@ -457,17 +496,33 @@ pub(crate) mod imp {
     }
 
     pub fn min(args: Arguments) -> anyhow::Result<V> {
-        let a = __internal_number_array(&args, 0)?;
-        let min = a.iter().min().context("Empty array")?;
+        let a = __internal_number_or_date_array(&args, 0)?;
 
-        Ok(V::Number(Decimal::from(*min)))
+        match a {
+            Either::Left(arr) => {
+                let max = arr.into_iter().min().context("Empty array")?;
+                Ok(V::Number(Decimal::from(max)))
+            }
+            Either::Right(arr) => {
+                let max = arr.into_iter().min().context("Empty array")?;
+                Ok(V::Dynamic(Rc::new(max)))
+            }
+        }
     }
 
     pub fn max(args: Arguments) -> anyhow::Result<V> {
-        let a = __internal_number_array(&args, 0)?;
-        let max = a.iter().max().context("Empty array")?;
+        let a = __internal_number_or_date_array(&args, 0)?;
 
-        Ok(V::Number(Decimal::from(*max)))
+        match a {
+            Either::Left(arr) => {
+                let max = arr.into_iter().max().context("Empty array")?;
+                Ok(V::Number(Decimal::from(max)))
+            }
+            Either::Right(arr) => {
+                let max = arr.into_iter().max().context("Empty array")?;
+                Ok(V::Dynamic(Rc::new(max)))
+            }
+        }
     }
 
     pub fn avg(args: Arguments) -> anyhow::Result<V> {

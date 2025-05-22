@@ -91,13 +91,14 @@ impl<'de> Visitor<'de> for VariableVisitor {
             map.next_entry_seed(PhantomData::<Rc<str>>, VariableDeserializer)?
         {
             if first && key.deref() == NUMBER_TOKEN {
+                let str = value
+                    .as_str()
+                    .ok_or_else(|| Error::custom("failed to deserialize number"))?;
+
                 return Ok(Variable::Number(
-                    Decimal::from_str_exact(
-                        value
-                            .as_str()
-                            .ok_or_else(|| Error::custom("failed to deserialize number"))?,
-                    )
-                    .map_err(|_| Error::custom("invalid number"))?,
+                    Decimal::from_str_exact(str)
+                        .or_else(|_| Decimal::from_scientific(str))
+                        .map_err(|_| Error::custom("invalid number"))?,
                 ));
             }
 

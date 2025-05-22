@@ -220,6 +220,28 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
             end = e;
         }
 
+        if let Some((e_pos, _)) = self.cursor.next_if(|c| c == 'e') {
+            end = e_pos;
+
+            if let Some((sign_pos, _)) = self.cursor.next_if(|c| c == '+' || c == '-') {
+                end = sign_pos;
+            }
+
+            let mut has_exponent_digits = false;
+            while let Some((exp_pos, _)) = self.cursor.next_if(|c| is_token_type!(c, "digit")) {
+                end = exp_pos;
+                has_exponent_digits = true;
+            }
+
+            if !has_exponent_digits {
+                while self.cursor.position() > e_pos {
+                    self.cursor.back();
+                }
+
+                end = e_pos - 1;
+            }
+        }
+
         self.push(Token {
             kind: TokenKind::Number,
             span: (start as u32, (end + 1) as u32),

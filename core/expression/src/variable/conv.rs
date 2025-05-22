@@ -12,9 +12,11 @@ impl From<Value> for Variable {
         match value {
             Value::Null => Variable::Null,
             Value::Bool(b) => Variable::Bool(b),
-            Value::Number(n) => {
-                Variable::Number(Decimal::from_str_exact(n.as_str()).expect("Allowed number"))
-            }
+            Value::Number(n) => Variable::Number(
+                Decimal::from_str_exact(n.as_str())
+                    .or_else(|_| Decimal::from_scientific(n.as_str()))
+                    .expect("Allowed number"),
+            ),
             Value::String(s) => Variable::String(Rc::from(s.as_str())),
             Value::Array(arr) => {
                 Variable::from_array(arr.into_iter().map(Variable::from).collect())
@@ -33,9 +35,11 @@ impl From<&Value> for Variable {
         match value {
             Value::Null => Variable::Null,
             Value::Bool(b) => Variable::Bool(*b),
-            Value::Number(n) => {
-                Variable::Number(Decimal::from_str_exact(n.as_str()).expect("Allowed number"))
-            }
+            Value::Number(n) => Variable::Number(
+                Decimal::from_str_exact(n.as_str())
+                    .or_else(|_| Decimal::from_scientific(n.as_str()))
+                    .expect("Allowed number"),
+            ),
             Value::String(s) => Variable::String(Rc::from(s.as_str())),
             Value::Array(arr) => Variable::from_array(arr.iter().map(Variable::from).collect()),
             Value::Object(obj) => Variable::from_object(

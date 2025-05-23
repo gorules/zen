@@ -466,3 +466,86 @@ trunc(7.999, 1);; 7.9
 trunc(7.999, 2);; 7.99
 trunc(-7.444, 2);; -7.44
 trunc(-7.999, 2);; -7.99
+
+# Scientific notation - basic parsing
+1e5;;100000
+2e3;;2000
+5e0;;5
+1e-2;;0.01
+2.5e2;;250
+3.14e1;;31.4
+1.23e-3;;0.00123
+-1e3;;-1000
+-2.5e-2;;-0.025
+
+# Scientific notation - arithmetic operations
+1e2 + 1e1;;110
+2e3 - 5e2;;1500
+3e2 * 2e1;;6000
+1e4 / 2e2;;50
+1e2 + 50;;150
+1e3 - 100;;900
+2e2 * 3;;600
+1e3 / 10;;100
+
+# Scientific notation - comparisons
+1e3 == 1000;;true
+1e3 != 999;;true
+1e2 > 50;;true
+1e2 < 200;;true
+1e2 >= 100;;true
+1e2 <= 100;;true
+2.5e2 == 250;;true
+1.5e-2 == 0.015;;true
+
+# Scientific notation - type conversions
+string(1e3);;'1000'
+string(2.5e2);;'250'
+string(1.23e-3);;'0.00123'
+number('1e3');;1000
+number('2.5e2');;250
+number('1.23e-3');;0.00123
+isNumeric('1e3');;true
+isNumeric('2.5e-2');;true
+isNumeric('1.23e-3');;true
+
+# Scientific notation - array operations
+sum([1e2, 2e2, 3e2]);;600
+max([1e1, 2e1, 3e1]);;30
+min([1e1, 2e1, 3e1]);;10
+avg([1e2, 2e2, 3e2]);;200
+contains([1e2, 2e2, 3e2], 200);;true
+map([1e1, 2e1, 3e1], # * 2);;[20, 40, 60]
+filter([1e1, 2e1, 3e1, 4e1], # > 25);;[30, 40]
+
+# Scientific notation - edge cases
+1e+3;;1000
+1e-0;;1
+0e5;;0
+1.0e2;;100
+10e1;;100
+0.1e3;;100
+1.5e+2;;150
+2e-1;;0.2
+
+# Scientific notation - mixed with regular numbers
+1e2 + 50.5;;150.5
+1000 - 1e2;;900
+15 * 1e2;;1500
+1e3 / 2.5;;400
+
+# Scientific notation - complex expressions
+(1e2 + 2e2) * 1e1;;3000
+1e3 / (2e1 + 3e1);;20
+abs(-1e2);;100
+floor(1.23e2);;123
+ceil(1.23e2);;123
+round(1.234e2);;123
+
+# Scientific notation - in functions
+1e1 ^ 2;;100
+
+# Scientific notation - template strings
+`Value: ${1e3}`;; 'Value: 1000'
+`Scientific: ${2.5e2}`;; 'Scientific: 250'
+`Negative: ${-1e2}`;; 'Negative: -100'

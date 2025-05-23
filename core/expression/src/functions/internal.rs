@@ -614,7 +614,12 @@ pub(crate) mod imp {
         let a = args.var(0)?;
         let val = match a {
             V::Number(n) => *n,
-            V::String(str) => Decimal::from_str_exact(str.trim()).context("Invalid number")?,
+            V::String(str) => {
+                let s = str.trim();
+                Decimal::from_str_exact(s)
+                    .or_else(|_| Decimal::from_scientific(s))
+                    .context("Invalid number")?
+            }
             V::Bool(b) => match *b {
                 true => Decimal::ONE,
                 false => Decimal::ZERO,
@@ -629,7 +634,12 @@ pub(crate) mod imp {
         let a = args.var(0)?;
         let is_ok = match a {
             V::Number(_) => true,
-            V::String(str) => Decimal::from_str_exact(str.trim()).is_ok(),
+            V::String(str) => {
+                let s = str.trim();
+                Decimal::from_str_exact(s)
+                    .or_else(|_| Decimal::from_scientific(s))
+                    .is_ok()
+            }
             _ => false,
         };
 

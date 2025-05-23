@@ -236,7 +236,9 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             });
         };
 
-        let Ok(decimal) = Decimal::from_str_exact(token.value) else {
+        let Ok(decimal) =
+            Decimal::from_str_exact(token.value).or_else(|_| Decimal::from_scientific(token.value))
+        else {
             return self.error(AstNodeError::InvalidNumber {
                 number: afmt!(self, "{}", token.value),
                 span: token.span,

@@ -8,7 +8,7 @@ use crate::mt::{block_on, worker_pool};
 use crate::value::PyValue;
 use crate::variable::PyVariable;
 use anyhow::{anyhow, Context};
-use pyo3::prelude::PyDictMethods;
+use pyo3::prelude::{PyAnyMethods, PyDictMethods};
 use pyo3::types::PyDict;
 use pyo3::{pyclass, pymethods, Bound, FromPyObject, IntoPyObjectExt, Py, PyAny, PyResult, Python};
 use pyo3_async_runtimes::tokio::get_current_locals;
@@ -23,10 +23,28 @@ pub struct PyZenEngine {
     engine: Arc<DecisionEngine<PyDecisionLoader, PyCustomNode>>,
 }
 
-#[derive(Serialize, Deserialize, FromPyObject)]
+#[derive(Serialize, Deserialize)]
 pub struct PyZenEvaluateOptions {
     pub trace: Option<bool>,
     pub max_depth: Option<u8>,
+}
+
+impl<'py> FromPyObject<'py> for PyZenEvaluateOptions {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let dict = ob.downcast::<PyDict>()?;
+
+        let trace = dict
+            .get_item("trace")?
+            .map(|v| v.extract::<bool>())
+            .transpose()?;
+
+        let max_depth = dict
+            .get_item("max_depth")?
+            .map(|v| v.extract::<u8>())
+            .transpose()?;
+
+        Ok(PyZenEvaluateOptions { trace, max_depth })
+    }
 }
 
 impl Default for PyZenEvaluateOptions {

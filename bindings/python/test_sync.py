@@ -90,6 +90,12 @@ class ZenEngine(unittest.TestCase):
         engine.evaluate("http-function.json", {})
         self.assertTrue(True)
 
+    def test_additional_options(self):
+        engine = zen.ZenEngine({"loader": loader, "customHandler": custom_handler})
+
+        engine.evaluate("sleep-function.json", {}, {"trace": True})
+        self.assertTrue(True)
+
     def test_evaluate_graphs(self):
         engine = zen.ZenEngine({"loader": graph_loader})
         json_files = glob.glob("../../test-data/graphs/*.json")

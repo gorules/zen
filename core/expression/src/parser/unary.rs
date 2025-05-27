@@ -132,6 +132,7 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
         left_node
     }
 
+    #[cfg_attr(feature = "stack-protection", recursive::recursive)]
     fn binary_expression(&self, precedence: u8, ctx: ParserContext) -> &'arena Node<'arena> {
         let mut node_left = self.unary_expression();
         let Some(mut token) = self.current() else {

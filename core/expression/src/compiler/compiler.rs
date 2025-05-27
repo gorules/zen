@@ -112,6 +112,7 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
         self.compile_node(arg)
     }
 
+    #[cfg_attr(feature = "stack-protection", recursive::recursive)]
     fn compile_member_fast(&mut self, node: &'arena Node<'arena>) -> Option<Vec<FetchFastTarget>> {
         match node {
             Node::Root => Some(vec![FetchFastTarget::Root]),
@@ -141,6 +142,7 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
         }
     }
 
+    #[cfg_attr(feature = "stack-protection", recursive::recursive)]
     fn compile_node(&mut self, node: &'arena Node<'arena>) -> CompilerResult<usize> {
         match node {
             Node::Null => Ok(self.emit(Opcode::PushNull)),

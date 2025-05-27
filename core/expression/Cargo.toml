@@ -16,6 +16,7 @@ chrono-tz = "0.10"
 humantime = { workspace = true }
 fastrand = { workspace = true }
 once_cell = { workspace = true }
+recursive = { workspace = true, optional = true }
 regex = { workspace = true, optional = true }
 regex-lite = { workspace = true, optional = true }
 serde = { workspace = true, features = ["rc", "derive"] }
@@ -35,9 +36,10 @@ csv = "1"
 serde_json5 = "0.2"
 
 [features]
-default = ["regex-deprecated"]
-regex-deprecated = ["dep:regex"]
+default = ["regex-deprecated", "stack-protection"]
 regex-lite = ["dep:regex-lite"]
+regex-deprecated = ["dep:regex"]
+stack-protection = ["dep:recursive"]
 
 [[bench]]
 harness = false

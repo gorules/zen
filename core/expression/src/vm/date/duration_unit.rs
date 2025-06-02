@@ -56,4 +56,8 @@ impl DurationUnit {
             DurationUnit::Year => None,
         }
     }
+
+    pub fn as_millis(&self) -> Option<f64> {
+        self.as_secs().map(|s| s as f64 * 1000_f64)
+    }
 }

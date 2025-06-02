@@ -12,7 +12,7 @@ trait PrettyPrint {
 impl PrettyPrint for Variable {
     fn pretty_print(&self) -> String {
         match &self {
-            Variable::Number(num) => format!("{}", num.to_string().yellow()),
+            Variable::Number(num) => format!("{}", num.normalize().to_string().yellow()),
             Variable::String(str) => format!("{}", format!("'{}'", str).green()),
             Variable::Bool(b) => format!("{}", b.to_string().yellow()),
             Variable::Null => format!("{}", "null".bold()),

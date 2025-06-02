@@ -56,7 +56,9 @@ impl From<Variable> for Value {
         match value {
             Variable::Null => Value::Null,
             Variable::Bool(b) => Value::Bool(b),
-            Variable::Number(n) => Value::Number(Number::from_string_unchecked(n.to_string())),
+            Variable::Number(n) => {
+                Value::Number(Number::from_string_unchecked(n.normalize().to_string()))
+            }
             Variable::String(s) => Value::String(s.to_string()),
             Variable::Array(arr) => {
                 let vec = Rc::try_unwrap(arr)

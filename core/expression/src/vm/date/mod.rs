@@ -178,8 +178,8 @@ mod helper {
     use crate::vm::date::{Duration, DurationUnit};
     use crate::Variable;
     use chrono::{
-        DateTime, Datelike, Days, LocalResult, Month, Months, NaiveDate, NaiveDateTime, TimeDelta,
-        TimeZone, Timelike, Utc,
+        DateTime, Datelike, Days, LocalResult, Month, Months, NaiveDate, NaiveDateTime, Offset,
+        TimeDelta, TimeZone, Timelike, Utc,
     };
     use chrono_tz::Tz;
     use rust_decimal::prelude::ToPrimitive;
@@ -352,25 +352,41 @@ mod helper {
     }
 
     pub fn diff(a: DateTime<Tz>, b: DateTime<Tz>, maybe_unit: Option<DurationUnit>) -> Option<i64> {
+        let zone_delta = (b.offset().fix().local_minus_utc() as i64
+            - a.offset().fix().local_minus_utc() as i64)
+            * 1000;
+
+        let diff_ms = a.timestamp_millis() - b.timestamp_millis();
         let Some(unit) = maybe_unit else {
-            return Some(a.timestamp_millis() - b.timestamp_millis());
+            return Some(diff_ms);
         };
 
-        if let Some(unit_secs) = unit.as_secs() {
-            let secs = a.timestamp() - b.timestamp();
-            return secs.checked_div(unit_secs.to_i64()?);
-        }
-
-        let year_diff = a.year().to_i64()?.checked_sub(b.year().to_i64()?)?;
-
-        match unit {
-            DurationUnit::Month => {
-                let month_diff = a.month().to_i64()?.checked_sub(b.month().to_i64()?)?;
-                Some(year_diff * 12 + month_diff)
+        let result = match unit {
+            DurationUnit::Year => month_diff(a, b) / 12.0,
+            DurationUnit::Month => month_diff(a, b),
+            DurationUnit::Quarter => month_diff(a, b) / 3.0,
+            DurationUnit::Week => {
+                (diff_ms - zone_delta) as f64 / DurationUnit::Week.as_millis().unwrap_or_default()
             }
-            DurationUnit::Year => Some(year_diff),
-            _ => None,
-        }
+            DurationUnit::Day => {
+                (diff_ms - zone_delta) as f64 / DurationUnit::Day.as_millis().unwrap_or_default()
+            }
+            DurationUnit::Hour => {
+                diff_ms as f64 / DurationUnit::Hour.as_millis().unwrap_or_default()
+            }
+            DurationUnit::Minute => {
+                diff_ms as f64 / DurationUnit::Minute.as_millis().unwrap_or_default()
+            }
+            DurationUnit::Second => {
+                diff_ms as f64 / DurationUnit::Second.as_millis().unwrap_or_default()
+            }
+        };
+
+        Some(if result < 0.0 {
+            result.ceil() as i64
+        } else {
+            result.floor() as i64
+        })
     }
 
     pub fn set(date_time: DateTime<Tz>, value: u32, unit: DurationUnit) -> Option<DateTime<Tz>> {
@@ -416,6 +432,41 @@ mod helper {
             }
             None => Some(a > b),
         }
+    }
+
+    fn month_diff(a: DateTime<Tz>, b: DateTime<Tz>) -> f64 {
+        if a.day() < b.day() {
+            return -month_diff(b, a);
+        }
+
+        let whole_month_diff = ((b.year() - a.year()) * 12) + (b.month() as i32 - a.month() as i32);
+        let anchor = add_months_to_date(a, whole_month_diff);
+        let c = (b.timestamp_millis() - anchor.timestamp_millis()) < 0;
+        let anchor2 = add_months_to_date(a, whole_month_diff + if c { -1 } else { 1 });
+
+        let numerator = b.timestamp_millis() - anchor.timestamp_millis();
+        let denominator = if c {
+            anchor.timestamp_millis() - anchor2.timestamp_millis()
+        } else {
+            anchor2.timestamp_millis() - anchor.timestamp_millis()
+        };
+
+        let fractional = if denominator != 0 {
+            numerator as f64 / denominator as f64
+        } else {
+            0.0
+        };
+
+        -((whole_month_diff as f64) + fractional)
+    }
+
+    fn add_months_to_date(date: DateTime<Tz>, months: i32) -> DateTime<Tz> {
+        if months >= 0 {
+            date.checked_add_months(Months::new(months as u32))
+        } else {
+            date.checked_sub_months(Months::new((-months) as u32))
+        }
+        .unwrap_or(date)
     }
 }
 

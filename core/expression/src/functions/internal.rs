@@ -313,7 +313,7 @@ pub(crate) mod imp {
     #[cfg(feature = "regex-lite")]
     use regex_lite::Regex;
     use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
-    use rust_decimal::Decimal;
+    use rust_decimal::{Decimal, RoundingStrategy};
     use rust_decimal_macros::dec;
     use std::collections::BTreeMap;
     use std::rc::Rc;
@@ -473,7 +473,10 @@ pub(crate) mod imp {
             .transpose()?
             .unwrap_or(0);
 
-        Ok(V::Number(a.round_dp(dp)))
+        Ok(V::Number(a.round_dp_with_strategy(
+            dp,
+            RoundingStrategy::MidpointAwayFromZero,
+        )))
     }
 
     pub fn trunc(args: Arguments) -> anyhow::Result<V> {

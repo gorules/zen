@@ -8,7 +8,7 @@ edition = "2021"
 repository = "https://github.com/gorules/zen.git"
 
 [dependencies]
-zen-expression = { path = "../expression", version = "0.47.0" }
+zen-expression = { path = "../expression", version = "0.47.0", default-features = false }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

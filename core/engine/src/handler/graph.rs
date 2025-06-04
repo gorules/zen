@@ -401,7 +401,6 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
 
                     node_request.input.dot_remove("$nodes");
                     res.output.dot_remove("$nodes");
-                    res.output.dot_remove("$");
 
                     trace!({
                         input: node_request.input,

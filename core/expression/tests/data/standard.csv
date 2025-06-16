@@ -78,6 +78,7 @@ x or not false;{ "x": false };true
 -5 + 5 == 0;;true
 -5 * 5 == -25;;true
 -5 * -5 == 25;;true
+10 / 0;;null
 abs(-5) == 5;;true
 abs(5) == 5;;true
 2 ^ 3 == 8;;true

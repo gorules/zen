@@ -489,15 +489,19 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                     let b = self.pop()?;
                     let a = self.pop()?;
 
-                    match (a, b) {
-                        (Number(a), Number(b)) => self.push(Number(a / b)),
-                        _ => {
-                            return Err(OpcodeErr {
-                                opcode: "Divide".into(),
-                                message: "Unsupported type".into(),
-                            });
-                        }
-                    }
+                    let (Number(a), Number(b)) = (a, b) else {
+                        return Err(OpcodeErr {
+                            opcode: "Divide".into(),
+                            message: "Unsupported type".into(),
+                        });
+                    };
+
+                    let result = match a.checked_div(b) {
+                        Some(r) => Number(r),
+                        None => Null,
+                    };
+
+                    self.push(result);
                 }
                 Opcode::Modulo => {
                     let b = self.pop()?;

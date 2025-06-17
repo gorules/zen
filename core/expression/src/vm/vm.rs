@@ -75,7 +75,9 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
         })
     }
 
-    pub fn run(&mut self, env: Variable) -> VMResult<Variable> {
+    pub fn run(&mut self, root_env: Variable) -> VMResult<Variable> {
+        let mut env = root_env.clone();
+        let mut assigned_object: Option<Variable> = None;
         if self.ip != 0 {
             self.ip = 0;
         }
@@ -136,7 +138,8 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                 }
                 Opcode::FetchFast(path) => {
                     let variable = path.iter().fold(Null, |v, p| match p {
-                        FetchFastTarget::Root => env.clone(),
+                        FetchFastTarget::Root => root_env.clone(),
+                        FetchFastTarget::Begin => env.clone(),
                         FetchFastTarget::String(key) => match v {
                             Object(obj) => {
                                 let obj_ref = obj.borrow();
@@ -726,6 +729,50 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                     }
 
                     self.push(Variable::from_object(map));
+                }
+                Opcode::AssignedObjectBegin => {
+                    assigned_object = Some(Variable::empty_object());
+                }
+                Opcode::AssignedObjectStep => {
+                    let value = self.pop()?;
+                    let String(key) = self.pop()? else {
+                        return Err(OpcodeErr {
+                            opcode: "AssignedObjectStep".into(),
+                            message: "Unexpected key value".to_string(),
+                        });
+                    };
+
+                    let Some(assigned_object) = &assigned_object else {
+                        return Err(OpcodeErr {
+                            opcode: "AssignedObjectStep".into(),
+                            message: "Assigned object scope must be set".to_owned(),
+                        });
+                    };
+
+                    let Some(new_env) = env.dot_insert_detached(key.as_ref(), value.clone()) else {
+                        return Err(OpcodeErr {
+                            opcode: "AssignedObjectStep".into(),
+                            message: "Failed to mutate existing env".to_owned(),
+                        });
+                    };
+
+                    env = new_env;
+                    assigned_object.dot_insert(key.as_ref(), value);
+                }
+                Opcode::AssignedObjectEnd { with_return } => {
+                    let Some(assigned_object) = assigned_object.take() else {
+                        return Err(OpcodeErr {
+                            opcode: "AssignedObjectEnd".into(),
+                            message: "Assigned object scope must be set".to_owned(),
+                        });
+                    };
+
+                    if *with_return {
+                        let output = self.pop()?;
+                        self.push(output);
+                    } else {
+                        self.push(assigned_object);
+                    }
                 }
                 Opcode::Len => {
                     let current = self.stack.last().ok_or_else(|| OpcodeErr {

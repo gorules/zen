@@ -7,6 +7,7 @@ use strum_macros::Display;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FetchFastTarget {
     Root,
+    Begin,
     String(Arc<str>),
     Number(u32),
 }
@@ -40,6 +41,11 @@ pub enum Opcode {
     Slice,
     Array,
     Object,
+    AssignedObjectBegin,
+    AssignedObjectStep,
+    AssignedObjectEnd {
+        with_return: bool,
+    },
     Len,
     IncrementIt,
     IncrementCount,

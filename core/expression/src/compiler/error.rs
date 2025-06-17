@@ -22,6 +22,9 @@ pub enum CompilerError {
 
     #[error("Invalid  method call `{name}`: {message}")]
     InvalidMethodCall { name: String, message: String },
+
+    #[error("Unexpected assigned object")]
+    UnexpectedAssignedObject,
 }
 
 pub(crate) type CompilerResult<T> = Result<T, CompilerError>;

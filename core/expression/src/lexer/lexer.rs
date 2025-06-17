@@ -63,8 +63,10 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
             token_type!("cmp_operator") => self.cmp_operator(),
             token_type!("operator") => self.operator(),
             token_type!("question_mark") => self.question_mark(),
+            '=' => self.equals(),
             '`' => self.template_string(),
             '.' => self.dot(),
+            ';' => self.semi(),
             token_type!("alpha") => self.identifier(),
             _ => Err(LexerError::UnmatchedSymbol {
                 symbol: s,
@@ -312,6 +314,38 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
             })?),
             span: (start as u32, (end + 1) as u32),
             value,
+        });
+
+        Ok(())
+    }
+
+    fn semi(&mut self) -> LexerResult<()> {
+        let (start, _) = self.next()?;
+        self.push(Token {
+            kind: TokenKind::Operator(Operator::Semi),
+            span: (start as u32, (start + 1) as u32),
+            value: &self.source[start..=start],
+        });
+
+        Ok(())
+    }
+
+    fn equals(&mut self) -> LexerResult<()> {
+        let (start, _) = self.next()?;
+        let Some((end, _)) = self.cursor.next_if(|c| c == '=') else {
+            self.push(Token {
+                kind: TokenKind::Operator(Operator::Assign),
+                span: (start as u32, (start + 1) as u32),
+                value: &self.source[start..=start],
+            });
+
+            return Ok(());
+        };
+
+        self.push(Token {
+            kind: TokenKind::Operator(Operator::Comparison(ComparisonOperator::Equal)),
+            span: (start as u32, (end + 1) as u32),
+            value: &self.source[start..=end],
         });
 
         Ok(())

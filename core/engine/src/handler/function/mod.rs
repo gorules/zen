@@ -1,4 +1,5 @@
 use std::rc::Rc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use ::serde::{Deserialize, Serialize};
@@ -12,6 +13,7 @@ use crate::handler::function::module::console::Log;
 use crate::handler::function::serde::JsValue;
 use crate::handler::node::{NodeRequest, NodeResponse, NodeResult, PartialTraceError};
 use crate::model::{DecisionNodeKind, FunctionNodeContent};
+use crate::ZEN_CONFIG;
 
 pub(crate) mod error;
 pub(crate) mod function;
@@ -30,17 +32,19 @@ pub struct FunctionHandler {
     trace: bool,
     iteration: u8,
     max_depth: u8,
+    max_duration: Duration,
 }
-
-static MAX_DURATION: Duration = Duration::from_millis(5_000);
 
 impl FunctionHandler {
     pub fn new(function: Rc<Function>, trace: bool, iteration: u8, max_depth: u8) -> Self {
+        let max_duration_millis = ZEN_CONFIG.function_timeout_millis.load(Ordering::Relaxed);
+
         Self {
             function,
             trace,
             iteration,
             max_depth,
+            max_duration: Duration::from_millis(max_duration_millis),
         }
     }
 
@@ -57,7 +61,9 @@ impl FunctionHandler {
         let module_name = self
             .function
             .suggest_module_name(request.node.id.as_str(), &content.source);
-        let interrupt_handler = Box::new(move || start.elapsed() > MAX_DURATION);
+
+        let max_duration = self.max_duration.clone();
+        let interrupt_handler = Box::new(move || start.elapsed() > max_duration);
         self.function
             .runtime()
             .set_interrupt_handler(Some(interrupt_handler))

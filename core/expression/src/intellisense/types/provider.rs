@@ -5,6 +5,7 @@ use crate::intellisense::types::type_info::TypeInfo;
 use crate::lexer::{ArithmeticOperator, ComparisonOperator, LogicalOperator, Operator};
 use crate::parser::Node;
 use crate::variable::VariableType;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::iter::once;
 use std::ops::Deref;
@@ -52,14 +53,14 @@ impl TypesProvider {
     }
 
     #[cfg_attr(feature = "stack-protection", recursive::recursive)]
-    fn determine(&mut self, node: &Node, scope: IntelliSenseScope) -> TypeInfo {
+    fn determine(&mut self, node: &Node, mut scope: IntelliSenseScope) -> TypeInfo {
         #[allow(non_snake_case)]
         let V = |vt: VariableType| TypeInfo::from(vt);
         #[allow(non_snake_case)]
         let Const = |v: &str| TypeInfo::from(VariableType::Const(Rc::from(v)));
         #[allow(non_snake_case)]
         let Error = |error: String| TypeInfo {
-            kind: Rc::from(VariableType::Any),
+            kind: VariableType::Any,
             error: Some(error),
         };
 
@@ -111,7 +112,7 @@ impl TypesProvider {
             }
 
             Node::Array(items) => {
-                let mut type_list: Vec<Rc<VariableType>> = items
+                let mut type_list: Vec<VariableType> = items
                     .iter()
                     .map(|n| self.determine(n, scope.clone()).kind)
                     .collect();
@@ -119,7 +120,7 @@ impl TypesProvider {
                 let all_same = type_list.iter().all(|t| Some(t) == first.as_ref());
 
                 match (first, all_same) {
-                    (Some(typ), true) => V(VariableType::Array(typ)),
+                    (Some(typ), true) => V(VariableType::Array(Rc::new(typ))),
                     _ => V(VariableType::Array(Rc::new(VariableType::Any))),
                 }
             }
@@ -136,14 +137,41 @@ impl TypesProvider {
                     })
                     .collect();
 
-                V(VariableType::Object(obj_type))
+                V(VariableType::Object(Rc::new(RefCell::new(obj_type))))
             }
+
+            Node::Assignments { list, output } => {
+                let obj_type: HashMap<Rc<str>, VariableType> = list
+                    .iter()
+                    .filter_map(|(k, v)| {
+                        let key_type = self.determine(k, scope.clone()).as_const_str()?;
+                        let value_type = self.determine(v, scope.clone());
+
+                        if let Some(new_var) = scope
+                            .root_data
+                            .dot_insert_detached(key_type.as_ref(), value_type.kind.shallow_clone())
+                        {
+                            println!("NewVar: {new_var:?}");
+                            scope.root_data = new_var;
+                        };
+
+                        Some((key_type, value_type.kind))
+                    })
+                    .collect();
+
+                if let Some(output) = output {
+                    self.determine(output, scope.clone())
+                } else {
+                    V(VariableType::Object(Rc::new(RefCell::new(obj_type))))
+                }
+            }
+
             Node::Identifier(i) => TypeInfo::from(scope.root_data.get(i)),
             Node::Member { node, property } => {
                 let node_type = self.determine(node, scope.clone());
                 let property_type = self.determine(property, scope.clone());
 
-                match node_type.kind.as_ref() {
+                match &node_type.kind {
                     VariableType::Any => V(VariableType::Any),
                     VariableType::Null => V(VariableType::Null),
                     VariableType::Array(inner) => {
@@ -164,10 +192,11 @@ impl TypesProvider {
                             );
                         }
 
+                        let obj = obj.borrow();
                         match property_type.as_const_str() {
                             None => V(VariableType::Any),
                             Some(key) => TypeInfo::from(
-                                obj.get(&key).cloned().unwrap_or(Rc::new(VariableType::Any)),
+                                obj.get(&key).cloned().unwrap_or(VariableType::Any),
                             ),
                         }
                     }
@@ -287,7 +316,7 @@ impl TypesProvider {
                 let true_type = self.determine(on_true, scope.clone());
                 let false_type = self.determine(on_false, scope.clone());
 
-                V(true_type.kind.merge(false_type.kind.as_ref()))
+                V(true_type.kind.merge(&false_type.kind))
             }
             Node::Unary { node, operator } => {
                 let node_type = self.determine(node, scope.clone());
@@ -325,7 +354,9 @@ impl TypesProvider {
                     | Operator::Comma
                     | Operator::Slice
                     | Operator::Dot
-                    | Operator::QuestionMark => Error("Unsupported operator".to_string()),
+                    | Operator::QuestionMark
+                    | Operator::Assign
+                    | Operator::Semi => Error("Unsupported operator".to_string()),
                 }
             }
             Node::Interval { left, right, .. } => {
@@ -352,7 +383,7 @@ impl TypesProvider {
                 V(VariableType::Interval)
             }
             Node::FunctionCall { arguments, kind } => {
-                let mut type_list: Vec<Rc<VariableType>> = arguments
+                let mut type_list: Vec<VariableType> = arguments
                     .iter()
                     .map(|n| self.determine(n, scope.clone()).kind)
                     .collect();
@@ -362,7 +393,7 @@ impl TypesProvider {
                     let new_type = self.determine(
                         arguments[1],
                         IntelliSenseScope {
-                            pointer_data: &ptr_type,
+                            pointer_data: ptr_type.deref().clone(),
                             current_data: scope.current_data,
                             root_data: scope.root_data,
                         },
@@ -383,7 +414,7 @@ impl TypesProvider {
                         }
 
                         TypeInfo {
-                            kind: Rc::new(typecheck.return_type),
+                            kind: typecheck.return_type,
                             error: typecheck.general,
                         }
                     }
@@ -423,7 +454,9 @@ impl TypesProvider {
                             ClosureFunction::One => V(VariableType::Bool),
                             ClosureFunction::Filter => TypeInfo::from(type_list[0].clone()),
                             ClosureFunction::Count => V(VariableType::Number),
-                            ClosureFunction::Map => V(VariableType::Array(type_list[1].clone())),
+                            ClosureFunction::Map => {
+                                V(VariableType::Array(Rc::new(type_list[1].clone())))
+                            }
                             ClosureFunction::FlatMap => V(VariableType::Any),
                         }
                     }
@@ -435,7 +468,7 @@ impl TypesProvider {
                 kind,
             } => {
                 let this_type = self.determine(this, scope.clone());
-                let type_list: Vec<Rc<VariableType>> = once(this_type.kind)
+                let type_list: Vec<VariableType> = once(this_type.kind)
                     .chain(
                         arguments
                             .iter()
@@ -457,7 +490,7 @@ impl TypesProvider {
                 }
 
                 TypeInfo {
-                    kind: Rc::new(typecheck.return_type),
+                    kind: typecheck.return_type,
                     error: typecheck.general,
                 }
             }
@@ -465,7 +498,7 @@ impl TypesProvider {
             Node::Parenthesized(c) => self.determine(c, scope.clone()),
             Node::Error { node, error } => match node {
                 None => TypeInfo {
-                    kind: Rc::new(VariableType::Any),
+                    kind: VariableType::Any,
                     error: Some(error.to_string()),
                 },
                 Some(n) => {

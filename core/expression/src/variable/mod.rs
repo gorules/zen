@@ -161,6 +161,37 @@ impl Variable {
                 _ => None,
             })
     }
+
+    fn dot_head_detach(&self, key: &str) -> (Variable, Option<Variable>) {
+        let mut parts = Vec::from_iter(key.split('.'));
+        parts.pop();
+
+        let cloned_self = self.depth_clone(1);
+        let head = parts
+            .iter()
+            .try_fold(cloned_self.shallow_clone(), |var, part| match var {
+                Variable::Object(obj) => {
+                    let mut obj_ref = obj.borrow_mut();
+                    Some(match obj_ref.entry(Rc::from(*part)) {
+                        Entry::Occupied(mut occ) => {
+                            let var = occ.get();
+                            let new_obj = match var {
+                                Variable::Object(_) => var.depth_clone(1),
+                                _ => Variable::empty_object(),
+                            };
+
+                            occ.insert(new_obj.shallow_clone());
+                            new_obj
+                        }
+                        Entry::Vacant(vac) => vac.insert(Self::empty_object()).shallow_clone(),
+                    })
+                }
+                _ => None,
+            });
+
+        (cloned_self, head)
+    }
+
     pub fn dot_remove(&self, key: &str) -> Option<Variable> {
         let last_part = key.split('.').last()?;
         let head = self.dot_head(key)?;
@@ -181,6 +212,19 @@ impl Variable {
 
         let mut object = object_ref.borrow_mut();
         object.insert(Rc::from(last_part), variable)
+    }
+
+    pub fn dot_insert_detached(&self, key: &str, variable: Variable) -> Option<Variable> {
+        let last_part = key.split('.').last()?;
+        let (new_var, head_opt) = self.dot_head_detach(key);
+        let head = head_opt?;
+        let Variable::Object(object_ref) = head else {
+            return None;
+        };
+
+        let mut object = object_ref.borrow_mut();
+        object.insert(Rc::from(last_part), variable);
+        Some(new_var)
     }
 
     pub fn merge(&mut self, patch: &Variable) -> Variable {
@@ -403,3 +447,35 @@ impl PartialEq for Variable {
 }
 
 impl Eq for Variable {}
+
+#[cfg(test)]
+mod tests {
+    use crate::Variable;
+    use rust_decimal_macros::dec;
+    use serde_json::json;
+
+    #[test]
+    fn insert_detached() {
+        let some_data: Variable = json!({ "customer": { "firstName": "John" }}).into();
+
+        let a_a = some_data
+            .dot_insert_detached("a.a", Variable::Number(dec!(1)))
+            .unwrap();
+        let a_b = a_a
+            .dot_insert_detached("a.b", Variable::Number(dec!(2)))
+            .unwrap();
+        let a_c = a_b
+            .dot_insert_detached("a.c", Variable::Number(dec!(3)))
+            .unwrap();
+
+        assert_eq!(a_a.dot("a"), Some(Variable::from(json!({ "a": 1 }))));
+        assert_eq!(
+            a_b.dot("a"),
+            Some(Variable::from(json!({ "a": 1, "b": 2 })))
+        );
+        assert_eq!(
+            a_c.dot("a"),
+            Some(Variable::from(json!({ "a": 1, "b": 2, "c": 3 })))
+        );
+    }
+}

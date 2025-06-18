@@ -1,6 +1,7 @@
 use crate::variable::types::VariableType;
 use serde_json::Value;
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::ops::Deref;
 use std::rc::Rc;
 
@@ -23,11 +24,11 @@ impl<'a> From<Cow<'a, Value>> for VariableType {
                     panic!("unexpected type of value, expected object");
                 };
 
-                VariableType::Object(
+                VariableType::Object(Rc::new(RefCell::new(
                     obj.into_iter()
-                        .map(|(k, v)| (Rc::from(k.as_str()), Rc::new(v.into())))
+                        .map(|(k, v)| (Rc::from(k.as_str()), v.into()))
                         .collect(),
-                )
+                )))
             }
         }
     }

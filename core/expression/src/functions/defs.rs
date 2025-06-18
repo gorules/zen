@@ -7,7 +7,7 @@ use std::rc::Rc;
 pub trait FunctionDefinition {
     fn required_parameters(&self) -> usize;
     fn optional_parameters(&self) -> usize;
-    fn check_types(&self, args: &[Rc<VariableType>]) -> FunctionTypecheck;
+    fn check_types(&self, args: &[VariableType]) -> FunctionTypecheck;
     fn call(&self, args: Arguments) -> anyhow::Result<Variable>;
     fn param_type(&self, index: usize) -> Option<VariableType>;
     fn param_type_str(&self, index: usize) -> String;
@@ -52,7 +52,7 @@ impl FunctionDefinition for StaticFunction {
         0
     }
 
-    fn check_types(&self, args: &[Rc<VariableType>]) -> FunctionTypecheck {
+    fn check_types(&self, args: &[VariableType]) -> FunctionTypecheck {
         let mut typecheck = FunctionTypecheck::default();
         typecheck.return_type = self.signature.return_type.clone();
 
@@ -135,7 +135,7 @@ impl FunctionDefinition for CompositeFunction {
         max - required_params
     }
 
-    fn check_types(&self, args: &[Rc<VariableType>]) -> FunctionTypecheck {
+    fn check_types(&self, args: &[VariableType]) -> FunctionTypecheck {
         let mut typecheck = FunctionTypecheck::default();
         if self.signatures.is_empty() {
             typecheck.general = Some("No implementation".to_string());

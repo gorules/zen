@@ -556,3 +556,61 @@ round(1.234e2);;123
 `Value: ${1e3}`;; 'Value: 1000'
 `Scientific: ${2.5e2}`;; 'Scientific: 250'
 `Negative: ${-1e2}`;; 'Negative: -100'
+
+### Assignment
+
+# Basic assignment
+"a = 5";{};{"a": 5}
+"name = 'John'";{};{"name": "John"}
+"active = true";{};{"active": true}
+"items = [1, 2, 3]";{};{"items": [1, 2, 3]}
+"config = {debug: true}";{};{"config": {"debug": true}}
+
+# Property assignment
+"user.name = 'Alice'";{};{"user": {"name": "Alice"}}
+"user.age = 30";{};{"user": {"age": 30}}
+"settings.theme = 'dark'";{};{"settings": {"theme": "dark"}}
+
+# Nested property assignment
+"user.profile.bio = 'Developer'";{};{"user": {"profile": {"bio": "Developer"}}}
+"app.config.database.host = 'localhost'";{};{"app": {"config": {"database": {"host": "localhost"}}}}
+"system.cache.redis.port = 6379";{};{"system": {"cache": {"redis": {"port": 6379}}}}
+
+# Multiple assignments
+"a = 1; b = 2";{};{"a": 1, "b": 2}
+"user.name = 'Charlie'; user.age = 35";{};{"user": {"name": "Charlie", "age": 35}}
+"x = 10; y = 20; z = 30";{};{"x": 10, "y": 20, "z": 30}
+
+# Assignment with expressions
+"counter = counter + 1";{"counter": 5};{"counter": 6}
+"total = price * quantity";{"price": 15, "quantity": 3};{"total": 45}
+"fullName = firstName + ' ' + lastName";{"firstName": "John", "lastName": "Doe"};{"fullName": "John Doe"}
+
+# Assignment with function calls
+"timestamp = date('2023-10-15')";{};{"timestamp": 1697328000}
+"userName = upper(name)";{"name": "alice"};{"userName": "ALICE"}
+"itemCount = len(items)";{"items": [1, 2, 3, 4]};{"itemCount": 4}
+
+# Assignment with array operations
+"doubled = map(numbers, # * 2)";{"numbers": [1, 2, 3]};{"doubled": [2, 4, 6]}
+"filtered = filter(items, # > 10)";{"items": [5, 15, 8, 20]};{"filtered": [15, 20]}
+"total = sum(values)";{"values": [10, 20, 30]};{"total": 60}
+
+# Assignment with conditional expressions
+"status = score > 70 ? 'pass' : 'fail'";{"score": 85};{"status": "pass"}
+"message = user.isActive ? 'Welcome!' : 'Please activate'";{"user": {"isActive": true}};{"message": "Welcome!"}
+"category = age >= 18 ? 'adult' : 'minor'";{"age": 25};{"category": "adult"}
+
+# Assignment with object creation
+"person = {name: firstName, age: userAge}";{"firstName": "Diana", "userAge": 28};{"person": {"name": "Diana", "age": 28}}
+"point = {x: posX, y: posY}";{"posX": 10, "posY": 15};{"point": {"x": 10, "y": 15}}
+
+# Assignment with template strings
+"greeting = `Hello, ${name}!`";{"name": "World"};{"greeting": "Hello, World!"}
+"summary = `Total: ${count} items`";{"count": 42};{"summary": "Total: 42 items"}
+
+# Assignment with return value
+"user.name = 'Eve'; user.name";{};'Eve'
+"config.debug = true; config.env = 'dev'; config";{};{"debug": true, "env": "dev"}
+"config.debug = true; config.env = 'dev'; $root";{};{"config": {"debug": true, "env": "dev"}}
+"a = 5; b = 10; a + b";{};15

@@ -75,6 +75,8 @@ pub enum Operator {
     Slice,        // :
     Dot,          // .
     QuestionMark, // ?
+    Assign,       // =
+    Semi,         // ;
 }
 
 impl Display for Operator {
@@ -88,6 +90,8 @@ impl Display for Operator {
             Operator::Slice => write!(f, ":"),
             Operator::Dot => write!(f, "."),
             Operator::QuestionMark => write!(f, "?"),
+            Operator::Assign => write!(f, "="),
+            Operator::Semi => write!(f, ";"),
         }
     }
 }
@@ -219,6 +223,8 @@ impl Operator {
             Operator::Slice => 21,
             Operator::Dot => 22,
             Operator::QuestionMark => 23,
+            Operator::Assign => 24,
+            Operator::Semi => 25,
         }
     }
 }

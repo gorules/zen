@@ -316,7 +316,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             })
     }
 
-    pub(crate) fn template_string<F>(&self, expression_parser: F) -> &'arena Node<'arena>
+    pub(crate) fn template_string<F>(&self, expression_parser: &F) -> &'arena Node<'arena>
     where
         F: Fn(ParserContext) -> &'arena Node<'arena>,
     {
@@ -384,7 +384,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         &self,
         node: &'arena Node,
         method_name: &Token,
-        expression_parser: F,
+        expression_parser: &F,
     ) -> &'arena Node<'arena>
     where
         F: Fn(ParserContext) -> &'arena Node<'arena>,
@@ -433,187 +433,212 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             },
         );
 
-        self.with_postfix(method_node, expression_parser)
+        let (node, _) = self.with_postfix(method_node, expression_parser);
+        node
+    }
+
+    pub(crate) fn with_member_access<F>(
+        &self,
+        node: &'arena Node<'arena>,
+        expression_parser: &F,
+    ) -> &'arena Node<'arena>
+    where
+        F: Fn(ParserContext) -> &'arena Node<'arena>,
+    {
+        self.next();
+        let property_token = self.current();
+        self.next();
+
+        let property = match property_token {
+            None => self.error_with_node(
+                AstNodeError::Custom {
+                    message: afmt!(self, "Expected a property"),
+                    span: (self.prev_token_end(), self.prev_token_end()),
+                },
+                node,
+            ),
+            Some(t) => match is_valid_property(t) {
+                true => {
+                    if self.current_kind() == Some(&TokenKind::Bracket(Bracket::LeftParenthesis)) {
+                        return self.method_call(node, t, expression_parser);
+                    }
+
+                    self.node(Node::String(t.value), |_| NodeMetadata { span: t.span })
+                }
+                false => {
+                    self.set_position(self.position() - 1);
+                    self.error_with_node(
+                        AstNodeError::InvalidProperty {
+                            property: afmt!(self, "{}", t.value),
+                            span: t.span,
+                        },
+                        node,
+                    )
+                }
+            },
+        };
+
+        self.node(Node::Member { node, property }, |h| NodeMetadata {
+            span: h.span(node, property).unwrap_or_default(),
+        })
+    }
+
+    pub(crate) fn with_property_access<F>(
+        &self,
+        node: &'arena Node<'arena>,
+        expression_parser: &F,
+    ) -> &'arena Node<'arena>
+    where
+        F: Fn(ParserContext) -> &'arena Node<'arena>,
+    {
+        self.next();
+        let mut from: Option<&'arena Node<'arena>> = None;
+        let mut to: Option<&'arena Node<'arena>> = None;
+
+        let Some(mut c) = self.current() else {
+            return self.error_with_node(
+                AstNodeError::Custom {
+                    message: afmt!(self, "Expected a property"),
+                    span: (self.prev_token_end(), self.prev_token_end()),
+                },
+                node,
+            );
+        };
+
+        if c.kind == TokenKind::Operator(Operator::Slice) {
+            self.next();
+
+            let Some(cc) = self.current() else {
+                return self.error_with_node(
+                    AstNodeError::Custom {
+                        message: afmt!(self, "Unexpected token"),
+                        span: (self.prev_token_end(), self.prev_token_end()),
+                    },
+                    node,
+                );
+            };
+            c = cc;
+
+            if c.kind != TokenKind::Bracket(Bracket::RightSquareBracket) {
+                to = Some(expression_parser(ParserContext::Global));
+            }
+
+            expect!(self, TokenKind::Bracket(Bracket::RightSquareBracket));
+            self.node(Node::Slice { node, to, from }, |h| NodeMetadata {
+                span: (
+                    h.metadata(node).map(|m| m.span.0).unwrap_or_default(),
+                    self.prev_token_end(),
+                ),
+            })
+        } else {
+            let from_node = expression_parser(ParserContext::Global);
+            from = Some(from_node);
+            let Some(cc) = self.current() else {
+                return self.error_with_node(
+                    AstNodeError::Custom {
+                        message: afmt!(self, "Unexpected token"),
+                        span: (self.prev_token_end(), self.prev_token_end()),
+                    },
+                    self.node(
+                        Node::Member {
+                            node,
+                            property: from_node,
+                        },
+                        |h| NodeMetadata {
+                            span: h.span(node, from_node).unwrap_or_default(),
+                        },
+                    ),
+                );
+            };
+            c = cc;
+
+            if c.kind == TokenKind::Operator(Operator::Slice) {
+                self.next();
+                let Some(cc) = self.current() else {
+                    return self.error_with_node(
+                        AstNodeError::Custom {
+                            message: afmt!(self, "Invalid slice syntax"),
+                            span: (self.prev_token_end(), self.prev_token_end()),
+                        },
+                        self.node(Node::Slice { node, from, to }, |h| NodeMetadata {
+                            span: h.span(node, from_node).unwrap_or_default(),
+                        }),
+                    );
+                };
+                c = cc;
+
+                if c.kind != TokenKind::Bracket(Bracket::RightSquareBracket) {
+                    to = Some(expression_parser(ParserContext::Global));
+                }
+
+                expect!(self, TokenKind::Bracket(Bracket::RightSquareBracket));
+                self.node(Node::Slice { node, from, to }, |h| NodeMetadata {
+                    span: (
+                        h.metadata(node).map(|m| m.span.0).unwrap_or_default(),
+                        self.prev_token_end(),
+                    ),
+                })
+            } else {
+                // Slice operator [:] was not found,
+                // it should be just an index node.
+                expect!(self, TokenKind::Bracket(Bracket::RightSquareBracket));
+                self.node(
+                    Node::Member {
+                        node,
+                        property: from.unwrap_or_else(|| {
+                            return self.error_with_node(
+                                AstNodeError::Custom {
+                                    message: afmt!(self, "Invalid index property"),
+                                    span: (self.prev_token_end(), self.prev_token_end()),
+                                },
+                                node,
+                            );
+                        }),
+                    },
+                    |h| NodeMetadata {
+                        span: (
+                            h.metadata(node).map(|m| m.span.0).unwrap_or_default(),
+                            self.prev_token_end(),
+                        ),
+                    },
+                )
+            }
+        }
     }
 
     pub(crate) fn with_postfix<F>(
         &self,
         node: &'arena Node<'arena>,
-        expression_parser: F,
-    ) -> &'arena Node<'arena>
+        expression_parser: &F,
+    ) -> (&'arena Node<'arena>, PostfixCombination)
     where
         F: Fn(ParserContext) -> &'arena Node<'arena>,
     {
         let Some(postfix_token) = self.current() else {
-            return node;
+            return (node, PostfixCombination::Mixed);
         };
 
         let postfix_kind = PostfixKind::from(postfix_token);
 
-        let processed_token = match postfix_kind {
-            PostfixKind::Other => return node,
-            PostfixKind::MemberAccess => {
-                self.next();
-                let property_token = self.current();
-                self.next();
-
-                let property = match property_token {
-                    None => self.error_with_node(
-                        AstNodeError::Custom {
-                            message: afmt!(self, "Expected a property"),
-                            span: (self.prev_token_end(), self.prev_token_end()),
-                        },
-                        node,
-                    ),
-                    Some(t) => match is_valid_property(t) {
-                        true => {
-                            if self.current_kind()
-                                == Some(&TokenKind::Bracket(Bracket::LeftParenthesis))
-                            {
-                                return self.method_call(node, t, expression_parser);
-                            }
-
-                            self.node(Node::String(t.value), |_| NodeMetadata { span: t.span })
-                        }
-                        false => {
-                            self.set_position(self.position() - 1);
-                            self.error_with_node(
-                                AstNodeError::InvalidProperty {
-                                    property: afmt!(self, "{}", t.value),
-                                    span: t.span,
-                                },
-                                node,
-                            )
-                        }
-                    },
-                };
-
-                self.node(Node::Member { node, property }, |h| NodeMetadata {
-                    span: h.span(node, property).unwrap_or_default(),
-                })
-            }
-            PostfixKind::PropertyAccess => {
-                self.next();
-                let mut from: Option<&'arena Node<'arena>> = None;
-                let mut to: Option<&'arena Node<'arena>> = None;
-
-                let Some(mut c) = self.current() else {
-                    return self.error_with_node(
-                        AstNodeError::Custom {
-                            message: afmt!(self, "Expected a property"),
-                            span: (self.prev_token_end(), self.prev_token_end()),
-                        },
-                        node,
-                    );
-                };
-
-                if c.kind == TokenKind::Operator(Operator::Slice) {
-                    self.next();
-
-                    let Some(cc) = self.current() else {
-                        return self.error_with_node(
-                            AstNodeError::Custom {
-                                message: afmt!(self, "Unexpected token"),
-                                span: (self.prev_token_end(), self.prev_token_end()),
-                            },
-                            node,
-                        );
-                    };
-                    c = cc;
-
-                    if c.kind != TokenKind::Bracket(Bracket::RightSquareBracket) {
-                        to = Some(expression_parser(ParserContext::Global));
-                    }
-
-                    expect!(self, TokenKind::Bracket(Bracket::RightSquareBracket));
-                    self.node(Node::Slice { node, to, from }, |h| NodeMetadata {
-                        span: (
-                            h.metadata(node).map(|m| m.span.0).unwrap_or_default(),
-                            self.prev_token_end(),
-                        ),
-                    })
-                } else {
-                    let from_node = expression_parser(ParserContext::Global);
-                    from = Some(from_node);
-                    let Some(cc) = self.current() else {
-                        return self.error_with_node(
-                            AstNodeError::Custom {
-                                message: afmt!(self, "Unexpected token"),
-                                span: (self.prev_token_end(), self.prev_token_end()),
-                            },
-                            self.node(
-                                Node::Member {
-                                    node,
-                                    property: from_node,
-                                },
-                                |h| NodeMetadata {
-                                    span: h.span(node, from_node).unwrap_or_default(),
-                                },
-                            ),
-                        );
-                    };
-                    c = cc;
-
-                    if c.kind == TokenKind::Operator(Operator::Slice) {
-                        self.next();
-                        let Some(cc) = self.current() else {
-                            return self.error_with_node(
-                                AstNodeError::Custom {
-                                    message: afmt!(self, "Invalid slice syntax"),
-                                    span: (self.prev_token_end(), self.prev_token_end()),
-                                },
-                                self.node(Node::Slice { node, from, to }, |h| NodeMetadata {
-                                    span: h.span(node, from_node).unwrap_or_default(),
-                                }),
-                            );
-                        };
-                        c = cc;
-
-                        if c.kind != TokenKind::Bracket(Bracket::RightSquareBracket) {
-                            to = Some(expression_parser(ParserContext::Global));
-                        }
-
-                        expect!(self, TokenKind::Bracket(Bracket::RightSquareBracket));
-                        self.node(Node::Slice { node, from, to }, |h| NodeMetadata {
-                            span: (
-                                h.metadata(node).map(|m| m.span.0).unwrap_or_default(),
-                                self.prev_token_end(),
-                            ),
-                        })
-                    } else {
-                        // Slice operator [:] was not found,
-                        // it should be just an index node.
-                        expect!(self, TokenKind::Bracket(Bracket::RightSquareBracket));
-                        self.node(
-                            Node::Member {
-                                node,
-                                property: from.unwrap_or_else(|| {
-                                    return self.error_with_node(
-                                        AstNodeError::Custom {
-                                            message: afmt!(self, "Invalid index property"),
-                                            span: (self.prev_token_end(), self.prev_token_end()),
-                                        },
-                                        node,
-                                    );
-                                }),
-                            },
-                            |h| NodeMetadata {
-                                span: (
-                                    h.metadata(node).map(|m| m.span.0).unwrap_or_default(),
-                                    self.prev_token_end(),
-                                ),
-                            },
-                        )
-                    }
-                }
-            }
+        let (processed_token, processed_combination) = match postfix_kind {
+            PostfixKind::Other => return (node, PostfixCombination::Inherit),
+            PostfixKind::PropertyAccess => (
+                self.with_member_access(node, expression_parser),
+                PostfixCombination::Property,
+            ),
+            PostfixKind::ComputedAccess => (
+                self.with_property_access(node, expression_parser),
+                PostfixCombination::Computed,
+            ),
         };
 
-        self.with_postfix(processed_token, expression_parser)
+        let (node, combination) = self.with_postfix(processed_token, expression_parser);
+
+        (node, combination.and(processed_combination))
     }
 
     /// Closure
-    pub(crate) fn closure<F>(&self, expression_parser: F) -> &'arena Node<'arena>
+    pub(crate) fn closure<F>(&self, expression_parser: &F) -> &'arena Node<'arena>
     where
         F: Fn(ParserContext) -> &'arena Node<'arena>,
     {
@@ -630,7 +655,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
 
     /// Identifier expression
     /// Either <Identifier> or <Identifier Expression>
-    pub(crate) fn identifier<F>(&self, expression_parser: F) -> &'arena Node<'arena>
+    pub(crate) fn identifier<F>(&self, expression_parser: &F) -> &'arena Node<'arena>
     where
         F: Fn(ParserContext) -> &'arena Node<'arena>,
     {
@@ -674,7 +699,25 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 }),
             };
 
-            return self.with_postfix(identifier_node, expression_parser);
+            let (identifier_with_postfix, combination) =
+                self.with_postfix(identifier_node, &expression_parser);
+            if let Some(&TokenKind::Operator(Operator::Assign)) = self.current_kind() {
+                if combination != PostfixCombination::Property
+                    && combination != PostfixCombination::Inherit
+                {
+                    return self.error_with_node(
+                        AstNodeError::Custom {
+                            span: identifier_with_postfix.span().unwrap_or_default(),
+                            message: "Only property access is allowed during assignment",
+                        },
+                        identifier_with_postfix,
+                    );
+                }
+
+                return self.assigned_object(identifier_with_postfix, expression_parser);
+            }
+
+            return identifier_with_postfix;
         }
 
         // Potentially it might be a built-in expression
@@ -734,16 +777,17 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             }
         };
 
-        self.with_postfix(
+        let (node, _) = self.with_postfix(
             self.node(function_node, |_| NodeMetadata {
                 span: (identifier_token.span.0, self.prev_token_end()),
             }),
             expression_parser,
-        )
+        );
+        node
     }
 
     /// Interval node
-    pub(crate) fn interval<F>(&self, expression_parser: F) -> Option<&'arena Node<'arena>>
+    pub(crate) fn interval<F>(&self, expression_parser: &F) -> Option<&'arena Node<'arena>>
     where
         F: Fn(ParserContext) -> &'arena Node<'arena>,
     {
@@ -799,11 +843,12 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             },
         );
 
-        Some(self.with_postfix(interval_node, expression_parser))
+        let (node, _) = self.with_postfix(interval_node, &expression_parser);
+        Some(node)
     }
 
     /// Array nodes
-    pub(crate) fn array<F>(&self, expression_parser: F) -> &'arena Node<'arena>
+    pub(crate) fn array<F>(&self, expression_parser: &F) -> &'arena Node<'arena>
     where
         F: Fn(ParserContext) -> &'arena Node<'arena>,
     {
@@ -843,15 +888,110 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
 
         let node = Node::Array(nodes.into_bump_slice());
 
-        self.with_postfix(
+        let (node, _) = self.with_postfix(
             self.node(node, |_| NodeMetadata {
                 span: (current_token.span.0, self.prev_token_end()),
             }),
-            expression_parser,
+            &expression_parser,
+        );
+        node
+    }
+
+    pub(crate) fn assigned_object<F>(
+        &self,
+        starting_key: &'arena Node<'arena>,
+        expression_parser: &F,
+    ) -> &'arena Node<'arena>
+    where
+        F: Fn(ParserContext) -> &'arena Node<'arena>,
+    {
+        let transform_key = |n: &'arena Node<'arena>| -> &'arena Node<'arena> {
+            let mut keys = BumpVec::new_in(&self.bump);
+            if n.member_key(&mut keys).is_none() {
+                return self.error_with_node(
+                    AstNodeError::Custom {
+                        span: n.span().unwrap_or_default(),
+                        message: self.bump.alloc_str("Failed to resolve"),
+                    },
+                    n,
+                );
+            }
+
+            self.node(
+                Node::String(self.bump.alloc_str(keys.join(".").as_str())),
+                |_| NodeMetadata {
+                    span: n.span().unwrap_or_default(),
+                },
+            )
+        };
+
+        let span_start = self.token_start();
+        expect!(self, TokenKind::Operator(Operator::Assign));
+
+        let mut key_value_pairs = BumpVec::new_in(self.bump);
+        let value = expression_parser(ParserContext::Global);
+
+        key_value_pairs.push((transform_key(starting_key), value));
+        let mut checkpoint_for_return = None;
+
+        loop {
+            if let None = self.current() {
+                break;
+            }
+
+            expect!(self, TokenKind::Operator(Operator::Semi));
+            let Some(identifier_token) = self.current() else {
+                break;
+            };
+
+            let checkpoint = self.position();
+            let identifier_node =
+                self.node(Node::Identifier(identifier_token.value), |_| NodeMetadata {
+                    span: identifier_token.span,
+                });
+            self.next();
+
+            let (key_node, combination) = self.with_postfix(identifier_node, expression_parser);
+            if let Some(_) = self.expect(TokenKind::Operator(Operator::Assign)) {
+                checkpoint_for_return = Some(checkpoint);
+                break;
+            };
+
+            if combination != PostfixCombination::Property
+                && combination != PostfixCombination::Inherit
+            {
+                return self.error_with_node(
+                    AstNodeError::Custom {
+                        span: key_node.span().unwrap_or_default(),
+                        message: "Only property access is allowed during assignment",
+                    },
+                    key_node,
+                );
+            }
+
+            let value = expression_parser(ParserContext::Global);
+            key_value_pairs.push((transform_key(key_node), value));
+        }
+
+        let mut output = None;
+        if let Some(starting_position) = checkpoint_for_return {
+            self.set_position(starting_position);
+            let value = expression_parser(ParserContext::Global);
+            output.replace(value);
+        }
+
+        self.node(
+            Node::Assignments {
+                list: key_value_pairs.into_bump_slice(),
+                output,
+            },
+            |_| NodeMetadata {
+                span: (span_start, self.prev_token_end()),
+            },
         )
     }
 
-    pub(crate) fn object<F>(&self, expression_parser: F) -> &'arena Node<'arena>
+    pub(crate) fn object<F>(&self, expression_parser: &F) -> &'arena Node<'arena>
     where
         F: Fn(ParserContext) -> &'arena Node<'arena>,
     {
@@ -910,7 +1050,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         })
     }
 
-    pub(crate) fn object_key<F>(&self, expression_parser: F) -> &'arena Node<'arena>
+    pub(crate) fn object_key<F>(&self, expression_parser: &F) -> &'arena Node<'arena>
     where
         F: Fn(ParserContext) -> &'arena Node<'arena>,
     {
@@ -1007,7 +1147,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
     pub(crate) fn conditional<F>(
         &self,
         condition: &'arena Node<'arena>,
-        expression_parser: F,
+        expression_parser: &F,
     ) -> Option<&'arena Node<'arena>>
     where
         F: Fn(ParserContext) -> &'arena Node<'arena>,
@@ -1040,7 +1180,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
     }
 
     /// Literal - number, string, array etc.
-    pub(crate) fn literal<F>(&self, expression_parser: F) -> &'arena Node<'arena>
+    pub(crate) fn literal<F>(&self, expression_parser: &F) -> &'arena Node<'arena>
     where
         F: Fn(ParserContext) -> &'arena Node<'arena>,
     {
@@ -1112,17 +1252,36 @@ fn is_valid_property(token: &Token) -> bool {
 
 #[derive(Debug)]
 enum PostfixKind {
-    MemberAccess,
     PropertyAccess,
+    ComputedAccess,
     Other,
 }
 
 impl From<&Token<'_>> for PostfixKind {
     fn from(token: &Token) -> Self {
         match &token.kind {
-            TokenKind::Bracket(Bracket::LeftSquareBracket) => Self::PropertyAccess,
-            TokenKind::Operator(Operator::Dot) => Self::MemberAccess,
+            TokenKind::Bracket(Bracket::LeftSquareBracket) => Self::ComputedAccess,
+            TokenKind::Operator(Operator::Dot) => Self::PropertyAccess,
             _ => Self::Other,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub(crate) enum PostfixCombination {
+    Mixed,
+    Computed,
+    Property,
+    Inherit,
+}
+
+impl PostfixCombination {
+    fn and(self, other: PostfixCombination) -> Self {
+        match (self, other) {
+            (Self::Computed, Self::Computed) => Self::Computed,
+            (Self::Property, Self::Property) => Self::Property,
+            (Self::Inherit, other) => other,
+            _ => Self::Mixed,
         }
     }
 }

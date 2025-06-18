@@ -190,7 +190,7 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
 
         if precedence == 0 {
             if let Some(conditional_node) =
-                self.conditional(node_left, |c| self.binary_expression(0, c))
+                self.conditional(node_left, &|c| self.binary_expression(0, c))
             {
                 node_left = conditional_node;
             }
@@ -201,14 +201,15 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
 
     fn unary_expression(&self) -> &'arena Node<'arena> {
         let Some(token) = self.current() else {
-            return self.literal(|c| self.binary_expression(0, c));
+            return self.literal(&|c| self.binary_expression(0, c));
         };
 
         if self.depth() > 0 && token.kind == TokenKind::Identifier(Identifier::CallbackReference) {
             self.next();
 
             let node = self.node(Node::Pointer, |_| NodeMetadata { span: token.span });
-            return self.with_postfix(node, |c| self.binary_expression(0, c));
+            let (n, _) = self.with_postfix(node, &|c| self.binary_expression(0, c));
+            return n;
         }
 
         if let TokenKind::Operator(operator) = &token.kind {
@@ -238,7 +239,7 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
             return node;
         }
 
-        if let Some(interval_node) = self.interval(|c| self.binary_expression(0, c)) {
+        if let Some(interval_node) = self.interval(&|c| self.binary_expression(0, c)) {
             return interval_node;
         }
 
@@ -255,10 +256,11 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
                 span: (p_start.unwrap_or_default(), self.prev_token_end()),
             });
 
-            return self.with_postfix(expr, |c| self.binary_expression(0, c));
+            let (n, _) = self.with_postfix(expr, &|c| self.binary_expression(0, c));
+            return n;
         }
 
-        self.literal(|c| self.binary_expression(0, c))
+        self.literal(&|c| self.binary_expression(0, c))
     }
 }
 
@@ -293,6 +295,7 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
             Node::String(_) => CompareWithReference(Equal),
             Node::TemplateString(_) => CompareWithReference(Equal),
             Node::Object(_) => CompareWithReference(Equal),
+            Node::Assignments { .. } => CompareWithReference(Equal),
             Node::Pointer => AsBoolean,
             Node::Array(_) => CompareWithReference(In),
             Node::Identifier(_) => CompareWithReference(Equal),
@@ -336,6 +339,8 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                 Operator::Comma => AsBoolean,
                 Operator::Dot => AsBoolean,
                 Operator::QuestionMark => AsBoolean,
+                Operator::Assign => AsBoolean,
+                Operator::Semi => AsBoolean,
             },
             Node::FunctionCall { kind, .. } => match kind {
                 FunctionKind::Internal(i) => match i {

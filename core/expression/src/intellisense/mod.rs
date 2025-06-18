@@ -6,7 +6,6 @@ use crate::parser::{Node, Parser};
 use crate::variable::VariableType;
 use serde::Serialize;
 use std::cell::RefCell;
-use std::rc::Rc;
 
 mod scope;
 mod types;
@@ -15,7 +14,7 @@ mod types;
 #[serde(rename_all = "camelCase")]
 pub struct IntelliSenseToken {
     pub span: (u32, u32),
-    pub kind: Rc<VariableType>,
+    pub kind: VariableType,
     pub node_kind: &'static str,
     pub error: Option<String>,
 }
@@ -50,9 +49,9 @@ impl<'arena> IntelliSense<'arena> {
         let type_data = TypesProvider::generate(
             ast,
             IntelliSenseScope {
-                pointer_data: data,
-                root_data: data,
-                current_data: data,
+                pointer_data: data.shallow_clone(),
+                root_data: data.shallow_clone(),
+                current_data: data.shallow_clone(),
             },
         );
 
@@ -71,7 +70,7 @@ impl<'arena> IntelliSense<'arena> {
                 error: typ.map(|t| t.error.clone()).flatten(),
                 kind: typ
                     .map(|t| t.kind.clone())
-                    .unwrap_or_else(|| Rc::new(VariableType::Any)),
+                    .unwrap_or_else(|| VariableType::Any),
             });
         });
 
@@ -96,9 +95,9 @@ impl<'arena> IntelliSense<'arena> {
         let type_data = TypesProvider::generate(
             ast,
             IntelliSenseScope {
-                pointer_data: data,
-                root_data: data,
-                current_data: data,
+                pointer_data: data.shallow_clone(),
+                root_data: data.shallow_clone(),
+                current_data: data.shallow_clone(),
             },
         );
 
@@ -114,7 +113,7 @@ impl<'arena> IntelliSense<'arena> {
                 error: typ.map(|t| t.error.clone()).flatten(),
                 kind: typ
                     .map(|t| t.kind.clone())
-                    .unwrap_or_else(|| Rc::new(VariableType::Any)),
+                    .unwrap_or_else(|| VariableType::Any),
             });
         });
 

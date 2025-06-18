@@ -1,6 +1,7 @@
 mod conv;
 mod util;
 
+use crate::variable::RcCell;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::{Display, Write};
@@ -17,7 +18,7 @@ pub enum VariableType {
     Date,
     Interval,
     Array(Rc<VariableType>),
-    Object(HashMap<Rc<str>, Rc<VariableType>>),
+    Object(RcCell<HashMap<Rc<str>, VariableType>>),
 
     Const(Rc<str>),
     Enum(Option<Rc<str>>, Vec<Rc<str>>),
@@ -97,6 +98,7 @@ impl Hash for VariableType {
             VariableType::Object(obj) => {
                 10.hash(state);
 
+                let obj = obj.borrow();
                 let mut pairs: Vec<_> = obj.iter().collect();
                 pairs.sort_by_key(|i| i.0);
 

@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TypeInfo {
-    pub(crate) kind: Rc<VariableType>,
+    pub(crate) kind: VariableType,
     pub(crate) error: Option<String>,
 }
 
@@ -26,7 +26,7 @@ impl Display for TypeInfo {
 impl Default for TypeInfo {
     fn default() -> Self {
         Self {
-            kind: Rc::new(VariableType::Any),
+            kind: VariableType::Any,
             error: None,
         }
     }
@@ -35,7 +35,7 @@ impl Default for TypeInfo {
 impl From<VariableType> for TypeInfo {
     fn from(value: VariableType) -> Self {
         Self {
-            kind: Rc::new(value),
+            kind: value,
             error: None,
         }
     }
@@ -44,7 +44,7 @@ impl From<VariableType> for TypeInfo {
 impl From<Rc<VariableType>> for TypeInfo {
     fn from(value: Rc<VariableType>) -> Self {
         Self {
-            kind: value,
+            kind: value.deref().clone(),
             error: None,
         }
     }

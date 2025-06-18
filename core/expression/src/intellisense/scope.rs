@@ -1,8 +1,8 @@
 use crate::variable::VariableType;
 
 #[derive(Clone, Debug)]
-pub struct IntelliSenseScope<'a> {
-    pub root_data: &'a VariableType,
-    pub current_data: &'a VariableType,
-    pub pointer_data: &'a VariableType,
+pub struct IntelliSenseScope {
+    pub root_data: VariableType,
+    pub current_data: VariableType,
+    pub pointer_data: VariableType,
 }

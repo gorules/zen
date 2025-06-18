@@ -1,4 +1,6 @@
 use crate::variable::types::VariableType;
+use rust_decimal::prelude::Zero;
+use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -19,12 +21,13 @@ impl VariableType {
         }
     }
 
-    pub fn get(&self, key: &str) -> Rc<VariableType> {
+    pub fn get(&self, key: &str) -> VariableType {
         match self {
             VariableType::Object(obj) => {
-                obj.get(key).cloned().unwrap_or(Rc::new(VariableType::Any))
+                let obj = obj.borrow();
+                obj.get(key).cloned().unwrap_or(VariableType::Any)
             }
-            _ => Rc::from(VariableType::Null),
+            _ => VariableType::Null,
         }
     }
 
@@ -40,9 +43,13 @@ impl VariableType {
             (_, VariableType::Date) if self.widen().is_string() => true,
             (VariableType::Interval, VariableType::Interval) => true,
             (VariableType::Array(a1), VariableType::Array(a2)) => a1.satisfies(a2),
-            (VariableType::Object(o1), VariableType::Object(o2)) => o1
-                .iter()
-                .all(|(k, v)| o2.get(k).is_some_and(|tv| v.satisfies(tv))),
+            (VariableType::Object(o1), VariableType::Object(o2)) => {
+                let o1 = o1.borrow();
+                let o2 = o2.borrow();
+
+                o1.iter()
+                    .all(|(k, v)| o2.get(k).is_some_and(|tv| v.satisfies(tv)))
+            }
 
             (VariableType::Const(c1), VariableType::Const(c2)) => c1 == c2,
             (VariableType::Const(c), VariableType::Enum(_, e)) => e.iter().any(|e| e == c),
@@ -120,6 +127,9 @@ impl VariableType {
             }
 
             (VariableType::Object(o1), VariableType::Object(o2)) => {
+                let o1 = o1.borrow();
+                let o2 = o2.borrow();
+
                 let mut merged = HashMap::with_capacity(o1.len().max(o2.len()));
                 for (k, v) in o1.iter() {
                     merged.insert(k.clone(), v.clone());
@@ -129,8 +139,8 @@ impl VariableType {
                     match merged.entry(k.clone()) {
                         Entry::Occupied(mut entry) => {
                             let current = entry.get();
-                            let merged_value = current.as_ref().merge(v.as_ref());
-                            entry.insert(Rc::new(merged_value));
+                            let merged_value = current.merge(v);
+                            entry.insert(merged_value);
                         }
                         Entry::Vacant(entry) => {
                             entry.insert(v.clone());
@@ -138,7 +148,7 @@ impl VariableType {
                     }
                 }
 
-                VariableType::Object(merged)
+                VariableType::Object(Rc::new(RefCell::new(merged)))
             }
 
             (VariableType::Const(c), VariableType::Enum(_, values)) => {
@@ -188,6 +198,126 @@ impl VariableType {
 
             (_, _) => VariableType::Any,
         }
+    }
+
+    pub fn shallow_clone(&self) -> Self {
+        match self {
+            VariableType::Any => VariableType::Any,
+            VariableType::Null => VariableType::Null,
+            VariableType::Bool => VariableType::Bool,
+            VariableType::String => VariableType::String,
+            VariableType::Number => VariableType::Number,
+            VariableType::Date => VariableType::Date,
+            VariableType::Interval => VariableType::Interval,
+            VariableType::Array(arr) => VariableType::Array(arr.clone()),
+            VariableType::Object(obj) => VariableType::Object(obj.clone()),
+            VariableType::Const(c) => VariableType::Const(c.clone()),
+            VariableType::Enum(name, options) => VariableType::Enum(name.clone(), options.clone()),
+        }
+    }
+
+    pub fn dot_head(&self, key: &str) -> Option<Self> {
+        let mut parts = Vec::from_iter(key.split('.'));
+        parts.pop();
+
+        parts
+            .iter()
+            .try_fold(self.shallow_clone(), |var, part| match var {
+                VariableType::Object(obj) => {
+                    let mut obj_ref = obj.borrow_mut();
+                    Some(match obj_ref.entry(Rc::from(*part)) {
+                        Entry::Occupied(occ) => occ.get().shallow_clone(),
+                        Entry::Vacant(vac) => vac.insert(Self::empty_object()).shallow_clone(),
+                    })
+                }
+                _ => None,
+            })
+    }
+
+    pub fn dot_head_detach(&self, key: &str) -> (Self, Option<Self>) {
+        let mut parts = Vec::from_iter(key.split('.'));
+        parts.pop();
+
+        let cloned_self = self.depth_clone(1);
+        let head = parts
+            .iter()
+            .try_fold(cloned_self.shallow_clone(), |var, part| match var {
+                VariableType::Object(obj) => {
+                    let mut obj_ref = obj.borrow_mut();
+                    Some(match obj_ref.entry(Rc::from(*part)) {
+                        Entry::Occupied(mut occ) => {
+                            let var = occ.get();
+                            let new_obj = match var {
+                                VariableType::Object(_) => var.depth_clone(1),
+                                _ => VariableType::empty_object(),
+                            };
+
+                            occ.insert(new_obj.shallow_clone());
+                            new_obj
+                        }
+                        Entry::Vacant(vac) => vac.insert(Self::empty_object()).shallow_clone(),
+                    })
+                }
+                _ => None,
+            });
+
+        (cloned_self, head)
+    }
+
+    pub fn depth_clone(&self, depth: usize) -> Self {
+        match depth.is_zero() {
+            true => self.shallow_clone(),
+            false => match self {
+                VariableType::Object(o) => {
+                    let obj = o.borrow();
+                    VariableType::Object(Rc::new(RefCell::new(
+                        obj.iter()
+                            .map(|(k, v)| (k.clone(), v.depth_clone(depth - 1)))
+                            .collect(),
+                    )))
+                }
+                _ => self.shallow_clone(),
+            },
+        }
+    }
+
+    pub fn empty_object() -> Self {
+        VariableType::Object(Rc::new(RefCell::new(HashMap::new())))
+    }
+
+    pub fn dot_insert_detached(&self, key: &str, variable: Self) -> Option<Self> {
+        let last_part = key.split('.').last()?;
+        let (new_var, head_opt) = self.dot_head_detach(key);
+        let head = head_opt?;
+        let VariableType::Object(object_ref) = head else {
+            return None;
+        };
+
+        let mut object = object_ref.borrow_mut();
+        object.insert(Rc::from(last_part), variable);
+        Some(new_var)
+    }
+
+    pub fn dot_insert(&self, key: &str, variable: Self) -> Option<Self> {
+        let last_part = key.split('.').last()?;
+        let head = self.dot_head(key)?;
+        let Self::Object(object_ref) = head else {
+            return None;
+        };
+
+        let mut object = object_ref.borrow_mut();
+        object.insert(Rc::from(last_part), variable)
+    }
+
+    pub fn dot(&self, key: &str) -> Option<Self> {
+        key.split('.')
+            .try_fold(self.shallow_clone(), |var, part| match var {
+                Self::Object(obj) => {
+                    let reference = obj.borrow();
+                    reference.get(part).map(|v| v.shallow_clone())
+                }
+                _ => None,
+            })
     }
 }
 

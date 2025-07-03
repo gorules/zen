@@ -56,7 +56,11 @@ impl FunctionHandler {
             },
             _ => Err(anyhow!("Unexpected node type")),
         }?;
+
         let start = std::time::Instant::now();
+        if content.omit_nodes {
+            request.input.dot_remove("$nodes");
+        }
 
         let module_name = self
             .function

@@ -185,12 +185,17 @@ mod helper {
     use rust_decimal::prelude::ToPrimitive;
     use std::ops::{Add, Deref};
     use std::str::FromStr;
+    use std::sync::OnceLock;
 
     fn tz() -> Tz {
-        iana_time_zone::get_timezone()
-            .ok()
-            .and_then(|tz| Tz::from_str(&tz).ok())
-            .unwrap_or_else(|| Tz::UTC)
+        static CACHED_TZ: OnceLock<Tz> = OnceLock::new();
+
+        *CACHED_TZ.get_or_init(|| {
+            iana_time_zone::get_timezone()
+                .ok()
+                .and_then(|tz| Tz::from_str(&tz).ok())
+                .unwrap_or_else(|| Tz::UTC)
+        })
     }
 
     pub fn now() -> DateTime<Tz> {

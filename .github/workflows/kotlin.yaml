@@ -127,9 +127,9 @@ jobs:
             --bin uniffi-bindgen \
             --features "uniffi/cli" \
             -- generate \ 
-            --library build/generated/resources/libs/libzen_kotlin.dylib \
+            --library build/generated/resources/libs/libzen_uniffi.dylib \
             --language kotlin \
-            --out-dir build/generated/main/kotlin
+            --out-dir build/generated/kotlin
 
 #    TODO
 #      - name: Setup Maven Repository credentials

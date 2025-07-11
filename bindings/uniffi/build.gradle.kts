@@ -19,27 +19,67 @@ plugins {
     id("com.gradleup.nmcp") version "0.0.9"
 }
 
-dependencies {
-    implementation("net.java.dev.jna:jna:5.15.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
-}
-
 repositories {
     mavenCentral()
 }
 
 sourceSets {
-    main {
-        kotlin {
-            srcDirs("build/generated/main/kotlin")
+    val java by creating {
+        java {
+            srcDirs("build/generated/java")
         }
         resources {
-            srcDirs("build/generated/main/resources")
+            srcDirs("build/generated/resources")
         }
+
+        compileClasspath += sourceSets["main"].compileClasspath
+        runtimeClasspath += sourceSets["main"].runtimeClasspath
+    }
+
+    val kotlin by creating {
+        kotlin {
+            srcDirs("build/generated/kotlin")
+        }
+        resources {
+            srcDirs("build/generated/resources")
+        }
+
+        compileClasspath += sourceSets["main"].compileClasspath
+        runtimeClasspath += sourceSets["main"].runtimeClasspath
     }
 }
 
+dependencies {
+    implementation("net.java.dev.jna:jna:5.15.0")
+    "kotlinImplementation"("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
+}
+
+
 tasks {
+    val generateJavaJar by creating(Jar::class) {
+        archiveBaseName.set("zen_engine")
+        from(sourceSets["java"].output)
+        dependsOn(sourceSets["java"].classesTaskName)
+    }
+
+    val generateJavaSourcesJar by creating(Jar::class) {
+        archiveBaseName.set("zen_engine")
+        archiveClassifier.set("sources")
+        from(sourceSets["java"].allJava)
+    }
+
+    val generateKotlinJar by creating(Jar::class) {
+        archiveBaseName.set("zen_engine_kotlin")
+        from(sourceSets["kotlin"].output)
+        dependsOn(sourceSets["kotlin"].classesTaskName)
+    }
+
+    val generateKotlinSourcesJar by creating(Jar::class) {
+        archiveBaseName.set("zen_engine_kotlin")
+        archiveClassifier.set("sources")
+        from(sourceSets["kotlin"].kotlin)
+    }
+
     val javadocJar by creating(Jar::class) {
         dependsOn(dokkaGeneratePublicationJavadoc)
         archiveClassifier.set("javadoc")
@@ -51,8 +91,17 @@ tasks {
 publishing {
     publications {
         create<MavenPublication>("mavenJava") {
-            from(components["java"])
-            artifact(tasks["kotlinSourcesJar"])
+            groupId = "io.gorules"
+            artifactId = "zen-engine"
+            artifact(tasks["generateJavaJar"])
+            artifact(tasks["generateJavaSourcesJar"])
+        }
+
+        create<MavenPublication>("mavenKotlin") {
+            groupId = "io.gorules"
+            artifactId = "zen-engine-kotlin"
+            artifact(tasks["generateKotlinJar"])
+            artifact(tasks["generateKotlinSourcesJar"])
             artifact(tasks["javadocJar"])
 
             pom {

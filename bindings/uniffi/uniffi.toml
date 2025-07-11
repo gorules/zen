@@ -1,2 +1,4 @@
 [bindings.kotlin]
-package_name = "io.gorules.zen"
+package_name = "io.gorules.zen.kotlin"
+[bindings.java]
+package_name = 'io.gorules.zen'

@@ -1,4 +1,12 @@
 [bindings.kotlin]
 package_name = "io.gorules.zen.kotlin"
+generate_immutable_records = true
+[bindings.kotlin.custom_types.JsonBuffer]
+into_custom = "JsonBuffer({})"
+from_custom = "{}.value"
 [bindings.java]
 package_name = 'io.gorules.zen'
+generate_immutable_records = true
+[bindings.java.custom_types.JsonBuffer]
+into_custom = "{}"
+from_custom = "{}"

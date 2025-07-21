@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
     "core/*",
-    "bindings/*"
+    
 ]
 
 [workspace.dependencies]

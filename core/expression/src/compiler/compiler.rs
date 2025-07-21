@@ -396,7 +396,7 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                 }),
             },
             Node::FunctionCall { kind, arguments } => match kind {
-                FunctionKind::Internal(_) | FunctionKind::Deprecated(_) => {
+                FunctionKind::Internal(_) | FunctionKind::Deprecated(_) | FunctionKind::Mf(_) => {
                     let function = FunctionRegistry::get_definition(kind).ok_or_else(|| {
                         CompilerError::UnknownFunction {
                             name: kind.to_string(),

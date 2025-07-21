@@ -403,7 +403,7 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                                 ClosureFunction::FlatMap => CompareWithReference(In),
                                 ClosureFunction::Count => CompareWithReference(Equal),
                             },
-                FunctionKind::Mf(_) => AsBoolean,
+                FunctionKind::Mf(_) => CompareWithReference(Equal),
             },
             Node::MethodCall { kind, .. } => match kind {
                 MethodKind::DateMethod(dm) => match dm {

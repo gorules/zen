@@ -35,7 +35,6 @@ async fn execute_http<'js>(
     config: Option<HttpConfig>,
 ) -> rquickjs::Result<HttpResponse<'js>> {
     static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-
     let client = HTTP_CLIENT.get_or_init(|| reqwest::Client::new()).clone();
     let mut builder = client.request(method, url);
     if let Some(data) = data {
@@ -48,7 +47,9 @@ async fn execute_http<'js>(
             .query(config.params.as_slice());
 
         if let Some(data) = config.data {
-            builder = builder.json(&data.0);
+            if !matches!(data.0, Variable::Null) {
+                builder = builder.json(&data.0);
+            }
         }
     }
 

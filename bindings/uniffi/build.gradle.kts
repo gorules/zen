@@ -1,5 +1,9 @@
+import org.gradle.kotlin.dsl.dokkaSourceSets
+import org.gradle.kotlin.dsl.invoke
+import org.jetbrains.dokka.gradle.DokkaTask
 import org.tomlj.Toml
 import java.util.*
+import kotlin.text.set
 
 group = "io.gorules"
 version = loadCargoVersion()
@@ -49,6 +53,7 @@ sourceSets {
     }
 }
 
+
 dependencies {
     implementation("net.java.dev.jna:jna:5.15.0")
     "kotlinImplementation"("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
@@ -80,15 +85,28 @@ tasks {
         from(sourceSets["kotlin"].kotlin)
     }
 
-    val javadocJar by creating(Jar::class) {
+    val dokkaJavadocJava by creating(DokkaTask::class) {
+        outputDirectory.set(layout.buildDirectory.dir("dokka/java"))
+        dokkaSourceSets { named("java") }
+
+    }
+
+    val dokkaJavadocKotlin by creating(DokkaTask::class) {
+        outputDirectory.set(layout.buildDirectory.dir("dokka/kotlin"))
+        dokkaSourceSets { named("kotlin") }
+    }
+
+    val javadocJarJava by creating(Jar::class) {
         dependsOn(dokkaGeneratePublicationJavadoc)
+        archiveBaseName.set("zen_engine")
         archiveClassifier.set("javadoc")
 
         from(dokkaGeneratePublicationJavadoc.get())
     }
 
-    val kotlindocJar by creating(Jar::class) {
+    val javadocJarKotlin by creating(Jar::class) {
         dependsOn(dokkaGeneratePublicationJavadoc)
+        archiveBaseName.set("zen_engine_kotlin")
         archiveClassifier.set("javadoc")
 
         from(dokkaGeneratePublicationJavadoc.get())
@@ -102,7 +120,7 @@ publishing {
             artifactId = "zen-engine"
             artifact(tasks["generateJavaJar"])
             artifact(tasks["generateJavaSourcesJar"])
-            artifact(tasks["javadocJar"])
+            artifact(tasks["javadocJarJava"])
 
             configurePom()
         }
@@ -112,7 +130,7 @@ publishing {
             artifactId = "zen-engine-kotlin"
             artifact(tasks["generateKotlinJar"])
             artifact(tasks["generateKotlinSourcesJar"])
-            artifact(tasks["kotlindocJar"])
+            artifact(tasks["javadocJarKotlin"])
 
             configurePom()
         }
@@ -130,8 +148,7 @@ signing {
         val signingKey = Base64.getDecoder().decode(signingKeyBase64.get()).toString(Charsets.UTF_8)
 
         useInMemoryPgpKeys(signingKey, signingPassphrase.get())
-        sign(publishing.publications["mavenJava"])
-        sign(publishing.publications["mavenKotlin"])
+        sign(publishing.publications["mavenJava"], publishing.publications["mavenKotlin"])
     }
 }
 

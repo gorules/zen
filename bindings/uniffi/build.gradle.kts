@@ -86,6 +86,13 @@ tasks {
 
         from(dokkaGeneratePublicationJavadoc.get())
     }
+
+    val kotlindocJar by creating(Jar::class) {
+        dependsOn(dokkaGeneratePublicationJavadoc)
+        archiveClassifier.set("javadoc")
+
+        from(dokkaGeneratePublicationJavadoc.get())
+    }
 }
 
 publishing {
@@ -105,7 +112,7 @@ publishing {
             artifactId = "zen-engine-kotlin"
             artifact(tasks["generateKotlinJar"])
             artifact(tasks["generateKotlinSourcesJar"])
-            artifact(tasks["javadocJar"])
+            artifact(tasks["kotlindocJar"])
 
             configurePom()
         }

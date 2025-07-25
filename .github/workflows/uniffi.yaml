@@ -23,6 +23,8 @@ on:
 jobs:
   build:
     if: "!contains(github.event.head_commit.message, 'skip ci')"
+    env:
+      OUTPUT_NAME: zen_uniffi
 
     strategy:
       fail-fast: true
@@ -30,23 +32,23 @@ jobs:
         settings:
           - host: windows-latest
             target: 'x86_64-pc-windows-msvc'
-            output: 'zen_uniffi.dll'
+            output: '{0}.dll'
             lib_dir: 'win32-x86-64'
           - host: macos-latest
             target: 'x86_64-apple-darwin'
-            output: 'libzen_uniffi.dylib'
+            output: 'lib{0}.dylib'
             lib_dir: 'darwin-x86-64'
           - host: macos-latest
             target: 'aarch64-apple-darwin'
-            output: 'libzen_uniffi.dylib'
+            output: 'lib{0}.dylib'
             lib_dir: 'darwin-aarch64'
           - host: ubuntu-latest
             target: 'x86_64-unknown-linux-gnu'
-            output: 'libzen_uniffi.so'
+            output: 'lib{0}.so'
             lib_dir: 'linux-x86-64'
           - host: ubuntu-latest
             target: 'aarch64-unknown-linux-gnu'
-            output: 'libzen_uniffi.so'
+            output: 'lib{0}.so'
             lib_dir: 'linux-aarch64'
 
     name: UniFFI - ${{ matrix.settings.target }}
@@ -71,13 +73,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.settings.lib_dir }}
-          path: target/${{ matrix.settings.target }}/release/${{ matrix.settings.output }}
+          path: target/${{ matrix.settings.target }}/release/${{ format(matrix.settings.output, env.OUTPUT_NAME) }}
           if-no-files-found: error
 
   release-kotlin:
     runs-on: ubuntu-latest
     needs: [ build ]
-    #    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
+    #  TODO: Uncomment
+    #if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
     defaults:
       run:
         working-directory: ${{ env.UNIFFI_DIRECTORY }}

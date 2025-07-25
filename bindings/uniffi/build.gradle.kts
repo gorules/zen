@@ -124,11 +124,24 @@ signing {
 
         useInMemoryPgpKeys(signingKey, signingPassphrase.get())
         sign(publishing.publications["mavenJava"])
+        sign(publishing.publications["mavenKotlin"])
     }
 }
 
 nmcp {
     publish("mavenJava") {
+        publicationType = "USER_MANAGED"
+
+        val remoteUsername = providers.environmentVariable("SONATYPE_USERNAME")
+        val remotePassword = providers.environmentVariable("SONATYPE_PASSWORD")
+
+        if (remoteUsername.isPresent && remotePassword.isPresent) {
+            username.set(remoteUsername.get())
+            password.set(remotePassword.get())
+        }
+    }
+
+    publish("mavenKotlin") {
         publicationType = "USER_MANAGED"
 
         val remoteUsername = providers.environmentVariable("SONATYPE_USERNAME")

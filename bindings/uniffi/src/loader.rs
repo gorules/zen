@@ -32,7 +32,7 @@ impl DecisionLoader for ZenDecisionLoaderCallbackWrapper {
                     return Err(Box::new(LoaderError::Internal {
                         key: key.to_string(),
                         source: anyhow!(error),
-                    }))
+                    }));
                 }
             };
 

@@ -100,7 +100,7 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          path: build/generated/main/resources
+          path: build/generated/resources
 
       - name: Move artifacts
         run: mv ../../build ./
@@ -108,9 +108,16 @@ jobs:
       - name: Generate Kotlin sources
         run: |
           cargo run --bin uniffi-bindgen -- generate \
-            --library build/generated/main/resources/darwin-x86-64/libzen_uniffi.dylib \
+            --library build/generated/resources/darwin-x86-64/libzen_uniffi.dylib \
             --language kotlin \
-            --out-dir build/generated/main/kotlin
+            --out-dir build/generated/kotlin
+
+      - name: Generate Java sources
+        run: |
+          cargo run --bin uniffi-bindgen -- generate \
+            --library build/generated/resources/darwin-x86-64/libzen_uniffi.dylib \
+            --language java \
+            --out-dir build/generated/java
 
       - name: Print directory tree
         run: tree build

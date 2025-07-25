@@ -95,6 +95,9 @@ publishing {
             artifactId = "zen-engine"
             artifact(tasks["generateJavaJar"])
             artifact(tasks["generateJavaSourcesJar"])
+            artifact(tasks["javadocJar"])
+
+            configurePom()
         }
 
         create<MavenPublication>("mavenKotlin") {
@@ -104,34 +107,7 @@ publishing {
             artifact(tasks["generateKotlinSourcesJar"])
             artifact(tasks["javadocJar"])
 
-            pom {
-                name = "GoRules ZEN Engine"
-                description = "GoRules ZEN Engine is a cross-platform, Open-Source Business Rules Engine (BRE)"
-                url = "https://gorules.io"
-
-                licenses {
-                    license {
-                        name = "MIT License"
-                        url = "https://github.com/gorules/zen/blob/master/LICENSE"
-                    }
-                }
-
-                developers {
-                    developer {
-                        id = "gorules"
-                        name = "GoRules Team"
-                        email = "hi@gorules.io"
-                    }
-                    organization {
-                        name = "GoRules"
-                        url = "https://gorules.io"
-                    }
-                }
-
-                scm {
-                    url = "https://github.com/gorules/zen"
-                }
-            }
+            configurePom()
         }
     }
     repositories {
@@ -170,4 +146,35 @@ fun loadCargoVersion(): String {
     val result = Toml.parse(cargoFile.toPath())
     return result.getTable("package")?.getString("version")
         ?: throw GradleException("Version not found in Cargo.toml")
+}
+
+fun MavenPublication.configurePom() {
+    pom {
+        name = "GoRules ZEN Engine"
+        description = "GoRules ZEN Engine is a cross-platform, Open-Source Business Rules Engine (BRE)"
+        url = "https://gorules.io"
+
+        licenses {
+            license {
+                name = "MIT License"
+                url = "https://github.com/gorules/zen/blob/master/LICENSE"
+            }
+        }
+
+        developers {
+            developer {
+                id = "gorules"
+                name = "GoRules Team"
+                email = "hi@gorules.io"
+            }
+            organization {
+                name = "GoRules"
+                url = "https://gorules.io"
+            }
+        }
+
+        scm {
+            url = "https://github.com/gorules/zen"
+        }
+    }
 }

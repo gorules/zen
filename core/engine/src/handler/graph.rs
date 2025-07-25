@@ -3,6 +3,7 @@ use crate::handler::decision::DecisionHandler;
 use crate::handler::expression::ExpressionHandler;
 use crate::handler::function::function::{Function, FunctionConfig};
 use crate::handler::function::module::console::ConsoleListener;
+use crate::handler::function::module::mf::ModuforgeListener;
 use crate::handler::function::module::zen::ZenListener;
 use crate::handler::function::FunctionHandler;
 use crate::handler::function_v1;
@@ -110,6 +111,7 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
                     loader: self.loader.clone(),
                     adapter: self.adapter.clone(),
                 }),
+                Box::new(ModuforgeListener{})
             ]),
         })
         .await

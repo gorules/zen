@@ -112,11 +112,13 @@ jobs:
             --language kotlin \
             --out-dir build/generated/kotlin
 
+      - name: Install uniffi-bindgen-java
+        run: cargo install uniffi-bindgen-java
+
       - name: Generate Java sources
         run: |
-          cargo run --bin uniffi-bindgen -- generate \
+          uniffi-bindgen-java generate \
             --library build/generated/resources/darwin-x86-64/libzen_uniffi.dylib \
-            --language java \
             --out-dir build/generated/java
 
       - name: Print directory tree

@@ -1,9 +1,6 @@
-import org.gradle.kotlin.dsl.dokkaSourceSets
-import org.gradle.kotlin.dsl.invoke
 import org.jetbrains.dokka.gradle.DokkaTask
 import org.tomlj.Toml
 import java.util.*
-import kotlin.text.set
 
 group = "io.gorules"
 version = loadCargoVersion()
@@ -153,19 +150,7 @@ signing {
 }
 
 nmcp {
-    publish("mavenJava") {
-        publicationType = "USER_MANAGED"
-
-        val remoteUsername = providers.environmentVariable("SONATYPE_USERNAME")
-        val remotePassword = providers.environmentVariable("SONATYPE_PASSWORD")
-
-        if (remoteUsername.isPresent && remotePassword.isPresent) {
-            username.set(remoteUsername.get())
-            password.set(remotePassword.get())
-        }
-    }
-
-    publish("mavenKotlin") {
+    publishAllPublications {
         publicationType = "USER_MANAGED"
 
         val remoteUsername = providers.environmentVariable("SONATYPE_USERNAME")

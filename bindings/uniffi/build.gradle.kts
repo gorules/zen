@@ -52,8 +52,8 @@ sourceSets {
 
 
 dependencies {
-    implementation("net.java.dev.jna:jna:5.15.0")
-    "kotlinImplementation"("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
+    implementation("net.java.dev.jna:jna:5.17.0")
+    "kotlinImplementation"("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
 }
 
 
@@ -119,7 +119,9 @@ publishing {
             artifact(tasks["generateJavaSourcesJar"])
             artifact(tasks["javadocJarJava"])
 
-            configurePom(configurations["implementation"])
+            configurePom {
+                dependency("net.java.dev.jna:jna:5.17.0")
+            }
         }
 
         create<MavenPublication>("mavenKotlin") {
@@ -129,7 +131,9 @@ publishing {
             artifact(tasks["generateKotlinSourcesJar"])
             artifact(tasks["javadocJarKotlin"])
 
-            configurePom(configurations["implementation"])
+            configurePom {
+                dependency("net.java.dev.jna:jna:5.17.0")
+            }
         }
     }
     repositories {
@@ -170,7 +174,10 @@ fun loadCargoVersion(): String {
         ?: throw GradleException("Version not found in Cargo.toml")
 }
 
-fun MavenPublication.configurePom(configuration: Configuration) {
+fun MavenPublication.configurePom(dependencyConfig: PomDependencyBuilder.() -> Unit) {
+    val depBuilder = PomDependencyBuilder()
+    depBuilder.dependencyConfig()
+
     pom {
         name = "GoRules ZEN Engine"
         description = "GoRules ZEN Engine is a cross-platform, Open-Source Business Rules Engine (BRE)"
@@ -201,14 +208,27 @@ fun MavenPublication.configurePom(configuration: Configuration) {
 
         withXml {
             val dependenciesNode = asNode().appendNode("dependencies")
+            depBuilder.addToXml(dependenciesNode)
+        }
+    }
+}
 
-            configuration.allDependencies.forEach { dep ->
-                val dependencyNode = dependenciesNode.appendNode("dependency")
-                dependencyNode.appendNode("groupId", dep.group)
-                dependencyNode.appendNode("artifactId", dep.name)
-                dependencyNode.appendNode("version", dep.version)
-                dependencyNode.appendNode("scope", "runtime")
-            }
+class PomDependencyBuilder {
+    private val dependencies = mutableListOf<Triple<String, String, String>>()
+
+    fun dependency(notation: String) {
+        val parts = notation.split(":")
+        require(parts.size == 3) { "Dependency notation must be 'group:artifact:version'" }
+        dependencies.add(Triple(parts[0], parts[1], parts[2]))
+    }
+
+    fun addToXml(dependenciesNode: groovy.util.Node) {
+        dependencies.forEach { (groupId, artifactId, version) ->
+            val dependencyNode = dependenciesNode.appendNode("dependency")
+            dependencyNode.appendNode("groupId", groupId)
+            dependencyNode.appendNode("artifactId", artifactId)
+            dependencyNode.appendNode("version", version)
+            dependencyNode.appendNode("scope", "runtime")
         }
     }
 }

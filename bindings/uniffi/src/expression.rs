@@ -1,7 +1,8 @@
 use crate::error::ZenError;
 use crate::types::JsonBuffer;
 use tokio::task;
-use zen_expression::Variable;
+use zen_expression::expression::{Standard, Unary};
+use zen_expression::{Expression, Variable};
 
 #[uniffi::export()]
 pub fn evaluate_expression_sync(
@@ -39,20 +40,6 @@ pub fn evaluate_unary_expression_sync(
 }
 
 #[allow(dead_code)]
-#[uniffi::export()]
-pub fn render_template_sync(template: String, context: JsonBuffer) -> Result<JsonBuffer, ZenError> {
-    let ctx: Variable = context.try_into()?;
-
-    Ok(zen_tmpl::render(template.as_str(), ctx)
-        .map_err(|e| ZenError::TemplateEngineError {
-            template,
-            details: serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()),
-        })?
-        .to_value()
-        .try_into()?)
-}
-
-#[allow(dead_code)]
 #[uniffi::export(async_runtime = "tokio")]
 pub async fn evaluate_expression(
     expression: String,
@@ -75,12 +62,70 @@ pub async fn evaluate_unary_expression(
 }
 
 #[allow(dead_code)]
+#[uniffi::export()]
+pub fn compile_expression(expression: String) -> Result<ZenExpression, ZenError> {
+    zen_expression::compile_expression(expression.as_str())
+        .map_err(|err| ZenError::IsolateError(err.to_string()))
+        .map(|expression| ZenExpression { expression })
+}
+
+#[allow(dead_code)]
+#[uniffi::export()]
+pub fn compile_unary_expression(expression: String) -> Result<ZenExpressionUnary, ZenError> {
+    zen_expression::compile_unary_expression(expression.as_str())
+        .map_err(|err| ZenError::IsolateError(err.to_string()))
+        .map(|expression| ZenExpressionUnary { expression })
+}
+
+#[derive(uniffi::Object)]
+pub(crate) struct ZenExpression {
+    expression: Expression<Standard>,
+}
+
 #[uniffi::export(async_runtime = "tokio")]
-pub async fn render_template(
-    template: String,
-    context: JsonBuffer,
-) -> Result<JsonBuffer, ZenError> {
-    task::spawn_blocking(move || render_template_sync(template, context))
-        .await
-        .map_err(|_| ZenError::ExecutionTaskSpawnError)?
+impl ZenExpression {
+    pub async fn evaluate(&self, context: JsonBuffer) -> Result<JsonBuffer, ZenError> {
+        let expression = ZenExpression {
+            expression: self.expression.clone(),
+        };
+
+        task::spawn_blocking(move || expression.evaluate_sync(context))
+            .await
+            .map_err(|_| ZenError::ExecutionTaskSpawnError)?
+    }
+
+    pub fn evaluate_sync(&self, context: JsonBuffer) -> Result<JsonBuffer, ZenError> {
+        let ctx: Variable = context.try_into()?;
+        let res = self.expression.evaluate(ctx).map_err(|e| {
+            ZenError::EvaluationError(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))
+        });
+
+        res?.try_into()
+    }
+}
+
+#[derive(uniffi::Object)]
+pub(crate) struct ZenExpressionUnary {
+    expression: Expression<Unary>,
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+impl ZenExpressionUnary {
+    pub async fn evaluate(&self, context: JsonBuffer) -> Result<bool, ZenError> {
+        let expression = ZenExpressionUnary {
+            expression: self.expression.clone(),
+        };
+
+        task::spawn_blocking(move || expression.evaluate_sync(context))
+            .await
+            .map_err(|_| ZenError::ExecutionTaskSpawnError)?
+    }
+
+    pub fn evaluate_sync(&self, context: JsonBuffer) -> Result<bool, ZenError> {
+        let ctx: Variable = context.try_into()?;
+
+        self.expression.evaluate(ctx).map_err(|e| {
+            ZenError::EvaluationError(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))
+        })
+    }
 }

@@ -27,7 +27,7 @@ repositories {
 sourceSets {
     val java by creating {
         java {
-            srcDirs("lib/java", "build/generated/java")
+            srcDirs("build/generated/java")
         }
         resources {
             srcDirs("build/generated/resources")
@@ -39,7 +39,7 @@ sourceSets {
 
     val kotlin by creating {
         kotlin {
-            srcDirs("lib/kotlin", "build/generated/kotlin")
+            srcDirs("build/generated/kotlin")
         }
         resources {
             srcDirs("build/generated/resources")

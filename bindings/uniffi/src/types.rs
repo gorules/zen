@@ -1,46 +1,71 @@
 use crate::error::ZenError;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::ops::Deref;
+use std::sync::Arc;
 use zen_engine::handler::custom_node_adapter::CustomDecisionNode;
 use zen_engine::{DecisionGraphResponse, DecisionGraphTrace};
 use zen_expression::Variable;
 
-pub struct JsonBuffer(pub Vec<u8>);
-uniffi::custom_newtype!(JsonBuffer, Vec<u8>);
+#[derive(uniffi::Object)]
+pub struct JsonBuffer(pub(crate) Value);
 
-impl TryFrom<JsonBuffer> for Value {
-    type Error = ZenError;
-
-    fn try_from(value: JsonBuffer) -> Result<Self, Self::Error> {
-        serde_json::from_slice(&value.0).map_err(|_| ZenError::JsonDeserializationFailed)
+impl From<JsonBuffer> for Value {
+    fn from(value: JsonBuffer) -> Self {
+        value.0
     }
 }
 
-impl TryFrom<JsonBuffer> for Variable {
-    type Error = ZenError;
-
-    fn try_from(value: JsonBuffer) -> Result<Self, Self::Error> {
-        serde_json::from_slice(&value.0).map_err(|_| ZenError::JsonDeserializationFailed)
+impl From<JsonBuffer> for Variable {
+    fn from(value: JsonBuffer) -> Variable {
+        Variable::from(&value.0)
     }
 }
 
-impl TryFrom<Value> for JsonBuffer {
-    type Error = ZenError;
-
-    fn try_from(value: Value) -> Result<Self, Self::Error> {
-        serde_json::to_vec(&value)
-            .map(|v| JsonBuffer(v))
-            .map_err(|_| ZenError::JsonSerializationFailed)
+impl From<Value> for JsonBuffer {
+    fn from(value: Value) -> Self {
+        JsonBuffer(value)
     }
 }
 
-impl TryFrom<Variable> for JsonBuffer {
-    type Error = ZenError;
+impl From<Variable> for JsonBuffer {
+    fn from(var: Variable) -> Self {
+        JsonBuffer(var.to_value())
+    }
+}
 
-    fn try_from(var: Variable) -> Result<Self, Self::Error> {
-        serde_json::to_vec(&var)
-            .map(|v| JsonBuffer(v))
-            .map_err(|_| ZenError::JsonSerializationFailed)
+impl JsonBuffer {
+    pub fn to_value(&self) -> Value {
+        self.0.clone()
+    }
+
+    pub fn to_variable(&self) -> Variable {
+        Variable::from(&self.0)
+    }
+}
+
+#[uniffi::export]
+impl JsonBuffer {
+    #[uniffi::constructor]
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, ZenError> {
+        serde_json::from_slice(&bytes)
+            .map(JsonBuffer)
+            .map_err(|_| ZenError::JsonDeserializationFailed)
+    }
+
+    #[uniffi::constructor]
+    pub fn from_string(json_str: String) -> Result<Self, ZenError> {
+        serde_json::from_str(&json_str)
+            .map(JsonBuffer)
+            .map_err(|_| ZenError::JsonDeserializationFailed)
+    }
+
+    pub fn to_bytes(&self) -> Result<Vec<u8>, ZenError> {
+        serde_json::to_vec(&self.0).map_err(|_| ZenError::JsonSerializationFailed)
+    }
+
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(&self.0).unwrap_or_else(|_| String::from("Failed to serialize JSON"))
     }
 }
 
@@ -48,10 +73,10 @@ impl TryFrom<Variable> for JsonBuffer {
 pub struct ZenEngineTrace {
     pub id: String,
     pub name: String,
-    pub input: JsonBuffer,
-    pub output: JsonBuffer,
+    pub input: Arc<JsonBuffer>,
+    pub output: Arc<JsonBuffer>,
     pub performance: Option<String>,
-    pub trace_data: Option<JsonBuffer>,
+    pub trace_data: Option<Arc<JsonBuffer>>,
     pub order: u32,
 }
 
@@ -60,10 +85,10 @@ impl From<DecisionGraphTrace> for ZenEngineTrace {
         Self {
             id: value.id,
             name: value.name,
-            input: value.input.to_value().try_into().unwrap(),
-            output: value.output.to_value().try_into().unwrap(),
+            input: Arc::new(value.input.into()),
+            output: Arc::new(value.output.into()),
             performance: value.performance,
-            trace_data: value.trace_data.map(|data| data.try_into().unwrap()),
+            trace_data: value.trace_data.map(|data| Arc::new(data.into())),
             order: value.order,
         }
     }
@@ -72,7 +97,7 @@ impl From<DecisionGraphTrace> for ZenEngineTrace {
 #[derive(uniffi::Record)]
 pub struct ZenEngineResponse {
     pub performance: String,
-    pub result: JsonBuffer,
+    pub result: Arc<JsonBuffer>,
     pub trace: Option<HashMap<String, ZenEngineTrace>>,
 }
 
@@ -80,7 +105,7 @@ impl From<DecisionGraphResponse> for ZenEngineResponse {
     fn from(value: DecisionGraphResponse) -> Self {
         Self {
             performance: value.performance,
-            result: value.result.to_value().try_into().unwrap(),
+            result: Arc::new(value.result.into()),
             trace: value.trace.map(|opt| {
                 opt.into_iter()
                     .map(|(key, value)| (key, ZenEngineTrace::from(value)))
@@ -92,8 +117,8 @@ impl From<DecisionGraphResponse> for ZenEngineResponse {
 
 #[derive(uniffi::Record)]
 pub struct ZenEngineHandlerResponse {
-    pub output: JsonBuffer,
-    pub trace_data: Option<JsonBuffer>,
+    pub output: Arc<JsonBuffer>,
+    pub trace_data: Option<Arc<JsonBuffer>>,
 }
 
 #[derive(uniffi::Record)]
@@ -101,7 +126,7 @@ pub struct DecisionNode {
     pub id: String,
     pub name: String,
     pub kind: String,
-    pub config: JsonBuffer,
+    pub config: Arc<JsonBuffer>,
 }
 
 impl From<CustomDecisionNode> for DecisionNode {
@@ -110,13 +135,13 @@ impl From<CustomDecisionNode> for DecisionNode {
             id: value.id,
             name: value.name,
             kind: value.kind,
-            config: JsonBuffer(serde_json::to_vec(&value.config).unwrap()),
+            config: Arc::new(value.config.deref().clone().into()),
         }
     }
 }
 
 #[derive(uniffi::Record)]
 pub struct ZenEngineHandlerRequest {
-    pub input: JsonBuffer,
+    pub input: Arc<JsonBuffer>,
     pub node: DecisionNode,
 }

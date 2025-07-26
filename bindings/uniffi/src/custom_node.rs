@@ -1,6 +1,7 @@
 use crate::error::ZenError;
-use crate::types::{DecisionNode, ZenEngineHandlerRequest, ZenEngineHandlerResponse};
+use crate::types::{DecisionNode, JsonBuffer, ZenEngineHandlerRequest, ZenEngineHandlerResponse};
 use serde_json::Value;
+use std::sync::Arc;
 use uniffi::deps::anyhow::anyhow;
 use zen_engine::handler::custom_node_adapter::{CustomNodeAdapter, CustomNodeRequest};
 use zen_engine::handler::node::{NodeResponse, NodeResult};
@@ -31,11 +32,7 @@ pub struct ZenCustomNodeCallbackWrapper(pub Box<dyn ZenCustomNodeCallback>);
 
 impl CustomNodeAdapter for ZenCustomNodeCallbackWrapper {
     async fn handle(&self, request: CustomNodeRequest) -> NodeResult {
-        let input = request
-            .input
-            .try_into()
-            .map_err(|err: ZenError| anyhow!(err))?;
-
+        let input = Arc::new(JsonBuffer(request.input.to_value()));
         let node = DecisionNode::from(request.node);
 
         let result = self
@@ -44,12 +41,8 @@ impl CustomNodeAdapter for ZenCustomNodeCallbackWrapper {
             .await
             .map_err(|err| anyhow!(err.details()))?;
 
-        let output: Variable = result
-            .output
-            .try_into()
-            .map_err(|err: ZenError| anyhow!(err))?;
-
-        let trace_data: Option<Value> = result.trace_data.and_then(|trace| trace.try_into().ok());
+        let output: Variable = result.output.to_variable();
+        let trace_data: Option<Value> = result.trace_data.map(|trace| trace.to_value());
 
         Ok(NodeResponse { output, trace_data })
     }

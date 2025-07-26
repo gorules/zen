@@ -30,11 +30,11 @@ impl From<Decision<ZenDecisionLoaderCallbackWrapper, ZenCustomNodeCallbackWrappe
 impl ZenDecision {
     pub async fn evaluate(
         &self,
-        context: JsonBuffer,
+        context: Arc<JsonBuffer>,
         options: Option<ZenEvaluateOptions>,
     ) -> Result<ZenEngineResponse, ZenError> {
         let options = options.unwrap_or_default();
-        let context: Value = context.try_into()?;
+        let context: Value = context.to_value();
 
         let decision = self.decision.clone();
         let evaluation_options = EvaluationOptions {

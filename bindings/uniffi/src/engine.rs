@@ -55,11 +55,11 @@ impl ZenEngine {
     pub async fn evaluate(
         &self,
         key: String,
-        context: JsonBuffer,
+        context: Arc<JsonBuffer>,
         options: Option<ZenEvaluateOptions>,
     ) -> Result<ZenEngineResponse, ZenError> {
         let options = options.unwrap_or_default();
-        let context: Value = context.try_into()?;
+        let context: Value = context.to_value();
 
         let engine = self.engine.clone();
         let evaluation_options = EvaluationOptions {
@@ -89,9 +89,10 @@ impl ZenEngine {
         Ok(response)
     }
 
-    pub fn create_decision(&self, content: JsonBuffer) -> Result<ZenDecision, ZenError> {
+    pub fn create_decision(&self, content: Arc<JsonBuffer>) -> Result<ZenDecision, ZenError> {
         let decision = self.engine.create_decision(Arc::new(
-            serde_json::from_slice(&content.0).map_err(|_| ZenError::JsonDeserializationFailed)?,
+            serde_json::from_value(content.to_value())
+                .map_err(|_| ZenError::JsonDeserializationFailed)?,
         ));
 
         Ok(ZenDecision::from(decision))

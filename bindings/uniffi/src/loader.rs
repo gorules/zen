@@ -9,14 +9,14 @@ use zen_engine::model::DecisionContent;
 #[uniffi::export(callback_interface)]
 #[async_trait::async_trait]
 pub trait ZenDecisionLoaderCallback: Send + Sync {
-    async fn load(&self, key: String) -> Result<Option<JsonBuffer>, ZenError>;
+    async fn load(&self, key: String) -> Result<Option<Arc<JsonBuffer>>, ZenError>;
 }
 
 pub struct NoopDecisionLoader;
 
 #[async_trait::async_trait]
 impl ZenDecisionLoaderCallback for NoopDecisionLoader {
-    async fn load(&self, _: String) -> Result<Option<JsonBuffer>, ZenError> {
+    async fn load(&self, _: String) -> Result<Option<Arc<JsonBuffer>>, ZenError> {
         Err(ZenError::Zero)
     }
 }
@@ -40,12 +40,10 @@ impl DecisionLoader for ZenDecisionLoaderCallbackWrapper {
                 return Err(Box::new(LoaderError::NotFound(key.to_string())));
             };
 
-            let decision_content: DecisionContent =
-                serde_json::from_slice(json_buffer.0.as_slice()).map_err(|e| {
-                    LoaderError::Internal {
-                        key: key.to_string(),
-                        source: anyhow!(e),
-                    }
+            let decision_content: DecisionContent = serde_json::from_value(json_buffer.to_value())
+                .map_err(|e| LoaderError::Internal {
+                    key: key.to_string(),
+                    source: anyhow!(e),
                 })?;
 
             Ok(Arc::new(decision_content))

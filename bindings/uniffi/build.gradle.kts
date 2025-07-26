@@ -119,7 +119,7 @@ publishing {
             artifact(tasks["generateJavaSourcesJar"])
             artifact(tasks["javadocJarJava"])
 
-            configurePom()
+            configurePom(configurations["implementation"])
         }
 
         create<MavenPublication>("mavenKotlin") {
@@ -129,7 +129,7 @@ publishing {
             artifact(tasks["generateKotlinSourcesJar"])
             artifact(tasks["javadocJarKotlin"])
 
-            configurePom()
+            configurePom(configurations["implementation"])
         }
     }
     repositories {
@@ -170,7 +170,7 @@ fun loadCargoVersion(): String {
         ?: throw GradleException("Version not found in Cargo.toml")
 }
 
-fun MavenPublication.configurePom() {
+fun MavenPublication.configurePom(configuration: Configuration) {
     pom {
         name = "GoRules ZEN Engine"
         description = "GoRules ZEN Engine is a cross-platform, Open-Source Business Rules Engine (BRE)"
@@ -197,6 +197,18 @@ fun MavenPublication.configurePom() {
 
         scm {
             url = "https://github.com/gorules/zen"
+        }
+
+        withXml {
+            val dependenciesNode = asNode().appendNode("dependencies")
+
+            configuration.allDependencies.forEach { dep ->
+                val dependencyNode = dependenciesNode.appendNode("dependency")
+                dependencyNode.appendNode("groupId", dep.group)
+                dependencyNode.appendNode("artifactId", dep.name)
+                dependencyNode.appendNode("version", dep.version)
+                dependencyNode.appendNode("scope", "runtime")
+            }
         }
     }
 }

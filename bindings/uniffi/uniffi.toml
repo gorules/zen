@@ -1,0 +1,9 @@
+# Kotlin
+[bindings.kotlin]
+package_name = "io.gorules.zen_engine.kotlin"
+generate_immutable_records = true
+
+# Java
+[bindings.java]
+package_name = 'io.gorules.zen_engine'
+generate_immutable_records = true

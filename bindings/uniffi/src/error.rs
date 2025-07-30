@@ -1,5 +1,6 @@
 use serde_json::json;
 use std::fmt::Formatter;
+use zen_expression::IsolateError;
 
 #[allow(dead_code)]
 #[derive(Debug, uniffi::Error)]
@@ -50,5 +51,13 @@ impl ZenError {
 impl std::fmt::Display for ZenError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.details().fmt(f)
+    }
+}
+
+impl From<IsolateError> for ZenError {
+    fn from(error: IsolateError) -> Self {
+        ZenError::EvaluationError(
+            serde_json::to_string(&error).unwrap_or_else(|_| error.to_string()),
+        )
     }
 }

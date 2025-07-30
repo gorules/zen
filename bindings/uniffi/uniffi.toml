@@ -3,7 +3,15 @@
 package_name = "io.gorules.zen_engine.kotlin"
 generate_immutable_records = true
 
+[bindings.kotlin.custom_types.JsonBuffer]
+into_custom = "JsonBuffer({})"
+from_custom = "{}.value"
+
 # Java
 [bindings.java]
 package_name = 'io.gorules.zen_engine'
 generate_immutable_records = true
+
+[bindings.java.custom_types.JsonBuffer]
+into_custom = "{}"
+from_custom = "{}"

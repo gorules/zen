@@ -55,11 +55,11 @@ impl ZenEngine {
     pub async fn evaluate(
         &self,
         key: String,
-        context: Arc<JsonBuffer>,
+        context: JsonBuffer,
         options: Option<ZenEvaluateOptions>,
     ) -> Result<ZenEngineResponse, ZenError> {
         let options = options.unwrap_or_default();
-        let context: Value = context.to_value();
+        let context: Value = context.try_into()?;
 
         let engine = self.engine.clone();
         let evaluation_options = EvaluationOptions {
@@ -74,7 +74,7 @@ impl ZenEngine {
                 engine
                     .evaluate_with_opts(key, context.into(), evaluation_options)
                     .await
-                    .map(|response| ZenEngineResponse::from(response))
+                    .map(|response| ZenEngineResponse::try_from(response))
                     .map_err(|err| {
                         ZenError::EvaluationError(
                             serde_json::to_string(&err.as_ref())
@@ -84,15 +84,14 @@ impl ZenEngine {
             })
         })
         .await
-        .map_err(|e| ZenError::EvaluationError(format!("Task failed: {:?}", e)))??;
+        .map_err(|e| ZenError::EvaluationError(format!("Task failed: {:?}", e)))???;
 
         Ok(response)
     }
 
-    pub fn create_decision(&self, content: Arc<JsonBuffer>) -> Result<ZenDecision, ZenError> {
+    pub fn create_decision(&self, content: JsonBuffer) -> Result<ZenDecision, ZenError> {
         let decision = self.engine.create_decision(Arc::new(
-            serde_json::from_value(content.to_value())
-                .map_err(|_| ZenError::JsonDeserializationFailed)?,
+            serde_json::from_slice(&content.0).map_err(|_| ZenError::JsonDeserializationFailed)?,
         ));
 
         Ok(ZenDecision::from(decision))

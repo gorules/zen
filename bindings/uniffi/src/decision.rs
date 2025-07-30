@@ -30,11 +30,11 @@ impl From<Decision<ZenDecisionLoaderCallbackWrapper, ZenCustomNodeCallbackWrappe
 impl ZenDecision {
     pub async fn evaluate(
         &self,
-        context: Arc<JsonBuffer>,
+        context: JsonBuffer,
         options: Option<ZenEvaluateOptions>,
     ) -> Result<ZenEngineResponse, ZenError> {
         let options = options.unwrap_or_default();
-        let context: Value = context.to_value();
+        let context: Value = context.try_into()?;
 
         let decision = self.decision.clone();
         let evaluation_options = EvaluationOptions {
@@ -49,7 +49,7 @@ impl ZenDecision {
                 decision
                     .evaluate_with_opts(context.into(), evaluation_options)
                     .await
-                    .map(|response| ZenEngineResponse::from(response))
+                    .map(|response| ZenEngineResponse::try_from(response))
                     .map_err(|err| {
                         ZenError::EvaluationError(
                             serde_json::to_string(&err.as_ref())
@@ -59,7 +59,7 @@ impl ZenDecision {
             })
         })
         .await
-        .map_err(|e| ZenError::EvaluationError(format!("Task failed: {:?}", e)))??;
+        .map_err(|e| ZenError::EvaluationError(format!("Task failed: {:?}", e)))???;
 
         Ok(response)
     }

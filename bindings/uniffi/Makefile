@@ -15,6 +15,11 @@ generate-kotlin:
 		--language kotlin \
 		--out-dir build/generated/kotlin
 
-all: build generate-java generate-kotlin
+generate-csharp:
+	uniffi-bindgen-cs \
+		--library build/generated/resources/libzen_uniffi.dylib \
+		--out-dir build/generated/csharp
 
-.PHONY: all build generate-java generate-kotlin
+all: build generate-java generate-kotlin generate-csharp
+
+.PHONY: all build generate-java generate-kotlin generate-csharp

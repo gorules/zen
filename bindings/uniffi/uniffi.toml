@@ -15,3 +15,12 @@ generate_immutable_records = true
 [bindings.java.custom_types.JsonBuffer]
 into_custom = "{}"
 from_custom = "{}"
+
+# C#
+[bindings.csharp]
+namespace = "GoRules.ZenEngine"
+cdylib_name = "Libs/zen_uniffi"
+
+[bindings.csharp.custom_types.JsonBuffer]
+into_custom = "new JsonBuffer({})"
+from_custom = "{}.Value"

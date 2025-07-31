@@ -4,10 +4,7 @@ import org.jetbrains.annotations.NotNull;
 
 import java.nio.charset.StandardCharsets;
 
-public record JsonBuffer(
-  byte[] value
-) {
-
+public record JsonBuffer(byte[] value) {
     public JsonBuffer(String value) {
         this(value.getBytes(StandardCharsets.UTF_8));
     }

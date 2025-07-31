@@ -9,13 +9,13 @@ on:
     tags-ignore:
       - '**'
     paths:
-      - '../../bindings/uniffi/**'
+      - 'bindings/uniffi/**'
       - 'core/**'
       - 'test-data/**'
       - '.github/workflows/uniffi.yaml'
   pull_request:
     paths:
-      - '../../bindings/uniffi/**'
+      - 'bindings/uniffi/**'
       - 'core/**'
       - 'test-data/**'
       - '.github/workflows/uniffi.yaml'

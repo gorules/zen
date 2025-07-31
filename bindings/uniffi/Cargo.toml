@@ -1,0 +1,25 @@
+[package]
+name = "zen-uniffi"
+version = "0.1.10"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"
+
+[dependencies]
+uniffi = { version = "0.29", features = ["tokio", "cli"] }
+serde_json = { workspace = true }
+zen-engine = { path = "../../core/engine" }
+zen-expression = { path = "../../core/expression" }
+serde = { workspace = true, features = ["derive"] }
+async-trait = "0.1"
+tokio = "1.46"
+
+[build-dependencies]
+uniffi = { version = "0.29", features = ["build"] }

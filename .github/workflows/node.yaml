@@ -64,6 +64,8 @@ jobs:
               sudo apt-get update
               sudo apt-get install -y patch
               cd bindings/nodejs
+              rustup install 1.88.0
+              rustup default 1.88.0
               rustup target add x86_64-unknown-linux-gnu
               yarn build --target x86_64-unknown-linux-gnu
               strip ./*.node
@@ -76,6 +78,8 @@ jobs:
               sudo apt-get update
               sudo apt-get install -y patch
               cd bindings/nodejs
+              rustup install 1.88.0
+              rustup default 1.88.0
               rustup target add aarch64-unknown-linux-gnu
               yarn build --target aarch64-unknown-linux-gnu
               llvm-strip ./*.node
@@ -86,6 +90,8 @@ jobs:
             build: |
               set -e
               cd bindings/nodejs
+              rustup install 1.88.0
+              rustup default 1.88.0
               rustup target add x86_64-unknown-linux-musl
               yarn build --target x86_64-unknown-linux-musl
               strip ./*.node
@@ -99,6 +105,8 @@ jobs:
               # Set environment variables for the Rust toolchain
               export CC_aarch64_unknown_linux_musl=aarch64-linux-musl-gcc
               export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-musl-gcc
+              rustup install 1.88.0
+              rustup default 1.88.0
               rustup target add aarch64-unknown-linux-musl
               yarn build --target aarch64-unknown-linux-musl
               /aarch64-linux-musl-cross/bin/aarch64-linux-musl-strip *.node

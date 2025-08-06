@@ -3,24 +3,29 @@ pub use crate::functions::defs::FunctionTypecheck;
 pub use crate::functions::deprecated::DeprecatedFunction;
 pub use crate::functions::internal::InternalFunction;
 pub use crate::functions::method::{MethodKind, MethodRegistry};
+use crate::functions::mf_function::MfFunction;
+pub use crate::functions::state_guard::{StateGuard, with_state_async};
 pub use crate::functions::registry::FunctionRegistry;
 
 use std::fmt::Display;
 use strum_macros::{Display, EnumIter, EnumString, IntoStaticStr};
 
-pub(crate) mod arguments;
+pub  mod arguments;
 mod date_method;
 pub(crate) mod defs;
 mod deprecated;
 pub(crate) mod internal;
 mod method;
 pub(crate) mod registry;
+pub mod mf_function;
+pub mod state_guard;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum FunctionKind {
     Internal(InternalFunction),
     Deprecated(DeprecatedFunction),
     Closure(ClosureFunction),
+    Mf(MfFunction),
 }
 
 impl TryFrom<&str> for FunctionKind {
@@ -31,6 +36,7 @@ impl TryFrom<&str> for FunctionKind {
             .map(FunctionKind::Internal)
             .or_else(|_| DeprecatedFunction::try_from(value).map(FunctionKind::Deprecated))
             .or_else(|_| ClosureFunction::try_from(value).map(FunctionKind::Closure))
+            .or_else(|_| MfFunction::try_from(value).map(FunctionKind::Mf))
     }
 }
 
@@ -40,6 +46,7 @@ impl Display for FunctionKind {
             FunctionKind::Internal(i) => write!(f, "{i}"),
             FunctionKind::Deprecated(d) => write!(f, "{d}"),
             FunctionKind::Closure(c) => write!(f, "{c}"),
+            FunctionKind::Mf(m) => write!(f, "{m}"),
         }
     }
 }

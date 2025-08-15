@@ -4,6 +4,7 @@ use crate::functions::registry::FunctionRegistry;
 use crate::functions::{internal, MethodRegistry};
 use crate::variable::Variable;
 use crate::variable::Variable::*;
+use crate::vm::date::DynamicVariableExt;
 use crate::vm::error::VMError::*;
 use crate::vm::error::VMResult;
 use crate::vm::interval::{VmInterval, VmIntervalData};

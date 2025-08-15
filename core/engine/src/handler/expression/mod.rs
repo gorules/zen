@@ -1,21 +1,23 @@
-use crate::handler::node::{NodeRequest, NodeResponse, NodeResult, PartialTraceError};
+use crate::handler::node::{NodeRequest, NodeResponse, NodeResult};
 use crate::model::{DecisionNodeKind, ExpressionNodeContent};
 use ahash::{HashMap, HashMapExt};
+use std::rc::Rc;
 use std::sync::Arc;
 
-use anyhow::{anyhow, Context};
+use crate::handler::node::NodError;
+use anyhow::anyhow;
 use serde::Serialize;
 use tokio::sync::Mutex;
-use zen_expression::variable::Variable;
-use zen_expression::Isolate;
+use zen_expression::variable::{ToVariable, Variable};
+use zen_expression::{Isolate, ToVariable};
 
 pub struct ExpressionHandler {
     trace: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToVariable)]
 struct ExpressionTrace {
-    result: String,
+    result: Variable,
 }
 
 impl ExpressionHandler {
@@ -60,7 +62,9 @@ impl<'a> ExpressionHandlerInner<'a> {
 
     async fn handle(&mut self, input: Variable, content: &'a ExpressionNodeContent) -> NodeResult {
         let result = Variable::empty_object();
-        let mut trace_map = self.trace.then(|| HashMap::<&str, ExpressionTrace>::new());
+        let mut trace_map = self
+            .trace
+            .then(|| HashMap::<Rc<str>, ExpressionTrace>::new());
 
         self.isolate.set_environment(input.depth_clone(1));
         for expression in &content.expressions {
@@ -68,21 +72,17 @@ impl<'a> ExpressionHandlerInner<'a> {
                 continue;
             }
 
-            let value = self
-                .isolate
-                .run_standard(&expression.value)
-                .with_context(|| PartialTraceError {
-                    trace: trace_map
-                        .as_ref()
-                        .map(|s| serde_json::to_value(s).ok())
-                        .flatten(),
+            let value = self.isolate.run_standard(&expression.value).map_err(|_| {
+                NodError::PartialTrace {
+                    trace: trace_map.as_ref().map(|v| v.to_variable()),
                     message: format!(r#"Failed to evaluate expression: "{}""#, &expression.value),
-                })?;
+                }
+            })?;
             if let Some(tmap) = &mut trace_map {
                 tmap.insert(
-                    &expression.key,
+                    Rc::from(expression.key.as_str()),
                     ExpressionTrace {
-                        result: serde_json::to_string(&value).unwrap_or("Error".to_owned()),
+                        result: value.clone(),
                     },
                 );
             }
@@ -101,7 +101,7 @@ impl<'a> ExpressionHandlerInner<'a> {
 
         Ok(NodeResponse {
             output: result,
-            trace_data: trace_map.map(|tm| serde_json::to_value(tm).ok()).flatten(),
+            trace_data: trace_map.as_ref().map(|v| v.to_variable()),
         })
     }
 }

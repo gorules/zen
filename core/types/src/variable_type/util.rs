@@ -1,8 +1,8 @@
-use crate::variable::types::VariableType;
+use crate::variable_type::VariableType;
 use rust_decimal::prelude::Zero;
 use std::cell::RefCell;
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::rc::Rc;
 
 impl VariableType {
@@ -323,7 +323,7 @@ impl VariableType {
 
 #[cfg(test)]
 mod tests {
-    use crate::variable::VariableType;
+    use crate::variable_type::VariableType;
     use std::rc::Rc;
 
     #[test]

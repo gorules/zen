@@ -1,4 +1,4 @@
-use crate::variable::types::VariableType;
+use crate::variable_type::VariableType;
 use serde_json::Value;
 use std::borrow::Cow;
 use std::cell::RefCell;

@@ -8,6 +8,7 @@ use crate::handler::function::listener::{RuntimeEvent, RuntimeListener};
 use rquickjs::prelude::Rest;
 use rquickjs::{Ctx, Object, Value};
 use serde::{Deserialize, Serialize};
+use zen_expression::ToVariable;
 
 pub(crate) struct ConsoleListener;
 
@@ -28,7 +29,7 @@ impl RuntimeListener for ConsoleListener {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, ToVariable, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Log {
     pub lines: Vec<String>,

@@ -117,11 +117,29 @@ impl From<&DeprecatedFunction> for Rc<dyn FunctionDefinition> {
 mod imp {
     use super::*;
     use crate::vm::helpers::DateUnit;
+    use crate::vm::VMError;
+    use zen_types::variable::Variable;
 
     fn __internal_convert_datetime(timestamp: &V) -> anyhow::Result<NaiveDateTime> {
-        timestamp
-            .try_into()
-            .context("Failed to convert value to date time")
+        match timestamp {
+            Variable::String(a) => date_time(a),
+            #[allow(deprecated)]
+            Variable::Number(a) => NaiveDateTime::from_timestamp_opt(
+                a.to_i64().ok_or_else(|| VMError::OpcodeErr {
+                    opcode: "DateManipulation".into(),
+                    message: "Failed to extract date".into(),
+                })?,
+                0,
+            )
+            .ok_or_else(|| VMError::ParseDateTimeErr {
+                timestamp: a.to_string(),
+            }),
+            _ => Err(VMError::OpcodeErr {
+                opcode: "DateManipulation".into(),
+                message: "Unsupported type".into(),
+            }),
+        }
+        .context("Failed to convert value to date time")
     }
 
     pub fn parse_date(args: Arguments) -> anyhow::Result<V> {

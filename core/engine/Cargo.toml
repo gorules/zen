@@ -27,6 +27,7 @@ rquickjs = { version = "0.9", features = ["macro", "loader", "rust-alloc", "futu
 jsonschema = "0.29"
 zen-expression = { path = "../expression", version = "0.49.1" }
 zen-tmpl = { path = "../template", version = "0.49.1" }
+zen-types = { path = "../types" }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

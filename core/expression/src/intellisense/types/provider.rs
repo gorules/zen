@@ -151,7 +151,6 @@ impl TypesProvider {
                             .root_data
                             .dot_insert_detached(key_type.as_ref(), value_type.kind.shallow_clone())
                         {
-                            println!("NewVar: {new_var:?}");
                             scope.root_data = new_var;
                         };
 

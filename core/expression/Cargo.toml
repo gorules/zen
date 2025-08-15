@@ -30,6 +30,9 @@ nohash-hasher = "0.2.0"
 strsim = "0.11"
 iana-time-zone = "0.1"
 
+zen-macros = { path = "../macros" }
+zen-types = { path = "../types" }
+
 [dev-dependencies]
 criterion = { workspace = true }
 csv = "1"

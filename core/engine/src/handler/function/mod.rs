@@ -2,18 +2,18 @@ use std::rc::Rc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use ::serde::{Deserialize, Serialize};
-use anyhow::anyhow;
-use rquickjs::{async_with, CatchResultExt, Object};
-use serde_json::json;
-
 use crate::handler::function::error::FunctionResult;
 use crate::handler::function::function::{Function, HandlerResponse};
 use crate::handler::function::module::console::Log;
 use crate::handler::function::serde::JsValue;
-use crate::handler::node::{NodeRequest, NodeResponse, NodeResult, PartialTraceError};
+use crate::handler::node::{NodError, NodeRequest, NodeResponse, NodeResult};
 use crate::model::{DecisionNodeKind, FunctionNodeContent};
 use crate::ZEN_CONFIG;
+use ::serde::{Deserialize, Serialize};
+use anyhow::anyhow;
+use rquickjs::{async_with, CatchResultExt, Object};
+use serde_json::json;
+use zen_expression::variable::ToVariable;
 
 pub(crate) mod error;
 pub(crate) mod function;
@@ -58,9 +58,9 @@ impl FunctionHandler {
         }?;
 
         let start = std::time::Instant::now();
-        if content.omit_nodes {
-            request.input.dot_remove("$nodes");
-        }
+        // if content.omit_nodes {
+        request.input.dot_remove("$nodes");
+        // }
 
         let module_name = self
             .function
@@ -93,7 +93,7 @@ impl FunctionHandler {
 
                 Ok(NodeResponse {
                     output: response.data,
-                    trace_data: self.trace.then(|| json!({ "log": response.logs })),
+                    trace_data: self.trace.then(|| response.logs.to_variable()),
                 })
             }
             Err(e) => {
@@ -103,10 +103,10 @@ impl FunctionHandler {
                     ms_since_run: start.elapsed().as_millis() as usize,
                 });
 
-                Err(anyhow!(PartialTraceError {
+                Err(NodError::PartialTrace {
                     message: e.to_string(),
-                    trace: Some(json!({ "log": log })),
-                }))
+                    trace: Some(log.to_variable()),
+                })
             }
         }
     }

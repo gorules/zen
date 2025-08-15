@@ -1,11 +1,12 @@
 use crate::handler::graph::DecisionGraphValidationError;
-use crate::handler::node::NodeError;
+use crate::handler::node::NodError;
 use crate::loader::LoaderError;
 use jsonschema::{ErrorIterator, ValidationError};
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 use serde_json::{Map, Value};
 use std::iter::once;
+use std::ops::Deref;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -14,7 +15,7 @@ pub enum EvaluationError {
     LoaderError(Box<LoaderError>),
 
     #[error("Node error")]
-    NodeError(Box<NodeError>),
+    NodeError(Box<NodError>),
 
     #[error("Depth limit exceeded")]
     DepthLimitExceeded,
@@ -38,11 +39,35 @@ impl Serialize for EvaluationError {
             }
             EvaluationError::NodeError(err) => {
                 map.serialize_entry("type", "NodeError")?;
-                map.serialize_entry("nodeId", &err.node_id)?;
-                map.serialize_entry("source", &err.source.to_string())?;
 
-                if let Some(trace) = &err.trace {
-                    map.serialize_entry("trace", &trace)?;
+                match err.deref() {
+                    NodError::Internal => map.serialize_entry("source", "Internal")?,
+                    NodError::Other(o) => map.serialize_entry("source", &o.to_string())?,
+                    NodError::Display(d) => map.serialize_entry("source", d.as_str())?,
+                    NodError::Node {
+                        node_id,
+                        source,
+                        trace,
+                    } => {
+                        map.serialize_entry("nodeId", node_id.as_str())?;
+                        map.serialize_entry("source", &source.to_string())?;
+
+                        if let Some(trace) = &trace {
+                            map.serialize_entry(
+                                "trace",
+                                &serde_json::to_string(&trace.serialize_ref()).unwrap(),
+                            )?;
+                        }
+                    }
+                    NodError::PartialTrace { trace, message } => {
+                        map.serialize_entry("source", message.as_str())?;
+                        if let Some(trace) = &trace {
+                            map.serialize_entry(
+                                "trace",
+                                &serde_json::to_string(&trace.serialize_ref()).unwrap(),
+                            )?;
+                        }
+                    }
                 }
             }
             EvaluationError::LoaderError(err) => {
@@ -83,15 +108,15 @@ impl From<Box<LoaderError>> for Box<EvaluationError> {
     }
 }
 
-impl From<NodeError> for Box<EvaluationError> {
-    fn from(error: NodeError) -> Self {
-        Box::new(EvaluationError::NodeError(error.into()))
+impl From<NodError> for Box<EvaluationError> {
+    fn from(value: NodError) -> Self {
+        Box::new(EvaluationError::NodeError(Box::new(value)))
     }
 }
 
-impl From<Box<NodeError>> for Box<EvaluationError> {
-    fn from(error: Box<NodeError>) -> Self {
-        Box::new(EvaluationError::NodeError(error))
+impl From<Box<NodError>> for Box<EvaluationError> {
+    fn from(value: Box<NodError>) -> Self {
+        Box::new(EvaluationError::NodeError(value))
     }
 }
 

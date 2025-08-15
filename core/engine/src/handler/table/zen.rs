@@ -7,10 +7,10 @@ use crate::handler::table::{RowOutput, RowOutputKind};
 use crate::model::{DecisionNodeKind, DecisionTableContent, DecisionTableHitPolicy};
 use serde::Serialize;
 use tokio::sync::Mutex;
-use zen_expression::variable::Variable;
-use zen_expression::Isolate;
+use zen_expression::variable::{ToVariable, Variable};
+use zen_expression::{Isolate, ToVariable};
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToVariable)]
 struct RowResult {
     rule: Option<HashMap<String, String>>,
     reference_map: Option<HashMap<String, Variable>>,
@@ -89,10 +89,7 @@ impl<'a> DecisionTableHandlerInner<'a> {
             if let Some(result) = self.evaluate_row(&content, i) {
                 return Ok(NodeResponse {
                     output: result.output.to_json().await,
-                    trace_data: self
-                        .trace
-                        .then(|| serde_json::to_value(&result).ok())
-                        .flatten(),
+                    trace_data: self.trace.then(|| result.to_variable()),
                 });
             }
         }
@@ -118,10 +115,7 @@ impl<'a> DecisionTableHandlerInner<'a> {
 
         Ok(NodeResponse {
             output: Variable::from_array(outputs),
-            trace_data: self
-                .trace
-                .then(|| serde_json::to_value(&results).ok())
-                .flatten(),
+            trace_data: self.trace.then(|| results.to_variable()),
         })
     }
 

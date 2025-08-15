@@ -1,4 +1,4 @@
-use crate::handler::node::{NodeRequest, NodeResult};
+use crate::handler::node::{NodError, NodeRequest, NodeResult};
 use crate::model::{DecisionNode, DecisionNodeKind};
 use anyhow::anyhow;
 use json_dotpath::DotPaths;
@@ -18,7 +18,7 @@ pub struct NoopCustomNode;
 
 impl CustomNodeAdapter for NoopCustomNode {
     async fn handle(&self, _: CustomNodeRequest) -> NodeResult {
-        Err(anyhow!("Custom node handler not provided"))
+        Err(NodError::Internal)
     }
 }
 

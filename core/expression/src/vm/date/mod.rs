@@ -175,7 +175,7 @@ impl VmDate {
 }
 
 mod helper {
-    use crate::vm::date::{Duration, DurationUnit};
+    use crate::vm::date::{Duration, DurationUnit, DynamicVariableExt};
     use crate::Variable;
     use chrono::{
         DateTime, Datelike, Days, LocalResult, Month, Months, NaiveDate, NaiveDateTime, Offset,
@@ -475,8 +475,12 @@ mod helper {
     }
 }
 
-impl dyn DynamicVariable {
-    pub(crate) fn as_date(&self) -> Option<&VmDate> {
+pub(crate) trait DynamicVariableExt {
+    fn as_date(&self) -> Option<&VmDate>;
+}
+
+impl DynamicVariableExt for dyn DynamicVariable {
+    fn as_date(&self) -> Option<&VmDate> {
         self.as_any().downcast_ref::<VmDate>()
     }
 }

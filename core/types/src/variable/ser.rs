@@ -1,4 +1,4 @@
-use crate::variable::de::NUMBER_TOKEN;
+use crate::constant::NUMBER_TOKEN;
 use crate::variable::Variable;
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};

@@ -7,7 +7,7 @@ use crate::handler::function::module::zen::ZenListener;
 use crate::handler::function::FunctionHandler;
 use crate::handler::function_v1;
 use crate::handler::function_v1::runtime::create_runtime;
-use crate::handler::node::{NodeRequest, PartialTraceError};
+use crate::handler::node::{NodError, NodeRequest, PartialTraceError};
 use crate::handler::table::zen::DecisionTableHandler;
 use crate::handler::traversal::{GraphWalker, StableDiDecisionGraph};
 use crate::loader::DecisionLoader;
@@ -25,7 +25,8 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 use thiserror::Error;
-use zen_expression::variable::Variable;
+use zen_expression::variable::{ToVariable, Variable};
+use zen_expression::ToVariable;
 
 pub struct DecisionGraph<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> {
     initial_graph: StableDiDecisionGraph,
@@ -142,22 +143,19 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
             .count()
     }
 
-    pub async fn evaluate(
-        &mut self,
-        context: Variable,
-    ) -> Result<DecisionGraphResponse, NodeError> {
+    pub async fn evaluate(&mut self, context: Variable) -> Result<DecisionGraphResponse, NodError> {
         let root_start = Instant::now();
 
         self.validate().map_err(|e| NodeError {
             node_id: "".to_string(),
-            source: anyhow!(e),
+            source: anyhow!(e).into(),
             trace: None,
         })?;
 
         if self.iteration >= self.max_depth {
-            return Err(NodeError {
+            return Err(NodError::Node {
                 node_id: "".to_string(),
-                source: anyhow!(EvaluationError::DepthLimitExceeded),
+                source: Box::new(NodError::Internal),
                 trace: None,
             });
         }
@@ -218,7 +216,7 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
                             .get_or_insert(validator_key, &json_schema)
                             .await
                             .map_err(|e| NodeError {
-                                source: e.into(),
+                                source: NodError::from(e.to_string()),
                                 node_id: node.id.clone(),
                                 trace: error_trace(&node_traces),
                             })?;
@@ -228,7 +226,8 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
                             source: anyhow!(serde_json::to_value(
                                 Into::<Box<EvaluationError>>::into(e)
                             )
-                            .unwrap_or_default()),
+                            .unwrap_or_default())
+                            .into(),
                             node_id: node.id.clone(),
                             trace: error_trace(&node_traces),
                         })?;
@@ -257,7 +256,7 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
                             .get_or_insert(validator_key, &json_schema)
                             .await
                             .map_err(|e| NodeError {
-                                source: e.into(),
+                                source: NodError::from(e.to_string()),
                                 node_id: node.id.clone(),
                                 trace: error_trace(&node_traces),
                             })?;
@@ -266,10 +265,7 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
                         validator
                             .validate(&incoming_data_json)
                             .map_err(|e| NodeError {
-                                source: anyhow!(serde_json::to_value(
-                                    Into::<Box<EvaluationError>>::into(e)
-                                )
-                                .unwrap_or_default()),
+                                source: NodError::from(e.to_string()),
                                 node_id: node.id.clone(),
                                 trace: error_trace(&node_traces),
                             })?;
@@ -308,11 +304,11 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
                         .handle(node_request.clone())
                         .await
                         .map_err(|e| {
-                            if let Some(detailed_err) = e.downcast_ref::<PartialTraceError>() {
+                            if let NodError::PartialTrace { trace, message } = &e {
                                 trace!({
                                     input: node_request.input.clone(),
                                     output: Variable::Null,
-                                    trace_data: detailed_err.trace.clone(),
+                                    trace_data: trace.clone(),
                                 });
                             }
 
@@ -420,11 +416,11 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
                         .handle(node_request.clone())
                         .await
                         .map_err(|e| {
-                            if let Some(detailed_err) = e.downcast_ref::<PartialTraceError>() {
+                            if let NodError::PartialTrace { trace, message } = &e {
                                 trace!({
                                     input: node_request.input.clone(),
                                     output: Variable::Null,
-                                    trace_data: detailed_err.trace.clone(),
+                                    trace_data: trace.clone(),
                                 });
                             }
 
@@ -536,7 +532,7 @@ pub struct DecisionGraphResponse {
     pub trace: Option<HashMap<String, DecisionGraphTrace>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToVariable)]
 #[serde(rename_all = "camelCase")]
 pub struct DecisionGraphTrace {
     pub input: Variable,
@@ -544,15 +540,12 @@ pub struct DecisionGraphTrace {
     pub name: String,
     pub id: String,
     pub performance: Option<String>,
-    pub trace_data: Option<Value>,
+    pub trace_data: Option<Variable>,
     pub order: u32,
 }
 
-pub(crate) fn error_trace(trace: &Option<HashMap<String, DecisionGraphTrace>>) -> Option<Value> {
-    trace
-        .as_ref()
-        .map(|s| serde_json::to_value(s).ok())
-        .flatten()
+pub(crate) fn error_trace(trace: &Option<HashMap<String, DecisionGraphTrace>>) -> Option<Variable> {
+    trace.as_ref().map(|s| s.to_variable())
 }
 
 fn create_validator_cache_key(content: &Value) -> u64 {

@@ -5,7 +5,6 @@ use crate::handler::node::{NodeRequest, NodeResponse, NodeResult};
 use crate::model::{DecisionNodeKind, FunctionNodeContent};
 use anyhow::anyhow;
 use rquickjs::Runtime;
-use serde_json::json;
 use zen_expression::variable::ToVariable;
 
 pub(crate) mod runtime;

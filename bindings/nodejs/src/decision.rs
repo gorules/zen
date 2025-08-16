@@ -47,13 +47,13 @@ impl ZenDecision {
                     )
                     .await
                     .map(ZenEngineResponse::from)
+                    .map_err(|e| {
+                        anyhow!(serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string()))
+                    })
             }
         })
         .await
-        .map_err(|_| anyhow!("Hook timed out"))?
-        .map_err(|e| {
-            anyhow!(serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string()))
-        })?;
+        .map_err(|_| anyhow!("Hook timed out"))??;
 
         Ok(result)
     }

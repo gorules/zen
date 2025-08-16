@@ -4,7 +4,7 @@ use ahash::{HashMap, HashMapExt};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use crate::handler::node::NodError;
+use crate::handler::node::NodeError;
 use anyhow::anyhow;
 use serde::Serialize;
 use tokio::sync::Mutex;
@@ -73,7 +73,7 @@ impl<'a> ExpressionHandlerInner<'a> {
             }
 
             let value = self.isolate.run_standard(&expression.value).map_err(|_| {
-                NodError::PartialTrace {
+                NodeError::PartialTrace {
                     trace: trace_map.as_ref().map(|v| v.to_variable()),
                     message: format!(r#"Failed to evaluate expression: "{}""#, &expression.value),
                 }

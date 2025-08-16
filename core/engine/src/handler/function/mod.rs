@@ -6,7 +6,7 @@ use crate::handler::function::error::FunctionResult;
 use crate::handler::function::function::{Function, HandlerResponse};
 use crate::handler::function::module::console::Log;
 use crate::handler::function::serde::JsValue;
-use crate::handler::node::{NodError, NodeRequest, NodeResponse, NodeResult};
+use crate::handler::node::{NodeError, NodeRequest, NodeResponse, NodeResult};
 use crate::model::{DecisionNodeKind, FunctionNodeContent};
 use crate::ZEN_CONFIG;
 use ::serde::{Deserialize, Serialize};
@@ -103,7 +103,7 @@ impl FunctionHandler {
                     ms_since_run: start.elapsed().as_millis() as usize,
                 });
 
-                Err(NodError::PartialTrace {
+                Err(NodeError::PartialTrace {
                     message: e.to_string(),
                     trace: Some(log.to_variable()),
                 })

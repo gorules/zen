@@ -3,7 +3,7 @@ use serde_json::json;
 use std::ops::Deref;
 use std::sync::Arc;
 use tokio::runtime::Builder;
-use zen_engine::{Decision, DecisionGraphValidationError, EvaluationError};
+use zen_engine::{Decision, DecisionGraphValidationError, EvaluationError, NodeError};
 
 mod support;
 
@@ -28,9 +28,11 @@ async fn decision_from_content_recursive() {
     let context = json!({});
     let result = decision.evaluate(context.clone().into()).await;
     match result.unwrap_err().deref() {
-        EvaluationError::NodeError(e) => {
-            assert_eq!(e.node_id, "0b8dcf6b-fc04-47cb-bf82-bda764e6c09b");
-            assert!(e.source.to_string().contains("Loader failed"));
+        EvaluationError::NodeError(NodeError::Node {
+            node_id, source, ..
+        }) => {
+            assert_eq!(node_id, "0b8dcf6b-fc04-47cb-bf82-bda764e6c09b");
+            assert!(source.to_string().contains("Loader failed"));
         }
         _ => assert!(false, "Depth limit not exceeded"),
     }
@@ -38,8 +40,8 @@ async fn decision_from_content_recursive() {
     let with_loader = decision.with_loader(Arc::new(create_fs_loader()));
     let new_result = with_loader.evaluate(context.clone().into()).await;
     match new_result.unwrap_err().deref() {
-        EvaluationError::NodeError(e) => {
-            assert_eq!(e.source.to_string(), "Depth limit exceeded")
+        EvaluationError::NodeError(NodeError::Node { source, .. }) => {
+            assert_eq!(source.to_string(), "Depth limit exceeded")
         }
         _ => assert!(false, "Depth limit not exceeded"),
     }

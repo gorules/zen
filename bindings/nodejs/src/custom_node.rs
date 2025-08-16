@@ -2,10 +2,10 @@ use napi::anyhow::anyhow;
 use napi::bindgen_prelude::Promise;
 use napi::threadsafe_function::{ErrorStrategy, ThreadsafeFunction};
 
+use crate::types::{ZenEngineHandlerRequest, ZenEngineHandlerResponse};
 use zen_engine::handler::custom_node_adapter::{CustomNodeAdapter, CustomNodeRequest};
 use zen_engine::handler::node::{NodeResponse, NodeResult};
-
-use crate::types::{ZenEngineHandlerRequest, ZenEngineHandlerResponse};
+use zen_engine::Variable;
 
 #[derive(Default)]
 pub(crate) struct CustomNode {
@@ -23,7 +23,7 @@ impl CustomNode {
 impl CustomNodeAdapter for CustomNode {
     async fn handle(&self, request: CustomNodeRequest) -> NodeResult {
         let Some(function) = &self.function else {
-            return Err(anyhow!("Custom function is undefined"));
+            return Err(anyhow!("Custom function is undefined").into());
         };
 
         let node_data = crate::types::DecisionNode::from(request.node);
@@ -41,7 +41,7 @@ impl CustomNodeAdapter for CustomNode {
 
         Ok(NodeResponse {
             output: result.output.into(),
-            trace_data: result.trace_data,
+            trace_data: result.trace_data.map(Variable::from),
         })
     }
 }

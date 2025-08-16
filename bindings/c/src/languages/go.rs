@@ -52,11 +52,11 @@ impl GoCustomNode {
 impl CustomNodeAdapter for GoCustomNode {
     async fn handle(&self, request: CustomNodeRequest) -> NodeResult {
         let Some(handler) = self.handler else {
-            return Err(anyhow!("go handler not found"));
+            return Err(anyhow!("go handler not found").into());
         };
 
         let Ok(request_value) = serde_json::to_string(&request) else {
-            return Err(anyhow!("failed to serialize request json"));
+            return Err(anyhow!("failed to serialize request json").into());
         };
 
         let c_request = unsafe { CString::from_vec_unchecked(request_value.into_bytes()) };

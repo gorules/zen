@@ -1,6 +1,5 @@
-use crate::handler::node::{NodError, NodeRequest, NodeResult};
+use crate::handler::node::{NodeError, NodeRequest, NodeResult};
 use crate::model::{DecisionNode, DecisionNodeKind};
-use anyhow::anyhow;
 use json_dotpath::DotPaths;
 use serde::Serialize;
 use serde_json::Value;
@@ -18,7 +17,7 @@ pub struct NoopCustomNode;
 
 impl CustomNodeAdapter for NoopCustomNode {
     async fn handle(&self, _: CustomNodeRequest) -> NodeResult {
-        Err(NodError::Internal)
+        Err(NodeError::Internal)
     }
 }
 

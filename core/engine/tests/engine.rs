@@ -9,8 +9,8 @@ use std::sync::Arc;
 use tokio::runtime::Builder;
 use zen_engine::loader::{LoaderError, MemoryLoader};
 use zen_engine::model::{DecisionContent, DecisionNode, DecisionNodeKind, FunctionNodeContent};
-use zen_engine::Variable;
 use zen_engine::{DecisionEngine, EvaluationError, EvaluationOptions};
+use zen_engine::{NodeError, Variable};
 
 mod support;
 
@@ -112,9 +112,11 @@ async fn engine_errors() {
         .evaluate("infinite-function.json", json!({}).into())
         .await;
     match infinite_fn.unwrap_err().deref() {
-        EvaluationError::NodeError(e) => {
-            assert_eq!(e.node_id, "e0fd96d0-44dc-4f0e-b825-06e56b442d78");
-            assert!(e.source.to_string().contains("interrupted"));
+        EvaluationError::NodeError(NodeError::Node {
+            node_id, source, ..
+        }) => {
+            assert_eq!(node_id, "e0fd96d0-44dc-4f0e-b825-06e56b442d78");
+            assert!(source.to_string().contains("interrupted"));
         }
         _ => assert!(false, "Wrong error type"),
     }
@@ -123,8 +125,8 @@ async fn engine_errors() {
         .evaluate("recursive-table1.json", json!({}).into())
         .await;
     match recursive.unwrap_err().deref() {
-        EvaluationError::NodeError(e) => {
-            assert_eq!(e.source.to_string(), "Depth limit exceeded")
+        EvaluationError::NodeError(NodeError::Node { source, .. }) => {
+            assert_eq!(source.to_string(), "Depth limit exceeded")
         }
         _ => assert!(false, "Depth limit not exceeded"),
     }

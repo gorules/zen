@@ -1,30 +1,29 @@
 use crate::handler::graph::DecisionGraphValidationError;
-use crate::handler::node::NodError;
+pub use crate::handler::node::NodeError;
 use crate::loader::LoaderError;
 use jsonschema::{ErrorIterator, ValidationError};
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 use serde_json::{Map, Value};
 use std::iter::once;
-use std::ops::Deref;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum EvaluationError {
     #[error("Loader error")]
-    LoaderError(Box<LoaderError>),
+    LoaderError(LoaderError),
 
     #[error("Node error")]
-    NodeError(Box<NodError>),
+    NodeError(NodeError),
 
     #[error("Depth limit exceeded")]
     DepthLimitExceeded,
 
     #[error("Invalid graph")]
-    InvalidGraph(Box<DecisionGraphValidationError>),
+    InvalidGraph(DecisionGraphValidationError),
 
     #[error("Validation failed")]
-    Validation(Box<Value>),
+    Validation(Value),
 }
 
 impl Serialize for EvaluationError {
@@ -40,11 +39,11 @@ impl Serialize for EvaluationError {
             EvaluationError::NodeError(err) => {
                 map.serialize_entry("type", "NodeError")?;
 
-                match err.deref() {
-                    NodError::Internal => map.serialize_entry("source", "Internal")?,
-                    NodError::Other(o) => map.serialize_entry("source", &o.to_string())?,
-                    NodError::Display(d) => map.serialize_entry("source", d.as_str())?,
-                    NodError::Node {
+                match err {
+                    NodeError::Internal => map.serialize_entry("source", "Internal")?,
+                    NodeError::Other(o) => map.serialize_entry("source", &o.to_string())?,
+                    NodeError::Display(d) => map.serialize_entry("source", d.as_str())?,
+                    NodeError::Node {
                         node_id,
                         source,
                         trace,
@@ -59,7 +58,7 @@ impl Serialize for EvaluationError {
                             )?;
                         }
                     }
-                    NodError::PartialTrace { trace, message } => {
+                    NodeError::PartialTrace { trace, message } => {
                         map.serialize_entry("source", message.as_str())?;
                         if let Some(trace) = &trace {
                             map.serialize_entry(
@@ -72,7 +71,7 @@ impl Serialize for EvaluationError {
             }
             EvaluationError::LoaderError(err) => {
                 map.serialize_entry("type", "LoaderError")?;
-                match err.as_ref() {
+                match err {
                     LoaderError::Internal { key, source } => {
                         map.serialize_entry("key", key)?;
                         map.serialize_entry("source", &source.to_string())?;
@@ -102,20 +101,8 @@ impl From<LoaderError> for Box<EvaluationError> {
     }
 }
 
-impl From<Box<LoaderError>> for Box<EvaluationError> {
-    fn from(error: Box<LoaderError>) -> Self {
-        Box::new(EvaluationError::LoaderError(error))
-    }
-}
-
-impl From<NodError> for Box<EvaluationError> {
-    fn from(value: NodError) -> Self {
-        Box::new(EvaluationError::NodeError(Box::new(value)))
-    }
-}
-
-impl From<Box<NodError>> for Box<EvaluationError> {
-    fn from(value: Box<NodError>) -> Self {
+impl From<NodeError> for Box<EvaluationError> {
+    fn from(value: NodeError) -> Self {
         Box::new(EvaluationError::NodeError(value))
     }
 }
@@ -152,9 +139,7 @@ impl<'a> From<ErrorIterator<'a>> for Box<EvaluationError> {
             serde_json::to_value(errors).unwrap_or_default(),
         );
 
-        Box::new(EvaluationError::Validation(Box::new(Value::Object(
-            json_map,
-        ))))
+        Box::new(EvaluationError::Validation(Value::Object(json_map)))
     }
 }
 

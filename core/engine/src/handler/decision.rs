@@ -1,7 +1,7 @@
 use crate::handler::custom_node_adapter::CustomNodeAdapter;
 use crate::handler::function::function::Function;
 use crate::handler::graph::{DecisionGraph, DecisionGraphConfig};
-use crate::handler::node::{NodError, NodeRequest, NodeResponse, NodeResult};
+use crate::handler::node::{NodeError, NodeRequest, NodeResponse, NodeResult};
 use crate::loader::DecisionLoader;
 use crate::model::DecisionNodeKind;
 use crate::util::validator_cache::ValidatorCache;
@@ -59,7 +59,7 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionHandle
                 .loader
                 .load(&content.key)
                 .await
-                .map_err(|_| NodError::Internal)?;
+                .map_err(|_| NodeError::Internal)?;
             let sub_tree = DecisionGraph::try_new(DecisionGraphConfig {
                 content: sub_decision,
                 max_depth: self.max_depth,
@@ -69,7 +69,7 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionHandle
                 trace: self.trace,
                 validator_cache: Some(self.validator_cache.clone()),
             })
-            .map_err(|_| NodError::Internal)?
+            .map_err(|_| NodeError::Internal)?
             .with_function(self.js_function.clone());
 
             let sub_tree_mutex = Arc::new(Mutex::new(sub_tree));

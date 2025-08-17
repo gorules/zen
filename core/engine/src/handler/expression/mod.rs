@@ -9,7 +9,7 @@ use anyhow::anyhow;
 use serde::Serialize;
 use tokio::sync::Mutex;
 use zen_expression::variable::{ToVariable, Variable};
-use zen_expression::{Isolate, ToVariable};
+use zen_expression::Isolate;
 
 pub struct ExpressionHandler {
     trace: bool,

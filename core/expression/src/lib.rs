@@ -69,8 +69,6 @@ pub mod validate;
 pub mod variable;
 pub mod vm;
 
-pub use zen_macros::ToVariable;
-
 pub use exports::{
     compile_expression, compile_unary_expression, evaluate_expression, evaluate_unary_expression,
 };

@@ -54,7 +54,7 @@ impl Serialize for EvaluationError {
                         if let Some(trace) = &trace {
                             map.serialize_entry(
                                 "trace",
-                                &serde_json::to_string(&trace.serialize_ref()).unwrap(),
+                                &serde_json::to_value(&trace.serialize_ref()).unwrap(),
                             )?;
                         }
                     }
@@ -63,7 +63,7 @@ impl Serialize for EvaluationError {
                         if let Some(trace) = &trace {
                             map.serialize_entry(
                                 "trace",
-                                &serde_json::to_string(&trace.serialize_ref()).unwrap(),
+                                &serde_json::to_value(&trace.serialize_ref()).unwrap(),
                             )?;
                         }
                     }

@@ -62,12 +62,8 @@ impl Display for NodeError {
             NodeError::Node { source, .. } => {
                 write!(f, "{}", source)
             }
-            NodeError::PartialTrace { trace, message } => {
-                if let Some(var) = trace {
-                    write!(f, "{} (trace: {:?})", message, var)
-                } else {
-                    write!(f, "{}", message)
-                }
+            NodeError::PartialTrace { message, .. } => {
+                write!(f, "{}", message)
             }
         }
     }

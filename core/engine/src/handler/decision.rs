@@ -1,6 +1,6 @@
 use crate::handler::custom_node_adapter::CustomNodeAdapter;
 use crate::handler::function::function::Function;
-use crate::handler::graph::{DecisionGraph, DecisionGraphConfig};
+use crate::handler::graph::{error_trace, DecisionGraph, DecisionGraphConfig};
 use crate::handler::node::{NodeError, NodeRequest, NodeResponse, NodeResult};
 use crate::loader::DecisionLoader;
 use crate::model::DecisionNodeKind;
@@ -11,7 +11,6 @@ use std::pin::Pin;
 use std::rc::Rc;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use zen_expression::variable::ToVariable;
 
 pub struct DecisionHandler<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> {
     trace: bool,
@@ -59,7 +58,7 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionHandle
                 .loader
                 .load(&content.key)
                 .await
-                .map_err(|_| NodeError::Internal)?;
+                .map_err(|err| NodeError::Display(err.to_string()))?;
             let sub_tree = DecisionGraph::try_new(DecisionGraphConfig {
                 content: sub_decision,
                 max_depth: self.max_depth,
@@ -69,7 +68,7 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionHandle
                 trace: self.trace,
                 validator_cache: Some(self.validator_cache.clone()),
             })
-            .map_err(|_| NodeError::Internal)?
+            .map_err(|err| NodeError::Display(err.to_string()))?
             .with_function(self.js_function.clone());
 
             let sub_tree_mutex = Arc::new(Mutex::new(sub_tree));
@@ -85,7 +84,7 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionHandle
                         sub_tree_ref.reset_graph();
                         sub_tree_ref.evaluate(input).await.map(|r| NodeResponse {
                             output: r.result,
-                            trace_data: Some(r.trace.to_variable()),
+                            trace_data: error_trace(&r.trace),
                         })
                     }
                 })

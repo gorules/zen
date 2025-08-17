@@ -5,11 +5,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt::Debug;
 use std::rc::Rc;
-use zen_expression::variable::Variable;
+use zen_expression::variable::{ToVariable, Variable};
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, ToVariable, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EvaluateResponse {
+    #[serde(skip)]
     pub output: Variable,
     pub log: Vec<Value>,
 }

@@ -8,7 +8,7 @@ use crate::handler::function::listener::{RuntimeEvent, RuntimeListener};
 use rquickjs::prelude::Rest;
 use rquickjs::{Ctx, Object, Value};
 use serde::{Deserialize, Serialize};
-use zen_expression::ToVariable;
+use zen_expression::variable::ToVariable;
 
 pub(crate) struct ConsoleListener;
 

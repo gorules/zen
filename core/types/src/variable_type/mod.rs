@@ -2,6 +2,7 @@ mod conv;
 mod util;
 
 use crate::variable::RcCell;
+pub use ahash::HashMapExt as VariableMapExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::{Display, Write};

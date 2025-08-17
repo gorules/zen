@@ -17,7 +17,9 @@ pub struct NoopCustomNode;
 
 impl CustomNodeAdapter for NoopCustomNode {
     async fn handle(&self, _: CustomNodeRequest) -> NodeResult {
-        Err(NodeError::Internal)
+        Err(NodeError::Display(
+            "Custom node handler not provided".to_string(),
+        ))
     }
 }
 

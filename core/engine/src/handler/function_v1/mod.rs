@@ -42,8 +42,8 @@ impl FunctionHandler {
 
         let response = result_response?;
         Ok(NodeResponse {
-            output: response.output,
-            trace_data: self.trace.then(|| response.log.to_variable()),
+            output: response.output.clone(),
+            trace_data: self.trace.then(|| response.to_variable()),
         })
     }
 }

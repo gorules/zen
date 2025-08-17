@@ -1,7 +1,6 @@
 pub mod zen;
 
-use zen_expression::variable::Variable;
-use zen_expression::ToVariable;
+use zen_expression::variable::{ToVariable, Variable};
 
 #[derive(Debug, Clone, ToVariable)]
 pub(crate) enum RowOutputKind {

@@ -17,10 +17,13 @@ pub use impls::ToVariable;
 mod conv;
 mod de;
 mod impls;
+mod ref_deser;
 mod ref_ser;
 mod ser;
 
 pub(crate) type RcCell<T> = Rc<RefCell<T>>;
+
+pub type VariableMap = HashMap<Rc<str>, Variable>;
 
 pub enum Variable {
     Null,
@@ -28,7 +31,7 @@ pub enum Variable {
     Number(Decimal),
     String(Rc<str>),
     Array(RcCell<Vec<Variable>>),
-    Object(RcCell<HashMap<Rc<str>, Variable>>),
+    Object(RcCell<VariableMap>),
     Dynamic(Rc<dyn DynamicVariable>),
 }
 
@@ -47,7 +50,7 @@ impl Variable {
 
     pub fn serialize_ref(&self) -> RcValue {
         RefSerializer::new().serialize(self).unwrap()
-        // self.to_value()
+        // RcValue::from(self)
     }
 
     pub fn from_object(obj: HashMap<Rc<str>, Self>) -> Self {

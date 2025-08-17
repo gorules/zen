@@ -35,6 +35,12 @@ pub struct FunctionHandler {
     max_duration: Duration,
 }
 
+#[derive(ToVariable)]
+#[serde(rename_all = "camelCase")]
+struct FunctionTrace {
+    pub log: Vec<Log>,
+}
+
 impl FunctionHandler {
     pub fn new(function: Rc<Function>, trace: bool, iteration: u8, max_depth: u8) -> Self {
         let max_duration_millis = ZEN_CONFIG.function_timeout_millis.load(Ordering::Relaxed);
@@ -58,9 +64,9 @@ impl FunctionHandler {
         }?;
 
         let start = std::time::Instant::now();
-        // if content.omit_nodes {
-        request.input.dot_remove("$nodes");
-        // }
+        if content.omit_nodes {
+            request.input.dot_remove("$nodes");
+        }
 
         let module_name = self
             .function
@@ -93,7 +99,12 @@ impl FunctionHandler {
 
                 Ok(NodeResponse {
                     output: response.data,
-                    trace_data: self.trace.then(|| response.logs.to_variable()),
+                    trace_data: self.trace.then(|| {
+                        FunctionTrace {
+                            log: response.logs.clone(),
+                        }
+                        .to_variable()
+                    }),
                 })
             }
             Err(e) => {
@@ -105,7 +116,7 @@ impl FunctionHandler {
 
                 Err(NodeError::PartialTrace {
                     message: e.to_string(),
-                    trace: Some(log.to_variable()),
+                    trace: Some(FunctionTrace { log }.to_variable()),
                 })
             }
         }

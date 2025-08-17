@@ -19,14 +19,13 @@ use anyhow::anyhow;
 use petgraph::algo::is_cyclic_directed;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize, Serializer};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 use thiserror::Error;
 use zen_expression::variable::{ToVariable, Variable};
-use zen_expression::ToVariable;
 
 pub struct DecisionGraph<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> {
     initial_graph: StableDiDecisionGraph,
@@ -158,7 +157,7 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionGraph<
         if self.iteration >= self.max_depth {
             return Err(NodeError::Node {
                 node_id: "".to_string(),
-                source: Box::new(NodeError::Internal),
+                source: Box::new(NodeError::Display("Depth limit exceeded".to_string())),
                 trace: None,
             });
         }
@@ -540,6 +539,32 @@ pub struct DecisionGraphResponse {
     pub trace: Option<HashMap<String, DecisionGraphTrace>>,
 }
 
+impl DecisionGraphResponse {
+    pub fn serialize_ref(&self) -> Value {
+        let mut map = Map::with_capacity(3);
+        map.insert(
+            "performance".to_string(),
+            Value::String(self.performance.clone()),
+        );
+        map.insert("result".to_string(), self.result.to_value());
+
+        if let Some(trace) = &self.trace {
+            let trace_map = trace
+                .iter()
+                .map(|(k, v)| (Rc::from(k.as_str()), v.to_variable()))
+                .collect::<HashMap<Rc<str>, Variable>>();
+
+            let joined_variable = Variable::from_object(trace_map);
+            map.insert(
+                "trace".to_string(),
+                serde_json::to_value(joined_variable).unwrap_or_default(),
+            );
+        }
+
+        Value::Object(map)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToVariable)]
 #[serde(rename_all = "camelCase")]
 pub struct DecisionGraphTrace {
@@ -553,7 +578,14 @@ pub struct DecisionGraphTrace {
 }
 
 pub(crate) fn error_trace(trace: &Option<HashMap<String, DecisionGraphTrace>>) -> Option<Variable> {
-    trace.as_ref().map(|s| s.to_variable())
+    trace.as_ref().map(|s| {
+        s.values().for_each(|v| {
+            v.input.dot_remove("$nodes");
+            v.output.dot_remove("$nodes");
+        });
+
+        s.to_variable()
+    })
 }
 
 fn create_validator_cache_key(content: &Value) -> u64 {

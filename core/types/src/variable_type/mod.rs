@@ -2,9 +2,9 @@ mod conv;
 mod util;
 
 use crate::variable::RcCell;
+use ahash::HashMap;
 pub use ahash::HashMapExt as VariableMapExt;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::fmt::{Display, Write};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;

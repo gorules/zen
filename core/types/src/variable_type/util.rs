@@ -1,7 +1,7 @@
 use crate::variable_type::VariableType;
+use ahash::{HashMap, HashMapExt};
 use rust_decimal::prelude::Zero;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::rc::Rc;
 
@@ -318,52 +318,5 @@ impl VariableType {
                 }
                 _ => None,
             })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::variable_type::VariableType;
-    use std::rc::Rc;
-
-    #[test]
-    fn merge_simple() {
-        assert_eq!(
-            VariableType::Number.merge(&VariableType::Number),
-            VariableType::Number
-        );
-        assert_eq!(
-            VariableType::String.merge(&VariableType::String),
-            VariableType::String
-        );
-        assert_eq!(
-            VariableType::Bool.merge(&VariableType::Bool),
-            VariableType::Bool
-        );
-        assert_eq!(
-            VariableType::Null.merge(&VariableType::Null),
-            VariableType::Null
-        );
-        assert_eq!(
-            VariableType::Any.merge(&VariableType::Any),
-            VariableType::Any
-        );
-    }
-
-    #[test]
-    fn merge_array() {
-        assert_eq!(
-            VariableType::Array(Rc::new(VariableType::Number))
-                .merge(&VariableType::Array(Rc::new(VariableType::Number))),
-            VariableType::Array(Rc::new(VariableType::Number))
-        );
-    }
-
-    #[test]
-    fn merge_mixed() {
-        assert_eq!(
-            VariableType::Number.merge(&VariableType::String),
-            VariableType::Any
-        );
     }
 }

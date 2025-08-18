@@ -47,11 +47,11 @@ impl RefSerializer {
         Rc::as_ptr(&reference) as *const () as usize
     }
 
-    pub fn serialize(mut self, var: &Variable) -> serde_json::Result<RcValue> {
+    pub fn serialize(mut self, var: &Variable) -> RcValue {
         self.count_refs(var);
         self.assign_ref_ids();
 
-        let data = self.serialize_with_refs(var)?;
+        let data = self.serialize_with_refs(var);
 
         let mut result = HashMap::default();
         if !self.ref_data.is_empty() {
@@ -59,7 +59,7 @@ impl RefSerializer {
         }
 
         result.insert(Rc::from("$root"), data);
-        Ok(RcValue::Object(result))
+        RcValue::Object(result)
     }
 
     fn count_refs(&mut self, var: &Variable) {
@@ -118,42 +118,42 @@ impl RefSerializer {
         }
     }
 
-    fn serialize_with_refs(&mut self, var: &Variable) -> serde_json::Result<RcValue> {
+    fn serialize_with_refs(&mut self, var: &Variable) -> RcValue {
         match var {
             Variable::String(s) => {
                 let addr = self.intern_string_addr(s);
                 let Some((id, id_str)) = self.refs.get(&addr) else {
-                    return Ok(RcValue::String(Self::escape_at_string(s)));
+                    return RcValue::String(Self::escape_at_string(s));
                 };
 
                 if self.ref_data[*id] == RcValue::Null {
                     self.ref_data[*id] = RcValue::String(Self::escape_at_string(s));
                 }
 
-                Ok(RcValue::String(id_str.clone()))
+                RcValue::String(id_str.clone())
             }
 
             Variable::Array(arr) => {
                 let addr = Rc::as_ptr(arr) as *const () as usize;
                 let data = {
                     let borrowed = arr.borrow();
-                    let items: Result<Vec<_>, _> = borrowed
+                    let items: Vec<_> = borrowed
                         .iter()
                         .map(|item| self.serialize_with_refs(item))
                         .collect();
 
-                    RcValue::Array(items?)
+                    RcValue::Array(items)
                 };
 
                 let Some((id, id_str)) = self.refs.get(&addr) else {
-                    return Ok(data);
+                    return data;
                 };
 
                 if self.ref_data[*id] == RcValue::Null {
                     self.ref_data[*id] = data;
                 }
 
-                Ok(RcValue::String(id_str.clone()))
+                RcValue::String(id_str.clone())
             }
 
             Variable::Object(obj) => {
@@ -178,30 +178,24 @@ impl RefSerializer {
                             Self::escape_at_string(key)
                         };
 
-                        map.insert(key_str, self.serialize_with_refs(value)?);
+                        map.insert(key_str, self.serialize_with_refs(value));
                     }
 
                     RcValue::Object(map)
                 };
 
                 let Some((id, id_str)) = self.refs.get(&addr) else {
-                    return Ok(data);
+                    return data;
                 };
 
                 if self.ref_data[*id] == RcValue::Null {
                     self.ref_data[*id] = data;
                 }
 
-                Ok(RcValue::String(id_str.clone()))
+                RcValue::String(id_str.clone())
             }
 
-            _ => Ok(RcValue::from(var)),
+            _ => RcValue::from(var),
         }
-    }
-}
-
-impl Default for RefSerializer {
-    fn default() -> Self {
-        Self::new()
     }
 }

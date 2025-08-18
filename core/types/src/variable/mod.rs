@@ -11,6 +11,8 @@ use std::ops::Deref;
 use std::rc::Rc;
 
 use crate::rcvalue::RcValue;
+pub use crate::variable::ref_deser::RefDeserializeError;
+use crate::variable::ref_deser::RefDeserializer;
 pub use de::VariableDeserializer;
 pub use impls::ToVariable;
 
@@ -49,8 +51,11 @@ impl Variable {
     }
 
     pub fn serialize_ref(&self) -> RcValue {
-        RefSerializer::new().serialize(self).unwrap()
-        // RcValue::from(self)
+        RefSerializer::new().serialize(self)
+    }
+
+    pub fn deserialize_ref(serialized: RcValue) -> Result<Self, RefDeserializeError> {
+        RefDeserializer::new().deserialize(serialized)
     }
 
     pub fn from_object(obj: HashMap<Rc<str>, Self>) -> Self {

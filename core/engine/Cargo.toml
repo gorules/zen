@@ -17,6 +17,7 @@ thiserror = { workspace = true }
 petgraph = { workspace = true }
 serde_json = { workspace = true, features = ["arbitrary_precision"] }
 serde = { workspace = true, features = ["derive", "rc"] }
+strum = { workspace = true, features = ["derive"] }
 once_cell = { workspace = true }
 json_dotpath = { workspace = true }
 rust_decimal = { workspace = true, features = ["maths-nopanic"] }

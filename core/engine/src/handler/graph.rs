@@ -1,3 +1,4 @@
+use crate::engine::EvaluationTraceKind;
 use crate::handler::custom_node_adapter::{CustomNodeAdapter, CustomNodeRequest};
 use crate::handler::decision::DecisionHandler;
 use crate::handler::expression::ExpressionHandler;
@@ -19,7 +20,7 @@ use anyhow::anyhow;
 use petgraph::algo::is_cyclic_directed;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize, Serializer};
-use serde_json::{Map, Value};
+use serde_json::Value;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -540,28 +541,22 @@ pub struct DecisionGraphResponse {
 }
 
 impl DecisionGraphResponse {
-    pub fn serialize_ref(&self) -> Value {
-        let mut map = Map::with_capacity(3);
-        map.insert(
-            "performance".to_string(),
-            Value::String(self.performance.clone()),
-        );
-        map.insert("result".to_string(), self.result.to_value());
-
+    pub fn serialize_with_mode<S>(
+        &self,
+        serializer: S,
+        mode: EvaluationTraceKind,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("performance", &self.performance)?;
+        map.serialize_entry("result", &self.result)?;
         if let Some(trace) = &self.trace {
-            let trace_map = trace
-                .iter()
-                .map(|(k, v)| (Rc::from(k.as_str()), v.to_variable()))
-                .collect::<HashMap<Rc<str>, Variable>>();
-
-            let joined_variable = Variable::from_object(trace_map);
-            map.insert(
-                "trace".to_string(),
-                serde_json::to_value(joined_variable).unwrap_or_default(),
-            );
+            map.serialize_entry("trace", &mode.serialize_trace(&trace.to_variable()))?;
         }
 
-        Value::Object(map)
+        map.end()
     }
 }
 

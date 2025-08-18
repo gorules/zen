@@ -102,7 +102,7 @@ impl From<NodeResponse> for PyNodeResponse {
     fn from(value: NodeResponse) -> Self {
         Self {
             output: value.output.to_value(),
-            trace_data: value.trace_data,
+            trace_data: value.trace_data.map(|v| v.to_value()),
         }
     }
 }
@@ -111,7 +111,7 @@ impl From<PyNodeResponse> for NodeResponse {
     fn from(value: PyNodeResponse) -> Self {
         Self {
             output: value.output.into(),
-            trace_data: value.trace_data,
+            trace_data: value.trace_data.map(|v| v.into()),
         }
     }
 }

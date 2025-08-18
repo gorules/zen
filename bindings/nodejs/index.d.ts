@@ -5,22 +5,23 @@
 
 export interface ZenConfig {
   nodesInContext?: boolean
+  functionTimeoutMillis?: number
 }
-export function overrideConfig(config: ZenConfig): void
+export declare function overrideConfig(config: ZenConfig): void
 export interface ZenEvaluateOptions {
   maxDepth?: number
-  trace?: boolean
+  trace?: boolean | 'string' | 'reference' | 'referenceString'
 }
 export interface ZenEngineOptions {
   loader?: (key: string) => Promise<Buffer | ZenDecisionContent>
   customHandler?: (request: ZenEngineHandlerRequest) => Promise<ZenEngineHandlerResponse>
 }
-export function evaluateExpressionSync(expression: string, context?: any | undefined | null): any
-export function evaluateUnaryExpressionSync(expression: string, context: any): boolean
-export function renderTemplateSync(template: string, context: any): any
-export function evaluateExpression(expression: string, context?: any | undefined | null): Promise<any>
-export function evaluateUnaryExpression(expression: string, context: any): Promise<boolean>
-export function renderTemplate(template: string, context: any): Promise<any>
+export declare function evaluateExpressionSync(expression: string, context?: any | undefined | null): any
+export declare function evaluateUnaryExpressionSync(expression: string, context: any): boolean
+export declare function renderTemplateSync(template: string, context: any): any
+export declare function evaluateExpression(expression: string, context?: any | undefined | null): Promise<any>
+export declare function evaluateUnaryExpression(expression: string, context: any): Promise<boolean>
+export declare function renderTemplate(template: string, context: any): Promise<any>
 export interface ZenEngineTrace {
   id: string
   name: string
@@ -45,17 +46,17 @@ export interface DecisionNode {
   kind: string
   config: any
 }
-export class ZenDecisionContent {
+export declare class ZenDecisionContent {
   constructor(content: Buffer | object)
   toBuffer(): Buffer
 }
-export class ZenDecision {
+export declare class ZenDecision {
   constructor()
   evaluate(context: any, opts?: ZenEvaluateOptions | undefined | null): Promise<ZenEngineResponse>
   safeEvaluate(context: any, opts?: ZenEvaluateOptions | undefined | null): Promise<SafeResult<ZenEngineResponse>>
   validate(): void
 }
-export class ZenEngine {
+export declare class ZenEngine {
   constructor(options?: ZenEngineOptions | undefined | null)
   evaluate(key: string, context: any, opts?: ZenEvaluateOptions | undefined | null): Promise<ZenEngineResponse>
   createDecision(content: ZenDecisionContent | Buffer | object): ZenDecision
@@ -68,23 +69,10 @@ export class ZenEngine {
    */
   dispose(): void
 }
-export class ZenEngineHandlerRequest {
+export declare class ZenEngineHandlerRequest {
   input: any
   node: DecisionNode
   constructor()
   getField(path: string): unknown
   getFieldRaw(path: string): unknown
 }
-
-// Custom definitions
-type SafeResultSuccess<T> = {
-  success: true;
-  data: T;
-}
-
-type SafeResultError = {
-  success: false;
-  error: any;
-}
-
-export type SafeResult<T> = SafeResultSuccess<T> | SafeResultError;

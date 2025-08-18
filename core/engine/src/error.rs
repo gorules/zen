@@ -1,3 +1,4 @@
+use crate::engine::EvaluationTraceKind;
 use crate::handler::graph::DecisionGraphValidationError;
 pub use crate::handler::node::NodeError;
 use crate::loader::LoaderError;
@@ -26,12 +27,17 @@ pub enum EvaluationError {
     Validation(Value),
 }
 
-impl Serialize for EvaluationError {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+impl EvaluationError {
+    pub fn serialize_with_mode<S>(
+        &self,
+        serializer: S,
+        mode: EvaluationTraceKind,
+    ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         let mut map = serializer.serialize_map(None)?;
+
         match self {
             EvaluationError::DepthLimitExceeded => {
                 map.serialize_entry("type", "DepthLimitExceeded")?;
@@ -50,21 +56,14 @@ impl Serialize for EvaluationError {
                     } => {
                         map.serialize_entry("nodeId", node_id.as_str())?;
                         map.serialize_entry("source", &source.to_string())?;
-
                         if let Some(trace) = &trace {
-                            map.serialize_entry(
-                                "trace",
-                                &serde_json::to_value(&trace.serialize_ref()).unwrap(),
-                            )?;
+                            map.serialize_entry("trace", &mode.serialize_trace(trace))?;
                         }
                     }
                     NodeError::PartialTrace { trace, message } => {
                         map.serialize_entry("source", message.as_str())?;
                         if let Some(trace) = &trace {
-                            map.serialize_entry(
-                                "trace",
-                                &serde_json::to_value(&trace.serialize_ref()).unwrap(),
-                            )?;
+                            map.serialize_entry("trace", &mode.serialize_trace(trace))?;
                         }
                     }
                 }
@@ -92,6 +91,15 @@ impl Serialize for EvaluationError {
         }
 
         map.end()
+    }
+}
+
+impl Serialize for EvaluationError {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.serialize_with_mode(serializer, Default::default())
     }
 }
 

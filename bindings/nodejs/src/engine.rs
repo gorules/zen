@@ -1,14 +1,13 @@
+use std::str::FromStr;
 use std::sync::Arc;
 
 use napi::anyhow::{anyhow, Context};
-use napi::bindgen_prelude::{Buffer, Either3};
+use napi::bindgen_prelude::{Buffer, Either3, FromNapiValue, ToNapiValue};
+use napi::sys::{napi_env, napi_value};
 use napi::threadsafe_function::{ErrorStrategy, ThreadSafeCallContext, ThreadsafeFunction};
-use napi::{Env, JsFunction, JsObject};
+use napi::{Env, JsFunction, JsObject, JsUnknown, NapiValue, ValueType};
 use napi_derive::napi;
 use serde_json::Value;
-
-use zen_engine::model::DecisionContent;
-use zen_engine::{DecisionEngine, EvaluationOptions};
 
 use crate::content::ZenDecisionContent;
 use crate::custom_node::CustomNode;
@@ -16,7 +15,9 @@ use crate::decision::ZenDecision;
 use crate::loader::DecisionLoader;
 use crate::mt::spawn_worker;
 use crate::safe_result::SafeResult;
-use crate::types::{ZenEngineHandlerRequest, ZenEngineResponse};
+use crate::types::ZenEngineHandlerRequest;
+use zen_engine::model::DecisionContent;
+use zen_engine::{DecisionEngine, EvaluationSerializedOptions, EvaluationTraceKind};
 
 #[napi]
 pub struct ZenEngine {
@@ -26,17 +27,63 @@ pub struct ZenEngine {
     custom_handler_ref: Option<ThreadsafeFunction<ZenEngineHandlerRequest, ErrorStrategy::Fatal>>,
 }
 
+#[derive(Debug, Default)]
+pub struct JsEvaluationTraceKind(pub EvaluationTraceKind);
+
+impl FromNapiValue for JsEvaluationTraceKind {
+    unsafe fn from_napi_value(env: napi_env, napi_val: napi_value) -> napi::Result<Self> {
+        let js_value = JsUnknown::from_raw(env, napi_val)?;
+
+        match js_value.get_type()? {
+            ValueType::Undefined | ValueType::Null => Ok(JsEvaluationTraceKind::default()),
+            ValueType::Boolean => {
+                let enabled = js_value.coerce_to_bool()?.get_value()?;
+                let kind = match enabled {
+                    true => EvaluationTraceKind::Default,
+                    false => EvaluationTraceKind::None,
+                };
+
+                Ok(JsEvaluationTraceKind(kind))
+            }
+            ValueType::String => {
+                let kind_utf8 = js_value.coerce_to_string()?.into_utf8()?;
+                let kind_str = kind_utf8.as_str()?;
+                let kind =
+                    EvaluationTraceKind::from_str(kind_str).context("invalid evaluation mode")?;
+
+                Ok(JsEvaluationTraceKind(kind))
+            }
+            _ => Err(anyhow!("Invalid trace setting").into()),
+        }
+    }
+}
+
+impl ToNapiValue for JsEvaluationTraceKind {
+    unsafe fn to_napi_value(env: napi_env, val: Self) -> napi::Result<napi_value> {
+        match val.0 {
+            EvaluationTraceKind::None => ToNapiValue::to_napi_value(env, false),
+            EvaluationTraceKind::Default => ToNapiValue::to_napi_value(env, true),
+            _ => {
+                let mode_str: &'static str = val.0.into();
+                ToNapiValue::to_napi_value(env, mode_str)
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
 #[napi(object)]
 pub struct ZenEvaluateOptions {
     pub max_depth: Option<u8>,
-    pub trace: Option<bool>,
+    #[napi(ts_type = "boolean | 'string' | 'reference' | 'referenceString'")]
+    pub trace: Option<JsEvaluationTraceKind>,
 }
 
 impl Default for ZenEvaluateOptions {
     fn default() -> Self {
         Self {
             max_depth: Some(5),
-            trace: Some(false),
+            trace: Some(JsEvaluationTraceKind::default()),
         }
     }
 }
@@ -103,36 +150,33 @@ impl ZenEngine {
         })
     }
 
-    #[napi]
+    #[napi(ts_return_type = "Promise<ZenEngineResponse>")]
     pub async fn evaluate(
         &self,
         key: String,
         context: Value,
         opts: Option<ZenEvaluateOptions>,
-    ) -> napi::Result<ZenEngineResponse> {
+    ) -> napi::Result<Value> {
         let graph = self.graph.clone();
         let result = spawn_worker(|| {
             let options = opts.unwrap_or_default();
 
             async move {
                 graph
-                    .evaluate_with_opts(
+                    .evaluate_serialized(
                         key,
                         context.into(),
-                        EvaluationOptions {
+                        EvaluationSerializedOptions {
                             max_depth: options.max_depth,
-                            trace: options.trace,
+                            trace: options.trace.unwrap_or_default().0,
                         },
                     )
                     .await
-                    .map(ZenEngineResponse::from)
-                    .map_err(|e| {
-                        anyhow!(serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string()))
-                    })
             }
         })
         .await
-        .map_err(|_| anyhow!("Hook timed out"))??;
+        .map_err(|_| anyhow!("Hook timed out"))?
+        .map_err(|e| anyhow!(e))?;
 
         Ok(result)
     }
@@ -173,7 +217,7 @@ impl ZenEngine {
         key: String,
         context: Value,
         opts: Option<ZenEvaluateOptions>,
-    ) -> SafeResult<ZenEngineResponse> {
+    ) -> SafeResult<Value> {
         self.evaluate(key, context, opts).await.into()
     }
 

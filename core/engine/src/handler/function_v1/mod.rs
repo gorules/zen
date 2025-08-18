@@ -5,6 +5,7 @@ use crate::handler::node::{NodeRequest, NodeResponse, NodeResult};
 use crate::model::{DecisionNodeKind, FunctionNodeContent};
 use anyhow::anyhow;
 use rquickjs::Runtime;
+use serde_json::Value;
 use zen_expression::variable::ToVariable;
 
 pub(crate) mod runtime;
@@ -43,7 +44,14 @@ impl FunctionHandler {
         let response = result_response?;
         Ok(NodeResponse {
             output: response.output.clone(),
-            trace_data: self.trace.then(|| response.to_variable()),
+            trace_data: self
+                .trace
+                .then(|| FunctionTrace { log: response.log }.to_variable()),
         })
     }
+}
+
+#[derive(ToVariable)]
+struct FunctionTrace {
+    log: Vec<Value>,
 }

@@ -1,0 +1,585 @@
+{
+  "tests": [
+    {
+      "input": {
+        "patient": {
+          "id": "PT12345",
+          "name": "John Smith",
+          "age": 67,
+          "gender": "male",
+          "careComplexity": "high",
+          "mobilityScore": 35,
+          "conditions": [
+            "diabetes",
+            "heart_disease",
+            "hypertension",
+            "depression"
+          ],
+          "primaryLanguage": "english",
+          "insuranceType": "medicare",
+          "carePreferences": {
+            "preferredGender": "any",
+            "preferredLanguage": "english",
+            "requiresTranslator": false
+          }
+        },
+        "facility": {
+          "id": "FAC789",
+          "name": "Memorial Medical Center",
+          "department": "Internal Medicine"
+        },
+        "availableProviders": [
+          {
+            "id": "DR001",
+            "name": "Dr. Sarah Johnson",
+            "role": "primary_physician",
+            "specialties": [
+              "internal_medicine",
+              "geriatrics"
+            ],
+            "languages": [
+              "english",
+              "spanish"
+            ]
+          },
+          {
+            "id": "DR002",
+            "name": "Dr. Michael Chen",
+            "role": "cardiologist",
+            "specialties": [
+              "cardiology"
+            ],
+            "languages": [
+              "english",
+              "mandarin"
+            ]
+          },
+          {
+            "id": "DR003",
+            "name": "Dr. Lisa Peterson",
+            "role": "diabetes_specialist",
+            "specialties": [
+              "endocrinology"
+            ],
+            "languages": [
+              "english"
+            ]
+          },
+          {
+            "id": "NP001",
+            "name": "Nancy Williams",
+            "role": "nurse_practitioner",
+            "specialties": [
+              "primary_care"
+            ],
+            "languages": [
+              "english"
+            ]
+          },
+          {
+            "id": "RN001",
+            "name": "Robert Garcia",
+            "role": "nurse",
+            "specialties": [
+              "geriatric_care"
+            ],
+            "languages": [
+              "english",
+              "spanish"
+            ]
+          },
+          {
+            "id": "MH001",
+            "name": "Dr. Emily Cohen",
+            "role": "mental_health_provider",
+            "specialties": [
+              "psychiatry",
+              "geriatric_psychiatry"
+            ],
+            "languages": [
+              "english"
+            ]
+          },
+          {
+            "id": "PT001",
+            "name": "James Wilson",
+            "role": "physical_therapist",
+            "specialties": [
+              "geriatric_physical_therapy"
+            ],
+            "languages": [
+              "english"
+            ]
+          },
+          {
+            "id": "CC001",
+            "name": "Maria Rodriguez",
+            "role": "care_coordinator",
+            "specialties": [
+              "complex_care_coordination"
+            ],
+            "languages": [
+              "english",
+              "spanish"
+            ]
+          }
+        ]
+      },
+      "output": {
+        "ageCategory": "senior",
+        "careTeam": {
+          "complexityLevel": "high",
+          "coordinator": {
+            "priority": "high",
+            "role": "care_coordinator"
+          },
+          "providers": [
+            {
+              "priority": "high",
+              "role": "primary_physician"
+            },
+            {
+              "priority": "medium",
+              "role": "geriatric_specialist"
+            },
+            {
+              "priority": "medium",
+              "role": "mental_health_provider"
+            },
+            {
+              "priority": "medium",
+              "role": "nutritionist"
+            },
+            {
+              "priority": "high",
+              "role": "nurse_practitioner"
+            },
+            {
+              "priority": "medium",
+              "role": "physical_therapist"
+            }
+          ],
+          "teamSize": "3"
+        },
+        "mobilityIssues": true,
+        "requiresMentalHealthSupport": true,
+        "requiresNutritionSupport": true,
+        "requiresSpecialist": true
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "ip1",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 292.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1-1",
+            "i1-1": "\"high\"",
+            "o1-1": "\"high\"",
+            "o1-2": "\"3\""
+          },
+          {
+            "_id": "r1-2",
+            "i1-1": "\"medium\"",
+            "o1-1": "\"medium\"",
+            "o1-2": "\"2\""
+          },
+          {
+            "_id": "r1-3",
+            "i1-1": "\"low\"",
+            "o1-1": "\"low\"",
+            "o1-2": "\"1\""
+          },
+          {
+            "_id": "r1-4",
+            "i1-1": "",
+            "o1-1": "\"low\"",
+            "o1-2": "\"1\""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Care Complexity",
+            "field": "patient.careComplexity"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Complexity Level",
+            "field": "careTeam.complexityLevel"
+          },
+          {
+            "id": "o1-2",
+            "name": "Team Size",
+            "field": "careTeam.teamSize"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt1",
+      "name": "determine_complexity",
+      "position": {
+        "x": 430,
+        "y": 292.5
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1-1",
+            "key": "requiresSpecialist",
+            "value": "some(patient.conditions, # in ['diabetes', 'heart_disease', 'kidney_disease'])"
+          },
+          {
+            "id": "e1-2",
+            "key": "requiresMentalHealthSupport",
+            "value": "some(patient.conditions, # in ['depression', 'anxiety', 'ptsd'])"
+          },
+          {
+            "id": "e1-3",
+            "key": "requiresNutritionSupport",
+            "value": "some(patient.conditions, # in ['obesity', 'diabetes', 'malnutrition'])"
+          },
+          {
+            "id": "e1-5",
+            "key": "mobilityIssues",
+            "value": "patient.mobilityScore < 50"
+          },
+          {
+            "id": "e1-6",
+            "key": "patient",
+            "value": "null"
+          },
+          {
+            "id": "e1-7",
+            "key": "availableProviders",
+            "value": "null"
+          },
+          {
+            "id": "e1-8",
+            "key": "facility",
+            "value": "null"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex1",
+      "name": "evaluate_patient_needs",
+      "position": {
+        "x": 1070,
+        "y": 292.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "collect",
+        "rules": [
+          {
+            "_id": "r2-1",
+            "i2-1": "\"high\"",
+            "i2-2": "",
+            "o2-1": "\"primary_physician\"",
+            "o2-2": "\"high\"",
+            "o2-3": ""
+          },
+          {
+            "_id": "r2-2",
+            "i2-1": "\"medium\", \"low\"",
+            "i2-2": "",
+            "o2-1": "\"primary_physician\"",
+            "o2-2": "\"medium\"",
+            "o2-3": ""
+          },
+          {
+            "_id": "r2-3",
+            "i2-1": "",
+            "i2-2": "ageCategory == \"senior\"",
+            "o2-1": "\"geriatric_specialist\"",
+            "o2-2": "\"medium\"",
+            "o2-3": ""
+          },
+          {
+            "_id": "r2-4",
+            "i2-1": "",
+            "i2-2": "ageCategory == \"pediatric\"",
+            "o2-1": "\"pediatrician\"",
+            "o2-2": "\"medium\"",
+            "o2-3": ""
+          },
+          {
+            "_id": "r2-5",
+            "i2-1": "",
+            "i2-2": "\"diabetes\" in patient.conditions",
+            "o2-1": "\"diabetes_specialist\"",
+            "o2-2": "\"high\"",
+            "o2-3": "\"diabetes\""
+          },
+          {
+            "_id": "r2-6",
+            "i2-1": "",
+            "i2-2": "\"heart_disease\" in patient.conditions",
+            "o2-1": "\"cardiologist\"",
+            "o2-2": "\"high\"",
+            "o2-3": "\"heart_disease\""
+          },
+          {
+            "_id": "r2-7",
+            "i2-1": "",
+            "i2-2": "\"kidney_disease\" in patient.conditions",
+            "o2-1": "\"nephrologist\"",
+            "o2-2": "\"high\"",
+            "o2-3": "\"kidney_disease\""
+          },
+          {
+            "_id": "r2-8",
+            "i2-1": "",
+            "i2-2": "requiresMentalHealthSupport == true",
+            "o2-1": "\"mental_health_provider\"",
+            "o2-2": "\"medium\"",
+            "o2-3": ""
+          },
+          {
+            "_id": "r2-9",
+            "i2-1": "",
+            "i2-2": "requiresNutritionSupport == true",
+            "o2-1": "\"nutritionist\"",
+            "o2-2": "\"medium\"",
+            "o2-3": ""
+          },
+          {
+            "_id": "r2-10",
+            "i2-1": "\"high\"",
+            "i2-2": "",
+            "o2-1": "\"nurse_practitioner\"",
+            "o2-2": "\"high\"",
+            "o2-3": ""
+          },
+          {
+            "_id": "r2-11",
+            "i2-1": "\"medium\", \"low\"",
+            "i2-2": "",
+            "o2-1": "\"nurse\"",
+            "o2-2": "\"medium\"",
+            "o2-3": ""
+          },
+          {
+            "_id": "r2-12",
+            "i2-1": "",
+            "i2-2": "mobilityIssues == true",
+            "o2-1": "\"physical_therapist\"",
+            "o2-2": "\"medium\"",
+            "o2-3": ""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i2-1",
+            "name": "Complexity Level",
+            "field": "careTeam.complexityLevel"
+          },
+          {
+            "id": "i2-2",
+            "name": "Patient Condition"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2-1",
+            "name": "Provider Role",
+            "field": "role"
+          },
+          {
+            "id": "o2-2",
+            "name": "Priority",
+            "field": "priority"
+          },
+          {
+            "id": "o2-3",
+            "name": "Specialty Focus",
+            "field": "specialtyFocus"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": "careTeam.providers",
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "dt2",
+      "name": "assign_providers",
+      "position": {
+        "x": 1390,
+        "y": 292.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r3-1",
+            "i3-1": "\"high\"",
+            "i3-2": "len(careTeam.providers) > 5",
+            "o3-1": "\"care_coordinator\"",
+            "o3-2": "\"high\""
+          },
+          {
+            "_id": "r3-2",
+            "i3-1": "\"high\", \"medium\"",
+            "i3-2": "",
+            "o3-1": "\"case_manager\"",
+            "o3-2": "\"medium\""
+          },
+          {
+            "_id": "r3-3",
+            "i3-1": "",
+            "i3-2": "",
+            "o3-1": "\"none\"",
+            "o3-2": "\"low\""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i3-1",
+            "name": "Complexity Level",
+            "field": "careTeam.complexityLevel"
+          },
+          {
+            "id": "i3-2",
+            "name": "Team Size",
+            "field": "$"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o3-1",
+            "name": "Coordinator Role",
+            "field": "careTeam.coordinator.role"
+          },
+          {
+            "id": "o3-2",
+            "name": "Coordinator Priority",
+            "field": "careTeam.coordinator.priority"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "dt3",
+      "name": "assign_coordinator",
+      "position": {
+        "x": 1710,
+        "y": 292.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1-1",
+            "i1-1": "< 18",
+            "o1-2": "\"pediatric\""
+          },
+          {
+            "_id": "r1-2",
+            "i1-1": "< 65",
+            "o1-2": "\"adult\""
+          },
+          {
+            "_id": "r1-3",
+            "i1-1": "",
+            "o1-2": "\"senior\""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Patient age",
+            "field": "patient.age"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-2",
+            "name": "Age category",
+            "field": "ageCategory"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "f1af25e2-126e-4882-8d35-6ae33dbc37bf",
+      "name": "age_category",
+      "position": {
+        "x": 750,
+        "y": 292.5
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "ed1",
+      "sourceId": "ip1",
+      "targetId": "dt1",
+      "type": "edge"
+    },
+    {
+      "id": "ed3",
+      "sourceId": "ex1",
+      "targetId": "dt2",
+      "type": "edge"
+    },
+    {
+      "id": "ed4",
+      "sourceId": "dt2",
+      "targetId": "dt3",
+      "type": "edge"
+    },
+    {
+      "id": "c45e4da7-e948-40ba-965b-772c57497e67",
+      "sourceId": "dt1",
+      "type": "edge",
+      "targetId": "f1af25e2-126e-4882-8d35-6ae33dbc37bf"
+    },
+    {
+      "id": "1483ea19-afcd-418e-9a8a-efbc34636b4b",
+      "sourceId": "f1af25e2-126e-4882-8d35-6ae33dbc37bf",
+      "type": "edge",
+      "targetId": "ex1"
+    }
+  ]
+}

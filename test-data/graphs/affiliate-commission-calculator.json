@@ -1,0 +1,228 @@
+{
+  "tests": [
+    {
+      "input": {
+        "productCategory": "fashion",
+        "monthlyReferrals": 75,
+        "conversionRate": 0.12,
+        "isSpecialPromotion": true,
+        "saleAmount": 350
+      },
+      "output": {
+        "commissionAmount": 69.3,
+        "finalCommissionRate": 0.198,
+        "promotionMultiplier": 1.25
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "ip1",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 261.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1-1",
+            "i1-1": "'electronics'",
+            "o1-1": "0.08",
+            "o1-2": "0.03"
+          },
+          {
+            "_id": "r1-2",
+            "i1-1": "'fashion'",
+            "o1-1": "0.12",
+            "o1-2": "0.04"
+          },
+          {
+            "_id": "r1-3",
+            "i1-1": "'beauty'",
+            "o1-1": "0.15",
+            "o1-2": "0.05"
+          },
+          {
+            "_id": "r1-4",
+            "i1-1": "'home_goods'",
+            "o1-1": "0.10",
+            "o1-2": "0.03"
+          },
+          {
+            "_id": "r1-5",
+            "i1-1": "",
+            "o1-1": "0.05",
+            "o1-2": "0.02"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Product Category",
+            "field": "productCategory"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Base Rate",
+            "field": "baseCommissionRate"
+          },
+          {
+            "id": "o1-2",
+            "name": "Volume Bonus Max",
+            "field": "volumeBonusMax"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt1",
+      "name": "categoryRates",
+      "position": {
+        "x": 430,
+        "y": 261.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r2-1",
+            "i2-1": ">= 100",
+            "i2-2": ">= 0.15",
+            "o2-1": "volumeBonusMax",
+            "o2-2": "1.2"
+          },
+          {
+            "_id": "r2-2",
+            "i2-1": ">= 100",
+            "i2-2": ">= 0.10",
+            "o2-1": "volumeBonusMax * 0.8",
+            "o2-2": "1.15"
+          },
+          {
+            "_id": "r2-3",
+            "i2-1": ">= 50",
+            "i2-2": ">= 0.10",
+            "o2-1": "volumeBonusMax * 0.6",
+            "o2-2": "1.1"
+          },
+          {
+            "_id": "r2-4",
+            "i2-1": ">= 25",
+            "i2-2": ">= 0.05",
+            "o2-1": "volumeBonusMax * 0.3",
+            "o2-2": "1.05"
+          },
+          {
+            "_id": "r2-5",
+            "i2-1": "",
+            "i2-2": "",
+            "o2-1": "0",
+            "o2-2": "1"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i2-1",
+            "name": "Monthly Referrals",
+            "field": "monthlyReferrals"
+          },
+          {
+            "id": "i2-2",
+            "name": "Conversion Rate",
+            "field": "conversionRate"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2-1",
+            "name": "Volume Bonus",
+            "field": "volumeBonus"
+          },
+          {
+            "id": "o2-2",
+            "name": "Performance Multiplier",
+            "field": "performanceMultiplier"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt2",
+      "name": "performanceRates",
+      "position": {
+        "x": 750,
+        "y": 261.5
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1-1",
+            "key": "promotionMultiplier",
+            "value": "isSpecialPromotion ? 1.25 : 1"
+          },
+          {
+            "id": "e1-2",
+            "key": "finalCommissionRate",
+            "value": "(baseCommissionRate + volumeBonus) * performanceMultiplier * $.promotionMultiplier"
+          },
+          {
+            "id": "e1-3",
+            "key": "commissionAmount",
+            "value": "saleAmount * $.finalCommissionRate"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex1",
+      "name": "calculateCommission",
+      "position": {
+        "x": 1070,
+        "y": 261.5
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "ed1",
+      "sourceId": "ip1",
+      "targetId": "dt1",
+      "type": "edge"
+    },
+    {
+      "id": "ed2",
+      "sourceId": "dt1",
+      "targetId": "dt2",
+      "type": "edge"
+    },
+    {
+      "id": "ed3",
+      "sourceId": "dt2",
+      "targetId": "ex1",
+      "type": "edge"
+    }
+  ]
+}

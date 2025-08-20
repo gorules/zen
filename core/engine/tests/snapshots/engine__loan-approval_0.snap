@@ -1,0 +1,465 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  approval: true
+  baseRate:
+    "$serde_json::private::Number": "5.5"
+  interestRate:
+    "$serde_json::private::Number": "6.5"
+  riskAdjustment:
+    "$serde_json::private::Number": "20"
+  totalRiskScore:
+    "$serde_json::private::Number": "80"
+trace:
+  calculateDTI:
+    id: calculateDTI
+    input:
+      annualIncome:
+        "$serde_json::private::Number": "72000"
+      applicantId: APL-12345
+      creditRating: fair
+      creditScore:
+        "$serde_json::private::Number": "685"
+      creditScorePoints:
+        "$serde_json::private::Number": "15"
+      employmentStatus: full_time
+      employmentYears:
+        "$serde_json::private::Number": "4"
+      incomeLevel: medium
+      incomePoints:
+        "$serde_json::private::Number": "20"
+      loanAmount:
+        "$serde_json::private::Number": "250000"
+      loanTerm:
+        "$serde_json::private::Number": "30"
+      monthlyDebt:
+        "$serde_json::private::Number": "1800"
+      monthlyIncome:
+        "$serde_json::private::Number": "6000"
+    name: debtToIncomeRatio
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      annualIncome:
+        "$serde_json::private::Number": "72000"
+      applicantId: APL-12345
+      creditRating: fair
+      creditScore:
+        "$serde_json::private::Number": "685"
+      creditScorePoints:
+        "$serde_json::private::Number": "15"
+      dtiRatio:
+        "$serde_json::private::Number": "30"
+      employmentStatus: full_time
+      employmentYears:
+        "$serde_json::private::Number": "4"
+      incomeLevel: medium
+      incomePoints:
+        "$serde_json::private::Number": "20"
+      loanAmount:
+        "$serde_json::private::Number": "250000"
+      loanTerm:
+        "$serde_json::private::Number": "30"
+      monthlyDebt:
+        "$serde_json::private::Number": "1800"
+      monthlyIncome:
+        "$serde_json::private::Number": "6000"
+    performance: "[perf]"
+    traceData:
+      dtiRatio:
+        result:
+          "$serde_json::private::Number": "30"
+  calculateInterestRate:
+    id: calculateInterestRate
+    input:
+      annualIncome:
+        "$serde_json::private::Number": "72000"
+      applicantId: APL-12345
+      creditRating: fair
+      creditScore:
+        "$serde_json::private::Number": "685"
+      creditScorePoints:
+        "$serde_json::private::Number": "15"
+      dtiRatio:
+        "$serde_json::private::Number": "30"
+      employmentPoints:
+        "$serde_json::private::Number": "15"
+      employmentStability: stable
+      employmentStatus: full_time
+      employmentYears:
+        "$serde_json::private::Number": "4"
+      incomeLevel: medium
+      incomePoints:
+        "$serde_json::private::Number": "20"
+      loanAmount:
+        "$serde_json::private::Number": "250000"
+      loanTerm:
+        "$serde_json::private::Number": "30"
+      monthlyDebt:
+        "$serde_json::private::Number": "1800"
+      monthlyIncome:
+        "$serde_json::private::Number": "6000"
+      rejectionReasons: []
+    name: interestRateCalculation
+    order:
+      "$serde_json::private::Number": "7"
+    output:
+      approval: true
+      baseRate:
+        "$serde_json::private::Number": "5.5"
+      interestRate:
+        "$serde_json::private::Number": "6.5"
+      riskAdjustment:
+        "$serde_json::private::Number": "20"
+      totalRiskScore:
+        "$serde_json::private::Number": "80"
+    performance: "[perf]"
+    traceData:
+      approval:
+        result: true
+      baseRate:
+        result:
+          "$serde_json::private::Number": "5.5"
+      interestRate:
+        result:
+          "$serde_json::private::Number": "6.5"
+      riskAdjustment:
+        result:
+          "$serde_json::private::Number": "20"
+      totalRiskScore:
+        result:
+          "$serde_json::private::Number": "80"
+  determineApproval:
+    id: determineApproval
+    input:
+      annualIncome:
+        "$serde_json::private::Number": "72000"
+      applicantId: APL-12345
+      creditRating: fair
+      creditScore:
+        "$serde_json::private::Number": "685"
+      creditScorePoints:
+        "$serde_json::private::Number": "15"
+      dtiRatio:
+        "$serde_json::private::Number": "30"
+      employmentPoints:
+        "$serde_json::private::Number": "15"
+      employmentStability: stable
+      employmentStatus: full_time
+      employmentYears:
+        "$serde_json::private::Number": "4"
+      incomeLevel: medium
+      incomePoints:
+        "$serde_json::private::Number": "20"
+      loanAmount:
+        "$serde_json::private::Number": "250000"
+      loanTerm:
+        "$serde_json::private::Number": "30"
+      monthlyDebt:
+        "$serde_json::private::Number": "1800"
+      monthlyIncome:
+        "$serde_json::private::Number": "6000"
+      rejectionReasons: []
+    name: loanApprovalDecision
+    order:
+      "$serde_json::private::Number": "6"
+    output:
+      annualIncome:
+        "$serde_json::private::Number": "72000"
+      applicantId: APL-12345
+      creditRating: fair
+      creditScore:
+        "$serde_json::private::Number": "685"
+      creditScorePoints:
+        "$serde_json::private::Number": "15"
+      dtiRatio:
+        "$serde_json::private::Number": "30"
+      employmentPoints:
+        "$serde_json::private::Number": "15"
+      employmentStability: stable
+      employmentStatus: full_time
+      employmentYears:
+        "$serde_json::private::Number": "4"
+      incomeLevel: medium
+      incomePoints:
+        "$serde_json::private::Number": "20"
+      loanAmount:
+        "$serde_json::private::Number": "250000"
+      loanTerm:
+        "$serde_json::private::Number": "30"
+      monthlyDebt:
+        "$serde_json::private::Number": "1800"
+      monthlyIncome:
+        "$serde_json::private::Number": "6000"
+      rejectionReasons: []
+    performance: "[perf]"
+    traceData:
+      statements:
+        - id: approval1
+  evaluateCreditScore:
+    id: evaluateCreditScore
+    input:
+      annualIncome:
+        "$serde_json::private::Number": "72000"
+      applicantId: APL-12345
+      creditScore:
+        "$serde_json::private::Number": "685"
+      employmentStatus: full_time
+      employmentYears:
+        "$serde_json::private::Number": "4"
+      loanAmount:
+        "$serde_json::private::Number": "250000"
+      loanTerm:
+        "$serde_json::private::Number": "30"
+      monthlyDebt:
+        "$serde_json::private::Number": "1800"
+      monthlyIncome:
+        "$serde_json::private::Number": "6000"
+    name: creditScoreEvaluation
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      annualIncome:
+        "$serde_json::private::Number": "72000"
+      applicantId: APL-12345
+      creditRating: fair
+      creditScore:
+        "$serde_json::private::Number": "685"
+      creditScorePoints:
+        "$serde_json::private::Number": "15"
+      employmentStatus: full_time
+      employmentYears:
+        "$serde_json::private::Number": "4"
+      loanAmount:
+        "$serde_json::private::Number": "250000"
+      loanTerm:
+        "$serde_json::private::Number": "30"
+      monthlyDebt:
+        "$serde_json::private::Number": "1800"
+      monthlyIncome:
+        "$serde_json::private::Number": "6000"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "2"
+      reference_map:
+        creditScore:
+          "$serde_json::private::Number": "685"
+      rule:
+        _id: cs3
+        "creditScore[i1-1]": "[650..699]"
+  evaluateEmployment:
+    id: evaluateEmployment
+    input:
+      annualIncome:
+        "$serde_json::private::Number": "72000"
+      applicantId: APL-12345
+      creditRating: fair
+      creditScore:
+        "$serde_json::private::Number": "685"
+      creditScorePoints:
+        "$serde_json::private::Number": "15"
+      dtiRatio:
+        "$serde_json::private::Number": "30"
+      employmentStatus: full_time
+      employmentYears:
+        "$serde_json::private::Number": "4"
+      incomeLevel: medium
+      incomePoints:
+        "$serde_json::private::Number": "20"
+      loanAmount:
+        "$serde_json::private::Number": "250000"
+      loanTerm:
+        "$serde_json::private::Number": "30"
+      monthlyDebt:
+        "$serde_json::private::Number": "1800"
+      monthlyIncome:
+        "$serde_json::private::Number": "6000"
+    name: employmentHistory
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      annualIncome:
+        "$serde_json::private::Number": "72000"
+      applicantId: APL-12345
+      creditRating: fair
+      creditScore:
+        "$serde_json::private::Number": "685"
+      creditScorePoints:
+        "$serde_json::private::Number": "15"
+      dtiRatio:
+        "$serde_json::private::Number": "30"
+      employmentPoints:
+        "$serde_json::private::Number": "15"
+      employmentStability: stable
+      employmentStatus: full_time
+      employmentYears:
+        "$serde_json::private::Number": "4"
+      incomeLevel: medium
+      incomePoints:
+        "$serde_json::private::Number": "20"
+      loanAmount:
+        "$serde_json::private::Number": "250000"
+      loanTerm:
+        "$serde_json::private::Number": "30"
+      monthlyDebt:
+        "$serde_json::private::Number": "1800"
+      monthlyIncome:
+        "$serde_json::private::Number": "6000"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map: {}
+      rule:
+        _id: eh2
+  evaluateIncome:
+    id: evaluateIncome
+    input:
+      annualIncome:
+        "$serde_json::private::Number": "72000"
+      applicantId: APL-12345
+      creditRating: fair
+      creditScore:
+        "$serde_json::private::Number": "685"
+      creditScorePoints:
+        "$serde_json::private::Number": "15"
+      employmentStatus: full_time
+      employmentYears:
+        "$serde_json::private::Number": "4"
+      loanAmount:
+        "$serde_json::private::Number": "250000"
+      loanTerm:
+        "$serde_json::private::Number": "30"
+      monthlyDebt:
+        "$serde_json::private::Number": "1800"
+      monthlyIncome:
+        "$serde_json::private::Number": "6000"
+    name: incomeVerification
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      annualIncome:
+        "$serde_json::private::Number": "72000"
+      applicantId: APL-12345
+      creditRating: fair
+      creditScore:
+        "$serde_json::private::Number": "685"
+      creditScorePoints:
+        "$serde_json::private::Number": "15"
+      employmentStatus: full_time
+      employmentYears:
+        "$serde_json::private::Number": "4"
+      incomeLevel: medium
+      incomePoints:
+        "$serde_json::private::Number": "20"
+      loanAmount:
+        "$serde_json::private::Number": "250000"
+      loanTerm:
+        "$serde_json::private::Number": "30"
+      monthlyDebt:
+        "$serde_json::private::Number": "1800"
+      monthlyIncome:
+        "$serde_json::private::Number": "6000"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        annualIncome:
+          "$serde_json::private::Number": "72000"
+      rule:
+        _id: iv2
+        "annualIncome[i2-1]": "[60000..99999]"
+  input:
+    id: input
+    input: ~
+    name: loanApplication
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      annualIncome:
+        "$serde_json::private::Number": "72000"
+      applicantId: APL-12345
+      creditScore:
+        "$serde_json::private::Number": "685"
+      employmentStatus: full_time
+      employmentYears:
+        "$serde_json::private::Number": "4"
+      loanAmount:
+        "$serde_json::private::Number": "250000"
+      loanTerm:
+        "$serde_json::private::Number": "30"
+      monthlyDebt:
+        "$serde_json::private::Number": "1800"
+      monthlyIncome:
+        "$serde_json::private::Number": "6000"
+    performance: "[perf]"
+    traceData: ~
+  rejectionReason:
+    id: rejectionReason
+    input:
+      annualIncome:
+        "$serde_json::private::Number": "72000"
+      applicantId: APL-12345
+      creditRating: fair
+      creditScore:
+        "$serde_json::private::Number": "685"
+      creditScorePoints:
+        "$serde_json::private::Number": "15"
+      dtiRatio:
+        "$serde_json::private::Number": "30"
+      employmentPoints:
+        "$serde_json::private::Number": "15"
+      employmentStability: stable
+      employmentStatus: full_time
+      employmentYears:
+        "$serde_json::private::Number": "4"
+      incomeLevel: medium
+      incomePoints:
+        "$serde_json::private::Number": "20"
+      loanAmount:
+        "$serde_json::private::Number": "250000"
+      loanTerm:
+        "$serde_json::private::Number": "30"
+      monthlyDebt:
+        "$serde_json::private::Number": "1800"
+      monthlyIncome:
+        "$serde_json::private::Number": "6000"
+    name: determineLoanRejectionReason
+    order:
+      "$serde_json::private::Number": "5"
+    output:
+      annualIncome:
+        "$serde_json::private::Number": "72000"
+      applicantId: APL-12345
+      creditRating: fair
+      creditScore:
+        "$serde_json::private::Number": "685"
+      creditScorePoints:
+        "$serde_json::private::Number": "15"
+      dtiRatio:
+        "$serde_json::private::Number": "30"
+      employmentPoints:
+        "$serde_json::private::Number": "15"
+      employmentStability: stable
+      employmentStatus: full_time
+      employmentYears:
+        "$serde_json::private::Number": "4"
+      incomeLevel: medium
+      incomePoints:
+        "$serde_json::private::Number": "20"
+      loanAmount:
+        "$serde_json::private::Number": "250000"
+      loanTerm:
+        "$serde_json::private::Number": "30"
+      monthlyDebt:
+        "$serde_json::private::Number": "1800"
+      monthlyIncome:
+        "$serde_json::private::Number": "6000"
+      rejectionReasons: []
+    performance: "[perf]"
+    traceData: []

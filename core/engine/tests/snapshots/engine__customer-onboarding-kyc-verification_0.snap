@@ -1,0 +1,653 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  nextSteps: Onboarding approved
+  requiredActionsCount:
+    "$serde_json::private::Number": "0"
+  requirements:
+    addressVerification: false
+    enhancedMonitoring: false
+    faceVerification: false
+    sourceOfFunds: false
+  verificationStatus: approved
+trace:
+  additionalChecks:
+    id: additionalChecks
+    input:
+      assessment:
+        riskLevel: medium
+        riskScore:
+          "$serde_json::private::Number": "30"
+      customer:
+        address:
+          city: New York
+          country: US
+          line1: 123 Main Street
+          line2: Apt 4B
+          postalCode: "10001"
+          state: NY
+        dateOfBirth: 1985-06-15
+        email: john.smith@example.com
+        employerName: Tech Company Inc.
+        firstName: John
+        id: CUST12345
+        isHighRiskBusiness: false
+        isPoliticallyExposed: false
+        lastName: Smith
+        occupation: Software Engineer
+        phone: +1-555-123-4567
+      dueDiligenceLevel: standard
+      financialInfo:
+        accountPurpose: Savings and Investment
+        estimatedTransactionValue:
+          "$serde_json::private::Number": "25000"
+        sourceOfFunds: Employment Income
+      isSanctioned: false
+      requiresEDD: false
+      verification:
+        documentExpiry: 2028-05-20
+        documentIssuingCountry: US
+        documentNumber: P123456789
+        documentStatus: valid
+        documentType: passport
+        documentVerificationStatus: standard
+        isDocumentVerified: true
+        requiresAdditionalVerification: false
+      watchlist:
+        adverseMediaMatch: false
+        message: No watchlist hits found
+        passed: true
+        pepListMatch: false
+        sanctionsMatch: false
+        status: pass
+    name: additionalChecks
+    order:
+      "$serde_json::private::Number": "5"
+    output:
+      assessment:
+        riskLevel: medium
+        riskScore:
+          "$serde_json::private::Number": "30"
+      customer:
+        address:
+          city: New York
+          country: US
+          line1: 123 Main Street
+          line2: Apt 4B
+          postalCode: "10001"
+          state: NY
+        dateOfBirth: 1985-06-15
+        email: john.smith@example.com
+        employerName: Tech Company Inc.
+        firstName: John
+        id: CUST12345
+        isHighRiskBusiness: false
+        isPoliticallyExposed: false
+        lastName: Smith
+        occupation: Software Engineer
+        phone: +1-555-123-4567
+      dueDiligenceLevel: standard
+      financialInfo:
+        accountPurpose: Savings and Investment
+        estimatedTransactionValue:
+          "$serde_json::private::Number": "25000"
+        sourceOfFunds: Employment Income
+      isSanctioned: false
+      requirements:
+        addressVerification: false
+        enhancedMonitoring: false
+        faceVerification: false
+        sourceOfFunds: false
+      requiresEDD: false
+      verification:
+        documentExpiry: 2028-05-20
+        documentIssuingCountry: US
+        documentNumber: P123456789
+        documentStatus: valid
+        documentType: passport
+        documentVerificationStatus: standard
+        isDocumentVerified: true
+        requiresAdditionalVerification: false
+      watchlist:
+        adverseMediaMatch: false
+        message: No watchlist hits found
+        passed: true
+        pepListMatch: false
+        sanctionsMatch: false
+        status: pass
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "3"
+      reference_map:
+        assessment.riskScore:
+          "$serde_json::private::Number": "30"
+        dueDiligenceLevel: standard
+      rule:
+        _id: add4
+        "assessment.riskScore[i2]": "< 40"
+        "dueDiligenceLevel[i1]": "'standard'"
+  customerRiskScoring:
+    id: customerRiskScoring
+    input:
+      customer:
+        address:
+          city: New York
+          country: US
+          line1: 123 Main Street
+          line2: Apt 4B
+          postalCode: "10001"
+          state: NY
+        dateOfBirth: 1985-06-15
+        email: john.smith@example.com
+        employerName: Tech Company Inc.
+        firstName: John
+        id: CUST12345
+        isHighRiskBusiness: false
+        isPoliticallyExposed: false
+        lastName: Smith
+        occupation: Software Engineer
+        phone: +1-555-123-4567
+      financialInfo:
+        accountPurpose: Savings and Investment
+        estimatedTransactionValue:
+          "$serde_json::private::Number": "25000"
+        sourceOfFunds: Employment Income
+      verification:
+        documentExpiry: 2028-05-20
+        documentIssuingCountry: US
+        documentNumber: P123456789
+        documentStatus: valid
+        documentType: passport
+      watchlist:
+        adverseMediaMatch: false
+        pepListMatch: false
+        sanctionsMatch: false
+    name: customerRiskScoring
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      assessment:
+        riskLevel: medium
+        riskScore:
+          "$serde_json::private::Number": "30"
+      customer:
+        address:
+          city: New York
+          country: US
+          line1: 123 Main Street
+          line2: Apt 4B
+          postalCode: "10001"
+          state: NY
+        dateOfBirth: 1985-06-15
+        email: john.smith@example.com
+        employerName: Tech Company Inc.
+        firstName: John
+        id: CUST12345
+        isHighRiskBusiness: false
+        isPoliticallyExposed: false
+        lastName: Smith
+        occupation: Software Engineer
+        phone: +1-555-123-4567
+      financialInfo:
+        accountPurpose: Savings and Investment
+        estimatedTransactionValue:
+          "$serde_json::private::Number": "25000"
+        sourceOfFunds: Employment Income
+      verification:
+        documentExpiry: 2028-05-20
+        documentIssuingCountry: US
+        documentNumber: P123456789
+        documentStatus: valid
+        documentType: passport
+      watchlist:
+        adverseMediaMatch: false
+        pepListMatch: false
+        sanctionsMatch: false
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        customer.address.country: US
+        customer.isHighRiskBusiness: false
+        customer.isPoliticallyExposed: false
+        financialInfo.estimatedTransactionValue:
+          "$serde_json::private::Number": "25000"
+      rule:
+        _id: risk2
+        "customer.address.country[country]": "'US', 'CA', 'GB', 'AU', 'NZ', 'JP', 'DE', 'FR'"
+        "customer.isHighRiskBusiness[highRiskBusiness]": "false"
+        "customer.isPoliticallyExposed[pep]": "false"
+        "financialInfo.estimatedTransactionValue[transactionValue]": ">= 10000, < 100000"
+  documentVerification:
+    id: documentVerification
+    input:
+      assessment:
+        riskLevel: medium
+        riskScore:
+          "$serde_json::private::Number": "30"
+      customer:
+        address:
+          city: New York
+          country: US
+          line1: 123 Main Street
+          line2: Apt 4B
+          postalCode: "10001"
+          state: NY
+        dateOfBirth: 1985-06-15
+        email: john.smith@example.com
+        employerName: Tech Company Inc.
+        firstName: John
+        id: CUST12345
+        isHighRiskBusiness: false
+        isPoliticallyExposed: false
+        lastName: Smith
+        occupation: Software Engineer
+        phone: +1-555-123-4567
+      financialInfo:
+        accountPurpose: Savings and Investment
+        estimatedTransactionValue:
+          "$serde_json::private::Number": "25000"
+        sourceOfFunds: Employment Income
+      verification:
+        documentExpiry: 2028-05-20
+        documentIssuingCountry: US
+        documentNumber: P123456789
+        documentStatus: valid
+        documentType: passport
+      watchlist:
+        adverseMediaMatch: false
+        pepListMatch: false
+        sanctionsMatch: false
+    name: documentVerification
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      assessment:
+        riskLevel: medium
+        riskScore:
+          "$serde_json::private::Number": "30"
+      customer:
+        address:
+          city: New York
+          country: US
+          line1: 123 Main Street
+          line2: Apt 4B
+          postalCode: "10001"
+          state: NY
+        dateOfBirth: 1985-06-15
+        email: john.smith@example.com
+        employerName: Tech Company Inc.
+        firstName: John
+        id: CUST12345
+        isHighRiskBusiness: false
+        isPoliticallyExposed: false
+        lastName: Smith
+        occupation: Software Engineer
+        phone: +1-555-123-4567
+      financialInfo:
+        accountPurpose: Savings and Investment
+        estimatedTransactionValue:
+          "$serde_json::private::Number": "25000"
+        sourceOfFunds: Employment Income
+      verification:
+        documentExpiry: 2028-05-20
+        documentIssuingCountry: US
+        documentNumber: P123456789
+        documentStatus: valid
+        documentType: passport
+        documentVerificationStatus: standard
+        isDocumentVerified: true
+        requiresAdditionalVerification: false
+      watchlist:
+        adverseMediaMatch: false
+        pepListMatch: false
+        sanctionsMatch: false
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        assessment.riskLevel: medium
+        verification.documentStatus: valid
+        verification.documentType: passport
+      rule:
+        _id: doc1
+        "assessment.riskLevel[i3]": "'low', 'medium'"
+        "verification.documentStatus[i2]": "'valid'"
+        "verification.documentType[i1]": "'passport'"
+  dueDiligenceLevel:
+    id: dueDiligenceLevel
+    input:
+      assessment:
+        riskLevel: medium
+        riskScore:
+          "$serde_json::private::Number": "30"
+      customer:
+        address:
+          city: New York
+          country: US
+          line1: 123 Main Street
+          line2: Apt 4B
+          postalCode: "10001"
+          state: NY
+        dateOfBirth: 1985-06-15
+        email: john.smith@example.com
+        employerName: Tech Company Inc.
+        firstName: John
+        id: CUST12345
+        isHighRiskBusiness: false
+        isPoliticallyExposed: false
+        lastName: Smith
+        occupation: Software Engineer
+        phone: +1-555-123-4567
+      financialInfo:
+        accountPurpose: Savings and Investment
+        estimatedTransactionValue:
+          "$serde_json::private::Number": "25000"
+        sourceOfFunds: Employment Income
+      verification:
+        documentExpiry: 2028-05-20
+        documentIssuingCountry: US
+        documentNumber: P123456789
+        documentStatus: valid
+        documentType: passport
+        documentVerificationStatus: standard
+        isDocumentVerified: true
+        requiresAdditionalVerification: false
+      watchlist:
+        adverseMediaMatch: false
+        message: No watchlist hits found
+        passed: true
+        pepListMatch: false
+        sanctionsMatch: false
+        status: pass
+    name: dueDiligenceLevel
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      assessment:
+        riskLevel: medium
+        riskScore:
+          "$serde_json::private::Number": "30"
+      customer:
+        address:
+          city: New York
+          country: US
+          line1: 123 Main Street
+          line2: Apt 4B
+          postalCode: "10001"
+          state: NY
+        dateOfBirth: 1985-06-15
+        email: john.smith@example.com
+        employerName: Tech Company Inc.
+        firstName: John
+        id: CUST12345
+        isHighRiskBusiness: false
+        isPoliticallyExposed: false
+        lastName: Smith
+        occupation: Software Engineer
+        phone: +1-555-123-4567
+      dueDiligenceLevel: standard
+      financialInfo:
+        accountPurpose: Savings and Investment
+        estimatedTransactionValue:
+          "$serde_json::private::Number": "25000"
+        sourceOfFunds: Employment Income
+      isSanctioned: false
+      requiresEDD: false
+      verification:
+        documentExpiry: 2028-05-20
+        documentIssuingCountry: US
+        documentNumber: P123456789
+        documentStatus: valid
+        documentType: passport
+        documentVerificationStatus: standard
+        isDocumentVerified: true
+        requiresAdditionalVerification: false
+      watchlist:
+        adverseMediaMatch: false
+        message: No watchlist hits found
+        passed: true
+        pepListMatch: false
+        sanctionsMatch: false
+        status: pass
+    performance: "[perf]"
+    traceData:
+      dueDiligenceLevel:
+        result: standard
+      isSanctioned:
+        result: false
+      requiresEDD:
+        result: false
+  input:
+    id: input
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      customer:
+        address:
+          city: New York
+          country: US
+          line1: 123 Main Street
+          line2: Apt 4B
+          postalCode: "10001"
+          state: NY
+        dateOfBirth: 1985-06-15
+        email: john.smith@example.com
+        employerName: Tech Company Inc.
+        firstName: John
+        id: CUST12345
+        isHighRiskBusiness: false
+        isPoliticallyExposed: false
+        lastName: Smith
+        occupation: Software Engineer
+        phone: +1-555-123-4567
+      financialInfo:
+        accountPurpose: Savings and Investment
+        estimatedTransactionValue:
+          "$serde_json::private::Number": "25000"
+        sourceOfFunds: Employment Income
+      verification:
+        documentExpiry: 2028-05-20
+        documentIssuingCountry: US
+        documentNumber: P123456789
+        documentStatus: valid
+        documentType: passport
+      watchlist:
+        adverseMediaMatch: false
+        pepListMatch: false
+        sanctionsMatch: false
+    performance: "[perf]"
+    traceData: ~
+  verificationResult:
+    id: verificationResult
+    input:
+      assessment:
+        riskLevel: medium
+        riskScore:
+          "$serde_json::private::Number": "30"
+      customer:
+        address:
+          city: New York
+          country: US
+          line1: 123 Main Street
+          line2: Apt 4B
+          postalCode: "10001"
+          state: NY
+        dateOfBirth: 1985-06-15
+        email: john.smith@example.com
+        employerName: Tech Company Inc.
+        firstName: John
+        id: CUST12345
+        isHighRiskBusiness: false
+        isPoliticallyExposed: false
+        lastName: Smith
+        occupation: Software Engineer
+        phone: +1-555-123-4567
+      dueDiligenceLevel: standard
+      financialInfo:
+        accountPurpose: Savings and Investment
+        estimatedTransactionValue:
+          "$serde_json::private::Number": "25000"
+        sourceOfFunds: Employment Income
+      isSanctioned: false
+      requirements:
+        addressVerification: false
+        enhancedMonitoring: false
+        faceVerification: false
+        sourceOfFunds: false
+      requiresEDD: false
+      verification:
+        documentExpiry: 2028-05-20
+        documentIssuingCountry: US
+        documentNumber: P123456789
+        documentStatus: valid
+        documentType: passport
+        documentVerificationStatus: standard
+        isDocumentVerified: true
+        requiresAdditionalVerification: false
+      watchlist:
+        adverseMediaMatch: false
+        message: No watchlist hits found
+        passed: true
+        pepListMatch: false
+        sanctionsMatch: false
+        status: pass
+    name: verificationResult
+    order:
+      "$serde_json::private::Number": "6"
+    output:
+      nextSteps: Onboarding approved
+      requiredActionsCount:
+        "$serde_json::private::Number": "0"
+      requirements:
+        addressVerification: false
+        enhancedMonitoring: false
+        faceVerification: false
+        sourceOfFunds: false
+      verificationStatus: approved
+    performance: "[perf]"
+    traceData:
+      nextSteps:
+        result: Onboarding approved
+      requiredActionsCount:
+        result:
+          "$serde_json::private::Number": "0"
+      requirements:
+        result:
+          addressVerification: false
+          enhancedMonitoring: false
+          faceVerification: false
+          sourceOfFunds: false
+      verificationStatus:
+        result: approved
+  watchlistCheck:
+    id: watchlistCheck
+    input:
+      assessment:
+        riskLevel: medium
+        riskScore:
+          "$serde_json::private::Number": "30"
+      customer:
+        address:
+          city: New York
+          country: US
+          line1: 123 Main Street
+          line2: Apt 4B
+          postalCode: "10001"
+          state: NY
+        dateOfBirth: 1985-06-15
+        email: john.smith@example.com
+        employerName: Tech Company Inc.
+        firstName: John
+        id: CUST12345
+        isHighRiskBusiness: false
+        isPoliticallyExposed: false
+        lastName: Smith
+        occupation: Software Engineer
+        phone: +1-555-123-4567
+      financialInfo:
+        accountPurpose: Savings and Investment
+        estimatedTransactionValue:
+          "$serde_json::private::Number": "25000"
+        sourceOfFunds: Employment Income
+      verification:
+        documentExpiry: 2028-05-20
+        documentIssuingCountry: US
+        documentNumber: P123456789
+        documentStatus: valid
+        documentType: passport
+        documentVerificationStatus: standard
+        isDocumentVerified: true
+        requiresAdditionalVerification: false
+      watchlist:
+        adverseMediaMatch: false
+        pepListMatch: false
+        sanctionsMatch: false
+    name: watchlistCheck
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      assessment:
+        riskLevel: medium
+        riskScore:
+          "$serde_json::private::Number": "30"
+      customer:
+        address:
+          city: New York
+          country: US
+          line1: 123 Main Street
+          line2: Apt 4B
+          postalCode: "10001"
+          state: NY
+        dateOfBirth: 1985-06-15
+        email: john.smith@example.com
+        employerName: Tech Company Inc.
+        firstName: John
+        id: CUST12345
+        isHighRiskBusiness: false
+        isPoliticallyExposed: false
+        lastName: Smith
+        occupation: Software Engineer
+        phone: +1-555-123-4567
+      financialInfo:
+        accountPurpose: Savings and Investment
+        estimatedTransactionValue:
+          "$serde_json::private::Number": "25000"
+        sourceOfFunds: Employment Income
+      verification:
+        documentExpiry: 2028-05-20
+        documentIssuingCountry: US
+        documentNumber: P123456789
+        documentStatus: valid
+        documentType: passport
+        documentVerificationStatus: standard
+        isDocumentVerified: true
+        requiresAdditionalVerification: false
+      watchlist:
+        adverseMediaMatch: false
+        message: No watchlist hits found
+        passed: true
+        pepListMatch: false
+        sanctionsMatch: false
+        status: pass
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "3"
+      reference_map:
+        watchlist.adverseMediaMatch: false
+        watchlist.pepListMatch: false
+        watchlist.sanctionsMatch: false
+      rule:
+        _id: watch4
+        "watchlist.adverseMediaMatch[i3]": "false"
+        "watchlist.pepListMatch[i2]": "false"
+        "watchlist.sanctionsMatch[i1]": "false"

@@ -1,0 +1,181 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  reason: Advanced imaging requires prior authorization
+  requiresAuthorization: true
+  timestamp:
+    "$serde_json::private::Number": "1755622502"
+trace:
+  commercialRules:
+    id: commercialRules
+    input:
+      diagnosisCodes:
+        - M54.5
+        - M51.26
+      patientInfo:
+        insuranceType: Commercial
+      serviceDetails:
+        code: "70551"
+        cost:
+          "$serde_json::private::Number": "1200"
+        isEmergency: false
+      serviceType: Imaging
+    name: Commercial Rules
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      authorizationReason: Advanced imaging requires prior authorization
+      diagnosisCodes:
+        - M54.5
+        - M51.26
+      patientInfo:
+        insuranceType: Commercial
+      requiresAuthorization: true
+      serviceDetails:
+        code: "70551"
+        cost:
+          "$serde_json::private::Number": "1200"
+        isEmergency: false
+      serviceType: Imaging
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "2"
+      reference_map:
+        serviceType: Imaging
+      rule:
+        _id: r3
+        "serviceType[i1]": "'Imaging'"
+  diagnosisCheck:
+    id: diagnosisCheck
+    input:
+      authorizationReason: Advanced imaging requires prior authorization
+      diagnosisCodes:
+        - M54.5
+        - M51.26
+      patientInfo:
+        insuranceType: Commercial
+      requiresAuthorization: true
+      serviceDetails:
+        code: "70551"
+        cost:
+          "$serde_json::private::Number": "1200"
+        isEmergency: false
+      serviceType: Imaging
+    name: Diagnosis Code Exclusions
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      authorizationReason: Advanced imaging requires prior authorization
+      diagnosisCodes:
+        - M54.5
+        - M51.26
+      patientInfo:
+        insuranceType: Commercial
+      requiresAuthorization: true
+      serviceDetails:
+        code: "70551"
+        cost:
+          "$serde_json::private::Number": "1200"
+        isEmergency: false
+      serviceType: Imaging
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "3"
+      reference_map:
+        diagnosisCodes:
+          - M54.5
+          - M51.26
+      rule:
+        _id: r4
+        "diagnosisCodes[i1]": ""
+  finalDetermination:
+    id: finalDetermination
+    input:
+      authorizationReason: Advanced imaging requires prior authorization
+      diagnosisCodes:
+        - M54.5
+        - M51.26
+      patientInfo:
+        insuranceType: Commercial
+      requiresAuthorization: true
+      serviceDetails:
+        code: "70551"
+        cost:
+          "$serde_json::private::Number": "1200"
+        isEmergency: false
+      serviceType: Imaging
+    name: Final Determination
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      reason: Advanced imaging requires prior authorization
+      requiresAuthorization: true
+      timestamp:
+        "$serde_json::private::Number": "1755622502"
+    performance: "[perf]"
+    traceData:
+      reason:
+        result: Advanced imaging requires prior authorization
+      requiresAuthorization:
+        result: true
+      timestamp:
+        result:
+          "$serde_json::private::Number": "1755622502"
+  inputNode:
+    id: inputNode
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      diagnosisCodes:
+        - M54.5
+        - M51.26
+      patientInfo:
+        insuranceType: Commercial
+      serviceDetails:
+        code: "70551"
+        cost:
+          "$serde_json::private::Number": "1200"
+        isEmergency: false
+      serviceType: Imaging
+    performance: "[perf]"
+    traceData: ~
+  insuranceTypeCheck:
+    id: insuranceTypeCheck
+    input:
+      diagnosisCodes:
+        - M54.5
+        - M51.26
+      patientInfo:
+        insuranceType: Commercial
+      serviceDetails:
+        code: "70551"
+        cost:
+          "$serde_json::private::Number": "1200"
+        isEmergency: false
+      serviceType: Imaging
+    name: Insurance Type Check
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      diagnosisCodes:
+        - M54.5
+        - M51.26
+      patientInfo:
+        insuranceType: Commercial
+      serviceDetails:
+        code: "70551"
+        cost:
+          "$serde_json::private::Number": "1200"
+        isEmergency: false
+      serviceType: Imaging
+    performance: "[perf]"
+    traceData:
+      statements:
+        - id: s3

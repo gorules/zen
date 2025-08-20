@@ -1,0 +1,412 @@
+{
+  "tests": [
+    {
+      "input": {
+        "customer": {
+          "age": 35,
+          "gender": "female",
+          "creditScore": 720,
+          "drivingHistory": {
+            "accidentsLast3Years": 0,
+            "violationsLast3Years": 1
+          }
+        },
+        "policy": {
+          "coverageAmount": 300000,
+          "coverageType": "comprehensive",
+          "deductible": 500,
+          "vehicleAge": 3,
+          "vehicleType": "sedan"
+        }
+      },
+      "output": {
+        "basePremium": 1650,
+        "basePremiumPerThousand": 5.5,
+        "coverageAmountInThousands": 300,
+        "customer": {
+          "age": 35,
+          "creditScore": 720,
+          "drivingHistory": {
+            "accidentsLast3Years": 0,
+            "violationsLast3Years": 1
+          },
+          "gender": "female"
+        },
+        "policy": {
+          "coverageAmount": 300000,
+          "coverageType": "comprehensive",
+          "deductible": 500,
+          "vehicleAge": 3,
+          "vehicleType": "sedan"
+        },
+        "riskFactors": {
+          "ageRiskFactor": 1.2,
+          "driverRiskCategory": "medium",
+          "vehicleRiskFactor": 1
+        }
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "ip1",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1-1",
+            "i1-1": "< 25",
+            "i1-2": "> 1",
+            "o1-1": "1.5",
+            "o1-2": "'high'"
+          },
+          {
+            "_id": "r1-2",
+            "i1-1": "< 25",
+            "i1-2": "0, 1",
+            "o1-1": "1.3",
+            "o1-2": "'medium-high'"
+          },
+          {
+            "_id": "r1-3",
+            "i1-1": "[25..65]",
+            "i1-2": "> 2",
+            "o1-1": "1.4",
+            "o1-2": "'medium-high'"
+          },
+          {
+            "_id": "r1-4",
+            "i1-1": "[25..65]",
+            "i1-2": "1, 2",
+            "o1-1": "1.2",
+            "o1-2": "'medium'"
+          },
+          {
+            "_id": "r1-5",
+            "i1-1": "[25..65]",
+            "i1-2": "0",
+            "o1-1": "1.0",
+            "o1-2": "'low'"
+          },
+          {
+            "_id": "r1-6",
+            "i1-1": "> 65",
+            "i1-2": "> 0",
+            "o1-1": "1.3",
+            "o1-2": "'medium-high'"
+          },
+          {
+            "_id": "r1-7",
+            "i1-1": "> 65",
+            "i1-2": "0",
+            "o1-1": "1.1",
+            "o1-2": "'medium-low'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Age",
+            "field": "customer.age"
+          },
+          {
+            "id": "i1-2",
+            "name": "Total Incidents",
+            "field": "customer.drivingHistory.accidentsLast3Years + customer.drivingHistory.violationsLast3Years"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Age Risk Factor",
+            "field": "riskFactors.ageRiskFactor"
+          },
+          {
+            "id": "o1-2",
+            "name": "Driver Risk Category",
+            "field": "riskFactors.driverRiskCategory"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt1",
+      "name": "driverRiskAssessment",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1-1",
+            "key": "basePremiumPerThousand",
+            "value": "5.5"
+          },
+          {
+            "id": "e1-2",
+            "key": "coverageAmountInThousands",
+            "value": "policy.coverageAmount / 1000"
+          },
+          {
+            "id": "e1-3",
+            "key": "basePremium",
+            "value": "$.basePremiumPerThousand * $.coverageAmountInThousands"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex1",
+      "name": "calculateBasePremium",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r2-1",
+            "i2-1": "'sedan'",
+            "i2-2": "< 3",
+            "o2-1": "0.9"
+          },
+          {
+            "_id": "r2-2",
+            "i2-1": "'sedan'",
+            "i2-2": "[3..7]",
+            "o2-1": "1.0"
+          },
+          {
+            "_id": "r2-3",
+            "i2-1": "'sedan'",
+            "i2-2": "> 7",
+            "o2-1": "1.1"
+          },
+          {
+            "_id": "r2-4",
+            "i2-1": "'suv'",
+            "i2-2": "< 3",
+            "o2-1": "1.1"
+          },
+          {
+            "_id": "r2-5",
+            "i2-1": "'suv'",
+            "i2-2": "[3..7]",
+            "o2-1": "1.2"
+          },
+          {
+            "_id": "r2-6",
+            "i2-1": "'suv'",
+            "i2-2": "> 7",
+            "o2-1": "1.3"
+          },
+          {
+            "_id": "r2-7",
+            "i2-1": "'sports'",
+            "i2-2": "< 3",
+            "o2-1": "1.5"
+          },
+          {
+            "_id": "r2-8",
+            "i2-1": "'sports'",
+            "i2-2": "[3..7]",
+            "o2-1": "1.6"
+          },
+          {
+            "_id": "r2-9",
+            "i2-1": "'sports'",
+            "i2-2": "> 7",
+            "o2-1": "1.8"
+          },
+          {
+            "_id": "r2-10",
+            "i2-1": "",
+            "i2-2": "",
+            "o2-1": "1.2"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i2-1",
+            "name": "Vehicle Type",
+            "field": "policy.vehicleType"
+          },
+          {
+            "id": "i2-2",
+            "name": "Vehicle Age",
+            "field": "policy.vehicleAge"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2-1",
+            "name": "Vehicle Risk Factor",
+            "field": "riskFactors.vehicleRiskFactor"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt2",
+      "name": "vehicleRiskAssessment",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r3-1",
+            "i3-1": "'basic'",
+            "i3-2": "> 1000",
+            "o3-1": "0.8"
+          },
+          {
+            "_id": "r3-2",
+            "i3-1": "'basic'",
+            "i3-2": "[500..1000]",
+            "o3-1": "0.9"
+          },
+          {
+            "_id": "r3-3",
+            "i3-1": "'basic'",
+            "i3-2": "< 500",
+            "o3-1": "1.0"
+          },
+          {
+            "_id": "r3-4",
+            "i3-1": "'standard'",
+            "i3-2": "> 1000",
+            "o3-1": "0.9"
+          },
+          {
+            "_id": "r3-5",
+            "i3-1": "'standard'",
+            "i3-2": "[500..1000]",
+            "o3-1": "1.0"
+          },
+          {
+            "_id": "r3-6",
+            "i3-1": "'standard'",
+            "i3-2": "< 500",
+            "o3-1": "1.1"
+          },
+          {
+            "_id": "r3-7",
+            "i3-1": "'comprehensive'",
+            "i3-2": "> 1000",
+            "o3-1": "1.1"
+          },
+          {
+            "_id": "r3-8",
+            "i3-1": "'comprehensive'",
+            "i3-2": "[500..1000]",
+            "o3-1": "1.2"
+          },
+          {
+            "_id": "r3-9",
+            "i3-1": "'comprehensive'",
+            "i3-2": "< 500",
+            "o3-1": "1.3"
+          },
+          {
+            "_id": "r3-10",
+            "i3-1": "",
+            "i3-2": "",
+            "o3-1": "1.0"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i3-1",
+            "name": "Coverage Type",
+            "field": "policy.coverageType"
+          },
+          {
+            "id": "i3-2",
+            "name": "Deductible",
+            "field": "policy.deductible"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o3-1",
+            "name": "Coverage Factor",
+            "field": "riskFactors.coverageFactor"
+          },
+          {
+            "id": "o3-2",
+            "name": "Final Premium",
+            "field": "premium"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt3",
+      "name": "finalPremiumCalculation",
+      "position": {
+        "x": 1390,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "ed1",
+      "sourceId": "ip1",
+      "targetId": "dt1",
+      "type": "edge"
+    },
+    {
+      "id": "ed2",
+      "sourceId": "dt1",
+      "targetId": "ex1",
+      "type": "edge"
+    },
+    {
+      "id": "ed3",
+      "sourceId": "ex1",
+      "targetId": "dt2",
+      "type": "edge"
+    },
+    {
+      "id": "ed4",
+      "sourceId": "dt2",
+      "targetId": "dt3",
+      "type": "edge"
+    }
+  ]
+}

@@ -1,0 +1,278 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  category: Electronics
+  currentInventory:
+    "$serde_json::private::Number": "75"
+  currentMonth:
+    "$serde_json::private::Number": "7"
+  discountPercentage:
+    "$serde_json::private::Number": "15"
+  eligibilityReason: Product fully qualifies for flash sale
+  initialCheckReason: Sufficient inventory and margin
+  isEligibleForFlashSale: true
+  isInSeason: true
+  isQualifiedSeller: true
+  passesInitialCheck: true
+  productId: PROD-12345
+  profitMargin:
+    "$serde_json::private::Number": "0.28"
+  season: summer
+  seasonReason: Summer product in summer months
+  seasonalityFactor:
+    "$serde_json::private::Number": "1.2"
+  sellerFactor:
+    "$serde_json::private::Number": "1.5"
+  sellerHistoricalSales:
+    "$serde_json::private::Number": "2500"
+  sellerRating:
+    "$serde_json::private::Number": "4.5"
+trace:
+  checkInventoryAndMargin:
+    id: checkInventoryAndMargin
+    input:
+      category: Electronics
+      currentInventory:
+        "$serde_json::private::Number": "75"
+      currentMonth:
+        "$serde_json::private::Number": "7"
+      productId: PROD-12345
+      profitMargin:
+        "$serde_json::private::Number": "0.28"
+      season: summer
+      sellerHistoricalSales:
+        "$serde_json::private::Number": "2500"
+      sellerRating:
+        "$serde_json::private::Number": "4.5"
+    name: checkInventoryAndMargin
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      category: Electronics
+      currentInventory:
+        "$serde_json::private::Number": "75"
+      currentMonth:
+        "$serde_json::private::Number": "7"
+      initialCheckReason: Sufficient inventory and margin
+      passesInitialCheck: true
+      productId: PROD-12345
+      profitMargin:
+        "$serde_json::private::Number": "0.28"
+      season: summer
+      sellerHistoricalSales:
+        "$serde_json::private::Number": "2500"
+      sellerRating:
+        "$serde_json::private::Number": "4.5"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        currentInventory:
+          "$serde_json::private::Number": "75"
+        profitMargin:
+          "$serde_json::private::Number": "0.28"
+      rule:
+        _id: r1
+        "currentInventory[i1]": ">= 50"
+        "profitMargin[i2]": ">= 0.25"
+  checkSeasonality:
+    id: checkSeasonality
+    input:
+      category: Electronics
+      currentInventory:
+        "$serde_json::private::Number": "75"
+      currentMonth:
+        "$serde_json::private::Number": "7"
+      initialCheckReason: Sufficient inventory and margin
+      passesInitialCheck: true
+      productId: PROD-12345
+      profitMargin:
+        "$serde_json::private::Number": "0.28"
+      season: summer
+      sellerHistoricalSales:
+        "$serde_json::private::Number": "2500"
+      sellerRating:
+        "$serde_json::private::Number": "4.5"
+    name: checkSeasonality
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      category: Electronics
+      currentInventory:
+        "$serde_json::private::Number": "75"
+      currentMonth:
+        "$serde_json::private::Number": "7"
+      initialCheckReason: Sufficient inventory and margin
+      isInSeason: true
+      passesInitialCheck: true
+      productId: PROD-12345
+      profitMargin:
+        "$serde_json::private::Number": "0.28"
+      season: summer
+      seasonReason: Summer product in summer months
+      sellerHistoricalSales:
+        "$serde_json::private::Number": "2500"
+      sellerRating:
+        "$serde_json::private::Number": "4.5"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        currentMonth:
+          "$serde_json::private::Number": "7"
+        season: summer
+      rule:
+        _id: r1
+        "currentMonth[i2]": "6, 7, 8"
+        "season[i1]": "'summer'"
+  checkSellerQuality:
+    id: checkSellerQuality
+    input:
+      category: Electronics
+      currentInventory:
+        "$serde_json::private::Number": "75"
+      currentMonth:
+        "$serde_json::private::Number": "7"
+      initialCheckReason: Sufficient inventory and margin
+      isInSeason: true
+      passesInitialCheck: true
+      productId: PROD-12345
+      profitMargin:
+        "$serde_json::private::Number": "0.28"
+      season: summer
+      seasonReason: Summer product in summer months
+      sellerHistoricalSales:
+        "$serde_json::private::Number": "2500"
+      sellerRating:
+        "$serde_json::private::Number": "4.5"
+    name: checkSellerQuality
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      category: Electronics
+      currentInventory:
+        "$serde_json::private::Number": "75"
+      currentMonth:
+        "$serde_json::private::Number": "7"
+      initialCheckReason: Sufficient inventory and margin
+      isInSeason: true
+      isQualifiedSeller: true
+      passesInitialCheck: true
+      productId: PROD-12345
+      profitMargin:
+        "$serde_json::private::Number": "0.28"
+      season: summer
+      seasonReason: Summer product in summer months
+      seasonalityFactor:
+        "$serde_json::private::Number": "1.2"
+      sellerFactor:
+        "$serde_json::private::Number": "1.5"
+      sellerHistoricalSales:
+        "$serde_json::private::Number": "2500"
+      sellerRating:
+        "$serde_json::private::Number": "4.5"
+    performance: "[perf]"
+    traceData:
+      isQualifiedSeller:
+        result: true
+      seasonalityFactor:
+        result:
+          "$serde_json::private::Number": "1.2"
+      sellerFactor:
+        result:
+          "$serde_json::private::Number": "1.5"
+  determineEligibility:
+    id: determineEligibility
+    input:
+      category: Electronics
+      currentInventory:
+        "$serde_json::private::Number": "75"
+      currentMonth:
+        "$serde_json::private::Number": "7"
+      initialCheckReason: Sufficient inventory and margin
+      isInSeason: true
+      isQualifiedSeller: true
+      passesInitialCheck: true
+      productId: PROD-12345
+      profitMargin:
+        "$serde_json::private::Number": "0.28"
+      season: summer
+      seasonReason: Summer product in summer months
+      seasonalityFactor:
+        "$serde_json::private::Number": "1.2"
+      sellerFactor:
+        "$serde_json::private::Number": "1.5"
+      sellerHistoricalSales:
+        "$serde_json::private::Number": "2500"
+      sellerRating:
+        "$serde_json::private::Number": "4.5"
+    name: determineEligibility
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      category: Electronics
+      currentInventory:
+        "$serde_json::private::Number": "75"
+      currentMonth:
+        "$serde_json::private::Number": "7"
+      discountPercentage:
+        "$serde_json::private::Number": "15"
+      eligibilityReason: Product fully qualifies for flash sale
+      initialCheckReason: Sufficient inventory and margin
+      isEligibleForFlashSale: true
+      isInSeason: true
+      isQualifiedSeller: true
+      passesInitialCheck: true
+      productId: PROD-12345
+      profitMargin:
+        "$serde_json::private::Number": "0.28"
+      season: summer
+      seasonReason: Summer product in summer months
+      seasonalityFactor:
+        "$serde_json::private::Number": "1.2"
+      sellerFactor:
+        "$serde_json::private::Number": "1.5"
+      sellerHistoricalSales:
+        "$serde_json::private::Number": "2500"
+      sellerRating:
+        "$serde_json::private::Number": "4.5"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        isInSeason: true
+        isQualifiedSeller: true
+        passesInitialCheck: true
+      rule:
+        _id: r1
+        "isInSeason[i2]": isInSeason == true
+        "isQualifiedSeller[i3]": isQualifiedSeller == true
+        "passesInitialCheck[i1]": passesInitialCheck == true
+  input:
+    id: input
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      category: Electronics
+      currentInventory:
+        "$serde_json::private::Number": "75"
+      currentMonth:
+        "$serde_json::private::Number": "7"
+      productId: PROD-12345
+      profitMargin:
+        "$serde_json::private::Number": "0.28"
+      season: summer
+      sellerHistoricalSales:
+        "$serde_json::private::Number": "2500"
+      sellerRating:
+        "$serde_json::private::Number": "4.5"
+    performance: "[perf]"
+    traceData: ~

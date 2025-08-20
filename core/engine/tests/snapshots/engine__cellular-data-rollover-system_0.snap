@@ -1,0 +1,233 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  nextBillingCycle:
+    consecutiveRollovers:
+      "$serde_json::private::Number": "2"
+    status: approved
+  responseMessage: Rollover successful. You have 20 GB of rollover data available for your next billing cycle.
+trace:
+  dt1:
+    id: dt1
+    input:
+      currentBillingCycle:
+        consecutiveRollovers:
+          "$serde_json::private::Number": "1"
+        dataUsed:
+          "$serde_json::private::Number": "35"
+        rolloverData:
+          "$serde_json::private::Number": "5"
+      isPositiveUnusedData: true
+      plan:
+        monthlyDataAllowance:
+          "$serde_json::private::Number": "50"
+        rolloverEligible: true
+        type: premium
+      previousRolloverAmount:
+        "$serde_json::private::Number": "5"
+      unusedData:
+        "$serde_json::private::Number": "15"
+    name: determineRolloverAmount
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      currentBillingCycle:
+        consecutiveRollovers:
+          "$serde_json::private::Number": "1"
+        dataUsed:
+          "$serde_json::private::Number": "35"
+        rolloverData:
+          "$serde_json::private::Number": "5"
+      isPositiveUnusedData: true
+      nextBillingCycle:
+        rolloverData:
+          "$serde_json::private::Number": "20"
+        rolloverReason: Unlimited rollover for Premium plan
+      plan:
+        monthlyDataAllowance:
+          "$serde_json::private::Number": "50"
+        rolloverEligible: true
+        type: premium
+      previousRolloverAmount:
+        "$serde_json::private::Number": "5"
+      unusedData:
+        "$serde_json::private::Number": "15"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        currentBillingCycle.consecutiveRollovers:
+          "$serde_json::private::Number": "1"
+        isPositiveUnusedData: true
+        plan.type: premium
+      rule:
+        _id: r1-1
+        "currentBillingCycle.consecutiveRollovers[i1-3]": "< 3"
+        "isPositiveUnusedData[i1-2]": "true"
+        "plan.type[i1-1]": "'premium'"
+  ex1:
+    id: ex1
+    input:
+      currentBillingCycle:
+        consecutiveRollovers:
+          "$serde_json::private::Number": "1"
+        dataUsed:
+          "$serde_json::private::Number": "35"
+        rolloverData:
+          "$serde_json::private::Number": "5"
+      plan:
+        monthlyDataAllowance:
+          "$serde_json::private::Number": "50"
+        rolloverEligible: true
+        type: premium
+    name: calculateUnusedData
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      currentBillingCycle:
+        consecutiveRollovers:
+          "$serde_json::private::Number": "1"
+        dataUsed:
+          "$serde_json::private::Number": "35"
+        rolloverData:
+          "$serde_json::private::Number": "5"
+      isPositiveUnusedData: true
+      plan:
+        monthlyDataAllowance:
+          "$serde_json::private::Number": "50"
+        rolloverEligible: true
+        type: premium
+      previousRolloverAmount:
+        "$serde_json::private::Number": "5"
+      unusedData:
+        "$serde_json::private::Number": "15"
+    performance: "[perf]"
+    traceData:
+      isPositiveUnusedData:
+        result: true
+      previousRolloverAmount:
+        result:
+          "$serde_json::private::Number": "5"
+      unusedData:
+        result:
+          "$serde_json::private::Number": "15"
+  ex2:
+    id: ex2
+    input:
+      currentBillingCycle:
+        consecutiveRollovers:
+          "$serde_json::private::Number": "1"
+        dataUsed:
+          "$serde_json::private::Number": "35"
+        rolloverData:
+          "$serde_json::private::Number": "5"
+      isPositiveUnusedData: true
+      nextBillingCycle:
+        rolloverData:
+          "$serde_json::private::Number": "20"
+        rolloverReason: Unlimited rollover for Premium plan
+      plan:
+        monthlyDataAllowance:
+          "$serde_json::private::Number": "50"
+        rolloverEligible: true
+        type: premium
+      previousRolloverAmount:
+        "$serde_json::private::Number": "5"
+      unusedData:
+        "$serde_json::private::Number": "15"
+    name: processSuccessfulRollover
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      nextBillingCycle:
+        consecutiveRollovers:
+          "$serde_json::private::Number": "2"
+        status: approved
+      responseMessage: Rollover successful. You have 20 GB of rollover data available for your next billing cycle.
+    performance: "[perf]"
+    traceData:
+      nextBillingCycle.consecutiveRollovers:
+        result:
+          "$serde_json::private::Number": "2"
+      nextBillingCycle.status:
+        result: approved
+      responseMessage:
+        result: Rollover successful. You have 20 GB of rollover data available for your next billing cycle.
+  ip1:
+    id: ip1
+    input: ~
+    name: dataRolloverRequest
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      currentBillingCycle:
+        consecutiveRollovers:
+          "$serde_json::private::Number": "1"
+        dataUsed:
+          "$serde_json::private::Number": "35"
+        rolloverData:
+          "$serde_json::private::Number": "5"
+      plan:
+        monthlyDataAllowance:
+          "$serde_json::private::Number": "50"
+        rolloverEligible: true
+        type: premium
+    performance: "[perf]"
+    traceData: ~
+  sw1:
+    id: sw1
+    input:
+      currentBillingCycle:
+        consecutiveRollovers:
+          "$serde_json::private::Number": "1"
+        dataUsed:
+          "$serde_json::private::Number": "35"
+        rolloverData:
+          "$serde_json::private::Number": "5"
+      isPositiveUnusedData: true
+      nextBillingCycle:
+        rolloverData:
+          "$serde_json::private::Number": "20"
+        rolloverReason: Unlimited rollover for Premium plan
+      plan:
+        monthlyDataAllowance:
+          "$serde_json::private::Number": "50"
+        rolloverEligible: true
+        type: premium
+      previousRolloverAmount:
+        "$serde_json::private::Number": "5"
+      unusedData:
+        "$serde_json::private::Number": "15"
+    name: verifyRollover
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      currentBillingCycle:
+        consecutiveRollovers:
+          "$serde_json::private::Number": "1"
+        dataUsed:
+          "$serde_json::private::Number": "35"
+        rolloverData:
+          "$serde_json::private::Number": "5"
+      isPositiveUnusedData: true
+      nextBillingCycle:
+        rolloverData:
+          "$serde_json::private::Number": "20"
+        rolloverReason: Unlimited rollover for Premium plan
+      plan:
+        monthlyDataAllowance:
+          "$serde_json::private::Number": "50"
+        rolloverEligible: true
+        type: premium
+      previousRolloverAmount:
+        "$serde_json::private::Number": "5"
+      unusedData:
+        "$serde_json::private::Number": "15"
+    performance: "[perf]"
+    traceData:
+      statements:
+        - id: s1-1

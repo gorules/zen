@@ -1,0 +1,366 @@
+{
+  "tests": [
+    {
+      "input": {
+        "productId": "PROD-12345",
+        "category": "Electronics",
+        "currentInventory": 75,
+        "profitMargin": 0.28,
+        "season": "summer",
+        "currentMonth": 7,
+        "sellerRating": 4.5,
+        "sellerHistoricalSales": 2500
+      },
+      "output": {
+        "category": "Electronics",
+        "currentInventory": 75,
+        "currentMonth": 7,
+        "discountPercentage": 15,
+        "eligibilityReason": "Product fully qualifies for flash sale",
+        "initialCheckReason": "Sufficient inventory and margin",
+        "isEligibleForFlashSale": true,
+        "isInSeason": true,
+        "isQualifiedSeller": true,
+        "passesInitialCheck": true,
+        "productId": "PROD-12345",
+        "profitMargin": 0.28,
+        "season": "summer",
+        "seasonReason": "Summer product in summer months",
+        "seasonalityFactor": 1.2,
+        "sellerFactor": 1.5,
+        "sellerHistoricalSales": 2500,
+        "sellerRating": 4.5
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"productId\": { \"type\": \"string\" },\n    \"category\": { \"type\": \"string\" },\n    \"currentInventory\": { \"type\": \"number\" },\n    \"profitMargin\": { \"type\": \"number\" },\n    \"season\": { \"type\": \"string\" },\n    \"currentMonth\": { \"type\": \"number\" },\n    \"sellerRating\": { \"type\": \"number\" },\n    \"sellerHistoricalSales\": { \"type\": \"number\" }\n  },\n  \"required\": [\"productId\", \"category\", \"currentInventory\", \"profitMargin\", \"season\", \"currentMonth\", \"sellerRating\", \"sellerHistoricalSales\"]\n}"
+      },
+      "id": "input",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1",
+            "i1": ">= 50",
+            "i2": ">= 0.25",
+            "o1": "true",
+            "o2": "'Sufficient inventory and margin'"
+          },
+          {
+            "_id": "r2",
+            "i1": ">= 100",
+            "i2": ">= 0.15",
+            "o1": "true",
+            "o2": "'High inventory with acceptable margin'"
+          },
+          {
+            "_id": "r3",
+            "i1": "< 20",
+            "i2": "",
+            "o1": "false",
+            "o2": "'Insufficient inventory for flash sale'"
+          },
+          {
+            "_id": "r4",
+            "i1": "",
+            "i2": "< 0.1",
+            "o1": "false",
+            "o2": "'Margin too low for promotion'"
+          },
+          {
+            "_id": "r5",
+            "i1": "",
+            "i2": "",
+            "o1": "false",
+            "o2": "'Default: Does not meet primary criteria'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Current Inventory",
+            "field": "currentInventory"
+          },
+          {
+            "id": "i2",
+            "name": "Profit Margin",
+            "field": "profitMargin"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Passes Initial Check",
+            "field": "passesInitialCheck"
+          },
+          {
+            "id": "o2",
+            "name": "Initial Check Reason",
+            "field": "initialCheckReason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "checkInventoryAndMargin",
+      "name": "checkInventoryAndMargin",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1",
+            "i1": "'summer'",
+            "i2": "6, 7, 8",
+            "o1": "true",
+            "o2": "'Summer product in summer months'"
+          },
+          {
+            "_id": "r2",
+            "i1": "'winter'",
+            "i2": "1, 2, 12",
+            "o1": "true",
+            "o2": "'Winter product in winter months'"
+          },
+          {
+            "_id": "r3",
+            "i1": "'fall'",
+            "i2": "9, 10, 11",
+            "o1": "true",
+            "o2": "'Fall product in fall months'"
+          },
+          {
+            "_id": "r4",
+            "i1": "'spring'",
+            "i2": "3, 4, 5",
+            "o1": "true",
+            "o2": "'Spring product in spring months'"
+          },
+          {
+            "_id": "r5",
+            "i1": "'all-year'",
+            "i2": "",
+            "o1": "true",
+            "o2": "'Product available year-round'"
+          },
+          {
+            "_id": "r6",
+            "i1": "",
+            "i2": "",
+            "o1": "false",
+            "o2": "'Product out of season'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Season",
+            "field": "season"
+          },
+          {
+            "id": "i2",
+            "name": "Current Month",
+            "field": "currentMonth"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Is In Season",
+            "field": "isInSeason"
+          },
+          {
+            "id": "o2",
+            "name": "Season Reason",
+            "field": "seasonReason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "checkSeasonality",
+      "name": "checkSeasonality",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1",
+            "key": "isQualifiedSeller",
+            "value": "sellerRating >= 4.0 and sellerHistoricalSales >= 1000"
+          },
+          {
+            "id": "e2",
+            "key": "seasonalityFactor",
+            "value": "isInSeason ? 1.2 : 0.8"
+          },
+          {
+            "id": "e3",
+            "key": "sellerFactor",
+            "value": "$.isQualifiedSeller ? 1.5 : (sellerRating >= 3.5 ? 1.0 : 0.5)"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "checkSellerQuality",
+      "name": "checkSellerQuality",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1",
+            "i1": "passesInitialCheck == true",
+            "i2": "isInSeason == true",
+            "i3": "isQualifiedSeller == true",
+            "o1": "true",
+            "o2": "'Product fully qualifies for flash sale'",
+            "o3": "15"
+          },
+          {
+            "_id": "r2",
+            "i1": "passesInitialCheck == true",
+            "i2": "isInSeason == true",
+            "i3": "isQualifiedSeller == false",
+            "o1": "true",
+            "o2": "'Seasonal product with sufficient inventory/margin'",
+            "o3": "10"
+          },
+          {
+            "_id": "r3",
+            "i1": "passesInitialCheck == true",
+            "i2": "isInSeason == false",
+            "i3": "isQualifiedSeller == true",
+            "o1": "true",
+            "o2": "'Off-season product from top seller'",
+            "o3": "8"
+          },
+          {
+            "_id": "r4",
+            "i1": "passesInitialCheck == false",
+            "i2": "",
+            "i3": "isQualifiedSeller == true and currentInventory >= 30",
+            "o1": "true",
+            "o2": "'Top seller exemption applied'",
+            "o3": "5"
+          },
+          {
+            "_id": "r5",
+            "i1": "",
+            "i2": "",
+            "i3": "",
+            "o1": "false",
+            "o2": "'Product does not qualify for flash sale'",
+            "o3": "0"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Initial Check",
+            "field": "passesInitialCheck"
+          },
+          {
+            "id": "i2",
+            "name": "Seasonality",
+            "field": "isInSeason"
+          },
+          {
+            "id": "i3",
+            "name": "Seller Quality",
+            "field": "isQualifiedSeller"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Is Eligible For Flash Sale",
+            "field": "isEligibleForFlashSale"
+          },
+          {
+            "id": "o2",
+            "name": "Eligibility Reason",
+            "field": "eligibilityReason"
+          },
+          {
+            "id": "o3",
+            "name": "Discount Percentage",
+            "field": "discountPercentage"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "determineEligibility",
+      "name": "determineEligibility",
+      "position": {
+        "x": 1390,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "input",
+      "targetId": "checkInventoryAndMargin",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "checkInventoryAndMargin",
+      "targetId": "checkSeasonality",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "checkSeasonality",
+      "targetId": "checkSellerQuality",
+      "type": "edge"
+    },
+    {
+      "id": "edge4",
+      "sourceId": "checkSellerQuality",
+      "targetId": "determineEligibility",
+      "type": "edge"
+    }
+  ]
+}

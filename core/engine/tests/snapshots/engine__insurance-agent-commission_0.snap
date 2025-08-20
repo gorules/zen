@@ -1,0 +1,123 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  baseCommission:
+    "$serde_json::private::Number": "360"
+  baseCommissionRate:
+    "$serde_json::private::Number": "0.18"
+  finalCommission:
+    "$serde_json::private::Number": "450"
+  performanceTier: gold
+  policyType: home
+  premiumAmount:
+    "$serde_json::private::Number": "2000"
+  tierMultiplier:
+    "$serde_json::private::Number": "1.25"
+trace:
+  dt1:
+    id: dt1
+    input:
+      performanceTier: gold
+      policyType: home
+      premiumAmount:
+        "$serde_json::private::Number": "2000"
+    name: baseCommissionRates
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      baseCommissionRate:
+        "$serde_json::private::Number": "0.18"
+      performanceTier: gold
+      policyType: home
+      premiumAmount:
+        "$serde_json::private::Number": "2000"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "3"
+      reference_map:
+        policyType: home
+        premiumAmount:
+          "$serde_json::private::Number": "2000"
+      rule:
+        _id: r1-4
+        "policyType[i1-1]": "'home'"
+        "premiumAmount[i1-2]": "> 1500"
+  dt2:
+    id: dt2
+    input:
+      baseCommission:
+        "$serde_json::private::Number": "360"
+      baseCommissionRate:
+        "$serde_json::private::Number": "0.18"
+      performanceTier: gold
+      policyType: home
+      premiumAmount:
+        "$serde_json::private::Number": "2000"
+    name: performanceTierMultipliers
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      baseCommission:
+        "$serde_json::private::Number": "360"
+      baseCommissionRate:
+        "$serde_json::private::Number": "0.18"
+      finalCommission:
+        "$serde_json::private::Number": "450"
+      performanceTier: gold
+      policyType: home
+      premiumAmount:
+        "$serde_json::private::Number": "2000"
+      tierMultiplier:
+        "$serde_json::private::Number": "1.25"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        performanceTier: gold
+      rule:
+        _id: r2-2
+        "performanceTier[i2-1]": "'gold'"
+  ex1:
+    id: ex1
+    input:
+      baseCommissionRate:
+        "$serde_json::private::Number": "0.18"
+      performanceTier: gold
+      policyType: home
+      premiumAmount:
+        "$serde_json::private::Number": "2000"
+    name: calculateBaseCommission
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      baseCommission:
+        "$serde_json::private::Number": "360"
+      baseCommissionRate:
+        "$serde_json::private::Number": "0.18"
+      performanceTier: gold
+      policyType: home
+      premiumAmount:
+        "$serde_json::private::Number": "2000"
+    performance: "[perf]"
+    traceData:
+      baseCommission:
+        result:
+          "$serde_json::private::Number": "360"
+  ip1:
+    id: ip1
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      performanceTier: gold
+      policyType: home
+      premiumAmount:
+        "$serde_json::private::Number": "2000"
+    performance: "[perf]"
+    traceData: ~

@@ -1,0 +1,51 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  output: false
+trace:
+  46fbad36-4bbe-44ac-833f-d30e0d37d8d7:
+    id: 46fbad36-4bbe-44ac-833f-d30e0d37d8d7
+    input:
+      amount:
+        "$serde_json::private::Number": "10"
+    name: Amount Check
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      output: false
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        amount:
+          "$serde_json::private::Number": "10"
+        second: ~
+      rule:
+        _id: SY7uwJEPqS
+        "amount[6xj5CMIFv9]": ""
+        "second[07795ded-cb9b-4165-9b5e-783b066dda61]": ""
+  4e7e6bb9-f128-41e7-8cc5-b9d79670b96a:
+    id: 4e7e6bb9-f128-41e7-8cc5-b9d79670b96a
+    input: ~
+    name: Request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      amount:
+        "$serde_json::private::Number": "10"
+    performance: "[perf]"
+    traceData: ~
+  95aa8f3c-f371-4e48-beb3-0b5775d2a814:
+    id: 95aa8f3c-f371-4e48-beb3-0b5775d2a814
+    input:
+      output: false
+    name: Response
+    order:
+      "$serde_json::private::Number": "2"
+    output: ~
+    performance: "[perf]"
+    traceData: ~

@@ -1,0 +1,42 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  sum:
+    "$serde_json::private::Number": "10"
+trace:
+  6b9cfc7e-4776-4b3f-8a19-c2a4d7874770:
+    id: 6b9cfc7e-4776-4b3f-8a19-c2a4d7874770
+    input:
+      a:
+        "$serde_json::private::Number": "7"
+      b:
+        "$serde_json::private::Number": "3"
+      passThrough: This should not appear in output
+    name: expression1
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      sum:
+        "$serde_json::private::Number": "10"
+    performance: "[perf]"
+    traceData:
+      sum:
+        result:
+          "$serde_json::private::Number": "10"
+  deced339-bace-452a-8db0-777f038bffe8:
+    id: deced339-bace-452a-8db0-777f038bffe8
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      a:
+        "$serde_json::private::Number": "7"
+      b:
+        "$serde_json::private::Number": "3"
+      passThrough: This should not appear in output
+    performance: "[perf]"
+    traceData: ~

@@ -1,0 +1,313 @@
+{
+  "tests": [
+    {
+      "input": {
+        "inboundShipmentId": "IN-12345",
+        "inboundShipmentTime": "2025-03-19T10:00:00Z",
+        "outboundShipmentTime": "2025-03-20T09:00:00Z",
+        "matchingOutboundOrders": [
+          {
+            "orderId": "ORD-789",
+            "customerPriority": "standard",
+            "destinationZone": "East"
+          },
+          {
+            "orderId": "ORD-790",
+            "customerPriority": "premium",
+            "destinationZone": "East"
+          }
+        ],
+        "inboundShipmentItems": [
+          {
+            "sku": "ITEM-001",
+            "quantity": 50,
+            "category": "Electronics"
+          },
+          {
+            "sku": "ITEM-002",
+            "quantity": 30,
+            "category": "Home Goods"
+          }
+        ],
+        "currentStorageUsed": 7500,
+        "totalStorageCapacity": 10000,
+        "crossDockingBayAssignment": "Bay-E4"
+      },
+      "output": {
+        "crossDockDecision": "cross-dock",
+        "crossDockingBayAssignment": "Bay-E4",
+        "currentStorageUsed": 7500,
+        "decisionReason": "Matching orders available within 48 hours",
+        "dockingBay": "Bay-E4",
+        "estimatedProcessingTime": 30,
+        "hasMatchingOutboundOrders": true,
+        "inboundShipmentId": "IN-12345",
+        "inboundShipmentItems": [
+          {
+            "category": "Electronics",
+            "quantity": 50,
+            "sku": "ITEM-001"
+          },
+          {
+            "category": "Home Goods",
+            "quantity": 30,
+            "sku": "ITEM-002"
+          }
+        ],
+        "inboundShipmentTime": "2025-03-19T10:00:00Z",
+        "matchingOutboundOrders": [
+          {
+            "customerPriority": "standard",
+            "destinationZone": "East",
+            "orderId": "ORD-789"
+          },
+          {
+            "customerPriority": "premium",
+            "destinationZone": "East",
+            "orderId": "ORD-790"
+          }
+        ],
+        "outboundShipmentTime": "2025-03-20T09:00:00Z",
+        "priority": "normal",
+        "timeDifferenceHours": 23,
+        "totalStorageCapacity": 10000,
+        "warehouseCapacityPercentage": 75
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "ip1",
+      "name": "shipmentRequest",
+      "position": {
+        "x": 110,
+        "y": 173.5
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1-1",
+            "key": "hasMatchingOutboundOrders",
+            "value": "len(matchingOutboundOrders) > 0"
+          },
+          {
+            "id": "e1-2",
+            "key": "timeDifferenceHours",
+            "value": "(date(outboundShipmentTime) - date(inboundShipmentTime)) / 3600"
+          },
+          {
+            "id": "e1-3",
+            "key": "warehouseCapacityPercentage",
+            "value": "(currentStorageUsed / totalStorageCapacity) * 100"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex1",
+      "name": "calculateMetrics",
+      "position": {
+        "x": 430,
+        "y": 173.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1-1",
+            "i1-1": "true",
+            "i1-2": "[0..24]",
+            "i1-3": "<= 36",
+            "o1-1": "'cross-dock'",
+            "o1-2": "'Matching orders available within 24 hours with sufficient capacity'"
+          },
+          {
+            "_id": "r1-2",
+            "i1-1": "true",
+            "i1-2": "[0..48]",
+            "i1-3": "<= 80",
+            "o1-1": "'cross-dock'",
+            "o1-2": "'Matching orders available within 48 hours'"
+          },
+          {
+            "_id": "r1-3",
+            "i1-1": "true",
+            "i1-2": "> 48",
+            "i1-3": ">= 90",
+            "o1-1": "'cross-dock'",
+            "o1-2": "'High warehouse capacity, cross-dock to save space'"
+          },
+          {
+            "_id": "r1-4",
+            "i1-1": "true",
+            "i1-2": "> 72",
+            "i1-3": "",
+            "o1-1": "'store'",
+            "o1-2": "'Matching orders but time difference too large'"
+          },
+          {
+            "_id": "r1-5",
+            "i1-1": "false",
+            "i1-2": "",
+            "i1-3": "",
+            "o1-1": "'store'",
+            "o1-2": "'No matching outbound orders'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Has Matching Orders",
+            "field": "hasMatchingOutboundOrders"
+          },
+          {
+            "id": "i1-2",
+            "name": "Time Difference (hours)",
+            "field": "timeDifferenceHours"
+          },
+          {
+            "id": "i1-3",
+            "name": "Warehouse Capacity (%)",
+            "field": "warehouseCapacityPercentage"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Decision",
+            "field": "crossDockDecision"
+          },
+          {
+            "id": "o1-2",
+            "name": "Reason",
+            "field": "decisionReason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt1",
+      "name": "crossDockingDecision",
+      "position": {
+        "x": 750,
+        "y": 173.5
+      }
+    },
+    {
+      "type": "switchNode",
+      "content": {
+        "hitPolicy": "first",
+        "statements": [
+          {
+            "id": "s1-1",
+            "condition": "crossDockDecision == 'cross-dock'",
+            "isDefault": false
+          },
+          {
+            "id": "s1-2",
+            "condition": "",
+            "isDefault": true
+          }
+        ]
+      },
+      "id": "sw1",
+      "name": "handleCrossDocking",
+      "position": {
+        "x": 1070,
+        "y": 173.5
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e2-1",
+            "key": "dockingBay",
+            "value": "crossDockingBayAssignment"
+          },
+          {
+            "id": "e2-2",
+            "key": "estimatedProcessingTime",
+            "value": "30"
+          },
+          {
+            "id": "e2-3",
+            "key": "priority",
+            "value": "timeDifferenceHours < 12 ? 'high' : 'normal'"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex2",
+      "name": "assignCrossDockingDetails",
+      "position": {
+        "x": 1390,
+        "y": 173.5
+      }
+    },
+    {
+      "type": "outputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "e1a7d99b-255e-47a2-929f-642fc0e7efc5",
+      "name": "response",
+      "position": {
+        "x": 1390,
+        "y": 305
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "ed1",
+      "sourceId": "ip1",
+      "targetId": "ex1",
+      "type": "edge"
+    },
+    {
+      "id": "ed2",
+      "sourceId": "ex1",
+      "targetId": "dt1",
+      "type": "edge"
+    },
+    {
+      "id": "ed3",
+      "sourceId": "dt1",
+      "targetId": "sw1",
+      "type": "edge"
+    },
+    {
+      "id": "ed4",
+      "sourceId": "sw1",
+      "targetId": "ex2",
+      "sourceHandle": "s1-1",
+      "type": "edge"
+    },
+    {
+      "id": "7d282229-bce6-47a6-a68d-ed867787a674",
+      "sourceId": "sw1",
+      "type": "edge",
+      "targetId": "e1a7d99b-255e-47a2-929f-642fc0e7efc5",
+      "sourceHandle": "s1-2"
+    }
+  ]
+}

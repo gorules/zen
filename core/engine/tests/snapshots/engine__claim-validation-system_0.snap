@@ -1,0 +1,227 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  claimNumber: CLM12345
+  claimType: property
+  damageAmount:
+    "$serde_json::private::Number": "1500"
+  description: Water damage from burst pipe in kitchen
+  incidentDate:
+    "$serde_json::private::Number": "1640995200"
+  isValid: false
+  nextStep: rejection
+  policyNumber: POL98765432
+  policyStartDate:
+    "$serde_json::private::Number": "1609459200"
+  policyStatus: active
+  validation:
+    claimDetailsReason: ""
+    claimDetailsValid: true
+    policyStatusValid: true
+    timeframesReason: Claim reported more than 60 days after incident
+    timeframesValid: false
+  validationMessage: Claim reported more than 60 days after incident
+trace:
+  checkPolicyStatus:
+    id: checkPolicyStatus
+    input:
+      claimNumber: CLM12345
+      claimType: property
+      damageAmount:
+        "$serde_json::private::Number": "1500"
+      description: Water damage from burst pipe in kitchen
+      incidentDate:
+        "$serde_json::private::Number": "1640995200"
+      policyNumber: POL98765432
+      policyStartDate:
+        "$serde_json::private::Number": "1609459200"
+      policyStatus: active
+      validation:
+        claimDetailsReason: ""
+        claimDetailsValid: true
+    name: checkPolicyStatus
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      claimNumber: CLM12345
+      claimType: property
+      damageAmount:
+        "$serde_json::private::Number": "1500"
+      description: Water damage from burst pipe in kitchen
+      incidentDate:
+        "$serde_json::private::Number": "1640995200"
+      policyNumber: POL98765432
+      policyStartDate:
+        "$serde_json::private::Number": "1609459200"
+      policyStatus: active
+      validation:
+        claimDetailsReason: ""
+        claimDetailsValid: true
+        policyStatusValid: true
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "4"
+      reference_map: {}
+      rule:
+        _id: r2-5
+  determineOutcome:
+    id: determineOutcome
+    input:
+      claimNumber: CLM12345
+      claimType: property
+      damageAmount:
+        "$serde_json::private::Number": "1500"
+      description: Water damage from burst pipe in kitchen
+      incidentDate:
+        "$serde_json::private::Number": "1640995200"
+      policyNumber: POL98765432
+      policyStartDate:
+        "$serde_json::private::Number": "1609459200"
+      policyStatus: active
+      validation:
+        claimDetailsReason: ""
+        claimDetailsValid: true
+        policyStatusValid: true
+        timeframesReason: Claim reported more than 60 days after incident
+        timeframesValid: false
+    name: determineOutcome
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      claimNumber: CLM12345
+      claimType: property
+      damageAmount:
+        "$serde_json::private::Number": "1500"
+      description: Water damage from burst pipe in kitchen
+      incidentDate:
+        "$serde_json::private::Number": "1640995200"
+      isValid: false
+      nextStep: rejection
+      policyNumber: POL98765432
+      policyStartDate:
+        "$serde_json::private::Number": "1609459200"
+      policyStatus: active
+      validation:
+        claimDetailsReason: ""
+        claimDetailsValid: true
+        policyStatusValid: true
+        timeframesReason: Claim reported more than 60 days after incident
+        timeframesValid: false
+      validationMessage: Claim reported more than 60 days after incident
+    performance: "[perf]"
+    traceData:
+      isValid:
+        result: false
+      nextStep:
+        result: rejection
+      validationMessage:
+        result: Claim reported more than 60 days after incident
+  evaluateTimeframes:
+    id: evaluateTimeframes
+    input:
+      claimNumber: CLM12345
+      claimType: property
+      damageAmount:
+        "$serde_json::private::Number": "1500"
+      description: Water damage from burst pipe in kitchen
+      incidentDate:
+        "$serde_json::private::Number": "1640995200"
+      policyNumber: POL98765432
+      policyStartDate:
+        "$serde_json::private::Number": "1609459200"
+      policyStatus: active
+      validation:
+        claimDetailsReason: ""
+        claimDetailsValid: true
+        policyStatusValid: true
+    name: evaluateTimeframes
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      claimNumber: CLM12345
+      claimType: property
+      damageAmount:
+        "$serde_json::private::Number": "1500"
+      description: Water damage from burst pipe in kitchen
+      incidentDate:
+        "$serde_json::private::Number": "1640995200"
+      policyNumber: POL98765432
+      policyStartDate:
+        "$serde_json::private::Number": "1609459200"
+      policyStatus: active
+      validation:
+        claimDetailsReason: ""
+        claimDetailsValid: true
+        policyStatusValid: true
+        timeframesReason: Claim reported more than 60 days after incident
+        timeframesValid: false
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map: {}
+      rule:
+        _id: r3-2
+  input:
+    id: input
+    input: ~
+    name: claimRequest
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      claimNumber: CLM12345
+      claimType: property
+      damageAmount:
+        "$serde_json::private::Number": "1500"
+      description: Water damage from burst pipe in kitchen
+      incidentDate:
+        "$serde_json::private::Number": "1640995200"
+      policyNumber: POL98765432
+      policyStartDate:
+        "$serde_json::private::Number": "1609459200"
+      policyStatus: active
+    performance: "[perf]"
+    traceData: ~
+  validateClaimDetails:
+    id: validateClaimDetails
+    input:
+      claimNumber: CLM12345
+      claimType: property
+      damageAmount:
+        "$serde_json::private::Number": "1500"
+      description: Water damage from burst pipe in kitchen
+      incidentDate:
+        "$serde_json::private::Number": "1640995200"
+      policyNumber: POL98765432
+      policyStartDate:
+        "$serde_json::private::Number": "1609459200"
+      policyStatus: active
+    name: validateClaimDetails
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      claimNumber: CLM12345
+      claimType: property
+      damageAmount:
+        "$serde_json::private::Number": "1500"
+      description: Water damage from burst pipe in kitchen
+      incidentDate:
+        "$serde_json::private::Number": "1640995200"
+      policyNumber: POL98765432
+      policyStartDate:
+        "$serde_json::private::Number": "1609459200"
+      policyStatus: active
+      validation:
+        claimDetailsReason: ""
+        claimDetailsValid: true
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "4"
+      reference_map: {}
+      rule:
+        _id: r1-5

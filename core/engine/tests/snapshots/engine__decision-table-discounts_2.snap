@@ -1,0 +1,72 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  - discount:
+      percentage:
+        "$serde_json::private::Number": "10"
+trace:
+  5eefa8a4-56a9-46b1-a265-7ddbddde3441:
+    id: 5eefa8a4-56a9-46b1-a265-7ddbddde3441
+    input: ~
+    name: Request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      code: EARLY_BIRD
+      customer:
+        joinDate: 2019-12-01
+        pastPurchases: []
+      order:
+        createdAt: 2022-01-15
+    performance: "[perf]"
+    traceData: ~
+  638d767d-ae08-4ba3-9db3-97c6c4e4c6f5:
+    id: 638d767d-ae08-4ba3-9db3-97c6c4e4c6f5
+    input:
+      code: EARLY_BIRD
+      customer:
+        joinDate: 2019-12-01
+        pastPurchases: []
+      order:
+        createdAt: 2022-01-15
+    name: Discounts
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      - discount:
+          percentage:
+            "$serde_json::private::Number": "10"
+    performance: "[perf]"
+    traceData:
+      - index:
+          "$serde_json::private::Number": "2"
+        reference_map:
+          code: EARLY_BIRD
+          date(customer.joinDate):
+            "$serde_json::private::Number": "1575158400"
+          date(order.createdAt):
+            "$serde_json::private::Number": "1642204800"
+          len(customer.pastPurchases):
+            "$serde_json::private::Number": "0"
+        rule:
+          _description: Old customer 10%
+          _id: fcfae4b3-5c86-4efe-91cd-ca4bc1fa7c7c
+          "code[6fd35e3e-584b-4149-b4bf-5f2d258f40e7]": "\"EARLY_BIRD\""
+          "date(customer.joinDate)[813dace4-0b55-4409-adb2-b4739a653302]": "< date(\"2020-01-01\")"
+          "date(order.createdAt)[a1700de6-fe35-4cec-b66f-0897d2604a3f]": ""
+          "len(customer.pastPurchases)[f34f2c8b-eba9-4ebe-aeec-384bce69e3aa]": ""
+  c87d26e6-f3a2-47ad-9310-cbd1899cc68a:
+    id: c87d26e6-f3a2-47ad-9310-cbd1899cc68a
+    input:
+      - discount:
+          percentage:
+            "$serde_json::private::Number": "10"
+    name: Response
+    order:
+      "$serde_json::private::Number": "2"
+    output: ~
+    performance: "[perf]"
+    traceData: ~

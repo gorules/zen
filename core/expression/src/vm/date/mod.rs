@@ -2,11 +2,12 @@ use crate::variable::DynamicVariable;
 pub(crate) use crate::vm::date::duration::Duration;
 pub(crate) use crate::vm::date::duration_unit::DurationUnit;
 use crate::Variable;
-use chrono::{DateTime, SecondsFormat};
+use chrono::{DateTime, SecondsFormat, Utc};
 use chrono_tz::Tz;
 use serde_json::Value;
 use std::any::Any;
 use std::fmt::{Display, Formatter};
+use std::sync::{LazyLock, RwLock};
 
 // Duration is a modified copy of `humantime`
 mod duration;
@@ -175,11 +176,11 @@ impl VmDate {
 }
 
 mod helper {
-    use crate::vm::date::{Duration, DurationUnit};
+    use crate::vm::date::{utc_now, Duration, DurationUnit};
     use crate::Variable;
     use chrono::{
         DateTime, Datelike, Days, LocalResult, Month, Months, NaiveDate, NaiveDateTime, Offset,
-        TimeDelta, TimeZone, Timelike, Utc,
+        TimeDelta, TimeZone, Timelike,
     };
     use chrono_tz::Tz;
     use rust_decimal::prelude::ToPrimitive;
@@ -203,7 +204,7 @@ mod helper {
     }
 
     pub fn now_tz(tz: Tz) -> DateTime<Tz> {
-        Utc::now().with_timezone(&tz)
+        utc_now().with_timezone(&tz)
     }
 
     pub fn parse_date(var: Variable, tz_opt: Option<Tz>) -> Option<DateTime<Tz>> {
@@ -479,4 +480,21 @@ impl dyn DynamicVariable {
     pub(crate) fn as_date(&self) -> Option<&VmDate> {
         self.as_any().downcast_ref::<VmDate>()
     }
+}
+
+#[cfg(feature = "time-override")]
+pub static UTC_OVERRIDE: LazyLock<RwLock<Option<DateTime<Utc>>>> =
+    LazyLock::new(|| RwLock::new(None));
+
+pub(crate) fn utc_now() -> DateTime<Utc> {
+    #[cfg(feature = "time-override")]
+    {
+        if let Ok(override_time) = UTC_OVERRIDE.read() {
+            if let Some(time) = *override_time {
+                return time;
+            }
+        }
+    }
+
+    Utc::now()
 }

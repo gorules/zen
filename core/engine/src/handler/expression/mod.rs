@@ -15,7 +15,7 @@ pub struct ExpressionHandler {
 
 #[derive(Debug, Serialize)]
 struct ExpressionTrace {
-    result: String,
+    result: serde_json::Value,
 }
 
 impl ExpressionHandler {
@@ -82,7 +82,7 @@ impl<'a> ExpressionHandlerInner<'a> {
                 tmap.insert(
                     &expression.key,
                     ExpressionTrace {
-                        result: serde_json::to_string(&value).unwrap_or("Error".to_owned()),
+                        result: value.to_value(),
                     },
                 );
             }

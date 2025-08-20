@@ -1,0 +1,378 @@
+{
+  "tests": [
+    {
+      "input": {
+        "shippingType": "express",
+        "weight": 25,
+        "length": 40,
+        "width": 30,
+        "height": 20,
+        "distance": 250,
+        "customerTier": "gold"
+      },
+      "output": {
+        "baseRate": 30,
+        "currentSeason": "summer",
+        "customerTier": "gold",
+        "dimensionalWeight": 4.8,
+        "distance": 250,
+        "distanceFactor": 2.5,
+        "effectiveWeight": 25,
+        "finalPrice": 35.4375,
+        "height": 20,
+        "length": 40,
+        "shippingType": "express",
+        "tierDiscount": 0.9,
+        "weight": 25,
+        "width": 30
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "ip1",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1-1",
+            "i1-1": "'standard'",
+            "i1-2": "< 20",
+            "o1-1": "10"
+          },
+          {
+            "_id": "r1-2",
+            "i1-1": "'standard'",
+            "i1-2": "[20..50]",
+            "o1-1": "15"
+          },
+          {
+            "_id": "r1-3",
+            "i1-1": "'standard'",
+            "i1-2": "> 50",
+            "o1-1": "25"
+          },
+          {
+            "_id": "r1-4",
+            "i1-1": "'express'",
+            "i1-2": "< 20",
+            "o1-1": "20"
+          },
+          {
+            "_id": "r1-5",
+            "i1-1": "'express'",
+            "i1-2": "[20..50]",
+            "o1-1": "30"
+          },
+          {
+            "_id": "r1-6",
+            "i1-1": "'express'",
+            "i1-2": "> 50",
+            "o1-1": "45"
+          },
+          {
+            "_id": "r1-7",
+            "i1-1": "'priority'",
+            "i1-2": "< 20",
+            "o1-1": "35"
+          },
+          {
+            "_id": "r1-8",
+            "i1-1": "'priority'",
+            "i1-2": "[20..50]",
+            "o1-1": "50"
+          },
+          {
+            "_id": "r1-9",
+            "i1-1": "'priority'",
+            "i1-2": "> 50",
+            "o1-1": "75"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Shipping Type",
+            "field": "shippingType"
+          },
+          {
+            "id": "i1-2",
+            "name": "Weight (kg)",
+            "field": "weight"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Base Rate",
+            "field": "baseRate"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt1",
+      "name": "base_rate_calculation",
+      "position": {
+        "x": 430,
+        "y": 65
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r3-1",
+            "i3-1": "< 80",
+            "o3-1": "'winter'"
+          },
+          {
+            "_id": "r3-2",
+            "i3-1": "> 355",
+            "o3-1": "'winter'"
+          },
+          {
+            "_id": "r3-3",
+            "i3-1": "> 172 and < 265",
+            "o3-1": "'summer'"
+          },
+          {
+            "_id": "r3-4",
+            "i3-1": "",
+            "o3-1": "'regular'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i3-1",
+            "name": "Day of Year",
+            "field": "dayOfYear('now')"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o3-1",
+            "name": "Current Season",
+            "field": "currentSeason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt3",
+      "name": "determine_season",
+      "position": {
+        "x": 430,
+        "y": 163
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1-1",
+            "key": "dimensionalWeight",
+            "value": "(length * width * height) / 5000"
+          },
+          {
+            "id": "e1-2",
+            "key": "effectiveWeight",
+            "value": "max([weight, $.dimensionalWeight])"
+          },
+          {
+            "id": "e1-3",
+            "key": "distanceFactor",
+            "value": "distance / 100"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex1",
+      "name": "calculate_factors",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r2-1",
+            "i2-1": "'platinum'",
+            "i2-2": "'winter'",
+            "o2-1": "baseRate * (effectiveWeight / weight) * (1 + distanceFactor * 0.1) * 0.8",
+            "o2-2": "0.8"
+          },
+          {
+            "_id": "r2-2",
+            "i2-1": "'platinum'",
+            "i2-2": "'summer'",
+            "o2-1": "baseRate * (effectiveWeight / weight) * (1 + distanceFactor * 0.1) * 0.8",
+            "o2-2": "0.8"
+          },
+          {
+            "_id": "r2-3",
+            "i2-1": "'platinum'",
+            "i2-2": "'regular'",
+            "o2-1": "baseRate * (effectiveWeight / weight) * (1 + distanceFactor * 0.1) * 0.8",
+            "o2-2": "0.8"
+          },
+          {
+            "_id": "r2-4",
+            "i2-1": "'gold'",
+            "i2-2": "'winter'",
+            "o2-1": "baseRate * (effectiveWeight / weight) * (1 + distanceFactor * 0.1) * 0.9 * 1.1",
+            "o2-2": "0.9"
+          },
+          {
+            "_id": "r2-5",
+            "i2-1": "'gold'",
+            "i2-2": "'summer'",
+            "o2-1": "baseRate * (effectiveWeight / weight) * (1 + distanceFactor * 0.1) * 0.9 * 1.05",
+            "o2-2": "0.9"
+          },
+          {
+            "_id": "r2-6",
+            "i2-1": "'gold'",
+            "i2-2": "'regular'",
+            "o2-1": "baseRate * (effectiveWeight / weight) * (1 + distanceFactor * 0.1) * 0.9",
+            "o2-2": "0.9"
+          },
+          {
+            "_id": "r2-7",
+            "i2-1": "'silver'",
+            "i2-2": "'winter'",
+            "o2-1": "baseRate * (effectiveWeight / weight) * (1 + distanceFactor * 0.1) * 0.95 * 1.1",
+            "o2-2": "0.95"
+          },
+          {
+            "_id": "r2-8",
+            "i2-1": "'silver'",
+            "i2-2": "'summer'",
+            "o2-1": "baseRate * (effectiveWeight / weight) * (1 + distanceFactor * 0.1) * 0.95 * 1.05",
+            "o2-2": "0.95"
+          },
+          {
+            "_id": "r2-9",
+            "i2-1": "'silver'",
+            "i2-2": "'regular'",
+            "o2-1": "baseRate * (effectiveWeight / weight) * (1 + distanceFactor * 0.1) * 0.95",
+            "o2-2": "0.95"
+          },
+          {
+            "_id": "r2-10",
+            "i2-1": "",
+            "i2-2": "'winter'",
+            "o2-1": "baseRate * (effectiveWeight / weight) * (1 + distanceFactor * 0.1) * 1.1",
+            "o2-2": "1"
+          },
+          {
+            "_id": "r2-11",
+            "i2-1": "",
+            "i2-2": "'summer'",
+            "o2-1": "baseRate * (effectiveWeight / weight) * (1 + distanceFactor * 0.1) * 1.05",
+            "o2-2": "1"
+          },
+          {
+            "_id": "r2-12",
+            "i2-1": "",
+            "i2-2": "",
+            "o2-1": "baseRate * (effectiveWeight / weight) * (1 + distanceFactor * 0.1)",
+            "o2-2": "1"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i2-1",
+            "name": "Customer Tier",
+            "field": "customerTier"
+          },
+          {
+            "id": "i2-2",
+            "name": "Season",
+            "field": "currentSeason"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2-1",
+            "name": "Final Price",
+            "field": "finalPrice"
+          },
+          {
+            "id": "o2-2",
+            "name": "Tier Discount",
+            "field": "tierDiscount"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt2",
+      "name": "calculate_final_price",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "ed1",
+      "sourceId": "ip1",
+      "targetId": "dt1",
+      "type": "edge"
+    },
+    {
+      "id": "ed2",
+      "sourceId": "ip1",
+      "targetId": "dt3",
+      "type": "edge"
+    },
+    {
+      "id": "ed3",
+      "sourceId": "dt1",
+      "targetId": "ex1",
+      "type": "edge"
+    },
+    {
+      "id": "ed4",
+      "sourceId": "dt3",
+      "targetId": "ex1",
+      "type": "edge"
+    },
+    {
+      "id": "ed5",
+      "sourceId": "ex1",
+      "targetId": "dt2",
+      "type": "edge"
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  res:
+    - world: bar
+    - world: error
+trace:
+  668e8acb-5b42-4bd6-b399-cbe790df7532:
+    id: 668e8acb-5b42-4bd6-b399-cbe790df7532
+    input:
+      items:
+        - hello: foo
+        - hello: koo
+    name: decisionTable1
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      res:
+        - world: bar
+        - world: error
+    performance: "[perf]"
+    traceData:
+      - index:
+          "$serde_json::private::Number": "0"
+        reference_map:
+          hello: foo
+        rule:
+          _id: 78f3629d-f7eb-4fdb-94b1-c4be9f7bd534
+          "hello[6d27354e-56ff-4b25-9160-5fb428c98a5d]": "\"foo\""
+      - index:
+          "$serde_json::private::Number": "1"
+        reference_map:
+          hello: koo
+        rule:
+          _id: 582b14c8-df87-4c83-8954-4904dc811a98
+          "hello[6d27354e-56ff-4b25-9160-5fb428c98a5d]": ""
+  da3ed838-ab74-4f55-a703-2d1b7e507722:
+    id: da3ed838-ab74-4f55-a703-2d1b7e507722
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      items:
+        - hello: foo
+        - hello: koo
+    performance: "[perf]"
+    traceData: ~

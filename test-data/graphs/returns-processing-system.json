@@ -1,0 +1,448 @@
+{
+  "tests": [
+    {
+      "input": {
+        "customer": {
+          "id": "CUST-12345",
+          "membershipTier": "premium",
+          "returnsHistoryCount": 3
+        },
+        "product": {
+          "type": "electronics",
+          "condition": "damaged",
+          "daysFromPurchase": 12,
+          "price": 249.99
+        },
+        "return": {
+          "reason": "defective item - won't power on",
+          "hasReceipt": true
+        }
+      },
+      "output": {
+        "customer": {
+          "id": "CUST-12345",
+          "membershipTier": "premium",
+          "returnsHistoryCount": 3
+        },
+        "isFrequentReturner": false,
+        "isHighValueCustomer": true,
+        "isHighValueItem": true,
+        "isPurchaseWithinWarranty": true,
+        "product": {
+          "condition": "damaged",
+          "daysFromPurchase": 12,
+          "price": 249.99,
+          "type": "electronics"
+        },
+        "return": {
+          "hasReceipt": true,
+          "reason": "defective item - won't power on"
+        },
+        "returnDetails": {
+          "customerCommunication": "partial_approval",
+          "expectedProcessingDays": 2,
+          "priorityLevel": "high",
+          "processingQueue": "returns_dept",
+          "refundAmount": 199.992,
+          "restockingFee": 10,
+          "type": "partial_refund"
+        }
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"customer\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"id\": { \"type\": \"string\" },\n        \"membershipTier\": { \"type\": \"string\", \"enum\": [\"standard\", \"premium\", \"vip\"] },\n        \"returnsHistoryCount\": { \"type\": \"integer\" }\n      }\n    },\n    \"product\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"type\": { \"type\": \"string\" },\n        \"condition\": { \"type\": \"string\", \"enum\": [\"new\", \"like_new\", \"damaged\", \"opened\", \"used\"] },\n        \"daysFromPurchase\": { \"type\": \"integer\" },\n        \"price\": { \"type\": \"number\" }\n      }\n    },\n    \"return\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"reason\": { \"type\": \"string\" },\n        \"hasReceipt\": { \"type\": \"boolean\" }\n      }\n    }\n  }\n}\n"
+      },
+      "id": "input1",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "expr1",
+            "key": "isHighValueCustomer",
+            "value": "customer.membershipTier == 'vip' or customer.membershipTier == 'premium'"
+          },
+          {
+            "id": "expr2",
+            "key": "isFrequentReturner",
+            "value": "customer.returnsHistoryCount > 5"
+          },
+          {
+            "id": "expr3",
+            "key": "isPurchaseWithinWarranty",
+            "value": "product.daysFromPurchase <= 30"
+          },
+          {
+            "id": "expr4",
+            "key": "isHighValueItem",
+            "value": "product.price >= 100"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "customerStatus",
+      "name": "customerEligibility",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "productType": "'electronics', 'appliances'",
+            "productCondition": "'new', 'like_new'",
+            "returnReason": "startsWith($, 'defect')",
+            "daysFromPurchase": "<= 30",
+            "hasReceipt": "true",
+            "returnType": "'warranty_replacement'",
+            "refundAmount": "product.price",
+            "restockingFee": "0"
+          },
+          {
+            "_id": "rule2",
+            "productType": "'electronics', 'appliances'",
+            "productCondition": "'damaged', 'opened'",
+            "returnReason": "",
+            "daysFromPurchase": "<= 15",
+            "hasReceipt": "true",
+            "returnType": "'partial_refund'",
+            "refundAmount": "product.price * 0.8",
+            "restockingFee": "10"
+          },
+          {
+            "_id": "rule3",
+            "productType": "'clothing', 'accessories'",
+            "productCondition": "'new', 'like_new'",
+            "returnReason": "",
+            "daysFromPurchase": "<= 30",
+            "hasReceipt": "true",
+            "returnType": "'full_refund'",
+            "refundAmount": "product.price",
+            "restockingFee": "0"
+          },
+          {
+            "_id": "rule4",
+            "productType": "'clothing', 'accessories'",
+            "productCondition": "'used', 'opened'",
+            "returnReason": "",
+            "daysFromPurchase": "<= 15",
+            "hasReceipt": "true",
+            "returnType": "'store_credit'",
+            "refundAmount": "product.price * 0.7",
+            "restockingFee": "5"
+          },
+          {
+            "_id": "rule5",
+            "productType": "",
+            "productCondition": "",
+            "returnReason": "contains($, 'quality')",
+            "daysFromPurchase": "<= 90",
+            "hasReceipt": "",
+            "returnType": "'quality_review'",
+            "refundAmount": "isHighValueCustomer ? product.price : product.price * 0.9",
+            "restockingFee": "0"
+          },
+          {
+            "_id": "rule6",
+            "productType": "",
+            "productCondition": "",
+            "returnReason": "",
+            "daysFromPurchase": "> 30",
+            "hasReceipt": "false",
+            "returnType": "'store_credit'",
+            "refundAmount": "isHighValueCustomer ? product.price * 0.8 : product.price * 0.5",
+            "restockingFee": "isHighValueCustomer ? 0 : 15"
+          },
+          {
+            "_id": "rule7",
+            "productType": "",
+            "productCondition": "",
+            "returnReason": "",
+            "daysFromPurchase": "> 90",
+            "hasReceipt": "",
+            "returnType": "'denied'",
+            "refundAmount": "0",
+            "restockingFee": "0"
+          },
+          {
+            "_id": "rule8",
+            "productType": "",
+            "productCondition": "",
+            "returnReason": "",
+            "daysFromPurchase": "",
+            "hasReceipt": "",
+            "returnType": "'manual_review'",
+            "refundAmount": "0",
+            "restockingFee": "0"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "productType",
+            "name": "Product Type",
+            "field": "product.type"
+          },
+          {
+            "id": "productCondition",
+            "name": "Product Condition",
+            "field": "product.condition"
+          },
+          {
+            "id": "returnReason",
+            "name": "Return Reason",
+            "field": "return.reason"
+          },
+          {
+            "id": "daysFromPurchase",
+            "name": "Days From Purchase",
+            "field": "product.daysFromPurchase"
+          },
+          {
+            "id": "hasReceipt",
+            "name": "Has Receipt",
+            "field": "return.hasReceipt"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "returnType",
+            "name": "Return Type",
+            "field": "returnDetails.type"
+          },
+          {
+            "id": "refundAmount",
+            "name": "Refund Amount",
+            "field": "returnDetails.refundAmount"
+          },
+          {
+            "id": "restockingFee",
+            "name": "Restocking Fee",
+            "field": "returnDetails.restockingFee"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "returnsClassification",
+      "name": "determineReturnType",
+      "position": {
+        "x": 750,
+        "y": 115
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "queue1",
+            "returnType": "'warranty_replacement'",
+            "processingQueue": "'warranty_dept'"
+          },
+          {
+            "_id": "queue2",
+            "returnType": "'quality_review'",
+            "processingQueue": "'quality_assurance'"
+          },
+          {
+            "_id": "queue3",
+            "returnType": "'manual_review'",
+            "processingQueue": "'customer_service'"
+          },
+          {
+            "_id": "queue4",
+            "returnType": "",
+            "processingQueue": "'returns_dept'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "returnType",
+            "name": "Return Type",
+            "field": "returnDetails.type"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "processingQueue",
+            "name": "Processing Queue",
+            "field": "returnDetails.processingQueue"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "processingQueueTable",
+      "name": "determineProcessingQueue",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "priority1",
+            "highValueCustomer": "true",
+            "highValueItem": "",
+            "priorityLevel": "'high'",
+            "expectedProcessingDays": "2"
+          },
+          {
+            "_id": "priority2",
+            "highValueCustomer": "false",
+            "highValueItem": "true",
+            "priorityLevel": "'medium'",
+            "expectedProcessingDays": "5"
+          },
+          {
+            "_id": "priority3",
+            "highValueCustomer": "false",
+            "highValueItem": "false",
+            "priorityLevel": "'standard'",
+            "expectedProcessingDays": "7"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "highValueCustomer",
+            "name": "High Value Customer",
+            "field": "isHighValueCustomer"
+          },
+          {
+            "id": "highValueItem",
+            "name": "High Value Item",
+            "field": "isHighValueItem"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "priorityLevel",
+            "name": "Priority Level",
+            "field": "returnDetails.priorityLevel"
+          },
+          {
+            "id": "expectedProcessingDays",
+            "name": "Expected Processing Days",
+            "field": "returnDetails.expectedProcessingDays"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "priorityLevelTable",
+      "name": "determinePriorityLevel",
+      "position": {
+        "x": 1390,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "comm1",
+            "returnType": "'denied'",
+            "customerCommunication": "'rejection_notice'"
+          },
+          {
+            "_id": "comm2",
+            "returnType": "'partial_refund', 'store_credit'",
+            "customerCommunication": "'partial_approval'"
+          },
+          {
+            "_id": "comm3",
+            "returnType": "",
+            "customerCommunication": "'approved'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "returnType",
+            "name": "Return Type",
+            "field": "returnDetails.type"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "customerCommunication",
+            "name": "Customer Communication",
+            "field": "returnDetails.customerCommunication"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "communicationTable",
+      "name": "determineCommunication",
+      "position": {
+        "x": 1710,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "input1",
+      "targetId": "customerStatus",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "customerStatus",
+      "targetId": "returnsClassification",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "returnsClassification",
+      "targetId": "processingQueueTable",
+      "type": "edge"
+    },
+    {
+      "id": "edge4",
+      "sourceId": "processingQueueTable",
+      "targetId": "priorityLevelTable",
+      "type": "edge"
+    },
+    {
+      "id": "edge5",
+      "sourceId": "priorityLevelTable",
+      "targetId": "communicationTable",
+      "type": "edge"
+    }
+  ]
+}

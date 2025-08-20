@@ -1,0 +1,349 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  customer:
+    id: C12345
+    name: Jane Smith
+    numberOfPolicies:
+      "$serde_json::private::Number": "2"
+    yearsAsCustomer:
+      "$serde_json::private::Number": "4"
+  discounts:
+    bundle:
+      description: Dual policy discount
+      percentage:
+        "$serde_json::private::Number": "7"
+    loyalty:
+      description: Standard loyalty discount
+      percentage:
+        "$serde_json::private::Number": "10"
+    safetyFeatures:
+      - description: Anti-theft system discount
+        percentage:
+          "$serde_json::private::Number": "3"
+      - description: ADAS discount
+        percentage:
+          "$serde_json::private::Number": "5"
+  finalPremium:
+    "$serde_json::private::Number": "900"
+  maximumDiscountPercentage:
+    "$serde_json::private::Number": "25"
+  policy:
+    basePremium:
+      "$serde_json::private::Number": "1200"
+    id: P98765
+    safetyFeatures:
+      - antiTheftSystem
+      - advancedDriverAssistance
+    type: auto
+  totalDiscountPercentage:
+    "$serde_json::private::Number": "25"
+trace:
+  bundledPoliciesTable:
+    id: bundledPoliciesTable
+    input:
+      customer:
+        id: C12345
+        name: Jane Smith
+        numberOfPolicies:
+          "$serde_json::private::Number": "2"
+        yearsAsCustomer:
+          "$serde_json::private::Number": "4"
+      discounts:
+        loyalty:
+          description: Standard loyalty discount
+          percentage:
+            "$serde_json::private::Number": "10"
+      policy:
+        basePremium:
+          "$serde_json::private::Number": "1200"
+        id: P98765
+        safetyFeatures:
+          - antiTheftSystem
+          - advancedDriverAssistance
+        type: auto
+    name: bundledPoliciesDiscounts
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      customer:
+        id: C12345
+        name: Jane Smith
+        numberOfPolicies:
+          "$serde_json::private::Number": "2"
+        yearsAsCustomer:
+          "$serde_json::private::Number": "4"
+      discounts:
+        bundle:
+          description: Dual policy discount
+          percentage:
+            "$serde_json::private::Number": "7"
+        loyalty:
+          description: Standard loyalty discount
+          percentage:
+            "$serde_json::private::Number": "10"
+      policy:
+        basePremium:
+          "$serde_json::private::Number": "1200"
+        id: P98765
+        safetyFeatures:
+          - antiTheftSystem
+          - advancedDriverAssistance
+        type: auto
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        customer.numberOfPolicies:
+          "$serde_json::private::Number": "2"
+      rule:
+        _id: r2-2
+        "customer.numberOfPolicies[i2-1]": "2"
+  inputNode:
+    id: inputNode
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      customer:
+        id: C12345
+        name: Jane Smith
+        numberOfPolicies:
+          "$serde_json::private::Number": "2"
+        yearsAsCustomer:
+          "$serde_json::private::Number": "4"
+      policy:
+        basePremium:
+          "$serde_json::private::Number": "1200"
+        id: P98765
+        safetyFeatures:
+          - antiTheftSystem
+          - advancedDriverAssistance
+        type: auto
+    performance: "[perf]"
+    traceData: ~
+  loyaltyDiscountsTable:
+    id: loyaltyDiscountsTable
+    input:
+      customer:
+        id: C12345
+        name: Jane Smith
+        numberOfPolicies:
+          "$serde_json::private::Number": "2"
+        yearsAsCustomer:
+          "$serde_json::private::Number": "4"
+      policy:
+        basePremium:
+          "$serde_json::private::Number": "1200"
+        id: P98765
+        safetyFeatures:
+          - antiTheftSystem
+          - advancedDriverAssistance
+        type: auto
+    name: customerLoyaltyDiscounts
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      customer:
+        id: C12345
+        name: Jane Smith
+        numberOfPolicies:
+          "$serde_json::private::Number": "2"
+        yearsAsCustomer:
+          "$serde_json::private::Number": "4"
+      discounts:
+        loyalty:
+          description: Standard loyalty discount
+          percentage:
+            "$serde_json::private::Number": "10"
+      policy:
+        basePremium:
+          "$serde_json::private::Number": "1200"
+        id: P98765
+        safetyFeatures:
+          - antiTheftSystem
+          - advancedDriverAssistance
+        type: auto
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        customer.yearsAsCustomer:
+          "$serde_json::private::Number": "4"
+      rule:
+        _id: r1-2
+        "customer.yearsAsCustomer[i1-1]": ">= 3"
+  safetyFeaturesTable:
+    id: safetyFeaturesTable
+    input:
+      customer:
+        id: C12345
+        name: Jane Smith
+        numberOfPolicies:
+          "$serde_json::private::Number": "2"
+        yearsAsCustomer:
+          "$serde_json::private::Number": "4"
+      discounts:
+        bundle:
+          description: Dual policy discount
+          percentage:
+            "$serde_json::private::Number": "7"
+        loyalty:
+          description: Standard loyalty discount
+          percentage:
+            "$serde_json::private::Number": "10"
+      policy:
+        basePremium:
+          "$serde_json::private::Number": "1200"
+        id: P98765
+        safetyFeatures:
+          - antiTheftSystem
+          - advancedDriverAssistance
+        type: auto
+    name: safetyFeaturesDiscounts
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      customer:
+        id: C12345
+        name: Jane Smith
+        numberOfPolicies:
+          "$serde_json::private::Number": "2"
+        yearsAsCustomer:
+          "$serde_json::private::Number": "4"
+      discounts:
+        bundle:
+          description: Dual policy discount
+          percentage:
+            "$serde_json::private::Number": "7"
+        loyalty:
+          description: Standard loyalty discount
+          percentage:
+            "$serde_json::private::Number": "10"
+        safetyFeatures:
+          - description: Anti-theft system discount
+            percentage:
+              "$serde_json::private::Number": "3"
+          - description: ADAS discount
+            percentage:
+              "$serde_json::private::Number": "5"
+      policy:
+        basePremium:
+          "$serde_json::private::Number": "1200"
+        id: P98765
+        safetyFeatures:
+          - antiTheftSystem
+          - advancedDriverAssistance
+        type: auto
+    performance: "[perf]"
+    traceData:
+      - index:
+          "$serde_json::private::Number": "0"
+        reference_map:
+          policy.safetyFeatures:
+            - antiTheftSystem
+            - advancedDriverAssistance
+        rule:
+          _id: r3-1
+          "policy.safetyFeatures[i3-1]": "contains($, 'antiTheftSystem')"
+      - index:
+          "$serde_json::private::Number": "2"
+        reference_map:
+          policy.safetyFeatures:
+            - antiTheftSystem
+            - advancedDriverAssistance
+        rule:
+          _id: r3-3
+          "policy.safetyFeatures[i3-1]": "contains($, 'advancedDriverAssistance')"
+  totalDiscountCalculation:
+    id: totalDiscountCalculation
+    input:
+      customer:
+        id: C12345
+        name: Jane Smith
+        numberOfPolicies:
+          "$serde_json::private::Number": "2"
+        yearsAsCustomer:
+          "$serde_json::private::Number": "4"
+      discounts:
+        bundle:
+          description: Dual policy discount
+          percentage:
+            "$serde_json::private::Number": "7"
+        loyalty:
+          description: Standard loyalty discount
+          percentage:
+            "$serde_json::private::Number": "10"
+        safetyFeatures:
+          - description: Anti-theft system discount
+            percentage:
+              "$serde_json::private::Number": "3"
+          - description: ADAS discount
+            percentage:
+              "$serde_json::private::Number": "5"
+      policy:
+        basePremium:
+          "$serde_json::private::Number": "1200"
+        id: P98765
+        safetyFeatures:
+          - antiTheftSystem
+          - advancedDriverAssistance
+        type: auto
+    name: calculateTotalDiscount
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      customer:
+        id: C12345
+        name: Jane Smith
+        numberOfPolicies:
+          "$serde_json::private::Number": "2"
+        yearsAsCustomer:
+          "$serde_json::private::Number": "4"
+      discounts:
+        bundle:
+          description: Dual policy discount
+          percentage:
+            "$serde_json::private::Number": "7"
+        loyalty:
+          description: Standard loyalty discount
+          percentage:
+            "$serde_json::private::Number": "10"
+        safetyFeatures:
+          - description: Anti-theft system discount
+            percentage:
+              "$serde_json::private::Number": "3"
+          - description: ADAS discount
+            percentage:
+              "$serde_json::private::Number": "5"
+      finalPremium:
+        "$serde_json::private::Number": "900"
+      maximumDiscountPercentage:
+        "$serde_json::private::Number": "25"
+      policy:
+        basePremium:
+          "$serde_json::private::Number": "1200"
+        id: P98765
+        safetyFeatures:
+          - antiTheftSystem
+          - advancedDriverAssistance
+        type: auto
+      totalDiscountPercentage:
+        "$serde_json::private::Number": "25"
+    performance: "[perf]"
+    traceData:
+      finalPremium:
+        result:
+          "$serde_json::private::Number": "900"
+      maximumDiscountPercentage:
+        result:
+          "$serde_json::private::Number": "25"
+      totalDiscountPercentage:
+        result:
+          "$serde_json::private::Number": "25"

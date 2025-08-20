@@ -1,0 +1,364 @@
+{
+  "tests": [
+    {
+      "input": {
+        "applicationType": "building",
+        "zoneType": "residential",
+        "buildingHeight": 28,
+        "squareFootage": 3200,
+        "safetyScore": 85,
+        "environmentalImpact": "minimal",
+        "applicantInfo": {
+          "name": "John Smith",
+          "contactEmail": "john.smith@example.com",
+          "phoneNumber": "555-123-4567"
+        },
+        "propertyAddress": {
+          "street": "123 Main Street",
+          "city": "Anytown",
+          "state": "CA",
+          "zipCode": "90210"
+        },
+        "projectDescription": "Single-family home construction with attached garage"
+      },
+      "output": {
+        "applicantInfo": {
+          "contactEmail": "john.smith@example.com",
+          "name": "John Smith",
+          "phoneNumber": "555-123-4567"
+        },
+        "applicationType": "building",
+        "approvalReason": "Application approved - Minimal environmental impact",
+        "approvalStatus": "Approved",
+        "buildingHeight": 28,
+        "environmentalImpact": "minimal",
+        "initialApprovalStatus": "Approved",
+        "isCommercialZone": false,
+        "isIndoorEvent": false,
+        "isIndustrialZone": false,
+        "isOutdoorEvent": false,
+        "isResidentialZone": true,
+        "nextSteps": "standard",
+        "projectDescription": "Single-family home construction with attached garage",
+        "propertyAddress": {
+          "city": "Anytown",
+          "state": "CA",
+          "street": "123 Main Street",
+          "zipCode": "90210"
+        },
+        "safetyScore": 85,
+        "squareFootage": 3200,
+        "statusReason": "Residential building meets height and safety requirements",
+        "zoneType": "residential"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "ip1",
+      "name": "permitRequest",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1-1",
+            "key": "isResidentialZone",
+            "value": "applicationType == 'building' and zoneType == 'residential'"
+          },
+          {
+            "id": "e1-2",
+            "key": "isCommercialZone",
+            "value": "applicationType == 'building' and zoneType == 'commercial'"
+          },
+          {
+            "id": "e1-3",
+            "key": "isIndustrialZone",
+            "value": "applicationType == 'building' and zoneType == 'industrial'"
+          },
+          {
+            "id": "e1-4",
+            "key": "isOutdoorEvent",
+            "value": "applicationType == 'event' and location == 'outdoor'"
+          },
+          {
+            "id": "e1-5",
+            "key": "isIndoorEvent",
+            "value": "applicationType == 'event' and location == 'indoor'"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex1",
+      "name": "applicationClassification",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1-1",
+            "i1-1": "isResidentialZone and buildingHeight <= 35",
+            "i1-2": "< 5000",
+            "i1-3": ">= 80",
+            "o1-1": "'Approved'",
+            "o1-2": "'Residential building meets height and safety requirements'"
+          },
+          {
+            "_id": "r1-2",
+            "i1-1": "isResidentialZone and buildingHeight > 35",
+            "i1-2": "< 5000",
+            "i1-3": ">= 80",
+            "o1-1": "'Conditional'",
+            "o1-2": "'Residential building exceeds height limits, requires variance approval'"
+          },
+          {
+            "_id": "r1-3",
+            "i1-1": "isCommercialZone and buildingHeight <= 100",
+            "i1-2": "< 20000",
+            "i1-3": ">= 85",
+            "o1-1": "'Approved'",
+            "o1-2": "'Commercial building meets standard requirements'"
+          },
+          {
+            "_id": "r1-4",
+            "i1-1": "isCommercialZone and buildingHeight > 100",
+            "i1-2": "",
+            "i1-3": ">= 85",
+            "o1-1": "'Conditional'",
+            "o1-2": "'Commercial building exceeds height limits, requires additional review'"
+          },
+          {
+            "_id": "r1-5",
+            "i1-1": "isIndustrialZone",
+            "i1-2": "",
+            "i1-3": ">= 90",
+            "o1-1": "'Conditional'",
+            "o1-2": "'Industrial buildings require environmental impact assessment'"
+          },
+          {
+            "_id": "r1-6",
+            "i1-1": "isOutdoorEvent and expectedAttendees <= 500",
+            "i1-2": "",
+            "i1-3": ">= 75",
+            "o1-1": "'Approved'",
+            "o1-2": "'Small outdoor event meets safety requirements'"
+          },
+          {
+            "_id": "r1-7",
+            "i1-1": "isOutdoorEvent and expectedAttendees > 500",
+            "i1-2": "",
+            "i1-3": ">= 85",
+            "o1-1": "'Conditional'",
+            "o1-2": "'Large outdoor event requires additional crowd management plan'"
+          },
+          {
+            "_id": "r1-8",
+            "i1-1": "isIndoorEvent and safetyScore >= 90",
+            "i1-2": "",
+            "i1-3": "",
+            "o1-1": "'Approved'",
+            "o1-2": "'Indoor event meets all safety requirements'"
+          },
+          {
+            "_id": "r1-9",
+            "i1-1": "",
+            "i1-2": "",
+            "i1-3": "< 75",
+            "o1-1": "'Denied'",
+            "o1-2": "'Application does not meet minimum safety score requirements'"
+          },
+          {
+            "_id": "r1-10",
+            "i1-1": "",
+            "i1-2": "",
+            "i1-3": "",
+            "o1-1": "'Pending'",
+            "o1-2": "'Application requires manual review'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Application Type",
+            "field": ""
+          },
+          {
+            "id": "i1-2",
+            "name": "Square Footage",
+            "field": "squareFootage"
+          },
+          {
+            "id": "i1-3",
+            "name": "Safety Score",
+            "field": "safetyScore"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Status",
+            "field": "initialApprovalStatus"
+          },
+          {
+            "id": "o1-2",
+            "name": "Reason",
+            "field": "statusReason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "dt1",
+      "name": "initialApprovalCheck",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r2-1",
+            "i2-1": "'Approved'",
+            "i2-2": "'minimal'",
+            "o2-1": "'Approved'",
+            "o2-2": "'Application approved - Minimal environmental impact'",
+            "o2-3": "'standard'"
+          },
+          {
+            "_id": "r2-2",
+            "i2-1": "'Approved'",
+            "i2-2": "'moderate'",
+            "o2-1": "'Conditional'",
+            "o2-2": "'Application requires environmental mitigation plan'",
+            "o2-3": "'environmental_review'"
+          },
+          {
+            "_id": "r2-3",
+            "i2-1": "'Conditional'",
+            "i2-2": "'minimal'",
+            "o2-1": "'Conditional'",
+            "o2-2": "statusReason",
+            "o2-3": "'standard_review'"
+          },
+          {
+            "_id": "r2-4",
+            "i2-1": "'Conditional'",
+            "i2-2": "'moderate'",
+            "o2-1": "'Conditional'",
+            "o2-2": "statusReason + ' and requires environmental assessment'",
+            "o2-3": "'comprehensive_review'"
+          },
+          {
+            "_id": "r2-5",
+            "i2-1": "'Conditional' or 'Approved'",
+            "i2-2": "'significant'",
+            "o2-1": "'Denied'",
+            "o2-2": "'Application denied due to significant environmental impact'",
+            "o2-3": "'rejected'"
+          },
+          {
+            "_id": "r2-6",
+            "i2-1": "'Denied'",
+            "i2-2": "",
+            "o2-1": "'Denied'",
+            "o2-2": "statusReason",
+            "o2-3": "'rejected'"
+          },
+          {
+            "_id": "r2-7",
+            "i2-1": "'Pending'",
+            "i2-2": "",
+            "o2-1": "'Pending'",
+            "o2-2": "statusReason",
+            "o2-3": "'manual_review'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i2-1",
+            "name": "Initial Status",
+            "field": "initialApprovalStatus"
+          },
+          {
+            "id": "i2-2",
+            "name": "Environmental Impact",
+            "field": "environmentalImpact"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2-1",
+            "name": "Final Status",
+            "field": "approvalStatus"
+          },
+          {
+            "id": "o2-2",
+            "name": "Final Reason",
+            "field": "approvalReason"
+          },
+          {
+            "id": "o2-3",
+            "name": "Next Steps",
+            "field": "nextSteps"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "dt2",
+      "name": "environmentalCheck",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "ed1",
+      "sourceId": "ip1",
+      "targetId": "ex1",
+      "type": "edge"
+    },
+    {
+      "id": "ed2",
+      "sourceId": "ex1",
+      "targetId": "dt1",
+      "type": "edge"
+    },
+    {
+      "id": "ed3",
+      "sourceId": "dt1",
+      "targetId": "dt2",
+      "type": "edge"
+    }
+  ]
+}

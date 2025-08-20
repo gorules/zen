@@ -1,0 +1,366 @@
+{
+  "tests": [
+    {
+      "input": {
+        "orderInfo": {
+          "orderId": "ORD-12345",
+          "purchaseDate": "2023-10-15"
+        },
+        "returnReason": "damaged",
+        "daysSincePurchase": 25,
+        "originalPrice": 89.99,
+        "itemCondition": "new",
+        "sellerPolicy": {
+          "returnsAllowed": true,
+          "returnWindow": 30,
+          "restockingFeePercent": 15,
+          "freeReturnShipping": false
+        },
+        "buyerInfo": {
+          "id": "USR-789",
+          "returnHistory": {
+            "totalReturns": 3,
+            "recentDisputes": 0
+          }
+        },
+        "productDetails": {
+          "category": "electronics",
+          "isWarrantyActive": true
+        }
+      },
+      "output": {
+        "buyerInfo": {
+          "id": "USR-789",
+          "returnHistory": {
+            "recentDisputes": 0,
+            "totalReturns": 3
+          }
+        },
+        "daysSincePurchase": 25,
+        "itemCondition": "new",
+        "orderInfo": {
+          "orderId": "ORD-12345",
+          "purchaseDate": "2023-10-15"
+        },
+        "originalPrice": 89.99,
+        "processingTimeEstimate": 5,
+        "productDetails": {
+          "category": "electronics",
+          "isWarrantyActive": true
+        },
+        "refundAmount": 89.99,
+        "refundShipping": true,
+        "resolution": {
+          "note": "Seller is responsible for product issues on new items.",
+          "refundApproved": true,
+          "responsibleParty": "seller"
+        },
+        "returnReason": "damaged",
+        "returnShippingCovered": true,
+        "returnStatus": {
+          "code": "eligible",
+          "isEligible": true,
+          "message": "The return is within policy timeframe and eligible for processing."
+        },
+        "sellerPolicy": {
+          "freeReturnShipping": false,
+          "restockingFeePercent": 15,
+          "returnWindow": 30,
+          "returnsAllowed": true
+        }
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "input",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1-1",
+            "i1-1": "< 30",
+            "i1-2": "true",
+            "i1-3": "'damaged', 'defective', 'wrong_item'",
+            "o1-1": "true",
+            "o1-2": "'eligible'",
+            "o1-3": "'The return is within policy timeframe and eligible for processing.'"
+          },
+          {
+            "_id": "r1-2",
+            "i1-1": "< 30",
+            "i1-2": "true",
+            "i1-3": "'changed_mind'",
+            "o1-1": "true",
+            "o1-2": "'eligible_restocking_fee'",
+            "o1-3": "'Return is eligible but subject to restocking fee per seller policy.'"
+          },
+          {
+            "_id": "r1-3",
+            "i1-1": "> 30, <= 60",
+            "i1-2": "true",
+            "i1-3": "'damaged', 'defective'",
+            "o1-1": "true",
+            "o1-2": "'eligible_extended'",
+            "o1-3": "'Extended return period applies for product issues.'"
+          },
+          {
+            "_id": "r1-4",
+            "i1-1": "> 60",
+            "i1-2": "",
+            "i1-3": "",
+            "o1-1": "false",
+            "o1-2": "'ineligible_timeframe'",
+            "o1-3": "'Return period has expired.'"
+          },
+          {
+            "_id": "r1-5",
+            "i1-1": "",
+            "i1-2": "false",
+            "i1-3": "",
+            "o1-1": "false",
+            "o1-2": "'ineligible_non_returnable'",
+            "o1-3": "'Item is marked as non-returnable in seller policy.'"
+          },
+          {
+            "_id": "r1-6",
+            "i1-1": "",
+            "i1-2": "",
+            "i1-3": "",
+            "o1-1": "false",
+            "o1-2": "'ineligible_other'",
+            "o1-3": "'Return does not meet eligibility criteria.'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Days Since Purchase",
+            "field": "daysSincePurchase"
+          },
+          {
+            "id": "i1-2",
+            "name": "Item Returnable",
+            "field": "sellerPolicy.returnsAllowed"
+          },
+          {
+            "id": "i1-3",
+            "name": "Return Reason",
+            "field": "returnReason"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Is Eligible",
+            "field": "returnStatus.isEligible"
+          },
+          {
+            "id": "o1-2",
+            "name": "Eligibility Code",
+            "field": "returnStatus.code"
+          },
+          {
+            "id": "o1-3",
+            "name": "Eligibility Message",
+            "field": "returnStatus.message"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "returnEligibility",
+      "name": "returnEligibility",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r2-1",
+            "i2-1": "'damaged', 'defective'",
+            "i2-2": "'new', 'like_new'",
+            "i2-3": "true",
+            "o2-1": "'seller'",
+            "o2-2": "true",
+            "o2-3": "'Seller is responsible for product issues on new items.'"
+          },
+          {
+            "_id": "r2-2",
+            "i2-1": "'wrong_item'",
+            "i2-2": "",
+            "i2-3": "true",
+            "o2-1": "'seller'",
+            "o2-2": "true",
+            "o2-3": "'Seller is responsible for shipping incorrect item.'"
+          },
+          {
+            "_id": "r2-3",
+            "i2-1": "'damaged_in_transit'",
+            "i2-2": "",
+            "i2-3": "true",
+            "o2-1": "'platform'",
+            "o2-2": "true",
+            "o2-3": "'Platform shipping protection covers transit damage.'"
+          },
+          {
+            "_id": "r2-4",
+            "i2-1": "'changed_mind'",
+            "i2-2": "",
+            "i2-3": "true",
+            "o2-1": "'buyer'",
+            "o2-2": "true",
+            "o2-3": "'Buyer is responsible for return costs when changing mind.'"
+          },
+          {
+            "_id": "r2-5",
+            "i2-1": "'damaged', 'defective'",
+            "i2-2": "'used', 'refurbished'",
+            "i2-3": "true",
+            "o2-1": "'shared'",
+            "o2-2": "true",
+            "o2-3": "'Responsibility is shared for used/refurbished items with issues.'"
+          },
+          {
+            "_id": "r2-6",
+            "i2-1": "",
+            "i2-2": "",
+            "i2-3": "false",
+            "o2-1": "'none'",
+            "o2-2": "false",
+            "o2-3": "'No refund applicable for ineligible returns.'"
+          },
+          {
+            "_id": "r2-7",
+            "i2-1": "",
+            "i2-2": "",
+            "i2-3": "",
+            "o2-1": "'platform'",
+            "o2-2": "false",
+            "o2-3": "'Platform will review the case for final determination.'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i2-1",
+            "name": "Return Reason",
+            "field": "returnReason"
+          },
+          {
+            "id": "i2-2",
+            "name": "Item Condition",
+            "field": "itemCondition"
+          },
+          {
+            "id": "i2-3",
+            "name": "Is Eligible",
+            "field": "returnStatus.isEligible"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2-1",
+            "name": "Responsible Party",
+            "field": "resolution.responsibleParty"
+          },
+          {
+            "id": "o2-2",
+            "name": "Refund Approved",
+            "field": "resolution.refundApproved"
+          },
+          {
+            "id": "o2-3",
+            "name": "Responsibility Note",
+            "field": "resolution.note"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "responsibilityDetermination",
+      "name": "responsibilityDetermination",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1",
+            "key": "refundAmount",
+            "value": "resolution.refundApproved == true ? \n  (returnStatus.code == 'eligible_restocking_fee' ? \n    originalPrice * (1 - sellerPolicy.restockingFeePercent / 100) : \n    originalPrice) : \n  0"
+          },
+          {
+            "id": "e2",
+            "key": "refundShipping",
+            "value": "resolution.responsibleParty == 'seller' or resolution.responsibleParty == 'platform'"
+          },
+          {
+            "id": "e3",
+            "key": "returnShippingCovered",
+            "value": "resolution.responsibleParty == 'seller' or resolution.responsibleParty == 'platform'"
+          },
+          {
+            "id": "e4",
+            "key": "processingTimeEstimate",
+            "value": "resolution.refundApproved == true ? \n  (resolution.responsibleParty == 'platform' ? 7 : \n   resolution.responsibleParty == 'seller' ? 5 : 3) : \n  14"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "refundCalculation",
+      "name": "refundCalculation",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "input",
+      "targetId": "returnEligibility",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "returnEligibility",
+      "targetId": "responsibilityDetermination",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "responsibilityDetermination",
+      "targetId": "refundCalculation",
+      "type": "edge"
+    }
+  ]
+}

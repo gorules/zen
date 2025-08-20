@@ -1,0 +1,377 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  migrationEligible: false
+  migrationOfferDetails: Protected legacy plan - migration not recommended
+  recommendedPlanId: LEGACY-PLAN-2019
+  simplifiedPlanName: Legacy Unlimited Family Plan
+trace:
+  e2398550-dac8-4d1f-a720-e09291e34f2e:
+    id: e2398550-dac8-4d1f-a720-e09291e34f2e
+    input:
+      customer:
+        id: CUST-12345
+        location: Urban
+        segment: Family
+        tenureInMonths:
+          "$serde_json::private::Number": "36"
+      migrationEligible: false
+      migrationOfferDetails: Protected legacy plan - migration not recommended
+      plan:
+        ageInMonths:
+          "$serde_json::private::Number": "48"
+        dataAllowance:
+          "$serde_json::private::Number": "25"
+        features:
+          - Unlimited SMS
+          - Free Evening Calls
+          - Family Sharing
+        id: LEGACY-PLAN-2019
+        internationalMinutes:
+          "$serde_json::private::Number": "120"
+        name: Legacy Unlimited Family Plan
+      planDetails:
+        category: legacy
+        dataAllowanceGB:
+          "$serde_json::private::Number": "25"
+        description: This is a grandfathered legacy plan with protected benefits.
+        internationalMinutes:
+          "$serde_json::private::Number": "120"
+        isGrandfathered: true
+        retainSpecialFeatures: true
+      recommendedPlanId: LEGACY-PLAN-2019
+      simplifiedPlanName: Legacy Unlimited Family Plan
+    name: omitFields
+    order:
+      "$serde_json::private::Number": "5"
+    output:
+      migrationEligible: false
+      migrationOfferDetails: Protected legacy plan - migration not recommended
+      recommendedPlanId: LEGACY-PLAN-2019
+      simplifiedPlanName: Legacy Unlimited Family Plan
+    performance: "[perf]"
+    traceData:
+      customer:
+        result: ~
+      plan:
+        result: ~
+      planDetails:
+        result: ~
+  migrationEligibility:
+    id: migrationEligibility
+    input:
+      customer:
+        id: CUST-12345
+        location: Urban
+        segment: Family
+        tenureInMonths:
+          "$serde_json::private::Number": "36"
+      plan:
+        ageInMonths:
+          "$serde_json::private::Number": "48"
+        dataAllowance:
+          "$serde_json::private::Number": "25"
+        features:
+          - Unlimited SMS
+          - Free Evening Calls
+          - Family Sharing
+        id: LEGACY-PLAN-2019
+        internationalMinutes:
+          "$serde_json::private::Number": "120"
+        name: Legacy Unlimited Family Plan
+      planDetails:
+        category: legacy
+        dataAllowanceGB:
+          "$serde_json::private::Number": "25"
+        description: This is a grandfathered legacy plan with protected benefits.
+        internationalMinutes:
+          "$serde_json::private::Number": "120"
+        isGrandfathered: true
+        retainSpecialFeatures: true
+      recommendedPlanId: LEGACY-PLAN-2019
+      simplifiedPlanName: Legacy Unlimited Family Plan
+    name: determineMigrationEligibility
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      customer:
+        id: CUST-12345
+        location: Urban
+        segment: Family
+        tenureInMonths:
+          "$serde_json::private::Number": "36"
+      migrationEligible: false
+      migrationOfferDetails: Protected legacy plan - migration not recommended
+      plan:
+        ageInMonths:
+          "$serde_json::private::Number": "48"
+        dataAllowance:
+          "$serde_json::private::Number": "25"
+        features:
+          - Unlimited SMS
+          - Free Evening Calls
+          - Family Sharing
+        id: LEGACY-PLAN-2019
+        internationalMinutes:
+          "$serde_json::private::Number": "120"
+        name: Legacy Unlimited Family Plan
+      planDetails:
+        category: legacy
+        dataAllowanceGB:
+          "$serde_json::private::Number": "25"
+        description: This is a grandfathered legacy plan with protected benefits.
+        internationalMinutes:
+          "$serde_json::private::Number": "120"
+        isGrandfathered: true
+        retainSpecialFeatures: true
+      recommendedPlanId: LEGACY-PLAN-2019
+      simplifiedPlanName: Legacy Unlimited Family Plan
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        planDetails.category: legacy
+        planDetails.isGrandfathered: true
+      rule:
+        _id: migrationRule1
+        "planDetails.category[category]": "'legacy'"
+        "planDetails.isGrandfathered[grandfathered]": "true"
+  planBenefits:
+    id: planBenefits
+    input:
+      customer:
+        id: CUST-12345
+        location: Urban
+        segment: Family
+        tenureInMonths:
+          "$serde_json::private::Number": "36"
+      plan:
+        ageInMonths:
+          "$serde_json::private::Number": "48"
+        dataAllowance:
+          "$serde_json::private::Number": "25"
+        features:
+          - Unlimited SMS
+          - Free Evening Calls
+          - Family Sharing
+        id: LEGACY-PLAN-2019
+        internationalMinutes:
+          "$serde_json::private::Number": "120"
+        name: Legacy Unlimited Family Plan
+      planDetails:
+        category: legacy
+        isGrandfathered: true
+    name: determineBenefits
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      customer:
+        id: CUST-12345
+        location: Urban
+        segment: Family
+        tenureInMonths:
+          "$serde_json::private::Number": "36"
+      plan:
+        ageInMonths:
+          "$serde_json::private::Number": "48"
+        dataAllowance:
+          "$serde_json::private::Number": "25"
+        features:
+          - Unlimited SMS
+          - Free Evening Calls
+          - Family Sharing
+        id: LEGACY-PLAN-2019
+        internationalMinutes:
+          "$serde_json::private::Number": "120"
+        name: Legacy Unlimited Family Plan
+      planDetails:
+        category: legacy
+        dataAllowanceGB:
+          "$serde_json::private::Number": "25"
+        description: This is a grandfathered legacy plan with protected benefits.
+        internationalMinutes:
+          "$serde_json::private::Number": "120"
+        isGrandfathered: true
+        retainSpecialFeatures: true
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        planDetails.category: legacy
+        planDetails.isGrandfathered: true
+      rule:
+        _id: benefitRule1
+        "planDetails.category[planCategory]": "'legacy'"
+        "planDetails.isGrandfathered[isGrandfathered]": "true"
+  planIdentifier:
+    id: planIdentifier
+    input:
+      customer:
+        id: CUST-12345
+        location: Urban
+        segment: Family
+        tenureInMonths:
+          "$serde_json::private::Number": "36"
+      plan:
+        ageInMonths:
+          "$serde_json::private::Number": "48"
+        dataAllowance:
+          "$serde_json::private::Number": "25"
+        features:
+          - Unlimited SMS
+          - Free Evening Calls
+          - Family Sharing
+        id: LEGACY-PLAN-2019
+        internationalMinutes:
+          "$serde_json::private::Number": "120"
+        name: Legacy Unlimited Family Plan
+    name: identifyPlanType
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      customer:
+        id: CUST-12345
+        location: Urban
+        segment: Family
+        tenureInMonths:
+          "$serde_json::private::Number": "36"
+      plan:
+        ageInMonths:
+          "$serde_json::private::Number": "48"
+        dataAllowance:
+          "$serde_json::private::Number": "25"
+        features:
+          - Unlimited SMS
+          - Free Evening Calls
+          - Family Sharing
+        id: LEGACY-PLAN-2019
+        internationalMinutes:
+          "$serde_json::private::Number": "120"
+        name: Legacy Unlimited Family Plan
+      planDetails:
+        category: legacy
+        isGrandfathered: true
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        customer.tenureInMonths:
+          "$serde_json::private::Number": "36"
+        plan.ageInMonths:
+          "$serde_json::private::Number": "48"
+        plan.name: Legacy Unlimited Family Plan
+      rule:
+        _id: rule1
+        "customer.tenureInMonths[customerTenure]": "> 24"
+        "plan.ageInMonths[planAge]": "> 36"
+        "plan.name[planName]": "contains($, \"Legacy\")"
+  planMapping:
+    id: planMapping
+    input:
+      customer:
+        id: CUST-12345
+        location: Urban
+        segment: Family
+        tenureInMonths:
+          "$serde_json::private::Number": "36"
+      plan:
+        ageInMonths:
+          "$serde_json::private::Number": "48"
+        dataAllowance:
+          "$serde_json::private::Number": "25"
+        features:
+          - Unlimited SMS
+          - Free Evening Calls
+          - Family Sharing
+        id: LEGACY-PLAN-2019
+        internationalMinutes:
+          "$serde_json::private::Number": "120"
+        name: Legacy Unlimited Family Plan
+      planDetails:
+        category: legacy
+        dataAllowanceGB:
+          "$serde_json::private::Number": "25"
+        description: This is a grandfathered legacy plan with protected benefits.
+        internationalMinutes:
+          "$serde_json::private::Number": "120"
+        isGrandfathered: true
+        retainSpecialFeatures: true
+    name: mapToCurrentCatalog
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      customer:
+        id: CUST-12345
+        location: Urban
+        segment: Family
+        tenureInMonths:
+          "$serde_json::private::Number": "36"
+      plan:
+        ageInMonths:
+          "$serde_json::private::Number": "48"
+        dataAllowance:
+          "$serde_json::private::Number": "25"
+        features:
+          - Unlimited SMS
+          - Free Evening Calls
+          - Family Sharing
+        id: LEGACY-PLAN-2019
+        internationalMinutes:
+          "$serde_json::private::Number": "120"
+        name: Legacy Unlimited Family Plan
+      planDetails:
+        category: legacy
+        dataAllowanceGB:
+          "$serde_json::private::Number": "25"
+        description: This is a grandfathered legacy plan with protected benefits.
+        internationalMinutes:
+          "$serde_json::private::Number": "120"
+        isGrandfathered: true
+        retainSpecialFeatures: true
+      recommendedPlanId: LEGACY-PLAN-2019
+      simplifiedPlanName: Legacy Unlimited Family Plan
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        planDetails.category: legacy
+        planDetails.isGrandfathered: true
+      rule:
+        _id: mappingRule1
+        "planDetails.category[category]": "'legacy'"
+        "planDetails.isGrandfathered[grandfathered]": "true"
+  requestNode:
+    id: requestNode
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      customer:
+        id: CUST-12345
+        location: Urban
+        segment: Family
+        tenureInMonths:
+          "$serde_json::private::Number": "36"
+      plan:
+        ageInMonths:
+          "$serde_json::private::Number": "48"
+        dataAllowance:
+          "$serde_json::private::Number": "25"
+        features:
+          - Unlimited SMS
+          - Free Evening Calls
+          - Family Sharing
+        id: LEGACY-PLAN-2019
+        internationalMinutes:
+          "$serde_json::private::Number": "120"
+        name: Legacy Unlimited Family Plan
+    performance: "[perf]"
+    traceData: ~

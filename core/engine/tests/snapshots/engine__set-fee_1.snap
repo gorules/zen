@@ -1,0 +1,98 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  amount:
+    "$serde_json::private::Number": "110"
+  country: US
+  currency: USD
+  fee:
+    "$serde_json::private::Number": "0.5"
+  percent:
+    "$serde_json::private::Number": "1"
+trace:
+  1a8c6564-c566-44ff-b07a-bce27d7f5a02:
+    id: 1a8c6564-c566-44ff-b07a-bce27d7f5a02
+    input:
+      amount:
+        "$serde_json::private::Number": "110"
+      country: US
+      currency: USD
+      fee:
+        "$serde_json::private::Number": "0.5"
+      percent:
+        "$serde_json::private::Number": "1"
+    name: response
+    order:
+      "$serde_json::private::Number": "3"
+    output: ~
+    performance: "[perf]"
+    traceData: ~
+  3a801d19-b611-4163-bfdd-f247a689a275:
+    id: 3a801d19-b611-4163-bfdd-f247a689a275
+    input:
+      amount:
+        "$serde_json::private::Number": "110"
+      country: US
+      currency: USD
+    name: pricing
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      amount:
+        "$serde_json::private::Number": "110"
+      country: US
+      currency: USD
+      fee:
+        "$serde_json::private::Number": "0.5"
+      percent:
+        "$serde_json::private::Number": "1"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map: {}
+      rule:
+        _id: 6d08b48b-fe57-4efe-8d97-1bce5fcc75e8
+  bf832d94-d01d-4842-a60b-3db28375bccb:
+    id: bf832d94-d01d-4842-a60b-3db28375bccb
+    input:
+      amount:
+        "$serde_json::private::Number": "110"
+      country: US
+      currency: USD
+      fee:
+        "$serde_json::private::Number": "0.5"
+      percent:
+        "$serde_json::private::Number": "1"
+    name: fee set?
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      amount:
+        "$serde_json::private::Number": "110"
+      country: US
+      currency: USD
+      fee:
+        "$serde_json::private::Number": "0.5"
+      percent:
+        "$serde_json::private::Number": "1"
+    performance: "[perf]"
+    traceData:
+      statements:
+        - id: 718244e6-9471-4d20-af18-fce456d36f7e
+  e0f3612a-6019-4647-a682-4f3019b67fce:
+    id: e0f3612a-6019-4647-a682-4f3019b67fce
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      amount:
+        "$serde_json::private::Number": "110"
+      country: US
+      currency: USD
+    performance: "[perf]"
+    traceData: ~

@@ -1,0 +1,382 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  crossDockDecision: cross-dock
+  crossDockingBayAssignment: Bay-E4
+  currentStorageUsed:
+    "$serde_json::private::Number": "7500"
+  decisionReason: Matching orders available within 48 hours
+  dockingBay: Bay-E4
+  estimatedProcessingTime:
+    "$serde_json::private::Number": "30"
+  hasMatchingOutboundOrders: true
+  inboundShipmentId: IN-12345
+  inboundShipmentItems:
+    - category: Electronics
+      quantity:
+        "$serde_json::private::Number": "50"
+      sku: ITEM-001
+    - category: Home Goods
+      quantity:
+        "$serde_json::private::Number": "30"
+      sku: ITEM-002
+  inboundShipmentTime: "2025-03-19T10:00:00Z"
+  matchingOutboundOrders:
+    - customerPriority: standard
+      destinationZone: East
+      orderId: ORD-789
+    - customerPriority: premium
+      destinationZone: East
+      orderId: ORD-790
+  outboundShipmentTime: "2025-03-20T09:00:00Z"
+  priority: normal
+  timeDifferenceHours:
+    "$serde_json::private::Number": "23"
+  totalStorageCapacity:
+    "$serde_json::private::Number": "10000"
+  warehouseCapacityPercentage:
+    "$serde_json::private::Number": "75"
+trace:
+  dt1:
+    id: dt1
+    input:
+      crossDockingBayAssignment: Bay-E4
+      currentStorageUsed:
+        "$serde_json::private::Number": "7500"
+      hasMatchingOutboundOrders: true
+      inboundShipmentId: IN-12345
+      inboundShipmentItems:
+        - category: Electronics
+          quantity:
+            "$serde_json::private::Number": "50"
+          sku: ITEM-001
+        - category: Home Goods
+          quantity:
+            "$serde_json::private::Number": "30"
+          sku: ITEM-002
+      inboundShipmentTime: "2025-03-19T10:00:00Z"
+      matchingOutboundOrders:
+        - customerPriority: standard
+          destinationZone: East
+          orderId: ORD-789
+        - customerPriority: premium
+          destinationZone: East
+          orderId: ORD-790
+      outboundShipmentTime: "2025-03-20T09:00:00Z"
+      timeDifferenceHours:
+        "$serde_json::private::Number": "23"
+      totalStorageCapacity:
+        "$serde_json::private::Number": "10000"
+      warehouseCapacityPercentage:
+        "$serde_json::private::Number": "75"
+    name: crossDockingDecision
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      crossDockDecision: cross-dock
+      crossDockingBayAssignment: Bay-E4
+      currentStorageUsed:
+        "$serde_json::private::Number": "7500"
+      decisionReason: Matching orders available within 48 hours
+      hasMatchingOutboundOrders: true
+      inboundShipmentId: IN-12345
+      inboundShipmentItems:
+        - category: Electronics
+          quantity:
+            "$serde_json::private::Number": "50"
+          sku: ITEM-001
+        - category: Home Goods
+          quantity:
+            "$serde_json::private::Number": "30"
+          sku: ITEM-002
+      inboundShipmentTime: "2025-03-19T10:00:00Z"
+      matchingOutboundOrders:
+        - customerPriority: standard
+          destinationZone: East
+          orderId: ORD-789
+        - customerPriority: premium
+          destinationZone: East
+          orderId: ORD-790
+      outboundShipmentTime: "2025-03-20T09:00:00Z"
+      timeDifferenceHours:
+        "$serde_json::private::Number": "23"
+      totalStorageCapacity:
+        "$serde_json::private::Number": "10000"
+      warehouseCapacityPercentage:
+        "$serde_json::private::Number": "75"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        hasMatchingOutboundOrders: true
+        timeDifferenceHours:
+          "$serde_json::private::Number": "23"
+        warehouseCapacityPercentage:
+          "$serde_json::private::Number": "75"
+      rule:
+        _id: r1-2
+        "hasMatchingOutboundOrders[i1-1]": "true"
+        "timeDifferenceHours[i1-2]": "[0..48]"
+        "warehouseCapacityPercentage[i1-3]": "<= 80"
+  ex1:
+    id: ex1
+    input:
+      crossDockingBayAssignment: Bay-E4
+      currentStorageUsed:
+        "$serde_json::private::Number": "7500"
+      inboundShipmentId: IN-12345
+      inboundShipmentItems:
+        - category: Electronics
+          quantity:
+            "$serde_json::private::Number": "50"
+          sku: ITEM-001
+        - category: Home Goods
+          quantity:
+            "$serde_json::private::Number": "30"
+          sku: ITEM-002
+      inboundShipmentTime: "2025-03-19T10:00:00Z"
+      matchingOutboundOrders:
+        - customerPriority: standard
+          destinationZone: East
+          orderId: ORD-789
+        - customerPriority: premium
+          destinationZone: East
+          orderId: ORD-790
+      outboundShipmentTime: "2025-03-20T09:00:00Z"
+      totalStorageCapacity:
+        "$serde_json::private::Number": "10000"
+    name: calculateMetrics
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      crossDockingBayAssignment: Bay-E4
+      currentStorageUsed:
+        "$serde_json::private::Number": "7500"
+      hasMatchingOutboundOrders: true
+      inboundShipmentId: IN-12345
+      inboundShipmentItems:
+        - category: Electronics
+          quantity:
+            "$serde_json::private::Number": "50"
+          sku: ITEM-001
+        - category: Home Goods
+          quantity:
+            "$serde_json::private::Number": "30"
+          sku: ITEM-002
+      inboundShipmentTime: "2025-03-19T10:00:00Z"
+      matchingOutboundOrders:
+        - customerPriority: standard
+          destinationZone: East
+          orderId: ORD-789
+        - customerPriority: premium
+          destinationZone: East
+          orderId: ORD-790
+      outboundShipmentTime: "2025-03-20T09:00:00Z"
+      timeDifferenceHours:
+        "$serde_json::private::Number": "23"
+      totalStorageCapacity:
+        "$serde_json::private::Number": "10000"
+      warehouseCapacityPercentage:
+        "$serde_json::private::Number": "75"
+    performance: "[perf]"
+    traceData:
+      hasMatchingOutboundOrders:
+        result: true
+      timeDifferenceHours:
+        result:
+          "$serde_json::private::Number": "23"
+      warehouseCapacityPercentage:
+        result:
+          "$serde_json::private::Number": "75"
+  ex2:
+    id: ex2
+    input:
+      crossDockDecision: cross-dock
+      crossDockingBayAssignment: Bay-E4
+      currentStorageUsed:
+        "$serde_json::private::Number": "7500"
+      decisionReason: Matching orders available within 48 hours
+      hasMatchingOutboundOrders: true
+      inboundShipmentId: IN-12345
+      inboundShipmentItems:
+        - category: Electronics
+          quantity:
+            "$serde_json::private::Number": "50"
+          sku: ITEM-001
+        - category: Home Goods
+          quantity:
+            "$serde_json::private::Number": "30"
+          sku: ITEM-002
+      inboundShipmentTime: "2025-03-19T10:00:00Z"
+      matchingOutboundOrders:
+        - customerPriority: standard
+          destinationZone: East
+          orderId: ORD-789
+        - customerPriority: premium
+          destinationZone: East
+          orderId: ORD-790
+      outboundShipmentTime: "2025-03-20T09:00:00Z"
+      timeDifferenceHours:
+        "$serde_json::private::Number": "23"
+      totalStorageCapacity:
+        "$serde_json::private::Number": "10000"
+      warehouseCapacityPercentage:
+        "$serde_json::private::Number": "75"
+    name: assignCrossDockingDetails
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      crossDockDecision: cross-dock
+      crossDockingBayAssignment: Bay-E4
+      currentStorageUsed:
+        "$serde_json::private::Number": "7500"
+      decisionReason: Matching orders available within 48 hours
+      dockingBay: Bay-E4
+      estimatedProcessingTime:
+        "$serde_json::private::Number": "30"
+      hasMatchingOutboundOrders: true
+      inboundShipmentId: IN-12345
+      inboundShipmentItems:
+        - category: Electronics
+          quantity:
+            "$serde_json::private::Number": "50"
+          sku: ITEM-001
+        - category: Home Goods
+          quantity:
+            "$serde_json::private::Number": "30"
+          sku: ITEM-002
+      inboundShipmentTime: "2025-03-19T10:00:00Z"
+      matchingOutboundOrders:
+        - customerPriority: standard
+          destinationZone: East
+          orderId: ORD-789
+        - customerPriority: premium
+          destinationZone: East
+          orderId: ORD-790
+      outboundShipmentTime: "2025-03-20T09:00:00Z"
+      priority: normal
+      timeDifferenceHours:
+        "$serde_json::private::Number": "23"
+      totalStorageCapacity:
+        "$serde_json::private::Number": "10000"
+      warehouseCapacityPercentage:
+        "$serde_json::private::Number": "75"
+    performance: "[perf]"
+    traceData:
+      dockingBay:
+        result: Bay-E4
+      estimatedProcessingTime:
+        result:
+          "$serde_json::private::Number": "30"
+      priority:
+        result: normal
+  ip1:
+    id: ip1
+    input: ~
+    name: shipmentRequest
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      crossDockingBayAssignment: Bay-E4
+      currentStorageUsed:
+        "$serde_json::private::Number": "7500"
+      inboundShipmentId: IN-12345
+      inboundShipmentItems:
+        - category: Electronics
+          quantity:
+            "$serde_json::private::Number": "50"
+          sku: ITEM-001
+        - category: Home Goods
+          quantity:
+            "$serde_json::private::Number": "30"
+          sku: ITEM-002
+      inboundShipmentTime: "2025-03-19T10:00:00Z"
+      matchingOutboundOrders:
+        - customerPriority: standard
+          destinationZone: East
+          orderId: ORD-789
+        - customerPriority: premium
+          destinationZone: East
+          orderId: ORD-790
+      outboundShipmentTime: "2025-03-20T09:00:00Z"
+      totalStorageCapacity:
+        "$serde_json::private::Number": "10000"
+    performance: "[perf]"
+    traceData: ~
+  sw1:
+    id: sw1
+    input:
+      crossDockDecision: cross-dock
+      crossDockingBayAssignment: Bay-E4
+      currentStorageUsed:
+        "$serde_json::private::Number": "7500"
+      decisionReason: Matching orders available within 48 hours
+      hasMatchingOutboundOrders: true
+      inboundShipmentId: IN-12345
+      inboundShipmentItems:
+        - category: Electronics
+          quantity:
+            "$serde_json::private::Number": "50"
+          sku: ITEM-001
+        - category: Home Goods
+          quantity:
+            "$serde_json::private::Number": "30"
+          sku: ITEM-002
+      inboundShipmentTime: "2025-03-19T10:00:00Z"
+      matchingOutboundOrders:
+        - customerPriority: standard
+          destinationZone: East
+          orderId: ORD-789
+        - customerPriority: premium
+          destinationZone: East
+          orderId: ORD-790
+      outboundShipmentTime: "2025-03-20T09:00:00Z"
+      timeDifferenceHours:
+        "$serde_json::private::Number": "23"
+      totalStorageCapacity:
+        "$serde_json::private::Number": "10000"
+      warehouseCapacityPercentage:
+        "$serde_json::private::Number": "75"
+    name: handleCrossDocking
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      crossDockDecision: cross-dock
+      crossDockingBayAssignment: Bay-E4
+      currentStorageUsed:
+        "$serde_json::private::Number": "7500"
+      decisionReason: Matching orders available within 48 hours
+      hasMatchingOutboundOrders: true
+      inboundShipmentId: IN-12345
+      inboundShipmentItems:
+        - category: Electronics
+          quantity:
+            "$serde_json::private::Number": "50"
+          sku: ITEM-001
+        - category: Home Goods
+          quantity:
+            "$serde_json::private::Number": "30"
+          sku: ITEM-002
+      inboundShipmentTime: "2025-03-19T10:00:00Z"
+      matchingOutboundOrders:
+        - customerPriority: standard
+          destinationZone: East
+          orderId: ORD-789
+        - customerPriority: premium
+          destinationZone: East
+          orderId: ORD-790
+      outboundShipmentTime: "2025-03-20T09:00:00Z"
+      timeDifferenceHours:
+        "$serde_json::private::Number": "23"
+      totalStorageCapacity:
+        "$serde_json::private::Number": "10000"
+      warehouseCapacityPercentage:
+        "$serde_json::private::Number": "75"
+    performance: "[perf]"
+    traceData:
+      statements:
+        - id: s1-1

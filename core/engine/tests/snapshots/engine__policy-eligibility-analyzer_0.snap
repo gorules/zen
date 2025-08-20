@@ -1,0 +1,305 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  customer:
+    age:
+      "$serde_json::private::Number": "45"
+    healthScore:
+      "$serde_json::private::Number": "85"
+    location:
+      city: San Francisco
+      country: US
+      state: CA
+    riskFactors:
+      count:
+        "$serde_json::private::Number": "2"
+      factors:
+        - previous_claim
+        - family_history
+  denialReasons: []
+  eligibility:
+    age:
+      isEligible: true
+      reason: Age requirements met
+    location:
+      isEligible: true
+      reason: Location requirements met
+    riskFactors:
+      isEligible: true
+      reason: Risk factor assessment passed
+  isEligible: true
+  policyDecision:
+    approved: ~
+    reasons: ~
+trace:
+  ageEligibility:
+    id: ageEligibility
+    input:
+      customer:
+        age:
+          "$serde_json::private::Number": "45"
+        healthScore:
+          "$serde_json::private::Number": "85"
+        location:
+          city: San Francisco
+          country: US
+          state: CA
+        riskFactors:
+          count:
+            "$serde_json::private::Number": "2"
+          factors:
+            - previous_claim
+            - family_history
+    name: Age Eligibility
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      customer:
+        age:
+          "$serde_json::private::Number": "45"
+        healthScore:
+          "$serde_json::private::Number": "85"
+        location:
+          city: San Francisco
+          country: US
+          state: CA
+        riskFactors:
+          count:
+            "$serde_json::private::Number": "2"
+          factors:
+            - previous_claim
+            - family_history
+      eligibility:
+        age:
+          isEligible: true
+          reason: Age requirements met
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "2"
+      reference_map:
+        customer.age:
+          "$serde_json::private::Number": "45"
+      rule:
+        _id: rule3
+        "customer.age[i1-1]": ""
+  finalDetermination:
+    id: finalDetermination
+    input:
+      customer:
+        age:
+          "$serde_json::private::Number": "45"
+        healthScore:
+          "$serde_json::private::Number": "85"
+        location:
+          city: San Francisco
+          country: US
+          state: CA
+        riskFactors:
+          count:
+            "$serde_json::private::Number": "2"
+          factors:
+            - previous_claim
+            - family_history
+      eligibility:
+        age:
+          isEligible: true
+          reason: Age requirements met
+        location:
+          isEligible: true
+          reason: Location requirements met
+        riskFactors:
+          isEligible: true
+          reason: Risk factor assessment passed
+    name: Final Determination
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      customer:
+        age:
+          "$serde_json::private::Number": "45"
+        healthScore:
+          "$serde_json::private::Number": "85"
+        location:
+          city: San Francisco
+          country: US
+          state: CA
+        riskFactors:
+          count:
+            "$serde_json::private::Number": "2"
+          factors:
+            - previous_claim
+            - family_history
+      denialReasons: []
+      eligibility:
+        age:
+          isEligible: true
+          reason: Age requirements met
+        location:
+          isEligible: true
+          reason: Location requirements met
+        riskFactors:
+          isEligible: true
+          reason: Risk factor assessment passed
+      isEligible: true
+      policyDecision:
+        approved: ~
+        reasons: ~
+    performance: "[perf]"
+    traceData:
+      denialReasons:
+        result: []
+      isEligible:
+        result: true
+      policyDecision:
+        result:
+          approved: ~
+          reasons: ~
+  input:
+    id: input
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      customer:
+        age:
+          "$serde_json::private::Number": "45"
+        healthScore:
+          "$serde_json::private::Number": "85"
+        location:
+          city: San Francisco
+          country: US
+          state: CA
+        riskFactors:
+          count:
+            "$serde_json::private::Number": "2"
+          factors:
+            - previous_claim
+            - family_history
+    performance: "[perf]"
+    traceData: ~
+  locationEligibility:
+    id: locationEligibility
+    input:
+      customer:
+        age:
+          "$serde_json::private::Number": "45"
+        healthScore:
+          "$serde_json::private::Number": "85"
+        location:
+          city: San Francisco
+          country: US
+          state: CA
+        riskFactors:
+          count:
+            "$serde_json::private::Number": "2"
+          factors:
+            - previous_claim
+            - family_history
+      eligibility:
+        age:
+          isEligible: true
+          reason: Age requirements met
+    name: Location Eligibility
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      customer:
+        age:
+          "$serde_json::private::Number": "45"
+        healthScore:
+          "$serde_json::private::Number": "85"
+        location:
+          city: San Francisco
+          country: US
+          state: CA
+        riskFactors:
+          count:
+            "$serde_json::private::Number": "2"
+          factors:
+            - previous_claim
+            - family_history
+      eligibility:
+        age:
+          isEligible: true
+          reason: Age requirements met
+        location:
+          isEligible: true
+          reason: Location requirements met
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "2"
+      reference_map:
+        customer.location.state: CA
+      rule:
+        _id: rule3
+        "customer.location.state[i1-1]": ""
+  riskFactors:
+    id: riskFactors
+    input:
+      customer:
+        age:
+          "$serde_json::private::Number": "45"
+        healthScore:
+          "$serde_json::private::Number": "85"
+        location:
+          city: San Francisco
+          country: US
+          state: CA
+        riskFactors:
+          count:
+            "$serde_json::private::Number": "2"
+          factors:
+            - previous_claim
+            - family_history
+      eligibility:
+        age:
+          isEligible: true
+          reason: Age requirements met
+        location:
+          isEligible: true
+          reason: Location requirements met
+    name: Risk Factor Assessment
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      customer:
+        age:
+          "$serde_json::private::Number": "45"
+        healthScore:
+          "$serde_json::private::Number": "85"
+        location:
+          city: San Francisco
+          country: US
+          state: CA
+        riskFactors:
+          count:
+            "$serde_json::private::Number": "2"
+          factors:
+            - previous_claim
+            - family_history
+      eligibility:
+        age:
+          isEligible: true
+          reason: Age requirements met
+        location:
+          isEligible: true
+          reason: Location requirements met
+        riskFactors:
+          isEligible: true
+          reason: Risk factor assessment passed
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "2"
+      reference_map:
+        customer.riskFactors.count:
+          "$serde_json::private::Number": "2"
+      rule:
+        _id: rule3
+        "customer.riskFactors.count[i1-1]": ""

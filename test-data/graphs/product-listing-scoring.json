@@ -1,0 +1,358 @@
+{
+  "tests": [
+    {
+      "input": {
+        "listing": {
+          "images": {
+            "count": 4,
+            "highResolution": true,
+            "hasVariantImages": true
+          },
+          "description": {
+            "wordCount": 250,
+            "hasBulletPoints": true,
+            "hasSpecifications": true,
+            "keywordDensity": 3.2
+          },
+          "pricing": {
+            "competitiveRank": 2,
+            "hasDiscount": true
+          },
+          "inventory": {
+            "stockLevel": 15,
+            "daysToShip": 2
+          }
+        }
+      },
+      "output": {
+        "breakdown": {
+          "descriptionCompleteness": {
+            "category": "good",
+            "score": 25
+          },
+          "imageQuality": {
+            "category": "good",
+            "score": 25
+          },
+          "inventoryAvailability": {
+            "score": 8
+          },
+          "keywordOptimization": {
+            "score": 15
+          },
+          "pricingCompetitiveness": {
+            "score": 8
+          }
+        },
+        "maximumPossibleScore": 100,
+        "overallScoreCategory": "excellent",
+        "totalScore": 81
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"listing\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"images\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"count\": {\"type\": \"integer\"},\n            \"highResolution\": {\"type\": \"boolean\"},\n            \"hasVariantImages\": {\"type\": \"boolean\"}\n          }\n        },\n        \"description\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"wordCount\": {\"type\": \"integer\"},\n            \"hasBulletPoints\": {\"type\": \"boolean\"},\n            \"hasSpecifications\": {\"type\": \"boolean\"},\n            \"keywordDensity\": {\"type\": \"number\"}\n          }\n        },\n        \"pricing\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"competitiveRank\": {\"type\": \"integer\"},\n            \"hasDiscount\": {\"type\": \"boolean\"}\n          }\n        },\n        \"inventory\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"stockLevel\": {\"type\": \"integer\"},\n            \"daysToShip\": {\"type\": \"integer\"}\n          }\n        }\n      }\n    }\n  }\n}"
+      },
+      "id": "input-node",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "img-rule-1",
+            "imageCount": ">= 5",
+            "highRes": "true",
+            "hasVariantImages": "true",
+            "imgScore": "30",
+            "imgCategory": "'excellent'"
+          },
+          {
+            "_id": "img-rule-2",
+            "imageCount": ">= 3",
+            "highRes": "true",
+            "hasVariantImages": "",
+            "imgScore": "25",
+            "imgCategory": "'good'"
+          },
+          {
+            "_id": "img-rule-3",
+            "imageCount": ">= 2",
+            "highRes": "true",
+            "hasVariantImages": "",
+            "imgScore": "20",
+            "imgCategory": "'average'"
+          },
+          {
+            "_id": "img-rule-4",
+            "imageCount": ">= 1",
+            "highRes": "",
+            "hasVariantImages": "",
+            "imgScore": "10",
+            "imgCategory": "'poor'"
+          },
+          {
+            "_id": "img-rule-5",
+            "imageCount": "",
+            "highRes": "",
+            "hasVariantImages": "",
+            "imgScore": "0",
+            "imgCategory": "'missing'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "imageCount",
+            "name": "Image Count",
+            "field": "listing.images.count"
+          },
+          {
+            "id": "highRes",
+            "name": "High Resolution",
+            "field": "listing.images.highResolution"
+          },
+          {
+            "id": "hasVariantImages",
+            "name": "Has Variant Images",
+            "field": "listing.images.hasVariantImages"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "imgScore",
+            "name": "Image Score",
+            "field": "scores.imageQuality.score"
+          },
+          {
+            "id": "imgCategory",
+            "name": "Image Category",
+            "field": "scores.imageQuality.category"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "image-quality-node",
+      "name": "imageQuality",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "desc-rule-1",
+            "wordCount": "> 300",
+            "hasBullets": "true",
+            "hasSpecs": "true",
+            "keywordDensity": "> 2 and < 5",
+            "stockLevel": "> 20",
+            "competitiveRank": "< 3",
+            "descScore": "30",
+            "keywordScore": "20",
+            "inventoryScore": "10",
+            "pricingScore": "10",
+            "category": "'excellent'"
+          },
+          {
+            "_id": "desc-rule-2",
+            "wordCount": "> 200",
+            "hasBullets": "true",
+            "hasSpecs": "",
+            "keywordDensity": "> 1 and < 6",
+            "stockLevel": "> 10",
+            "competitiveRank": "< 5",
+            "descScore": "25",
+            "keywordScore": "15",
+            "inventoryScore": "8",
+            "pricingScore": "8",
+            "category": "'good'"
+          },
+          {
+            "_id": "desc-rule-3",
+            "wordCount": "> 100",
+            "hasBullets": "",
+            "hasSpecs": "",
+            "keywordDensity": "> 0",
+            "stockLevel": "> 5",
+            "competitiveRank": "< 10",
+            "descScore": "15",
+            "keywordScore": "10",
+            "inventoryScore": "5",
+            "pricingScore": "5",
+            "category": "'average'"
+          },
+          {
+            "_id": "desc-rule-4",
+            "wordCount": "> 50",
+            "hasBullets": "",
+            "hasSpecs": "",
+            "keywordDensity": "",
+            "stockLevel": "> 0",
+            "competitiveRank": "",
+            "descScore": "10",
+            "keywordScore": "5",
+            "inventoryScore": "3",
+            "pricingScore": "3",
+            "category": "'poor'"
+          },
+          {
+            "_id": "desc-rule-5",
+            "wordCount": "",
+            "hasBullets": "",
+            "hasSpecs": "",
+            "keywordDensity": "",
+            "stockLevel": "",
+            "competitiveRank": "",
+            "descScore": "0",
+            "keywordScore": "0",
+            "inventoryScore": "0",
+            "pricingScore": "0",
+            "category": "'missing'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "wordCount",
+            "name": "Word Count",
+            "field": "listing.description.wordCount"
+          },
+          {
+            "id": "hasBullets",
+            "name": "Has Bullet Points",
+            "field": "listing.description.hasBulletPoints"
+          },
+          {
+            "id": "hasSpecs",
+            "name": "Has Specifications",
+            "field": "listing.description.hasSpecifications"
+          },
+          {
+            "id": "keywordDensity",
+            "name": "Keyword Density",
+            "field": "listing.description.keywordDensity"
+          },
+          {
+            "id": "stockLevel",
+            "name": "Stock Level",
+            "field": "listing.inventory.stockLevel"
+          },
+          {
+            "id": "competitiveRank",
+            "name": "Competitive Rank",
+            "field": "listing.pricing.competitiveRank"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "descScore",
+            "name": "Description Score",
+            "field": "scores.descriptionCompleteness.score"
+          },
+          {
+            "id": "keywordScore",
+            "name": "Keyword Score",
+            "field": "scores.keywordOptimization.score"
+          },
+          {
+            "id": "inventoryScore",
+            "name": "Inventory Score",
+            "field": "scores.inventoryAvailability.score"
+          },
+          {
+            "id": "pricingScore",
+            "name": "Pricing Score",
+            "field": "scores.pricingCompetitiveness.score"
+          },
+          {
+            "id": "category",
+            "name": "Category",
+            "field": "scores.descriptionCompleteness.category"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "description-node",
+      "name": "descriptionAndOtherFactors",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "expr-1",
+            "key": "totalScore",
+            "value": "scores.imageQuality.score + scores.descriptionCompleteness.score + scores.keywordOptimization.score + scores.inventoryAvailability.score + scores.pricingCompetitiveness.score"
+          },
+          {
+            "id": "expr-2",
+            "key": "overallScoreCategory",
+            "value": "$.totalScore >= 80 ? 'excellent' : $.totalScore >= 60 ? 'good' : $.totalScore >= 40 ? 'average' : $.totalScore >= 20 ? 'poor' : 'unacceptable'"
+          },
+          {
+            "id": "a3ffe24e-36ba-48a8-9f07-d77bdcbbdfe0",
+            "key": "maximumPossibleScore",
+            "value": "100"
+          },
+          {
+            "id": "expr-3",
+            "key": "breakdown",
+            "value": "{\n  'imageQuality': scores.imageQuality,\n  'descriptionCompleteness': scores.descriptionCompleteness,\n  'keywordOptimization': scores.keywordOptimization,\n  'inventoryAvailability': scores.inventoryAvailability,\n  'pricingCompetitiveness': scores.pricingCompetitiveness\n}"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "overall-score-node",
+      "name": "overallScore",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-input-to-image",
+      "sourceId": "input-node",
+      "targetId": "image-quality-node",
+      "type": "edge"
+    },
+    {
+      "id": "edge-image-to-description",
+      "sourceId": "image-quality-node",
+      "targetId": "description-node",
+      "type": "edge"
+    },
+    {
+      "id": "edge-description-to-overall",
+      "sourceId": "description-node",
+      "targetId": "overall-score-node",
+      "type": "edge"
+    }
+  ]
+}

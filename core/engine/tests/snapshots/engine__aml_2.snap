@@ -1,0 +1,354 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  breakdown:
+    amber:
+      "$serde_json::private::Number": "2"
+    green:
+      "$serde_json::private::Number": "2"
+    red:
+      "$serde_json::private::Number": "0"
+  flags:
+    eurSanctions: amber
+    globalSanctions: green
+    merchantReputation: amber
+    transactionAmount: green
+  overallFlag: amber
+trace:
+  204af8f6-325f-41cc-a5bd-ee99905d8c1f:
+    id: 204af8f6-325f-41cc-a5bd-ee99905d8c1f
+    input:
+      flags:
+        eurSanctions: amber
+        globalSanctions: green
+        merchantReputation: amber
+        transactionAmount: green
+    name: Aggregator
+    order:
+      "$serde_json::private::Number": "6"
+    output:
+      breakdown:
+        amber:
+          "$serde_json::private::Number": "2"
+        green:
+          "$serde_json::private::Number": "2"
+        red:
+          "$serde_json::private::Number": "0"
+      flags:
+        eurSanctions: amber
+        globalSanctions: green
+        merchantReputation: amber
+        transactionAmount: green
+      overallFlag: amber
+    performance: "[perf]"
+    traceData:
+      log: []
+  3187c4af-565f-482c-805f-9099e9d56fc1:
+    id: 3187c4af-565f-482c-805f-9099e9d56fc1
+    input:
+      customer:
+        address:
+          country: FR
+        email: john.doe@example.com
+        firstName: John
+        id: "987654321"
+        lastName: Doe
+        tier: enterprise
+      merchant:
+        category: Retail
+        id: "567890123"
+        location:
+          city: AnotherTown
+          country: VE
+          state: CA
+          street: 456 High St
+          zipCode: "54321"
+        name: SuperMart
+        reputation:
+          "$serde_json::private::Number": "0.55"
+      transaction:
+        amountUSD:
+          "$serde_json::private::Number": "30000"
+        currency: EUR
+        id: "123456789"
+        status: pending
+        timestamp: "2023-11-30T12:34:56Z"
+    name: EUR Sanctions
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      flags:
+        eurSanctions: amber
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        merchant.location.country: VE
+      rule:
+        _id: 380670ff-4a6a-48d6-b430-8cbb6186438b
+        "merchant.location.country[90adfc05-ffdf-490f-ab47-cede8dd899f3]": "\"VE\", \"IR\""
+  57b828f3-e0ff-4e3a-9549-7dae4eeba55d:
+    id: 57b828f3-e0ff-4e3a-9549-7dae4eeba55d
+    input:
+      customer:
+        address:
+          country: FR
+        email: john.doe@example.com
+        firstName: John
+        id: "987654321"
+        lastName: Doe
+        tier: enterprise
+      merchant:
+        category: Retail
+        id: "567890123"
+        location:
+          city: AnotherTown
+          country: VE
+          state: CA
+          street: 456 High St
+          zipCode: "54321"
+        name: SuperMart
+        reputation:
+          "$serde_json::private::Number": "0.55"
+      transaction:
+        amountUSD:
+          "$serde_json::private::Number": "30000"
+        currency: EUR
+        id: "123456789"
+        status: pending
+        timestamp: "2023-11-30T12:34:56Z"
+    name: Merchant Reputation
+    order:
+      "$serde_json::private::Number": "5"
+    output:
+      flags:
+        merchantReputation: amber
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        merchant.reputation:
+          "$serde_json::private::Number": "0.55"
+      rule:
+        _id: cdee900f-a1b1-4a0c-8aca-c305c19a33dd
+        "merchant.reputation[c658ae97-99c8-46fe-bc3a-64c14ea8c475]": "(0.5..0.8]"
+  71285ae0-45cf-4300-afe7-de39e0f81590:
+    id: 71285ae0-45cf-4300-afe7-de39e0f81590
+    input:
+      breakdown:
+        amber:
+          "$serde_json::private::Number": "2"
+        green:
+          "$serde_json::private::Number": "2"
+        red:
+          "$serde_json::private::Number": "0"
+      flags:
+        eurSanctions: amber
+        globalSanctions: green
+        merchantReputation: amber
+        transactionAmount: green
+      overallFlag: amber
+    name: Response
+    order:
+      "$serde_json::private::Number": "7"
+    output: ~
+    performance: "[perf]"
+    traceData: ~
+  ac9cf968-98b2-4ba5-a481-28da1e32b649:
+    id: ac9cf968-98b2-4ba5-a481-28da1e32b649
+    input:
+      customer:
+        address:
+          country: FR
+        email: john.doe@example.com
+        firstName: John
+        id: "987654321"
+        lastName: Doe
+        tier: enterprise
+      merchant:
+        category: Retail
+        id: "567890123"
+        location:
+          city: AnotherTown
+          country: VE
+          state: CA
+          street: 456 High St
+          zipCode: "54321"
+        name: SuperMart
+        reputation:
+          "$serde_json::private::Number": "0.55"
+      transaction:
+        amountUSD:
+          "$serde_json::private::Number": "30000"
+        currency: EUR
+        id: "123456789"
+        status: pending
+        timestamp: "2023-11-30T12:34:56Z"
+    name: Transaction Amount
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      flags:
+        transactionAmount: green
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        customer.tier: enterprise
+        transaction.amountUSD:
+          "$serde_json::private::Number": "30000"
+      rule:
+        _id: 831b4587-4f1b-494c-97c3-da2861991779
+        "customer.tier[a713c7ef-1db6-4fa4-aca4-590c4092c742]": "\"enterprise\""
+        "transaction.amountUSD[360ba5d7-25b0-44ff-9cce-3f365634a42f]": ""
+  df092198-208d-4526-82a2-2ff4359d9001:
+    id: df092198-208d-4526-82a2-2ff4359d9001
+    input: ~
+    name: Request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      customer:
+        address:
+          country: FR
+        email: john.doe@example.com
+        firstName: John
+        id: "987654321"
+        lastName: Doe
+        tier: enterprise
+      merchant:
+        category: Retail
+        id: "567890123"
+        location:
+          city: AnotherTown
+          country: VE
+          state: CA
+          street: 456 High St
+          zipCode: "54321"
+        name: SuperMart
+        reputation:
+          "$serde_json::private::Number": "0.55"
+      transaction:
+        amountUSD:
+          "$serde_json::private::Number": "30000"
+        currency: EUR
+        id: "123456789"
+        status: pending
+        timestamp: "2023-11-30T12:34:56Z"
+    performance: "[perf]"
+    traceData: ~
+  f7e19179-48b7-4d94-b085-ea3d6c9e829e:
+    id: f7e19179-48b7-4d94-b085-ea3d6c9e829e
+    input:
+      customer:
+        address:
+          country: FR
+        email: john.doe@example.com
+        firstName: John
+        id: "987654321"
+        lastName: Doe
+        tier: enterprise
+      merchant:
+        category: Retail
+        id: "567890123"
+        location:
+          city: AnotherTown
+          country: VE
+          state: CA
+          street: 456 High St
+          zipCode: "54321"
+        name: SuperMart
+        reputation:
+          "$serde_json::private::Number": "0.55"
+      transaction:
+        amountUSD:
+          "$serde_json::private::Number": "30000"
+        currency: EUR
+        id: "123456789"
+        status: pending
+        timestamp: "2023-11-30T12:34:56Z"
+    name: Sanctions
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      customer:
+        address:
+          country: FR
+        email: john.doe@example.com
+        firstName: John
+        id: "987654321"
+        lastName: Doe
+        tier: enterprise
+      merchant:
+        category: Retail
+        id: "567890123"
+        location:
+          city: AnotherTown
+          country: VE
+          state: CA
+          street: 456 High St
+          zipCode: "54321"
+        name: SuperMart
+        reputation:
+          "$serde_json::private::Number": "0.55"
+      transaction:
+        amountUSD:
+          "$serde_json::private::Number": "30000"
+        currency: EUR
+        id: "123456789"
+        status: pending
+        timestamp: "2023-11-30T12:34:56Z"
+    performance: "[perf]"
+    traceData:
+      statements:
+        - id: 13737427-cb8c-4c32-bde5-e49ef6fa03e0
+        - id: aa630466-3bb1-45e3-9ae8-12eb57451f55
+  fd8f6200-f236-4d00-859e-9a732e553176:
+    id: fd8f6200-f236-4d00-859e-9a732e553176
+    input:
+      customer:
+        address:
+          country: FR
+        email: john.doe@example.com
+        firstName: John
+        id: "987654321"
+        lastName: Doe
+        tier: enterprise
+      merchant:
+        category: Retail
+        id: "567890123"
+        location:
+          city: AnotherTown
+          country: VE
+          state: CA
+          street: 456 High St
+          zipCode: "54321"
+        name: SuperMart
+        reputation:
+          "$serde_json::private::Number": "0.55"
+      transaction:
+        amountUSD:
+          "$serde_json::private::Number": "30000"
+        currency: EUR
+        id: "123456789"
+        status: pending
+        timestamp: "2023-11-30T12:34:56Z"
+    name: Global Sanctions
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      flags:
+        globalSanctions: green
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map: {}
+      rule:
+        _id: 380eee74-94aa-4321-a673-878386dc3200

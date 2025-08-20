@@ -1,0 +1,177 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  flag:
+    directors: red
+    secretaries: amber
+    turnover: red
+trace:
+  2ee16c8c-fb12-4f20-9813-67bad6f4eb14:
+    id: 2ee16c8c-fb12-4f20-9813-67bad6f4eb14
+    input:
+      company:
+        directors:
+          - first
+          - second
+        secretaries:
+          - first
+          - second
+        type: LLC
+    name: Model Turnover LLC
+    order:
+      "$serde_json::private::Number": "5"
+    output:
+      flag:
+        turnover: red
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "2"
+      reference_map:
+        company.turnover: ~
+      rule:
+        _id: 952300fd-e4d9-4301-8a5a-4eda1d01d8ee
+        "company.turnover[fa0fd31a-8865-43fb-8a60-b729c640140a]": ""
+  49f76396-88ae-4808-a6db-65091d5be0c7:
+    id: 49f76396-88ae-4808-a6db-65091d5be0c7
+    input:
+      company:
+        directors:
+          - first
+          - second
+        secretaries:
+          - first
+          - second
+        type: LLC
+    name: Model 1a
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      flag:
+        secretaries: amber
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        len(company.secretaries):
+          "$serde_json::private::Number": "2"
+      rule:
+        _id: c6cc83a2-3b57-4c21-b2e9-a5753c1714cc
+        "len(company.secretaries)[d34e312e-3c73-4e7f-a384-8c7b63d226cc]": "> 1"
+  84b0e11b-8c9d-46f3-ac34-f674f3b98068:
+    id: 84b0e11b-8c9d-46f3-ac34-f674f3b98068
+    input:
+      flag:
+        directors: red
+        secretaries: amber
+        turnover: red
+    name: Response
+    order:
+      "$serde_json::private::Number": "6"
+    output: ~
+    performance: "[perf]"
+    traceData: ~
+  ab1b450a-ce21-4d99-8de6-4e4deeb37d75:
+    id: ab1b450a-ce21-4d99-8de6-4e4deeb37d75
+    input:
+      company:
+        directors:
+          - first
+          - second
+        secretaries:
+          - first
+          - second
+        type: LLC
+    name: Model 1b
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      flag:
+        directors: red
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        len(company.directors):
+          "$serde_json::private::Number": "2"
+      rule:
+        _id: 171ec41f-ac79-4926-a24f-c8d227879989
+        "len(company.directors)[014f4025-ddb0-48c3-9e79-aa60368b485b]": ""
+  dc7b8739-e234-4363-afe9-df156f082f6f:
+    id: dc7b8739-e234-4363-afe9-df156f082f6f
+    input:
+      company:
+        directors:
+          - first
+          - second
+        secretaries:
+          - first
+          - second
+        type: LLC
+    name: switchNode 1
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      company:
+        directors:
+          - first
+          - second
+        secretaries:
+          - first
+          - second
+        type: LLC
+    performance: "[perf]"
+    traceData:
+      statements:
+        - id: e672a228-ff6b-4859-a017-ab5e5c125b60
+        - id: 5ba3e324-a4fa-4e5f-8523-db21b47b32b6
+        - id: 931eda5b-a780-428b-9a0a-e3eb6283bab4
+  de6cc00d-ef1b-46f5-9beb-9285d468c39d:
+    id: de6cc00d-ef1b-46f5-9beb-9285d468c39d
+    input:
+      company:
+        directors:
+          - first
+          - second
+        secretaries:
+          - first
+          - second
+        type: LLC
+    name: switchNode 1
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      company:
+        directors:
+          - first
+          - second
+        secretaries:
+          - first
+          - second
+        type: LLC
+    performance: "[perf]"
+    traceData:
+      statements:
+        - id: 6499e0bb-2cda-4a5f-9246-d48e7d2177fb
+  fecde070-38cf-4656-81d7-3a2cb6e38f8f:
+    id: fecde070-38cf-4656-81d7-3a2cb6e38f8f
+    input: ~
+    name: Request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      company:
+        directors:
+          - first
+          - second
+        secretaries:
+          - first
+          - second
+        type: LLC
+    performance: "[perf]"
+    traceData: ~

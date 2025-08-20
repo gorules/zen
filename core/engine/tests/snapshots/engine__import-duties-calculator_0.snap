@@ -1,0 +1,214 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  additionalFees:
+    "$serde_json::private::Number": "0"
+  baseDuty:
+    "$serde_json::private::Number": "180"
+  countryAdjustment:
+    "$serde_json::private::Number": "225"
+  dutyRate:
+    "$serde_json::private::Number": "0.1875"
+  minDuty:
+    "$serde_json::private::Number": "225"
+  preferentialDiscount:
+    "$serde_json::private::Number": "225"
+  totalDuty:
+    "$serde_json::private::Number": "225"
+trace:
+  country_rules:
+    id: country_rules
+    input:
+      classification:
+        baseRate:
+          "$serde_json::private::Number": "0.15"
+        category: High-Tech Electronics
+      destination:
+        country: US
+      origin:
+        country: CN
+        hasFTA: false
+        preferentialTreatment: false
+      product:
+        category: electronics
+        hsCode: "851712"
+        value:
+          "$serde_json::private::Number": "1200"
+        weight:
+          "$serde_json::private::Number": "0.8"
+    name: country_rules
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      classification:
+        baseRate:
+          "$serde_json::private::Number": "0.15"
+        category: High-Tech Electronics
+      countryRules:
+        hasSanctions: false
+        multiplier:
+          "$serde_json::private::Number": "1.25"
+      destination:
+        country: US
+      origin:
+        country: CN
+        hasFTA: false
+        preferentialTreatment: false
+      product:
+        category: electronics
+        hsCode: "851712"
+        value:
+          "$serde_json::private::Number": "1200"
+        weight:
+          "$serde_json::private::Number": "0.8"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        destination.country: US
+        origin.country: CN
+        origin.hasFTA: false
+      rule:
+        _id: cr-1
+        "destination.country[i-destination]": "'US'"
+        "origin.country[i-origin]": "'CN'"
+        "origin.hasFTA[i-hasFTA]": "false"
+  duty_calculation:
+    id: duty_calculation
+    input:
+      classification:
+        baseRate:
+          "$serde_json::private::Number": "0.15"
+        category: High-Tech Electronics
+      countryRules:
+        hasSanctions: false
+        multiplier:
+          "$serde_json::private::Number": "1.25"
+      destination:
+        country: US
+      origin:
+        country: CN
+        hasFTA: false
+        preferentialTreatment: false
+      product:
+        category: electronics
+        hsCode: "851712"
+        value:
+          "$serde_json::private::Number": "1200"
+        weight:
+          "$serde_json::private::Number": "0.8"
+    name: duty_calculation
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      additionalFees:
+        "$serde_json::private::Number": "0"
+      baseDuty:
+        "$serde_json::private::Number": "180"
+      countryAdjustment:
+        "$serde_json::private::Number": "225"
+      dutyRate:
+        "$serde_json::private::Number": "0.1875"
+      minDuty:
+        "$serde_json::private::Number": "225"
+      preferentialDiscount:
+        "$serde_json::private::Number": "225"
+      totalDuty:
+        "$serde_json::private::Number": "225"
+    performance: "[perf]"
+    traceData:
+      additionalFees:
+        result:
+          "$serde_json::private::Number": "0"
+      baseDuty:
+        result:
+          "$serde_json::private::Number": "180"
+      countryAdjustment:
+        result:
+          "$serde_json::private::Number": "225"
+      dutyRate:
+        result:
+          "$serde_json::private::Number": "0.1875"
+      minDuty:
+        result:
+          "$serde_json::private::Number": "225"
+      preferentialDiscount:
+        result:
+          "$serde_json::private::Number": "225"
+      totalDuty:
+        result:
+          "$serde_json::private::Number": "225"
+  input:
+    id: input
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      destination:
+        country: US
+      origin:
+        country: CN
+        hasFTA: false
+        preferentialTreatment: false
+      product:
+        category: electronics
+        hsCode: "851712"
+        value:
+          "$serde_json::private::Number": "1200"
+        weight:
+          "$serde_json::private::Number": "0.8"
+    performance: "[perf]"
+    traceData: ~
+  product_classification:
+    id: product_classification
+    input:
+      destination:
+        country: US
+      origin:
+        country: CN
+        hasFTA: false
+        preferentialTreatment: false
+      product:
+        category: electronics
+        hsCode: "851712"
+        value:
+          "$serde_json::private::Number": "1200"
+        weight:
+          "$serde_json::private::Number": "0.8"
+    name: product_classification
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      classification:
+        baseRate:
+          "$serde_json::private::Number": "0.15"
+        category: High-Tech Electronics
+      destination:
+        country: US
+      origin:
+        country: CN
+        hasFTA: false
+        preferentialTreatment: false
+      product:
+        category: electronics
+        hsCode: "851712"
+        value:
+          "$serde_json::private::Number": "1200"
+        weight:
+          "$serde_json::private::Number": "0.8"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        product.category: electronics
+        product.hsCode: "851712"
+      rule:
+        _id: pc-1
+        "product.category[i-category]": "'electronics'"
+        "product.hsCode[i-hsCode]": "startsWith($, '85')"

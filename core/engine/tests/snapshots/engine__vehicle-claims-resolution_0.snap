@@ -1,0 +1,205 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  assessment:
+    damageLevel: severe
+    isTotalLoss: false
+  claim:
+    damagePercentage:
+      "$serde_json::private::Number": "65"
+    id: CL-20250318-001
+  parts:
+    availability: available
+    status: limited
+  recommendation:
+    explanation: Severe damage with obtainable parts; repair recommended
+    method: repair
+  vehicle:
+    ageYears:
+      "$serde_json::private::Number": "10"
+    make: Toyota
+    model: Camry
+    year:
+      "$serde_json::private::Number": "2015"
+trace:
+  assessDamage:
+    id: assessDamage
+    input:
+      claim:
+        damagePercentage:
+          "$serde_json::private::Number": "65"
+        id: CL-20250318-001
+      parts:
+        status: limited
+      vehicle:
+        ageYears:
+          "$serde_json::private::Number": "10"
+        make: Toyota
+        model: Camry
+        year:
+          "$serde_json::private::Number": "2015"
+    name: assessDamage
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      assessment:
+        damageLevel: severe
+        isTotalLoss: false
+      claim:
+        damagePercentage:
+          "$serde_json::private::Number": "65"
+        id: CL-20250318-001
+      parts:
+        status: limited
+      vehicle:
+        ageYears:
+          "$serde_json::private::Number": "10"
+        make: Toyota
+        model: Camry
+        year:
+          "$serde_json::private::Number": "2015"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        claim.damagePercentage:
+          "$serde_json::private::Number": "65"
+      rule:
+        _id: rule2
+        "claim.damagePercentage[i1]": ">= 60"
+  checkPartsAvailability:
+    id: checkPartsAvailability
+    input:
+      assessment:
+        damageLevel: severe
+        isTotalLoss: false
+      claim:
+        damagePercentage:
+          "$serde_json::private::Number": "65"
+        id: CL-20250318-001
+      parts:
+        status: limited
+      vehicle:
+        ageYears:
+          "$serde_json::private::Number": "10"
+        make: Toyota
+        model: Camry
+        year:
+          "$serde_json::private::Number": "2015"
+    name: checkPartsAvailability
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      assessment:
+        damageLevel: severe
+        isTotalLoss: false
+      claim:
+        damagePercentage:
+          "$serde_json::private::Number": "65"
+        id: CL-20250318-001
+      parts:
+        availability: available
+        status: limited
+      vehicle:
+        ageYears:
+          "$serde_json::private::Number": "10"
+        make: Toyota
+        model: Camry
+        year:
+          "$serde_json::private::Number": "2015"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "3"
+      reference_map:
+        parts.status: limited
+        vehicle.ageYears:
+          "$serde_json::private::Number": "10"
+      rule:
+        _id: rule4
+        "parts.status[i2]": ""
+        "vehicle.ageYears[i1]": "<= 10"
+  determineRepairMethod:
+    id: determineRepairMethod
+    input:
+      assessment:
+        damageLevel: severe
+        isTotalLoss: false
+      claim:
+        damagePercentage:
+          "$serde_json::private::Number": "65"
+        id: CL-20250318-001
+      parts:
+        availability: available
+        status: limited
+      vehicle:
+        ageYears:
+          "$serde_json::private::Number": "10"
+        make: Toyota
+        model: Camry
+        year:
+          "$serde_json::private::Number": "2015"
+    name: determineRepairMethod
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      assessment:
+        damageLevel: severe
+        isTotalLoss: false
+      claim:
+        damagePercentage:
+          "$serde_json::private::Number": "65"
+        id: CL-20250318-001
+      parts:
+        availability: available
+        status: limited
+      recommendation:
+        explanation: Severe damage with obtainable parts; repair recommended
+        method: repair
+      vehicle:
+        ageYears:
+          "$serde_json::private::Number": "10"
+        make: Toyota
+        model: Camry
+        year:
+          "$serde_json::private::Number": "2015"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "3"
+      reference_map:
+        assessment.damageLevel: severe
+        parts.availability: available
+        vehicle.ageYears:
+          "$serde_json::private::Number": "10"
+      rule:
+        _id: rule4
+        "assessment.damageLevel[i1]": "'severe'"
+        "parts.availability[i2]": "'delayed', 'available'"
+        "vehicle.ageYears[i3]": ""
+  input:
+    id: input
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      claim:
+        damagePercentage:
+          "$serde_json::private::Number": "65"
+        id: CL-20250318-001
+      parts:
+        status: limited
+      vehicle:
+        ageYears:
+          "$serde_json::private::Number": "10"
+        make: Toyota
+        model: Camry
+        year:
+          "$serde_json::private::Number": "2015"
+    performance: "[perf]"
+    traceData: ~

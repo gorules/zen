@@ -1,0 +1,160 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  effectiveFeeRate:
+    "$serde_json::private::Number": "0.07"
+  totalMonthlyFee:
+    "$serde_json::private::Number": "5139.99"
+  transactionFee:
+    "$serde_json::private::Number": "5040"
+trace:
+  additionalFees:
+    id: additionalFees
+    input:
+      fees:
+        baseFeeRate:
+          "$serde_json::private::Number": "0.1"
+        subscriptionFee:
+          "$serde_json::private::Number": "99.99"
+        subscriptionTier: premium
+      sellerData:
+        category: premium
+        inSpecialProgram: true
+        monthlySalesVolume:
+          "$serde_json::private::Number": "72000"
+        performanceRating:
+          "$serde_json::private::Number": "4.9"
+    name: calculateAdditionalFees
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      fees:
+        additionalServiceCharge:
+          "$serde_json::private::Number": "0"
+        baseFeeRate:
+          "$serde_json::private::Number": "0.1"
+        hasPromotionalBenefits: true
+        rateAdjustment:
+          "$serde_json::private::Number": "-0.03"
+        subscriptionFee:
+          "$serde_json::private::Number": "99.99"
+        subscriptionTier: premium
+      sellerData:
+        category: premium
+        inSpecialProgram: true
+        monthlySalesVolume:
+          "$serde_json::private::Number": "72000"
+        performanceRating:
+          "$serde_json::private::Number": "4.9"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        sellerData.inSpecialProgram: true
+        sellerData.performanceRating:
+          "$serde_json::private::Number": "4.9"
+      rule:
+        _id: addRule1
+        "sellerData.inSpecialProgram[i2]": "true"
+        "sellerData.performanceRating[i1]": "> 4.8"
+  calculateTotal:
+    id: calculateTotal
+    input:
+      fees:
+        additionalServiceCharge:
+          "$serde_json::private::Number": "0"
+        baseFeeRate:
+          "$serde_json::private::Number": "0.1"
+        hasPromotionalBenefits: true
+        rateAdjustment:
+          "$serde_json::private::Number": "-0.03"
+        subscriptionFee:
+          "$serde_json::private::Number": "99.99"
+        subscriptionTier: premium
+      sellerData:
+        category: premium
+        inSpecialProgram: true
+        monthlySalesVolume:
+          "$serde_json::private::Number": "72000"
+        performanceRating:
+          "$serde_json::private::Number": "4.9"
+    name: calculateTotalFees
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      effectiveFeeRate:
+        "$serde_json::private::Number": "0.07"
+      totalMonthlyFee:
+        "$serde_json::private::Number": "5139.99"
+      transactionFee:
+        "$serde_json::private::Number": "5040"
+    performance: "[perf]"
+    traceData:
+      effectiveFeeRate:
+        result:
+          "$serde_json::private::Number": "0.07"
+      totalMonthlyFee:
+        result:
+          "$serde_json::private::Number": "5139.99"
+      transactionFee:
+        result:
+          "$serde_json::private::Number": "5040"
+  input:
+    id: input
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      sellerData:
+        category: premium
+        inSpecialProgram: true
+        monthlySalesVolume:
+          "$serde_json::private::Number": "72000"
+        performanceRating:
+          "$serde_json::private::Number": "4.9"
+    performance: "[perf]"
+    traceData: ~
+  sellerCategory:
+    id: sellerCategory
+    input:
+      sellerData:
+        category: premium
+        inSpecialProgram: true
+        monthlySalesVolume:
+          "$serde_json::private::Number": "72000"
+        performanceRating:
+          "$serde_json::private::Number": "4.9"
+    name: determineCategoryFees
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      fees:
+        baseFeeRate:
+          "$serde_json::private::Number": "0.1"
+        subscriptionFee:
+          "$serde_json::private::Number": "99.99"
+        subscriptionTier: premium
+      sellerData:
+        category: premium
+        inSpecialProgram: true
+        monthlySalesVolume:
+          "$serde_json::private::Number": "72000"
+        performanceRating:
+          "$serde_json::private::Number": "4.9"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        sellerData.category: premium
+        sellerData.monthlySalesVolume:
+          "$serde_json::private::Number": "72000"
+      rule:
+        _id: rule2
+        "sellerData.category[i1]": "'premium'"
+        "sellerData.monthlySalesVolume[i2]": "> 50000"

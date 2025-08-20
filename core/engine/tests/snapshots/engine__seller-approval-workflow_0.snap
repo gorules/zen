@@ -1,0 +1,375 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  approvalDate:
+    "$serde_json::private::Number": "1755622502"
+  score:
+    "$serde_json::private::Number": "85"
+  status: APPROVED
+trace:
+  approvalResult:
+    id: approvalResult
+    input:
+      backgroundCheck:
+        creditScore:
+          "$serde_json::private::Number": "720"
+        criminalRecord: false
+        identityVerified: true
+        passed: true
+      businessCredentials:
+        businessName: TechGadgets LLC
+        businessType: Limited Liability Company
+        hasValidDocumentation: true
+        taxId: 12-3456789
+        yearsInBusiness:
+          "$serde_json::private::Number": "2.5"
+      categoryExpertise:
+        certifications:
+          - Consumer Electronics Specialist
+        primaryCategory: Electronics
+        rating:
+          "$serde_json::private::Number": "4"
+        yearsOfExperience:
+          "$serde_json::private::Number": "3"
+      evaluation:
+        businessStatus: established
+        credentialNotes: Established business with moderate history
+        credentialScore:
+          "$serde_json::private::Number": "25"
+        finalScore:
+          "$serde_json::private::Number": "85"
+        isApproved: true
+        notes: Strong seller profile with good expertise and inventory
+      inventoryQuality:
+        brandAuthenticity: true
+        productCompliance: true
+        productImageQuality: high
+        rating:
+          "$serde_json::private::Number": "4.2"
+        sampleProducts:
+          "$serde_json::private::Number": "15"
+    name: generateApprovalResult
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      approvalDate:
+        "$serde_json::private::Number": "1755622502"
+      score:
+        "$serde_json::private::Number": "85"
+      status: APPROVED
+    performance: "[perf]"
+    traceData:
+      approvalDate:
+        result:
+          "$serde_json::private::Number": "1755622502"
+      score:
+        result:
+          "$serde_json::private::Number": "85"
+      status:
+        result: APPROVED
+  approvalSwitch:
+    id: approvalSwitch
+    input:
+      backgroundCheck:
+        creditScore:
+          "$serde_json::private::Number": "720"
+        criminalRecord: false
+        identityVerified: true
+        passed: true
+      businessCredentials:
+        businessName: TechGadgets LLC
+        businessType: Limited Liability Company
+        hasValidDocumentation: true
+        taxId: 12-3456789
+        yearsInBusiness:
+          "$serde_json::private::Number": "2.5"
+      categoryExpertise:
+        certifications:
+          - Consumer Electronics Specialist
+        primaryCategory: Electronics
+        rating:
+          "$serde_json::private::Number": "4"
+        yearsOfExperience:
+          "$serde_json::private::Number": "3"
+      evaluation:
+        businessStatus: established
+        credentialNotes: Established business with moderate history
+        credentialScore:
+          "$serde_json::private::Number": "25"
+        finalScore:
+          "$serde_json::private::Number": "85"
+        isApproved: true
+        notes: Strong seller profile with good expertise and inventory
+      inventoryQuality:
+        brandAuthenticity: true
+        productCompliance: true
+        productImageQuality: high
+        rating:
+          "$serde_json::private::Number": "4.2"
+        sampleProducts:
+          "$serde_json::private::Number": "15"
+    name: routeApplication
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      backgroundCheck:
+        creditScore:
+          "$serde_json::private::Number": "720"
+        criminalRecord: false
+        identityVerified: true
+        passed: true
+      businessCredentials:
+        businessName: TechGadgets LLC
+        businessType: Limited Liability Company
+        hasValidDocumentation: true
+        taxId: 12-3456789
+        yearsInBusiness:
+          "$serde_json::private::Number": "2.5"
+      categoryExpertise:
+        certifications:
+          - Consumer Electronics Specialist
+        primaryCategory: Electronics
+        rating:
+          "$serde_json::private::Number": "4"
+        yearsOfExperience:
+          "$serde_json::private::Number": "3"
+      evaluation:
+        businessStatus: established
+        credentialNotes: Established business with moderate history
+        credentialScore:
+          "$serde_json::private::Number": "25"
+        finalScore:
+          "$serde_json::private::Number": "85"
+        isApproved: true
+        notes: Strong seller profile with good expertise and inventory
+      inventoryQuality:
+        brandAuthenticity: true
+        productCompliance: true
+        productImageQuality: high
+        rating:
+          "$serde_json::private::Number": "4.2"
+        sampleProducts:
+          "$serde_json::private::Number": "15"
+    performance: "[perf]"
+    traceData:
+      statements:
+        - id: approved
+  businessCredentialsTable:
+    id: businessCredentialsTable
+    input:
+      backgroundCheck:
+        creditScore:
+          "$serde_json::private::Number": "720"
+        criminalRecord: false
+        identityVerified: true
+        passed: true
+      businessCredentials:
+        businessName: TechGadgets LLC
+        businessType: Limited Liability Company
+        hasValidDocumentation: true
+        taxId: 12-3456789
+        yearsInBusiness:
+          "$serde_json::private::Number": "2.5"
+      categoryExpertise:
+        certifications:
+          - Consumer Electronics Specialist
+        primaryCategory: Electronics
+        rating:
+          "$serde_json::private::Number": "4"
+        yearsOfExperience:
+          "$serde_json::private::Number": "3"
+      inventoryQuality:
+        brandAuthenticity: true
+        productCompliance: true
+        productImageQuality: high
+        rating:
+          "$serde_json::private::Number": "4.2"
+        sampleProducts:
+          "$serde_json::private::Number": "15"
+    name: evaluateBusinessCredentials
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      backgroundCheck:
+        creditScore:
+          "$serde_json::private::Number": "720"
+        criminalRecord: false
+        identityVerified: true
+        passed: true
+      businessCredentials:
+        businessName: TechGadgets LLC
+        businessType: Limited Liability Company
+        hasValidDocumentation: true
+        taxId: 12-3456789
+        yearsInBusiness:
+          "$serde_json::private::Number": "2.5"
+      categoryExpertise:
+        certifications:
+          - Consumer Electronics Specialist
+        primaryCategory: Electronics
+        rating:
+          "$serde_json::private::Number": "4"
+        yearsOfExperience:
+          "$serde_json::private::Number": "3"
+      evaluation:
+        businessStatus: established
+        credentialNotes: Established business with moderate history
+        credentialScore:
+          "$serde_json::private::Number": "25"
+      inventoryQuality:
+        brandAuthenticity: true
+        productCompliance: true
+        productImageQuality: high
+        rating:
+          "$serde_json::private::Number": "4.2"
+        sampleProducts:
+          "$serde_json::private::Number": "15"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "2"
+      reference_map:
+        businessCredentials.hasValidDocumentation: true
+        businessCredentials.yearsInBusiness:
+          "$serde_json::private::Number": "2.5"
+      rule:
+        _id: r3
+        "businessCredentials.hasValidDocumentation[i1-1]": "true"
+        "businessCredentials.yearsInBusiness[i1-2]": "[1..3)"
+  input:
+    id: input
+    input: ~
+    name: sellerApplicationRequest
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      backgroundCheck:
+        creditScore:
+          "$serde_json::private::Number": "720"
+        criminalRecord: false
+        identityVerified: true
+        passed: true
+      businessCredentials:
+        businessName: TechGadgets LLC
+        businessType: Limited Liability Company
+        hasValidDocumentation: true
+        taxId: 12-3456789
+        yearsInBusiness:
+          "$serde_json::private::Number": "2.5"
+      categoryExpertise:
+        certifications:
+          - Consumer Electronics Specialist
+        primaryCategory: Electronics
+        rating:
+          "$serde_json::private::Number": "4"
+        yearsOfExperience:
+          "$serde_json::private::Number": "3"
+      inventoryQuality:
+        brandAuthenticity: true
+        productCompliance: true
+        productImageQuality: high
+        rating:
+          "$serde_json::private::Number": "4.2"
+        sampleProducts:
+          "$serde_json::private::Number": "15"
+    performance: "[perf]"
+    traceData: ~
+  sellerEvaluationTable:
+    id: sellerEvaluationTable
+    input:
+      backgroundCheck:
+        creditScore:
+          "$serde_json::private::Number": "720"
+        criminalRecord: false
+        identityVerified: true
+        passed: true
+      businessCredentials:
+        businessName: TechGadgets LLC
+        businessType: Limited Liability Company
+        hasValidDocumentation: true
+        taxId: 12-3456789
+        yearsInBusiness:
+          "$serde_json::private::Number": "2.5"
+      categoryExpertise:
+        certifications:
+          - Consumer Electronics Specialist
+        primaryCategory: Electronics
+        rating:
+          "$serde_json::private::Number": "4"
+        yearsOfExperience:
+          "$serde_json::private::Number": "3"
+      evaluation:
+        businessStatus: established
+        credentialNotes: Established business with moderate history
+        credentialScore:
+          "$serde_json::private::Number": "25"
+      inventoryQuality:
+        brandAuthenticity: true
+        productCompliance: true
+        productImageQuality: high
+        rating:
+          "$serde_json::private::Number": "4.2"
+        sampleProducts:
+          "$serde_json::private::Number": "15"
+    name: evaluateSellerQualifications
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      backgroundCheck:
+        creditScore:
+          "$serde_json::private::Number": "720"
+        criminalRecord: false
+        identityVerified: true
+        passed: true
+      businessCredentials:
+        businessName: TechGadgets LLC
+        businessType: Limited Liability Company
+        hasValidDocumentation: true
+        taxId: 12-3456789
+        yearsInBusiness:
+          "$serde_json::private::Number": "2.5"
+      categoryExpertise:
+        certifications:
+          - Consumer Electronics Specialist
+        primaryCategory: Electronics
+        rating:
+          "$serde_json::private::Number": "4"
+        yearsOfExperience:
+          "$serde_json::private::Number": "3"
+      evaluation:
+        businessStatus: established
+        credentialNotes: Established business with moderate history
+        credentialScore:
+          "$serde_json::private::Number": "25"
+        finalScore:
+          "$serde_json::private::Number": "85"
+        isApproved: true
+        notes: Strong seller profile with good expertise and inventory
+      inventoryQuality:
+        brandAuthenticity: true
+        productCompliance: true
+        productImageQuality: high
+        rating:
+          "$serde_json::private::Number": "4.2"
+        sampleProducts:
+          "$serde_json::private::Number": "15"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "4"
+      reference_map:
+        backgroundCheck.passed: true
+        categoryExpertise.rating:
+          "$serde_json::private::Number": "4"
+        evaluation.businessStatus: established
+        inventoryQuality.rating:
+          "$serde_json::private::Number": "4.2"
+      rule:
+        _id: r5
+        "backgroundCheck.passed[i2-4]": "true"
+        "categoryExpertise.rating[i2-2]": ">= 3"
+        "evaluation.businessStatus[i2-1]": ""
+        "inventoryQuality.rating[i2-3]": ">= 3"

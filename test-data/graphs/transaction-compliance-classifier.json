@@ -1,0 +1,525 @@
+{
+  "tests": [
+    {
+      "input": {
+        "transaction": {
+          "id": "TX123456789",
+          "type": "cash_deposit",
+          "amount": 15000,
+          "date": "2025-03-15T10:30:00Z",
+          "currency": "USD",
+          "description": "Business cash deposit",
+          "high_risk_country": false,
+          "structuring_suspected": false
+        },
+        "customer": {
+          "id": "CUST98765",
+          "name": "Acme Corporation",
+          "type": "business",
+          "jurisdiction": "US",
+          "kyc_verified": true,
+          "high_risk": false,
+          "suspicious_activity_count": 0,
+          "normal_activity_patterns": [
+            "cash_deposit",
+            "domestic_wire",
+            "check_deposit"
+          ],
+          "account_opening_date": "2020-01-15",
+          "risk_category": "medium"
+        }
+      },
+      "output": {
+        "has_compliance_flags": false,
+        "report_instructions": "File FinCEN Form 112 within 24 hours",
+        "reporting_deadline": 1743330600,
+        "reporting_status": "urgent_filing_required",
+        "requires_immediate_filing": true
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "input",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1-1",
+            "i1-1": "'cash_deposit'",
+            "i1-2": "> 10000",
+            "o1-1": "'high_priority'",
+            "o1-2": "'CTR'"
+          },
+          {
+            "_id": "r1-2",
+            "i1-1": "'international_wire'",
+            "i1-2": "> 3000",
+            "o1-1": "'medium_priority'",
+            "o1-2": "'FBAR'"
+          },
+          {
+            "_id": "r1-3",
+            "i1-1": "'securities_trade'",
+            "i1-2": "> 5000",
+            "o1-1": "'medium_priority'",
+            "o1-2": "'SEC_REPORT'"
+          },
+          {
+            "_id": "r1-4",
+            "i1-1": "'crypto_transaction'",
+            "i1-2": "> 3000",
+            "o1-1": "'high_priority'",
+            "o1-2": "'CRYPTO_SAR'"
+          },
+          {
+            "_id": "r1-5",
+            "i1-1": "'structured_deposit'",
+            "i1-2": "",
+            "o1-1": "'high_priority'",
+            "o1-2": "'SAR'"
+          },
+          {
+            "_id": "r1-6",
+            "i1-1": "'domestic_wire'",
+            "i1-2": "> 10000",
+            "o1-1": "'low_priority'",
+            "o1-2": "'WIRE_REPORT'"
+          },
+          {
+            "_id": "r1-7",
+            "i1-1": "",
+            "i1-2": "",
+            "o1-1": "'standard'",
+            "o1-2": "'STANDARD'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Transaction Type",
+            "field": "transaction.type"
+          },
+          {
+            "id": "i1-2",
+            "name": "Amount",
+            "field": "transaction.amount"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Priority",
+            "field": "classification.priority"
+          },
+          {
+            "id": "o1-2",
+            "name": "Report Type",
+            "field": "classification.report_type"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "transaction_type",
+      "name": "classify_transaction",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r2-1",
+            "i2-1": "'US'",
+            "i2-2": "'CTR'",
+            "o2-1": "15",
+            "o2-2": "'FinCEN Form 112'",
+            "o2-3": "15"
+          },
+          {
+            "_id": "r2-2",
+            "i2-1": "'US'",
+            "i2-2": "'SAR'",
+            "o2-1": "30",
+            "o2-2": "'FinCEN Form 111'",
+            "o2-3": "30"
+          },
+          {
+            "_id": "r2-3",
+            "i2-1": "'EU'",
+            "i2-2": "'CTR', 'SAR'",
+            "o2-1": "10",
+            "o2-2": "'EU Suspicious Transaction Report'",
+            "o2-3": "10"
+          },
+          {
+            "_id": "r2-4",
+            "i2-1": "'UK'",
+            "i2-2": "'CTR', 'SAR'",
+            "o2-1": "7",
+            "o2-2": "'NCA SAR'",
+            "o2-3": "10"
+          },
+          {
+            "_id": "r2-5",
+            "i2-1": "",
+            "i2-2": "",
+            "o2-1": "30",
+            "o2-2": "'Standard Reporting Form'",
+            "o2-3": "5"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i2-1",
+            "name": "Jurisdiction",
+            "field": "customer.jurisdiction"
+          },
+          {
+            "id": "i2-2",
+            "name": "Report Type",
+            "field": "classification.report_type"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2-1",
+            "name": "Days to Report",
+            "field": "reporting.days_to_report"
+          },
+          {
+            "id": "o2-2",
+            "name": "Form Name",
+            "field": "reporting.form_name"
+          },
+          {
+            "id": "o2-3",
+            "name": "Jurisdiction Score",
+            "field": "risk.jurisdiction_score"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "jurisdiction_rules",
+      "name": "apply_jurisdiction_rules",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1-1",
+            "key": "base_risk_score",
+            "value": "0"
+          },
+          {
+            "id": "e1-2",
+            "key": "amount_score",
+            "value": "transaction.amount > 50000 ? 25 : (transaction.amount > 10000 ? 15 : (transaction.amount > 5000 ? 10 : 5))"
+          },
+          {
+            "id": "e1-3",
+            "key": "priority_score",
+            "value": "classification.priority == 'high_priority' ? 25 : (classification.priority == 'medium_priority' ? 15 : 5)"
+          },
+          {
+            "id": "e1-4",
+            "key": "customer_score",
+            "value": "customer.high_risk == true ? 20 : 0"
+          },
+          {
+            "id": "e1-5",
+            "key": "transaction_history_score",
+            "value": "customer.suspicious_activity_count > 2 ? 20 : (customer.suspicious_activity_count > 0 ? 10 : 0)"
+          },
+          {
+            "id": "e1-6",
+            "key": "total_risk_score",
+            "value": "$.base_risk_score + $.amount_score + $.priority_score + $.customer_score + $.transaction_history_score + risk.jurisdiction_score"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "risk_assessment",
+      "name": "calculate_risk_score",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r3-1",
+            "i3-1": "> 75",
+            "i3-2": "'high_priority'",
+            "o3-1": "true",
+            "o3-2": "'Requires immediate review - High risk score and priority'"
+          },
+          {
+            "_id": "r3-2",
+            "i3-1": "> 60",
+            "i3-2": "",
+            "o3-1": "true",
+            "o3-2": "'High risk score requires compliance review'"
+          },
+          {
+            "_id": "r3-3",
+            "i3-1": "[40..60]",
+            "i3-2": "'high_priority'",
+            "o3-1": "true",
+            "o3-2": "'Medium risk score with high priority requires review'"
+          },
+          {
+            "_id": "r3-4",
+            "i3-1": "[40..60]",
+            "i3-2": "",
+            "o3-1": "false",
+            "o3-2": "'Medium risk score - standard monitoring'"
+          },
+          {
+            "_id": "r3-5",
+            "i3-1": "",
+            "i3-2": "",
+            "o3-1": "false",
+            "o3-2": "'Standard monitoring - no flags'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i3-1",
+            "name": "Risk Score",
+            "field": "total_risk_score"
+          },
+          {
+            "id": "i3-2",
+            "name": "Priority",
+            "field": "classification.priority"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o3-1",
+            "name": "Requires Review",
+            "field": "compliance.requires_review"
+          },
+          {
+            "id": "o3-2",
+            "name": "Review Reason",
+            "field": "compliance.review_reason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "threshold_checks",
+      "name": "regulatory_thresholds",
+      "position": {
+        "x": 1390,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "collect",
+        "rules": [
+          {
+            "_id": "r4-1",
+            "i4-1": "transaction.amount > 10000",
+            "i4-2": "customer.kyc_verified != true",
+            "o4-1": "true",
+            "o4-2": "'KYC_INCOMPLETE'",
+            "o4-3": "'Customer KYC verification incomplete for large transaction'"
+          },
+          {
+            "_id": "r4-2",
+            "i4-1": "transaction.amount > 5000",
+            "i4-2": "transaction.high_risk_country == true",
+            "o4-1": "true",
+            "o4-2": "'HIGH_RISK_JURISDICTION'",
+            "o4-3": "'Transaction involves high-risk jurisdiction'"
+          },
+          {
+            "_id": "r4-3",
+            "i4-1": "customer.suspicious_activity_count > 0",
+            "i4-2": "transaction.amount > 3000",
+            "o4-1": "true",
+            "o4-2": "'PATTERN_ALERT'",
+            "o4-3": "'Multiple suspicious activities detected with customer'"
+          },
+          {
+            "_id": "r4-4",
+            "i4-1": "transaction.structuring_suspected == true",
+            "i4-2": "",
+            "o4-1": "true",
+            "o4-2": "'STRUCTURING'",
+            "o4-3": "'Potential structuring activity detected'"
+          },
+          {
+            "_id": "r4-5",
+            "i4-1": "transaction.amount > 50000",
+            "i4-2": "!contains(customer.normal_activity_patterns ?? [], transaction.type)",
+            "o4-1": "true",
+            "o4-2": "'UNUSUAL_ACTIVITY'",
+            "o4-3": "'Transaction outside of normal customer activity patterns'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i4-1",
+            "name": "Condition 1"
+          },
+          {
+            "id": "i4-2",
+            "name": "Condition 2"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o4-1",
+            "name": "Flag Raised",
+            "field": "raised"
+          },
+          {
+            "id": "o4-2",
+            "name": "Flag Type",
+            "field": "type"
+          },
+          {
+            "id": "o4-3",
+            "name": "Flag Description",
+            "field": "description"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": "compliance.flags",
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "compliance_flags",
+      "name": "identify_compliance_issues",
+      "position": {
+        "x": 1710,
+        "y": 115
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e2-1",
+            "key": "reporting_deadline",
+            "value": "date(transaction.date) + (reporting.days_to_report * 86400)"
+          },
+          {
+            "id": "e2-2",
+            "key": "has_compliance_flags",
+            "value": "len(compliance.flags ?? []) > 0"
+          },
+          {
+            "id": "e2-3",
+            "key": "requires_immediate_filing",
+            "value": "compliance.requires_review == true or ($.has_compliance_flags and classification.priority == 'high_priority')"
+          },
+          {
+            "id": "e2-4",
+            "key": "reporting_status",
+            "value": "$.requires_immediate_filing ? 'urgent_filing_required' : ($.has_compliance_flags ? 'filing_required' : 'standard_reporting')"
+          },
+          {
+            "id": "e2-5",
+            "key": "report_instructions",
+            "value": "$.requires_immediate_filing ? 'File ' + reporting.form_name + ' within 24 hours' : 'File ' + reporting.form_name + ' within ' + string(reporting.days_to_report) + ' days'"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "reporting_requirements",
+      "name": "determine_reporting_requirements",
+      "position": {
+        "x": 2030,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "input",
+      "targetId": "transaction_type",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "transaction_type",
+      "targetId": "jurisdiction_rules",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "jurisdiction_rules",
+      "targetId": "risk_assessment",
+      "type": "edge"
+    },
+    {
+      "id": "edge4",
+      "sourceId": "risk_assessment",
+      "targetId": "threshold_checks",
+      "type": "edge"
+    },
+    {
+      "id": "edge5",
+      "sourceId": "threshold_checks",
+      "targetId": "compliance_flags",
+      "type": "edge"
+    },
+    {
+      "id": "edge6",
+      "sourceId": "compliance_flags",
+      "targetId": "reporting_requirements",
+      "type": "edge"
+    }
+  ]
+}

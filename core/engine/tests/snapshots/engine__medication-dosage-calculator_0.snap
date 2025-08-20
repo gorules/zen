@@ -1,0 +1,167 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  calculatedDose:
+    adjustmentReason: adjusted for renal function
+    amount:
+      "$serde_json::private::Number": "731.25"
+    frequencyHours: "12"
+    route: intravenous
+    unit: mg
+trace:
+  dt1:
+    id: dt1
+    input:
+      ageYears:
+        "$serde_json::private::Number": "72"
+      allergies:
+        - penicillin
+        - sulfa
+      currentMedications:
+        - metformin
+        - lisinopril
+      gfrValue:
+        "$serde_json::private::Number": "45"
+      hasLiverImpairment: false
+      hasRenalImpairment: true
+      isChild: false
+      isElderly: true
+      liverAdjustmentFactor:
+        "$serde_json::private::Number": "1"
+      liverFunction: normal
+      medication: vancomycin
+      patientId: P12345
+      renalAdjustmentFactor:
+        "$serde_json::private::Number": "0.75"
+      weightFactorAdult:
+        "$serde_json::private::Number": "0.9285714285714285714285714286"
+      weightFactorChild:
+        "$serde_json::private::Number": "2.1666666666666666666666666667"
+      weightKg:
+        "$serde_json::private::Number": "65"
+    name: calculateDosage
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      calculatedDose:
+        adjustmentReason: adjusted for renal function
+        amount:
+          "$serde_json::private::Number": "731.25"
+        frequencyHours: "12"
+        route: intravenous
+        unit: mg
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "5"
+      reference_map:
+        hasLiverImpairment: false
+        hasRenalImpairment: true
+        isChild: false
+        isElderly: true
+        medication: vancomycin
+      rule:
+        _id: r1-6
+        "hasLiverImpairment[i1-5]": ""
+        "hasRenalImpairment[i1-4]": "true"
+        "isChild[i1-2]": ""
+        "isElderly[i1-3]": ""
+        "medication[i1-1]": "'vancomycin'"
+  ex1:
+    id: ex1
+    input:
+      ageYears:
+        "$serde_json::private::Number": "72"
+      allergies:
+        - penicillin
+        - sulfa
+      currentMedications:
+        - metformin
+        - lisinopril
+      gfrValue:
+        "$serde_json::private::Number": "45"
+      liverFunction: normal
+      medication: vancomycin
+      patientId: P12345
+      weightKg:
+        "$serde_json::private::Number": "65"
+    name: calculateParameters
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      ageYears:
+        "$serde_json::private::Number": "72"
+      allergies:
+        - penicillin
+        - sulfa
+      currentMedications:
+        - metformin
+        - lisinopril
+      gfrValue:
+        "$serde_json::private::Number": "45"
+      hasLiverImpairment: false
+      hasRenalImpairment: true
+      isChild: false
+      isElderly: true
+      liverAdjustmentFactor:
+        "$serde_json::private::Number": "1"
+      liverFunction: normal
+      medication: vancomycin
+      patientId: P12345
+      renalAdjustmentFactor:
+        "$serde_json::private::Number": "0.75"
+      weightFactorAdult:
+        "$serde_json::private::Number": "0.9285714285714285714285714286"
+      weightFactorChild:
+        "$serde_json::private::Number": "2.1666666666666666666666666667"
+      weightKg:
+        "$serde_json::private::Number": "65"
+    performance: "[perf]"
+    traceData:
+      hasLiverImpairment:
+        result: false
+      hasRenalImpairment:
+        result: true
+      isChild:
+        result: false
+      isElderly:
+        result: true
+      liverAdjustmentFactor:
+        result:
+          "$serde_json::private::Number": "1"
+      renalAdjustmentFactor:
+        result:
+          "$serde_json::private::Number": "0.75"
+      weightFactorAdult:
+        result:
+          "$serde_json::private::Number": "0.9285714285714285714285714286"
+      weightFactorChild:
+        result:
+          "$serde_json::private::Number": "2.1666666666666666666666666667"
+  ip1:
+    id: ip1
+    input: ~
+    name: patientData
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      ageYears:
+        "$serde_json::private::Number": "72"
+      allergies:
+        - penicillin
+        - sulfa
+      currentMedications:
+        - metformin
+        - lisinopril
+      gfrValue:
+        "$serde_json::private::Number": "45"
+      liverFunction: normal
+      medication: vancomycin
+      patientId: P12345
+      weightKg:
+        "$serde_json::private::Number": "65"
+    performance: "[perf]"
+    traceData: ~

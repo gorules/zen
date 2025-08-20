@@ -1,0 +1,434 @@
+{
+  "tests": [
+    {
+      "input": {
+        "plan": {
+          "id": "LEGACY-PLAN-2019",
+          "name": "Legacy Unlimited Family Plan",
+          "ageInMonths": 48,
+          "dataAllowance": 25,
+          "internationalMinutes": 120,
+          "features": [
+            "Unlimited SMS",
+            "Free Evening Calls",
+            "Family Sharing"
+          ]
+        },
+        "customer": {
+          "id": "CUST-12345",
+          "tenureInMonths": 36,
+          "segment": "Family",
+          "location": "Urban"
+        }
+      },
+      "output": {
+        "migrationEligible": false,
+        "migrationOfferDetails": "Protected legacy plan - migration not recommended",
+        "recommendedPlanId": "LEGACY-PLAN-2019",
+        "simplifiedPlanName": "Legacy Unlimited Family Plan"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "requestNode",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "planName": "contains($, \"Legacy\")",
+            "planAge": "> 36",
+            "customerTenure": "> 24",
+            "o1": "'legacy'",
+            "o2": "true"
+          },
+          {
+            "_id": "rule2",
+            "planName": "contains($, \"Legacy\")",
+            "planAge": "> 24",
+            "customerTenure": "",
+            "o1": "'legacy'",
+            "o2": "false"
+          },
+          {
+            "_id": "rule3",
+            "planName": "contains($, \"Value\") or contains($, \"Essential\")",
+            "planAge": "",
+            "customerTenure": "",
+            "o1": "'value'",
+            "o2": "false"
+          },
+          {
+            "_id": "rule4",
+            "planName": "contains($, \"Premium\") or contains($, \"Unlimited\")",
+            "planAge": "",
+            "customerTenure": "",
+            "o1": "'premium'",
+            "o2": "false"
+          },
+          {
+            "_id": "rule5",
+            "planName": "",
+            "planAge": "",
+            "customerTenure": "",
+            "o1": "'standard'",
+            "o2": "false"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "planName",
+            "name": "Plan Name",
+            "field": "plan.name"
+          },
+          {
+            "id": "planAge",
+            "name": "Plan Age (months)",
+            "field": "plan.ageInMonths"
+          },
+          {
+            "id": "customerTenure",
+            "name": "Customer Tenure (months)",
+            "field": "customer.tenureInMonths"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Plan Category",
+            "field": "planDetails.category"
+          },
+          {
+            "id": "o2",
+            "name": "Grandfathered",
+            "field": "planDetails.isGrandfathered"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "planIdentifier",
+      "name": "identifyPlanType",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "benefitRule1",
+            "planCategory": "'legacy'",
+            "isGrandfathered": "true",
+            "o1": "plan.dataAllowance",
+            "o2": "true",
+            "o3": "plan.internationalMinutes",
+            "o4": "'This is a grandfathered legacy plan with protected benefits.'"
+          },
+          {
+            "_id": "benefitRule2",
+            "planCategory": "'legacy'",
+            "isGrandfathered": "false",
+            "o1": "plan.dataAllowance",
+            "o2": "false",
+            "o3": "10",
+            "o4": "'This is a legacy plan eligible for migration to our current offerings.'"
+          },
+          {
+            "_id": "benefitRule3",
+            "planCategory": "'premium'",
+            "isGrandfathered": "",
+            "o1": "50",
+            "o2": "true",
+            "o3": "100",
+            "o4": "'Premium plan with our highest tier of benefits.'"
+          },
+          {
+            "_id": "benefitRule4",
+            "planCategory": "'value'",
+            "isGrandfathered": "",
+            "o1": "15",
+            "o2": "false",
+            "o3": "0",
+            "o4": "'Value plan with essential features.'"
+          },
+          {
+            "_id": "benefitRule5",
+            "planCategory": "",
+            "isGrandfathered": "",
+            "o1": "25",
+            "o2": "false",
+            "o3": "50",
+            "o4": "'Standard plan with balanced features.'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "planCategory",
+            "name": "Plan Category",
+            "field": "planDetails.category"
+          },
+          {
+            "id": "isGrandfathered",
+            "name": "Is Grandfathered",
+            "field": "planDetails.isGrandfathered"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Data Allowance (GB)",
+            "field": "planDetails.dataAllowanceGB"
+          },
+          {
+            "id": "o2",
+            "name": "Retain Special Features",
+            "field": "planDetails.retainSpecialFeatures"
+          },
+          {
+            "id": "o3",
+            "name": "International Minutes",
+            "field": "planDetails.internationalMinutes"
+          },
+          {
+            "id": "o4",
+            "name": "Plan Description",
+            "field": "planDetails.description"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "planBenefits",
+      "name": "determineBenefits",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "mappingRule1",
+            "category": "'legacy'",
+            "grandfathered": "true",
+            "o1": "plan.name",
+            "o2": "plan.id"
+          },
+          {
+            "_id": "mappingRule2",
+            "category": "'legacy'",
+            "grandfathered": "false",
+            "o1": "'Telco Essentials Plus'",
+            "o2": "'PLAN-ESS-001'"
+          },
+          {
+            "_id": "mappingRule3",
+            "category": "'premium'",
+            "grandfathered": "",
+            "o1": "'Telco Premium Unlimited'",
+            "o2": "'PLAN-PREM-001'"
+          },
+          {
+            "_id": "mappingRule4",
+            "category": "'value'",
+            "grandfathered": "",
+            "o1": "'Telco Essentials'",
+            "o2": "'PLAN-VAL-001'"
+          },
+          {
+            "_id": "mappingRule5",
+            "category": "",
+            "grandfathered": "",
+            "o1": "'Telco Standard'",
+            "o2": "'PLAN-STD-001'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "category",
+            "name": "Plan Category",
+            "field": "planDetails.category"
+          },
+          {
+            "id": "grandfathered",
+            "name": "Is Grandfathered",
+            "field": "planDetails.isGrandfathered"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Simplified Plan Name",
+            "field": "simplifiedPlanName"
+          },
+          {
+            "id": "o2",
+            "name": "Recommended Plan ID",
+            "field": "recommendedPlanId"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "planMapping",
+      "name": "mapToCurrentCatalog",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "migrationRule1",
+            "category": "'legacy'",
+            "grandfathered": "true",
+            "o1": "false",
+            "o2": "'Protected legacy plan - migration not recommended'"
+          },
+          {
+            "_id": "migrationRule2",
+            "category": "'legacy'",
+            "grandfathered": "false",
+            "o1": "true",
+            "o2": "'Eligible for migration to Telco Essentials Plus with 3 months promotional pricing'"
+          },
+          {
+            "_id": "migrationRule3",
+            "category": "",
+            "grandfathered": "",
+            "o1": "false",
+            "o2": "'Current catalog plan - no migration needed'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "category",
+            "name": "Plan Category",
+            "field": "planDetails.category"
+          },
+          {
+            "id": "grandfathered",
+            "name": "Is Grandfathered",
+            "field": "planDetails.isGrandfathered"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Migration Eligible",
+            "field": "migrationEligible"
+          },
+          {
+            "id": "o2",
+            "name": "Migration Offer Details",
+            "field": "migrationOfferDetails"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "migrationEligibility",
+      "name": "determineMigrationEligibility",
+      "position": {
+        "x": 1390,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "80330def-ddbf-4b19-a7f6-bc18ff007bf2",
+            "key": "plan",
+            "value": "null"
+          },
+          {
+            "id": "7940de78-cff0-4041-a5d6-afcfd69b16f3",
+            "key": "planDetails",
+            "value": "null"
+          },
+          {
+            "id": "76c7ccef-80e4-4cd5-8a1a-cd45573ec070",
+            "key": "customer",
+            "value": "null"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "e2398550-dac8-4d1f-a720-e09291e34f2e",
+      "name": "omitFields",
+      "position": {
+        "x": 1710,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "requestNode",
+      "targetId": "planIdentifier",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "planIdentifier",
+      "targetId": "planBenefits",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "planBenefits",
+      "targetId": "planMapping",
+      "type": "edge"
+    },
+    {
+      "id": "edge4",
+      "sourceId": "planMapping",
+      "targetId": "migrationEligibility",
+      "type": "edge"
+    },
+    {
+      "id": "84bb7505-4ff7-420d-9a9e-673a87e81c98",
+      "sourceId": "migrationEligibility",
+      "type": "edge",
+      "targetId": "e2398550-dac8-4d1f-a720-e09291e34f2e"
+    }
+  ]
+}

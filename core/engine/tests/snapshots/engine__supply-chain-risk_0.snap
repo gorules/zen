@@ -1,0 +1,303 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  adjustedRiskScore:
+    "$serde_json::private::Number": "57"
+  assessment:
+    baseRiskCategory: medium
+    baseRiskScore:
+      "$serde_json::private::Number": "40"
+    recommendedAction: Monitor supplier performance and conduct quarterly reviews
+  finalAssessment:
+    leadTimeImpact: minor
+    priorityLevel: medium
+    riskCategory: medium
+  geopoliticalFactor:
+    "$serde_json::private::Number": "1.3"
+  geopoliticalTensions: true
+  leadTimeData:
+    averageDays:
+      "$serde_json::private::Number": "45"
+    historicalVariance:
+      "$serde_json::private::Number": "8"
+  marketVolatility: medium
+  marketVolatilityFactor:
+    "$serde_json::private::Number": "1.1"
+  supplier:
+    alternateSourcesCount:
+      "$serde_json::private::Number": "2"
+    location: medium_risk_region
+    name: GlobalTech Supplies Inc.
+    performanceScore:
+      "$serde_json::private::Number": "82"
+    products:
+      - criticalComponent: true
+        id: P123
+        name: Semiconductor Chip
+    relationshipDurationMonths:
+      "$serde_json::private::Number": "36"
+  supplyCategory: electronics
+trace:
+  geopoliticalRiskCalculation:
+    id: geopoliticalRiskCalculation
+    input:
+      assessment:
+        baseRiskCategory: medium
+        baseRiskScore:
+          "$serde_json::private::Number": "40"
+        recommendedAction: Monitor supplier performance and conduct quarterly reviews
+      geopoliticalTensions: true
+      leadTimeData:
+        averageDays:
+          "$serde_json::private::Number": "45"
+        historicalVariance:
+          "$serde_json::private::Number": "8"
+      marketVolatility: medium
+      supplier:
+        alternateSourcesCount:
+          "$serde_json::private::Number": "2"
+        location: medium_risk_region
+        name: GlobalTech Supplies Inc.
+        performanceScore:
+          "$serde_json::private::Number": "82"
+        products:
+          - criticalComponent: true
+            id: P123
+            name: Semiconductor Chip
+        relationshipDurationMonths:
+          "$serde_json::private::Number": "36"
+      supplyCategory: electronics
+    name: geopoliticalRiskCalculation
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      adjustedRiskScore:
+        "$serde_json::private::Number": "57"
+      assessment:
+        baseRiskCategory: medium
+        baseRiskScore:
+          "$serde_json::private::Number": "40"
+        recommendedAction: Monitor supplier performance and conduct quarterly reviews
+      geopoliticalFactor:
+        "$serde_json::private::Number": "1.3"
+      geopoliticalTensions: true
+      leadTimeData:
+        averageDays:
+          "$serde_json::private::Number": "45"
+        historicalVariance:
+          "$serde_json::private::Number": "8"
+      marketVolatility: medium
+      marketVolatilityFactor:
+        "$serde_json::private::Number": "1.1"
+      supplier:
+        alternateSourcesCount:
+          "$serde_json::private::Number": "2"
+        location: medium_risk_region
+        name: GlobalTech Supplies Inc.
+        performanceScore:
+          "$serde_json::private::Number": "82"
+        products:
+          - criticalComponent: true
+            id: P123
+            name: Semiconductor Chip
+        relationshipDurationMonths:
+          "$serde_json::private::Number": "36"
+      supplyCategory: electronics
+    performance: "[perf]"
+    traceData:
+      adjustedRiskScore:
+        result:
+          "$serde_json::private::Number": "57"
+      geopoliticalFactor:
+        result:
+          "$serde_json::private::Number": "1.3"
+      marketVolatilityFactor:
+        result:
+          "$serde_json::private::Number": "1.1"
+  input:
+    id: input
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      geopoliticalTensions: true
+      leadTimeData:
+        averageDays:
+          "$serde_json::private::Number": "45"
+        historicalVariance:
+          "$serde_json::private::Number": "8"
+      marketVolatility: medium
+      supplier:
+        alternateSourcesCount:
+          "$serde_json::private::Number": "2"
+        location: medium_risk_region
+        name: GlobalTech Supplies Inc.
+        performanceScore:
+          "$serde_json::private::Number": "82"
+        products:
+          - criticalComponent: true
+            id: P123
+            name: Semiconductor Chip
+        relationshipDurationMonths:
+          "$serde_json::private::Number": "36"
+      supplyCategory: electronics
+    performance: "[perf]"
+    traceData: ~
+  overallRiskAssessment:
+    id: overallRiskAssessment
+    input:
+      adjustedRiskScore:
+        "$serde_json::private::Number": "57"
+      assessment:
+        baseRiskCategory: medium
+        baseRiskScore:
+          "$serde_json::private::Number": "40"
+        recommendedAction: Monitor supplier performance and conduct quarterly reviews
+      geopoliticalFactor:
+        "$serde_json::private::Number": "1.3"
+      geopoliticalTensions: true
+      leadTimeData:
+        averageDays:
+          "$serde_json::private::Number": "45"
+        historicalVariance:
+          "$serde_json::private::Number": "8"
+      marketVolatility: medium
+      marketVolatilityFactor:
+        "$serde_json::private::Number": "1.1"
+      supplier:
+        alternateSourcesCount:
+          "$serde_json::private::Number": "2"
+        location: medium_risk_region
+        name: GlobalTech Supplies Inc.
+        performanceScore:
+          "$serde_json::private::Number": "82"
+        products:
+          - criticalComponent: true
+            id: P123
+            name: Semiconductor Chip
+        relationshipDurationMonths:
+          "$serde_json::private::Number": "36"
+      supplyCategory: electronics
+    name: overallRiskAssessment
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      adjustedRiskScore:
+        "$serde_json::private::Number": "57"
+      assessment:
+        baseRiskCategory: medium
+        baseRiskScore:
+          "$serde_json::private::Number": "40"
+        recommendedAction: Monitor supplier performance and conduct quarterly reviews
+      finalAssessment:
+        leadTimeImpact: minor
+        priorityLevel: medium
+        riskCategory: medium
+      geopoliticalFactor:
+        "$serde_json::private::Number": "1.3"
+      geopoliticalTensions: true
+      leadTimeData:
+        averageDays:
+          "$serde_json::private::Number": "45"
+        historicalVariance:
+          "$serde_json::private::Number": "8"
+      marketVolatility: medium
+      marketVolatilityFactor:
+        "$serde_json::private::Number": "1.1"
+      supplier:
+        alternateSourcesCount:
+          "$serde_json::private::Number": "2"
+        location: medium_risk_region
+        name: GlobalTech Supplies Inc.
+        performanceScore:
+          "$serde_json::private::Number": "82"
+        products:
+          - criticalComponent: true
+            id: P123
+            name: Semiconductor Chip
+        relationshipDurationMonths:
+          "$serde_json::private::Number": "36"
+      supplyCategory: electronics
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "2"
+      reference_map:
+        adjustedRiskScore:
+          "$serde_json::private::Number": "57"
+      rule:
+        _id: finalRule3
+        "adjustedRiskScore[adjustedRiskScore]": ">= 40"
+  supplierRiskEvaluation:
+    id: supplierRiskEvaluation
+    input:
+      geopoliticalTensions: true
+      leadTimeData:
+        averageDays:
+          "$serde_json::private::Number": "45"
+        historicalVariance:
+          "$serde_json::private::Number": "8"
+      marketVolatility: medium
+      supplier:
+        alternateSourcesCount:
+          "$serde_json::private::Number": "2"
+        location: medium_risk_region
+        name: GlobalTech Supplies Inc.
+        performanceScore:
+          "$serde_json::private::Number": "82"
+        products:
+          - criticalComponent: true
+            id: P123
+            name: Semiconductor Chip
+        relationshipDurationMonths:
+          "$serde_json::private::Number": "36"
+      supplyCategory: electronics
+    name: supplierRiskEvaluation
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      assessment:
+        baseRiskCategory: medium
+        baseRiskScore:
+          "$serde_json::private::Number": "40"
+        recommendedAction: Monitor supplier performance and conduct quarterly reviews
+      geopoliticalTensions: true
+      leadTimeData:
+        averageDays:
+          "$serde_json::private::Number": "45"
+        historicalVariance:
+          "$serde_json::private::Number": "8"
+      marketVolatility: medium
+      supplier:
+        alternateSourcesCount:
+          "$serde_json::private::Number": "2"
+        location: medium_risk_region
+        name: GlobalTech Supplies Inc.
+        performanceScore:
+          "$serde_json::private::Number": "82"
+        products:
+          - criticalComponent: true
+            id: P123
+            name: Semiconductor Chip
+        relationshipDurationMonths:
+          "$serde_json::private::Number": "36"
+      supplyCategory: electronics
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "3"
+      reference_map:
+        supplier.alternateSourcesCount:
+          "$serde_json::private::Number": "2"
+        supplier.location: medium_risk_region
+        supplier.performanceScore:
+          "$serde_json::private::Number": "82"
+      rule:
+        _id: rule4
+        "supplier.alternateSourcesCount[alternativeSources]": ""
+        "supplier.location[supplierLocation]": "'medium_risk_region'"
+        "supplier.performanceScore[historicalPerformance]": ">= 80"

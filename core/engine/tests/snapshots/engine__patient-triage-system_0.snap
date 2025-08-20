@@ -1,0 +1,281 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  highestFlag: orange
+  maxWaitTimeMinutes:
+    "$serde_json::private::Number": "10"
+  priorityLevel: Level 2 - Very Urgent
+trace:
+  calculatePriority:
+    id: calculatePriority
+    input:
+      chiefComplaint: fracture
+      flags:
+        complaintFlag: orange
+        symptomFlag: orange
+        vitalFlag: green
+      scores:
+        complaintScore:
+          "$serde_json::private::Number": "20"
+        symptomScore:
+          "$serde_json::private::Number": "20"
+        vitalScore:
+          "$serde_json::private::Number": "0"
+      symptoms:
+        - moderate pain
+        - fever
+        - dizziness
+      vitals:
+        heartRate:
+          "$serde_json::private::Number": "115"
+        oxygenSaturation:
+          "$serde_json::private::Number": "94"
+        respiratoryRate:
+          "$serde_json::private::Number": "24"
+        systolicBP:
+          "$serde_json::private::Number": "165"
+        temperature:
+          "$serde_json::private::Number": "38.7"
+    name: calculate_priority_level
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      highestFlag: orange
+      maxWaitTimeMinutes:
+        "$serde_json::private::Number": "10"
+      priorityLevel: Level 2 - Very Urgent
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "2"
+      reference_map:
+        scores.vitalScore + scores.symptomScore + scores.complaintScore:
+          "$serde_json::private::Number": "40"
+        values(flags):
+          - green
+          - orange
+          - orange
+      rule:
+        _id: cp3
+        "scores.vitalScore + scores.symptomScore + scores.complaintScore[i2]": ">= 40"
+        "values(flags)[i1]": "contains($, 'orange')"
+  chiefComplaint:
+    id: chiefComplaint
+    input:
+      chiefComplaint: fracture
+      flags:
+        symptomFlag: orange
+        vitalFlag: green
+      scores:
+        symptomScore:
+          "$serde_json::private::Number": "20"
+        vitalScore:
+          "$serde_json::private::Number": "0"
+      symptoms:
+        - moderate pain
+        - fever
+        - dizziness
+      vitals:
+        heartRate:
+          "$serde_json::private::Number": "115"
+        oxygenSaturation:
+          "$serde_json::private::Number": "94"
+        respiratoryRate:
+          "$serde_json::private::Number": "24"
+        systolicBP:
+          "$serde_json::private::Number": "165"
+        temperature:
+          "$serde_json::private::Number": "38.7"
+    name: chief_complaint_assessment
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      chiefComplaint: fracture
+      flags:
+        complaintFlag: orange
+        symptomFlag: orange
+        vitalFlag: green
+      scores:
+        complaintScore:
+          "$serde_json::private::Number": "20"
+        symptomScore:
+          "$serde_json::private::Number": "20"
+        vitalScore:
+          "$serde_json::private::Number": "0"
+      symptoms:
+        - moderate pain
+        - fever
+        - dizziness
+      vitals:
+        heartRate:
+          "$serde_json::private::Number": "115"
+        oxygenSaturation:
+          "$serde_json::private::Number": "94"
+        respiratoryRate:
+          "$serde_json::private::Number": "24"
+        systolicBP:
+          "$serde_json::private::Number": "165"
+        temperature:
+          "$serde_json::private::Number": "38.7"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        chiefComplaint: fracture
+      rule:
+        _id: cc2
+        "chiefComplaint[i1]": "\"fracture\", \"deep cut\", \"burn\", \"allergic reaction\", \"infection\", \"pregnancy complication\""
+  input:
+    id: input
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      chiefComplaint: fracture
+      symptoms:
+        - moderate pain
+        - fever
+        - dizziness
+      vitals:
+        heartRate:
+          "$serde_json::private::Number": "115"
+        oxygenSaturation:
+          "$serde_json::private::Number": "94"
+        respiratoryRate:
+          "$serde_json::private::Number": "24"
+        systolicBP:
+          "$serde_json::private::Number": "165"
+        temperature:
+          "$serde_json::private::Number": "38.7"
+    performance: "[perf]"
+    traceData: ~
+  symptoms:
+    id: symptoms
+    input:
+      chiefComplaint: fracture
+      flags:
+        vitalFlag: green
+      scores:
+        vitalScore:
+          "$serde_json::private::Number": "0"
+      symptoms:
+        - moderate pain
+        - fever
+        - dizziness
+      vitals:
+        heartRate:
+          "$serde_json::private::Number": "115"
+        oxygenSaturation:
+          "$serde_json::private::Number": "94"
+        respiratoryRate:
+          "$serde_json::private::Number": "24"
+        systolicBP:
+          "$serde_json::private::Number": "165"
+        temperature:
+          "$serde_json::private::Number": "38.7"
+    name: symptom_assessment
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      chiefComplaint: fracture
+      flags:
+        symptomFlag: orange
+        vitalFlag: green
+      scores:
+        symptomScore:
+          "$serde_json::private::Number": "20"
+        vitalScore:
+          "$serde_json::private::Number": "0"
+      symptoms:
+        - moderate pain
+        - fever
+        - dizziness
+      vitals:
+        heartRate:
+          "$serde_json::private::Number": "115"
+        oxygenSaturation:
+          "$serde_json::private::Number": "94"
+        respiratoryRate:
+          "$serde_json::private::Number": "24"
+        systolicBP:
+          "$serde_json::private::Number": "165"
+        temperature:
+          "$serde_json::private::Number": "38.7"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map: {}
+      rule:
+        _id: sym2
+  vitalSigns:
+    id: vitalSigns
+    input:
+      chiefComplaint: fracture
+      symptoms:
+        - moderate pain
+        - fever
+        - dizziness
+      vitals:
+        heartRate:
+          "$serde_json::private::Number": "115"
+        oxygenSaturation:
+          "$serde_json::private::Number": "94"
+        respiratoryRate:
+          "$serde_json::private::Number": "24"
+        systolicBP:
+          "$serde_json::private::Number": "165"
+        temperature:
+          "$serde_json::private::Number": "38.7"
+    name: vital_signs_assessment
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      chiefComplaint: fracture
+      flags:
+        vitalFlag: green
+      scores:
+        vitalScore:
+          "$serde_json::private::Number": "0"
+      symptoms:
+        - moderate pain
+        - fever
+        - dizziness
+      vitals:
+        heartRate:
+          "$serde_json::private::Number": "115"
+        oxygenSaturation:
+          "$serde_json::private::Number": "94"
+        respiratoryRate:
+          "$serde_json::private::Number": "24"
+        systolicBP:
+          "$serde_json::private::Number": "165"
+        temperature:
+          "$serde_json::private::Number": "38.7"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "3"
+      reference_map:
+        vitals.heartRate:
+          "$serde_json::private::Number": "115"
+        vitals.oxygenSaturation:
+          "$serde_json::private::Number": "94"
+        vitals.respiratoryRate:
+          "$serde_json::private::Number": "24"
+        vitals.systolicBP:
+          "$serde_json::private::Number": "165"
+        vitals.temperature:
+          "$serde_json::private::Number": "38.7"
+      rule:
+        _id: vs4
+        "vitals.heartRate[i2]": ""
+        "vitals.oxygenSaturation[i5]": ""
+        "vitals.respiratoryRate[i3]": ""
+        "vitals.systolicBP[i4]": ""
+        "vitals.temperature[i1]": ""

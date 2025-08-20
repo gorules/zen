@@ -1,0 +1,466 @@
+{
+  "tests": [
+    {
+      "input": {
+        "passenger": {
+          "id": "P123456",
+          "name": "Jane Smith",
+          "ticketStatus": "confirmed",
+          "flightStatus": "scheduled",
+          "checkInStatus": "completed",
+          "loyaltyStatus": "gold",
+          "loyaltyMiles": 82500,
+          "fareClass": "premium economy"
+        },
+        "flight": {
+          "flightNumber": "FL789",
+          "departureDate": "2025-04-15",
+          "route": "LHR-JFK",
+          "cabinAvailability": 7
+        },
+        "corporate": {
+          "agreementLevel": "premier",
+          "upgradeEligible": true,
+          "companyName": "Acme Corporation"
+        }
+      },
+      "output": {
+        "result": {
+          "isEligible": false,
+          "reason": "Check-in not completed",
+          "score": 0
+        }
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "input",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i1-1": "!= 'confirmed'",
+            "o1-1": "false",
+            "o1-2": "'Ticket not confirmed'"
+          },
+          {
+            "_id": "rule2",
+            "i1-1": "'cancelled'",
+            "o1-1": "false",
+            "o1-2": "'Flight cancelled'"
+          },
+          {
+            "_id": "rule3",
+            "i1-1": "!= 'completed'",
+            "o1-1": "false",
+            "o1-2": "'Check-in not completed'"
+          },
+          {
+            "_id": "rule4",
+            "i1-1": "",
+            "o1-1": "true",
+            "o1-2": "'Basic eligibility confirmed'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Ticket status",
+            "field": "passenger.ticketStatus"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "IsEligible",
+            "field": "basicEligibility.isEligible"
+          },
+          {
+            "id": "o1-2",
+            "name": "Reason",
+            "field": "basicEligibility.reason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "checkBasicEligibility",
+      "name": "checkBasicEligibility",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i2-1": "'platinum'",
+            "i2-2": "> 100000",
+            "o2-1": "50"
+          },
+          {
+            "_id": "rule2",
+            "i2-1": "'platinum'",
+            "i2-2": "",
+            "o2-1": "40"
+          },
+          {
+            "_id": "rule3",
+            "i2-1": "'gold'",
+            "i2-2": "> 75000",
+            "o2-1": "35"
+          },
+          {
+            "_id": "rule4",
+            "i2-1": "'gold'",
+            "i2-2": "",
+            "o2-1": "30"
+          },
+          {
+            "_id": "rule5",
+            "i2-1": "'silver'",
+            "i2-2": "> 50000",
+            "o2-1": "25"
+          },
+          {
+            "_id": "rule6",
+            "i2-1": "'silver'",
+            "i2-2": "",
+            "o2-1": "20"
+          },
+          {
+            "_id": "rule7",
+            "i2-1": "'member'",
+            "i2-2": "> 25000",
+            "o2-1": "15"
+          },
+          {
+            "_id": "rule8",
+            "i2-1": "'member'",
+            "i2-2": "",
+            "o2-1": "10"
+          },
+          {
+            "_id": "rule9",
+            "i2-1": "",
+            "i2-2": "",
+            "o2-1": "0"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i2-1",
+            "name": "Status",
+            "field": "passenger.loyaltyStatus"
+          },
+          {
+            "id": "i2-2",
+            "name": "Miles",
+            "field": "passenger.loyaltyMiles"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2-1",
+            "name": "Score",
+            "field": "scores.loyalty"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "calculateLoyaltyScore",
+      "name": "calculateLoyaltyScore",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i3-1": "'business'",
+            "o3-1": "30"
+          },
+          {
+            "_id": "rule2",
+            "i3-1": "'premium economy'",
+            "o3-1": "20"
+          },
+          {
+            "_id": "rule3",
+            "i3-1": "'economy flex'",
+            "o3-1": "15"
+          },
+          {
+            "_id": "rule4",
+            "i3-1": "'economy standard'",
+            "o3-1": "10"
+          },
+          {
+            "_id": "rule5",
+            "i3-1": "'economy basic'",
+            "o3-1": "5"
+          },
+          {
+            "_id": "rule6",
+            "i3-1": "",
+            "o3-1": "0"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i3-1",
+            "name": "FareClass",
+            "field": "passenger.fareClass"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o3-1",
+            "name": "Score",
+            "field": "scores.fare"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "calculateFareScore",
+      "name": "calculateFareScore",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i4-1": "'premier'",
+            "i4-2": "true",
+            "o4-1": "25"
+          },
+          {
+            "_id": "rule2",
+            "i4-1": "'standard'",
+            "i4-2": "true",
+            "o4-1": "15"
+          },
+          {
+            "_id": "rule3",
+            "i4-1": "!= null",
+            "i4-2": "",
+            "o4-1": "5"
+          },
+          {
+            "_id": "rule4",
+            "i4-1": "",
+            "i4-2": "",
+            "o4-1": "0"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i4-1",
+            "name": "Agreement Level",
+            "field": "corporate.agreementLevel"
+          },
+          {
+            "id": "i4-2",
+            "name": "Eligible",
+            "field": "corporate.upgradeEligible"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o4-1",
+            "name": "Score",
+            "field": "scores.corporate"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "checkCorporateAgreement",
+      "name": "checkCorporateAgreement",
+      "position": {
+        "x": 1390,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "expr1",
+            "key": "totalScore",
+            "value": "scores.loyalty + scores.fare + scores.corporate"
+          },
+          {
+            "id": "expr2",
+            "key": "cabinMultiplier",
+            "value": "flight.cabinAvailability > 10 ? 1.2 :  flight.cabinAvailability > 5 ? 1.0 :  flight.cabinAvailability > 2 ? 0.8 : 0.5"
+          },
+          {
+            "id": "expr3",
+            "key": "finalScore",
+            "value": "$.totalScore * $.cabinMultiplier"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "evaluateCabinAvailability",
+      "name": "evaluateCabinAvailability",
+      "position": {
+        "x": 1710,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i5-1": "basicEligibility.isEligible == false",
+            "o5-1": "false",
+            "o5-2": "basicEligibility.reason",
+            "o5-3": "0"
+          },
+          {
+            "_id": "rule2",
+            "i5-1": "finalScore >= 75",
+            "o5-1": "true",
+            "o5-2": "'Premium upgrade approved'",
+            "o5-3": "finalScore"
+          },
+          {
+            "_id": "rule3",
+            "i5-1": "finalScore >= 50",
+            "o5-1": "true",
+            "o5-2": "'Standard upgrade approved'",
+            "o5-3": "finalScore"
+          },
+          {
+            "_id": "rule4",
+            "i5-1": "",
+            "o5-1": "false",
+            "o5-2": "'Insufficient score for upgrade'",
+            "o5-3": "finalScore"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i5-1",
+            "name": "Condition"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o5-1",
+            "name": "Eligible",
+            "field": "result.isEligible"
+          },
+          {
+            "id": "o5-2",
+            "name": "Reason",
+            "field": "result.reason"
+          },
+          {
+            "id": "o5-3",
+            "name": "Score",
+            "field": "result.score"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "determineUpgradeEligibility",
+      "name": "determineUpgradeEligibility",
+      "position": {
+        "x": 2030,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "input",
+      "targetId": "checkBasicEligibility",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "checkBasicEligibility",
+      "targetId": "calculateLoyaltyScore",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "calculateLoyaltyScore",
+      "targetId": "calculateFareScore",
+      "type": "edge"
+    },
+    {
+      "id": "edge4",
+      "sourceId": "calculateFareScore",
+      "targetId": "checkCorporateAgreement",
+      "type": "edge"
+    },
+    {
+      "id": "edge5",
+      "sourceId": "checkCorporateAgreement",
+      "targetId": "evaluateCabinAvailability",
+      "type": "edge"
+    },
+    {
+      "id": "edge6",
+      "sourceId": "evaluateCabinAvailability",
+      "targetId": "determineUpgradeEligibility",
+      "type": "edge"
+    }
+  ]
+}

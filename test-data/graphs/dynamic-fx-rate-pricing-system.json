@@ -1,0 +1,237 @@
+{
+  "tests": [
+    {
+      "input": {
+        "product": {
+          "id": "PRD-12345",
+          "name": "Luxury Watch",
+          "basePrice": 8500
+        },
+        "baseCurrency": "USD",
+        "targetCurrency": "EUR",
+        "quantity": 1,
+        "customerTier": "gold"
+      },
+      "output": {
+        "fxDetails": {
+          "discount": 0.015,
+          "message": "Luxury products receive favorable rates",
+          "rate": 0.91
+        }
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "inputNode",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i1-1": ">= 10000",
+            "o1-1": "'premium'"
+          },
+          {
+            "_id": "rule2",
+            "i1-1": ">= 5000",
+            "o1-1": "'luxury'"
+          },
+          {
+            "_id": "rule3",
+            "i1-1": ">= 1000",
+            "o1-1": "'mid-range'"
+          },
+          {
+            "_id": "rule4",
+            "i1-1": "",
+            "o1-1": "'standard'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Product Price",
+            "field": "product.basePrice"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Product Category",
+            "field": "product.category"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "productCategoryDT",
+      "name": "determineProductCategory",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i2-1": "'premium'",
+            "i2-2": "'USD'",
+            "i2-3": "'EUR'",
+            "o2-1": "0.90",
+            "o2-2": "0.02",
+            "o2-3": "'Premium products receive our most favorable rate'"
+          },
+          {
+            "_id": "rule2",
+            "i2-1": "'premium'",
+            "i2-2": "'USD'",
+            "i2-3": "'GBP'",
+            "o2-1": "0.78",
+            "o2-2": "0.02",
+            "o2-3": "'Premium products receive our most favorable rate'"
+          },
+          {
+            "_id": "rule3",
+            "i2-1": "'luxury'",
+            "i2-2": "'USD'",
+            "i2-3": "'EUR'",
+            "o2-1": "0.91",
+            "o2-2": "0.015",
+            "o2-3": "'Luxury products receive favorable rates'"
+          },
+          {
+            "_id": "rule4",
+            "i2-1": "'luxury'",
+            "i2-2": "'USD'",
+            "i2-3": "'GBP'",
+            "o2-1": "0.79",
+            "o2-2": "0.015",
+            "o2-3": "'Luxury products receive favorable rates'"
+          },
+          {
+            "_id": "rule5",
+            "i2-1": "'mid-range'",
+            "i2-2": "'USD'",
+            "i2-3": "'EUR'",
+            "o2-1": "0.92",
+            "o2-2": "0.01",
+            "o2-3": "'Mid-range products receive standard rates'"
+          },
+          {
+            "_id": "rule6",
+            "i2-1": "'mid-range'",
+            "i2-2": "'USD'",
+            "i2-3": "'GBP'",
+            "o2-1": "0.80",
+            "o2-2": "0.01",
+            "o2-3": "'Mid-range products receive standard rates'"
+          },
+          {
+            "_id": "rule7",
+            "i2-1": "'standard'",
+            "i2-2": "'USD'",
+            "i2-3": "'EUR'",
+            "o2-1": "0.93",
+            "o2-2": "0",
+            "o2-3": "'Standard products receive base rates'"
+          },
+          {
+            "_id": "rule8",
+            "i2-1": "'standard'",
+            "i2-2": "'USD'",
+            "i2-3": "'GBP'",
+            "o2-1": "0.81",
+            "o2-2": "0",
+            "o2-3": "'Standard products receive base rates'"
+          },
+          {
+            "_id": "rule9",
+            "i2-1": "",
+            "i2-2": "",
+            "i2-3": "",
+            "o2-1": "1.0",
+            "o2-2": "0",
+            "o2-3": "'Default base rate applied'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i2-1",
+            "name": "Category",
+            "field": "product.category"
+          },
+          {
+            "id": "i2-2",
+            "name": "Base Currency",
+            "field": "baseCurrency"
+          },
+          {
+            "id": "i2-3",
+            "name": "Target Currency",
+            "field": "targetCurrency"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2-1",
+            "name": "FX Rate",
+            "field": "fxDetails.rate"
+          },
+          {
+            "id": "o2-2",
+            "name": "Discount",
+            "field": "fxDetails.discount"
+          },
+          {
+            "id": "o2-3",
+            "name": "Message",
+            "field": "fxDetails.message"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "fxRateAdjustmentDT",
+      "name": "determineFXRateAdjustment",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "inputNode",
+      "targetId": "productCategoryDT",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "productCategoryDT",
+      "targetId": "fxRateAdjustmentDT",
+      "type": "edge"
+    }
+  ]
+}

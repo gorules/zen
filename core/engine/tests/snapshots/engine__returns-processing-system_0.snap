@@ -1,0 +1,396 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  customer:
+    id: CUST-12345
+    membershipTier: premium
+    returnsHistoryCount:
+      "$serde_json::private::Number": "3"
+  isFrequentReturner: false
+  isHighValueCustomer: true
+  isHighValueItem: true
+  isPurchaseWithinWarranty: true
+  product:
+    condition: damaged
+    daysFromPurchase:
+      "$serde_json::private::Number": "12"
+    price:
+      "$serde_json::private::Number": "249.99"
+    type: electronics
+  return:
+    hasReceipt: true
+    reason: "defective item - won't power on"
+  returnDetails:
+    customerCommunication: partial_approval
+    expectedProcessingDays:
+      "$serde_json::private::Number": "2"
+    priorityLevel: high
+    processingQueue: returns_dept
+    refundAmount:
+      "$serde_json::private::Number": "199.992"
+    restockingFee:
+      "$serde_json::private::Number": "10"
+    type: partial_refund
+trace:
+  communicationTable:
+    id: communicationTable
+    input:
+      customer:
+        id: CUST-12345
+        membershipTier: premium
+        returnsHistoryCount:
+          "$serde_json::private::Number": "3"
+      isFrequentReturner: false
+      isHighValueCustomer: true
+      isHighValueItem: true
+      isPurchaseWithinWarranty: true
+      product:
+        condition: damaged
+        daysFromPurchase:
+          "$serde_json::private::Number": "12"
+        price:
+          "$serde_json::private::Number": "249.99"
+        type: electronics
+      return:
+        hasReceipt: true
+        reason: "defective item - won't power on"
+      returnDetails:
+        expectedProcessingDays:
+          "$serde_json::private::Number": "2"
+        priorityLevel: high
+        processingQueue: returns_dept
+        refundAmount:
+          "$serde_json::private::Number": "199.992"
+        restockingFee:
+          "$serde_json::private::Number": "10"
+        type: partial_refund
+    name: determineCommunication
+    order:
+      "$serde_json::private::Number": "5"
+    output:
+      customer:
+        id: CUST-12345
+        membershipTier: premium
+        returnsHistoryCount:
+          "$serde_json::private::Number": "3"
+      isFrequentReturner: false
+      isHighValueCustomer: true
+      isHighValueItem: true
+      isPurchaseWithinWarranty: true
+      product:
+        condition: damaged
+        daysFromPurchase:
+          "$serde_json::private::Number": "12"
+        price:
+          "$serde_json::private::Number": "249.99"
+        type: electronics
+      return:
+        hasReceipt: true
+        reason: "defective item - won't power on"
+      returnDetails:
+        customerCommunication: partial_approval
+        expectedProcessingDays:
+          "$serde_json::private::Number": "2"
+        priorityLevel: high
+        processingQueue: returns_dept
+        refundAmount:
+          "$serde_json::private::Number": "199.992"
+        restockingFee:
+          "$serde_json::private::Number": "10"
+        type: partial_refund
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        returnDetails.type: partial_refund
+      rule:
+        _id: comm2
+        "returnDetails.type[returnType]": "'partial_refund', 'store_credit'"
+  customerStatus:
+    id: customerStatus
+    input:
+      customer:
+        id: CUST-12345
+        membershipTier: premium
+        returnsHistoryCount:
+          "$serde_json::private::Number": "3"
+      product:
+        condition: damaged
+        daysFromPurchase:
+          "$serde_json::private::Number": "12"
+        price:
+          "$serde_json::private::Number": "249.99"
+        type: electronics
+      return:
+        hasReceipt: true
+        reason: "defective item - won't power on"
+    name: customerEligibility
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      customer:
+        id: CUST-12345
+        membershipTier: premium
+        returnsHistoryCount:
+          "$serde_json::private::Number": "3"
+      isFrequentReturner: false
+      isHighValueCustomer: true
+      isHighValueItem: true
+      isPurchaseWithinWarranty: true
+      product:
+        condition: damaged
+        daysFromPurchase:
+          "$serde_json::private::Number": "12"
+        price:
+          "$serde_json::private::Number": "249.99"
+        type: electronics
+      return:
+        hasReceipt: true
+        reason: "defective item - won't power on"
+    performance: "[perf]"
+    traceData:
+      isFrequentReturner:
+        result: false
+      isHighValueCustomer:
+        result: true
+      isHighValueItem:
+        result: true
+      isPurchaseWithinWarranty:
+        result: true
+  input1:
+    id: input1
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      customer:
+        id: CUST-12345
+        membershipTier: premium
+        returnsHistoryCount:
+          "$serde_json::private::Number": "3"
+      product:
+        condition: damaged
+        daysFromPurchase:
+          "$serde_json::private::Number": "12"
+        price:
+          "$serde_json::private::Number": "249.99"
+        type: electronics
+      return:
+        hasReceipt: true
+        reason: "defective item - won't power on"
+    performance: "[perf]"
+    traceData: ~
+  priorityLevelTable:
+    id: priorityLevelTable
+    input:
+      customer:
+        id: CUST-12345
+        membershipTier: premium
+        returnsHistoryCount:
+          "$serde_json::private::Number": "3"
+      isFrequentReturner: false
+      isHighValueCustomer: true
+      isHighValueItem: true
+      isPurchaseWithinWarranty: true
+      product:
+        condition: damaged
+        daysFromPurchase:
+          "$serde_json::private::Number": "12"
+        price:
+          "$serde_json::private::Number": "249.99"
+        type: electronics
+      return:
+        hasReceipt: true
+        reason: "defective item - won't power on"
+      returnDetails:
+        processingQueue: returns_dept
+        refundAmount:
+          "$serde_json::private::Number": "199.992"
+        restockingFee:
+          "$serde_json::private::Number": "10"
+        type: partial_refund
+    name: determinePriorityLevel
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      customer:
+        id: CUST-12345
+        membershipTier: premium
+        returnsHistoryCount:
+          "$serde_json::private::Number": "3"
+      isFrequentReturner: false
+      isHighValueCustomer: true
+      isHighValueItem: true
+      isPurchaseWithinWarranty: true
+      product:
+        condition: damaged
+        daysFromPurchase:
+          "$serde_json::private::Number": "12"
+        price:
+          "$serde_json::private::Number": "249.99"
+        type: electronics
+      return:
+        hasReceipt: true
+        reason: "defective item - won't power on"
+      returnDetails:
+        expectedProcessingDays:
+          "$serde_json::private::Number": "2"
+        priorityLevel: high
+        processingQueue: returns_dept
+        refundAmount:
+          "$serde_json::private::Number": "199.992"
+        restockingFee:
+          "$serde_json::private::Number": "10"
+        type: partial_refund
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        isHighValueCustomer: true
+        isHighValueItem: true
+      rule:
+        _id: priority1
+        "isHighValueCustomer[highValueCustomer]": "true"
+        "isHighValueItem[highValueItem]": ""
+  processingQueueTable:
+    id: processingQueueTable
+    input:
+      customer:
+        id: CUST-12345
+        membershipTier: premium
+        returnsHistoryCount:
+          "$serde_json::private::Number": "3"
+      isFrequentReturner: false
+      isHighValueCustomer: true
+      isHighValueItem: true
+      isPurchaseWithinWarranty: true
+      product:
+        condition: damaged
+        daysFromPurchase:
+          "$serde_json::private::Number": "12"
+        price:
+          "$serde_json::private::Number": "249.99"
+        type: electronics
+      return:
+        hasReceipt: true
+        reason: "defective item - won't power on"
+      returnDetails:
+        refundAmount:
+          "$serde_json::private::Number": "199.992"
+        restockingFee:
+          "$serde_json::private::Number": "10"
+        type: partial_refund
+    name: determineProcessingQueue
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      customer:
+        id: CUST-12345
+        membershipTier: premium
+        returnsHistoryCount:
+          "$serde_json::private::Number": "3"
+      isFrequentReturner: false
+      isHighValueCustomer: true
+      isHighValueItem: true
+      isPurchaseWithinWarranty: true
+      product:
+        condition: damaged
+        daysFromPurchase:
+          "$serde_json::private::Number": "12"
+        price:
+          "$serde_json::private::Number": "249.99"
+        type: electronics
+      return:
+        hasReceipt: true
+        reason: "defective item - won't power on"
+      returnDetails:
+        processingQueue: returns_dept
+        refundAmount:
+          "$serde_json::private::Number": "199.992"
+        restockingFee:
+          "$serde_json::private::Number": "10"
+        type: partial_refund
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "3"
+      reference_map:
+        returnDetails.type: partial_refund
+      rule:
+        _id: queue4
+        "returnDetails.type[returnType]": ""
+  returnsClassification:
+    id: returnsClassification
+    input:
+      customer:
+        id: CUST-12345
+        membershipTier: premium
+        returnsHistoryCount:
+          "$serde_json::private::Number": "3"
+      isFrequentReturner: false
+      isHighValueCustomer: true
+      isHighValueItem: true
+      isPurchaseWithinWarranty: true
+      product:
+        condition: damaged
+        daysFromPurchase:
+          "$serde_json::private::Number": "12"
+        price:
+          "$serde_json::private::Number": "249.99"
+        type: electronics
+      return:
+        hasReceipt: true
+        reason: "defective item - won't power on"
+    name: determineReturnType
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      customer:
+        id: CUST-12345
+        membershipTier: premium
+        returnsHistoryCount:
+          "$serde_json::private::Number": "3"
+      isFrequentReturner: false
+      isHighValueCustomer: true
+      isHighValueItem: true
+      isPurchaseWithinWarranty: true
+      product:
+        condition: damaged
+        daysFromPurchase:
+          "$serde_json::private::Number": "12"
+        price:
+          "$serde_json::private::Number": "249.99"
+        type: electronics
+      return:
+        hasReceipt: true
+        reason: "defective item - won't power on"
+      returnDetails:
+        refundAmount:
+          "$serde_json::private::Number": "199.992"
+        restockingFee:
+          "$serde_json::private::Number": "10"
+        type: partial_refund
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        product.condition: damaged
+        product.daysFromPurchase:
+          "$serde_json::private::Number": "12"
+        product.type: electronics
+        return.hasReceipt: true
+        return.reason: "defective item - won't power on"
+      rule:
+        _id: rule2
+        "product.condition[productCondition]": "'damaged', 'opened'"
+        "product.daysFromPurchase[daysFromPurchase]": "<= 15"
+        "product.type[productType]": "'electronics', 'appliances'"
+        "return.hasReceipt[hasReceipt]": "true"
+        "return.reason[returnReason]": ""

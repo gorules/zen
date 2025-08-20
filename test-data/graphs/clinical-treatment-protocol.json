@@ -1,0 +1,474 @@
+{
+  "tests": [
+    {
+      "input": {
+        "diagnosis": "diabetes_type2",
+        "measurement_value": 8.2,
+        "patient": {
+          "age": 67,
+          "is_pregnant": "no",
+          "has_comorbidities": "yes",
+          "previous_adverse_reaction": "no"
+        }
+      },
+      "output": {
+        "protocol_name": "oral_medication_moderate",
+        "treatment_protocol": {
+          "base_treatment": "oral_medication",
+          "dosage_instruction": "standard_elderly",
+          "follow_up_frequency": "bi-weekly",
+          "protocol_id": "oral_medication_moderate_intensive",
+          "protocol_intensity": "intensive",
+          "risk_adjustment": "modified_treatment",
+          "severity_level": "moderate_diabetes"
+        }
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "input",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i1-1": "'diabetes_type2'",
+            "i1-2": "< 7.0",
+            "o1-1": "'mild_diabetes'",
+            "o1-2": "'lifestyle_modification'"
+          },
+          {
+            "_id": "rule2",
+            "i1-1": "'diabetes_type2'",
+            "i1-2": "[7.0..8.5]",
+            "o1-1": "'moderate_diabetes'",
+            "o1-2": "'oral_medication'"
+          },
+          {
+            "_id": "rule3",
+            "i1-1": "'diabetes_type2'",
+            "i1-2": "> 8.5",
+            "o1-1": "'severe_diabetes'",
+            "o1-2": "'insulin_therapy'"
+          },
+          {
+            "_id": "rule4",
+            "i1-1": "'hypertension'",
+            "i1-2": "[140..160)",
+            "o1-1": "'stage1_hypertension'",
+            "o1-2": "'lifestyle_and_monotherapy'"
+          },
+          {
+            "_id": "rule5",
+            "i1-1": "'hypertension'",
+            "i1-2": ">= 160",
+            "o1-1": "'stage2_hypertension'",
+            "o1-2": "'dual_therapy'"
+          },
+          {
+            "_id": "rule6",
+            "i1-1": "'asthma'",
+            "i1-2": "> 80",
+            "o1-1": "'mild_asthma'",
+            "o1-2": "'as_needed_bronchodilator'"
+          },
+          {
+            "_id": "rule7",
+            "i1-1": "'asthma'",
+            "i1-2": "[60..80]",
+            "o1-1": "'moderate_asthma'",
+            "o1-2": "'daily_controller'"
+          },
+          {
+            "_id": "rule8",
+            "i1-1": "'asthma'",
+            "i1-2": "< 60",
+            "o1-1": "'severe_asthma'",
+            "o1-2": "'multiple_controllers'"
+          },
+          {
+            "_id": "rule9",
+            "i1-1": "",
+            "i1-2": "",
+            "o1-1": "'unclassified'",
+            "o1-2": "'standard_care'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Diagnosis",
+            "field": "diagnosis"
+          },
+          {
+            "id": "i1-2",
+            "name": "MeasurementValue",
+            "field": "measurement_value"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Severity",
+            "field": "diagnosis_severity"
+          },
+          {
+            "id": "o1-2",
+            "name": "BaseTreatment",
+            "field": "base_treatment"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "diagnoseTable",
+      "name": "diagnosisEvaluation",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "pc1",
+            "i2-1": ">= 65",
+            "i2-2": "'yes'",
+            "o2-1": "'high'",
+            "o2-2": "'reduced_dosage'"
+          },
+          {
+            "_id": "pc2",
+            "i2-1": ">= 65",
+            "i2-2": "'no'",
+            "o2-1": "'moderate'",
+            "o2-2": "'standard_elderly'"
+          },
+          {
+            "_id": "pc3",
+            "i2-1": "< 18",
+            "i2-2": "",
+            "o2-1": "'special'",
+            "o2-2": "'pediatric_dosage'"
+          },
+          {
+            "_id": "pc4",
+            "i2-1": "",
+            "i2-2": "'yes'",
+            "o2-1": "'elevated'",
+            "o2-2": "'monitor_closely'"
+          },
+          {
+            "_id": "pc5",
+            "i2-1": "",
+            "i2-2": "",
+            "o2-1": "'standard'",
+            "o2-2": "'standard_dosage'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i2-1",
+            "name": "Age",
+            "field": "patient.age"
+          },
+          {
+            "id": "i2-2",
+            "name": "Pregnancy",
+            "field": "patient.is_pregnant"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2-1",
+            "name": "PatientRiskCategory",
+            "field": "patient_risk_category"
+          },
+          {
+            "id": "o2-2",
+            "name": "DosageModification",
+            "field": "dosage_modification"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "patientCharacteristics",
+      "name": "patientFactors",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rf1",
+            "i3-1": "'yes'",
+            "i3-2": "'yes'",
+            "o3-1": "'critical'",
+            "o3-2": "'specialist_consult'"
+          },
+          {
+            "_id": "rf2",
+            "i3-1": "'yes'",
+            "i3-2": "'no'",
+            "o3-1": "'high'",
+            "o3-2": "'modified_treatment'"
+          },
+          {
+            "_id": "rf3",
+            "i3-1": "'no'",
+            "i3-2": "'yes'",
+            "o3-1": "'moderate'",
+            "o3-2": "'additional_monitoring'"
+          },
+          {
+            "_id": "rf4",
+            "i3-1": "'no'",
+            "i3-2": "'no'",
+            "o3-1": "'low'",
+            "o3-2": "'standard_approach'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i3-1",
+            "name": "HasComorbidities",
+            "field": "patient.has_comorbidities"
+          },
+          {
+            "id": "i3-2",
+            "name": "PreviousAdverseReaction",
+            "field": "patient.previous_adverse_reaction"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o3-1",
+            "name": "ComorbidityRiskLevel",
+            "field": "comorbidity_risk_level"
+          },
+          {
+            "id": "o3-2",
+            "name": "RiskAdjustment",
+            "field": "risk_adjustment"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "riskFactors",
+      "name": "comorbidityEvaluation",
+      "position": {
+        "x": 1070,
+        "y": 115
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "pi1",
+            "i4-1": "'critical'",
+            "o4-1": "'urgent'"
+          },
+          {
+            "_id": "pi2",
+            "i4-1": "'high'",
+            "o4-1": "'intensive'"
+          },
+          {
+            "_id": "pi3",
+            "i4-1": "'moderate'",
+            "o4-1": "'standard'"
+          },
+          {
+            "_id": "pi4",
+            "i4-1": "'low'",
+            "o4-1": "'routine'"
+          },
+          {
+            "_id": "pi5",
+            "i4-1": "",
+            "o4-1": "'regular'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i4-1",
+            "name": "RiskLevel",
+            "field": "comorbidity_risk_level"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o4-1",
+            "name": "ProtocolIntensity",
+            "field": "protocol_intensity"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "protocolIntensity",
+      "name": "intensityDetermination",
+      "position": {
+        "x": 1390,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "fs1",
+            "i5-1": "'critical'",
+            "o5-1": "'weekly'"
+          },
+          {
+            "_id": "fs2",
+            "i5-1": "'high'",
+            "o5-1": "'bi-weekly'"
+          },
+          {
+            "_id": "fs3",
+            "i5-1": "'moderate'",
+            "o5-1": "'monthly'"
+          },
+          {
+            "_id": "fs4",
+            "i5-1": "'low'",
+            "o5-1": "'quarterly'"
+          },
+          {
+            "_id": "fs5",
+            "i5-1": "",
+            "o5-1": "'as_needed'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i5-1",
+            "name": "RiskLevel",
+            "field": "comorbidity_risk_level"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o5-1",
+            "name": "FollowUpSchedule",
+            "field": "follow_up_schedule"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "followUpSchedule",
+      "name": "followUpDetermination",
+      "position": {
+        "x": 1710,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "exp1",
+            "key": "protocol_name",
+            "value": "base_treatment + '_' + patient_risk_category"
+          },
+          {
+            "id": "exp2",
+            "key": "treatment_protocol",
+            "value": "{\n  'protocol_id': `${$.protocol_name}_${protocol_intensity}`,\n  'base_treatment': base_treatment,\n  'dosage_instruction': dosage_modification,\n  'risk_adjustment': risk_adjustment,\n  'follow_up_frequency': follow_up_schedule,\n  'severity_level': diagnosis_severity,\n  'protocol_intensity': protocol_intensity\n}"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "treatmentProtocol",
+      "name": "finalTreatmentSelection",
+      "position": {
+        "x": 2030,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "input",
+      "targetId": "diagnoseTable",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "diagnoseTable",
+      "targetId": "patientCharacteristics",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "patientCharacteristics",
+      "targetId": "riskFactors",
+      "type": "edge"
+    },
+    {
+      "id": "edge4",
+      "sourceId": "riskFactors",
+      "targetId": "protocolIntensity",
+      "type": "edge"
+    },
+    {
+      "id": "edge5",
+      "sourceId": "protocolIntensity",
+      "targetId": "followUpSchedule",
+      "type": "edge"
+    },
+    {
+      "id": "edge6",
+      "sourceId": "followUpSchedule",
+      "targetId": "treatmentProtocol",
+      "type": "edge"
+    }
+  ]
+}

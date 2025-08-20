@@ -1,0 +1,178 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  recommendationMessage: Start rebuilding your credit with these financial tools.
+  recommendedProducts:
+    - secured_credit_card
+    - basic_checking
+    - credit_builder_loan
+trace:
+  creditScoreEvaluation:
+    id: creditScoreEvaluation
+    input:
+      customerProfile:
+        age:
+          "$serde_json::private::Number": "35"
+        annualIncome:
+          "$serde_json::private::Number": "85000"
+        creditScore:
+          "$serde_json::private::Number": "720"
+        customerId: C12345
+        employmentStatus: employed
+        existingProducts:
+          - checking_account
+        financialGoals:
+          - home_purchase
+          - retirement_savings
+        name: Jane Smith
+        riskTolerance: moderate
+    name: evaluateCreditScore
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      creditCategory: poor
+      customerProfile:
+        age:
+          "$serde_json::private::Number": "35"
+        annualIncome:
+          "$serde_json::private::Number": "85000"
+        creditScore:
+          "$serde_json::private::Number": "720"
+        customerId: C12345
+        employmentStatus: employed
+        existingProducts:
+          - checking_account
+        financialGoals:
+          - home_purchase
+          - retirement_savings
+        name: Jane Smith
+        riskTolerance: moderate
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "3"
+      reference_map:
+        creditScore: ~
+      rule:
+        _id: rule4
+        "creditScore[i1-1]": ""
+  incomeEvaluation:
+    id: incomeEvaluation
+    input:
+      creditCategory: poor
+      customerProfile:
+        age:
+          "$serde_json::private::Number": "35"
+        annualIncome:
+          "$serde_json::private::Number": "85000"
+        creditScore:
+          "$serde_json::private::Number": "720"
+        customerId: C12345
+        employmentStatus: employed
+        existingProducts:
+          - checking_account
+        financialGoals:
+          - home_purchase
+          - retirement_savings
+        name: Jane Smith
+        riskTolerance: moderate
+    name: evaluateIncome
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      creditCategory: poor
+      customerProfile:
+        age:
+          "$serde_json::private::Number": "35"
+        annualIncome:
+          "$serde_json::private::Number": "85000"
+        creditScore:
+          "$serde_json::private::Number": "720"
+        customerId: C12345
+        employmentStatus: employed
+        existingProducts:
+          - checking_account
+        financialGoals:
+          - home_purchase
+          - retirement_savings
+        name: Jane Smith
+        riskTolerance: moderate
+      incomeCategory: low
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "2"
+      reference_map:
+        annualIncome: ~
+      rule:
+        _id: rule3
+        "annualIncome[i2-1]": ""
+  input:
+    id: input
+    input: ~
+    name: customerProfile
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      customerProfile:
+        age:
+          "$serde_json::private::Number": "35"
+        annualIncome:
+          "$serde_json::private::Number": "85000"
+        creditScore:
+          "$serde_json::private::Number": "720"
+        customerId: C12345
+        employmentStatus: employed
+        existingProducts:
+          - checking_account
+        financialGoals:
+          - home_purchase
+          - retirement_savings
+        name: Jane Smith
+        riskTolerance: moderate
+    performance: "[perf]"
+    traceData: ~
+  productRecommendation:
+    id: productRecommendation
+    input:
+      creditCategory: poor
+      customerProfile:
+        age:
+          "$serde_json::private::Number": "35"
+        annualIncome:
+          "$serde_json::private::Number": "85000"
+        creditScore:
+          "$serde_json::private::Number": "720"
+        customerId: C12345
+        employmentStatus: employed
+        existingProducts:
+          - checking_account
+        financialGoals:
+          - home_purchase
+          - retirement_savings
+        name: Jane Smith
+        riskTolerance: moderate
+      incomeCategory: low
+    name: recommendProducts
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      recommendationMessage: Start rebuilding your credit with these financial tools.
+      recommendedProducts:
+        - secured_credit_card
+        - basic_checking
+        - credit_builder_loan
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "4"
+      reference_map:
+        creditCategory: poor
+        incomeCategory: low
+      rule:
+        _id: rule5
+        "creditCategory[i3-1]": "'poor'"
+        "incomeCategory[i3-2]": ""

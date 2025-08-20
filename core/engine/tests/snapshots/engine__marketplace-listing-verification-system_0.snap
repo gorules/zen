@@ -1,0 +1,362 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  category:
+    averagePrice:
+      "$serde_json::private::Number": "1500"
+    highValueBrands:
+      - LuxuryBrand
+      - PremiumDesigner
+      - ExclusiveFashion
+    id: CAT789
+    name: Designer Handbags
+    type: luxury
+  hasLowRating: true
+  hasPreviousViolations: true
+  isHighValueBrand: true
+  isNewSeller: true
+  isSensitiveCategory: true
+  listing:
+    brand: LuxuryBrand
+    condition: New
+    description: "Authentic designer handbag, limited edition, comes with certificate"
+    id: LIST12345
+    price:
+      "$serde_json::private::Number": "950"
+    title: Designer Handbag - Limited Edition
+  priceDeviationScore:
+    "$serde_json::private::Number": "36.66666666666666666666666667"
+  riskAssessment:
+    level: high
+    reason: Suspicious pricing for high-value brand with history of violations
+  seller:
+    accountAgeDays:
+      "$serde_json::private::Number": "45"
+    id: SELL456
+    listingsCount:
+      "$serde_json::private::Number": "27"
+    name: FashionReseller
+    previousViolations:
+      "$serde_json::private::Number": "1"
+    rating:
+      "$serde_json::private::Number": "3.8"
+  verification:
+    message: High risk listing requires immediate manual verification
+    required: true
+    type: manual
+trace:
+  calculateRiskFactors:
+    id: calculateRiskFactors
+    input:
+      category:
+        averagePrice:
+          "$serde_json::private::Number": "1500"
+        highValueBrands:
+          - LuxuryBrand
+          - PremiumDesigner
+          - ExclusiveFashion
+        id: CAT789
+        name: Designer Handbags
+        type: luxury
+      listing:
+        brand: LuxuryBrand
+        condition: New
+        description: "Authentic designer handbag, limited edition, comes with certificate"
+        id: LIST12345
+        price:
+          "$serde_json::private::Number": "950"
+        title: Designer Handbag - Limited Edition
+      seller:
+        accountAgeDays:
+          "$serde_json::private::Number": "45"
+        id: SELL456
+        listingsCount:
+          "$serde_json::private::Number": "27"
+        name: FashionReseller
+        previousViolations:
+          "$serde_json::private::Number": "1"
+        rating:
+          "$serde_json::private::Number": "3.8"
+    name: calculateRiskFactors
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      category:
+        averagePrice:
+          "$serde_json::private::Number": "1500"
+        highValueBrands:
+          - LuxuryBrand
+          - PremiumDesigner
+          - ExclusiveFashion
+        id: CAT789
+        name: Designer Handbags
+        type: luxury
+      hasLowRating: true
+      hasPreviousViolations: true
+      isHighValueBrand: true
+      isNewSeller: true
+      isSensitiveCategory: true
+      listing:
+        brand: LuxuryBrand
+        condition: New
+        description: "Authentic designer handbag, limited edition, comes with certificate"
+        id: LIST12345
+        price:
+          "$serde_json::private::Number": "950"
+        title: Designer Handbag - Limited Edition
+      priceDeviationScore:
+        "$serde_json::private::Number": "36.66666666666666666666666667"
+      seller:
+        accountAgeDays:
+          "$serde_json::private::Number": "45"
+        id: SELL456
+        listingsCount:
+          "$serde_json::private::Number": "27"
+        name: FashionReseller
+        previousViolations:
+          "$serde_json::private::Number": "1"
+        rating:
+          "$serde_json::private::Number": "3.8"
+    performance: "[perf]"
+    traceData:
+      hasLowRating:
+        result: true
+      hasPreviousViolations:
+        result: true
+      isHighValueBrand:
+        result: true
+      isNewSeller:
+        result: true
+      isSensitiveCategory:
+        result: true
+      priceDeviationScore:
+        result:
+          "$serde_json::private::Number": "36.66666666666666666666666667"
+  determineAction:
+    id: determineAction
+    input:
+      category:
+        averagePrice:
+          "$serde_json::private::Number": "1500"
+        highValueBrands:
+          - LuxuryBrand
+          - PremiumDesigner
+          - ExclusiveFashion
+        id: CAT789
+        name: Designer Handbags
+        type: luxury
+      hasLowRating: true
+      hasPreviousViolations: true
+      isHighValueBrand: true
+      isNewSeller: true
+      isSensitiveCategory: true
+      listing:
+        brand: LuxuryBrand
+        condition: New
+        description: "Authentic designer handbag, limited edition, comes with certificate"
+        id: LIST12345
+        price:
+          "$serde_json::private::Number": "950"
+        title: Designer Handbag - Limited Edition
+      priceDeviationScore:
+        "$serde_json::private::Number": "36.66666666666666666666666667"
+      riskAssessment:
+        level: high
+        reason: Suspicious pricing for high-value brand with history of violations
+      seller:
+        accountAgeDays:
+          "$serde_json::private::Number": "45"
+        id: SELL456
+        listingsCount:
+          "$serde_json::private::Number": "27"
+        name: FashionReseller
+        previousViolations:
+          "$serde_json::private::Number": "1"
+        rating:
+          "$serde_json::private::Number": "3.8"
+    name: determineAction
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      category:
+        averagePrice:
+          "$serde_json::private::Number": "1500"
+        highValueBrands:
+          - LuxuryBrand
+          - PremiumDesigner
+          - ExclusiveFashion
+        id: CAT789
+        name: Designer Handbags
+        type: luxury
+      hasLowRating: true
+      hasPreviousViolations: true
+      isHighValueBrand: true
+      isNewSeller: true
+      isSensitiveCategory: true
+      listing:
+        brand: LuxuryBrand
+        condition: New
+        description: "Authentic designer handbag, limited edition, comes with certificate"
+        id: LIST12345
+        price:
+          "$serde_json::private::Number": "950"
+        title: Designer Handbag - Limited Edition
+      priceDeviationScore:
+        "$serde_json::private::Number": "36.66666666666666666666666667"
+      riskAssessment:
+        level: high
+        reason: Suspicious pricing for high-value brand with history of violations
+      seller:
+        accountAgeDays:
+          "$serde_json::private::Number": "45"
+        id: SELL456
+        listingsCount:
+          "$serde_json::private::Number": "27"
+        name: FashionReseller
+        previousViolations:
+          "$serde_json::private::Number": "1"
+        rating:
+          "$serde_json::private::Number": "3.8"
+      verification:
+        message: High risk listing requires immediate manual verification
+        required: true
+        type: manual
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        riskAssessment.level: high
+      rule:
+        _id: rule1
+        "riskAssessment.level[i1]": "'high'"
+  evaluateRisk:
+    id: evaluateRisk
+    input:
+      category:
+        averagePrice:
+          "$serde_json::private::Number": "1500"
+        highValueBrands:
+          - LuxuryBrand
+          - PremiumDesigner
+          - ExclusiveFashion
+        id: CAT789
+        name: Designer Handbags
+        type: luxury
+      hasLowRating: true
+      hasPreviousViolations: true
+      isHighValueBrand: true
+      isNewSeller: true
+      isSensitiveCategory: true
+      listing:
+        brand: LuxuryBrand
+        condition: New
+        description: "Authentic designer handbag, limited edition, comes with certificate"
+        id: LIST12345
+        price:
+          "$serde_json::private::Number": "950"
+        title: Designer Handbag - Limited Edition
+      priceDeviationScore:
+        "$serde_json::private::Number": "36.66666666666666666666666667"
+      seller:
+        accountAgeDays:
+          "$serde_json::private::Number": "45"
+        id: SELL456
+        listingsCount:
+          "$serde_json::private::Number": "27"
+        name: FashionReseller
+        previousViolations:
+          "$serde_json::private::Number": "1"
+        rating:
+          "$serde_json::private::Number": "3.8"
+    name: evaluateRiskLevel
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      category:
+        averagePrice:
+          "$serde_json::private::Number": "1500"
+        highValueBrands:
+          - LuxuryBrand
+          - PremiumDesigner
+          - ExclusiveFashion
+        id: CAT789
+        name: Designer Handbags
+        type: luxury
+      hasLowRating: true
+      hasPreviousViolations: true
+      isHighValueBrand: true
+      isNewSeller: true
+      isSensitiveCategory: true
+      listing:
+        brand: LuxuryBrand
+        condition: New
+        description: "Authentic designer handbag, limited edition, comes with certificate"
+        id: LIST12345
+        price:
+          "$serde_json::private::Number": "950"
+        title: Designer Handbag - Limited Edition
+      priceDeviationScore:
+        "$serde_json::private::Number": "36.66666666666666666666666667"
+      riskAssessment:
+        level: high
+        reason: Suspicious pricing for high-value brand with history of violations
+      seller:
+        accountAgeDays:
+          "$serde_json::private::Number": "45"
+        id: SELL456
+        listingsCount:
+          "$serde_json::private::Number": "27"
+        name: FashionReseller
+        previousViolations:
+          "$serde_json::private::Number": "1"
+        rating:
+          "$serde_json::private::Number": "3.8"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map: {}
+      rule:
+        _id: rule1
+  input:
+    id: input
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      category:
+        averagePrice:
+          "$serde_json::private::Number": "1500"
+        highValueBrands:
+          - LuxuryBrand
+          - PremiumDesigner
+          - ExclusiveFashion
+        id: CAT789
+        name: Designer Handbags
+        type: luxury
+      listing:
+        brand: LuxuryBrand
+        condition: New
+        description: "Authentic designer handbag, limited edition, comes with certificate"
+        id: LIST12345
+        price:
+          "$serde_json::private::Number": "950"
+        title: Designer Handbag - Limited Edition
+      seller:
+        accountAgeDays:
+          "$serde_json::private::Number": "45"
+        id: SELL456
+        listingsCount:
+          "$serde_json::private::Number": "27"
+        name: FashionReseller
+        previousViolations:
+          "$serde_json::private::Number": "1"
+        rating:
+          "$serde_json::private::Number": "3.8"
+    performance: "[perf]"
+    traceData: ~

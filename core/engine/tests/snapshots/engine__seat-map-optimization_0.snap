@@ -1,0 +1,269 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  seatDisplay:
+    displayMessage: Select your seats
+    seatMapVersion: premium
+    totalAvailableSeats:
+      "$serde_json::private::Number": "72"
+trace:
+  cabinFillCalculator:
+    id: cabinFillCalculator
+    input:
+      cabin:
+        id: CAB789
+        name: main cabin
+        occupiedSeats:
+          "$serde_json::private::Number": "108"
+        premiumSeats:
+          "$serde_json::private::Number": "32"
+        restrictedSeats:
+          "$serde_json::private::Number": "10"
+        standardSeats:
+          "$serde_json::private::Number": "138"
+        totalSeats:
+          "$serde_json::private::Number": "180"
+      customer:
+        fareClass: economy_plus
+        groupSize:
+          "$serde_json::private::Number": "3"
+        hasSpecialNeeds: false
+        id: CUS123456
+        previousFlights:
+          "$serde_json::private::Number": "24"
+        tier: gold
+      flight:
+        aircraft: Boeing 737-800
+        arrivalTime: "2025-04-15T11:45:00Z"
+        departureTime: "2025-04-15T08:30:00Z"
+        flightNumber: FL722
+    name: calculateCabinFill
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      adjacentSeatsNeeded:
+        "$serde_json::private::Number": "3"
+      cabin:
+        id: CAB789
+        name: main cabin
+        occupiedSeats:
+          "$serde_json::private::Number": "108"
+        premiumSeats:
+          "$serde_json::private::Number": "32"
+        restrictedSeats:
+          "$serde_json::private::Number": "10"
+        standardSeats:
+          "$serde_json::private::Number": "138"
+        totalSeats:
+          "$serde_json::private::Number": "180"
+      cabinFillPercentage:
+        "$serde_json::private::Number": "60"
+      customer:
+        fareClass: economy_plus
+        groupSize:
+          "$serde_json::private::Number": "3"
+        hasSpecialNeeds: false
+        id: CUS123456
+        previousFlights:
+          "$serde_json::private::Number": "24"
+        tier: gold
+      flight:
+        aircraft: Boeing 737-800
+        arrivalTime: "2025-04-15T11:45:00Z"
+        departureTime: "2025-04-15T08:30:00Z"
+        flightNumber: FL722
+    performance: "[perf]"
+    traceData:
+      adjacentSeatsNeeded:
+        result:
+          "$serde_json::private::Number": "3"
+      cabinFillPercentage:
+        result:
+          "$serde_json::private::Number": "60"
+  inputNode:
+    id: inputNode
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      cabin:
+        id: CAB789
+        name: main cabin
+        occupiedSeats:
+          "$serde_json::private::Number": "108"
+        premiumSeats:
+          "$serde_json::private::Number": "32"
+        restrictedSeats:
+          "$serde_json::private::Number": "10"
+        standardSeats:
+          "$serde_json::private::Number": "138"
+        totalSeats:
+          "$serde_json::private::Number": "180"
+      customer:
+        fareClass: economy_plus
+        groupSize:
+          "$serde_json::private::Number": "3"
+        hasSpecialNeeds: false
+        id: CUS123456
+        previousFlights:
+          "$serde_json::private::Number": "24"
+        tier: gold
+      flight:
+        aircraft: Boeing 737-800
+        arrivalTime: "2025-04-15T11:45:00Z"
+        departureTime: "2025-04-15T08:30:00Z"
+        flightNumber: FL722
+    performance: "[perf]"
+    traceData: ~
+  seatAvailabilityAdjuster:
+    id: seatAvailabilityAdjuster
+    input:
+      adjacentSeatsNeeded:
+        "$serde_json::private::Number": "3"
+      cabin:
+        id: CAB789
+        name: main cabin
+        occupiedSeats:
+          "$serde_json::private::Number": "108"
+        premiumSeats:
+          "$serde_json::private::Number": "32"
+        restrictedSeats:
+          "$serde_json::private::Number": "10"
+        standardSeats:
+          "$serde_json::private::Number": "138"
+        totalSeats:
+          "$serde_json::private::Number": "180"
+      cabinFillPercentage:
+        "$serde_json::private::Number": "60"
+      customer:
+        fareClass: economy_plus
+        groupSize:
+          "$serde_json::private::Number": "3"
+        hasSpecialNeeds: false
+        id: CUS123456
+        previousFlights:
+          "$serde_json::private::Number": "24"
+        tier: gold
+      flight:
+        aircraft: Boeing 737-800
+        arrivalTime: "2025-04-15T11:45:00Z"
+        departureTime: "2025-04-15T08:30:00Z"
+        flightNumber: FL722
+      seatDisplay:
+        showPreferredSeats: true
+        showRestrictedSeats: false
+        showStandardSeats: true
+        unlockPremiumSeats: true
+    name: adjustSeatAvailability
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      seatDisplay:
+        displayMessage: Select your seats
+        seatMapVersion: premium
+        totalAvailableSeats:
+          "$serde_json::private::Number": "72"
+    performance: "[perf]"
+    traceData:
+      seatDisplay.displayMessage:
+        result: Select your seats
+      seatDisplay.seatMapVersion:
+        result: premium
+      seatDisplay.totalAvailableSeats:
+        result:
+          "$serde_json::private::Number": "72"
+  seatMapRules:
+    id: seatMapRules
+    input:
+      adjacentSeatsNeeded:
+        "$serde_json::private::Number": "3"
+      cabin:
+        id: CAB789
+        name: main cabin
+        occupiedSeats:
+          "$serde_json::private::Number": "108"
+        premiumSeats:
+          "$serde_json::private::Number": "32"
+        restrictedSeats:
+          "$serde_json::private::Number": "10"
+        standardSeats:
+          "$serde_json::private::Number": "138"
+        totalSeats:
+          "$serde_json::private::Number": "180"
+      cabinFillPercentage:
+        "$serde_json::private::Number": "60"
+      customer:
+        fareClass: economy_plus
+        groupSize:
+          "$serde_json::private::Number": "3"
+        hasSpecialNeeds: false
+        id: CUS123456
+        previousFlights:
+          "$serde_json::private::Number": "24"
+        tier: gold
+      flight:
+        aircraft: Boeing 737-800
+        arrivalTime: "2025-04-15T11:45:00Z"
+        departureTime: "2025-04-15T08:30:00Z"
+        flightNumber: FL722
+    name: determineSeatAvailability
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      adjacentSeatsNeeded:
+        "$serde_json::private::Number": "3"
+      cabin:
+        id: CAB789
+        name: main cabin
+        occupiedSeats:
+          "$serde_json::private::Number": "108"
+        premiumSeats:
+          "$serde_json::private::Number": "32"
+        restrictedSeats:
+          "$serde_json::private::Number": "10"
+        standardSeats:
+          "$serde_json::private::Number": "138"
+        totalSeats:
+          "$serde_json::private::Number": "180"
+      cabinFillPercentage:
+        "$serde_json::private::Number": "60"
+      customer:
+        fareClass: economy_plus
+        groupSize:
+          "$serde_json::private::Number": "3"
+        hasSpecialNeeds: false
+        id: CUS123456
+        previousFlights:
+          "$serde_json::private::Number": "24"
+        tier: gold
+      flight:
+        aircraft: Boeing 737-800
+        arrivalTime: "2025-04-15T11:45:00Z"
+        departureTime: "2025-04-15T08:30:00Z"
+        flightNumber: FL722
+      seatDisplay:
+        showPreferredSeats: true
+        showRestrictedSeats: false
+        showStandardSeats: true
+        unlockPremiumSeats: true
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        adjacentSeatsNeeded:
+          "$serde_json::private::Number": "3"
+        cabinFillPercentage:
+          "$serde_json::private::Number": "60"
+        customer.fareClass: economy_plus
+        customer.tier: gold
+      rule:
+        _id: rule2
+        "adjacentSeatsNeeded[adjacentSeats]": ""
+        "cabinFillPercentage[cabinFill]": "< 70"
+        "customer.fareClass[fareClass]": "'economy_plus', 'economy'"
+        "customer.tier[customerTier]": "'platinum', 'gold'"

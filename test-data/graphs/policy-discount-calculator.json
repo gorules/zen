@@ -1,0 +1,307 @@
+{
+  "tests": [
+    {
+      "input": {
+        "customer": {
+          "id": "C12345",
+          "name": "Jane Smith",
+          "yearsAsCustomer": 4,
+          "numberOfPolicies": 2
+        },
+        "policy": {
+          "id": "P98765",
+          "type": "auto",
+          "basePremium": 1200,
+          "safetyFeatures": [
+            "antiTheftSystem",
+            "advancedDriverAssistance"
+          ]
+        }
+      },
+      "output": {
+        "customer": {
+          "id": "C12345",
+          "name": "Jane Smith",
+          "numberOfPolicies": 2,
+          "yearsAsCustomer": 4
+        },
+        "discounts": {
+          "bundle": {
+            "description": "Dual policy discount",
+            "percentage": 7
+          },
+          "loyalty": {
+            "description": "Standard loyalty discount",
+            "percentage": 10
+          },
+          "safetyFeatures": [
+            {
+              "description": "Anti-theft system discount",
+              "percentage": 3
+            },
+            {
+              "description": "ADAS discount",
+              "percentage": 5
+            }
+          ]
+        },
+        "finalPremium": 900,
+        "maximumDiscountPercentage": 25,
+        "policy": {
+          "basePremium": 1200,
+          "id": "P98765",
+          "safetyFeatures": [
+            "antiTheftSystem",
+            "advancedDriverAssistance"
+          ],
+          "type": "auto"
+        },
+        "totalDiscountPercentage": 25
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "inputNode",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1-1",
+            "i1-1": ">= 5",
+            "o1-1": "15",
+            "o1-2": "'Premium loyalty discount'"
+          },
+          {
+            "_id": "r1-2",
+            "i1-1": ">= 3",
+            "o1-1": "10",
+            "o1-2": "'Standard loyalty discount'"
+          },
+          {
+            "_id": "r1-3",
+            "i1-1": ">= 1",
+            "o1-1": "5",
+            "o1-2": "'Basic loyalty discount'"
+          },
+          {
+            "_id": "r1-4",
+            "i1-1": "",
+            "o1-1": "0",
+            "o1-2": "'No loyalty discount'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Years as Customer",
+            "field": "customer.yearsAsCustomer"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Loyalty Discount Percentage",
+            "field": "discounts.loyalty.percentage"
+          },
+          {
+            "id": "o1-2",
+            "name": "Loyalty Discount Description",
+            "field": "discounts.loyalty.description"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "loyaltyDiscountsTable",
+      "name": "customerLoyaltyDiscounts",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r2-1",
+            "i2-1": ">= 3",
+            "o2-1": "12",
+            "o2-2": "'Multi-policy premium discount'"
+          },
+          {
+            "_id": "r2-2",
+            "i2-1": "2",
+            "o2-1": "7",
+            "o2-2": "'Dual policy discount'"
+          },
+          {
+            "_id": "r2-3",
+            "i2-1": "",
+            "o2-1": "0",
+            "o2-2": "'No bundle discount'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i2-1",
+            "name": "Number of Policies",
+            "field": "customer.numberOfPolicies"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2-1",
+            "name": "Bundle Discount Percentage",
+            "field": "discounts.bundle.percentage"
+          },
+          {
+            "id": "o2-2",
+            "name": "Bundle Discount Description",
+            "field": "discounts.bundle.description"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "bundledPoliciesTable",
+      "name": "bundledPoliciesDiscounts",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "collect",
+        "rules": [
+          {
+            "_id": "r3-1",
+            "i3-1": "contains($, 'antiTheftSystem')",
+            "o3-1": "3",
+            "o3-2": "'Anti-theft system discount'"
+          },
+          {
+            "_id": "r3-2",
+            "i3-1": "contains($, 'dashCam')",
+            "o3-1": "2",
+            "o3-2": "'Dash cam discount'"
+          },
+          {
+            "_id": "r3-3",
+            "i3-1": "contains($, 'advancedDriverAssistance')",
+            "o3-1": "5",
+            "o3-2": "'ADAS discount'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i3-1",
+            "name": "Safety Features",
+            "field": "policy.safetyFeatures"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o3-1",
+            "name": "Feature Discount",
+            "field": "percentage"
+          },
+          {
+            "id": "o3-2",
+            "name": "Feature Description",
+            "field": "description"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": "discounts.safetyFeatures",
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "safetyFeaturesTable",
+      "name": "safetyFeaturesDiscounts",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1",
+            "key": "totalDiscountPercentage",
+            "value": "discounts.loyalty.percentage + discounts.bundle.percentage + sum(map(discounts.safetyFeatures, #.percentage))"
+          },
+          {
+            "id": "e2",
+            "key": "maximumDiscountPercentage",
+            "value": "min([$.totalDiscountPercentage, 25])"
+          },
+          {
+            "id": "e3",
+            "key": "finalPremium",
+            "value": "policy.basePremium * (1 - ($.maximumDiscountPercentage / 100))"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "totalDiscountCalculation",
+      "name": "calculateTotalDiscount",
+      "position": {
+        "x": 1390,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "sourceId": "inputNode",
+      "targetId": "loyaltyDiscountsTable",
+      "type": "edge"
+    },
+    {
+      "id": "e2",
+      "sourceId": "loyaltyDiscountsTable",
+      "targetId": "bundledPoliciesTable",
+      "type": "edge"
+    },
+    {
+      "id": "e3",
+      "sourceId": "bundledPoliciesTable",
+      "targetId": "safetyFeaturesTable",
+      "type": "edge"
+    },
+    {
+      "id": "e4",
+      "sourceId": "safetyFeaturesTable",
+      "targetId": "totalDiscountCalculation",
+      "type": "edge"
+    }
+  ]
+}

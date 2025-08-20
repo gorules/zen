@@ -1,0 +1,63 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  code: BAG23
+  included: true
+  price:
+    "$serde_json::private::Number": "0"
+trace:
+  36aa02a4-df14-4c54-a852-175e749d5860:
+    id: 36aa02a4-df14-4c54-a852-175e749d5860
+    input: ~
+    name: Request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      class: business
+      destination: LAX
+      origin: JFK
+    performance: "[perf]"
+    traceData: ~
+  5d03a351-786f-4f7d-9b2b-709dc0d81460:
+    id: 5d03a351-786f-4f7d-9b2b-709dc0d81460
+    input:
+      class: business
+      destination: LAX
+      origin: JFK
+    name: Bags
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      code: BAG23
+      included: true
+      price:
+        "$serde_json::private::Number": "0"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "4"
+      reference_map:
+        class: business
+        destination: LAX
+        origin: JFK
+      rule:
+        _id: 731388b9-9e94-499a-b201-3f107e7e8a54
+        "class[b2e2476f-5340-4d66-aec0-9a282be0e716]": "\"business\", \"first\""
+        "destination[UmZtXogtD7]": ""
+        "origin[a9711b12-1d29-40a3-a48f-2c03df5c8aff]": ""
+  f42391bc-6183-4b12-8eaa-6b56510c17ef:
+    id: f42391bc-6183-4b12-8eaa-6b56510c17ef
+    input:
+      code: BAG23
+      included: true
+      price:
+        "$serde_json::private::Number": "0"
+    name: Response
+    order:
+      "$serde_json::private::Number": "2"
+    output: ~
+    performance: "[perf]"
+    traceData: ~

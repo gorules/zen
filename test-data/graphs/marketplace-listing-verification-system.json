@@ -55,7 +55,7 @@
           "price": 950,
           "title": "Designer Handbag - Limited Edition"
         },
-        "priceDeviationScore": 36.666666666666664,
+        "priceDeviationScore": 36.66666666666666666666666667,
         "riskAssessment": {
           "level": "high",
           "reason": "Suspicious pricing for high-value brand with history of violations"

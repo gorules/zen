@@ -11,3 +11,6 @@ mod interval;
 mod vm;
 
 pub(crate) use date::VmDate;
+
+#[cfg(feature = "time-override")]
+pub use date::UTC_OVERRIDE;

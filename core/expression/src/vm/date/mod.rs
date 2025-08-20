@@ -180,7 +180,7 @@ mod helper {
     use crate::Variable;
     use chrono::{
         DateTime, Datelike, Days, LocalResult, Month, Months, NaiveDate, NaiveDateTime, Offset,
-        TimeDelta, TimeZone, Timelike, Utc,
+        TimeDelta, TimeZone, Timelike,
     };
     use chrono_tz::Tz;
     use rust_decimal::prelude::ToPrimitive;
@@ -482,12 +482,12 @@ impl dyn DynamicVariable {
     }
 }
 
-#[cfg(test)]
+#[cfg(feature = "time-override")]
 pub static UTC_OVERRIDE: LazyLock<RwLock<Option<DateTime<Utc>>>> =
     LazyLock::new(|| RwLock::new(None));
 
 pub(crate) fn utc_now() -> DateTime<Utc> {
-    #[cfg(test)]
+    #[cfg(feature = "time-override")]
     {
         if let Ok(override_time) = UTC_OVERRIDE.read() {
             if let Some(time) = *override_time {

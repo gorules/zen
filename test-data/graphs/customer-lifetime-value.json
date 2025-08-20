@@ -23,10 +23,10 @@
         }
       },
       "output": {
-        "acquisitionCostRatio": 0.009543603664743808,
-        "adjustedLTV": 15567.333333333334,
+        "acquisitionCostRatio": 0.0095436036647438072616219885,
+        "adjustedLTV": 15567.333333333333333333333334,
         "averageOrderValue": 168.4,
-        "basicLTV": 15717.333333333334,
+        "basicLTV": 15717.333333333333333333333334,
         "customer": {
           "acquisitionChannel": "paid_search",
           "acquisitionCost": 150,
@@ -40,7 +40,7 @@
         },
         "customerLifetimeMonths": 80,
         "grossMargin": 0.35,
-        "purchaseFrequency": 3.3333333333333335,
+        "purchaseFrequency": 3.3333333333333333333333333336,
         "purchaseHistory": {
           "averageGrossMarginPercent": 35,
           "customerDurationMonths": 18,

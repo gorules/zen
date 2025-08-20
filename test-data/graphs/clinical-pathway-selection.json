@@ -1,0 +1,454 @@
+{
+  "tests": [
+    {
+      "input": {
+        "patient": {
+          "id": "P1234567",
+          "primaryDiagnosis": "heart_failure",
+          "severityScore": 3,
+          "age": 72,
+          "bmi": 24,
+          "comorbidities": [
+            "diabetes",
+            "hypertension",
+            "kidney_disease"
+          ],
+          "currentMedications": [
+            {
+              "name": "Lisinopril",
+              "dosage": "10mg",
+              "frequency": "daily"
+            },
+            {
+              "name": "Metformin",
+              "dosage": "500mg",
+              "frequency": "twice daily"
+            },
+            {
+              "name": "Furosemide",
+              "dosage": "40mg",
+              "frequency": "daily"
+            }
+          ],
+          "vitalSigns": {
+            "bloodPressure": {
+              "systolic": 142,
+              "diastolic": 85
+            },
+            "heartRate": 88,
+            "oxygenSaturation": 94,
+            "temperature": 37.1
+          },
+          "labResults": {
+            "bnp": 450,
+            "creatinine": 1.4,
+            "potassium": 4.2,
+            "hba1c": 7.8
+          }
+        }
+      },
+      "output": {
+        "followupFrequency": "daily",
+        "recommendedMonitoring": [
+          "comprehensive_vitals",
+          "medication_adherence",
+          "lifestyle_factors",
+          "specialist_consultation"
+        ],
+        "selectedPathway": "intensive"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "input",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 136.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1",
+            "i1": "'heart_failure'",
+            "i2": "> 2",
+            "o1": "'cardiac'",
+            "o2": "8"
+          },
+          {
+            "_id": "r2",
+            "i1": "'heart_failure'",
+            "i2": "",
+            "o1": "'cardiac'",
+            "o2": "5"
+          },
+          {
+            "_id": "r3",
+            "i1": "'pneumonia'",
+            "i2": "> 1",
+            "o1": "'respiratory'",
+            "o2": "7"
+          },
+          {
+            "_id": "r4",
+            "i1": "'pneumonia'",
+            "i2": "",
+            "o1": "'respiratory'",
+            "o2": "4"
+          },
+          {
+            "_id": "r5",
+            "i1": "'diabetes'",
+            "i2": "> 8.5",
+            "o1": "'endocrine'",
+            "o2": "6"
+          },
+          {
+            "_id": "r6",
+            "i1": "'diabetes'",
+            "i2": "",
+            "o1": "'endocrine'",
+            "o2": "3"
+          },
+          {
+            "_id": "r7",
+            "i1": "'stroke'",
+            "i2": "> 1",
+            "o1": "'neurological'",
+            "o2": "9"
+          },
+          {
+            "_id": "r8",
+            "i1": "'stroke'",
+            "i2": "",
+            "o1": "'neurological'",
+            "o2": "6"
+          },
+          {
+            "_id": "r9",
+            "i1": "",
+            "i2": "",
+            "o1": "'general'",
+            "o2": "2"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Primary Diagnosis",
+            "field": "patient.primaryDiagnosis"
+          },
+          {
+            "id": "i2",
+            "name": "Severity Score",
+            "field": "patient.severityScore"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Clinical Domain",
+            "field": "evaluation.clinicalDomain"
+          },
+          {
+            "id": "o2",
+            "name": "Base Risk Score",
+            "field": "evaluation.baseRiskScore"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "diagnoseTable",
+      "name": "diagnosisEvaluation",
+      "position": {
+        "x": 430,
+        "y": 136.5
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1",
+            "key": "comorbidityCount",
+            "value": "len(patient.comorbidities ?? [])"
+          },
+          {
+            "id": "e2",
+            "key": "hasHighRiskComorbidity",
+            "value": "contains(patient.comorbidities ?? [], 'kidney_disease') or contains(patient.comorbidities ?? [], 'copd') or contains(patient.comorbidities ?? [], 'immunocompromised')"
+          },
+          {
+            "id": "e3",
+            "key": "comorbidityRiskScore",
+            "value": "$.comorbidityCount * 2 + ($.hasHighRiskComorbidity ? 3 : 0)"
+          },
+          {
+            "id": "e4",
+            "key": "totalRiskScore",
+            "value": "evaluation.baseRiskScore + $.comorbidityRiskScore"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "comorbidityCheck",
+      "name": "comorbidityEvaluation",
+      "position": {
+        "x": 750,
+        "y": 136.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1",
+            "i1": "> 80",
+            "i2": "< 20",
+            "o1": "3",
+            "o2": "'high'"
+          },
+          {
+            "_id": "r2",
+            "i1": "> 70",
+            "i2": "< 25",
+            "o1": "2",
+            "o2": "'moderate'"
+          },
+          {
+            "_id": "r3",
+            "i1": "",
+            "i2": "",
+            "o1": "0",
+            "o2": "'standard'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Age",
+            "field": "patient.age"
+          },
+          {
+            "id": "i2",
+            "name": "BMI",
+            "field": "patient.bmi"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Additional Risk Score",
+            "field": "evaluation.additionalRiskScore"
+          },
+          {
+            "id": "o2",
+            "name": "Patient Risk Category",
+            "field": "evaluation.patientRiskCategory"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "patientFactorsTable",
+      "name": "patientFactorsEvaluation",
+      "position": {
+        "x": 1070,
+        "y": 136.5
+      }
+    },
+    {
+      "type": "switchNode",
+      "content": {
+        "hitPolicy": "first",
+        "statements": [
+          {
+            "id": "intensive",
+            "condition": "totalRiskScore + evaluation.additionalRiskScore >= 12",
+            "isDefault": false
+          },
+          {
+            "id": "enhanced",
+            "condition": "totalRiskScore + evaluation.additionalRiskScore >= 8",
+            "isDefault": false
+          },
+          {
+            "id": "standard",
+            "condition": "",
+            "isDefault": true
+          }
+        ]
+      },
+      "id": "finalPathwaySwitch",
+      "name": "pathwaySelection",
+      "position": {
+        "x": 1390,
+        "y": 136.5
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1",
+            "key": "selectedPathway",
+            "value": "'standard'"
+          },
+          {
+            "id": "e2",
+            "key": "followupFrequency",
+            "value": "'weekly'"
+          },
+          {
+            "id": "e3",
+            "key": "recommendedMonitoring",
+            "value": "['basic_vitals', 'medication_adherence']"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "standardPathway",
+      "name": "standardPathway",
+      "position": {
+        "x": 1710,
+        "y": 385
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1",
+            "key": "selectedPathway",
+            "value": "'enhanced'"
+          },
+          {
+            "id": "e2",
+            "key": "followupFrequency",
+            "value": "'twice_weekly'"
+          },
+          {
+            "id": "e3",
+            "key": "recommendedMonitoring",
+            "value": "['extended_vitals', 'medication_adherence', 'lifestyle_factors']"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "enhancedPathway",
+      "name": "enhancedPathway",
+      "position": {
+        "x": 1710,
+        "y": 280
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1",
+            "key": "selectedPathway",
+            "value": "'intensive'"
+          },
+          {
+            "id": "e2",
+            "key": "followupFrequency",
+            "value": "'daily'"
+          },
+          {
+            "id": "e3",
+            "key": "recommendedMonitoring",
+            "value": "['comprehensive_vitals', 'medication_adherence', 'lifestyle_factors', 'specialist_consultation']"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "intensivePathway",
+      "name": "intensivePathway",
+      "position": {
+        "x": 1710,
+        "y": 170
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "input",
+      "targetId": "diagnoseTable",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "diagnoseTable",
+      "targetId": "comorbidityCheck",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "comorbidityCheck",
+      "targetId": "patientFactorsTable",
+      "type": "edge"
+    },
+    {
+      "id": "edge4",
+      "sourceId": "patientFactorsTable",
+      "targetId": "finalPathwaySwitch",
+      "type": "edge"
+    },
+    {
+      "id": "edge5",
+      "sourceId": "finalPathwaySwitch",
+      "targetId": "standardPathway",
+      "sourceHandle": "standard",
+      "type": "edge"
+    },
+    {
+      "id": "edge6",
+      "sourceId": "finalPathwaySwitch",
+      "targetId": "enhancedPathway",
+      "sourceHandle": "enhanced",
+      "type": "edge"
+    },
+    {
+      "id": "edge7",
+      "sourceId": "finalPathwaySwitch",
+      "targetId": "intensivePathway",
+      "sourceHandle": "intensive",
+      "type": "edge"
+    }
+  ]
+}

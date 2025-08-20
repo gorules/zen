@@ -1,0 +1,242 @@
+{
+  "tests": [
+    {
+      "input": {
+        "product": {
+          "category": "electronics",
+          "id": "prod-123"
+        },
+        "sales": {
+          "amount": 750,
+          "volume": 120
+        },
+        "seller": {
+          "id": "sell-456",
+          "rating": 4.7,
+          "fulfillmentRate": 97
+        },
+        "promotion": {
+          "startDate": "2025-02-01",
+          "endDate": "2025-04-01"
+        }
+      },
+      "output": {
+        "finalCommissionRate": 0.168,
+        "isPromotionActive": false,
+        "promotionAdjustment": 0,
+        "volumeMultiplier": 1.2
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "input",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1",
+            "i1": "'electronics'",
+            "i2": "> 500",
+            "o1": "0.12"
+          },
+          {
+            "_id": "r2",
+            "i1": "'electronics'",
+            "i2": "",
+            "o1": "0.08"
+          },
+          {
+            "_id": "r3",
+            "i1": "'fashion'",
+            "i2": "> 300",
+            "o1": "0.15"
+          },
+          {
+            "_id": "r4",
+            "i1": "'fashion'",
+            "i2": "",
+            "o1": "0.10"
+          },
+          {
+            "_id": "r5",
+            "i1": "'home'",
+            "i2": "> 400",
+            "o1": "0.11"
+          },
+          {
+            "_id": "r6",
+            "i1": "'home'",
+            "i2": "",
+            "o1": "0.07"
+          },
+          {
+            "_id": "r7",
+            "i1": "",
+            "i2": "",
+            "o1": "0.05"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Category",
+            "field": "product.category"
+          },
+          {
+            "id": "i2",
+            "name": "Sales Amount",
+            "field": "sales.amount"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Base Commission Rate",
+            "field": "commission.baseRate"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "productCategory",
+      "name": "productCategoryRates",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r8",
+            "i3": "> 4.5",
+            "i4": "> 95",
+            "o2": "0.02"
+          },
+          {
+            "_id": "r9",
+            "i3": "> 4.0",
+            "i4": "> 90",
+            "o2": "0.01"
+          },
+          {
+            "_id": "r10",
+            "i3": "< 3.0",
+            "i4": "< 80",
+            "o2": "-0.02"
+          },
+          {
+            "_id": "r11",
+            "i3": "",
+            "i4": "",
+            "o2": "0"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i3",
+            "name": "Rating",
+            "field": "seller.rating"
+          },
+          {
+            "id": "i4",
+            "name": "Fulfillment Rate",
+            "field": "seller.fulfillmentRate"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2",
+            "name": "Performance Adjustment",
+            "field": "commission.performanceAdjustment"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "sellerPerformance",
+      "name": "sellerPerformanceAdjustment",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1",
+            "key": "isPromotionActive",
+            "value": "date(promotion.startDate) <= date('now') and date('now') <= date(promotion.endDate)"
+          },
+          {
+            "id": "e2",
+            "key": "volumeMultiplier",
+            "value": "sales.volume > 100 ? 1.2 : 1.0"
+          },
+          {
+            "id": "e3",
+            "key": "promotionAdjustment",
+            "value": "$.isPromotionActive ? 0.03 : 0"
+          },
+          {
+            "id": "e4",
+            "key": "finalCommissionRate",
+            "value": "(commission.baseRate + commission.performanceAdjustment + $.promotionAdjustment) * $.volumeMultiplier"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "promotionalPeriod",
+      "name": "promotionalAdjustment",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "sourceId": "input",
+      "targetId": "productCategory",
+      "type": "edge"
+    },
+    {
+      "id": "e2",
+      "sourceId": "productCategory",
+      "targetId": "sellerPerformance",
+      "type": "edge"
+    },
+    {
+      "id": "e3",
+      "sourceId": "sellerPerformance",
+      "targetId": "promotionalPeriod",
+      "type": "edge"
+    }
+  ]
+}

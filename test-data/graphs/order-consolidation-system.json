@@ -1,0 +1,493 @@
+{
+  "tests": [
+    {
+      "input": {
+        "orders": [
+          {
+            "orderId": "ORD-12345",
+            "customerName": "John Smith",
+            "deliveryAddress": {
+              "street": "123 Main St",
+              "city": "Springfield",
+              "state": "IL",
+              "zipCode": "62704",
+              "coordinates": {
+                "latitude": 39.7817,
+                "longitude": -89.6501
+              }
+            },
+            "requestedDeliveryDate": "2025-03-25T14:00:00Z",
+            "orderWeight": 12.5,
+            "orderItems": 3
+          },
+          {
+            "orderId": "ORD-12346",
+            "customerName": "Jane Doe",
+            "deliveryAddress": {
+              "street": "456 Oak Ave",
+              "city": "Springfield",
+              "state": "IL",
+              "zipCode": "62702",
+              "coordinates": {
+                "latitude": 39.8021,
+                "longitude": -89.6443
+              }
+            },
+            "requestedDeliveryDate": "2025-03-25T16:00:00Z",
+            "orderWeight": 8.2,
+            "orderItems": 2
+          }
+        ],
+        "distanceKm": 35,
+        "deliveryWindowDifferenceHours": 24,
+        "availableCarrierCapacity": 4,
+        "orderWeight1": 12.5,
+        "orderWeight2": 8.2,
+        "carrierDetails": {
+          "carrierId": "CAR-789",
+          "maxCapacity": 500,
+          "currentLoad": 320
+        }
+      },
+      "output": {
+        "availableCarrierCapacity": 4,
+        "canConsolidate": true,
+        "carrierDetails": {
+          "carrierId": "CAR-789",
+          "currentLoad": 320,
+          "maxCapacity": 500
+        },
+        "consolidationAction": "immediate_consolidation",
+        "consolidationPriority": "high",
+        "consolidationWeight": 20.7,
+        "costSavingEstimate": 23.75,
+        "costSavingsReport": {
+          "fuelSavings": 5.25,
+          "laborSavings": 23.75,
+          "totalSavings": 29
+        },
+        "deliverySchedule": {
+          "estimatedDeliveryTime": null,
+          "notificationRequired": false,
+          "type": "consolidated"
+        },
+        "deliveryWindowDifferenceHours": 24,
+        "distanceKm": 35,
+        "expectedFuelSavings": 5.25,
+        "explanation": "Orders are nearby, delivery window compatible, and carrier has capacity",
+        "orderWeight1": 12.5,
+        "orderWeight2": 8.2,
+        "orders": [
+          {
+            "customerName": "John Smith",
+            "deliveryAddress": {
+              "city": "Springfield",
+              "coordinates": {
+                "latitude": 39.7817,
+                "longitude": -89.6501
+              },
+              "state": "IL",
+              "street": "123 Main St",
+              "zipCode": "62704"
+            },
+            "orderId": "ORD-12345",
+            "orderItems": 3,
+            "orderWeight": 12.5,
+            "requestedDeliveryDate": "2025-03-25T14:00:00Z"
+          },
+          {
+            "customerName": "Jane Doe",
+            "deliveryAddress": {
+              "city": "Springfield",
+              "coordinates": {
+                "latitude": 39.8021,
+                "longitude": -89.6443
+              },
+              "state": "IL",
+              "street": "456 Oak Ave",
+              "zipCode": "62702"
+            },
+            "orderId": "ORD-12346",
+            "orderItems": 2,
+            "orderWeight": 8.2,
+            "requestedDeliveryDate": "2025-03-25T16:00:00Z"
+          }
+        ],
+        "schedulingPriority": "high"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "ip1",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1-1",
+            "i1-1": "< 50",
+            "i1-2": "< 48",
+            "i1-3": "> 3",
+            "o1-1": "'high'",
+            "o1-2": "'Orders are nearby, delivery window compatible, and carrier has capacity'"
+          },
+          {
+            "_id": "r1-2",
+            "i1-1": "< 50",
+            "i1-2": "< 72",
+            "i1-3": "> 2",
+            "o1-1": "'medium'",
+            "o1-2": "'Orders are nearby with slightly different delivery windows but carrier has capacity'"
+          },
+          {
+            "_id": "r1-3",
+            "i1-1": "< 100",
+            "i1-2": "< 48",
+            "i1-3": "> 2",
+            "o1-1": "'medium'",
+            "o1-2": "'Orders are reasonably close with compatible delivery windows and carrier has capacity'"
+          },
+          {
+            "_id": "r1-4",
+            "i1-1": "< 100",
+            "i1-2": "< 72",
+            "i1-3": "> 1",
+            "o1-1": "'low'",
+            "o1-2": "'Orders are reasonably close with slightly different delivery windows and minimal carrier capacity'"
+          },
+          {
+            "_id": "r1-5",
+            "i1-1": "",
+            "i1-2": "",
+            "i1-3": "",
+            "o1-1": "'none'",
+            "o1-2": "'Orders cannot be consolidated due to distance, delivery timing, or carrier capacity'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Distance (km)",
+            "field": "distanceKm"
+          },
+          {
+            "id": "i1-2",
+            "name": "Delivery Window Difference (hours)",
+            "field": "deliveryWindowDifferenceHours"
+          },
+          {
+            "id": "i1-3",
+            "name": "Available Carrier Capacity",
+            "field": "availableCarrierCapacity"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Consolidation Priority",
+            "field": "consolidationPriority"
+          },
+          {
+            "id": "o1-2",
+            "name": "Explanation",
+            "field": "explanation"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt1",
+      "name": "evaluateConsolidationFactors",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1-1",
+            "key": "canConsolidate",
+            "value": "consolidationPriority != 'none'"
+          },
+          {
+            "id": "e1-2",
+            "key": "consolidationWeight",
+            "value": "orderWeight1 + orderWeight2"
+          },
+          {
+            "id": "e1-3",
+            "key": "expectedFuelSavings",
+            "value": "distanceKm * 0.15"
+          },
+          {
+            "id": "e1-4",
+            "key": "costSavingEstimate",
+            "value": "distanceKm * 0.25 + 15"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex1",
+      "name": "calculateConsolidationMetrics",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "switchNode",
+      "content": {
+        "hitPolicy": "first",
+        "statements": [
+          {
+            "id": "s1-1",
+            "condition": "consolidationPriority == 'high'",
+            "isDefault": false
+          },
+          {
+            "id": "s1-2",
+            "condition": "consolidationPriority == 'medium'",
+            "isDefault": false
+          },
+          {
+            "id": "s1-3",
+            "condition": "consolidationPriority == 'low'",
+            "isDefault": false
+          },
+          {
+            "id": "s1-4",
+            "condition": "",
+            "isDefault": true
+          }
+        ]
+      },
+      "id": "sw1",
+      "name": "routeByConsolidationPriority",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e2-1",
+            "key": "consolidationAction",
+            "value": "'immediate_consolidation'"
+          },
+          {
+            "id": "e2-2",
+            "key": "schedulingPriority",
+            "value": "'high'"
+          },
+          {
+            "id": "e2-3",
+            "key": "deliverySchedule",
+            "value": "{'type': 'consolidated', 'estimatedDeliveryTime': requestedDeliveryDate1, 'notificationRequired': false}"
+          },
+          {
+            "id": "e2-4",
+            "key": "costSavingsReport",
+            "value": "{'fuelSavings': expectedFuelSavings, 'laborSavings': costSavingEstimate, 'totalSavings': expectedFuelSavings + costSavingEstimate}"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex2",
+      "name": "highPriorityProcessing",
+      "position": {
+        "x": 1390,
+        "y": -33
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e3-1",
+            "key": "consolidationAction",
+            "value": "'scheduled_consolidation'"
+          },
+          {
+            "id": "e3-2",
+            "key": "schedulingPriority",
+            "value": "'medium'"
+          },
+          {
+            "id": "e3-3",
+            "key": "deliverySchedule",
+            "value": "{'type': 'consolidated', 'estimatedDeliveryTime': requestedDeliveryDate1, 'customerConfirmationRequired': deliveryWindowDifferenceHours > 24}"
+          },
+          {
+            "id": "e3-4",
+            "key": "costSavingsReport",
+            "value": "{'fuelSavings': expectedFuelSavings * 0.9, 'laborSavings': costSavingEstimate * 0.8, 'totalSavings': (expectedFuelSavings * 0.9) + (costSavingEstimate * 0.8)}"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex3",
+      "name": "mediumPriorityProcessing",
+      "position": {
+        "x": 1390,
+        "y": 65
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e4-1",
+            "key": "consolidationAction",
+            "value": "'optional_consolidation'"
+          },
+          {
+            "id": "e4-2",
+            "key": "schedulingPriority",
+            "value": "'low'"
+          },
+          {
+            "id": "e4-3",
+            "key": "deliverySchedule",
+            "value": "{'type': 'potential_consolidation', 'earliestDeliveryTime': requestedDeliveryDate1, 'latestDeliveryTime': requestedDeliveryDate2, 'customerConfirmationRequired': true}"
+          },
+          {
+            "id": "e4-4",
+            "key": "additionalReview",
+            "value": "'required'"
+          },
+          {
+            "id": "e4-5",
+            "key": "costSavingsReport",
+            "value": "{'fuelSavings': expectedFuelSavings * 0.7, 'laborSavings': costSavingEstimate * 0.6, 'totalSavings': (expectedFuelSavings * 0.7) + (costSavingEstimate * 0.6)}"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex4",
+      "name": "lowPriorityProcessing",
+      "position": {
+        "x": 1390,
+        "y": 163
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e5-1",
+            "key": "consolidationAction",
+            "value": "'no_consolidation'"
+          },
+          {
+            "id": "e5-2",
+            "key": "schedulingPriority",
+            "value": "'standard'"
+          },
+          {
+            "id": "e5-3",
+            "key": "deliverySchedule",
+            "value": "{'type': 'separate', 'order1DeliveryTime': requestedDeliveryDate1, 'order2DeliveryTime': requestedDeliveryDate2}"
+          },
+          {
+            "id": "e5-4",
+            "key": "costSavingsReport",
+            "value": "{'fuelSavings': 0, 'laborSavings': 0, 'totalSavings': 0}"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex5",
+      "name": "standardProcessing",
+      "position": {
+        "x": 1390,
+        "y": 261
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "ed1",
+      "sourceId": "ip1",
+      "targetId": "dt1",
+      "type": "edge"
+    },
+    {
+      "id": "ed2",
+      "sourceId": "dt1",
+      "targetId": "ex1",
+      "type": "edge"
+    },
+    {
+      "id": "ed3",
+      "sourceId": "ex1",
+      "targetId": "sw1",
+      "type": "edge"
+    },
+    {
+      "id": "ed4",
+      "sourceId": "sw1",
+      "targetId": "ex2",
+      "sourceHandle": "s1-1",
+      "type": "edge"
+    },
+    {
+      "id": "ed5",
+      "sourceId": "sw1",
+      "targetId": "ex3",
+      "sourceHandle": "s1-2",
+      "type": "edge"
+    },
+    {
+      "id": "ed6",
+      "sourceId": "sw1",
+      "targetId": "ex4",
+      "sourceHandle": "s1-3",
+      "type": "edge"
+    },
+    {
+      "id": "ed7",
+      "sourceId": "sw1",
+      "targetId": "ex5",
+      "sourceHandle": "s1-4",
+      "type": "edge"
+    }
+  ]
+}

@@ -1,0 +1,362 @@
+{
+  "tests": [
+    {
+      "input": {
+        "customerData": {
+          "propertyValue": 450000,
+          "propertyAge": 15,
+          "propertyType": "single-family",
+          "preferredDeductible": 1500
+        },
+        "riskAssessment": {
+          "areaRiskLevel": "medium",
+          "claimHistory": {
+            "pastClaims": 1,
+            "severityLevel": "low"
+          }
+        },
+        "additionalRisks": [
+          {
+            "type": "flood",
+            "level": "medium"
+          },
+          {
+            "type": "earthquake",
+            "level": "low"
+          }
+        ]
+      },
+      "output": {
+        "additionalCoverageRecommendations": [
+          {
+            "additionalCoverage": {
+              "amount": 0,
+              "recommended": false
+            },
+            "level": "medium",
+            "type": "flood"
+          },
+          {
+            "additionalCoverage": {
+              "amount": 0,
+              "recommended": false
+            },
+            "level": "low",
+            "type": "earthquake"
+          }
+        ],
+        "additionalRisks": [
+          {
+            "level": "medium",
+            "type": "flood"
+          },
+          {
+            "level": "low",
+            "type": "earthquake"
+          }
+        ],
+        "basePackage": "basic",
+        "customerData": {
+          "preferredDeductible": 1500,
+          "propertyAge": 15,
+          "propertyType": "single-family",
+          "propertyValue": 450000
+        },
+        "riskAssessment": {
+          "areaRiskLevel": "medium",
+          "claimHistory": {
+            "pastClaims": 1,
+            "severityLevel": "low"
+          }
+        }
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "ip1",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1-1",
+            "i1-1": ">= 500000",
+            "i1-2": "'high'",
+            "o1-1": "'premium'"
+          },
+          {
+            "_id": "r1-2",
+            "i1-1": ">= 300000",
+            "i1-2": "'high'",
+            "o1-1": "'standard'"
+          },
+          {
+            "_id": "r1-3",
+            "i1-1": ">= 500000",
+            "i1-2": "'medium'",
+            "o1-1": "'standard'"
+          },
+          {
+            "_id": "r1-4",
+            "i1-1": ">= 300000",
+            "i1-2": "'medium'",
+            "o1-1": "'basic'"
+          },
+          {
+            "_id": "r1-5",
+            "i1-1": ">= 200000",
+            "i1-2": "'low'",
+            "o1-1": "'basic'"
+          },
+          {
+            "_id": "r1-6",
+            "i1-1": "",
+            "i1-2": "",
+            "o1-1": "'minimal'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Property Value",
+            "field": "customerData.propertyValue"
+          },
+          {
+            "id": "i1-2",
+            "name": "Risk Area",
+            "field": "riskAssessment.areaRiskLevel"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Base Package",
+            "field": "basePackage"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "dt1",
+      "name": "determineBasePackage",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r2-1",
+            "i2-1": "'premium'",
+            "o2-1": "propertyValue",
+            "o2-2": "propertyValue * 0.5",
+            "o2-3": "500000",
+            "o2-4": "10000",
+            "o2-5": "1000"
+          },
+          {
+            "_id": "r2-2",
+            "i2-1": "'standard'",
+            "o2-1": "propertyValue * 0.9",
+            "o2-2": "propertyValue * 0.45",
+            "o2-3": "300000",
+            "o2-4": "7500",
+            "o2-5": "1500"
+          },
+          {
+            "_id": "r2-3",
+            "i2-1": "'basic'",
+            "o2-1": "propertyValue * 0.8",
+            "o2-2": "propertyValue * 0.4",
+            "o2-3": "200000",
+            "o2-4": "5000",
+            "o2-5": "2000"
+          },
+          {
+            "_id": "r2-4",
+            "i2-1": "'minimal'",
+            "o2-1": "propertyValue * 0.7",
+            "o2-2": "propertyValue * 0.35",
+            "o2-3": "100000",
+            "o2-4": "2500",
+            "o2-5": "2500"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i2-1",
+            "name": "Base Package",
+            "field": "basePackage"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2-1",
+            "name": "Dwelling Coverage",
+            "field": "coverageLevels.dwellingCoverage"
+          },
+          {
+            "id": "o2-2",
+            "name": "Personal Property Coverage",
+            "field": "coverageLevels.personalPropertyCoverage"
+          },
+          {
+            "id": "o2-3",
+            "name": "Liability Coverage",
+            "field": "coverageLevels.liabilityCoverage"
+          },
+          {
+            "id": "o2-4",
+            "name": "Medical Payments Coverage",
+            "field": "coverageLevels.medicalPaymentsCoverage"
+          },
+          {
+            "id": "o2-5",
+            "name": "Deductible",
+            "field": "coverageLevels.deductible"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt2",
+      "name": "calculateCoverageLevels",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r3-1",
+            "i3-1": "'flood'",
+            "i3-2": "'high'",
+            "o3-1": "true",
+            "o3-2": "coverageLevels.dwellingCoverage * 0.25"
+          },
+          {
+            "_id": "r3-2",
+            "i3-1": "'flood'",
+            "i3-2": "'medium'",
+            "o3-1": "true",
+            "o3-2": "coverageLevels.dwellingCoverage * 0.2"
+          },
+          {
+            "_id": "r3-3",
+            "i3-1": "'flood'",
+            "i3-2": "'low'",
+            "o3-1": "false",
+            "o3-2": "0"
+          },
+          {
+            "_id": "r3-4",
+            "i3-1": "'earthquake'",
+            "i3-2": "'high'",
+            "o3-1": "true",
+            "o3-2": "coverageLevels.dwellingCoverage * 0.3"
+          },
+          {
+            "_id": "r3-5",
+            "i3-1": "'earthquake'",
+            "i3-2": "'medium'",
+            "o3-1": "true",
+            "o3-2": "coverageLevels.dwellingCoverage * 0.2"
+          },
+          {
+            "_id": "r3-6",
+            "i3-1": "'earthquake'",
+            "i3-2": "'low'",
+            "o3-1": "false",
+            "o3-2": "0"
+          },
+          {
+            "_id": "r3-7",
+            "i3-1": "",
+            "i3-2": "",
+            "o3-1": "false",
+            "o3-2": "0"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i3-1",
+            "name": "Disaster Type",
+            "field": "additionalRisks.type"
+          },
+          {
+            "id": "i3-2",
+            "name": "Risk Level",
+            "field": "additionalRisks.level"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o3-1",
+            "name": "Recommend",
+            "field": "additionalCoverage.recommended"
+          },
+          {
+            "id": "o3-2",
+            "name": "Coverage Amount",
+            "field": "additionalCoverage.amount"
+          }
+        ],
+        "passThrough": true,
+        "inputField": "additionalRisks",
+        "outputPath": "additionalCoverageRecommendations",
+        "executionMode": "loop"
+      },
+      "id": "dt3",
+      "name": "additionalCoverageRecommendations",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "ed1",
+      "sourceId": "ip1",
+      "targetId": "dt1",
+      "type": "edge"
+    },
+    {
+      "id": "ed2",
+      "sourceId": "dt1",
+      "targetId": "dt2",
+      "type": "edge"
+    },
+    {
+      "id": "ed3",
+      "sourceId": "dt2",
+      "targetId": "dt3",
+      "type": "edge"
+    }
+  ]
+}

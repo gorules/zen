@@ -1,0 +1,289 @@
+{
+  "tests": [
+    {
+      "input": {
+        "userProfile": "premium",
+        "serviceType": "calls",
+        "timePeriod": "peak",
+        "locationType": "domestic",
+        "currency": "EUR",
+        "usage": {
+          "amount": 15,
+          "unit": "minutes"
+        },
+        "userId": "USR123456",
+        "timestamp": "2025-03-20T14:30:00Z"
+      },
+      "output": {
+        "baseTariff": 0.05,
+        "currency": "EUR",
+        "finalTariff": 0.048,
+        "rulesSummary": [
+          "Base rate: 0.05 per unit",
+          "Premium user call discount",
+          "Peak hour domestic rate"
+        ]
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "input",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1",
+            "i1": "'premium'",
+            "i2": "'calls'",
+            "o1": "0.8",
+            "o2": "'Premium user call discount'"
+          },
+          {
+            "_id": "r2",
+            "i1": "'premium'",
+            "i2": "'data'",
+            "o1": "0.9",
+            "o2": "'Premium user data discount'"
+          },
+          {
+            "_id": "r3",
+            "i1": "'premium'",
+            "i2": "'messaging'",
+            "o1": "0.7",
+            "o2": "'Premium user messaging discount'"
+          },
+          {
+            "_id": "r4",
+            "i1": "'business'",
+            "i2": "'calls'",
+            "o1": "0.85",
+            "o2": "'Business user call discount'"
+          },
+          {
+            "_id": "r5",
+            "i1": "'business'",
+            "i2": "'data'",
+            "o1": "0.8",
+            "o2": "'Business user data discount'"
+          },
+          {
+            "_id": "r6",
+            "i1": "'business'",
+            "i2": "'messaging'",
+            "o1": "0.6",
+            "o2": "'Business user messaging discount'"
+          },
+          {
+            "_id": "r7",
+            "i1": "'standard'",
+            "i2": "",
+            "o1": "1.0",
+            "o2": "'Standard rate applied'"
+          },
+          {
+            "_id": "r8",
+            "i1": "",
+            "i2": "",
+            "o1": "1.0",
+            "o2": "'Default rate applied'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "User Profile",
+            "field": "userProfile"
+          },
+          {
+            "id": "i2",
+            "name": "Service Type",
+            "field": "serviceType"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Profile Multiplier",
+            "field": "profileMultiplier"
+          },
+          {
+            "id": "o2",
+            "name": "Rule Applied",
+            "field": "profileRuleApplied"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "profileRules",
+      "name": "userProfileRules",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1",
+            "i1": "'peak'",
+            "i2": "'roaming'",
+            "o1": "1.5",
+            "o2": "'Peak hour roaming surcharge'"
+          },
+          {
+            "_id": "r2",
+            "i1": "'peak'",
+            "i2": "'domestic'",
+            "o1": "1.2",
+            "o2": "'Peak hour domestic rate'"
+          },
+          {
+            "_id": "r3",
+            "i1": "'off-peak'",
+            "i2": "'roaming'",
+            "o1": "1.3",
+            "o2": "'Off-peak roaming rate'"
+          },
+          {
+            "_id": "r4",
+            "i1": "'off-peak'",
+            "i2": "'domestic'",
+            "o1": "0.9",
+            "o2": "'Off-peak domestic discount'"
+          },
+          {
+            "_id": "r5",
+            "i1": "'weekend'",
+            "i2": "'roaming'",
+            "o1": "1.2",
+            "o2": "'Weekend roaming rate'"
+          },
+          {
+            "_id": "r6",
+            "i1": "'weekend'",
+            "i2": "'domestic'",
+            "o1": "0.8",
+            "o2": "'Weekend domestic discount'"
+          },
+          {
+            "_id": "r7",
+            "i1": "",
+            "i2": "",
+            "o1": "1.0",
+            "o2": "'Default time/location rate'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Time Period",
+            "field": "timePeriod"
+          },
+          {
+            "id": "i2",
+            "name": "Location Type",
+            "field": "locationType"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Time Location Multiplier",
+            "field": "timeLocationMultiplier"
+          },
+          {
+            "id": "o2",
+            "name": "Rule Applied",
+            "field": "timeLocationRuleApplied"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "timeLocationRules",
+      "name": "timeLocationRules",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1",
+            "key": "baseTariff",
+            "value": "serviceType == 'calls' ? 0.05 : (serviceType == 'data' ? 0.02 : 0.01)"
+          },
+          {
+            "id": "e2",
+            "key": "finalTariff",
+            "value": "$.baseTariff * profileMultiplier * timeLocationMultiplier"
+          },
+          {
+            "id": "e3",
+            "key": "currency",
+            "value": "currency ?? 'USD'"
+          },
+          {
+            "id": "e4",
+            "key": "rulesSummary",
+            "value": "[`Base rate: ${$.baseTariff} per unit`, profileRuleApplied, timeLocationRuleApplied]"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "calculateFinalTariff",
+      "name": "calculateFinalTariff",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "sourceId": "input",
+      "targetId": "profileRules",
+      "type": "edge"
+    },
+    {
+      "id": "e2",
+      "sourceId": "profileRules",
+      "targetId": "timeLocationRules",
+      "type": "edge"
+    },
+    {
+      "id": "e3",
+      "sourceId": "timeLocationRules",
+      "targetId": "calculateFinalTariff",
+      "type": "edge"
+    }
+  ]
+}

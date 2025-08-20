@@ -1,0 +1,171 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  baseTariff:
+    "$serde_json::private::Number": "0.05"
+  currency: EUR
+  finalTariff:
+    "$serde_json::private::Number": "0.048"
+  rulesSummary:
+    - "Base rate: 0.05 per unit"
+    - Premium user call discount
+    - Peak hour domestic rate
+trace:
+  calculateFinalTariff:
+    id: calculateFinalTariff
+    input:
+      currency: EUR
+      locationType: domestic
+      profileMultiplier:
+        "$serde_json::private::Number": "0.8"
+      profileRuleApplied: Premium user call discount
+      serviceType: calls
+      timeLocationMultiplier:
+        "$serde_json::private::Number": "1.2"
+      timeLocationRuleApplied: Peak hour domestic rate
+      timePeriod: peak
+      timestamp: "2025-03-20T14:30:00Z"
+      usage:
+        amount:
+          "$serde_json::private::Number": "15"
+        unit: minutes
+      userId: USR123456
+      userProfile: premium
+    name: calculateFinalTariff
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      baseTariff:
+        "$serde_json::private::Number": "0.05"
+      currency: EUR
+      finalTariff:
+        "$serde_json::private::Number": "0.048"
+      rulesSummary:
+        - "Base rate: 0.05 per unit"
+        - Premium user call discount
+        - Peak hour domestic rate
+    performance: "[perf]"
+    traceData:
+      baseTariff:
+        result: "0.05"
+      currency:
+        result: "\"EUR\""
+      finalTariff:
+        result: "0.048"
+      rulesSummary:
+        result: "[\"Base rate: 0.05 per unit\",\"Premium user call discount\",\"Peak hour domestic rate\"]"
+  input:
+    id: input
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      currency: EUR
+      locationType: domestic
+      serviceType: calls
+      timePeriod: peak
+      timestamp: "2025-03-20T14:30:00Z"
+      usage:
+        amount:
+          "$serde_json::private::Number": "15"
+        unit: minutes
+      userId: USR123456
+      userProfile: premium
+    performance: "[perf]"
+    traceData: ~
+  profileRules:
+    id: profileRules
+    input:
+      currency: EUR
+      locationType: domestic
+      serviceType: calls
+      timePeriod: peak
+      timestamp: "2025-03-20T14:30:00Z"
+      usage:
+        amount:
+          "$serde_json::private::Number": "15"
+        unit: minutes
+      userId: USR123456
+      userProfile: premium
+    name: userProfileRules
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      currency: EUR
+      locationType: domestic
+      profileMultiplier:
+        "$serde_json::private::Number": "0.8"
+      profileRuleApplied: Premium user call discount
+      serviceType: calls
+      timePeriod: peak
+      timestamp: "2025-03-20T14:30:00Z"
+      usage:
+        amount:
+          "$serde_json::private::Number": "15"
+        unit: minutes
+      userId: USR123456
+      userProfile: premium
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        serviceType: calls
+        userProfile: premium
+      rule:
+        _id: r1
+        "serviceType[i2]": "'calls'"
+        "userProfile[i1]": "'premium'"
+  timeLocationRules:
+    id: timeLocationRules
+    input:
+      currency: EUR
+      locationType: domestic
+      profileMultiplier:
+        "$serde_json::private::Number": "0.8"
+      profileRuleApplied: Premium user call discount
+      serviceType: calls
+      timePeriod: peak
+      timestamp: "2025-03-20T14:30:00Z"
+      usage:
+        amount:
+          "$serde_json::private::Number": "15"
+        unit: minutes
+      userId: USR123456
+      userProfile: premium
+    name: timeLocationRules
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      currency: EUR
+      locationType: domestic
+      profileMultiplier:
+        "$serde_json::private::Number": "0.8"
+      profileRuleApplied: Premium user call discount
+      serviceType: calls
+      timeLocationMultiplier:
+        "$serde_json::private::Number": "1.2"
+      timeLocationRuleApplied: Peak hour domestic rate
+      timePeriod: peak
+      timestamp: "2025-03-20T14:30:00Z"
+      usage:
+        amount:
+          "$serde_json::private::Number": "15"
+        unit: minutes
+      userId: USR123456
+      userProfile: premium
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        locationType: domestic
+        timePeriod: peak
+      rule:
+        _id: r2
+        "locationType[i2]": "'domestic'"
+        "timePeriod[i1]": "'peak'"

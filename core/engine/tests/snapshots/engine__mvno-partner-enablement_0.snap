@@ -1,0 +1,177 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  pricing:
+    dataRatePerMB:
+      "$serde_json::private::Number": "0.004"
+    revenueShareFactor:
+      "$serde_json::private::Number": "0.85"
+    tier: tier1
+    voiceRatePerMinute:
+      "$serde_json::private::Number": "0.002"
+trace:
+  input:
+    id: input
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      partner:
+        ageInMonths:
+          "$serde_json::private::Number": "36"
+        businessModel: business-focused
+        id: mvno-123
+        name: TechMobile
+        region: Northeast
+        subscriberCount:
+          "$serde_json::private::Number": "120000"
+        type: premium
+    performance: "[perf]"
+    traceData: ~
+  partnerConfig:
+    id: partnerConfig
+    input:
+      partner:
+        ageInMonths:
+          "$serde_json::private::Number": "36"
+        businessModel: business-focused
+        id: mvno-123
+        name: TechMobile
+        region: Northeast
+        subscriberCount:
+          "$serde_json::private::Number": "120000"
+        type: premium
+    name: partnerServiceAccess
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      config:
+        bandwidthPriority: high
+        serviceAccessLevel: full
+      partner:
+        ageInMonths:
+          "$serde_json::private::Number": "36"
+        businessModel: business-focused
+        id: mvno-123
+        name: TechMobile
+        region: Northeast
+        subscriberCount:
+          "$serde_json::private::Number": "120000"
+        type: premium
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        partner.ageInMonths:
+          "$serde_json::private::Number": "36"
+        partner.subscriberCount:
+          "$serde_json::private::Number": "120000"
+        partner.type: premium
+      rule:
+        _id: rule1
+        "partner.ageInMonths[partnerAge]": "> 24"
+        "partner.subscriberCount[subscribers]": "> 100000"
+        "partner.type[partnerType]": "'premium'"
+  pricingTier:
+    id: pricingTier
+    input:
+      config:
+        bandwidthPriority: high
+        serviceAccessLevel: full
+      partner:
+        ageInMonths:
+          "$serde_json::private::Number": "36"
+        businessModel: business-focused
+        id: mvno-123
+        name: TechMobile
+        region: Northeast
+        subscriberCount:
+          "$serde_json::private::Number": "120000"
+        type: premium
+      resources:
+        apiAccessLevel: advanced
+        dataAllocationGB:
+          "$serde_json::private::Number": "5000"
+        smsCount:
+          "$serde_json::private::Number": "2000000"
+        voiceMinutes:
+          "$serde_json::private::Number": "1000000"
+    name: partnerPricing
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      pricing:
+        dataRatePerMB:
+          "$serde_json::private::Number": "0.004"
+        revenueShareFactor:
+          "$serde_json::private::Number": "0.85"
+        tier: tier1
+        voiceRatePerMinute:
+          "$serde_json::private::Number": "0.002"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        config.serviceAccessLevel: full
+        partner.subscriberCount:
+          "$serde_json::private::Number": "120000"
+      rule:
+        _id: pt1
+        "config.serviceAccessLevel[i1]": "'full'"
+        "partner.subscriberCount[i2]": "> 100000"
+  resourceAllocation:
+    id: resourceAllocation
+    input:
+      config:
+        bandwidthPriority: high
+        serviceAccessLevel: full
+      partner:
+        ageInMonths:
+          "$serde_json::private::Number": "36"
+        businessModel: business-focused
+        id: mvno-123
+        name: TechMobile
+        region: Northeast
+        subscriberCount:
+          "$serde_json::private::Number": "120000"
+        type: premium
+    name: networkResourceAllocation
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      config:
+        bandwidthPriority: high
+        serviceAccessLevel: full
+      partner:
+        ageInMonths:
+          "$serde_json::private::Number": "36"
+        businessModel: business-focused
+        id: mvno-123
+        name: TechMobile
+        region: Northeast
+        subscriberCount:
+          "$serde_json::private::Number": "120000"
+        type: premium
+      resources:
+        apiAccessLevel: advanced
+        dataAllocationGB:
+          "$serde_json::private::Number": "5000"
+        smsCount:
+          "$serde_json::private::Number": "2000000"
+        voiceMinutes:
+          "$serde_json::private::Number": "1000000"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        config.serviceAccessLevel: full
+      rule:
+        _id: res1
+        "config.serviceAccessLevel[serviceLevel]": "'full'"

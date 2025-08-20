@@ -1,0 +1,752 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  dispatchReasons:
+    - flag: false
+      reason: Extreme wind and low visibility
+  dispatchSummary: Flight dispatch denied
+  failedCriteria:
+    - weather
+  isDispatchable: false
+trace:
+  aircraftEligibility:
+    id: aircraftEligibility
+    input:
+      aircraft:
+        emptyWeight:
+          "$serde_json::private::Number": "41500"
+        fuelReserves:
+          "$serde_json::private::Number": "1.5"
+        maintenanceRequired: false
+        maxTakeoffWeight:
+          "$serde_json::private::Number": "78000"
+        type: B737-800
+      crew:
+        members:
+          - C001
+          - C002
+          - C003
+        restCompliant: true
+      estimatedTakeoffWeight:
+        "$serde_json::private::Number": "44850"
+      flight:
+        destination: JFK
+        number: FL123
+        origin: LAX
+        scheduledDeparture: "2025-03-19T08:00:00Z"
+      manifest:
+        cargoWeight:
+          "$serde_json::private::Number": "2500"
+        passengers:
+          - P001
+          - P002
+          - P003
+          - P004
+          - P005
+          - P006
+          - P007
+          - P008
+          - P009
+          - P010
+      passengerWeight:
+        "$serde_json::private::Number": "850"
+      totalCargo:
+        "$serde_json::private::Number": "2500"
+      totalPassengers:
+        "$serde_json::private::Number": "10"
+      weather:
+        precipitation: light
+        temperature:
+          "$serde_json::private::Number": "15"
+        visibility:
+          "$serde_json::private::Number": "6500"
+        windSpeed:
+          "$serde_json::private::Number": "90"
+    name: aircraftEligibility
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      aircraft:
+        emptyWeight:
+          "$serde_json::private::Number": "41500"
+        fuelReserves:
+          "$serde_json::private::Number": "1.5"
+        maintenanceRequired: false
+        maxTakeoffWeight:
+          "$serde_json::private::Number": "78000"
+        type: B737-800
+      crew:
+        members:
+          - C001
+          - C002
+          - C003
+        restCompliant: true
+      dispatch:
+        aircraft:
+          flag: true
+          reason: Aircraft is operational
+      estimatedTakeoffWeight:
+        "$serde_json::private::Number": "44850"
+      flight:
+        destination: JFK
+        number: FL123
+        origin: LAX
+        scheduledDeparture: "2025-03-19T08:00:00Z"
+      manifest:
+        cargoWeight:
+          "$serde_json::private::Number": "2500"
+        passengers:
+          - P001
+          - P002
+          - P003
+          - P004
+          - P005
+          - P006
+          - P007
+          - P008
+          - P009
+          - P010
+      passengerWeight:
+        "$serde_json::private::Number": "850"
+      totalCargo:
+        "$serde_json::private::Number": "2500"
+      totalPassengers:
+        "$serde_json::private::Number": "10"
+      weather:
+        precipitation: light
+        temperature:
+          "$serde_json::private::Number": "15"
+        visibility:
+          "$serde_json::private::Number": "6500"
+        windSpeed:
+          "$serde_json::private::Number": "90"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "2"
+      reference_map:
+        aircraft.fuelReserves:
+          "$serde_json::private::Number": "1.5"
+        aircraft.maintenanceRequired: false
+      rule:
+        _id: rule3
+        "aircraft.fuelReserves[fuelReserves]": ""
+        "aircraft.maintenanceRequired[maintenance]": ""
+  crewEligibility:
+    id: crewEligibility
+    input:
+      aircraft:
+        emptyWeight:
+          "$serde_json::private::Number": "41500"
+        fuelReserves:
+          "$serde_json::private::Number": "1.5"
+        maintenanceRequired: false
+        maxTakeoffWeight:
+          "$serde_json::private::Number": "78000"
+        type: B737-800
+      crew:
+        members:
+          - C001
+          - C002
+          - C003
+        restCompliant: true
+      estimatedTakeoffWeight:
+        "$serde_json::private::Number": "44850"
+      flight:
+        destination: JFK
+        number: FL123
+        origin: LAX
+        scheduledDeparture: "2025-03-19T08:00:00Z"
+      manifest:
+        cargoWeight:
+          "$serde_json::private::Number": "2500"
+        passengers:
+          - P001
+          - P002
+          - P003
+          - P004
+          - P005
+          - P006
+          - P007
+          - P008
+          - P009
+          - P010
+      passengerWeight:
+        "$serde_json::private::Number": "850"
+      totalCargo:
+        "$serde_json::private::Number": "2500"
+      totalPassengers:
+        "$serde_json::private::Number": "10"
+      weather:
+        precipitation: light
+        temperature:
+          "$serde_json::private::Number": "15"
+        visibility:
+          "$serde_json::private::Number": "6500"
+        windSpeed:
+          "$serde_json::private::Number": "90"
+    name: crewEligibility
+    order:
+      "$serde_json::private::Number": "5"
+    output:
+      aircraft:
+        emptyWeight:
+          "$serde_json::private::Number": "41500"
+        fuelReserves:
+          "$serde_json::private::Number": "1.5"
+        maintenanceRequired: false
+        maxTakeoffWeight:
+          "$serde_json::private::Number": "78000"
+        type: B737-800
+      crew:
+        members:
+          - C001
+          - C002
+          - C003
+        restCompliant: true
+      dispatch:
+        crew:
+          flag: true
+          reason: Crew requirements satisfied
+      estimatedTakeoffWeight:
+        "$serde_json::private::Number": "44850"
+      flight:
+        destination: JFK
+        number: FL123
+        origin: LAX
+        scheduledDeparture: "2025-03-19T08:00:00Z"
+      manifest:
+        cargoWeight:
+          "$serde_json::private::Number": "2500"
+        passengers:
+          - P001
+          - P002
+          - P003
+          - P004
+          - P005
+          - P006
+          - P007
+          - P008
+          - P009
+          - P010
+      passengerWeight:
+        "$serde_json::private::Number": "850"
+      totalCargo:
+        "$serde_json::private::Number": "2500"
+      totalPassengers:
+        "$serde_json::private::Number": "10"
+      weather:
+        precipitation: light
+        temperature:
+          "$serde_json::private::Number": "15"
+        visibility:
+          "$serde_json::private::Number": "6500"
+        windSpeed:
+          "$serde_json::private::Number": "90"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "2"
+      reference_map:
+        crew.restCompliant: true
+        len(crew.members):
+          "$serde_json::private::Number": "3"
+      rule:
+        _id: rule3
+        "crew.restCompliant[restCompliant]": ""
+        "len(crew.members)[crewCount]": ""
+  dispatchSummary:
+    id: dispatchSummary
+    input:
+      aircraft:
+        emptyWeight:
+          "$serde_json::private::Number": "41500"
+        fuelReserves:
+          "$serde_json::private::Number": "1.5"
+        maintenanceRequired: false
+        maxTakeoffWeight:
+          "$serde_json::private::Number": "78000"
+        type: B737-800
+      crew:
+        members:
+          - C001
+          - C002
+          - C003
+        restCompliant: true
+      dispatch:
+        aircraft:
+          flag: true
+          reason: Aircraft is operational
+        crew:
+          flag: true
+          reason: Crew requirements satisfied
+        weather:
+          flag: false
+          reason: Extreme wind and low visibility
+        weight:
+          flag: true
+          reason: Weight within acceptable limits
+      estimatedTakeoffWeight:
+        "$serde_json::private::Number": "44850"
+      flight:
+        destination: JFK
+        number: FL123
+        origin: LAX
+        scheduledDeparture: "2025-03-19T08:00:00Z"
+      manifest:
+        cargoWeight:
+          "$serde_json::private::Number": "2500"
+        passengers:
+          - P001
+          - P002
+          - P003
+          - P004
+          - P005
+          - P006
+          - P007
+          - P008
+          - P009
+          - P010
+      passengerWeight:
+        "$serde_json::private::Number": "850"
+      totalCargo:
+        "$serde_json::private::Number": "2500"
+      totalPassengers:
+        "$serde_json::private::Number": "10"
+      weather:
+        precipitation: light
+        temperature:
+          "$serde_json::private::Number": "15"
+        visibility:
+          "$serde_json::private::Number": "6500"
+        windSpeed:
+          "$serde_json::private::Number": "90"
+    name: dispatchSummary
+    order:
+      "$serde_json::private::Number": "6"
+    output:
+      dispatchReasons:
+        - flag: false
+          reason: Extreme wind and low visibility
+      dispatchSummary: Flight dispatch denied
+      failedCriteria:
+        - weather
+      isDispatchable: false
+    performance: "[perf]"
+    traceData:
+      dispatchReasons:
+        result: "[{\"flag\":false,\"reason\":\"Extreme wind and low visibility\"}]"
+      dispatchSummary:
+        result: "\"Flight dispatch denied\""
+      failedCriteria:
+        result: "[\"weather\"]"
+      isDispatchable:
+        result: "false"
+  inputNode:
+    id: inputNode
+    input: ~
+    name: flightDispatchRequest
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      aircraft:
+        emptyWeight:
+          "$serde_json::private::Number": "41500"
+        fuelReserves:
+          "$serde_json::private::Number": "1.5"
+        maintenanceRequired: false
+        maxTakeoffWeight:
+          "$serde_json::private::Number": "78000"
+        type: B737-800
+      crew:
+        members:
+          - C001
+          - C002
+          - C003
+        restCompliant: true
+      flight:
+        destination: JFK
+        number: FL123
+        origin: LAX
+        scheduledDeparture: "2025-03-19T08:00:00Z"
+      manifest:
+        cargoWeight:
+          "$serde_json::private::Number": "2500"
+        passengers:
+          - P001
+          - P002
+          - P003
+          - P004
+          - P005
+          - P006
+          - P007
+          - P008
+          - P009
+          - P010
+      weather:
+        precipitation: light
+        temperature:
+          "$serde_json::private::Number": "15"
+        visibility:
+          "$serde_json::private::Number": "6500"
+        windSpeed:
+          "$serde_json::private::Number": "90"
+    performance: "[perf]"
+    traceData: ~
+  weatherEligibility:
+    id: weatherEligibility
+    input:
+      aircraft:
+        emptyWeight:
+          "$serde_json::private::Number": "41500"
+        fuelReserves:
+          "$serde_json::private::Number": "1.5"
+        maintenanceRequired: false
+        maxTakeoffWeight:
+          "$serde_json::private::Number": "78000"
+        type: B737-800
+      crew:
+        members:
+          - C001
+          - C002
+          - C003
+        restCompliant: true
+      estimatedTakeoffWeight:
+        "$serde_json::private::Number": "44850"
+      flight:
+        destination: JFK
+        number: FL123
+        origin: LAX
+        scheduledDeparture: "2025-03-19T08:00:00Z"
+      manifest:
+        cargoWeight:
+          "$serde_json::private::Number": "2500"
+        passengers:
+          - P001
+          - P002
+          - P003
+          - P004
+          - P005
+          - P006
+          - P007
+          - P008
+          - P009
+          - P010
+      passengerWeight:
+        "$serde_json::private::Number": "850"
+      totalCargo:
+        "$serde_json::private::Number": "2500"
+      totalPassengers:
+        "$serde_json::private::Number": "10"
+      weather:
+        precipitation: light
+        temperature:
+          "$serde_json::private::Number": "15"
+        visibility:
+          "$serde_json::private::Number": "6500"
+        windSpeed:
+          "$serde_json::private::Number": "90"
+    name: weatherEligibility
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      aircraft:
+        emptyWeight:
+          "$serde_json::private::Number": "41500"
+        fuelReserves:
+          "$serde_json::private::Number": "1.5"
+        maintenanceRequired: false
+        maxTakeoffWeight:
+          "$serde_json::private::Number": "78000"
+        type: B737-800
+      crew:
+        members:
+          - C001
+          - C002
+          - C003
+        restCompliant: true
+      dispatch:
+        weather:
+          flag: false
+          reason: Extreme wind and low visibility
+      estimatedTakeoffWeight:
+        "$serde_json::private::Number": "44850"
+      flight:
+        destination: JFK
+        number: FL123
+        origin: LAX
+        scheduledDeparture: "2025-03-19T08:00:00Z"
+      manifest:
+        cargoWeight:
+          "$serde_json::private::Number": "2500"
+        passengers:
+          - P001
+          - P002
+          - P003
+          - P004
+          - P005
+          - P006
+          - P007
+          - P008
+          - P009
+          - P010
+      passengerWeight:
+        "$serde_json::private::Number": "850"
+      totalCargo:
+        "$serde_json::private::Number": "2500"
+      totalPassengers:
+        "$serde_json::private::Number": "10"
+      weather:
+        precipitation: light
+        temperature:
+          "$serde_json::private::Number": "15"
+        visibility:
+          "$serde_json::private::Number": "6500"
+        windSpeed:
+          "$serde_json::private::Number": "90"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        weather.visibility:
+          "$serde_json::private::Number": "6500"
+        weather.windSpeed:
+          "$serde_json::private::Number": "90"
+      rule:
+        _id: rule1
+        "weather.visibility[visibility]": "< 10000"
+        "weather.windSpeed[windSpeed]": "> 45"
+  weightCalculations:
+    id: weightCalculations
+    input:
+      aircraft:
+        emptyWeight:
+          "$serde_json::private::Number": "41500"
+        fuelReserves:
+          "$serde_json::private::Number": "1.5"
+        maintenanceRequired: false
+        maxTakeoffWeight:
+          "$serde_json::private::Number": "78000"
+        type: B737-800
+      crew:
+        members:
+          - C001
+          - C002
+          - C003
+        restCompliant: true
+      flight:
+        destination: JFK
+        number: FL123
+        origin: LAX
+        scheduledDeparture: "2025-03-19T08:00:00Z"
+      manifest:
+        cargoWeight:
+          "$serde_json::private::Number": "2500"
+        passengers:
+          - P001
+          - P002
+          - P003
+          - P004
+          - P005
+          - P006
+          - P007
+          - P008
+          - P009
+          - P010
+      weather:
+        precipitation: light
+        temperature:
+          "$serde_json::private::Number": "15"
+        visibility:
+          "$serde_json::private::Number": "6500"
+        windSpeed:
+          "$serde_json::private::Number": "90"
+    name: weightCalculations
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      aircraft:
+        emptyWeight:
+          "$serde_json::private::Number": "41500"
+        fuelReserves:
+          "$serde_json::private::Number": "1.5"
+        maintenanceRequired: false
+        maxTakeoffWeight:
+          "$serde_json::private::Number": "78000"
+        type: B737-800
+      crew:
+        members:
+          - C001
+          - C002
+          - C003
+        restCompliant: true
+      estimatedTakeoffWeight:
+        "$serde_json::private::Number": "44850"
+      flight:
+        destination: JFK
+        number: FL123
+        origin: LAX
+        scheduledDeparture: "2025-03-19T08:00:00Z"
+      manifest:
+        cargoWeight:
+          "$serde_json::private::Number": "2500"
+        passengers:
+          - P001
+          - P002
+          - P003
+          - P004
+          - P005
+          - P006
+          - P007
+          - P008
+          - P009
+          - P010
+      passengerWeight:
+        "$serde_json::private::Number": "850"
+      totalCargo:
+        "$serde_json::private::Number": "2500"
+      totalPassengers:
+        "$serde_json::private::Number": "10"
+      weather:
+        precipitation: light
+        temperature:
+          "$serde_json::private::Number": "15"
+        visibility:
+          "$serde_json::private::Number": "6500"
+        windSpeed:
+          "$serde_json::private::Number": "90"
+    performance: "[perf]"
+    traceData:
+      estimatedTakeoffWeight:
+        result: "44850"
+      passengerWeight:
+        result: "850"
+      totalCargo:
+        result: "2500"
+      totalPassengers:
+        result: "10"
+  weightEligibility:
+    id: weightEligibility
+    input:
+      aircraft:
+        emptyWeight:
+          "$serde_json::private::Number": "41500"
+        fuelReserves:
+          "$serde_json::private::Number": "1.5"
+        maintenanceRequired: false
+        maxTakeoffWeight:
+          "$serde_json::private::Number": "78000"
+        type: B737-800
+      crew:
+        members:
+          - C001
+          - C002
+          - C003
+        restCompliant: true
+      estimatedTakeoffWeight:
+        "$serde_json::private::Number": "44850"
+      flight:
+        destination: JFK
+        number: FL123
+        origin: LAX
+        scheduledDeparture: "2025-03-19T08:00:00Z"
+      manifest:
+        cargoWeight:
+          "$serde_json::private::Number": "2500"
+        passengers:
+          - P001
+          - P002
+          - P003
+          - P004
+          - P005
+          - P006
+          - P007
+          - P008
+          - P009
+          - P010
+      passengerWeight:
+        "$serde_json::private::Number": "850"
+      totalCargo:
+        "$serde_json::private::Number": "2500"
+      totalPassengers:
+        "$serde_json::private::Number": "10"
+      weather:
+        precipitation: light
+        temperature:
+          "$serde_json::private::Number": "15"
+        visibility:
+          "$serde_json::private::Number": "6500"
+        windSpeed:
+          "$serde_json::private::Number": "90"
+    name: weightEligibility
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      aircraft:
+        emptyWeight:
+          "$serde_json::private::Number": "41500"
+        fuelReserves:
+          "$serde_json::private::Number": "1.5"
+        maintenanceRequired: false
+        maxTakeoffWeight:
+          "$serde_json::private::Number": "78000"
+        type: B737-800
+      crew:
+        members:
+          - C001
+          - C002
+          - C003
+        restCompliant: true
+      dispatch:
+        weight:
+          flag: true
+          reason: Weight within acceptable limits
+      estimatedTakeoffWeight:
+        "$serde_json::private::Number": "44850"
+      flight:
+        destination: JFK
+        number: FL123
+        origin: LAX
+        scheduledDeparture: "2025-03-19T08:00:00Z"
+      manifest:
+        cargoWeight:
+          "$serde_json::private::Number": "2500"
+        passengers:
+          - P001
+          - P002
+          - P003
+          - P004
+          - P005
+          - P006
+          - P007
+          - P008
+          - P009
+          - P010
+      passengerWeight:
+        "$serde_json::private::Number": "850"
+      totalCargo:
+        "$serde_json::private::Number": "2500"
+      totalPassengers:
+        "$serde_json::private::Number": "10"
+      weather:
+        precipitation: light
+        temperature:
+          "$serde_json::private::Number": "15"
+        visibility:
+          "$serde_json::private::Number": "6500"
+        windSpeed:
+          "$serde_json::private::Number": "90"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        estimatedTakeoffWeight:
+          "$serde_json::private::Number": "44850"
+      rule:
+        _id: rule2
+        "estimatedTakeoffWeight[takeoffWeight]": ""

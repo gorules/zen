@@ -1,0 +1,62 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  nodeData: {}
+trace:
+  07f6fe29-bfcc-457f-8c84-a7594e5627e2:
+    id: 07f6fe29-bfcc-457f-8c84-a7594e5627e2
+    input:
+      L1:
+        carbon_accounting:
+          score_commentary: There is likely to be
+          score_label: Moderate risk
+    name: expression3
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      nodeData: {}
+    performance: "[perf]"
+    traceData:
+      nodeData:
+        result: "{}"
+  2a8241f2-a808-4030-afd3-94ba60d93291:
+    id: 2a8241f2-a808-4030-afd3-94ba60d93291
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output: {}
+    performance: "[perf]"
+    traceData: ~
+  d0435b70-ad45-4de8-9086-2477d66344b9:
+    id: d0435b70-ad45-4de8-9086-2477d66344b9
+    input: {}
+    name: expression1
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      L1:
+        carbon_accounting:
+          score_commentary: There is likely to be
+          score_label: Moderate risk
+    performance: "[perf]"
+    traceData:
+      L1.carbon_accounting.score_commentary:
+        result: "\"There is likely to be\""
+      L1.carbon_accounting.score_label:
+        result: "\"Moderate risk\""
+  d438419f-c54a-49b4-b2a0-3bb626b0617f:
+    id: d438419f-c54a-49b4-b2a0-3bb626b0617f
+    input: {}
+    name: expression2
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      L1: {}
+    performance: "[perf]"
+    traceData:
+      L1:
+        result: "{}"

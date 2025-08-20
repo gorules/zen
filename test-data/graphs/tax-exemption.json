@@ -1,0 +1,295 @@
+{
+  "tests": [
+    {
+      "input": {
+        "organizationType": "nonprofit",
+        "annualRevenue": 175000,
+        "publicSupportPercentage": 45.7,
+        "politicalActivity": false,
+        "charitableActivitiesPercentage": 92.3
+      },
+      "output": {
+        "annualRevenue": 175000,
+        "charitableActivitiesPercentage": 92.3,
+        "organizationType": "nonprofit",
+        "politicalActivity": false,
+        "publicSupportPercentage": 45.7,
+        "result": {
+          "annualFilingRequirement": "990-EZ",
+          "classification": "501(c)(3)",
+          "effectiveDate": "2025-03-20",
+          "explanation": "Public charity with substantial public support",
+          "publicDisclosureRequired": true,
+          "status": "Exempt"
+        }
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"organizationType\": {\n      \"type\": \"string\",\n      \"description\": \"Type of organization (e.g., nonprofit, religious, educational)\"\n    },\n    \"annualRevenue\": {\n      \"type\": \"number\",\n      \"description\": \"Annual revenue in USD\"\n    },\n    \"publicSupportPercentage\": {\n      \"type\": \"number\",\n      \"description\": \"Percentage of funding from public sources\"\n    },\n    \"politicalActivity\": {\n      \"type\": \"boolean\",\n      \"description\": \"Whether the organization engages in political activities\"\n    },\n    \"charitableActivitiesPercentage\": {\n      \"type\": \"number\",\n      \"description\": \"Percentage of activities that are charitable in nature\"\n    }\n  }\n}"
+      },
+      "id": "ip1",
+      "name": "organizationRequest",
+      "position": {
+        "x": 110,
+        "y": 124.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1-1",
+            "_description": "501(c)(3) Religious Organization",
+            "i1-1": "'religious'",
+            "i1-2": "false",
+            "i1-3": ">= 85",
+            "o1-1": "'501(c)(3)'",
+            "o1-2": "'Exempt'",
+            "o1-3": "'Religious organization with no political activity and high charitable focus'"
+          },
+          {
+            "_id": "r1-2",
+            "_description": "501(c)(3) Educational Organization",
+            "i1-1": "'educational'",
+            "i1-2": "false",
+            "i1-3": ">= 85",
+            "o1-1": "'501(c)(3)'",
+            "o1-2": "'Exempt'",
+            "o1-3": "'Educational institution with no political activity and high charitable focus'"
+          },
+          {
+            "_id": "r1-3",
+            "_description": "501(c)(3) Nonprofit with high public support",
+            "i1-1": "'nonprofit'",
+            "i1-2": "false",
+            "i1-3": ">= 85",
+            "i1-4": ">= 33.3",
+            "o1-1": "'501(c)(3)'",
+            "o1-2": "'Exempt'",
+            "o1-3": "'Public charity with substantial public support'"
+          },
+          {
+            "_id": "r1-4",
+            "_description": "501(c)(3) Nonprofit with moderate public support",
+            "i1-1": "'nonprofit'",
+            "i1-2": "false",
+            "i1-3": ">= 85",
+            "i1-4": ">= 10 and < 33.3",
+            "o1-1": "'501(c)(3)'",
+            "o1-2": "'Exempt'",
+            "o1-3": "'Public charity with moderate public support'"
+          },
+          {
+            "_id": "r1-5",
+            "_description": "501(c)(3) Private Foundation",
+            "i1-1": "'nonprofit'",
+            "i1-2": "false",
+            "i1-3": ">= 85",
+            "i1-4": "< 10",
+            "o1-1": "'501(c)(3)'",
+            "o1-2": "'Exempt - Private Foundation'",
+            "o1-3": "'Private foundation with limited public support'"
+          },
+          {
+            "_id": "r1-6",
+            "_description": "Political Activity Disqualification",
+            "i1-2": "true",
+            "o1-1": "'Non-exempt'",
+            "o1-2": "'Not Eligible'",
+            "o1-3": "'Disqualified due to political activity'"
+          },
+          {
+            "_id": "r1-7",
+            "_description": "Insufficient Charitable Focus",
+            "i1-3": "< 85",
+            "o1-1": "'Non-exempt'",
+            "o1-2": "'Not Eligible'",
+            "o1-3": "'Insufficient focus on charitable activities'"
+          },
+          {
+            "_id": "r1-8",
+            "_description": "Default Rule",
+            "i1-1": "",
+            "i1-2": "",
+            "i1-3": "",
+            "i1-4": "",
+            "o1-1": "'Requires Further Review'",
+            "o1-2": "'Pending'",
+            "o1-3": "'Organization requires manual review'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Organization Type",
+            "field": "organizationType"
+          },
+          {
+            "id": "i1-2",
+            "name": "Political Activity",
+            "field": "politicalActivity"
+          },
+          {
+            "id": "i1-3",
+            "name": "Charitable Activities Percentage",
+            "field": "charitableActivitiesPercentage"
+          },
+          {
+            "id": "i1-4",
+            "name": "Public Support Percentage",
+            "field": "publicSupportPercentage"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Classification",
+            "field": "result.classification"
+          },
+          {
+            "id": "o1-2",
+            "name": "Status",
+            "field": "result.status"
+          },
+          {
+            "id": "o1-3",
+            "name": "Explanation",
+            "field": "result.explanation"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt1",
+      "name": "taxExemptionEvaluation",
+      "position": {
+        "x": 430,
+        "y": 124.5
+      }
+    },
+    {
+      "type": "switchNode",
+      "content": {
+        "hitPolicy": "first",
+        "statements": [
+          {
+            "id": "s1-1",
+            "condition": "result.classification == '501(c)(3)'",
+            "isDefault": false
+          },
+          {
+            "id": "s1-2",
+            "condition": "",
+            "isDefault": true
+          }
+        ]
+      },
+      "id": "sw1",
+      "name": "requiresAdditionalClassification",
+      "position": {
+        "x": 750,
+        "y": 124.5
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1-1",
+            "key": "result.annualFilingRequirement",
+            "value": "annualRevenue < 50000 ? '990-N' : annualRevenue < 200000 ? '990-EZ' : '990'"
+          },
+          {
+            "id": "e1-2",
+            "key": "result.publicDisclosureRequired",
+            "value": "true"
+          },
+          {
+            "id": "e1-3",
+            "key": "result.effectiveDate",
+            "value": "'2025-03-20'"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex1",
+      "name": "exemptRequirements",
+      "position": {
+        "x": 1070,
+        "y": 75.5
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e2-1",
+            "key": "result.nextSteps",
+            "value": "result.status == 'Not Eligible' ? 'Organization must restructure to meet eligibility requirements' : 'Submit additional documentation for manual review'"
+          },
+          {
+            "id": "e2-2",
+            "key": "result.appealDeadline",
+            "value": "'2025-05-19'"
+          },
+          {
+            "id": "e2-3",
+            "key": "result.alternativeOptions",
+            "value": "organizationType == 'nonprofit' ? 'Consider 501(c)(4) or 501(c)(6) classification' : ''"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex2",
+      "name": "nonExemptGuidance",
+      "position": {
+        "x": 1070,
+        "y": 173.5
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "ed1",
+      "sourceId": "ip1",
+      "targetId": "dt1",
+      "type": "edge"
+    },
+    {
+      "id": "ed2",
+      "sourceId": "dt1",
+      "targetId": "sw1",
+      "type": "edge"
+    },
+    {
+      "id": "ed3",
+      "sourceId": "sw1",
+      "targetId": "ex1",
+      "sourceHandle": "s1-1",
+      "type": "edge"
+    },
+    {
+      "id": "ed4",
+      "sourceId": "sw1",
+      "targetId": "ex2",
+      "sourceHandle": "s1-2",
+      "type": "edge"
+    }
+  ]
+}

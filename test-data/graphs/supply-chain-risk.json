@@ -1,0 +1,316 @@
+{
+  "tests": [
+    {
+      "input": {
+        "supplier": {
+          "name": "GlobalTech Supplies Inc.",
+          "location": "medium_risk_region",
+          "performanceScore": 82,
+          "alternateSourcesCount": 2,
+          "products": [
+            {
+              "id": "P123",
+              "name": "Semiconductor Chip",
+              "criticalComponent": true
+            }
+          ],
+          "relationshipDurationMonths": 36
+        },
+        "geopoliticalTensions": true,
+        "marketVolatility": "medium",
+        "supplyCategory": "electronics",
+        "leadTimeData": {
+          "averageDays": 45,
+          "historicalVariance": 8
+        }
+      },
+      "output": {
+        "adjustedRiskScore": 57,
+        "assessment": {
+          "baseRiskCategory": "medium",
+          "baseRiskScore": 40,
+          "recommendedAction": "Monitor supplier performance and conduct quarterly reviews"
+        },
+        "finalAssessment": {
+          "leadTimeImpact": "minor",
+          "priorityLevel": "medium",
+          "riskCategory": "medium"
+        },
+        "geopoliticalFactor": 1.3,
+        "geopoliticalTensions": true,
+        "leadTimeData": {
+          "averageDays": 45,
+          "historicalVariance": 8
+        },
+        "marketVolatility": "medium",
+        "marketVolatilityFactor": 1.1,
+        "supplier": {
+          "alternateSourcesCount": 2,
+          "location": "medium_risk_region",
+          "name": "GlobalTech Supplies Inc.",
+          "performanceScore": 82,
+          "products": [
+            {
+              "criticalComponent": true,
+              "id": "P123",
+              "name": "Semiconductor Chip"
+            }
+          ],
+          "relationshipDurationMonths": 36
+        },
+        "supplyCategory": "electronics"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "input",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "supplierLocation": "'high_risk_region'",
+            "historicalPerformance": "< 70",
+            "alternativeSources": "< 2",
+            "riskScore": "80",
+            "riskCategory": "'critical'",
+            "mitigation": "'Immediate action required: Identify alternative suppliers'"
+          },
+          {
+            "_id": "rule2",
+            "supplierLocation": "'high_risk_region'",
+            "historicalPerformance": ">= 70",
+            "alternativeSources": "",
+            "riskScore": "65",
+            "riskCategory": "'high'",
+            "mitigation": "'Develop backup suppliers and increase safety stock'"
+          },
+          {
+            "_id": "rule3",
+            "supplierLocation": "'medium_risk_region'",
+            "historicalPerformance": "< 80",
+            "alternativeSources": "< 3",
+            "riskScore": "60",
+            "riskCategory": "'high'",
+            "mitigation": "'Implement dual-sourcing strategy'"
+          },
+          {
+            "_id": "rule4",
+            "supplierLocation": "'medium_risk_region'",
+            "historicalPerformance": ">= 80",
+            "alternativeSources": "",
+            "riskScore": "40",
+            "riskCategory": "'medium'",
+            "mitigation": "'Monitor supplier performance and conduct quarterly reviews'"
+          },
+          {
+            "_id": "rule5",
+            "supplierLocation": "'low_risk_region'",
+            "historicalPerformance": "< 75",
+            "alternativeSources": "",
+            "riskScore": "35",
+            "riskCategory": "'medium'",
+            "mitigation": "'Schedule regular performance reviews'"
+          },
+          {
+            "_id": "rule6",
+            "supplierLocation": "'low_risk_region'",
+            "historicalPerformance": ">= 75",
+            "alternativeSources": ">= 3",
+            "riskScore": "15",
+            "riskCategory": "'low'",
+            "mitigation": "'Standard monitoring procedures'"
+          },
+          {
+            "_id": "rule7",
+            "supplierLocation": "",
+            "historicalPerformance": "",
+            "alternativeSources": "",
+            "riskScore": "50",
+            "riskCategory": "'medium'",
+            "mitigation": "'Conduct detailed supplier assessment'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "supplierLocation",
+            "name": "Supplier Location",
+            "field": "supplier.location"
+          },
+          {
+            "id": "historicalPerformance",
+            "name": "Historical Performance Score",
+            "field": "supplier.performanceScore"
+          },
+          {
+            "id": "alternativeSources",
+            "name": "Alternative Sources Count",
+            "field": "supplier.alternateSourcesCount"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "riskScore",
+            "name": "Risk Score",
+            "field": "assessment.baseRiskScore"
+          },
+          {
+            "id": "riskCategory",
+            "name": "Risk Category",
+            "field": "assessment.baseRiskCategory"
+          },
+          {
+            "id": "mitigation",
+            "name": "Recommended Mitigation",
+            "field": "assessment.recommendedAction"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "supplierRiskEvaluation",
+      "name": "supplierRiskEvaluation",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "expr1",
+            "key": "geopoliticalFactor",
+            "value": "geopoliticalTensions == true ? 1.3 : 1.0"
+          },
+          {
+            "id": "expr2",
+            "key": "marketVolatilityFactor",
+            "value": "marketVolatility == 'high' ? 1.2 : (marketVolatility == 'medium' ? 1.1 : 1.0)"
+          },
+          {
+            "id": "expr3",
+            "key": "adjustedRiskScore",
+            "value": "min([round(assessment.baseRiskScore * $.geopoliticalFactor * $.marketVolatilityFactor), 100])"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "geopoliticalRiskCalculation",
+      "name": "geopoliticalRiskCalculation",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "finalRule1",
+            "adjustedRiskScore": ">= 75",
+            "finalCategory": "'critical'",
+            "leadTimeImpact": "'significant'",
+            "priorityLevel": "'immediate'"
+          },
+          {
+            "_id": "finalRule2",
+            "adjustedRiskScore": ">= 60",
+            "finalCategory": "'high'",
+            "leadTimeImpact": "'moderate'",
+            "priorityLevel": "'high'"
+          },
+          {
+            "_id": "finalRule3",
+            "adjustedRiskScore": ">= 40",
+            "finalCategory": "'medium'",
+            "leadTimeImpact": "'minor'",
+            "priorityLevel": "'medium'"
+          },
+          {
+            "_id": "finalRule4",
+            "adjustedRiskScore": "",
+            "finalCategory": "'low'",
+            "leadTimeImpact": "'minimal'",
+            "priorityLevel": "'routine'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "adjustedRiskScore",
+            "name": "Adjusted Risk Score",
+            "field": "adjustedRiskScore"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "finalCategory",
+            "name": "Final Risk Category",
+            "field": "finalAssessment.riskCategory"
+          },
+          {
+            "id": "leadTimeImpact",
+            "name": "Lead Time Impact",
+            "field": "finalAssessment.leadTimeImpact"
+          },
+          {
+            "id": "priorityLevel",
+            "name": "Priority Level",
+            "field": "finalAssessment.priorityLevel"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "overallRiskAssessment",
+      "name": "overallRiskAssessment",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "input",
+      "targetId": "supplierRiskEvaluation",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "supplierRiskEvaluation",
+      "targetId": "geopoliticalRiskCalculation",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "geopoliticalRiskCalculation",
+      "targetId": "overallRiskAssessment",
+      "type": "edge"
+    }
+  ]
+}

@@ -1,0 +1,391 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  priorityFactors:
+    - Moderate condition with follow-up
+    - Moderate wait time (8-14 days)
+    - Age over 65
+    - Chronic condition
+    - Recent hospitalization
+  result:
+    priority: HIGH
+    recommendation: Schedule within 24-48 hours
+  scores:
+    conditionSeverity:
+      "$serde_json::private::Number": "20"
+    riskFactors:
+      "$serde_json::private::Number": "40"
+    waitTime:
+      "$serde_json::private::Number": "10"
+  totalScore:
+    "$serde_json::private::Number": "70"
+trace:
+  02b0be40-dfe0-4a11-a9a4-17f66823f0c2:
+    id: 02b0be40-dfe0-4a11-a9a4-17f66823f0c2
+    input:
+      appointment:
+        conditionSeverity: moderate
+        daysWaiting:
+          "$serde_json::private::Number": "12"
+        isFollowUp: true
+      patient:
+        age:
+          "$serde_json::private::Number": "72"
+        hasChronicCondition: true
+        immunocompromised: false
+        recentHospitalization: true
+      riskFactors:
+        - message: Age over 65
+          score:
+            "$serde_json::private::Number": "10"
+        - message: Chronic condition
+          score:
+            "$serde_json::private::Number": "15"
+        - message: Recent hospitalization
+          score:
+            "$serde_json::private::Number": "15"
+    name: riskFactorSummary
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      appointment:
+        conditionSeverity: moderate
+        daysWaiting:
+          "$serde_json::private::Number": "12"
+        isFollowUp: true
+      patient:
+        age:
+          "$serde_json::private::Number": "72"
+        hasChronicCondition: true
+        immunocompromised: false
+        recentHospitalization: true
+      reasons:
+        riskFactors:
+          - Age over 65
+          - Chronic condition
+          - Recent hospitalization
+      scores:
+        riskFactors:
+          "$serde_json::private::Number": "40"
+    performance: "[perf]"
+    traceData:
+      reasons.riskFactors:
+        result: "[\"Age over 65\",\"Chronic condition\",\"Recent hospitalization\"]"
+      riskFactors:
+        result: "null"
+      scores.riskFactors:
+        result: "40"
+  conditionSeverityNode:
+    id: conditionSeverityNode
+    input:
+      appointment:
+        conditionSeverity: moderate
+        daysWaiting:
+          "$serde_json::private::Number": "12"
+        isFollowUp: true
+      patient:
+        age:
+          "$serde_json::private::Number": "72"
+        hasChronicCondition: true
+        immunocompromised: false
+        recentHospitalization: true
+      reasons:
+        riskFactors:
+          - Age over 65
+          - Chronic condition
+          - Recent hospitalization
+      scores:
+        riskFactors:
+          "$serde_json::private::Number": "40"
+    name: evaluateConditionSeverity
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      appointment:
+        conditionSeverity: moderate
+        daysWaiting:
+          "$serde_json::private::Number": "12"
+        isFollowUp: true
+      patient:
+        age:
+          "$serde_json::private::Number": "72"
+        hasChronicCondition: true
+        immunocompromised: false
+        recentHospitalization: true
+      reasons:
+        conditionSeverity: Moderate condition with follow-up
+        riskFactors:
+          - Age over 65
+          - Chronic condition
+          - Recent hospitalization
+      scores:
+        conditionSeverity:
+          "$serde_json::private::Number": "20"
+        riskFactors:
+          "$serde_json::private::Number": "40"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "2"
+      reference_map:
+        appointment.conditionSeverity: moderate
+        appointment.isFollowUp: true
+      rule:
+        _id: severity3
+        "appointment.conditionSeverity[i2-1]": "'moderate'"
+        "appointment.isFollowUp[i2-2]": "true"
+  inputNode:
+    id: inputNode
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      appointment:
+        conditionSeverity: moderate
+        daysWaiting:
+          "$serde_json::private::Number": "12"
+        isFollowUp: true
+      patient:
+        age:
+          "$serde_json::private::Number": "72"
+        hasChronicCondition: true
+        immunocompromised: false
+        recentHospitalization: true
+    performance: "[perf]"
+    traceData: ~
+  priorityAssignmentNode:
+    id: priorityAssignmentNode
+    input:
+      priorityFactors:
+        - Moderate condition with follow-up
+        - Moderate wait time (8-14 days)
+        - Age over 65
+        - Chronic condition
+        - Recent hospitalization
+      scores:
+        conditionSeverity:
+          "$serde_json::private::Number": "20"
+        riskFactors:
+          "$serde_json::private::Number": "40"
+        waitTime:
+          "$serde_json::private::Number": "10"
+      totalScore:
+        "$serde_json::private::Number": "70"
+    name: assignPriorityLevel
+    order:
+      "$serde_json::private::Number": "6"
+    output:
+      priorityFactors:
+        - Moderate condition with follow-up
+        - Moderate wait time (8-14 days)
+        - Age over 65
+        - Chronic condition
+        - Recent hospitalization
+      result:
+        priority: HIGH
+        recommendation: Schedule within 24-48 hours
+      scores:
+        conditionSeverity:
+          "$serde_json::private::Number": "20"
+        riskFactors:
+          "$serde_json::private::Number": "40"
+        waitTime:
+          "$serde_json::private::Number": "10"
+      totalScore:
+        "$serde_json::private::Number": "70"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        totalScore:
+          "$serde_json::private::Number": "70"
+      rule:
+        _id: priority2
+        "totalScore[i4-1]": ">= 60"
+  riskFactorScoreNode:
+    id: riskFactorScoreNode
+    input:
+      appointment:
+        conditionSeverity: moderate
+        daysWaiting:
+          "$serde_json::private::Number": "12"
+        isFollowUp: true
+      patient:
+        age:
+          "$serde_json::private::Number": "72"
+        hasChronicCondition: true
+        immunocompromised: false
+        recentHospitalization: true
+    name: calculateRiskFactorScore
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      appointment:
+        conditionSeverity: moderate
+        daysWaiting:
+          "$serde_json::private::Number": "12"
+        isFollowUp: true
+      patient:
+        age:
+          "$serde_json::private::Number": "72"
+        hasChronicCondition: true
+        immunocompromised: false
+        recentHospitalization: true
+      riskFactors:
+        - message: Age over 65
+          score:
+            "$serde_json::private::Number": "10"
+        - message: Chronic condition
+          score:
+            "$serde_json::private::Number": "15"
+        - message: Recent hospitalization
+          score:
+            "$serde_json::private::Number": "15"
+    performance: "[perf]"
+    traceData:
+      - index:
+          "$serde_json::private::Number": "0"
+        reference_map: {}
+        rule:
+          _description: ""
+          _id: risk1
+      - index:
+          "$serde_json::private::Number": "1"
+        reference_map: {}
+        rule:
+          _description: ""
+          _id: risk2
+      - index:
+          "$serde_json::private::Number": "3"
+        reference_map: {}
+        rule:
+          _description: ""
+          _id: risk4
+  totalPriorityScoreNode:
+    id: totalPriorityScoreNode
+    input:
+      appointment:
+        conditionSeverity: moderate
+        daysWaiting:
+          "$serde_json::private::Number": "12"
+        isFollowUp: true
+      patient:
+        age:
+          "$serde_json::private::Number": "72"
+        hasChronicCondition: true
+        immunocompromised: false
+        recentHospitalization: true
+      reasons:
+        conditionSeverity: Moderate condition with follow-up
+        riskFactors:
+          - Age over 65
+          - Chronic condition
+          - Recent hospitalization
+        waitTime: Moderate wait time (8-14 days)
+      scores:
+        conditionSeverity:
+          "$serde_json::private::Number": "20"
+        riskFactors:
+          "$serde_json::private::Number": "40"
+        waitTime:
+          "$serde_json::private::Number": "10"
+    name: calculateTotalPriorityScore
+    order:
+      "$serde_json::private::Number": "5"
+    output:
+      priorityFactors:
+        - Moderate condition with follow-up
+        - Moderate wait time (8-14 days)
+        - Age over 65
+        - Chronic condition
+        - Recent hospitalization
+      scores:
+        conditionSeverity:
+          "$serde_json::private::Number": "20"
+        riskFactors:
+          "$serde_json::private::Number": "40"
+        waitTime:
+          "$serde_json::private::Number": "10"
+      totalScore:
+        "$serde_json::private::Number": "70"
+    performance: "[perf]"
+    traceData:
+      appointment:
+        result: "null"
+      patient:
+        result: "null"
+      priorityFactors:
+        result: "[\"Moderate condition with follow-up\",\"Moderate wait time (8-14 days)\",\"Age over 65\",\"Chronic condition\",\"Recent hospitalization\"]"
+      reasons:
+        result: "null"
+      totalScore:
+        result: "70"
+  waitTimeScoreNode:
+    id: waitTimeScoreNode
+    input:
+      appointment:
+        conditionSeverity: moderate
+        daysWaiting:
+          "$serde_json::private::Number": "12"
+        isFollowUp: true
+      patient:
+        age:
+          "$serde_json::private::Number": "72"
+        hasChronicCondition: true
+        immunocompromised: false
+        recentHospitalization: true
+      reasons:
+        conditionSeverity: Moderate condition with follow-up
+        riskFactors:
+          - Age over 65
+          - Chronic condition
+          - Recent hospitalization
+      scores:
+        conditionSeverity:
+          "$serde_json::private::Number": "20"
+        riskFactors:
+          "$serde_json::private::Number": "40"
+    name: calculateWaitTimeScore
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      appointment:
+        conditionSeverity: moderate
+        daysWaiting:
+          "$serde_json::private::Number": "12"
+        isFollowUp: true
+      patient:
+        age:
+          "$serde_json::private::Number": "72"
+        hasChronicCondition: true
+        immunocompromised: false
+        recentHospitalization: true
+      reasons:
+        conditionSeverity: Moderate condition with follow-up
+        riskFactors:
+          - Age over 65
+          - Chronic condition
+          - Recent hospitalization
+        waitTime: Moderate wait time (8-14 days)
+      scores:
+        conditionSeverity:
+          "$serde_json::private::Number": "20"
+        riskFactors:
+          "$serde_json::private::Number": "40"
+        waitTime:
+          "$serde_json::private::Number": "10"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "2"
+      reference_map:
+        appointment.daysWaiting:
+          "$serde_json::private::Number": "12"
+      rule:
+        _id: wait3
+        "appointment.daysWaiting[i3-1]": "> 7"

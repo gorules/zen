@@ -1,0 +1,502 @@
+{
+  "tests": [
+    {
+      "input": {
+        "patient": {
+          "id": "P67890",
+          "name": "John Smith",
+          "age": 68,
+          "diagnosis": "lung_cancer",
+          "diseaseStage": "IV",
+          "currentMedications": [
+            "immunosuppressants",
+            "albuterol",
+            "omeprazole"
+          ],
+          "priorTreatments": 3,
+          "comorbidities": [
+            "autoimmune_disease",
+            "COPD"
+          ],
+          "lastLabResults": {
+            "wbc": 3.8,
+            "hgb": 10.9,
+            "plt": 150,
+            "creatinine": 1.2
+          }
+        }
+      },
+      "output": {
+        "decisionSummary": "Patient is not eligible for clinical trial",
+        "eligibilityReasons": [
+          {
+            "flag": false,
+            "reason": "Patient taking excluded medications"
+          },
+          {
+            "flag": true,
+            "reason": "Age within eligible range"
+          },
+          {
+            "flag": false,
+            "reason": "Excluded comorbidity present"
+          },
+          {
+            "flag": false,
+            "reason": "Stage IV patients excluded from trial"
+          },
+          {
+            "flag": true,
+            "reason": "Diagnosis matches trial criteria"
+          },
+          {
+            "flag": false,
+            "reason": "Too many prior treatments"
+          }
+        ],
+        "failedCriteria": [
+          "medication",
+          "comorbidity",
+          "stage",
+          "priorTreatment"
+        ],
+        "isEligible": false
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "inputNode",
+      "name": "patient",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "diagnosis": "'breast_cancer', 'lung_cancer', 'colorectal_cancer'",
+            "diagnosisFlag": "true",
+            "diagnosisReason": "'Diagnosis matches trial criteria'"
+          },
+          {
+            "_id": "rule2",
+            "diagnosis": "",
+            "diagnosisFlag": "false",
+            "diagnosisReason": "'Diagnosis does not match trial criteria'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "diagnosis",
+            "name": "Diagnosis",
+            "field": "patient.diagnosis"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "diagnosisFlag",
+            "name": "DiagnosisFlag",
+            "field": "eligibility.diagnosis.flag"
+          },
+          {
+            "id": "diagnosisReason",
+            "name": "DiagnosisReason",
+            "field": "eligibility.diagnosis.reason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "diagnosisEligibility",
+      "name": "diagnosisEligibility",
+      "position": {
+        "x": 430,
+        "y": -131
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "stage": "'I', 'II', 'III'",
+            "stageFlag": "true",
+            "stageReason": "'Disease stage matches trial criteria'"
+          },
+          {
+            "_id": "rule2",
+            "stage": "'IV'",
+            "stageFlag": "false",
+            "stageReason": "'Stage IV patients excluded from trial'"
+          },
+          {
+            "_id": "rule3",
+            "stage": "",
+            "stageFlag": "false",
+            "stageReason": "'Unknown or invalid disease stage'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "stage",
+            "name": "Stage",
+            "field": "patient.diseaseStage"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "stageFlag",
+            "name": "StageFlag",
+            "field": "eligibility.stage.flag"
+          },
+          {
+            "id": "stageReason",
+            "name": "StageReason",
+            "field": "eligibility.stage.reason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "diseaseStageEligibility",
+      "name": "diseaseStageEligibility",
+      "position": {
+        "x": 430,
+        "y": -33
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "medications": "some($, # in ['immunosuppressants', 'anticancer_agents', 'corticosteroids'])",
+            "medicationFlag": "false",
+            "medicationReason": "'Patient taking excluded medications'"
+          },
+          {
+            "_id": "rule2",
+            "medications": "",
+            "medicationFlag": "true",
+            "medicationReason": "'No conflicting medications'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "medications",
+            "name": "Medications",
+            "field": "patient.currentMedications ?? []"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "medicationFlag",
+            "name": "MedicationFlag",
+            "field": "eligibility.medication.flag"
+          },
+          {
+            "id": "medicationReason",
+            "name": "MedicationReason",
+            "field": "eligibility.medication.reason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "medicationEligibility",
+      "name": "medicationEligibility",
+      "position": {
+        "x": 430,
+        "y": 65
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "age": ")18..75(",
+            "ageFlag": "false",
+            "ageReason": "'Age outside eligible range (18-75)'"
+          },
+          {
+            "_id": "rule2",
+            "age": "",
+            "ageFlag": "true",
+            "ageReason": "'Age within eligible range'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "age",
+            "name": "PatientAge",
+            "field": "patient.age"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "ageFlag",
+            "name": "AgeFlag",
+            "field": "eligibility.age.flag"
+          },
+          {
+            "id": "ageReason",
+            "name": "AgeReason",
+            "field": "eligibility.age.reason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "ageEligibility",
+      "name": "ageEligibility",
+      "position": {
+        "x": 430,
+        "y": 163
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "priorTreatments": "> 2",
+            "treatmentFlag": "false",
+            "treatmentReason": "'Too many prior treatments'"
+          },
+          {
+            "_id": "rule2",
+            "priorTreatments": "<= 2",
+            "treatmentFlag": "true",
+            "treatmentReason": "'Acceptable number of prior treatments'"
+          },
+          {
+            "_id": "rule3",
+            "priorTreatments": "",
+            "treatmentFlag": "true",
+            "treatmentReason": "'No prior treatments recorded'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "priorTreatments",
+            "name": "PriorTreatments",
+            "field": "patient.priorTreatments"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "treatmentFlag",
+            "name": "TreatmentFlag",
+            "field": "eligibility.priorTreatment.flag"
+          },
+          {
+            "id": "treatmentReason",
+            "name": "TreatmentReason",
+            "field": "eligibility.priorTreatment.reason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "priorTreatmentEligibility",
+      "name": "priorTreatmentEligibility",
+      "position": {
+        "x": 430,
+        "y": 261
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "comorbidities": "some($, # in ['autoimmune_disease', 'heart_failure', 'uncontrolled_diabetes'])",
+            "comorbidityFlag": "false",
+            "comorbidityReason": "'Excluded comorbidity present'"
+          },
+          {
+            "_id": "rule2",
+            "comorbidities": "",
+            "comorbidityFlag": "true",
+            "comorbidityReason": "'No exclusionary comorbidities'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "comorbidities",
+            "name": "Comorbidities",
+            "field": "patient.comorbidities ?? []"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "comorbidityFlag",
+            "name": "ComorbidityFlag",
+            "field": "eligibility.comorbidity.flag"
+          },
+          {
+            "id": "comorbidityReason",
+            "name": "ComorbidityReason",
+            "field": "eligibility.comorbidity.reason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "comorbidityEligibility",
+      "name": "comorbidityEligibility",
+      "position": {
+        "x": 430,
+        "y": 359
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "expr1",
+            "key": "isEligible",
+            "value": "all(values(eligibility), #.flag)"
+          },
+          {
+            "id": "expr2",
+            "key": "eligibilityReasons",
+            "value": "filter(values(eligibility), #.reason != null)"
+          },
+          {
+            "id": "expr3",
+            "key": "decisionSummary",
+            "value": "$.isEligible ? 'Patient is eligible for clinical trial' : 'Patient is not eligible for clinical trial'"
+          },
+          {
+            "id": "expr4",
+            "key": "failedCriteria",
+            "value": "filter(keys(eligibility), eligibility[#].flag == false)"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "eligibilitySummary",
+      "name": "eligibilitySummary",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "inputNode",
+      "targetId": "diagnosisEligibility",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "inputNode",
+      "targetId": "diseaseStageEligibility",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "inputNode",
+      "targetId": "medicationEligibility",
+      "type": "edge"
+    },
+    {
+      "id": "edge4",
+      "sourceId": "inputNode",
+      "targetId": "ageEligibility",
+      "type": "edge"
+    },
+    {
+      "id": "edge5",
+      "sourceId": "inputNode",
+      "targetId": "priorTreatmentEligibility",
+      "type": "edge"
+    },
+    {
+      "id": "edge6",
+      "sourceId": "inputNode",
+      "targetId": "comorbidityEligibility",
+      "type": "edge"
+    },
+    {
+      "id": "edge7",
+      "sourceId": "diagnosisEligibility",
+      "targetId": "eligibilitySummary",
+      "type": "edge"
+    },
+    {
+      "id": "edge8",
+      "sourceId": "diseaseStageEligibility",
+      "targetId": "eligibilitySummary",
+      "type": "edge"
+    },
+    {
+      "id": "edge9",
+      "sourceId": "medicationEligibility",
+      "targetId": "eligibilitySummary",
+      "type": "edge"
+    },
+    {
+      "id": "edge10",
+      "sourceId": "ageEligibility",
+      "targetId": "eligibilitySummary",
+      "type": "edge"
+    },
+    {
+      "id": "edge11",
+      "sourceId": "priorTreatmentEligibility",
+      "targetId": "eligibilitySummary",
+      "type": "edge"
+    },
+    {
+      "id": "edge12",
+      "sourceId": "comorbidityEligibility",
+      "targetId": "eligibilitySummary",
+      "type": "edge"
+    }
+  ]
+}

@@ -1,0 +1,307 @@
+{
+  "tests": [
+    {
+      "input": {
+        "claimNumber": "CLM12345",
+        "policyNumber": "POL98765432",
+        "policyStatus": "active",
+        "policyStartDate": 1609459200,
+        "incidentDate": 1640995200,
+        "damageAmount": 1500,
+        "claimType": "property",
+        "description": "Water damage from burst pipe in kitchen"
+      },
+      "output": {
+        "claimNumber": "CLM12345",
+        "claimType": "property",
+        "damageAmount": 1500,
+        "description": "Water damage from burst pipe in kitchen",
+        "incidentDate": 1640995200,
+        "isValid": false,
+        "nextStep": "rejection",
+        "policyNumber": "POL98765432",
+        "policyStartDate": 1609459200,
+        "policyStatus": "active",
+        "validation": {
+          "claimDetailsReason": "",
+          "claimDetailsValid": true,
+          "policyStatusValid": true,
+          "timeframesReason": "Claim reported more than 60 days after incident",
+          "timeframesValid": false
+        },
+        "validationMessage": "Claim reported more than 60 days after incident"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "input",
+      "name": "claimRequest",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1-1",
+            "i1-1": "len(trim(claimNumber ?? '')) < 5",
+            "o1-1": "false",
+            "o1-2": "'Invalid claim number format'"
+          },
+          {
+            "_id": "r1-2",
+            "i1-1": "type(incidentDate) != 'number'",
+            "o1-1": "false",
+            "o1-2": "'Incident date is missing or invalid'"
+          },
+          {
+            "_id": "r1-3",
+            "i1-1": "len(trim(policyNumber ?? '')) < 8",
+            "o1-1": "false",
+            "o1-2": "'Invalid policy number format'"
+          },
+          {
+            "_id": "r1-4",
+            "i1-1": "damageAmount <= 0",
+            "o1-1": "false",
+            "o1-2": "'Damage amount must be greater than zero'"
+          },
+          {
+            "_id": "r1-5",
+            "i1-1": "",
+            "o1-1": "true",
+            "o1-2": "''"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Input"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "IsValid",
+            "field": "validation.claimDetailsValid"
+          },
+          {
+            "id": "o1-2",
+            "name": "Reason",
+            "field": "validation.claimDetailsReason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "validateClaimDetails",
+      "name": "validateClaimDetails",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r2-1",
+            "i2-1": "!validation.claimDetailsValid",
+            "o2-1": "false",
+            "o2-2": "validation.claimDetailsReason"
+          },
+          {
+            "_id": "r2-2",
+            "i2-1": "policyStatus == 'expired'",
+            "o2-1": "false",
+            "o2-2": "'Policy has expired'"
+          },
+          {
+            "_id": "r2-3",
+            "i2-1": "policyStatus == 'canceled'",
+            "o2-1": "false",
+            "o2-2": "'Policy has been canceled'"
+          },
+          {
+            "_id": "r2-4",
+            "i2-1": "policyStatus == 'suspended'",
+            "o2-1": "false",
+            "o2-2": "'Policy is currently suspended'"
+          },
+          {
+            "_id": "r2-5",
+            "i2-1": "",
+            "o2-1": "true",
+            "o2-2": ""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i2-1",
+            "name": "Input"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2-1",
+            "name": "IsValid",
+            "field": "validation.policyStatusValid"
+          },
+          {
+            "id": "o2-2",
+            "name": "Reason",
+            "field": "validation.policyStatusReason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "checkPolicyStatus",
+      "name": "checkPolicyStatus",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r3-1",
+            "i3-1": "!validation.policyStatusValid",
+            "o3-1": "false",
+            "o3-2": "validation.policyStatusReason"
+          },
+          {
+            "_id": "r3-2",
+            "i3-1": "date('now') - incidentDate > 60 * 24 * 60 * 60",
+            "o3-1": "false",
+            "o3-2": "'Claim reported more than 60 days after incident'"
+          },
+          {
+            "_id": "r3-3",
+            "i3-1": "incidentDate > date('now')",
+            "o3-1": "false",
+            "o3-2": "'Incident date cannot be in the future'"
+          },
+          {
+            "_id": "r3-4",
+            "i3-1": "policyStartDate > incidentDate",
+            "o3-1": "false",
+            "o3-2": "'Incident occurred before policy start date'"
+          },
+          {
+            "_id": "r3-5",
+            "i3-1": "",
+            "o3-1": "true",
+            "o3-2": "''"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i3-1",
+            "name": "Input"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o3-1",
+            "name": "IsValid",
+            "field": "validation.timeframesValid"
+          },
+          {
+            "id": "o3-2",
+            "name": "Reason",
+            "field": "validation.timeframesReason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "evaluateTimeframes",
+      "name": "evaluateTimeframes",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1-1",
+            "key": "isValid",
+            "value": "validation.claimDetailsValid and validation.policyStatusValid and validation.timeframesValid"
+          },
+          {
+            "id": "e1-2",
+            "key": "validationMessage",
+            "value": "validation.claimDetailsValid ? (validation.policyStatusValid ? (validation.timeframesValid ? 'Claim validation passed' : validation.timeframesReason) : validation.policyStatusReason) : validation.claimDetailsReason"
+          },
+          {
+            "id": "e1-3",
+            "key": "nextStep",
+            "value": "$.isValid ? 'investigation' : 'rejection'"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "determineOutcome",
+      "name": "determineOutcome",
+      "position": {
+        "x": 1390,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "sourceId": "input",
+      "targetId": "validateClaimDetails",
+      "type": "edge"
+    },
+    {
+      "id": "e2",
+      "sourceId": "validateClaimDetails",
+      "targetId": "checkPolicyStatus",
+      "type": "edge"
+    },
+    {
+      "id": "e3",
+      "sourceId": "checkPolicyStatus",
+      "targetId": "evaluateTimeframes",
+      "type": "edge"
+    },
+    {
+      "id": "e4",
+      "sourceId": "evaluateTimeframes",
+      "targetId": "determineOutcome",
+      "type": "edge"
+    }
+  ]
+}

@@ -1,0 +1,370 @@
+{
+  "tests": [
+    {
+      "input": {
+        "firstName": "Jane",
+        "lastName": "Smith",
+        "age": 42,
+        "sex": "female",
+        "familyHistory": [
+          "breast cancer",
+          "diabetes"
+        ],
+        "riskFactors": [
+          "smoking"
+        ],
+        "lastCheckup": "2023-10-15"
+      },
+      "output": {
+        "patientName": "Jane Smith",
+        "recommendationDate": "2025-08-19 16:55:02",
+        "summarizedRecommendations": [
+          {
+            "genderBasedRecommendations": {
+              "primary": "Mammogram every 1-2 years (discuss with doctor)",
+              "secondary": "Cervical cancer screening every 3 years"
+            }
+          },
+          {
+            "ageBasedRecommendations": {
+              "primary": "Blood pressure screening",
+              "quaternary": "Eye exam every 2-4 years",
+              "secondary": "Cholesterol screening every 5 years",
+              "tertiary": "Diabetes screening every 3 years"
+            }
+          },
+          {
+            "riskBasedRecommendations": "Earlier and more frequent diabetes screening"
+          },
+          {
+            "riskBasedRecommendations": "Earlier and more frequent mammograms"
+          },
+          {
+            "riskBasedRecommendations": "Lung cancer screening"
+          }
+        ],
+        "totalRecommendations": 5
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "input",
+      "name": "patientData",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "collect",
+        "rules": [
+          {
+            "_id": "age1",
+            "i1": "< 18",
+            "o1": "\"Annual physical examination\"",
+            "o2": "\"Immunizations as per schedule\"",
+            "o3": "\"Vision screening\"",
+            "o4": "\"Dental checkup every 6 months\""
+          },
+          {
+            "_id": "age2",
+            "i1": ">= 18 and < 40",
+            "o1": "\"Blood pressure screening\"",
+            "o2": "\"Cholesterol screening every 5 years\"",
+            "o3": "\"Depression screening\"",
+            "o4": "\"Skin cancer screening\""
+          },
+          {
+            "_id": "age3",
+            "i1": ">= 40 and < 50",
+            "o1": "\"Blood pressure screening\"",
+            "o2": "\"Cholesterol screening every 5 years\"",
+            "o3": "\"Diabetes screening every 3 years\"",
+            "o4": "\"Eye exam every 2-4 years\""
+          },
+          {
+            "_id": "age4",
+            "i1": ">= 50 and < 65",
+            "o1": "\"Blood pressure screening\"",
+            "o2": "\"Cholesterol screening annually\"",
+            "o3": "\"Diabetes screening every 3 years\"",
+            "o4": "\"Colorectal cancer screening\""
+          },
+          {
+            "_id": "age5",
+            "i1": ">= 65",
+            "o1": "\"Blood pressure screening\"",
+            "o2": "\"Cholesterol screening annually\"",
+            "o3": "\"Diabetes screening annually\"",
+            "o4": "\"Fall risk assessment\""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Age",
+            "field": "age"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Recommendation1",
+            "field": "recommendations.ageBasedRecommendations.primary"
+          },
+          {
+            "id": "o2",
+            "name": "Recommendation2",
+            "field": "recommendations.ageBasedRecommendations.secondary"
+          },
+          {
+            "id": "o3",
+            "name": "Recommendation3",
+            "field": "recommendations.ageBasedRecommendations.tertiary"
+          },
+          {
+            "id": "o4",
+            "name": "Recommendation4",
+            "field": "recommendations.ageBasedRecommendations.quaternary"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": "recommendations.age",
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "ageSpecificScreenings",
+      "name": "ageBasedRecommendations",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "collect",
+        "rules": [
+          {
+            "_id": "gender1",
+            "i1": "'female'",
+            "i2": "[21..30)",
+            "o1": "\"Cervical cancer screening every 3 years\"",
+            "o2": "\"Chlamydia screening annually (if sexually active)\""
+          },
+          {
+            "_id": "gender2",
+            "i1": "'female'",
+            "i2": "[30..40)",
+            "o1": "\"Cervical cancer screening every 3 years\"",
+            "o2": "\"HPV testing every 5 years\""
+          },
+          {
+            "_id": "gender3",
+            "i1": "'female'",
+            "i2": "[40..50)",
+            "o1": "\"Mammogram every 1-2 years (discuss with doctor)\"",
+            "o2": "\"Cervical cancer screening every 3 years\""
+          },
+          {
+            "_id": "gender4",
+            "i1": "'female'",
+            "i2": "[50..75)",
+            "o1": "\"Mammogram every 2 years\"",
+            "o2": "\"Bone density screening (65+ or at risk)\""
+          },
+          {
+            "_id": "gender5",
+            "i1": "'male'",
+            "i2": "[40..55)",
+            "o1": "\"Prostate health discussion with doctor\"",
+            "o2": "\"Testicular exam\""
+          },
+          {
+            "_id": "gender6",
+            "i1": "'male'",
+            "i2": "[55..70)",
+            "o1": "\"Prostate cancer screening (discuss with doctor)\"",
+            "o2": "\"Abdominal aortic aneurysm screening (if ever smoked)\""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Sex",
+            "field": "sex"
+          },
+          {
+            "id": "i2",
+            "name": "Age",
+            "field": "age"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "GenderRecommendation1",
+            "field": "recommendations.genderBasedRecommendations.primary"
+          },
+          {
+            "id": "o2",
+            "name": "GenderRecommendation2",
+            "field": "recommendations.genderBasedRecommendations.secondary"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": "recommendations.sex",
+        "executionMode": "single"
+      },
+      "id": "genderSpecificScreenings",
+      "name": "sexBasedRecommendations",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "collect",
+        "rules": [
+          {
+            "_id": "risk1",
+            "i1": "contains(familyHistory, \"diabetes\")",
+            "o1": "\"Earlier and more frequent diabetes screening\""
+          },
+          {
+            "_id": "risk2",
+            "i1": "contains(familyHistory, \"heart disease\")",
+            "o1": "\"Earlier and more frequent cholesterol and blood pressure monitoring\""
+          },
+          {
+            "_id": "risk3",
+            "i1": "contains(familyHistory, \"colorectal cancer\")",
+            "o1": "\"Earlier colorectal cancer screening (before age 45)\""
+          },
+          {
+            "_id": "risk4",
+            "i1": "contains(familyHistory, \"breast cancer\")",
+            "o1": "\"Earlier and more frequent mammograms\""
+          },
+          {
+            "_id": "risk5",
+            "i1": "contains(riskFactors, \"smoking\")",
+            "o1": "\"Lung cancer screening\""
+          },
+          {
+            "_id": "risk6",
+            "i1": "contains(riskFactors, \"obesity\")",
+            "o1": "\"More frequent diabetes and heart disease screenings\""
+          },
+          {
+            "_id": "risk7",
+            "i1": "contains(riskFactors, \"alcohol abuse\")",
+            "o1": "\"Liver function tests\""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Risk Assessment"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "RiskRecommendation",
+            "field": "recommendations.riskBasedRecommendations"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": "recommendations.risk",
+        "executionMode": "single"
+      },
+      "id": "riskFactorScreenings",
+      "name": "riskBasedRecommendations",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "expr1",
+            "key": "summarizedRecommendations",
+            "value": "flatMap(flatten(values(recommendations)), #.recommendations)"
+          },
+          {
+            "id": "expr3",
+            "key": "patientName",
+            "value": "`${firstName} ${lastName}`"
+          },
+          {
+            "id": "expr4",
+            "key": "recommendationDate",
+            "value": "dateString(date(\"now\"))"
+          },
+          {
+            "id": "expr5",
+            "key": "totalRecommendations",
+            "value": "len($.summarizedRecommendations)"
+          },
+          {
+            "id": "27928cee-be10-4e77-8089-f4ca14541539",
+            "key": "testResults",
+            "value": "null"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "generateRecommendations",
+      "name": "finalRecommendations",
+      "position": {
+        "x": 1390,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "input",
+      "targetId": "ageSpecificScreenings",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "ageSpecificScreenings",
+      "targetId": "genderSpecificScreenings",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "genderSpecificScreenings",
+      "targetId": "riskFactorScreenings",
+      "type": "edge"
+    },
+    {
+      "id": "edge4",
+      "sourceId": "riskFactorScreenings",
+      "targetId": "generateRecommendations",
+      "type": "edge"
+    }
+  ]
+}

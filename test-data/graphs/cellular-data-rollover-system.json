@@ -1,0 +1,281 @@
+{
+  "tests": [
+    {
+      "input": {
+        "plan": {
+          "type": "premium",
+          "monthlyDataAllowance": 50,
+          "rolloverEligible": true
+        },
+        "currentBillingCycle": {
+          "dataUsed": 35,
+          "consecutiveRollovers": 1,
+          "rolloverData": 5
+        }
+      },
+      "output": {
+        "nextBillingCycle": {
+          "consecutiveRollovers": 2,
+          "status": "approved"
+        },
+        "responseMessage": "Rollover successful. You have 20 GB of rollover data available for your next billing cycle."
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "ip1",
+      "name": "dataRolloverRequest",
+      "position": {
+        "x": 110,
+        "y": 212.5
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1-1",
+            "key": "unusedData",
+            "value": "plan.monthlyDataAllowance - currentBillingCycle.dataUsed"
+          },
+          {
+            "id": "e1-2",
+            "key": "isPositiveUnusedData",
+            "value": "$.unusedData > 0"
+          },
+          {
+            "id": "e1-3",
+            "key": "previousRolloverAmount",
+            "value": "currentBillingCycle.rolloverData ?? 0"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex1",
+      "name": "calculateUnusedData",
+      "position": {
+        "x": 430,
+        "y": 212.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1-1",
+            "i1-1": "'premium'",
+            "i1-2": "true",
+            "i1-3": "< 3",
+            "o1-1": "unusedData + previousRolloverAmount",
+            "o1-2": "'Unlimited rollover for Premium plan'"
+          },
+          {
+            "_id": "r1-2",
+            "i1-1": "'standard'",
+            "i1-2": "true",
+            "i1-3": "< 3",
+            "o1-1": "min([unusedData + previousRolloverAmount, plan.monthlyDataAllowance * 0.5])",
+            "o1-2": "'Standard plan can rollover up to 50% of monthly allowance'"
+          },
+          {
+            "_id": "r1-3",
+            "i1-1": "'basic'",
+            "i1-2": "true",
+            "i1-3": "< 3",
+            "o1-1": "min([unusedData, plan.monthlyDataAllowance * 0.25])",
+            "o1-2": "'Basic plan can rollover up to 25% of monthly allowance'"
+          },
+          {
+            "_id": "r1-4",
+            "i1-1": "",
+            "i1-2": "true",
+            "i1-3": ">= 3",
+            "o1-1": "0",
+            "o1-2": "'Maximum consecutive rollovers (3) reached'"
+          },
+          {
+            "_id": "r1-5",
+            "i1-1": "",
+            "i1-2": "false",
+            "i1-3": "",
+            "o1-1": "0",
+            "o1-2": "'No unused data to rollover'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Plan Type",
+            "field": "plan.type"
+          },
+          {
+            "id": "i1-2",
+            "name": "Has Unused Data",
+            "field": "isPositiveUnusedData"
+          },
+          {
+            "id": "i1-3",
+            "name": "Consecutive Rollovers",
+            "field": "currentBillingCycle.consecutiveRollovers"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Rollover Amount",
+            "field": "nextBillingCycle.rolloverData"
+          },
+          {
+            "id": "o1-2",
+            "name": "Reason",
+            "field": "nextBillingCycle.rolloverReason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "dt1",
+      "name": "determineRolloverAmount",
+      "position": {
+        "x": 750,
+        "y": 212.5
+      }
+    },
+    {
+      "type": "switchNode",
+      "content": {
+        "hitPolicy": "first",
+        "statements": [
+          {
+            "id": "s1-1",
+            "condition": "nextBillingCycle.rolloverData > 0",
+            "isDefault": false
+          },
+          {
+            "id": "s1-2",
+            "condition": "",
+            "isDefault": true
+          }
+        ]
+      },
+      "id": "sw1",
+      "name": "verifyRollover",
+      "position": {
+        "x": 1070,
+        "y": 212.5
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e2-1",
+            "key": "responseMessage",
+            "value": "`Rollover successful. You have ${nextBillingCycle.rolloverData} GB of rollover data available for your next billing cycle.`"
+          },
+          {
+            "id": "e2-2",
+            "key": "nextBillingCycle.consecutiveRollovers",
+            "value": "currentBillingCycle.consecutiveRollovers + 1"
+          },
+          {
+            "id": "e2-3",
+            "key": "nextBillingCycle.status",
+            "value": "'approved'"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex2",
+      "name": "processSuccessfulRollover",
+      "position": {
+        "x": 1390,
+        "y": 163.5
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e3-1",
+            "key": "responseMessage",
+            "value": "`No data rolled over. Reason: ${nextBillingCycle.rolloverReason ?? 'No unused data available'}`"
+          },
+          {
+            "id": "e3-2",
+            "key": "nextBillingCycle.consecutiveRollovers",
+            "value": "0"
+          },
+          {
+            "id": "e3-3",
+            "key": "nextBillingCycle.status",
+            "value": "'no_rollover'"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex3",
+      "name": "processNoRollover",
+      "position": {
+        "x": 1390,
+        "y": 261.5
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "ed1",
+      "sourceId": "ip1",
+      "targetId": "ex1",
+      "type": "edge"
+    },
+    {
+      "id": "ed2",
+      "sourceId": "ex1",
+      "targetId": "dt1",
+      "type": "edge"
+    },
+    {
+      "id": "ed3",
+      "sourceId": "dt1",
+      "targetId": "sw1",
+      "type": "edge"
+    },
+    {
+      "id": "ed4",
+      "sourceId": "sw1",
+      "targetId": "ex2",
+      "sourceHandle": "s1-1",
+      "type": "edge"
+    },
+    {
+      "id": "ed5",
+      "sourceId": "sw1",
+      "targetId": "ex3",
+      "sourceHandle": "s1-2",
+      "type": "edge"
+    }
+  ]
+}

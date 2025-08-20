@@ -1,0 +1,467 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  features:
+    conciergeService: false
+    contentStreaming: true
+    internationalRoaming: true
+    message: Most premium features available based on gold status.
+    prioritySupport: true
+trace:
+  accountStatus:
+    id: accountStatus
+    input:
+      accountInfo:
+        accountAge:
+          "$serde_json::private::Number": "28"
+        contractStatus: pending_renewal
+        currentPlan: Family Premium 50GB
+        monthlySpend:
+          "$serde_json::private::Number": "95"
+        paymentHistory: excellent
+      customerId: CUST12345
+      customerProfile:
+        devices:
+          - iPhone 14
+          - iPad Air
+          - Apple Watch
+        location: "Seattle, WA"
+        previousComplaints:
+          "$serde_json::private::Number": "0"
+        segment: consumer
+      usageStats:
+        callMinutes:
+          "$serde_json::private::Number": "350"
+        dataUsageGB:
+          "$serde_json::private::Number": "42.5"
+        dataUtilizationPercent:
+          "$serde_json::private::Number": "85"
+        textMessages:
+          "$serde_json::private::Number": "1250"
+    name: evaluateAccountStatus
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      accountInfo:
+        accountAge:
+          "$serde_json::private::Number": "28"
+        contractStatus: pending_renewal
+        currentPlan: Family Premium 50GB
+        monthlySpend:
+          "$serde_json::private::Number": "95"
+        paymentHistory: excellent
+      customerId: CUST12345
+      customerProfile:
+        devices:
+          - iPhone 14
+          - iPad Air
+          - Apple Watch
+        location: "Seattle, WA"
+        previousComplaints:
+          "$serde_json::private::Number": "0"
+        segment: consumer
+      eligibility:
+        accountStatus: excellent
+        goodStanding: true
+      usageStats:
+        callMinutes:
+          "$serde_json::private::Number": "350"
+        dataUsageGB:
+          "$serde_json::private::Number": "42.5"
+        dataUtilizationPercent:
+          "$serde_json::private::Number": "85"
+        textMessages:
+          "$serde_json::private::Number": "1250"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        accountInfo.accountAge:
+          "$serde_json::private::Number": "28"
+        accountInfo.contractStatus: pending_renewal
+        accountInfo.paymentHistory: excellent
+      rule:
+        _id: r1
+        "accountInfo.accountAge[i1]": ">= 24"
+        "accountInfo.contractStatus[i3]": ""
+        "accountInfo.paymentHistory[i2]": "'excellent'"
+  input:
+    id: input
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      accountInfo:
+        accountAge:
+          "$serde_json::private::Number": "28"
+        contractStatus: pending_renewal
+        currentPlan: Family Premium 50GB
+        monthlySpend:
+          "$serde_json::private::Number": "95"
+        paymentHistory: excellent
+      customerId: CUST12345
+      customerProfile:
+        devices:
+          - iPhone 14
+          - iPad Air
+          - Apple Watch
+        location: "Seattle, WA"
+        previousComplaints:
+          "$serde_json::private::Number": "0"
+        segment: consumer
+      usageStats:
+        callMinutes:
+          "$serde_json::private::Number": "350"
+        dataUsageGB:
+          "$serde_json::private::Number": "42.5"
+        dataUtilizationPercent:
+          "$serde_json::private::Number": "85"
+        textMessages:
+          "$serde_json::private::Number": "1250"
+    performance: "[perf]"
+    traceData: ~
+  loyaltyTier:
+    id: loyaltyTier
+    input:
+      accountInfo:
+        accountAge:
+          "$serde_json::private::Number": "28"
+        contractStatus: pending_renewal
+        currentPlan: Family Premium 50GB
+        monthlySpend:
+          "$serde_json::private::Number": "95"
+        paymentHistory: excellent
+      customerId: CUST12345
+      customerProfile:
+        devices:
+          - iPhone 14
+          - iPad Air
+          - Apple Watch
+        location: "Seattle, WA"
+        previousComplaints:
+          "$serde_json::private::Number": "0"
+        segment: consumer
+      eligibility:
+        accountStatus: excellent
+        goodStanding: true
+      usageStats:
+        callMinutes:
+          "$serde_json::private::Number": "350"
+        dataUsageGB:
+          "$serde_json::private::Number": "42.5"
+        dataUtilizationPercent:
+          "$serde_json::private::Number": "85"
+        textMessages:
+          "$serde_json::private::Number": "1250"
+    name: determineLoyaltyTier
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      accountInfo:
+        accountAge:
+          "$serde_json::private::Number": "28"
+        contractStatus: pending_renewal
+        currentPlan: Family Premium 50GB
+        monthlySpend:
+          "$serde_json::private::Number": "95"
+        paymentHistory: excellent
+      customerId: CUST12345
+      customerProfile:
+        devices:
+          - iPhone 14
+          - iPad Air
+          - Apple Watch
+        location: "Seattle, WA"
+        previousComplaints:
+          "$serde_json::private::Number": "0"
+        segment: consumer
+      eligibility:
+        accountStatus: excellent
+        goodStanding: true
+        loyaltyDiscountPercent:
+          "$serde_json::private::Number": "15"
+        loyaltyTier: gold
+      usageStats:
+        callMinutes:
+          "$serde_json::private::Number": "350"
+        dataUsageGB:
+          "$serde_json::private::Number": "42.5"
+        dataUtilizationPercent:
+          "$serde_json::private::Number": "85"
+        textMessages:
+          "$serde_json::private::Number": "1250"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        accountInfo.accountAge:
+          "$serde_json::private::Number": "28"
+        accountInfo.monthlySpend:
+          "$serde_json::private::Number": "95"
+        eligibility.accountStatus: excellent
+      rule:
+        _id: r2
+        "accountInfo.accountAge[i1]": ">= 24"
+        "accountInfo.monthlySpend[i2]": ">= 80"
+        "eligibility.accountStatus[i3]": "'excellent', 'good'"
+  premiumFeatures:
+    id: premiumFeatures
+    input:
+      accountInfo:
+        accountAge:
+          "$serde_json::private::Number": "28"
+        contractStatus: pending_renewal
+        currentPlan: Family Premium 50GB
+        monthlySpend:
+          "$serde_json::private::Number": "95"
+        paymentHistory: excellent
+      customerId: CUST12345
+      customerProfile:
+        devices:
+          - iPhone 14
+          - iPad Air
+          - Apple Watch
+        location: "Seattle, WA"
+        previousComplaints:
+          "$serde_json::private::Number": "0"
+        segment: consumer
+      eligibility:
+        accountStatus: excellent
+        canUpgrade: true
+        earlyUpgradeEligible: true
+        goodStanding: true
+        loyaltyDiscountPercent:
+          "$serde_json::private::Number": "15"
+        loyaltyTier: gold
+        offerCount:
+          "$serde_json::private::Number": "5"
+        premiumPlanEligible: true
+        specialOffers:
+          dataBooster: true
+          deviceUpgrade: true
+          familyPlan: true
+          internationalBundle: true
+          loyaltyReward: true
+        upgradeMessage: High-priority upgrade eligible. Offers for all plan categories.
+      usageStats:
+        callMinutes:
+          "$serde_json::private::Number": "350"
+        dataUsageGB:
+          "$serde_json::private::Number": "42.5"
+        dataUtilizationPercent:
+          "$serde_json::private::Number": "85"
+        textMessages:
+          "$serde_json::private::Number": "1250"
+    name: determinePremiumFeatures
+    order:
+      "$serde_json::private::Number": "5"
+    output:
+      features:
+        conciergeService: false
+        contentStreaming: true
+        internationalRoaming: true
+        message: Most premium features available based on gold status.
+        prioritySupport: true
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        eligibility.goodStanding: true
+        eligibility.loyaltyTier: gold
+        eligibility.offerCount:
+          "$serde_json::private::Number": "5"
+      rule:
+        _id: r2
+        "eligibility.goodStanding[i2]": "true"
+        "eligibility.loyaltyTier[i1]": "['gold']"
+        "eligibility.offerCount[i3]": ">= 2"
+  specialOffers:
+    id: specialOffers
+    input:
+      accountInfo:
+        accountAge:
+          "$serde_json::private::Number": "28"
+        contractStatus: pending_renewal
+        currentPlan: Family Premium 50GB
+        monthlySpend:
+          "$serde_json::private::Number": "95"
+        paymentHistory: excellent
+      customerId: CUST12345
+      customerProfile:
+        devices:
+          - iPhone 14
+          - iPad Air
+          - Apple Watch
+        location: "Seattle, WA"
+        previousComplaints:
+          "$serde_json::private::Number": "0"
+        segment: consumer
+      eligibility:
+        accountStatus: excellent
+        canUpgrade: true
+        earlyUpgradeEligible: true
+        goodStanding: true
+        loyaltyDiscountPercent:
+          "$serde_json::private::Number": "15"
+        loyaltyTier: gold
+        premiumPlanEligible: true
+        upgradeMessage: High-priority upgrade eligible. Offers for all plan categories.
+      usageStats:
+        callMinutes:
+          "$serde_json::private::Number": "350"
+        dataUsageGB:
+          "$serde_json::private::Number": "42.5"
+        dataUtilizationPercent:
+          "$serde_json::private::Number": "85"
+        textMessages:
+          "$serde_json::private::Number": "1250"
+    name: determineSpecialOffers
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      accountInfo:
+        accountAge:
+          "$serde_json::private::Number": "28"
+        contractStatus: pending_renewal
+        currentPlan: Family Premium 50GB
+        monthlySpend:
+          "$serde_json::private::Number": "95"
+        paymentHistory: excellent
+      customerId: CUST12345
+      customerProfile:
+        devices:
+          - iPhone 14
+          - iPad Air
+          - Apple Watch
+        location: "Seattle, WA"
+        previousComplaints:
+          "$serde_json::private::Number": "0"
+        segment: consumer
+      eligibility:
+        accountStatus: excellent
+        canUpgrade: true
+        earlyUpgradeEligible: true
+        goodStanding: true
+        loyaltyDiscountPercent:
+          "$serde_json::private::Number": "15"
+        loyaltyTier: gold
+        offerCount:
+          "$serde_json::private::Number": "5"
+        premiumPlanEligible: true
+        specialOffers:
+          dataBooster: true
+          deviceUpgrade: true
+          familyPlan: true
+          internationalBundle: true
+          loyaltyReward: true
+        upgradeMessage: High-priority upgrade eligible. Offers for all plan categories.
+      usageStats:
+        callMinutes:
+          "$serde_json::private::Number": "350"
+        dataUsageGB:
+          "$serde_json::private::Number": "42.5"
+        dataUtilizationPercent:
+          "$serde_json::private::Number": "85"
+        textMessages:
+          "$serde_json::private::Number": "1250"
+    performance: "[perf]"
+    traceData:
+      eligibility.offerCount:
+        result: "5"
+      eligibility.specialOffers:
+        result: "{\"dataBooster\":true,\"deviceUpgrade\":true,\"internationalBundle\":true,\"familyPlan\":true,\"loyaltyReward\":true}"
+  upgradeEligibility:
+    id: upgradeEligibility
+    input:
+      accountInfo:
+        accountAge:
+          "$serde_json::private::Number": "28"
+        contractStatus: pending_renewal
+        currentPlan: Family Premium 50GB
+        monthlySpend:
+          "$serde_json::private::Number": "95"
+        paymentHistory: excellent
+      customerId: CUST12345
+      customerProfile:
+        devices:
+          - iPhone 14
+          - iPad Air
+          - Apple Watch
+        location: "Seattle, WA"
+        previousComplaints:
+          "$serde_json::private::Number": "0"
+        segment: consumer
+      eligibility:
+        accountStatus: excellent
+        goodStanding: true
+        loyaltyDiscountPercent:
+          "$serde_json::private::Number": "15"
+        loyaltyTier: gold
+      usageStats:
+        callMinutes:
+          "$serde_json::private::Number": "350"
+        dataUsageGB:
+          "$serde_json::private::Number": "42.5"
+        dataUtilizationPercent:
+          "$serde_json::private::Number": "85"
+        textMessages:
+          "$serde_json::private::Number": "1250"
+    name: determineUpgradeEligibility
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      accountInfo:
+        accountAge:
+          "$serde_json::private::Number": "28"
+        contractStatus: pending_renewal
+        currentPlan: Family Premium 50GB
+        monthlySpend:
+          "$serde_json::private::Number": "95"
+        paymentHistory: excellent
+      customerId: CUST12345
+      customerProfile:
+        devices:
+          - iPhone 14
+          - iPad Air
+          - Apple Watch
+        location: "Seattle, WA"
+        previousComplaints:
+          "$serde_json::private::Number": "0"
+        segment: consumer
+      eligibility:
+        accountStatus: excellent
+        canUpgrade: true
+        earlyUpgradeEligible: true
+        goodStanding: true
+        loyaltyDiscountPercent:
+          "$serde_json::private::Number": "15"
+        loyaltyTier: gold
+        premiumPlanEligible: true
+        upgradeMessage: High-priority upgrade eligible. Offers for all plan categories.
+      usageStats:
+        callMinutes:
+          "$serde_json::private::Number": "350"
+        dataUsageGB:
+          "$serde_json::private::Number": "42.5"
+        dataUtilizationPercent:
+          "$serde_json::private::Number": "85"
+        textMessages:
+          "$serde_json::private::Number": "1250"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        eligibility.goodStanding: true
+        eligibility.loyaltyTier: gold
+      rule:
+        _id: r1
+        "eligibility.goodStanding[i1]": "true"
+        "eligibility.loyaltyTier[i2]": "['platinum', 'gold']"

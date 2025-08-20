@@ -1,0 +1,161 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  annualRevenue:
+    "$serde_json::private::Number": "175000"
+  charitableActivitiesPercentage:
+    "$serde_json::private::Number": "92.3"
+  organizationType: nonprofit
+  politicalActivity: false
+  publicSupportPercentage:
+    "$serde_json::private::Number": "45.7"
+  result:
+    annualFilingRequirement: 990-EZ
+    classification: 501(c)(3)
+    effectiveDate: 2025-03-20
+    explanation: Public charity with substantial public support
+    publicDisclosureRequired: true
+    status: Exempt
+trace:
+  dt1:
+    id: dt1
+    input:
+      annualRevenue:
+        "$serde_json::private::Number": "175000"
+      charitableActivitiesPercentage:
+        "$serde_json::private::Number": "92.3"
+      organizationType: nonprofit
+      politicalActivity: false
+      publicSupportPercentage:
+        "$serde_json::private::Number": "45.7"
+    name: taxExemptionEvaluation
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      annualRevenue:
+        "$serde_json::private::Number": "175000"
+      charitableActivitiesPercentage:
+        "$serde_json::private::Number": "92.3"
+      organizationType: nonprofit
+      politicalActivity: false
+      publicSupportPercentage:
+        "$serde_json::private::Number": "45.7"
+      result:
+        classification: 501(c)(3)
+        explanation: Public charity with substantial public support
+        status: Exempt
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "2"
+      reference_map:
+        charitableActivitiesPercentage:
+          "$serde_json::private::Number": "92.3"
+        organizationType: nonprofit
+        politicalActivity: false
+        publicSupportPercentage:
+          "$serde_json::private::Number": "45.7"
+      rule:
+        _description: 501(c)(3) Nonprofit with high public support
+        _id: r1-3
+        "charitableActivitiesPercentage[i1-3]": ">= 85"
+        "organizationType[i1-1]": "'nonprofit'"
+        "politicalActivity[i1-2]": "false"
+        "publicSupportPercentage[i1-4]": ">= 33.3"
+  ex1:
+    id: ex1
+    input:
+      annualRevenue:
+        "$serde_json::private::Number": "175000"
+      charitableActivitiesPercentage:
+        "$serde_json::private::Number": "92.3"
+      organizationType: nonprofit
+      politicalActivity: false
+      publicSupportPercentage:
+        "$serde_json::private::Number": "45.7"
+      result:
+        classification: 501(c)(3)
+        explanation: Public charity with substantial public support
+        status: Exempt
+    name: exemptRequirements
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      annualRevenue:
+        "$serde_json::private::Number": "175000"
+      charitableActivitiesPercentage:
+        "$serde_json::private::Number": "92.3"
+      organizationType: nonprofit
+      politicalActivity: false
+      publicSupportPercentage:
+        "$serde_json::private::Number": "45.7"
+      result:
+        annualFilingRequirement: 990-EZ
+        classification: 501(c)(3)
+        effectiveDate: 2025-03-20
+        explanation: Public charity with substantial public support
+        publicDisclosureRequired: true
+        status: Exempt
+    performance: "[perf]"
+    traceData:
+      result.annualFilingRequirement:
+        result: "\"990-EZ\""
+      result.effectiveDate:
+        result: "\"2025-03-20\""
+      result.publicDisclosureRequired:
+        result: "true"
+  ip1:
+    id: ip1
+    input: ~
+    name: organizationRequest
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      annualRevenue:
+        "$serde_json::private::Number": "175000"
+      charitableActivitiesPercentage:
+        "$serde_json::private::Number": "92.3"
+      organizationType: nonprofit
+      politicalActivity: false
+      publicSupportPercentage:
+        "$serde_json::private::Number": "45.7"
+    performance: "[perf]"
+    traceData: ~
+  sw1:
+    id: sw1
+    input:
+      annualRevenue:
+        "$serde_json::private::Number": "175000"
+      charitableActivitiesPercentage:
+        "$serde_json::private::Number": "92.3"
+      organizationType: nonprofit
+      politicalActivity: false
+      publicSupportPercentage:
+        "$serde_json::private::Number": "45.7"
+      result:
+        classification: 501(c)(3)
+        explanation: Public charity with substantial public support
+        status: Exempt
+    name: requiresAdditionalClassification
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      annualRevenue:
+        "$serde_json::private::Number": "175000"
+      charitableActivitiesPercentage:
+        "$serde_json::private::Number": "92.3"
+      organizationType: nonprofit
+      politicalActivity: false
+      publicSupportPercentage:
+        "$serde_json::private::Number": "45.7"
+      result:
+        classification: 501(c)(3)
+        explanation: Public charity with substantial public support
+        status: Exempt
+    performance: "[perf]"
+    traceData:
+      statements:
+        - id: s1-1

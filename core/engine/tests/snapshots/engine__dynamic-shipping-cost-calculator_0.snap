@@ -1,0 +1,255 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  baseRate:
+    "$serde_json::private::Number": "30"
+  currentSeason: summer
+  customerTier: gold
+  dimensionalWeight:
+    "$serde_json::private::Number": "4.8"
+  distance:
+    "$serde_json::private::Number": "250"
+  distanceFactor:
+    "$serde_json::private::Number": "2.5"
+  effectiveWeight:
+    "$serde_json::private::Number": "25"
+  finalPrice:
+    "$serde_json::private::Number": "35.4375"
+  height:
+    "$serde_json::private::Number": "20"
+  length:
+    "$serde_json::private::Number": "40"
+  shippingType: express
+  tierDiscount:
+    "$serde_json::private::Number": "0.9"
+  weight:
+    "$serde_json::private::Number": "25"
+  width:
+    "$serde_json::private::Number": "30"
+trace:
+  dt1:
+    id: dt1
+    input:
+      customerTier: gold
+      distance:
+        "$serde_json::private::Number": "250"
+      height:
+        "$serde_json::private::Number": "20"
+      length:
+        "$serde_json::private::Number": "40"
+      shippingType: express
+      weight:
+        "$serde_json::private::Number": "25"
+      width:
+        "$serde_json::private::Number": "30"
+    name: base_rate_calculation
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      baseRate:
+        "$serde_json::private::Number": "30"
+      customerTier: gold
+      distance:
+        "$serde_json::private::Number": "250"
+      height:
+        "$serde_json::private::Number": "20"
+      length:
+        "$serde_json::private::Number": "40"
+      shippingType: express
+      weight:
+        "$serde_json::private::Number": "25"
+      width:
+        "$serde_json::private::Number": "30"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "4"
+      reference_map:
+        shippingType: express
+        weight:
+          "$serde_json::private::Number": "25"
+      rule:
+        _id: r1-5
+        "shippingType[i1-1]": "'express'"
+        "weight[i1-2]": "[20..50]"
+  dt2:
+    id: dt2
+    input:
+      baseRate:
+        "$serde_json::private::Number": "30"
+      currentSeason: summer
+      customerTier: gold
+      dimensionalWeight:
+        "$serde_json::private::Number": "4.8"
+      distance:
+        "$serde_json::private::Number": "250"
+      distanceFactor:
+        "$serde_json::private::Number": "2.5"
+      effectiveWeight:
+        "$serde_json::private::Number": "25"
+      height:
+        "$serde_json::private::Number": "20"
+      length:
+        "$serde_json::private::Number": "40"
+      shippingType: express
+      weight:
+        "$serde_json::private::Number": "25"
+      width:
+        "$serde_json::private::Number": "30"
+    name: calculate_final_price
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      baseRate:
+        "$serde_json::private::Number": "30"
+      currentSeason: summer
+      customerTier: gold
+      dimensionalWeight:
+        "$serde_json::private::Number": "4.8"
+      distance:
+        "$serde_json::private::Number": "250"
+      distanceFactor:
+        "$serde_json::private::Number": "2.5"
+      effectiveWeight:
+        "$serde_json::private::Number": "25"
+      finalPrice:
+        "$serde_json::private::Number": "35.4375"
+      height:
+        "$serde_json::private::Number": "20"
+      length:
+        "$serde_json::private::Number": "40"
+      shippingType: express
+      tierDiscount:
+        "$serde_json::private::Number": "0.9"
+      weight:
+        "$serde_json::private::Number": "25"
+      width:
+        "$serde_json::private::Number": "30"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "4"
+      reference_map:
+        currentSeason: summer
+        customerTier: gold
+      rule:
+        _id: r2-5
+        "currentSeason[i2-2]": "'summer'"
+        "customerTier[i2-1]": "'gold'"
+  dt3:
+    id: dt3
+    input:
+      customerTier: gold
+      distance:
+        "$serde_json::private::Number": "250"
+      height:
+        "$serde_json::private::Number": "20"
+      length:
+        "$serde_json::private::Number": "40"
+      shippingType: express
+      weight:
+        "$serde_json::private::Number": "25"
+      width:
+        "$serde_json::private::Number": "30"
+    name: determine_season
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      currentSeason: summer
+      customerTier: gold
+      distance:
+        "$serde_json::private::Number": "250"
+      height:
+        "$serde_json::private::Number": "20"
+      length:
+        "$serde_json::private::Number": "40"
+      shippingType: express
+      weight:
+        "$serde_json::private::Number": "25"
+      width:
+        "$serde_json::private::Number": "30"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "2"
+      reference_map:
+        "dayOfYear('now')":
+          "$serde_json::private::Number": "232"
+      rule:
+        _id: r3-3
+        "dayOfYear('now')[i3-1]": "> 172 and < 265"
+  ex1:
+    id: ex1
+    input:
+      baseRate:
+        "$serde_json::private::Number": "30"
+      currentSeason: summer
+      customerTier: gold
+      distance:
+        "$serde_json::private::Number": "250"
+      height:
+        "$serde_json::private::Number": "20"
+      length:
+        "$serde_json::private::Number": "40"
+      shippingType: express
+      weight:
+        "$serde_json::private::Number": "25"
+      width:
+        "$serde_json::private::Number": "30"
+    name: calculate_factors
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      baseRate:
+        "$serde_json::private::Number": "30"
+      currentSeason: summer
+      customerTier: gold
+      dimensionalWeight:
+        "$serde_json::private::Number": "4.8"
+      distance:
+        "$serde_json::private::Number": "250"
+      distanceFactor:
+        "$serde_json::private::Number": "2.5"
+      effectiveWeight:
+        "$serde_json::private::Number": "25"
+      height:
+        "$serde_json::private::Number": "20"
+      length:
+        "$serde_json::private::Number": "40"
+      shippingType: express
+      weight:
+        "$serde_json::private::Number": "25"
+      width:
+        "$serde_json::private::Number": "30"
+    performance: "[perf]"
+    traceData:
+      dimensionalWeight:
+        result: "4.8"
+      distanceFactor:
+        result: "2.5"
+      effectiveWeight:
+        result: "25"
+  ip1:
+    id: ip1
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      customerTier: gold
+      distance:
+        "$serde_json::private::Number": "250"
+      height:
+        "$serde_json::private::Number": "20"
+      length:
+        "$serde_json::private::Number": "40"
+      shippingType: express
+      weight:
+        "$serde_json::private::Number": "25"
+      width:
+        "$serde_json::private::Number": "30"
+    performance: "[perf]"
+    traceData: ~

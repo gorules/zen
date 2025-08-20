@@ -1,0 +1,287 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  fundingPercentage:
+    "$serde_json::private::Number": "76"
+  fundingStatus: Approved
+  grantAmount:
+    "$serde_json::private::Number": "57000"
+  maxPossibleAmount:
+    "$serde_json::private::Number": "57000"
+trace:
+  budgetConstraint:
+    id: budgetConstraint
+    input:
+      application:
+        applicantQualifications: medium
+        id: GR-2025-0042
+        impactMetrics:
+          beneficiaries:
+            "$serde_json::private::Number": "1200"
+          communityNeedScore:
+            "$serde_json::private::Number": "85"
+          innovationScore:
+            "$serde_json::private::Number": "72"
+          overallScore:
+            "$serde_json::private::Number": "75"
+          sustainabilityScore:
+            "$serde_json::private::Number": "68"
+        minimumViableAmount:
+          "$serde_json::private::Number": "50000"
+        organizationName: Community Health Initiative
+        projectScope: high
+        projectTitle: Rural Healthcare Access Program
+        requestedAmount:
+          "$serde_json::private::Number": "75000"
+      budgetConstraints:
+        allocatedAmount:
+          "$serde_json::private::Number": "325000"
+        allocationRatio:
+          "$serde_json::private::Number": "0.65"
+        maxAwardAmount:
+          "$serde_json::private::Number": "100000"
+        totalBudget:
+          "$serde_json::private::Number": "500000"
+      evaluation:
+        baseFundingRatio:
+          "$serde_json::private::Number": "0.8"
+        fundingPriority: high
+    name: budget_constraint
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      application:
+        applicantQualifications: medium
+        id: GR-2025-0042
+        impactMetrics:
+          beneficiaries:
+            "$serde_json::private::Number": "1200"
+          communityNeedScore:
+            "$serde_json::private::Number": "85"
+          innovationScore:
+            "$serde_json::private::Number": "72"
+          overallScore:
+            "$serde_json::private::Number": "75"
+          sustainabilityScore:
+            "$serde_json::private::Number": "68"
+        minimumViableAmount:
+          "$serde_json::private::Number": "50000"
+        organizationName: Community Health Initiative
+        projectScope: high
+        projectTitle: Rural Healthcare Access Program
+        requestedAmount:
+          "$serde_json::private::Number": "75000"
+      budgetConstraints:
+        allocatedAmount:
+          "$serde_json::private::Number": "325000"
+        allocationRatio:
+          "$serde_json::private::Number": "0.65"
+        maxAwardAmount:
+          "$serde_json::private::Number": "100000"
+        totalBudget:
+          "$serde_json::private::Number": "500000"
+      evaluation:
+        adjustmentFactor:
+          "$serde_json::private::Number": "0.95"
+        baseFundingRatio:
+          "$serde_json::private::Number": "0.8"
+        fundingPriority: high
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        budgetConstraints.allocationRatio:
+          "$serde_json::private::Number": "0.65"
+        evaluation.fundingPriority: high
+      rule:
+        _id: bc1
+        "budgetConstraints.allocationRatio[i2]": "< 0.75"
+        "evaluation.fundingPriority[i1]": "'high'"
+  fundingCalculation:
+    id: fundingCalculation
+    input:
+      application:
+        applicantQualifications: medium
+        id: GR-2025-0042
+        impactMetrics:
+          beneficiaries:
+            "$serde_json::private::Number": "1200"
+          communityNeedScore:
+            "$serde_json::private::Number": "85"
+          innovationScore:
+            "$serde_json::private::Number": "72"
+          overallScore:
+            "$serde_json::private::Number": "75"
+          sustainabilityScore:
+            "$serde_json::private::Number": "68"
+        minimumViableAmount:
+          "$serde_json::private::Number": "50000"
+        organizationName: Community Health Initiative
+        projectScope: high
+        projectTitle: Rural Healthcare Access Program
+        requestedAmount:
+          "$serde_json::private::Number": "75000"
+      budgetConstraints:
+        allocatedAmount:
+          "$serde_json::private::Number": "325000"
+        allocationRatio:
+          "$serde_json::private::Number": "0.65"
+        maxAwardAmount:
+          "$serde_json::private::Number": "100000"
+        totalBudget:
+          "$serde_json::private::Number": "500000"
+      evaluation:
+        adjustmentFactor:
+          "$serde_json::private::Number": "0.95"
+        baseFundingRatio:
+          "$serde_json::private::Number": "0.8"
+        fundingPriority: high
+    name: funding_calculation
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      fundingPercentage:
+        "$serde_json::private::Number": "76"
+      fundingStatus: Approved
+      grantAmount:
+        "$serde_json::private::Number": "57000"
+      maxPossibleAmount:
+        "$serde_json::private::Number": "57000"
+    performance: "[perf]"
+    traceData:
+      fundingPercentage:
+        result: "76"
+      fundingStatus:
+        result: "\"Approved\""
+      grantAmount:
+        result: "57000"
+      maxPossibleAmount:
+        result: "57000"
+  inputNode:
+    id: inputNode
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      application:
+        applicantQualifications: medium
+        id: GR-2025-0042
+        impactMetrics:
+          beneficiaries:
+            "$serde_json::private::Number": "1200"
+          communityNeedScore:
+            "$serde_json::private::Number": "85"
+          innovationScore:
+            "$serde_json::private::Number": "72"
+          overallScore:
+            "$serde_json::private::Number": "75"
+          sustainabilityScore:
+            "$serde_json::private::Number": "68"
+        minimumViableAmount:
+          "$serde_json::private::Number": "50000"
+        organizationName: Community Health Initiative
+        projectScope: high
+        projectTitle: Rural Healthcare Access Program
+        requestedAmount:
+          "$serde_json::private::Number": "75000"
+      budgetConstraints:
+        allocatedAmount:
+          "$serde_json::private::Number": "325000"
+        allocationRatio:
+          "$serde_json::private::Number": "0.65"
+        maxAwardAmount:
+          "$serde_json::private::Number": "100000"
+        totalBudget:
+          "$serde_json::private::Number": "500000"
+    performance: "[perf]"
+    traceData: ~
+  projectEvaluation:
+    id: projectEvaluation
+    input:
+      application:
+        applicantQualifications: medium
+        id: GR-2025-0042
+        impactMetrics:
+          beneficiaries:
+            "$serde_json::private::Number": "1200"
+          communityNeedScore:
+            "$serde_json::private::Number": "85"
+          innovationScore:
+            "$serde_json::private::Number": "72"
+          overallScore:
+            "$serde_json::private::Number": "75"
+          sustainabilityScore:
+            "$serde_json::private::Number": "68"
+        minimumViableAmount:
+          "$serde_json::private::Number": "50000"
+        organizationName: Community Health Initiative
+        projectScope: high
+        projectTitle: Rural Healthcare Access Program
+        requestedAmount:
+          "$serde_json::private::Number": "75000"
+      budgetConstraints:
+        allocatedAmount:
+          "$serde_json::private::Number": "325000"
+        allocationRatio:
+          "$serde_json::private::Number": "0.65"
+        maxAwardAmount:
+          "$serde_json::private::Number": "100000"
+        totalBudget:
+          "$serde_json::private::Number": "500000"
+    name: project_evaluation
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      application:
+        applicantQualifications: medium
+        id: GR-2025-0042
+        impactMetrics:
+          beneficiaries:
+            "$serde_json::private::Number": "1200"
+          communityNeedScore:
+            "$serde_json::private::Number": "85"
+          innovationScore:
+            "$serde_json::private::Number": "72"
+          overallScore:
+            "$serde_json::private::Number": "75"
+          sustainabilityScore:
+            "$serde_json::private::Number": "68"
+        minimumViableAmount:
+          "$serde_json::private::Number": "50000"
+        organizationName: Community Health Initiative
+        projectScope: high
+        projectTitle: Rural Healthcare Access Program
+        requestedAmount:
+          "$serde_json::private::Number": "75000"
+      budgetConstraints:
+        allocatedAmount:
+          "$serde_json::private::Number": "325000"
+        allocationRatio:
+          "$serde_json::private::Number": "0.65"
+        maxAwardAmount:
+          "$serde_json::private::Number": "100000"
+        totalBudget:
+          "$serde_json::private::Number": "500000"
+      evaluation:
+        baseFundingRatio:
+          "$serde_json::private::Number": "0.8"
+        fundingPriority: high
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        application.applicantQualifications: medium
+        application.impactMetrics.overallScore:
+          "$serde_json::private::Number": "75"
+        application.projectScope: high
+      rule:
+        _id: r2
+        "application.applicantQualifications[i2]": "'medium'"
+        "application.impactMetrics.overallScore[i3]": ">= 70"
+        "application.projectScope[i1]": "'high'"

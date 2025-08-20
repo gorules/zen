@@ -1,0 +1,527 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  recommendation:
+    amount_change:
+      "$serde_json::private::Number": "1500"
+    new_credit_limit:
+      "$serde_json::private::Number": "6500"
+trace:
+  creditLimitRecommendationNode:
+    id: creditLimitRecommendationNode
+    input:
+      account:
+        current_credit_limit:
+          "$serde_json::private::Number": "5000"
+        customer_id: CUST10025
+        financial_behavior:
+          credit_inquiries_last_12_months:
+            "$serde_json::private::Number": "0"
+          has_other_products: true
+          income_verified: true
+          years_with_institution:
+            "$serde_json::private::Number": "4"
+        payment_history:
+          late_payments_last_12_months:
+            "$serde_json::private::Number": "0"
+          on_time_payment_percentage:
+            "$serde_json::private::Number": "98"
+          total_payments:
+            "$serde_json::private::Number": "24"
+        utilization:
+          average_last_6_months:
+            "$serde_json::private::Number": "40"
+          current_percentage:
+            "$serde_json::private::Number": "25"
+          highest_balance:
+            "$serde_json::private::Number": "2800"
+      evaluation:
+        financial_behavior_rating: excellent
+        financial_behavior_score:
+          "$serde_json::private::Number": "25"
+        payment_history_rating: excellent
+        payment_history_score:
+          "$serde_json::private::Number": "30"
+        utilization_rating: low
+        utilization_score:
+          "$serde_json::private::Number": "25"
+      total_adjustment_score:
+        "$serde_json::private::Number": "80"
+    name: credit_limit_recommendation
+    order:
+      "$serde_json::private::Number": "5"
+    output:
+      account:
+        current_credit_limit:
+          "$serde_json::private::Number": "5000"
+        customer_id: CUST10025
+        financial_behavior:
+          credit_inquiries_last_12_months:
+            "$serde_json::private::Number": "0"
+          has_other_products: true
+          income_verified: true
+          years_with_institution:
+            "$serde_json::private::Number": "4"
+        payment_history:
+          late_payments_last_12_months:
+            "$serde_json::private::Number": "0"
+          on_time_payment_percentage:
+            "$serde_json::private::Number": "98"
+          total_payments:
+            "$serde_json::private::Number": "24"
+        utilization:
+          average_last_6_months:
+            "$serde_json::private::Number": "40"
+          current_percentage:
+            "$serde_json::private::Number": "25"
+          highest_balance:
+            "$serde_json::private::Number": "2800"
+      evaluation:
+        financial_behavior_rating: excellent
+        financial_behavior_score:
+          "$serde_json::private::Number": "25"
+        payment_history_rating: excellent
+        payment_history_score:
+          "$serde_json::private::Number": "30"
+        utilization_rating: low
+        utilization_score:
+          "$serde_json::private::Number": "25"
+      recommendation:
+        justification: Significant increase recommended based on excellent history and behavior.
+        percent_change:
+          "$serde_json::private::Number": "30"
+      total_adjustment_score:
+        "$serde_json::private::Number": "80"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        total_adjustment_score:
+          "$serde_json::private::Number": "80"
+      rule:
+        _id: rule1
+        "total_adjustment_score[i4-1]": "> 50"
+  finalCalculationNode:
+    id: finalCalculationNode
+    input:
+      account:
+        current_credit_limit:
+          "$serde_json::private::Number": "5000"
+        customer_id: CUST10025
+        financial_behavior:
+          credit_inquiries_last_12_months:
+            "$serde_json::private::Number": "0"
+          has_other_products: true
+          income_verified: true
+          years_with_institution:
+            "$serde_json::private::Number": "4"
+        payment_history:
+          late_payments_last_12_months:
+            "$serde_json::private::Number": "0"
+          on_time_payment_percentage:
+            "$serde_json::private::Number": "98"
+          total_payments:
+            "$serde_json::private::Number": "24"
+        utilization:
+          average_last_6_months:
+            "$serde_json::private::Number": "40"
+          current_percentage:
+            "$serde_json::private::Number": "25"
+          highest_balance:
+            "$serde_json::private::Number": "2800"
+      evaluation:
+        financial_behavior_rating: excellent
+        financial_behavior_score:
+          "$serde_json::private::Number": "25"
+        payment_history_rating: excellent
+        payment_history_score:
+          "$serde_json::private::Number": "30"
+        utilization_rating: low
+        utilization_score:
+          "$serde_json::private::Number": "25"
+      recommendation:
+        justification: Significant increase recommended based on excellent history and behavior.
+        percent_change:
+          "$serde_json::private::Number": "30"
+      total_adjustment_score:
+        "$serde_json::private::Number": "80"
+    name: calculate_final_amounts
+    order:
+      "$serde_json::private::Number": "6"
+    output:
+      recommendation:
+        amount_change:
+          "$serde_json::private::Number": "1500"
+        new_credit_limit:
+          "$serde_json::private::Number": "6500"
+    performance: "[perf]"
+    traceData:
+      recommendation.amount_change:
+        result: "1500"
+      recommendation.new_credit_limit:
+        result: "6500"
+  financialBehaviorNode:
+    id: financialBehaviorNode
+    input:
+      account:
+        current_credit_limit:
+          "$serde_json::private::Number": "5000"
+        customer_id: CUST10025
+        financial_behavior:
+          credit_inquiries_last_12_months:
+            "$serde_json::private::Number": "0"
+          has_other_products: true
+          income_verified: true
+          years_with_institution:
+            "$serde_json::private::Number": "4"
+        payment_history:
+          late_payments_last_12_months:
+            "$serde_json::private::Number": "0"
+          on_time_payment_percentage:
+            "$serde_json::private::Number": "98"
+          total_payments:
+            "$serde_json::private::Number": "24"
+        utilization:
+          average_last_6_months:
+            "$serde_json::private::Number": "40"
+          current_percentage:
+            "$serde_json::private::Number": "25"
+          highest_balance:
+            "$serde_json::private::Number": "2800"
+      evaluation:
+        payment_history_rating: excellent
+        payment_history_score:
+          "$serde_json::private::Number": "30"
+        utilization_rating: low
+        utilization_score:
+          "$serde_json::private::Number": "25"
+    name: financial_behavior_evaluation
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      account:
+        current_credit_limit:
+          "$serde_json::private::Number": "5000"
+        customer_id: CUST10025
+        financial_behavior:
+          credit_inquiries_last_12_months:
+            "$serde_json::private::Number": "0"
+          has_other_products: true
+          income_verified: true
+          years_with_institution:
+            "$serde_json::private::Number": "4"
+        payment_history:
+          late_payments_last_12_months:
+            "$serde_json::private::Number": "0"
+          on_time_payment_percentage:
+            "$serde_json::private::Number": "98"
+          total_payments:
+            "$serde_json::private::Number": "24"
+        utilization:
+          average_last_6_months:
+            "$serde_json::private::Number": "40"
+          current_percentage:
+            "$serde_json::private::Number": "25"
+          highest_balance:
+            "$serde_json::private::Number": "2800"
+      evaluation:
+        financial_behavior_rating: excellent
+        financial_behavior_score:
+          "$serde_json::private::Number": "25"
+        payment_history_rating: excellent
+        payment_history_score:
+          "$serde_json::private::Number": "30"
+        utilization_rating: low
+        utilization_score:
+          "$serde_json::private::Number": "25"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        account.financial_behavior.credit_inquiries_last_12_months:
+          "$serde_json::private::Number": "0"
+        account.financial_behavior.income_verified: true
+        account.financial_behavior.years_with_institution:
+          "$serde_json::private::Number": "4"
+      rule:
+        _id: rule1
+        "account.financial_behavior.credit_inquiries_last_12_months[i3-1]": "< 1"
+        "account.financial_behavior.income_verified[i3-3]": "true"
+        "account.financial_behavior.years_with_institution[i3-2]": ">= 3"
+  inputNode:
+    id: inputNode
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      account:
+        current_credit_limit:
+          "$serde_json::private::Number": "5000"
+        customer_id: CUST10025
+        financial_behavior:
+          credit_inquiries_last_12_months:
+            "$serde_json::private::Number": "0"
+          has_other_products: true
+          income_verified: true
+          years_with_institution:
+            "$serde_json::private::Number": "4"
+        payment_history:
+          late_payments_last_12_months:
+            "$serde_json::private::Number": "0"
+          on_time_payment_percentage:
+            "$serde_json::private::Number": "98"
+          total_payments:
+            "$serde_json::private::Number": "24"
+        utilization:
+          average_last_6_months:
+            "$serde_json::private::Number": "40"
+          current_percentage:
+            "$serde_json::private::Number": "25"
+          highest_balance:
+            "$serde_json::private::Number": "2800"
+    performance: "[perf]"
+    traceData: ~
+  paymentHistoryNode:
+    id: paymentHistoryNode
+    input:
+      account:
+        current_credit_limit:
+          "$serde_json::private::Number": "5000"
+        customer_id: CUST10025
+        financial_behavior:
+          credit_inquiries_last_12_months:
+            "$serde_json::private::Number": "0"
+          has_other_products: true
+          income_verified: true
+          years_with_institution:
+            "$serde_json::private::Number": "4"
+        payment_history:
+          late_payments_last_12_months:
+            "$serde_json::private::Number": "0"
+          on_time_payment_percentage:
+            "$serde_json::private::Number": "98"
+          total_payments:
+            "$serde_json::private::Number": "24"
+        utilization:
+          average_last_6_months:
+            "$serde_json::private::Number": "40"
+          current_percentage:
+            "$serde_json::private::Number": "25"
+          highest_balance:
+            "$serde_json::private::Number": "2800"
+    name: payment_history_evaluation
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      account:
+        current_credit_limit:
+          "$serde_json::private::Number": "5000"
+        customer_id: CUST10025
+        financial_behavior:
+          credit_inquiries_last_12_months:
+            "$serde_json::private::Number": "0"
+          has_other_products: true
+          income_verified: true
+          years_with_institution:
+            "$serde_json::private::Number": "4"
+        payment_history:
+          late_payments_last_12_months:
+            "$serde_json::private::Number": "0"
+          on_time_payment_percentage:
+            "$serde_json::private::Number": "98"
+          total_payments:
+            "$serde_json::private::Number": "24"
+        utilization:
+          average_last_6_months:
+            "$serde_json::private::Number": "40"
+          current_percentage:
+            "$serde_json::private::Number": "25"
+          highest_balance:
+            "$serde_json::private::Number": "2800"
+      evaluation:
+        payment_history_rating: excellent
+        payment_history_score:
+          "$serde_json::private::Number": "30"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        account.payment_history.late_payments_last_12_months:
+          "$serde_json::private::Number": "0"
+        account.payment_history.on_time_payment_percentage:
+          "$serde_json::private::Number": "98"
+      rule:
+        _id: rule1
+        "account.payment_history.late_payments_last_12_months[i1-2]": "<= 0"
+        "account.payment_history.on_time_payment_percentage[i1-1]": ">= 95"
+  scoreCalculationNode:
+    id: scoreCalculationNode
+    input:
+      account:
+        current_credit_limit:
+          "$serde_json::private::Number": "5000"
+        customer_id: CUST10025
+        financial_behavior:
+          credit_inquiries_last_12_months:
+            "$serde_json::private::Number": "0"
+          has_other_products: true
+          income_verified: true
+          years_with_institution:
+            "$serde_json::private::Number": "4"
+        payment_history:
+          late_payments_last_12_months:
+            "$serde_json::private::Number": "0"
+          on_time_payment_percentage:
+            "$serde_json::private::Number": "98"
+          total_payments:
+            "$serde_json::private::Number": "24"
+        utilization:
+          average_last_6_months:
+            "$serde_json::private::Number": "40"
+          current_percentage:
+            "$serde_json::private::Number": "25"
+          highest_balance:
+            "$serde_json::private::Number": "2800"
+      evaluation:
+        financial_behavior_rating: excellent
+        financial_behavior_score:
+          "$serde_json::private::Number": "25"
+        payment_history_rating: excellent
+        payment_history_score:
+          "$serde_json::private::Number": "30"
+        utilization_rating: low
+        utilization_score:
+          "$serde_json::private::Number": "25"
+    name: calculate_total_score
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      account:
+        current_credit_limit:
+          "$serde_json::private::Number": "5000"
+        customer_id: CUST10025
+        financial_behavior:
+          credit_inquiries_last_12_months:
+            "$serde_json::private::Number": "0"
+          has_other_products: true
+          income_verified: true
+          years_with_institution:
+            "$serde_json::private::Number": "4"
+        payment_history:
+          late_payments_last_12_months:
+            "$serde_json::private::Number": "0"
+          on_time_payment_percentage:
+            "$serde_json::private::Number": "98"
+          total_payments:
+            "$serde_json::private::Number": "24"
+        utilization:
+          average_last_6_months:
+            "$serde_json::private::Number": "40"
+          current_percentage:
+            "$serde_json::private::Number": "25"
+          highest_balance:
+            "$serde_json::private::Number": "2800"
+      evaluation:
+        financial_behavior_rating: excellent
+        financial_behavior_score:
+          "$serde_json::private::Number": "25"
+        payment_history_rating: excellent
+        payment_history_score:
+          "$serde_json::private::Number": "30"
+        utilization_rating: low
+        utilization_score:
+          "$serde_json::private::Number": "25"
+      total_adjustment_score:
+        "$serde_json::private::Number": "80"
+    performance: "[perf]"
+    traceData:
+      total_adjustment_score:
+        result: "80"
+  utilizationNode:
+    id: utilizationNode
+    input:
+      account:
+        current_credit_limit:
+          "$serde_json::private::Number": "5000"
+        customer_id: CUST10025
+        financial_behavior:
+          credit_inquiries_last_12_months:
+            "$serde_json::private::Number": "0"
+          has_other_products: true
+          income_verified: true
+          years_with_institution:
+            "$serde_json::private::Number": "4"
+        payment_history:
+          late_payments_last_12_months:
+            "$serde_json::private::Number": "0"
+          on_time_payment_percentage:
+            "$serde_json::private::Number": "98"
+          total_payments:
+            "$serde_json::private::Number": "24"
+        utilization:
+          average_last_6_months:
+            "$serde_json::private::Number": "40"
+          current_percentage:
+            "$serde_json::private::Number": "25"
+          highest_balance:
+            "$serde_json::private::Number": "2800"
+      evaluation:
+        payment_history_rating: excellent
+        payment_history_score:
+          "$serde_json::private::Number": "30"
+    name: utilization_evaluation
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      account:
+        current_credit_limit:
+          "$serde_json::private::Number": "5000"
+        customer_id: CUST10025
+        financial_behavior:
+          credit_inquiries_last_12_months:
+            "$serde_json::private::Number": "0"
+          has_other_products: true
+          income_verified: true
+          years_with_institution:
+            "$serde_json::private::Number": "4"
+        payment_history:
+          late_payments_last_12_months:
+            "$serde_json::private::Number": "0"
+          on_time_payment_percentage:
+            "$serde_json::private::Number": "98"
+          total_payments:
+            "$serde_json::private::Number": "24"
+        utilization:
+          average_last_6_months:
+            "$serde_json::private::Number": "40"
+          current_percentage:
+            "$serde_json::private::Number": "25"
+          highest_balance:
+            "$serde_json::private::Number": "2800"
+      evaluation:
+        payment_history_rating: excellent
+        payment_history_score:
+          "$serde_json::private::Number": "30"
+        utilization_rating: low
+        utilization_score:
+          "$serde_json::private::Number": "25"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        account.utilization.average_last_6_months:
+          "$serde_json::private::Number": "40"
+        account.utilization.current_percentage:
+          "$serde_json::private::Number": "25"
+      rule:
+        _id: rule1
+        "account.utilization.average_last_6_months[i2-2]": "< 50"
+        "account.utilization.current_percentage[i2-1]": "< 30"

@@ -1,0 +1,479 @@
+{
+  "tests": [
+    {
+      "input": {
+        "account": {
+          "customer_id": "CUST10025",
+          "current_credit_limit": 5000,
+          "payment_history": {
+            "on_time_payment_percentage": 98,
+            "late_payments_last_12_months": 0,
+            "total_payments": 24
+          },
+          "utilization": {
+            "current_percentage": 25,
+            "average_last_6_months": 40,
+            "highest_balance": 2800
+          },
+          "financial_behavior": {
+            "credit_inquiries_last_12_months": 0,
+            "years_with_institution": 4,
+            "income_verified": true,
+            "has_other_products": true
+          }
+        }
+      },
+      "output": {
+        "recommendation": {
+          "amount_change": 1500,
+          "new_credit_limit": 6500
+        }
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "inputNode",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i1-1": ">= 95",
+            "i1-2": "<= 0",
+            "o1-1": "'excellent'",
+            "o1-2": "30"
+          },
+          {
+            "_id": "rule2",
+            "i1-1": ">= 90",
+            "i1-2": "<= 1",
+            "o1-1": "'good'",
+            "o1-2": "20"
+          },
+          {
+            "_id": "rule3",
+            "i1-1": ">= 80",
+            "i1-2": "<= 2",
+            "o1-1": "'average'",
+            "o1-2": "0"
+          },
+          {
+            "_id": "rule4",
+            "i1-1": ">= 70",
+            "i1-2": "<= 3",
+            "o1-1": "'below_average'",
+            "o1-2": "-10"
+          },
+          {
+            "_id": "rule5",
+            "i1-1": "",
+            "i1-2": "",
+            "o1-1": "'poor'",
+            "o1-2": "-30"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "On-time Payment Percentage",
+            "field": "account.payment_history.on_time_payment_percentage"
+          },
+          {
+            "id": "i1-2",
+            "name": "Late Payments (Last 12 Months)",
+            "field": "account.payment_history.late_payments_last_12_months"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Payment History Rating",
+            "field": "evaluation.payment_history_rating"
+          },
+          {
+            "id": "o1-2",
+            "name": "Payment History Score",
+            "field": "evaluation.payment_history_score"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "paymentHistoryNode",
+      "name": "payment_history_evaluation",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i2-1": "< 30",
+            "i2-2": "< 50",
+            "o2-1": "'low'",
+            "o2-2": "25"
+          },
+          {
+            "_id": "rule2",
+            "i2-1": ">= 30, < 50",
+            "i2-2": ">= 50, < 70",
+            "o2-1": "'moderate'",
+            "o2-2": "15"
+          },
+          {
+            "_id": "rule3",
+            "i2-1": ">= 50, < 70",
+            "i2-2": ">= 70, < 85",
+            "o2-1": "'high'",
+            "o2-2": "0"
+          },
+          {
+            "_id": "rule4",
+            "i2-1": ">= 70, < 85",
+            "i2-2": ">= 85, < 95",
+            "o2-1": "'very_high'",
+            "o2-2": "-15"
+          },
+          {
+            "_id": "rule5",
+            "i2-1": "",
+            "i2-2": "",
+            "o2-1": "'excessive'",
+            "o2-2": "-25"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i2-1",
+            "name": "Current Utilization Percentage",
+            "field": "account.utilization.current_percentage"
+          },
+          {
+            "id": "i2-2",
+            "name": "Average Utilization (Last 6 Months)",
+            "field": "account.utilization.average_last_6_months"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2-1",
+            "name": "Utilization Rating",
+            "field": "evaluation.utilization_rating"
+          },
+          {
+            "id": "o2-2",
+            "name": "Utilization Score",
+            "field": "evaluation.utilization_score"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "utilizationNode",
+      "name": "utilization_evaluation",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i3-1": "< 1",
+            "i3-2": ">= 3",
+            "i3-3": "true",
+            "o3-1": "'excellent'",
+            "o3-2": "25"
+          },
+          {
+            "_id": "rule2",
+            "i3-1": "< 2",
+            "i3-2": ">= 2",
+            "i3-3": "true",
+            "o3-1": "'good'",
+            "o3-2": "15"
+          },
+          {
+            "_id": "rule3",
+            "i3-1": "< 3",
+            "i3-2": ">= 1",
+            "i3-3": "",
+            "o3-1": "'average'",
+            "o3-2": "5"
+          },
+          {
+            "_id": "rule4",
+            "i3-1": "< 4",
+            "i3-2": "< 1",
+            "i3-3": "false",
+            "o3-1": "'below_average'",
+            "o3-2": "-10"
+          },
+          {
+            "_id": "rule5",
+            "i3-1": "",
+            "i3-2": "",
+            "i3-3": "",
+            "o3-1": "'poor'",
+            "o3-2": "-20"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i3-1",
+            "name": "Credit Inquiries (Last 12 Months)",
+            "field": "account.financial_behavior.credit_inquiries_last_12_months"
+          },
+          {
+            "id": "i3-2",
+            "name": "Years with Institution",
+            "field": "account.financial_behavior.years_with_institution"
+          },
+          {
+            "id": "i3-3",
+            "name": "Income Verification",
+            "field": "account.financial_behavior.income_verified"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o3-1",
+            "name": "Financial Behavior Rating",
+            "field": "evaluation.financial_behavior_rating"
+          },
+          {
+            "id": "o3-2",
+            "name": "Financial Behavior Score",
+            "field": "evaluation.financial_behavior_score"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "financialBehaviorNode",
+      "name": "financial_behavior_evaluation",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "expr1",
+            "key": "total_adjustment_score",
+            "value": "evaluation.payment_history_score + evaluation.utilization_score + evaluation.financial_behavior_score"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "scoreCalculationNode",
+      "name": "calculate_total_score",
+      "position": {
+        "x": 1390,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i4-1": "> 50",
+            "o4-1": "30",
+            "o4-2": "'Significant increase recommended based on excellent history and behavior.'"
+          },
+          {
+            "_id": "rule2",
+            "i4-1": "> 40",
+            "o4-1": "25",
+            "o4-2": "'Strong increase recommended based on very good history and behavior.'"
+          },
+          {
+            "_id": "rule3",
+            "i4-1": "> 30",
+            "o4-1": "20",
+            "o4-2": "'Moderate increase recommended based on good history and behavior.'"
+          },
+          {
+            "_id": "rule4",
+            "i4-1": "> 20",
+            "o4-1": "15",
+            "o4-2": "'Increase recommended based on above average history and behavior.'"
+          },
+          {
+            "_id": "rule5",
+            "i4-1": "> 10",
+            "o4-1": "10",
+            "o4-2": "'Small increase recommended based on satisfactory history and behavior.'"
+          },
+          {
+            "_id": "rule6",
+            "i4-1": "> 0",
+            "o4-1": "5",
+            "o4-2": "'Minimal increase recommended based on acceptable history and behavior.'"
+          },
+          {
+            "_id": "rule7",
+            "i4-1": "> -10",
+            "o4-1": "0",
+            "o4-2": "'No change recommended, monitoring advised.'"
+          },
+          {
+            "_id": "rule8",
+            "i4-1": "> -20",
+            "o4-1": "-5",
+            "o4-2": "'Small decrease recommended due to concerning trends.'"
+          },
+          {
+            "_id": "rule9",
+            "i4-1": "> -30",
+            "o4-1": "-10",
+            "o4-2": "'Moderate decrease recommended due to negative indicators.'"
+          },
+          {
+            "_id": "rule10",
+            "i4-1": "> -40",
+            "o4-1": "-15",
+            "o4-2": "'Significant decrease recommended due to high risk factors.'"
+          },
+          {
+            "_id": "rule11",
+            "i4-1": "",
+            "o4-1": "-20",
+            "o4-2": "'Major decrease recommended due to severe risk factors.'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i4-1",
+            "name": "Total Adjustment Score",
+            "field": "total_adjustment_score"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o4-1",
+            "name": "Percent Change",
+            "field": "recommendation.percent_change"
+          },
+          {
+            "id": "o4-2",
+            "name": "Justification",
+            "field": "recommendation.justification"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "creditLimitRecommendationNode",
+      "name": "credit_limit_recommendation",
+      "position": {
+        "x": 1710,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "expr1",
+            "key": "recommendation.amount_change",
+            "value": "round(account.current_credit_limit * (recommendation.percent_change / 100))"
+          },
+          {
+            "id": "expr2",
+            "key": "recommendation.new_credit_limit",
+            "value": "account.current_credit_limit + $.recommendation.amount_change"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "finalCalculationNode",
+      "name": "calculate_final_amounts",
+      "position": {
+        "x": 2030,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "inputNode",
+      "targetId": "paymentHistoryNode",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "paymentHistoryNode",
+      "targetId": "utilizationNode",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "utilizationNode",
+      "targetId": "financialBehaviorNode",
+      "type": "edge"
+    },
+    {
+      "id": "edge4",
+      "sourceId": "financialBehaviorNode",
+      "targetId": "scoreCalculationNode",
+      "type": "edge"
+    },
+    {
+      "id": "edge5",
+      "sourceId": "scoreCalculationNode",
+      "targetId": "creditLimitRecommendationNode",
+      "type": "edge"
+    },
+    {
+      "id": "edge6",
+      "sourceId": "creditLimitRecommendationNode",
+      "targetId": "finalCalculationNode",
+      "type": "edge"
+    }
+  ]
+}

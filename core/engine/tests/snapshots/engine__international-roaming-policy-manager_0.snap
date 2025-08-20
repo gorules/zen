@@ -1,0 +1,183 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  isDataRoamingEnabled: true
+  isVoiceRoamingEnabled: true
+  remainingDataAllowance:
+    "$serde_json::private::Number": "3750"
+  totalEstimatedDailyCost:
+    "$serde_json::private::Number": "252.75"
+trace:
+  dt1:
+    id: dt1
+    input:
+      customer:
+        id: C123456789
+        profile:
+          avgDailyDataUsage:
+            "$serde_json::private::Number": "250"
+          avgDailySmsUsage:
+            "$serde_json::private::Number": "10"
+          avgDailyVoiceUsage:
+            "$serde_json::private::Number": "15"
+          dataRoamingQuota:
+            "$serde_json::private::Number": "5000"
+          isDataRoamingAllowed: true
+          isVoiceRoamingAllowed: true
+          planType: International Plus
+        usage:
+          dataRoamingUsed:
+            "$serde_json::private::Number": "1250"
+          smsRoamingUsed:
+            "$serde_json::private::Number": "22"
+          voiceRoamingUsed:
+            "$serde_json::private::Number": "45"
+      destination:
+        arrivalDate: 2025-03-20
+        country: France
+        departureDate: 2025-03-27
+        region: EU
+    name: roamingPolicyLookup
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      customer:
+        id: C123456789
+        profile:
+          avgDailyDataUsage:
+            "$serde_json::private::Number": "250"
+          avgDailySmsUsage:
+            "$serde_json::private::Number": "10"
+          avgDailyVoiceUsage:
+            "$serde_json::private::Number": "15"
+          dataRoamingQuota:
+            "$serde_json::private::Number": "5000"
+          isDataRoamingAllowed: true
+          isVoiceRoamingAllowed: true
+          planType: International Plus
+        usage:
+          dataRoamingUsed:
+            "$serde_json::private::Number": "1250"
+          smsRoamingUsed:
+            "$serde_json::private::Number": "22"
+          voiceRoamingUsed:
+            "$serde_json::private::Number": "45"
+      destination:
+        arrivalDate: 2025-03-20
+        country: France
+        departureDate: 2025-03-27
+        region: EU
+      policy:
+        dataAccess: full
+        dataRate:
+          "$serde_json::private::Number": "1"
+        serviceTier: premium
+        smsRate:
+          "$serde_json::private::Number": "0.05"
+        voiceRate:
+          "$serde_json::private::Number": "0.15"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        destination.region: EU
+      rule:
+        _id: r1-1
+        "destination.region[i1-1]": "'EU'"
+  ex1:
+    id: ex1
+    input:
+      customer:
+        id: C123456789
+        profile:
+          avgDailyDataUsage:
+            "$serde_json::private::Number": "250"
+          avgDailySmsUsage:
+            "$serde_json::private::Number": "10"
+          avgDailyVoiceUsage:
+            "$serde_json::private::Number": "15"
+          dataRoamingQuota:
+            "$serde_json::private::Number": "5000"
+          isDataRoamingAllowed: true
+          isVoiceRoamingAllowed: true
+          planType: International Plus
+        usage:
+          dataRoamingUsed:
+            "$serde_json::private::Number": "1250"
+          smsRoamingUsed:
+            "$serde_json::private::Number": "22"
+          voiceRoamingUsed:
+            "$serde_json::private::Number": "45"
+      destination:
+        arrivalDate: 2025-03-20
+        country: France
+        departureDate: 2025-03-27
+        region: EU
+      policy:
+        dataAccess: full
+        dataRate:
+          "$serde_json::private::Number": "1"
+        serviceTier: premium
+        smsRate:
+          "$serde_json::private::Number": "0.05"
+        voiceRate:
+          "$serde_json::private::Number": "0.15"
+    name: calculateRoamingParameters
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      isDataRoamingEnabled: true
+      isVoiceRoamingEnabled: true
+      remainingDataAllowance:
+        "$serde_json::private::Number": "3750"
+      totalEstimatedDailyCost:
+        "$serde_json::private::Number": "252.75"
+    performance: "[perf]"
+    traceData:
+      isDataRoamingEnabled:
+        result: "true"
+      isVoiceRoamingEnabled:
+        result: "true"
+      remainingDataAllowance:
+        result: "3750"
+      totalEstimatedDailyCost:
+        result: "252.75"
+  ip1:
+    id: ip1
+    input: ~
+    name: roamingRequest
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      customer:
+        id: C123456789
+        profile:
+          avgDailyDataUsage:
+            "$serde_json::private::Number": "250"
+          avgDailySmsUsage:
+            "$serde_json::private::Number": "10"
+          avgDailyVoiceUsage:
+            "$serde_json::private::Number": "15"
+          dataRoamingQuota:
+            "$serde_json::private::Number": "5000"
+          isDataRoamingAllowed: true
+          isVoiceRoamingAllowed: true
+          planType: International Plus
+        usage:
+          dataRoamingUsed:
+            "$serde_json::private::Number": "1250"
+          smsRoamingUsed:
+            "$serde_json::private::Number": "22"
+          voiceRoamingUsed:
+            "$serde_json::private::Number": "45"
+      destination:
+        arrivalDate: 2025-03-20
+        country: France
+        departureDate: 2025-03-27
+        region: EU
+    performance: "[perf]"
+    traceData: ~

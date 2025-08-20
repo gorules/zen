@@ -1,0 +1,386 @@
+{
+  "tests": [
+    {
+      "input": {
+        "industry": "manufacturing",
+        "location": {
+          "country": "United States",
+          "region": "midwest",
+          "city": "Detroit"
+        },
+        "emissions": {
+          "carbonDioxideMetricTons": 18500,
+          "methaneMetricTons": 120,
+          "nitrousOxideMetricTons": 45
+        },
+        "production": {
+          "volume": 100,
+          "units": "million_units"
+        },
+        "waste": {
+          "hazardousWasteMetricTons": 50,
+          "nonHazardousWasteMetricTons": 350,
+          "recycledPercentage": 22,
+          "violations": 1
+        },
+        "water": {
+          "consumptionKiloliters": 250000,
+          "treatedPercentage": 85,
+          "violations": 0
+        },
+        "audits": {
+          "lastAuditDate": "2025-01-15",
+          "previousFindings": 3,
+          "resolvedFindings": 2
+        }
+      },
+      "output": {
+        "assessment": {
+          "emissionThreshold": 150,
+          "industryRiskLevel": "medium"
+        },
+        "audits": {
+          "lastAuditDate": "2025-01-15",
+          "previousFindings": 3,
+          "resolvedFindings": 2
+        },
+        "carbonIntensity": 185,
+        "compliance": {
+          "actionTimeframe": "60-days",
+          "recommendation": "Medium-risk industry with significant threshold exceedance requires remediation plan within 60 days.",
+          "status": "non-compliant"
+        },
+        "emissions": {
+          "carbonDioxideMetricTons": 18500,
+          "methaneMetricTons": 120,
+          "nitrousOxideMetricTons": 45
+        },
+        "exceededThreshold": true,
+        "hasWasteViolations": true,
+        "hasWaterViolations": false,
+        "industry": "manufacturing",
+        "location": {
+          "city": "Detroit",
+          "country": "United States",
+          "region": "midwest"
+        },
+        "percentOverThreshold": 23.333333333333332,
+        "production": {
+          "units": "million_units",
+          "volume": 100
+        },
+        "waste": {
+          "hazardousWasteMetricTons": 50,
+          "nonHazardousWasteMetricTons": 350,
+          "recycledPercentage": 22,
+          "violations": 1
+        },
+        "water": {
+          "consumptionKiloliters": 250000,
+          "treatedPercentage": 85,
+          "violations": 0
+        }
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "inputNode",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "industry": "'energy', 'oil', 'gas', 'mining', 'chemical'",
+            "region": "",
+            "industryRiskLevel": "'high'",
+            "emissionThreshold": "100"
+          },
+          {
+            "_id": "rule2",
+            "industry": "'manufacturing', 'automotive', 'construction'",
+            "region": "",
+            "industryRiskLevel": "'medium'",
+            "emissionThreshold": "150"
+          },
+          {
+            "_id": "rule3",
+            "industry": "'transportation', 'logistics'",
+            "region": "'california', 'eu', 'uk'",
+            "industryRiskLevel": "'medium'",
+            "emissionThreshold": "120"
+          },
+          {
+            "_id": "rule4",
+            "industry": "'transportation', 'logistics'",
+            "region": "",
+            "industryRiskLevel": "'medium-low'",
+            "emissionThreshold": "200"
+          },
+          {
+            "_id": "rule5",
+            "industry": "'agriculture', 'food processing'",
+            "region": "",
+            "industryRiskLevel": "'medium-low'",
+            "emissionThreshold": "180"
+          },
+          {
+            "_id": "rule6",
+            "industry": "'technology', 'services', 'retail', 'healthcare'",
+            "region": "",
+            "industryRiskLevel": "'low'",
+            "emissionThreshold": "250"
+          },
+          {
+            "_id": "rule7",
+            "industry": "",
+            "region": "",
+            "industryRiskLevel": "'undefined'",
+            "emissionThreshold": "200"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "industry",
+            "name": "Industry",
+            "field": "industry"
+          },
+          {
+            "id": "region",
+            "name": "Region",
+            "field": "location.region"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "industryRiskLevel",
+            "name": "Industry Risk Level",
+            "field": "assessment.industryRiskLevel"
+          },
+          {
+            "id": "emissionThreshold",
+            "name": "Emission Threshold",
+            "field": "assessment.emissionThreshold"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "industryRiskTable",
+      "name": "industryRiskAssessment",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "expr1",
+            "key": "carbonIntensity",
+            "value": "emissions.carbonDioxideMetricTons / (production.volume ?? 1)"
+          },
+          {
+            "id": "expr2",
+            "key": "exceededThreshold",
+            "value": "$.carbonIntensity > (assessment.emissionThreshold ?? 200)"
+          },
+          {
+            "id": "expr3",
+            "key": "percentOverThreshold",
+            "value": "$.exceededThreshold ? (($.carbonIntensity - assessment.emissionThreshold) / assessment.emissionThreshold * 100) : 0"
+          },
+          {
+            "id": "expr4",
+            "key": "hasWasteViolations",
+            "value": "waste.violations > 0"
+          },
+          {
+            "id": "expr5",
+            "key": "hasWaterViolations",
+            "value": "water.violations > 0"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "emissionsEvaluation",
+      "name": "emissionsEvaluation",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "cs1",
+            "i1": "'high'",
+            "i2": "true",
+            "i3": "> 10",
+            "o1": "'non-compliant'",
+            "o2": "'immediate'",
+            "o3": "'High-risk industry with significant threshold exceedance requires immediate remediation plan and potential reporting to authorities.'"
+          },
+          {
+            "_id": "cs2",
+            "i1": "'high'",
+            "i2": "true",
+            "i3": "< 10",
+            "o1": "'at-risk'",
+            "o2": "'30-days'",
+            "o3": "'High-risk industry with minor threshold exceedance requires action plan within 30 days.'"
+          },
+          {
+            "_id": "cs3",
+            "i1": "'high'",
+            "i2": "false",
+            "i3": "",
+            "o1": "'compliant-with-monitoring'",
+            "o2": "'quarterly'",
+            "o3": "'High-risk industry requires quarterly monitoring and reporting despite current compliance.'"
+          },
+          {
+            "_id": "cs4",
+            "i1": "'medium', 'medium-low'",
+            "i2": "true",
+            "i3": "> 20",
+            "o1": "'non-compliant'",
+            "o2": "'60-days'",
+            "o3": "'Medium-risk industry with significant threshold exceedance requires remediation plan within 60 days.'"
+          },
+          {
+            "_id": "cs5",
+            "i1": "'medium', 'medium-low'",
+            "i2": "true",
+            "i3": "< 20",
+            "o1": "'at-risk'",
+            "o2": "'90-days'",
+            "o3": "'Medium-risk industry with minor threshold exceedance requires review within 90 days.'"
+          },
+          {
+            "_id": "cs6",
+            "i1": "'medium', 'medium-low'",
+            "i2": "false",
+            "i3": "",
+            "o1": "'compliant'",
+            "o2": "'bi-annual'",
+            "o3": "'Medium-risk industry is currently compliant with bi-annual review recommendation.'"
+          },
+          {
+            "_id": "cs7",
+            "i1": "'low'",
+            "i2": "true",
+            "i3": "",
+            "o1": "'at-risk'",
+            "o2": "'120-days'",
+            "o3": "'Low-risk industry exceeding thresholds requires review within 120 days.'"
+          },
+          {
+            "_id": "cs8",
+            "i1": "'low'",
+            "i2": "false",
+            "i3": "",
+            "o1": "'compliant'",
+            "o2": "'annual'",
+            "o3": "'Low-risk industry is compliant with annual review recommendation.'"
+          },
+          {
+            "_id": "cs9",
+            "i1": "",
+            "i2": "",
+            "i3": "",
+            "o1": "'undefined'",
+            "o2": "'90-days'",
+            "o3": "'Industry risk level undefined. Recommended assessment within 90 days.'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Industry Risk Level",
+            "field": "assessment.industryRiskLevel"
+          },
+          {
+            "id": "i2",
+            "name": "Exceeded Threshold",
+            "field": "exceededThreshold"
+          },
+          {
+            "id": "i3",
+            "name": "Percent Over Threshold",
+            "field": "percentOverThreshold"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Compliance Status",
+            "field": "compliance.status"
+          },
+          {
+            "id": "o2",
+            "name": "Required Action Timeframe",
+            "field": "compliance.actionTimeframe"
+          },
+          {
+            "id": "o3",
+            "name": "Recommendation",
+            "field": "compliance.recommendation"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "complianceStatus",
+      "name": "complianceStatus",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "inputNode",
+      "targetId": "industryRiskTable",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "industryRiskTable",
+      "targetId": "emissionsEvaluation",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "emissionsEvaluation",
+      "targetId": "complianceStatus",
+      "type": "edge"
+    }
+  ]
+}

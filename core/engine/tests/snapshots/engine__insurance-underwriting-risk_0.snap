@@ -1,0 +1,276 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  answers:
+    age:
+      "$serde_json::private::Number": "58"
+    coverageAmount:
+      "$serde_json::private::Number": "1200000"
+    hasForeignResidency: false
+    hasHighRiskMedicalCondition: true
+    hasIncompleteInformation: false
+    hasInformationDiscrepancy: true
+    hazardousOccupation: false
+    multiplePreExistingConditions: true
+    recentHospitalization: false
+  applicantName: Jane Smith
+  applicationId: APP-12345
+  riskDescriptions:
+    - High risk medical condition
+    - Multiple pre-existing conditions
+  riskFactors:
+    - description: High risk medical condition
+      points:
+        "$serde_json::private::Number": "10"
+    - description: Multiple pre-existing conditions
+      points:
+        "$serde_json::private::Number": "20"
+  totalRiskScore:
+    "$serde_json::private::Number": "30"
+  underwriting:
+    needsManualReview: false
+    referralReason: No referral required
+trace:
+  dt1:
+    id: dt1
+    input:
+      answers:
+        age:
+          "$serde_json::private::Number": "58"
+        coverageAmount:
+          "$serde_json::private::Number": "1200000"
+        hasForeignResidency: false
+        hasHighRiskMedicalCondition: true
+        hasIncompleteInformation: false
+        hasInformationDiscrepancy: true
+        hazardousOccupation: false
+        multiplePreExistingConditions: true
+        recentHospitalization: false
+      applicantName: Jane Smith
+      applicationId: APP-12345
+    name: risk_factors
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      answers:
+        age:
+          "$serde_json::private::Number": "58"
+        coverageAmount:
+          "$serde_json::private::Number": "1200000"
+        hasForeignResidency: false
+        hasHighRiskMedicalCondition: true
+        hasIncompleteInformation: false
+        hasInformationDiscrepancy: true
+        hazardousOccupation: false
+        multiplePreExistingConditions: true
+        recentHospitalization: false
+      applicantName: Jane Smith
+      applicationId: APP-12345
+      riskFactors:
+        - description: High risk medical condition
+          points:
+            "$serde_json::private::Number": "10"
+        - description: Multiple pre-existing conditions
+          points:
+            "$serde_json::private::Number": "20"
+    performance: "[perf]"
+    traceData:
+      - index:
+          "$serde_json::private::Number": "0"
+        reference_map:
+          answers.age:
+            "$serde_json::private::Number": "58"
+          answers.hasHighRiskMedicalCondition: true
+          answers.hazardousOccupation: false
+          answers.multiplePreExistingConditions: true
+          answers.recentHospitalization: false
+        rule:
+          _id: r1-1
+          "answers.age[i1-5]": ""
+          "answers.hasHighRiskMedicalCondition[i1-1]": "true"
+          "answers.hazardousOccupation[i1-4]": ""
+          "answers.multiplePreExistingConditions[i1-3]": ""
+          "answers.recentHospitalization[i1-2]": ""
+      - index:
+          "$serde_json::private::Number": "2"
+        reference_map:
+          answers.age:
+            "$serde_json::private::Number": "58"
+          answers.hasHighRiskMedicalCondition: true
+          answers.hazardousOccupation: false
+          answers.multiplePreExistingConditions: true
+          answers.recentHospitalization: false
+        rule:
+          _id: r1-3
+          "answers.age[i1-5]": ""
+          "answers.hasHighRiskMedicalCondition[i1-1]": ""
+          "answers.hazardousOccupation[i1-4]": ""
+          "answers.multiplePreExistingConditions[i1-3]": "true"
+          "answers.recentHospitalization[i1-2]": ""
+  dt2:
+    id: dt2
+    input:
+      answers:
+        age:
+          "$serde_json::private::Number": "58"
+        coverageAmount:
+          "$serde_json::private::Number": "1200000"
+        hasForeignResidency: false
+        hasHighRiskMedicalCondition: true
+        hasIncompleteInformation: false
+        hasInformationDiscrepancy: true
+        hazardousOccupation: false
+        multiplePreExistingConditions: true
+        recentHospitalization: false
+      applicantName: Jane Smith
+      applicationId: APP-12345
+      riskDescriptions:
+        - High risk medical condition
+        - Multiple pre-existing conditions
+      riskFactors:
+        - description: High risk medical condition
+          points:
+            "$serde_json::private::Number": "10"
+        - description: Multiple pre-existing conditions
+          points:
+            "$serde_json::private::Number": "20"
+      totalRiskScore:
+        "$serde_json::private::Number": "30"
+    name: referral_decision
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      answers:
+        age:
+          "$serde_json::private::Number": "58"
+        coverageAmount:
+          "$serde_json::private::Number": "1200000"
+        hasForeignResidency: false
+        hasHighRiskMedicalCondition: true
+        hasIncompleteInformation: false
+        hasInformationDiscrepancy: true
+        hazardousOccupation: false
+        multiplePreExistingConditions: true
+        recentHospitalization: false
+      applicantName: Jane Smith
+      applicationId: APP-12345
+      riskDescriptions:
+        - High risk medical condition
+        - Multiple pre-existing conditions
+      riskFactors:
+        - description: High risk medical condition
+          points:
+            "$serde_json::private::Number": "10"
+        - description: Multiple pre-existing conditions
+          points:
+            "$serde_json::private::Number": "20"
+      totalRiskScore:
+        "$serde_json::private::Number": "30"
+      underwriting:
+        needsManualReview: false
+        referralReason: No referral required
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "5"
+      reference_map:
+        answers.coverageAmount:
+          "$serde_json::private::Number": "1200000"
+        answers.hasForeignResidency: false
+        answers.hasIncompleteInformation: false
+        answers.hasInformationDiscrepancy: true
+        totalRiskScore:
+          "$serde_json::private::Number": "30"
+      rule:
+        _id: r2-6
+        "answers.coverageAmount[i2-1]": ""
+        "answers.hasForeignResidency[i2-5]": ""
+        "answers.hasIncompleteInformation[i2-3]": ""
+        "answers.hasInformationDiscrepancy[i2-4]": ""
+        "totalRiskScore[i2-2]": ""
+  ex1:
+    id: ex1
+    input:
+      answers:
+        age:
+          "$serde_json::private::Number": "58"
+        coverageAmount:
+          "$serde_json::private::Number": "1200000"
+        hasForeignResidency: false
+        hasHighRiskMedicalCondition: true
+        hasIncompleteInformation: false
+        hasInformationDiscrepancy: true
+        hazardousOccupation: false
+        multiplePreExistingConditions: true
+        recentHospitalization: false
+      applicantName: Jane Smith
+      applicationId: APP-12345
+      riskFactors:
+        - description: High risk medical condition
+          points:
+            "$serde_json::private::Number": "10"
+        - description: Multiple pre-existing conditions
+          points:
+            "$serde_json::private::Number": "20"
+    name: calculate_risk_score
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      answers:
+        age:
+          "$serde_json::private::Number": "58"
+        coverageAmount:
+          "$serde_json::private::Number": "1200000"
+        hasForeignResidency: false
+        hasHighRiskMedicalCondition: true
+        hasIncompleteInformation: false
+        hasInformationDiscrepancy: true
+        hazardousOccupation: false
+        multiplePreExistingConditions: true
+        recentHospitalization: false
+      applicantName: Jane Smith
+      applicationId: APP-12345
+      riskDescriptions:
+        - High risk medical condition
+        - Multiple pre-existing conditions
+      riskFactors:
+        - description: High risk medical condition
+          points:
+            "$serde_json::private::Number": "10"
+        - description: Multiple pre-existing conditions
+          points:
+            "$serde_json::private::Number": "20"
+      totalRiskScore:
+        "$serde_json::private::Number": "30"
+    performance: "[perf]"
+    traceData:
+      riskDescriptions:
+        result: "[\"High risk medical condition\",\"Multiple pre-existing conditions\"]"
+      totalRiskScore:
+        result: "30"
+  ip1:
+    id: ip1
+    input: ~
+    name: application
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      answers:
+        age:
+          "$serde_json::private::Number": "58"
+        coverageAmount:
+          "$serde_json::private::Number": "1200000"
+        hasForeignResidency: false
+        hasHighRiskMedicalCondition: true
+        hasIncompleteInformation: false
+        hasInformationDiscrepancy: true
+        hazardousOccupation: false
+        multiplePreExistingConditions: true
+        recentHospitalization: false
+      applicantName: Jane Smith
+      applicationId: APP-12345
+    performance: "[perf]"
+    traceData: ~

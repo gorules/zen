@@ -1,0 +1,414 @@
+{
+  "tests": [
+    {
+      "input": {
+        "material": "Sulfuric Acid",
+        "quantity": 75,
+        "state": "liquid",
+        "location": "Lab-B42",
+        "transportMode": "road"
+      },
+      "output": {
+        "complianceRequirements": "Safety data sheets must accompany shipment",
+        "handlingProcedure": "Avoid contact with skin and eyes, neutralizing agents must be readily available",
+        "hazardClassification": "Class B - Corrosive",
+        "hazardLevel": "high",
+        "location": "Lab-B42",
+        "material": "Sulfuric Acid",
+        "permitRequired": "false",
+        "quantity": 75,
+        "recommendedStorageZone": "yellow-zone",
+        "reportingRequired": "false",
+        "requiredEquipment": "Chemical-resistant gloves, face shield, apron, boots",
+        "state": "liquid",
+        "storageLimit": 1000,
+        "transportMode": "road"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"material\": {\n      \"type\": \"string\",\n      \"description\": \"Name or code of hazardous material\"\n    },\n    \"quantity\": {\n      \"type\": \"number\",\n      \"description\": \"Quantity in kilograms\"\n    },\n    \"state\": {\n      \"type\": \"string\",\n      \"enum\": [\"solid\", \"liquid\", \"gas\"],\n      \"description\": \"Physical state of the material\"\n    },\n    \"location\": {\n      \"type\": \"string\",\n      \"description\": \"Storage or handling location code\"\n    },\n    \"transportMode\": {\n      \"type\": \"string\",\n      \"enum\": [\"road\", \"rail\", \"air\", \"sea\", \"internal\"],\n      \"description\": \"Mode of transportation if applicable\"\n    }\n  },\n  \"required\": [\"material\", \"quantity\", \"state\"]\n}\n"
+      },
+      "id": "inputNode",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "materialType": "some(['flammable', 'combustible'], contains($, #))",
+            "materialState": "'liquid', 'gas'",
+            "materialQuantity": "",
+            "classificationOutput": "'Class A - Flammable'",
+            "hazardLevelOutput": "'high'",
+            "storageZoneOutput": "'red-zone'"
+          },
+          {
+            "_id": "rule2",
+            "materialType": "some(['corrosive', 'acid', 'base'], contains($, #))",
+            "materialState": "",
+            "materialQuantity": "",
+            "classificationOutput": "'Class B - Corrosive'",
+            "hazardLevelOutput": "'high'",
+            "storageZoneOutput": "'yellow-zone'"
+          },
+          {
+            "_id": "rule3",
+            "materialType": "some(['toxic', 'poison'], contains($, #))",
+            "materialState": "",
+            "materialQuantity": "> 25",
+            "classificationOutput": "'Class C - Toxic'",
+            "hazardLevelOutput": "'high'",
+            "storageZoneOutput": "'green-zone'"
+          },
+          {
+            "_id": "rule4",
+            "materialType": "some(['toxic', 'poison'], contains($, #))",
+            "materialState": "",
+            "materialQuantity": "<= 25",
+            "classificationOutput": "'Class C - Toxic'",
+            "hazardLevelOutput": "'medium'",
+            "storageZoneOutput": "'green-zone'"
+          },
+          {
+            "_id": "rule5",
+            "materialType": "some(['radioactive'], contains($, #))",
+            "materialState": "",
+            "materialQuantity": "",
+            "classificationOutput": "'Class D - Radioactive'",
+            "hazardLevelOutput": "'extreme'",
+            "storageZoneOutput": "'black-zone'"
+          },
+          {
+            "_id": "rule6",
+            "materialType": "some(['explosive'], contains($, #))",
+            "materialState": "",
+            "materialQuantity": "",
+            "classificationOutput": "'Class E - Explosive'",
+            "hazardLevelOutput": "'extreme'",
+            "storageZoneOutput": "'black-zone'"
+          },
+          {
+            "_id": "rule7",
+            "materialType": "some(['oxidizer', 'oxidizing'], contains($, #))",
+            "materialState": "",
+            "materialQuantity": "",
+            "classificationOutput": "'Class F - Oxidizer'",
+            "hazardLevelOutput": "'high'",
+            "storageZoneOutput": "'blue-zone'"
+          },
+          {
+            "_id": "rule8",
+            "materialType": "",
+            "materialState": "",
+            "materialQuantity": "",
+            "classificationOutput": "'Unclassified'",
+            "hazardLevelOutput": "'low'",
+            "storageZoneOutput": "'grey-zone'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "materialType",
+            "name": "Material Type",
+            "field": "lower(material)"
+          },
+          {
+            "id": "materialState",
+            "name": "State",
+            "field": "state"
+          },
+          {
+            "id": "materialQuantity",
+            "name": "Quantity (kg)",
+            "field": "quantity"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "classificationOutput",
+            "name": "Classification",
+            "field": "hazardClassification"
+          },
+          {
+            "id": "hazardLevelOutput",
+            "name": "Hazard Level",
+            "field": "hazardLevel"
+          },
+          {
+            "id": "storageZoneOutput",
+            "name": "Storage Zone",
+            "field": "recommendedStorageZone"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "materialClassificationTable",
+      "name": "Material Classification",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "hazardClass": "'Class A - Flammable'",
+            "hazardLevel": "'high'",
+            "handlingEquipmentOutput": "'Fire-resistant gloves, face shield, flame-retardant clothing'",
+            "handlingProcedureOutput": "'Keep away from ignition sources, ensure proper ventilation, use non-sparking tools'",
+            "storageLimitOutput": "500"
+          },
+          {
+            "_id": "rule2",
+            "hazardClass": "'Class B - Corrosive'",
+            "hazardLevel": "'high'",
+            "handlingEquipmentOutput": "'Chemical-resistant gloves, face shield, apron, boots'",
+            "handlingProcedureOutput": "'Avoid contact with skin and eyes, neutralizing agents must be readily available'",
+            "storageLimitOutput": "1000"
+          },
+          {
+            "_id": "rule3",
+            "hazardClass": "'Class C - Toxic'",
+            "hazardLevel": "'high'",
+            "handlingEquipmentOutput": "'Chemical-resistant gloves, respirator, full protective suit'",
+            "handlingProcedureOutput": "'Use only in designated areas with proper ventilation, decontamination station required'",
+            "storageLimitOutput": "250"
+          },
+          {
+            "_id": "rule4",
+            "hazardClass": "'Class C - Toxic'",
+            "hazardLevel": "'medium'",
+            "handlingEquipmentOutput": "'Chemical-resistant gloves, safety goggles, lab coat'",
+            "handlingProcedureOutput": "'Use in well-ventilated area, wash hands thoroughly after handling'",
+            "storageLimitOutput": "500"
+          },
+          {
+            "_id": "rule5",
+            "hazardClass": "'Class D - Radioactive'",
+            "hazardLevel": "'extreme'",
+            "handlingEquipmentOutput": "'Radiation suit, dosimeter, remote handling tools'",
+            "handlingProcedureOutput": "'Special authorization required, time and distance protocols, radiation monitoring mandatory'",
+            "storageLimitOutput": "50"
+          },
+          {
+            "_id": "rule6",
+            "hazardClass": "'Class E - Explosive'",
+            "hazardLevel": "'extreme'",
+            "handlingEquipmentOutput": "'Anti-static clothing, specialized tools, blast shield'",
+            "handlingProcedureOutput": "'Expert personnel only, evacuation plan required, no electronic devices'",
+            "storageLimitOutput": "100"
+          },
+          {
+            "_id": "rule7",
+            "hazardClass": "'Class F - Oxidizer'",
+            "hazardLevel": "'high'",
+            "handlingEquipmentOutput": "'Chemical-resistant gloves, safety goggles, lab coat'",
+            "handlingProcedureOutput": "'Keep away from combustible materials, avoid contamination'",
+            "storageLimitOutput": "750"
+          },
+          {
+            "_id": "rule8",
+            "hazardClass": "'Unclassified'",
+            "hazardLevel": "'low'",
+            "handlingEquipmentOutput": "'Standard PPE (gloves, safety glasses)'",
+            "handlingProcedureOutput": "'Follow general laboratory safety procedures'",
+            "storageLimitOutput": "2000"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "hazardClass",
+            "name": "Hazard Classification",
+            "field": "hazardClassification"
+          },
+          {
+            "id": "hazardLevel",
+            "name": "Hazard Level",
+            "field": "hazardLevel"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "handlingEquipmentOutput",
+            "name": "Required Equipment",
+            "field": "requiredEquipment"
+          },
+          {
+            "id": "handlingProcedureOutput",
+            "name": "Handling Procedure",
+            "field": "handlingProcedure"
+          },
+          {
+            "id": "storageLimitOutput",
+            "name": "Storage Limit (kg)",
+            "field": "storageLimit"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "handlingRequirementsTable",
+      "name": "Handling Requirements",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "hazardClass": "'Class A - Flammable', 'Class E - Explosive'",
+            "transportMode": "'air'",
+            "quantityCheck": "> 5",
+            "complianceOutput": "'Prohibited for air transport in this quantity'",
+            "permitRequiredOutput": "'true'",
+            "reportingRequiredOutput": "'true'"
+          },
+          {
+            "_id": "rule2",
+            "hazardClass": "'Class D - Radioactive'",
+            "transportMode": "'road', 'rail', 'air', 'sea'",
+            "quantityCheck": "",
+            "complianceOutput": "'Special NRC permit required, scheduled route mandatory'",
+            "permitRequiredOutput": "'true'",
+            "reportingRequiredOutput": "'true'"
+          },
+          {
+            "_id": "rule3",
+            "hazardClass": "'Class A - Flammable', 'Class B - Corrosive', 'Class C - Toxic', 'Class F - Oxidizer'",
+            "transportMode": "'road', 'rail', 'sea'",
+            "quantityCheck": "> 1000",
+            "complianceOutput": "'HAZMAT placards required, certified driver/handler only'",
+            "permitRequiredOutput": "'true'",
+            "reportingRequiredOutput": "'true'"
+          },
+          {
+            "_id": "rule4",
+            "hazardClass": "'Class A - Flammable', 'Class B - Corrosive', 'Class C - Toxic', 'Class F - Oxidizer'",
+            "transportMode": "'road', 'rail', 'sea'",
+            "quantityCheck": "> 100 and <= 1000",
+            "complianceOutput": "'HAZMAT placards required, safety data sheets must accompany shipment'",
+            "permitRequiredOutput": "'true'",
+            "reportingRequiredOutput": "'false'"
+          },
+          {
+            "_id": "rule5",
+            "hazardClass": "'Class A - Flammable', 'Class B - Corrosive', 'Class C - Toxic', 'Class F - Oxidizer'",
+            "transportMode": "'road', 'rail', 'sea'",
+            "quantityCheck": "<= 100",
+            "complianceOutput": "'Safety data sheets must accompany shipment'",
+            "permitRequiredOutput": "'false'",
+            "reportingRequiredOutput": "'false'"
+          },
+          {
+            "_id": "rule6",
+            "hazardClass": "'Class A - Flammable', 'Class B - Corrosive', 'Class C - Toxic', 'Class F - Oxidizer'",
+            "transportMode": "'internal'",
+            "quantityCheck": "",
+            "complianceOutput": "'Internal movement log required'",
+            "permitRequiredOutput": "'false'",
+            "reportingRequiredOutput": "'false'"
+          },
+          {
+            "_id": "rule7",
+            "hazardClass": "'Unclassified'",
+            "transportMode": "",
+            "quantityCheck": "",
+            "complianceOutput": "'Standard shipping procedures apply'",
+            "permitRequiredOutput": "'false'",
+            "reportingRequiredOutput": "'false'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "hazardClass",
+            "name": "Hazard Classification",
+            "field": "hazardClassification"
+          },
+          {
+            "id": "transportMode",
+            "name": "Transport Mode",
+            "field": "transportMode"
+          },
+          {
+            "id": "quantityCheck",
+            "name": "Quantity (kg)",
+            "field": "quantity"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "complianceOutput",
+            "name": "Compliance Requirements",
+            "field": "complianceRequirements"
+          },
+          {
+            "id": "permitRequiredOutput",
+            "name": "Permit Required",
+            "field": "permitRequired"
+          },
+          {
+            "id": "reportingRequiredOutput",
+            "name": "Reporting Required",
+            "field": "reportingRequired"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "regulatoryComplianceTable",
+      "name": "Regulatory Compliance",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "inputNode",
+      "targetId": "materialClassificationTable",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "materialClassificationTable",
+      "targetId": "handlingRequirementsTable",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "handlingRequirementsTable",
+      "targetId": "regulatoryComplianceTable",
+      "type": "edge"
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  escalation:
+    assignedTeam: Executive Response Team
+    description: Immediate executive team escalation required
+    level: immediate_executive
+    priority:
+      "$serde_json::private::Number": "1"
+    slaMinutes:
+      "$serde_json::private::Number": "30"
+trace:
+  dt1:
+    id: dt1
+    input:
+      customer:
+        accountAge:
+          "$serde_json::private::Number": "36"
+        id: C123456
+        name: Acme Corporation
+        tier: premium
+      issue:
+        complexity: high
+        description: Complete service outage affecting all production systems
+        financialImpact:
+          "$serde_json::private::Number": "7500"
+        id: ISS-789
+        type: service_outage
+    name: determine_escalation_level
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      escalation:
+        assignedTeam: Executive Response Team
+        description: Immediate executive team escalation required
+        level: immediate_executive
+        priority:
+          "$serde_json::private::Number": "1"
+        slaMinutes:
+          "$serde_json::private::Number": "30"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        customer.tier: premium
+        issue.complexity: high
+        issue.financialImpact:
+          "$serde_json::private::Number": "7500"
+      rule:
+        _id: r1-1
+        "customer.tier[i1-1]": "'premium'"
+        "issue.complexity[i1-2]": "'high'"
+        "issue.financialImpact[i1-3]": "> 5000"
+  ip1:
+    id: ip1
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      customer:
+        accountAge:
+          "$serde_json::private::Number": "36"
+        id: C123456
+        name: Acme Corporation
+        tier: premium
+      issue:
+        complexity: high
+        description: Complete service outage affecting all production systems
+        financialImpact:
+          "$serde_json::private::Number": "7500"
+        id: ISS-789
+        type: service_outage
+    performance: "[perf]"
+    traceData: ~

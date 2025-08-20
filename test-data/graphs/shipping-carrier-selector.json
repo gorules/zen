@@ -1,0 +1,379 @@
+{
+  "tests": [
+    {
+      "input": {
+        "length": 45,
+        "width": 35,
+        "height": 25,
+        "weight": 12.5,
+        "destination": "domestic",
+        "deliveryTimeline": "express",
+        "priorityFactor": "cost"
+      },
+      "output": {
+        "baseCosts": {
+          "EcoShip": 21.75,
+          "FastTrack": 40.5,
+          "GlobalExpress": 87.5,
+          "GlobalStandard": 60,
+          "HeavyHauler": 65,
+          "QuickShip": 39.75,
+          "RegularPost": 25,
+          "SpeedyExpress": 56.25,
+          "StandardCourier": 28.25,
+          "WorldWide": 77.5
+        },
+        "carrierCosts": [
+          {
+            "carrier": "FastTrack",
+            "cost": 40.5
+          },
+          {
+            "carrier": "QuickShip",
+            "cost": 39.75
+          }
+        ],
+        "chargableWeight": 12.5,
+        "deliveryTimeline": "express",
+        "destination": "domestic",
+        "eligibleCarriers": [
+          "FastTrack",
+          "QuickShip"
+        ],
+        "height": 25,
+        "isOversized": false,
+        "length": 45,
+        "priorityFactor": "cost",
+        "serviceLevel": "express",
+        "validation": {
+          "isValid": true
+        },
+        "volumetricWeight": 7.875,
+        "weight": 12.5,
+        "width": 35
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "input",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 115.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i1": "weight <= 0 or length <= 0 or width <= 0 or height <= 0",
+            "o1": "'Package dimensions and weight must be positive values'",
+            "o2": "false"
+          },
+          {
+            "_id": "rule2",
+            "i1": "weight > 70",
+            "o1": "'Package exceeds maximum weight limit of 70kg'",
+            "o2": "false"
+          },
+          {
+            "_id": "rule3",
+            "i1": "length > 200 or width > 200 or height > 200",
+            "o1": "'Package exceeds maximum dimension limit of 200cm'",
+            "o2": "false"
+          },
+          {
+            "_id": "rule4",
+            "i1": "deliveryTimeline != 'standard' and deliveryTimeline != 'express' and deliveryTimeline != 'same-day'",
+            "o1": "'Invalid delivery timeline option'",
+            "o2": "false"
+          },
+          {
+            "_id": "rule5",
+            "i1": "",
+            "o1": "",
+            "o2": "true"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Input"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Error",
+            "field": "validation.error"
+          },
+          {
+            "id": "o2",
+            "name": "IsValid",
+            "field": "validation.isValid"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "validate",
+      "name": "validatePackage",
+      "position": {
+        "x": 430,
+        "y": 115.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i1": "validation.isValid == false",
+            "o1": "'none'"
+          },
+          {
+            "_id": "rule2",
+            "i1": "deliveryTimeline == 'same-day'",
+            "o1": "'premium'"
+          },
+          {
+            "_id": "rule3",
+            "i1": "deliveryTimeline == 'express'",
+            "o1": "'express'"
+          },
+          {
+            "_id": "rule4",
+            "i1": "deliveryTimeline == 'standard'",
+            "o1": "'standard'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Input"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "ServiceLevel",
+            "field": "serviceLevel"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "serviceLevel",
+      "name": "determineServiceLevel",
+      "position": {
+        "x": 1070,
+        "y": 66.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "collect",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i1": "validation.isValid == false",
+            "o1": "[]"
+          },
+          {
+            "_id": "rule2",
+            "i1": "serviceLevel == 'premium' and destination == 'domestic' and weight <= 15",
+            "o1": "['SpeedyExpress']"
+          },
+          {
+            "_id": "rule3",
+            "i1": "serviceLevel == 'express' and destination == 'domestic' and weight <= 30",
+            "o1": "['FastTrack', 'QuickShip']"
+          },
+          {
+            "_id": "rule4",
+            "i1": "serviceLevel == 'express' and destination == 'international' and weight <= 20",
+            "o1": "['GlobalExpress', 'WorldWide']"
+          },
+          {
+            "_id": "rule5",
+            "i1": "serviceLevel == 'standard' and destination == 'domestic' and weight <= 50",
+            "o1": "['RegularPost', 'EcoShip', 'StandardCourier']"
+          },
+          {
+            "_id": "rule6",
+            "i1": "serviceLevel == 'standard' and destination == 'international' and weight <= 30",
+            "o1": "['GlobalStandard', 'WorldWide']"
+          },
+          {
+            "_id": "rule7",
+            "i1": "weight > 50 and weight <= 70",
+            "o1": "['HeavyHauler']"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Input"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "EligibleCarriers",
+            "field": "carriers"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": "eligibleCarriers",
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "carrierEligibility",
+      "name": "determineEligibleCarriers",
+      "position": {
+        "x": 1390,
+        "y": 66.5
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "bd88f97d-d7fa-4342-b880-e611ba6ee610",
+            "key": "eligibleCarriers",
+            "value": "flatten(map(eligibleCarriers, #.carriers))"
+          },
+          {
+            "id": "expr1",
+            "key": "volumetricWeight",
+            "value": "(length * width * height) / 5000"
+          },
+          {
+            "id": "expr2",
+            "key": "chargableWeight",
+            "value": "max([weight, $.volumetricWeight])"
+          },
+          {
+            "id": "expr3",
+            "key": "isOversized",
+            "value": "length > 100 or width > 100 or height > 100"
+          },
+          {
+            "id": "expr4",
+            "key": "baseCosts",
+            "value": "{\n  \"SpeedyExpress\": 25 + ($.chargableWeight * 2.5) + ($.isOversized ? 15 : 0),\n  \"FastTrack\": 18 + ($.chargableWeight * 1.8) + ($.isOversized ? 12 : 0),\n  \"QuickShip\": 16 + ($.chargableWeight * 1.9) + ($.isOversized ? 10 : 0),\n  \"GlobalExpress\": 35 + ($.chargableWeight * 4.2) + ($.isOversized ? 25 : 0),\n  \"WorldWide\": 30 + ($.chargableWeight * 3.8) + ($.isOversized ? 20 : 0),\n  \"RegularPost\": 10 + ($.chargableWeight * 1.2) + ($.isOversized ? 8 : 0),\n  \"EcoShip\": 8 + ($.chargableWeight * 1.1) + ($.isOversized ? 7 : 0),\n  \"StandardCourier\": 12 + ($.chargableWeight * 1.3) + ($.isOversized ? 9 : 0),\n  \"GlobalStandard\": 25 + ($.chargableWeight * 2.8) + ($.isOversized ? 15 : 0),\n  \"HeavyHauler\": 40 + ($.chargableWeight * 2.0) + ($.isOversized ? 30 : 0)\n}"
+          },
+          {
+            "id": "expr5",
+            "key": "carrierCosts",
+            "value": "filter(\n  map($.eligibleCarriers, {\n      'carrier': #,\n      'cost': $.baseCosts[#]\n  }),\n  #.cost < 999999\n)"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "costCalculation",
+      "name": "calculateCosts",
+      "position": {
+        "x": 1710,
+        "y": 66.5
+      }
+    },
+    {
+      "type": "switchNode",
+      "content": {
+        "hitPolicy": "first",
+        "statements": [
+          {
+            "id": "de01933e-42a2-4995-8f84-9b9ab0a3d1ec",
+            "condition": "validation.isValid",
+            "isDefault": false
+          },
+          {
+            "id": "e9a52c8a-8553-4abb-b232-3a5283066ce8",
+            "condition": "",
+            "isDefault": true
+          }
+        ]
+      },
+      "id": "1842fd5e-dc7e-480e-b501-07f93500a14c",
+      "name": "switch1",
+      "position": {
+        "x": 750,
+        "y": 115.5
+      }
+    },
+    {
+      "type": "outputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "0e7b0128-a7bc-404d-894a-423fd79f7ea9",
+      "name": "response",
+      "position": {
+        "x": 1070,
+        "y": 164.5
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "input",
+      "targetId": "validate",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "serviceLevel",
+      "targetId": "carrierEligibility",
+      "type": "edge"
+    },
+    {
+      "id": "edge4",
+      "sourceId": "carrierEligibility",
+      "targetId": "costCalculation",
+      "type": "edge"
+    },
+    {
+      "id": "099c6707-868d-42c1-8953-92397134ccfb",
+      "sourceId": "validate",
+      "type": "edge",
+      "targetId": "1842fd5e-dc7e-480e-b501-07f93500a14c"
+    },
+    {
+      "id": "9b03863d-954d-43bf-8a1e-a3a091457647",
+      "sourceId": "1842fd5e-dc7e-480e-b501-07f93500a14c",
+      "type": "edge",
+      "targetId": "serviceLevel",
+      "sourceHandle": "de01933e-42a2-4995-8f84-9b9ab0a3d1ec"
+    },
+    {
+      "id": "e693e75d-93f9-4d03-94c6-7cc798063645",
+      "sourceId": "1842fd5e-dc7e-480e-b501-07f93500a14c",
+      "type": "edge",
+      "targetId": "0e7b0128-a7bc-404d-894a-423fd79f7ea9",
+      "sourceHandle": "e9a52c8a-8553-4abb-b232-3a5283066ce8"
+    }
+  ]
+}

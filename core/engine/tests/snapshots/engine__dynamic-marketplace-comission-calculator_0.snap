@@ -1,0 +1,204 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  finalCommissionRate:
+    "$serde_json::private::Number": "0.168"
+  isPromotionActive: false
+  promotionAdjustment:
+    "$serde_json::private::Number": "0"
+  volumeMultiplier:
+    "$serde_json::private::Number": "1.2"
+trace:
+  input:
+    id: input
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      product:
+        category: electronics
+        id: prod-123
+      promotion:
+        endDate: 2025-04-01
+        startDate: 2025-02-01
+      sales:
+        amount:
+          "$serde_json::private::Number": "750"
+        volume:
+          "$serde_json::private::Number": "120"
+      seller:
+        fulfillmentRate:
+          "$serde_json::private::Number": "97"
+        id: sell-456
+        rating:
+          "$serde_json::private::Number": "4.7"
+    performance: "[perf]"
+    traceData: ~
+  productCategory:
+    id: productCategory
+    input:
+      product:
+        category: electronics
+        id: prod-123
+      promotion:
+        endDate: 2025-04-01
+        startDate: 2025-02-01
+      sales:
+        amount:
+          "$serde_json::private::Number": "750"
+        volume:
+          "$serde_json::private::Number": "120"
+      seller:
+        fulfillmentRate:
+          "$serde_json::private::Number": "97"
+        id: sell-456
+        rating:
+          "$serde_json::private::Number": "4.7"
+    name: productCategoryRates
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      commission:
+        baseRate:
+          "$serde_json::private::Number": "0.12"
+      product:
+        category: electronics
+        id: prod-123
+      promotion:
+        endDate: 2025-04-01
+        startDate: 2025-02-01
+      sales:
+        amount:
+          "$serde_json::private::Number": "750"
+        volume:
+          "$serde_json::private::Number": "120"
+      seller:
+        fulfillmentRate:
+          "$serde_json::private::Number": "97"
+        id: sell-456
+        rating:
+          "$serde_json::private::Number": "4.7"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        product.category: electronics
+        sales.amount:
+          "$serde_json::private::Number": "750"
+      rule:
+        _id: r1
+        "product.category[i1]": "'electronics'"
+        "sales.amount[i2]": "> 500"
+  promotionalPeriod:
+    id: promotionalPeriod
+    input:
+      commission:
+        baseRate:
+          "$serde_json::private::Number": "0.12"
+        performanceAdjustment:
+          "$serde_json::private::Number": "0.02"
+      product:
+        category: electronics
+        id: prod-123
+      promotion:
+        endDate: 2025-04-01
+        startDate: 2025-02-01
+      sales:
+        amount:
+          "$serde_json::private::Number": "750"
+        volume:
+          "$serde_json::private::Number": "120"
+      seller:
+        fulfillmentRate:
+          "$serde_json::private::Number": "97"
+        id: sell-456
+        rating:
+          "$serde_json::private::Number": "4.7"
+    name: promotionalAdjustment
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      finalCommissionRate:
+        "$serde_json::private::Number": "0.168"
+      isPromotionActive: false
+      promotionAdjustment:
+        "$serde_json::private::Number": "0"
+      volumeMultiplier:
+        "$serde_json::private::Number": "1.2"
+    performance: "[perf]"
+    traceData:
+      finalCommissionRate:
+        result: "0.168"
+      isPromotionActive:
+        result: "false"
+      promotionAdjustment:
+        result: "0"
+      volumeMultiplier:
+        result: "1.2"
+  sellerPerformance:
+    id: sellerPerformance
+    input:
+      commission:
+        baseRate:
+          "$serde_json::private::Number": "0.12"
+      product:
+        category: electronics
+        id: prod-123
+      promotion:
+        endDate: 2025-04-01
+        startDate: 2025-02-01
+      sales:
+        amount:
+          "$serde_json::private::Number": "750"
+        volume:
+          "$serde_json::private::Number": "120"
+      seller:
+        fulfillmentRate:
+          "$serde_json::private::Number": "97"
+        id: sell-456
+        rating:
+          "$serde_json::private::Number": "4.7"
+    name: sellerPerformanceAdjustment
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      commission:
+        baseRate:
+          "$serde_json::private::Number": "0.12"
+        performanceAdjustment:
+          "$serde_json::private::Number": "0.02"
+      product:
+        category: electronics
+        id: prod-123
+      promotion:
+        endDate: 2025-04-01
+        startDate: 2025-02-01
+      sales:
+        amount:
+          "$serde_json::private::Number": "750"
+        volume:
+          "$serde_json::private::Number": "120"
+      seller:
+        fulfillmentRate:
+          "$serde_json::private::Number": "97"
+        id: sell-456
+        rating:
+          "$serde_json::private::Number": "4.7"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        seller.fulfillmentRate:
+          "$serde_json::private::Number": "97"
+        seller.rating:
+          "$serde_json::private::Number": "4.7"
+      rule:
+        _id: r8
+        "seller.fulfillmentRate[i4]": "> 95"
+        "seller.rating[i3]": "> 4.5"

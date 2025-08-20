@@ -266,6 +266,64 @@ async fn engine_graph_tests() {
 
 #[tokio::test]
 #[cfg_attr(miri, ignore)]
+async fn engine_snapshot_tests() {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct TestCase {
+        input: Variable,
+        output: Variable,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct TestData {
+        tests: Vec<TestCase>,
+        #[serde(flatten)]
+        decision_content: DecisionContent,
+    }
+
+    let engine = DecisionEngine::default();
+
+    let graphs_path = Path::new(test_data_root().as_str()).join("graphs");
+    let file_list = fs::read_dir(graphs_path).unwrap();
+    for maybe_file in file_list {
+        let Ok(file) = maybe_file else {
+            panic!("Failed to read DirEntry {maybe_file:?}");
+        };
+
+        let file_name = file.file_name().to_str().map(|s| s.to_string()).unwrap();
+        let file_name = if let Some(pos) = file_name.rfind('.') {
+            file_name[..pos].to_string()
+        } else {
+            file_name
+        };
+        let file_contents = fs::read_to_string(file.path()).expect("valid file data");
+        let test_data: TestData = serde_json::from_str(&file_contents).expect("Valid JSON");
+
+        let decision = engine.create_decision(test_data.decision_content.into());
+        for (index, test_case) in test_data.tests.iter().enumerate() {
+            let input = test_case.input.clone();
+            let result = decision
+                .evaluate_with_opts(
+                    input.clone(),
+                    EvaluationOptions {
+                        trace: Some(true),
+                        max_depth: None,
+                    },
+                )
+                .await
+                .unwrap();
+            let serialized_result = serde_json::to_value(&result).unwrap();
+            insta::assert_yaml_snapshot!(format!("{}_{}", file_name, index), serialized_result, {
+                ".performance" => "[perf]",
+                ".trace.*.performance" => "[perf]"
+            });
+        }
+    }
+}
+
+#[tokio::test]
+#[cfg_attr(miri, ignore)]
 async fn engine_function_v2() {
     let engine = DecisionEngine::default().with_loader(create_fs_loader().into());
 

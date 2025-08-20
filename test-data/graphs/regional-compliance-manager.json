@@ -1,0 +1,278 @@
+{
+  "tests": [
+    {
+      "input": {
+        "customer": {
+          "id": "CUST-83921",
+          "region": "EU",
+          "type": "individual",
+          "consentProvided": true,
+          "age": 32,
+          "serviceLevel": "standard",
+          "dateJoined": "2023-05-15"
+        },
+        "serviceRequest": {
+          "upgradeToPremium": true,
+          "internationalRoaming": true,
+          "dataSharing": false
+        }
+      },
+      "output": {
+        "eligibility": {
+          "notes": "Age verification required for premium services",
+          "premiumServices": true
+        }
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "input",
+      "name": "customerData",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "region": "'EU'",
+            "dataRetention": "24",
+            "privacyRequirements": "'GDPR'",
+            "consentRequired": "true",
+            "serviceRestrictions": "['roaming_cap', 'third_party_data_sharing']",
+            "exportAllowed": "false"
+          },
+          {
+            "_id": "rule2",
+            "region": "'US'",
+            "dataRetention": "36",
+            "privacyRequirements": "'CCPA'",
+            "consentRequired": "true",
+            "serviceRestrictions": "['international_calls_verification']",
+            "exportAllowed": "true"
+          },
+          {
+            "_id": "rule3",
+            "region": "'UK'",
+            "dataRetention": "24",
+            "privacyRequirements": "'UK_GDPR'",
+            "consentRequired": "true",
+            "serviceRestrictions": "['roaming_cap']",
+            "exportAllowed": "false"
+          },
+          {
+            "_id": "rule4",
+            "region": "'CA'",
+            "dataRetention": "18",
+            "privacyRequirements": "'PIPEDA'",
+            "consentRequired": "true",
+            "serviceRestrictions": "[]",
+            "exportAllowed": "true"
+          },
+          {
+            "_id": "rule5",
+            "region": "'AU'",
+            "dataRetention": "12",
+            "privacyRequirements": "'Privacy_Act'",
+            "consentRequired": "true",
+            "serviceRestrictions": "[]",
+            "exportAllowed": "true"
+          },
+          {
+            "_id": "rule6",
+            "region": "",
+            "dataRetention": "36",
+            "privacyRequirements": "'default'",
+            "consentRequired": "false",
+            "serviceRestrictions": "[]",
+            "exportAllowed": "true"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "region",
+            "name": "Region",
+            "field": "customer.region"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "dataRetention",
+            "name": "Data Retention Period (months)",
+            "field": "compliance.dataRetentionMonths"
+          },
+          {
+            "id": "privacyRequirements",
+            "name": "Privacy Framework",
+            "field": "compliance.privacyFramework"
+          },
+          {
+            "id": "consentRequired",
+            "name": "Explicit Consent Required",
+            "field": "compliance.explicitConsentRequired"
+          },
+          {
+            "id": "serviceRestrictions",
+            "name": "Service Restrictions",
+            "field": "compliance.serviceRestrictions"
+          },
+          {
+            "id": "exportAllowed",
+            "name": "Data Export Allowed",
+            "field": "compliance.dataExportAllowed"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "regionRules",
+      "name": "regionalComplianceRules",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "expr1",
+            "key": "complianceStatus",
+            "value": "compliance.explicitConsentRequired == true and customer.consentProvided == true ? 'compliant' : (compliance.explicitConsentRequired == false ? 'compliant' : 'non_compliant')"
+          },
+          {
+            "id": "expr2",
+            "key": "dataRetentionDate",
+            "value": "date('now') + (number(compliance.dataRetentionMonths) * 30 * 24 * 60 * 60 * 1000)"
+          },
+          {
+            "id": "expr3",
+            "key": "complianceSummary",
+            "value": "`Region: ${customer.region}, Framework: ${compliance.privacyFramework}, Retention: ${compliance.dataRetentionMonths} months`"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "complianceOutput",
+      "name": "complianceEvaluation",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "eligible1",
+            "customerType": "'business'",
+            "region": "'EU'",
+            "eligibleForPremium": "true",
+            "additionalNotes": "'Business customers in EU require additional data processing agreement'"
+          },
+          {
+            "_id": "eligible2",
+            "customerType": "'business'",
+            "region": "",
+            "eligibleForPremium": "true",
+            "additionalNotes": "'Standard business customer requirements apply'"
+          },
+          {
+            "_id": "eligible3",
+            "customerType": "'individual'",
+            "region": "'US', 'CA', 'AU'",
+            "eligibleForPremium": "true",
+            "additionalNotes": "'No additional requirements'"
+          },
+          {
+            "_id": "eligible4",
+            "customerType": "'individual'",
+            "region": "'EU', 'UK'",
+            "eligibleForPremium": "customer.age >= 18",
+            "additionalNotes": "'Age verification required for premium services'"
+          },
+          {
+            "_id": "eligible5",
+            "customerType": "",
+            "region": "",
+            "eligibleForPremium": "false",
+            "additionalNotes": "'Default ineligible until properly categorized'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "customerType",
+            "name": "Customer Type",
+            "field": "customer.type"
+          },
+          {
+            "id": "region",
+            "name": "Region",
+            "field": "customer.region"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "eligibleForPremium",
+            "name": "Eligible for Premium Services",
+            "field": "eligibility.premiumServices"
+          },
+          {
+            "id": "additionalNotes",
+            "name": "Additional Notes",
+            "field": "eligibility.notes"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "additionalRestrictions",
+      "name": "serviceEligibility",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "input",
+      "targetId": "regionRules",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "regionRules",
+      "targetId": "complianceOutput",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "complianceOutput",
+      "targetId": "additionalRestrictions",
+      "type": "edge"
+    }
+  ]
+}

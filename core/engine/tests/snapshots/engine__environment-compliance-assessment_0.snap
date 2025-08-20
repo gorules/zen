@@ -1,0 +1,438 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  assessment:
+    emissionThreshold:
+      "$serde_json::private::Number": "150"
+    industryRiskLevel: medium
+  audits:
+    lastAuditDate: 2025-01-15
+    previousFindings:
+      "$serde_json::private::Number": "3"
+    resolvedFindings:
+      "$serde_json::private::Number": "2"
+  carbonIntensity:
+    "$serde_json::private::Number": "185"
+  compliance:
+    actionTimeframe: 60-days
+    recommendation: Medium-risk industry with significant threshold exceedance requires remediation plan within 60 days.
+    status: non-compliant
+  emissions:
+    carbonDioxideMetricTons:
+      "$serde_json::private::Number": "18500"
+    methaneMetricTons:
+      "$serde_json::private::Number": "120"
+    nitrousOxideMetricTons:
+      "$serde_json::private::Number": "45"
+  exceededThreshold: true
+  hasWasteViolations: true
+  hasWaterViolations: false
+  industry: manufacturing
+  location:
+    city: Detroit
+    country: United States
+    region: midwest
+  percentOverThreshold:
+    "$serde_json::private::Number": "23.33333333333333333333333333"
+  production:
+    units: million_units
+    volume:
+      "$serde_json::private::Number": "100"
+  waste:
+    hazardousWasteMetricTons:
+      "$serde_json::private::Number": "50"
+    nonHazardousWasteMetricTons:
+      "$serde_json::private::Number": "350"
+    recycledPercentage:
+      "$serde_json::private::Number": "22"
+    violations:
+      "$serde_json::private::Number": "1"
+  water:
+    consumptionKiloliters:
+      "$serde_json::private::Number": "250000"
+    treatedPercentage:
+      "$serde_json::private::Number": "85"
+    violations:
+      "$serde_json::private::Number": "0"
+trace:
+  complianceStatus:
+    id: complianceStatus
+    input:
+      assessment:
+        emissionThreshold:
+          "$serde_json::private::Number": "150"
+        industryRiskLevel: medium
+      audits:
+        lastAuditDate: 2025-01-15
+        previousFindings:
+          "$serde_json::private::Number": "3"
+        resolvedFindings:
+          "$serde_json::private::Number": "2"
+      carbonIntensity:
+        "$serde_json::private::Number": "185"
+      emissions:
+        carbonDioxideMetricTons:
+          "$serde_json::private::Number": "18500"
+        methaneMetricTons:
+          "$serde_json::private::Number": "120"
+        nitrousOxideMetricTons:
+          "$serde_json::private::Number": "45"
+      exceededThreshold: true
+      hasWasteViolations: true
+      hasWaterViolations: false
+      industry: manufacturing
+      location:
+        city: Detroit
+        country: United States
+        region: midwest
+      percentOverThreshold:
+        "$serde_json::private::Number": "23.33333333333333333333333333"
+      production:
+        units: million_units
+        volume:
+          "$serde_json::private::Number": "100"
+      waste:
+        hazardousWasteMetricTons:
+          "$serde_json::private::Number": "50"
+        nonHazardousWasteMetricTons:
+          "$serde_json::private::Number": "350"
+        recycledPercentage:
+          "$serde_json::private::Number": "22"
+        violations:
+          "$serde_json::private::Number": "1"
+      water:
+        consumptionKiloliters:
+          "$serde_json::private::Number": "250000"
+        treatedPercentage:
+          "$serde_json::private::Number": "85"
+        violations:
+          "$serde_json::private::Number": "0"
+    name: complianceStatus
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      assessment:
+        emissionThreshold:
+          "$serde_json::private::Number": "150"
+        industryRiskLevel: medium
+      audits:
+        lastAuditDate: 2025-01-15
+        previousFindings:
+          "$serde_json::private::Number": "3"
+        resolvedFindings:
+          "$serde_json::private::Number": "2"
+      carbonIntensity:
+        "$serde_json::private::Number": "185"
+      compliance:
+        actionTimeframe: 60-days
+        recommendation: Medium-risk industry with significant threshold exceedance requires remediation plan within 60 days.
+        status: non-compliant
+      emissions:
+        carbonDioxideMetricTons:
+          "$serde_json::private::Number": "18500"
+        methaneMetricTons:
+          "$serde_json::private::Number": "120"
+        nitrousOxideMetricTons:
+          "$serde_json::private::Number": "45"
+      exceededThreshold: true
+      hasWasteViolations: true
+      hasWaterViolations: false
+      industry: manufacturing
+      location:
+        city: Detroit
+        country: United States
+        region: midwest
+      percentOverThreshold:
+        "$serde_json::private::Number": "23.33333333333333333333333333"
+      production:
+        units: million_units
+        volume:
+          "$serde_json::private::Number": "100"
+      waste:
+        hazardousWasteMetricTons:
+          "$serde_json::private::Number": "50"
+        nonHazardousWasteMetricTons:
+          "$serde_json::private::Number": "350"
+        recycledPercentage:
+          "$serde_json::private::Number": "22"
+        violations:
+          "$serde_json::private::Number": "1"
+      water:
+        consumptionKiloliters:
+          "$serde_json::private::Number": "250000"
+        treatedPercentage:
+          "$serde_json::private::Number": "85"
+        violations:
+          "$serde_json::private::Number": "0"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "3"
+      reference_map:
+        assessment.industryRiskLevel: medium
+        exceededThreshold: true
+        percentOverThreshold:
+          "$serde_json::private::Number": "23.33333333333333333333333333"
+      rule:
+        _id: cs4
+        "assessment.industryRiskLevel[i1]": "'medium', 'medium-low'"
+        "exceededThreshold[i2]": "true"
+        "percentOverThreshold[i3]": "> 20"
+  emissionsEvaluation:
+    id: emissionsEvaluation
+    input:
+      assessment:
+        emissionThreshold:
+          "$serde_json::private::Number": "150"
+        industryRiskLevel: medium
+      audits:
+        lastAuditDate: 2025-01-15
+        previousFindings:
+          "$serde_json::private::Number": "3"
+        resolvedFindings:
+          "$serde_json::private::Number": "2"
+      emissions:
+        carbonDioxideMetricTons:
+          "$serde_json::private::Number": "18500"
+        methaneMetricTons:
+          "$serde_json::private::Number": "120"
+        nitrousOxideMetricTons:
+          "$serde_json::private::Number": "45"
+      industry: manufacturing
+      location:
+        city: Detroit
+        country: United States
+        region: midwest
+      production:
+        units: million_units
+        volume:
+          "$serde_json::private::Number": "100"
+      waste:
+        hazardousWasteMetricTons:
+          "$serde_json::private::Number": "50"
+        nonHazardousWasteMetricTons:
+          "$serde_json::private::Number": "350"
+        recycledPercentage:
+          "$serde_json::private::Number": "22"
+        violations:
+          "$serde_json::private::Number": "1"
+      water:
+        consumptionKiloliters:
+          "$serde_json::private::Number": "250000"
+        treatedPercentage:
+          "$serde_json::private::Number": "85"
+        violations:
+          "$serde_json::private::Number": "0"
+    name: emissionsEvaluation
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      assessment:
+        emissionThreshold:
+          "$serde_json::private::Number": "150"
+        industryRiskLevel: medium
+      audits:
+        lastAuditDate: 2025-01-15
+        previousFindings:
+          "$serde_json::private::Number": "3"
+        resolvedFindings:
+          "$serde_json::private::Number": "2"
+      carbonIntensity:
+        "$serde_json::private::Number": "185"
+      emissions:
+        carbonDioxideMetricTons:
+          "$serde_json::private::Number": "18500"
+        methaneMetricTons:
+          "$serde_json::private::Number": "120"
+        nitrousOxideMetricTons:
+          "$serde_json::private::Number": "45"
+      exceededThreshold: true
+      hasWasteViolations: true
+      hasWaterViolations: false
+      industry: manufacturing
+      location:
+        city: Detroit
+        country: United States
+        region: midwest
+      percentOverThreshold:
+        "$serde_json::private::Number": "23.33333333333333333333333333"
+      production:
+        units: million_units
+        volume:
+          "$serde_json::private::Number": "100"
+      waste:
+        hazardousWasteMetricTons:
+          "$serde_json::private::Number": "50"
+        nonHazardousWasteMetricTons:
+          "$serde_json::private::Number": "350"
+        recycledPercentage:
+          "$serde_json::private::Number": "22"
+        violations:
+          "$serde_json::private::Number": "1"
+      water:
+        consumptionKiloliters:
+          "$serde_json::private::Number": "250000"
+        treatedPercentage:
+          "$serde_json::private::Number": "85"
+        violations:
+          "$serde_json::private::Number": "0"
+    performance: "[perf]"
+    traceData:
+      carbonIntensity:
+        result: "185"
+      exceededThreshold:
+        result: "true"
+      hasWasteViolations:
+        result: "true"
+      hasWaterViolations:
+        result: "false"
+      percentOverThreshold:
+        result: "23.33333333333333333333333333"
+  industryRiskTable:
+    id: industryRiskTable
+    input:
+      audits:
+        lastAuditDate: 2025-01-15
+        previousFindings:
+          "$serde_json::private::Number": "3"
+        resolvedFindings:
+          "$serde_json::private::Number": "2"
+      emissions:
+        carbonDioxideMetricTons:
+          "$serde_json::private::Number": "18500"
+        methaneMetricTons:
+          "$serde_json::private::Number": "120"
+        nitrousOxideMetricTons:
+          "$serde_json::private::Number": "45"
+      industry: manufacturing
+      location:
+        city: Detroit
+        country: United States
+        region: midwest
+      production:
+        units: million_units
+        volume:
+          "$serde_json::private::Number": "100"
+      waste:
+        hazardousWasteMetricTons:
+          "$serde_json::private::Number": "50"
+        nonHazardousWasteMetricTons:
+          "$serde_json::private::Number": "350"
+        recycledPercentage:
+          "$serde_json::private::Number": "22"
+        violations:
+          "$serde_json::private::Number": "1"
+      water:
+        consumptionKiloliters:
+          "$serde_json::private::Number": "250000"
+        treatedPercentage:
+          "$serde_json::private::Number": "85"
+        violations:
+          "$serde_json::private::Number": "0"
+    name: industryRiskAssessment
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      assessment:
+        emissionThreshold:
+          "$serde_json::private::Number": "150"
+        industryRiskLevel: medium
+      audits:
+        lastAuditDate: 2025-01-15
+        previousFindings:
+          "$serde_json::private::Number": "3"
+        resolvedFindings:
+          "$serde_json::private::Number": "2"
+      emissions:
+        carbonDioxideMetricTons:
+          "$serde_json::private::Number": "18500"
+        methaneMetricTons:
+          "$serde_json::private::Number": "120"
+        nitrousOxideMetricTons:
+          "$serde_json::private::Number": "45"
+      industry: manufacturing
+      location:
+        city: Detroit
+        country: United States
+        region: midwest
+      production:
+        units: million_units
+        volume:
+          "$serde_json::private::Number": "100"
+      waste:
+        hazardousWasteMetricTons:
+          "$serde_json::private::Number": "50"
+        nonHazardousWasteMetricTons:
+          "$serde_json::private::Number": "350"
+        recycledPercentage:
+          "$serde_json::private::Number": "22"
+        violations:
+          "$serde_json::private::Number": "1"
+      water:
+        consumptionKiloliters:
+          "$serde_json::private::Number": "250000"
+        treatedPercentage:
+          "$serde_json::private::Number": "85"
+        violations:
+          "$serde_json::private::Number": "0"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        industry: manufacturing
+        location.region: midwest
+      rule:
+        _id: rule2
+        "industry[industry]": "'manufacturing', 'automotive', 'construction'"
+        "location.region[region]": ""
+  inputNode:
+    id: inputNode
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      audits:
+        lastAuditDate: 2025-01-15
+        previousFindings:
+          "$serde_json::private::Number": "3"
+        resolvedFindings:
+          "$serde_json::private::Number": "2"
+      emissions:
+        carbonDioxideMetricTons:
+          "$serde_json::private::Number": "18500"
+        methaneMetricTons:
+          "$serde_json::private::Number": "120"
+        nitrousOxideMetricTons:
+          "$serde_json::private::Number": "45"
+      industry: manufacturing
+      location:
+        city: Detroit
+        country: United States
+        region: midwest
+      production:
+        units: million_units
+        volume:
+          "$serde_json::private::Number": "100"
+      waste:
+        hazardousWasteMetricTons:
+          "$serde_json::private::Number": "50"
+        nonHazardousWasteMetricTons:
+          "$serde_json::private::Number": "350"
+        recycledPercentage:
+          "$serde_json::private::Number": "22"
+        violations:
+          "$serde_json::private::Number": "1"
+      water:
+        consumptionKiloliters:
+          "$serde_json::private::Number": "250000"
+        treatedPercentage:
+          "$serde_json::private::Number": "85"
+        violations:
+          "$serde_json::private::Number": "0"
+    performance: "[perf]"
+    traceData: ~

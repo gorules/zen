@@ -1,0 +1,212 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  calculatedPoints:
+    "$serde_json::private::Number": "9000"
+  seasonalPromotion:
+    "$serde_json::private::Number": "1.5"
+  totalPoints:
+    "$serde_json::private::Number": "9000"
+trace:
+  dt1:
+    id: dt1
+    input:
+      booking:
+        distance:
+          "$serde_json::private::Number": "3500"
+        fareClass: Business
+        isSeasonalPromotion: true
+        routeType: International
+      member:
+        enrollmentDate: 2020-05-15
+        id: MEM12345
+        name: John Smith
+        status: Gold
+    name: fareClassMultiplier
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      booking:
+        distance:
+          "$serde_json::private::Number": "3500"
+        fareClass: Business
+        isSeasonalPromotion: true
+        routeType: International
+      member:
+        enrollmentDate: 2020-05-15
+        id: MEM12345
+        name: John Smith
+        status: Gold
+      points:
+        fareMultiplier:
+          "$serde_json::private::Number": "2"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        booking.fareClass: Business
+      rule:
+        _id: r1-2
+        "booking.fareClass[i1-1]": "'Business'"
+  dt2:
+    id: dt2
+    input:
+      booking:
+        distance:
+          "$serde_json::private::Number": "3500"
+        fareClass: Business
+        isSeasonalPromotion: true
+        routeType: International
+      member:
+        enrollmentDate: 2020-05-15
+        id: MEM12345
+        name: John Smith
+        status: Gold
+      points:
+        fareMultiplier:
+          "$serde_json::private::Number": "2"
+    name: routeBasePoints
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      booking:
+        distance:
+          "$serde_json::private::Number": "3500"
+        fareClass: Business
+        isSeasonalPromotion: true
+        routeType: International
+      member:
+        enrollmentDate: 2020-05-15
+        id: MEM12345
+        name: John Smith
+        status: Gold
+      points:
+        basePoints:
+          "$serde_json::private::Number": "2000"
+        fareMultiplier:
+          "$serde_json::private::Number": "2"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "4"
+      reference_map:
+        booking.distance:
+          "$serde_json::private::Number": "3500"
+        booking.routeType: International
+      rule:
+        _id: r2-5
+        "booking.distance[i2-2]": "[2000..5000]"
+        "booking.routeType[i2-1]": "'International'"
+  dt3:
+    id: dt3
+    input:
+      booking:
+        distance:
+          "$serde_json::private::Number": "3500"
+        fareClass: Business
+        isSeasonalPromotion: true
+        routeType: International
+      member:
+        enrollmentDate: 2020-05-15
+        id: MEM12345
+        name: John Smith
+        status: Gold
+      points:
+        basePoints:
+          "$serde_json::private::Number": "2000"
+        fareMultiplier:
+          "$serde_json::private::Number": "2"
+    name: memberStatusMultiplier
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      booking:
+        distance:
+          "$serde_json::private::Number": "3500"
+        fareClass: Business
+        isSeasonalPromotion: true
+        routeType: International
+      member:
+        enrollmentDate: 2020-05-15
+        id: MEM12345
+        name: John Smith
+        status: Gold
+      points:
+        basePoints:
+          "$serde_json::private::Number": "2000"
+        fareMultiplier:
+          "$serde_json::private::Number": "2"
+        statusMultiplier:
+          "$serde_json::private::Number": "1.5"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        member.status: Gold
+      rule:
+        _id: r3-2
+        "member.status[i3-1]": "'Gold'"
+  ex1:
+    id: ex1
+    input:
+      booking:
+        distance:
+          "$serde_json::private::Number": "3500"
+        fareClass: Business
+        isSeasonalPromotion: true
+        routeType: International
+      member:
+        enrollmentDate: 2020-05-15
+        id: MEM12345
+        name: John Smith
+        status: Gold
+      points:
+        basePoints:
+          "$serde_json::private::Number": "2000"
+        fareMultiplier:
+          "$serde_json::private::Number": "2"
+        statusMultiplier:
+          "$serde_json::private::Number": "1.5"
+    name: calculateTotalPoints
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      calculatedPoints:
+        "$serde_json::private::Number": "9000"
+      seasonalPromotion:
+        "$serde_json::private::Number": "1.5"
+      totalPoints:
+        "$serde_json::private::Number": "9000"
+    performance: "[perf]"
+    traceData:
+      calculatedPoints:
+        result: "9000"
+      seasonalPromotion:
+        result: "1.5"
+      totalPoints:
+        result: "9000"
+  ip1:
+    id: ip1
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      booking:
+        distance:
+          "$serde_json::private::Number": "3500"
+        fareClass: Business
+        isSeasonalPromotion: true
+        routeType: International
+      member:
+        enrollmentDate: 2020-05-15
+        id: MEM12345
+        name: John Smith
+        status: Gold
+    performance: "[perf]"
+    traceData: ~

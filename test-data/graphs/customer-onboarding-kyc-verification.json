@@ -1,0 +1,611 @@
+{
+  "tests": [
+    {
+      "input": {
+        "customer": {
+          "id": "CUST12345",
+          "firstName": "John",
+          "lastName": "Smith",
+          "dateOfBirth": "1985-06-15",
+          "email": "john.smith@example.com",
+          "phone": "+1-555-123-4567",
+          "address": {
+            "line1": "123 Main Street",
+            "line2": "Apt 4B",
+            "city": "New York",
+            "state": "NY",
+            "postalCode": "10001",
+            "country": "US"
+          },
+          "isPoliticallyExposed": false,
+          "isHighRiskBusiness": false,
+          "occupation": "Software Engineer",
+          "employerName": "Tech Company Inc."
+        },
+        "financialInfo": {
+          "estimatedTransactionValue": 25000,
+          "accountPurpose": "Savings and Investment",
+          "sourceOfFunds": "Employment Income"
+        },
+        "verification": {
+          "documentType": "passport",
+          "documentStatus": "valid",
+          "documentNumber": "P123456789",
+          "documentExpiry": "2028-05-20",
+          "documentIssuingCountry": "US"
+        },
+        "watchlist": {
+          "sanctionsMatch": false,
+          "pepListMatch": false,
+          "adverseMediaMatch": false
+        }
+      },
+      "output": {
+        "nextSteps": "Onboarding approved",
+        "requiredActionsCount": 0,
+        "requirements": {
+          "addressVerification": false,
+          "enhancedMonitoring": false,
+          "faceVerification": false,
+          "sourceOfFunds": false
+        },
+        "verificationStatus": "approved"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "input",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "risk1",
+            "country": "'US', 'CA', 'GB', 'AU', 'NZ', 'JP', 'DE', 'FR'",
+            "pep": "false",
+            "highRiskBusiness": "false",
+            "transactionValue": "< 10000",
+            "o1": "10",
+            "o2": "'low'"
+          },
+          {
+            "_id": "risk2",
+            "country": "'US', 'CA', 'GB', 'AU', 'NZ', 'JP', 'DE', 'FR'",
+            "pep": "false",
+            "highRiskBusiness": "false",
+            "transactionValue": ">= 10000, < 100000",
+            "o1": "30",
+            "o2": "'medium'"
+          },
+          {
+            "_id": "risk3",
+            "country": "'US', 'CA', 'GB', 'AU', 'NZ', 'JP', 'DE', 'FR'",
+            "pep": "true",
+            "highRiskBusiness": "",
+            "transactionValue": "",
+            "o1": "75",
+            "o2": "'high'"
+          },
+          {
+            "_id": "risk4",
+            "country": "'US', 'CA', 'GB', 'AU', 'NZ', 'JP', 'DE', 'FR'",
+            "pep": "",
+            "highRiskBusiness": "true",
+            "transactionValue": "",
+            "o1": "70",
+            "o2": "'high'"
+          },
+          {
+            "_id": "risk5",
+            "country": "'RU', 'IR', 'KP', 'CU', 'SY', 'VE'",
+            "pep": "",
+            "highRiskBusiness": "",
+            "transactionValue": "",
+            "o1": "100",
+            "o2": "'very-high'"
+          },
+          {
+            "_id": "risk6",
+            "country": "",
+            "pep": "true",
+            "highRiskBusiness": "true",
+            "transactionValue": "",
+            "o1": "90",
+            "o2": "'very-high'"
+          },
+          {
+            "_id": "risk7",
+            "country": "",
+            "pep": "",
+            "highRiskBusiness": "",
+            "transactionValue": ">= 100000",
+            "o1": "60",
+            "o2": "'high'"
+          },
+          {
+            "_id": "risk8",
+            "country": "",
+            "pep": "",
+            "highRiskBusiness": "",
+            "transactionValue": "",
+            "o1": "40",
+            "o2": "'medium'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "country",
+            "name": "Country",
+            "field": "customer.address.country"
+          },
+          {
+            "id": "pep",
+            "name": "PEP Status",
+            "field": "customer.isPoliticallyExposed"
+          },
+          {
+            "id": "highRiskBusiness",
+            "name": "High Risk Business",
+            "field": "customer.isHighRiskBusiness"
+          },
+          {
+            "id": "transactionValue",
+            "name": "Transaction Value",
+            "field": "financialInfo.estimatedTransactionValue"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Risk Score",
+            "field": "assessment.riskScore"
+          },
+          {
+            "id": "o2",
+            "name": "Risk Level",
+            "field": "assessment.riskLevel"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "customerRiskScoring",
+      "name": "customerRiskScoring",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "doc1",
+            "i1": "'passport'",
+            "i2": "'valid'",
+            "i3": "'low', 'medium'",
+            "o1": "true",
+            "o2": "'standard'",
+            "o3": "false"
+          },
+          {
+            "_id": "doc2",
+            "i1": "'passport'",
+            "i2": "'valid'",
+            "i3": "'high', 'very-high'",
+            "o1": "true",
+            "o2": "'enhanced'",
+            "o3": "true"
+          },
+          {
+            "_id": "doc3",
+            "i1": "'driving_license'",
+            "i2": "'valid'",
+            "i3": "'low'",
+            "o1": "true",
+            "o2": "'standard'",
+            "o3": "false"
+          },
+          {
+            "_id": "doc4",
+            "i1": "'driving_license'",
+            "i2": "'valid'",
+            "i3": "'medium', 'high', 'very-high'",
+            "o1": "false",
+            "o2": "'insufficient'",
+            "o3": "true"
+          },
+          {
+            "_id": "doc5",
+            "i1": "'national_id'",
+            "i2": "'valid'",
+            "i3": "'low', 'medium'",
+            "o1": "true",
+            "o2": "'standard'",
+            "o3": "false"
+          },
+          {
+            "_id": "doc6",
+            "i1": "'national_id'",
+            "i2": "'valid'",
+            "i3": "'high', 'very-high'",
+            "o1": "false",
+            "o2": "'insufficient'",
+            "o3": "true"
+          },
+          {
+            "_id": "doc7",
+            "i1": "",
+            "i2": "'expired', 'damaged', 'suspicious'",
+            "i3": "",
+            "o1": "false",
+            "o2": "'rejected'",
+            "o3": "true"
+          },
+          {
+            "_id": "doc8",
+            "i1": "",
+            "i2": "",
+            "i3": "",
+            "o1": "false",
+            "o2": "'missing'",
+            "o3": "true"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Document Type",
+            "field": "verification.documentType"
+          },
+          {
+            "id": "i2",
+            "name": "Document Status",
+            "field": "verification.documentStatus"
+          },
+          {
+            "id": "i3",
+            "name": "Risk Level",
+            "field": "assessment.riskLevel"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Document Verified",
+            "field": "verification.isDocumentVerified"
+          },
+          {
+            "id": "o2",
+            "name": "Verification Status",
+            "field": "verification.documentVerificationStatus"
+          },
+          {
+            "id": "o3",
+            "name": "Additional Verification Required",
+            "field": "verification.requiresAdditionalVerification"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "documentVerification",
+      "name": "documentVerification",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "watch1",
+            "i1": "true",
+            "i2": "",
+            "i3": "",
+            "o1": "false",
+            "o2": "'reject'",
+            "o3": "'Customer appears on sanctions list'"
+          },
+          {
+            "_id": "watch2",
+            "i1": "false",
+            "i2": "true",
+            "i3": "",
+            "o1": "true",
+            "o2": "'review'",
+            "o3": "'Customer appears on PEP list - requires manual review'"
+          },
+          {
+            "_id": "watch3",
+            "i1": "false",
+            "i2": "false",
+            "i3": "true",
+            "o1": "true",
+            "o2": "'review'",
+            "o3": "'Customer has adverse media - requires manual review'"
+          },
+          {
+            "_id": "watch4",
+            "i1": "false",
+            "i2": "false",
+            "i3": "false",
+            "o1": "true",
+            "o2": "'pass'",
+            "o3": "'No watchlist hits found'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Sanctions Match",
+            "field": "watchlist.sanctionsMatch"
+          },
+          {
+            "id": "i2",
+            "name": "PEP Match",
+            "field": "watchlist.pepListMatch"
+          },
+          {
+            "id": "i3",
+            "name": "Adverse Media",
+            "field": "watchlist.adverseMediaMatch"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Watchlist Passed",
+            "field": "watchlist.passed"
+          },
+          {
+            "id": "o2",
+            "name": "Watchlist Status",
+            "field": "watchlist.status"
+          },
+          {
+            "id": "o3",
+            "name": "Watchlist Message",
+            "field": "watchlist.message"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "watchlistCheck",
+      "name": "watchlistCheck",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "exp1",
+            "key": "requiresEDD",
+            "value": "assessment.riskLevel == 'high' or assessment.riskLevel == 'very-high' or watchlist.status == 'review'"
+          },
+          {
+            "id": "exp2",
+            "key": "isSanctioned",
+            "value": "watchlist.status == 'reject'"
+          },
+          {
+            "id": "exp3",
+            "key": "dueDiligenceLevel",
+            "value": "$.isSanctioned ? 'blocked' : ($.requiresEDD ? 'enhanced' : 'standard')"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dueDiligenceLevel",
+      "name": "dueDiligenceLevel",
+      "position": {
+        "x": 1390,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "add1",
+            "i1": "'enhanced'",
+            "i2": ">= 60",
+            "o1": "true",
+            "o2": "true",
+            "o3": "true",
+            "o4": "true"
+          },
+          {
+            "_id": "add2",
+            "i1": "'enhanced'",
+            "i2": "< 60",
+            "o1": "true",
+            "o2": "true",
+            "o3": "false",
+            "o4": "true"
+          },
+          {
+            "_id": "add3",
+            "i1": "'standard'",
+            "i2": ">= 40",
+            "o1": "false",
+            "o2": "true",
+            "o3": "false",
+            "o4": "false"
+          },
+          {
+            "_id": "add4",
+            "i1": "'standard'",
+            "i2": "< 40",
+            "o1": "false",
+            "o2": "false",
+            "o3": "false",
+            "o4": "false"
+          },
+          {
+            "_id": "add5",
+            "i1": "'blocked'",
+            "i2": "",
+            "o1": "false",
+            "o2": "false",
+            "o3": "false",
+            "o4": "false"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Due Diligence Level",
+            "field": "dueDiligenceLevel"
+          },
+          {
+            "id": "i2",
+            "name": "Risk Score",
+            "field": "assessment.riskScore"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Requires Source of Funds",
+            "field": "requirements.sourceOfFunds"
+          },
+          {
+            "id": "o2",
+            "name": "Requires Address Verification",
+            "field": "requirements.addressVerification"
+          },
+          {
+            "id": "o3",
+            "name": "Requires Face Verification",
+            "field": "requirements.faceVerification"
+          },
+          {
+            "id": "o4",
+            "name": "Requires Enhanced Monitoring",
+            "field": "requirements.enhancedMonitoring"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "additionalChecks",
+      "name": "additionalChecks",
+      "position": {
+        "x": 1710,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "exp1",
+            "key": "verificationStatus",
+            "value": "dueDiligenceLevel == 'blocked' ? 'rejected' : (verification.isDocumentVerified and watchlist.passed ? 'approved' : 'pending')"
+          },
+          {
+            "id": "exp2",
+            "key": "requiredActionsCount",
+            "value": "count(values(requirements), # == true)"
+          },
+          {
+            "id": "exp3",
+            "key": "nextSteps",
+            "value": "dueDiligenceLevel == 'blocked' ? 'Application rejected due to sanctions match' : ($.verificationStatus == 'pending' ? 'Additional verification required' : 'Onboarding approved')"
+          },
+          {
+            "id": "exp4",
+            "key": "requirements",
+            "value": "requirements"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "verificationResult",
+      "name": "verificationResult",
+      "position": {
+        "x": 2030,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "input",
+      "targetId": "customerRiskScoring",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "customerRiskScoring",
+      "targetId": "documentVerification",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "documentVerification",
+      "targetId": "watchlistCheck",
+      "type": "edge"
+    },
+    {
+      "id": "edge4",
+      "sourceId": "watchlistCheck",
+      "targetId": "dueDiligenceLevel",
+      "type": "edge"
+    },
+    {
+      "id": "edge5",
+      "sourceId": "dueDiligenceLevel",
+      "targetId": "additionalChecks",
+      "type": "edge"
+    },
+    {
+      "id": "edge6",
+      "sourceId": "additionalChecks",
+      "targetId": "verificationResult",
+      "type": "edge"
+    }
+  ]
+}

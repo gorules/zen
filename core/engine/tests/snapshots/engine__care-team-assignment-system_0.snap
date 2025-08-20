@@ -1,0 +1,783 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  ageCategory: senior
+  careTeam:
+    complexityLevel: high
+    coordinator:
+      priority: high
+      role: care_coordinator
+    providers:
+      - priority: high
+        role: primary_physician
+      - priority: medium
+        role: geriatric_specialist
+      - priority: medium
+        role: mental_health_provider
+      - priority: medium
+        role: nutritionist
+      - priority: high
+        role: nurse_practitioner
+      - priority: medium
+        role: physical_therapist
+    teamSize: "3"
+  mobilityIssues: true
+  requiresMentalHealthSupport: true
+  requiresNutritionSupport: true
+  requiresSpecialist: true
+trace:
+  dt1:
+    id: dt1
+    input:
+      availableProviders:
+        - id: DR001
+          languages:
+            - english
+            - spanish
+          name: Dr. Sarah Johnson
+          role: primary_physician
+          specialties:
+            - internal_medicine
+            - geriatrics
+        - id: DR002
+          languages:
+            - english
+            - mandarin
+          name: Dr. Michael Chen
+          role: cardiologist
+          specialties:
+            - cardiology
+        - id: DR003
+          languages:
+            - english
+          name: Dr. Lisa Peterson
+          role: diabetes_specialist
+          specialties:
+            - endocrinology
+        - id: NP001
+          languages:
+            - english
+          name: Nancy Williams
+          role: nurse_practitioner
+          specialties:
+            - primary_care
+        - id: RN001
+          languages:
+            - english
+            - spanish
+          name: Robert Garcia
+          role: nurse
+          specialties:
+            - geriatric_care
+        - id: MH001
+          languages:
+            - english
+          name: Dr. Emily Cohen
+          role: mental_health_provider
+          specialties:
+            - psychiatry
+            - geriatric_psychiatry
+        - id: PT001
+          languages:
+            - english
+          name: James Wilson
+          role: physical_therapist
+          specialties:
+            - geriatric_physical_therapy
+        - id: CC001
+          languages:
+            - english
+            - spanish
+          name: Maria Rodriguez
+          role: care_coordinator
+          specialties:
+            - complex_care_coordination
+      facility:
+        department: Internal Medicine
+        id: FAC789
+        name: Memorial Medical Center
+      patient:
+        age:
+          "$serde_json::private::Number": "67"
+        careComplexity: high
+        carePreferences:
+          preferredGender: any
+          preferredLanguage: english
+          requiresTranslator: false
+        conditions:
+          - diabetes
+          - heart_disease
+          - hypertension
+          - depression
+        gender: male
+        id: PT12345
+        insuranceType: medicare
+        mobilityScore:
+          "$serde_json::private::Number": "35"
+        name: John Smith
+        primaryLanguage: english
+    name: determine_complexity
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      availableProviders:
+        - id: DR001
+          languages:
+            - english
+            - spanish
+          name: Dr. Sarah Johnson
+          role: primary_physician
+          specialties:
+            - internal_medicine
+            - geriatrics
+        - id: DR002
+          languages:
+            - english
+            - mandarin
+          name: Dr. Michael Chen
+          role: cardiologist
+          specialties:
+            - cardiology
+        - id: DR003
+          languages:
+            - english
+          name: Dr. Lisa Peterson
+          role: diabetes_specialist
+          specialties:
+            - endocrinology
+        - id: NP001
+          languages:
+            - english
+          name: Nancy Williams
+          role: nurse_practitioner
+          specialties:
+            - primary_care
+        - id: RN001
+          languages:
+            - english
+            - spanish
+          name: Robert Garcia
+          role: nurse
+          specialties:
+            - geriatric_care
+        - id: MH001
+          languages:
+            - english
+          name: Dr. Emily Cohen
+          role: mental_health_provider
+          specialties:
+            - psychiatry
+            - geriatric_psychiatry
+        - id: PT001
+          languages:
+            - english
+          name: James Wilson
+          role: physical_therapist
+          specialties:
+            - geriatric_physical_therapy
+        - id: CC001
+          languages:
+            - english
+            - spanish
+          name: Maria Rodriguez
+          role: care_coordinator
+          specialties:
+            - complex_care_coordination
+      careTeam:
+        complexityLevel: high
+        teamSize: "3"
+      facility:
+        department: Internal Medicine
+        id: FAC789
+        name: Memorial Medical Center
+      patient:
+        age:
+          "$serde_json::private::Number": "67"
+        careComplexity: high
+        carePreferences:
+          preferredGender: any
+          preferredLanguage: english
+          requiresTranslator: false
+        conditions:
+          - diabetes
+          - heart_disease
+          - hypertension
+          - depression
+        gender: male
+        id: PT12345
+        insuranceType: medicare
+        mobilityScore:
+          "$serde_json::private::Number": "35"
+        name: John Smith
+        primaryLanguage: english
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        patient.careComplexity: high
+      rule:
+        _id: r1-1
+        "patient.careComplexity[i1-1]": "\"high\""
+  dt2:
+    id: dt2
+    input:
+      ageCategory: senior
+      careTeam:
+        complexityLevel: high
+        teamSize: "3"
+      mobilityIssues: true
+      requiresMentalHealthSupport: true
+      requiresNutritionSupport: true
+      requiresSpecialist: true
+    name: assign_providers
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      ageCategory: senior
+      careTeam:
+        complexityLevel: high
+        providers:
+          - priority: high
+            role: primary_physician
+          - priority: medium
+            role: geriatric_specialist
+          - priority: medium
+            role: mental_health_provider
+          - priority: medium
+            role: nutritionist
+          - priority: high
+            role: nurse_practitioner
+          - priority: medium
+            role: physical_therapist
+        teamSize: "3"
+      mobilityIssues: true
+      requiresMentalHealthSupport: true
+      requiresNutritionSupport: true
+      requiresSpecialist: true
+    performance: "[perf]"
+    traceData:
+      - index:
+          "$serde_json::private::Number": "0"
+        reference_map:
+          careTeam.complexityLevel: high
+        rule:
+          _id: r2-1
+          "careTeam.complexityLevel[i2-1]": "\"high\""
+      - index:
+          "$serde_json::private::Number": "2"
+        reference_map:
+          careTeam.complexityLevel: high
+        rule:
+          _id: r2-3
+          "careTeam.complexityLevel[i2-1]": ""
+      - index:
+          "$serde_json::private::Number": "7"
+        reference_map:
+          careTeam.complexityLevel: high
+        rule:
+          _id: r2-8
+          "careTeam.complexityLevel[i2-1]": ""
+      - index:
+          "$serde_json::private::Number": "8"
+        reference_map:
+          careTeam.complexityLevel: high
+        rule:
+          _id: r2-9
+          "careTeam.complexityLevel[i2-1]": ""
+      - index:
+          "$serde_json::private::Number": "9"
+        reference_map:
+          careTeam.complexityLevel: high
+        rule:
+          _id: r2-10
+          "careTeam.complexityLevel[i2-1]": "\"high\""
+      - index:
+          "$serde_json::private::Number": "11"
+        reference_map:
+          careTeam.complexityLevel: high
+        rule:
+          _id: r2-12
+          "careTeam.complexityLevel[i2-1]": ""
+  dt3:
+    id: dt3
+    input:
+      ageCategory: senior
+      careTeam:
+        complexityLevel: high
+        providers:
+          - priority: high
+            role: primary_physician
+          - priority: medium
+            role: geriatric_specialist
+          - priority: medium
+            role: mental_health_provider
+          - priority: medium
+            role: nutritionist
+          - priority: high
+            role: nurse_practitioner
+          - priority: medium
+            role: physical_therapist
+        teamSize: "3"
+      mobilityIssues: true
+      requiresMentalHealthSupport: true
+      requiresNutritionSupport: true
+      requiresSpecialist: true
+    name: assign_coordinator
+    order:
+      "$serde_json::private::Number": "5"
+    output:
+      ageCategory: senior
+      careTeam:
+        complexityLevel: high
+        coordinator:
+          priority: high
+          role: care_coordinator
+        providers:
+          - priority: high
+            role: primary_physician
+          - priority: medium
+            role: geriatric_specialist
+          - priority: medium
+            role: mental_health_provider
+          - priority: medium
+            role: nutritionist
+          - priority: high
+            role: nurse_practitioner
+          - priority: medium
+            role: physical_therapist
+        teamSize: "3"
+      mobilityIssues: true
+      requiresMentalHealthSupport: true
+      requiresNutritionSupport: true
+      requiresSpecialist: true
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        $: high
+        careTeam.complexityLevel: high
+      rule:
+        "$[i3-2]": len(careTeam.providers) > 5
+        _id: r3-1
+        "careTeam.complexityLevel[i3-1]": "\"high\""
+  ex1:
+    id: ex1
+    input:
+      ageCategory: senior
+      availableProviders:
+        - id: DR001
+          languages:
+            - english
+            - spanish
+          name: Dr. Sarah Johnson
+          role: primary_physician
+          specialties:
+            - internal_medicine
+            - geriatrics
+        - id: DR002
+          languages:
+            - english
+            - mandarin
+          name: Dr. Michael Chen
+          role: cardiologist
+          specialties:
+            - cardiology
+        - id: DR003
+          languages:
+            - english
+          name: Dr. Lisa Peterson
+          role: diabetes_specialist
+          specialties:
+            - endocrinology
+        - id: NP001
+          languages:
+            - english
+          name: Nancy Williams
+          role: nurse_practitioner
+          specialties:
+            - primary_care
+        - id: RN001
+          languages:
+            - english
+            - spanish
+          name: Robert Garcia
+          role: nurse
+          specialties:
+            - geriatric_care
+        - id: MH001
+          languages:
+            - english
+          name: Dr. Emily Cohen
+          role: mental_health_provider
+          specialties:
+            - psychiatry
+            - geriatric_psychiatry
+        - id: PT001
+          languages:
+            - english
+          name: James Wilson
+          role: physical_therapist
+          specialties:
+            - geriatric_physical_therapy
+        - id: CC001
+          languages:
+            - english
+            - spanish
+          name: Maria Rodriguez
+          role: care_coordinator
+          specialties:
+            - complex_care_coordination
+      careTeam:
+        complexityLevel: high
+        teamSize: "3"
+      facility:
+        department: Internal Medicine
+        id: FAC789
+        name: Memorial Medical Center
+      patient:
+        age:
+          "$serde_json::private::Number": "67"
+        careComplexity: high
+        carePreferences:
+          preferredGender: any
+          preferredLanguage: english
+          requiresTranslator: false
+        conditions:
+          - diabetes
+          - heart_disease
+          - hypertension
+          - depression
+        gender: male
+        id: PT12345
+        insuranceType: medicare
+        mobilityScore:
+          "$serde_json::private::Number": "35"
+        name: John Smith
+        primaryLanguage: english
+    name: evaluate_patient_needs
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      ageCategory: senior
+      careTeam:
+        complexityLevel: high
+        teamSize: "3"
+      mobilityIssues: true
+      requiresMentalHealthSupport: true
+      requiresNutritionSupport: true
+      requiresSpecialist: true
+    performance: "[perf]"
+    traceData:
+      availableProviders:
+        result: "null"
+      facility:
+        result: "null"
+      mobilityIssues:
+        result: "true"
+      patient:
+        result: "null"
+      requiresMentalHealthSupport:
+        result: "true"
+      requiresNutritionSupport:
+        result: "true"
+      requiresSpecialist:
+        result: "true"
+  f1af25e2-126e-4882-8d35-6ae33dbc37bf:
+    id: f1af25e2-126e-4882-8d35-6ae33dbc37bf
+    input:
+      availableProviders:
+        - id: DR001
+          languages:
+            - english
+            - spanish
+          name: Dr. Sarah Johnson
+          role: primary_physician
+          specialties:
+            - internal_medicine
+            - geriatrics
+        - id: DR002
+          languages:
+            - english
+            - mandarin
+          name: Dr. Michael Chen
+          role: cardiologist
+          specialties:
+            - cardiology
+        - id: DR003
+          languages:
+            - english
+          name: Dr. Lisa Peterson
+          role: diabetes_specialist
+          specialties:
+            - endocrinology
+        - id: NP001
+          languages:
+            - english
+          name: Nancy Williams
+          role: nurse_practitioner
+          specialties:
+            - primary_care
+        - id: RN001
+          languages:
+            - english
+            - spanish
+          name: Robert Garcia
+          role: nurse
+          specialties:
+            - geriatric_care
+        - id: MH001
+          languages:
+            - english
+          name: Dr. Emily Cohen
+          role: mental_health_provider
+          specialties:
+            - psychiatry
+            - geriatric_psychiatry
+        - id: PT001
+          languages:
+            - english
+          name: James Wilson
+          role: physical_therapist
+          specialties:
+            - geriatric_physical_therapy
+        - id: CC001
+          languages:
+            - english
+            - spanish
+          name: Maria Rodriguez
+          role: care_coordinator
+          specialties:
+            - complex_care_coordination
+      careTeam:
+        complexityLevel: high
+        teamSize: "3"
+      facility:
+        department: Internal Medicine
+        id: FAC789
+        name: Memorial Medical Center
+      patient:
+        age:
+          "$serde_json::private::Number": "67"
+        careComplexity: high
+        carePreferences:
+          preferredGender: any
+          preferredLanguage: english
+          requiresTranslator: false
+        conditions:
+          - diabetes
+          - heart_disease
+          - hypertension
+          - depression
+        gender: male
+        id: PT12345
+        insuranceType: medicare
+        mobilityScore:
+          "$serde_json::private::Number": "35"
+        name: John Smith
+        primaryLanguage: english
+    name: age_category
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      ageCategory: senior
+      availableProviders:
+        - id: DR001
+          languages:
+            - english
+            - spanish
+          name: Dr. Sarah Johnson
+          role: primary_physician
+          specialties:
+            - internal_medicine
+            - geriatrics
+        - id: DR002
+          languages:
+            - english
+            - mandarin
+          name: Dr. Michael Chen
+          role: cardiologist
+          specialties:
+            - cardiology
+        - id: DR003
+          languages:
+            - english
+          name: Dr. Lisa Peterson
+          role: diabetes_specialist
+          specialties:
+            - endocrinology
+        - id: NP001
+          languages:
+            - english
+          name: Nancy Williams
+          role: nurse_practitioner
+          specialties:
+            - primary_care
+        - id: RN001
+          languages:
+            - english
+            - spanish
+          name: Robert Garcia
+          role: nurse
+          specialties:
+            - geriatric_care
+        - id: MH001
+          languages:
+            - english
+          name: Dr. Emily Cohen
+          role: mental_health_provider
+          specialties:
+            - psychiatry
+            - geriatric_psychiatry
+        - id: PT001
+          languages:
+            - english
+          name: James Wilson
+          role: physical_therapist
+          specialties:
+            - geriatric_physical_therapy
+        - id: CC001
+          languages:
+            - english
+            - spanish
+          name: Maria Rodriguez
+          role: care_coordinator
+          specialties:
+            - complex_care_coordination
+      careTeam:
+        complexityLevel: high
+        teamSize: "3"
+      facility:
+        department: Internal Medicine
+        id: FAC789
+        name: Memorial Medical Center
+      patient:
+        age:
+          "$serde_json::private::Number": "67"
+        careComplexity: high
+        carePreferences:
+          preferredGender: any
+          preferredLanguage: english
+          requiresTranslator: false
+        conditions:
+          - diabetes
+          - heart_disease
+          - hypertension
+          - depression
+        gender: male
+        id: PT12345
+        insuranceType: medicare
+        mobilityScore:
+          "$serde_json::private::Number": "35"
+        name: John Smith
+        primaryLanguage: english
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "2"
+      reference_map:
+        patient.age:
+          "$serde_json::private::Number": "67"
+      rule:
+        _id: r1-3
+        "patient.age[i1-1]": ""
+  ip1:
+    id: ip1
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      availableProviders:
+        - id: DR001
+          languages:
+            - english
+            - spanish
+          name: Dr. Sarah Johnson
+          role: primary_physician
+          specialties:
+            - internal_medicine
+            - geriatrics
+        - id: DR002
+          languages:
+            - english
+            - mandarin
+          name: Dr. Michael Chen
+          role: cardiologist
+          specialties:
+            - cardiology
+        - id: DR003
+          languages:
+            - english
+          name: Dr. Lisa Peterson
+          role: diabetes_specialist
+          specialties:
+            - endocrinology
+        - id: NP001
+          languages:
+            - english
+          name: Nancy Williams
+          role: nurse_practitioner
+          specialties:
+            - primary_care
+        - id: RN001
+          languages:
+            - english
+            - spanish
+          name: Robert Garcia
+          role: nurse
+          specialties:
+            - geriatric_care
+        - id: MH001
+          languages:
+            - english
+          name: Dr. Emily Cohen
+          role: mental_health_provider
+          specialties:
+            - psychiatry
+            - geriatric_psychiatry
+        - id: PT001
+          languages:
+            - english
+          name: James Wilson
+          role: physical_therapist
+          specialties:
+            - geriatric_physical_therapy
+        - id: CC001
+          languages:
+            - english
+            - spanish
+          name: Maria Rodriguez
+          role: care_coordinator
+          specialties:
+            - complex_care_coordination
+      facility:
+        department: Internal Medicine
+        id: FAC789
+        name: Memorial Medical Center
+      patient:
+        age:
+          "$serde_json::private::Number": "67"
+        careComplexity: high
+        carePreferences:
+          preferredGender: any
+          preferredLanguage: english
+          requiresTranslator: false
+        conditions:
+          - diabetes
+          - heart_disease
+          - hypertension
+          - depression
+        gender: male
+        id: PT12345
+        insuranceType: medicare
+        mobilityScore:
+          "$serde_json::private::Number": "35"
+        name: John Smith
+        primaryLanguage: english
+    performance: "[perf]"
+    traceData: ~

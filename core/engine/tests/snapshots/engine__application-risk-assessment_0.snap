@@ -1,0 +1,441 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  applicant:
+    bankAccountStanding: good
+    creditHistoryMonths:
+      "$serde_json::private::Number": "48"
+    creditScore:
+      "$serde_json::private::Number": "710"
+    debtToIncomeRatio:
+      "$serde_json::private::Number": "0.35"
+    employmentMonths:
+      "$serde_json::private::Number": "36"
+    incomeVerification: complete
+    latePayments:
+      "$serde_json::private::Number": "1"
+    outstandingLoans:
+      "$serde_json::private::Number": "2"
+  approvalStatus: manual-review
+  interestRateModifier:
+    "$serde_json::private::Number": "0"
+  negativeFactors: []
+  negativeFactorsCount:
+    "$serde_json::private::Number": "0"
+  riskCategory: medium
+  scores:
+    creditHistory:
+      "$serde_json::private::Number": "20"
+    debtToIncome:
+      "$serde_json::private::Number": "15"
+    incomeStability:
+      "$serde_json::private::Number": "20"
+  totalRiskScore:
+    "$serde_json::private::Number": "55"
+trace:
+  calculateRiskScore:
+    id: calculateRiskScore
+    input:
+      applicant:
+        bankAccountStanding: good
+        creditHistoryMonths:
+          "$serde_json::private::Number": "48"
+        creditScore:
+          "$serde_json::private::Number": "710"
+        debtToIncomeRatio:
+          "$serde_json::private::Number": "0.35"
+        employmentMonths:
+          "$serde_json::private::Number": "36"
+        incomeVerification: complete
+        latePayments:
+          "$serde_json::private::Number": "1"
+        outstandingLoans:
+          "$serde_json::private::Number": "2"
+      scores:
+        creditHistory:
+          "$serde_json::private::Number": "20"
+        debtToIncome:
+          "$serde_json::private::Number": "15"
+        incomeStability:
+          "$serde_json::private::Number": "20"
+    name: calculateRiskScore
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      applicant:
+        bankAccountStanding: good
+        creditHistoryMonths:
+          "$serde_json::private::Number": "48"
+        creditScore:
+          "$serde_json::private::Number": "710"
+        debtToIncomeRatio:
+          "$serde_json::private::Number": "0.35"
+        employmentMonths:
+          "$serde_json::private::Number": "36"
+        incomeVerification: complete
+        latePayments:
+          "$serde_json::private::Number": "1"
+        outstandingLoans:
+          "$serde_json::private::Number": "2"
+      negativeFactors: []
+      negativeFactorsCount:
+        "$serde_json::private::Number": "0"
+      scores:
+        creditHistory:
+          "$serde_json::private::Number": "20"
+        debtToIncome:
+          "$serde_json::private::Number": "15"
+        incomeStability:
+          "$serde_json::private::Number": "20"
+      totalRiskScore:
+        "$serde_json::private::Number": "55"
+    performance: "[perf]"
+    traceData:
+      negativeFactors:
+        result: "[]"
+      negativeFactorsCount:
+        result: "0"
+      totalRiskScore:
+        result: "55"
+  classifyRisk:
+    id: classifyRisk
+    input:
+      applicant:
+        bankAccountStanding: good
+        creditHistoryMonths:
+          "$serde_json::private::Number": "48"
+        creditScore:
+          "$serde_json::private::Number": "710"
+        debtToIncomeRatio:
+          "$serde_json::private::Number": "0.35"
+        employmentMonths:
+          "$serde_json::private::Number": "36"
+        incomeVerification: complete
+        latePayments:
+          "$serde_json::private::Number": "1"
+        outstandingLoans:
+          "$serde_json::private::Number": "2"
+      negativeFactors: []
+      negativeFactorsCount:
+        "$serde_json::private::Number": "0"
+      scores:
+        creditHistory:
+          "$serde_json::private::Number": "20"
+        debtToIncome:
+          "$serde_json::private::Number": "15"
+        incomeStability:
+          "$serde_json::private::Number": "20"
+      totalRiskScore:
+        "$serde_json::private::Number": "55"
+    name: classifyRisk
+    order:
+      "$serde_json::private::Number": "5"
+    output:
+      applicant:
+        bankAccountStanding: good
+        creditHistoryMonths:
+          "$serde_json::private::Number": "48"
+        creditScore:
+          "$serde_json::private::Number": "710"
+        debtToIncomeRatio:
+          "$serde_json::private::Number": "0.35"
+        employmentMonths:
+          "$serde_json::private::Number": "36"
+        incomeVerification: complete
+        latePayments:
+          "$serde_json::private::Number": "1"
+        outstandingLoans:
+          "$serde_json::private::Number": "2"
+      negativeFactors: []
+      negativeFactorsCount:
+        "$serde_json::private::Number": "0"
+      scores:
+        creditHistory:
+          "$serde_json::private::Number": "20"
+        debtToIncome:
+          "$serde_json::private::Number": "15"
+        incomeStability:
+          "$serde_json::private::Number": "20"
+      totalRiskScore:
+        "$serde_json::private::Number": "55"
+    performance: "[perf]"
+    traceData:
+      statements:
+        - id: s2
+  input:
+    id: input
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      applicant:
+        bankAccountStanding: good
+        creditHistoryMonths:
+          "$serde_json::private::Number": "48"
+        creditScore:
+          "$serde_json::private::Number": "710"
+        debtToIncomeRatio:
+          "$serde_json::private::Number": "0.35"
+        employmentMonths:
+          "$serde_json::private::Number": "36"
+        incomeVerification: complete
+        latePayments:
+          "$serde_json::private::Number": "1"
+        outstandingLoans:
+          "$serde_json::private::Number": "2"
+    performance: "[perf]"
+    traceData: ~
+  mediumRiskAction:
+    id: mediumRiskAction
+    input:
+      applicant:
+        bankAccountStanding: good
+        creditHistoryMonths:
+          "$serde_json::private::Number": "48"
+        creditScore:
+          "$serde_json::private::Number": "710"
+        debtToIncomeRatio:
+          "$serde_json::private::Number": "0.35"
+        employmentMonths:
+          "$serde_json::private::Number": "36"
+        incomeVerification: complete
+        latePayments:
+          "$serde_json::private::Number": "1"
+        outstandingLoans:
+          "$serde_json::private::Number": "2"
+      negativeFactors: []
+      negativeFactorsCount:
+        "$serde_json::private::Number": "0"
+      scores:
+        creditHistory:
+          "$serde_json::private::Number": "20"
+        debtToIncome:
+          "$serde_json::private::Number": "15"
+        incomeStability:
+          "$serde_json::private::Number": "20"
+      totalRiskScore:
+        "$serde_json::private::Number": "55"
+    name: mediumRiskAction
+    order:
+      "$serde_json::private::Number": "6"
+    output:
+      applicant:
+        bankAccountStanding: good
+        creditHistoryMonths:
+          "$serde_json::private::Number": "48"
+        creditScore:
+          "$serde_json::private::Number": "710"
+        debtToIncomeRatio:
+          "$serde_json::private::Number": "0.35"
+        employmentMonths:
+          "$serde_json::private::Number": "36"
+        incomeVerification: complete
+        latePayments:
+          "$serde_json::private::Number": "1"
+        outstandingLoans:
+          "$serde_json::private::Number": "2"
+      approvalStatus: manual-review
+      interestRateModifier:
+        "$serde_json::private::Number": "0"
+      negativeFactors: []
+      negativeFactorsCount:
+        "$serde_json::private::Number": "0"
+      riskCategory: medium
+      scores:
+        creditHistory:
+          "$serde_json::private::Number": "20"
+        debtToIncome:
+          "$serde_json::private::Number": "15"
+        incomeStability:
+          "$serde_json::private::Number": "20"
+      totalRiskScore:
+        "$serde_json::private::Number": "55"
+    performance: "[perf]"
+    traceData:
+      approvalStatus:
+        result: "\"manual-review\""
+      interestRateModifier:
+        result: "0"
+      riskCategory:
+        result: "\"medium\""
+  scoreCreditHistory:
+    id: scoreCreditHistory
+    input:
+      applicant:
+        bankAccountStanding: good
+        creditHistoryMonths:
+          "$serde_json::private::Number": "48"
+        creditScore:
+          "$serde_json::private::Number": "710"
+        debtToIncomeRatio:
+          "$serde_json::private::Number": "0.35"
+        employmentMonths:
+          "$serde_json::private::Number": "36"
+        incomeVerification: complete
+        latePayments:
+          "$serde_json::private::Number": "1"
+        outstandingLoans:
+          "$serde_json::private::Number": "2"
+    name: scoreCreditHistory
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      applicant:
+        bankAccountStanding: good
+        creditHistoryMonths:
+          "$serde_json::private::Number": "48"
+        creditScore:
+          "$serde_json::private::Number": "710"
+        debtToIncomeRatio:
+          "$serde_json::private::Number": "0.35"
+        employmentMonths:
+          "$serde_json::private::Number": "36"
+        incomeVerification: complete
+        latePayments:
+          "$serde_json::private::Number": "1"
+        outstandingLoans:
+          "$serde_json::private::Number": "2"
+      scores:
+        creditHistory:
+          "$serde_json::private::Number": "20"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        applicant.creditHistoryMonths:
+          "$serde_json::private::Number": "48"
+        applicant.creditScore:
+          "$serde_json::private::Number": "710"
+        applicant.latePayments:
+          "$serde_json::private::Number": "1"
+      rule:
+        _id: r1-2
+        "applicant.creditHistoryMonths[i1-3]": "> 36"
+        "applicant.creditScore[i1-1]": "[650..750]"
+        "applicant.latePayments[i1-2]": "< 4"
+  scoreDebtToIncome:
+    id: scoreDebtToIncome
+    input:
+      applicant:
+        bankAccountStanding: good
+        creditHistoryMonths:
+          "$serde_json::private::Number": "48"
+        creditScore:
+          "$serde_json::private::Number": "710"
+        debtToIncomeRatio:
+          "$serde_json::private::Number": "0.35"
+        employmentMonths:
+          "$serde_json::private::Number": "36"
+        incomeVerification: complete
+        latePayments:
+          "$serde_json::private::Number": "1"
+        outstandingLoans:
+          "$serde_json::private::Number": "2"
+      scores:
+        creditHistory:
+          "$serde_json::private::Number": "20"
+        incomeStability:
+          "$serde_json::private::Number": "20"
+    name: scoreDebtToIncome
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      applicant:
+        bankAccountStanding: good
+        creditHistoryMonths:
+          "$serde_json::private::Number": "48"
+        creditScore:
+          "$serde_json::private::Number": "710"
+        debtToIncomeRatio:
+          "$serde_json::private::Number": "0.35"
+        employmentMonths:
+          "$serde_json::private::Number": "36"
+        incomeVerification: complete
+        latePayments:
+          "$serde_json::private::Number": "1"
+        outstandingLoans:
+          "$serde_json::private::Number": "2"
+      scores:
+        creditHistory:
+          "$serde_json::private::Number": "20"
+        debtToIncome:
+          "$serde_json::private::Number": "15"
+        incomeStability:
+          "$serde_json::private::Number": "20"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        applicant.debtToIncomeRatio:
+          "$serde_json::private::Number": "0.35"
+        applicant.outstandingLoans:
+          "$serde_json::private::Number": "2"
+      rule:
+        _id: r3-2
+        "applicant.debtToIncomeRatio[i3-1]": "< 0.4"
+        "applicant.outstandingLoans[i3-2]": "< 3"
+  scoreIncomeStability:
+    id: scoreIncomeStability
+    input:
+      applicant:
+        bankAccountStanding: good
+        creditHistoryMonths:
+          "$serde_json::private::Number": "48"
+        creditScore:
+          "$serde_json::private::Number": "710"
+        debtToIncomeRatio:
+          "$serde_json::private::Number": "0.35"
+        employmentMonths:
+          "$serde_json::private::Number": "36"
+        incomeVerification: complete
+        latePayments:
+          "$serde_json::private::Number": "1"
+        outstandingLoans:
+          "$serde_json::private::Number": "2"
+      scores:
+        creditHistory:
+          "$serde_json::private::Number": "20"
+    name: scoreIncomeStability
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      applicant:
+        bankAccountStanding: good
+        creditHistoryMonths:
+          "$serde_json::private::Number": "48"
+        creditScore:
+          "$serde_json::private::Number": "710"
+        debtToIncomeRatio:
+          "$serde_json::private::Number": "0.35"
+        employmentMonths:
+          "$serde_json::private::Number": "36"
+        incomeVerification: complete
+        latePayments:
+          "$serde_json::private::Number": "1"
+        outstandingLoans:
+          "$serde_json::private::Number": "2"
+      scores:
+        creditHistory:
+          "$serde_json::private::Number": "20"
+        incomeStability:
+          "$serde_json::private::Number": "20"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        applicant.bankAccountStanding: good
+        applicant.employmentMonths:
+          "$serde_json::private::Number": "36"
+        applicant.incomeVerification: complete
+      rule:
+        _id: r2-2
+        "applicant.bankAccountStanding[i2-3]": "'good'"
+        "applicant.employmentMonths[i2-1]": "> 24"
+        "applicant.incomeVerification[i2-2]": "'complete'"

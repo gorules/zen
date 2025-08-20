@@ -1,0 +1,285 @@
+{
+  "tests": [
+    {
+      "input": {
+        "passenger": {
+          "id": "P12345678",
+          "name": "John Smith",
+          "hasValidPassport": true,
+          "hasValidVisa": true,
+          "requiresSpecialAssistance": false,
+          "frequentFlyerStatus": "gold"
+        },
+        "flight": {
+          "flightNumber": "BA123",
+          "departureTime": "2025-03-20T10:30:00Z",
+          "origin": "LHR",
+          "destination": "JFK",
+          "requiresVisa": true,
+          "hasSeatSelection": true,
+          "allowsExtraBaggage": true,
+          "hasSpecialMealOptions": true
+        }
+      },
+      "output": {
+        "canAddBaggage": true,
+        "canSelectSeat": true,
+        "isEligible": false,
+        "message": "You are eligible for online check-in.",
+        "statusCode": "eligible"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "id": "ip1",
+      "name": "request",
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "position": {
+        "x": 110,
+        "y": 164.5
+      }
+    },
+    {
+      "id": "ex1",
+      "name": "preprocessData",
+      "type": "expressionNode",
+      "content": {
+        "inputField": null,
+        "outputPath": null,
+        "expressions": [
+          {
+            "id": "e1-1",
+            "key": "flightDepartureTime",
+            "value": "date(flight.departureTime)"
+          },
+          {
+            "id": "e1-2",
+            "key": "currentTime",
+            "value": "date('2025-03-20T08:30:00Z')"
+          },
+          {
+            "id": "e1-3",
+            "key": "hoursUntilDeparture",
+            "value": "($.flightDepartureTime - $.currentTime) / 3600"
+          },
+          {
+            "id": "e1-4",
+            "key": "hasRequiredDocuments",
+            "value": "passenger.hasValidPassport == true and passenger.hasValidVisa == (flight.requiresVisa ?? false)"
+          }
+        ],
+        "passThrough": true,
+        "executionMode": "single"
+      },
+      "position": {
+        "x": 430,
+        "y": 164.5
+      }
+    },
+    {
+      "id": "dt1",
+      "name": "checkEligibility",
+      "type": "decisionTableNode",
+      "content": {
+        "rules": [
+          {
+            "_id": "r1-1",
+            "i1-1": "hoursUntilDeparture < 1.5",
+            "o1-1": "false",
+            "o1-2": "'check_in_closed'",
+            "o1-3": "'Online check-in is closed. Please proceed to the airport for assistance.'"
+          },
+          {
+            "_id": "r1-2",
+            "i1-1": "!hasRequiredDocuments",
+            "o1-1": "false",
+            "o1-2": "'missing_documents'",
+            "o1-3": "'Missing required travel documents. Please check-in at the airport.'"
+          },
+          {
+            "_id": "r1-3",
+            "i1-1": "passenger.requiresSpecialAssistance",
+            "o1-1": "false",
+            "o1-2": "'special_assistance'",
+            "o1-3": "'Special assistance required. Please check-in at the airport.'"
+          },
+          {
+            "_id": "r1-4",
+            "i1-1": "",
+            "o1-1": "true",
+            "o1-2": "'eligible'",
+            "o1-3": "'You are eligible for online check-in.'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Condition"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Is Eligible",
+            "field": "isEligible"
+          },
+          {
+            "id": "o1-2",
+            "name": "Status Code",
+            "field": "statusCode"
+          },
+          {
+            "id": "o1-3",
+            "name": "Message",
+            "field": "message"
+          }
+        ],
+        "hitPolicy": "first",
+        "inputField": null,
+        "outputPath": null,
+        "passThrough": true,
+        "executionMode": "single"
+      },
+      "position": {
+        "x": 750,
+        "y": 164.5
+      }
+    },
+    {
+      "id": "sw1",
+      "name": "eligibilityCheck",
+      "type": "switchNode",
+      "content": {
+        "hitPolicy": "first",
+        "statements": [
+          {
+            "id": "s1-1",
+            "condition": "isEligible == true",
+            "isDefault": false
+          },
+          {
+            "id": "s1-2",
+            "condition": "",
+            "isDefault": true
+          }
+        ]
+      },
+      "position": {
+        "x": 1070,
+        "y": 164.5
+      }
+    },
+    {
+      "id": "ex2",
+      "name": "additionalServices",
+      "type": "expressionNode",
+      "content": {
+        "inputField": null,
+        "outputPath": null,
+        "expressions": [
+          {
+            "id": "01248d19-c35f-4f47-a424-526359696be5",
+            "key": "isEligible",
+            "value": "false"
+          },
+          {
+            "id": "e2-1",
+            "key": "canSelectSeat",
+            "value": "flight.hasSeatSelection == true"
+          },
+          {
+            "id": "e2-2",
+            "key": "canAddBaggage",
+            "value": "flight.allowsExtraBaggage == true"
+          },
+          {
+            "id": "d053c9cd-f974-417a-92fe-ab880d498c5c",
+            "key": "statusCode",
+            "value": "statusCode"
+          },
+          {
+            "id": "44b35986-520b-4615-87ab-fd990e3b501c",
+            "key": "message",
+            "value": "message"
+          }
+        ],
+        "passThrough": false,
+        "executionMode": "single"
+      },
+      "position": {
+        "x": 1390,
+        "y": 190
+      }
+    },
+    {
+      "id": "e87f2886-5c3d-42c2-ba78-9c576cc442b7",
+      "name": "nonEligible",
+      "type": "expressionNode",
+      "content": {
+        "inputField": null,
+        "outputPath": null,
+        "expressions": [
+          {
+            "id": "76a5124e-9d0f-4d85-9e21-6e5cb5cc3bdd",
+            "key": "isEligible",
+            "value": "false"
+          },
+          {
+            "id": "377c0312-f2e1-49ea-a9ad-d3abb82e48b5",
+            "key": "statusCode",
+            "value": "statusCode"
+          },
+          {
+            "id": "cbe1da24-a10a-4ac8-ba3c-06740d7be79b",
+            "key": "message",
+            "value": "message"
+          }
+        ],
+        "passThrough": false,
+        "executionMode": "single"
+      },
+      "position": {
+        "x": 1390,
+        "y": 330
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "ed1",
+      "type": "edge",
+      "sourceId": "ip1",
+      "targetId": "ex1"
+    },
+    {
+      "id": "ed2",
+      "type": "edge",
+      "sourceId": "ex1",
+      "targetId": "dt1"
+    },
+    {
+      "id": "ed3",
+      "type": "edge",
+      "sourceId": "dt1",
+      "targetId": "sw1"
+    },
+    {
+      "id": "ed4",
+      "type": "edge",
+      "sourceId": "sw1",
+      "targetId": "ex2",
+      "sourceHandle": "s1-1"
+    },
+    {
+      "id": "44445fe0-c343-4f6d-a5dc-bdbec35c4d5f",
+      "type": "edge",
+      "sourceId": "sw1",
+      "targetId": "e87f2886-5c3d-42c2-ba78-9c576cc442b7",
+      "sourceHandle": "s1-2"
+    }
+  ]
+}

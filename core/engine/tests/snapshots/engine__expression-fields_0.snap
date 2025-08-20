@@ -1,0 +1,65 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  customer:
+    age:
+      "$serde_json::private::Number": "30"
+    firstName: John
+    fullName: John Doe
+    lastName: Doe
+  order:
+    id: ORD-001
+    total:
+      "$serde_json::private::Number": "100"
+trace:
+  expression-node-1:
+    id: expression-node-1
+    input:
+      customer:
+        age:
+          "$serde_json::private::Number": "30"
+        firstName: John
+        lastName: Doe
+      order:
+        id: ORD-001
+        total:
+          "$serde_json::private::Number": "100"
+    name: customerFullName
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      customer:
+        age:
+          "$serde_json::private::Number": "30"
+        firstName: John
+        fullName: John Doe
+        lastName: Doe
+      order:
+        id: ORD-001
+        total:
+          "$serde_json::private::Number": "100"
+    performance: "[perf]"
+    traceData:
+      fullName:
+        result: "\"John Doe\""
+  input-node:
+    id: input-node
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      customer:
+        age:
+          "$serde_json::private::Number": "30"
+        firstName: John
+        lastName: Doe
+      order:
+        id: ORD-001
+        total:
+          "$serde_json::private::Number": "100"
+    performance: "[perf]"
+    traceData: ~

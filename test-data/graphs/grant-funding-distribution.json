@@ -1,0 +1,307 @@
+{
+  "tests": [
+    {
+      "input": {
+        "application": {
+          "id": "GR-2025-0042",
+          "organizationName": "Community Health Initiative",
+          "projectTitle": "Rural Healthcare Access Program",
+          "projectScope": "high",
+          "applicantQualifications": "medium",
+          "requestedAmount": 75000,
+          "minimumViableAmount": 50000,
+          "impactMetrics": {
+            "beneficiaries": 1200,
+            "innovationScore": 72,
+            "sustainabilityScore": 68,
+            "communityNeedScore": 85,
+            "overallScore": 75
+          }
+        },
+        "budgetConstraints": {
+          "totalBudget": 500000,
+          "allocatedAmount": 325000,
+          "allocationRatio": 0.65,
+          "maxAwardAmount": 100000
+        }
+      },
+      "output": {
+        "fundingPercentage": 76,
+        "fundingStatus": "Approved",
+        "grantAmount": 57000,
+        "maxPossibleAmount": 57000
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "inputNode",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1",
+            "i1": "'high'",
+            "i2": "'high'",
+            "i3": ">= 80",
+            "o1": "'high'",
+            "o2": "0.9"
+          },
+          {
+            "_id": "r2",
+            "i1": "'high'",
+            "i2": "'medium'",
+            "i3": ">= 70",
+            "o1": "'high'",
+            "o2": "0.8"
+          },
+          {
+            "_id": "r3",
+            "i1": "'medium'",
+            "i2": "'high'",
+            "i3": ">= 70",
+            "o1": "'high'",
+            "o2": "0.75"
+          },
+          {
+            "_id": "r4",
+            "i1": "'high'",
+            "i2": "'low'",
+            "i3": ">= 60",
+            "o1": "'medium'",
+            "o2": "0.7"
+          },
+          {
+            "_id": "r5",
+            "i1": "'medium'",
+            "i2": "'medium'",
+            "i3": ">= 60",
+            "o1": "'medium'",
+            "o2": "0.65"
+          },
+          {
+            "_id": "r6",
+            "i1": "'low'",
+            "i2": "'high'",
+            "i3": ">= 60",
+            "o1": "'medium'",
+            "o2": "0.6"
+          },
+          {
+            "_id": "r7",
+            "i1": "'medium'",
+            "i2": "'low'",
+            "i3": ">= 50",
+            "o1": "'low'",
+            "o2": "0.5"
+          },
+          {
+            "_id": "r8",
+            "i1": "'low'",
+            "i2": "'medium'",
+            "i3": ">= 50",
+            "o1": "'low'",
+            "o2": "0.45"
+          },
+          {
+            "_id": "r9",
+            "i1": "'low'",
+            "i2": "'low'",
+            "i3": ">= 40",
+            "o1": "'low'",
+            "o2": "0.4"
+          },
+          {
+            "_id": "r10",
+            "i1": "",
+            "i2": "",
+            "i3": "",
+            "o1": "'rejected'",
+            "o2": "0"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Project Scope",
+            "field": "application.projectScope"
+          },
+          {
+            "id": "i2",
+            "name": "Applicant Qualifications",
+            "field": "application.applicantQualifications"
+          },
+          {
+            "id": "i3",
+            "name": "Impact Score",
+            "field": "application.impactMetrics.overallScore"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Funding Priority",
+            "field": "evaluation.fundingPriority"
+          },
+          {
+            "id": "o2",
+            "name": "Base Funding Ratio",
+            "field": "evaluation.baseFundingRatio"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "projectEvaluation",
+      "name": "project_evaluation",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "bc1",
+            "i1": "'high'",
+            "i2": "< 0.75",
+            "o1": "0.95"
+          },
+          {
+            "_id": "bc2",
+            "i1": "'high'",
+            "i2": ">= 0.75",
+            "o1": "0.85"
+          },
+          {
+            "_id": "bc3",
+            "i1": "'medium'",
+            "i2": "< 0.6",
+            "o1": "1.0"
+          },
+          {
+            "_id": "bc4",
+            "i1": "'medium'",
+            "i2": ">= 0.6",
+            "o1": "0.9"
+          },
+          {
+            "_id": "bc5",
+            "i1": "'low'",
+            "i2": "",
+            "o1": "1.0"
+          },
+          {
+            "_id": "bc6",
+            "i1": "'rejected'",
+            "i2": "",
+            "o1": "0"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Funding Priority",
+            "field": "evaluation.fundingPriority"
+          },
+          {
+            "id": "i2",
+            "name": "Budget Allocation Ratio",
+            "field": "budgetConstraints.allocationRatio"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Adjustment Factor",
+            "field": "evaluation.adjustmentFactor"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "budgetConstraint",
+      "name": "budget_constraint",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "fc1",
+            "key": "maxPossibleAmount",
+            "value": "application.requestedAmount * evaluation.baseFundingRatio * evaluation.adjustmentFactor"
+          },
+          {
+            "id": "fc2",
+            "key": "grantAmount",
+            "value": "evaluation.fundingPriority == 'rejected' ? 0 : min([$.maxPossibleAmount, application.requestedAmount, budgetConstraints.maxAwardAmount])"
+          },
+          {
+            "id": "fc3",
+            "key": "fundingStatus",
+            "value": "evaluation.fundingPriority == 'rejected' ? 'Rejected' : $.grantAmount >= application.minimumViableAmount ? 'Approved' : 'Partially Funded'"
+          },
+          {
+            "id": "fc4",
+            "key": "fundingPercentage",
+            "value": "application.requestedAmount > 0 ? round($.grantAmount / application.requestedAmount * 100) : 0"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "fundingCalculation",
+      "name": "funding_calculation",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "inputNode",
+      "targetId": "projectEvaluation",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "projectEvaluation",
+      "targetId": "budgetConstraint",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "budgetConstraint",
+      "targetId": "fundingCalculation",
+      "type": "edge"
+    }
+  ]
+}

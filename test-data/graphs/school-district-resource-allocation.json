@@ -1,0 +1,282 @@
+{
+  "tests": [
+    {
+      "input": {
+        "school": {
+          "id": "sch_12345",
+          "name": "Washington High School",
+          "type": "secondary",
+          "student_population": 750,
+          "special_education_students": 45,
+          "esl_students": 80,
+          "gifted_students": 35,
+          "test_scores": {
+            "math": 82,
+            "reading": 78
+          },
+          "special_programs": [
+            "special_education",
+            "esl",
+            "stem"
+          ]
+        }
+      },
+      "output": {
+        "adjusted_funding": 4537500,
+        "allocation": {
+          "base_funding": 4125000,
+          "school_size": "medium"
+        },
+        "funding": [
+          {
+            "allocation": {
+              "funding_descriptions": "Special Education Support",
+              "program_funding": 135000
+            }
+          },
+          {
+            "allocation": {
+              "funding_descriptions": "ESL Program Support",
+              "program_funding": 200000
+            }
+          },
+          {
+            "allocation": {
+              "funding_descriptions": "STEM Program Support",
+              "program_funding": 20000
+            }
+          }
+        ],
+        "performance_multiplier": 1.1,
+        "performance_score": 80,
+        "school": {
+          "esl_students": 80,
+          "gifted_students": 35,
+          "id": "sch_12345",
+          "name": "Washington High School",
+          "special_education_students": 45,
+          "special_programs": [
+            "special_education",
+            "esl",
+            "stem"
+          ],
+          "student_population": 750,
+          "test_scores": {
+            "math": 82,
+            "reading": 78
+          },
+          "type": "secondary"
+        }
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "id": "inputNode",
+      "name": "request",
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "id": "baseAllocationTable",
+      "name": "baseAllocation",
+      "type": "decisionTableNode",
+      "content": {
+        "rules": [
+          {
+            "i1": "> 1000",
+            "i2": "",
+            "o1": "school.student_population * 5000",
+            "o2": "'large'",
+            "_id": "r1"
+          },
+          {
+            "i1": "> 500",
+            "i2": "",
+            "o1": "school.student_population * 5500",
+            "o2": "'medium'",
+            "_id": "r2"
+          },
+          {
+            "i1": "> 200",
+            "i2": "",
+            "o1": "school.student_population * 6000",
+            "o2": "'small'",
+            "_id": "r3"
+          },
+          {
+            "i1": "",
+            "i2": "'elementary'",
+            "o1": "school.student_population * 6500",
+            "o2": "'very_small'",
+            "_id": "r4"
+          },
+          {
+            "i1": "",
+            "i2": "",
+            "o1": "school.student_population * 6000",
+            "o2": "'very_small'",
+            "_id": "r5"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Student Population",
+            "field": "school.student_population"
+          },
+          {
+            "id": "i2",
+            "name": "School Type",
+            "field": "school.type"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Base Funding",
+            "field": "allocation.base_funding"
+          },
+          {
+            "id": "o2",
+            "name": "School Size Category",
+            "field": "allocation.school_size"
+          }
+        ],
+        "hitPolicy": "first",
+        "inputField": null,
+        "outputPath": null,
+        "passThrough": true,
+        "executionMode": "single"
+      },
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "id": "performanceAdjustment",
+      "name": "performanceAdjustment",
+      "type": "expressionNode",
+      "content": {
+        "inputField": null,
+        "outputPath": null,
+        "expressions": [
+          {
+            "id": "e1",
+            "key": "performance_score",
+            "value": "(school.test_scores.math + school.test_scores.reading) / 2"
+          },
+          {
+            "id": "e2",
+            "key": "performance_multiplier",
+            "value": "$.performance_score < 70 ? 1.2 : ($.performance_score < 85 ? 1.1 : 1.0)"
+          },
+          {
+            "id": "e3",
+            "key": "adjusted_funding",
+            "value": "allocation.base_funding * $.performance_multiplier"
+          }
+        ],
+        "passThrough": true,
+        "executionMode": "single"
+      },
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "id": "specialProgramsTable",
+      "name": "specialProgramsAdjustment",
+      "type": "decisionTableNode",
+      "content": {
+        "rules": [
+          {
+            "i1": "contains(school.special_programs, 'special_education')",
+            "o1": "school.special_education_students * 3000",
+            "o2": "'Special Education Support'",
+            "_id": "sp1"
+          },
+          {
+            "i1": "contains(school.special_programs, 'esl')",
+            "o1": "school.esl_students * 2500",
+            "o2": "'ESL Program Support'",
+            "_id": "sp2"
+          },
+          {
+            "i1": "contains(school.special_programs, 'gifted')",
+            "o1": "school.gifted_students * 1800",
+            "o2": "'Gifted Program Support'",
+            "_id": "sp3"
+          },
+          {
+            "i1": "contains(school.special_programs, 'stem')",
+            "o1": "20000",
+            "o2": "'STEM Program Support'",
+            "_id": "sp4"
+          },
+          {
+            "i1": "contains(school.special_programs, 'arts')",
+            "o1": "15000",
+            "o2": "'Arts Program Support'",
+            "_id": "sp5"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Special Programs"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Additional Funding",
+            "field": "allocation.program_funding"
+          },
+          {
+            "id": "o2",
+            "name": "Funding Description",
+            "field": "allocation.funding_descriptions"
+          }
+        ],
+        "hitPolicy": "collect",
+        "inputField": null,
+        "outputPath": "funding",
+        "passThrough": true,
+        "executionMode": "single"
+      },
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "type": "edge",
+      "sourceId": "inputNode",
+      "targetId": "baseAllocationTable"
+    },
+    {
+      "id": "e2",
+      "type": "edge",
+      "sourceId": "baseAllocationTable",
+      "targetId": "performanceAdjustment"
+    },
+    {
+      "id": "e3",
+      "type": "edge",
+      "sourceId": "performanceAdjustment",
+      "targetId": "specialProgramsTable"
+    }
+  ]
+}

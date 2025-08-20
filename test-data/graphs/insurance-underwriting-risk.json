@@ -1,0 +1,321 @@
+{
+  "tests": [
+    {
+      "input": {
+        "applicationId": "APP-12345",
+        "applicantName": "Jane Smith",
+        "answers": {
+          "hasHighRiskMedicalCondition": true,
+          "recentHospitalization": false,
+          "multiplePreExistingConditions": true,
+          "hazardousOccupation": false,
+          "age": 58,
+          "coverageAmount": 1200000,
+          "hasIncompleteInformation": false,
+          "hasInformationDiscrepancy": true,
+          "hasForeignResidency": false
+        }
+      },
+      "output": {
+        "answers": {
+          "age": 58,
+          "coverageAmount": 1200000,
+          "hasForeignResidency": false,
+          "hasHighRiskMedicalCondition": true,
+          "hasIncompleteInformation": false,
+          "hasInformationDiscrepancy": true,
+          "hazardousOccupation": false,
+          "multiplePreExistingConditions": true,
+          "recentHospitalization": false
+        },
+        "applicantName": "Jane Smith",
+        "applicationId": "APP-12345",
+        "riskDescriptions": [
+          "High risk medical condition",
+          "Multiple pre-existing conditions"
+        ],
+        "riskFactors": [
+          {
+            "description": "High risk medical condition",
+            "points": 10
+          },
+          {
+            "description": "Multiple pre-existing conditions",
+            "points": 20
+          }
+        ],
+        "totalRiskScore": 30,
+        "underwriting": {
+          "needsManualReview": false,
+          "referralReason": "No referral required"
+        }
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "ip1",
+      "name": "application",
+      "position": {
+        "x": 110,
+        "y": 292.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "collect",
+        "rules": [
+          {
+            "_id": "r1-1",
+            "i1-1": "true",
+            "i1-2": "",
+            "i1-3": "",
+            "i1-4": "",
+            "i1-5": "",
+            "o1-1": "10",
+            "o1-2": "'High risk medical condition'"
+          },
+          {
+            "_id": "r1-2",
+            "i1-1": "",
+            "i1-2": "true",
+            "i1-3": "",
+            "i1-4": "",
+            "i1-5": "",
+            "o1-1": "15",
+            "o1-2": "'Recent hospitalization'"
+          },
+          {
+            "_id": "r1-3",
+            "i1-1": "",
+            "i1-2": "",
+            "i1-3": "true",
+            "i1-4": "",
+            "i1-5": "",
+            "o1-1": "20",
+            "o1-2": "'Multiple pre-existing conditions'"
+          },
+          {
+            "_id": "r1-4",
+            "i1-1": "",
+            "i1-2": "",
+            "i1-3": "",
+            "i1-4": "true",
+            "i1-5": "",
+            "o1-1": "25",
+            "o1-2": "'Hazardous occupation'"
+          },
+          {
+            "_id": "r1-5",
+            "i1-1": "",
+            "i1-2": "",
+            "i1-3": "",
+            "i1-4": "",
+            "i1-5": "> 65",
+            "o1-1": "15",
+            "o1-2": "'Advanced age applicant'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Has High Risk Medical Condition",
+            "field": "answers.hasHighRiskMedicalCondition"
+          },
+          {
+            "id": "i1-2",
+            "name": "Recent Hospitalization",
+            "field": "answers.recentHospitalization"
+          },
+          {
+            "id": "i1-3",
+            "name": "Multiple Pre-existing Conditions",
+            "field": "answers.multiplePreExistingConditions"
+          },
+          {
+            "id": "i1-4",
+            "name": "Hazardous Occupation",
+            "field": "answers.hazardousOccupation"
+          },
+          {
+            "id": "i1-5",
+            "name": "Age",
+            "field": "answers.age"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Risk Points",
+            "field": "points"
+          },
+          {
+            "id": "o1-2",
+            "name": "Risk Description",
+            "field": "description"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": "riskFactors",
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "dt1",
+      "name": "risk_factors",
+      "position": {
+        "x": 430,
+        "y": 292.5
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1-1",
+            "key": "totalRiskScore",
+            "value": "sum(map(riskFactors ?? [], #.points))"
+          },
+          {
+            "id": "e1-2",
+            "key": "riskDescriptions",
+            "value": "map(riskFactors ?? [], #.description)"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex1",
+      "name": "calculate_risk_score",
+      "position": {
+        "x": 750,
+        "y": 292.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r2-1",
+            "i2-1": "> 1500000",
+            "o2-1": "true",
+            "o2-2": "'Coverage amount exceeds automatic approval threshold'"
+          },
+          {
+            "_id": "r2-2",
+            "i2-2": "> 40",
+            "o2-1": "true",
+            "o2-2": "'Risk score exceeds threshold'"
+          },
+          {
+            "_id": "r2-3",
+            "i2-3": "true",
+            "o2-1": "true",
+            "o2-2": "'Application has incomplete information'"
+          },
+          {
+            "_id": "r2-4",
+            "i2-4": "true",
+            "o2-1": "true",
+            "o2-2": "'Discrepancy in personal information'"
+          },
+          {
+            "_id": "r2-5",
+            "i2-5": "true",
+            "o2-1": "true",
+            "o2-2": "'Foreign residency or citizenship'"
+          },
+          {
+            "_id": "r2-6",
+            "i2-1": "",
+            "i2-2": "",
+            "i2-3": "",
+            "i2-4": "",
+            "i2-5": "",
+            "o2-1": "false",
+            "o2-2": "'No referral required'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i2-1",
+            "name": "Coverage Amount",
+            "field": "answers.coverageAmount"
+          },
+          {
+            "id": "i2-2",
+            "name": "Risk Score",
+            "field": "totalRiskScore"
+          },
+          {
+            "id": "i2-3",
+            "name": "Incomplete Information",
+            "field": "answers.hasIncompleteInformation"
+          },
+          {
+            "id": "i2-4",
+            "name": "Information Discrepancy",
+            "field": "answers.hasInformationDiscrepancy"
+          },
+          {
+            "id": "i2-5",
+            "name": "Foreign Residency",
+            "field": "answers.hasForeignResidency"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2-1",
+            "name": "Needs Manual Review",
+            "field": "underwriting.needsManualReview"
+          },
+          {
+            "id": "o2-2",
+            "name": "Referral Reason",
+            "field": "underwriting.referralReason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt2",
+      "name": "referral_decision",
+      "position": {
+        "x": 1070,
+        "y": 292.5
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "ed1",
+      "sourceId": "ip1",
+      "targetId": "dt1",
+      "type": "edge"
+    },
+    {
+      "id": "ed2",
+      "sourceId": "dt1",
+      "targetId": "ex1",
+      "type": "edge"
+    },
+    {
+      "id": "ed3",
+      "sourceId": "ex1",
+      "targetId": "dt2",
+      "type": "edge"
+    }
+  ]
+}

@@ -1,0 +1,561 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  assignmentDetails:
+    assignmentScore:
+      "$serde_json::private::Number": "28"
+    deliveryPersonId: DP-789
+    estimatedArrival:
+      "$serde_json::private::Number": "1755683930"
+    packageId: PKG-12345
+  assignmentStatus: assigned
+  capacityFactor:
+    "$serde_json::private::Number": "5"
+  deliveryPerson:
+    collectSignatureEquipped: true
+    currentLocation:
+      latitude:
+        "$serde_json::private::Number": "40.7128"
+      longitude:
+        "$serde_json::private::Number": "-74.006"
+    currentZone: downtown
+    id: DP-789
+    name: Alex Johnson
+    remainingCapacity:
+      "$serde_json::private::Number": "50"
+    remainingDeliveries:
+      "$serde_json::private::Number": "8"
+    shiftEndsAt: "2025-03-19T20:00:00Z"
+    skills:
+      - express_certified
+      - heavy_lifting
+      - collectSignature
+    vehicleType: van
+  distanceScore:
+    "$serde_json::private::Number": "7"
+  matchScore:
+    "$serde_json::private::Number": "10"
+  message: Package successfully assigned to delivery person
+  package:
+    deliveryDeadline: "2025-03-19T16:00:00Z"
+    deliveryZone: downtown
+    dimensions:
+      height:
+        "$serde_json::private::Number": "25"
+      length:
+        "$serde_json::private::Number": "45"
+      width:
+        "$serde_json::private::Number": "30"
+    distanceFromDeliveryPerson:
+      "$serde_json::private::Number": "5.2"
+    fragile: false
+    id: PKG-12345
+    needsSignature: true
+    priority: express
+    specialInstructions: Leave with doorman if recipient unavailable
+    weight:
+      "$serde_json::private::Number": "22.5"
+  priorityLevel: high
+  recommendedAssignment: true
+  slaFactor:
+    "$serde_json::private::Number": "6"
+  totalScore:
+    "$serde_json::private::Number": "28"
+trace:
+  dt1:
+    id: dt1
+    input:
+      deliveryPerson:
+        collectSignatureEquipped: true
+        currentLocation:
+          latitude:
+            "$serde_json::private::Number": "40.7128"
+          longitude:
+            "$serde_json::private::Number": "-74.006"
+        currentZone: downtown
+        id: DP-789
+        name: Alex Johnson
+        remainingCapacity:
+          "$serde_json::private::Number": "50"
+        remainingDeliveries:
+          "$serde_json::private::Number": "8"
+        shiftEndsAt: "2025-03-19T20:00:00Z"
+        skills:
+          - express_certified
+          - heavy_lifting
+          - collectSignature
+        vehicleType: van
+      package:
+        deliveryDeadline: "2025-03-19T16:00:00Z"
+        deliveryZone: downtown
+        dimensions:
+          height:
+            "$serde_json::private::Number": "25"
+          length:
+            "$serde_json::private::Number": "45"
+          width:
+            "$serde_json::private::Number": "30"
+        distanceFromDeliveryPerson:
+          "$serde_json::private::Number": "5.2"
+        fragile: false
+        id: PKG-12345
+        needsSignature: true
+        priority: express
+        specialInstructions: Leave with doorman if recipient unavailable
+        weight:
+          "$serde_json::private::Number": "22.5"
+    name: calculate_match_score
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      deliveryPerson:
+        collectSignatureEquipped: true
+        currentLocation:
+          latitude:
+            "$serde_json::private::Number": "40.7128"
+          longitude:
+            "$serde_json::private::Number": "-74.006"
+        currentZone: downtown
+        id: DP-789
+        name: Alex Johnson
+        remainingCapacity:
+          "$serde_json::private::Number": "50"
+        remainingDeliveries:
+          "$serde_json::private::Number": "8"
+        shiftEndsAt: "2025-03-19T20:00:00Z"
+        skills:
+          - express_certified
+          - heavy_lifting
+          - collectSignature
+        vehicleType: van
+      matchScore:
+        "$serde_json::private::Number": "10"
+      package:
+        deliveryDeadline: "2025-03-19T16:00:00Z"
+        deliveryZone: downtown
+        dimensions:
+          height:
+            "$serde_json::private::Number": "25"
+          length:
+            "$serde_json::private::Number": "45"
+          width:
+            "$serde_json::private::Number": "30"
+        distanceFromDeliveryPerson:
+          "$serde_json::private::Number": "5.2"
+        fragile: false
+        id: PKG-12345
+        needsSignature: true
+        priority: express
+        specialInstructions: Leave with doorman if recipient unavailable
+        weight:
+          "$serde_json::private::Number": "22.5"
+      priorityLevel: high
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map: {}
+      rule:
+        _id: r1-1
+  ex1:
+    id: ex1
+    input:
+      deliveryPerson:
+        collectSignatureEquipped: true
+        currentLocation:
+          latitude:
+            "$serde_json::private::Number": "40.7128"
+          longitude:
+            "$serde_json::private::Number": "-74.006"
+        currentZone: downtown
+        id: DP-789
+        name: Alex Johnson
+        remainingCapacity:
+          "$serde_json::private::Number": "50"
+        remainingDeliveries:
+          "$serde_json::private::Number": "8"
+        shiftEndsAt: "2025-03-19T20:00:00Z"
+        skills:
+          - express_certified
+          - heavy_lifting
+          - collectSignature
+        vehicleType: van
+      matchScore:
+        "$serde_json::private::Number": "10"
+      package:
+        deliveryDeadline: "2025-03-19T16:00:00Z"
+        deliveryZone: downtown
+        dimensions:
+          height:
+            "$serde_json::private::Number": "25"
+          length:
+            "$serde_json::private::Number": "45"
+          width:
+            "$serde_json::private::Number": "30"
+        distanceFromDeliveryPerson:
+          "$serde_json::private::Number": "5.2"
+        fragile: false
+        id: PKG-12345
+        needsSignature: true
+        priority: express
+        specialInstructions: Leave with doorman if recipient unavailable
+        weight:
+          "$serde_json::private::Number": "22.5"
+      priorityLevel: high
+    name: calculate_final_score
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      capacityFactor:
+        "$serde_json::private::Number": "5"
+      deliveryPerson:
+        collectSignatureEquipped: true
+        currentLocation:
+          latitude:
+            "$serde_json::private::Number": "40.7128"
+          longitude:
+            "$serde_json::private::Number": "-74.006"
+        currentZone: downtown
+        id: DP-789
+        name: Alex Johnson
+        remainingCapacity:
+          "$serde_json::private::Number": "50"
+        remainingDeliveries:
+          "$serde_json::private::Number": "8"
+        shiftEndsAt: "2025-03-19T20:00:00Z"
+        skills:
+          - express_certified
+          - heavy_lifting
+          - collectSignature
+        vehicleType: van
+      distanceScore:
+        "$serde_json::private::Number": "7"
+      matchScore:
+        "$serde_json::private::Number": "10"
+      package:
+        deliveryDeadline: "2025-03-19T16:00:00Z"
+        deliveryZone: downtown
+        dimensions:
+          height:
+            "$serde_json::private::Number": "25"
+          length:
+            "$serde_json::private::Number": "45"
+          width:
+            "$serde_json::private::Number": "30"
+        distanceFromDeliveryPerson:
+          "$serde_json::private::Number": "5.2"
+        fragile: false
+        id: PKG-12345
+        needsSignature: true
+        priority: express
+        specialInstructions: Leave with doorman if recipient unavailable
+        weight:
+          "$serde_json::private::Number": "22.5"
+      priorityLevel: high
+      recommendedAssignment: true
+      slaFactor:
+        "$serde_json::private::Number": "6"
+      totalScore:
+        "$serde_json::private::Number": "28"
+    performance: "[perf]"
+    traceData:
+      capacityFactor:
+        result: "5"
+      distanceScore:
+        result: "7"
+      recommendedAssignment:
+        result: "true"
+      slaFactor:
+        result: "6"
+      totalScore:
+        result: "28"
+  ex2:
+    id: ex2
+    input:
+      capacityFactor:
+        "$serde_json::private::Number": "5"
+      deliveryPerson:
+        collectSignatureEquipped: true
+        currentLocation:
+          latitude:
+            "$serde_json::private::Number": "40.7128"
+          longitude:
+            "$serde_json::private::Number": "-74.006"
+        currentZone: downtown
+        id: DP-789
+        name: Alex Johnson
+        remainingCapacity:
+          "$serde_json::private::Number": "50"
+        remainingDeliveries:
+          "$serde_json::private::Number": "8"
+        shiftEndsAt: "2025-03-19T20:00:00Z"
+        skills:
+          - express_certified
+          - heavy_lifting
+          - collectSignature
+        vehicleType: van
+      distanceScore:
+        "$serde_json::private::Number": "7"
+      matchScore:
+        "$serde_json::private::Number": "10"
+      package:
+        deliveryDeadline: "2025-03-19T16:00:00Z"
+        deliveryZone: downtown
+        dimensions:
+          height:
+            "$serde_json::private::Number": "25"
+          length:
+            "$serde_json::private::Number": "45"
+          width:
+            "$serde_json::private::Number": "30"
+        distanceFromDeliveryPerson:
+          "$serde_json::private::Number": "5.2"
+        fragile: false
+        id: PKG-12345
+        needsSignature: true
+        priority: express
+        specialInstructions: Leave with doorman if recipient unavailable
+        weight:
+          "$serde_json::private::Number": "22.5"
+      priorityLevel: high
+      recommendedAssignment: true
+      slaFactor:
+        "$serde_json::private::Number": "6"
+      totalScore:
+        "$serde_json::private::Number": "28"
+    name: create_assignment
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      assignmentDetails:
+        assignmentScore:
+          "$serde_json::private::Number": "28"
+        deliveryPersonId: DP-789
+        estimatedArrival:
+          "$serde_json::private::Number": "1755683930"
+        packageId: PKG-12345
+      assignmentStatus: assigned
+      capacityFactor:
+        "$serde_json::private::Number": "5"
+      deliveryPerson:
+        collectSignatureEquipped: true
+        currentLocation:
+          latitude:
+            "$serde_json::private::Number": "40.7128"
+          longitude:
+            "$serde_json::private::Number": "-74.006"
+        currentZone: downtown
+        id: DP-789
+        name: Alex Johnson
+        remainingCapacity:
+          "$serde_json::private::Number": "50"
+        remainingDeliveries:
+          "$serde_json::private::Number": "8"
+        shiftEndsAt: "2025-03-19T20:00:00Z"
+        skills:
+          - express_certified
+          - heavy_lifting
+          - collectSignature
+        vehicleType: van
+      distanceScore:
+        "$serde_json::private::Number": "7"
+      matchScore:
+        "$serde_json::private::Number": "10"
+      message: Package successfully assigned to delivery person
+      package:
+        deliveryDeadline: "2025-03-19T16:00:00Z"
+        deliveryZone: downtown
+        dimensions:
+          height:
+            "$serde_json::private::Number": "25"
+          length:
+            "$serde_json::private::Number": "45"
+          width:
+            "$serde_json::private::Number": "30"
+        distanceFromDeliveryPerson:
+          "$serde_json::private::Number": "5.2"
+        fragile: false
+        id: PKG-12345
+        needsSignature: true
+        priority: express
+        specialInstructions: Leave with doorman if recipient unavailable
+        weight:
+          "$serde_json::private::Number": "22.5"
+      priorityLevel: high
+      recommendedAssignment: true
+      slaFactor:
+        "$serde_json::private::Number": "6"
+      totalScore:
+        "$serde_json::private::Number": "28"
+    performance: "[perf]"
+    traceData:
+      assignmentDetails:
+        result: "{\"deliveryPersonId\":\"DP-789\",\"assignmentScore\":28,\"packageId\":\"PKG-12345\",\"estimatedArrival\":1755683930}"
+      assignmentStatus:
+        result: "\"assigned\""
+      message:
+        result: "\"Package successfully assigned to delivery person\""
+  ip1:
+    id: ip1
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      deliveryPerson:
+        collectSignatureEquipped: true
+        currentLocation:
+          latitude:
+            "$serde_json::private::Number": "40.7128"
+          longitude:
+            "$serde_json::private::Number": "-74.006"
+        currentZone: downtown
+        id: DP-789
+        name: Alex Johnson
+        remainingCapacity:
+          "$serde_json::private::Number": "50"
+        remainingDeliveries:
+          "$serde_json::private::Number": "8"
+        shiftEndsAt: "2025-03-19T20:00:00Z"
+        skills:
+          - express_certified
+          - heavy_lifting
+          - collectSignature
+        vehicleType: van
+      package:
+        deliveryDeadline: "2025-03-19T16:00:00Z"
+        deliveryZone: downtown
+        dimensions:
+          height:
+            "$serde_json::private::Number": "25"
+          length:
+            "$serde_json::private::Number": "45"
+          width:
+            "$serde_json::private::Number": "30"
+        distanceFromDeliveryPerson:
+          "$serde_json::private::Number": "5.2"
+        fragile: false
+        id: PKG-12345
+        needsSignature: true
+        priority: express
+        specialInstructions: Leave with doorman if recipient unavailable
+        weight:
+          "$serde_json::private::Number": "22.5"
+    performance: "[perf]"
+    traceData: ~
+  sw1:
+    id: sw1
+    input:
+      capacityFactor:
+        "$serde_json::private::Number": "5"
+      deliveryPerson:
+        collectSignatureEquipped: true
+        currentLocation:
+          latitude:
+            "$serde_json::private::Number": "40.7128"
+          longitude:
+            "$serde_json::private::Number": "-74.006"
+        currentZone: downtown
+        id: DP-789
+        name: Alex Johnson
+        remainingCapacity:
+          "$serde_json::private::Number": "50"
+        remainingDeliveries:
+          "$serde_json::private::Number": "8"
+        shiftEndsAt: "2025-03-19T20:00:00Z"
+        skills:
+          - express_certified
+          - heavy_lifting
+          - collectSignature
+        vehicleType: van
+      distanceScore:
+        "$serde_json::private::Number": "7"
+      matchScore:
+        "$serde_json::private::Number": "10"
+      package:
+        deliveryDeadline: "2025-03-19T16:00:00Z"
+        deliveryZone: downtown
+        dimensions:
+          height:
+            "$serde_json::private::Number": "25"
+          length:
+            "$serde_json::private::Number": "45"
+          width:
+            "$serde_json::private::Number": "30"
+        distanceFromDeliveryPerson:
+          "$serde_json::private::Number": "5.2"
+        fragile: false
+        id: PKG-12345
+        needsSignature: true
+        priority: express
+        specialInstructions: Leave with doorman if recipient unavailable
+        weight:
+          "$serde_json::private::Number": "22.5"
+      priorityLevel: high
+      recommendedAssignment: true
+      slaFactor:
+        "$serde_json::private::Number": "6"
+      totalScore:
+        "$serde_json::private::Number": "28"
+    name: determine_assignment
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      capacityFactor:
+        "$serde_json::private::Number": "5"
+      deliveryPerson:
+        collectSignatureEquipped: true
+        currentLocation:
+          latitude:
+            "$serde_json::private::Number": "40.7128"
+          longitude:
+            "$serde_json::private::Number": "-74.006"
+        currentZone: downtown
+        id: DP-789
+        name: Alex Johnson
+        remainingCapacity:
+          "$serde_json::private::Number": "50"
+        remainingDeliveries:
+          "$serde_json::private::Number": "8"
+        shiftEndsAt: "2025-03-19T20:00:00Z"
+        skills:
+          - express_certified
+          - heavy_lifting
+          - collectSignature
+        vehicleType: van
+      distanceScore:
+        "$serde_json::private::Number": "7"
+      matchScore:
+        "$serde_json::private::Number": "10"
+      package:
+        deliveryDeadline: "2025-03-19T16:00:00Z"
+        deliveryZone: downtown
+        dimensions:
+          height:
+            "$serde_json::private::Number": "25"
+          length:
+            "$serde_json::private::Number": "45"
+          width:
+            "$serde_json::private::Number": "30"
+        distanceFromDeliveryPerson:
+          "$serde_json::private::Number": "5.2"
+        fragile: false
+        id: PKG-12345
+        needsSignature: true
+        priority: express
+        specialInstructions: Leave with doorman if recipient unavailable
+        weight:
+          "$serde_json::private::Number": "22.5"
+      priorityLevel: high
+      recommendedAssignment: true
+      slaFactor:
+        "$serde_json::private::Number": "6"
+      totalScore:
+        "$serde_json::private::Number": "28"
+    performance: "[perf]"
+    traceData:
+      statements:
+        - id: s1-1

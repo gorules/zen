@@ -1,0 +1,584 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  routing:
+    processing_instructions:
+      fraud_scan: standard
+      manual_review: true
+      priority: medium
+      processor: credit_processor
+      velocity_check: true
+      verification_required: 3ds
+  security:
+    fraud_scan_level: standard
+    high_risk_flag: true
+    total_risk_score:
+      "$serde_json::private::Number": "50"
+    velocity_check_required: true
+trace:
+  amount-processing:
+    id: amount-processing
+    input:
+      fee:
+        base_percentage:
+          "$serde_json::private::Number": "2.9"
+        channel_addition:
+          "$serde_json::private::Number": "0.3"
+      merchant:
+        category: retail
+        country: US
+        id: merch_98765432
+        processing_history:
+          average_amount:
+            "$serde_json::private::Number": "175.5"
+          chargeback_rate:
+            "$serde_json::private::Number": "0.2"
+          total_transactions:
+            "$serde_json::private::Number": "1256"
+      payment:
+        amount:
+          "$serde_json::private::Number": "2500"
+        channel: web
+        currency: USD
+        customer_id: cust_87654321
+        id: pmt_12345678
+        metadata:
+          card_last_four: "4242"
+          card_network: Visa
+          save_for_future: true
+        timestamp: "2025-03-18T10:30:45Z"
+        type: credit_card
+      routing:
+        priority: medium
+        processor: credit_processor
+      security:
+        base_risk_score:
+          "$serde_json::private::Number": "25"
+        channel_risk_addition:
+          "$serde_json::private::Number": "5"
+      session:
+        browser: Chrome
+        device_id: dev_abcdef123456
+        ip_address: 192.168.1.1
+        location:
+          city: San Francisco
+          country: US
+          state: CA
+    name: amount-based-processing
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      fee:
+        amount_adjustment:
+          "$serde_json::private::Number": "-0.3"
+        base_percentage:
+          "$serde_json::private::Number": "2.9"
+        channel_addition:
+          "$serde_json::private::Number": "0.3"
+      merchant:
+        category: retail
+        country: US
+        id: merch_98765432
+        processing_history:
+          average_amount:
+            "$serde_json::private::Number": "175.5"
+          chargeback_rate:
+            "$serde_json::private::Number": "0.2"
+          total_transactions:
+            "$serde_json::private::Number": "1256"
+      payment:
+        amount:
+          "$serde_json::private::Number": "2500"
+        channel: web
+        currency: USD
+        customer_id: cust_87654321
+        id: pmt_12345678
+        metadata:
+          card_last_four: "4242"
+          card_network: Visa
+          save_for_future: true
+        timestamp: "2025-03-18T10:30:45Z"
+        type: credit_card
+      routing:
+        priority: medium
+        processor: credit_processor
+      security:
+        amount_risk_addition:
+          "$serde_json::private::Number": "20"
+        base_risk_score:
+          "$serde_json::private::Number": "25"
+        channel_risk_addition:
+          "$serde_json::private::Number": "5"
+        verification_method: 3ds
+      session:
+        browser: Chrome
+        device_id: dev_abcdef123456
+        ip_address: 192.168.1.1
+        location:
+          city: San Francisco
+          country: US
+          state: CA
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        payment.amount:
+          "$serde_json::private::Number": "2500"
+        routing.processor: credit_processor
+      rule:
+        _id: rule-medium-high-amount
+        "payment.amount[input-amount]": ">= 5000, < 10000"
+        "routing.processor[input-route]": ""
+  channel-routing-table:
+    id: channel-routing-table
+    input:
+      fee:
+        base_percentage:
+          "$serde_json::private::Number": "2.9"
+      merchant:
+        category: retail
+        country: US
+        id: merch_98765432
+        processing_history:
+          average_amount:
+            "$serde_json::private::Number": "175.5"
+          chargeback_rate:
+            "$serde_json::private::Number": "0.2"
+          total_transactions:
+            "$serde_json::private::Number": "1256"
+      payment:
+        amount:
+          "$serde_json::private::Number": "2500"
+        channel: web
+        currency: USD
+        customer_id: cust_87654321
+        id: pmt_12345678
+        metadata:
+          card_last_four: "4242"
+          card_network: Visa
+          save_for_future: true
+        timestamp: "2025-03-18T10:30:45Z"
+        type: credit_card
+      routing:
+        processor: credit_processor
+      security:
+        base_risk_score:
+          "$serde_json::private::Number": "25"
+      session:
+        browser: Chrome
+        device_id: dev_abcdef123456
+        ip_address: 192.168.1.1
+        location:
+          city: San Francisco
+          country: US
+          state: CA
+    name: channel-routing
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      fee:
+        base_percentage:
+          "$serde_json::private::Number": "2.9"
+        channel_addition:
+          "$serde_json::private::Number": "0.3"
+      merchant:
+        category: retail
+        country: US
+        id: merch_98765432
+        processing_history:
+          average_amount:
+            "$serde_json::private::Number": "175.5"
+          chargeback_rate:
+            "$serde_json::private::Number": "0.2"
+          total_transactions:
+            "$serde_json::private::Number": "1256"
+      payment:
+        amount:
+          "$serde_json::private::Number": "2500"
+        channel: web
+        currency: USD
+        customer_id: cust_87654321
+        id: pmt_12345678
+        metadata:
+          card_last_four: "4242"
+          card_network: Visa
+          save_for_future: true
+        timestamp: "2025-03-18T10:30:45Z"
+        type: credit_card
+      routing:
+        priority: medium
+        processor: credit_processor
+      security:
+        base_risk_score:
+          "$serde_json::private::Number": "25"
+        channel_risk_addition:
+          "$serde_json::private::Number": "5"
+      session:
+        browser: Chrome
+        device_id: dev_abcdef123456
+        ip_address: 192.168.1.1
+        location:
+          city: San Francisco
+          country: US
+          state: CA
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        payment.channel: web
+        security.base_risk_score:
+          "$serde_json::private::Number": "25"
+      rule:
+        _id: rule-web-low-risk
+        "payment.channel[input-channel]": "'web'"
+        "security.base_risk_score[input-risk-score]": "<= 30"
+  fee-calculation:
+    id: fee-calculation
+    input:
+      fee:
+        amount_adjustment:
+          "$serde_json::private::Number": "-0.3"
+        base_percentage:
+          "$serde_json::private::Number": "2.9"
+        channel_addition:
+          "$serde_json::private::Number": "0.3"
+      merchant:
+        category: retail
+        country: US
+        id: merch_98765432
+        processing_history:
+          average_amount:
+            "$serde_json::private::Number": "175.5"
+          chargeback_rate:
+            "$serde_json::private::Number": "0.2"
+          total_transactions:
+            "$serde_json::private::Number": "1256"
+      payment:
+        amount:
+          "$serde_json::private::Number": "2500"
+        channel: web
+        currency: USD
+        customer_id: cust_87654321
+        id: pmt_12345678
+        metadata:
+          card_last_four: "4242"
+          card_network: Visa
+          save_for_future: true
+        timestamp: "2025-03-18T10:30:45Z"
+        type: credit_card
+      routing:
+        priority: medium
+        processor: credit_processor
+      security:
+        amount_risk_addition:
+          "$serde_json::private::Number": "20"
+        base_risk_score:
+          "$serde_json::private::Number": "25"
+        channel_risk_addition:
+          "$serde_json::private::Number": "5"
+        verification_method: 3ds
+      session:
+        browser: Chrome
+        device_id: dev_abcdef123456
+        ip_address: 192.168.1.1
+        location:
+          city: San Francisco
+          country: US
+          state: CA
+    name: fee-calculation
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      fee:
+        amount_adjustment:
+          "$serde_json::private::Number": "-0.3"
+        base_percentage:
+          "$serde_json::private::Number": "2.9"
+        channel_addition:
+          "$serde_json::private::Number": "0.3"
+        final_amount:
+          "$serde_json::private::Number": "72.5"
+      fee_amount:
+        "$serde_json::private::Number": "72.5"
+      final_fee_percentage:
+        "$serde_json::private::Number": "2.9"
+      merchant:
+        category: retail
+        country: US
+        id: merch_98765432
+        processing_history:
+          average_amount:
+            "$serde_json::private::Number": "175.5"
+          chargeback_rate:
+            "$serde_json::private::Number": "0.2"
+          total_transactions:
+            "$serde_json::private::Number": "1256"
+      payment:
+        amount:
+          "$serde_json::private::Number": "2500"
+        channel: web
+        currency: USD
+        customer_id: cust_87654321
+        id: pmt_12345678
+        metadata:
+          card_last_four: "4242"
+          card_network: Visa
+          save_for_future: true
+        net_amount:
+          "$serde_json::private::Number": "2427.5"
+        timestamp: "2025-03-18T10:30:45Z"
+        type: credit_card
+      routing:
+        priority: medium
+        processor: credit_processor
+      security:
+        amount_risk_addition:
+          "$serde_json::private::Number": "20"
+        base_risk_score:
+          "$serde_json::private::Number": "25"
+        channel_risk_addition:
+          "$serde_json::private::Number": "5"
+        verification_method: 3ds
+      session:
+        browser: Chrome
+        device_id: dev_abcdef123456
+        ip_address: 192.168.1.1
+        location:
+          city: San Francisco
+          country: US
+          state: CA
+    performance: "[perf]"
+    traceData:
+      fee.final_amount:
+        result: "72.5"
+      fee_amount:
+        result: "72.5"
+      final_fee_percentage:
+        result: "2.9"
+      payment.net_amount:
+        result: "2427.5"
+  payment-input:
+    id: payment-input
+    input: ~
+    name: payment-request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      merchant:
+        category: retail
+        country: US
+        id: merch_98765432
+        processing_history:
+          average_amount:
+            "$serde_json::private::Number": "175.5"
+          chargeback_rate:
+            "$serde_json::private::Number": "0.2"
+          total_transactions:
+            "$serde_json::private::Number": "1256"
+      payment:
+        amount:
+          "$serde_json::private::Number": "2500"
+        channel: web
+        currency: USD
+        customer_id: cust_87654321
+        id: pmt_12345678
+        metadata:
+          card_last_four: "4242"
+          card_network: Visa
+          save_for_future: true
+        timestamp: "2025-03-18T10:30:45Z"
+        type: credit_card
+      session:
+        browser: Chrome
+        device_id: dev_abcdef123456
+        ip_address: 192.168.1.1
+        location:
+          city: San Francisco
+          country: US
+          state: CA
+    performance: "[perf]"
+    traceData: ~
+  payment-type-table:
+    id: payment-type-table
+    input:
+      merchant:
+        category: retail
+        country: US
+        id: merch_98765432
+        processing_history:
+          average_amount:
+            "$serde_json::private::Number": "175.5"
+          chargeback_rate:
+            "$serde_json::private::Number": "0.2"
+          total_transactions:
+            "$serde_json::private::Number": "1256"
+      payment:
+        amount:
+          "$serde_json::private::Number": "2500"
+        channel: web
+        currency: USD
+        customer_id: cust_87654321
+        id: pmt_12345678
+        metadata:
+          card_last_four: "4242"
+          card_network: Visa
+          save_for_future: true
+        timestamp: "2025-03-18T10:30:45Z"
+        type: credit_card
+      session:
+        browser: Chrome
+        device_id: dev_abcdef123456
+        ip_address: 192.168.1.1
+        location:
+          city: San Francisco
+          country: US
+          state: CA
+    name: payment-type-processing
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      fee:
+        base_percentage:
+          "$serde_json::private::Number": "2.9"
+      merchant:
+        category: retail
+        country: US
+        id: merch_98765432
+        processing_history:
+          average_amount:
+            "$serde_json::private::Number": "175.5"
+          chargeback_rate:
+            "$serde_json::private::Number": "0.2"
+          total_transactions:
+            "$serde_json::private::Number": "1256"
+      payment:
+        amount:
+          "$serde_json::private::Number": "2500"
+        channel: web
+        currency: USD
+        customer_id: cust_87654321
+        id: pmt_12345678
+        metadata:
+          card_last_four: "4242"
+          card_network: Visa
+          save_for_future: true
+        timestamp: "2025-03-18T10:30:45Z"
+        type: credit_card
+      routing:
+        processor: credit_processor
+      security:
+        base_risk_score:
+          "$serde_json::private::Number": "25"
+      session:
+        browser: Chrome
+        device_id: dev_abcdef123456
+        ip_address: 192.168.1.1
+        location:
+          city: San Francisco
+          country: US
+          state: CA
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        payment.type: credit_card
+      rule:
+        _id: rule-credit-card
+        "payment.type[input-payment-type]": "'credit_card'"
+  security-requirements:
+    id: security-requirements
+    input:
+      fee:
+        amount_adjustment:
+          "$serde_json::private::Number": "-0.3"
+        base_percentage:
+          "$serde_json::private::Number": "2.9"
+        channel_addition:
+          "$serde_json::private::Number": "0.3"
+        final_amount:
+          "$serde_json::private::Number": "72.5"
+      fee_amount:
+        "$serde_json::private::Number": "72.5"
+      final_fee_percentage:
+        "$serde_json::private::Number": "2.9"
+      merchant:
+        category: retail
+        country: US
+        id: merch_98765432
+        processing_history:
+          average_amount:
+            "$serde_json::private::Number": "175.5"
+          chargeback_rate:
+            "$serde_json::private::Number": "0.2"
+          total_transactions:
+            "$serde_json::private::Number": "1256"
+      payment:
+        amount:
+          "$serde_json::private::Number": "2500"
+        channel: web
+        currency: USD
+        customer_id: cust_87654321
+        id: pmt_12345678
+        metadata:
+          card_last_four: "4242"
+          card_network: Visa
+          save_for_future: true
+        net_amount:
+          "$serde_json::private::Number": "2427.5"
+        timestamp: "2025-03-18T10:30:45Z"
+        type: credit_card
+      routing:
+        priority: medium
+        processor: credit_processor
+      security:
+        amount_risk_addition:
+          "$serde_json::private::Number": "20"
+        base_risk_score:
+          "$serde_json::private::Number": "25"
+        channel_risk_addition:
+          "$serde_json::private::Number": "5"
+        verification_method: 3ds
+      session:
+        browser: Chrome
+        device_id: dev_abcdef123456
+        ip_address: 192.168.1.1
+        location:
+          city: San Francisco
+          country: US
+          state: CA
+    name: security-verification
+    order:
+      "$serde_json::private::Number": "5"
+    output:
+      routing:
+        processing_instructions:
+          fraud_scan: standard
+          manual_review: true
+          priority: medium
+          processor: credit_processor
+          velocity_check: true
+          verification_required: 3ds
+      security:
+        fraud_scan_level: standard
+        high_risk_flag: true
+        total_risk_score:
+          "$serde_json::private::Number": "50"
+        velocity_check_required: true
+    performance: "[perf]"
+    traceData:
+      routing.processing_instructions:
+        result: "{\"priority\":\"medium\",\"velocity_check\":true,\"fraud_scan\":\"standard\",\"manual_review\":true,\"verification_required\":\"3ds\",\"processor\":\"credit_processor\"}"
+      security.fraud_scan_level:
+        result: "\"standard\""
+      security.high_risk_flag:
+        result: "true"
+      security.total_risk_score:
+        result: "50"
+      security.velocity_check_required:
+        result: "true"

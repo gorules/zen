@@ -1,0 +1,455 @@
+{
+  "tests": [
+    {
+      "input": {
+        "weather": {
+          "windSpeed": 90,
+          "visibility": 6500,
+          "precipitation": "light",
+          "temperature": 15
+        },
+        "aircraft": {
+          "emptyWeight": 41500,
+          "maxTakeoffWeight": 78000,
+          "fuelReserves": 1.5,
+          "maintenanceRequired": false,
+          "type": "B737-800"
+        },
+        "manifest": {
+          "passengers": [
+            "P001",
+            "P002",
+            "P003",
+            "P004",
+            "P005",
+            "P006",
+            "P007",
+            "P008",
+            "P009",
+            "P010"
+          ],
+          "cargoWeight": 2500
+        },
+        "crew": {
+          "restCompliant": true,
+          "members": [
+            "C001",
+            "C002",
+            "C003"
+          ]
+        },
+        "flight": {
+          "number": "FL123",
+          "origin": "LAX",
+          "destination": "JFK",
+          "scheduledDeparture": "2025-03-19T08:00:00Z"
+        }
+      },
+      "output": {
+        "dispatchReasons": [
+          {
+            "flag": false,
+            "reason": "Extreme wind and low visibility"
+          }
+        ],
+        "dispatchSummary": "Flight dispatch denied",
+        "failedCriteria": [
+          "weather"
+        ],
+        "isDispatchable": false
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "inputNode",
+      "name": "flightDispatchRequest",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "windSpeed": "> 45",
+            "visibility": "< 10000",
+            "weatherFlag": "false",
+            "weatherReason": "'Extreme wind and low visibility'"
+          },
+          {
+            "_id": "rule2",
+            "windSpeed": "> 45",
+            "visibility": "",
+            "weatherFlag": "false",
+            "weatherReason": "'Winds exceed aircraft limitations'"
+          },
+          {
+            "_id": "rule3",
+            "windSpeed": "> 35",
+            "visibility": "< 5000",
+            "weatherFlag": "false",
+            "weatherReason": "'High winds with low visibility'"
+          },
+          {
+            "_id": "rule4",
+            "windSpeed": "",
+            "visibility": "< 1000",
+            "weatherFlag": "false",
+            "weatherReason": "'Visibility below minimum requirements'"
+          },
+          {
+            "_id": "rule5",
+            "windSpeed": "",
+            "visibility": "",
+            "weatherFlag": "true",
+            "weatherReason": "'Weather conditions acceptable'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "windSpeed",
+            "name": "WindSpeed",
+            "field": "weather.windSpeed"
+          },
+          {
+            "id": "visibility",
+            "name": "Visibility",
+            "field": "weather.visibility"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "weatherFlag",
+            "name": "WeatherFlag",
+            "field": "dispatch.weather.flag"
+          },
+          {
+            "id": "weatherReason",
+            "name": "WeatherReason",
+            "field": "dispatch.weather.reason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "weatherEligibility",
+      "name": "weatherEligibility",
+      "position": {
+        "x": 750,
+        "y": -33
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "maintenance": "true",
+            "aircraftFlag": "false",
+            "aircraftReason": "'Aircraft requires maintenance'"
+          },
+          {
+            "_id": "rule2",
+            "fuelReserves": "< 1",
+            "aircraftFlag": "false",
+            "aircraftReason": "'Insufficient fuel reserves'"
+          },
+          {
+            "_id": "rule3",
+            "maintenance": "",
+            "fuelReserves": "",
+            "aircraftFlag": "true",
+            "aircraftReason": "'Aircraft is operational'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "maintenance",
+            "name": "MaintenanceRequired",
+            "field": "aircraft.maintenanceRequired"
+          },
+          {
+            "id": "fuelReserves",
+            "name": "FuelReserves",
+            "field": "aircraft.fuelReserves"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "aircraftFlag",
+            "name": "AircraftFlag",
+            "field": "dispatch.aircraft.flag"
+          },
+          {
+            "id": "aircraftReason",
+            "name": "AircraftReason",
+            "field": "dispatch.aircraft.reason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "aircraftEligibility",
+      "name": "aircraftEligibility",
+      "position": {
+        "x": 750,
+        "y": 65
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "restCompliant": "false",
+            "crewFlag": "false",
+            "crewReason": "'Crew rest requirements not met'"
+          },
+          {
+            "_id": "rule2",
+            "crewCount": "< 2",
+            "crewFlag": "false",
+            "crewReason": "'Insufficient crew members'"
+          },
+          {
+            "_id": "rule3",
+            "restCompliant": "",
+            "crewCount": "",
+            "crewFlag": "true",
+            "crewReason": "'Crew requirements satisfied'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "restCompliant",
+            "name": "CrewRestCompliant",
+            "field": "crew.restCompliant"
+          },
+          {
+            "id": "crewCount",
+            "name": "CrewCount",
+            "field": "len(crew.members)"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "crewFlag",
+            "name": "CrewFlag",
+            "field": "dispatch.crew.flag"
+          },
+          {
+            "id": "crewReason",
+            "name": "CrewReason",
+            "field": "dispatch.crew.reason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "crewEligibility",
+      "name": "crewEligibility",
+      "position": {
+        "x": 750,
+        "y": 163
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "expr1",
+            "key": "totalPassengers",
+            "value": "len(manifest.passengers)"
+          },
+          {
+            "id": "expr2",
+            "key": "passengerWeight",
+            "value": "$.totalPassengers * 85"
+          },
+          {
+            "id": "expr3",
+            "key": "totalCargo",
+            "value": "manifest.cargoWeight"
+          },
+          {
+            "id": "expr4",
+            "key": "estimatedTakeoffWeight",
+            "value": "aircraft.emptyWeight + $.totalCargo + $.passengerWeight"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "weightCalculations",
+      "name": "weightCalculations",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "takeoffWeight": "> aircraft.maxTakeoffWeight",
+            "weightFlag": "false",
+            "weightReason": "'Aircraft exceeds maximum takeoff weight'"
+          },
+          {
+            "_id": "rule2",
+            "takeoffWeight": "",
+            "weightFlag": "true",
+            "weightReason": "'Weight within acceptable limits'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "takeoffWeight",
+            "name": "TakeoffWeight",
+            "field": "estimatedTakeoffWeight"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "weightFlag",
+            "name": "WeightFlag",
+            "field": "dispatch.weight.flag"
+          },
+          {
+            "id": "weightReason",
+            "name": "WeightReason",
+            "field": "dispatch.weight.reason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "weightEligibility",
+      "name": "weightEligibility",
+      "position": {
+        "x": 750,
+        "y": 261
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "expr1",
+            "key": "isDispatchable",
+            "value": "all(values(dispatch), #.flag)"
+          },
+          {
+            "id": "expr2",
+            "key": "dispatchReasons",
+            "value": "filter(values(dispatch), #.flag == false)"
+          },
+          {
+            "id": "expr3",
+            "key": "dispatchSummary",
+            "value": "$.isDispatchable ? 'Flight is cleared for dispatch' : 'Flight dispatch denied'"
+          },
+          {
+            "id": "expr4",
+            "key": "failedCriteria",
+            "value": "filter(keys(dispatch), dispatch[#].flag == false)"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dispatchSummary",
+      "name": "dispatchSummary",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge5",
+      "sourceId": "weightCalculations",
+      "targetId": "weightEligibility",
+      "type": "edge"
+    },
+    {
+      "id": "edge6",
+      "sourceId": "weatherEligibility",
+      "targetId": "dispatchSummary",
+      "type": "edge"
+    },
+    {
+      "id": "edge7",
+      "sourceId": "aircraftEligibility",
+      "targetId": "dispatchSummary",
+      "type": "edge"
+    },
+    {
+      "id": "edge8",
+      "sourceId": "crewEligibility",
+      "targetId": "dispatchSummary",
+      "type": "edge"
+    },
+    {
+      "id": "edge9",
+      "sourceId": "weightEligibility",
+      "targetId": "dispatchSummary",
+      "type": "edge"
+    },
+    {
+      "id": "19843411-30e0-44f4-977d-ccffbfaf9635",
+      "sourceId": "inputNode",
+      "type": "edge",
+      "targetId": "weightCalculations"
+    },
+    {
+      "id": "721e4054-5365-495b-b87c-8b10618ba5a3",
+      "sourceId": "weightCalculations",
+      "type": "edge",
+      "targetId": "crewEligibility"
+    },
+    {
+      "id": "62052cad-4e0a-4e8c-8867-9481b608ebca",
+      "sourceId": "weightCalculations",
+      "type": "edge",
+      "targetId": "aircraftEligibility"
+    },
+    {
+      "id": "1a2195e2-364c-4ba3-98ce-a64be30160ba",
+      "sourceId": "weightCalculations",
+      "type": "edge",
+      "targetId": "weatherEligibility"
+    }
+  ]
+}

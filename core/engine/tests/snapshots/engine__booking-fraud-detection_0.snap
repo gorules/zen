@@ -1,0 +1,329 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  flags:
+    manual_review: true
+    requires_verification: true
+trace:
+  9213dd68-a9f4-4b90-ada9-c7418d8b3c51:
+    id: 9213dd68-a9f4-4b90-ada9-c7418d8b3c51
+    input:
+      account:
+        bookings_last_24h:
+          "$serde_json::private::Number": "6"
+        country: US
+      booking:
+        amount:
+          "$serde_json::private::Number": "2500"
+        ip_country: US
+        payment_method: prepaid_card
+      risk:
+        account:
+          reason: Normal account history
+          score:
+            "$serde_json::private::Number": "0"
+        pattern:
+          reason: Multiple rapid bookings
+          score:
+            "$serde_json::private::Number": "30"
+        payment:
+          reason: High-value prepaid card transaction
+          score:
+            "$serde_json::private::Number": "40"
+      risk_factors:
+        - Multiple rapid bookings
+        - High-value prepaid card transaction
+      total_risk_score:
+        "$serde_json::private::Number": "70"
+    name: risk_level
+    order:
+      "$serde_json::private::Number": "5"
+    output:
+      account:
+        bookings_last_24h:
+          "$serde_json::private::Number": "6"
+        country: US
+      booking:
+        amount:
+          "$serde_json::private::Number": "2500"
+        ip_country: US
+        payment_method: prepaid_card
+      risk:
+        account:
+          reason: Normal account history
+          score:
+            "$serde_json::private::Number": "0"
+        pattern:
+          reason: Multiple rapid bookings
+          score:
+            "$serde_json::private::Number": "30"
+        payment:
+          reason: High-value prepaid card transaction
+          score:
+            "$serde_json::private::Number": "40"
+      risk_factors:
+        - Multiple rapid bookings
+        - High-value prepaid card transaction
+      risk_level: high
+      total_risk_score:
+        "$serde_json::private::Number": "70"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        total_risk_score:
+          "$serde_json::private::Number": "70"
+      rule:
+        _id: 42dc5a6d-6605-40b6-83b4-bad0bcf445c6
+        "total_risk_score[7385e66d-dc97-4048-a214-3f35d0029465]": ">= 70"
+  dt1:
+    id: dt1
+    input:
+      account:
+        bookings_last_24h:
+          "$serde_json::private::Number": "6"
+        country: US
+      booking:
+        amount:
+          "$serde_json::private::Number": "2500"
+        ip_country: US
+        payment_method: prepaid_card
+    name: payment_risk
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      account:
+        bookings_last_24h:
+          "$serde_json::private::Number": "6"
+        country: US
+      booking:
+        amount:
+          "$serde_json::private::Number": "2500"
+        ip_country: US
+        payment_method: prepaid_card
+      risk:
+        payment:
+          reason: High-value prepaid card transaction
+          score:
+            "$serde_json::private::Number": "40"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        booking.amount:
+          "$serde_json::private::Number": "2500"
+        booking.payment_method: prepaid_card
+      rule:
+        _id: r1-1
+        "booking.amount[i1-2]": "> 2000"
+        "booking.payment_method[i1-1]": "'prepaid_card'"
+  dt2:
+    id: dt2
+    input:
+      account:
+        bookings_last_24h:
+          "$serde_json::private::Number": "6"
+        country: US
+      booking:
+        amount:
+          "$serde_json::private::Number": "2500"
+        ip_country: US
+        payment_method: prepaid_card
+    name: pattern_risk
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      account:
+        bookings_last_24h:
+          "$serde_json::private::Number": "6"
+        country: US
+      booking:
+        amount:
+          "$serde_json::private::Number": "2500"
+        ip_country: US
+        payment_method: prepaid_card
+      risk:
+        pattern:
+          reason: Multiple rapid bookings
+          score:
+            "$serde_json::private::Number": "30"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        account.bookings_last_24h:
+          "$serde_json::private::Number": "6"
+        account.country: US
+      rule:
+        _id: r2-2
+        "account.bookings_last_24h[i2-1]": "> 5"
+        "account.country[i2-2]": ""
+  dt3:
+    id: dt3
+    input:
+      account:
+        bookings_last_24h:
+          "$serde_json::private::Number": "6"
+        country: US
+      booking:
+        amount:
+          "$serde_json::private::Number": "2500"
+        ip_country: US
+        payment_method: prepaid_card
+    name: account_risk
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      account:
+        bookings_last_24h:
+          "$serde_json::private::Number": "6"
+        country: US
+      booking:
+        amount:
+          "$serde_json::private::Number": "2500"
+        ip_country: US
+        payment_method: prepaid_card
+      risk:
+        account:
+          reason: Normal account history
+          score:
+            "$serde_json::private::Number": "0"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "3"
+      reference_map:
+        account.age_days: ~
+      rule:
+        _id: r3-4
+        "account.age_days[i3-1]": ""
+  e6dd7428-9ce6-4d8d-9a62-e38af18da14b:
+    id: e6dd7428-9ce6-4d8d-9a62-e38af18da14b
+    input:
+      account:
+        bookings_last_24h:
+          "$serde_json::private::Number": "6"
+        country: US
+      booking:
+        amount:
+          "$serde_json::private::Number": "2500"
+        ip_country: US
+        payment_method: prepaid_card
+      risk:
+        account:
+          reason: Normal account history
+          score:
+            "$serde_json::private::Number": "0"
+        pattern:
+          reason: Multiple rapid bookings
+          score:
+            "$serde_json::private::Number": "30"
+        payment:
+          reason: High-value prepaid card transaction
+          score:
+            "$serde_json::private::Number": "40"
+      risk_factors:
+        - Multiple rapid bookings
+        - High-value prepaid card transaction
+      risk_level: high
+      total_risk_score:
+        "$serde_json::private::Number": "70"
+    name: flags
+    order:
+      "$serde_json::private::Number": "6"
+    output:
+      flags:
+        manual_review: true
+        requires_verification: true
+    performance: "[perf]"
+    traceData:
+      flags.manual_review:
+        result: "true"
+      flags.requires_verification:
+        result: "true"
+  ex1:
+    id: ex1
+    input:
+      account:
+        bookings_last_24h:
+          "$serde_json::private::Number": "6"
+        country: US
+      booking:
+        amount:
+          "$serde_json::private::Number": "2500"
+        ip_country: US
+        payment_method: prepaid_card
+      risk:
+        account:
+          reason: Normal account history
+          score:
+            "$serde_json::private::Number": "0"
+        pattern:
+          reason: Multiple rapid bookings
+          score:
+            "$serde_json::private::Number": "30"
+        payment:
+          reason: High-value prepaid card transaction
+          score:
+            "$serde_json::private::Number": "40"
+    name: risk_calculation
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      account:
+        bookings_last_24h:
+          "$serde_json::private::Number": "6"
+        country: US
+      booking:
+        amount:
+          "$serde_json::private::Number": "2500"
+        ip_country: US
+        payment_method: prepaid_card
+      risk:
+        account:
+          reason: Normal account history
+          score:
+            "$serde_json::private::Number": "0"
+        pattern:
+          reason: Multiple rapid bookings
+          score:
+            "$serde_json::private::Number": "30"
+        payment:
+          reason: High-value prepaid card transaction
+          score:
+            "$serde_json::private::Number": "40"
+      risk_factors:
+        - Multiple rapid bookings
+        - High-value prepaid card transaction
+      total_risk_score:
+        "$serde_json::private::Number": "70"
+    performance: "[perf]"
+    traceData:
+      risk_factors:
+        result: "[\"Multiple rapid bookings\",\"High-value prepaid card transaction\"]"
+      total_risk_score:
+        result: "70"
+  ip1:
+    id: ip1
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      account:
+        bookings_last_24h:
+          "$serde_json::private::Number": "6"
+        country: US
+      booking:
+        amount:
+          "$serde_json::private::Number": "2500"
+        ip_country: US
+        payment_method: prepaid_card
+    performance: "[perf]"
+    traceData: ~

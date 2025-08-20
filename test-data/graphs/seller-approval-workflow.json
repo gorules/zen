@@ -1,0 +1,383 @@
+{
+  "tests": [
+    {
+      "input": {
+        "businessCredentials": {
+          "hasValidDocumentation": true,
+          "yearsInBusiness": 2.5,
+          "businessName": "TechGadgets LLC",
+          "businessType": "Limited Liability Company",
+          "taxId": "12-3456789"
+        },
+        "categoryExpertise": {
+          "primaryCategory": "Electronics",
+          "yearsOfExperience": 3,
+          "certifications": [
+            "Consumer Electronics Specialist"
+          ],
+          "rating": 4
+        },
+        "inventoryQuality": {
+          "sampleProducts": 15,
+          "brandAuthenticity": true,
+          "productCompliance": true,
+          "productImageQuality": "high",
+          "rating": 4.2
+        },
+        "backgroundCheck": {
+          "passed": true,
+          "criminalRecord": false,
+          "creditScore": 720,
+          "identityVerified": true
+        }
+      },
+      "output": {
+        "approvalDate": 1755622502,
+        "score": 85,
+        "status": "APPROVED"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "input",
+      "name": "sellerApplicationRequest",
+      "position": {
+        "x": 110,
+        "y": 124.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1",
+            "i1-1": "false",
+            "i1-2": "",
+            "o1-1": "0",
+            "o1-2": "'invalid'",
+            "o1-3": "'Business documentation is missing or invalid'"
+          },
+          {
+            "_id": "r2",
+            "i1-1": "true",
+            "i1-2": "< 1",
+            "o1-1": "15",
+            "o1-2": "'new'",
+            "o1-3": "'New business with limited history'"
+          },
+          {
+            "_id": "r3",
+            "i1-1": "true",
+            "i1-2": "[1..3)",
+            "o1-1": "25",
+            "o1-2": "'established'",
+            "o1-3": "'Established business with moderate history'"
+          },
+          {
+            "_id": "r4",
+            "i1-1": "true",
+            "i1-2": ">= 3",
+            "o1-1": "35",
+            "o1-2": "'mature'",
+            "o1-3": "'Mature business with solid history'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Has Valid Documentation",
+            "field": "businessCredentials.hasValidDocumentation"
+          },
+          {
+            "id": "i1-2",
+            "name": "Years In Business",
+            "field": "businessCredentials.yearsInBusiness"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Credential Score",
+            "field": "evaluation.credentialScore"
+          },
+          {
+            "id": "o1-2",
+            "name": "Business Status",
+            "field": "evaluation.businessStatus"
+          },
+          {
+            "id": "o1-3",
+            "name": "Credential Notes",
+            "field": "evaluation.credentialNotes"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "businessCredentialsTable",
+      "name": "evaluateBusinessCredentials",
+      "position": {
+        "x": 430,
+        "y": 124.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1",
+            "i2-1": "== 'invalid'",
+            "i2-2": "",
+            "i2-3": "",
+            "i2-4": "",
+            "o2-1": "0",
+            "o2-2": "false",
+            "o2-3": "'Business credentials are invalid'"
+          },
+          {
+            "_id": "r2",
+            "i2-1": "",
+            "i2-2": "< 3",
+            "i2-3": "",
+            "i2-4": "false",
+            "o2-1": "15",
+            "o2-2": "false",
+            "o2-3": "'Failed background check and low category expertise'"
+          },
+          {
+            "_id": "r3",
+            "i2-1": "",
+            "i2-2": ">= 3",
+            "i2-3": "",
+            "i2-4": "false",
+            "o2-1": "30",
+            "o2-2": "false",
+            "o2-3": "'Failed background check despite good category expertise'"
+          },
+          {
+            "_id": "r4",
+            "i2-1": "",
+            "i2-2": "",
+            "i2-3": "< 3",
+            "i2-4": "true",
+            "o2-1": "40",
+            "o2-2": "false",
+            "o2-3": "'Low inventory quality score'"
+          },
+          {
+            "_id": "r5",
+            "i2-1": "",
+            "i2-2": ">= 3",
+            "i2-3": ">= 3",
+            "i2-4": "true",
+            "o2-1": "85",
+            "o2-2": "true",
+            "o2-3": "'Strong seller profile with good expertise and inventory'"
+          },
+          {
+            "_id": "r6",
+            "i2-1": "",
+            "i2-2": ">= 4",
+            "i2-3": ">= 4",
+            "i2-4": "true",
+            "o2-1": "95",
+            "o2-2": "true",
+            "o2-3": "'Exceptional seller profile with excellent expertise and inventory'"
+          },
+          {
+            "_id": "r7",
+            "i2-1": "",
+            "i2-2": "",
+            "i2-3": "",
+            "i2-4": "true",
+            "o2-1": "evaluation.credentialScore + 30",
+            "o2-2": "true",
+            "o2-3": "'Standard seller approval'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i2-1",
+            "name": "Business Status",
+            "field": "evaluation.businessStatus"
+          },
+          {
+            "id": "i2-2",
+            "name": "Category Expertise",
+            "field": "categoryExpertise.rating"
+          },
+          {
+            "id": "i2-3",
+            "name": "Inventory Quality",
+            "field": "inventoryQuality.rating"
+          },
+          {
+            "id": "i2-4",
+            "name": "Background Check Passed",
+            "field": "backgroundCheck.passed"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2-1",
+            "name": "Final Score",
+            "field": "evaluation.finalScore"
+          },
+          {
+            "id": "o2-2",
+            "name": "Is Approved",
+            "field": "evaluation.isApproved"
+          },
+          {
+            "id": "o2-3",
+            "name": "Evaluation Notes",
+            "field": "evaluation.notes"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "sellerEvaluationTable",
+      "name": "evaluateSellerQualifications",
+      "position": {
+        "x": 750,
+        "y": 124.5
+      }
+    },
+    {
+      "type": "switchNode",
+      "content": {
+        "hitPolicy": "first",
+        "statements": [
+          {
+            "id": "approved",
+            "condition": "evaluation.isApproved == true",
+            "isDefault": false
+          },
+          {
+            "id": "rejected",
+            "condition": "",
+            "isDefault": true
+          }
+        ]
+      },
+      "id": "approvalSwitch",
+      "name": "routeApplication",
+      "position": {
+        "x": 1070,
+        "y": 124.5
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1",
+            "key": "status",
+            "value": "'APPROVED'"
+          },
+          {
+            "id": "e2",
+            "key": "score",
+            "value": "evaluation.finalScore"
+          },
+          {
+            "id": "e3",
+            "key": "approvalDate",
+            "value": "date('now')"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "approvalResult",
+      "name": "generateApprovalResult",
+      "position": {
+        "x": 1390,
+        "y": 75.5
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1",
+            "key": "status",
+            "value": "'REJECTED'"
+          },
+          {
+            "id": "e2",
+            "key": "score",
+            "value": "evaluation.finalScore"
+          },
+          {
+            "id": "e3",
+            "key": "rejectionDate",
+            "value": "date('now')"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "rejectionResult",
+      "name": "generateRejectionResult",
+      "position": {
+        "x": 1390,
+        "y": 173.5
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "input",
+      "targetId": "businessCredentialsTable",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "businessCredentialsTable",
+      "targetId": "sellerEvaluationTable",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "sellerEvaluationTable",
+      "targetId": "approvalSwitch",
+      "type": "edge"
+    },
+    {
+      "id": "edge4",
+      "sourceId": "approvalSwitch",
+      "targetId": "approvalResult",
+      "sourceHandle": "approved",
+      "type": "edge"
+    },
+    {
+      "id": "edge5",
+      "sourceId": "approvalSwitch",
+      "targetId": "rejectionResult",
+      "sourceHandle": "rejected",
+      "type": "edge"
+    }
+  ]
+}

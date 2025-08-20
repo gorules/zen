@@ -1,0 +1,765 @@
+{
+  "tests": [
+    {
+      "input": {
+        "applicant": {
+          "fullName": "Jane Smith",
+          "dateOfBirth": "1985-05-15",
+          "nationality": "United Kingdom",
+          "currentResidence": "France"
+        },
+        "documentation": {
+          "passportValid": true,
+          "visaApplicationComplete": true,
+          "proofOfFundsProvided": true,
+          "medicalCheckComplete": true,
+          "supportingDocuments": [
+            "Reference Letter",
+            "Property Deed",
+            "Bank Statements"
+          ]
+        },
+        "background": {
+          "criminalHistory": false,
+          "immigrationViolations": false,
+          "securityConcerns": false,
+          "previousVisaRejections": 0
+        },
+        "qualifications": {
+          "educationLevel": "master",
+          "workExperienceYears": 8,
+          "languageProficiency": "advanced",
+          "skillsInDemand": true,
+          "familyConnections": false
+        }
+      },
+      "output": {
+        "applicant": {
+          "currentResidence": "France",
+          "dateOfBirth": "1985-05-15",
+          "fullName": "Jane Smith",
+          "nationality": "United Kingdom"
+        },
+        "assessment": {
+          "additionalFactorsReason": "In-demand skills",
+          "additionalFactorsScore": 80,
+          "backgroundReason": "Background check clear",
+          "backgroundScore": 100,
+          "backgroundStatus": "pending",
+          "documentationReason": "Documentation complete",
+          "documentationScore": 100,
+          "documentationStatus": "pending",
+          "educationReason": "Advanced education",
+          "educationScore": 80,
+          "experienceReason": "Significant work experience",
+          "experienceScore": 80,
+          "finalReason": "Application meets criteria",
+          "finalStatus": "approved",
+          "languageReason": "Advanced language proficiency",
+          "languageScore": 75,
+          "overallScore": 85.83333333333333
+        },
+        "background": {
+          "criminalHistory": false,
+          "immigrationViolations": false,
+          "previousVisaRejections": 0,
+          "securityConcerns": false
+        },
+        "documentation": {
+          "medicalCheckComplete": true,
+          "passportValid": true,
+          "proofOfFundsProvided": true,
+          "supportingDocuments": [
+            "Reference Letter",
+            "Property Deed",
+            "Bank Statements"
+          ],
+          "visaApplicationComplete": true
+        },
+        "qualifications": {
+          "educationLevel": "master",
+          "familyConnections": false,
+          "languageProficiency": "advanced",
+          "skillsInDemand": true,
+          "workExperienceYears": 8
+        }
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"applicant\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"fullName\": {\"type\": \"string\"},\n        \"dateOfBirth\": {\"type\": \"string\"},\n        \"nationality\": {\"type\": \"string\"},\n        \"currentResidence\": {\"type\": \"string\"}\n      }\n    },\n    \"documentation\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"passportValid\": {\"type\": \"boolean\"},\n        \"visaApplicationComplete\": {\"type\": \"boolean\"},\n        \"proofOfFundsProvided\": {\"type\": \"boolean\"},\n        \"medicalCheckComplete\": {\"type\": \"boolean\"},\n        \"supportingDocuments\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}}\n      }\n    },\n    \"background\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"criminalHistory\": {\"type\": \"boolean\"},\n        \"immigrationViolations\": {\"type\": \"boolean\"},\n        \"securityConcerns\": {\"type\": \"boolean\"},\n        \"previousVisaRejections\": {\"type\": \"integer\", \"minimum\": 0}\n      }\n    },\n    \"qualifications\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"educationLevel\": {\"type\": \"string\", \"enum\": [\"none\", \"primary\", \"secondary\", \"bachelor\", \"master\", \"doctorate\"]},\n        \"workExperienceYears\": {\"type\": \"integer\", \"minimum\": 0},\n        \"languageProficiency\": {\"type\": \"string\", \"enum\": [\"none\", \"basic\", \"intermediate\", \"advanced\", \"native\"]},\n        \"skillsInDemand\": {\"type\": \"boolean\"},\n        \"familyConnections\": {\"type\": \"boolean\"}\n      }\n    }\n  }\n}"
+      },
+      "id": "input",
+      "name": "immigrationApplication",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i1-1": "false",
+            "i1-2": "",
+            "i1-3": "",
+            "i1-4": "",
+            "o1-1": "\"rejected\"",
+            "o1-2": "\"Missing valid passport\"",
+            "o1-3": "0"
+          },
+          {
+            "_id": "rule2",
+            "i1-1": "",
+            "i1-2": "false",
+            "i1-3": "",
+            "i1-4": "",
+            "o1-1": "\"incomplete\"",
+            "o1-2": "\"Incomplete visa application\"",
+            "o1-3": "40"
+          },
+          {
+            "_id": "rule3",
+            "i1-1": "",
+            "i1-2": "",
+            "i1-3": "false",
+            "i1-4": "",
+            "o1-1": "\"incomplete\"",
+            "o1-2": "\"Missing proof of funds\"",
+            "o1-3": "50"
+          },
+          {
+            "_id": "rule4",
+            "i1-1": "",
+            "i1-2": "",
+            "i1-3": "",
+            "i1-4": "false",
+            "o1-1": "\"incomplete\"",
+            "o1-2": "\"Medical check not completed\"",
+            "o1-3": "60"
+          },
+          {
+            "_id": "rule5",
+            "i1-1": "true",
+            "i1-2": "true",
+            "i1-3": "true",
+            "i1-4": "true",
+            "o1-1": "\"pending\"",
+            "o1-2": "\"Documentation complete\"",
+            "o1-3": "100"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Passport Valid",
+            "field": "documentation.passportValid"
+          },
+          {
+            "id": "i1-2",
+            "name": "Application Complete",
+            "field": "documentation.visaApplicationComplete"
+          },
+          {
+            "id": "i1-3",
+            "name": "Proof of Funds",
+            "field": "documentation.proofOfFundsProvided"
+          },
+          {
+            "id": "i1-4",
+            "name": "Medical Check",
+            "field": "documentation.medicalCheckComplete"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Status",
+            "field": "assessment.documentationStatus"
+          },
+          {
+            "id": "o1-2",
+            "name": "Reason",
+            "field": "assessment.documentationReason"
+          },
+          {
+            "id": "o1-3",
+            "name": "Score",
+            "field": "assessment.documentationScore"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "documentationCheck",
+      "name": "verifyDocumentation",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i2-1": "true",
+            "i2-2": "",
+            "i2-3": "",
+            "i2-4": "",
+            "o2-1": "\"rejected\"",
+            "o2-2": "\"Criminal history detected\"",
+            "o2-3": "0"
+          },
+          {
+            "_id": "rule2",
+            "i2-1": "false",
+            "i2-2": "true",
+            "i2-3": "",
+            "i2-4": "",
+            "o2-1": "\"review\"",
+            "o2-2": "\"Immigration violations\"",
+            "o2-3": "30"
+          },
+          {
+            "_id": "rule3",
+            "i2-1": "false",
+            "i2-2": "false",
+            "i2-3": "true",
+            "i2-4": "",
+            "o2-1": "\"review\"",
+            "o2-2": "\"Security concerns\"",
+            "o2-3": "20"
+          },
+          {
+            "_id": "rule4",
+            "i2-1": "false",
+            "i2-2": "false",
+            "i2-3": "false",
+            "i2-4": ">= 3",
+            "o2-1": "\"review\"",
+            "o2-2": "\"Multiple previous rejections\"",
+            "o2-3": "40"
+          },
+          {
+            "_id": "rule5",
+            "i2-1": "false",
+            "i2-2": "false",
+            "i2-3": "false",
+            "i2-4": "1, 2",
+            "o2-1": "\"pending\"",
+            "o2-2": "\"Previous rejections noted\"",
+            "o2-3": "70"
+          },
+          {
+            "_id": "rule6",
+            "i2-1": "false",
+            "i2-2": "false",
+            "i2-3": "false",
+            "i2-4": "0",
+            "o2-1": "\"pending\"",
+            "o2-2": "\"Background check clear\"",
+            "o2-3": "100"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i2-1",
+            "name": "Criminal History",
+            "field": "background.criminalHistory"
+          },
+          {
+            "id": "i2-2",
+            "name": "Immigration Violations",
+            "field": "background.immigrationViolations"
+          },
+          {
+            "id": "i2-3",
+            "name": "Security Concerns",
+            "field": "background.securityConcerns"
+          },
+          {
+            "id": "i2-4",
+            "name": "Previous Rejections",
+            "field": "background.previousVisaRejections"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2-1",
+            "name": "Status",
+            "field": "assessment.backgroundStatus"
+          },
+          {
+            "id": "o2-2",
+            "name": "Reason",
+            "field": "assessment.backgroundReason"
+          },
+          {
+            "id": "o2-3",
+            "name": "Score",
+            "field": "assessment.backgroundScore"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "backgroundCheck",
+      "name": "evaluateBackground",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i3-1": "\"doctorate\"",
+            "o3-1": "100",
+            "o3-2": "\"Highest education level\""
+          },
+          {
+            "_id": "rule2",
+            "i3-1": "\"master\"",
+            "o3-1": "80",
+            "o3-2": "\"Advanced education\""
+          },
+          {
+            "_id": "rule3",
+            "i3-1": "\"bachelor\"",
+            "o3-1": "60",
+            "o3-2": "\"University education\""
+          },
+          {
+            "_id": "rule4",
+            "i3-1": "\"secondary\"",
+            "o3-1": "40",
+            "o3-2": "\"Secondary education\""
+          },
+          {
+            "_id": "rule5",
+            "i3-1": "\"primary\"",
+            "o3-1": "20",
+            "o3-2": "\"Primary education only\""
+          },
+          {
+            "_id": "rule6",
+            "i3-1": "\"none\"",
+            "o3-1": "0",
+            "o3-2": "\"No formal education\""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i3-1",
+            "name": "Education Level",
+            "field": "qualifications.educationLevel"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o3-1",
+            "name": "Score",
+            "field": "assessment.educationScore"
+          },
+          {
+            "id": "o3-2",
+            "name": "Reason",
+            "field": "assessment.educationReason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "educationTable",
+      "name": "assessEducation",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i4-1": ">= 10",
+            "o4-1": "100",
+            "o4-2": "\"Extensive work experience\""
+          },
+          {
+            "_id": "rule2",
+            "i4-1": ">= 7",
+            "o4-1": "80",
+            "o4-2": "\"Significant work experience\""
+          },
+          {
+            "_id": "rule3",
+            "i4-1": ">= 4",
+            "o4-1": "60",
+            "o4-2": "\"Moderate work experience\""
+          },
+          {
+            "_id": "rule4",
+            "i4-1": ">= 2",
+            "o4-1": "40",
+            "o4-2": "\"Limited work experience\""
+          },
+          {
+            "_id": "rule5",
+            "i4-1": ">= 1",
+            "o4-1": "20",
+            "o4-2": "\"Minimal work experience\""
+          },
+          {
+            "_id": "rule6",
+            "i4-1": "0",
+            "o4-1": "0",
+            "o4-2": "\"No work experience\""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i4-1",
+            "name": "Work Experience Years",
+            "field": "qualifications.workExperienceYears"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o4-1",
+            "name": "Score",
+            "field": "assessment.experienceScore"
+          },
+          {
+            "id": "o4-2",
+            "name": "Reason",
+            "field": "assessment.experienceReason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "experienceTable",
+      "name": "assessWorkExperience",
+      "position": {
+        "x": 1390,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i5-1": "\"native\"",
+            "o5-1": "100",
+            "o5-2": "\"Native language proficiency\""
+          },
+          {
+            "_id": "rule2",
+            "i5-1": "\"advanced\"",
+            "o5-1": "75",
+            "o5-2": "\"Advanced language proficiency\""
+          },
+          {
+            "_id": "rule3",
+            "i5-1": "\"intermediate\"",
+            "o5-1": "50",
+            "o5-2": "\"Intermediate language proficiency\""
+          },
+          {
+            "_id": "rule4",
+            "i5-1": "\"basic\"",
+            "o5-1": "25",
+            "o5-2": "\"Basic language proficiency\""
+          },
+          {
+            "_id": "rule5",
+            "i5-1": "\"none\"",
+            "o5-1": "0",
+            "o5-2": "\"No language proficiency\""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i5-1",
+            "name": "Language Proficiency",
+            "field": "qualifications.languageProficiency"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o5-1",
+            "name": "Score",
+            "field": "assessment.languageScore"
+          },
+          {
+            "id": "o5-2",
+            "name": "Reason",
+            "field": "assessment.languageReason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "languageTable",
+      "name": "assessLanguage",
+      "position": {
+        "x": 1710,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i6-1": "true",
+            "i6-2": "true",
+            "o6-1": "100",
+            "o6-2": "\"In-demand skills and family connections\""
+          },
+          {
+            "_id": "rule2",
+            "i6-1": "true",
+            "i6-2": "false",
+            "o6-1": "80",
+            "o6-2": "\"In-demand skills\""
+          },
+          {
+            "_id": "rule3",
+            "i6-1": "false",
+            "i6-2": "true",
+            "o6-1": "70",
+            "o6-2": "\"Family connections\""
+          },
+          {
+            "_id": "rule4",
+            "i6-1": "false",
+            "i6-2": "false",
+            "o6-1": "0",
+            "o6-2": "\"No additional qualifying factors\""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i6-1",
+            "name": "Skills In Demand",
+            "field": "qualifications.skillsInDemand"
+          },
+          {
+            "id": "i6-2",
+            "name": "Family Connections",
+            "field": "qualifications.familyConnections"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o6-1",
+            "name": "Score",
+            "field": "assessment.additionalFactorsScore"
+          },
+          {
+            "id": "o6-2",
+            "name": "Reason",
+            "field": "assessment.additionalFactorsReason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "additionalFactorsTable",
+      "name": "assessAdditionalFactors",
+      "position": {
+        "x": 2030,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i7-1": "\"rejected\"",
+            "i7-2": "",
+            "o7-1": "\"rejected\"",
+            "o7-2": "assessment.documentationReason",
+            "o7-3": "assessment.documentationScore"
+          },
+          {
+            "_id": "rule2",
+            "i7-1": "",
+            "i7-2": "\"rejected\"",
+            "o7-1": "\"rejected\"",
+            "o7-2": "assessment.backgroundReason",
+            "o7-3": "assessment.backgroundScore"
+          },
+          {
+            "_id": "rule3",
+            "i7-1": "\"incomplete\"",
+            "i7-2": "",
+            "o7-1": "\"incomplete\"",
+            "o7-2": "assessment.documentationReason",
+            "o7-3": "assessment.documentationScore"
+          },
+          {
+            "_id": "rule4",
+            "i7-1": "",
+            "i7-2": "\"review\"",
+            "o7-1": "\"review\"",
+            "o7-2": "assessment.backgroundReason",
+            "o7-3": "(assessment.documentationScore + assessment.backgroundScore + assessment.educationScore + assessment.experienceScore + assessment.languageScore + assessment.additionalFactorsScore) / 6"
+          },
+          {
+            "_id": "rule5",
+            "i7-1": "",
+            "i7-2": "",
+            "i7-3": ">= 70",
+            "o7-1": "\"approved\"",
+            "o7-2": "\"Application meets criteria\"",
+            "o7-3": "(assessment.documentationScore + assessment.backgroundScore + assessment.educationScore + assessment.experienceScore + assessment.languageScore + assessment.additionalFactorsScore) / 6"
+          },
+          {
+            "_id": "rule6",
+            "i7-1": "",
+            "i7-2": "",
+            "i7-3": ">= 50",
+            "o7-1": "\"review\"",
+            "o7-2": "\"Application requires further review\"",
+            "o7-3": "(assessment.documentationScore + assessment.backgroundScore + assessment.educationScore + assessment.experienceScore + assessment.languageScore + assessment.additionalFactorsScore) / 6"
+          },
+          {
+            "_id": "rule7",
+            "i7-1": "",
+            "i7-2": "",
+            "i7-3": "",
+            "o7-1": "\"rejected\"",
+            "o7-2": "\"Application does not meet minimum requirements\"",
+            "o7-3": "(assessment.documentationScore + assessment.backgroundScore + assessment.educationScore + assessment.experienceScore + assessment.languageScore + assessment.additionalFactorsScore) / 6"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i7-1",
+            "name": "Documentation Status",
+            "field": "assessment.documentationStatus"
+          },
+          {
+            "id": "i7-2",
+            "name": "Background Status",
+            "field": "assessment.backgroundStatus"
+          },
+          {
+            "id": "i7-3",
+            "name": "Average Score",
+            "field": "(assessment.documentationScore + assessment.backgroundScore + assessment.educationScore + assessment.experienceScore + assessment.languageScore + assessment.additionalFactorsScore) / 6"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o7-1",
+            "name": "Final Status",
+            "field": "assessment.finalStatus"
+          },
+          {
+            "id": "o7-2",
+            "name": "Final Reason",
+            "field": "assessment.finalReason"
+          },
+          {
+            "id": "o7-3",
+            "name": "Overall Score",
+            "field": "assessment.overallScore"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "overallAssessment",
+      "name": "finalAssessment",
+      "position": {
+        "x": 2350,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "input",
+      "targetId": "documentationCheck",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "documentationCheck",
+      "targetId": "backgroundCheck",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "backgroundCheck",
+      "targetId": "educationTable",
+      "type": "edge"
+    },
+    {
+      "id": "edge4",
+      "sourceId": "educationTable",
+      "targetId": "experienceTable",
+      "type": "edge"
+    },
+    {
+      "id": "edge5",
+      "sourceId": "experienceTable",
+      "targetId": "languageTable",
+      "type": "edge"
+    },
+    {
+      "id": "edge6",
+      "sourceId": "languageTable",
+      "targetId": "additionalFactorsTable",
+      "type": "edge"
+    },
+    {
+      "id": "edge7",
+      "sourceId": "additionalFactorsTable",
+      "targetId": "overallAssessment",
+      "type": "edge"
+    }
+  ]
+}

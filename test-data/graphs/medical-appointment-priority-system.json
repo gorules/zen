@@ -1,0 +1,446 @@
+{
+  "tests": [
+    {
+      "input": {
+        "patient": {
+          "age": 72,
+          "hasChronicCondition": true,
+          "immunocompromised": false,
+          "recentHospitalization": true
+        },
+        "appointment": {
+          "conditionSeverity": "moderate",
+          "daysWaiting": 12,
+          "isFollowUp": true
+        }
+      },
+      "output": {
+        "priorityFactors": [
+          "Moderate condition with follow-up",
+          "Moderate wait time (8-14 days)",
+          "Age over 65",
+          "Chronic condition",
+          "Recent hospitalization"
+        ],
+        "result": {
+          "priority": "HIGH",
+          "recommendation": "Schedule within 24-48 hours"
+        },
+        "scores": {
+          "conditionSeverity": 20,
+          "riskFactors": 40,
+          "waitTime": 10
+        },
+        "totalScore": 70
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "id": "inputNode",
+      "name": "request",
+      "type": "inputNode",
+      "content": {
+        "schema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"patient\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"age\": {\n          \"type\": \"number\"\n        },\n        \"hasChronicCondition\": {\n          \"type\": \"boolean\"\n        },\n        \"immunocompromised\": {\n          \"type\": \"boolean\"\n        },\n        \"recentHospitalization\": {\n          \"type\": \"boolean\"\n        }\n      }\n    },\n    \"appointment\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"conditionSeverity\": {\n          \"type\": \"string\",\n          \"enum\": [\"mild\", \"moderate\", \"severe\", \"critical\"]\n        },\n        \"daysWaiting\": {\n          \"type\": \"number\"\n        },\n        \"isFollowUp\": {\n          \"type\": \"boolean\"\n        }\n      }\n    }\n  }\n}"
+      },
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "id": "riskFactorScoreNode",
+      "name": "calculateRiskFactorScore",
+      "type": "decisionTableNode",
+      "content": {
+        "rules": [
+          {
+            "_id": "risk1",
+            "i1-1": "patient.age > 65",
+            "o1-1": "10",
+            "o1-2": "'Age over 65'",
+            "_description": ""
+          },
+          {
+            "_id": "risk2",
+            "i1-1": "patient.hasChronicCondition",
+            "o1-1": "15",
+            "o1-2": "'Chronic condition'",
+            "_description": ""
+          },
+          {
+            "_id": "risk3",
+            "i1-1": "patient.immunocompromised",
+            "o1-1": "20",
+            "o1-2": "'Immunocompromised'",
+            "_description": ""
+          },
+          {
+            "_id": "risk4",
+            "i1-1": "patient.recentHospitalization",
+            "o1-1": "15",
+            "o1-2": "'Recent hospitalization'",
+            "_description": ""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Condition"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Score",
+            "field": "score"
+          },
+          {
+            "id": "o1-2",
+            "name": "Reason",
+            "field": "message"
+          }
+        ],
+        "hitPolicy": "collect",
+        "inputField": null,
+        "outputPath": "riskFactors",
+        "passThrough": true,
+        "executionMode": "single"
+      },
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "id": "conditionSeverityNode",
+      "name": "evaluateConditionSeverity",
+      "type": "decisionTableNode",
+      "content": {
+        "rules": [
+          {
+            "_id": "severity1",
+            "i2-1": "'critical'",
+            "i2-2": "",
+            "o2-1": "50",
+            "o2-2": "'Critical condition'"
+          },
+          {
+            "_id": "severity2",
+            "i2-1": "'severe'",
+            "i2-2": "",
+            "o2-1": "30",
+            "o2-2": "'Severe condition'"
+          },
+          {
+            "_id": "severity3",
+            "i2-1": "'moderate'",
+            "i2-2": "true",
+            "o2-1": "20",
+            "o2-2": "'Moderate condition with follow-up'"
+          },
+          {
+            "_id": "severity4",
+            "i2-1": "'moderate'",
+            "i2-2": "false",
+            "o2-1": "15",
+            "o2-2": "'Moderate condition'"
+          },
+          {
+            "_id": "severity5",
+            "i2-1": "'mild'",
+            "i2-2": "true",
+            "o2-1": "10",
+            "o2-2": "'Mild condition with follow-up'"
+          },
+          {
+            "_id": "severity6",
+            "i2-1": "'mild'",
+            "i2-2": "false",
+            "o2-1": "5",
+            "o2-2": "'Mild condition'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i2-1",
+            "name": "Condition Severity",
+            "field": "appointment.conditionSeverity"
+          },
+          {
+            "id": "i2-2",
+            "name": "Is Follow Up",
+            "field": "appointment.isFollowUp"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2-1",
+            "name": "Score",
+            "field": "scores.conditionSeverity"
+          },
+          {
+            "id": "o2-2",
+            "name": "Reason",
+            "field": "reasons.conditionSeverity"
+          }
+        ],
+        "hitPolicy": "first",
+        "inputField": null,
+        "outputPath": null,
+        "passThrough": true,
+        "executionMode": "single"
+      },
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    },
+    {
+      "id": "waitTimeScoreNode",
+      "name": "calculateWaitTimeScore",
+      "type": "decisionTableNode",
+      "content": {
+        "rules": [
+          {
+            "_id": "wait1",
+            "i3-1": "> 30",
+            "o3-1": "25",
+            "o3-2": "'Excessive wait time (> 30 days)'"
+          },
+          {
+            "_id": "wait2",
+            "i3-1": "> 14",
+            "o3-1": "15",
+            "o3-2": "'Long wait time (15-30 days)'"
+          },
+          {
+            "_id": "wait3",
+            "i3-1": "> 7",
+            "o3-1": "10",
+            "o3-2": "'Moderate wait time (8-14 days)'"
+          },
+          {
+            "_id": "wait4",
+            "i3-1": "> 3",
+            "o3-1": "5",
+            "o3-2": "'Short wait time (4-7 days)'"
+          },
+          {
+            "_id": "wait5",
+            "i3-1": "",
+            "o3-1": "0",
+            "o3-2": "'Minimal wait time (0-3 days)'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i3-1",
+            "name": "Days Waiting",
+            "field": "appointment.daysWaiting"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o3-1",
+            "name": "Score",
+            "field": "scores.waitTime"
+          },
+          {
+            "id": "o3-2",
+            "name": "Reason",
+            "field": "reasons.waitTime"
+          }
+        ],
+        "hitPolicy": "first",
+        "inputField": null,
+        "outputPath": null,
+        "passThrough": true,
+        "executionMode": "single"
+      },
+      "position": {
+        "x": 1390,
+        "y": 114
+      }
+    },
+    {
+      "id": "totalPriorityScoreNode",
+      "name": "calculateTotalPriorityScore",
+      "type": "expressionNode",
+      "content": {
+        "inputField": null,
+        "outputPath": null,
+        "expressions": [
+          {
+            "id": "expr1",
+            "key": "totalScore",
+            "value": "sum(values(scores))"
+          },
+          {
+            "id": "expr2",
+            "key": "priorityFactors",
+            "value": "flatten(values(reasons))"
+          },
+          {
+            "id": "f7a526e0-582e-4717-b2c1-8b9df0c504d8",
+            "key": "reasons",
+            "value": "null"
+          },
+          {
+            "id": "b4e49a47-a434-484d-807a-739c32a616db",
+            "key": "patient",
+            "value": "null"
+          },
+          {
+            "id": "dba4d54a-67be-4cca-9258-07b52c76fb61",
+            "key": "appointment",
+            "value": "null"
+          }
+        ],
+        "passThrough": true,
+        "executionMode": "single"
+      },
+      "position": {
+        "x": 1710,
+        "y": 114
+      }
+    },
+    {
+      "id": "priorityAssignmentNode",
+      "name": "assignPriorityLevel",
+      "type": "decisionTableNode",
+      "content": {
+        "rules": [
+          {
+            "_id": "priority1",
+            "i4-1": ">= 85",
+            "o4-1": "'URGENT'",
+            "o4-2": "'Schedule immediately'"
+          },
+          {
+            "_id": "priority2",
+            "i4-1": ">= 60",
+            "o4-1": "'HIGH'",
+            "o4-2": "'Schedule within 24-48 hours'"
+          },
+          {
+            "_id": "priority3",
+            "i4-1": ">= 40",
+            "o4-1": "'MEDIUM'",
+            "o4-2": "'Schedule within 1 week'"
+          },
+          {
+            "_id": "priority4",
+            "i4-1": ">= 20",
+            "o4-1": "'STANDARD'",
+            "o4-2": "'Schedule within 2 weeks'"
+          },
+          {
+            "_id": "priority5",
+            "i4-1": "",
+            "o4-1": "'LOW'",
+            "o4-2": "'Schedule as available'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i4-1",
+            "name": "Total Score",
+            "field": "totalScore"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o4-1",
+            "name": "Priority",
+            "field": "result.priority"
+          },
+          {
+            "id": "o4-2",
+            "name": "Recommendation",
+            "field": "result.recommendation"
+          }
+        ],
+        "hitPolicy": "first",
+        "inputField": null,
+        "outputPath": null,
+        "passThrough": true,
+        "executionMode": "single"
+      },
+      "position": {
+        "x": 2030,
+        "y": 114
+      }
+    },
+    {
+      "id": "02b0be40-dfe0-4a11-a9a4-17f66823f0c2",
+      "name": "riskFactorSummary",
+      "type": "expressionNode",
+      "content": {
+        "inputField": null,
+        "outputPath": null,
+        "expressions": [
+          {
+            "id": "dc9c736d-00fb-4a40-b9ec-59012e9cbbad",
+            "key": "scores.riskFactors",
+            "value": "sum(map(riskFactors, #.score))"
+          },
+          {
+            "id": "26479ea2-761e-4c16-975d-b0d26f4e8f8f",
+            "key": "reasons.riskFactors",
+            "value": "map(riskFactors, #.message)"
+          },
+          {
+            "id": "50d71c19-5c0a-4957-8ec0-c45309ad4f45",
+            "key": "riskFactors",
+            "value": "null"
+          }
+        ],
+        "passThrough": true,
+        "executionMode": "single"
+      },
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "type": "edge",
+      "sourceId": "inputNode",
+      "targetId": "riskFactorScoreNode"
+    },
+    {
+      "id": "edge3",
+      "type": "edge",
+      "sourceId": "conditionSeverityNode",
+      "targetId": "waitTimeScoreNode"
+    },
+    {
+      "id": "edge4",
+      "type": "edge",
+      "sourceId": "waitTimeScoreNode",
+      "targetId": "totalPriorityScoreNode"
+    },
+    {
+      "id": "edge5",
+      "type": "edge",
+      "sourceId": "totalPriorityScoreNode",
+      "targetId": "priorityAssignmentNode"
+    },
+    {
+      "id": "607f2b6e-b5ca-4cdd-8e59-d1539f9dda2b",
+      "type": "edge",
+      "sourceId": "riskFactorScoreNode",
+      "targetId": "02b0be40-dfe0-4a11-a9a4-17f66823f0c2"
+    },
+    {
+      "id": "e857ae81-6c47-4630-8706-c9eba58170ff",
+      "type": "edge",
+      "sourceId": "02b0be40-dfe0-4a11-a9a4-17f66823f0c2",
+      "targetId": "conditionSeverityNode"
+    }
+  ]
+}

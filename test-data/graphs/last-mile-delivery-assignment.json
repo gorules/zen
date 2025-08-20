@@ -1,0 +1,373 @@
+{
+  "tests": [
+    {
+      "input": {
+        "package": {
+          "id": "PKG-12345",
+          "priority": "express",
+          "weight": 22.5,
+          "dimensions": {
+            "length": 45,
+            "width": 30,
+            "height": 25
+          },
+          "fragile": false,
+          "needsSignature": true,
+          "distanceFromDeliveryPerson": 5.2,
+          "deliveryDeadline": "2025-03-19T16:00:00Z",
+          "deliveryZone": "downtown",
+          "specialInstructions": "Leave with doorman if recipient unavailable"
+        },
+        "deliveryPerson": {
+          "id": "DP-789",
+          "name": "Alex Johnson",
+          "skills": [
+            "express_certified",
+            "heavy_lifting",
+            "collectSignature"
+          ],
+          "currentLocation": {
+            "latitude": 40.7128,
+            "longitude": -74.006
+          },
+          "remainingCapacity": 50,
+          "remainingDeliveries": 8,
+          "vehicleType": "van",
+          "collectSignatureEquipped": true,
+          "currentZone": "downtown",
+          "shiftEndsAt": "2025-03-19T20:00:00Z"
+        }
+      },
+      "output": {
+        "assignmentDetails": {
+          "assignmentScore": 28,
+          "deliveryPersonId": "DP-789",
+          "estimatedArrival": 1755623438,
+          "packageId": "PKG-12345"
+        },
+        "assignmentStatus": "assigned",
+        "capacityFactor": 5,
+        "deliveryPerson": {
+          "collectSignatureEquipped": true,
+          "currentLocation": {
+            "latitude": 40.7128,
+            "longitude": -74.006
+          },
+          "currentZone": "downtown",
+          "id": "DP-789",
+          "name": "Alex Johnson",
+          "remainingCapacity": 50,
+          "remainingDeliveries": 8,
+          "shiftEndsAt": "2025-03-19T20:00:00Z",
+          "skills": [
+            "express_certified",
+            "heavy_lifting",
+            "collectSignature"
+          ],
+          "vehicleType": "van"
+        },
+        "distanceScore": 7,
+        "matchScore": 10,
+        "message": "Package successfully assigned to delivery person",
+        "package": {
+          "deliveryDeadline": "2025-03-19T16:00:00Z",
+          "deliveryZone": "downtown",
+          "dimensions": {
+            "height": 25,
+            "length": 45,
+            "width": 30
+          },
+          "distanceFromDeliveryPerson": 5.2,
+          "fragile": false,
+          "id": "PKG-12345",
+          "needsSignature": true,
+          "priority": "express",
+          "specialInstructions": "Leave with doorman if recipient unavailable",
+          "weight": 22.5
+        },
+        "priorityLevel": "high",
+        "recommendedAssignment": true,
+        "slaFactor": 6,
+        "totalScore": 28
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "ip1",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 124.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1-1",
+            "i1-1": "package.priority == 'express'",
+            "i1-2": "package.weight > 20",
+            "i1-3": "contains(deliveryPerson.skills, 'heavy_lifting')",
+            "o1-1": "10",
+            "o1-2": "'high'"
+          },
+          {
+            "_id": "r1-2",
+            "i1-1": "package.priority == 'express'",
+            "i1-2": "",
+            "i1-3": "contains(deliveryPerson.skills, 'express_certified')",
+            "o1-1": "8",
+            "o1-2": "'high'"
+          },
+          {
+            "_id": "r1-3",
+            "i1-1": "package.priority == 'standard'",
+            "i1-2": "package.fragile == true",
+            "i1-3": "contains(deliveryPerson.skills, 'fragile_handling')",
+            "o1-1": "7",
+            "o1-2": "'medium'"
+          },
+          {
+            "_id": "r1-4",
+            "i1-1": "package.priority == 'standard'",
+            "i1-2": "package.weight > 15",
+            "i1-3": "contains(deliveryPerson.skills, 'heavy_lifting')",
+            "o1-1": "5",
+            "o1-2": "'medium'"
+          },
+          {
+            "_id": "r1-5",
+            "i1-1": "package.needsSignature == true",
+            "i1-2": "",
+            "i1-3": "deliveryPerson.collectSignatureEquipped == true",
+            "o1-1": "4",
+            "o1-2": "'medium'"
+          },
+          {
+            "_id": "r1-6",
+            "i1-1": "",
+            "i1-2": "",
+            "i1-3": "",
+            "o1-1": "2",
+            "o1-2": "'low'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Package Requirements",
+            "field": ""
+          },
+          {
+            "id": "i1-2",
+            "name": "Package Attributes",
+            "field": ""
+          },
+          {
+            "id": "i1-3",
+            "name": "Delivery Person Qualifications",
+            "field": ""
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Match Score",
+            "field": "matchScore"
+          },
+          {
+            "id": "o1-2",
+            "name": "Priority Level",
+            "field": "priorityLevel"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt1",
+      "name": "calculate_match_score",
+      "position": {
+        "x": 430,
+        "y": 124.5
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1-1",
+            "key": "distanceScore",
+            "value": "10 - min([round(package.distanceFromDeliveryPerson / 2), 8])"
+          },
+          {
+            "id": "e1-2",
+            "key": "capacityFactor",
+            "value": "deliveryPerson.remainingCapacity >= package.weight ? 5 : 0"
+          },
+          {
+            "id": "e1-3",
+            "key": "slaFactor",
+            "value": "date(package.deliveryDeadline) - date('now') < 7200 ? 6 : 3"
+          },
+          {
+            "id": "e1-4",
+            "key": "totalScore",
+            "value": "matchScore + $.distanceScore + $.capacityFactor + $.slaFactor"
+          },
+          {
+            "id": "e1-5",
+            "key": "recommendedAssignment",
+            "value": "$.totalScore >= 15"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex1",
+      "name": "calculate_final_score",
+      "position": {
+        "x": 750,
+        "y": 124.5
+      }
+    },
+    {
+      "type": "switchNode",
+      "content": {
+        "hitPolicy": "first",
+        "statements": [
+          {
+            "id": "s1-1",
+            "condition": "recommendedAssignment == true",
+            "isDefault": false
+          },
+          {
+            "id": "s1-2",
+            "condition": "",
+            "isDefault": true
+          }
+        ]
+      },
+      "id": "sw1",
+      "name": "determine_assignment",
+      "position": {
+        "x": 1070,
+        "y": 124.5
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e2-1",
+            "key": "assignmentStatus",
+            "value": "'assigned'"
+          },
+          {
+            "id": "e2-2",
+            "key": "assignmentDetails",
+            "value": "{ 'deliveryPersonId': deliveryPerson.id, 'packageId': package.id, 'estimatedArrival': date('now') + (package.distanceFromDeliveryPerson * 180), 'assignmentScore': totalScore }"
+          },
+          {
+            "id": "e2-3",
+            "key": "message",
+            "value": "'Package successfully assigned to delivery person'"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex2",
+      "name": "create_assignment",
+      "position": {
+        "x": 1390,
+        "y": 75.5
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e3-1",
+            "key": "assignmentStatus",
+            "value": "'pending'"
+          },
+          {
+            "id": "e3-2",
+            "key": "reason",
+            "value": "totalScore < 15 ? 'Score too low for automatic assignment' : 'Unknown issue'"
+          },
+          {
+            "id": "e3-3",
+            "key": "suggestedActions",
+            "value": "['Try different delivery person', 'Wait for closer delivery person', 'Escalate to dispatch manager']"
+          },
+          {
+            "id": "e3-4",
+            "key": "message",
+            "value": "'Package requires manual review for assignment'"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex3",
+      "name": "require_manual_review",
+      "position": {
+        "x": 1390,
+        "y": 173.5
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "ed1",
+      "sourceId": "ip1",
+      "targetId": "dt1",
+      "type": "edge"
+    },
+    {
+      "id": "ed2",
+      "sourceId": "dt1",
+      "targetId": "ex1",
+      "type": "edge"
+    },
+    {
+      "id": "ed3",
+      "sourceId": "ex1",
+      "targetId": "sw1",
+      "type": "edge"
+    },
+    {
+      "id": "ed4",
+      "sourceId": "sw1",
+      "targetId": "ex2",
+      "sourceHandle": "s1-1",
+      "type": "edge"
+    },
+    {
+      "id": "ed5",
+      "sourceId": "sw1",
+      "targetId": "ex3",
+      "sourceHandle": "s1-2",
+      "type": "edge"
+    }
+  ]
+}

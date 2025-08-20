@@ -1,0 +1,308 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  breakdown:
+    descriptionCompleteness:
+      category: good
+      score:
+        "$serde_json::private::Number": "25"
+    imageQuality:
+      category: good
+      score:
+        "$serde_json::private::Number": "25"
+    inventoryAvailability:
+      score:
+        "$serde_json::private::Number": "8"
+    keywordOptimization:
+      score:
+        "$serde_json::private::Number": "15"
+    pricingCompetitiveness:
+      score:
+        "$serde_json::private::Number": "8"
+  maximumPossibleScore:
+    "$serde_json::private::Number": "100"
+  overallScoreCategory: excellent
+  totalScore:
+    "$serde_json::private::Number": "81"
+trace:
+  description-node:
+    id: description-node
+    input:
+      listing:
+        description:
+          hasBulletPoints: true
+          hasSpecifications: true
+          keywordDensity:
+            "$serde_json::private::Number": "3.2"
+          wordCount:
+            "$serde_json::private::Number": "250"
+        images:
+          count:
+            "$serde_json::private::Number": "4"
+          hasVariantImages: true
+          highResolution: true
+        inventory:
+          daysToShip:
+            "$serde_json::private::Number": "2"
+          stockLevel:
+            "$serde_json::private::Number": "15"
+        pricing:
+          competitiveRank:
+            "$serde_json::private::Number": "2"
+          hasDiscount: true
+      scores:
+        imageQuality:
+          category: good
+          score:
+            "$serde_json::private::Number": "25"
+    name: descriptionAndOtherFactors
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      listing:
+        description:
+          hasBulletPoints: true
+          hasSpecifications: true
+          keywordDensity:
+            "$serde_json::private::Number": "3.2"
+          wordCount:
+            "$serde_json::private::Number": "250"
+        images:
+          count:
+            "$serde_json::private::Number": "4"
+          hasVariantImages: true
+          highResolution: true
+        inventory:
+          daysToShip:
+            "$serde_json::private::Number": "2"
+          stockLevel:
+            "$serde_json::private::Number": "15"
+        pricing:
+          competitiveRank:
+            "$serde_json::private::Number": "2"
+          hasDiscount: true
+      scores:
+        descriptionCompleteness:
+          category: good
+          score:
+            "$serde_json::private::Number": "25"
+        imageQuality:
+          category: good
+          score:
+            "$serde_json::private::Number": "25"
+        inventoryAvailability:
+          score:
+            "$serde_json::private::Number": "8"
+        keywordOptimization:
+          score:
+            "$serde_json::private::Number": "15"
+        pricingCompetitiveness:
+          score:
+            "$serde_json::private::Number": "8"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        listing.description.hasBulletPoints: true
+        listing.description.hasSpecifications: true
+        listing.description.keywordDensity:
+          "$serde_json::private::Number": "3.2"
+        listing.description.wordCount:
+          "$serde_json::private::Number": "250"
+        listing.inventory.stockLevel:
+          "$serde_json::private::Number": "15"
+        listing.pricing.competitiveRank:
+          "$serde_json::private::Number": "2"
+      rule:
+        _id: desc-rule-2
+        "listing.description.hasBulletPoints[hasBullets]": "true"
+        "listing.description.hasSpecifications[hasSpecs]": ""
+        "listing.description.keywordDensity[keywordDensity]": "> 1 and < 6"
+        "listing.description.wordCount[wordCount]": "> 200"
+        "listing.inventory.stockLevel[stockLevel]": "> 10"
+        "listing.pricing.competitiveRank[competitiveRank]": "< 5"
+  image-quality-node:
+    id: image-quality-node
+    input:
+      listing:
+        description:
+          hasBulletPoints: true
+          hasSpecifications: true
+          keywordDensity:
+            "$serde_json::private::Number": "3.2"
+          wordCount:
+            "$serde_json::private::Number": "250"
+        images:
+          count:
+            "$serde_json::private::Number": "4"
+          hasVariantImages: true
+          highResolution: true
+        inventory:
+          daysToShip:
+            "$serde_json::private::Number": "2"
+          stockLevel:
+            "$serde_json::private::Number": "15"
+        pricing:
+          competitiveRank:
+            "$serde_json::private::Number": "2"
+          hasDiscount: true
+    name: imageQuality
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      listing:
+        description:
+          hasBulletPoints: true
+          hasSpecifications: true
+          keywordDensity:
+            "$serde_json::private::Number": "3.2"
+          wordCount:
+            "$serde_json::private::Number": "250"
+        images:
+          count:
+            "$serde_json::private::Number": "4"
+          hasVariantImages: true
+          highResolution: true
+        inventory:
+          daysToShip:
+            "$serde_json::private::Number": "2"
+          stockLevel:
+            "$serde_json::private::Number": "15"
+        pricing:
+          competitiveRank:
+            "$serde_json::private::Number": "2"
+          hasDiscount: true
+      scores:
+        imageQuality:
+          category: good
+          score:
+            "$serde_json::private::Number": "25"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        listing.images.count:
+          "$serde_json::private::Number": "4"
+        listing.images.hasVariantImages: true
+        listing.images.highResolution: true
+      rule:
+        _id: img-rule-2
+        "listing.images.count[imageCount]": ">= 3"
+        "listing.images.hasVariantImages[hasVariantImages]": ""
+        "listing.images.highResolution[highRes]": "true"
+  input-node:
+    id: input-node
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      listing:
+        description:
+          hasBulletPoints: true
+          hasSpecifications: true
+          keywordDensity:
+            "$serde_json::private::Number": "3.2"
+          wordCount:
+            "$serde_json::private::Number": "250"
+        images:
+          count:
+            "$serde_json::private::Number": "4"
+          hasVariantImages: true
+          highResolution: true
+        inventory:
+          daysToShip:
+            "$serde_json::private::Number": "2"
+          stockLevel:
+            "$serde_json::private::Number": "15"
+        pricing:
+          competitiveRank:
+            "$serde_json::private::Number": "2"
+          hasDiscount: true
+    performance: "[perf]"
+    traceData: ~
+  overall-score-node:
+    id: overall-score-node
+    input:
+      listing:
+        description:
+          hasBulletPoints: true
+          hasSpecifications: true
+          keywordDensity:
+            "$serde_json::private::Number": "3.2"
+          wordCount:
+            "$serde_json::private::Number": "250"
+        images:
+          count:
+            "$serde_json::private::Number": "4"
+          hasVariantImages: true
+          highResolution: true
+        inventory:
+          daysToShip:
+            "$serde_json::private::Number": "2"
+          stockLevel:
+            "$serde_json::private::Number": "15"
+        pricing:
+          competitiveRank:
+            "$serde_json::private::Number": "2"
+          hasDiscount: true
+      scores:
+        descriptionCompleteness:
+          category: good
+          score:
+            "$serde_json::private::Number": "25"
+        imageQuality:
+          category: good
+          score:
+            "$serde_json::private::Number": "25"
+        inventoryAvailability:
+          score:
+            "$serde_json::private::Number": "8"
+        keywordOptimization:
+          score:
+            "$serde_json::private::Number": "15"
+        pricingCompetitiveness:
+          score:
+            "$serde_json::private::Number": "8"
+    name: overallScore
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      breakdown:
+        descriptionCompleteness:
+          category: good
+          score:
+            "$serde_json::private::Number": "25"
+        imageQuality:
+          category: good
+          score:
+            "$serde_json::private::Number": "25"
+        inventoryAvailability:
+          score:
+            "$serde_json::private::Number": "8"
+        keywordOptimization:
+          score:
+            "$serde_json::private::Number": "15"
+        pricingCompetitiveness:
+          score:
+            "$serde_json::private::Number": "8"
+      maximumPossibleScore:
+        "$serde_json::private::Number": "100"
+      overallScoreCategory: excellent
+      totalScore:
+        "$serde_json::private::Number": "81"
+    performance: "[perf]"
+    traceData:
+      breakdown:
+        result: "{\"inventoryAvailability\":{\"score\":8},\"descriptionCompleteness\":{\"category\":\"good\",\"score\":25},\"keywordOptimization\":{\"score\":15},\"pricingCompetitiveness\":{\"score\":8},\"imageQuality\":{\"score\":25,\"category\":\"good\"}}"
+      maximumPossibleScore:
+        result: "100"
+      overallScoreCategory:
+        result: "\"excellent\""
+      totalScore:
+        result: "81"

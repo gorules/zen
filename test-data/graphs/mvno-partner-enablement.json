@@ -1,0 +1,313 @@
+{
+  "tests": [
+    {
+      "input": {
+        "partner": {
+          "id": "mvno-123",
+          "name": "TechMobile",
+          "type": "premium",
+          "ageInMonths": 36,
+          "subscriberCount": 120000,
+          "region": "Northeast",
+          "businessModel": "business-focused"
+        }
+      },
+      "output": {
+        "pricing": {
+          "dataRatePerMB": 0.004,
+          "revenueShareFactor": 0.85,
+          "tier": "tier1",
+          "voiceRatePerMinute": 0.002
+        }
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "input",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "partnerType": "'premium'",
+            "partnerAge": "> 24",
+            "subscribers": "> 100000",
+            "serviceAccess": "'full'",
+            "bandwidthPriority": "'high'"
+          },
+          {
+            "_id": "rule2",
+            "partnerType": "'premium'",
+            "partnerAge": "",
+            "subscribers": "> 50000",
+            "serviceAccess": "'enhanced'",
+            "bandwidthPriority": "'medium'"
+          },
+          {
+            "_id": "rule3",
+            "partnerType": "'standard'",
+            "partnerAge": "> 12",
+            "subscribers": "> 25000",
+            "serviceAccess": "'standard'",
+            "bandwidthPriority": "'medium'"
+          },
+          {
+            "_id": "rule4",
+            "partnerType": "'standard'",
+            "partnerAge": "",
+            "subscribers": "",
+            "serviceAccess": "'basic'",
+            "bandwidthPriority": "'low'"
+          },
+          {
+            "_id": "rule5",
+            "partnerType": "'startup'",
+            "partnerAge": "",
+            "subscribers": "",
+            "serviceAccess": "'basic'",
+            "bandwidthPriority": "'low'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "partnerType",
+            "name": "Partner Type",
+            "field": "partner.type"
+          },
+          {
+            "id": "partnerAge",
+            "name": "Partner Age (months)",
+            "field": "partner.ageInMonths"
+          },
+          {
+            "id": "subscribers",
+            "name": "Subscriber Count",
+            "field": "partner.subscriberCount"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "serviceAccess",
+            "name": "Service Access Level",
+            "field": "config.serviceAccessLevel"
+          },
+          {
+            "id": "bandwidthPriority",
+            "name": "Bandwidth Priority",
+            "field": "config.bandwidthPriority"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "partnerConfig",
+      "name": "partnerServiceAccess",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "res1",
+            "serviceLevel": "'full'",
+            "dataAlloc": "5000",
+            "voiceAlloc": "1000000",
+            "smsAlloc": "2000000",
+            "apiLevel": "'advanced'"
+          },
+          {
+            "_id": "res2",
+            "serviceLevel": "'enhanced'",
+            "dataAlloc": "2500",
+            "voiceAlloc": "500000",
+            "smsAlloc": "1000000",
+            "apiLevel": "'intermediate'"
+          },
+          {
+            "_id": "res3",
+            "serviceLevel": "'standard'",
+            "dataAlloc": "1000",
+            "voiceAlloc": "250000",
+            "smsAlloc": "500000",
+            "apiLevel": "'intermediate'"
+          },
+          {
+            "_id": "res4",
+            "serviceLevel": "'basic'",
+            "dataAlloc": "500",
+            "voiceAlloc": "100000",
+            "smsAlloc": "200000",
+            "apiLevel": "'basic'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "serviceLevel",
+            "name": "Service Access Level",
+            "field": "config.serviceAccessLevel"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "dataAlloc",
+            "name": "Data Allocation (GB)",
+            "field": "resources.dataAllocationGB"
+          },
+          {
+            "id": "voiceAlloc",
+            "name": "Voice Minutes",
+            "field": "resources.voiceMinutes"
+          },
+          {
+            "id": "smsAlloc",
+            "name": "SMS Count",
+            "field": "resources.smsCount"
+          },
+          {
+            "id": "apiLevel",
+            "name": "API Access Level",
+            "field": "resources.apiAccessLevel"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "resourceAllocation",
+      "name": "networkResourceAllocation",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "pt1",
+            "i1": "'full'",
+            "i2": "> 100000",
+            "o1": "'tier1'",
+            "o2": "0.85",
+            "o3": "0.004",
+            "o4": "0.002"
+          },
+          {
+            "_id": "pt2",
+            "i1": "'enhanced'",
+            "i2": "> 50000",
+            "o1": "'tier2'",
+            "o2": "0.88",
+            "o3": "0.005",
+            "o4": "0.003"
+          },
+          {
+            "_id": "pt3",
+            "i1": "'standard'",
+            "i2": "> 10000",
+            "o1": "'tier3'",
+            "o2": "0.9",
+            "o3": "0.006",
+            "o4": "0.003"
+          },
+          {
+            "_id": "pt4",
+            "i1": "",
+            "i2": "",
+            "o1": "'tier4'",
+            "o2": "0.95",
+            "o3": "0.008",
+            "o4": "0.004"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Service Level",
+            "field": "config.serviceAccessLevel"
+          },
+          {
+            "id": "i2",
+            "name": "Subscriber Count",
+            "field": "partner.subscriberCount"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Pricing Tier",
+            "field": "pricing.tier"
+          },
+          {
+            "id": "o2",
+            "name": "Revenue Share",
+            "field": "pricing.revenueShareFactor"
+          },
+          {
+            "id": "o3",
+            "name": "Data Cost Per MB",
+            "field": "pricing.dataRatePerMB"
+          },
+          {
+            "id": "o4",
+            "name": "Voice Cost Per Min",
+            "field": "pricing.voiceRatePerMinute"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "pricingTier",
+      "name": "partnerPricing",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "input",
+      "targetId": "partnerConfig",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "partnerConfig",
+      "targetId": "resourceAllocation",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "resourceAllocation",
+      "targetId": "pricingTier",
+      "type": "edge"
+    }
+  ]
+}

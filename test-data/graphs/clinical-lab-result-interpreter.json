@@ -1,0 +1,433 @@
+{
+  "tests": [
+    {
+      "input": {
+        "testResults": [
+          {
+            "testType": "glucose",
+            "value": 260,
+            "date": "2025-03-15"
+          },
+          {
+            "testType": "potassium",
+            "value": 3.2,
+            "date": "2025-03-15"
+          },
+          {
+            "testType": "hemoglobin",
+            "value": 10.2,
+            "date": "2025-03-15"
+          },
+          {
+            "testType": "creatinine",
+            "value": 1.7,
+            "date": "2025-03-15"
+          }
+        ],
+        "patientHistory": {
+          "conditions": [
+            "diabetes",
+            "hypertension"
+          ],
+          "medications": [
+            "metformin",
+            "lisinopril",
+            "atorvastatin"
+          ],
+          "allergies": [
+            "penicillin"
+          ]
+        }
+      },
+      "output": {
+        "followUp": {
+          "actionRequired": "Immediate provider notification required",
+          "timeframe": "24 hours"
+        },
+        "patientHistory": {
+          "allergies": [
+            "penicillin"
+          ],
+          "conditions": [
+            "diabetes",
+            "hypertension"
+          ],
+          "medications": [
+            "metformin",
+            "lisinopril",
+            "atorvastatin"
+          ]
+        },
+        "riskAssessment": {
+          "clinicalRecommendation": "Schedule follow-up within 48 hours; consider insulin adjustment",
+          "level": "high-risk"
+        },
+        "testResults": [
+          {
+            "condition": "Hyperglycemia",
+            "date": "2025-03-15",
+            "flag": "abnormal",
+            "recommendation": "Monitor closely; adjust diabetes management if applicable",
+            "testType": "glucose",
+            "value": 260
+          },
+          {
+            "condition": "Hypokalemia",
+            "date": "2025-03-15",
+            "flag": "critical",
+            "recommendation": "Urgent electrolyte replacement; ECG monitoring required",
+            "testType": "potassium",
+            "value": 3.2
+          },
+          {
+            "date": "2025-03-15",
+            "testType": "hemoglobin",
+            "value": 10.2
+          },
+          {
+            "condition": "Elevated Creatinine",
+            "date": "2025-03-15",
+            "flag": "abnormal",
+            "recommendation": "Evaluate kidney function; adjust medication dosages as needed",
+            "testType": "creatinine",
+            "value": 1.7
+          }
+        ],
+        "urgencyLevel": "urgent"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "ip1",
+      "name": "labResults",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1-1",
+            "i1-1": "< 3.5",
+            "i1-2": "'potassium'",
+            "o1-1": "'critical'",
+            "o1-2": "'Hypokalemia'",
+            "o1-3": "'Urgent electrolyte replacement; ECG monitoring required'"
+          },
+          {
+            "_id": "r1-2",
+            "i1-1": "> 6.0",
+            "i1-2": "'potassium'",
+            "o1-1": "'critical'",
+            "o1-2": "'Hyperkalemia'",
+            "o1-3": "'Urgent intervention required; cardiac monitoring advised'"
+          },
+          {
+            "_id": "r1-3",
+            "i1-1": "< 8.5",
+            "i1-2": "'hemoglobin'",
+            "o1-1": "'abnormal'",
+            "o1-2": "'Anemia'",
+            "o1-3": "'Evaluate for blood loss or chronic disease'"
+          },
+          {
+            "_id": "r1-4",
+            "i1-1": "> 18.0",
+            "i1-2": "'hemoglobin'",
+            "o1-1": "'abnormal'",
+            "o1-2": "'Polycythemia'",
+            "o1-3": "'Evaluate for underlying conditions'"
+          },
+          {
+            "_id": "r1-5",
+            "i1-1": "> 200",
+            "i1-2": "'glucose'",
+            "o1-1": "'abnormal'",
+            "o1-2": "'Hyperglycemia'",
+            "o1-3": "'Monitor closely; adjust diabetes management if applicable'"
+          },
+          {
+            "_id": "r1-6",
+            "i1-1": "< 70",
+            "i1-2": "'glucose'",
+            "o1-1": "'critical'",
+            "o1-2": "'Hypoglycemia'",
+            "o1-3": "'Immediate glucose administration; evaluate medication regimen'"
+          },
+          {
+            "_id": "r1-7",
+            "i1-1": "> 1.5",
+            "i1-2": "'creatinine'",
+            "o1-1": "'abnormal'",
+            "o1-2": "'Elevated Creatinine'",
+            "o1-3": "'Evaluate kidney function; adjust medication dosages as needed'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Value",
+            "field": "value"
+          },
+          {
+            "id": "i1-2",
+            "name": "Test Type",
+            "field": "testType"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Flag",
+            "field": "flag"
+          },
+          {
+            "id": "o1-2",
+            "name": "Condition",
+            "field": "condition"
+          },
+          {
+            "id": "o1-3",
+            "name": "Recommendation",
+            "field": "recommendation"
+          }
+        ],
+        "passThrough": true,
+        "inputField": "testResults",
+        "outputPath": "testResults",
+        "executionMode": "loop"
+      },
+      "id": "dt1",
+      "name": "basicLabEvaluation",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r2-1",
+            "i2-1": "'diabetes' in $",
+            "i2-2": "some($, # in ['metformin', 'insulin', 'glipizide'])",
+            "i2-3": "some(testResults, #.testType == 'glucose' and #.value > 250)",
+            "o2-1": "'high-risk'",
+            "o2-2": "'Schedule follow-up within 48 hours; consider insulin adjustment'"
+          },
+          {
+            "_id": "r2-2",
+            "i2-1": "'heart_failure' in $",
+            "i2-2": "some($, # in ['furosemide', 'spironolactone'])",
+            "i2-3": "some(testResults, #.testType == 'potassium' and #.value > 3.0)",
+            "o2-1": "'high-risk'",
+            "o2-2": "'Urgent electrolyte replacement; evaluate diuretic dosage'"
+          },
+          {
+            "_id": "r2-3",
+            "i2-1": "'kidney_disease' in $",
+            "i2-2": "",
+            "i2-3": "some(testResults, #.testType == 'creatinine' and #.value > 2.0)\n",
+            "o2-1": "'high-risk'",
+            "o2-2": "'Nephrology consult; adjust medication dosages'"
+          },
+          {
+            "_id": "r2-4",
+            "i2-1": "",
+            "i2-2": "'warfarin' in $",
+            "i2-3": "some(testResults, #.testType == 'inr' and #.value > 3.5)",
+            "o2-1": "'high-risk'",
+            "o2-2": "'Hold next warfarin dose; monitor for bleeding'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i2-1",
+            "name": "Condition",
+            "field": "patientHistory.conditions"
+          },
+          {
+            "id": "i2-2",
+            "name": "Medications",
+            "field": "patientHistory.medications"
+          },
+          {
+            "id": "i2-3",
+            "name": "Additional condition"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2-1",
+            "name": "Risk Level",
+            "field": "riskAssessment.level"
+          },
+          {
+            "id": "o2-2",
+            "name": "Clinical Recommendation",
+            "field": "riskAssessment.clinicalRecommendation"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt2",
+      "name": "patientContextEvaluation",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r4-1",
+            "i4-1": "some(testResults, #.flag == 'critical')",
+            "o4-1": "'urgent'"
+          },
+          {
+            "_id": "r4-2",
+            "i4-1": "riskAssessment.level == 'high-risk'",
+            "o4-1": "'high'"
+          },
+          {
+            "_id": "r4-3",
+            "i4-1": "some(testResults, #.flag == 'abnormal')",
+            "o4-1": "'moderate'"
+          },
+          {
+            "_id": "r4-4",
+            "i4-1": "",
+            "o4-1": "'routine'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i4-1",
+            "name": "Condition"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o4-1",
+            "name": "Urgency Level",
+            "field": "urgencyLevel"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt4",
+      "name": "urgencyAssessment",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r3-1",
+            "i3-1": "'urgent'",
+            "o3-1": "'Immediate provider notification required'",
+            "o3-2": "'24 hours'"
+          },
+          {
+            "_id": "r3-2",
+            "i3-1": "'high'",
+            "o3-1": "'Provider notification recommended'",
+            "o3-2": "'72 hours'"
+          },
+          {
+            "_id": "r3-3",
+            "i3-1": "'moderate'",
+            "o3-1": "'Include in routine provider review'",
+            "o3-2": "'1 week'"
+          },
+          {
+            "_id": "r3-4",
+            "i3-1": "'routine'",
+            "o3-1": "'No immediate action required'",
+            "o3-2": "'Next scheduled visit'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i3-1",
+            "name": "Urgency",
+            "field": "urgencyLevel"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o3-1",
+            "name": "Action Required",
+            "field": "followUp.actionRequired"
+          },
+          {
+            "id": "o3-2",
+            "name": "Timeframe",
+            "field": "followUp.timeframe"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt3",
+      "name": "followUpDetermination",
+      "position": {
+        "x": 1390,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "ed1",
+      "sourceId": "ip1",
+      "targetId": "dt1",
+      "type": "edge"
+    },
+    {
+      "id": "ed2",
+      "sourceId": "dt1",
+      "targetId": "dt2",
+      "type": "edge"
+    },
+    {
+      "id": "ed3",
+      "sourceId": "dt2",
+      "targetId": "dt4",
+      "type": "edge"
+    },
+    {
+      "id": "ed4",
+      "sourceId": "dt4",
+      "targetId": "dt3",
+      "type": "edge"
+    }
+  ]
+}

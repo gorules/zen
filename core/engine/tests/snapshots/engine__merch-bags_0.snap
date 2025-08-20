@@ -1,0 +1,58 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  code: BAG10
+  price:
+    "$serde_json::private::Number": "12"
+trace:
+  36aa02a4-df14-4c54-a852-175e749d5860:
+    id: 36aa02a4-df14-4c54-a852-175e749d5860
+    input: ~
+    name: Request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      class: economy
+      origin: JFK
+    performance: "[perf]"
+    traceData: ~
+  5d03a351-786f-4f7d-9b2b-709dc0d81460:
+    id: 5d03a351-786f-4f7d-9b2b-709dc0d81460
+    input:
+      class: economy
+      origin: JFK
+    name: Bags
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      code: BAG10
+      price:
+        "$serde_json::private::Number": "12"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        class: economy
+        destination: ~
+        origin: JFK
+      rule:
+        _id: a6083cab-8dfe-46ae-acf3-823e02ca3f3b
+        "class[b2e2476f-5340-4d66-aec0-9a282be0e716]": "\"economy\""
+        "destination[UmZtXogtD7]": ""
+        "origin[a9711b12-1d29-40a3-a48f-2c03df5c8aff]": "\"JFK\""
+  f42391bc-6183-4b12-8eaa-6b56510c17ef:
+    id: f42391bc-6183-4b12-8eaa-6b56510c17ef
+    input:
+      code: BAG10
+      price:
+        "$serde_json::private::Number": "12"
+    name: Response
+    order:
+      "$serde_json::private::Number": "2"
+    output: ~
+    performance: "[perf]"
+    traceData: ~

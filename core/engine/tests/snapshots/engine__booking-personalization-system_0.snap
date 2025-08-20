@@ -1,0 +1,482 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  allFeatures:
+    - standardSearch
+    - standardNavigation
+    - joinLoyaltyBanner
+    - standardOptions
+  bookingFlowTemplate: basic
+  totalDiscountPercentage:
+    "$serde_json::private::Number": "0"
+trace:
+  bookingHistoryTable:
+    id: bookingHistoryTable
+    input:
+      availableSeats:
+        "$serde_json::private::Number": "35"
+      avgCompetitorPrice:
+        "$serde_json::private::Number": "275"
+      basePrice:
+        "$serde_json::private::Number": "250"
+      daysToDepature:
+        "$serde_json::private::Number": "5"
+      demandForecast:
+        "$serde_json::private::Number": "75"
+      flightId: FL-123
+      personalization:
+        additionalDiscountPercentage:
+          "$serde_json::private::Number": "0"
+        baseDiscountPercentage:
+          "$serde_json::private::Number": "0"
+        customerPriority:
+          "$serde_json::private::Number": "4"
+        layoutConfig:
+          imageSize: medium
+          showExtras: true
+          type: standard
+        loyaltyFeatures:
+          - joinLoyaltyBanner
+          - standardOptions
+        showSpecialOffers: false
+        specialOffersType: standardOffers
+        uiElements:
+          - standardSearch
+          - standardNavigation
+      routeId: JFK-LAX
+      totalSeats:
+        "$serde_json::private::Number": "180"
+    name: Booking History Personalization
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      availableSeats:
+        "$serde_json::private::Number": "35"
+      avgCompetitorPrice:
+        "$serde_json::private::Number": "275"
+      basePrice:
+        "$serde_json::private::Number": "250"
+      daysToDepature:
+        "$serde_json::private::Number": "5"
+      demandForecast:
+        "$serde_json::private::Number": "75"
+      flightId: FL-123
+      personalization:
+        additionalDiscountPercentage:
+          "$serde_json::private::Number": "0"
+        baseDiscountPercentage:
+          "$serde_json::private::Number": "0"
+        customerPriority:
+          "$serde_json::private::Number": "4"
+        historyDiscountPercentage:
+          "$serde_json::private::Number": "0"
+        layoutConfig:
+          imageSize: medium
+          showExtras: true
+          type: standard
+        loyaltyFeatures:
+          - joinLoyaltyBanner
+          - standardOptions
+        recommendationType: standard
+        showRecentlyViewed: false
+        showSpecialOffers: false
+        specialOffersType: standardOffers
+        uiElements:
+          - standardSearch
+          - standardNavigation
+      routeId: JFK-LAX
+      totalSeats:
+        "$serde_json::private::Number": "180"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "4"
+      reference_map:
+        customer.bookingHistory.recentBookings: ~
+        customer.bookingHistory.totalBookings: ~
+      rule:
+        _id: bh-rule5
+        "customer.bookingHistory.recentBookings[recentBookings]": ""
+        "customer.bookingHistory.totalBookings[totalBookings]": ""
+  deviceTypeTable:
+    id: deviceTypeTable
+    input:
+      availableSeats:
+        "$serde_json::private::Number": "35"
+      avgCompetitorPrice:
+        "$serde_json::private::Number": "275"
+      basePrice:
+        "$serde_json::private::Number": "250"
+      daysToDepature:
+        "$serde_json::private::Number": "5"
+      demandForecast:
+        "$serde_json::private::Number": "75"
+      flightId: FL-123
+      routeId: JFK-LAX
+      totalSeats:
+        "$serde_json::private::Number": "180"
+    name: Device Type Personalization
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      availableSeats:
+        "$serde_json::private::Number": "35"
+      avgCompetitorPrice:
+        "$serde_json::private::Number": "275"
+      basePrice:
+        "$serde_json::private::Number": "250"
+      daysToDepature:
+        "$serde_json::private::Number": "5"
+      demandForecast:
+        "$serde_json::private::Number": "75"
+      flightId: FL-123
+      personalization:
+        layoutConfig:
+          imageSize: medium
+          showExtras: true
+          type: standard
+        uiElements:
+          - standardSearch
+          - standardNavigation
+      routeId: JFK-LAX
+      totalSeats:
+        "$serde_json::private::Number": "180"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "3"
+      reference_map:
+        customer.deviceType: ~
+      rule:
+        _id: dt-rule4
+        "customer.deviceType[deviceType]": ""
+  finalPersonalization:
+    id: finalPersonalization
+    input:
+      availableSeats:
+        "$serde_json::private::Number": "35"
+      avgCompetitorPrice:
+        "$serde_json::private::Number": "275"
+      basePrice:
+        "$serde_json::private::Number": "250"
+      daysToDepature:
+        "$serde_json::private::Number": "5"
+      demandForecast:
+        "$serde_json::private::Number": "75"
+      flightId: FL-123
+      personalization:
+        additionalDiscountPercentage:
+          "$serde_json::private::Number": "0"
+        baseDiscountPercentage:
+          "$serde_json::private::Number": "0"
+        customerPriority:
+          "$serde_json::private::Number": "4"
+        historyDiscountPercentage:
+          "$serde_json::private::Number": "0"
+        layoutConfig:
+          imageSize: medium
+          showExtras: true
+          type: standard
+        loyaltyFeatures:
+          - joinLoyaltyBanner
+          - standardOptions
+        personalizationScore:
+          "$serde_json::private::Number": "5"
+        recommendationType: standard
+        showRecentlyViewed: false
+        showSpecialOffers: false
+        specialOffersType: standardOffers
+        uiElements:
+          - standardSearch
+          - standardNavigation
+      routeId: JFK-LAX
+      totalSeats:
+        "$serde_json::private::Number": "180"
+    name: Calculate Final Personalization
+    order:
+      "$serde_json::private::Number": "6"
+    output:
+      allFeatures:
+        - standardSearch
+        - standardNavigation
+        - joinLoyaltyBanner
+        - standardOptions
+      bookingFlowTemplate: basic
+      totalDiscountPercentage:
+        "$serde_json::private::Number": "0"
+    performance: "[perf]"
+    traceData:
+      allFeatures:
+        result: "[\"standardSearch\",\"standardNavigation\",\"joinLoyaltyBanner\",\"standardOptions\"]"
+      bookingFlowTemplate:
+        result: "\"basic\""
+      totalDiscountPercentage:
+        result: "0"
+  input:
+    id: input
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      availableSeats:
+        "$serde_json::private::Number": "35"
+      avgCompetitorPrice:
+        "$serde_json::private::Number": "275"
+      basePrice:
+        "$serde_json::private::Number": "250"
+      daysToDepature:
+        "$serde_json::private::Number": "5"
+      demandForecast:
+        "$serde_json::private::Number": "75"
+      flightId: FL-123
+      routeId: JFK-LAX
+      totalSeats:
+        "$serde_json::private::Number": "180"
+    performance: "[perf]"
+    traceData: ~
+  loyaltyStatusTable:
+    id: loyaltyStatusTable
+    input:
+      availableSeats:
+        "$serde_json::private::Number": "35"
+      avgCompetitorPrice:
+        "$serde_json::private::Number": "275"
+      basePrice:
+        "$serde_json::private::Number": "250"
+      daysToDepature:
+        "$serde_json::private::Number": "5"
+      demandForecast:
+        "$serde_json::private::Number": "75"
+      flightId: FL-123
+      personalization:
+        layoutConfig:
+          imageSize: medium
+          showExtras: true
+          type: standard
+        uiElements:
+          - standardSearch
+          - standardNavigation
+      routeId: JFK-LAX
+      totalSeats:
+        "$serde_json::private::Number": "180"
+    name: Loyalty Status Personalization
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      availableSeats:
+        "$serde_json::private::Number": "35"
+      avgCompetitorPrice:
+        "$serde_json::private::Number": "275"
+      basePrice:
+        "$serde_json::private::Number": "250"
+      daysToDepature:
+        "$serde_json::private::Number": "5"
+      demandForecast:
+        "$serde_json::private::Number": "75"
+      flightId: FL-123
+      personalization:
+        baseDiscountPercentage:
+          "$serde_json::private::Number": "0"
+        customerPriority:
+          "$serde_json::private::Number": "4"
+        layoutConfig:
+          imageSize: medium
+          showExtras: true
+          type: standard
+        loyaltyFeatures:
+          - joinLoyaltyBanner
+          - standardOptions
+        uiElements:
+          - standardSearch
+          - standardNavigation
+      routeId: JFK-LAX
+      totalSeats:
+        "$serde_json::private::Number": "180"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "4"
+      reference_map:
+        customer.loyaltyStatus: ~
+      rule:
+        _id: ls-rule5
+        "customer.loyaltyStatus[loyaltyStatus]": ""
+  personalizationScoreTable:
+    id: personalizationScoreTable
+    input:
+      availableSeats:
+        "$serde_json::private::Number": "35"
+      avgCompetitorPrice:
+        "$serde_json::private::Number": "275"
+      basePrice:
+        "$serde_json::private::Number": "250"
+      daysToDepature:
+        "$serde_json::private::Number": "5"
+      demandForecast:
+        "$serde_json::private::Number": "75"
+      flightId: FL-123
+      personalization:
+        additionalDiscountPercentage:
+          "$serde_json::private::Number": "0"
+        baseDiscountPercentage:
+          "$serde_json::private::Number": "0"
+        customerPriority:
+          "$serde_json::private::Number": "4"
+        historyDiscountPercentage:
+          "$serde_json::private::Number": "0"
+        layoutConfig:
+          imageSize: medium
+          showExtras: true
+          type: standard
+        loyaltyFeatures:
+          - joinLoyaltyBanner
+          - standardOptions
+        recommendationType: standard
+        showRecentlyViewed: false
+        showSpecialOffers: false
+        specialOffersType: standardOffers
+        uiElements:
+          - standardSearch
+          - standardNavigation
+      routeId: JFK-LAX
+      totalSeats:
+        "$serde_json::private::Number": "180"
+    name: Calculate Personalization Score
+    order:
+      "$serde_json::private::Number": "5"
+    output:
+      availableSeats:
+        "$serde_json::private::Number": "35"
+      avgCompetitorPrice:
+        "$serde_json::private::Number": "275"
+      basePrice:
+        "$serde_json::private::Number": "250"
+      daysToDepature:
+        "$serde_json::private::Number": "5"
+      demandForecast:
+        "$serde_json::private::Number": "75"
+      flightId: FL-123
+      personalization:
+        additionalDiscountPercentage:
+          "$serde_json::private::Number": "0"
+        baseDiscountPercentage:
+          "$serde_json::private::Number": "0"
+        customerPriority:
+          "$serde_json::private::Number": "4"
+        historyDiscountPercentage:
+          "$serde_json::private::Number": "0"
+        layoutConfig:
+          imageSize: medium
+          showExtras: true
+          type: standard
+        loyaltyFeatures:
+          - joinLoyaltyBanner
+          - standardOptions
+        personalizationScore:
+          "$serde_json::private::Number": "5"
+        recommendationType: standard
+        showRecentlyViewed: false
+        showSpecialOffers: false
+        specialOffersType: standardOffers
+        uiElements:
+          - standardSearch
+          - standardNavigation
+      routeId: JFK-LAX
+      totalSeats:
+        "$serde_json::private::Number": "180"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "12"
+      reference_map:
+        customer.bookingHistory.totalBookings: ~
+        customer.visitSource: ~
+        personalization.customerPriority:
+          "$serde_json::private::Number": "4"
+      rule:
+        _id: ps-rule13
+        "customer.bookingHistory.totalBookings[totalBookingsCheck]": ""
+        "customer.visitSource[visitSourceCheck]": ""
+        "personalization.customerPriority[loyaltyPriority]": ""
+  visitSourceTable:
+    id: visitSourceTable
+    input:
+      availableSeats:
+        "$serde_json::private::Number": "35"
+      avgCompetitorPrice:
+        "$serde_json::private::Number": "275"
+      basePrice:
+        "$serde_json::private::Number": "250"
+      daysToDepature:
+        "$serde_json::private::Number": "5"
+      demandForecast:
+        "$serde_json::private::Number": "75"
+      flightId: FL-123
+      personalization:
+        baseDiscountPercentage:
+          "$serde_json::private::Number": "0"
+        customerPriority:
+          "$serde_json::private::Number": "4"
+        layoutConfig:
+          imageSize: medium
+          showExtras: true
+          type: standard
+        loyaltyFeatures:
+          - joinLoyaltyBanner
+          - standardOptions
+        uiElements:
+          - standardSearch
+          - standardNavigation
+      routeId: JFK-LAX
+      totalSeats:
+        "$serde_json::private::Number": "180"
+    name: Visit Source Personalization
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      availableSeats:
+        "$serde_json::private::Number": "35"
+      avgCompetitorPrice:
+        "$serde_json::private::Number": "275"
+      basePrice:
+        "$serde_json::private::Number": "250"
+      daysToDepature:
+        "$serde_json::private::Number": "5"
+      demandForecast:
+        "$serde_json::private::Number": "75"
+      flightId: FL-123
+      personalization:
+        additionalDiscountPercentage:
+          "$serde_json::private::Number": "0"
+        baseDiscountPercentage:
+          "$serde_json::private::Number": "0"
+        customerPriority:
+          "$serde_json::private::Number": "4"
+        layoutConfig:
+          imageSize: medium
+          showExtras: true
+          type: standard
+        loyaltyFeatures:
+          - joinLoyaltyBanner
+          - standardOptions
+        showSpecialOffers: false
+        specialOffersType: standardOffers
+        uiElements:
+          - standardSearch
+          - standardNavigation
+      routeId: JFK-LAX
+      totalSeats:
+        "$serde_json::private::Number": "180"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "5"
+      reference_map:
+        customer.visitSource: ~
+      rule:
+        _id: vs-rule6
+        "customer.visitSource[visitSource]": ""

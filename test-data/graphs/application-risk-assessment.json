@@ -1,0 +1,474 @@
+{
+  "tests": [
+    {
+      "input": {
+        "applicant": {
+          "creditScore": 710,
+          "latePayments": 1,
+          "creditHistoryMonths": 48,
+          "employmentMonths": 36,
+          "incomeVerification": "complete",
+          "bankAccountStanding": "good",
+          "debtToIncomeRatio": 0.35,
+          "outstandingLoans": 2
+        }
+      },
+      "output": {
+        "applicant": {
+          "bankAccountStanding": "good",
+          "creditHistoryMonths": 48,
+          "creditScore": 710,
+          "debtToIncomeRatio": 0.35,
+          "employmentMonths": 36,
+          "incomeVerification": "complete",
+          "latePayments": 1,
+          "outstandingLoans": 2
+        },
+        "approvalStatus": "manual-review",
+        "interestRateModifier": 0,
+        "negativeFactors": [],
+        "negativeFactorsCount": 0,
+        "riskCategory": "medium",
+        "scores": {
+          "creditHistory": 20,
+          "debtToIncome": 15,
+          "incomeStability": 20
+        },
+        "totalRiskScore": 55
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "input",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 163.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1-1",
+            "i1-1": "> 750",
+            "i1-2": "< 2",
+            "i1-3": "> 60",
+            "o1-1": "30"
+          },
+          {
+            "_id": "r1-2",
+            "i1-1": "[650..750]",
+            "i1-2": "< 4",
+            "i1-3": "> 36",
+            "o1-1": "20"
+          },
+          {
+            "_id": "r1-3",
+            "i1-1": "[600..650)",
+            "i1-2": "< 6",
+            "i1-3": "> 24",
+            "o1-1": "10"
+          },
+          {
+            "_id": "r1-4",
+            "i1-1": "",
+            "i1-2": "",
+            "i1-3": "",
+            "o1-1": "0"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "creditScore",
+            "field": "applicant.creditScore"
+          },
+          {
+            "id": "i1-2",
+            "name": "latePayments",
+            "field": "applicant.latePayments"
+          },
+          {
+            "id": "i1-3",
+            "name": "creditHistoryLength",
+            "field": "applicant.creditHistoryMonths"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "creditHistoryScore",
+            "field": "scores.creditHistory"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "scoreCreditHistory",
+      "name": "scoreCreditHistory",
+      "position": {
+        "x": 430,
+        "y": 163.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r2-1",
+            "i2-1": "> 60",
+            "i2-2": "'complete'",
+            "i2-3": "'good'",
+            "o2-1": "25"
+          },
+          {
+            "_id": "r2-2",
+            "i2-1": "> 24",
+            "i2-2": "'complete'",
+            "i2-3": "'good'",
+            "o2-1": "20"
+          },
+          {
+            "_id": "r2-3",
+            "i2-1": "> 12",
+            "i2-2": "'partial'",
+            "i2-3": "'fair'",
+            "o2-1": "15"
+          },
+          {
+            "_id": "r2-4",
+            "i2-1": "> 6",
+            "i2-2": "",
+            "i2-3": "",
+            "o2-1": "5"
+          },
+          {
+            "_id": "r2-5",
+            "i2-1": "",
+            "i2-2": "",
+            "i2-3": "",
+            "o2-1": "0"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i2-1",
+            "name": "employmentLength",
+            "field": "applicant.employmentMonths"
+          },
+          {
+            "id": "i2-2",
+            "name": "incomeVerification",
+            "field": "applicant.incomeVerification"
+          },
+          {
+            "id": "i2-3",
+            "name": "bankAccountStanding",
+            "field": "applicant.bankAccountStanding"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2-1",
+            "name": "incomeStabilityScore",
+            "field": "scores.incomeStability"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "scoreIncomeStability",
+      "name": "scoreIncomeStability",
+      "position": {
+        "x": 750,
+        "y": 163.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r3-1",
+            "i3-1": "< 0.2",
+            "i3-2": "< 2",
+            "o3-1": "25"
+          },
+          {
+            "_id": "r3-2",
+            "i3-1": "< 0.4",
+            "i3-2": "< 3",
+            "o3-1": "15"
+          },
+          {
+            "_id": "r3-3",
+            "i3-1": "< 0.6",
+            "i3-2": "< 5",
+            "o3-1": "5"
+          },
+          {
+            "_id": "r3-4",
+            "i3-1": "",
+            "i3-2": "",
+            "o3-1": "0"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i3-1",
+            "name": "debtToIncomeRatio",
+            "field": "applicant.debtToIncomeRatio"
+          },
+          {
+            "id": "i3-2",
+            "name": "outstandingLoans",
+            "field": "applicant.outstandingLoans"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o3-1",
+            "name": "debtToIncomeScore",
+            "field": "scores.debtToIncome"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "scoreDebtToIncome",
+      "name": "scoreDebtToIncome",
+      "position": {
+        "x": 1070,
+        "y": 163.5
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e4-1",
+            "key": "totalRiskScore",
+            "value": "scores.creditHistory + scores.incomeStability + scores.debtToIncome"
+          },
+          {
+            "id": "e4-2",
+            "key": "negativeFactors",
+            "value": "filter([scores.creditHistory == 0, scores.incomeStability == 0, scores.debtToIncome == 0], # == true)"
+          },
+          {
+            "id": "e4-3",
+            "key": "negativeFactorsCount",
+            "value": "len($.negativeFactors)"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "calculateRiskScore",
+      "name": "calculateRiskScore",
+      "position": {
+        "x": 1390,
+        "y": 163.5
+      }
+    },
+    {
+      "type": "switchNode",
+      "content": {
+        "hitPolicy": "first",
+        "statements": [
+          {
+            "id": "s1",
+            "condition": "totalRiskScore >= 60 and negativeFactorsCount == 0",
+            "isDefault": false
+          },
+          {
+            "id": "s2",
+            "condition": "totalRiskScore >= 30 or (totalRiskScore >= 20 and negativeFactorsCount < 2)",
+            "isDefault": false
+          },
+          {
+            "id": "s3",
+            "condition": "",
+            "isDefault": true
+          }
+        ]
+      },
+      "id": "classifyRisk",
+      "name": "classifyRisk",
+      "position": {
+        "x": 1710,
+        "y": 163.5
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e6-1",
+            "key": "riskCategory",
+            "value": "'low'"
+          },
+          {
+            "id": "e6-2",
+            "key": "approvalStatus",
+            "value": "'auto-approved'"
+          },
+          {
+            "id": "e6-3",
+            "key": "interestRateModifier",
+            "value": "-0.5"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "lowRiskAction",
+      "name": "lowRiskAction",
+      "position": {
+        "x": 2030,
+        "y": 65.5
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e7-1",
+            "key": "riskCategory",
+            "value": "'medium'"
+          },
+          {
+            "id": "e7-2",
+            "key": "approvalStatus",
+            "value": "'manual-review'"
+          },
+          {
+            "id": "e7-3",
+            "key": "interestRateModifier",
+            "value": "0"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "mediumRiskAction",
+      "name": "mediumRiskAction",
+      "position": {
+        "x": 2030,
+        "y": 163.5
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e8-1",
+            "key": "riskCategory",
+            "value": "'high'"
+          },
+          {
+            "id": "e8-2",
+            "key": "approvalStatus",
+            "value": "'additional-verification'"
+          },
+          {
+            "id": "e8-3",
+            "key": "interestRateModifier",
+            "value": "1.5"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "highRiskAction",
+      "name": "highRiskAction",
+      "position": {
+        "x": 2030,
+        "y": 261.5
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "sourceId": "input",
+      "targetId": "scoreCreditHistory",
+      "type": "edge"
+    },
+    {
+      "id": "e2",
+      "sourceId": "scoreCreditHistory",
+      "targetId": "scoreIncomeStability",
+      "type": "edge"
+    },
+    {
+      "id": "e3",
+      "sourceId": "scoreIncomeStability",
+      "targetId": "scoreDebtToIncome",
+      "type": "edge"
+    },
+    {
+      "id": "e4",
+      "sourceId": "scoreDebtToIncome",
+      "targetId": "calculateRiskScore",
+      "type": "edge"
+    },
+    {
+      "id": "e5",
+      "sourceId": "calculateRiskScore",
+      "targetId": "classifyRisk",
+      "type": "edge"
+    },
+    {
+      "id": "e6",
+      "sourceId": "classifyRisk",
+      "targetId": "lowRiskAction",
+      "sourceHandle": "s1",
+      "type": "edge"
+    },
+    {
+      "id": "e7",
+      "sourceId": "classifyRisk",
+      "targetId": "mediumRiskAction",
+      "sourceHandle": "s2",
+      "type": "edge"
+    },
+    {
+      "id": "e8",
+      "sourceId": "classifyRisk",
+      "targetId": "highRiskAction",
+      "sourceHandle": "s3",
+      "type": "edge"
+    }
+  ]
+}

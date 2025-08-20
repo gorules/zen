@@ -1,0 +1,191 @@
+{
+  "tests": [
+    {
+      "input": {
+        "customer": {
+          "id": "C123456",
+          "name": "Acme Corporation",
+          "tier": "premium",
+          "accountAge": 36
+        },
+        "issue": {
+          "id": "ISS-789",
+          "type": "service_outage",
+          "complexity": "high",
+          "financialImpact": 7500,
+          "description": "Complete service outage affecting all production systems"
+        }
+      },
+      "output": {
+        "escalation": {
+          "assignedTeam": "Executive Response Team",
+          "description": "Immediate executive team escalation required",
+          "level": "immediate_executive",
+          "priority": 1,
+          "slaMinutes": 30
+        }
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "ip1",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1-1",
+            "i1-1": "'premium'",
+            "i1-2": "'high'",
+            "i1-3": "> 5000",
+            "o1-1": "'immediate_executive'",
+            "o1-2": "'Immediate executive team escalation required'",
+            "o1-3": "1",
+            "o1-4": "30",
+            "o1-5": "'Executive Response Team'"
+          },
+          {
+            "_id": "r1-2",
+            "i1-1": "'premium'",
+            "i1-2": "'high'",
+            "i1-3": "<= 5000",
+            "o1-1": "'senior_support'",
+            "o1-2": "'Escalate to senior support team'",
+            "o1-3": "2",
+            "o1-4": "120",
+            "o1-5": "'Senior Support Team'"
+          },
+          {
+            "_id": "r1-3",
+            "i1-1": "'premium'",
+            "i1-2": "'medium', 'low'",
+            "i1-3": "> 1000",
+            "o1-1": "'senior_support'",
+            "o1-2": "'Escalate to senior support team'",
+            "o1-3": "2",
+            "o1-4": "120",
+            "o1-5": "'Senior Support Team'"
+          },
+          {
+            "_id": "r1-4",
+            "i1-1": "'standard'",
+            "i1-2": "'high'",
+            "i1-3": "> 2000",
+            "o1-1": "'senior_support'",
+            "o1-2": "'Escalate to senior support team'",
+            "o1-3": "2",
+            "o1-4": "180",
+            "o1-5": "'Senior Support Team'"
+          },
+          {
+            "_id": "r1-5",
+            "i1-1": "'standard'",
+            "i1-2": "'medium'",
+            "i1-3": "> 5000",
+            "o1-1": "'senior_support'",
+            "o1-2": "'Escalate to senior support team'",
+            "o1-3": "2",
+            "o1-4": "180",
+            "o1-5": "'Senior Support Team'"
+          },
+          {
+            "_id": "r1-6",
+            "i1-1": "'trial'",
+            "i1-2": "'high'",
+            "i1-3": "> 5000",
+            "o1-1": "'senior_support'",
+            "o1-2": "'Escalate to senior support team'",
+            "o1-3": "3",
+            "o1-4": "240",
+            "o1-5": "'Senior Support Team'"
+          },
+          {
+            "_id": "r1-7",
+            "i1-1": "",
+            "i1-2": "",
+            "i1-3": "",
+            "o1-1": "'standard_support'",
+            "o1-2": "'Handle through standard support process'",
+            "o1-3": "4",
+            "o1-4": "480",
+            "o1-5": "'Standard Support Team'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Customer Tier",
+            "field": "customer.tier"
+          },
+          {
+            "id": "i1-2",
+            "name": "Issue Complexity",
+            "field": "issue.complexity"
+          },
+          {
+            "id": "i1-3",
+            "name": "Financial Impact",
+            "field": "issue.financialImpact"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Escalation Level",
+            "field": "escalation.level"
+          },
+          {
+            "id": "o1-2",
+            "name": "Action Description",
+            "field": "escalation.description"
+          },
+          {
+            "id": "o1-3",
+            "name": "Priority",
+            "field": "escalation.priority"
+          },
+          {
+            "id": "o1-4",
+            "name": "SLA Minutes",
+            "field": "escalation.slaMinutes"
+          },
+          {
+            "id": "o1-5",
+            "name": "Assigned Team",
+            "field": "escalation.assignedTeam"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt1",
+      "name": "determine_escalation_level",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "ed1",
+      "sourceId": "ip1",
+      "targetId": "dt1",
+      "type": "edge"
+    }
+  ]
+}

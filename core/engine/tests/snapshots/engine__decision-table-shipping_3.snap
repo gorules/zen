@@ -1,0 +1,81 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  group: US_HIGH
+  price:
+    "$serde_json::private::Number": "25"
+trace:
+  2938f93f-1dce-4f85-a401-44c224d9237f:
+    id: 2938f93f-1dce-4f85-a401-44c224d9237f
+    input:
+      group: US_HIGH
+      price:
+        "$serde_json::private::Number": "25"
+    name: Response
+    order:
+      "$serde_json::private::Number": "2"
+    output: ~
+    performance: "[perf]"
+    traceData: ~
+  405841da-b7bb-4f4e-824f-21f1f4bc6fd9:
+    id: 405841da-b7bb-4f4e-824f-21f1f4bc6fd9
+    input:
+      cart:
+        items:
+          - quantity:
+              "$serde_json::private::Number": "2"
+            unitPrice:
+              "$serde_json::private::Number": "1500"
+          - quantity:
+              "$serde_json::private::Number": "3"
+            unitPrice:
+              "$serde_json::private::Number": "800"
+      customer:
+        country: US
+        tags: []
+    name: Shipping Fees
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      group: US_HIGH
+      price:
+        "$serde_json::private::Number": "25"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "3"
+      reference_map:
+        customer.country: US
+        customer.tags: []
+        "sum(map(cart.items, #.unitPrice * #.quantity))":
+          "$serde_json::private::Number": "5400"
+      rule:
+        _id: a179f314-512c-4cc6-a892-5f1e0b6b979c
+        "customer.country[d89ca9da-581e-4392-a990-24cde9c33a2b]": "\"US\""
+        "customer.tags[184cc5f5-f459-41cf-814b-79f6ffea695d]": ""
+        "sum(map(cart.items, #.unitPrice * #.quantity))[ea23eec9-76c5-4b62-821c-aec504545506]": ">= 1_000"
+  4c688656-05ba-4503-a582-02e6e4a5a135:
+    id: 4c688656-05ba-4503-a582-02e6e4a5a135
+    input: ~
+    name: Request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      cart:
+        items:
+          - quantity:
+              "$serde_json::private::Number": "2"
+            unitPrice:
+              "$serde_json::private::Number": "1500"
+          - quantity:
+              "$serde_json::private::Number": "3"
+            unitPrice:
+              "$serde_json::private::Number": "800"
+      customer:
+        country: US
+        tags: []
+    performance: "[perf]"
+    traceData: ~

@@ -1,0 +1,678 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  availableCarrierCapacity:
+    "$serde_json::private::Number": "4"
+  canConsolidate: true
+  carrierDetails:
+    carrierId: CAR-789
+    currentLoad:
+      "$serde_json::private::Number": "320"
+    maxCapacity:
+      "$serde_json::private::Number": "500"
+  consolidationAction: immediate_consolidation
+  consolidationPriority: high
+  consolidationWeight:
+    "$serde_json::private::Number": "20.7"
+  costSavingEstimate:
+    "$serde_json::private::Number": "23.75"
+  costSavingsReport:
+    fuelSavings:
+      "$serde_json::private::Number": "5.25"
+    laborSavings:
+      "$serde_json::private::Number": "23.75"
+    totalSavings:
+      "$serde_json::private::Number": "29"
+  deliverySchedule:
+    estimatedDeliveryTime: ~
+    notificationRequired: false
+    type: consolidated
+  deliveryWindowDifferenceHours:
+    "$serde_json::private::Number": "24"
+  distanceKm:
+    "$serde_json::private::Number": "35"
+  expectedFuelSavings:
+    "$serde_json::private::Number": "5.25"
+  explanation: "Orders are nearby, delivery window compatible, and carrier has capacity"
+  orderWeight1:
+    "$serde_json::private::Number": "12.5"
+  orderWeight2:
+    "$serde_json::private::Number": "8.2"
+  orders:
+    - customerName: John Smith
+      deliveryAddress:
+        city: Springfield
+        coordinates:
+          latitude:
+            "$serde_json::private::Number": "39.7817"
+          longitude:
+            "$serde_json::private::Number": "-89.6501"
+        state: IL
+        street: 123 Main St
+        zipCode: "62704"
+      orderId: ORD-12345
+      orderItems:
+        "$serde_json::private::Number": "3"
+      orderWeight:
+        "$serde_json::private::Number": "12.5"
+      requestedDeliveryDate: "2025-03-25T14:00:00Z"
+    - customerName: Jane Doe
+      deliveryAddress:
+        city: Springfield
+        coordinates:
+          latitude:
+            "$serde_json::private::Number": "39.8021"
+          longitude:
+            "$serde_json::private::Number": "-89.6443"
+        state: IL
+        street: 456 Oak Ave
+        zipCode: "62702"
+      orderId: ORD-12346
+      orderItems:
+        "$serde_json::private::Number": "2"
+      orderWeight:
+        "$serde_json::private::Number": "8.2"
+      requestedDeliveryDate: "2025-03-25T16:00:00Z"
+  schedulingPriority: high
+trace:
+  dt1:
+    id: dt1
+    input:
+      availableCarrierCapacity:
+        "$serde_json::private::Number": "4"
+      carrierDetails:
+        carrierId: CAR-789
+        currentLoad:
+          "$serde_json::private::Number": "320"
+        maxCapacity:
+          "$serde_json::private::Number": "500"
+      deliveryWindowDifferenceHours:
+        "$serde_json::private::Number": "24"
+      distanceKm:
+        "$serde_json::private::Number": "35"
+      orderWeight1:
+        "$serde_json::private::Number": "12.5"
+      orderWeight2:
+        "$serde_json::private::Number": "8.2"
+      orders:
+        - customerName: John Smith
+          deliveryAddress:
+            city: Springfield
+            coordinates:
+              latitude:
+                "$serde_json::private::Number": "39.7817"
+              longitude:
+                "$serde_json::private::Number": "-89.6501"
+            state: IL
+            street: 123 Main St
+            zipCode: "62704"
+          orderId: ORD-12345
+          orderItems:
+            "$serde_json::private::Number": "3"
+          orderWeight:
+            "$serde_json::private::Number": "12.5"
+          requestedDeliveryDate: "2025-03-25T14:00:00Z"
+        - customerName: Jane Doe
+          deliveryAddress:
+            city: Springfield
+            coordinates:
+              latitude:
+                "$serde_json::private::Number": "39.8021"
+              longitude:
+                "$serde_json::private::Number": "-89.6443"
+            state: IL
+            street: 456 Oak Ave
+            zipCode: "62702"
+          orderId: ORD-12346
+          orderItems:
+            "$serde_json::private::Number": "2"
+          orderWeight:
+            "$serde_json::private::Number": "8.2"
+          requestedDeliveryDate: "2025-03-25T16:00:00Z"
+    name: evaluateConsolidationFactors
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      availableCarrierCapacity:
+        "$serde_json::private::Number": "4"
+      carrierDetails:
+        carrierId: CAR-789
+        currentLoad:
+          "$serde_json::private::Number": "320"
+        maxCapacity:
+          "$serde_json::private::Number": "500"
+      consolidationPriority: high
+      deliveryWindowDifferenceHours:
+        "$serde_json::private::Number": "24"
+      distanceKm:
+        "$serde_json::private::Number": "35"
+      explanation: "Orders are nearby, delivery window compatible, and carrier has capacity"
+      orderWeight1:
+        "$serde_json::private::Number": "12.5"
+      orderWeight2:
+        "$serde_json::private::Number": "8.2"
+      orders:
+        - customerName: John Smith
+          deliveryAddress:
+            city: Springfield
+            coordinates:
+              latitude:
+                "$serde_json::private::Number": "39.7817"
+              longitude:
+                "$serde_json::private::Number": "-89.6501"
+            state: IL
+            street: 123 Main St
+            zipCode: "62704"
+          orderId: ORD-12345
+          orderItems:
+            "$serde_json::private::Number": "3"
+          orderWeight:
+            "$serde_json::private::Number": "12.5"
+          requestedDeliveryDate: "2025-03-25T14:00:00Z"
+        - customerName: Jane Doe
+          deliveryAddress:
+            city: Springfield
+            coordinates:
+              latitude:
+                "$serde_json::private::Number": "39.8021"
+              longitude:
+                "$serde_json::private::Number": "-89.6443"
+            state: IL
+            street: 456 Oak Ave
+            zipCode: "62702"
+          orderId: ORD-12346
+          orderItems:
+            "$serde_json::private::Number": "2"
+          orderWeight:
+            "$serde_json::private::Number": "8.2"
+          requestedDeliveryDate: "2025-03-25T16:00:00Z"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        availableCarrierCapacity:
+          "$serde_json::private::Number": "4"
+        deliveryWindowDifferenceHours:
+          "$serde_json::private::Number": "24"
+        distanceKm:
+          "$serde_json::private::Number": "35"
+      rule:
+        _id: r1-1
+        "availableCarrierCapacity[i1-3]": "> 3"
+        "deliveryWindowDifferenceHours[i1-2]": "< 48"
+        "distanceKm[i1-1]": "< 50"
+  ex1:
+    id: ex1
+    input:
+      availableCarrierCapacity:
+        "$serde_json::private::Number": "4"
+      carrierDetails:
+        carrierId: CAR-789
+        currentLoad:
+          "$serde_json::private::Number": "320"
+        maxCapacity:
+          "$serde_json::private::Number": "500"
+      consolidationPriority: high
+      deliveryWindowDifferenceHours:
+        "$serde_json::private::Number": "24"
+      distanceKm:
+        "$serde_json::private::Number": "35"
+      explanation: "Orders are nearby, delivery window compatible, and carrier has capacity"
+      orderWeight1:
+        "$serde_json::private::Number": "12.5"
+      orderWeight2:
+        "$serde_json::private::Number": "8.2"
+      orders:
+        - customerName: John Smith
+          deliveryAddress:
+            city: Springfield
+            coordinates:
+              latitude:
+                "$serde_json::private::Number": "39.7817"
+              longitude:
+                "$serde_json::private::Number": "-89.6501"
+            state: IL
+            street: 123 Main St
+            zipCode: "62704"
+          orderId: ORD-12345
+          orderItems:
+            "$serde_json::private::Number": "3"
+          orderWeight:
+            "$serde_json::private::Number": "12.5"
+          requestedDeliveryDate: "2025-03-25T14:00:00Z"
+        - customerName: Jane Doe
+          deliveryAddress:
+            city: Springfield
+            coordinates:
+              latitude:
+                "$serde_json::private::Number": "39.8021"
+              longitude:
+                "$serde_json::private::Number": "-89.6443"
+            state: IL
+            street: 456 Oak Ave
+            zipCode: "62702"
+          orderId: ORD-12346
+          orderItems:
+            "$serde_json::private::Number": "2"
+          orderWeight:
+            "$serde_json::private::Number": "8.2"
+          requestedDeliveryDate: "2025-03-25T16:00:00Z"
+    name: calculateConsolidationMetrics
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      availableCarrierCapacity:
+        "$serde_json::private::Number": "4"
+      canConsolidate: true
+      carrierDetails:
+        carrierId: CAR-789
+        currentLoad:
+          "$serde_json::private::Number": "320"
+        maxCapacity:
+          "$serde_json::private::Number": "500"
+      consolidationPriority: high
+      consolidationWeight:
+        "$serde_json::private::Number": "20.7"
+      costSavingEstimate:
+        "$serde_json::private::Number": "23.75"
+      deliveryWindowDifferenceHours:
+        "$serde_json::private::Number": "24"
+      distanceKm:
+        "$serde_json::private::Number": "35"
+      expectedFuelSavings:
+        "$serde_json::private::Number": "5.25"
+      explanation: "Orders are nearby, delivery window compatible, and carrier has capacity"
+      orderWeight1:
+        "$serde_json::private::Number": "12.5"
+      orderWeight2:
+        "$serde_json::private::Number": "8.2"
+      orders:
+        - customerName: John Smith
+          deliveryAddress:
+            city: Springfield
+            coordinates:
+              latitude:
+                "$serde_json::private::Number": "39.7817"
+              longitude:
+                "$serde_json::private::Number": "-89.6501"
+            state: IL
+            street: 123 Main St
+            zipCode: "62704"
+          orderId: ORD-12345
+          orderItems:
+            "$serde_json::private::Number": "3"
+          orderWeight:
+            "$serde_json::private::Number": "12.5"
+          requestedDeliveryDate: "2025-03-25T14:00:00Z"
+        - customerName: Jane Doe
+          deliveryAddress:
+            city: Springfield
+            coordinates:
+              latitude:
+                "$serde_json::private::Number": "39.8021"
+              longitude:
+                "$serde_json::private::Number": "-89.6443"
+            state: IL
+            street: 456 Oak Ave
+            zipCode: "62702"
+          orderId: ORD-12346
+          orderItems:
+            "$serde_json::private::Number": "2"
+          orderWeight:
+            "$serde_json::private::Number": "8.2"
+          requestedDeliveryDate: "2025-03-25T16:00:00Z"
+    performance: "[perf]"
+    traceData:
+      canConsolidate:
+        result: "true"
+      consolidationWeight:
+        result: "20.7"
+      costSavingEstimate:
+        result: "23.75"
+      expectedFuelSavings:
+        result: "5.25"
+  ex2:
+    id: ex2
+    input:
+      availableCarrierCapacity:
+        "$serde_json::private::Number": "4"
+      canConsolidate: true
+      carrierDetails:
+        carrierId: CAR-789
+        currentLoad:
+          "$serde_json::private::Number": "320"
+        maxCapacity:
+          "$serde_json::private::Number": "500"
+      consolidationPriority: high
+      consolidationWeight:
+        "$serde_json::private::Number": "20.7"
+      costSavingEstimate:
+        "$serde_json::private::Number": "23.75"
+      deliveryWindowDifferenceHours:
+        "$serde_json::private::Number": "24"
+      distanceKm:
+        "$serde_json::private::Number": "35"
+      expectedFuelSavings:
+        "$serde_json::private::Number": "5.25"
+      explanation: "Orders are nearby, delivery window compatible, and carrier has capacity"
+      orderWeight1:
+        "$serde_json::private::Number": "12.5"
+      orderWeight2:
+        "$serde_json::private::Number": "8.2"
+      orders:
+        - customerName: John Smith
+          deliveryAddress:
+            city: Springfield
+            coordinates:
+              latitude:
+                "$serde_json::private::Number": "39.7817"
+              longitude:
+                "$serde_json::private::Number": "-89.6501"
+            state: IL
+            street: 123 Main St
+            zipCode: "62704"
+          orderId: ORD-12345
+          orderItems:
+            "$serde_json::private::Number": "3"
+          orderWeight:
+            "$serde_json::private::Number": "12.5"
+          requestedDeliveryDate: "2025-03-25T14:00:00Z"
+        - customerName: Jane Doe
+          deliveryAddress:
+            city: Springfield
+            coordinates:
+              latitude:
+                "$serde_json::private::Number": "39.8021"
+              longitude:
+                "$serde_json::private::Number": "-89.6443"
+            state: IL
+            street: 456 Oak Ave
+            zipCode: "62702"
+          orderId: ORD-12346
+          orderItems:
+            "$serde_json::private::Number": "2"
+          orderWeight:
+            "$serde_json::private::Number": "8.2"
+          requestedDeliveryDate: "2025-03-25T16:00:00Z"
+    name: highPriorityProcessing
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      availableCarrierCapacity:
+        "$serde_json::private::Number": "4"
+      canConsolidate: true
+      carrierDetails:
+        carrierId: CAR-789
+        currentLoad:
+          "$serde_json::private::Number": "320"
+        maxCapacity:
+          "$serde_json::private::Number": "500"
+      consolidationAction: immediate_consolidation
+      consolidationPriority: high
+      consolidationWeight:
+        "$serde_json::private::Number": "20.7"
+      costSavingEstimate:
+        "$serde_json::private::Number": "23.75"
+      costSavingsReport:
+        fuelSavings:
+          "$serde_json::private::Number": "5.25"
+        laborSavings:
+          "$serde_json::private::Number": "23.75"
+        totalSavings:
+          "$serde_json::private::Number": "29"
+      deliverySchedule:
+        estimatedDeliveryTime: ~
+        notificationRequired: false
+        type: consolidated
+      deliveryWindowDifferenceHours:
+        "$serde_json::private::Number": "24"
+      distanceKm:
+        "$serde_json::private::Number": "35"
+      expectedFuelSavings:
+        "$serde_json::private::Number": "5.25"
+      explanation: "Orders are nearby, delivery window compatible, and carrier has capacity"
+      orderWeight1:
+        "$serde_json::private::Number": "12.5"
+      orderWeight2:
+        "$serde_json::private::Number": "8.2"
+      orders:
+        - customerName: John Smith
+          deliveryAddress:
+            city: Springfield
+            coordinates:
+              latitude:
+                "$serde_json::private::Number": "39.7817"
+              longitude:
+                "$serde_json::private::Number": "-89.6501"
+            state: IL
+            street: 123 Main St
+            zipCode: "62704"
+          orderId: ORD-12345
+          orderItems:
+            "$serde_json::private::Number": "3"
+          orderWeight:
+            "$serde_json::private::Number": "12.5"
+          requestedDeliveryDate: "2025-03-25T14:00:00Z"
+        - customerName: Jane Doe
+          deliveryAddress:
+            city: Springfield
+            coordinates:
+              latitude:
+                "$serde_json::private::Number": "39.8021"
+              longitude:
+                "$serde_json::private::Number": "-89.6443"
+            state: IL
+            street: 456 Oak Ave
+            zipCode: "62702"
+          orderId: ORD-12346
+          orderItems:
+            "$serde_json::private::Number": "2"
+          orderWeight:
+            "$serde_json::private::Number": "8.2"
+          requestedDeliveryDate: "2025-03-25T16:00:00Z"
+      schedulingPriority: high
+    performance: "[perf]"
+    traceData:
+      consolidationAction:
+        result: "\"immediate_consolidation\""
+      costSavingsReport:
+        result: "{\"fuelSavings\":5.25,\"laborSavings\":23.75,\"totalSavings\":29}"
+      deliverySchedule:
+        result: "{\"estimatedDeliveryTime\":null,\"type\":\"consolidated\",\"notificationRequired\":false}"
+      schedulingPriority:
+        result: "\"high\""
+  ip1:
+    id: ip1
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      availableCarrierCapacity:
+        "$serde_json::private::Number": "4"
+      carrierDetails:
+        carrierId: CAR-789
+        currentLoad:
+          "$serde_json::private::Number": "320"
+        maxCapacity:
+          "$serde_json::private::Number": "500"
+      deliveryWindowDifferenceHours:
+        "$serde_json::private::Number": "24"
+      distanceKm:
+        "$serde_json::private::Number": "35"
+      orderWeight1:
+        "$serde_json::private::Number": "12.5"
+      orderWeight2:
+        "$serde_json::private::Number": "8.2"
+      orders:
+        - customerName: John Smith
+          deliveryAddress:
+            city: Springfield
+            coordinates:
+              latitude:
+                "$serde_json::private::Number": "39.7817"
+              longitude:
+                "$serde_json::private::Number": "-89.6501"
+            state: IL
+            street: 123 Main St
+            zipCode: "62704"
+          orderId: ORD-12345
+          orderItems:
+            "$serde_json::private::Number": "3"
+          orderWeight:
+            "$serde_json::private::Number": "12.5"
+          requestedDeliveryDate: "2025-03-25T14:00:00Z"
+        - customerName: Jane Doe
+          deliveryAddress:
+            city: Springfield
+            coordinates:
+              latitude:
+                "$serde_json::private::Number": "39.8021"
+              longitude:
+                "$serde_json::private::Number": "-89.6443"
+            state: IL
+            street: 456 Oak Ave
+            zipCode: "62702"
+          orderId: ORD-12346
+          orderItems:
+            "$serde_json::private::Number": "2"
+          orderWeight:
+            "$serde_json::private::Number": "8.2"
+          requestedDeliveryDate: "2025-03-25T16:00:00Z"
+    performance: "[perf]"
+    traceData: ~
+  sw1:
+    id: sw1
+    input:
+      availableCarrierCapacity:
+        "$serde_json::private::Number": "4"
+      canConsolidate: true
+      carrierDetails:
+        carrierId: CAR-789
+        currentLoad:
+          "$serde_json::private::Number": "320"
+        maxCapacity:
+          "$serde_json::private::Number": "500"
+      consolidationPriority: high
+      consolidationWeight:
+        "$serde_json::private::Number": "20.7"
+      costSavingEstimate:
+        "$serde_json::private::Number": "23.75"
+      deliveryWindowDifferenceHours:
+        "$serde_json::private::Number": "24"
+      distanceKm:
+        "$serde_json::private::Number": "35"
+      expectedFuelSavings:
+        "$serde_json::private::Number": "5.25"
+      explanation: "Orders are nearby, delivery window compatible, and carrier has capacity"
+      orderWeight1:
+        "$serde_json::private::Number": "12.5"
+      orderWeight2:
+        "$serde_json::private::Number": "8.2"
+      orders:
+        - customerName: John Smith
+          deliveryAddress:
+            city: Springfield
+            coordinates:
+              latitude:
+                "$serde_json::private::Number": "39.7817"
+              longitude:
+                "$serde_json::private::Number": "-89.6501"
+            state: IL
+            street: 123 Main St
+            zipCode: "62704"
+          orderId: ORD-12345
+          orderItems:
+            "$serde_json::private::Number": "3"
+          orderWeight:
+            "$serde_json::private::Number": "12.5"
+          requestedDeliveryDate: "2025-03-25T14:00:00Z"
+        - customerName: Jane Doe
+          deliveryAddress:
+            city: Springfield
+            coordinates:
+              latitude:
+                "$serde_json::private::Number": "39.8021"
+              longitude:
+                "$serde_json::private::Number": "-89.6443"
+            state: IL
+            street: 456 Oak Ave
+            zipCode: "62702"
+          orderId: ORD-12346
+          orderItems:
+            "$serde_json::private::Number": "2"
+          orderWeight:
+            "$serde_json::private::Number": "8.2"
+          requestedDeliveryDate: "2025-03-25T16:00:00Z"
+    name: routeByConsolidationPriority
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      availableCarrierCapacity:
+        "$serde_json::private::Number": "4"
+      canConsolidate: true
+      carrierDetails:
+        carrierId: CAR-789
+        currentLoad:
+          "$serde_json::private::Number": "320"
+        maxCapacity:
+          "$serde_json::private::Number": "500"
+      consolidationPriority: high
+      consolidationWeight:
+        "$serde_json::private::Number": "20.7"
+      costSavingEstimate:
+        "$serde_json::private::Number": "23.75"
+      deliveryWindowDifferenceHours:
+        "$serde_json::private::Number": "24"
+      distanceKm:
+        "$serde_json::private::Number": "35"
+      expectedFuelSavings:
+        "$serde_json::private::Number": "5.25"
+      explanation: "Orders are nearby, delivery window compatible, and carrier has capacity"
+      orderWeight1:
+        "$serde_json::private::Number": "12.5"
+      orderWeight2:
+        "$serde_json::private::Number": "8.2"
+      orders:
+        - customerName: John Smith
+          deliveryAddress:
+            city: Springfield
+            coordinates:
+              latitude:
+                "$serde_json::private::Number": "39.7817"
+              longitude:
+                "$serde_json::private::Number": "-89.6501"
+            state: IL
+            street: 123 Main St
+            zipCode: "62704"
+          orderId: ORD-12345
+          orderItems:
+            "$serde_json::private::Number": "3"
+          orderWeight:
+            "$serde_json::private::Number": "12.5"
+          requestedDeliveryDate: "2025-03-25T14:00:00Z"
+        - customerName: Jane Doe
+          deliveryAddress:
+            city: Springfield
+            coordinates:
+              latitude:
+                "$serde_json::private::Number": "39.8021"
+              longitude:
+                "$serde_json::private::Number": "-89.6443"
+            state: IL
+            street: 456 Oak Ave
+            zipCode: "62702"
+          orderId: ORD-12346
+          orderItems:
+            "$serde_json::private::Number": "2"
+          orderWeight:
+            "$serde_json::private::Number": "8.2"
+          requestedDeliveryDate: "2025-03-25T16:00:00Z"
+    performance: "[perf]"
+    traceData:
+      statements:
+        - id: s1-1

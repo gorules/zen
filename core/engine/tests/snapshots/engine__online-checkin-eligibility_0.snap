@@ -1,0 +1,269 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  canAddBaggage: true
+  canSelectSeat: true
+  isEligible: false
+  message: You are eligible for online check-in.
+  statusCode: eligible
+trace:
+  dt1:
+    id: dt1
+    input:
+      currentTime:
+        "$serde_json::private::Number": "1742459400"
+      flight:
+        allowsExtraBaggage: true
+        departureTime: "2025-03-20T10:30:00Z"
+        destination: JFK
+        flightNumber: BA123
+        hasSeatSelection: true
+        hasSpecialMealOptions: true
+        origin: LHR
+        requiresVisa: true
+      flightDepartureTime:
+        "$serde_json::private::Number": "1742466600"
+      hasRequiredDocuments: true
+      hoursUntilDeparture:
+        "$serde_json::private::Number": "2"
+      passenger:
+        frequentFlyerStatus: gold
+        hasValidPassport: true
+        hasValidVisa: true
+        id: P12345678
+        name: John Smith
+        requiresSpecialAssistance: false
+    name: checkEligibility
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      currentTime:
+        "$serde_json::private::Number": "1742459400"
+      flight:
+        allowsExtraBaggage: true
+        departureTime: "2025-03-20T10:30:00Z"
+        destination: JFK
+        flightNumber: BA123
+        hasSeatSelection: true
+        hasSpecialMealOptions: true
+        origin: LHR
+        requiresVisa: true
+      flightDepartureTime:
+        "$serde_json::private::Number": "1742466600"
+      hasRequiredDocuments: true
+      hoursUntilDeparture:
+        "$serde_json::private::Number": "2"
+      isEligible: true
+      message: You are eligible for online check-in.
+      passenger:
+        frequentFlyerStatus: gold
+        hasValidPassport: true
+        hasValidVisa: true
+        id: P12345678
+        name: John Smith
+        requiresSpecialAssistance: false
+      statusCode: eligible
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "3"
+      reference_map: {}
+      rule:
+        _id: r1-4
+  ex1:
+    id: ex1
+    input:
+      flight:
+        allowsExtraBaggage: true
+        departureTime: "2025-03-20T10:30:00Z"
+        destination: JFK
+        flightNumber: BA123
+        hasSeatSelection: true
+        hasSpecialMealOptions: true
+        origin: LHR
+        requiresVisa: true
+      passenger:
+        frequentFlyerStatus: gold
+        hasValidPassport: true
+        hasValidVisa: true
+        id: P12345678
+        name: John Smith
+        requiresSpecialAssistance: false
+    name: preprocessData
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      currentTime:
+        "$serde_json::private::Number": "1742459400"
+      flight:
+        allowsExtraBaggage: true
+        departureTime: "2025-03-20T10:30:00Z"
+        destination: JFK
+        flightNumber: BA123
+        hasSeatSelection: true
+        hasSpecialMealOptions: true
+        origin: LHR
+        requiresVisa: true
+      flightDepartureTime:
+        "$serde_json::private::Number": "1742466600"
+      hasRequiredDocuments: true
+      hoursUntilDeparture:
+        "$serde_json::private::Number": "2"
+      passenger:
+        frequentFlyerStatus: gold
+        hasValidPassport: true
+        hasValidVisa: true
+        id: P12345678
+        name: John Smith
+        requiresSpecialAssistance: false
+    performance: "[perf]"
+    traceData:
+      currentTime:
+        result: "1742459400"
+      flightDepartureTime:
+        result: "1742466600"
+      hasRequiredDocuments:
+        result: "true"
+      hoursUntilDeparture:
+        result: "2"
+  ex2:
+    id: ex2
+    input:
+      currentTime:
+        "$serde_json::private::Number": "1742459400"
+      flight:
+        allowsExtraBaggage: true
+        departureTime: "2025-03-20T10:30:00Z"
+        destination: JFK
+        flightNumber: BA123
+        hasSeatSelection: true
+        hasSpecialMealOptions: true
+        origin: LHR
+        requiresVisa: true
+      flightDepartureTime:
+        "$serde_json::private::Number": "1742466600"
+      hasRequiredDocuments: true
+      hoursUntilDeparture:
+        "$serde_json::private::Number": "2"
+      isEligible: true
+      message: You are eligible for online check-in.
+      passenger:
+        frequentFlyerStatus: gold
+        hasValidPassport: true
+        hasValidVisa: true
+        id: P12345678
+        name: John Smith
+        requiresSpecialAssistance: false
+      statusCode: eligible
+    name: additionalServices
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      canAddBaggage: true
+      canSelectSeat: true
+      isEligible: false
+      message: You are eligible for online check-in.
+      statusCode: eligible
+    performance: "[perf]"
+    traceData:
+      canAddBaggage:
+        result: "true"
+      canSelectSeat:
+        result: "true"
+      isEligible:
+        result: "false"
+      message:
+        result: "\"You are eligible for online check-in.\""
+      statusCode:
+        result: "\"eligible\""
+  ip1:
+    id: ip1
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      flight:
+        allowsExtraBaggage: true
+        departureTime: "2025-03-20T10:30:00Z"
+        destination: JFK
+        flightNumber: BA123
+        hasSeatSelection: true
+        hasSpecialMealOptions: true
+        origin: LHR
+        requiresVisa: true
+      passenger:
+        frequentFlyerStatus: gold
+        hasValidPassport: true
+        hasValidVisa: true
+        id: P12345678
+        name: John Smith
+        requiresSpecialAssistance: false
+    performance: "[perf]"
+    traceData: ~
+  sw1:
+    id: sw1
+    input:
+      currentTime:
+        "$serde_json::private::Number": "1742459400"
+      flight:
+        allowsExtraBaggage: true
+        departureTime: "2025-03-20T10:30:00Z"
+        destination: JFK
+        flightNumber: BA123
+        hasSeatSelection: true
+        hasSpecialMealOptions: true
+        origin: LHR
+        requiresVisa: true
+      flightDepartureTime:
+        "$serde_json::private::Number": "1742466600"
+      hasRequiredDocuments: true
+      hoursUntilDeparture:
+        "$serde_json::private::Number": "2"
+      isEligible: true
+      message: You are eligible for online check-in.
+      passenger:
+        frequentFlyerStatus: gold
+        hasValidPassport: true
+        hasValidVisa: true
+        id: P12345678
+        name: John Smith
+        requiresSpecialAssistance: false
+      statusCode: eligible
+    name: eligibilityCheck
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      currentTime:
+        "$serde_json::private::Number": "1742459400"
+      flight:
+        allowsExtraBaggage: true
+        departureTime: "2025-03-20T10:30:00Z"
+        destination: JFK
+        flightNumber: BA123
+        hasSeatSelection: true
+        hasSpecialMealOptions: true
+        origin: LHR
+        requiresVisa: true
+      flightDepartureTime:
+        "$serde_json::private::Number": "1742466600"
+      hasRequiredDocuments: true
+      hoursUntilDeparture:
+        "$serde_json::private::Number": "2"
+      isEligible: true
+      message: You are eligible for online check-in.
+      passenger:
+        frequentFlyerStatus: gold
+        hasValidPassport: true
+        hasValidVisa: true
+        id: P12345678
+        name: John Smith
+        requiresSpecialAssistance: false
+      statusCode: eligible
+    performance: "[perf]"
+    traceData:
+      statements:
+        - id: s1-1

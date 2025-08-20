@@ -1,0 +1,791 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  applicant:
+    currentResidence: France
+    dateOfBirth: 1985-05-15
+    fullName: Jane Smith
+    nationality: United Kingdom
+  assessment:
+    additionalFactorsReason: In-demand skills
+    additionalFactorsScore:
+      "$serde_json::private::Number": "80"
+    backgroundReason: Background check clear
+    backgroundScore:
+      "$serde_json::private::Number": "100"
+    backgroundStatus: pending
+    documentationReason: Documentation complete
+    documentationScore:
+      "$serde_json::private::Number": "100"
+    documentationStatus: pending
+    educationReason: Advanced education
+    educationScore:
+      "$serde_json::private::Number": "80"
+    experienceReason: Significant work experience
+    experienceScore:
+      "$serde_json::private::Number": "80"
+    finalReason: Application meets criteria
+    finalStatus: approved
+    languageReason: Advanced language proficiency
+    languageScore:
+      "$serde_json::private::Number": "75"
+    overallScore:
+      "$serde_json::private::Number": "85.83333333333333333333333333"
+  background:
+    criminalHistory: false
+    immigrationViolations: false
+    previousVisaRejections:
+      "$serde_json::private::Number": "0"
+    securityConcerns: false
+  documentation:
+    medicalCheckComplete: true
+    passportValid: true
+    proofOfFundsProvided: true
+    supportingDocuments:
+      - Reference Letter
+      - Property Deed
+      - Bank Statements
+    visaApplicationComplete: true
+  qualifications:
+    educationLevel: master
+    familyConnections: false
+    languageProficiency: advanced
+    skillsInDemand: true
+    workExperienceYears:
+      "$serde_json::private::Number": "8"
+trace:
+  additionalFactorsTable:
+    id: additionalFactorsTable
+    input:
+      applicant:
+        currentResidence: France
+        dateOfBirth: 1985-05-15
+        fullName: Jane Smith
+        nationality: United Kingdom
+      assessment:
+        backgroundReason: Background check clear
+        backgroundScore:
+          "$serde_json::private::Number": "100"
+        backgroundStatus: pending
+        documentationReason: Documentation complete
+        documentationScore:
+          "$serde_json::private::Number": "100"
+        documentationStatus: pending
+        educationReason: Advanced education
+        educationScore:
+          "$serde_json::private::Number": "80"
+        experienceReason: Significant work experience
+        experienceScore:
+          "$serde_json::private::Number": "80"
+        languageReason: Advanced language proficiency
+        languageScore:
+          "$serde_json::private::Number": "75"
+      background:
+        criminalHistory: false
+        immigrationViolations: false
+        previousVisaRejections:
+          "$serde_json::private::Number": "0"
+        securityConcerns: false
+      documentation:
+        medicalCheckComplete: true
+        passportValid: true
+        proofOfFundsProvided: true
+        supportingDocuments:
+          - Reference Letter
+          - Property Deed
+          - Bank Statements
+        visaApplicationComplete: true
+      qualifications:
+        educationLevel: master
+        familyConnections: false
+        languageProficiency: advanced
+        skillsInDemand: true
+        workExperienceYears:
+          "$serde_json::private::Number": "8"
+    name: assessAdditionalFactors
+    order:
+      "$serde_json::private::Number": "6"
+    output:
+      applicant:
+        currentResidence: France
+        dateOfBirth: 1985-05-15
+        fullName: Jane Smith
+        nationality: United Kingdom
+      assessment:
+        additionalFactorsReason: In-demand skills
+        additionalFactorsScore:
+          "$serde_json::private::Number": "80"
+        backgroundReason: Background check clear
+        backgroundScore:
+          "$serde_json::private::Number": "100"
+        backgroundStatus: pending
+        documentationReason: Documentation complete
+        documentationScore:
+          "$serde_json::private::Number": "100"
+        documentationStatus: pending
+        educationReason: Advanced education
+        educationScore:
+          "$serde_json::private::Number": "80"
+        experienceReason: Significant work experience
+        experienceScore:
+          "$serde_json::private::Number": "80"
+        languageReason: Advanced language proficiency
+        languageScore:
+          "$serde_json::private::Number": "75"
+      background:
+        criminalHistory: false
+        immigrationViolations: false
+        previousVisaRejections:
+          "$serde_json::private::Number": "0"
+        securityConcerns: false
+      documentation:
+        medicalCheckComplete: true
+        passportValid: true
+        proofOfFundsProvided: true
+        supportingDocuments:
+          - Reference Letter
+          - Property Deed
+          - Bank Statements
+        visaApplicationComplete: true
+      qualifications:
+        educationLevel: master
+        familyConnections: false
+        languageProficiency: advanced
+        skillsInDemand: true
+        workExperienceYears:
+          "$serde_json::private::Number": "8"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        qualifications.familyConnections: false
+        qualifications.skillsInDemand: true
+      rule:
+        _id: rule2
+        "qualifications.familyConnections[i6-2]": "false"
+        "qualifications.skillsInDemand[i6-1]": "true"
+  backgroundCheck:
+    id: backgroundCheck
+    input:
+      applicant:
+        currentResidence: France
+        dateOfBirth: 1985-05-15
+        fullName: Jane Smith
+        nationality: United Kingdom
+      assessment:
+        documentationReason: Documentation complete
+        documentationScore:
+          "$serde_json::private::Number": "100"
+        documentationStatus: pending
+      background:
+        criminalHistory: false
+        immigrationViolations: false
+        previousVisaRejections:
+          "$serde_json::private::Number": "0"
+        securityConcerns: false
+      documentation:
+        medicalCheckComplete: true
+        passportValid: true
+        proofOfFundsProvided: true
+        supportingDocuments:
+          - Reference Letter
+          - Property Deed
+          - Bank Statements
+        visaApplicationComplete: true
+      qualifications:
+        educationLevel: master
+        familyConnections: false
+        languageProficiency: advanced
+        skillsInDemand: true
+        workExperienceYears:
+          "$serde_json::private::Number": "8"
+    name: evaluateBackground
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      applicant:
+        currentResidence: France
+        dateOfBirth: 1985-05-15
+        fullName: Jane Smith
+        nationality: United Kingdom
+      assessment:
+        backgroundReason: Background check clear
+        backgroundScore:
+          "$serde_json::private::Number": "100"
+        backgroundStatus: pending
+        documentationReason: Documentation complete
+        documentationScore:
+          "$serde_json::private::Number": "100"
+        documentationStatus: pending
+      background:
+        criminalHistory: false
+        immigrationViolations: false
+        previousVisaRejections:
+          "$serde_json::private::Number": "0"
+        securityConcerns: false
+      documentation:
+        medicalCheckComplete: true
+        passportValid: true
+        proofOfFundsProvided: true
+        supportingDocuments:
+          - Reference Letter
+          - Property Deed
+          - Bank Statements
+        visaApplicationComplete: true
+      qualifications:
+        educationLevel: master
+        familyConnections: false
+        languageProficiency: advanced
+        skillsInDemand: true
+        workExperienceYears:
+          "$serde_json::private::Number": "8"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "5"
+      reference_map:
+        background.criminalHistory: false
+        background.immigrationViolations: false
+        background.previousVisaRejections:
+          "$serde_json::private::Number": "0"
+        background.securityConcerns: false
+      rule:
+        _id: rule6
+        "background.criminalHistory[i2-1]": "false"
+        "background.immigrationViolations[i2-2]": "false"
+        "background.previousVisaRejections[i2-4]": "0"
+        "background.securityConcerns[i2-3]": "false"
+  documentationCheck:
+    id: documentationCheck
+    input:
+      applicant:
+        currentResidence: France
+        dateOfBirth: 1985-05-15
+        fullName: Jane Smith
+        nationality: United Kingdom
+      background:
+        criminalHistory: false
+        immigrationViolations: false
+        previousVisaRejections:
+          "$serde_json::private::Number": "0"
+        securityConcerns: false
+      documentation:
+        medicalCheckComplete: true
+        passportValid: true
+        proofOfFundsProvided: true
+        supportingDocuments:
+          - Reference Letter
+          - Property Deed
+          - Bank Statements
+        visaApplicationComplete: true
+      qualifications:
+        educationLevel: master
+        familyConnections: false
+        languageProficiency: advanced
+        skillsInDemand: true
+        workExperienceYears:
+          "$serde_json::private::Number": "8"
+    name: verifyDocumentation
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      applicant:
+        currentResidence: France
+        dateOfBirth: 1985-05-15
+        fullName: Jane Smith
+        nationality: United Kingdom
+      assessment:
+        documentationReason: Documentation complete
+        documentationScore:
+          "$serde_json::private::Number": "100"
+        documentationStatus: pending
+      background:
+        criminalHistory: false
+        immigrationViolations: false
+        previousVisaRejections:
+          "$serde_json::private::Number": "0"
+        securityConcerns: false
+      documentation:
+        medicalCheckComplete: true
+        passportValid: true
+        proofOfFundsProvided: true
+        supportingDocuments:
+          - Reference Letter
+          - Property Deed
+          - Bank Statements
+        visaApplicationComplete: true
+      qualifications:
+        educationLevel: master
+        familyConnections: false
+        languageProficiency: advanced
+        skillsInDemand: true
+        workExperienceYears:
+          "$serde_json::private::Number": "8"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "4"
+      reference_map:
+        documentation.medicalCheckComplete: true
+        documentation.passportValid: true
+        documentation.proofOfFundsProvided: true
+        documentation.visaApplicationComplete: true
+      rule:
+        _id: rule5
+        "documentation.medicalCheckComplete[i1-4]": "true"
+        "documentation.passportValid[i1-1]": "true"
+        "documentation.proofOfFundsProvided[i1-3]": "true"
+        "documentation.visaApplicationComplete[i1-2]": "true"
+  educationTable:
+    id: educationTable
+    input:
+      applicant:
+        currentResidence: France
+        dateOfBirth: 1985-05-15
+        fullName: Jane Smith
+        nationality: United Kingdom
+      assessment:
+        backgroundReason: Background check clear
+        backgroundScore:
+          "$serde_json::private::Number": "100"
+        backgroundStatus: pending
+        documentationReason: Documentation complete
+        documentationScore:
+          "$serde_json::private::Number": "100"
+        documentationStatus: pending
+      background:
+        criminalHistory: false
+        immigrationViolations: false
+        previousVisaRejections:
+          "$serde_json::private::Number": "0"
+        securityConcerns: false
+      documentation:
+        medicalCheckComplete: true
+        passportValid: true
+        proofOfFundsProvided: true
+        supportingDocuments:
+          - Reference Letter
+          - Property Deed
+          - Bank Statements
+        visaApplicationComplete: true
+      qualifications:
+        educationLevel: master
+        familyConnections: false
+        languageProficiency: advanced
+        skillsInDemand: true
+        workExperienceYears:
+          "$serde_json::private::Number": "8"
+    name: assessEducation
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      applicant:
+        currentResidence: France
+        dateOfBirth: 1985-05-15
+        fullName: Jane Smith
+        nationality: United Kingdom
+      assessment:
+        backgroundReason: Background check clear
+        backgroundScore:
+          "$serde_json::private::Number": "100"
+        backgroundStatus: pending
+        documentationReason: Documentation complete
+        documentationScore:
+          "$serde_json::private::Number": "100"
+        documentationStatus: pending
+        educationReason: Advanced education
+        educationScore:
+          "$serde_json::private::Number": "80"
+      background:
+        criminalHistory: false
+        immigrationViolations: false
+        previousVisaRejections:
+          "$serde_json::private::Number": "0"
+        securityConcerns: false
+      documentation:
+        medicalCheckComplete: true
+        passportValid: true
+        proofOfFundsProvided: true
+        supportingDocuments:
+          - Reference Letter
+          - Property Deed
+          - Bank Statements
+        visaApplicationComplete: true
+      qualifications:
+        educationLevel: master
+        familyConnections: false
+        languageProficiency: advanced
+        skillsInDemand: true
+        workExperienceYears:
+          "$serde_json::private::Number": "8"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        qualifications.educationLevel: master
+      rule:
+        _id: rule2
+        "qualifications.educationLevel[i3-1]": "\"master\""
+  experienceTable:
+    id: experienceTable
+    input:
+      applicant:
+        currentResidence: France
+        dateOfBirth: 1985-05-15
+        fullName: Jane Smith
+        nationality: United Kingdom
+      assessment:
+        backgroundReason: Background check clear
+        backgroundScore:
+          "$serde_json::private::Number": "100"
+        backgroundStatus: pending
+        documentationReason: Documentation complete
+        documentationScore:
+          "$serde_json::private::Number": "100"
+        documentationStatus: pending
+        educationReason: Advanced education
+        educationScore:
+          "$serde_json::private::Number": "80"
+      background:
+        criminalHistory: false
+        immigrationViolations: false
+        previousVisaRejections:
+          "$serde_json::private::Number": "0"
+        securityConcerns: false
+      documentation:
+        medicalCheckComplete: true
+        passportValid: true
+        proofOfFundsProvided: true
+        supportingDocuments:
+          - Reference Letter
+          - Property Deed
+          - Bank Statements
+        visaApplicationComplete: true
+      qualifications:
+        educationLevel: master
+        familyConnections: false
+        languageProficiency: advanced
+        skillsInDemand: true
+        workExperienceYears:
+          "$serde_json::private::Number": "8"
+    name: assessWorkExperience
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      applicant:
+        currentResidence: France
+        dateOfBirth: 1985-05-15
+        fullName: Jane Smith
+        nationality: United Kingdom
+      assessment:
+        backgroundReason: Background check clear
+        backgroundScore:
+          "$serde_json::private::Number": "100"
+        backgroundStatus: pending
+        documentationReason: Documentation complete
+        documentationScore:
+          "$serde_json::private::Number": "100"
+        documentationStatus: pending
+        educationReason: Advanced education
+        educationScore:
+          "$serde_json::private::Number": "80"
+        experienceReason: Significant work experience
+        experienceScore:
+          "$serde_json::private::Number": "80"
+      background:
+        criminalHistory: false
+        immigrationViolations: false
+        previousVisaRejections:
+          "$serde_json::private::Number": "0"
+        securityConcerns: false
+      documentation:
+        medicalCheckComplete: true
+        passportValid: true
+        proofOfFundsProvided: true
+        supportingDocuments:
+          - Reference Letter
+          - Property Deed
+          - Bank Statements
+        visaApplicationComplete: true
+      qualifications:
+        educationLevel: master
+        familyConnections: false
+        languageProficiency: advanced
+        skillsInDemand: true
+        workExperienceYears:
+          "$serde_json::private::Number": "8"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        qualifications.workExperienceYears:
+          "$serde_json::private::Number": "8"
+      rule:
+        _id: rule2
+        "qualifications.workExperienceYears[i4-1]": ">= 7"
+  input:
+    id: input
+    input: ~
+    name: immigrationApplication
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      applicant:
+        currentResidence: France
+        dateOfBirth: 1985-05-15
+        fullName: Jane Smith
+        nationality: United Kingdom
+      background:
+        criminalHistory: false
+        immigrationViolations: false
+        previousVisaRejections:
+          "$serde_json::private::Number": "0"
+        securityConcerns: false
+      documentation:
+        medicalCheckComplete: true
+        passportValid: true
+        proofOfFundsProvided: true
+        supportingDocuments:
+          - Reference Letter
+          - Property Deed
+          - Bank Statements
+        visaApplicationComplete: true
+      qualifications:
+        educationLevel: master
+        familyConnections: false
+        languageProficiency: advanced
+        skillsInDemand: true
+        workExperienceYears:
+          "$serde_json::private::Number": "8"
+    performance: "[perf]"
+    traceData: ~
+  languageTable:
+    id: languageTable
+    input:
+      applicant:
+        currentResidence: France
+        dateOfBirth: 1985-05-15
+        fullName: Jane Smith
+        nationality: United Kingdom
+      assessment:
+        backgroundReason: Background check clear
+        backgroundScore:
+          "$serde_json::private::Number": "100"
+        backgroundStatus: pending
+        documentationReason: Documentation complete
+        documentationScore:
+          "$serde_json::private::Number": "100"
+        documentationStatus: pending
+        educationReason: Advanced education
+        educationScore:
+          "$serde_json::private::Number": "80"
+        experienceReason: Significant work experience
+        experienceScore:
+          "$serde_json::private::Number": "80"
+      background:
+        criminalHistory: false
+        immigrationViolations: false
+        previousVisaRejections:
+          "$serde_json::private::Number": "0"
+        securityConcerns: false
+      documentation:
+        medicalCheckComplete: true
+        passportValid: true
+        proofOfFundsProvided: true
+        supportingDocuments:
+          - Reference Letter
+          - Property Deed
+          - Bank Statements
+        visaApplicationComplete: true
+      qualifications:
+        educationLevel: master
+        familyConnections: false
+        languageProficiency: advanced
+        skillsInDemand: true
+        workExperienceYears:
+          "$serde_json::private::Number": "8"
+    name: assessLanguage
+    order:
+      "$serde_json::private::Number": "5"
+    output:
+      applicant:
+        currentResidence: France
+        dateOfBirth: 1985-05-15
+        fullName: Jane Smith
+        nationality: United Kingdom
+      assessment:
+        backgroundReason: Background check clear
+        backgroundScore:
+          "$serde_json::private::Number": "100"
+        backgroundStatus: pending
+        documentationReason: Documentation complete
+        documentationScore:
+          "$serde_json::private::Number": "100"
+        documentationStatus: pending
+        educationReason: Advanced education
+        educationScore:
+          "$serde_json::private::Number": "80"
+        experienceReason: Significant work experience
+        experienceScore:
+          "$serde_json::private::Number": "80"
+        languageReason: Advanced language proficiency
+        languageScore:
+          "$serde_json::private::Number": "75"
+      background:
+        criminalHistory: false
+        immigrationViolations: false
+        previousVisaRejections:
+          "$serde_json::private::Number": "0"
+        securityConcerns: false
+      documentation:
+        medicalCheckComplete: true
+        passportValid: true
+        proofOfFundsProvided: true
+        supportingDocuments:
+          - Reference Letter
+          - Property Deed
+          - Bank Statements
+        visaApplicationComplete: true
+      qualifications:
+        educationLevel: master
+        familyConnections: false
+        languageProficiency: advanced
+        skillsInDemand: true
+        workExperienceYears:
+          "$serde_json::private::Number": "8"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        qualifications.languageProficiency: advanced
+      rule:
+        _id: rule2
+        "qualifications.languageProficiency[i5-1]": "\"advanced\""
+  overallAssessment:
+    id: overallAssessment
+    input:
+      applicant:
+        currentResidence: France
+        dateOfBirth: 1985-05-15
+        fullName: Jane Smith
+        nationality: United Kingdom
+      assessment:
+        additionalFactorsReason: In-demand skills
+        additionalFactorsScore:
+          "$serde_json::private::Number": "80"
+        backgroundReason: Background check clear
+        backgroundScore:
+          "$serde_json::private::Number": "100"
+        backgroundStatus: pending
+        documentationReason: Documentation complete
+        documentationScore:
+          "$serde_json::private::Number": "100"
+        documentationStatus: pending
+        educationReason: Advanced education
+        educationScore:
+          "$serde_json::private::Number": "80"
+        experienceReason: Significant work experience
+        experienceScore:
+          "$serde_json::private::Number": "80"
+        languageReason: Advanced language proficiency
+        languageScore:
+          "$serde_json::private::Number": "75"
+      background:
+        criminalHistory: false
+        immigrationViolations: false
+        previousVisaRejections:
+          "$serde_json::private::Number": "0"
+        securityConcerns: false
+      documentation:
+        medicalCheckComplete: true
+        passportValid: true
+        proofOfFundsProvided: true
+        supportingDocuments:
+          - Reference Letter
+          - Property Deed
+          - Bank Statements
+        visaApplicationComplete: true
+      qualifications:
+        educationLevel: master
+        familyConnections: false
+        languageProficiency: advanced
+        skillsInDemand: true
+        workExperienceYears:
+          "$serde_json::private::Number": "8"
+    name: finalAssessment
+    order:
+      "$serde_json::private::Number": "7"
+    output:
+      applicant:
+        currentResidence: France
+        dateOfBirth: 1985-05-15
+        fullName: Jane Smith
+        nationality: United Kingdom
+      assessment:
+        additionalFactorsReason: In-demand skills
+        additionalFactorsScore:
+          "$serde_json::private::Number": "80"
+        backgroundReason: Background check clear
+        backgroundScore:
+          "$serde_json::private::Number": "100"
+        backgroundStatus: pending
+        documentationReason: Documentation complete
+        documentationScore:
+          "$serde_json::private::Number": "100"
+        documentationStatus: pending
+        educationReason: Advanced education
+        educationScore:
+          "$serde_json::private::Number": "80"
+        experienceReason: Significant work experience
+        experienceScore:
+          "$serde_json::private::Number": "80"
+        finalReason: Application meets criteria
+        finalStatus: approved
+        languageReason: Advanced language proficiency
+        languageScore:
+          "$serde_json::private::Number": "75"
+        overallScore:
+          "$serde_json::private::Number": "85.83333333333333333333333333"
+      background:
+        criminalHistory: false
+        immigrationViolations: false
+        previousVisaRejections:
+          "$serde_json::private::Number": "0"
+        securityConcerns: false
+      documentation:
+        medicalCheckComplete: true
+        passportValid: true
+        proofOfFundsProvided: true
+        supportingDocuments:
+          - Reference Letter
+          - Property Deed
+          - Bank Statements
+        visaApplicationComplete: true
+      qualifications:
+        educationLevel: master
+        familyConnections: false
+        languageProficiency: advanced
+        skillsInDemand: true
+        workExperienceYears:
+          "$serde_json::private::Number": "8"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "4"
+      reference_map:
+        (assessment.documentationScore + assessment.backgroundScore + assessment.educationScore + assessment.experienceScore + assessment.languageScore + assessment.additionalFactorsScore) / 6:
+          "$serde_json::private::Number": "85.83333333333333333333333333"
+        assessment.backgroundStatus: pending
+        assessment.documentationStatus: pending
+      rule:
+        "(assessment.documentationScore + assessment.backgroundScore + assessment.educationScore + assessment.experienceScore + assessment.languageScore + assessment.additionalFactorsScore) / 6[i7-3]": ">= 70"
+        _id: rule5
+        "assessment.backgroundStatus[i7-2]": ""
+        "assessment.documentationStatus[i7-1]": ""

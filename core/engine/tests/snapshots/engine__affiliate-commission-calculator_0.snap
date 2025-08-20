@@ -1,0 +1,151 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  commissionAmount:
+    "$serde_json::private::Number": "69.3"
+  finalCommissionRate:
+    "$serde_json::private::Number": "0.198"
+  promotionMultiplier:
+    "$serde_json::private::Number": "1.25"
+trace:
+  dt1:
+    id: dt1
+    input:
+      conversionRate:
+        "$serde_json::private::Number": "0.12"
+      isSpecialPromotion: true
+      monthlyReferrals:
+        "$serde_json::private::Number": "75"
+      productCategory: fashion
+      saleAmount:
+        "$serde_json::private::Number": "350"
+    name: categoryRates
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      baseCommissionRate:
+        "$serde_json::private::Number": "0.12"
+      conversionRate:
+        "$serde_json::private::Number": "0.12"
+      isSpecialPromotion: true
+      monthlyReferrals:
+        "$serde_json::private::Number": "75"
+      productCategory: fashion
+      saleAmount:
+        "$serde_json::private::Number": "350"
+      volumeBonusMax:
+        "$serde_json::private::Number": "0.04"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        productCategory: fashion
+      rule:
+        _id: r1-2
+        "productCategory[i1-1]": "'fashion'"
+  dt2:
+    id: dt2
+    input:
+      baseCommissionRate:
+        "$serde_json::private::Number": "0.12"
+      conversionRate:
+        "$serde_json::private::Number": "0.12"
+      isSpecialPromotion: true
+      monthlyReferrals:
+        "$serde_json::private::Number": "75"
+      productCategory: fashion
+      saleAmount:
+        "$serde_json::private::Number": "350"
+      volumeBonusMax:
+        "$serde_json::private::Number": "0.04"
+    name: performanceRates
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      baseCommissionRate:
+        "$serde_json::private::Number": "0.12"
+      conversionRate:
+        "$serde_json::private::Number": "0.12"
+      isSpecialPromotion: true
+      monthlyReferrals:
+        "$serde_json::private::Number": "75"
+      performanceMultiplier:
+        "$serde_json::private::Number": "1.1"
+      productCategory: fashion
+      saleAmount:
+        "$serde_json::private::Number": "350"
+      volumeBonus:
+        "$serde_json::private::Number": "0.024"
+      volumeBonusMax:
+        "$serde_json::private::Number": "0.04"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "2"
+      reference_map:
+        conversionRate:
+          "$serde_json::private::Number": "0.12"
+        monthlyReferrals:
+          "$serde_json::private::Number": "75"
+      rule:
+        _id: r2-3
+        "conversionRate[i2-2]": ">= 0.10"
+        "monthlyReferrals[i2-1]": ">= 50"
+  ex1:
+    id: ex1
+    input:
+      baseCommissionRate:
+        "$serde_json::private::Number": "0.12"
+      conversionRate:
+        "$serde_json::private::Number": "0.12"
+      isSpecialPromotion: true
+      monthlyReferrals:
+        "$serde_json::private::Number": "75"
+      performanceMultiplier:
+        "$serde_json::private::Number": "1.1"
+      productCategory: fashion
+      saleAmount:
+        "$serde_json::private::Number": "350"
+      volumeBonus:
+        "$serde_json::private::Number": "0.024"
+      volumeBonusMax:
+        "$serde_json::private::Number": "0.04"
+    name: calculateCommission
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      commissionAmount:
+        "$serde_json::private::Number": "69.3"
+      finalCommissionRate:
+        "$serde_json::private::Number": "0.198"
+      promotionMultiplier:
+        "$serde_json::private::Number": "1.25"
+    performance: "[perf]"
+    traceData:
+      commissionAmount:
+        result: "69.3"
+      finalCommissionRate:
+        result: "0.198"
+      promotionMultiplier:
+        result: "1.25"
+  ip1:
+    id: ip1
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      conversionRate:
+        "$serde_json::private::Number": "0.12"
+      isSpecialPromotion: true
+      monthlyReferrals:
+        "$serde_json::private::Number": "75"
+      productCategory: fashion
+      saleAmount:
+        "$serde_json::private::Number": "350"
+    performance: "[perf]"
+    traceData: ~

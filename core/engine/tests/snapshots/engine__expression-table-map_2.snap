@@ -1,0 +1,263 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  customer:
+    country: US
+    name: John Doe
+  exprItems:
+    - amount:
+        "$serde_json::private::Number": "51"
+      discount:
+        "$serde_json::private::Number": "5"
+      group: accessories
+      name: Mouse
+  exprItemsSum:
+    "$serde_json::private::Number": "51"
+  items:
+    - amount:
+        "$serde_json::private::Number": "1000"
+      group: electronics
+      name: Laptop
+    - amount:
+        "$serde_json::private::Number": "51"
+      group: accessories
+      name: Mouse
+  tblItems:
+    - amount:
+        "$serde_json::private::Number": "1000"
+      group: electronics
+      name: Laptop
+    - amount:
+        "$serde_json::private::Number": "51"
+      discount:
+        "$serde_json::private::Number": "5"
+      group: accessories
+      name: Mouse
+  tblItemsSum:
+    "$serde_json::private::Number": "1051"
+trace:
+  3814877d-0169-45dc-b4f5-5f9eade2e4f1:
+    id: 3814877d-0169-45dc-b4f5-5f9eade2e4f1
+    input:
+      customer:
+        country: US
+        name: John Doe
+      exprItems:
+        - amount:
+            "$serde_json::private::Number": "51"
+          discount:
+            "$serde_json::private::Number": "5"
+          group: accessories
+          name: Mouse
+      items:
+        - amount:
+            "$serde_json::private::Number": "1000"
+          group: electronics
+          name: Laptop
+        - amount:
+            "$serde_json::private::Number": "51"
+          group: accessories
+          name: Mouse
+    name: sum
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      customer:
+        country: US
+        name: John Doe
+      exprItems:
+        - amount:
+            "$serde_json::private::Number": "51"
+          discount:
+            "$serde_json::private::Number": "5"
+          group: accessories
+          name: Mouse
+      exprItemsSum:
+        "$serde_json::private::Number": "51"
+      items:
+        - amount:
+            "$serde_json::private::Number": "1000"
+          group: electronics
+          name: Laptop
+        - amount:
+            "$serde_json::private::Number": "51"
+          group: accessories
+          name: Mouse
+    performance: "[perf]"
+    traceData:
+      exprItemsSum:
+        result: "51"
+  5f56e61b-5687-4758-8524-8121df13b2ba:
+    id: 5f56e61b-5687-4758-8524-8121df13b2ba
+    input:
+      customer:
+        country: US
+        name: John Doe
+      items:
+        - amount:
+            "$serde_json::private::Number": "1000"
+          group: electronics
+          name: Laptop
+        - amount:
+            "$serde_json::private::Number": "51"
+          group: accessories
+          name: Mouse
+    name: expr
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      customer:
+        country: US
+        name: John Doe
+      exprItems:
+        - amount:
+            "$serde_json::private::Number": "51"
+          discount:
+            "$serde_json::private::Number": "5"
+          group: accessories
+          name: Mouse
+      items:
+        - amount:
+            "$serde_json::private::Number": "1000"
+          group: electronics
+          name: Laptop
+        - amount:
+            "$serde_json::private::Number": "51"
+          group: accessories
+          name: Mouse
+    performance: "[perf]"
+    traceData:
+      - discount:
+          result: "5"
+  8ceca45e-e6ff-4613-984c-5846e53c5a39:
+    id: 8ceca45e-e6ff-4613-984c-5846e53c5a39
+    input:
+      customer:
+        country: US
+        name: John Doe
+      items:
+        - amount:
+            "$serde_json::private::Number": "1000"
+          group: electronics
+          name: Laptop
+        - amount:
+            "$serde_json::private::Number": "51"
+          group: accessories
+          name: Mouse
+      tblItems:
+        - amount:
+            "$serde_json::private::Number": "1000"
+          group: electronics
+          name: Laptop
+        - amount:
+            "$serde_json::private::Number": "51"
+          discount:
+            "$serde_json::private::Number": "5"
+          group: accessories
+          name: Mouse
+    name: sum
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      customer:
+        country: US
+        name: John Doe
+      items:
+        - amount:
+            "$serde_json::private::Number": "1000"
+          group: electronics
+          name: Laptop
+        - amount:
+            "$serde_json::private::Number": "51"
+          group: accessories
+          name: Mouse
+      tblItems:
+        - amount:
+            "$serde_json::private::Number": "1000"
+          group: electronics
+          name: Laptop
+        - amount:
+            "$serde_json::private::Number": "51"
+          discount:
+            "$serde_json::private::Number": "5"
+          group: accessories
+          name: Mouse
+      tblItemsSum:
+        "$serde_json::private::Number": "1051"
+    performance: "[perf]"
+    traceData:
+      tblItemsSum:
+        result: "1051"
+  b8ebb212-e290-4131-9703-0bb7b1fd2328:
+    id: b8ebb212-e290-4131-9703-0bb7b1fd2328
+    input:
+      customer:
+        country: US
+        name: John Doe
+      items:
+        - amount:
+            "$serde_json::private::Number": "1000"
+          group: electronics
+          name: Laptop
+        - amount:
+            "$serde_json::private::Number": "51"
+          group: accessories
+          name: Mouse
+    name: table
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      customer:
+        country: US
+        name: John Doe
+      items:
+        - amount:
+            "$serde_json::private::Number": "1000"
+          group: electronics
+          name: Laptop
+        - amount:
+            "$serde_json::private::Number": "51"
+          group: accessories
+          name: Mouse
+      tblItems:
+        - amount:
+            "$serde_json::private::Number": "1000"
+          group: electronics
+          name: Laptop
+        - amount:
+            "$serde_json::private::Number": "51"
+          discount:
+            "$serde_json::private::Number": "5"
+          group: accessories
+          name: Mouse
+    performance: "[perf]"
+    traceData:
+      - index:
+          "$serde_json::private::Number": "0"
+        reference_map: {}
+        rule:
+          _id: fd81538a-7451-4eb7-a25c-01c3afbebbdf
+  be2a55f4-cdd8-482e-b53c-a947cbb7d7a0:
+    id: be2a55f4-cdd8-482e-b53c-a947cbb7d7a0
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      customer:
+        country: US
+        name: John Doe
+      items:
+        - amount:
+            "$serde_json::private::Number": "1000"
+          group: electronics
+          name: Laptop
+        - amount:
+            "$serde_json::private::Number": "51"
+          group: accessories
+          name: Mouse
+    performance: "[perf]"
+    traceData: ~

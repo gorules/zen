@@ -1,0 +1,245 @@
+{
+  "tests": [
+    {
+      "input": {
+        "accountId": "ACC98765432",
+        "accountType": "savings",
+        "customerTier": "premium",
+        "lastActivityDate": "2024-11-15",
+        "dormancyThreshold": 180,
+        "accountBalance": 25750.45,
+        "currency": "USD",
+        "region": "NORTH_AMERICA",
+        "contactPreference": "email",
+        "customerEmail": "customer@example.com",
+        "customerPhone": "+15551234567",
+        "regulatoryJurisdiction": "US-NY"
+      },
+      "output": {
+        "actionPriority": "high",
+        "recommendedAction": "fee_waiver"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "ip1",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 173.5
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1-1",
+            "key": "daysSinceLastActivity",
+            "value": "date('now') - date(lastActivityDate)"
+          },
+          {
+            "id": "e1-2",
+            "key": "daysToThreshold",
+            "value": "dormancyThreshold - $.daysSinceLastActivity"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex1",
+      "name": "calculate_dormancy",
+      "position": {
+        "x": 430,
+        "y": 173.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1-1",
+            "i1-1": "< 0",
+            "o1-1": "'dormant'"
+          },
+          {
+            "_id": "r1-2",
+            "i1-1": "< 30",
+            "o1-1": "'at_risk'"
+          },
+          {
+            "_id": "r1-3",
+            "i1-1": "< 60",
+            "o1-1": "'warning'"
+          },
+          {
+            "_id": "r1-4",
+            "i1-1": "",
+            "o1-1": "'active'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Days To Threshold",
+            "field": "daysToThreshold"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Status",
+            "field": "dormancyStatus"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt1",
+      "name": "dormancy_status",
+      "position": {
+        "x": 750,
+        "y": 173.5
+      }
+    },
+    {
+      "type": "switchNode",
+      "content": {
+        "hitPolicy": "first",
+        "statements": [
+          {
+            "id": "s1-1",
+            "condition": "dormancyStatus != 'active'",
+            "isDefault": false
+          },
+          {
+            "id": "s1-2",
+            "condition": "",
+            "isDefault": true
+          }
+        ]
+      },
+      "id": "sw1",
+      "name": "route_by_status",
+      "position": {
+        "x": 1070,
+        "y": 173.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r2-1",
+            "i2-1": "'dormant'",
+            "i2-2": "'premium'",
+            "o2-1": "'fee_waiver'",
+            "o2-2": "'high'"
+          },
+          {
+            "_id": "r2-2",
+            "i2-1": "'dormant'",
+            "i2-2": "",
+            "o2-1": "'auto_close'",
+            "o2-2": "'medium'"
+          },
+          {
+            "_id": "r2-3",
+            "i2-1": "'at_risk'",
+            "i2-2": "'premium'",
+            "o2-1": "'account_review'",
+            "o2-2": "'high'"
+          },
+          {
+            "_id": "r2-4",
+            "i2-1": "'at_risk'",
+            "i2-2": "",
+            "o2-1": "'final_notice'",
+            "o2-2": "'high'"
+          },
+          {
+            "_id": "r2-5",
+            "i2-1": "'warning'",
+            "i2-2": "",
+            "o2-1": "'notification'",
+            "o2-2": "'medium'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i2-1",
+            "name": "Status",
+            "field": "dormancyStatus"
+          },
+          {
+            "id": "i2-2",
+            "name": "Customer Tier",
+            "field": "customerTier"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2-1",
+            "name": "Action",
+            "field": "recommendedAction"
+          },
+          {
+            "id": "o2-2",
+            "name": "Priority",
+            "field": "actionPriority"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt2",
+      "name": "determine_action",
+      "position": {
+        "x": 1390,
+        "y": 173.5
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "ed1",
+      "sourceId": "ip1",
+      "targetId": "ex1",
+      "type": "edge"
+    },
+    {
+      "id": "ed2",
+      "sourceId": "ex1",
+      "targetId": "dt1",
+      "type": "edge"
+    },
+    {
+      "id": "ed3",
+      "sourceId": "dt1",
+      "targetId": "sw1",
+      "type": "edge"
+    },
+    {
+      "id": "ed4",
+      "sourceId": "sw1",
+      "targetId": "dt2",
+      "sourceHandle": "s1-1",
+      "type": "edge"
+    }
+  ]
+}

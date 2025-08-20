@@ -1,0 +1,605 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  has_compliance_flags: false
+  report_instructions: File FinCEN Form 112 within 24 hours
+  reporting_deadline:
+    "$serde_json::private::Number": "1743330600"
+  reporting_status: urgent_filing_required
+  requires_immediate_filing: true
+trace:
+  compliance_flags:
+    id: compliance_flags
+    input:
+      amount_score:
+        "$serde_json::private::Number": "15"
+      base_risk_score:
+        "$serde_json::private::Number": "0"
+      classification:
+        priority: high_priority
+        report_type: CTR
+      compliance:
+        requires_review: true
+        review_reason: Medium risk score with high priority requires review
+      customer:
+        account_opening_date: 2020-01-15
+        high_risk: false
+        id: CUST98765
+        jurisdiction: US
+        kyc_verified: true
+        name: Acme Corporation
+        normal_activity_patterns:
+          - cash_deposit
+          - domestic_wire
+          - check_deposit
+        risk_category: medium
+        suspicious_activity_count:
+          "$serde_json::private::Number": "0"
+        type: business
+      customer_score:
+        "$serde_json::private::Number": "0"
+      priority_score:
+        "$serde_json::private::Number": "25"
+      reporting:
+        days_to_report:
+          "$serde_json::private::Number": "15"
+        form_name: FinCEN Form 112
+      risk:
+        jurisdiction_score:
+          "$serde_json::private::Number": "15"
+      total_risk_score:
+        "$serde_json::private::Number": "55"
+      transaction:
+        amount:
+          "$serde_json::private::Number": "15000"
+        currency: USD
+        date: "2025-03-15T10:30:00Z"
+        description: Business cash deposit
+        high_risk_country: false
+        id: TX123456789
+        structuring_suspected: false
+        type: cash_deposit
+      transaction_history_score:
+        "$serde_json::private::Number": "0"
+    name: identify_compliance_issues
+    order:
+      "$serde_json::private::Number": "5"
+    output:
+      amount_score:
+        "$serde_json::private::Number": "15"
+      base_risk_score:
+        "$serde_json::private::Number": "0"
+      classification:
+        priority: high_priority
+        report_type: CTR
+      compliance:
+        flags: []
+        requires_review: true
+        review_reason: Medium risk score with high priority requires review
+      customer:
+        account_opening_date: 2020-01-15
+        high_risk: false
+        id: CUST98765
+        jurisdiction: US
+        kyc_verified: true
+        name: Acme Corporation
+        normal_activity_patterns:
+          - cash_deposit
+          - domestic_wire
+          - check_deposit
+        risk_category: medium
+        suspicious_activity_count:
+          "$serde_json::private::Number": "0"
+        type: business
+      customer_score:
+        "$serde_json::private::Number": "0"
+      priority_score:
+        "$serde_json::private::Number": "25"
+      reporting:
+        days_to_report:
+          "$serde_json::private::Number": "15"
+        form_name: FinCEN Form 112
+      risk:
+        jurisdiction_score:
+          "$serde_json::private::Number": "15"
+      total_risk_score:
+        "$serde_json::private::Number": "55"
+      transaction:
+        amount:
+          "$serde_json::private::Number": "15000"
+        currency: USD
+        date: "2025-03-15T10:30:00Z"
+        description: Business cash deposit
+        high_risk_country: false
+        id: TX123456789
+        structuring_suspected: false
+        type: cash_deposit
+      transaction_history_score:
+        "$serde_json::private::Number": "0"
+    performance: "[perf]"
+    traceData: []
+  input:
+    id: input
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      customer:
+        account_opening_date: 2020-01-15
+        high_risk: false
+        id: CUST98765
+        jurisdiction: US
+        kyc_verified: true
+        name: Acme Corporation
+        normal_activity_patterns:
+          - cash_deposit
+          - domestic_wire
+          - check_deposit
+        risk_category: medium
+        suspicious_activity_count:
+          "$serde_json::private::Number": "0"
+        type: business
+      transaction:
+        amount:
+          "$serde_json::private::Number": "15000"
+        currency: USD
+        date: "2025-03-15T10:30:00Z"
+        description: Business cash deposit
+        high_risk_country: false
+        id: TX123456789
+        structuring_suspected: false
+        type: cash_deposit
+    performance: "[perf]"
+    traceData: ~
+  jurisdiction_rules:
+    id: jurisdiction_rules
+    input:
+      classification:
+        priority: high_priority
+        report_type: CTR
+      customer:
+        account_opening_date: 2020-01-15
+        high_risk: false
+        id: CUST98765
+        jurisdiction: US
+        kyc_verified: true
+        name: Acme Corporation
+        normal_activity_patterns:
+          - cash_deposit
+          - domestic_wire
+          - check_deposit
+        risk_category: medium
+        suspicious_activity_count:
+          "$serde_json::private::Number": "0"
+        type: business
+      transaction:
+        amount:
+          "$serde_json::private::Number": "15000"
+        currency: USD
+        date: "2025-03-15T10:30:00Z"
+        description: Business cash deposit
+        high_risk_country: false
+        id: TX123456789
+        structuring_suspected: false
+        type: cash_deposit
+    name: apply_jurisdiction_rules
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      classification:
+        priority: high_priority
+        report_type: CTR
+      customer:
+        account_opening_date: 2020-01-15
+        high_risk: false
+        id: CUST98765
+        jurisdiction: US
+        kyc_verified: true
+        name: Acme Corporation
+        normal_activity_patterns:
+          - cash_deposit
+          - domestic_wire
+          - check_deposit
+        risk_category: medium
+        suspicious_activity_count:
+          "$serde_json::private::Number": "0"
+        type: business
+      reporting:
+        days_to_report:
+          "$serde_json::private::Number": "15"
+        form_name: FinCEN Form 112
+      risk:
+        jurisdiction_score:
+          "$serde_json::private::Number": "15"
+      transaction:
+        amount:
+          "$serde_json::private::Number": "15000"
+        currency: USD
+        date: "2025-03-15T10:30:00Z"
+        description: Business cash deposit
+        high_risk_country: false
+        id: TX123456789
+        structuring_suspected: false
+        type: cash_deposit
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        classification.report_type: CTR
+        customer.jurisdiction: US
+      rule:
+        _id: r2-1
+        "classification.report_type[i2-2]": "'CTR'"
+        "customer.jurisdiction[i2-1]": "'US'"
+  reporting_requirements:
+    id: reporting_requirements
+    input:
+      amount_score:
+        "$serde_json::private::Number": "15"
+      base_risk_score:
+        "$serde_json::private::Number": "0"
+      classification:
+        priority: high_priority
+        report_type: CTR
+      compliance:
+        flags: []
+        requires_review: true
+        review_reason: Medium risk score with high priority requires review
+      customer:
+        account_opening_date: 2020-01-15
+        high_risk: false
+        id: CUST98765
+        jurisdiction: US
+        kyc_verified: true
+        name: Acme Corporation
+        normal_activity_patterns:
+          - cash_deposit
+          - domestic_wire
+          - check_deposit
+        risk_category: medium
+        suspicious_activity_count:
+          "$serde_json::private::Number": "0"
+        type: business
+      customer_score:
+        "$serde_json::private::Number": "0"
+      priority_score:
+        "$serde_json::private::Number": "25"
+      reporting:
+        days_to_report:
+          "$serde_json::private::Number": "15"
+        form_name: FinCEN Form 112
+      risk:
+        jurisdiction_score:
+          "$serde_json::private::Number": "15"
+      total_risk_score:
+        "$serde_json::private::Number": "55"
+      transaction:
+        amount:
+          "$serde_json::private::Number": "15000"
+        currency: USD
+        date: "2025-03-15T10:30:00Z"
+        description: Business cash deposit
+        high_risk_country: false
+        id: TX123456789
+        structuring_suspected: false
+        type: cash_deposit
+      transaction_history_score:
+        "$serde_json::private::Number": "0"
+    name: determine_reporting_requirements
+    order:
+      "$serde_json::private::Number": "6"
+    output:
+      has_compliance_flags: false
+      report_instructions: File FinCEN Form 112 within 24 hours
+      reporting_deadline:
+        "$serde_json::private::Number": "1743330600"
+      reporting_status: urgent_filing_required
+      requires_immediate_filing: true
+    performance: "[perf]"
+    traceData:
+      has_compliance_flags:
+        result: "false"
+      report_instructions:
+        result: "\"File FinCEN Form 112 within 24 hours\""
+      reporting_deadline:
+        result: "1743330600"
+      reporting_status:
+        result: "\"urgent_filing_required\""
+      requires_immediate_filing:
+        result: "true"
+  risk_assessment:
+    id: risk_assessment
+    input:
+      classification:
+        priority: high_priority
+        report_type: CTR
+      customer:
+        account_opening_date: 2020-01-15
+        high_risk: false
+        id: CUST98765
+        jurisdiction: US
+        kyc_verified: true
+        name: Acme Corporation
+        normal_activity_patterns:
+          - cash_deposit
+          - domestic_wire
+          - check_deposit
+        risk_category: medium
+        suspicious_activity_count:
+          "$serde_json::private::Number": "0"
+        type: business
+      reporting:
+        days_to_report:
+          "$serde_json::private::Number": "15"
+        form_name: FinCEN Form 112
+      risk:
+        jurisdiction_score:
+          "$serde_json::private::Number": "15"
+      transaction:
+        amount:
+          "$serde_json::private::Number": "15000"
+        currency: USD
+        date: "2025-03-15T10:30:00Z"
+        description: Business cash deposit
+        high_risk_country: false
+        id: TX123456789
+        structuring_suspected: false
+        type: cash_deposit
+    name: calculate_risk_score
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      amount_score:
+        "$serde_json::private::Number": "15"
+      base_risk_score:
+        "$serde_json::private::Number": "0"
+      classification:
+        priority: high_priority
+        report_type: CTR
+      customer:
+        account_opening_date: 2020-01-15
+        high_risk: false
+        id: CUST98765
+        jurisdiction: US
+        kyc_verified: true
+        name: Acme Corporation
+        normal_activity_patterns:
+          - cash_deposit
+          - domestic_wire
+          - check_deposit
+        risk_category: medium
+        suspicious_activity_count:
+          "$serde_json::private::Number": "0"
+        type: business
+      customer_score:
+        "$serde_json::private::Number": "0"
+      priority_score:
+        "$serde_json::private::Number": "25"
+      reporting:
+        days_to_report:
+          "$serde_json::private::Number": "15"
+        form_name: FinCEN Form 112
+      risk:
+        jurisdiction_score:
+          "$serde_json::private::Number": "15"
+      total_risk_score:
+        "$serde_json::private::Number": "55"
+      transaction:
+        amount:
+          "$serde_json::private::Number": "15000"
+        currency: USD
+        date: "2025-03-15T10:30:00Z"
+        description: Business cash deposit
+        high_risk_country: false
+        id: TX123456789
+        structuring_suspected: false
+        type: cash_deposit
+      transaction_history_score:
+        "$serde_json::private::Number": "0"
+    performance: "[perf]"
+    traceData:
+      amount_score:
+        result: "15"
+      base_risk_score:
+        result: "0"
+      customer_score:
+        result: "0"
+      priority_score:
+        result: "25"
+      total_risk_score:
+        result: "55"
+      transaction_history_score:
+        result: "0"
+  threshold_checks:
+    id: threshold_checks
+    input:
+      amount_score:
+        "$serde_json::private::Number": "15"
+      base_risk_score:
+        "$serde_json::private::Number": "0"
+      classification:
+        priority: high_priority
+        report_type: CTR
+      customer:
+        account_opening_date: 2020-01-15
+        high_risk: false
+        id: CUST98765
+        jurisdiction: US
+        kyc_verified: true
+        name: Acme Corporation
+        normal_activity_patterns:
+          - cash_deposit
+          - domestic_wire
+          - check_deposit
+        risk_category: medium
+        suspicious_activity_count:
+          "$serde_json::private::Number": "0"
+        type: business
+      customer_score:
+        "$serde_json::private::Number": "0"
+      priority_score:
+        "$serde_json::private::Number": "25"
+      reporting:
+        days_to_report:
+          "$serde_json::private::Number": "15"
+        form_name: FinCEN Form 112
+      risk:
+        jurisdiction_score:
+          "$serde_json::private::Number": "15"
+      total_risk_score:
+        "$serde_json::private::Number": "55"
+      transaction:
+        amount:
+          "$serde_json::private::Number": "15000"
+        currency: USD
+        date: "2025-03-15T10:30:00Z"
+        description: Business cash deposit
+        high_risk_country: false
+        id: TX123456789
+        structuring_suspected: false
+        type: cash_deposit
+      transaction_history_score:
+        "$serde_json::private::Number": "0"
+    name: regulatory_thresholds
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      amount_score:
+        "$serde_json::private::Number": "15"
+      base_risk_score:
+        "$serde_json::private::Number": "0"
+      classification:
+        priority: high_priority
+        report_type: CTR
+      compliance:
+        requires_review: true
+        review_reason: Medium risk score with high priority requires review
+      customer:
+        account_opening_date: 2020-01-15
+        high_risk: false
+        id: CUST98765
+        jurisdiction: US
+        kyc_verified: true
+        name: Acme Corporation
+        normal_activity_patterns:
+          - cash_deposit
+          - domestic_wire
+          - check_deposit
+        risk_category: medium
+        suspicious_activity_count:
+          "$serde_json::private::Number": "0"
+        type: business
+      customer_score:
+        "$serde_json::private::Number": "0"
+      priority_score:
+        "$serde_json::private::Number": "25"
+      reporting:
+        days_to_report:
+          "$serde_json::private::Number": "15"
+        form_name: FinCEN Form 112
+      risk:
+        jurisdiction_score:
+          "$serde_json::private::Number": "15"
+      total_risk_score:
+        "$serde_json::private::Number": "55"
+      transaction:
+        amount:
+          "$serde_json::private::Number": "15000"
+        currency: USD
+        date: "2025-03-15T10:30:00Z"
+        description: Business cash deposit
+        high_risk_country: false
+        id: TX123456789
+        structuring_suspected: false
+        type: cash_deposit
+      transaction_history_score:
+        "$serde_json::private::Number": "0"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "2"
+      reference_map:
+        classification.priority: high_priority
+        total_risk_score:
+          "$serde_json::private::Number": "55"
+      rule:
+        _id: r3-3
+        "classification.priority[i3-2]": "'high_priority'"
+        "total_risk_score[i3-1]": "[40..60]"
+  transaction_type:
+    id: transaction_type
+    input:
+      customer:
+        account_opening_date: 2020-01-15
+        high_risk: false
+        id: CUST98765
+        jurisdiction: US
+        kyc_verified: true
+        name: Acme Corporation
+        normal_activity_patterns:
+          - cash_deposit
+          - domestic_wire
+          - check_deposit
+        risk_category: medium
+        suspicious_activity_count:
+          "$serde_json::private::Number": "0"
+        type: business
+      transaction:
+        amount:
+          "$serde_json::private::Number": "15000"
+        currency: USD
+        date: "2025-03-15T10:30:00Z"
+        description: Business cash deposit
+        high_risk_country: false
+        id: TX123456789
+        structuring_suspected: false
+        type: cash_deposit
+    name: classify_transaction
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      classification:
+        priority: high_priority
+        report_type: CTR
+      customer:
+        account_opening_date: 2020-01-15
+        high_risk: false
+        id: CUST98765
+        jurisdiction: US
+        kyc_verified: true
+        name: Acme Corporation
+        normal_activity_patterns:
+          - cash_deposit
+          - domestic_wire
+          - check_deposit
+        risk_category: medium
+        suspicious_activity_count:
+          "$serde_json::private::Number": "0"
+        type: business
+      transaction:
+        amount:
+          "$serde_json::private::Number": "15000"
+        currency: USD
+        date: "2025-03-15T10:30:00Z"
+        description: Business cash deposit
+        high_risk_country: false
+        id: TX123456789
+        structuring_suspected: false
+        type: cash_deposit
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        transaction.amount:
+          "$serde_json::private::Number": "15000"
+        transaction.type: cash_deposit
+      rule:
+        _id: r1-1
+        "transaction.amount[i1-2]": "> 10000"
+        "transaction.type[i1-1]": "'cash_deposit'"

@@ -1,0 +1,255 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  additionalCoverageRecommendations:
+    - additionalCoverage:
+        amount:
+          "$serde_json::private::Number": "0"
+        recommended: false
+      level: medium
+      type: flood
+    - additionalCoverage:
+        amount:
+          "$serde_json::private::Number": "0"
+        recommended: false
+      level: low
+      type: earthquake
+  additionalRisks:
+    - level: medium
+      type: flood
+    - level: low
+      type: earthquake
+  basePackage: basic
+  customerData:
+    preferredDeductible:
+      "$serde_json::private::Number": "1500"
+    propertyAge:
+      "$serde_json::private::Number": "15"
+    propertyType: single-family
+    propertyValue:
+      "$serde_json::private::Number": "450000"
+  riskAssessment:
+    areaRiskLevel: medium
+    claimHistory:
+      pastClaims:
+        "$serde_json::private::Number": "1"
+      severityLevel: low
+trace:
+  dt1:
+    id: dt1
+    input:
+      additionalRisks:
+        - level: medium
+          type: flood
+        - level: low
+          type: earthquake
+      customerData:
+        preferredDeductible:
+          "$serde_json::private::Number": "1500"
+        propertyAge:
+          "$serde_json::private::Number": "15"
+        propertyType: single-family
+        propertyValue:
+          "$serde_json::private::Number": "450000"
+      riskAssessment:
+        areaRiskLevel: medium
+        claimHistory:
+          pastClaims:
+            "$serde_json::private::Number": "1"
+          severityLevel: low
+    name: determineBasePackage
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      additionalRisks:
+        - level: medium
+          type: flood
+        - level: low
+          type: earthquake
+      basePackage: basic
+      customerData:
+        preferredDeductible:
+          "$serde_json::private::Number": "1500"
+        propertyAge:
+          "$serde_json::private::Number": "15"
+        propertyType: single-family
+        propertyValue:
+          "$serde_json::private::Number": "450000"
+      riskAssessment:
+        areaRiskLevel: medium
+        claimHistory:
+          pastClaims:
+            "$serde_json::private::Number": "1"
+          severityLevel: low
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "3"
+      reference_map:
+        customerData.propertyValue:
+          "$serde_json::private::Number": "450000"
+        riskAssessment.areaRiskLevel: medium
+      rule:
+        _id: r1-4
+        "customerData.propertyValue[i1-1]": ">= 300000"
+        "riskAssessment.areaRiskLevel[i1-2]": "'medium'"
+  dt2:
+    id: dt2
+    input:
+      additionalRisks:
+        - level: medium
+          type: flood
+        - level: low
+          type: earthquake
+      basePackage: basic
+      customerData:
+        preferredDeductible:
+          "$serde_json::private::Number": "1500"
+        propertyAge:
+          "$serde_json::private::Number": "15"
+        propertyType: single-family
+        propertyValue:
+          "$serde_json::private::Number": "450000"
+      riskAssessment:
+        areaRiskLevel: medium
+        claimHistory:
+          pastClaims:
+            "$serde_json::private::Number": "1"
+          severityLevel: low
+    name: calculateCoverageLevels
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      additionalRisks:
+        - level: medium
+          type: flood
+        - level: low
+          type: earthquake
+      basePackage: basic
+      customerData:
+        preferredDeductible:
+          "$serde_json::private::Number": "1500"
+        propertyAge:
+          "$serde_json::private::Number": "15"
+        propertyType: single-family
+        propertyValue:
+          "$serde_json::private::Number": "450000"
+      riskAssessment:
+        areaRiskLevel: medium
+        claimHistory:
+          pastClaims:
+            "$serde_json::private::Number": "1"
+          severityLevel: low
+    performance: "[perf]"
+    traceData: ~
+  dt3:
+    id: dt3
+    input:
+      additionalRisks:
+        - level: medium
+          type: flood
+        - level: low
+          type: earthquake
+      basePackage: basic
+      customerData:
+        preferredDeductible:
+          "$serde_json::private::Number": "1500"
+        propertyAge:
+          "$serde_json::private::Number": "15"
+        propertyType: single-family
+        propertyValue:
+          "$serde_json::private::Number": "450000"
+      riskAssessment:
+        areaRiskLevel: medium
+        claimHistory:
+          pastClaims:
+            "$serde_json::private::Number": "1"
+          severityLevel: low
+    name: additionalCoverageRecommendations
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      additionalCoverageRecommendations:
+        - additionalCoverage:
+            amount:
+              "$serde_json::private::Number": "0"
+            recommended: false
+          level: medium
+          type: flood
+        - additionalCoverage:
+            amount:
+              "$serde_json::private::Number": "0"
+            recommended: false
+          level: low
+          type: earthquake
+      additionalRisks:
+        - level: medium
+          type: flood
+        - level: low
+          type: earthquake
+      basePackage: basic
+      customerData:
+        preferredDeductible:
+          "$serde_json::private::Number": "1500"
+        propertyAge:
+          "$serde_json::private::Number": "15"
+        propertyType: single-family
+        propertyValue:
+          "$serde_json::private::Number": "450000"
+      riskAssessment:
+        areaRiskLevel: medium
+        claimHistory:
+          pastClaims:
+            "$serde_json::private::Number": "1"
+          severityLevel: low
+    performance: "[perf]"
+    traceData:
+      - index:
+          "$serde_json::private::Number": "6"
+        reference_map:
+          additionalRisks.level: ~
+          additionalRisks.type: ~
+        rule:
+          _id: r3-7
+          "additionalRisks.level[i3-2]": ""
+          "additionalRisks.type[i3-1]": ""
+      - index:
+          "$serde_json::private::Number": "6"
+        reference_map:
+          additionalRisks.level: ~
+          additionalRisks.type: ~
+        rule:
+          _id: r3-7
+          "additionalRisks.level[i3-2]": ""
+          "additionalRisks.type[i3-1]": ""
+  ip1:
+    id: ip1
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      additionalRisks:
+        - level: medium
+          type: flood
+        - level: low
+          type: earthquake
+      customerData:
+        preferredDeductible:
+          "$serde_json::private::Number": "1500"
+        propertyAge:
+          "$serde_json::private::Number": "15"
+        propertyType: single-family
+        propertyValue:
+          "$serde_json::private::Number": "450000"
+      riskAssessment:
+        areaRiskLevel: medium
+        claimHistory:
+          pastClaims:
+            "$serde_json::private::Number": "1"
+          severityLevel: low
+    performance: "[perf]"
+    traceData: ~

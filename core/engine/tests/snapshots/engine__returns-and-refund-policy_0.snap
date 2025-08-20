@@ -1,0 +1,334 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  buyerInfo:
+    id: USR-789
+    returnHistory:
+      recentDisputes:
+        "$serde_json::private::Number": "0"
+      totalReturns:
+        "$serde_json::private::Number": "3"
+  daysSincePurchase:
+    "$serde_json::private::Number": "25"
+  itemCondition: new
+  orderInfo:
+    orderId: ORD-12345
+    purchaseDate: 2023-10-15
+  originalPrice:
+    "$serde_json::private::Number": "89.99"
+  processingTimeEstimate:
+    "$serde_json::private::Number": "5"
+  productDetails:
+    category: electronics
+    isWarrantyActive: true
+  refundAmount:
+    "$serde_json::private::Number": "89.99"
+  refundShipping: true
+  resolution:
+    note: Seller is responsible for product issues on new items.
+    refundApproved: true
+    responsibleParty: seller
+  returnReason: damaged
+  returnShippingCovered: true
+  returnStatus:
+    code: eligible
+    isEligible: true
+    message: The return is within policy timeframe and eligible for processing.
+  sellerPolicy:
+    freeReturnShipping: false
+    restockingFeePercent:
+      "$serde_json::private::Number": "15"
+    returnWindow:
+      "$serde_json::private::Number": "30"
+    returnsAllowed: true
+trace:
+  input:
+    id: input
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      buyerInfo:
+        id: USR-789
+        returnHistory:
+          recentDisputes:
+            "$serde_json::private::Number": "0"
+          totalReturns:
+            "$serde_json::private::Number": "3"
+      daysSincePurchase:
+        "$serde_json::private::Number": "25"
+      itemCondition: new
+      orderInfo:
+        orderId: ORD-12345
+        purchaseDate: 2023-10-15
+      originalPrice:
+        "$serde_json::private::Number": "89.99"
+      productDetails:
+        category: electronics
+        isWarrantyActive: true
+      returnReason: damaged
+      sellerPolicy:
+        freeReturnShipping: false
+        restockingFeePercent:
+          "$serde_json::private::Number": "15"
+        returnWindow:
+          "$serde_json::private::Number": "30"
+        returnsAllowed: true
+    performance: "[perf]"
+    traceData: ~
+  refundCalculation:
+    id: refundCalculation
+    input:
+      buyerInfo:
+        id: USR-789
+        returnHistory:
+          recentDisputes:
+            "$serde_json::private::Number": "0"
+          totalReturns:
+            "$serde_json::private::Number": "3"
+      daysSincePurchase:
+        "$serde_json::private::Number": "25"
+      itemCondition: new
+      orderInfo:
+        orderId: ORD-12345
+        purchaseDate: 2023-10-15
+      originalPrice:
+        "$serde_json::private::Number": "89.99"
+      productDetails:
+        category: electronics
+        isWarrantyActive: true
+      resolution:
+        note: Seller is responsible for product issues on new items.
+        refundApproved: true
+        responsibleParty: seller
+      returnReason: damaged
+      returnStatus:
+        code: eligible
+        isEligible: true
+        message: The return is within policy timeframe and eligible for processing.
+      sellerPolicy:
+        freeReturnShipping: false
+        restockingFeePercent:
+          "$serde_json::private::Number": "15"
+        returnWindow:
+          "$serde_json::private::Number": "30"
+        returnsAllowed: true
+    name: refundCalculation
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      buyerInfo:
+        id: USR-789
+        returnHistory:
+          recentDisputes:
+            "$serde_json::private::Number": "0"
+          totalReturns:
+            "$serde_json::private::Number": "3"
+      daysSincePurchase:
+        "$serde_json::private::Number": "25"
+      itemCondition: new
+      orderInfo:
+        orderId: ORD-12345
+        purchaseDate: 2023-10-15
+      originalPrice:
+        "$serde_json::private::Number": "89.99"
+      processingTimeEstimate:
+        "$serde_json::private::Number": "5"
+      productDetails:
+        category: electronics
+        isWarrantyActive: true
+      refundAmount:
+        "$serde_json::private::Number": "89.99"
+      refundShipping: true
+      resolution:
+        note: Seller is responsible for product issues on new items.
+        refundApproved: true
+        responsibleParty: seller
+      returnReason: damaged
+      returnShippingCovered: true
+      returnStatus:
+        code: eligible
+        isEligible: true
+        message: The return is within policy timeframe and eligible for processing.
+      sellerPolicy:
+        freeReturnShipping: false
+        restockingFeePercent:
+          "$serde_json::private::Number": "15"
+        returnWindow:
+          "$serde_json::private::Number": "30"
+        returnsAllowed: true
+    performance: "[perf]"
+    traceData:
+      processingTimeEstimate:
+        result: "5"
+      refundAmount:
+        result: "89.99"
+      refundShipping:
+        result: "true"
+      returnShippingCovered:
+        result: "true"
+  responsibilityDetermination:
+    id: responsibilityDetermination
+    input:
+      buyerInfo:
+        id: USR-789
+        returnHistory:
+          recentDisputes:
+            "$serde_json::private::Number": "0"
+          totalReturns:
+            "$serde_json::private::Number": "3"
+      daysSincePurchase:
+        "$serde_json::private::Number": "25"
+      itemCondition: new
+      orderInfo:
+        orderId: ORD-12345
+        purchaseDate: 2023-10-15
+      originalPrice:
+        "$serde_json::private::Number": "89.99"
+      productDetails:
+        category: electronics
+        isWarrantyActive: true
+      returnReason: damaged
+      returnStatus:
+        code: eligible
+        isEligible: true
+        message: The return is within policy timeframe and eligible for processing.
+      sellerPolicy:
+        freeReturnShipping: false
+        restockingFeePercent:
+          "$serde_json::private::Number": "15"
+        returnWindow:
+          "$serde_json::private::Number": "30"
+        returnsAllowed: true
+    name: responsibilityDetermination
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      buyerInfo:
+        id: USR-789
+        returnHistory:
+          recentDisputes:
+            "$serde_json::private::Number": "0"
+          totalReturns:
+            "$serde_json::private::Number": "3"
+      daysSincePurchase:
+        "$serde_json::private::Number": "25"
+      itemCondition: new
+      orderInfo:
+        orderId: ORD-12345
+        purchaseDate: 2023-10-15
+      originalPrice:
+        "$serde_json::private::Number": "89.99"
+      productDetails:
+        category: electronics
+        isWarrantyActive: true
+      resolution:
+        note: Seller is responsible for product issues on new items.
+        refundApproved: true
+        responsibleParty: seller
+      returnReason: damaged
+      returnStatus:
+        code: eligible
+        isEligible: true
+        message: The return is within policy timeframe and eligible for processing.
+      sellerPolicy:
+        freeReturnShipping: false
+        restockingFeePercent:
+          "$serde_json::private::Number": "15"
+        returnWindow:
+          "$serde_json::private::Number": "30"
+        returnsAllowed: true
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        itemCondition: new
+        returnReason: damaged
+        returnStatus.isEligible: true
+      rule:
+        _id: r2-1
+        "itemCondition[i2-2]": "'new', 'like_new'"
+        "returnReason[i2-1]": "'damaged', 'defective'"
+        "returnStatus.isEligible[i2-3]": "true"
+  returnEligibility:
+    id: returnEligibility
+    input:
+      buyerInfo:
+        id: USR-789
+        returnHistory:
+          recentDisputes:
+            "$serde_json::private::Number": "0"
+          totalReturns:
+            "$serde_json::private::Number": "3"
+      daysSincePurchase:
+        "$serde_json::private::Number": "25"
+      itemCondition: new
+      orderInfo:
+        orderId: ORD-12345
+        purchaseDate: 2023-10-15
+      originalPrice:
+        "$serde_json::private::Number": "89.99"
+      productDetails:
+        category: electronics
+        isWarrantyActive: true
+      returnReason: damaged
+      sellerPolicy:
+        freeReturnShipping: false
+        restockingFeePercent:
+          "$serde_json::private::Number": "15"
+        returnWindow:
+          "$serde_json::private::Number": "30"
+        returnsAllowed: true
+    name: returnEligibility
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      buyerInfo:
+        id: USR-789
+        returnHistory:
+          recentDisputes:
+            "$serde_json::private::Number": "0"
+          totalReturns:
+            "$serde_json::private::Number": "3"
+      daysSincePurchase:
+        "$serde_json::private::Number": "25"
+      itemCondition: new
+      orderInfo:
+        orderId: ORD-12345
+        purchaseDate: 2023-10-15
+      originalPrice:
+        "$serde_json::private::Number": "89.99"
+      productDetails:
+        category: electronics
+        isWarrantyActive: true
+      returnReason: damaged
+      returnStatus:
+        code: eligible
+        isEligible: true
+        message: The return is within policy timeframe and eligible for processing.
+      sellerPolicy:
+        freeReturnShipping: false
+        restockingFeePercent:
+          "$serde_json::private::Number": "15"
+        returnWindow:
+          "$serde_json::private::Number": "30"
+        returnsAllowed: true
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        daysSincePurchase:
+          "$serde_json::private::Number": "25"
+        returnReason: damaged
+        sellerPolicy.returnsAllowed: true
+      rule:
+        _id: r1-1
+        "daysSincePurchase[i1-1]": "< 30"
+        "returnReason[i1-3]": "'damaged', 'defective', 'wrong_item'"
+        "sellerPolicy.returnsAllowed[i1-2]": "true"

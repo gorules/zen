@@ -31,6 +31,7 @@ zen-tmpl = { path = "../template", version = "0.49.1" }
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 criterion = { workspace = true, features = ["async_tokio"] }
+insta = { version = "1.43", features = ["yaml", "redactions"] }
 
 [[bench]]
 harness = false

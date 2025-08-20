@@ -1,0 +1,1415 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  action: rebalance
+  outcome:
+    riskScore:
+      "$serde_json::private::Number": "0.53"
+    status: rebalance_suggested
+    timestamp: "2025-08-20T09:43:13.406Z"
+  rebalanceDetails:
+    currentAllocation:
+      bonds:
+        "$serde_json::private::Number": "25"
+      cash:
+        "$serde_json::private::Number": "10"
+      equity:
+        "$serde_json::private::Number": "65"
+    customerId: cust-78945
+    date: 2025-08-20
+    driftPercentage: "5.0"
+    message: "Rebalancing recommended: Portfolio has drifted 5.0% from target allocation."
+    portfolioId: port-12345
+    riskCategory: high
+    riskScore:
+      "$serde_json::private::Number": "0.53"
+    suggestedChanges:
+      bonds:
+        "$serde_json::private::Number": "10"
+      cash:
+        "$serde_json::private::Number": "-5"
+      equity:
+        "$serde_json::private::Number": "-5"
+    targetAllocation:
+      bonds:
+        "$serde_json::private::Number": "35"
+      cash:
+        "$serde_json::private::Number": "5"
+      equity:
+        "$serde_json::private::Number": "60"
+trace:
+  actionDeterminationSwitch:
+    id: actionDeterminationSwitch
+    input:
+      assessment:
+        exposureFactor:
+          "$serde_json::private::Number": "0.5"
+        exposureLevel: elevated
+        marketAssessment: Elevated volatility with substantial market decline
+        marketCondition: high
+        marketRiskFactor:
+          "$serde_json::private::Number": "0.7"
+        volatilityFactor:
+          "$serde_json::private::Number": "0.4"
+        volatilityLevel: moderate
+      customer:
+        id: cust-78945
+        investmentHorizon: long-term
+        name: John Smith
+        preferences:
+          alertThreshold: moderate
+          allowAutomaticAdjustments: true
+          communicationPreference: email
+        riskTolerance: moderate
+      exposureWeight:
+        "$serde_json::private::Number": "0.4"
+      market:
+        economicIndicators:
+          gdpGrowth:
+            "$serde_json::private::Number": "0.8"
+          inflation:
+            "$serde_json::private::Number": "4.2"
+          unemploymentRate:
+            "$serde_json::private::Number": "4.1"
+        interestRate:
+          "$serde_json::private::Number": "3.75"
+        sectorPerformance:
+          consumerStaples:
+            "$serde_json::private::Number": "-3.2"
+          financials:
+            "$serde_json::private::Number": "-18.4"
+          healthcare:
+            "$serde_json::private::Number": "-5.1"
+          technology:
+            "$serde_json::private::Number": "-15.2"
+          utilities:
+            "$serde_json::private::Number": "1.5"
+        trendPercentage:
+          "$serde_json::private::Number": "-12.5"
+        volatilityIndex:
+          "$serde_json::private::Number": "28.5"
+      marketWeight:
+        "$serde_json::private::Number": "0.3"
+      portfolio:
+        creationDate: 2019-05-12
+        currentAllocation:
+          bonds:
+            "$serde_json::private::Number": "25"
+          cash:
+            "$serde_json::private::Number": "10"
+          equity:
+            "$serde_json::private::Number": "65"
+        highRiskPercentage:
+          "$serde_json::private::Number": "35"
+        holdings:
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "30"
+            symbol: VTI
+            value:
+              "$serde_json::private::Number": "225000"
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "20"
+            symbol: VXUS
+            value:
+              "$serde_json::private::Number": "150000"
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "15"
+            symbol: VGT
+            value:
+              "$serde_json::private::Number": "112500"
+          - category: bonds
+            percentage:
+              "$serde_json::private::Number": "25"
+            symbol: BND
+            value:
+              "$serde_json::private::Number": "187500"
+          - category: cash
+            percentage:
+              "$serde_json::private::Number": "10"
+            symbol: CASH
+            value:
+              "$serde_json::private::Number": "75000"
+        id: port-12345
+        lastRebalance:
+          "$serde_json::private::Number": "95"
+        name: Retirement Portfolio
+        targetAllocation:
+          bonds:
+            "$serde_json::private::Number": "35"
+          cash:
+            "$serde_json::private::Number": "5"
+          equity:
+            "$serde_json::private::Number": "60"
+        totalValue:
+          "$serde_json::private::Number": "750000"
+        volatility:
+          "$serde_json::private::Number": "22.5"
+      portfolioDrift:
+        "$serde_json::private::Number": "5"
+      riskCategory: high
+      riskScore:
+        "$serde_json::private::Number": "0.53"
+      volatilityWeight:
+        "$serde_json::private::Number": "0.3"
+    name: determineAction
+    order:
+      "$serde_json::private::Number": "5"
+    output:
+      assessment:
+        exposureFactor:
+          "$serde_json::private::Number": "0.5"
+        exposureLevel: elevated
+        marketAssessment: Elevated volatility with substantial market decline
+        marketCondition: high
+        marketRiskFactor:
+          "$serde_json::private::Number": "0.7"
+        volatilityFactor:
+          "$serde_json::private::Number": "0.4"
+        volatilityLevel: moderate
+      customer:
+        id: cust-78945
+        investmentHorizon: long-term
+        name: John Smith
+        preferences:
+          alertThreshold: moderate
+          allowAutomaticAdjustments: true
+          communicationPreference: email
+        riskTolerance: moderate
+      exposureWeight:
+        "$serde_json::private::Number": "0.4"
+      market:
+        economicIndicators:
+          gdpGrowth:
+            "$serde_json::private::Number": "0.8"
+          inflation:
+            "$serde_json::private::Number": "4.2"
+          unemploymentRate:
+            "$serde_json::private::Number": "4.1"
+        interestRate:
+          "$serde_json::private::Number": "3.75"
+        sectorPerformance:
+          consumerStaples:
+            "$serde_json::private::Number": "-3.2"
+          financials:
+            "$serde_json::private::Number": "-18.4"
+          healthcare:
+            "$serde_json::private::Number": "-5.1"
+          technology:
+            "$serde_json::private::Number": "-15.2"
+          utilities:
+            "$serde_json::private::Number": "1.5"
+        trendPercentage:
+          "$serde_json::private::Number": "-12.5"
+        volatilityIndex:
+          "$serde_json::private::Number": "28.5"
+      marketWeight:
+        "$serde_json::private::Number": "0.3"
+      portfolio:
+        creationDate: 2019-05-12
+        currentAllocation:
+          bonds:
+            "$serde_json::private::Number": "25"
+          cash:
+            "$serde_json::private::Number": "10"
+          equity:
+            "$serde_json::private::Number": "65"
+        highRiskPercentage:
+          "$serde_json::private::Number": "35"
+        holdings:
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "30"
+            symbol: VTI
+            value:
+              "$serde_json::private::Number": "225000"
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "20"
+            symbol: VXUS
+            value:
+              "$serde_json::private::Number": "150000"
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "15"
+            symbol: VGT
+            value:
+              "$serde_json::private::Number": "112500"
+          - category: bonds
+            percentage:
+              "$serde_json::private::Number": "25"
+            symbol: BND
+            value:
+              "$serde_json::private::Number": "187500"
+          - category: cash
+            percentage:
+              "$serde_json::private::Number": "10"
+            symbol: CASH
+            value:
+              "$serde_json::private::Number": "75000"
+        id: port-12345
+        lastRebalance:
+          "$serde_json::private::Number": "95"
+        name: Retirement Portfolio
+        targetAllocation:
+          bonds:
+            "$serde_json::private::Number": "35"
+          cash:
+            "$serde_json::private::Number": "5"
+          equity:
+            "$serde_json::private::Number": "60"
+        totalValue:
+          "$serde_json::private::Number": "750000"
+        volatility:
+          "$serde_json::private::Number": "22.5"
+      portfolioDrift:
+        "$serde_json::private::Number": "5"
+      riskCategory: high
+      riskScore:
+        "$serde_json::private::Number": "0.53"
+      volatilityWeight:
+        "$serde_json::private::Number": "0.3"
+    performance: "[perf]"
+    traceData:
+      statements:
+        - id: rebalanceAction
+  inputNode:
+    id: inputNode
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      customer:
+        id: cust-78945
+        investmentHorizon: long-term
+        name: John Smith
+        preferences:
+          alertThreshold: moderate
+          allowAutomaticAdjustments: true
+          communicationPreference: email
+        riskTolerance: moderate
+      market:
+        economicIndicators:
+          gdpGrowth:
+            "$serde_json::private::Number": "0.8"
+          inflation:
+            "$serde_json::private::Number": "4.2"
+          unemploymentRate:
+            "$serde_json::private::Number": "4.1"
+        interestRate:
+          "$serde_json::private::Number": "3.75"
+        sectorPerformance:
+          consumerStaples:
+            "$serde_json::private::Number": "-3.2"
+          financials:
+            "$serde_json::private::Number": "-18.4"
+          healthcare:
+            "$serde_json::private::Number": "-5.1"
+          technology:
+            "$serde_json::private::Number": "-15.2"
+          utilities:
+            "$serde_json::private::Number": "1.5"
+        trendPercentage:
+          "$serde_json::private::Number": "-12.5"
+        volatilityIndex:
+          "$serde_json::private::Number": "28.5"
+      portfolio:
+        creationDate: 2019-05-12
+        currentAllocation:
+          bonds:
+            "$serde_json::private::Number": "25"
+          cash:
+            "$serde_json::private::Number": "10"
+          equity:
+            "$serde_json::private::Number": "65"
+        highRiskPercentage:
+          "$serde_json::private::Number": "35"
+        holdings:
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "30"
+            symbol: VTI
+            value:
+              "$serde_json::private::Number": "225000"
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "20"
+            symbol: VXUS
+            value:
+              "$serde_json::private::Number": "150000"
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "15"
+            symbol: VGT
+            value:
+              "$serde_json::private::Number": "112500"
+          - category: bonds
+            percentage:
+              "$serde_json::private::Number": "25"
+            symbol: BND
+            value:
+              "$serde_json::private::Number": "187500"
+          - category: cash
+            percentage:
+              "$serde_json::private::Number": "10"
+            symbol: CASH
+            value:
+              "$serde_json::private::Number": "75000"
+        id: port-12345
+        lastRebalance:
+          "$serde_json::private::Number": "95"
+        name: Retirement Portfolio
+        targetAllocation:
+          bonds:
+            "$serde_json::private::Number": "35"
+          cash:
+            "$serde_json::private::Number": "5"
+          equity:
+            "$serde_json::private::Number": "60"
+        totalValue:
+          "$serde_json::private::Number": "750000"
+        volatility:
+          "$serde_json::private::Number": "22.5"
+    performance: "[perf]"
+    traceData: ~
+  marketConditionsTable:
+    id: marketConditionsTable
+    input:
+      customer:
+        id: cust-78945
+        investmentHorizon: long-term
+        name: John Smith
+        preferences:
+          alertThreshold: moderate
+          allowAutomaticAdjustments: true
+          communicationPreference: email
+        riskTolerance: moderate
+      market:
+        economicIndicators:
+          gdpGrowth:
+            "$serde_json::private::Number": "0.8"
+          inflation:
+            "$serde_json::private::Number": "4.2"
+          unemploymentRate:
+            "$serde_json::private::Number": "4.1"
+        interestRate:
+          "$serde_json::private::Number": "3.75"
+        sectorPerformance:
+          consumerStaples:
+            "$serde_json::private::Number": "-3.2"
+          financials:
+            "$serde_json::private::Number": "-18.4"
+          healthcare:
+            "$serde_json::private::Number": "-5.1"
+          technology:
+            "$serde_json::private::Number": "-15.2"
+          utilities:
+            "$serde_json::private::Number": "1.5"
+        trendPercentage:
+          "$serde_json::private::Number": "-12.5"
+        volatilityIndex:
+          "$serde_json::private::Number": "28.5"
+      portfolio:
+        creationDate: 2019-05-12
+        currentAllocation:
+          bonds:
+            "$serde_json::private::Number": "25"
+          cash:
+            "$serde_json::private::Number": "10"
+          equity:
+            "$serde_json::private::Number": "65"
+        highRiskPercentage:
+          "$serde_json::private::Number": "35"
+        holdings:
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "30"
+            symbol: VTI
+            value:
+              "$serde_json::private::Number": "225000"
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "20"
+            symbol: VXUS
+            value:
+              "$serde_json::private::Number": "150000"
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "15"
+            symbol: VGT
+            value:
+              "$serde_json::private::Number": "112500"
+          - category: bonds
+            percentage:
+              "$serde_json::private::Number": "25"
+            symbol: BND
+            value:
+              "$serde_json::private::Number": "187500"
+          - category: cash
+            percentage:
+              "$serde_json::private::Number": "10"
+            symbol: CASH
+            value:
+              "$serde_json::private::Number": "75000"
+        id: port-12345
+        lastRebalance:
+          "$serde_json::private::Number": "95"
+        name: Retirement Portfolio
+        targetAllocation:
+          bonds:
+            "$serde_json::private::Number": "35"
+          cash:
+            "$serde_json::private::Number": "5"
+          equity:
+            "$serde_json::private::Number": "60"
+        totalValue:
+          "$serde_json::private::Number": "750000"
+        volatility:
+          "$serde_json::private::Number": "22.5"
+    name: marketConditionsAssessment
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      assessment:
+        marketAssessment: Elevated volatility with substantial market decline
+        marketCondition: high
+        marketRiskFactor:
+          "$serde_json::private::Number": "0.7"
+      customer:
+        id: cust-78945
+        investmentHorizon: long-term
+        name: John Smith
+        preferences:
+          alertThreshold: moderate
+          allowAutomaticAdjustments: true
+          communicationPreference: email
+        riskTolerance: moderate
+      market:
+        economicIndicators:
+          gdpGrowth:
+            "$serde_json::private::Number": "0.8"
+          inflation:
+            "$serde_json::private::Number": "4.2"
+          unemploymentRate:
+            "$serde_json::private::Number": "4.1"
+        interestRate:
+          "$serde_json::private::Number": "3.75"
+        sectorPerformance:
+          consumerStaples:
+            "$serde_json::private::Number": "-3.2"
+          financials:
+            "$serde_json::private::Number": "-18.4"
+          healthcare:
+            "$serde_json::private::Number": "-5.1"
+          technology:
+            "$serde_json::private::Number": "-15.2"
+          utilities:
+            "$serde_json::private::Number": "1.5"
+        trendPercentage:
+          "$serde_json::private::Number": "-12.5"
+        volatilityIndex:
+          "$serde_json::private::Number": "28.5"
+      portfolio:
+        creationDate: 2019-05-12
+        currentAllocation:
+          bonds:
+            "$serde_json::private::Number": "25"
+          cash:
+            "$serde_json::private::Number": "10"
+          equity:
+            "$serde_json::private::Number": "65"
+        highRiskPercentage:
+          "$serde_json::private::Number": "35"
+        holdings:
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "30"
+            symbol: VTI
+            value:
+              "$serde_json::private::Number": "225000"
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "20"
+            symbol: VXUS
+            value:
+              "$serde_json::private::Number": "150000"
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "15"
+            symbol: VGT
+            value:
+              "$serde_json::private::Number": "112500"
+          - category: bonds
+            percentage:
+              "$serde_json::private::Number": "25"
+            symbol: BND
+            value:
+              "$serde_json::private::Number": "187500"
+          - category: cash
+            percentage:
+              "$serde_json::private::Number": "10"
+            symbol: CASH
+            value:
+              "$serde_json::private::Number": "75000"
+        id: port-12345
+        lastRebalance:
+          "$serde_json::private::Number": "95"
+        name: Retirement Portfolio
+        targetAllocation:
+          bonds:
+            "$serde_json::private::Number": "35"
+          cash:
+            "$serde_json::private::Number": "5"
+          equity:
+            "$serde_json::private::Number": "60"
+        totalValue:
+          "$serde_json::private::Number": "750000"
+        volatility:
+          "$serde_json::private::Number": "22.5"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        market.trendPercentage:
+          "$serde_json::private::Number": "-12.5"
+        market.volatilityIndex:
+          "$serde_json::private::Number": "28.5"
+      rule:
+        _id: rule2
+        "market.trendPercentage[i1-2]": "< -10"
+        "market.volatilityIndex[i1-1]": "> 25"
+  portfolioExposureTable:
+    id: portfolioExposureTable
+    input:
+      assessment:
+        marketAssessment: Elevated volatility with substantial market decline
+        marketCondition: high
+        marketRiskFactor:
+          "$serde_json::private::Number": "0.7"
+      customer:
+        id: cust-78945
+        investmentHorizon: long-term
+        name: John Smith
+        preferences:
+          alertThreshold: moderate
+          allowAutomaticAdjustments: true
+          communicationPreference: email
+        riskTolerance: moderate
+      market:
+        economicIndicators:
+          gdpGrowth:
+            "$serde_json::private::Number": "0.8"
+          inflation:
+            "$serde_json::private::Number": "4.2"
+          unemploymentRate:
+            "$serde_json::private::Number": "4.1"
+        interestRate:
+          "$serde_json::private::Number": "3.75"
+        sectorPerformance:
+          consumerStaples:
+            "$serde_json::private::Number": "-3.2"
+          financials:
+            "$serde_json::private::Number": "-18.4"
+          healthcare:
+            "$serde_json::private::Number": "-5.1"
+          technology:
+            "$serde_json::private::Number": "-15.2"
+          utilities:
+            "$serde_json::private::Number": "1.5"
+        trendPercentage:
+          "$serde_json::private::Number": "-12.5"
+        volatilityIndex:
+          "$serde_json::private::Number": "28.5"
+      portfolio:
+        creationDate: 2019-05-12
+        currentAllocation:
+          bonds:
+            "$serde_json::private::Number": "25"
+          cash:
+            "$serde_json::private::Number": "10"
+          equity:
+            "$serde_json::private::Number": "65"
+        highRiskPercentage:
+          "$serde_json::private::Number": "35"
+        holdings:
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "30"
+            symbol: VTI
+            value:
+              "$serde_json::private::Number": "225000"
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "20"
+            symbol: VXUS
+            value:
+              "$serde_json::private::Number": "150000"
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "15"
+            symbol: VGT
+            value:
+              "$serde_json::private::Number": "112500"
+          - category: bonds
+            percentage:
+              "$serde_json::private::Number": "25"
+            symbol: BND
+            value:
+              "$serde_json::private::Number": "187500"
+          - category: cash
+            percentage:
+              "$serde_json::private::Number": "10"
+            symbol: CASH
+            value:
+              "$serde_json::private::Number": "75000"
+        id: port-12345
+        lastRebalance:
+          "$serde_json::private::Number": "95"
+        name: Retirement Portfolio
+        targetAllocation:
+          bonds:
+            "$serde_json::private::Number": "35"
+          cash:
+            "$serde_json::private::Number": "5"
+          equity:
+            "$serde_json::private::Number": "60"
+        totalValue:
+          "$serde_json::private::Number": "750000"
+        volatility:
+          "$serde_json::private::Number": "22.5"
+    name: portfolioExposureAssessment
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      assessment:
+        exposureFactor:
+          "$serde_json::private::Number": "0.5"
+        exposureLevel: elevated
+        marketAssessment: Elevated volatility with substantial market decline
+        marketCondition: high
+        marketRiskFactor:
+          "$serde_json::private::Number": "0.7"
+      customer:
+        id: cust-78945
+        investmentHorizon: long-term
+        name: John Smith
+        preferences:
+          alertThreshold: moderate
+          allowAutomaticAdjustments: true
+          communicationPreference: email
+        riskTolerance: moderate
+      market:
+        economicIndicators:
+          gdpGrowth:
+            "$serde_json::private::Number": "0.8"
+          inflation:
+            "$serde_json::private::Number": "4.2"
+          unemploymentRate:
+            "$serde_json::private::Number": "4.1"
+        interestRate:
+          "$serde_json::private::Number": "3.75"
+        sectorPerformance:
+          consumerStaples:
+            "$serde_json::private::Number": "-3.2"
+          financials:
+            "$serde_json::private::Number": "-18.4"
+          healthcare:
+            "$serde_json::private::Number": "-5.1"
+          technology:
+            "$serde_json::private::Number": "-15.2"
+          utilities:
+            "$serde_json::private::Number": "1.5"
+        trendPercentage:
+          "$serde_json::private::Number": "-12.5"
+        volatilityIndex:
+          "$serde_json::private::Number": "28.5"
+      portfolio:
+        creationDate: 2019-05-12
+        currentAllocation:
+          bonds:
+            "$serde_json::private::Number": "25"
+          cash:
+            "$serde_json::private::Number": "10"
+          equity:
+            "$serde_json::private::Number": "65"
+        highRiskPercentage:
+          "$serde_json::private::Number": "35"
+        holdings:
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "30"
+            symbol: VTI
+            value:
+              "$serde_json::private::Number": "225000"
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "20"
+            symbol: VXUS
+            value:
+              "$serde_json::private::Number": "150000"
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "15"
+            symbol: VGT
+            value:
+              "$serde_json::private::Number": "112500"
+          - category: bonds
+            percentage:
+              "$serde_json::private::Number": "25"
+            symbol: BND
+            value:
+              "$serde_json::private::Number": "187500"
+          - category: cash
+            percentage:
+              "$serde_json::private::Number": "10"
+            symbol: CASH
+            value:
+              "$serde_json::private::Number": "75000"
+        id: port-12345
+        lastRebalance:
+          "$serde_json::private::Number": "95"
+        name: Retirement Portfolio
+        targetAllocation:
+          bonds:
+            "$serde_json::private::Number": "35"
+          cash:
+            "$serde_json::private::Number": "5"
+          equity:
+            "$serde_json::private::Number": "60"
+        totalValue:
+          "$serde_json::private::Number": "750000"
+        volatility:
+          "$serde_json::private::Number": "22.5"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "2"
+      reference_map:
+        portfolio.highRiskPercentage:
+          "$serde_json::private::Number": "35"
+      rule:
+        _id: rule3
+        "portfolio.highRiskPercentage[i1-1]": "> 30"
+  portfolioVolatilityTable:
+    id: portfolioVolatilityTable
+    input:
+      assessment:
+        exposureFactor:
+          "$serde_json::private::Number": "0.5"
+        exposureLevel: elevated
+        marketAssessment: Elevated volatility with substantial market decline
+        marketCondition: high
+        marketRiskFactor:
+          "$serde_json::private::Number": "0.7"
+      customer:
+        id: cust-78945
+        investmentHorizon: long-term
+        name: John Smith
+        preferences:
+          alertThreshold: moderate
+          allowAutomaticAdjustments: true
+          communicationPreference: email
+        riskTolerance: moderate
+      market:
+        economicIndicators:
+          gdpGrowth:
+            "$serde_json::private::Number": "0.8"
+          inflation:
+            "$serde_json::private::Number": "4.2"
+          unemploymentRate:
+            "$serde_json::private::Number": "4.1"
+        interestRate:
+          "$serde_json::private::Number": "3.75"
+        sectorPerformance:
+          consumerStaples:
+            "$serde_json::private::Number": "-3.2"
+          financials:
+            "$serde_json::private::Number": "-18.4"
+          healthcare:
+            "$serde_json::private::Number": "-5.1"
+          technology:
+            "$serde_json::private::Number": "-15.2"
+          utilities:
+            "$serde_json::private::Number": "1.5"
+        trendPercentage:
+          "$serde_json::private::Number": "-12.5"
+        volatilityIndex:
+          "$serde_json::private::Number": "28.5"
+      portfolio:
+        creationDate: 2019-05-12
+        currentAllocation:
+          bonds:
+            "$serde_json::private::Number": "25"
+          cash:
+            "$serde_json::private::Number": "10"
+          equity:
+            "$serde_json::private::Number": "65"
+        highRiskPercentage:
+          "$serde_json::private::Number": "35"
+        holdings:
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "30"
+            symbol: VTI
+            value:
+              "$serde_json::private::Number": "225000"
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "20"
+            symbol: VXUS
+            value:
+              "$serde_json::private::Number": "150000"
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "15"
+            symbol: VGT
+            value:
+              "$serde_json::private::Number": "112500"
+          - category: bonds
+            percentage:
+              "$serde_json::private::Number": "25"
+            symbol: BND
+            value:
+              "$serde_json::private::Number": "187500"
+          - category: cash
+            percentage:
+              "$serde_json::private::Number": "10"
+            symbol: CASH
+            value:
+              "$serde_json::private::Number": "75000"
+        id: port-12345
+        lastRebalance:
+          "$serde_json::private::Number": "95"
+        name: Retirement Portfolio
+        targetAllocation:
+          bonds:
+            "$serde_json::private::Number": "35"
+          cash:
+            "$serde_json::private::Number": "5"
+          equity:
+            "$serde_json::private::Number": "60"
+        totalValue:
+          "$serde_json::private::Number": "750000"
+        volatility:
+          "$serde_json::private::Number": "22.5"
+    name: portfolioVolatilityAssessment
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      assessment:
+        exposureFactor:
+          "$serde_json::private::Number": "0.5"
+        exposureLevel: elevated
+        marketAssessment: Elevated volatility with substantial market decline
+        marketCondition: high
+        marketRiskFactor:
+          "$serde_json::private::Number": "0.7"
+        volatilityFactor:
+          "$serde_json::private::Number": "0.4"
+        volatilityLevel: moderate
+      customer:
+        id: cust-78945
+        investmentHorizon: long-term
+        name: John Smith
+        preferences:
+          alertThreshold: moderate
+          allowAutomaticAdjustments: true
+          communicationPreference: email
+        riskTolerance: moderate
+      market:
+        economicIndicators:
+          gdpGrowth:
+            "$serde_json::private::Number": "0.8"
+          inflation:
+            "$serde_json::private::Number": "4.2"
+          unemploymentRate:
+            "$serde_json::private::Number": "4.1"
+        interestRate:
+          "$serde_json::private::Number": "3.75"
+        sectorPerformance:
+          consumerStaples:
+            "$serde_json::private::Number": "-3.2"
+          financials:
+            "$serde_json::private::Number": "-18.4"
+          healthcare:
+            "$serde_json::private::Number": "-5.1"
+          technology:
+            "$serde_json::private::Number": "-15.2"
+          utilities:
+            "$serde_json::private::Number": "1.5"
+        trendPercentage:
+          "$serde_json::private::Number": "-12.5"
+        volatilityIndex:
+          "$serde_json::private::Number": "28.5"
+      portfolio:
+        creationDate: 2019-05-12
+        currentAllocation:
+          bonds:
+            "$serde_json::private::Number": "25"
+          cash:
+            "$serde_json::private::Number": "10"
+          equity:
+            "$serde_json::private::Number": "65"
+        highRiskPercentage:
+          "$serde_json::private::Number": "35"
+        holdings:
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "30"
+            symbol: VTI
+            value:
+              "$serde_json::private::Number": "225000"
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "20"
+            symbol: VXUS
+            value:
+              "$serde_json::private::Number": "150000"
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "15"
+            symbol: VGT
+            value:
+              "$serde_json::private::Number": "112500"
+          - category: bonds
+            percentage:
+              "$serde_json::private::Number": "25"
+            symbol: BND
+            value:
+              "$serde_json::private::Number": "187500"
+          - category: cash
+            percentage:
+              "$serde_json::private::Number": "10"
+            symbol: CASH
+            value:
+              "$serde_json::private::Number": "75000"
+        id: port-12345
+        lastRebalance:
+          "$serde_json::private::Number": "95"
+        name: Retirement Portfolio
+        targetAllocation:
+          bonds:
+            "$serde_json::private::Number": "35"
+          cash:
+            "$serde_json::private::Number": "5"
+          equity:
+            "$serde_json::private::Number": "60"
+        totalValue:
+          "$serde_json::private::Number": "750000"
+        volatility:
+          "$serde_json::private::Number": "22.5"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "2"
+      reference_map:
+        assessment.marketRiskFactor:
+          "$serde_json::private::Number": "0.7"
+        portfolio.volatility:
+          "$serde_json::private::Number": "22.5"
+      rule:
+        _id: rule3
+        "assessment.marketRiskFactor[i1-2]": ""
+        "portfolio.volatility[i1-1]": "> 20"
+  rebalanceFunction:
+    id: rebalanceFunction
+    input:
+      assessment:
+        exposureFactor:
+          "$serde_json::private::Number": "0.5"
+        exposureLevel: elevated
+        marketAssessment: Elevated volatility with substantial market decline
+        marketCondition: high
+        marketRiskFactor:
+          "$serde_json::private::Number": "0.7"
+        volatilityFactor:
+          "$serde_json::private::Number": "0.4"
+        volatilityLevel: moderate
+      customer:
+        id: cust-78945
+        investmentHorizon: long-term
+        name: John Smith
+        preferences:
+          alertThreshold: moderate
+          allowAutomaticAdjustments: true
+          communicationPreference: email
+        riskTolerance: moderate
+      exposureWeight:
+        "$serde_json::private::Number": "0.4"
+      market:
+        economicIndicators:
+          gdpGrowth:
+            "$serde_json::private::Number": "0.8"
+          inflation:
+            "$serde_json::private::Number": "4.2"
+          unemploymentRate:
+            "$serde_json::private::Number": "4.1"
+        interestRate:
+          "$serde_json::private::Number": "3.75"
+        sectorPerformance:
+          consumerStaples:
+            "$serde_json::private::Number": "-3.2"
+          financials:
+            "$serde_json::private::Number": "-18.4"
+          healthcare:
+            "$serde_json::private::Number": "-5.1"
+          technology:
+            "$serde_json::private::Number": "-15.2"
+          utilities:
+            "$serde_json::private::Number": "1.5"
+        trendPercentage:
+          "$serde_json::private::Number": "-12.5"
+        volatilityIndex:
+          "$serde_json::private::Number": "28.5"
+      marketWeight:
+        "$serde_json::private::Number": "0.3"
+      portfolio:
+        creationDate: 2019-05-12
+        currentAllocation:
+          bonds:
+            "$serde_json::private::Number": "25"
+          cash:
+            "$serde_json::private::Number": "10"
+          equity:
+            "$serde_json::private::Number": "65"
+        highRiskPercentage:
+          "$serde_json::private::Number": "35"
+        holdings:
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "30"
+            symbol: VTI
+            value:
+              "$serde_json::private::Number": "225000"
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "20"
+            symbol: VXUS
+            value:
+              "$serde_json::private::Number": "150000"
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "15"
+            symbol: VGT
+            value:
+              "$serde_json::private::Number": "112500"
+          - category: bonds
+            percentage:
+              "$serde_json::private::Number": "25"
+            symbol: BND
+            value:
+              "$serde_json::private::Number": "187500"
+          - category: cash
+            percentage:
+              "$serde_json::private::Number": "10"
+            symbol: CASH
+            value:
+              "$serde_json::private::Number": "75000"
+        id: port-12345
+        lastRebalance:
+          "$serde_json::private::Number": "95"
+        name: Retirement Portfolio
+        targetAllocation:
+          bonds:
+            "$serde_json::private::Number": "35"
+          cash:
+            "$serde_json::private::Number": "5"
+          equity:
+            "$serde_json::private::Number": "60"
+        totalValue:
+          "$serde_json::private::Number": "750000"
+        volatility:
+          "$serde_json::private::Number": "22.5"
+      portfolioDrift:
+        "$serde_json::private::Number": "5"
+      riskCategory: high
+      riskScore:
+        "$serde_json::private::Number": "0.53"
+      volatilityWeight:
+        "$serde_json::private::Number": "0.3"
+    name: suggestRebalancing
+    order:
+      "$serde_json::private::Number": "6"
+    output:
+      action: rebalance
+      outcome:
+        riskScore:
+          "$serde_json::private::Number": "0.53"
+        status: rebalance_suggested
+        timestamp: "2025-08-20T09:43:13.406Z"
+      rebalanceDetails:
+        currentAllocation:
+          bonds:
+            "$serde_json::private::Number": "25"
+          cash:
+            "$serde_json::private::Number": "10"
+          equity:
+            "$serde_json::private::Number": "65"
+        customerId: cust-78945
+        date: 2025-08-20
+        driftPercentage: "5.0"
+        message: "Rebalancing recommended: Portfolio has drifted 5.0% from target allocation."
+        portfolioId: port-12345
+        riskCategory: high
+        riskScore:
+          "$serde_json::private::Number": "0.53"
+        suggestedChanges:
+          bonds:
+            "$serde_json::private::Number": "10"
+          cash:
+            "$serde_json::private::Number": "-5"
+          equity:
+            "$serde_json::private::Number": "-5"
+        targetAllocation:
+          bonds:
+            "$serde_json::private::Number": "35"
+          cash:
+            "$serde_json::private::Number": "5"
+          equity:
+            "$serde_json::private::Number": "60"
+    performance: "[perf]"
+    traceData:
+      log: []
+  riskScoreCalculation:
+    id: riskScoreCalculation
+    input:
+      assessment:
+        exposureFactor:
+          "$serde_json::private::Number": "0.5"
+        exposureLevel: elevated
+        marketAssessment: Elevated volatility with substantial market decline
+        marketCondition: high
+        marketRiskFactor:
+          "$serde_json::private::Number": "0.7"
+        volatilityFactor:
+          "$serde_json::private::Number": "0.4"
+        volatilityLevel: moderate
+      customer:
+        id: cust-78945
+        investmentHorizon: long-term
+        name: John Smith
+        preferences:
+          alertThreshold: moderate
+          allowAutomaticAdjustments: true
+          communicationPreference: email
+        riskTolerance: moderate
+      market:
+        economicIndicators:
+          gdpGrowth:
+            "$serde_json::private::Number": "0.8"
+          inflation:
+            "$serde_json::private::Number": "4.2"
+          unemploymentRate:
+            "$serde_json::private::Number": "4.1"
+        interestRate:
+          "$serde_json::private::Number": "3.75"
+        sectorPerformance:
+          consumerStaples:
+            "$serde_json::private::Number": "-3.2"
+          financials:
+            "$serde_json::private::Number": "-18.4"
+          healthcare:
+            "$serde_json::private::Number": "-5.1"
+          technology:
+            "$serde_json::private::Number": "-15.2"
+          utilities:
+            "$serde_json::private::Number": "1.5"
+        trendPercentage:
+          "$serde_json::private::Number": "-12.5"
+        volatilityIndex:
+          "$serde_json::private::Number": "28.5"
+      portfolio:
+        creationDate: 2019-05-12
+        currentAllocation:
+          bonds:
+            "$serde_json::private::Number": "25"
+          cash:
+            "$serde_json::private::Number": "10"
+          equity:
+            "$serde_json::private::Number": "65"
+        highRiskPercentage:
+          "$serde_json::private::Number": "35"
+        holdings:
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "30"
+            symbol: VTI
+            value:
+              "$serde_json::private::Number": "225000"
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "20"
+            symbol: VXUS
+            value:
+              "$serde_json::private::Number": "150000"
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "15"
+            symbol: VGT
+            value:
+              "$serde_json::private::Number": "112500"
+          - category: bonds
+            percentage:
+              "$serde_json::private::Number": "25"
+            symbol: BND
+            value:
+              "$serde_json::private::Number": "187500"
+          - category: cash
+            percentage:
+              "$serde_json::private::Number": "10"
+            symbol: CASH
+            value:
+              "$serde_json::private::Number": "75000"
+        id: port-12345
+        lastRebalance:
+          "$serde_json::private::Number": "95"
+        name: Retirement Portfolio
+        targetAllocation:
+          bonds:
+            "$serde_json::private::Number": "35"
+          cash:
+            "$serde_json::private::Number": "5"
+          equity:
+            "$serde_json::private::Number": "60"
+        totalValue:
+          "$serde_json::private::Number": "750000"
+        volatility:
+          "$serde_json::private::Number": "22.5"
+    name: calculateRiskScore
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      assessment:
+        exposureFactor:
+          "$serde_json::private::Number": "0.5"
+        exposureLevel: elevated
+        marketAssessment: Elevated volatility with substantial market decline
+        marketCondition: high
+        marketRiskFactor:
+          "$serde_json::private::Number": "0.7"
+        volatilityFactor:
+          "$serde_json::private::Number": "0.4"
+        volatilityLevel: moderate
+      customer:
+        id: cust-78945
+        investmentHorizon: long-term
+        name: John Smith
+        preferences:
+          alertThreshold: moderate
+          allowAutomaticAdjustments: true
+          communicationPreference: email
+        riskTolerance: moderate
+      exposureWeight:
+        "$serde_json::private::Number": "0.4"
+      market:
+        economicIndicators:
+          gdpGrowth:
+            "$serde_json::private::Number": "0.8"
+          inflation:
+            "$serde_json::private::Number": "4.2"
+          unemploymentRate:
+            "$serde_json::private::Number": "4.1"
+        interestRate:
+          "$serde_json::private::Number": "3.75"
+        sectorPerformance:
+          consumerStaples:
+            "$serde_json::private::Number": "-3.2"
+          financials:
+            "$serde_json::private::Number": "-18.4"
+          healthcare:
+            "$serde_json::private::Number": "-5.1"
+          technology:
+            "$serde_json::private::Number": "-15.2"
+          utilities:
+            "$serde_json::private::Number": "1.5"
+        trendPercentage:
+          "$serde_json::private::Number": "-12.5"
+        volatilityIndex:
+          "$serde_json::private::Number": "28.5"
+      marketWeight:
+        "$serde_json::private::Number": "0.3"
+      portfolio:
+        creationDate: 2019-05-12
+        currentAllocation:
+          bonds:
+            "$serde_json::private::Number": "25"
+          cash:
+            "$serde_json::private::Number": "10"
+          equity:
+            "$serde_json::private::Number": "65"
+        highRiskPercentage:
+          "$serde_json::private::Number": "35"
+        holdings:
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "30"
+            symbol: VTI
+            value:
+              "$serde_json::private::Number": "225000"
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "20"
+            symbol: VXUS
+            value:
+              "$serde_json::private::Number": "150000"
+          - category: equity
+            percentage:
+              "$serde_json::private::Number": "15"
+            symbol: VGT
+            value:
+              "$serde_json::private::Number": "112500"
+          - category: bonds
+            percentage:
+              "$serde_json::private::Number": "25"
+            symbol: BND
+            value:
+              "$serde_json::private::Number": "187500"
+          - category: cash
+            percentage:
+              "$serde_json::private::Number": "10"
+            symbol: CASH
+            value:
+              "$serde_json::private::Number": "75000"
+        id: port-12345
+        lastRebalance:
+          "$serde_json::private::Number": "95"
+        name: Retirement Portfolio
+        targetAllocation:
+          bonds:
+            "$serde_json::private::Number": "35"
+          cash:
+            "$serde_json::private::Number": "5"
+          equity:
+            "$serde_json::private::Number": "60"
+        totalValue:
+          "$serde_json::private::Number": "750000"
+        volatility:
+          "$serde_json::private::Number": "22.5"
+      portfolioDrift:
+        "$serde_json::private::Number": "5"
+      riskCategory: high
+      riskScore:
+        "$serde_json::private::Number": "0.53"
+      volatilityWeight:
+        "$serde_json::private::Number": "0.3"
+    performance: "[perf]"
+    traceData:
+      exposureWeight:
+        result: "0.4"
+      marketWeight:
+        result: "0.3"
+      portfolioDrift:
+        result: "5"
+      riskCategory:
+        result: "\"high\""
+      riskScore:
+        result: "0.53"
+      volatilityWeight:
+        result: "0.3"

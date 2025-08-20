@@ -1,0 +1,297 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  protocol_name: oral_medication_moderate
+  treatment_protocol:
+    base_treatment: oral_medication
+    dosage_instruction: standard_elderly
+    follow_up_frequency: bi-weekly
+    protocol_id: oral_medication_moderate_intensive
+    protocol_intensity: intensive
+    risk_adjustment: modified_treatment
+    severity_level: moderate_diabetes
+trace:
+  diagnoseTable:
+    id: diagnoseTable
+    input:
+      diagnosis: diabetes_type2
+      measurement_value:
+        "$serde_json::private::Number": "8.2"
+      patient:
+        age:
+          "$serde_json::private::Number": "67"
+        has_comorbidities: "yes"
+        is_pregnant: "no"
+        previous_adverse_reaction: "no"
+    name: diagnosisEvaluation
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      base_treatment: oral_medication
+      diagnosis: diabetes_type2
+      diagnosis_severity: moderate_diabetes
+      measurement_value:
+        "$serde_json::private::Number": "8.2"
+      patient:
+        age:
+          "$serde_json::private::Number": "67"
+        has_comorbidities: "yes"
+        is_pregnant: "no"
+        previous_adverse_reaction: "no"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        diagnosis: diabetes_type2
+        measurement_value:
+          "$serde_json::private::Number": "8.2"
+      rule:
+        _id: rule2
+        "diagnosis[i1-1]": "'diabetes_type2'"
+        "measurement_value[i1-2]": "[7.0..8.5]"
+  followUpSchedule:
+    id: followUpSchedule
+    input:
+      base_treatment: oral_medication
+      comorbidity_risk_level: high
+      diagnosis: diabetes_type2
+      diagnosis_severity: moderate_diabetes
+      dosage_modification: standard_elderly
+      measurement_value:
+        "$serde_json::private::Number": "8.2"
+      patient:
+        age:
+          "$serde_json::private::Number": "67"
+        has_comorbidities: "yes"
+        is_pregnant: "no"
+        previous_adverse_reaction: "no"
+      patient_risk_category: moderate
+      protocol_intensity: intensive
+      risk_adjustment: modified_treatment
+    name: followUpDetermination
+    order:
+      "$serde_json::private::Number": "5"
+    output:
+      base_treatment: oral_medication
+      comorbidity_risk_level: high
+      diagnosis: diabetes_type2
+      diagnosis_severity: moderate_diabetes
+      dosage_modification: standard_elderly
+      follow_up_schedule: bi-weekly
+      measurement_value:
+        "$serde_json::private::Number": "8.2"
+      patient:
+        age:
+          "$serde_json::private::Number": "67"
+        has_comorbidities: "yes"
+        is_pregnant: "no"
+        previous_adverse_reaction: "no"
+      patient_risk_category: moderate
+      protocol_intensity: intensive
+      risk_adjustment: modified_treatment
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        comorbidity_risk_level: high
+      rule:
+        _id: fs2
+        "comorbidity_risk_level[i5-1]": "'high'"
+  input:
+    id: input
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      diagnosis: diabetes_type2
+      measurement_value:
+        "$serde_json::private::Number": "8.2"
+      patient:
+        age:
+          "$serde_json::private::Number": "67"
+        has_comorbidities: "yes"
+        is_pregnant: "no"
+        previous_adverse_reaction: "no"
+    performance: "[perf]"
+    traceData: ~
+  patientCharacteristics:
+    id: patientCharacteristics
+    input:
+      base_treatment: oral_medication
+      diagnosis: diabetes_type2
+      diagnosis_severity: moderate_diabetes
+      measurement_value:
+        "$serde_json::private::Number": "8.2"
+      patient:
+        age:
+          "$serde_json::private::Number": "67"
+        has_comorbidities: "yes"
+        is_pregnant: "no"
+        previous_adverse_reaction: "no"
+    name: patientFactors
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      base_treatment: oral_medication
+      diagnosis: diabetes_type2
+      diagnosis_severity: moderate_diabetes
+      dosage_modification: standard_elderly
+      measurement_value:
+        "$serde_json::private::Number": "8.2"
+      patient:
+        age:
+          "$serde_json::private::Number": "67"
+        has_comorbidities: "yes"
+        is_pregnant: "no"
+        previous_adverse_reaction: "no"
+      patient_risk_category: moderate
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        patient.age:
+          "$serde_json::private::Number": "67"
+        patient.is_pregnant: "no"
+      rule:
+        _id: pc2
+        "patient.age[i2-1]": ">= 65"
+        "patient.is_pregnant[i2-2]": "'no'"
+  protocolIntensity:
+    id: protocolIntensity
+    input:
+      base_treatment: oral_medication
+      comorbidity_risk_level: high
+      diagnosis: diabetes_type2
+      diagnosis_severity: moderate_diabetes
+      dosage_modification: standard_elderly
+      measurement_value:
+        "$serde_json::private::Number": "8.2"
+      patient:
+        age:
+          "$serde_json::private::Number": "67"
+        has_comorbidities: "yes"
+        is_pregnant: "no"
+        previous_adverse_reaction: "no"
+      patient_risk_category: moderate
+      risk_adjustment: modified_treatment
+    name: intensityDetermination
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      base_treatment: oral_medication
+      comorbidity_risk_level: high
+      diagnosis: diabetes_type2
+      diagnosis_severity: moderate_diabetes
+      dosage_modification: standard_elderly
+      measurement_value:
+        "$serde_json::private::Number": "8.2"
+      patient:
+        age:
+          "$serde_json::private::Number": "67"
+        has_comorbidities: "yes"
+        is_pregnant: "no"
+        previous_adverse_reaction: "no"
+      patient_risk_category: moderate
+      protocol_intensity: intensive
+      risk_adjustment: modified_treatment
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        comorbidity_risk_level: high
+      rule:
+        _id: pi2
+        "comorbidity_risk_level[i4-1]": "'high'"
+  riskFactors:
+    id: riskFactors
+    input:
+      base_treatment: oral_medication
+      diagnosis: diabetes_type2
+      diagnosis_severity: moderate_diabetes
+      dosage_modification: standard_elderly
+      measurement_value:
+        "$serde_json::private::Number": "8.2"
+      patient:
+        age:
+          "$serde_json::private::Number": "67"
+        has_comorbidities: "yes"
+        is_pregnant: "no"
+        previous_adverse_reaction: "no"
+      patient_risk_category: moderate
+    name: comorbidityEvaluation
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      base_treatment: oral_medication
+      comorbidity_risk_level: high
+      diagnosis: diabetes_type2
+      diagnosis_severity: moderate_diabetes
+      dosage_modification: standard_elderly
+      measurement_value:
+        "$serde_json::private::Number": "8.2"
+      patient:
+        age:
+          "$serde_json::private::Number": "67"
+        has_comorbidities: "yes"
+        is_pregnant: "no"
+        previous_adverse_reaction: "no"
+      patient_risk_category: moderate
+      risk_adjustment: modified_treatment
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        patient.has_comorbidities: "yes"
+        patient.previous_adverse_reaction: "no"
+      rule:
+        _id: rf2
+        "patient.has_comorbidities[i3-1]": "'yes'"
+        "patient.previous_adverse_reaction[i3-2]": "'no'"
+  treatmentProtocol:
+    id: treatmentProtocol
+    input:
+      base_treatment: oral_medication
+      comorbidity_risk_level: high
+      diagnosis: diabetes_type2
+      diagnosis_severity: moderate_diabetes
+      dosage_modification: standard_elderly
+      follow_up_schedule: bi-weekly
+      measurement_value:
+        "$serde_json::private::Number": "8.2"
+      patient:
+        age:
+          "$serde_json::private::Number": "67"
+        has_comorbidities: "yes"
+        is_pregnant: "no"
+        previous_adverse_reaction: "no"
+      patient_risk_category: moderate
+      protocol_intensity: intensive
+      risk_adjustment: modified_treatment
+    name: finalTreatmentSelection
+    order:
+      "$serde_json::private::Number": "6"
+    output:
+      protocol_name: oral_medication_moderate
+      treatment_protocol:
+        base_treatment: oral_medication
+        dosage_instruction: standard_elderly
+        follow_up_frequency: bi-weekly
+        protocol_id: oral_medication_moderate_intensive
+        protocol_intensity: intensive
+        risk_adjustment: modified_treatment
+        severity_level: moderate_diabetes
+    performance: "[perf]"
+    traceData:
+      protocol_name:
+        result: "\"oral_medication_moderate\""
+      treatment_protocol:
+        result: "{\"follow_up_frequency\":\"bi-weekly\",\"risk_adjustment\":\"modified_treatment\",\"base_treatment\":\"oral_medication\",\"protocol_intensity\":\"intensive\",\"dosage_instruction\":\"standard_elderly\",\"protocol_id\":\"oral_medication_moderate_intensive\",\"severity_level\":\"moderate_diabetes\"}"

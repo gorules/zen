@@ -1,0 +1,475 @@
+{
+  "tests": [
+    {
+      "input": {
+        "payment": {
+          "id": "pmt_12345678",
+          "type": "credit_card",
+          "amount": 2500,
+          "currency": "USD",
+          "channel": "web",
+          "timestamp": "2025-03-18T10:30:45Z",
+          "customer_id": "cust_87654321",
+          "metadata": {
+            "card_last_four": "4242",
+            "card_network": "Visa",
+            "save_for_future": true
+          }
+        },
+        "merchant": {
+          "id": "merch_98765432",
+          "category": "retail",
+          "country": "US",
+          "processing_history": {
+            "total_transactions": 1256,
+            "average_amount": 175.5,
+            "chargeback_rate": 0.2
+          }
+        },
+        "session": {
+          "ip_address": "192.168.1.1",
+          "device_id": "dev_abcdef123456",
+          "browser": "Chrome",
+          "location": {
+            "country": "US",
+            "state": "CA",
+            "city": "San Francisco"
+          }
+        }
+      },
+      "output": {
+        "routing": {
+          "processing_instructions": {
+            "fraud_scan": "standard",
+            "manual_review": true,
+            "priority": "medium",
+            "processor": "credit_processor",
+            "velocity_check": true,
+            "verification_required": "3ds"
+          }
+        },
+        "security": {
+          "fraud_scan_level": "standard",
+          "high_risk_flag": true,
+          "total_risk_score": 50,
+          "velocity_check_required": true
+        }
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "payment-input",
+      "name": "payment-request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule-credit-card",
+            "input-payment-type": "'credit_card'",
+            "output-route": "'credit_processor'",
+            "output-base-fee": "2.9",
+            "output-risk-score": "25"
+          },
+          {
+            "_id": "rule-debit-card",
+            "input-payment-type": "'debit_card'",
+            "output-route": "'debit_processor'",
+            "output-base-fee": "1.5",
+            "output-risk-score": "15"
+          },
+          {
+            "_id": "rule-bank-transfer",
+            "input-payment-type": "'bank_transfer'",
+            "output-route": "'ach_processor'",
+            "output-base-fee": "1.0",
+            "output-risk-score": "10"
+          },
+          {
+            "_id": "rule-crypto",
+            "input-payment-type": "'cryptocurrency'",
+            "output-route": "'crypto_processor'",
+            "output-base-fee": "1.8",
+            "output-risk-score": "35"
+          },
+          {
+            "_id": "rule-digital-wallet",
+            "input-payment-type": "'digital_wallet'",
+            "output-route": "'wallet_processor'",
+            "output-base-fee": "2.5",
+            "output-risk-score": "20"
+          },
+          {
+            "_id": "rule-default",
+            "input-payment-type": "",
+            "output-route": "'default_processor'",
+            "output-base-fee": "3.5",
+            "output-risk-score": "50"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "input-payment-type",
+            "name": "Payment Type",
+            "field": "payment.type"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "output-route",
+            "name": "Processor Route",
+            "field": "routing.processor"
+          },
+          {
+            "id": "output-base-fee",
+            "name": "Base Fee Percentage",
+            "field": "fee.base_percentage"
+          },
+          {
+            "id": "output-risk-score",
+            "name": "Risk Score",
+            "field": "security.base_risk_score"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "payment-type-table",
+      "name": "payment-type-processing",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule-web-high-risk",
+            "input-channel": "'web'",
+            "input-risk-score": "> 30",
+            "output-channel-fee": "0.5",
+            "output-channel-risk": "15",
+            "output-priority": "'low'"
+          },
+          {
+            "_id": "rule-web-low-risk",
+            "input-channel": "'web'",
+            "input-risk-score": "<= 30",
+            "output-channel-fee": "0.3",
+            "output-channel-risk": "5",
+            "output-priority": "'medium'"
+          },
+          {
+            "_id": "rule-mobile-high-risk",
+            "input-channel": "'mobile'",
+            "input-risk-score": "> 30",
+            "output-channel-fee": "0.8",
+            "output-channel-risk": "20",
+            "output-priority": "'low'"
+          },
+          {
+            "_id": "rule-mobile-low-risk",
+            "input-channel": "'mobile'",
+            "input-risk-score": "<= 30",
+            "output-channel-fee": "0.5",
+            "output-channel-risk": "10",
+            "output-priority": "'medium'"
+          },
+          {
+            "_id": "rule-pos-high-risk",
+            "input-channel": "'pos'",
+            "input-risk-score": "> 30",
+            "output-channel-fee": "1.0",
+            "output-channel-risk": "5",
+            "output-priority": "'medium'"
+          },
+          {
+            "_id": "rule-pos-low-risk",
+            "input-channel": "'pos'",
+            "input-risk-score": "<= 30",
+            "output-channel-fee": "0.8",
+            "output-channel-risk": "0",
+            "output-priority": "'high'"
+          },
+          {
+            "_id": "rule-api-integration",
+            "input-channel": "'api'",
+            "input-risk-score": "",
+            "output-channel-fee": "0.1",
+            "output-channel-risk": "5",
+            "output-priority": "'high'"
+          },
+          {
+            "_id": "rule-default-channel",
+            "input-channel": "",
+            "input-risk-score": "",
+            "output-channel-fee": "1.0",
+            "output-channel-risk": "25",
+            "output-priority": "'low'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "input-channel",
+            "name": "Channel",
+            "field": "payment.channel"
+          },
+          {
+            "id": "input-risk-score",
+            "name": "Base Risk Score",
+            "field": "security.base_risk_score"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "output-channel-fee",
+            "name": "Channel Fee Addition",
+            "field": "fee.channel_addition"
+          },
+          {
+            "id": "output-channel-risk",
+            "name": "Channel Risk Addition",
+            "field": "security.channel_risk_addition"
+          },
+          {
+            "id": "output-priority",
+            "name": "Processing Priority",
+            "field": "routing.priority"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "channel-routing-table",
+      "name": "channel-routing",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule-high-amount",
+            "input-amount": ">= 10000",
+            "input-route": "",
+            "output-amount-fee": "-0.5",
+            "output-amount-security": "30",
+            "output-verification": "'3ds_and_manual'"
+          },
+          {
+            "_id": "rule-medium-high-amount",
+            "input-amount": ">= 5000, < 10000",
+            "input-route": "",
+            "output-amount-fee": "-0.3",
+            "output-amount-security": "20",
+            "output-verification": "'3ds'"
+          },
+          {
+            "_id": "rule-medium-amount",
+            "input-amount": ">= 1000, < 5000",
+            "input-route": "",
+            "output-amount-fee": "0",
+            "output-amount-security": "10",
+            "output-verification": "'cvv_check'"
+          },
+          {
+            "_id": "rule-low-amount",
+            "input-amount": "< 1000",
+            "input-route": "",
+            "output-amount-fee": "0.5",
+            "output-amount-security": "0",
+            "output-verification": "'standard'"
+          },
+          {
+            "_id": "rule-high-amount-bank",
+            "input-amount": ">= 5000",
+            "input-route": "'ach_processor'",
+            "output-amount-fee": "-0.8",
+            "output-amount-security": "15",
+            "output-verification": "'account_verification'"
+          },
+          {
+            "_id": "rule-high-amount-crypto",
+            "input-amount": ">= 5000",
+            "input-route": "'crypto_processor'",
+            "output-amount-fee": "0",
+            "output-amount-security": "40",
+            "output-verification": "'blockchain_verification'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "input-amount",
+            "name": "Payment Amount",
+            "field": "payment.amount"
+          },
+          {
+            "id": "input-route",
+            "name": "Processor Route",
+            "field": "routing.processor"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "output-amount-fee",
+            "name": "Amount-based Fee Adjustment",
+            "field": "fee.amount_adjustment"
+          },
+          {
+            "id": "output-amount-security",
+            "name": "Amount-based Security Addition",
+            "field": "security.amount_risk_addition"
+          },
+          {
+            "id": "output-verification",
+            "name": "Verification Method",
+            "field": "security.verification_method"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "amount-processing",
+      "name": "amount-based-processing",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "expr-total-fee-percentage",
+            "key": "final_fee_percentage",
+            "value": "fee.base_percentage + fee.channel_addition + fee.amount_adjustment"
+          },
+          {
+            "id": "expr-fee-amount",
+            "key": "fee_amount",
+            "value": "payment.amount * ($.final_fee_percentage / 100)"
+          },
+          {
+            "id": "expr-minimum-fee",
+            "key": "fee.final_amount",
+            "value": "$.fee_amount < 0.5 ? 0.5 : $.fee_amount"
+          },
+          {
+            "id": "expr-net-amount",
+            "key": "payment.net_amount",
+            "value": "payment.amount - $.fee.final_amount"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "fee-calculation",
+      "name": "fee-calculation",
+      "position": {
+        "x": 1390,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "expr-total-risk-score",
+            "key": "security.total_risk_score",
+            "value": "security.base_risk_score + security.channel_risk_addition + security.amount_risk_addition"
+          },
+          {
+            "id": "expr-high-risk-flag",
+            "key": "security.high_risk_flag",
+            "value": "$.security.total_risk_score >= 50"
+          },
+          {
+            "id": "expr-velocity-check",
+            "key": "security.velocity_check_required",
+            "value": "$.security.total_risk_score >= 30"
+          },
+          {
+            "id": "expr-fraud-scan",
+            "key": "security.fraud_scan_level",
+            "value": "$.security.total_risk_score >= 75 ? \"enhanced\" :  $.security.total_risk_score >= 50 ? \"standard\" :  $.security.total_risk_score >= 25 ? \"basic\" :  \"minimal\""
+          },
+          {
+            "id": "expr-processing-instructions",
+            "key": "routing.processing_instructions",
+            "value": "{\n  \"priority\": routing.priority,\n  \"processor\": routing.processor,\n  \"verification_required\": security.verification_method,\n  \"fraud_scan\": $.security.fraud_scan_level,\n  \"velocity_check\": $.security.velocity_check_required,\n  \"manual_review\": $.security.high_risk_flag\n}"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "security-requirements",
+      "name": "security-verification",
+      "position": {
+        "x": 1710,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-input-to-payment-type",
+      "sourceId": "payment-input",
+      "targetId": "payment-type-table",
+      "type": "edge"
+    },
+    {
+      "id": "edge-payment-type-to-channel",
+      "sourceId": "payment-type-table",
+      "targetId": "channel-routing-table",
+      "type": "edge"
+    },
+    {
+      "id": "edge-channel-to-amount",
+      "sourceId": "channel-routing-table",
+      "targetId": "amount-processing",
+      "type": "edge"
+    },
+    {
+      "id": "edge-amount-to-fees",
+      "sourceId": "amount-processing",
+      "targetId": "fee-calculation",
+      "type": "edge"
+    },
+    {
+      "id": "edge-fees-to-security",
+      "sourceId": "fee-calculation",
+      "targetId": "security-requirements",
+      "type": "edge"
+    }
+  ]
+}

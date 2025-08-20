@@ -1,0 +1,235 @@
+{
+  "tests": [
+    {
+      "input": {
+        "transaction": {
+          "id": "tx-28473",
+          "amount": 1250,
+          "location": "Germany",
+          "time": "23:45",
+          "recentCount": 4,
+          "merchantCategory": "Electronics",
+          "date": "2023-03-18"
+        },
+        "userProfile": {
+          "id": "user-5932",
+          "homeCountry": "USA",
+          "frequentCountries": [
+            "Canada",
+            "UK"
+          ],
+          "averageTransactionAmount": 350,
+          "maxTransactionAmount": 800,
+          "usualMerchantCategories": [
+            "Groceries",
+            "Dining",
+            "Retail"
+          ],
+          "usualTransactionTimeRange": [
+            "08:00",
+            "21:00"
+          ]
+        }
+      },
+      "output": {
+        "blockTransaction": false,
+        "finalRiskScore": 75,
+        "reason": "Unusual location with amount significantly above average",
+        "requiresReview": true
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "input",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "locationInput": "!= userProfile.homeCountry and != userProfile.frequentCountries",
+            "amountInput": "> userProfile.averageTransactionAmount * 3",
+            "timeInput": "",
+            "frequencyInput": "",
+            "outputRisk": "75",
+            "outputFlag": "'high'",
+            "outputReason": "'Unusual location with amount significantly above average'"
+          },
+          {
+            "_id": "rule2",
+            "locationInput": "!= userProfile.homeCountry",
+            "amountInput": "> userProfile.averageTransactionAmount * 2",
+            "timeInput": "time($) > time('22:00') and time($) < time('06:00')",
+            "frequencyInput": "",
+            "outputRisk": "65",
+            "outputFlag": "'high'",
+            "outputReason": "'Foreign transaction at night with high value'"
+          },
+          {
+            "_id": "rule3",
+            "locationInput": "",
+            "amountInput": "> userProfile.averageTransactionAmount * 4",
+            "timeInput": "",
+            "frequencyInput": "> 3",
+            "outputRisk": "80",
+            "outputFlag": "'high'",
+            "outputReason": "'Multiple high-value transactions in short timeframe'"
+          },
+          {
+            "_id": "rule4",
+            "locationInput": "!= userProfile.homeCountry",
+            "amountInput": "",
+            "timeInput": "",
+            "frequencyInput": "> 5",
+            "outputRisk": "70",
+            "outputFlag": "'high'",
+            "outputReason": "'Multiple foreign transactions in short timeframe'"
+          },
+          {
+            "_id": "rule5",
+            "locationInput": "",
+            "amountInput": "> userProfile.averageTransactionAmount * 2",
+            "timeInput": "time($) > time('22:00') and time($) < time('06:00')",
+            "frequencyInput": "",
+            "outputRisk": "50",
+            "outputFlag": "'medium'",
+            "outputReason": "'Night transaction with amount above average'"
+          },
+          {
+            "_id": "rule6",
+            "locationInput": "",
+            "amountInput": "",
+            "timeInput": "",
+            "frequencyInput": "> 3",
+            "outputRisk": "45",
+            "outputFlag": "'medium'",
+            "outputReason": "'Multiple transactions in short timeframe'"
+          },
+          {
+            "_id": "rule7",
+            "locationInput": "",
+            "amountInput": "",
+            "timeInput": "",
+            "frequencyInput": "",
+            "outputRisk": "0",
+            "outputFlag": "'low'",
+            "outputReason": "'No suspicious patterns detected'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "locationInput",
+            "name": "Transaction Location",
+            "field": "transaction.location"
+          },
+          {
+            "id": "amountInput",
+            "name": "Transaction Amount",
+            "field": "transaction.amount"
+          },
+          {
+            "id": "timeInput",
+            "name": "Transaction Time",
+            "field": "transaction.time"
+          },
+          {
+            "id": "frequencyInput",
+            "name": "Recent Transactions Count",
+            "field": "transaction.recentCount"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "outputRisk",
+            "name": "Risk Score",
+            "field": "fraud.riskScore"
+          },
+          {
+            "id": "outputFlag",
+            "name": "Risk Flag",
+            "field": "fraud.flag"
+          },
+          {
+            "id": "outputReason",
+            "name": "Risk Reason",
+            "field": "fraud.reason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "fraudDetection",
+      "name": "detectSuspiciousActivity",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "expr1",
+            "key": "finalRiskScore",
+            "value": "number(fraud.riskScore)"
+          },
+          {
+            "id": "expr2",
+            "key": "requiresReview",
+            "value": "fraud.flag == 'high' or $.finalRiskScore > 60"
+          },
+          {
+            "id": "expr3",
+            "key": "blockTransaction",
+            "value": "$.finalRiskScore > 75"
+          },
+          {
+            "id": "expr4",
+            "key": "reason",
+            "value": "fraud.reason"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "riskScoring",
+      "name": "calculateRiskScore",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "input",
+      "targetId": "fraudDetection",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "fraudDetection",
+      "targetId": "riskScoring",
+      "type": "edge"
+    }
+  ]
+}

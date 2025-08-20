@@ -1,0 +1,145 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  compatibility:
+    advancedFeatures: true
+    basicService: true
+    hdStreaming: false
+    nextGenFeatures: false
+  deviceFirmware: 14.2.1
+  deviceId: A1B2C3D4E5F6
+  deviceModel: iPhone 13 Pro
+  majorVersion:
+    "$serde_json::private::Number": "14"
+  normalizedModel: iphone 13 pro
+  requestTimestamp: "2023-04-15T10:30:45Z"
+  subscriberId: "2022050789"
+trace:
+  dt1:
+    id: dt1
+    input:
+      deviceFirmware: 14.2.1
+      deviceId: A1B2C3D4E5F6
+      deviceModel: iPhone 13 Pro
+      majorVersion:
+        "$serde_json::private::Number": "14"
+      normalizedModel: iphone 13 pro
+      requestTimestamp: "2023-04-15T10:30:45Z"
+      subscriberId: "2022050789"
+    name: determine_compatibility
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      compatibility:
+        advancedFeatures: true
+        basicService: true
+        hdStreaming: true
+        nextGenFeatures: false
+      deviceFirmware: 14.2.1
+      deviceId: A1B2C3D4E5F6
+      deviceModel: iPhone 13 Pro
+      majorVersion:
+        "$serde_json::private::Number": "14"
+      normalizedModel: iphone 13 pro
+      requestTimestamp: "2023-04-15T10:30:45Z"
+      subscriberId: "2022050789"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        majorVersion:
+          "$serde_json::private::Number": "14"
+        normalizedModel: iphone 13 pro
+      rule:
+        _id: r1-2
+        "majorVersion[i1-2]": ">= 13 and < 15"
+        "normalizedModel[i1-1]": "contains($, 'iphone')"
+  dt2:
+    id: dt2
+    input:
+      compatibility:
+        advancedFeatures: true
+        basicService: true
+        hdStreaming: true
+        nextGenFeatures: false
+      deviceFirmware: 14.2.1
+      deviceId: A1B2C3D4E5F6
+      deviceModel: iPhone 13 Pro
+      majorVersion:
+        "$serde_json::private::Number": "14"
+      normalizedModel: iphone 13 pro
+      requestTimestamp: "2023-04-15T10:30:45Z"
+      subscriberId: "2022050789"
+    name: check_minor_version
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      compatibility:
+        advancedFeatures: true
+        basicService: true
+        hdStreaming: false
+        nextGenFeatures: false
+      deviceFirmware: 14.2.1
+      deviceId: A1B2C3D4E5F6
+      deviceModel: iPhone 13 Pro
+      majorVersion:
+        "$serde_json::private::Number": "14"
+      normalizedModel: iphone 13 pro
+      requestTimestamp: "2023-04-15T10:30:45Z"
+      subscriberId: "2022050789"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        majorVersion:
+          "$serde_json::private::Number": "14"
+        normalizedModel: iphone 13 pro
+      rule:
+        _id: r2-1
+        "majorVersion[624d983d-f416-4f68-b194-750f45445670]": "<= 14"
+        "normalizedModel[i2-1]": "contains($, 'iphone')"
+  ex1:
+    id: ex1
+    input:
+      deviceFirmware: 14.2.1
+      deviceId: A1B2C3D4E5F6
+      deviceModel: iPhone 13 Pro
+      requestTimestamp: "2023-04-15T10:30:45Z"
+      subscriberId: "2022050789"
+    name: normalize_data
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      deviceFirmware: 14.2.1
+      deviceId: A1B2C3D4E5F6
+      deviceModel: iPhone 13 Pro
+      majorVersion:
+        "$serde_json::private::Number": "14"
+      normalizedModel: iphone 13 pro
+      requestTimestamp: "2023-04-15T10:30:45Z"
+      subscriberId: "2022050789"
+    performance: "[perf]"
+    traceData:
+      majorVersion:
+        result: "14"
+      normalizedModel:
+        result: "\"iphone 13 pro\""
+  ip1:
+    id: ip1
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      deviceFirmware: 14.2.1
+      deviceId: A1B2C3D4E5F6
+      deviceModel: iPhone 13 Pro
+      requestTimestamp: "2023-04-15T10:30:45Z"
+      subscriberId: "2022050789"
+    performance: "[perf]"
+    traceData: ~

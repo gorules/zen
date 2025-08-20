@@ -1,0 +1,469 @@
+{
+  "tests": [
+    {
+      "input": {
+        "applicantId": "APL-12345",
+        "creditScore": 685,
+        "annualIncome": 72000,
+        "monthlyDebt": 1800,
+        "monthlyIncome": 6000,
+        "employmentYears": 4,
+        "employmentStatus": "full_time",
+        "loanAmount": 250000,
+        "loanTerm": 30
+      },
+      "output": {
+        "approval": true,
+        "baseRate": 5.5,
+        "interestRate": 6.5,
+        "riskAdjustment": 20,
+        "totalRiskScore": 80
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"applicantId\": {\n      \"type\": \"string\"\n    },\n    \"creditScore\": {\n      \"type\": \"number\"\n    },\n    \"annualIncome\": {\n      \"type\": \"number\"\n    },\n    \"monthlyDebt\": {\n      \"type\": \"number\"\n    },\n    \"monthlyIncome\": {\n      \"type\": \"number\"\n    },\n    \"employmentYears\": {\n      \"type\": \"number\"\n    },\n    \"employmentStatus\": {\n      \"type\": \"string\"\n    },\n    \"loanAmount\": {\n      \"type\": \"number\"\n    },\n    \"loanTerm\": {\n      \"type\": \"number\"\n    }\n  }\n}"
+      },
+      "id": "input",
+      "name": "loanApplication",
+      "position": {
+        "x": 110,
+        "y": 243.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "cs1",
+            "i1-1": ">= 750",
+            "o1-1": "\"excellent\"",
+            "o1-2": "30"
+          },
+          {
+            "_id": "cs2",
+            "i1-1": "[700..749]",
+            "o1-1": "\"good\"",
+            "o1-2": "25"
+          },
+          {
+            "_id": "cs3",
+            "i1-1": "[650..699]",
+            "o1-1": "\"fair\"",
+            "o1-2": "15"
+          },
+          {
+            "_id": "cs4",
+            "i1-1": "[600..649]",
+            "o1-1": "\"poor\"",
+            "o1-2": "5"
+          },
+          {
+            "_id": "cs5",
+            "i1-1": "< 600",
+            "o1-1": "\"very_poor\"",
+            "o1-2": "0"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Credit Score",
+            "field": "creditScore"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Credit Rating",
+            "field": "creditRating"
+          },
+          {
+            "id": "o1-2",
+            "name": "Score Points",
+            "field": "creditScorePoints"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "evaluateCreditScore",
+      "name": "creditScoreEvaluation",
+      "position": {
+        "x": 430,
+        "y": 243.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "iv1",
+            "i2-1": ">= 100000",
+            "o2-1": "\"high\"",
+            "o2-2": "25"
+          },
+          {
+            "_id": "iv2",
+            "i2-1": "[60000..99999]",
+            "o2-1": "\"medium\"",
+            "o2-2": "20"
+          },
+          {
+            "_id": "iv3",
+            "i2-1": "[30000..59999]",
+            "o2-1": "\"low\"",
+            "o2-2": "10"
+          },
+          {
+            "_id": "iv4",
+            "i2-1": "< 30000",
+            "o2-1": "\"very_low\"",
+            "o2-2": "0"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i2-1",
+            "name": "Annual Income",
+            "field": "annualIncome"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2-1",
+            "name": "Income Level",
+            "field": "incomeLevel"
+          },
+          {
+            "id": "o2-2",
+            "name": "Income Points",
+            "field": "incomePoints"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "evaluateIncome",
+      "name": "incomeVerification",
+      "position": {
+        "x": 750,
+        "y": 243.5
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "dti1",
+            "key": "dtiRatio",
+            "value": "(monthlyDebt / monthlyIncome) * 100"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "calculateDTI",
+      "name": "debtToIncomeRatio",
+      "position": {
+        "x": 1070,
+        "y": 243.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "eh1",
+            "i4-1": "employmentStatus == \"full_time\" and employmentYears >= 5",
+            "o4-1": "\"very_stable\"",
+            "o4-2": "20"
+          },
+          {
+            "_id": "eh2",
+            "i4-1": "employmentStatus == \"full_time\" and employmentYears >= 2",
+            "o4-1": "\"stable\"",
+            "o4-2": "15"
+          },
+          {
+            "_id": "eh3",
+            "i4-1": "employmentStatus == \"full_time\" and employmentYears < 2",
+            "o4-1": "\"new\"",
+            "o4-2": "10"
+          },
+          {
+            "_id": "eh4",
+            "i4-1": "employmentStatus == \"part_time\" and employmentYears >= 2",
+            "o4-1": "\"moderate\"",
+            "o4-2": "5"
+          },
+          {
+            "_id": "eh5",
+            "i4-1": "employmentStatus == \"part_time\" and employmentYears < 2",
+            "o4-1": "\"unstable\"",
+            "o4-2": "0"
+          },
+          {
+            "_id": "eh6",
+            "i4-1": "employmentStatus == \"self_employed\" and employmentYears >= 3",
+            "o4-1": "\"stable\"",
+            "o4-2": "15"
+          },
+          {
+            "_id": "eh7",
+            "i4-1": "employmentStatus == \"self_employed\" and employmentYears < 3",
+            "o4-1": "\"moderate\"",
+            "o4-2": "5"
+          },
+          {
+            "_id": "eh8",
+            "i4-1": "employmentStatus == \"unemployed\"",
+            "o4-1": "\"unstable\"",
+            "o4-2": "0"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i4-1",
+            "name": "Employment Status"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o4-1",
+            "name": "Stability",
+            "field": "employmentStability"
+          },
+          {
+            "id": "o4-2",
+            "name": "Employment Points",
+            "field": "employmentPoints"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "evaluateEmployment",
+      "name": "employmentHistory",
+      "position": {
+        "x": 1390,
+        "y": 243.5
+      }
+    },
+    {
+      "type": "switchNode",
+      "content": {
+        "hitPolicy": "first",
+        "statements": [
+          {
+            "id": "approval1",
+            "condition": "len(rejectionReasons) == 0",
+            "isDefault": false
+          },
+          {
+            "id": "rejection1",
+            "condition": "",
+            "isDefault": true
+          }
+        ]
+      },
+      "id": "determineApproval",
+      "name": "loanApprovalDecision",
+      "position": {
+        "x": 2030,
+        "y": 243.5
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "ir1",
+            "key": "totalRiskScore",
+            "value": "creditScorePoints + incomePoints + employmentPoints + dtiRatio"
+          },
+          {
+            "id": "ir2",
+            "key": "approval",
+            "value": "true"
+          },
+          {
+            "id": "ir3",
+            "key": "baseRate",
+            "value": "5.5"
+          },
+          {
+            "id": "ir4",
+            "key": "riskAdjustment",
+            "value": "100 - $.totalRiskScore"
+          },
+          {
+            "id": "ir5",
+            "key": "interestRate",
+            "value": "$.baseRate + ($.riskAdjustment * 0.05)"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "calculateInterestRate",
+      "name": "interestRateCalculation",
+      "position": {
+        "x": 2350,
+        "y": 194.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "collect",
+        "rules": [
+          {
+            "_id": "rr1",
+            "i5-1": "creditScorePoints < 15",
+            "o5-1": "\"Poor credit history\""
+          },
+          {
+            "_id": "rr2",
+            "i5-1": "incomePoints < 10",
+            "o5-1": "\"Insufficient income\""
+          },
+          {
+            "_id": "rr3",
+            "i5-1": "dtiRatio > 40",
+            "o5-1": "\"High debt-to-income ratio\""
+          },
+          {
+            "_id": "rr4",
+            "i5-1": "employmentPoints < 10",
+            "o5-1": "\"Unstable employment history\""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i5-1",
+            "name": "Rejection Conditions"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o5-1",
+            "name": "Message",
+            "field": "message"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": "rejectionReasons",
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "rejectionReason",
+      "name": "determineLoanRejectionReason",
+      "position": {
+        "x": 1710,
+        "y": 243.5
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "7f99a05c-4146-4110-a159-e4e3c269f49b",
+            "key": "rejectionReasons",
+            "value": "rejectionReasons"
+          },
+          {
+            "id": "ex2",
+            "key": "approval",
+            "value": "false"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "b2ee66ae-cf8f-40a4-8913-209ca02f4aa3",
+      "name": "rejection",
+      "position": {
+        "x": 2350,
+        "y": 365
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "input",
+      "targetId": "evaluateCreditScore",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "evaluateCreditScore",
+      "targetId": "evaluateIncome",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "evaluateIncome",
+      "targetId": "calculateDTI",
+      "type": "edge"
+    },
+    {
+      "id": "edge4",
+      "sourceId": "calculateDTI",
+      "targetId": "evaluateEmployment",
+      "type": "edge"
+    },
+    {
+      "id": "edge6",
+      "sourceId": "determineApproval",
+      "targetId": "calculateInterestRate",
+      "sourceHandle": "approval1",
+      "type": "edge"
+    },
+    {
+      "id": "cf7b66cb-e68d-4920-81f4-725f71855e2a",
+      "sourceId": "evaluateEmployment",
+      "type": "edge",
+      "targetId": "rejectionReason"
+    },
+    {
+      "id": "3c8b572d-68c8-42ba-9e0f-59b4a1557199",
+      "sourceId": "rejectionReason",
+      "type": "edge",
+      "targetId": "determineApproval"
+    },
+    {
+      "id": "04f4e081-8440-4162-8e78-cfa26d68a64a",
+      "sourceId": "determineApproval",
+      "type": "edge",
+      "targetId": "b2ee66ae-cf8f-40a4-8913-209ca02f4aa3",
+      "sourceHandle": "rejection1"
+    }
+  ]
+}

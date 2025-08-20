@@ -82,7 +82,7 @@ impl<'a> ExpressionHandlerInner<'a> {
                 tmap.insert(
                     Rc::from(expression.key.as_str()),
                     ExpressionTrace {
-                        result: value.to_value(),
+                        result: value.clone(),
                     },
                 );
             }

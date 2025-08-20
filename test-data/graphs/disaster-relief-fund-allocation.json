@@ -1,0 +1,296 @@
+{
+  "tests": [
+    {
+      "input": {
+        "assessment": {
+          "damageLevel": "major",
+          "propertyType": "residential",
+          "damageDescription": "Roof collapsed in multiple areas, extensive water damage"
+        },
+        "household": {
+          "size": 4,
+          "dependents": 2,
+          "specialNeeds": false
+        },
+        "income": {
+          "level": "low",
+          "annualAmount": 32000,
+          "primarySource": "employment"
+        },
+        "insurance": {
+          "status": "partial",
+          "deductible": 5000,
+          "provider": "StateInsurance"
+        }
+      },
+      "output": {
+        "assessment": {
+          "damageDescription": "Roof collapsed in multiple areas, extensive water damage",
+          "damageLevel": "major",
+          "propertyType": "residential"
+        },
+        "household": {
+          "dependents": 2,
+          "size": 4,
+          "specialNeeds": false
+        },
+        "householdMultiplier": 1.6,
+        "income": {
+          "annualAmount": 32000,
+          "level": "low",
+          "primarySource": "employment"
+        },
+        "initialAllocation": 14400,
+        "insurance": {
+          "deductible": 5000,
+          "provider": "StateInsurance",
+          "status": "partial"
+        },
+        "relief": {
+          "baseAmount": 7500,
+          "incomeAdjustedAmount": 9000,
+          "paymentAmount": 10080,
+          "paymentReason": "Partially insured - reduced payment"
+        }
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "ip1",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1-1",
+            "i1-1": "'severe'",
+            "o1-1": "10000"
+          },
+          {
+            "_id": "r1-2",
+            "i1-1": "'major'",
+            "o1-1": "7500"
+          },
+          {
+            "_id": "r1-3",
+            "i1-1": "'moderate'",
+            "o1-1": "5000"
+          },
+          {
+            "_id": "r1-4",
+            "i1-1": "'minor'",
+            "o1-1": "2500"
+          },
+          {
+            "_id": "r1-5",
+            "i1-1": "",
+            "o1-1": "1000"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Damage Level",
+            "field": "assessment.damageLevel"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Base Amount",
+            "field": "relief.baseAmount"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt1",
+      "name": "baseFundAllocation",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r3-1",
+            "i3-1": "'low'",
+            "o3-1": "relief.baseAmount * 1.2"
+          },
+          {
+            "_id": "r3-2",
+            "i3-1": "'medium'",
+            "o3-1": "relief.baseAmount"
+          },
+          {
+            "_id": "r3-3",
+            "i3-1": "'high'",
+            "o3-1": "relief.baseAmount * 0.8"
+          },
+          {
+            "_id": "r3-4",
+            "i3-1": "",
+            "o3-1": "relief.baseAmount"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i3-1",
+            "name": "Income Level",
+            "field": "income.level"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o3-1",
+            "name": "Income Adjusted Amount",
+            "field": "relief.incomeAdjustedAmount"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt3",
+      "name": "incomeAdjustment",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1-1",
+            "key": "householdMultiplier",
+            "value": "min([household.size * 0.15 + 1, 1.75])"
+          },
+          {
+            "id": "e1-2",
+            "key": "initialAllocation",
+            "value": "relief.incomeAdjustedAmount * $.householdMultiplier"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex1",
+      "name": "householdSizeAdjustment",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r2-1",
+            "i2-1": "'none'",
+            "o2-1": "initialAllocation",
+            "o2-2": "'Not insured - full payment'"
+          },
+          {
+            "_id": "r2-2",
+            "i2-1": "'partial'",
+            "o2-1": "max([initialAllocation * 0.7, 1000])",
+            "o2-2": "'Partially insured - reduced payment'"
+          },
+          {
+            "_id": "r2-3",
+            "i2-1": "'full'",
+            "o2-1": "max([initialAllocation * 0.3, 500])",
+            "o2-2": "'Fully insured - minimal supplemental payment'"
+          },
+          {
+            "_id": "r2-4",
+            "i2-1": "",
+            "o2-1": "initialAllocation * 0.5",
+            "o2-2": "'Unknown insurance status - standard reduction'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i2-1",
+            "name": "Insurance Status",
+            "field": "insurance.status"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2-1",
+            "name": "Final Payment",
+            "field": "relief.paymentAmount"
+          },
+          {
+            "id": "o2-2",
+            "name": "Reason",
+            "field": "relief.paymentReason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "dt2",
+      "name": "insuranceAdjustment",
+      "position": {
+        "x": 1390,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "ed1",
+      "sourceId": "ip1",
+      "targetId": "dt1",
+      "type": "edge"
+    },
+    {
+      "id": "ed2",
+      "sourceId": "dt1",
+      "targetId": "dt3",
+      "type": "edge"
+    },
+    {
+      "id": "ed3",
+      "sourceId": "dt3",
+      "targetId": "ex1",
+      "type": "edge"
+    },
+    {
+      "id": "ed4",
+      "sourceId": "ex1",
+      "targetId": "dt2",
+      "type": "edge"
+    }
+  ]
+}

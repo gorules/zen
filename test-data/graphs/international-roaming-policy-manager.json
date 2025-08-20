@@ -1,0 +1,199 @@
+{
+  "tests": [
+    {
+      "input": {
+        "destination": {
+          "country": "France",
+          "region": "EU",
+          "arrivalDate": "2025-03-20",
+          "departureDate": "2025-03-27"
+        },
+        "customer": {
+          "id": "C123456789",
+          "profile": {
+            "planType": "International Plus",
+            "isDataRoamingAllowed": true,
+            "isVoiceRoamingAllowed": true,
+            "dataRoamingQuota": 5000,
+            "avgDailyDataUsage": 250,
+            "avgDailyVoiceUsage": 15,
+            "avgDailySmsUsage": 10
+          },
+          "usage": {
+            "dataRoamingUsed": 1250,
+            "voiceRoamingUsed": 45,
+            "smsRoamingUsed": 22
+          }
+        }
+      },
+      "output": {
+        "isDataRoamingEnabled": true,
+        "isVoiceRoamingEnabled": true,
+        "remainingDataAllowance": 3750,
+        "totalEstimatedDailyCost": 252.75
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "ip1",
+      "name": "roamingRequest",
+      "position": {
+        "x": 110,
+        "y": 261.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1-1",
+            "i1-1": "'EU'",
+            "o1-1": "'premium'",
+            "o1-2": "'full'",
+            "o1-3": "1.0",
+            "o1-4": "0.15",
+            "o1-5": "0.05"
+          },
+          {
+            "_id": "r1-2",
+            "i1-1": "'USA', 'Canada'",
+            "o1-1": "'standard'",
+            "o1-2": "'limited'",
+            "o1-3": "2.0",
+            "o1-4": "0.25",
+            "o1-5": "0.10"
+          },
+          {
+            "_id": "r1-3",
+            "i1-1": "'Australia', 'New Zealand', 'Japan', 'South Korea'",
+            "o1-1": "'standard'",
+            "o1-2": "'limited'",
+            "o1-3": "2.5",
+            "o1-4": "0.30",
+            "o1-5": "0.15"
+          },
+          {
+            "_id": "r1-4",
+            "i1-1": "'China', 'India', 'Brazil', 'Russia', 'Mexico'",
+            "o1-1": "'basic'",
+            "o1-2": "'restricted'",
+            "o1-3": "3.5",
+            "o1-4": "0.40",
+            "o1-5": "0.25"
+          },
+          {
+            "_id": "r1-5",
+            "i1-1": "",
+            "o1-1": "'minimal'",
+            "o1-2": "'emergency'",
+            "o1-3": "5.0",
+            "o1-4": "0.50",
+            "o1-5": "0.30"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Region",
+            "field": "destination.region"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "ServiceTier",
+            "field": "policy.serviceTier"
+          },
+          {
+            "id": "o1-2",
+            "name": "DataAccess",
+            "field": "policy.dataAccess"
+          },
+          {
+            "id": "o1-3",
+            "name": "DataRatePerMB",
+            "field": "policy.dataRate"
+          },
+          {
+            "id": "o1-4",
+            "name": "VoiceRatePerMin",
+            "field": "policy.voiceRate"
+          },
+          {
+            "id": "o1-5",
+            "name": "SMSRatePerMessage",
+            "field": "policy.smsRate"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt1",
+      "name": "roamingPolicyLookup",
+      "position": {
+        "x": 430,
+        "y": 261.5
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1-2",
+            "key": "totalEstimatedDailyCost",
+            "value": "customer.profile.avgDailyDataUsage * policy.dataRate + customer.profile.avgDailyVoiceUsage * policy.voiceRate + customer.profile.avgDailySmsUsage * policy.smsRate"
+          },
+          {
+            "id": "e1-3",
+            "key": "isDataRoamingEnabled",
+            "value": "policy.serviceTier != 'minimal' and customer.profile.isDataRoamingAllowed == true"
+          },
+          {
+            "id": "e1-4",
+            "key": "isVoiceRoamingEnabled",
+            "value": "customer.profile.isVoiceRoamingAllowed == true"
+          },
+          {
+            "id": "e1-5",
+            "key": "remainingDataAllowance",
+            "value": "customer.profile.dataRoamingQuota - customer.usage.dataRoamingUsed"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex1",
+      "name": "calculateRoamingParameters",
+      "position": {
+        "x": 750,
+        "y": 261.5
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "ed1",
+      "sourceId": "ip1",
+      "targetId": "dt1",
+      "type": "edge"
+    },
+    {
+      "id": "ed2",
+      "sourceId": "dt1",
+      "targetId": "ex1",
+      "type": "edge"
+    }
+  ]
+}

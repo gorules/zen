@@ -1,0 +1,194 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  eligibility:
+    notes: Age verification required for premium services
+    premiumServices: true
+trace:
+  additionalRestrictions:
+    id: additionalRestrictions
+    input:
+      compliance:
+        dataExportAllowed: false
+        dataRetentionMonths:
+          "$serde_json::private::Number": "24"
+        explicitConsentRequired: true
+        privacyFramework: GDPR
+        serviceRestrictions:
+          - roaming_cap
+          - third_party_data_sharing
+      complianceStatus: compliant
+      complianceSummary: "Region: EU, Framework: GDPR, Retention: 24 months"
+      customer:
+        age:
+          "$serde_json::private::Number": "32"
+        consentProvided: true
+        dateJoined: 2023-05-15
+        id: CUST-83921
+        region: EU
+        serviceLevel: standard
+        type: individual
+      dataRetentionDate:
+        "$serde_json::private::Number": "63963622502"
+      serviceRequest:
+        dataSharing: false
+        internationalRoaming: true
+        upgradeToPremium: true
+    name: serviceEligibility
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      eligibility:
+        notes: Age verification required for premium services
+        premiumServices: true
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "3"
+      reference_map:
+        customer.region: EU
+        customer.type: individual
+      rule:
+        _id: eligible4
+        "customer.region[region]": "'EU', 'UK'"
+        "customer.type[customerType]": "'individual'"
+  complianceOutput:
+    id: complianceOutput
+    input:
+      compliance:
+        dataExportAllowed: false
+        dataRetentionMonths:
+          "$serde_json::private::Number": "24"
+        explicitConsentRequired: true
+        privacyFramework: GDPR
+        serviceRestrictions:
+          - roaming_cap
+          - third_party_data_sharing
+      customer:
+        age:
+          "$serde_json::private::Number": "32"
+        consentProvided: true
+        dateJoined: 2023-05-15
+        id: CUST-83921
+        region: EU
+        serviceLevel: standard
+        type: individual
+      serviceRequest:
+        dataSharing: false
+        internationalRoaming: true
+        upgradeToPremium: true
+    name: complianceEvaluation
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      compliance:
+        dataExportAllowed: false
+        dataRetentionMonths:
+          "$serde_json::private::Number": "24"
+        explicitConsentRequired: true
+        privacyFramework: GDPR
+        serviceRestrictions:
+          - roaming_cap
+          - third_party_data_sharing
+      complianceStatus: compliant
+      complianceSummary: "Region: EU, Framework: GDPR, Retention: 24 months"
+      customer:
+        age:
+          "$serde_json::private::Number": "32"
+        consentProvided: true
+        dateJoined: 2023-05-15
+        id: CUST-83921
+        region: EU
+        serviceLevel: standard
+        type: individual
+      dataRetentionDate:
+        "$serde_json::private::Number": "63963622502"
+      serviceRequest:
+        dataSharing: false
+        internationalRoaming: true
+        upgradeToPremium: true
+    performance: "[perf]"
+    traceData:
+      complianceStatus:
+        result: compliant
+      complianceSummary:
+        result: "Region: EU, Framework: GDPR, Retention: 24 months"
+      dataRetentionDate:
+        result:
+          "$serde_json::private::Number": "63963622502"
+  input:
+    id: input
+    input: ~
+    name: customerData
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      customer:
+        age:
+          "$serde_json::private::Number": "32"
+        consentProvided: true
+        dateJoined: 2023-05-15
+        id: CUST-83921
+        region: EU
+        serviceLevel: standard
+        type: individual
+      serviceRequest:
+        dataSharing: false
+        internationalRoaming: true
+        upgradeToPremium: true
+    performance: "[perf]"
+    traceData: ~
+  regionRules:
+    id: regionRules
+    input:
+      customer:
+        age:
+          "$serde_json::private::Number": "32"
+        consentProvided: true
+        dateJoined: 2023-05-15
+        id: CUST-83921
+        region: EU
+        serviceLevel: standard
+        type: individual
+      serviceRequest:
+        dataSharing: false
+        internationalRoaming: true
+        upgradeToPremium: true
+    name: regionalComplianceRules
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      compliance:
+        dataExportAllowed: false
+        dataRetentionMonths:
+          "$serde_json::private::Number": "24"
+        explicitConsentRequired: true
+        privacyFramework: GDPR
+        serviceRestrictions:
+          - roaming_cap
+          - third_party_data_sharing
+      customer:
+        age:
+          "$serde_json::private::Number": "32"
+        consentProvided: true
+        dateJoined: 2023-05-15
+        id: CUST-83921
+        region: EU
+        serviceLevel: standard
+        type: individual
+      serviceRequest:
+        dataSharing: false
+        internationalRoaming: true
+        upgradeToPremium: true
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        customer.region: EU
+      rule:
+        _id: rule1
+        "customer.region[region]": "'EU'"

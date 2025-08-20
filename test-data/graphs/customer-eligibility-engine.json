@@ -1,0 +1,551 @@
+{
+  "tests": [
+    {
+      "input": {
+        "customerId": "CUST12345",
+        "accountInfo": {
+          "accountAge": 28,
+          "paymentHistory": "excellent",
+          "currentPlan": "Family Premium 50GB",
+          "monthlySpend": 95,
+          "contractStatus": "pending_renewal"
+        },
+        "usageStats": {
+          "dataUsageGB": 42.5,
+          "dataUtilizationPercent": 85,
+          "callMinutes": 350,
+          "textMessages": 1250
+        },
+        "customerProfile": {
+          "segment": "consumer",
+          "location": "Seattle, WA",
+          "devices": [
+            "iPhone 14",
+            "iPad Air",
+            "Apple Watch"
+          ],
+          "previousComplaints": 0
+        }
+      },
+      "output": {
+        "features": {
+          "conciergeService": false,
+          "contentStreaming": true,
+          "internationalRoaming": true,
+          "message": "Most premium features available based on gold status.",
+          "prioritySupport": true
+        }
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"customerId\": {\n      \"type\": \"string\",\n      \"description\": \"Unique identifier for the customer\"\n    },\n    \"accountInfo\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"accountAge\": {\n          \"type\": \"number\",\n          \"description\": \"Account age in months\"\n        },\n        \"paymentHistory\": {\n          \"type\": \"string\",\n          \"enum\": [\"excellent\", \"good\", \"fair\", \"poor\"],\n          \"description\": \"Customer payment history classification\"\n        },\n        \"currentPlan\": {\n          \"type\": \"string\",\n          \"description\": \"Current service plan\"\n        },\n        \"monthlySpend\": {\n          \"type\": \"number\",\n          \"description\": \"Average monthly spend in dollars\"\n        },\n        \"contractStatus\": {\n          \"type\": \"string\",\n          \"enum\": [\"active\", \"pending_renewal\", \"ending_soon\", \"expired\"],\n          \"description\": \"Current contract status\"\n        }\n      }\n    },\n    \"usageStats\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"dataUsageGB\": {\n          \"type\": \"number\",\n          \"description\": \"Average monthly data usage in GB\"\n        },\n        \"dataUtilizationPercent\": {\n          \"type\": \"number\",\n          \"description\": \"Percentage of data allowance used\"\n        },\n        \"callMinutes\": {\n          \"type\": \"number\",\n          \"description\": \"Average monthly call minutes\"\n        },\n        \"textMessages\": {\n          \"type\": \"number\",\n          \"description\": \"Average monthly text messages sent\"\n        }\n      }\n    },\n    \"customerProfile\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"segment\": {\n          \"type\": \"string\",\n          \"enum\": [\"consumer\", \"small_business\", \"enterprise\"],\n          \"description\": \"Customer segment\"\n        },\n        \"location\": {\n          \"type\": \"string\",\n          \"description\": \"Customer geographic location\"\n        },\n        \"devices\": {\n          \"type\": \"array\",\n          \"items\": {\n            \"type\": \"string\"\n          },\n          \"description\": \"List of devices on account\"\n        },\n        \"previousComplaints\": {\n          \"type\": \"number\",\n          \"description\": \"Number of previous complaints\"\n        }\n      }\n    }\n  }\n}"
+      },
+      "id": "input",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1",
+            "i1": ">= 24",
+            "i2": "'excellent'",
+            "i3": "",
+            "o1": "\"excellent\"",
+            "o2": "true"
+          },
+          {
+            "_id": "r2",
+            "i1": ">= 12",
+            "i2": "'excellent', 'good'",
+            "i3": "'active', 'pending_renewal'",
+            "o1": "\"good\"",
+            "o2": "true"
+          },
+          {
+            "_id": "r3",
+            "i1": ">= 6",
+            "i2": "'excellent', 'good', 'fair'",
+            "i3": "'active', 'pending_renewal'",
+            "o1": "\"fair\"",
+            "o2": "true"
+          },
+          {
+            "_id": "r4",
+            "i1": "< 6",
+            "i2": "'excellent', 'good'",
+            "i3": "'active'",
+            "o1": "\"fair\"",
+            "o2": "true"
+          },
+          {
+            "_id": "r5",
+            "i1": "",
+            "i2": "'poort'",
+            "i3": "",
+            "o1": "\"poor\"",
+            "o2": "false"
+          },
+          {
+            "_id": "r6",
+            "i1": "",
+            "i2": "",
+            "i3": "'expired'",
+            "o1": "\"poor\"",
+            "o2": "false"
+          },
+          {
+            "_id": "r7",
+            "i1": "",
+            "i2": "",
+            "i3": "",
+            "o1": "\"review\"",
+            "o2": "false"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Account Age (Months)",
+            "field": "accountInfo.accountAge"
+          },
+          {
+            "id": "i2",
+            "name": "Payment History",
+            "field": "accountInfo.paymentHistory"
+          },
+          {
+            "id": "i3",
+            "name": "Contract Status",
+            "field": "accountInfo.contractStatus"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Account Status",
+            "field": "eligibility.accountStatus"
+          },
+          {
+            "id": "o2",
+            "name": "In Good Standing",
+            "field": "eligibility.goodStanding"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "accountStatus",
+      "name": "evaluateAccountStatus",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1",
+            "i1": ">= 36",
+            "i2": ">= 120",
+            "i3": "'excellent'",
+            "o1": "\"platinum\"",
+            "o2": "20"
+          },
+          {
+            "_id": "r2",
+            "i1": ">= 24",
+            "i2": ">= 80",
+            "i3": "'excellent', 'good'",
+            "o1": "\"gold\"",
+            "o2": "15"
+          },
+          {
+            "_id": "r3",
+            "i1": ">= 12",
+            "i2": ">= 50",
+            "i3": "'excellent', 'good', 'fair'",
+            "o1": "\"silver\"",
+            "o2": "10"
+          },
+          {
+            "_id": "r4",
+            "i1": ">= 6",
+            "i2": ">= 30",
+            "i3": "",
+            "o1": "\"bronze\"",
+            "o2": "5"
+          },
+          {
+            "_id": "r5",
+            "i1": "",
+            "i2": "",
+            "i3": "",
+            "o1": "\"standard\"",
+            "o2": "0"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Account Age (Months)",
+            "field": "accountInfo.accountAge"
+          },
+          {
+            "id": "i2",
+            "name": "Monthly Spend ($)",
+            "field": "accountInfo.monthlySpend"
+          },
+          {
+            "id": "i3",
+            "name": "Account Status",
+            "field": "eligibility.accountStatus"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Loyalty Tier",
+            "field": "eligibility.loyaltyTier"
+          },
+          {
+            "id": "o2",
+            "name": "Loyalty Discount",
+            "field": "eligibility.loyaltyDiscountPercent"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "loyaltyTier",
+      "name": "determineLoyaltyTier",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1",
+            "i1": "true",
+            "i2": "['platinum', 'gold']",
+            "i3": "accountInfo.contractStatus == 'pending_renewal' or accountInfo.contractStatus == 'ending_soon'",
+            "o1": "true",
+            "o2": "true",
+            "o3": "true",
+            "o4": "\"High-priority upgrade eligible. Offers for all plan categories.\""
+          },
+          {
+            "_id": "r2",
+            "i1": "true",
+            "i2": "['platinum', 'gold']",
+            "i3": "",
+            "o1": "true",
+            "o2": "true",
+            "o3": "false",
+            "o4": "\"Premium plan upgrade eligible based on customer tier.\""
+          },
+          {
+            "_id": "r3",
+            "i1": "true",
+            "i2": "['silver']",
+            "i3": "accountInfo.contractStatus == 'pending_renewal' or accountInfo.contractStatus == 'ending_soon'",
+            "o1": "true",
+            "o2": "false",
+            "o3": "false",
+            "o4": "\"Standard upgrade eligible based on contract status.\""
+          },
+          {
+            "_id": "r4",
+            "i1": "true",
+            "i2": "['bronze', 'standard']",
+            "i3": "accountInfo.contractStatus == 'ending_soon'",
+            "o1": "true",
+            "o2": "false",
+            "o3": "false",
+            "o4": "\"Basic upgrade eligible as contract is ending.\""
+          },
+          {
+            "_id": "r5",
+            "i1": "false",
+            "i2": "",
+            "i3": "",
+            "o1": "false",
+            "o2": "false",
+            "o3": "false",
+            "o4": "\"Not eligible for upgrades due to account standing.\""
+          },
+          {
+            "_id": "r6",
+            "i1": "",
+            "i2": "",
+            "i3": "",
+            "o1": "false",
+            "o2": "false",
+            "o3": "false",
+            "o4": "\"Standard eligibility rules apply.\""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Good Standing",
+            "field": "eligibility.goodStanding"
+          },
+          {
+            "id": "i2",
+            "name": "Loyalty Tier",
+            "field": "eligibility.loyaltyTier"
+          },
+          {
+            "id": "i3",
+            "name": "Contract Condition"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Eligible For Upgrade",
+            "field": "eligibility.canUpgrade"
+          },
+          {
+            "id": "o2",
+            "name": "Premium Plan Eligible",
+            "field": "eligibility.premiumPlanEligible"
+          },
+          {
+            "id": "o3",
+            "name": "Early Upgrade Eligible",
+            "field": "eligibility.earlyUpgradeEligible"
+          },
+          {
+            "id": "o4",
+            "name": "Upgrade Message",
+            "field": "eligibility.upgradeMessage"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "upgradeEligibility",
+      "name": "determineUpgradeEligibility",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1",
+            "key": "eligibility.specialOffers",
+            "value": "{\n  \"internationalBundle\": usageStats.callMinutes > 300,\n  \"dataBooster\": usageStats.dataUtilizationPercent > 80,\n  \"familyPlan\": len(customerProfile.devices) >= 3,\n  \"deviceUpgrade\": eligibility.canUpgrade,\n  \"loyaltyReward\": eligibility.loyaltyTier in [\"platinum\", \"gold\", \"silver\"]\n}"
+          },
+          {
+            "id": "e2",
+            "key": "eligibility.offerCount",
+            "value": "len(filter(values($.eligibility.specialOffers), # == true))"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "specialOffers",
+      "name": "determineSpecialOffers",
+      "position": {
+        "x": 1390,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1",
+            "i1": "['platinum']",
+            "i2": "true",
+            "i3": ">= 3",
+            "o1": "true",
+            "o2": "true",
+            "o3": "true",
+            "o4": "true",
+            "o5": "\"All premium features available based on platinum status.\""
+          },
+          {
+            "_id": "r2",
+            "i1": "['gold']",
+            "i2": "true",
+            "i3": ">= 2",
+            "o1": "true",
+            "o2": "true",
+            "o3": "true",
+            "o4": "false",
+            "o5": "\"Most premium features available based on gold status.\""
+          },
+          {
+            "_id": "r3",
+            "i1": "['silver']",
+            "i2": "true",
+            "i3": ">= 1",
+            "o1": "true",
+            "o2": "true",
+            "o3": "false",
+            "o4": "false",
+            "o5": "\"Selected premium features available based on silver status.\""
+          },
+          {
+            "_id": "r4",
+            "i1": "['bronze']",
+            "i2": "true",
+            "i3": "",
+            "o1": "true",
+            "o2": "false",
+            "o3": "false",
+            "o4": "false",
+            "o5": "\"Basic premium features available based on bronze status.\""
+          },
+          {
+            "_id": "r5",
+            "i1": "",
+            "i2": "false",
+            "i3": "",
+            "o1": "false",
+            "o2": "false",
+            "o3": "false",
+            "o4": "false",
+            "o5": "\"No premium features available due to account standing.\""
+          },
+          {
+            "_id": "r6",
+            "i1": "",
+            "i2": "",
+            "i3": "",
+            "o1": "false",
+            "o2": "false",
+            "o3": "false",
+            "o4": "false",
+            "o5": "\"No premium features available.\""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Loyalty Tier",
+            "field": "eligibility.loyaltyTier"
+          },
+          {
+            "id": "i2",
+            "name": "Good Standing",
+            "field": "eligibility.goodStanding"
+          },
+          {
+            "id": "i3",
+            "name": "Special Offer Count",
+            "field": "eligibility.offerCount"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Priority Support",
+            "field": "features.prioritySupport"
+          },
+          {
+            "id": "o2",
+            "name": "Content Streaming",
+            "field": "features.contentStreaming"
+          },
+          {
+            "id": "o3",
+            "name": "International Roaming",
+            "field": "features.internationalRoaming"
+          },
+          {
+            "id": "o4",
+            "name": "Concierge Service",
+            "field": "features.conciergeService"
+          },
+          {
+            "id": "o5",
+            "name": "Features Message",
+            "field": "features.message"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "premiumFeatures",
+      "name": "determinePremiumFeatures",
+      "position": {
+        "x": 1710,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "input",
+      "targetId": "accountStatus",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "accountStatus",
+      "targetId": "loyaltyTier",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "loyaltyTier",
+      "targetId": "upgradeEligibility",
+      "type": "edge"
+    },
+    {
+      "id": "edge4",
+      "sourceId": "upgradeEligibility",
+      "targetId": "specialOffers",
+      "type": "edge"
+    },
+    {
+      "id": "edge5",
+      "sourceId": "specialOffers",
+      "targetId": "premiumFeatures",
+      "type": "edge"
+    }
+  ]
+}

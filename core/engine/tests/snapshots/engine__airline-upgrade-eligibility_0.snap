@@ -1,0 +1,453 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  result:
+    isEligible: false
+    reason: Check-in not completed
+    score:
+      "$serde_json::private::Number": "0"
+trace:
+  calculateFareScore:
+    id: calculateFareScore
+    input:
+      basicEligibility:
+        isEligible: false
+        reason: Check-in not completed
+      corporate:
+        agreementLevel: premier
+        companyName: Acme Corporation
+        upgradeEligible: true
+      flight:
+        cabinAvailability:
+          "$serde_json::private::Number": "7"
+        departureDate: 2025-04-15
+        flightNumber: FL789
+        route: LHR-JFK
+      passenger:
+        checkInStatus: completed
+        fareClass: premium economy
+        flightStatus: scheduled
+        id: P123456
+        loyaltyMiles:
+          "$serde_json::private::Number": "82500"
+        loyaltyStatus: gold
+        name: Jane Smith
+        ticketStatus: confirmed
+      scores:
+        loyalty:
+          "$serde_json::private::Number": "35"
+    name: calculateFareScore
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      basicEligibility:
+        isEligible: false
+        reason: Check-in not completed
+      corporate:
+        agreementLevel: premier
+        companyName: Acme Corporation
+        upgradeEligible: true
+      flight:
+        cabinAvailability:
+          "$serde_json::private::Number": "7"
+        departureDate: 2025-04-15
+        flightNumber: FL789
+        route: LHR-JFK
+      passenger:
+        checkInStatus: completed
+        fareClass: premium economy
+        flightStatus: scheduled
+        id: P123456
+        loyaltyMiles:
+          "$serde_json::private::Number": "82500"
+        loyaltyStatus: gold
+        name: Jane Smith
+        ticketStatus: confirmed
+      scores:
+        fare:
+          "$serde_json::private::Number": "20"
+        loyalty:
+          "$serde_json::private::Number": "35"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        passenger.fareClass: premium economy
+      rule:
+        _id: rule2
+        "passenger.fareClass[i3-1]": "'premium economy'"
+  calculateLoyaltyScore:
+    id: calculateLoyaltyScore
+    input:
+      basicEligibility:
+        isEligible: false
+        reason: Check-in not completed
+      corporate:
+        agreementLevel: premier
+        companyName: Acme Corporation
+        upgradeEligible: true
+      flight:
+        cabinAvailability:
+          "$serde_json::private::Number": "7"
+        departureDate: 2025-04-15
+        flightNumber: FL789
+        route: LHR-JFK
+      passenger:
+        checkInStatus: completed
+        fareClass: premium economy
+        flightStatus: scheduled
+        id: P123456
+        loyaltyMiles:
+          "$serde_json::private::Number": "82500"
+        loyaltyStatus: gold
+        name: Jane Smith
+        ticketStatus: confirmed
+    name: calculateLoyaltyScore
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      basicEligibility:
+        isEligible: false
+        reason: Check-in not completed
+      corporate:
+        agreementLevel: premier
+        companyName: Acme Corporation
+        upgradeEligible: true
+      flight:
+        cabinAvailability:
+          "$serde_json::private::Number": "7"
+        departureDate: 2025-04-15
+        flightNumber: FL789
+        route: LHR-JFK
+      passenger:
+        checkInStatus: completed
+        fareClass: premium economy
+        flightStatus: scheduled
+        id: P123456
+        loyaltyMiles:
+          "$serde_json::private::Number": "82500"
+        loyaltyStatus: gold
+        name: Jane Smith
+        ticketStatus: confirmed
+      scores:
+        loyalty:
+          "$serde_json::private::Number": "35"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "2"
+      reference_map:
+        passenger.loyaltyMiles:
+          "$serde_json::private::Number": "82500"
+        passenger.loyaltyStatus: gold
+      rule:
+        _id: rule3
+        "passenger.loyaltyMiles[i2-2]": "> 75000"
+        "passenger.loyaltyStatus[i2-1]": "'gold'"
+  checkBasicEligibility:
+    id: checkBasicEligibility
+    input:
+      corporate:
+        agreementLevel: premier
+        companyName: Acme Corporation
+        upgradeEligible: true
+      flight:
+        cabinAvailability:
+          "$serde_json::private::Number": "7"
+        departureDate: 2025-04-15
+        flightNumber: FL789
+        route: LHR-JFK
+      passenger:
+        checkInStatus: completed
+        fareClass: premium economy
+        flightStatus: scheduled
+        id: P123456
+        loyaltyMiles:
+          "$serde_json::private::Number": "82500"
+        loyaltyStatus: gold
+        name: Jane Smith
+        ticketStatus: confirmed
+    name: checkBasicEligibility
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      basicEligibility:
+        isEligible: false
+        reason: Check-in not completed
+      corporate:
+        agreementLevel: premier
+        companyName: Acme Corporation
+        upgradeEligible: true
+      flight:
+        cabinAvailability:
+          "$serde_json::private::Number": "7"
+        departureDate: 2025-04-15
+        flightNumber: FL789
+        route: LHR-JFK
+      passenger:
+        checkInStatus: completed
+        fareClass: premium economy
+        flightStatus: scheduled
+        id: P123456
+        loyaltyMiles:
+          "$serde_json::private::Number": "82500"
+        loyaltyStatus: gold
+        name: Jane Smith
+        ticketStatus: confirmed
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "2"
+      reference_map:
+        passenger.ticketStatus: confirmed
+      rule:
+        _id: rule3
+        "passenger.ticketStatus[i1-1]": "!= 'completed'"
+  checkCorporateAgreement:
+    id: checkCorporateAgreement
+    input:
+      basicEligibility:
+        isEligible: false
+        reason: Check-in not completed
+      corporate:
+        agreementLevel: premier
+        companyName: Acme Corporation
+        upgradeEligible: true
+      flight:
+        cabinAvailability:
+          "$serde_json::private::Number": "7"
+        departureDate: 2025-04-15
+        flightNumber: FL789
+        route: LHR-JFK
+      passenger:
+        checkInStatus: completed
+        fareClass: premium economy
+        flightStatus: scheduled
+        id: P123456
+        loyaltyMiles:
+          "$serde_json::private::Number": "82500"
+        loyaltyStatus: gold
+        name: Jane Smith
+        ticketStatus: confirmed
+      scores:
+        fare:
+          "$serde_json::private::Number": "20"
+        loyalty:
+          "$serde_json::private::Number": "35"
+    name: checkCorporateAgreement
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      basicEligibility:
+        isEligible: false
+        reason: Check-in not completed
+      corporate:
+        agreementLevel: premier
+        companyName: Acme Corporation
+        upgradeEligible: true
+      flight:
+        cabinAvailability:
+          "$serde_json::private::Number": "7"
+        departureDate: 2025-04-15
+        flightNumber: FL789
+        route: LHR-JFK
+      passenger:
+        checkInStatus: completed
+        fareClass: premium economy
+        flightStatus: scheduled
+        id: P123456
+        loyaltyMiles:
+          "$serde_json::private::Number": "82500"
+        loyaltyStatus: gold
+        name: Jane Smith
+        ticketStatus: confirmed
+      scores:
+        corporate:
+          "$serde_json::private::Number": "25"
+        fare:
+          "$serde_json::private::Number": "20"
+        loyalty:
+          "$serde_json::private::Number": "35"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        corporate.agreementLevel: premier
+        corporate.upgradeEligible: true
+      rule:
+        _id: rule1
+        "corporate.agreementLevel[i4-1]": "'premier'"
+        "corporate.upgradeEligible[i4-2]": "true"
+  determineUpgradeEligibility:
+    id: determineUpgradeEligibility
+    input:
+      basicEligibility:
+        isEligible: false
+        reason: Check-in not completed
+      cabinMultiplier:
+        "$serde_json::private::Number": "1"
+      corporate:
+        agreementLevel: premier
+        companyName: Acme Corporation
+        upgradeEligible: true
+      finalScore:
+        "$serde_json::private::Number": "80"
+      flight:
+        cabinAvailability:
+          "$serde_json::private::Number": "7"
+        departureDate: 2025-04-15
+        flightNumber: FL789
+        route: LHR-JFK
+      passenger:
+        checkInStatus: completed
+        fareClass: premium economy
+        flightStatus: scheduled
+        id: P123456
+        loyaltyMiles:
+          "$serde_json::private::Number": "82500"
+        loyaltyStatus: gold
+        name: Jane Smith
+        ticketStatus: confirmed
+      scores:
+        corporate:
+          "$serde_json::private::Number": "25"
+        fare:
+          "$serde_json::private::Number": "20"
+        loyalty:
+          "$serde_json::private::Number": "35"
+      totalScore:
+        "$serde_json::private::Number": "80"
+    name: determineUpgradeEligibility
+    order:
+      "$serde_json::private::Number": "6"
+    output:
+      result:
+        isEligible: false
+        reason: Check-in not completed
+        score:
+          "$serde_json::private::Number": "0"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map: {}
+      rule:
+        _id: rule1
+  evaluateCabinAvailability:
+    id: evaluateCabinAvailability
+    input:
+      basicEligibility:
+        isEligible: false
+        reason: Check-in not completed
+      corporate:
+        agreementLevel: premier
+        companyName: Acme Corporation
+        upgradeEligible: true
+      flight:
+        cabinAvailability:
+          "$serde_json::private::Number": "7"
+        departureDate: 2025-04-15
+        flightNumber: FL789
+        route: LHR-JFK
+      passenger:
+        checkInStatus: completed
+        fareClass: premium economy
+        flightStatus: scheduled
+        id: P123456
+        loyaltyMiles:
+          "$serde_json::private::Number": "82500"
+        loyaltyStatus: gold
+        name: Jane Smith
+        ticketStatus: confirmed
+      scores:
+        corporate:
+          "$serde_json::private::Number": "25"
+        fare:
+          "$serde_json::private::Number": "20"
+        loyalty:
+          "$serde_json::private::Number": "35"
+    name: evaluateCabinAvailability
+    order:
+      "$serde_json::private::Number": "5"
+    output:
+      basicEligibility:
+        isEligible: false
+        reason: Check-in not completed
+      cabinMultiplier:
+        "$serde_json::private::Number": "1"
+      corporate:
+        agreementLevel: premier
+        companyName: Acme Corporation
+        upgradeEligible: true
+      finalScore:
+        "$serde_json::private::Number": "80"
+      flight:
+        cabinAvailability:
+          "$serde_json::private::Number": "7"
+        departureDate: 2025-04-15
+        flightNumber: FL789
+        route: LHR-JFK
+      passenger:
+        checkInStatus: completed
+        fareClass: premium economy
+        flightStatus: scheduled
+        id: P123456
+        loyaltyMiles:
+          "$serde_json::private::Number": "82500"
+        loyaltyStatus: gold
+        name: Jane Smith
+        ticketStatus: confirmed
+      scores:
+        corporate:
+          "$serde_json::private::Number": "25"
+        fare:
+          "$serde_json::private::Number": "20"
+        loyalty:
+          "$serde_json::private::Number": "35"
+      totalScore:
+        "$serde_json::private::Number": "80"
+    performance: "[perf]"
+    traceData:
+      cabinMultiplier:
+        result:
+          "$serde_json::private::Number": "1"
+      finalScore:
+        result:
+          "$serde_json::private::Number": "80"
+      totalScore:
+        result:
+          "$serde_json::private::Number": "80"
+  input:
+    id: input
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      corporate:
+        agreementLevel: premier
+        companyName: Acme Corporation
+        upgradeEligible: true
+      flight:
+        cabinAvailability:
+          "$serde_json::private::Number": "7"
+        departureDate: 2025-04-15
+        flightNumber: FL789
+        route: LHR-JFK
+      passenger:
+        checkInStatus: completed
+        fareClass: premium economy
+        flightStatus: scheduled
+        id: P123456
+        loyaltyMiles:
+          "$serde_json::private::Number": "82500"
+        loyaltyStatus: gold
+        name: Jane Smith
+        ticketStatus: confirmed
+    performance: "[perf]"
+    traceData: ~

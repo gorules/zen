@@ -1,0 +1,575 @@
+{
+  "tests": [
+    {
+      "input": {
+        "service": {
+          "id": "internet_service_123",
+          "name": "Business Fiber Internet",
+          "status": "down",
+          "downtimeDuration": 45,
+          "responseTime": 320,
+          "packetLoss": 0.8,
+          "startTime": "2025-03-19T15:30:00Z"
+        },
+        "customer": {
+          "id": "cust_789",
+          "name": "Acme Corporation",
+          "serviceTier": "premium",
+          "contractId": "contract_456",
+          "contactEmail": "support@acmecorp.com"
+        },
+        "incident": {
+          "id": "inc_123456",
+          "reportedTime": "2025-03-19T15:45:00Z",
+          "reportedBy": "automated_monitoring"
+        }
+      },
+      "output": {
+        "breachDescription": "Excessive downtime for premium customer",
+        "compensationAmount": 225,
+        "compensationType": "service_credit",
+        "customer": {
+          "contactEmail": "support@acmecorp.com",
+          "contractId": "contract_456",
+          "id": "cust_789",
+          "name": "Acme Corporation",
+          "serviceTier": "premium"
+        },
+        "customerTier": "premium",
+        "downtimeDuration": 45,
+        "escalationLevel": "senior_management",
+        "escalationTimeframe": "immediate",
+        "incident": {
+          "id": "inc_123456",
+          "reportedBy": "automated_monitoring",
+          "reportedTime": "2025-03-19T15:45:00Z"
+        },
+        "isDowntime": true,
+        "packetLoss": 0.8,
+        "parameterType": "downtime",
+        "parameterValue": 45,
+        "requiresEscalation": true,
+        "responseTime": 320,
+        "service": {
+          "downtimeDuration": 45,
+          "id": "internet_service_123",
+          "name": "Business Fiber Internet",
+          "packetLoss": 0.8,
+          "responseTime": 320,
+          "startTime": "2025-03-19T15:30:00Z",
+          "status": "down"
+        },
+        "severityLevel": "critical",
+        "severityScore": 3,
+        "slaBreached": true
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "id": "input1",
+      "name": "request",
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "id": "validateSLA",
+      "name": "validateServiceParameters",
+      "type": "expressionNode",
+      "content": {
+        "inputField": null,
+        "outputPath": null,
+        "expressions": [
+          {
+            "id": "expr1",
+            "key": "isDowntime",
+            "value": "service.status == 'down'"
+          },
+          {
+            "id": "expr2",
+            "key": "downtimeDuration",
+            "value": "service.downtimeDuration ?? 0"
+          },
+          {
+            "id": "expr3",
+            "key": "responseTime",
+            "value": "service.responseTime ?? 0"
+          },
+          {
+            "id": "expr4",
+            "key": "packetLoss",
+            "value": "service.packetLoss ?? 0"
+          },
+          {
+            "id": "expr5",
+            "key": "customerTier",
+            "value": "customer.serviceTier ?? 'standard'"
+          }
+        ],
+        "passThrough": true,
+        "executionMode": "single"
+      },
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "id": "determineParameterType",
+      "name": "determineParameterType",
+      "type": "decisionTableNode",
+      "content": {
+        "rules": [
+          {
+            "i1": "isDowntime == true",
+            "o1": "'downtime'",
+            "o2": "downtimeDuration",
+            "_id": "param1"
+          },
+          {
+            "i1": "responseTime > 0",
+            "o1": "'responseTime'",
+            "o2": "responseTime",
+            "_id": "param2"
+          },
+          {
+            "i1": "packetLoss > 0",
+            "o1": "'packetLoss'",
+            "o2": "packetLoss",
+            "_id": "param3"
+          },
+          {
+            "i1": "",
+            "o1": "'unknown'",
+            "o2": "0",
+            "_id": "param4"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Input"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Parameter Type",
+            "field": "parameterType"
+          },
+          {
+            "id": "o2",
+            "name": "Parameter Value",
+            "field": "parameterValue"
+          }
+        ],
+        "hitPolicy": "first",
+        "inputField": null,
+        "outputPath": null,
+        "passThrough": true,
+        "executionMode": "single"
+      },
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "id": "assessSLABreach",
+      "name": "assessSLABreach",
+      "type": "decisionTableNode",
+      "content": {
+        "rules": [
+          {
+            "o1": "true",
+            "o2": "'Excessive downtime for premium customer'",
+            "_id": "rule1",
+            "paramType": "'downtime'",
+            "paramValue": "> 10",
+            "serviceLevel": "'premium'"
+          },
+          {
+            "o1": "true",
+            "o2": "'Excessive downtime for standard customer'",
+            "_id": "rule2",
+            "paramType": "'downtime'",
+            "paramValue": "> 30",
+            "serviceLevel": "'standard'"
+          },
+          {
+            "o1": "true",
+            "o2": "'Response time exceeds premium SLA'",
+            "_id": "rule3",
+            "paramType": "'responseTime'",
+            "paramValue": "> 200",
+            "serviceLevel": "'premium'"
+          },
+          {
+            "o1": "true",
+            "o2": "'Response time exceeds standard SLA'",
+            "_id": "rule4",
+            "paramType": "'responseTime'",
+            "paramValue": "> 500",
+            "serviceLevel": "'standard'"
+          },
+          {
+            "o1": "true",
+            "o2": "'Packet loss exceeds premium SLA'",
+            "_id": "rule5",
+            "paramType": "'packetLoss'",
+            "paramValue": "> 0.5",
+            "serviceLevel": "'premium'"
+          },
+          {
+            "o1": "true",
+            "o2": "'Packet loss exceeds standard SLA'",
+            "_id": "rule6",
+            "paramType": "'packetLoss'",
+            "paramValue": "> 2",
+            "serviceLevel": "'standard'"
+          },
+          {
+            "o1": "false",
+            "o2": "'No SLA breach detected'",
+            "_id": "rule7",
+            "paramType": "",
+            "paramValue": "",
+            "serviceLevel": ""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "paramType",
+            "name": "Parameter Type",
+            "field": "parameterType"
+          },
+          {
+            "id": "serviceLevel",
+            "name": "Service Level",
+            "field": "customerTier"
+          },
+          {
+            "id": "paramValue",
+            "name": "Parameter Value",
+            "field": "parameterValue"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "SLA Breached",
+            "field": "slaBreached"
+          },
+          {
+            "id": "o2",
+            "name": "Breach Description",
+            "field": "breachDescription"
+          }
+        ],
+        "hitPolicy": "first",
+        "inputField": null,
+        "outputPath": null,
+        "passThrough": true,
+        "executionMode": "single"
+      },
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    },
+    {
+      "id": "determineSeverity",
+      "name": "determineSeverity",
+      "type": "decisionTableNode",
+      "content": {
+        "rules": [
+          {
+            "o1": "'critical'",
+            "o2": "3",
+            "_id": "severity1",
+            "_description": "",
+            "10022132-3b17-452f-9e87-cc67dcbc1682": "true",
+            "3b99eee0-25eb-49b6-8cf0-6daa7fcbfdc3": "'downtime'",
+            "d3d1e8b0-5f9f-4867-a326-8cfdbccdbb94": "'premium'"
+          },
+          {
+            "o1": "'high'",
+            "o2": "2",
+            "_id": "severity2",
+            "_description": "",
+            "10022132-3b17-452f-9e87-cc67dcbc1682": "true",
+            "3b99eee0-25eb-49b6-8cf0-6daa7fcbfdc3": "'downtime'",
+            "d3d1e8b0-5f9f-4867-a326-8cfdbccdbb94": "'standard'"
+          },
+          {
+            "o1": "'high'",
+            "o2": "2",
+            "_id": "severity3",
+            "_description": "",
+            "10022132-3b17-452f-9e87-cc67dcbc1682": "true",
+            "3b99eee0-25eb-49b6-8cf0-6daa7fcbfdc3": "'responseTime'",
+            "d3d1e8b0-5f9f-4867-a326-8cfdbccdbb94": "'premium'"
+          },
+          {
+            "o1": "'medium'",
+            "o2": "1",
+            "_id": "severity4",
+            "_description": "",
+            "10022132-3b17-452f-9e87-cc67dcbc1682": "true",
+            "3b99eee0-25eb-49b6-8cf0-6daa7fcbfdc3": "'responseTime'",
+            "d3d1e8b0-5f9f-4867-a326-8cfdbccdbb94": "'standard'"
+          },
+          {
+            "o1": "'high'",
+            "o2": "2",
+            "_id": "severity5",
+            "_description": "",
+            "10022132-3b17-452f-9e87-cc67dcbc1682": "true",
+            "3b99eee0-25eb-49b6-8cf0-6daa7fcbfdc3": "'packetLoss'",
+            "d3d1e8b0-5f9f-4867-a326-8cfdbccdbb94": "'premium'"
+          },
+          {
+            "o1": "'medium'",
+            "o2": "1",
+            "_id": "severity6",
+            "_description": "",
+            "10022132-3b17-452f-9e87-cc67dcbc1682": "true",
+            "3b99eee0-25eb-49b6-8cf0-6daa7fcbfdc3": "'packetLoss'",
+            "d3d1e8b0-5f9f-4867-a326-8cfdbccdbb94": "'standard'"
+          },
+          {
+            "o1": "'none'",
+            "o2": "0",
+            "_id": "severity7",
+            "_description": "",
+            "10022132-3b17-452f-9e87-cc67dcbc1682": "",
+            "3b99eee0-25eb-49b6-8cf0-6daa7fcbfdc3": "",
+            "d3d1e8b0-5f9f-4867-a326-8cfdbccdbb94": ""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "10022132-3b17-452f-9e87-cc67dcbc1682",
+            "name": "SLA Breached",
+            "field": "slaBreached"
+          },
+          {
+            "id": "3b99eee0-25eb-49b6-8cf0-6daa7fcbfdc3",
+            "name": "Parameter Type",
+            "field": "parameterType"
+          },
+          {
+            "id": "d3d1e8b0-5f9f-4867-a326-8cfdbccdbb94",
+            "name": "Customer tier",
+            "field": "customerTier"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Severity Level",
+            "field": "severityLevel"
+          },
+          {
+            "id": "o2",
+            "name": "Severity Score",
+            "field": "severityScore"
+          }
+        ],
+        "hitPolicy": "first",
+        "inputField": null,
+        "outputPath": null,
+        "passThrough": true,
+        "executionMode": "single"
+      },
+      "position": {
+        "x": 1390,
+        "y": 114
+      }
+    },
+    {
+      "id": "determineEscalation",
+      "name": "determineEscalation",
+      "type": "decisionTableNode",
+      "content": {
+        "rules": [
+          {
+            "i1": "'critical'",
+            "o1": "true",
+            "o2": "'immediate'",
+            "o3": "'senior_management'",
+            "_id": "escalation1",
+            "_description": ""
+          },
+          {
+            "i1": "'high'",
+            "o1": "true",
+            "o2": "'4_hours'",
+            "o3": "'service_manager'",
+            "_id": "escalation2",
+            "_description": ""
+          },
+          {
+            "i1": "'medium'",
+            "o1": "true",
+            "o2": "'24_hours'",
+            "o3": "'support_team'",
+            "_id": "escalation3",
+            "_description": ""
+          },
+          {
+            "i1": "",
+            "o1": "false",
+            "o2": "'none'",
+            "o3": "'none'",
+            "_id": "escalation4",
+            "_description": ""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Severity level",
+            "field": "severityLevel"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Requires Escalation",
+            "field": "requiresEscalation"
+          },
+          {
+            "id": "o2",
+            "name": "Escalation Timeframe",
+            "field": "escalationTimeframe"
+          },
+          {
+            "id": "o3",
+            "name": "Escalation Level",
+            "field": "escalationLevel"
+          }
+        ],
+        "hitPolicy": "first",
+        "inputField": null,
+        "outputPath": null,
+        "passThrough": true,
+        "executionMode": "single"
+      },
+      "position": {
+        "x": 2030,
+        "y": 114
+      }
+    },
+    {
+      "id": "ed8355c4-aea1-4526-82b3-56d7d98efa92",
+      "name": "calculateCompensation",
+      "type": "decisionTableNode",
+      "content": {
+        "rules": [
+          {
+            "_id": "32a4f6a9-6631-4a5b-9fad-75c5f22bb591",
+            "_description": "",
+            "bd7b183b-2e9f-4fec-bc0f-e915864bd5eb": "true",
+            "c3716324-94d0-4a9a-a3f1-4d6041b0a9aa": "'service_credit'",
+            "d83f698c-a398-49b4-9bca-622081180bac": "parameterValue * 5",
+            "f74a521d-8f22-47ba-b800-1c7a8e69d606": "'premium'"
+          },
+          {
+            "_id": "90cf3b42-e758-4dff-8f41-4e5ec409fdec",
+            "_description": "",
+            "bd7b183b-2e9f-4fec-bc0f-e915864bd5eb": "true",
+            "c3716324-94d0-4a9a-a3f1-4d6041b0a9aa": "'account_credit'",
+            "d83f698c-a398-49b4-9bca-622081180bac": "parameterValue * 2",
+            "f74a521d-8f22-47ba-b800-1c7a8e69d606": ""
+          },
+          {
+            "_id": "5e7f3275-c1ea-4969-a071-c4453a85fbbf",
+            "_description": "",
+            "bd7b183b-2e9f-4fec-bc0f-e915864bd5eb": "",
+            "c3716324-94d0-4a9a-a3f1-4d6041b0a9aa": "'none'",
+            "d83f698c-a398-49b4-9bca-622081180bac": "0",
+            "f74a521d-8f22-47ba-b800-1c7a8e69d606": ""
+          }
+        ],
+        "inputs": [
+          {
+            "id": "bd7b183b-2e9f-4fec-bc0f-e915864bd5eb",
+            "name": "SLA Breached",
+            "field": "slaBreached"
+          },
+          {
+            "id": "f74a521d-8f22-47ba-b800-1c7a8e69d606",
+            "name": "Customer tier",
+            "field": "customerTier"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "d83f698c-a398-49b4-9bca-622081180bac",
+            "name": "Compensation amount",
+            "field": "compensationAmount"
+          },
+          {
+            "id": "c3716324-94d0-4a9a-a3f1-4d6041b0a9aa",
+            "name": "Compensation type",
+            "field": "compensationType"
+          }
+        ],
+        "hitPolicy": "first",
+        "inputField": null,
+        "outputPath": null,
+        "passThrough": true,
+        "executionMode": "single"
+      },
+      "position": {
+        "x": 1710,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "type": "edge",
+      "sourceId": "input1",
+      "targetId": "validateSLA"
+    },
+    {
+      "id": "edge2",
+      "type": "edge",
+      "sourceId": "validateSLA",
+      "targetId": "determineParameterType"
+    },
+    {
+      "id": "edge3",
+      "type": "edge",
+      "sourceId": "determineParameterType",
+      "targetId": "assessSLABreach"
+    },
+    {
+      "id": "edge4",
+      "type": "edge",
+      "sourceId": "assessSLABreach",
+      "targetId": "determineSeverity"
+    },
+    {
+      "id": "f7976e4a-7d56-437e-aaa3-4ccbedc164d4",
+      "type": "edge",
+      "sourceId": "determineSeverity",
+      "targetId": "ed8355c4-aea1-4526-82b3-56d7d98efa92"
+    },
+    {
+      "id": "efe1c0df-71b0-4e9d-9544-5010b3c5bb84",
+      "type": "edge",
+      "sourceId": "ed8355c4-aea1-4526-82b3-56d7d98efa92",
+      "targetId": "determineEscalation"
+    }
+  ]
+}

@@ -1,0 +1,329 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  allocatedLocation: prime-picking-area-pallet-rack-bottom
+  allocation:
+    priority:
+      "$serde_json::private::Number": "3"
+    storageType: pallet-rack-bottom
+    warehouseZone: prime-picking-area
+  classification:
+    fastMoving: true
+    volumeCategory: medium-volume
+  pickingEfficiencyScore:
+    "$serde_json::private::Number": "7"
+  product:
+    dimensions:
+      height:
+        "$serde_json::private::Number": "10"
+      length:
+        "$serde_json::private::Number": "40"
+      unit: cm
+      width:
+        "$serde_json::private::Number": "30"
+    fragilityScore:
+      "$serde_json::private::Number": "4"
+    hazardous: false
+    id: PRD-12345
+    monthlyUnits:
+      "$serde_json::private::Number": "2500"
+    name: Gaming Laptop XZ5000
+    picksPerDay:
+      "$serde_json::private::Number": "12"
+    specialHandling: false
+    turnoverRate:
+      "$serde_json::private::Number": "0.65"
+    weight:
+      unit: kg
+      value:
+        "$serde_json::private::Number": "3.5"
+  recommendedQuantity:
+    "$serde_json::private::Number": "1250"
+  replenishmentFrequency: weekly
+trace:
+  finalAllocation:
+    id: finalAllocation
+    input:
+      allocation:
+        priority:
+          "$serde_json::private::Number": "3"
+        storageType: pallet-rack-bottom
+        warehouseZone: prime-picking-area
+      classification:
+        fastMoving: true
+        volumeCategory: medium-volume
+      product:
+        dimensions:
+          height:
+            "$serde_json::private::Number": "10"
+          length:
+            "$serde_json::private::Number": "40"
+          unit: cm
+          width:
+            "$serde_json::private::Number": "30"
+        fragilityScore:
+          "$serde_json::private::Number": "4"
+        hazardous: false
+        id: PRD-12345
+        monthlyUnits:
+          "$serde_json::private::Number": "2500"
+        name: Gaming Laptop XZ5000
+        picksPerDay:
+          "$serde_json::private::Number": "12"
+        specialHandling: false
+        turnoverRate:
+          "$serde_json::private::Number": "0.65"
+        weight:
+          unit: kg
+          value:
+            "$serde_json::private::Number": "3.5"
+    name: finalizeAllocation
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      allocatedLocation: prime-picking-area-pallet-rack-bottom
+      allocation:
+        priority:
+          "$serde_json::private::Number": "3"
+        storageType: pallet-rack-bottom
+        warehouseZone: prime-picking-area
+      classification:
+        fastMoving: true
+        volumeCategory: medium-volume
+      pickingEfficiencyScore:
+        "$serde_json::private::Number": "7"
+      product:
+        dimensions:
+          height:
+            "$serde_json::private::Number": "10"
+          length:
+            "$serde_json::private::Number": "40"
+          unit: cm
+          width:
+            "$serde_json::private::Number": "30"
+        fragilityScore:
+          "$serde_json::private::Number": "4"
+        hazardous: false
+        id: PRD-12345
+        monthlyUnits:
+          "$serde_json::private::Number": "2500"
+        name: Gaming Laptop XZ5000
+        picksPerDay:
+          "$serde_json::private::Number": "12"
+        specialHandling: false
+        turnoverRate:
+          "$serde_json::private::Number": "0.65"
+        weight:
+          unit: kg
+          value:
+            "$serde_json::private::Number": "3.5"
+      recommendedQuantity:
+        "$serde_json::private::Number": "1250"
+      replenishmentFrequency: weekly
+    performance: "[perf]"
+    traceData:
+      allocatedLocation:
+        result: prime-picking-area-pallet-rack-bottom
+      pickingEfficiencyScore:
+        result:
+          "$serde_json::private::Number": "7"
+      recommendedQuantity:
+        result:
+          "$serde_json::private::Number": "1250"
+      replenishmentFrequency:
+        result: weekly
+  input:
+    id: input
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      product:
+        dimensions:
+          height:
+            "$serde_json::private::Number": "10"
+          length:
+            "$serde_json::private::Number": "40"
+          unit: cm
+          width:
+            "$serde_json::private::Number": "30"
+        fragilityScore:
+          "$serde_json::private::Number": "4"
+        hazardous: false
+        id: PRD-12345
+        monthlyUnits:
+          "$serde_json::private::Number": "2500"
+        name: Gaming Laptop XZ5000
+        picksPerDay:
+          "$serde_json::private::Number": "12"
+        specialHandling: false
+        turnoverRate:
+          "$serde_json::private::Number": "0.65"
+        weight:
+          unit: kg
+          value:
+            "$serde_json::private::Number": "3.5"
+    performance: "[perf]"
+    traceData: ~
+  locationAssignment:
+    id: locationAssignment
+    input:
+      classification:
+        fastMoving: true
+        volumeCategory: medium-volume
+      product:
+        dimensions:
+          height:
+            "$serde_json::private::Number": "10"
+          length:
+            "$serde_json::private::Number": "40"
+          unit: cm
+          width:
+            "$serde_json::private::Number": "30"
+        fragilityScore:
+          "$serde_json::private::Number": "4"
+        hazardous: false
+        id: PRD-12345
+        monthlyUnits:
+          "$serde_json::private::Number": "2500"
+        name: Gaming Laptop XZ5000
+        picksPerDay:
+          "$serde_json::private::Number": "12"
+        specialHandling: false
+        turnoverRate:
+          "$serde_json::private::Number": "0.65"
+        weight:
+          unit: kg
+          value:
+            "$serde_json::private::Number": "3.5"
+    name: assignLocation
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      allocation:
+        priority:
+          "$serde_json::private::Number": "3"
+        storageType: pallet-rack-bottom
+        warehouseZone: prime-picking-area
+      classification:
+        fastMoving: true
+        volumeCategory: medium-volume
+      product:
+        dimensions:
+          height:
+            "$serde_json::private::Number": "10"
+          length:
+            "$serde_json::private::Number": "40"
+          unit: cm
+          width:
+            "$serde_json::private::Number": "30"
+        fragilityScore:
+          "$serde_json::private::Number": "4"
+        hazardous: false
+        id: PRD-12345
+        monthlyUnits:
+          "$serde_json::private::Number": "2500"
+        name: Gaming Laptop XZ5000
+        picksPerDay:
+          "$serde_json::private::Number": "12"
+        specialHandling: false
+        turnoverRate:
+          "$serde_json::private::Number": "0.65"
+        weight:
+          unit: kg
+          value:
+            "$serde_json::private::Number": "3.5"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "2"
+      reference_map:
+        classification.fastMoving: true
+        classification.volumeCategory: medium-volume
+        product.fragilityScore:
+          "$serde_json::private::Number": "4"
+      rule:
+        _id: rule3
+        "classification.fastMoving[i2]": "true"
+        "classification.volumeCategory[i1]": "'medium-volume'"
+        "product.fragilityScore[i3]": "> 2"
+  productClassification:
+    id: productClassification
+    input:
+      product:
+        dimensions:
+          height:
+            "$serde_json::private::Number": "10"
+          length:
+            "$serde_json::private::Number": "40"
+          unit: cm
+          width:
+            "$serde_json::private::Number": "30"
+        fragilityScore:
+          "$serde_json::private::Number": "4"
+        hazardous: false
+        id: PRD-12345
+        monthlyUnits:
+          "$serde_json::private::Number": "2500"
+        name: Gaming Laptop XZ5000
+        picksPerDay:
+          "$serde_json::private::Number": "12"
+        specialHandling: false
+        turnoverRate:
+          "$serde_json::private::Number": "0.65"
+        weight:
+          unit: kg
+          value:
+            "$serde_json::private::Number": "3.5"
+    name: classifyProduct
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      classification:
+        fastMoving: true
+        volumeCategory: medium-volume
+      product:
+        dimensions:
+          height:
+            "$serde_json::private::Number": "10"
+          length:
+            "$serde_json::private::Number": "40"
+          unit: cm
+          width:
+            "$serde_json::private::Number": "30"
+        fragilityScore:
+          "$serde_json::private::Number": "4"
+        hazardous: false
+        id: PRD-12345
+        monthlyUnits:
+          "$serde_json::private::Number": "2500"
+        name: Gaming Laptop XZ5000
+        picksPerDay:
+          "$serde_json::private::Number": "12"
+        specialHandling: false
+        turnoverRate:
+          "$serde_json::private::Number": "0.65"
+        weight:
+          unit: kg
+          value:
+            "$serde_json::private::Number": "3.5"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        product.monthlyUnits:
+          "$serde_json::private::Number": "2500"
+        product.picksPerDay:
+          "$serde_json::private::Number": "12"
+        product.turnoverRate:
+          "$serde_json::private::Number": "0.65"
+      rule:
+        _id: rule2
+        "product.monthlyUnits[i1]": "> 1000"
+        "product.picksPerDay[i3]": "> 10"
+        "product.turnoverRate[i2]": "> 0.5"

@@ -1,0 +1,285 @@
+{
+  "tests": [
+    {
+      "input": {
+        "booking": {
+          "fareClass": "Business",
+          "routeType": "International",
+          "distance": 3500,
+          "isSeasonalPromotion": true
+        },
+        "member": {
+          "status": "Gold",
+          "id": "MEM12345",
+          "name": "John Smith",
+          "enrollmentDate": "2020-05-15"
+        }
+      },
+      "output": {
+        "calculatedPoints": 9000,
+        "seasonalPromotion": 1.5,
+        "totalPoints": 9000
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "ip1",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1-1",
+            "i1-1": "'First'",
+            "o1-1": "3"
+          },
+          {
+            "_id": "r1-2",
+            "i1-1": "'Business'",
+            "o1-1": "2"
+          },
+          {
+            "_id": "r1-3",
+            "i1-1": "'Premium Economy'",
+            "o1-1": "1.5"
+          },
+          {
+            "_id": "r1-4",
+            "i1-1": "'Economy Plus'",
+            "o1-1": "1.25"
+          },
+          {
+            "_id": "r1-5",
+            "i1-1": "",
+            "o1-1": "1"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Fare Class",
+            "field": "booking.fareClass"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Fare Multiplier",
+            "field": "points.fareMultiplier"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt1",
+      "name": "fareClassMultiplier",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r2-1",
+            "i2-1": "'Domestic'",
+            "i2-2": "< 500",
+            "o2-1": "250"
+          },
+          {
+            "_id": "r2-2",
+            "i2-1": "'Domestic'",
+            "i2-2": "[500..1000]",
+            "o2-1": "500"
+          },
+          {
+            "_id": "r2-3",
+            "i2-1": "'Domestic'",
+            "i2-2": "> 1000",
+            "o2-1": "750"
+          },
+          {
+            "_id": "r2-4",
+            "i2-1": "'International'",
+            "i2-2": "< 2000",
+            "o2-1": "1000"
+          },
+          {
+            "_id": "r2-5",
+            "i2-1": "'International'",
+            "i2-2": "[2000..5000]",
+            "o2-1": "2000"
+          },
+          {
+            "_id": "r2-6",
+            "i2-1": "'International'",
+            "i2-2": "> 5000",
+            "o2-1": "3000"
+          },
+          {
+            "_id": "r2-7",
+            "i2-1": "",
+            "i2-2": "",
+            "o2-1": "500"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i2-1",
+            "name": "Route Type",
+            "field": "booking.routeType"
+          },
+          {
+            "id": "i2-2",
+            "name": "Distance (miles)",
+            "field": "booking.distance"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2-1",
+            "name": "Base Points",
+            "field": "points.basePoints"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt2",
+      "name": "routeBasePoints",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r3-1",
+            "i3-1": "'Platinum'",
+            "o3-1": "2"
+          },
+          {
+            "_id": "r3-2",
+            "i3-1": "'Gold'",
+            "o3-1": "1.5"
+          },
+          {
+            "_id": "r3-3",
+            "i3-1": "'Silver'",
+            "o3-1": "1.25"
+          },
+          {
+            "_id": "r3-4",
+            "i3-1": "",
+            "o3-1": "1"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i3-1",
+            "name": "Member Status",
+            "field": "member.status"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o3-1",
+            "name": "Status Multiplier",
+            "field": "points.statusMultiplier"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt3",
+      "name": "memberStatusMultiplier",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1-1",
+            "key": "seasonalPromotion",
+            "value": "booking.isSeasonalPromotion == true ? 1.5 : 1"
+          },
+          {
+            "id": "e1-2",
+            "key": "calculatedPoints",
+            "value": "floor(points.basePoints * points.fareMultiplier * points.statusMultiplier * $.seasonalPromotion)"
+          },
+          {
+            "id": "e1-3",
+            "key": "totalPoints",
+            "value": "$.calculatedPoints"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex1",
+      "name": "calculateTotalPoints",
+      "position": {
+        "x": 1390,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "ed1",
+      "sourceId": "ip1",
+      "targetId": "dt1",
+      "type": "edge"
+    },
+    {
+      "id": "ed2",
+      "sourceId": "dt1",
+      "targetId": "dt2",
+      "type": "edge"
+    },
+    {
+      "id": "ed3",
+      "sourceId": "dt2",
+      "targetId": "dt3",
+      "type": "edge"
+    },
+    {
+      "id": "ed4",
+      "sourceId": "dt3",
+      "targetId": "ex1",
+      "type": "edge"
+    }
+  ]
+}

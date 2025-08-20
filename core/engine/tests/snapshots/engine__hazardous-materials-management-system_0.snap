@@ -1,0 +1,164 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  complianceRequirements: Safety data sheets must accompany shipment
+  handlingProcedure: "Avoid contact with skin and eyes, neutralizing agents must be readily available"
+  hazardClassification: Class B - Corrosive
+  hazardLevel: high
+  location: Lab-B42
+  material: Sulfuric Acid
+  permitRequired: "false"
+  quantity:
+    "$serde_json::private::Number": "75"
+  recommendedStorageZone: yellow-zone
+  reportingRequired: "false"
+  requiredEquipment: "Chemical-resistant gloves, face shield, apron, boots"
+  state: liquid
+  storageLimit:
+    "$serde_json::private::Number": "1000"
+  transportMode: road
+trace:
+  handlingRequirementsTable:
+    id: handlingRequirementsTable
+    input:
+      hazardClassification: Class B - Corrosive
+      hazardLevel: high
+      location: Lab-B42
+      material: Sulfuric Acid
+      quantity:
+        "$serde_json::private::Number": "75"
+      recommendedStorageZone: yellow-zone
+      state: liquid
+      transportMode: road
+    name: Handling Requirements
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      handlingProcedure: "Avoid contact with skin and eyes, neutralizing agents must be readily available"
+      hazardClassification: Class B - Corrosive
+      hazardLevel: high
+      location: Lab-B42
+      material: Sulfuric Acid
+      quantity:
+        "$serde_json::private::Number": "75"
+      recommendedStorageZone: yellow-zone
+      requiredEquipment: "Chemical-resistant gloves, face shield, apron, boots"
+      state: liquid
+      storageLimit:
+        "$serde_json::private::Number": "1000"
+      transportMode: road
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        hazardClassification: Class B - Corrosive
+        hazardLevel: high
+      rule:
+        _id: rule2
+        "hazardClassification[hazardClass]": "'Class B - Corrosive'"
+        "hazardLevel[hazardLevel]": "'high'"
+  inputNode:
+    id: inputNode
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      location: Lab-B42
+      material: Sulfuric Acid
+      quantity:
+        "$serde_json::private::Number": "75"
+      state: liquid
+      transportMode: road
+    performance: "[perf]"
+    traceData: ~
+  materialClassificationTable:
+    id: materialClassificationTable
+    input:
+      location: Lab-B42
+      material: Sulfuric Acid
+      quantity:
+        "$serde_json::private::Number": "75"
+      state: liquid
+      transportMode: road
+    name: Material Classification
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      hazardClassification: Class B - Corrosive
+      hazardLevel: high
+      location: Lab-B42
+      material: Sulfuric Acid
+      quantity:
+        "$serde_json::private::Number": "75"
+      recommendedStorageZone: yellow-zone
+      state: liquid
+      transportMode: road
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        lower(material): sulfuric acid
+        quantity:
+          "$serde_json::private::Number": "75"
+        state: liquid
+      rule:
+        _id: rule2
+        "lower(material)[materialType]": "some(['corrosive', 'acid', 'base'], contains($, #))"
+        "quantity[materialQuantity]": ""
+        "state[materialState]": ""
+  regulatoryComplianceTable:
+    id: regulatoryComplianceTable
+    input:
+      handlingProcedure: "Avoid contact with skin and eyes, neutralizing agents must be readily available"
+      hazardClassification: Class B - Corrosive
+      hazardLevel: high
+      location: Lab-B42
+      material: Sulfuric Acid
+      quantity:
+        "$serde_json::private::Number": "75"
+      recommendedStorageZone: yellow-zone
+      requiredEquipment: "Chemical-resistant gloves, face shield, apron, boots"
+      state: liquid
+      storageLimit:
+        "$serde_json::private::Number": "1000"
+      transportMode: road
+    name: Regulatory Compliance
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      complianceRequirements: Safety data sheets must accompany shipment
+      handlingProcedure: "Avoid contact with skin and eyes, neutralizing agents must be readily available"
+      hazardClassification: Class B - Corrosive
+      hazardLevel: high
+      location: Lab-B42
+      material: Sulfuric Acid
+      permitRequired: "false"
+      quantity:
+        "$serde_json::private::Number": "75"
+      recommendedStorageZone: yellow-zone
+      reportingRequired: "false"
+      requiredEquipment: "Chemical-resistant gloves, face shield, apron, boots"
+      state: liquid
+      storageLimit:
+        "$serde_json::private::Number": "1000"
+      transportMode: road
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "4"
+      reference_map:
+        hazardClassification: Class B - Corrosive
+        quantity:
+          "$serde_json::private::Number": "75"
+        transportMode: road
+      rule:
+        _id: rule5
+        "hazardClassification[hazardClass]": "'Class A - Flammable', 'Class B - Corrosive', 'Class C - Toxic', 'Class F - Oxidizer'"
+        "quantity[quantityCheck]": "<= 100"
+        "transportMode[transportMode]": "'road', 'rail', 'sea'"

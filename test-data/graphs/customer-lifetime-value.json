@@ -1,0 +1,200 @@
+{
+  "tests": [
+    {
+      "input": {
+        "customer": {
+          "id": "CUST-12345",
+          "name": "John Doe",
+          "segment": "retail",
+          "acquisitionCost": 150,
+          "acquisitionChannel": "paid_search"
+        },
+        "purchaseHistory": {
+          "orderValues": [
+            120,
+            89,
+            245,
+            78,
+            310
+          ],
+          "customerDurationMonths": 18,
+          "averageGrossMarginPercent": 35,
+          "retentionRate": 85
+        }
+      },
+      "output": {
+        "acquisitionCostRatio": 0.0095436036647438072616219885,
+        "adjustedLTV": 15567.333333333333333333333334,
+        "averageOrderValue": 168.4,
+        "basicLTV": 15717.333333333333333333333334,
+        "customer": {
+          "acquisitionChannel": "paid_search",
+          "acquisitionCost": 150,
+          "id": "CUST-12345",
+          "name": "John Doe",
+          "segment": "retail"
+        },
+        "customerInsights": {
+          "recommendedStrategy": "High-touch service, premium offers, exclusive events",
+          "tier": "platinum"
+        },
+        "customerLifetimeMonths": 80,
+        "grossMargin": 0.35,
+        "purchaseFrequency": 3.3333333333333333333333333336,
+        "purchaseHistory": {
+          "averageGrossMarginPercent": 35,
+          "customerDurationMonths": 18,
+          "orderValues": [
+            120,
+            89,
+            245,
+            78,
+            310
+          ],
+          "retentionRate": 85
+        }
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "ip1",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1-1",
+            "key": "averageOrderValue",
+            "value": "sum(purchaseHistory.orderValues) / len(purchaseHistory.orderValues)"
+          },
+          {
+            "id": "e1-2",
+            "key": "purchaseFrequency",
+            "value": "len(purchaseHistory.orderValues) / purchaseHistory.customerDurationMonths * 12"
+          },
+          {
+            "id": "e1-3",
+            "key": "grossMargin",
+            "value": "purchaseHistory.averageGrossMarginPercent / 100"
+          },
+          {
+            "id": "e1-4",
+            "key": "customerLifetimeMonths",
+            "value": "1 / (1 - purchaseHistory.retentionRate / 100) * 12"
+          },
+          {
+            "id": "e1-5",
+            "key": "basicLTV",
+            "value": "$.averageOrderValue * $.purchaseFrequency * $.grossMargin * $.customerLifetimeMonths"
+          },
+          {
+            "id": "e1-6",
+            "key": "acquisitionCostRatio",
+            "value": "customer.acquisitionCost / $.basicLTV"
+          },
+          {
+            "id": "e1-7",
+            "key": "adjustedLTV",
+            "value": "$.basicLTV - customer.acquisitionCost"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex1",
+      "name": "clv_calculation",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1-1",
+            "i1-1": "> 2000",
+            "o1-1": "'platinum'",
+            "o1-2": "'High-touch service, premium offers, exclusive events'"
+          },
+          {
+            "_id": "r1-2",
+            "i1-1": "> 1000",
+            "o1-1": "'gold'",
+            "o1-2": "'Priority service, personalized offers, loyalty bonuses'"
+          },
+          {
+            "_id": "r1-3",
+            "i1-1": "> 500",
+            "o1-1": "'silver'",
+            "o1-2": "'Enhanced service, targeted offers, occasional perks'"
+          },
+          {
+            "_id": "r1-4",
+            "i1-1": "",
+            "o1-1": "'standard'",
+            "o1-2": "'Standard service, general promotions'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Adjusted LTV",
+            "field": "adjustedLTV"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Customer Tier",
+            "field": "customerInsights.tier"
+          },
+          {
+            "id": "o1-2",
+            "name": "Recommended Strategy",
+            "field": "customerInsights.recommendedStrategy"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt1",
+      "name": "customer_segmentation",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "ed1",
+      "sourceId": "ip1",
+      "targetId": "ex1",
+      "type": "edge"
+    },
+    {
+      "id": "ed2",
+      "sourceId": "ex1",
+      "targetId": "dt1",
+      "type": "edge"
+    }
+  ]
+}

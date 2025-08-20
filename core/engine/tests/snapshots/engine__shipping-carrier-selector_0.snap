@@ -1,0 +1,358 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  baseCosts:
+    EcoShip:
+      "$serde_json::private::Number": "21.75"
+    FastTrack:
+      "$serde_json::private::Number": "40.5"
+    GlobalExpress:
+      "$serde_json::private::Number": "87.5"
+    GlobalStandard:
+      "$serde_json::private::Number": "60"
+    HeavyHauler:
+      "$serde_json::private::Number": "65"
+    QuickShip:
+      "$serde_json::private::Number": "39.75"
+    RegularPost:
+      "$serde_json::private::Number": "25"
+    SpeedyExpress:
+      "$serde_json::private::Number": "56.25"
+    StandardCourier:
+      "$serde_json::private::Number": "28.25"
+    WorldWide:
+      "$serde_json::private::Number": "77.5"
+  carrierCosts:
+    - carrier: FastTrack
+      cost:
+        "$serde_json::private::Number": "40.5"
+    - carrier: QuickShip
+      cost:
+        "$serde_json::private::Number": "39.75"
+  chargableWeight:
+    "$serde_json::private::Number": "12.5"
+  deliveryTimeline: express
+  destination: domestic
+  eligibleCarriers:
+    - FastTrack
+    - QuickShip
+  height:
+    "$serde_json::private::Number": "25"
+  isOversized: false
+  length:
+    "$serde_json::private::Number": "45"
+  priorityFactor: cost
+  serviceLevel: express
+  validation:
+    isValid: true
+  volumetricWeight:
+    "$serde_json::private::Number": "7.875"
+  weight:
+    "$serde_json::private::Number": "12.5"
+  width:
+    "$serde_json::private::Number": "35"
+trace:
+  1842fd5e-dc7e-480e-b501-07f93500a14c:
+    id: 1842fd5e-dc7e-480e-b501-07f93500a14c
+    input:
+      deliveryTimeline: express
+      destination: domestic
+      height:
+        "$serde_json::private::Number": "25"
+      length:
+        "$serde_json::private::Number": "45"
+      priorityFactor: cost
+      validation:
+        isValid: true
+      weight:
+        "$serde_json::private::Number": "12.5"
+      width:
+        "$serde_json::private::Number": "35"
+    name: switch1
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      deliveryTimeline: express
+      destination: domestic
+      height:
+        "$serde_json::private::Number": "25"
+      length:
+        "$serde_json::private::Number": "45"
+      priorityFactor: cost
+      validation:
+        isValid: true
+      weight:
+        "$serde_json::private::Number": "12.5"
+      width:
+        "$serde_json::private::Number": "35"
+    performance: "[perf]"
+    traceData:
+      statements:
+        - id: de01933e-42a2-4995-8f84-9b9ab0a3d1ec
+  carrierEligibility:
+    id: carrierEligibility
+    input:
+      deliveryTimeline: express
+      destination: domestic
+      height:
+        "$serde_json::private::Number": "25"
+      length:
+        "$serde_json::private::Number": "45"
+      priorityFactor: cost
+      serviceLevel: express
+      validation:
+        isValid: true
+      weight:
+        "$serde_json::private::Number": "12.5"
+      width:
+        "$serde_json::private::Number": "35"
+    name: determineEligibleCarriers
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      deliveryTimeline: express
+      destination: domestic
+      eligibleCarriers:
+        - carriers:
+            - FastTrack
+            - QuickShip
+      height:
+        "$serde_json::private::Number": "25"
+      length:
+        "$serde_json::private::Number": "45"
+      priorityFactor: cost
+      serviceLevel: express
+      validation:
+        isValid: true
+      weight:
+        "$serde_json::private::Number": "12.5"
+      width:
+        "$serde_json::private::Number": "35"
+    performance: "[perf]"
+    traceData:
+      - index:
+          "$serde_json::private::Number": "2"
+        reference_map: {}
+        rule:
+          _id: rule3
+  costCalculation:
+    id: costCalculation
+    input:
+      deliveryTimeline: express
+      destination: domestic
+      eligibleCarriers:
+        - carriers:
+            - FastTrack
+            - QuickShip
+      height:
+        "$serde_json::private::Number": "25"
+      length:
+        "$serde_json::private::Number": "45"
+      priorityFactor: cost
+      serviceLevel: express
+      validation:
+        isValid: true
+      weight:
+        "$serde_json::private::Number": "12.5"
+      width:
+        "$serde_json::private::Number": "35"
+    name: calculateCosts
+    order:
+      "$serde_json::private::Number": "5"
+    output:
+      baseCosts:
+        EcoShip:
+          "$serde_json::private::Number": "21.75"
+        FastTrack:
+          "$serde_json::private::Number": "40.5"
+        GlobalExpress:
+          "$serde_json::private::Number": "87.5"
+        GlobalStandard:
+          "$serde_json::private::Number": "60"
+        HeavyHauler:
+          "$serde_json::private::Number": "65"
+        QuickShip:
+          "$serde_json::private::Number": "39.75"
+        RegularPost:
+          "$serde_json::private::Number": "25"
+        SpeedyExpress:
+          "$serde_json::private::Number": "56.25"
+        StandardCourier:
+          "$serde_json::private::Number": "28.25"
+        WorldWide:
+          "$serde_json::private::Number": "77.5"
+      carrierCosts:
+        - carrier: FastTrack
+          cost:
+            "$serde_json::private::Number": "40.5"
+        - carrier: QuickShip
+          cost:
+            "$serde_json::private::Number": "39.75"
+      chargableWeight:
+        "$serde_json::private::Number": "12.5"
+      deliveryTimeline: express
+      destination: domestic
+      eligibleCarriers:
+        - FastTrack
+        - QuickShip
+      height:
+        "$serde_json::private::Number": "25"
+      isOversized: false
+      length:
+        "$serde_json::private::Number": "45"
+      priorityFactor: cost
+      serviceLevel: express
+      validation:
+        isValid: true
+      volumetricWeight:
+        "$serde_json::private::Number": "7.875"
+      weight:
+        "$serde_json::private::Number": "12.5"
+      width:
+        "$serde_json::private::Number": "35"
+    performance: "[perf]"
+    traceData:
+      baseCosts:
+        result:
+          EcoShip:
+            "$serde_json::private::Number": "21.75"
+          FastTrack:
+            "$serde_json::private::Number": "40.5"
+          GlobalExpress:
+            "$serde_json::private::Number": "87.5"
+          GlobalStandard:
+            "$serde_json::private::Number": "60"
+          HeavyHauler:
+            "$serde_json::private::Number": "65"
+          QuickShip:
+            "$serde_json::private::Number": "39.75"
+          RegularPost:
+            "$serde_json::private::Number": "25"
+          SpeedyExpress:
+            "$serde_json::private::Number": "56.25"
+          StandardCourier:
+            "$serde_json::private::Number": "28.25"
+          WorldWide:
+            "$serde_json::private::Number": "77.5"
+      carrierCosts:
+        result:
+          - carrier: FastTrack
+            cost:
+              "$serde_json::private::Number": "40.5"
+          - carrier: QuickShip
+            cost:
+              "$serde_json::private::Number": "39.75"
+      chargableWeight:
+        result:
+          "$serde_json::private::Number": "12.5"
+      eligibleCarriers:
+        result:
+          - FastTrack
+          - QuickShip
+      isOversized:
+        result: false
+      volumetricWeight:
+        result:
+          "$serde_json::private::Number": "7.875"
+  input:
+    id: input
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      deliveryTimeline: express
+      destination: domestic
+      height:
+        "$serde_json::private::Number": "25"
+      length:
+        "$serde_json::private::Number": "45"
+      priorityFactor: cost
+      weight:
+        "$serde_json::private::Number": "12.5"
+      width:
+        "$serde_json::private::Number": "35"
+    performance: "[perf]"
+    traceData: ~
+  serviceLevel:
+    id: serviceLevel
+    input:
+      deliveryTimeline: express
+      destination: domestic
+      height:
+        "$serde_json::private::Number": "25"
+      length:
+        "$serde_json::private::Number": "45"
+      priorityFactor: cost
+      validation:
+        isValid: true
+      weight:
+        "$serde_json::private::Number": "12.5"
+      width:
+        "$serde_json::private::Number": "35"
+    name: determineServiceLevel
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      deliveryTimeline: express
+      destination: domestic
+      height:
+        "$serde_json::private::Number": "25"
+      length:
+        "$serde_json::private::Number": "45"
+      priorityFactor: cost
+      serviceLevel: express
+      validation:
+        isValid: true
+      weight:
+        "$serde_json::private::Number": "12.5"
+      width:
+        "$serde_json::private::Number": "35"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "2"
+      reference_map: {}
+      rule:
+        _id: rule3
+  validate:
+    id: validate
+    input:
+      deliveryTimeline: express
+      destination: domestic
+      height:
+        "$serde_json::private::Number": "25"
+      length:
+        "$serde_json::private::Number": "45"
+      priorityFactor: cost
+      weight:
+        "$serde_json::private::Number": "12.5"
+      width:
+        "$serde_json::private::Number": "35"
+    name: validatePackage
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      deliveryTimeline: express
+      destination: domestic
+      height:
+        "$serde_json::private::Number": "25"
+      length:
+        "$serde_json::private::Number": "45"
+      priorityFactor: cost
+      validation:
+        isValid: true
+      weight:
+        "$serde_json::private::Number": "12.5"
+      width:
+        "$serde_json::private::Number": "35"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "4"
+      reference_map: {}
+      rule:
+        _id: rule5

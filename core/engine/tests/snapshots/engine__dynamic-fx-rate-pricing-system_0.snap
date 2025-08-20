@@ -1,0 +1,107 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  fxDetails:
+    discount:
+      "$serde_json::private::Number": "0.015"
+    message: Luxury products receive favorable rates
+    rate:
+      "$serde_json::private::Number": "0.91"
+trace:
+  fxRateAdjustmentDT:
+    id: fxRateAdjustmentDT
+    input:
+      baseCurrency: USD
+      customerTier: gold
+      product:
+        basePrice:
+          "$serde_json::private::Number": "8500"
+        category: luxury
+        id: PRD-12345
+        name: Luxury Watch
+      quantity:
+        "$serde_json::private::Number": "1"
+      targetCurrency: EUR
+    name: determineFXRateAdjustment
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      fxDetails:
+        discount:
+          "$serde_json::private::Number": "0.015"
+        message: Luxury products receive favorable rates
+        rate:
+          "$serde_json::private::Number": "0.91"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "2"
+      reference_map:
+        baseCurrency: USD
+        product.category: luxury
+        targetCurrency: EUR
+      rule:
+        _id: rule3
+        "baseCurrency[i2-2]": "'USD'"
+        "product.category[i2-1]": "'luxury'"
+        "targetCurrency[i2-3]": "'EUR'"
+  inputNode:
+    id: inputNode
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      baseCurrency: USD
+      customerTier: gold
+      product:
+        basePrice:
+          "$serde_json::private::Number": "8500"
+        id: PRD-12345
+        name: Luxury Watch
+      quantity:
+        "$serde_json::private::Number": "1"
+      targetCurrency: EUR
+    performance: "[perf]"
+    traceData: ~
+  productCategoryDT:
+    id: productCategoryDT
+    input:
+      baseCurrency: USD
+      customerTier: gold
+      product:
+        basePrice:
+          "$serde_json::private::Number": "8500"
+        id: PRD-12345
+        name: Luxury Watch
+      quantity:
+        "$serde_json::private::Number": "1"
+      targetCurrency: EUR
+    name: determineProductCategory
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      baseCurrency: USD
+      customerTier: gold
+      product:
+        basePrice:
+          "$serde_json::private::Number": "8500"
+        category: luxury
+        id: PRD-12345
+        name: Luxury Watch
+      quantity:
+        "$serde_json::private::Number": "1"
+      targetCurrency: EUR
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        product.basePrice:
+          "$serde_json::private::Number": "8500"
+      rule:
+        _id: rule2
+        "product.basePrice[i1-1]": ">= 5000"

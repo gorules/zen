@@ -1,0 +1,249 @@
+{
+  "tests": [
+    {
+      "input": {
+        "customerProfile": {
+          "customerId": "C12345",
+          "name": "Jane Smith",
+          "age": 35,
+          "creditScore": 720,
+          "annualIncome": 85000,
+          "employmentStatus": "employed",
+          "existingProducts": [
+            "checking_account"
+          ],
+          "financialGoals": [
+            "home_purchase",
+            "retirement_savings"
+          ],
+          "riskTolerance": "moderate"
+        }
+      },
+      "output": {
+        "recommendationMessage": "Start rebuilding your credit with these financial tools.",
+        "recommendedProducts": [
+          "secured_credit_card",
+          "basic_checking",
+          "credit_builder_loan"
+        ]
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "input",
+      "name": "customerProfile",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i1-1": ">= 750",
+            "o1-1": "'excellent'"
+          },
+          {
+            "_id": "rule2",
+            "i1-1": ">= 700",
+            "o1-1": "'good'"
+          },
+          {
+            "_id": "rule3",
+            "i1-1": ">= 650",
+            "o1-1": "'fair'"
+          },
+          {
+            "_id": "rule4",
+            "i1-1": "",
+            "o1-1": "'poor'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Credit Score",
+            "field": "creditScore"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Credit Category",
+            "field": "creditCategory"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "creditScoreEvaluation",
+      "name": "evaluateCreditScore",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i2-1": ">= 120000",
+            "o2-1": "'high'"
+          },
+          {
+            "_id": "rule2",
+            "i2-1": ">= 60000",
+            "o2-1": "'medium'"
+          },
+          {
+            "_id": "rule3",
+            "i2-1": "",
+            "o2-1": "'low'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i2-1",
+            "name": "Annual Income",
+            "field": "annualIncome"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2-1",
+            "name": "Income Category",
+            "field": "incomeCategory"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "incomeEvaluation",
+      "name": "evaluateIncome",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i3-1": "'excellent'",
+            "i3-2": "'high'",
+            "o3-1": "['premium_credit_card', 'investment_account', 'high_yield_savings', 'wealth_management']",
+            "o3-2": "'You qualify for our premium services with competitive rates and exclusive benefits.'"
+          },
+          {
+            "_id": "rule2",
+            "i3-1": "'excellent'",
+            "i3-2": "'medium'",
+            "o3-1": "['rewards_credit_card', 'investment_account', 'high_yield_savings']",
+            "o3-2": "'You qualify for our premium credit products and investment services.'"
+          },
+          {
+            "_id": "rule3",
+            "i3-1": "'good'",
+            "i3-2": "'high', 'medium'",
+            "o3-1": "['rewards_credit_card', 'personal_loan', 'investment_account']",
+            "o3-2": "'Based on your good credit and income, we recommend these financial products.'"
+          },
+          {
+            "_id": "rule4",
+            "i3-1": "'fair'",
+            "i3-2": "'high', 'medium'",
+            "o3-1": "['secured_credit_card', 'savings_account', 'credit_builder_loan']",
+            "o3-2": "'These products can help you build credit while meeting your financial needs.'"
+          },
+          {
+            "_id": "rule5",
+            "i3-1": "'poor'",
+            "i3-2": "",
+            "o3-1": "['secured_credit_card', 'basic_checking', 'credit_builder_loan']",
+            "o3-2": "'Start rebuilding your credit with these financial tools.'"
+          },
+          {
+            "_id": "rule6",
+            "i3-1": "",
+            "i3-2": "'low'",
+            "o3-1": "['basic_checking', 'savings_account', 'secured_credit_card']",
+            "o3-2": "'These accounts have minimal fees and are designed to help you manage your finances.'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i3-1",
+            "name": "Credit Category",
+            "field": "creditCategory"
+          },
+          {
+            "id": "i3-2",
+            "name": "Income Category",
+            "field": "incomeCategory"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o3-1",
+            "name": "Recommended Products",
+            "field": "recommendedProducts"
+          },
+          {
+            "id": "o3-2",
+            "name": "Recommendation Message",
+            "field": "recommendationMessage"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "productRecommendation",
+      "name": "recommendProducts",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "input",
+      "targetId": "creditScoreEvaluation",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "creditScoreEvaluation",
+      "targetId": "incomeEvaluation",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "incomeEvaluation",
+      "targetId": "productRecommendation",
+      "type": "edge"
+    }
+  ]
+}

@@ -1,0 +1,307 @@
+{
+  "tests": [
+    {
+      "input": {
+        "sellerData": {
+          "category": "premium",
+          "monthlySalesVolume": 72000,
+          "performanceRating": 4.9,
+          "inSpecialProgram": true
+        }
+      },
+      "output": {
+        "effectiveFeeRate": 0.07,
+        "totalMonthlyFee": 5139.99,
+        "transactionFee": 5040
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "input",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i1": "'premium'",
+            "i2": "> 100000",
+            "o1": "0.08",
+            "o2": "'premium'",
+            "o3": "99.99"
+          },
+          {
+            "_id": "rule2",
+            "i1": "'premium'",
+            "i2": "> 50000",
+            "o1": "0.10",
+            "o2": "'premium'",
+            "o3": "99.99"
+          },
+          {
+            "_id": "rule3",
+            "i1": "'premium'",
+            "i2": "",
+            "o1": "0.12",
+            "o2": "'premium'",
+            "o3": "99.99"
+          },
+          {
+            "_id": "rule4",
+            "i1": "'standard'",
+            "i2": "> 75000",
+            "o1": "0.15",
+            "o2": "'standard'",
+            "o3": "29.99"
+          },
+          {
+            "_id": "rule5",
+            "i1": "'standard'",
+            "i2": "> 25000",
+            "o1": "0.18",
+            "o2": "'standard'",
+            "o3": "29.99"
+          },
+          {
+            "_id": "rule6",
+            "i1": "'standard'",
+            "i2": "",
+            "o1": "0.20",
+            "o2": "'standard'",
+            "o3": "29.99"
+          },
+          {
+            "_id": "rule7",
+            "i1": "'basic'",
+            "i2": "> 25000",
+            "o1": "0.25",
+            "o2": "'basic'",
+            "o3": "0"
+          },
+          {
+            "_id": "rule8",
+            "i1": "'basic'",
+            "i2": "",
+            "o1": "0.30",
+            "o2": "'basic'",
+            "o3": "0"
+          },
+          {
+            "_id": "rule9",
+            "i1": "",
+            "i2": "",
+            "o1": "0.35",
+            "o2": "'basic'",
+            "o3": "0"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Seller Category",
+            "field": "sellerData.category"
+          },
+          {
+            "id": "i2",
+            "name": "Monthly Sales Volume",
+            "field": "sellerData.monthlySalesVolume"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Base Fee Rate",
+            "field": "fees.baseFeeRate"
+          },
+          {
+            "id": "o2",
+            "name": "Subscription Tier",
+            "field": "fees.subscriptionTier"
+          },
+          {
+            "id": "o3",
+            "name": "Subscription Fee",
+            "field": "fees.subscriptionFee"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "sellerCategory",
+      "name": "determineCategoryFees",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "addRule1",
+            "i1": "> 4.8",
+            "i2": "true",
+            "o1": "-0.03",
+            "o2": "0",
+            "o3": "true"
+          },
+          {
+            "_id": "addRule2",
+            "i1": "> 4.8",
+            "i2": "false",
+            "o1": "-0.02",
+            "o2": "0",
+            "o3": "false"
+          },
+          {
+            "_id": "addRule3",
+            "i1": "> 4.5",
+            "i2": "true",
+            "o1": "-0.01",
+            "o2": "0",
+            "o3": "true"
+          },
+          {
+            "_id": "addRule4",
+            "i1": "> 4.5",
+            "i2": "false",
+            "o1": "0",
+            "o2": "0",
+            "o3": "false"
+          },
+          {
+            "_id": "addRule5",
+            "i1": "< 3.0",
+            "i2": "",
+            "o1": "0.05",
+            "o2": "25",
+            "o3": "false"
+          },
+          {
+            "_id": "addRule6",
+            "i1": "< 4.0",
+            "i2": "",
+            "o1": "0.02",
+            "o2": "10",
+            "o3": "false"
+          },
+          {
+            "_id": "addRule7",
+            "i1": "",
+            "i2": "",
+            "o1": "0",
+            "o2": "0",
+            "o3": "false"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Performance Rating",
+            "field": "sellerData.performanceRating"
+          },
+          {
+            "id": "i2",
+            "name": "Special Program",
+            "field": "sellerData.inSpecialProgram"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Rate Adjustment",
+            "field": "fees.rateAdjustment"
+          },
+          {
+            "id": "o2",
+            "name": "Additional Service Charge",
+            "field": "fees.additionalServiceCharge"
+          },
+          {
+            "id": "o3",
+            "name": "Promotional Benefits",
+            "field": "fees.hasPromotionalBenefits"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "additionalFees",
+      "name": "calculateAdditionalFees",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "expr1",
+            "key": "effectiveFeeRate",
+            "value": "fees.baseFeeRate + fees.rateAdjustment"
+          },
+          {
+            "id": "expr2",
+            "key": "transactionFee",
+            "value": "sellerData.monthlySalesVolume * $.effectiveFeeRate"
+          },
+          {
+            "id": "expr3",
+            "key": "totalMonthlyFee",
+            "value": "$.transactionFee + fees.subscriptionFee + fees.additionalServiceCharge"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "calculateTotal",
+      "name": "calculateTotalFees",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "input",
+      "targetId": "sellerCategory",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "sellerCategory",
+      "targetId": "additionalFees",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "additionalFees",
+      "targetId": "calculateTotal",
+      "type": "edge"
+    }
+  ]
+}

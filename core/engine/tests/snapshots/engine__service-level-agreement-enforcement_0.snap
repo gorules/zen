@@ -1,0 +1,602 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  breachDescription: Excessive downtime for premium customer
+  compensationAmount:
+    "$serde_json::private::Number": "225"
+  compensationType: service_credit
+  customer:
+    contactEmail: support@acmecorp.com
+    contractId: contract_456
+    id: cust_789
+    name: Acme Corporation
+    serviceTier: premium
+  customerTier: premium
+  downtimeDuration:
+    "$serde_json::private::Number": "45"
+  escalationLevel: senior_management
+  escalationTimeframe: immediate
+  incident:
+    id: inc_123456
+    reportedBy: automated_monitoring
+    reportedTime: "2025-03-19T15:45:00Z"
+  isDowntime: true
+  packetLoss:
+    "$serde_json::private::Number": "0.8"
+  parameterType: downtime
+  parameterValue:
+    "$serde_json::private::Number": "45"
+  requiresEscalation: true
+  responseTime:
+    "$serde_json::private::Number": "320"
+  service:
+    downtimeDuration:
+      "$serde_json::private::Number": "45"
+    id: internet_service_123
+    name: Business Fiber Internet
+    packetLoss:
+      "$serde_json::private::Number": "0.8"
+    responseTime:
+      "$serde_json::private::Number": "320"
+    startTime: "2025-03-19T15:30:00Z"
+    status: down
+  severityLevel: critical
+  severityScore:
+    "$serde_json::private::Number": "3"
+  slaBreached: true
+trace:
+  assessSLABreach:
+    id: assessSLABreach
+    input:
+      customer:
+        contactEmail: support@acmecorp.com
+        contractId: contract_456
+        id: cust_789
+        name: Acme Corporation
+        serviceTier: premium
+      customerTier: premium
+      downtimeDuration:
+        "$serde_json::private::Number": "45"
+      incident:
+        id: inc_123456
+        reportedBy: automated_monitoring
+        reportedTime: "2025-03-19T15:45:00Z"
+      isDowntime: true
+      packetLoss:
+        "$serde_json::private::Number": "0.8"
+      parameterType: downtime
+      parameterValue:
+        "$serde_json::private::Number": "45"
+      responseTime:
+        "$serde_json::private::Number": "320"
+      service:
+        downtimeDuration:
+          "$serde_json::private::Number": "45"
+        id: internet_service_123
+        name: Business Fiber Internet
+        packetLoss:
+          "$serde_json::private::Number": "0.8"
+        responseTime:
+          "$serde_json::private::Number": "320"
+        startTime: "2025-03-19T15:30:00Z"
+        status: down
+    name: assessSLABreach
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      breachDescription: Excessive downtime for premium customer
+      customer:
+        contactEmail: support@acmecorp.com
+        contractId: contract_456
+        id: cust_789
+        name: Acme Corporation
+        serviceTier: premium
+      customerTier: premium
+      downtimeDuration:
+        "$serde_json::private::Number": "45"
+      incident:
+        id: inc_123456
+        reportedBy: automated_monitoring
+        reportedTime: "2025-03-19T15:45:00Z"
+      isDowntime: true
+      packetLoss:
+        "$serde_json::private::Number": "0.8"
+      parameterType: downtime
+      parameterValue:
+        "$serde_json::private::Number": "45"
+      responseTime:
+        "$serde_json::private::Number": "320"
+      service:
+        downtimeDuration:
+          "$serde_json::private::Number": "45"
+        id: internet_service_123
+        name: Business Fiber Internet
+        packetLoss:
+          "$serde_json::private::Number": "0.8"
+        responseTime:
+          "$serde_json::private::Number": "320"
+        startTime: "2025-03-19T15:30:00Z"
+        status: down
+      slaBreached: true
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        customerTier: premium
+        parameterType: downtime
+        parameterValue:
+          "$serde_json::private::Number": "45"
+      rule:
+        _id: rule1
+        "customerTier[serviceLevel]": "'premium'"
+        "parameterType[paramType]": "'downtime'"
+        "parameterValue[paramValue]": "> 10"
+  determineEscalation:
+    id: determineEscalation
+    input:
+      breachDescription: Excessive downtime for premium customer
+      compensationAmount:
+        "$serde_json::private::Number": "225"
+      compensationType: service_credit
+      customer:
+        contactEmail: support@acmecorp.com
+        contractId: contract_456
+        id: cust_789
+        name: Acme Corporation
+        serviceTier: premium
+      customerTier: premium
+      downtimeDuration:
+        "$serde_json::private::Number": "45"
+      incident:
+        id: inc_123456
+        reportedBy: automated_monitoring
+        reportedTime: "2025-03-19T15:45:00Z"
+      isDowntime: true
+      packetLoss:
+        "$serde_json::private::Number": "0.8"
+      parameterType: downtime
+      parameterValue:
+        "$serde_json::private::Number": "45"
+      responseTime:
+        "$serde_json::private::Number": "320"
+      service:
+        downtimeDuration:
+          "$serde_json::private::Number": "45"
+        id: internet_service_123
+        name: Business Fiber Internet
+        packetLoss:
+          "$serde_json::private::Number": "0.8"
+        responseTime:
+          "$serde_json::private::Number": "320"
+        startTime: "2025-03-19T15:30:00Z"
+        status: down
+      severityLevel: critical
+      severityScore:
+        "$serde_json::private::Number": "3"
+      slaBreached: true
+    name: determineEscalation
+    order:
+      "$serde_json::private::Number": "6"
+    output:
+      breachDescription: Excessive downtime for premium customer
+      compensationAmount:
+        "$serde_json::private::Number": "225"
+      compensationType: service_credit
+      customer:
+        contactEmail: support@acmecorp.com
+        contractId: contract_456
+        id: cust_789
+        name: Acme Corporation
+        serviceTier: premium
+      customerTier: premium
+      downtimeDuration:
+        "$serde_json::private::Number": "45"
+      escalationLevel: senior_management
+      escalationTimeframe: immediate
+      incident:
+        id: inc_123456
+        reportedBy: automated_monitoring
+        reportedTime: "2025-03-19T15:45:00Z"
+      isDowntime: true
+      packetLoss:
+        "$serde_json::private::Number": "0.8"
+      parameterType: downtime
+      parameterValue:
+        "$serde_json::private::Number": "45"
+      requiresEscalation: true
+      responseTime:
+        "$serde_json::private::Number": "320"
+      service:
+        downtimeDuration:
+          "$serde_json::private::Number": "45"
+        id: internet_service_123
+        name: Business Fiber Internet
+        packetLoss:
+          "$serde_json::private::Number": "0.8"
+        responseTime:
+          "$serde_json::private::Number": "320"
+        startTime: "2025-03-19T15:30:00Z"
+        status: down
+      severityLevel: critical
+      severityScore:
+        "$serde_json::private::Number": "3"
+      slaBreached: true
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        severityLevel: critical
+      rule:
+        _description: ""
+        _id: escalation1
+        "severityLevel[i1]": "'critical'"
+  determineParameterType:
+    id: determineParameterType
+    input:
+      customer:
+        contactEmail: support@acmecorp.com
+        contractId: contract_456
+        id: cust_789
+        name: Acme Corporation
+        serviceTier: premium
+      customerTier: premium
+      downtimeDuration:
+        "$serde_json::private::Number": "45"
+      incident:
+        id: inc_123456
+        reportedBy: automated_monitoring
+        reportedTime: "2025-03-19T15:45:00Z"
+      isDowntime: true
+      packetLoss:
+        "$serde_json::private::Number": "0.8"
+      responseTime:
+        "$serde_json::private::Number": "320"
+      service:
+        downtimeDuration:
+          "$serde_json::private::Number": "45"
+        id: internet_service_123
+        name: Business Fiber Internet
+        packetLoss:
+          "$serde_json::private::Number": "0.8"
+        responseTime:
+          "$serde_json::private::Number": "320"
+        startTime: "2025-03-19T15:30:00Z"
+        status: down
+    name: determineParameterType
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      customer:
+        contactEmail: support@acmecorp.com
+        contractId: contract_456
+        id: cust_789
+        name: Acme Corporation
+        serviceTier: premium
+      customerTier: premium
+      downtimeDuration:
+        "$serde_json::private::Number": "45"
+      incident:
+        id: inc_123456
+        reportedBy: automated_monitoring
+        reportedTime: "2025-03-19T15:45:00Z"
+      isDowntime: true
+      packetLoss:
+        "$serde_json::private::Number": "0.8"
+      parameterType: downtime
+      parameterValue:
+        "$serde_json::private::Number": "45"
+      responseTime:
+        "$serde_json::private::Number": "320"
+      service:
+        downtimeDuration:
+          "$serde_json::private::Number": "45"
+        id: internet_service_123
+        name: Business Fiber Internet
+        packetLoss:
+          "$serde_json::private::Number": "0.8"
+        responseTime:
+          "$serde_json::private::Number": "320"
+        startTime: "2025-03-19T15:30:00Z"
+        status: down
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map: {}
+      rule:
+        _id: param1
+  determineSeverity:
+    id: determineSeverity
+    input:
+      breachDescription: Excessive downtime for premium customer
+      customer:
+        contactEmail: support@acmecorp.com
+        contractId: contract_456
+        id: cust_789
+        name: Acme Corporation
+        serviceTier: premium
+      customerTier: premium
+      downtimeDuration:
+        "$serde_json::private::Number": "45"
+      incident:
+        id: inc_123456
+        reportedBy: automated_monitoring
+        reportedTime: "2025-03-19T15:45:00Z"
+      isDowntime: true
+      packetLoss:
+        "$serde_json::private::Number": "0.8"
+      parameterType: downtime
+      parameterValue:
+        "$serde_json::private::Number": "45"
+      responseTime:
+        "$serde_json::private::Number": "320"
+      service:
+        downtimeDuration:
+          "$serde_json::private::Number": "45"
+        id: internet_service_123
+        name: Business Fiber Internet
+        packetLoss:
+          "$serde_json::private::Number": "0.8"
+        responseTime:
+          "$serde_json::private::Number": "320"
+        startTime: "2025-03-19T15:30:00Z"
+        status: down
+      slaBreached: true
+    name: determineSeverity
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      breachDescription: Excessive downtime for premium customer
+      customer:
+        contactEmail: support@acmecorp.com
+        contractId: contract_456
+        id: cust_789
+        name: Acme Corporation
+        serviceTier: premium
+      customerTier: premium
+      downtimeDuration:
+        "$serde_json::private::Number": "45"
+      incident:
+        id: inc_123456
+        reportedBy: automated_monitoring
+        reportedTime: "2025-03-19T15:45:00Z"
+      isDowntime: true
+      packetLoss:
+        "$serde_json::private::Number": "0.8"
+      parameterType: downtime
+      parameterValue:
+        "$serde_json::private::Number": "45"
+      responseTime:
+        "$serde_json::private::Number": "320"
+      service:
+        downtimeDuration:
+          "$serde_json::private::Number": "45"
+        id: internet_service_123
+        name: Business Fiber Internet
+        packetLoss:
+          "$serde_json::private::Number": "0.8"
+        responseTime:
+          "$serde_json::private::Number": "320"
+        startTime: "2025-03-19T15:30:00Z"
+        status: down
+      severityLevel: critical
+      severityScore:
+        "$serde_json::private::Number": "3"
+      slaBreached: true
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        customerTier: premium
+        parameterType: downtime
+        slaBreached: true
+      rule:
+        _description: ""
+        _id: severity1
+        "customerTier[d3d1e8b0-5f9f-4867-a326-8cfdbccdbb94]": "'premium'"
+        "parameterType[3b99eee0-25eb-49b6-8cf0-6daa7fcbfdc3]": "'downtime'"
+        "slaBreached[10022132-3b17-452f-9e87-cc67dcbc1682]": "true"
+  ed8355c4-aea1-4526-82b3-56d7d98efa92:
+    id: ed8355c4-aea1-4526-82b3-56d7d98efa92
+    input:
+      breachDescription: Excessive downtime for premium customer
+      customer:
+        contactEmail: support@acmecorp.com
+        contractId: contract_456
+        id: cust_789
+        name: Acme Corporation
+        serviceTier: premium
+      customerTier: premium
+      downtimeDuration:
+        "$serde_json::private::Number": "45"
+      incident:
+        id: inc_123456
+        reportedBy: automated_monitoring
+        reportedTime: "2025-03-19T15:45:00Z"
+      isDowntime: true
+      packetLoss:
+        "$serde_json::private::Number": "0.8"
+      parameterType: downtime
+      parameterValue:
+        "$serde_json::private::Number": "45"
+      responseTime:
+        "$serde_json::private::Number": "320"
+      service:
+        downtimeDuration:
+          "$serde_json::private::Number": "45"
+        id: internet_service_123
+        name: Business Fiber Internet
+        packetLoss:
+          "$serde_json::private::Number": "0.8"
+        responseTime:
+          "$serde_json::private::Number": "320"
+        startTime: "2025-03-19T15:30:00Z"
+        status: down
+      severityLevel: critical
+      severityScore:
+        "$serde_json::private::Number": "3"
+      slaBreached: true
+    name: calculateCompensation
+    order:
+      "$serde_json::private::Number": "5"
+    output:
+      breachDescription: Excessive downtime for premium customer
+      compensationAmount:
+        "$serde_json::private::Number": "225"
+      compensationType: service_credit
+      customer:
+        contactEmail: support@acmecorp.com
+        contractId: contract_456
+        id: cust_789
+        name: Acme Corporation
+        serviceTier: premium
+      customerTier: premium
+      downtimeDuration:
+        "$serde_json::private::Number": "45"
+      incident:
+        id: inc_123456
+        reportedBy: automated_monitoring
+        reportedTime: "2025-03-19T15:45:00Z"
+      isDowntime: true
+      packetLoss:
+        "$serde_json::private::Number": "0.8"
+      parameterType: downtime
+      parameterValue:
+        "$serde_json::private::Number": "45"
+      responseTime:
+        "$serde_json::private::Number": "320"
+      service:
+        downtimeDuration:
+          "$serde_json::private::Number": "45"
+        id: internet_service_123
+        name: Business Fiber Internet
+        packetLoss:
+          "$serde_json::private::Number": "0.8"
+        responseTime:
+          "$serde_json::private::Number": "320"
+        startTime: "2025-03-19T15:30:00Z"
+        status: down
+      severityLevel: critical
+      severityScore:
+        "$serde_json::private::Number": "3"
+      slaBreached: true
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        customerTier: premium
+        slaBreached: true
+      rule:
+        _description: ""
+        _id: 32a4f6a9-6631-4a5b-9fad-75c5f22bb591
+        "customerTier[f74a521d-8f22-47ba-b800-1c7a8e69d606]": "'premium'"
+        "slaBreached[bd7b183b-2e9f-4fec-bc0f-e915864bd5eb]": "true"
+  input1:
+    id: input1
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      customer:
+        contactEmail: support@acmecorp.com
+        contractId: contract_456
+        id: cust_789
+        name: Acme Corporation
+        serviceTier: premium
+      incident:
+        id: inc_123456
+        reportedBy: automated_monitoring
+        reportedTime: "2025-03-19T15:45:00Z"
+      service:
+        downtimeDuration:
+          "$serde_json::private::Number": "45"
+        id: internet_service_123
+        name: Business Fiber Internet
+        packetLoss:
+          "$serde_json::private::Number": "0.8"
+        responseTime:
+          "$serde_json::private::Number": "320"
+        startTime: "2025-03-19T15:30:00Z"
+        status: down
+    performance: "[perf]"
+    traceData: ~
+  validateSLA:
+    id: validateSLA
+    input:
+      customer:
+        contactEmail: support@acmecorp.com
+        contractId: contract_456
+        id: cust_789
+        name: Acme Corporation
+        serviceTier: premium
+      incident:
+        id: inc_123456
+        reportedBy: automated_monitoring
+        reportedTime: "2025-03-19T15:45:00Z"
+      service:
+        downtimeDuration:
+          "$serde_json::private::Number": "45"
+        id: internet_service_123
+        name: Business Fiber Internet
+        packetLoss:
+          "$serde_json::private::Number": "0.8"
+        responseTime:
+          "$serde_json::private::Number": "320"
+        startTime: "2025-03-19T15:30:00Z"
+        status: down
+    name: validateServiceParameters
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      customer:
+        contactEmail: support@acmecorp.com
+        contractId: contract_456
+        id: cust_789
+        name: Acme Corporation
+        serviceTier: premium
+      customerTier: premium
+      downtimeDuration:
+        "$serde_json::private::Number": "45"
+      incident:
+        id: inc_123456
+        reportedBy: automated_monitoring
+        reportedTime: "2025-03-19T15:45:00Z"
+      isDowntime: true
+      packetLoss:
+        "$serde_json::private::Number": "0.8"
+      responseTime:
+        "$serde_json::private::Number": "320"
+      service:
+        downtimeDuration:
+          "$serde_json::private::Number": "45"
+        id: internet_service_123
+        name: Business Fiber Internet
+        packetLoss:
+          "$serde_json::private::Number": "0.8"
+        responseTime:
+          "$serde_json::private::Number": "320"
+        startTime: "2025-03-19T15:30:00Z"
+        status: down
+    performance: "[perf]"
+    traceData:
+      customerTier:
+        result: premium
+      downtimeDuration:
+        result:
+          "$serde_json::private::Number": "45"
+      isDowntime:
+        result: true
+      packetLoss:
+        result:
+          "$serde_json::private::Number": "0.8"
+      responseTime:
+        result:
+          "$serde_json::private::Number": "320"

@@ -1,0 +1,299 @@
+{
+  "tests": [
+    {
+      "input": {
+        "applicant": {
+          "annualIncome": 28000,
+          "householdSize": 3,
+          "age": 35,
+          "specialCircumstances": {
+            "hasDisability": true,
+            "isVeteran": false,
+            "isCaregiver": false
+          }
+        }
+      },
+      "output": {
+        "applicant": {
+          "age": 35,
+          "annualIncome": 28000,
+          "householdSize": 3,
+          "specialCircumstances": {
+            "hasDisability": true,
+            "isCaregiver": false,
+            "isVeteran": false
+          }
+        },
+        "eligibility": {
+          "assignedProgram": "full-assistance-enhanced",
+          "baseEligible": true,
+          "eligible": true,
+          "programType": "full-assistance"
+        }
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "input",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "income": "<= 15000",
+            "householdSize": "<= 2",
+            "age": ">= 18",
+            "baseEligibility": "true",
+            "programType": "'full-assistance'"
+          },
+          {
+            "_id": "rule2",
+            "income": "<= 30000",
+            "householdSize": "> 2 and <= 4",
+            "age": ">= 18",
+            "baseEligibility": "true",
+            "programType": "'full-assistance'"
+          },
+          {
+            "_id": "rule3",
+            "income": "<= 45000",
+            "householdSize": "> 4",
+            "age": ">= 18",
+            "baseEligibility": "true",
+            "programType": "'full-assistance'"
+          },
+          {
+            "_id": "rule4",
+            "income": "> 15000 and <= 25000",
+            "householdSize": "<= 2",
+            "age": ">= 18",
+            "baseEligibility": "true",
+            "programType": "'partial-assistance'"
+          },
+          {
+            "_id": "rule5",
+            "income": "> 30000 and <= 50000",
+            "householdSize": "> 2 and <= 4",
+            "age": ">= 18",
+            "baseEligibility": "true",
+            "programType": "'partial-assistance'"
+          },
+          {
+            "_id": "rule6",
+            "income": "> 45000 and <= 65000",
+            "householdSize": "> 4",
+            "age": ">= 18",
+            "baseEligibility": "true",
+            "programType": "'partial-assistance'"
+          },
+          {
+            "_id": "rule7",
+            "income": "<= 25000",
+            "householdSize": "",
+            "age": "< 18 and >= 16",
+            "baseEligibility": "true",
+            "programType": "'youth-assistance'"
+          },
+          {
+            "_id": "rule8",
+            "income": "",
+            "householdSize": "",
+            "age": "",
+            "baseEligibility": "false",
+            "programType": "'ineligible'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "income",
+            "name": "Annual Income",
+            "field": "applicant.annualIncome"
+          },
+          {
+            "id": "householdSize",
+            "name": "Household Size",
+            "field": "applicant.householdSize"
+          },
+          {
+            "id": "age",
+            "name": "Age",
+            "field": "applicant.age"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "baseEligibility",
+            "name": "Base Eligibility",
+            "field": "eligibility.baseEligible"
+          },
+          {
+            "id": "programType",
+            "name": "Program Type",
+            "field": "eligibility.programType"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "incomeEligibility",
+      "name": "Income Eligibility",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "special1",
+            "baseEligibility": "false",
+            "hasDisability": "true",
+            "isVeteran": "",
+            "isCaregiver": "",
+            "finalEligibility": "true",
+            "bonusProgram": "'disability-support'"
+          },
+          {
+            "_id": "special2",
+            "baseEligibility": "false",
+            "hasDisability": "",
+            "isVeteran": "true",
+            "isCaregiver": "",
+            "finalEligibility": "true",
+            "bonusProgram": "'veterans-assistance'"
+          },
+          {
+            "_id": "special3",
+            "baseEligibility": "false",
+            "hasDisability": "",
+            "isVeteran": "",
+            "isCaregiver": "true",
+            "finalEligibility": "true",
+            "bonusProgram": "'caregiver-support'"
+          },
+          {
+            "_id": "special4",
+            "baseEligibility": "true",
+            "hasDisability": "true",
+            "isVeteran": "",
+            "isCaregiver": "",
+            "finalEligibility": "true",
+            "bonusProgram": "eligibility.programType + '-enhanced'"
+          },
+          {
+            "_id": "special5",
+            "baseEligibility": "true",
+            "hasDisability": "",
+            "isVeteran": "true",
+            "isCaregiver": "",
+            "finalEligibility": "true",
+            "bonusProgram": "eligibility.programType + '-enhanced'"
+          },
+          {
+            "_id": "special6",
+            "baseEligibility": "true",
+            "hasDisability": "",
+            "isVeteran": "",
+            "isCaregiver": "true",
+            "finalEligibility": "true",
+            "bonusProgram": "eligibility.programType + '-caregiver'"
+          },
+          {
+            "_id": "special7",
+            "baseEligibility": "true",
+            "hasDisability": "",
+            "isVeteran": "",
+            "isCaregiver": "",
+            "finalEligibility": "true",
+            "bonusProgram": "eligibility.programType"
+          },
+          {
+            "_id": "special8",
+            "baseEligibility": "false",
+            "hasDisability": "",
+            "isVeteran": "",
+            "isCaregiver": "",
+            "finalEligibility": "false",
+            "bonusProgram": "'ineligible'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "baseEligibility",
+            "name": "Base Eligibility",
+            "field": "eligibility.baseEligible"
+          },
+          {
+            "id": "hasDisability",
+            "name": "Has Disability",
+            "field": "applicant.specialCircumstances.hasDisability"
+          },
+          {
+            "id": "isVeteran",
+            "name": "Is Veteran",
+            "field": "applicant.specialCircumstances.isVeteran"
+          },
+          {
+            "id": "isCaregiver",
+            "name": "Is Caregiver",
+            "field": "applicant.specialCircumstances.isCaregiver"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "finalEligibility",
+            "name": "Final Eligibility",
+            "field": "eligibility.eligible"
+          },
+          {
+            "id": "bonusProgram",
+            "name": "Program Assignment",
+            "field": "eligibility.assignedProgram"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "specialCircumstances",
+      "name": "Special Circumstances",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "input",
+      "targetId": "incomeEligibility",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "incomeEligibility",
+      "targetId": "specialCircumstances",
+      "type": "edge"
+    }
+  ]
+}

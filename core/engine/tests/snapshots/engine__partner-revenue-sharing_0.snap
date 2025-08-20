@@ -1,0 +1,132 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  baseCommission:
+    "$serde_json::private::Number": "525000"
+  bonusCommission:
+    "$serde_json::private::Number": "37950"
+  durationMultiplier:
+    "$serde_json::private::Number": "1.1"
+  segmentMultiplier:
+    "$serde_json::private::Number": "1.15"
+  telcoRevenue:
+    "$serde_json::private::Number": "937050"
+  totalCommission:
+    "$serde_json::private::Number": "562950"
+trace:
+  dt1:
+    id: dt1
+    input:
+      contractDuration:
+        "$serde_json::private::Number": "24"
+      customerSegment: enterprise
+      exclusivity: true
+      partnerType: content
+      revenueGenerated:
+        "$serde_json::private::Number": "1500000"
+      serviceCategory: streaming
+    name: partnerCommissionRates
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      baseCommissionRate:
+        "$serde_json::private::Number": "0.35"
+      bonusRate:
+        "$serde_json::private::Number": "0.02"
+      contractDuration:
+        "$serde_json::private::Number": "24"
+      customerSegment: enterprise
+      exclusivity: true
+      partnerTier: premium
+      partnerType: content
+      revenueGenerated:
+        "$serde_json::private::Number": "1500000"
+      serviceCategory: streaming
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        exclusivity: true
+        partnerType: content
+        revenueGenerated:
+          "$serde_json::private::Number": "1500000"
+        serviceCategory: streaming
+      rule:
+        _id: r1
+        "exclusivity[i1-4]": "true"
+        "partnerType[i1-1]": "'content'"
+        "revenueGenerated[i1-3]": "> 1000000"
+        "serviceCategory[i1-2]": "'streaming'"
+  ex1:
+    id: ex1
+    input:
+      baseCommissionRate:
+        "$serde_json::private::Number": "0.35"
+      bonusRate:
+        "$serde_json::private::Number": "0.02"
+      contractDuration:
+        "$serde_json::private::Number": "24"
+      customerSegment: enterprise
+      exclusivity: true
+      partnerTier: premium
+      partnerType: content
+      revenueGenerated:
+        "$serde_json::private::Number": "1500000"
+      serviceCategory: streaming
+    name: calculateCommission
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      baseCommission:
+        "$serde_json::private::Number": "525000"
+      bonusCommission:
+        "$serde_json::private::Number": "37950"
+      durationMultiplier:
+        "$serde_json::private::Number": "1.1"
+      segmentMultiplier:
+        "$serde_json::private::Number": "1.15"
+      telcoRevenue:
+        "$serde_json::private::Number": "937050"
+      totalCommission:
+        "$serde_json::private::Number": "562950"
+    performance: "[perf]"
+    traceData:
+      baseCommission:
+        result:
+          "$serde_json::private::Number": "525000"
+      bonusCommission:
+        result:
+          "$serde_json::private::Number": "37950"
+      durationMultiplier:
+        result:
+          "$serde_json::private::Number": "1.1"
+      segmentMultiplier:
+        result:
+          "$serde_json::private::Number": "1.15"
+      telcoRevenue:
+        result:
+          "$serde_json::private::Number": "937050"
+      totalCommission:
+        result:
+          "$serde_json::private::Number": "562950"
+  ip1:
+    id: ip1
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      contractDuration:
+        "$serde_json::private::Number": "24"
+      customerSegment: enterprise
+      exclusivity: true
+      partnerType: content
+      revenueGenerated:
+        "$serde_json::private::Number": "1500000"
+      serviceCategory: streaming
+    performance: "[perf]"
+    traceData: ~

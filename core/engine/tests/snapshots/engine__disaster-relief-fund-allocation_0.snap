@@ -1,0 +1,337 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  assessment:
+    damageDescription: "Roof collapsed in multiple areas, extensive water damage"
+    damageLevel: major
+    propertyType: residential
+  household:
+    dependents:
+      "$serde_json::private::Number": "2"
+    size:
+      "$serde_json::private::Number": "4"
+    specialNeeds: false
+  householdMultiplier:
+    "$serde_json::private::Number": "1.6"
+  income:
+    annualAmount:
+      "$serde_json::private::Number": "32000"
+    level: low
+    primarySource: employment
+  initialAllocation:
+    "$serde_json::private::Number": "14400"
+  insurance:
+    deductible:
+      "$serde_json::private::Number": "5000"
+    provider: StateInsurance
+    status: partial
+  relief:
+    baseAmount:
+      "$serde_json::private::Number": "7500"
+    incomeAdjustedAmount:
+      "$serde_json::private::Number": "9000"
+    paymentAmount:
+      "$serde_json::private::Number": "10080"
+    paymentReason: Partially insured - reduced payment
+trace:
+  dt1:
+    id: dt1
+    input:
+      assessment:
+        damageDescription: "Roof collapsed in multiple areas, extensive water damage"
+        damageLevel: major
+        propertyType: residential
+      household:
+        dependents:
+          "$serde_json::private::Number": "2"
+        size:
+          "$serde_json::private::Number": "4"
+        specialNeeds: false
+      income:
+        annualAmount:
+          "$serde_json::private::Number": "32000"
+        level: low
+        primarySource: employment
+      insurance:
+        deductible:
+          "$serde_json::private::Number": "5000"
+        provider: StateInsurance
+        status: partial
+    name: baseFundAllocation
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      assessment:
+        damageDescription: "Roof collapsed in multiple areas, extensive water damage"
+        damageLevel: major
+        propertyType: residential
+      household:
+        dependents:
+          "$serde_json::private::Number": "2"
+        size:
+          "$serde_json::private::Number": "4"
+        specialNeeds: false
+      income:
+        annualAmount:
+          "$serde_json::private::Number": "32000"
+        level: low
+        primarySource: employment
+      insurance:
+        deductible:
+          "$serde_json::private::Number": "5000"
+        provider: StateInsurance
+        status: partial
+      relief:
+        baseAmount:
+          "$serde_json::private::Number": "7500"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        assessment.damageLevel: major
+      rule:
+        _id: r1-2
+        "assessment.damageLevel[i1-1]": "'major'"
+  dt2:
+    id: dt2
+    input:
+      assessment:
+        damageDescription: "Roof collapsed in multiple areas, extensive water damage"
+        damageLevel: major
+        propertyType: residential
+      household:
+        dependents:
+          "$serde_json::private::Number": "2"
+        size:
+          "$serde_json::private::Number": "4"
+        specialNeeds: false
+      householdMultiplier:
+        "$serde_json::private::Number": "1.6"
+      income:
+        annualAmount:
+          "$serde_json::private::Number": "32000"
+        level: low
+        primarySource: employment
+      initialAllocation:
+        "$serde_json::private::Number": "14400"
+      insurance:
+        deductible:
+          "$serde_json::private::Number": "5000"
+        provider: StateInsurance
+        status: partial
+      relief:
+        baseAmount:
+          "$serde_json::private::Number": "7500"
+        incomeAdjustedAmount:
+          "$serde_json::private::Number": "9000"
+    name: insuranceAdjustment
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      assessment:
+        damageDescription: "Roof collapsed in multiple areas, extensive water damage"
+        damageLevel: major
+        propertyType: residential
+      household:
+        dependents:
+          "$serde_json::private::Number": "2"
+        size:
+          "$serde_json::private::Number": "4"
+        specialNeeds: false
+      householdMultiplier:
+        "$serde_json::private::Number": "1.6"
+      income:
+        annualAmount:
+          "$serde_json::private::Number": "32000"
+        level: low
+        primarySource: employment
+      initialAllocation:
+        "$serde_json::private::Number": "14400"
+      insurance:
+        deductible:
+          "$serde_json::private::Number": "5000"
+        provider: StateInsurance
+        status: partial
+      relief:
+        baseAmount:
+          "$serde_json::private::Number": "7500"
+        incomeAdjustedAmount:
+          "$serde_json::private::Number": "9000"
+        paymentAmount:
+          "$serde_json::private::Number": "10080"
+        paymentReason: Partially insured - reduced payment
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        insurance.status: partial
+      rule:
+        _id: r2-2
+        "insurance.status[i2-1]": "'partial'"
+  dt3:
+    id: dt3
+    input:
+      assessment:
+        damageDescription: "Roof collapsed in multiple areas, extensive water damage"
+        damageLevel: major
+        propertyType: residential
+      household:
+        dependents:
+          "$serde_json::private::Number": "2"
+        size:
+          "$serde_json::private::Number": "4"
+        specialNeeds: false
+      income:
+        annualAmount:
+          "$serde_json::private::Number": "32000"
+        level: low
+        primarySource: employment
+      insurance:
+        deductible:
+          "$serde_json::private::Number": "5000"
+        provider: StateInsurance
+        status: partial
+      relief:
+        baseAmount:
+          "$serde_json::private::Number": "7500"
+    name: incomeAdjustment
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      assessment:
+        damageDescription: "Roof collapsed in multiple areas, extensive water damage"
+        damageLevel: major
+        propertyType: residential
+      household:
+        dependents:
+          "$serde_json::private::Number": "2"
+        size:
+          "$serde_json::private::Number": "4"
+        specialNeeds: false
+      income:
+        annualAmount:
+          "$serde_json::private::Number": "32000"
+        level: low
+        primarySource: employment
+      insurance:
+        deductible:
+          "$serde_json::private::Number": "5000"
+        provider: StateInsurance
+        status: partial
+      relief:
+        baseAmount:
+          "$serde_json::private::Number": "7500"
+        incomeAdjustedAmount:
+          "$serde_json::private::Number": "9000"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        income.level: low
+      rule:
+        _id: r3-1
+        "income.level[i3-1]": "'low'"
+  ex1:
+    id: ex1
+    input:
+      assessment:
+        damageDescription: "Roof collapsed in multiple areas, extensive water damage"
+        damageLevel: major
+        propertyType: residential
+      household:
+        dependents:
+          "$serde_json::private::Number": "2"
+        size:
+          "$serde_json::private::Number": "4"
+        specialNeeds: false
+      income:
+        annualAmount:
+          "$serde_json::private::Number": "32000"
+        level: low
+        primarySource: employment
+      insurance:
+        deductible:
+          "$serde_json::private::Number": "5000"
+        provider: StateInsurance
+        status: partial
+      relief:
+        baseAmount:
+          "$serde_json::private::Number": "7500"
+        incomeAdjustedAmount:
+          "$serde_json::private::Number": "9000"
+    name: householdSizeAdjustment
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      assessment:
+        damageDescription: "Roof collapsed in multiple areas, extensive water damage"
+        damageLevel: major
+        propertyType: residential
+      household:
+        dependents:
+          "$serde_json::private::Number": "2"
+        size:
+          "$serde_json::private::Number": "4"
+        specialNeeds: false
+      householdMultiplier:
+        "$serde_json::private::Number": "1.6"
+      income:
+        annualAmount:
+          "$serde_json::private::Number": "32000"
+        level: low
+        primarySource: employment
+      initialAllocation:
+        "$serde_json::private::Number": "14400"
+      insurance:
+        deductible:
+          "$serde_json::private::Number": "5000"
+        provider: StateInsurance
+        status: partial
+      relief:
+        baseAmount:
+          "$serde_json::private::Number": "7500"
+        incomeAdjustedAmount:
+          "$serde_json::private::Number": "9000"
+    performance: "[perf]"
+    traceData:
+      householdMultiplier:
+        result:
+          "$serde_json::private::Number": "1.6"
+      initialAllocation:
+        result:
+          "$serde_json::private::Number": "14400"
+  ip1:
+    id: ip1
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      assessment:
+        damageDescription: "Roof collapsed in multiple areas, extensive water damage"
+        damageLevel: major
+        propertyType: residential
+      household:
+        dependents:
+          "$serde_json::private::Number": "2"
+        size:
+          "$serde_json::private::Number": "4"
+        specialNeeds: false
+      income:
+        annualAmount:
+          "$serde_json::private::Number": "32000"
+        level: low
+        primarySource: employment
+      insurance:
+        deductible:
+          "$serde_json::private::Number": "5000"
+        provider: StateInsurance
+        status: partial
+    performance: "[perf]"
+    traceData: ~

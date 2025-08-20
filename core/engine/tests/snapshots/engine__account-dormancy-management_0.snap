@@ -1,0 +1,221 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  actionPriority: high
+  recommendedAction: fee_waiver
+trace:
+  dt1:
+    id: dt1
+    input:
+      accountBalance:
+        "$serde_json::private::Number": "25750.45"
+      accountId: ACC98765432
+      accountType: savings
+      contactPreference: email
+      currency: USD
+      customerEmail: customer@example.com
+      customerPhone: "+15551234567"
+      customerTier: premium
+      daysSinceLastActivity:
+        "$serde_json::private::Number": "23993702"
+      daysToThreshold:
+        "$serde_json::private::Number": "-23993522"
+      dormancyThreshold:
+        "$serde_json::private::Number": "180"
+      lastActivityDate: 2024-11-15
+      region: NORTH_AMERICA
+      regulatoryJurisdiction: US-NY
+    name: dormancy_status
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      accountBalance:
+        "$serde_json::private::Number": "25750.45"
+      accountId: ACC98765432
+      accountType: savings
+      contactPreference: email
+      currency: USD
+      customerEmail: customer@example.com
+      customerPhone: "+15551234567"
+      customerTier: premium
+      daysSinceLastActivity:
+        "$serde_json::private::Number": "23993702"
+      daysToThreshold:
+        "$serde_json::private::Number": "-23993522"
+      dormancyStatus: dormant
+      dormancyThreshold:
+        "$serde_json::private::Number": "180"
+      lastActivityDate: 2024-11-15
+      region: NORTH_AMERICA
+      regulatoryJurisdiction: US-NY
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        daysToThreshold:
+          "$serde_json::private::Number": "-23993522"
+      rule:
+        _id: r1-1
+        "daysToThreshold[i1-1]": "< 0"
+  dt2:
+    id: dt2
+    input:
+      accountBalance:
+        "$serde_json::private::Number": "25750.45"
+      accountId: ACC98765432
+      accountType: savings
+      contactPreference: email
+      currency: USD
+      customerEmail: customer@example.com
+      customerPhone: "+15551234567"
+      customerTier: premium
+      daysSinceLastActivity:
+        "$serde_json::private::Number": "23993702"
+      daysToThreshold:
+        "$serde_json::private::Number": "-23993522"
+      dormancyStatus: dormant
+      dormancyThreshold:
+        "$serde_json::private::Number": "180"
+      lastActivityDate: 2024-11-15
+      region: NORTH_AMERICA
+      regulatoryJurisdiction: US-NY
+    name: determine_action
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      actionPriority: high
+      recommendedAction: fee_waiver
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        customerTier: premium
+        dormancyStatus: dormant
+      rule:
+        _id: r2-1
+        "customerTier[i2-2]": "'premium'"
+        "dormancyStatus[i2-1]": "'dormant'"
+  ex1:
+    id: ex1
+    input:
+      accountBalance:
+        "$serde_json::private::Number": "25750.45"
+      accountId: ACC98765432
+      accountType: savings
+      contactPreference: email
+      currency: USD
+      customerEmail: customer@example.com
+      customerPhone: "+15551234567"
+      customerTier: premium
+      dormancyThreshold:
+        "$serde_json::private::Number": "180"
+      lastActivityDate: 2024-11-15
+      region: NORTH_AMERICA
+      regulatoryJurisdiction: US-NY
+    name: calculate_dormancy
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      accountBalance:
+        "$serde_json::private::Number": "25750.45"
+      accountId: ACC98765432
+      accountType: savings
+      contactPreference: email
+      currency: USD
+      customerEmail: customer@example.com
+      customerPhone: "+15551234567"
+      customerTier: premium
+      daysSinceLastActivity:
+        "$serde_json::private::Number": "23993702"
+      daysToThreshold:
+        "$serde_json::private::Number": "-23993522"
+      dormancyThreshold:
+        "$serde_json::private::Number": "180"
+      lastActivityDate: 2024-11-15
+      region: NORTH_AMERICA
+      regulatoryJurisdiction: US-NY
+    performance: "[perf]"
+    traceData:
+      daysSinceLastActivity:
+        result:
+          "$serde_json::private::Number": "23993702"
+      daysToThreshold:
+        result:
+          "$serde_json::private::Number": "-23993522"
+  ip1:
+    id: ip1
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      accountBalance:
+        "$serde_json::private::Number": "25750.45"
+      accountId: ACC98765432
+      accountType: savings
+      contactPreference: email
+      currency: USD
+      customerEmail: customer@example.com
+      customerPhone: "+15551234567"
+      customerTier: premium
+      dormancyThreshold:
+        "$serde_json::private::Number": "180"
+      lastActivityDate: 2024-11-15
+      region: NORTH_AMERICA
+      regulatoryJurisdiction: US-NY
+    performance: "[perf]"
+    traceData: ~
+  sw1:
+    id: sw1
+    input:
+      accountBalance:
+        "$serde_json::private::Number": "25750.45"
+      accountId: ACC98765432
+      accountType: savings
+      contactPreference: email
+      currency: USD
+      customerEmail: customer@example.com
+      customerPhone: "+15551234567"
+      customerTier: premium
+      daysSinceLastActivity:
+        "$serde_json::private::Number": "23993702"
+      daysToThreshold:
+        "$serde_json::private::Number": "-23993522"
+      dormancyStatus: dormant
+      dormancyThreshold:
+        "$serde_json::private::Number": "180"
+      lastActivityDate: 2024-11-15
+      region: NORTH_AMERICA
+      regulatoryJurisdiction: US-NY
+    name: route_by_status
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      accountBalance:
+        "$serde_json::private::Number": "25750.45"
+      accountId: ACC98765432
+      accountType: savings
+      contactPreference: email
+      currency: USD
+      customerEmail: customer@example.com
+      customerPhone: "+15551234567"
+      customerTier: premium
+      daysSinceLastActivity:
+        "$serde_json::private::Number": "23993702"
+      daysToThreshold:
+        "$serde_json::private::Number": "-23993522"
+      dormancyStatus: dormant
+      dormancyThreshold:
+        "$serde_json::private::Number": "180"
+      lastActivityDate: 2024-11-15
+      region: NORTH_AMERICA
+      regulatoryJurisdiction: US-NY
+    performance: "[perf]"
+    traceData:
+      statements:
+        - id: s1-1

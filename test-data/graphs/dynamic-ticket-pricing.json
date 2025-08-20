@@ -1,0 +1,325 @@
+{
+  "tests": [
+    {
+      "input": {
+        "flightId": "FL-123",
+        "routeId": "JFK-LAX",
+        "daysToDepature": 1,
+        "basePrice": 250,
+        "availableSeats": 5,
+        "totalSeats": 180,
+        "demandForecast": 95,
+        "avgCompetitorPrice": 25
+      },
+      "output": {
+        "finalPrice": 536.25,
+        "priceStrategy": "premium"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "ip1",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 292.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1-1",
+            "i1-1": "< 3",
+            "o1-1": "1.5",
+            "o1-2": "'high'"
+          },
+          {
+            "_id": "r1-2",
+            "i1-1": ">= 3 and <= 7",
+            "o1-1": "1.2",
+            "o1-2": "'medium'"
+          },
+          {
+            "_id": "r1-3",
+            "i1-1": "> 7 and <= 14",
+            "o1-1": "1.1",
+            "o1-2": "'low'"
+          },
+          {
+            "_id": "r1-4",
+            "i1-1": "> 14",
+            "o1-1": "1.0",
+            "o1-2": "'baseline'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Days To Departure",
+            "field": "daysToDepature"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Urgency Multiplier",
+            "field": "urgencyMultiplier"
+          },
+          {
+            "id": "o1-2",
+            "name": "Urgency Level",
+            "field": "urgencyLevel"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt1",
+      "name": "time_urgency",
+      "position": {
+        "x": 430,
+        "y": 292.5
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1-1",
+            "key": "availabilityRatio",
+            "value": "availableSeats / totalSeats"
+          },
+          {
+            "id": "e1-2",
+            "key": "demandIndex",
+            "value": "demandForecast / 100"
+          },
+          {
+            "id": "e1-3",
+            "key": "competitiveIndex",
+            "value": "avgCompetitorPrice / basePrice"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex1",
+      "name": "calculate_factors",
+      "position": {
+        "x": 750,
+        "y": 292.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r2-1",
+            "i2-1": "< 0.2",
+            "i2-2": "> 0.8",
+            "o2-1": "1.3",
+            "o2-2": "'very_high'"
+          },
+          {
+            "_id": "r2-2",
+            "i2-1": ">= 0.2 and < 0.4",
+            "i2-2": "> 0.7",
+            "o2-1": "1.2",
+            "o2-2": "'high'"
+          },
+          {
+            "_id": "r2-3",
+            "i2-1": ">= 0.4 and < 0.6",
+            "i2-2": ">= 0.5",
+            "o2-1": "1.1",
+            "o2-2": "'medium'"
+          },
+          {
+            "_id": "r2-4",
+            "i2-1": ">= 0.6 and < 0.8",
+            "i2-2": "",
+            "o2-1": "0.95",
+            "o2-2": "'low'"
+          },
+          {
+            "_id": "r2-5",
+            "i2-1": "",
+            "i2-2": "",
+            "o2-1": "0.9",
+            "o2-2": "'very_low'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i2-1",
+            "name": "Availability Ratio",
+            "field": "availabilityRatio"
+          },
+          {
+            "id": "i2-2",
+            "name": "Demand Index",
+            "field": "demandIndex"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2-1",
+            "name": "Inventory Multiplier",
+            "field": "inventoryMultiplier"
+          },
+          {
+            "id": "o2-2",
+            "name": "Demand Level",
+            "field": "demandLevel"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt2",
+      "name": "inventory_demand",
+      "position": {
+        "x": 1070,
+        "y": 292.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r3-1",
+            "i3-1": "'high'",
+            "i3-2": "'very_high'",
+            "i3-3": "< 0.9",
+            "o3-1": "basePrice * urgencyMultiplier * inventoryMultiplier * 1.1",
+            "o3-2": "'premium'"
+          },
+          {
+            "_id": "r3-2",
+            "i3-1": "'high','medium'",
+            "i3-2": "'high'",
+            "i3-3": "< 1.1",
+            "o3-1": "basePrice * urgencyMultiplier * inventoryMultiplier * 1.05",
+            "o3-2": "'competitive_high'"
+          },
+          {
+            "_id": "r3-3",
+            "i3-1": "'medium','low'",
+            "i3-2": "'medium'",
+            "i3-3": "<= 1.2 and >= 0.8",
+            "o3-1": "basePrice * urgencyMultiplier * inventoryMultiplier",
+            "o3-2": "'match_market'"
+          },
+          {
+            "_id": "r3-4",
+            "i3-1": "'low','baseline'",
+            "i3-2": "'low'",
+            "i3-3": "> 1.2",
+            "o3-1": "basePrice * urgencyMultiplier * inventoryMultiplier * 0.95",
+            "o3-2": "'competitive_low'"
+          },
+          {
+            "_id": "r3-5",
+            "i3-1": "'baseline'",
+            "i3-2": "'very_low'",
+            "i3-3": "> 1.3",
+            "o3-1": "basePrice * urgencyMultiplier * inventoryMultiplier * 0.9",
+            "o3-2": "'discount'"
+          },
+          {
+            "_id": "r3-6",
+            "i3-1": "",
+            "i3-2": "",
+            "i3-3": "",
+            "o3-1": "basePrice * urgencyMultiplier * inventoryMultiplier",
+            "o3-2": "'match_market'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i3-1",
+            "name": "Urgency Level",
+            "field": "urgencyLevel"
+          },
+          {
+            "id": "i3-2",
+            "name": "Demand Level",
+            "field": "demandLevel"
+          },
+          {
+            "id": "i3-3",
+            "name": "Competitive Index",
+            "field": "competitiveIndex"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o3-1",
+            "name": "Final Price",
+            "field": "finalPrice"
+          },
+          {
+            "id": "o3-2",
+            "name": "Price Strategy",
+            "field": "priceStrategy"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt3",
+      "name": "final_pricing",
+      "position": {
+        "x": 1390,
+        "y": 292.5
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "ed1",
+      "sourceId": "ip1",
+      "targetId": "dt1",
+      "type": "edge"
+    },
+    {
+      "id": "ed2",
+      "sourceId": "dt1",
+      "targetId": "ex1",
+      "type": "edge"
+    },
+    {
+      "id": "ed3",
+      "sourceId": "ex1",
+      "targetId": "dt2",
+      "type": "edge"
+    },
+    {
+      "id": "ed4",
+      "sourceId": "dt2",
+      "targetId": "dt3",
+      "type": "edge"
+    }
+  ]
+}

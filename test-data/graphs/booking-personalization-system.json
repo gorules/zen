@@ -1,0 +1,553 @@
+{
+  "tests": [
+    {
+      "input": {
+        "flightId": "FL-123",
+        "routeId": "JFK-LAX",
+        "daysToDepature": 5,
+        "basePrice": 250,
+        "availableSeats": 35,
+        "totalSeats": 180,
+        "demandForecast": 75,
+        "avgCompetitorPrice": 275
+      },
+      "output": {
+        "allFeatures": [
+          "standardSearch",
+          "standardNavigation",
+          "joinLoyaltyBanner",
+          "standardOptions"
+        ],
+        "bookingFlowTemplate": "basic",
+        "totalDiscountPercentage": 0
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "input",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "dt-rule1",
+            "deviceType": "'mobile'",
+            "uiElements": "['compactSearch', 'simplifiedNavigation', 'touchFriendlyControls']",
+            "layoutConfig": "{ 'type': 'compact', 'imageSize': 'small', 'showExtras': false }"
+          },
+          {
+            "_id": "dt-rule2",
+            "deviceType": "'tablet'",
+            "uiElements": "['touchFriendlyControls', 'mediumSearch', 'fullNavigation']",
+            "layoutConfig": "{ 'type': 'medium', 'imageSize': 'medium', 'showExtras': true }"
+          },
+          {
+            "_id": "dt-rule3",
+            "deviceType": "'desktop'",
+            "uiElements": "['expandedSearch', 'fullNavigation', 'detailedFilters']",
+            "layoutConfig": "{ 'type': 'full', 'imageSize': 'large', 'showExtras': true }"
+          },
+          {
+            "_id": "dt-rule4",
+            "deviceType": "",
+            "uiElements": "['standardSearch', 'standardNavigation']",
+            "layoutConfig": "{ 'type': 'standard', 'imageSize': 'medium', 'showExtras': true }"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "deviceType",
+            "name": "Device Type",
+            "field": "customer.deviceType"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "uiElements",
+            "name": "UI Elements",
+            "field": "personalization.uiElements"
+          },
+          {
+            "id": "layoutConfig",
+            "name": "Layout Configuration",
+            "field": "personalization.layoutConfig"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "deviceTypeTable",
+      "name": "Device Type Personalization",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "ls-rule1",
+            "loyaltyStatus": "'platinum'",
+            "priority": "1",
+            "showFeatures": "['priorityBooking', 'exclusiveDeals', 'conciergeService', 'upgradeOffers']",
+            "discountPercentage": "15"
+          },
+          {
+            "_id": "ls-rule2",
+            "loyaltyStatus": "'gold'",
+            "priority": "2",
+            "showFeatures": "['priorityBooking', 'memberDeals', 'upgradeOffers']",
+            "discountPercentage": "10"
+          },
+          {
+            "_id": "ls-rule3",
+            "loyaltyStatus": "'silver'",
+            "priority": "3",
+            "showFeatures": "['memberDeals', 'basicUpgrades']",
+            "discountPercentage": "5"
+          },
+          {
+            "_id": "ls-rule4",
+            "loyaltyStatus": "'none'",
+            "priority": "4",
+            "showFeatures": "['joinLoyaltyBanner', 'standardOptions']",
+            "discountPercentage": "0"
+          },
+          {
+            "_id": "ls-rule5",
+            "loyaltyStatus": "",
+            "priority": "4",
+            "showFeatures": "['joinLoyaltyBanner', 'standardOptions']",
+            "discountPercentage": "0"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "loyaltyStatus",
+            "name": "Loyalty Status",
+            "field": "customer.loyaltyStatus"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "priority",
+            "name": "Customer Priority",
+            "field": "personalization.customerPriority"
+          },
+          {
+            "id": "showFeatures",
+            "name": "Features to Show",
+            "field": "personalization.loyaltyFeatures"
+          },
+          {
+            "id": "discountPercentage",
+            "name": "Discount Percentage",
+            "field": "personalization.baseDiscountPercentage"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "loyaltyStatusTable",
+      "name": "Loyalty Status Personalization",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "vs-rule1",
+            "visitSource": "'email_campaign'",
+            "showSpecialOffers": "true",
+            "specialOffersType": "'emailPromotions'",
+            "addDiscount": "2"
+          },
+          {
+            "_id": "vs-rule2",
+            "visitSource": "'search_engine'",
+            "showSpecialOffers": "true",
+            "specialOffersType": "'searchSpecials'",
+            "addDiscount": "0"
+          },
+          {
+            "_id": "vs-rule3",
+            "visitSource": "'social_media'",
+            "showSpecialOffers": "true",
+            "specialOffersType": "'socialMediaDeals'",
+            "addDiscount": "3"
+          },
+          {
+            "_id": "vs-rule4",
+            "visitSource": "'partner_site'",
+            "showSpecialOffers": "true",
+            "specialOffersType": "'partnerOffers'",
+            "addDiscount": "5"
+          },
+          {
+            "_id": "vs-rule5",
+            "visitSource": "'direct'",
+            "showSpecialOffers": "false",
+            "specialOffersType": "'none'",
+            "addDiscount": "0"
+          },
+          {
+            "_id": "vs-rule6",
+            "visitSource": "",
+            "showSpecialOffers": "false",
+            "specialOffersType": "'standardOffers'",
+            "addDiscount": "0"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "visitSource",
+            "name": "Visit Source",
+            "field": "customer.visitSource"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "showSpecialOffers",
+            "name": "Show Special Offers",
+            "field": "personalization.showSpecialOffers"
+          },
+          {
+            "id": "specialOffersType",
+            "name": "Special Offers Type",
+            "field": "personalization.specialOffersType"
+          },
+          {
+            "id": "addDiscount",
+            "name": "Additional Discount",
+            "field": "personalization.additionalDiscountPercentage"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "visitSourceTable",
+      "name": "Visit Source Personalization",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "bh-rule1",
+            "totalBookings": "> 10",
+            "recentBookings": "> 2",
+            "recommendationType": "'frequentTraveler'",
+            "showRecentlyViewed": "true",
+            "addDiscount": "3"
+          },
+          {
+            "_id": "bh-rule2",
+            "totalBookings": "> 5",
+            "recentBookings": "> 1",
+            "recommendationType": "'regularCustomer'",
+            "showRecentlyViewed": "true",
+            "addDiscount": "2"
+          },
+          {
+            "_id": "bh-rule3",
+            "totalBookings": "> 0",
+            "recentBookings": "== 0",
+            "recommendationType": "'returningCustomer'",
+            "showRecentlyViewed": "false",
+            "addDiscount": "1"
+          },
+          {
+            "_id": "bh-rule4",
+            "totalBookings": "== 0",
+            "recentBookings": "== 0",
+            "recommendationType": "'newCustomer'",
+            "showRecentlyViewed": "false",
+            "addDiscount": "0"
+          },
+          {
+            "_id": "bh-rule5",
+            "totalBookings": "",
+            "recentBookings": "",
+            "recommendationType": "'standard'",
+            "showRecentlyViewed": "false",
+            "addDiscount": "0"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "totalBookings",
+            "name": "Total Bookings",
+            "field": "customer.bookingHistory.totalBookings"
+          },
+          {
+            "id": "recentBookings",
+            "name": "Recent Bookings (Last 90 Days)",
+            "field": "customer.bookingHistory.recentBookings"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "recommendationType",
+            "name": "Recommendation Type",
+            "field": "personalization.recommendationType"
+          },
+          {
+            "id": "showRecentlyViewed",
+            "name": "Show Recently Viewed",
+            "field": "personalization.showRecentlyViewed"
+          },
+          {
+            "id": "addDiscount",
+            "name": "History Discount",
+            "field": "personalization.historyDiscountPercentage"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "bookingHistoryTable",
+      "name": "Booking History Personalization",
+      "position": {
+        "x": 1390,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "ps-rule1",
+            "totalBookingsCheck": "> 0",
+            "loyaltyPriority": "1",
+            "visitSourceCheck": "'social_media', 'partner_site'",
+            "personalizationScore": "65"
+          },
+          {
+            "_id": "ps-rule2",
+            "totalBookingsCheck": "> 0",
+            "loyaltyPriority": "1",
+            "visitSourceCheck": "",
+            "personalizationScore": "50"
+          },
+          {
+            "_id": "ps-rule3",
+            "totalBookingsCheck": "> 0",
+            "loyaltyPriority": "2",
+            "visitSourceCheck": "'social_media', 'partner_site'",
+            "personalizationScore": "55"
+          },
+          {
+            "_id": "ps-rule4",
+            "totalBookingsCheck": "> 0",
+            "loyaltyPriority": "2",
+            "visitSourceCheck": "",
+            "personalizationScore": "40"
+          },
+          {
+            "_id": "ps-rule5",
+            "totalBookingsCheck": "> 0",
+            "loyaltyPriority": "3",
+            "visitSourceCheck": "'social_media', 'partner_site'",
+            "personalizationScore": "45"
+          },
+          {
+            "_id": "ps-rule6",
+            "totalBookingsCheck": "> 0",
+            "loyaltyPriority": "3",
+            "visitSourceCheck": "",
+            "personalizationScore": "30"
+          },
+          {
+            "_id": "ps-rule7",
+            "totalBookingsCheck": "> 0",
+            "loyaltyPriority": "",
+            "visitSourceCheck": "'social_media', 'partner_site'",
+            "personalizationScore": "35"
+          },
+          {
+            "_id": "ps-rule8",
+            "totalBookingsCheck": "> 0",
+            "loyaltyPriority": "",
+            "visitSourceCheck": "",
+            "personalizationScore": "20"
+          },
+          {
+            "_id": "ps-rule9",
+            "totalBookingsCheck": "0",
+            "loyaltyPriority": "1",
+            "visitSourceCheck": "",
+            "personalizationScore": "30"
+          },
+          {
+            "_id": "ps-rule10",
+            "totalBookingsCheck": "0",
+            "loyaltyPriority": "2",
+            "visitSourceCheck": "",
+            "personalizationScore": "20"
+          },
+          {
+            "_id": "ps-rule11",
+            "totalBookingsCheck": "0",
+            "loyaltyPriority": "3",
+            "visitSourceCheck": "",
+            "personalizationScore": "10"
+          },
+          {
+            "_id": "ps-rule12",
+            "totalBookingsCheck": "0",
+            "loyaltyPriority": "",
+            "visitSourceCheck": "'social_media', 'partner_site'",
+            "personalizationScore": "15"
+          },
+          {
+            "_id": "ps-rule13",
+            "totalBookingsCheck": "",
+            "loyaltyPriority": "",
+            "visitSourceCheck": "",
+            "personalizationScore": "5"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "totalBookingsCheck",
+            "name": "Has Previous Bookings",
+            "field": "customer.bookingHistory.totalBookings"
+          },
+          {
+            "id": "loyaltyPriority",
+            "name": "Loyalty Priority",
+            "field": "personalization.customerPriority"
+          },
+          {
+            "id": "visitSourceCheck",
+            "name": "Visit Source",
+            "field": "customer.visitSource"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "personalizationScore",
+            "name": "Personalization Score",
+            "field": "personalization.personalizationScore"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "personalizationScoreTable",
+      "name": "Calculate Personalization Score",
+      "position": {
+        "x": 1710,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "expr1",
+            "key": "totalDiscountPercentage",
+            "value": "number(personalization.baseDiscountPercentage) + number(personalization.additionalDiscountPercentage) + number(personalization.historyDiscountPercentage)"
+          },
+          {
+            "id": "expr2",
+            "key": "bookingFlowTemplate",
+            "value": "personalization.personalizationScore > 50 ? 'premium' : personalization.personalizationScore > 30 ? 'enhanced' : personalization.personalizationScore > 10 ? 'standard' : 'basic'"
+          },
+          {
+            "id": "expr3",
+            "key": "allFeatures",
+            "value": "flatten([personalization.uiElements, personalization.loyaltyFeatures])"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "finalPersonalization",
+      "name": "Calculate Final Personalization",
+      "position": {
+        "x": 2030,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "input",
+      "targetId": "deviceTypeTable",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "deviceTypeTable",
+      "targetId": "loyaltyStatusTable",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "loyaltyStatusTable",
+      "targetId": "visitSourceTable",
+      "type": "edge"
+    },
+    {
+      "id": "edge4",
+      "sourceId": "visitSourceTable",
+      "targetId": "bookingHistoryTable",
+      "type": "edge"
+    },
+    {
+      "id": "edge5",
+      "sourceId": "bookingHistoryTable",
+      "targetId": "personalizationScoreTable",
+      "type": "edge"
+    },
+    {
+      "id": "edge6",
+      "sourceId": "personalizationScoreTable",
+      "targetId": "finalPersonalization",
+      "type": "edge"
+    }
+  ]
+}

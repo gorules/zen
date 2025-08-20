@@ -1,0 +1,143 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  applicant:
+    age:
+      "$serde_json::private::Number": "35"
+    annualIncome:
+      "$serde_json::private::Number": "28000"
+    householdSize:
+      "$serde_json::private::Number": "3"
+    specialCircumstances:
+      hasDisability: true
+      isCaregiver: false
+      isVeteran: false
+  eligibility:
+    assignedProgram: full-assistance-enhanced
+    baseEligible: true
+    eligible: true
+    programType: full-assistance
+trace:
+  incomeEligibility:
+    id: incomeEligibility
+    input:
+      applicant:
+        age:
+          "$serde_json::private::Number": "35"
+        annualIncome:
+          "$serde_json::private::Number": "28000"
+        householdSize:
+          "$serde_json::private::Number": "3"
+        specialCircumstances:
+          hasDisability: true
+          isCaregiver: false
+          isVeteran: false
+    name: Income Eligibility
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      applicant:
+        age:
+          "$serde_json::private::Number": "35"
+        annualIncome:
+          "$serde_json::private::Number": "28000"
+        householdSize:
+          "$serde_json::private::Number": "3"
+        specialCircumstances:
+          hasDisability: true
+          isCaregiver: false
+          isVeteran: false
+      eligibility:
+        baseEligible: true
+        programType: full-assistance
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        applicant.age:
+          "$serde_json::private::Number": "35"
+        applicant.annualIncome:
+          "$serde_json::private::Number": "28000"
+        applicant.householdSize:
+          "$serde_json::private::Number": "3"
+      rule:
+        _id: rule2
+        "applicant.age[age]": ">= 18"
+        "applicant.annualIncome[income]": "<= 30000"
+        "applicant.householdSize[householdSize]": "> 2 and <= 4"
+  input:
+    id: input
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      applicant:
+        age:
+          "$serde_json::private::Number": "35"
+        annualIncome:
+          "$serde_json::private::Number": "28000"
+        householdSize:
+          "$serde_json::private::Number": "3"
+        specialCircumstances:
+          hasDisability: true
+          isCaregiver: false
+          isVeteran: false
+    performance: "[perf]"
+    traceData: ~
+  specialCircumstances:
+    id: specialCircumstances
+    input:
+      applicant:
+        age:
+          "$serde_json::private::Number": "35"
+        annualIncome:
+          "$serde_json::private::Number": "28000"
+        householdSize:
+          "$serde_json::private::Number": "3"
+        specialCircumstances:
+          hasDisability: true
+          isCaregiver: false
+          isVeteran: false
+      eligibility:
+        baseEligible: true
+        programType: full-assistance
+    name: Special Circumstances
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      applicant:
+        age:
+          "$serde_json::private::Number": "35"
+        annualIncome:
+          "$serde_json::private::Number": "28000"
+        householdSize:
+          "$serde_json::private::Number": "3"
+        specialCircumstances:
+          hasDisability: true
+          isCaregiver: false
+          isVeteran: false
+      eligibility:
+        assignedProgram: full-assistance-enhanced
+        baseEligible: true
+        eligible: true
+        programType: full-assistance
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "3"
+      reference_map:
+        applicant.specialCircumstances.hasDisability: true
+        applicant.specialCircumstances.isCaregiver: false
+        applicant.specialCircumstances.isVeteran: false
+        eligibility.baseEligible: true
+      rule:
+        _id: special4
+        "applicant.specialCircumstances.hasDisability[hasDisability]": "true"
+        "applicant.specialCircumstances.isCaregiver[isCaregiver]": ""
+        "applicant.specialCircumstances.isVeteran[isVeteran]": ""
+        "eligibility.baseEligible[baseEligibility]": "true"

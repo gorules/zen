@@ -1,0 +1,310 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  modificationFee:
+    allowed: true
+    description: Standard modification fee
+    finalFee:
+      "$serde_json::private::Number": "188"
+trace:
+  dt1:
+    id: dt1
+    input:
+      bookingId: BK-12345678
+      changeFrequency:
+        "$serde_json::private::Number": "2"
+      daysToDeparture:
+        "$serde_json::private::Number": "12"
+      fareClass: Economy
+      loyaltyTier: Silver
+      newDepartureDate: "2025-05-20T14:15:00Z"
+      originalDepartureDate: "2025-05-15T10:30:00Z"
+      passengerDetails:
+        firstName: Jane
+        lastName: Smith
+        loyaltyNumber: LM789012
+        loyaltyTier: Silver
+    name: baseFeeCalculation
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      bookingId: BK-12345678
+      changeFrequency:
+        "$serde_json::private::Number": "2"
+      daysToDeparture:
+        "$serde_json::private::Number": "12"
+      fareClass: Economy
+      loyaltyTier: Silver
+      modificationFee:
+        baseFee:
+          "$serde_json::private::Number": "200"
+        baseFeeReason: High fee for Economy with 3-14 days to departure
+      newDepartureDate: "2025-05-20T14:15:00Z"
+      originalDepartureDate: "2025-05-15T10:30:00Z"
+      passengerDetails:
+        firstName: Jane
+        lastName: Smith
+        loyaltyNumber: LM789012
+        loyaltyTier: Silver
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "7"
+      reference_map:
+        daysToDeparture:
+          "$serde_json::private::Number": "12"
+        fareClass: Economy
+      rule:
+        _id: r1-8
+        "daysToDeparture[i1-2]": "> 3 and <= 14"
+        "fareClass[i1-1]": "'Economy'"
+  dt2:
+    id: dt2
+    input:
+      bookingId: BK-12345678
+      changeFrequency:
+        "$serde_json::private::Number": "2"
+      daysToDeparture:
+        "$serde_json::private::Number": "12"
+      fareClass: Economy
+      loyaltyTier: Silver
+      modificationFee:
+        baseFee:
+          "$serde_json::private::Number": "200"
+        baseFeeReason: High fee for Economy with 3-14 days to departure
+      newDepartureDate: "2025-05-20T14:15:00Z"
+      originalDepartureDate: "2025-05-15T10:30:00Z"
+      passengerDetails:
+        firstName: Jane
+        lastName: Smith
+        loyaltyNumber: LM789012
+        loyaltyTier: Silver
+    name: frequencyMultiplier
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      bookingId: BK-12345678
+      changeFrequency:
+        "$serde_json::private::Number": "2"
+      daysToDeparture:
+        "$serde_json::private::Number": "12"
+      fareClass: Economy
+      loyaltyTier: Silver
+      modificationFee:
+        baseFee:
+          "$serde_json::private::Number": "200"
+        baseFeeReason: High fee for Economy with 3-14 days to departure
+        frequencyMultiplier:
+          "$serde_json::private::Number": "1.25"
+        frequencyReason: 25% surcharge for 2-3 changes
+      newDepartureDate: "2025-05-20T14:15:00Z"
+      originalDepartureDate: "2025-05-15T10:30:00Z"
+      passengerDetails:
+        firstName: Jane
+        lastName: Smith
+        loyaltyNumber: LM789012
+        loyaltyTier: Silver
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        changeFrequency:
+          "$serde_json::private::Number": "2"
+      rule:
+        _id: r2-2
+        "changeFrequency[i2-1]": "> 1 and <= 3"
+  dt3:
+    id: dt3
+    input:
+      bookingId: BK-12345678
+      changeFrequency:
+        "$serde_json::private::Number": "2"
+      daysToDeparture:
+        "$serde_json::private::Number": "12"
+      fareClass: Economy
+      loyaltyTier: Silver
+      modificationFee:
+        baseFee:
+          "$serde_json::private::Number": "200"
+        baseFeeReason: High fee for Economy with 3-14 days to departure
+        frequencyMultiplier:
+          "$serde_json::private::Number": "1.25"
+        frequencyReason: 25% surcharge for 2-3 changes
+      newDepartureDate: "2025-05-20T14:15:00Z"
+      originalDepartureDate: "2025-05-15T10:30:00Z"
+      passengerDetails:
+        firstName: Jane
+        lastName: Smith
+        loyaltyNumber: LM789012
+        loyaltyTier: Silver
+    name: loyaltyFactor
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      bookingId: BK-12345678
+      changeFrequency:
+        "$serde_json::private::Number": "2"
+      daysToDeparture:
+        "$serde_json::private::Number": "12"
+      fareClass: Economy
+      loyaltyTier: Silver
+      modificationFee:
+        baseFee:
+          "$serde_json::private::Number": "200"
+        baseFeeReason: High fee for Economy with 3-14 days to departure
+        frequencyMultiplier:
+          "$serde_json::private::Number": "1.25"
+        frequencyReason: 25% surcharge for 2-3 changes
+        loyaltyFactor:
+          "$serde_json::private::Number": "0.75"
+        loyaltyReason: Silver members receive 25% discount
+      newDepartureDate: "2025-05-20T14:15:00Z"
+      originalDepartureDate: "2025-05-15T10:30:00Z"
+      passengerDetails:
+        firstName: Jane
+        lastName: Smith
+        loyaltyNumber: LM789012
+        loyaltyTier: Silver
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "2"
+      reference_map:
+        loyaltyTier: Silver
+      rule:
+        _id: r3-3
+        "loyaltyTier[i3-1]": "'Silver'"
+  dt4:
+    id: dt4
+    input:
+      adjustedFee:
+        "$serde_json::private::Number": "188"
+      bookingId: BK-12345678
+      changeFrequency:
+        "$serde_json::private::Number": "2"
+      daysToDeparture:
+        "$serde_json::private::Number": "12"
+      fareClass: Economy
+      loyaltyTier: Silver
+      modificationFee:
+        baseFee:
+          "$serde_json::private::Number": "200"
+        baseFeeReason: High fee for Economy with 3-14 days to departure
+        frequencyMultiplier:
+          "$serde_json::private::Number": "1.25"
+        frequencyReason: 25% surcharge for 2-3 changes
+        loyaltyFactor:
+          "$serde_json::private::Number": "0.75"
+        loyaltyReason: Silver members receive 25% discount
+      newDepartureDate: "2025-05-20T14:15:00Z"
+      originalDepartureDate: "2025-05-15T10:30:00Z"
+      passengerDetails:
+        firstName: Jane
+        lastName: Smith
+        loyaltyNumber: LM789012
+        loyaltyTier: Silver
+    name: finalFeeAssessment
+    order:
+      "$serde_json::private::Number": "5"
+    output:
+      modificationFee:
+        allowed: true
+        description: Standard modification fee
+        finalFee:
+          "$serde_json::private::Number": "188"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "4"
+      reference_map: {}
+      rule:
+        _id: r4-5
+  ex1:
+    id: ex1
+    input:
+      bookingId: BK-12345678
+      changeFrequency:
+        "$serde_json::private::Number": "2"
+      daysToDeparture:
+        "$serde_json::private::Number": "12"
+      fareClass: Economy
+      loyaltyTier: Silver
+      modificationFee:
+        baseFee:
+          "$serde_json::private::Number": "200"
+        baseFeeReason: High fee for Economy with 3-14 days to departure
+        frequencyMultiplier:
+          "$serde_json::private::Number": "1.25"
+        frequencyReason: 25% surcharge for 2-3 changes
+        loyaltyFactor:
+          "$serde_json::private::Number": "0.75"
+        loyaltyReason: Silver members receive 25% discount
+      newDepartureDate: "2025-05-20T14:15:00Z"
+      originalDepartureDate: "2025-05-15T10:30:00Z"
+      passengerDetails:
+        firstName: Jane
+        lastName: Smith
+        loyaltyNumber: LM789012
+        loyaltyTier: Silver
+    name: calculateAdjustedFee
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      adjustedFee:
+        "$serde_json::private::Number": "188"
+      bookingId: BK-12345678
+      changeFrequency:
+        "$serde_json::private::Number": "2"
+      daysToDeparture:
+        "$serde_json::private::Number": "12"
+      fareClass: Economy
+      loyaltyTier: Silver
+      modificationFee:
+        baseFee:
+          "$serde_json::private::Number": "200"
+        baseFeeReason: High fee for Economy with 3-14 days to departure
+        frequencyMultiplier:
+          "$serde_json::private::Number": "1.25"
+        frequencyReason: 25% surcharge for 2-3 changes
+        loyaltyFactor:
+          "$serde_json::private::Number": "0.75"
+        loyaltyReason: Silver members receive 25% discount
+      newDepartureDate: "2025-05-20T14:15:00Z"
+      originalDepartureDate: "2025-05-15T10:30:00Z"
+      passengerDetails:
+        firstName: Jane
+        lastName: Smith
+        loyaltyNumber: LM789012
+        loyaltyTier: Silver
+    performance: "[perf]"
+    traceData:
+      adjustedFee:
+        result:
+          "$serde_json::private::Number": "188"
+  ip1:
+    id: ip1
+    input: ~
+    name: bookingModificationRequest
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      bookingId: BK-12345678
+      changeFrequency:
+        "$serde_json::private::Number": "2"
+      daysToDeparture:
+        "$serde_json::private::Number": "12"
+      fareClass: Economy
+      loyaltyTier: Silver
+      newDepartureDate: "2025-05-20T14:15:00Z"
+      originalDepartureDate: "2025-05-15T10:30:00Z"
+      passengerDetails:
+        firstName: Jane
+        lastName: Smith
+        loyaltyNumber: LM789012
+        loyaltyTier: Silver
+    performance: "[perf]"
+    traceData: ~

@@ -1,0 +1,325 @@
+{
+  "tests": [
+    {
+      "input": {
+        "customer": {
+          "id": "CUS123456",
+          "tier": "gold",
+          "fareClass": "economy_plus",
+          "groupSize": 3,
+          "hasSpecialNeeds": false,
+          "previousFlights": 24
+        },
+        "cabin": {
+          "id": "CAB789",
+          "name": "main cabin",
+          "totalSeats": 180,
+          "occupiedSeats": 108,
+          "premiumSeats": 32,
+          "standardSeats": 138,
+          "restrictedSeats": 10
+        },
+        "flight": {
+          "flightNumber": "FL722",
+          "departureTime": "2025-04-15T08:30:00Z",
+          "arrivalTime": "2025-04-15T11:45:00Z",
+          "aircraft": "Boeing 737-800"
+        }
+      },
+      "output": {
+        "seatDisplay": {
+          "displayMessage": "Select your seats",
+          "seatMapVersion": "premium",
+          "totalAvailableSeats": 72
+        }
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "inputNode",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "expr1",
+            "key": "cabinFillPercentage",
+            "value": "(cabin.occupiedSeats / cabin.totalSeats) * 100"
+          },
+          {
+            "id": "expr2",
+            "key": "adjacentSeatsNeeded",
+            "value": "customer.groupSize > 1 ? customer.groupSize : 0"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "cabinFillCalculator",
+      "name": "calculateCabinFill",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "customerTier": "'platinum', 'gold'",
+            "fareClass": "'first', 'business'",
+            "cabinFill": "",
+            "adjacentSeats": "",
+            "showPreferred": "true",
+            "showStandard": "true",
+            "showRestricted": "true",
+            "unlockPremiumSeats": "true"
+          },
+          {
+            "_id": "rule2",
+            "customerTier": "'platinum', 'gold'",
+            "fareClass": "'economy_plus', 'economy'",
+            "cabinFill": "< 70",
+            "adjacentSeats": "",
+            "showPreferred": "true",
+            "showStandard": "true",
+            "showRestricted": "false",
+            "unlockPremiumSeats": "true"
+          },
+          {
+            "_id": "rule3",
+            "customerTier": "'silver'",
+            "fareClass": "'business'",
+            "cabinFill": "",
+            "adjacentSeats": "",
+            "showPreferred": "true",
+            "showStandard": "true",
+            "showRestricted": "false",
+            "unlockPremiumSeats": "true"
+          },
+          {
+            "_id": "rule4",
+            "customerTier": "'silver'",
+            "fareClass": "'economy_plus', 'economy'",
+            "cabinFill": "< 60",
+            "adjacentSeats": "",
+            "showPreferred": "true",
+            "showStandard": "true",
+            "showRestricted": "false",
+            "unlockPremiumSeats": "false"
+          },
+          {
+            "_id": "rule5",
+            "customerTier": "'silver'",
+            "fareClass": "'economy_plus', 'economy'",
+            "cabinFill": ">= 60",
+            "adjacentSeats": "",
+            "showPreferred": "false",
+            "showStandard": "true",
+            "showRestricted": "false",
+            "unlockPremiumSeats": "false"
+          },
+          {
+            "_id": "rule6",
+            "customerTier": "'standard'",
+            "fareClass": "'business'",
+            "cabinFill": "",
+            "adjacentSeats": "",
+            "showPreferred": "false",
+            "showStandard": "true",
+            "showRestricted": "false",
+            "unlockPremiumSeats": "false"
+          },
+          {
+            "_id": "rule7",
+            "customerTier": "'standard'",
+            "fareClass": "'economy_plus'",
+            "cabinFill": "< 50",
+            "adjacentSeats": "",
+            "showPreferred": "false",
+            "showStandard": "true",
+            "showRestricted": "false",
+            "unlockPremiumSeats": "false"
+          },
+          {
+            "_id": "rule8",
+            "customerTier": "'standard'",
+            "fareClass": "'economy_plus'",
+            "cabinFill": ">= 50",
+            "adjacentSeats": "",
+            "showPreferred": "false",
+            "showStandard": "true",
+            "showRestricted": "false",
+            "unlockPremiumSeats": "false"
+          },
+          {
+            "_id": "rule9",
+            "customerTier": "'standard'",
+            "fareClass": "'economy'",
+            "cabinFill": "",
+            "adjacentSeats": "",
+            "showPreferred": "false",
+            "showStandard": "true",
+            "showRestricted": "false",
+            "unlockPremiumSeats": "false"
+          },
+          {
+            "_id": "rule10",
+            "customerTier": "",
+            "fareClass": "",
+            "cabinFill": "",
+            "adjacentSeats": "> 2",
+            "showPreferred": "false",
+            "showStandard": "true",
+            "showRestricted": "true",
+            "unlockPremiumSeats": "false"
+          },
+          {
+            "_id": "rule11",
+            "customerTier": "",
+            "fareClass": "",
+            "cabinFill": "> 85",
+            "adjacentSeats": "",
+            "showPreferred": "false",
+            "showStandard": "true",
+            "showRestricted": "true",
+            "unlockPremiumSeats": "false"
+          },
+          {
+            "_id": "rule12",
+            "customerTier": "",
+            "fareClass": "",
+            "cabinFill": "",
+            "adjacentSeats": "",
+            "showPreferred": "false",
+            "showStandard": "true",
+            "showRestricted": "false",
+            "unlockPremiumSeats": "false"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "customerTier",
+            "name": "Customer Tier",
+            "field": "customer.tier"
+          },
+          {
+            "id": "fareClass",
+            "name": "Fare Class",
+            "field": "customer.fareClass"
+          },
+          {
+            "id": "cabinFill",
+            "name": "Cabin Fill %",
+            "field": "cabinFillPercentage"
+          },
+          {
+            "id": "adjacentSeats",
+            "name": "Adjacent Seats Needed",
+            "field": "adjacentSeatsNeeded"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "showPreferred",
+            "name": "Show Preferred Seats",
+            "field": "seatDisplay.showPreferredSeats"
+          },
+          {
+            "id": "showStandard",
+            "name": "Show Standard Seats",
+            "field": "seatDisplay.showStandardSeats"
+          },
+          {
+            "id": "showRestricted",
+            "name": "Show Restricted Seats",
+            "field": "seatDisplay.showRestrictedSeats"
+          },
+          {
+            "id": "unlockPremiumSeats",
+            "name": "Unlock Premium Seats",
+            "field": "seatDisplay.unlockPremiumSeats"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "seatMapRules",
+      "name": "determineSeatAvailability",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "expr3",
+            "key": "seatDisplay.totalAvailableSeats",
+            "value": "cabin.totalSeats - cabin.occupiedSeats"
+          },
+          {
+            "id": "expr4",
+            "key": "seatDisplay.seatMapVersion",
+            "value": "seatDisplay.unlockPremiumSeats ? 'premium' : 'standard'"
+          },
+          {
+            "id": "expr5",
+            "key": "seatDisplay.displayMessage",
+            "value": "cabinFillPercentage > 80 ? 'Limited seats available' : 'Select your seats'"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "seatAvailabilityAdjuster",
+      "name": "adjustSeatAvailability",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "ed1",
+      "sourceId": "inputNode",
+      "targetId": "cabinFillCalculator",
+      "type": "edge"
+    },
+    {
+      "id": "ed2",
+      "sourceId": "cabinFillCalculator",
+      "targetId": "seatMapRules",
+      "type": "edge"
+    },
+    {
+      "id": "ed3",
+      "sourceId": "seatMapRules",
+      "targetId": "seatAvailabilityAdjuster",
+      "type": "edge"
+    }
+  ]
+}

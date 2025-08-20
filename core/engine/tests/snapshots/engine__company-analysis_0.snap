@@ -1,0 +1,168 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  flag:
+    companyType: green
+    country: green
+    turnover: red
+  overall: red
+trace:
+  46fbad36-4bbe-44ac-833f-d30e0d37d8d7:
+    id: 46fbad36-4bbe-44ac-833f-d30e0d37d8d7
+    input:
+      companyInformation:
+        country:
+          code: US
+        experian:
+          legalStatus: LTD
+    name: Turnover
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      flag:
+        turnover: red
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "3"
+      reference_map:
+        companyInformation.country.code: US
+        companyInformation.financialDetails.turnover: ~
+      rule:
+        _id: SY7uwJEPqS
+        "companyInformation.country.code[2Zxqan3BtC]": ""
+        "companyInformation.financialDetails.turnover[6xj5CMIFv9]": ""
+  4e7e6bb9-f128-41e7-8cc5-b9d79670b96a:
+    id: 4e7e6bb9-f128-41e7-8cc5-b9d79670b96a
+    input: ~
+    name: Request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      companyInformation:
+        country:
+          code: US
+        experian:
+          legalStatus: LTD
+    performance: "[perf]"
+    traceData: ~
+  86ce04c9-b4dd-4513-ae2b-7f585ceb224a:
+    id: 86ce04c9-b4dd-4513-ae2b-7f585ceb224a
+    input:
+      amber:
+        "$serde_json::private::Number": "0"
+      critical:
+        "$serde_json::private::Number": "0"
+      green:
+        "$serde_json::private::Number": "2"
+      red:
+        "$serde_json::private::Number": "1"
+    name: Overall
+    order:
+      "$serde_json::private::Number": "5"
+    output:
+      overall: red
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        amber:
+          "$serde_json::private::Number": "0"
+        critical:
+          "$serde_json::private::Number": "0"
+        green:
+          "$serde_json::private::Number": "2"
+        red:
+          "$serde_json::private::Number": "1"
+      rule:
+        _id: UGrT2iHE61
+        "amber[QJttqyV2FB]": ""
+        "critical[KsBwLhAedP]": ""
+        "green[iFQl1CKB5S]": ""
+        "red[AczIUwvClr]": "> 0"
+  95aa8f3c-f371-4e48-beb3-0b5775d2a814:
+    id: 95aa8f3c-f371-4e48-beb3-0b5775d2a814
+    input:
+      flag:
+        companyType: green
+        country: green
+        turnover: red
+      overall: red
+    name: Response
+    order:
+      "$serde_json::private::Number": "6"
+    output: ~
+    performance: "[perf]"
+    traceData: ~
+  abaaa033-5516-440c-b211-35f1d616ad9f:
+    id: abaaa033-5516-440c-b211-35f1d616ad9f
+    input:
+      companyInformation:
+        country:
+          code: US
+        experian:
+          legalStatus: LTD
+    name: Country
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      flag:
+        country: green
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        companyInformation.country.code: US
+      rule:
+        _id: TOi2qECISd
+        "companyInformation.country.code[z87lDk-Xar]": "\"US\",\"IE\",\"GB\",\"CA\", \"MX\""
+  af6cdac4-2019-4a0f-9715-2ecfb27e0bfc:
+    id: af6cdac4-2019-4a0f-9715-2ecfb27e0bfc
+    input:
+      flag:
+        companyType: green
+        country: green
+        turnover: red
+    name: Overall Mapper
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      amber:
+        "$serde_json::private::Number": "0"
+      critical:
+        "$serde_json::private::Number": "0"
+      green:
+        "$serde_json::private::Number": "2"
+      red:
+        "$serde_json::private::Number": "1"
+    performance: "[perf]"
+    traceData:
+      log: []
+  d6925cde-b3c9-4b7f-8652-7380dacea6a4:
+    id: d6925cde-b3c9-4b7f-8652-7380dacea6a4
+    input:
+      companyInformation:
+        country:
+          code: US
+        experian:
+          legalStatus: LTD
+    name: Company Type
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      flag:
+        companyType: green
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        companyInformation.experian.legalStatus: LTD
+      rule:
+        _id: D8T0xuyYLC
+        "companyInformation.experian.legalStatus[nd30YgUKve]": "\"INC\",\"LTD\",\"LLC\""

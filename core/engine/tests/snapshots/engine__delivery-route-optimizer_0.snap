@@ -1,0 +1,225 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  distanceScore:
+    "$serde_json::private::Number": "30"
+  route:
+    capacityUtilization:
+      "$serde_json::private::Number": "0.85"
+    deliveryWindowMinutes:
+      "$serde_json::private::Number": "45"
+    distanceKm:
+      "$serde_json::private::Number": "8.5"
+    id: R1234
+    name: Downtown Loop
+    otherCondition: normal
+    trafficCongestionMinutes:
+      "$serde_json::private::Number": "12"
+  routeResult:
+    classification: recommended
+    isApproved: true
+    message: Route is recommended with good score.
+  routeScores:
+    baseScore:
+      "$serde_json::private::Number": "100"
+    priority: high
+  timeWindowScore:
+    "$serde_json::private::Number": "30"
+  totalScore:
+    "$serde_json::private::Number": "160"
+trace:
+  dt1:
+    id: dt1
+    input:
+      route:
+        capacityUtilization:
+          "$serde_json::private::Number": "0.85"
+        deliveryWindowMinutes:
+          "$serde_json::private::Number": "45"
+        distanceKm:
+          "$serde_json::private::Number": "8.5"
+        id: R1234
+        name: Downtown Loop
+        otherCondition: normal
+        trafficCongestionMinutes:
+          "$serde_json::private::Number": "12"
+    name: evaluate_base_score
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      route:
+        capacityUtilization:
+          "$serde_json::private::Number": "0.85"
+        deliveryWindowMinutes:
+          "$serde_json::private::Number": "45"
+        distanceKm:
+          "$serde_json::private::Number": "8.5"
+        id: R1234
+        name: Downtown Loop
+        otherCondition: normal
+        trafficCongestionMinutes:
+          "$serde_json::private::Number": "12"
+      routeScores:
+        baseScore:
+          "$serde_json::private::Number": "100"
+        priority: high
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        route.capacityUtilization:
+          "$serde_json::private::Number": "0.85"
+        route.otherCondition: normal
+        route.trafficCongestionMinutes:
+          "$serde_json::private::Number": "12"
+      rule:
+        _id: r1-1
+        "route.capacityUtilization[i1-1]": "> 0.8"
+        "route.otherCondition[i1-3]": ""
+        "route.trafficCongestionMinutes[i1-2]": "< 15"
+  dt2:
+    id: dt2
+    input:
+      distanceScore:
+        "$serde_json::private::Number": "30"
+      route:
+        capacityUtilization:
+          "$serde_json::private::Number": "0.85"
+        deliveryWindowMinutes:
+          "$serde_json::private::Number": "45"
+        distanceKm:
+          "$serde_json::private::Number": "8.5"
+        id: R1234
+        name: Downtown Loop
+        otherCondition: normal
+        trafficCongestionMinutes:
+          "$serde_json::private::Number": "12"
+      routeScores:
+        baseScore:
+          "$serde_json::private::Number": "100"
+        priority: high
+      timeWindowScore:
+        "$serde_json::private::Number": "30"
+      totalScore:
+        "$serde_json::private::Number": "160"
+    name: determine_route_approval
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      distanceScore:
+        "$serde_json::private::Number": "30"
+      route:
+        capacityUtilization:
+          "$serde_json::private::Number": "0.85"
+        deliveryWindowMinutes:
+          "$serde_json::private::Number": "45"
+        distanceKm:
+          "$serde_json::private::Number": "8.5"
+        id: R1234
+        name: Downtown Loop
+        otherCondition: normal
+        trafficCongestionMinutes:
+          "$serde_json::private::Number": "12"
+      routeResult:
+        classification: recommended
+        isApproved: true
+        message: Route is recommended with good score.
+      routeScores:
+        baseScore:
+          "$serde_json::private::Number": "100"
+        priority: high
+      timeWindowScore:
+        "$serde_json::private::Number": "30"
+      totalScore:
+        "$serde_json::private::Number": "160"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        totalScore:
+          "$serde_json::private::Number": "160"
+      rule:
+        _id: r2-2
+        "totalScore[i2-1]": "> 120"
+  ex1:
+    id: ex1
+    input:
+      route:
+        capacityUtilization:
+          "$serde_json::private::Number": "0.85"
+        deliveryWindowMinutes:
+          "$serde_json::private::Number": "45"
+        distanceKm:
+          "$serde_json::private::Number": "8.5"
+        id: R1234
+        name: Downtown Loop
+        otherCondition: normal
+        trafficCongestionMinutes:
+          "$serde_json::private::Number": "12"
+      routeScores:
+        baseScore:
+          "$serde_json::private::Number": "100"
+        priority: high
+    name: calculate_additional_scores
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      distanceScore:
+        "$serde_json::private::Number": "30"
+      route:
+        capacityUtilization:
+          "$serde_json::private::Number": "0.85"
+        deliveryWindowMinutes:
+          "$serde_json::private::Number": "45"
+        distanceKm:
+          "$serde_json::private::Number": "8.5"
+        id: R1234
+        name: Downtown Loop
+        otherCondition: normal
+        trafficCongestionMinutes:
+          "$serde_json::private::Number": "12"
+      routeScores:
+        baseScore:
+          "$serde_json::private::Number": "100"
+        priority: high
+      timeWindowScore:
+        "$serde_json::private::Number": "30"
+      totalScore:
+        "$serde_json::private::Number": "160"
+    performance: "[perf]"
+    traceData:
+      distanceScore:
+        result:
+          "$serde_json::private::Number": "30"
+      timeWindowScore:
+        result:
+          "$serde_json::private::Number": "30"
+      totalScore:
+        result:
+          "$serde_json::private::Number": "160"
+  ip1:
+    id: ip1
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      route:
+        capacityUtilization:
+          "$serde_json::private::Number": "0.85"
+        deliveryWindowMinutes:
+          "$serde_json::private::Number": "45"
+        distanceKm:
+          "$serde_json::private::Number": "8.5"
+        id: R1234
+        name: Downtown Loop
+        otherCondition: normal
+        trafficCongestionMinutes:
+          "$serde_json::private::Number": "12"
+    performance: "[perf]"
+    traceData: ~

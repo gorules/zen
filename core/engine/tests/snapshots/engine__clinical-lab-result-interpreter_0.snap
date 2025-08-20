@@ -1,0 +1,478 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  followUp:
+    actionRequired: Immediate provider notification required
+    timeframe: 24 hours
+  patientHistory:
+    allergies:
+      - penicillin
+    conditions:
+      - diabetes
+      - hypertension
+    medications:
+      - metformin
+      - lisinopril
+      - atorvastatin
+  riskAssessment:
+    clinicalRecommendation: Schedule follow-up within 48 hours; consider insulin adjustment
+    level: high-risk
+  testResults:
+    - condition: Hyperglycemia
+      date: 2025-03-15
+      flag: abnormal
+      recommendation: Monitor closely; adjust diabetes management if applicable
+      testType: glucose
+      value:
+        "$serde_json::private::Number": "260"
+    - condition: Hypokalemia
+      date: 2025-03-15
+      flag: critical
+      recommendation: Urgent electrolyte replacement; ECG monitoring required
+      testType: potassium
+      value:
+        "$serde_json::private::Number": "3.2"
+    - date: 2025-03-15
+      testType: hemoglobin
+      value:
+        "$serde_json::private::Number": "10.2"
+    - condition: Elevated Creatinine
+      date: 2025-03-15
+      flag: abnormal
+      recommendation: Evaluate kidney function; adjust medication dosages as needed
+      testType: creatinine
+      value:
+        "$serde_json::private::Number": "1.7"
+  urgencyLevel: urgent
+trace:
+  dt1:
+    id: dt1
+    input:
+      patientHistory:
+        allergies:
+          - penicillin
+        conditions:
+          - diabetes
+          - hypertension
+        medications:
+          - metformin
+          - lisinopril
+          - atorvastatin
+      testResults:
+        - date: 2025-03-15
+          testType: glucose
+          value:
+            "$serde_json::private::Number": "260"
+        - date: 2025-03-15
+          testType: potassium
+          value:
+            "$serde_json::private::Number": "3.2"
+        - date: 2025-03-15
+          testType: hemoglobin
+          value:
+            "$serde_json::private::Number": "10.2"
+        - date: 2025-03-15
+          testType: creatinine
+          value:
+            "$serde_json::private::Number": "1.7"
+    name: basicLabEvaluation
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      patientHistory:
+        allergies:
+          - penicillin
+        conditions:
+          - diabetes
+          - hypertension
+        medications:
+          - metformin
+          - lisinopril
+          - atorvastatin
+      testResults:
+        - condition: Hyperglycemia
+          date: 2025-03-15
+          flag: abnormal
+          recommendation: Monitor closely; adjust diabetes management if applicable
+          testType: glucose
+          value:
+            "$serde_json::private::Number": "260"
+        - condition: Hypokalemia
+          date: 2025-03-15
+          flag: critical
+          recommendation: Urgent electrolyte replacement; ECG monitoring required
+          testType: potassium
+          value:
+            "$serde_json::private::Number": "3.2"
+        - date: 2025-03-15
+          testType: hemoglobin
+          value:
+            "$serde_json::private::Number": "10.2"
+        - condition: Elevated Creatinine
+          date: 2025-03-15
+          flag: abnormal
+          recommendation: Evaluate kidney function; adjust medication dosages as needed
+          testType: creatinine
+          value:
+            "$serde_json::private::Number": "1.7"
+    performance: "[perf]"
+    traceData:
+      - index:
+          "$serde_json::private::Number": "4"
+        reference_map:
+          testType: glucose
+          value:
+            "$serde_json::private::Number": "260"
+        rule:
+          _id: r1-5
+          "testType[i1-2]": "'glucose'"
+          "value[i1-1]": "> 200"
+      - index:
+          "$serde_json::private::Number": "0"
+        reference_map:
+          testType: potassium
+          value:
+            "$serde_json::private::Number": "3.2"
+        rule:
+          _id: r1-1
+          "testType[i1-2]": "'potassium'"
+          "value[i1-1]": "< 3.5"
+      - index:
+          "$serde_json::private::Number": "6"
+        reference_map:
+          testType: creatinine
+          value:
+            "$serde_json::private::Number": "1.7"
+        rule:
+          _id: r1-7
+          "testType[i1-2]": "'creatinine'"
+          "value[i1-1]": "> 1.5"
+  dt2:
+    id: dt2
+    input:
+      patientHistory:
+        allergies:
+          - penicillin
+        conditions:
+          - diabetes
+          - hypertension
+        medications:
+          - metformin
+          - lisinopril
+          - atorvastatin
+      testResults:
+        - condition: Hyperglycemia
+          date: 2025-03-15
+          flag: abnormal
+          recommendation: Monitor closely; adjust diabetes management if applicable
+          testType: glucose
+          value:
+            "$serde_json::private::Number": "260"
+        - condition: Hypokalemia
+          date: 2025-03-15
+          flag: critical
+          recommendation: Urgent electrolyte replacement; ECG monitoring required
+          testType: potassium
+          value:
+            "$serde_json::private::Number": "3.2"
+        - date: 2025-03-15
+          testType: hemoglobin
+          value:
+            "$serde_json::private::Number": "10.2"
+        - condition: Elevated Creatinine
+          date: 2025-03-15
+          flag: abnormal
+          recommendation: Evaluate kidney function; adjust medication dosages as needed
+          testType: creatinine
+          value:
+            "$serde_json::private::Number": "1.7"
+    name: patientContextEvaluation
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      patientHistory:
+        allergies:
+          - penicillin
+        conditions:
+          - diabetes
+          - hypertension
+        medications:
+          - metformin
+          - lisinopril
+          - atorvastatin
+      riskAssessment:
+        clinicalRecommendation: Schedule follow-up within 48 hours; consider insulin adjustment
+        level: high-risk
+      testResults:
+        - condition: Hyperglycemia
+          date: 2025-03-15
+          flag: abnormal
+          recommendation: Monitor closely; adjust diabetes management if applicable
+          testType: glucose
+          value:
+            "$serde_json::private::Number": "260"
+        - condition: Hypokalemia
+          date: 2025-03-15
+          flag: critical
+          recommendation: Urgent electrolyte replacement; ECG monitoring required
+          testType: potassium
+          value:
+            "$serde_json::private::Number": "3.2"
+        - date: 2025-03-15
+          testType: hemoglobin
+          value:
+            "$serde_json::private::Number": "10.2"
+        - condition: Elevated Creatinine
+          date: 2025-03-15
+          flag: abnormal
+          recommendation: Evaluate kidney function; adjust medication dosages as needed
+          testType: creatinine
+          value:
+            "$serde_json::private::Number": "1.7"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        patientHistory.conditions:
+          - diabetes
+          - hypertension
+        patientHistory.medications:
+          - metformin
+          - lisinopril
+          - atorvastatin
+      rule:
+        _id: r2-1
+        "patientHistory.conditions[i2-1]": "'diabetes' in $"
+        "patientHistory.medications[i2-2]": "some($, # in ['metformin', 'insulin', 'glipizide'])"
+  dt3:
+    id: dt3
+    input:
+      patientHistory:
+        allergies:
+          - penicillin
+        conditions:
+          - diabetes
+          - hypertension
+        medications:
+          - metformin
+          - lisinopril
+          - atorvastatin
+      riskAssessment:
+        clinicalRecommendation: Schedule follow-up within 48 hours; consider insulin adjustment
+        level: high-risk
+      testResults:
+        - condition: Hyperglycemia
+          date: 2025-03-15
+          flag: abnormal
+          recommendation: Monitor closely; adjust diabetes management if applicable
+          testType: glucose
+          value:
+            "$serde_json::private::Number": "260"
+        - condition: Hypokalemia
+          date: 2025-03-15
+          flag: critical
+          recommendation: Urgent electrolyte replacement; ECG monitoring required
+          testType: potassium
+          value:
+            "$serde_json::private::Number": "3.2"
+        - date: 2025-03-15
+          testType: hemoglobin
+          value:
+            "$serde_json::private::Number": "10.2"
+        - condition: Elevated Creatinine
+          date: 2025-03-15
+          flag: abnormal
+          recommendation: Evaluate kidney function; adjust medication dosages as needed
+          testType: creatinine
+          value:
+            "$serde_json::private::Number": "1.7"
+      urgencyLevel: urgent
+    name: followUpDetermination
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      followUp:
+        actionRequired: Immediate provider notification required
+        timeframe: 24 hours
+      patientHistory:
+        allergies:
+          - penicillin
+        conditions:
+          - diabetes
+          - hypertension
+        medications:
+          - metformin
+          - lisinopril
+          - atorvastatin
+      riskAssessment:
+        clinicalRecommendation: Schedule follow-up within 48 hours; consider insulin adjustment
+        level: high-risk
+      testResults:
+        - condition: Hyperglycemia
+          date: 2025-03-15
+          flag: abnormal
+          recommendation: Monitor closely; adjust diabetes management if applicable
+          testType: glucose
+          value:
+            "$serde_json::private::Number": "260"
+        - condition: Hypokalemia
+          date: 2025-03-15
+          flag: critical
+          recommendation: Urgent electrolyte replacement; ECG monitoring required
+          testType: potassium
+          value:
+            "$serde_json::private::Number": "3.2"
+        - date: 2025-03-15
+          testType: hemoglobin
+          value:
+            "$serde_json::private::Number": "10.2"
+        - condition: Elevated Creatinine
+          date: 2025-03-15
+          flag: abnormal
+          recommendation: Evaluate kidney function; adjust medication dosages as needed
+          testType: creatinine
+          value:
+            "$serde_json::private::Number": "1.7"
+      urgencyLevel: urgent
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        urgencyLevel: urgent
+      rule:
+        _id: r3-1
+        "urgencyLevel[i3-1]": "'urgent'"
+  dt4:
+    id: dt4
+    input:
+      patientHistory:
+        allergies:
+          - penicillin
+        conditions:
+          - diabetes
+          - hypertension
+        medications:
+          - metformin
+          - lisinopril
+          - atorvastatin
+      riskAssessment:
+        clinicalRecommendation: Schedule follow-up within 48 hours; consider insulin adjustment
+        level: high-risk
+      testResults:
+        - condition: Hyperglycemia
+          date: 2025-03-15
+          flag: abnormal
+          recommendation: Monitor closely; adjust diabetes management if applicable
+          testType: glucose
+          value:
+            "$serde_json::private::Number": "260"
+        - condition: Hypokalemia
+          date: 2025-03-15
+          flag: critical
+          recommendation: Urgent electrolyte replacement; ECG monitoring required
+          testType: potassium
+          value:
+            "$serde_json::private::Number": "3.2"
+        - date: 2025-03-15
+          testType: hemoglobin
+          value:
+            "$serde_json::private::Number": "10.2"
+        - condition: Elevated Creatinine
+          date: 2025-03-15
+          flag: abnormal
+          recommendation: Evaluate kidney function; adjust medication dosages as needed
+          testType: creatinine
+          value:
+            "$serde_json::private::Number": "1.7"
+    name: urgencyAssessment
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      patientHistory:
+        allergies:
+          - penicillin
+        conditions:
+          - diabetes
+          - hypertension
+        medications:
+          - metformin
+          - lisinopril
+          - atorvastatin
+      riskAssessment:
+        clinicalRecommendation: Schedule follow-up within 48 hours; consider insulin adjustment
+        level: high-risk
+      testResults:
+        - condition: Hyperglycemia
+          date: 2025-03-15
+          flag: abnormal
+          recommendation: Monitor closely; adjust diabetes management if applicable
+          testType: glucose
+          value:
+            "$serde_json::private::Number": "260"
+        - condition: Hypokalemia
+          date: 2025-03-15
+          flag: critical
+          recommendation: Urgent electrolyte replacement; ECG monitoring required
+          testType: potassium
+          value:
+            "$serde_json::private::Number": "3.2"
+        - date: 2025-03-15
+          testType: hemoglobin
+          value:
+            "$serde_json::private::Number": "10.2"
+        - condition: Elevated Creatinine
+          date: 2025-03-15
+          flag: abnormal
+          recommendation: Evaluate kidney function; adjust medication dosages as needed
+          testType: creatinine
+          value:
+            "$serde_json::private::Number": "1.7"
+      urgencyLevel: urgent
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map: {}
+      rule:
+        _id: r4-1
+  ip1:
+    id: ip1
+    input: ~
+    name: labResults
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      patientHistory:
+        allergies:
+          - penicillin
+        conditions:
+          - diabetes
+          - hypertension
+        medications:
+          - metformin
+          - lisinopril
+          - atorvastatin
+      testResults:
+        - date: 2025-03-15
+          testType: glucose
+          value:
+            "$serde_json::private::Number": "260"
+        - date: 2025-03-15
+          testType: potassium
+          value:
+            "$serde_json::private::Number": "3.2"
+        - date: 2025-03-15
+          testType: hemoglobin
+          value:
+            "$serde_json::private::Number": "10.2"
+        - date: 2025-03-15
+          testType: creatinine
+          value:
+            "$serde_json::private::Number": "1.7"
+    performance: "[perf]"
+    traceData: ~

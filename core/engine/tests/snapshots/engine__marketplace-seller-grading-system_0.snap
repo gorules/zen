@@ -1,0 +1,347 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  grade: B
+  recommendedAction: Eligible for featured seller status
+  status: Good
+trace:
+  dt1:
+    id: dt1
+    input:
+      metrics:
+        customerSatisfaction:
+          "$serde_json::private::Number": "4.7"
+        inventoryAccuracy:
+          "$serde_json::private::Number": "97.2"
+        onTimeDeliveryRate:
+          "$serde_json::private::Number": "96.5"
+        policyCompliance:
+          "$serde_json::private::Number": "94.8"
+      sellerInfo:
+        id: S12345
+        monthsActive:
+          "$serde_json::private::Number": "18"
+        name: Global Gadgets Store
+    name: evaluate_delivery
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      metrics:
+        customerSatisfaction:
+          "$serde_json::private::Number": "4.7"
+        inventoryAccuracy:
+          "$serde_json::private::Number": "97.2"
+        onTimeDeliveryRate:
+          "$serde_json::private::Number": "96.5"
+        policyCompliance:
+          "$serde_json::private::Number": "94.8"
+      scores:
+        delivery:
+          "$serde_json::private::Number": "4"
+      sellerInfo:
+        id: S12345
+        monthsActive:
+          "$serde_json::private::Number": "18"
+        name: Global Gadgets Store
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        metrics.onTimeDeliveryRate:
+          "$serde_json::private::Number": "96.5"
+      rule:
+        _id: r1-2
+        "metrics.onTimeDeliveryRate[i1-1]": ">= 95"
+  dt2:
+    id: dt2
+    input:
+      metrics:
+        customerSatisfaction:
+          "$serde_json::private::Number": "4.7"
+        inventoryAccuracy:
+          "$serde_json::private::Number": "97.2"
+        onTimeDeliveryRate:
+          "$serde_json::private::Number": "96.5"
+        policyCompliance:
+          "$serde_json::private::Number": "94.8"
+      sellerInfo:
+        id: S12345
+        monthsActive:
+          "$serde_json::private::Number": "18"
+        name: Global Gadgets Store
+    name: evaluate_satisfaction
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      metrics:
+        customerSatisfaction:
+          "$serde_json::private::Number": "4.7"
+        inventoryAccuracy:
+          "$serde_json::private::Number": "97.2"
+        onTimeDeliveryRate:
+          "$serde_json::private::Number": "96.5"
+        policyCompliance:
+          "$serde_json::private::Number": "94.8"
+      scores:
+        customerSatisfaction:
+          "$serde_json::private::Number": "4"
+      sellerInfo:
+        id: S12345
+        monthsActive:
+          "$serde_json::private::Number": "18"
+        name: Global Gadgets Store
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        metrics.customerSatisfaction:
+          "$serde_json::private::Number": "4.7"
+      rule:
+        _id: r2-2
+        "metrics.customerSatisfaction[i2-1]": ">= 4.5"
+  dt3:
+    id: dt3
+    input:
+      metrics:
+        customerSatisfaction:
+          "$serde_json::private::Number": "4.7"
+        inventoryAccuracy:
+          "$serde_json::private::Number": "97.2"
+        onTimeDeliveryRate:
+          "$serde_json::private::Number": "96.5"
+        policyCompliance:
+          "$serde_json::private::Number": "94.8"
+      sellerInfo:
+        id: S12345
+        monthsActive:
+          "$serde_json::private::Number": "18"
+        name: Global Gadgets Store
+    name: evaluate_inventory
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      metrics:
+        customerSatisfaction:
+          "$serde_json::private::Number": "4.7"
+        inventoryAccuracy:
+          "$serde_json::private::Number": "97.2"
+        onTimeDeliveryRate:
+          "$serde_json::private::Number": "96.5"
+        policyCompliance:
+          "$serde_json::private::Number": "94.8"
+      scores:
+        inventory:
+          "$serde_json::private::Number": "4"
+      sellerInfo:
+        id: S12345
+        monthsActive:
+          "$serde_json::private::Number": "18"
+        name: Global Gadgets Store
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        metrics.inventoryAccuracy:
+          "$serde_json::private::Number": "97.2"
+      rule:
+        _id: r3-2
+        "metrics.inventoryAccuracy[i3-1]": ">= 95"
+  dt4:
+    id: dt4
+    input:
+      metrics:
+        customerSatisfaction:
+          "$serde_json::private::Number": "4.7"
+        inventoryAccuracy:
+          "$serde_json::private::Number": "97.2"
+        onTimeDeliveryRate:
+          "$serde_json::private::Number": "96.5"
+        policyCompliance:
+          "$serde_json::private::Number": "94.8"
+      sellerInfo:
+        id: S12345
+        monthsActive:
+          "$serde_json::private::Number": "18"
+        name: Global Gadgets Store
+    name: evaluate_compliance
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      metrics:
+        customerSatisfaction:
+          "$serde_json::private::Number": "4.7"
+        inventoryAccuracy:
+          "$serde_json::private::Number": "97.2"
+        onTimeDeliveryRate:
+          "$serde_json::private::Number": "96.5"
+        policyCompliance:
+          "$serde_json::private::Number": "94.8"
+      scores:
+        compliance:
+          "$serde_json::private::Number": "3"
+      sellerInfo:
+        id: S12345
+        monthsActive:
+          "$serde_json::private::Number": "18"
+        name: Global Gadgets Store
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "2"
+      reference_map:
+        metrics.policyCompliance:
+          "$serde_json::private::Number": "94.8"
+      rule:
+        _id: r4-3
+        "metrics.policyCompliance[i4-1]": ">= 90"
+  dt5:
+    id: dt5
+    input:
+      metrics:
+        customerSatisfaction:
+          "$serde_json::private::Number": "4.7"
+        inventoryAccuracy:
+          "$serde_json::private::Number": "97.2"
+        onTimeDeliveryRate:
+          "$serde_json::private::Number": "96.5"
+        policyCompliance:
+          "$serde_json::private::Number": "94.8"
+      scores:
+        averageScore:
+          "$serde_json::private::Number": "3.75"
+        compliance:
+          "$serde_json::private::Number": "3"
+        customerSatisfaction:
+          "$serde_json::private::Number": "4"
+        delivery:
+          "$serde_json::private::Number": "4"
+        improvements: []
+        inventory:
+          "$serde_json::private::Number": "4"
+        strengths:
+          - inventory
+          - customerSatisfaction
+          - delivery
+      sellerInfo:
+        id: S12345
+        monthsActive:
+          "$serde_json::private::Number": "18"
+        name: Global Gadgets Store
+    name: calculate_final_grade
+    order:
+      "$serde_json::private::Number": "6"
+    output:
+      grade: B
+      recommendedAction: Eligible for featured seller status
+      status: Good
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        scores.averageScore:
+          "$serde_json::private::Number": "3.75"
+      rule:
+        _id: r5-2
+        "scores.averageScore[i5-1]": ">= 3.5"
+  ex1:
+    id: ex1
+    input:
+      metrics:
+        customerSatisfaction:
+          "$serde_json::private::Number": "4.7"
+        inventoryAccuracy:
+          "$serde_json::private::Number": "97.2"
+        onTimeDeliveryRate:
+          "$serde_json::private::Number": "96.5"
+        policyCompliance:
+          "$serde_json::private::Number": "94.8"
+      scores:
+        compliance:
+          "$serde_json::private::Number": "3"
+        customerSatisfaction:
+          "$serde_json::private::Number": "4"
+        delivery:
+          "$serde_json::private::Number": "4"
+        inventory:
+          "$serde_json::private::Number": "4"
+      sellerInfo:
+        id: S12345
+        monthsActive:
+          "$serde_json::private::Number": "18"
+        name: Global Gadgets Store
+    name: aggregate_scores
+    order:
+      "$serde_json::private::Number": "5"
+    output:
+      metrics:
+        customerSatisfaction:
+          "$serde_json::private::Number": "4.7"
+        inventoryAccuracy:
+          "$serde_json::private::Number": "97.2"
+        onTimeDeliveryRate:
+          "$serde_json::private::Number": "96.5"
+        policyCompliance:
+          "$serde_json::private::Number": "94.8"
+      scores:
+        averageScore:
+          "$serde_json::private::Number": "3.75"
+        compliance:
+          "$serde_json::private::Number": "3"
+        customerSatisfaction:
+          "$serde_json::private::Number": "4"
+        delivery:
+          "$serde_json::private::Number": "4"
+        improvements: []
+        inventory:
+          "$serde_json::private::Number": "4"
+        strengths:
+          - inventory
+          - customerSatisfaction
+          - delivery
+      sellerInfo:
+        id: S12345
+        monthsActive:
+          "$serde_json::private::Number": "18"
+        name: Global Gadgets Store
+    performance: "[perf]"
+    traceData:
+      averageScore:
+        result:
+          "$serde_json::private::Number": "3.75"
+      improvements:
+        result: []
+      strengths:
+        result:
+          - inventory
+          - customerSatisfaction
+          - delivery
+  ip1:
+    id: ip1
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      metrics:
+        customerSatisfaction:
+          "$serde_json::private::Number": "4.7"
+        inventoryAccuracy:
+          "$serde_json::private::Number": "97.2"
+        onTimeDeliveryRate:
+          "$serde_json::private::Number": "96.5"
+        policyCompliance:
+          "$serde_json::private::Number": "94.8"
+      sellerInfo:
+        id: S12345
+        monthsActive:
+          "$serde_json::private::Number": "18"
+        name: Global Gadgets Store
+    performance: "[perf]"
+    traceData: ~

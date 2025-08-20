@@ -1,0 +1,271 @@
+{
+  "tests": [
+    {
+      "input": {
+        "route": {
+          "id": "R1234",
+          "name": "Downtown Loop",
+          "capacityUtilization": 0.85,
+          "trafficCongestionMinutes": 12,
+          "deliveryWindowMinutes": 45,
+          "distanceKm": 8.5,
+          "otherCondition": "normal"
+        }
+      },
+      "output": {
+        "distanceScore": 30,
+        "route": {
+          "capacityUtilization": 0.85,
+          "deliveryWindowMinutes": 45,
+          "distanceKm": 8.5,
+          "id": "R1234",
+          "name": "Downtown Loop",
+          "otherCondition": "normal",
+          "trafficCongestionMinutes": 12
+        },
+        "routeResult": {
+          "classification": "recommended",
+          "isApproved": true,
+          "message": "Route is recommended with good score."
+        },
+        "routeScores": {
+          "baseScore": 100,
+          "priority": "high"
+        },
+        "timeWindowScore": 30,
+        "totalScore": 160
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "ip1",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1-1",
+            "i1-1": "> 0.8",
+            "i1-2": "< 15",
+            "i1-3": "",
+            "o1-1": "100",
+            "o1-2": "'high'"
+          },
+          {
+            "_id": "r1-2",
+            "i1-1": "> 0.8",
+            "i1-2": "> 15",
+            "i1-3": "",
+            "o1-1": "80",
+            "o1-2": "'medium'"
+          },
+          {
+            "_id": "r1-3",
+            "i1-1": "> 0.5",
+            "i1-2": "< 20",
+            "i1-3": "",
+            "o1-1": "70",
+            "o1-2": "'medium'"
+          },
+          {
+            "_id": "r1-4",
+            "i1-1": "> 0.5",
+            "i1-2": "> 20",
+            "i1-3": "",
+            "o1-1": "60",
+            "o1-2": "'low'"
+          },
+          {
+            "_id": "r1-5",
+            "i1-1": "< 0.5",
+            "i1-2": "< 30",
+            "i1-3": "",
+            "o1-1": "50",
+            "o1-2": "'low'"
+          },
+          {
+            "_id": "r1-6",
+            "i1-1": "",
+            "i1-2": "",
+            "i1-3": "",
+            "o1-1": "30",
+            "o1-2": "'very_low'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Capacity Utilization",
+            "field": "route.capacityUtilization"
+          },
+          {
+            "id": "i1-2",
+            "name": "Traffic Congestion (min)",
+            "field": "route.trafficCongestionMinutes"
+          },
+          {
+            "id": "i1-3",
+            "name": "Other Condition",
+            "field": "route.otherCondition"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Base Score",
+            "field": "routeScores.baseScore"
+          },
+          {
+            "id": "o1-2",
+            "name": "Priority",
+            "field": "routeScores.priority"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt1",
+      "name": "evaluate_base_score",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1-1",
+            "key": "timeWindowScore",
+            "value": "route.deliveryWindowMinutes <= 30 ? 50 : (route.deliveryWindowMinutes <= 60 ? 30 : 10)"
+          },
+          {
+            "id": "e1-2",
+            "key": "distanceScore",
+            "value": "route.distanceKm <= 5 ? 40 : (route.distanceKm <= 10 ? 30 : (route.distanceKm <= 20 ? 20 : 10))"
+          },
+          {
+            "id": "e1-3",
+            "key": "totalScore",
+            "value": "routeScores.baseScore + $.timeWindowScore + $.distanceScore"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex1",
+      "name": "calculate_additional_scores",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r2-1",
+            "i2-1": "> 160",
+            "o2-1": "'optimal'",
+            "o2-2": "true",
+            "o2-3": "'Route is optimal with high score.'"
+          },
+          {
+            "_id": "r2-2",
+            "i2-1": "> 120",
+            "o2-1": "'recommended'",
+            "o2-2": "true",
+            "o2-3": "'Route is recommended with good score.'"
+          },
+          {
+            "_id": "r2-3",
+            "i2-1": "> 90",
+            "o2-1": "'acceptable'",
+            "o2-2": "true",
+            "o2-3": "'Route is acceptable with moderate score.'"
+          },
+          {
+            "_id": "r2-4",
+            "i2-1": "",
+            "o2-1": "'not_recommended'",
+            "o2-2": "false",
+            "o2-3": "'Route is not recommended due to low score.'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i2-1",
+            "name": "Total Score",
+            "field": "totalScore"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2-1",
+            "name": "Route Classification",
+            "field": "routeResult.classification"
+          },
+          {
+            "id": "o2-2",
+            "name": "Is Approved",
+            "field": "routeResult.isApproved"
+          },
+          {
+            "id": "o2-3",
+            "name": "Message",
+            "field": "routeResult.message"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt2",
+      "name": "determine_route_approval",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "ed1",
+      "sourceId": "ip1",
+      "targetId": "dt1",
+      "type": "edge"
+    },
+    {
+      "id": "ed2",
+      "sourceId": "dt1",
+      "targetId": "ex1",
+      "type": "edge"
+    },
+    {
+      "id": "ed3",
+      "sourceId": "ex1",
+      "targetId": "dt2",
+      "type": "edge"
+    }
+  ]
+}

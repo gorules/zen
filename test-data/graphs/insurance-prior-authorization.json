@@ -1,0 +1,467 @@
+{
+  "tests": [
+    {
+      "input": {
+        "patientInfo": {
+          "insuranceType": "Commercial"
+        },
+        "diagnosisCodes": [
+          "M54.5",
+          "M51.26"
+        ],
+        "serviceType": "Imaging",
+        "serviceDetails": {
+          "code": "70551",
+          "cost": 1200,
+          "isEmergency": false
+        }
+      },
+      "output": {
+        "reason": "Advanced imaging requires prior authorization",
+        "requiresAuthorization": true,
+        "timestamp": 1755622502
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"patientInfo\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"insuranceType\": {\n          \"type\": \"string\",\n          \"enum\": [\"Medicaid\", \"Medicare\", \"Commercial\"]\n        }\n      }\n    },\n    \"diagnosisCodes\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"string\"\n      }\n    },\n    \"serviceType\": {\n      \"type\": \"string\",\n      \"enum\": [\"Medication\", \"Procedure\", \"Equipment\", \"Imaging\"]\n    },\n    \"serviceDetails\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"code\": {\n          \"type\": \"string\"\n        },\n        \"cost\": {\n          \"type\": \"number\"\n        },\n        \"isEmergency\": {\n          \"type\": \"boolean\"\n        }\n      }\n    }\n  }\n}"
+      },
+      "id": "inputNode",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 161.5
+      }
+    },
+    {
+      "type": "switchNode",
+      "content": {
+        "hitPolicy": "first",
+        "statements": [
+          {
+            "id": "s1",
+            "condition": "patientInfo.insuranceType == 'Medicaid'",
+            "isDefault": false
+          },
+          {
+            "id": "s2",
+            "condition": "patientInfo.insuranceType == 'Medicare'",
+            "isDefault": false
+          },
+          {
+            "id": "s3",
+            "condition": "patientInfo.insuranceType == 'Commercial'",
+            "isDefault": false
+          },
+          {
+            "id": "s4",
+            "condition": "",
+            "isDefault": true
+          }
+        ]
+      },
+      "id": "insuranceTypeCheck",
+      "name": "Insurance Type Check",
+      "position": {
+        "x": 430,
+        "y": 161.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1",
+            "i1": "'Medication'",
+            "i2": "> 200",
+            "o1": "true",
+            "o2": "'High-cost medication requires prior authorization'"
+          },
+          {
+            "_id": "r2",
+            "i1": "'Procedure'",
+            "i2": "> 500",
+            "o1": "true",
+            "o2": "'High-cost procedure requires prior authorization'"
+          },
+          {
+            "_id": "r3",
+            "i1": "'Imaging'",
+            "i2": "",
+            "o1": "true",
+            "o2": "'All imaging services require prior authorization'"
+          },
+          {
+            "_id": "r4",
+            "i1": "'Equipment'",
+            "i2": "> 300",
+            "o1": "true",
+            "o2": "'DME over threshold requires prior authorization'"
+          },
+          {
+            "_id": "r5",
+            "i1": "",
+            "i2": "",
+            "o1": "false",
+            "o2": "'Standard service does not require prior authorization'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Service Type",
+            "field": "serviceType"
+          },
+          {
+            "id": "i2",
+            "name": "Cost",
+            "field": "serviceDetails.cost"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Requires Authorization",
+            "field": "requiresAuthorization"
+          },
+          {
+            "id": "o2",
+            "name": "Reason",
+            "field": "authorizationReason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "medicaidRules",
+      "name": "Medicaid Rules",
+      "position": {
+        "x": 750,
+        "y": 63.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1",
+            "i1": "'Medication'",
+            "i2": "contains($, 'J')",
+            "o1": "true",
+            "o2": "'Part B medication requires prior authorization'"
+          },
+          {
+            "_id": "r2",
+            "i1": "'Procedure'",
+            "i2": "number($) > 1000",
+            "o1": "true",
+            "o2": "'High-cost procedure requires prior authorization'"
+          },
+          {
+            "_id": "r3",
+            "i1": "'Imaging'",
+            "i2": "startsWith($, 'CT') or startsWith($, 'MRI')",
+            "o1": "true",
+            "o2": "'Advanced imaging requires prior authorization'"
+          },
+          {
+            "_id": "r4",
+            "i1": "'Equipment'",
+            "i2": "number($) > 500",
+            "o1": "true",
+            "o2": "'DME over threshold requires prior authorization'"
+          },
+          {
+            "_id": "r5",
+            "i1": "",
+            "i2": "",
+            "o1": "false",
+            "o2": "'Standard Medicare service does not require prior authorization'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Service Type",
+            "field": "serviceType"
+          },
+          {
+            "id": "i2",
+            "name": "Code",
+            "field": "serviceDetails.code"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Requires Authorization",
+            "field": "requiresAuthorization"
+          },
+          {
+            "id": "o2",
+            "name": "Reason",
+            "field": "authorizationReason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "medicareRules",
+      "name": "Medicare Rules",
+      "position": {
+        "x": 750,
+        "y": 161.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1",
+            "i1": "'Medication'",
+            "i2": "contains(serviceDetails.code, 'SPE')",
+            "o1": "true",
+            "o2": "'Specialty medication requires prior authorization'"
+          },
+          {
+            "_id": "r2",
+            "i1": "'Procedure'",
+            "i2": "serviceDetails.code in ['33361', '33362', '33363', '33364']",
+            "o1": "true",
+            "o2": "'Specific procedures require prior authorization'"
+          },
+          {
+            "_id": "r3",
+            "i1": "'Imaging'",
+            "i2": "serviceDetails.code in ['70450', '70460', '70470', '70551', '70552', '70553']",
+            "o1": "true",
+            "o2": "'Advanced imaging requires prior authorization'"
+          },
+          {
+            "_id": "r4",
+            "i1": "'Equipment'",
+            "i2": "serviceDetails.cost > 1000",
+            "o1": "true",
+            "o2": "'High-cost equipment requires prior authorization'"
+          },
+          {
+            "_id": "r5",
+            "i1": "",
+            "i2": "serviceDetails.isEmergency == true",
+            "o1": "false",
+            "o2": "'Emergency services do not require prior authorization'"
+          },
+          {
+            "_id": "r6",
+            "i1": "",
+            "i2": "",
+            "o1": "false",
+            "o2": "'Standard commercial service does not require prior authorization'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Service Type",
+            "field": "serviceType"
+          },
+          {
+            "id": "i2",
+            "name": "Additional Check"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Requires Authorization",
+            "field": "requiresAuthorization"
+          },
+          {
+            "id": "o2",
+            "name": "Reason",
+            "field": "authorizationReason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "commercialRules",
+      "name": "Commercial Rules",
+      "position": {
+        "x": 750,
+        "y": 259.5
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1",
+            "i1": "some($, startsWith(#, 'Z51'))",
+            "i2": "requiresAuthorization == true",
+            "o1": "false",
+            "o2": "'Encounter for chemotherapy exempt from prior authorization'"
+          },
+          {
+            "_id": "r2",
+            "i1": "some($, # in ['O09.511', 'O09.512', 'O09.513', 'O09.519'])",
+            "i2": "requiresAuthorization == true",
+            "o1": "false",
+            "o2": "'Pregnancy-related services exempt from prior authorization'"
+          },
+          {
+            "_id": "r3",
+            "i1": "some($, # in ['U07.1'])",
+            "i2": "requiresAuthorization == true and serviceType == 'Imaging'",
+            "o1": "false",
+            "o2": "'COVID-19 related imaging exempt from prior authorization'"
+          },
+          {
+            "_id": "r4",
+            "i1": "",
+            "i2": "",
+            "o1": "requiresAuthorization",
+            "o2": "authorizationReason"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Diagnosis Codes",
+            "field": "diagnosisCodes"
+          },
+          {
+            "id": "i2",
+            "name": "Current Authorization Status"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Final Authorization Required",
+            "field": "requiresAuthorization"
+          },
+          {
+            "id": "o2",
+            "name": "Final Reason",
+            "field": "authorizationReason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "diagnosisCheck",
+      "name": "Diagnosis Code Exclusions",
+      "position": {
+        "x": 1070,
+        "y": 161.5
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1",
+            "key": "requiresAuthorization",
+            "value": "requiresAuthorization"
+          },
+          {
+            "id": "e2",
+            "key": "reason",
+            "value": "authorizationReason"
+          },
+          {
+            "id": "e3",
+            "key": "timestamp",
+            "value": "date('now')"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "finalDetermination",
+      "name": "Final Determination",
+      "position": {
+        "x": 1390,
+        "y": 161.5
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "inputNode",
+      "targetId": "insuranceTypeCheck",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "insuranceTypeCheck",
+      "targetId": "medicaidRules",
+      "sourceHandle": "s1",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "insuranceTypeCheck",
+      "targetId": "medicareRules",
+      "sourceHandle": "s2",
+      "type": "edge"
+    },
+    {
+      "id": "edge4",
+      "sourceId": "insuranceTypeCheck",
+      "targetId": "commercialRules",
+      "sourceHandle": "s3",
+      "type": "edge"
+    },
+    {
+      "id": "edge5",
+      "sourceId": "medicaidRules",
+      "targetId": "diagnosisCheck",
+      "type": "edge"
+    },
+    {
+      "id": "edge6",
+      "sourceId": "medicareRules",
+      "targetId": "diagnosisCheck",
+      "type": "edge"
+    },
+    {
+      "id": "edge7",
+      "sourceId": "commercialRules",
+      "targetId": "diagnosisCheck",
+      "type": "edge"
+    },
+    {
+      "id": "edge8",
+      "sourceId": "diagnosisCheck",
+      "targetId": "finalDetermination",
+      "type": "edge"
+    }
+  ]
+}

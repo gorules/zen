@@ -1,0 +1,299 @@
+{
+  "tests": [
+    {
+      "input": {
+        "customer": {
+          "age": 45,
+          "location": {
+            "country": "US",
+            "state": "CA",
+            "city": "San Francisco"
+          },
+          "healthScore": 85,
+          "riskFactors": {
+            "count": 2,
+            "factors": [
+              "previous_claim",
+              "family_history"
+            ]
+          }
+        }
+      },
+      "output": {
+        "customer": {
+          "age": 45,
+          "healthScore": 85,
+          "location": {
+            "city": "San Francisco",
+            "country": "US",
+            "state": "CA"
+          },
+          "riskFactors": {
+            "count": 2,
+            "factors": [
+              "previous_claim",
+              "family_history"
+            ]
+          }
+        },
+        "denialReasons": [],
+        "eligibility": {
+          "age": {
+            "isEligible": true,
+            "reason": "Age requirements met"
+          },
+          "location": {
+            "isEligible": true,
+            "reason": "Location requirements met"
+          },
+          "riskFactors": {
+            "isEligible": true,
+            "reason": "Risk factor assessment passed"
+          }
+        },
+        "isEligible": true,
+        "policyDecision": {
+          "approved": null,
+          "reasons": null
+        }
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "input",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i1-1": "< 18",
+            "o1-1": "false",
+            "o1-2": "'Age below minimum requirement'"
+          },
+          {
+            "_id": "rule2",
+            "i1-1": "> 75",
+            "o1-1": "false",
+            "o1-2": "'Age exceeds maximum limit'"
+          },
+          {
+            "_id": "rule3",
+            "i1-1": "",
+            "o1-1": "true",
+            "o1-2": "'Age requirements met'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Age",
+            "field": "customer.age"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Eligible",
+            "field": "eligibility.age.isEligible"
+          },
+          {
+            "id": "o1-2",
+            "name": "Reason",
+            "field": "eligibility.age.reason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ageEligibility",
+      "name": "Age Eligibility",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i1-1": "contains(['FL', 'LA', 'TX'], $)",
+            "o1-1": "false",
+            "o1-2": "'High risk location'"
+          },
+          {
+            "_id": "rule2",
+            "i1-1": "!contains(['US', 'CA', 'UK'], $)",
+            "o1-1": "false",
+            "o1-2": "'Location not supported'"
+          },
+          {
+            "_id": "rule3",
+            "i1-1": "",
+            "o1-1": "true",
+            "o1-2": "'Location requirements met'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "State/Region",
+            "field": "customer.location.state"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Eligible",
+            "field": "eligibility.location.isEligible"
+          },
+          {
+            "id": "o1-2",
+            "name": "Reason",
+            "field": "eligibility.location.reason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "locationEligibility",
+      "name": "Location Eligibility",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i1-1": "> 3",
+            "o1-1": "false",
+            "o1-2": "'Too many high-risk factors'"
+          },
+          {
+            "_id": "rule2",
+            "i1-1": "== 3 and customer.healthScore < 70",
+            "o1-1": "false",
+            "o1-2": "'Combination of risk factors and low health score'"
+          },
+          {
+            "_id": "rule3",
+            "i1-1": "",
+            "o1-1": "true",
+            "o1-2": "'Risk factor assessment passed'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Risk Factors Count",
+            "field": "customer.riskFactors.count"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Eligible",
+            "field": "eligibility.riskFactors.isEligible"
+          },
+          {
+            "id": "o1-2",
+            "name": "Reason",
+            "field": "eligibility.riskFactors.reason"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "riskFactors",
+      "name": "Risk Factor Assessment",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "expr1",
+            "key": "isEligible",
+            "value": "eligibility.age.isEligible and eligibility.location.isEligible and eligibility.riskFactors.isEligible"
+          },
+          {
+            "id": "expr2",
+            "key": "denialReasons",
+            "value": "filter([eligibility.age.reason, eligibility.location.reason, eligibility.riskFactors.reason], # != 'Age requirements met' and # != 'Location requirements met' and # != 'Risk factor assessment passed')"
+          },
+          {
+            "id": "expr3",
+            "key": "policyDecision",
+            "value": "{ 'approved': isEligible, 'reasons': denialReasons }"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "finalDetermination",
+      "name": "Final Determination",
+      "position": {
+        "x": 1390,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "input",
+      "targetId": "ageEligibility",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "ageEligibility",
+      "targetId": "locationEligibility",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "locationEligibility",
+      "targetId": "riskFactors",
+      "type": "edge"
+    },
+    {
+      "id": "edge4",
+      "sourceId": "riskFactors",
+      "targetId": "finalDetermination",
+      "type": "edge"
+    }
+  ]
+}

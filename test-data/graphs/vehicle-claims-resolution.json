@@ -1,0 +1,310 @@
+{
+  "tests": [
+    {
+      "input": {
+        "claim": {
+          "id": "CL-20250318-001",
+          "damagePercentage": 65
+        },
+        "vehicle": {
+          "make": "Toyota",
+          "model": "Camry",
+          "year": 2015,
+          "ageYears": 10
+        },
+        "parts": {
+          "status": "limited"
+        }
+      },
+      "output": {
+        "assessment": {
+          "damageLevel": "severe",
+          "isTotalLoss": false
+        },
+        "claim": {
+          "damagePercentage": 65,
+          "id": "CL-20250318-001"
+        },
+        "parts": {
+          "availability": "available",
+          "status": "limited"
+        },
+        "recommendation": {
+          "explanation": "Severe damage with obtainable parts; repair recommended",
+          "method": "repair"
+        },
+        "vehicle": {
+          "ageYears": 10,
+          "make": "Toyota",
+          "model": "Camry",
+          "year": 2015
+        }
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "input",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i1": ">= 80",
+            "o1": "'total_loss'",
+            "o2": "true"
+          },
+          {
+            "_id": "rule2",
+            "i1": ">= 60",
+            "o1": "'severe'",
+            "o2": "false"
+          },
+          {
+            "_id": "rule3",
+            "i1": ">= 30",
+            "o1": "'moderate'",
+            "o2": "false"
+          },
+          {
+            "_id": "rule4",
+            "i1": "",
+            "o1": "'minor'",
+            "o2": "false"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Damage Percentage",
+            "field": "claim.damagePercentage"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Damage Assessment",
+            "field": "assessment.damageLevel"
+          },
+          {
+            "id": "o2",
+            "name": "Is Total Loss",
+            "field": "assessment.isTotalLoss"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "assessDamage",
+      "name": "assessDamage",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i1": "> 10",
+            "i2": "'discontinued'",
+            "o1": "'unavailable'"
+          },
+          {
+            "_id": "rule2",
+            "i1": "> 10",
+            "i2": "'limited'",
+            "o1": "'delayed'"
+          },
+          {
+            "_id": "rule3",
+            "i1": "> 10",
+            "i2": "'available'",
+            "o1": "'available'"
+          },
+          {
+            "_id": "rule4",
+            "i1": "<= 10",
+            "i2": "",
+            "o1": "'available'"
+          },
+          {
+            "_id": "rule5",
+            "i1": "",
+            "i2": "",
+            "o1": "'available'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Vehicle Age",
+            "field": "vehicle.ageYears"
+          },
+          {
+            "id": "i2",
+            "name": "Parts Status",
+            "field": "parts.status"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Parts Availability",
+            "field": "parts.availability"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "checkPartsAvailability",
+      "name": "checkPartsAvailability",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "rule1",
+            "i1": "'total_loss'",
+            "i2": "",
+            "i3": "",
+            "o1": "'cash_settlement'",
+            "o2": "'Vehicle is a total loss; cash settlement recommended'"
+          },
+          {
+            "_id": "rule2",
+            "i1": "'severe'",
+            "i2": "'unavailable'",
+            "i3": "> 8",
+            "o1": "'cash_settlement'",
+            "o2": "'Severe damage with unavailable parts for older vehicle; cash settlement recommended'"
+          },
+          {
+            "_id": "rule3",
+            "i1": "'severe'",
+            "i2": "'unavailable'",
+            "i3": "<= 8",
+            "o1": "'replacement'",
+            "o2": "'Severe damage with unavailable parts for newer vehicle; replacement recommended'"
+          },
+          {
+            "_id": "rule4",
+            "i1": "'severe'",
+            "i2": "'delayed', 'available'",
+            "i3": "",
+            "o1": "'repair'",
+            "o2": "'Severe damage with obtainable parts; repair recommended'"
+          },
+          {
+            "_id": "rule5",
+            "i1": "'moderate'",
+            "i2": "'unavailable'",
+            "i3": "> 6",
+            "o1": "'cash_settlement'",
+            "o2": "'Moderate damage with unavailable parts for older vehicle; cash settlement recommended'"
+          },
+          {
+            "_id": "rule6",
+            "i1": "'moderate'",
+            "i2": "'delayed', 'available'",
+            "i3": "",
+            "o1": "'repair'",
+            "o2": "'Moderate damage with obtainable parts; repair recommended'"
+          },
+          {
+            "_id": "rule7",
+            "i1": "'minor'",
+            "i2": "",
+            "i3": "",
+            "o1": "'repair'",
+            "o2": "'Minor damage; repair recommended'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1",
+            "name": "Damage Level",
+            "field": "assessment.damageLevel"
+          },
+          {
+            "id": "i2",
+            "name": "Parts Availability",
+            "field": "parts.availability"
+          },
+          {
+            "id": "i3",
+            "name": "Vehicle Age",
+            "field": "vehicle.ageYears"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1",
+            "name": "Repair Method",
+            "field": "recommendation.method"
+          },
+          {
+            "id": "o2",
+            "name": "Explanation",
+            "field": "recommendation.explanation"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "determineRepairMethod",
+      "name": "determineRepairMethod",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "input",
+      "targetId": "assessDamage",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "assessDamage",
+      "targetId": "checkPartsAvailability",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "checkPartsAvailability",
+      "targetId": "determineRepairMethod",
+      "type": "edge"
+    }
+  ]
+}

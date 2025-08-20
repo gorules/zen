@@ -1,0 +1,269 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  applicantInfo:
+    contactEmail: john.smith@example.com
+    name: John Smith
+    phoneNumber: 555-123-4567
+  applicationType: building
+  approvalReason: Application approved - Minimal environmental impact
+  approvalStatus: Approved
+  buildingHeight:
+    "$serde_json::private::Number": "28"
+  environmentalImpact: minimal
+  initialApprovalStatus: Approved
+  isCommercialZone: false
+  isIndoorEvent: false
+  isIndustrialZone: false
+  isOutdoorEvent: false
+  isResidentialZone: true
+  nextSteps: standard
+  projectDescription: Single-family home construction with attached garage
+  propertyAddress:
+    city: Anytown
+    state: CA
+    street: 123 Main Street
+    zipCode: "90210"
+  safetyScore:
+    "$serde_json::private::Number": "85"
+  squareFootage:
+    "$serde_json::private::Number": "3200"
+  statusReason: Residential building meets height and safety requirements
+  zoneType: residential
+trace:
+  dt1:
+    id: dt1
+    input:
+      applicantInfo:
+        contactEmail: john.smith@example.com
+        name: John Smith
+        phoneNumber: 555-123-4567
+      applicationType: building
+      buildingHeight:
+        "$serde_json::private::Number": "28"
+      environmentalImpact: minimal
+      isCommercialZone: false
+      isIndoorEvent: false
+      isIndustrialZone: false
+      isOutdoorEvent: false
+      isResidentialZone: true
+      projectDescription: Single-family home construction with attached garage
+      propertyAddress:
+        city: Anytown
+        state: CA
+        street: 123 Main Street
+        zipCode: "90210"
+      safetyScore:
+        "$serde_json::private::Number": "85"
+      squareFootage:
+        "$serde_json::private::Number": "3200"
+      zoneType: residential
+    name: initialApprovalCheck
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      applicantInfo:
+        contactEmail: john.smith@example.com
+        name: John Smith
+        phoneNumber: 555-123-4567
+      applicationType: building
+      buildingHeight:
+        "$serde_json::private::Number": "28"
+      environmentalImpact: minimal
+      initialApprovalStatus: Approved
+      isCommercialZone: false
+      isIndoorEvent: false
+      isIndustrialZone: false
+      isOutdoorEvent: false
+      isResidentialZone: true
+      projectDescription: Single-family home construction with attached garage
+      propertyAddress:
+        city: Anytown
+        state: CA
+        street: 123 Main Street
+        zipCode: "90210"
+      safetyScore:
+        "$serde_json::private::Number": "85"
+      squareFootage:
+        "$serde_json::private::Number": "3200"
+      statusReason: Residential building meets height and safety requirements
+      zoneType: residential
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        safetyScore:
+          "$serde_json::private::Number": "85"
+        squareFootage:
+          "$serde_json::private::Number": "3200"
+      rule:
+        _id: r1-1
+        "safetyScore[i1-3]": ">= 80"
+        "squareFootage[i1-2]": "< 5000"
+  dt2:
+    id: dt2
+    input:
+      applicantInfo:
+        contactEmail: john.smith@example.com
+        name: John Smith
+        phoneNumber: 555-123-4567
+      applicationType: building
+      buildingHeight:
+        "$serde_json::private::Number": "28"
+      environmentalImpact: minimal
+      initialApprovalStatus: Approved
+      isCommercialZone: false
+      isIndoorEvent: false
+      isIndustrialZone: false
+      isOutdoorEvent: false
+      isResidentialZone: true
+      projectDescription: Single-family home construction with attached garage
+      propertyAddress:
+        city: Anytown
+        state: CA
+        street: 123 Main Street
+        zipCode: "90210"
+      safetyScore:
+        "$serde_json::private::Number": "85"
+      squareFootage:
+        "$serde_json::private::Number": "3200"
+      statusReason: Residential building meets height and safety requirements
+      zoneType: residential
+    name: environmentalCheck
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      applicantInfo:
+        contactEmail: john.smith@example.com
+        name: John Smith
+        phoneNumber: 555-123-4567
+      applicationType: building
+      approvalReason: Application approved - Minimal environmental impact
+      approvalStatus: Approved
+      buildingHeight:
+        "$serde_json::private::Number": "28"
+      environmentalImpact: minimal
+      initialApprovalStatus: Approved
+      isCommercialZone: false
+      isIndoorEvent: false
+      isIndustrialZone: false
+      isOutdoorEvent: false
+      isResidentialZone: true
+      nextSteps: standard
+      projectDescription: Single-family home construction with attached garage
+      propertyAddress:
+        city: Anytown
+        state: CA
+        street: 123 Main Street
+        zipCode: "90210"
+      safetyScore:
+        "$serde_json::private::Number": "85"
+      squareFootage:
+        "$serde_json::private::Number": "3200"
+      statusReason: Residential building meets height and safety requirements
+      zoneType: residential
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        environmentalImpact: minimal
+        initialApprovalStatus: Approved
+      rule:
+        _id: r2-1
+        "environmentalImpact[i2-2]": "'minimal'"
+        "initialApprovalStatus[i2-1]": "'Approved'"
+  ex1:
+    id: ex1
+    input:
+      applicantInfo:
+        contactEmail: john.smith@example.com
+        name: John Smith
+        phoneNumber: 555-123-4567
+      applicationType: building
+      buildingHeight:
+        "$serde_json::private::Number": "28"
+      environmentalImpact: minimal
+      projectDescription: Single-family home construction with attached garage
+      propertyAddress:
+        city: Anytown
+        state: CA
+        street: 123 Main Street
+        zipCode: "90210"
+      safetyScore:
+        "$serde_json::private::Number": "85"
+      squareFootage:
+        "$serde_json::private::Number": "3200"
+      zoneType: residential
+    name: applicationClassification
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      applicantInfo:
+        contactEmail: john.smith@example.com
+        name: John Smith
+        phoneNumber: 555-123-4567
+      applicationType: building
+      buildingHeight:
+        "$serde_json::private::Number": "28"
+      environmentalImpact: minimal
+      isCommercialZone: false
+      isIndoorEvent: false
+      isIndustrialZone: false
+      isOutdoorEvent: false
+      isResidentialZone: true
+      projectDescription: Single-family home construction with attached garage
+      propertyAddress:
+        city: Anytown
+        state: CA
+        street: 123 Main Street
+        zipCode: "90210"
+      safetyScore:
+        "$serde_json::private::Number": "85"
+      squareFootage:
+        "$serde_json::private::Number": "3200"
+      zoneType: residential
+    performance: "[perf]"
+    traceData:
+      isCommercialZone:
+        result: false
+      isIndoorEvent:
+        result: false
+      isIndustrialZone:
+        result: false
+      isOutdoorEvent:
+        result: false
+      isResidentialZone:
+        result: true
+  ip1:
+    id: ip1
+    input: ~
+    name: permitRequest
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      applicantInfo:
+        contactEmail: john.smith@example.com
+        name: John Smith
+        phoneNumber: 555-123-4567
+      applicationType: building
+      buildingHeight:
+        "$serde_json::private::Number": "28"
+      environmentalImpact: minimal
+      projectDescription: Single-family home construction with attached garage
+      propertyAddress:
+        city: Anytown
+        state: CA
+        street: 123 Main Street
+        zipCode: "90210"
+      safetyScore:
+        "$serde_json::private::Number": "85"
+      squareFootage:
+        "$serde_json::private::Number": "3200"
+      zoneType: residential
+    performance: "[perf]"
+    traceData: ~

@@ -1,0 +1,303 @@
+{
+  "tests": [
+    {
+      "input": {
+        "deviceModel": "iPhone 13 Pro",
+        "deviceFirmware": "14.2.1",
+        "deviceId": "A1B2C3D4E5F6",
+        "subscriberId": "2022050789",
+        "requestTimestamp": "2023-04-15T10:30:45Z"
+      },
+      "output": {
+        "compatibility": {
+          "advancedFeatures": true,
+          "basicService": true,
+          "hdStreaming": false,
+          "nextGenFeatures": false
+        },
+        "deviceFirmware": "14.2.1",
+        "deviceId": "A1B2C3D4E5F6",
+        "deviceModel": "iPhone 13 Pro",
+        "majorVersion": 14,
+        "normalizedModel": "iphone 13 pro",
+        "requestTimestamp": "2023-04-15T10:30:45Z",
+        "subscriberId": "2022050789"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "ip1",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1-1",
+            "key": "normalizedModel",
+            "value": "lower(deviceModel)"
+          },
+          {
+            "id": "e1-3",
+            "key": "majorVersion",
+            "value": "number(split(deviceFirmware, '.')[0])"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex1",
+      "name": "normalize_data",
+      "position": {
+        "x": 430,
+        "y": 115
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1-1",
+            "i1-1": "contains($, 'iphone')",
+            "i1-2": ">= 15",
+            "o1-1": "true",
+            "o1-2": "true",
+            "o1-3": "true",
+            "o1-4": "true"
+          },
+          {
+            "_id": "r1-2",
+            "i1-1": "contains($, 'iphone')",
+            "i1-2": ">= 13 and < 15",
+            "o1-1": "true",
+            "o1-2": "true",
+            "o1-3": "true",
+            "o1-4": "false"
+          },
+          {
+            "_id": "r1-3",
+            "i1-1": "contains($, 'iphone')",
+            "i1-2": ">= 10 and < 13",
+            "o1-1": "true",
+            "o1-2": "true",
+            "o1-3": "false",
+            "o1-4": "false"
+          },
+          {
+            "_id": "r1-4",
+            "i1-1": "contains($, 'iphone')",
+            "i1-2": "< 10",
+            "o1-1": "true",
+            "o1-2": "false",
+            "o1-3": "false",
+            "o1-4": "false"
+          },
+          {
+            "_id": "r1-5",
+            "i1-1": "contains($, 'samsung galaxy')",
+            "i1-2": ">= 10",
+            "o1-1": "true",
+            "o1-2": "true",
+            "o1-3": "true",
+            "o1-4": "false"
+          },
+          {
+            "_id": "r1-6",
+            "i1-1": "contains($, 'samsung galaxy')",
+            "i1-2": ">= 8 and < 10",
+            "o1-1": "true",
+            "o1-2": "true",
+            "o1-3": "false",
+            "o1-4": "false"
+          },
+          {
+            "_id": "r1-7",
+            "i1-1": "contains($, 'samsung galaxy')",
+            "i1-2": "< 8",
+            "o1-1": "true",
+            "o1-2": "false",
+            "o1-3": "false",
+            "o1-4": "false"
+          },
+          {
+            "_id": "r1-8",
+            "i1-1": "contains($, 'pixel')",
+            "i1-2": ">= 6",
+            "o1-1": "true",
+            "o1-2": "true",
+            "o1-3": "true",
+            "o1-4": "false"
+          },
+          {
+            "_id": "r1-9",
+            "i1-1": "contains($, 'pixel')",
+            "i1-2": ">= 4 and < 6",
+            "o1-1": "true",
+            "o1-2": "true",
+            "o1-3": "false",
+            "o1-4": "false"
+          },
+          {
+            "_id": "r1-10",
+            "i1-1": "contains($, 'pixel')",
+            "i1-2": "< 4",
+            "o1-1": "true",
+            "o1-2": "false",
+            "o1-3": "false",
+            "o1-4": "false"
+          },
+          {
+            "_id": "r1-11",
+            "i1-1": "",
+            "i1-2": "",
+            "o1-1": "false",
+            "o1-2": "false",
+            "o1-3": "false",
+            "o1-4": "false"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Device Model",
+            "field": "normalizedModel"
+          },
+          {
+            "id": "i1-2",
+            "name": "Major Version",
+            "field": "majorVersion"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Basic Service",
+            "field": "compatibility.basicService"
+          },
+          {
+            "id": "o1-2",
+            "name": "HD Streaming",
+            "field": "compatibility.hdStreaming"
+          },
+          {
+            "id": "o1-3",
+            "name": "Advanced Features",
+            "field": "compatibility.advancedFeatures"
+          },
+          {
+            "id": "o1-4",
+            "name": "Next Gen Features",
+            "field": "compatibility.nextGenFeatures"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "dt1",
+      "name": "determine_compatibility",
+      "position": {
+        "x": 750,
+        "y": 115
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r2-1",
+            "i2-1": "contains($, 'iphone')",
+            "624d983d-f416-4f68-b194-750f45445670": "<= 14",
+            "o2-1": "false"
+          },
+          {
+            "_id": "r2-2",
+            "i2-1": "contains($, 'samsung galaxy')",
+            "624d983d-f416-4f68-b194-750f45445670": "",
+            "o2-1": "false"
+          },
+          {
+            "_id": "r2-3",
+            "i2-1": "contains($, 'pixel')",
+            "624d983d-f416-4f68-b194-750f45445670": "",
+            "o2-1": "false"
+          },
+          {
+            "_id": "r2-4",
+            "i2-1": "",
+            "624d983d-f416-4f68-b194-750f45445670": "",
+            "o2-1": "compatibility.hdStreaming"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i2-1",
+            "name": "Device Model",
+            "field": "normalizedModel"
+          },
+          {
+            "id": "624d983d-f416-4f68-b194-750f45445670",
+            "field": "majorVersion",
+            "name": "Major version"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2-1",
+            "name": "HD Streaming Final",
+            "field": "compatibility.hdStreaming"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single",
+        "passThorough": false
+      },
+      "id": "dt2",
+      "name": "check_minor_version",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "ed1",
+      "sourceId": "ip1",
+      "targetId": "ex1",
+      "type": "edge"
+    },
+    {
+      "id": "ed2",
+      "sourceId": "ex1",
+      "targetId": "dt1",
+      "type": "edge"
+    },
+    {
+      "id": "ed3",
+      "sourceId": "dt1",
+      "targetId": "dt2",
+      "type": "edge"
+    }
+  ]
+}

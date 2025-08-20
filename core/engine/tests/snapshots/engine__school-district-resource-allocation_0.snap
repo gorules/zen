@@ -1,0 +1,319 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  adjusted_funding:
+    "$serde_json::private::Number": "4537500"
+  allocation:
+    base_funding:
+      "$serde_json::private::Number": "4125000"
+    school_size: medium
+  funding:
+    - allocation:
+        funding_descriptions: Special Education Support
+        program_funding:
+          "$serde_json::private::Number": "135000"
+    - allocation:
+        funding_descriptions: ESL Program Support
+        program_funding:
+          "$serde_json::private::Number": "200000"
+    - allocation:
+        funding_descriptions: STEM Program Support
+        program_funding:
+          "$serde_json::private::Number": "20000"
+  performance_multiplier:
+    "$serde_json::private::Number": "1.1"
+  performance_score:
+    "$serde_json::private::Number": "80"
+  school:
+    esl_students:
+      "$serde_json::private::Number": "80"
+    gifted_students:
+      "$serde_json::private::Number": "35"
+    id: sch_12345
+    name: Washington High School
+    special_education_students:
+      "$serde_json::private::Number": "45"
+    special_programs:
+      - special_education
+      - esl
+      - stem
+    student_population:
+      "$serde_json::private::Number": "750"
+    test_scores:
+      math:
+        "$serde_json::private::Number": "82"
+      reading:
+        "$serde_json::private::Number": "78"
+    type: secondary
+trace:
+  baseAllocationTable:
+    id: baseAllocationTable
+    input:
+      school:
+        esl_students:
+          "$serde_json::private::Number": "80"
+        gifted_students:
+          "$serde_json::private::Number": "35"
+        id: sch_12345
+        name: Washington High School
+        special_education_students:
+          "$serde_json::private::Number": "45"
+        special_programs:
+          - special_education
+          - esl
+          - stem
+        student_population:
+          "$serde_json::private::Number": "750"
+        test_scores:
+          math:
+            "$serde_json::private::Number": "82"
+          reading:
+            "$serde_json::private::Number": "78"
+        type: secondary
+    name: baseAllocation
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      allocation:
+        base_funding:
+          "$serde_json::private::Number": "4125000"
+        school_size: medium
+      school:
+        esl_students:
+          "$serde_json::private::Number": "80"
+        gifted_students:
+          "$serde_json::private::Number": "35"
+        id: sch_12345
+        name: Washington High School
+        special_education_students:
+          "$serde_json::private::Number": "45"
+        special_programs:
+          - special_education
+          - esl
+          - stem
+        student_population:
+          "$serde_json::private::Number": "750"
+        test_scores:
+          math:
+            "$serde_json::private::Number": "82"
+          reading:
+            "$serde_json::private::Number": "78"
+        type: secondary
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        school.student_population:
+          "$serde_json::private::Number": "750"
+        school.type: secondary
+      rule:
+        _id: r2
+        "school.student_population[i1]": "> 500"
+        "school.type[i2]": ""
+  inputNode:
+    id: inputNode
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      school:
+        esl_students:
+          "$serde_json::private::Number": "80"
+        gifted_students:
+          "$serde_json::private::Number": "35"
+        id: sch_12345
+        name: Washington High School
+        special_education_students:
+          "$serde_json::private::Number": "45"
+        special_programs:
+          - special_education
+          - esl
+          - stem
+        student_population:
+          "$serde_json::private::Number": "750"
+        test_scores:
+          math:
+            "$serde_json::private::Number": "82"
+          reading:
+            "$serde_json::private::Number": "78"
+        type: secondary
+    performance: "[perf]"
+    traceData: ~
+  performanceAdjustment:
+    id: performanceAdjustment
+    input:
+      allocation:
+        base_funding:
+          "$serde_json::private::Number": "4125000"
+        school_size: medium
+      school:
+        esl_students:
+          "$serde_json::private::Number": "80"
+        gifted_students:
+          "$serde_json::private::Number": "35"
+        id: sch_12345
+        name: Washington High School
+        special_education_students:
+          "$serde_json::private::Number": "45"
+        special_programs:
+          - special_education
+          - esl
+          - stem
+        student_population:
+          "$serde_json::private::Number": "750"
+        test_scores:
+          math:
+            "$serde_json::private::Number": "82"
+          reading:
+            "$serde_json::private::Number": "78"
+        type: secondary
+    name: performanceAdjustment
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      adjusted_funding:
+        "$serde_json::private::Number": "4537500"
+      allocation:
+        base_funding:
+          "$serde_json::private::Number": "4125000"
+        school_size: medium
+      performance_multiplier:
+        "$serde_json::private::Number": "1.1"
+      performance_score:
+        "$serde_json::private::Number": "80"
+      school:
+        esl_students:
+          "$serde_json::private::Number": "80"
+        gifted_students:
+          "$serde_json::private::Number": "35"
+        id: sch_12345
+        name: Washington High School
+        special_education_students:
+          "$serde_json::private::Number": "45"
+        special_programs:
+          - special_education
+          - esl
+          - stem
+        student_population:
+          "$serde_json::private::Number": "750"
+        test_scores:
+          math:
+            "$serde_json::private::Number": "82"
+          reading:
+            "$serde_json::private::Number": "78"
+        type: secondary
+    performance: "[perf]"
+    traceData:
+      adjusted_funding:
+        result:
+          "$serde_json::private::Number": "4537500"
+      performance_multiplier:
+        result:
+          "$serde_json::private::Number": "1.1"
+      performance_score:
+        result:
+          "$serde_json::private::Number": "80"
+  specialProgramsTable:
+    id: specialProgramsTable
+    input:
+      adjusted_funding:
+        "$serde_json::private::Number": "4537500"
+      allocation:
+        base_funding:
+          "$serde_json::private::Number": "4125000"
+        school_size: medium
+      performance_multiplier:
+        "$serde_json::private::Number": "1.1"
+      performance_score:
+        "$serde_json::private::Number": "80"
+      school:
+        esl_students:
+          "$serde_json::private::Number": "80"
+        gifted_students:
+          "$serde_json::private::Number": "35"
+        id: sch_12345
+        name: Washington High School
+        special_education_students:
+          "$serde_json::private::Number": "45"
+        special_programs:
+          - special_education
+          - esl
+          - stem
+        student_population:
+          "$serde_json::private::Number": "750"
+        test_scores:
+          math:
+            "$serde_json::private::Number": "82"
+          reading:
+            "$serde_json::private::Number": "78"
+        type: secondary
+    name: specialProgramsAdjustment
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      adjusted_funding:
+        "$serde_json::private::Number": "4537500"
+      allocation:
+        base_funding:
+          "$serde_json::private::Number": "4125000"
+        school_size: medium
+      funding:
+        - allocation:
+            funding_descriptions: Special Education Support
+            program_funding:
+              "$serde_json::private::Number": "135000"
+        - allocation:
+            funding_descriptions: ESL Program Support
+            program_funding:
+              "$serde_json::private::Number": "200000"
+        - allocation:
+            funding_descriptions: STEM Program Support
+            program_funding:
+              "$serde_json::private::Number": "20000"
+      performance_multiplier:
+        "$serde_json::private::Number": "1.1"
+      performance_score:
+        "$serde_json::private::Number": "80"
+      school:
+        esl_students:
+          "$serde_json::private::Number": "80"
+        gifted_students:
+          "$serde_json::private::Number": "35"
+        id: sch_12345
+        name: Washington High School
+        special_education_students:
+          "$serde_json::private::Number": "45"
+        special_programs:
+          - special_education
+          - esl
+          - stem
+        student_population:
+          "$serde_json::private::Number": "750"
+        test_scores:
+          math:
+            "$serde_json::private::Number": "82"
+          reading:
+            "$serde_json::private::Number": "78"
+        type: secondary
+    performance: "[perf]"
+    traceData:
+      - index:
+          "$serde_json::private::Number": "0"
+        reference_map: {}
+        rule:
+          _id: sp1
+      - index:
+          "$serde_json::private::Number": "1"
+        reference_map: {}
+        rule:
+          _id: sp2
+      - index:
+          "$serde_json::private::Number": "3"
+        reference_map: {}
+        rule:
+          _id: sp4

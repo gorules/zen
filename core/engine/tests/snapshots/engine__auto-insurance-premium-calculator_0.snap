@@ -1,0 +1,358 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  basePremium:
+    "$serde_json::private::Number": "1650"
+  basePremiumPerThousand:
+    "$serde_json::private::Number": "5.5"
+  coverageAmountInThousands:
+    "$serde_json::private::Number": "300"
+  customer:
+    age:
+      "$serde_json::private::Number": "35"
+    creditScore:
+      "$serde_json::private::Number": "720"
+    drivingHistory:
+      accidentsLast3Years:
+        "$serde_json::private::Number": "0"
+      violationsLast3Years:
+        "$serde_json::private::Number": "1"
+    gender: female
+  policy:
+    coverageAmount:
+      "$serde_json::private::Number": "300000"
+    coverageType: comprehensive
+    deductible:
+      "$serde_json::private::Number": "500"
+    vehicleAge:
+      "$serde_json::private::Number": "3"
+    vehicleType: sedan
+  riskFactors:
+    ageRiskFactor:
+      "$serde_json::private::Number": "1.2"
+    driverRiskCategory: medium
+    vehicleRiskFactor:
+      "$serde_json::private::Number": "1"
+trace:
+  dt1:
+    id: dt1
+    input:
+      customer:
+        age:
+          "$serde_json::private::Number": "35"
+        creditScore:
+          "$serde_json::private::Number": "720"
+        drivingHistory:
+          accidentsLast3Years:
+            "$serde_json::private::Number": "0"
+          violationsLast3Years:
+            "$serde_json::private::Number": "1"
+        gender: female
+      policy:
+        coverageAmount:
+          "$serde_json::private::Number": "300000"
+        coverageType: comprehensive
+        deductible:
+          "$serde_json::private::Number": "500"
+        vehicleAge:
+          "$serde_json::private::Number": "3"
+        vehicleType: sedan
+    name: driverRiskAssessment
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      customer:
+        age:
+          "$serde_json::private::Number": "35"
+        creditScore:
+          "$serde_json::private::Number": "720"
+        drivingHistory:
+          accidentsLast3Years:
+            "$serde_json::private::Number": "0"
+          violationsLast3Years:
+            "$serde_json::private::Number": "1"
+        gender: female
+      policy:
+        coverageAmount:
+          "$serde_json::private::Number": "300000"
+        coverageType: comprehensive
+        deductible:
+          "$serde_json::private::Number": "500"
+        vehicleAge:
+          "$serde_json::private::Number": "3"
+        vehicleType: sedan
+      riskFactors:
+        ageRiskFactor:
+          "$serde_json::private::Number": "1.2"
+        driverRiskCategory: medium
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "3"
+      reference_map:
+        customer.age:
+          "$serde_json::private::Number": "35"
+        customer.drivingHistory.accidentsLast3Years + customer.drivingHistory.violationsLast3Years:
+          "$serde_json::private::Number": "1"
+      rule:
+        _id: r1-4
+        "customer.age[i1-1]": "[25..65]"
+        "customer.drivingHistory.accidentsLast3Years + customer.drivingHistory.violationsLast3Years[i1-2]": "1, 2"
+  dt2:
+    id: dt2
+    input:
+      basePremium:
+        "$serde_json::private::Number": "1650"
+      basePremiumPerThousand:
+        "$serde_json::private::Number": "5.5"
+      coverageAmountInThousands:
+        "$serde_json::private::Number": "300"
+      customer:
+        age:
+          "$serde_json::private::Number": "35"
+        creditScore:
+          "$serde_json::private::Number": "720"
+        drivingHistory:
+          accidentsLast3Years:
+            "$serde_json::private::Number": "0"
+          violationsLast3Years:
+            "$serde_json::private::Number": "1"
+        gender: female
+      policy:
+        coverageAmount:
+          "$serde_json::private::Number": "300000"
+        coverageType: comprehensive
+        deductible:
+          "$serde_json::private::Number": "500"
+        vehicleAge:
+          "$serde_json::private::Number": "3"
+        vehicleType: sedan
+      riskFactors:
+        ageRiskFactor:
+          "$serde_json::private::Number": "1.2"
+        driverRiskCategory: medium
+    name: vehicleRiskAssessment
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      basePremium:
+        "$serde_json::private::Number": "1650"
+      basePremiumPerThousand:
+        "$serde_json::private::Number": "5.5"
+      coverageAmountInThousands:
+        "$serde_json::private::Number": "300"
+      customer:
+        age:
+          "$serde_json::private::Number": "35"
+        creditScore:
+          "$serde_json::private::Number": "720"
+        drivingHistory:
+          accidentsLast3Years:
+            "$serde_json::private::Number": "0"
+          violationsLast3Years:
+            "$serde_json::private::Number": "1"
+        gender: female
+      policy:
+        coverageAmount:
+          "$serde_json::private::Number": "300000"
+        coverageType: comprehensive
+        deductible:
+          "$serde_json::private::Number": "500"
+        vehicleAge:
+          "$serde_json::private::Number": "3"
+        vehicleType: sedan
+      riskFactors:
+        ageRiskFactor:
+          "$serde_json::private::Number": "1.2"
+        driverRiskCategory: medium
+        vehicleRiskFactor:
+          "$serde_json::private::Number": "1"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        policy.vehicleAge:
+          "$serde_json::private::Number": "3"
+        policy.vehicleType: sedan
+      rule:
+        _id: r2-2
+        "policy.vehicleAge[i2-2]": "[3..7]"
+        "policy.vehicleType[i2-1]": "'sedan'"
+  dt3:
+    id: dt3
+    input:
+      basePremium:
+        "$serde_json::private::Number": "1650"
+      basePremiumPerThousand:
+        "$serde_json::private::Number": "5.5"
+      coverageAmountInThousands:
+        "$serde_json::private::Number": "300"
+      customer:
+        age:
+          "$serde_json::private::Number": "35"
+        creditScore:
+          "$serde_json::private::Number": "720"
+        drivingHistory:
+          accidentsLast3Years:
+            "$serde_json::private::Number": "0"
+          violationsLast3Years:
+            "$serde_json::private::Number": "1"
+        gender: female
+      policy:
+        coverageAmount:
+          "$serde_json::private::Number": "300000"
+        coverageType: comprehensive
+        deductible:
+          "$serde_json::private::Number": "500"
+        vehicleAge:
+          "$serde_json::private::Number": "3"
+        vehicleType: sedan
+      riskFactors:
+        ageRiskFactor:
+          "$serde_json::private::Number": "1.2"
+        driverRiskCategory: medium
+        vehicleRiskFactor:
+          "$serde_json::private::Number": "1"
+    name: finalPremiumCalculation
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      basePremium:
+        "$serde_json::private::Number": "1650"
+      basePremiumPerThousand:
+        "$serde_json::private::Number": "5.5"
+      coverageAmountInThousands:
+        "$serde_json::private::Number": "300"
+      customer:
+        age:
+          "$serde_json::private::Number": "35"
+        creditScore:
+          "$serde_json::private::Number": "720"
+        drivingHistory:
+          accidentsLast3Years:
+            "$serde_json::private::Number": "0"
+          violationsLast3Years:
+            "$serde_json::private::Number": "1"
+        gender: female
+      policy:
+        coverageAmount:
+          "$serde_json::private::Number": "300000"
+        coverageType: comprehensive
+        deductible:
+          "$serde_json::private::Number": "500"
+        vehicleAge:
+          "$serde_json::private::Number": "3"
+        vehicleType: sedan
+      riskFactors:
+        ageRiskFactor:
+          "$serde_json::private::Number": "1.2"
+        driverRiskCategory: medium
+        vehicleRiskFactor:
+          "$serde_json::private::Number": "1"
+    performance: "[perf]"
+    traceData: ~
+  ex1:
+    id: ex1
+    input:
+      customer:
+        age:
+          "$serde_json::private::Number": "35"
+        creditScore:
+          "$serde_json::private::Number": "720"
+        drivingHistory:
+          accidentsLast3Years:
+            "$serde_json::private::Number": "0"
+          violationsLast3Years:
+            "$serde_json::private::Number": "1"
+        gender: female
+      policy:
+        coverageAmount:
+          "$serde_json::private::Number": "300000"
+        coverageType: comprehensive
+        deductible:
+          "$serde_json::private::Number": "500"
+        vehicleAge:
+          "$serde_json::private::Number": "3"
+        vehicleType: sedan
+      riskFactors:
+        ageRiskFactor:
+          "$serde_json::private::Number": "1.2"
+        driverRiskCategory: medium
+    name: calculateBasePremium
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      basePremium:
+        "$serde_json::private::Number": "1650"
+      basePremiumPerThousand:
+        "$serde_json::private::Number": "5.5"
+      coverageAmountInThousands:
+        "$serde_json::private::Number": "300"
+      customer:
+        age:
+          "$serde_json::private::Number": "35"
+        creditScore:
+          "$serde_json::private::Number": "720"
+        drivingHistory:
+          accidentsLast3Years:
+            "$serde_json::private::Number": "0"
+          violationsLast3Years:
+            "$serde_json::private::Number": "1"
+        gender: female
+      policy:
+        coverageAmount:
+          "$serde_json::private::Number": "300000"
+        coverageType: comprehensive
+        deductible:
+          "$serde_json::private::Number": "500"
+        vehicleAge:
+          "$serde_json::private::Number": "3"
+        vehicleType: sedan
+      riskFactors:
+        ageRiskFactor:
+          "$serde_json::private::Number": "1.2"
+        driverRiskCategory: medium
+    performance: "[perf]"
+    traceData:
+      basePremium:
+        result:
+          "$serde_json::private::Number": "1650"
+      basePremiumPerThousand:
+        result:
+          "$serde_json::private::Number": "5.5"
+      coverageAmountInThousands:
+        result:
+          "$serde_json::private::Number": "300"
+  ip1:
+    id: ip1
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      customer:
+        age:
+          "$serde_json::private::Number": "35"
+        creditScore:
+          "$serde_json::private::Number": "720"
+        drivingHistory:
+          accidentsLast3Years:
+            "$serde_json::private::Number": "0"
+          violationsLast3Years:
+            "$serde_json::private::Number": "1"
+        gender: female
+      policy:
+        coverageAmount:
+          "$serde_json::private::Number": "300000"
+        coverageType: comprehensive
+        deductible:
+          "$serde_json::private::Number": "500"
+        vehicleAge:
+          "$serde_json::private::Number": "3"
+        vehicleType: sedan
+    performance: "[perf]"
+    traceData: ~

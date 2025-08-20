@@ -1,0 +1,181 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  breakdown:
+    - key: premium
+      title: Premium
+      value:
+        "$serde_json::private::Number": "125"
+    - key: gst
+      title: GST
+      value:
+        "$serde_json::private::Number": "17"
+    - key: brokerFee
+      title: Broker Fee
+      value:
+        "$serde_json::private::Number": "45"
+trace:
+  0b998a2f-2b8d-45b4-8cea-13c731d0cd0d:
+    id: 0b998a2f-2b8d-45b4-8cea-13c731d0cd0d
+    input:
+      country: CA
+      coverage:
+        pi: 2M
+        pl: 20M
+    name: Fees
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      fee:
+        broker:
+          "$serde_json::private::Number": "45"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "3"
+      reference_map: {}
+      rule:
+        _id: 4b4e7a3c-17f9-451b-9099-d938de7bfbbb
+  453ed4ec-8754-4768-823a-0741e12926ee:
+    id: 453ed4ec-8754-4768-823a-0741e12926ee
+    input:
+      base:
+        pi:
+          "$serde_json::private::Number": "75"
+        pl:
+          "$serde_json::private::Number": "50"
+      fee:
+        broker:
+          "$serde_json::private::Number": "45"
+      tax:
+        gst:
+          "$serde_json::private::Number": "10"
+    name: Aggregator
+    order:
+      "$serde_json::private::Number": "5"
+    output:
+      breakdown:
+        - key: premium
+          title: Premium
+          value:
+            "$serde_json::private::Number": "125"
+        - key: gst
+          title: GST
+          value:
+            "$serde_json::private::Number": "17"
+        - key: brokerFee
+          title: Broker Fee
+          value:
+            "$serde_json::private::Number": "45"
+    performance: "[perf]"
+    traceData:
+      log: []
+  4b197c9b-8db6-4d67-8e64-2ea7d262b1c6:
+    id: 4b197c9b-8db6-4d67-8e64-2ea7d262b1c6
+    input: ~
+    name: Request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      country: CA
+      coverage:
+        pi: 2M
+        pl: 20M
+    performance: "[perf]"
+    traceData: ~
+  52d501fa-5089-471a-81e1-9d604b6b864d:
+    id: 52d501fa-5089-471a-81e1-9d604b6b864d
+    input:
+      breakdown:
+        - key: premium
+          title: Premium
+          value:
+            "$serde_json::private::Number": "125"
+        - key: gst
+          title: GST
+          value:
+            "$serde_json::private::Number": "17"
+        - key: brokerFee
+          title: Broker Fee
+          value:
+            "$serde_json::private::Number": "45"
+    name: Response
+    order:
+      "$serde_json::private::Number": "6"
+    output: ~
+    performance: "[perf]"
+    traceData: ~
+  831e22b5-93c4-4963-9d21-8af157dd1606:
+    id: 831e22b5-93c4-4963-9d21-8af157dd1606
+    input:
+      country: CA
+      coverage:
+        pi: 2M
+        pl: 20M
+    name: PL Base
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      base:
+        pl:
+          "$serde_json::private::Number": "50"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        coverage.pl: 20M
+      rule:
+        _id: 5a8986b1-27a3-4961-ab6d-e32fb773e083
+        "coverage.pl[6d179b45-a0b7-4c85-8324-73058f3def42]": "\"20M\""
+  b9d38a6e-2d57-483c-9765-66d97b940a04:
+    id: b9d38a6e-2d57-483c-9765-66d97b940a04
+    input:
+      country: CA
+      coverage:
+        pi: 2M
+        pl: 20M
+    name: GST
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      tax:
+        gst:
+          "$serde_json::private::Number": "10"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        country: CA
+        state: ~
+      rule:
+        _id: 35babb81-b350-4445-853f-3877892910f9
+        "country[5ca5e8d1-8339-483b-9c81-cdd34a4fb953]": "\"CA\""
+        "state[8342de09-7a13-4d3b-82f9-156e2381817d]": ""
+  ebec39cc-ac87-4145-ae5d-744759a37268:
+    id: ebec39cc-ac87-4145-ae5d-744759a37268
+    input:
+      country: CA
+      coverage:
+        pi: 2M
+        pl: 20M
+    name: PI Base
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      base:
+        pi:
+          "$serde_json::private::Number": "75"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        coverage.pi: 2M
+      rule:
+        _id: 9b10a56d-ee99-40f3-aa30-85ed38f60ec7
+        "coverage.pi[ec711970-6b90-492f-8b5b-4a6e7cbf3088]": "\"2M\""

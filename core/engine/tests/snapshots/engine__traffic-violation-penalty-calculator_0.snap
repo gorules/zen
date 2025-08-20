@@ -1,0 +1,294 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  assessment:
+    base_fine:
+      "$serde_json::private::Number": "150"
+    base_points:
+      "$serde_json::private::Number": "3"
+    final_fine:
+      "$serde_json::private::Number": "180"
+    final_points:
+      "$serde_json::private::Number": "3"
+    license_suspension_recommended: false
+    payment_deadline_days:
+      "$serde_json::private::Number": "30"
+    risk_level: medium
+    severity: moderate
+  driver:
+    license_issue_date: 2020-06-15
+    license_number: DL123456789
+    previous_violations:
+      "$serde_json::private::Number": "1"
+  violation:
+    date: "2025-03-15T14:30:00Z"
+    in_school_zone: true
+    location: Main St & 5th Ave
+    speed_over_limit:
+      "$serde_json::private::Number": "25"
+    type: speeding
+trace:
+  final_assessment:
+    id: final_assessment
+    input:
+      assessment:
+        base_fine:
+          "$serde_json::private::Number": "150"
+        base_points:
+          "$serde_json::private::Number": "3"
+        final_fine:
+          "$serde_json::private::Number": "180"
+        final_points:
+          "$serde_json::private::Number": "3"
+        license_suspension_recommended: false
+        severity: moderate
+      driver:
+        license_issue_date: 2020-06-15
+        license_number: DL123456789
+        previous_violations:
+          "$serde_json::private::Number": "1"
+      violation:
+        date: "2025-03-15T14:30:00Z"
+        in_school_zone: true
+        location: Main St & 5th Ave
+        speed_over_limit:
+          "$serde_json::private::Number": "25"
+        type: speeding
+    name: finalize_assessment
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      assessment:
+        base_fine:
+          "$serde_json::private::Number": "150"
+        base_points:
+          "$serde_json::private::Number": "3"
+        final_fine:
+          "$serde_json::private::Number": "180"
+        final_points:
+          "$serde_json::private::Number": "3"
+        license_suspension_recommended: false
+        severity: moderate
+      driver:
+        license_issue_date: 2020-06-15
+        license_number: DL123456789
+        previous_violations:
+          "$serde_json::private::Number": "1"
+      violation:
+        date: "2025-03-15T14:30:00Z"
+        in_school_zone: true
+        location: Main St & 5th Ave
+        speed_over_limit:
+          "$serde_json::private::Number": "25"
+        type: speeding
+    performance: "[perf]"
+    traceData:
+      assessment.final_fine:
+        result:
+          "$serde_json::private::Number": "180"
+      assessment.final_points:
+        result:
+          "$serde_json::private::Number": "3"
+  input:
+    id: input
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      driver:
+        license_issue_date: 2020-06-15
+        license_number: DL123456789
+        previous_violations:
+          "$serde_json::private::Number": "1"
+      violation:
+        date: "2025-03-15T14:30:00Z"
+        in_school_zone: true
+        location: Main St & 5th Ave
+        speed_over_limit:
+          "$serde_json::private::Number": "25"
+        type: speeding
+    performance: "[perf]"
+    traceData: ~
+  penalty_calculation:
+    id: penalty_calculation
+    input:
+      assessment:
+        base_fine:
+          "$serde_json::private::Number": "150"
+        base_points:
+          "$serde_json::private::Number": "3"
+        severity: moderate
+      driver:
+        license_issue_date: 2020-06-15
+        license_number: DL123456789
+        previous_violations:
+          "$serde_json::private::Number": "1"
+      violation:
+        date: "2025-03-15T14:30:00Z"
+        in_school_zone: true
+        location: Main St & 5th Ave
+        speed_over_limit:
+          "$serde_json::private::Number": "25"
+        type: speeding
+    name: calculate_penalty
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      assessment:
+        base_fine:
+          "$serde_json::private::Number": "150"
+        base_points:
+          "$serde_json::private::Number": "3"
+        final_fine:
+          "$serde_json::private::Number": "180"
+        final_points:
+          "$serde_json::private::Number": "3"
+        license_suspension_recommended: false
+        severity: moderate
+      driver:
+        license_issue_date: 2020-06-15
+        license_number: DL123456789
+        previous_violations:
+          "$serde_json::private::Number": "1"
+      violation:
+        date: "2025-03-15T14:30:00Z"
+        in_school_zone: true
+        location: Main St & 5th Ave
+        speed_over_limit:
+          "$serde_json::private::Number": "25"
+        type: speeding
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "3"
+      reference_map:
+        assessment.severity: moderate
+        driver.previous_violations:
+          "$serde_json::private::Number": "1"
+        violation.in_school_zone: true
+      rule:
+        _id: pc4
+        "assessment.severity[i1]": "'moderate'"
+        "driver.previous_violations[i2]": ""
+        "violation.in_school_zone[i3]": "true"
+  risk_assessment:
+    id: risk_assessment
+    input:
+      assessment:
+        base_fine:
+          "$serde_json::private::Number": "150"
+        base_points:
+          "$serde_json::private::Number": "3"
+        final_fine:
+          "$serde_json::private::Number": "180"
+        final_points:
+          "$serde_json::private::Number": "3"
+        license_suspension_recommended: false
+        severity: moderate
+      driver:
+        license_issue_date: 2020-06-15
+        license_number: DL123456789
+        previous_violations:
+          "$serde_json::private::Number": "1"
+      violation:
+        date: "2025-03-15T14:30:00Z"
+        in_school_zone: true
+        location: Main St & 5th Ave
+        speed_over_limit:
+          "$serde_json::private::Number": "25"
+        type: speeding
+    name: assess_risk_and_deadlines
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      assessment:
+        base_fine:
+          "$serde_json::private::Number": "150"
+        base_points:
+          "$serde_json::private::Number": "3"
+        final_fine:
+          "$serde_json::private::Number": "180"
+        final_points:
+          "$serde_json::private::Number": "3"
+        license_suspension_recommended: false
+        payment_deadline_days:
+          "$serde_json::private::Number": "30"
+        risk_level: medium
+        severity: moderate
+      driver:
+        license_issue_date: 2020-06-15
+        license_number: DL123456789
+        previous_violations:
+          "$serde_json::private::Number": "1"
+      violation:
+        date: "2025-03-15T14:30:00Z"
+        in_school_zone: true
+        location: Main St & 5th Ave
+        speed_over_limit:
+          "$serde_json::private::Number": "25"
+        type: speeding
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "2"
+      reference_map:
+        assessment.final_points:
+          "$serde_json::private::Number": "3"
+        assessment.severity: moderate
+      rule:
+        _id: ra3
+        "assessment.final_points[i1]": ">= 3"
+        "assessment.severity[i2]": "'moderate'"
+  violation_classification:
+    id: violation_classification
+    input:
+      driver:
+        license_issue_date: 2020-06-15
+        license_number: DL123456789
+        previous_violations:
+          "$serde_json::private::Number": "1"
+      violation:
+        date: "2025-03-15T14:30:00Z"
+        in_school_zone: true
+        location: Main St & 5th Ave
+        speed_over_limit:
+          "$serde_json::private::Number": "25"
+        type: speeding
+    name: classify_violation
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      assessment:
+        base_fine:
+          "$serde_json::private::Number": "150"
+        base_points:
+          "$serde_json::private::Number": "3"
+        severity: moderate
+      driver:
+        license_issue_date: 2020-06-15
+        license_number: DL123456789
+        previous_violations:
+          "$serde_json::private::Number": "1"
+      violation:
+        date: "2025-03-15T14:30:00Z"
+        in_school_zone: true
+        location: Main St & 5th Ave
+        speed_over_limit:
+          "$serde_json::private::Number": "25"
+        type: speeding
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        violation.speed_over_limit:
+          "$serde_json::private::Number": "25"
+        violation.type: speeding
+      rule:
+        _id: rule2
+        "violation.speed_over_limit[i2]": "> 15"
+        "violation.type[i1]": "'speeding'"

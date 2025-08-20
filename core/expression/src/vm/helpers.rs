@@ -1,3 +1,4 @@
+use crate::vm::date::utc_now;
 use crate::vm::error::{VMError, VMResult};
 use chrono::{
     DateTime, Datelike, Days, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Utc, Weekday,
@@ -15,7 +16,7 @@ static TIME_H: &str = "%H";
 
 pub(crate) fn date_time(str: &str) -> VMResult<NaiveDateTime> {
     if str == "now" {
-        return Ok(Utc::now().naive_utc());
+        return Ok(utc_now().naive_utc());
     }
 
     NaiveDateTime::parse_from_str(str, DATE_TIME)
@@ -27,7 +28,7 @@ pub(crate) fn date_time(str: &str) -> VMResult<NaiveDateTime> {
 }
 
 pub(crate) fn time(str: &str) -> VMResult<NaiveTime> {
-    let now = Utc::now();
+    let now = utc_now();
 
     if str == "now" {
         return Ok(now.naive_utc().time());

@@ -1,0 +1,318 @@
+{
+  "tests": [
+    {
+      "input": {
+        "product": {
+          "category": "electronics",
+          "value": 1200,
+          "weight": 0.8,
+          "hsCode": "851712"
+        },
+        "origin": {
+          "country": "CN",
+          "hasFTA": false,
+          "preferentialTreatment": false
+        },
+        "destination": {
+          "country": "US"
+        }
+      },
+      "output": {
+        "additionalFees": 0,
+        "baseDuty": 180,
+        "countryAdjustment": 225,
+        "dutyRate": 0.1875,
+        "minDuty": 225,
+        "preferentialDiscount": 225,
+        "totalDuty": 225
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"product\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"category\": {\n          \"type\": \"string\",\n          \"description\": \"Product category\"\n        },\n        \"value\": {\n          \"type\": \"number\",\n          \"description\": \"Product value in USD\"\n        },\n        \"weight\": {\n          \"type\": \"number\",\n          \"description\": \"Product weight in kg\"\n        },\n        \"hsCode\": {\n          \"type\": \"string\",\n          \"description\": \"Harmonized System code\"\n        }\n      }\n    },\n    \"origin\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"country\": {\n          \"type\": \"string\",\n          \"description\": \"Country of origin\"\n        },\n        \"hasFTA\": {\n          \"type\": \"boolean\",\n          \"description\": \"Has free trade agreement\"\n        },\n        \"preferentialTreatment\": {\n          \"type\": \"boolean\",\n          \"description\": \"Eligible for preferential treatment\"\n        }\n      }\n    },\n    \"destination\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"country\": {\n          \"type\": \"string\",\n          \"description\": \"Destination country\"\n        }\n      }\n    }\n  }\n}"
+      },
+      "id": "input",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "pc-1",
+            "i-category": "'electronics'",
+            "i-hsCode": "startsWith($, '85')",
+            "o-baseRate": "0.15",
+            "o-category": "'High-Tech Electronics'"
+          },
+          {
+            "_id": "pc-2",
+            "i-category": "'electronics'",
+            "i-hsCode": "startsWith($, '90')",
+            "o-baseRate": "0.12",
+            "o-category": "'Precision Electronics'"
+          },
+          {
+            "_id": "pc-3",
+            "i-category": "'textiles'",
+            "i-hsCode": "startsWith($, '61'), startsWith($, '62')",
+            "o-baseRate": "0.20",
+            "o-category": "'Clothing'"
+          },
+          {
+            "_id": "pc-4",
+            "i-category": "'textiles'",
+            "i-hsCode": "startsWith($, '63')",
+            "o-baseRate": "0.18",
+            "o-category": "'Home Textiles'"
+          },
+          {
+            "_id": "pc-5",
+            "i-category": "'food'",
+            "i-hsCode": "startsWith($, '02'), startsWith($, '03'), startsWith($, '04')",
+            "o-baseRate": "0.22",
+            "o-category": "'Perishable Food'"
+          },
+          {
+            "_id": "pc-6",
+            "i-category": "'food'",
+            "i-hsCode": "startsWith($, '19'), startsWith($, '20'), startsWith($, '21')",
+            "o-baseRate": "0.16",
+            "o-category": "'Processed Food'"
+          },
+          {
+            "_id": "pc-7",
+            "i-category": "'automotive'",
+            "i-hsCode": "startsWith($, '87')",
+            "o-baseRate": "0.25",
+            "o-category": "'Vehicles'"
+          },
+          {
+            "_id": "pc-8",
+            "i-category": "",
+            "i-hsCode": "",
+            "o-baseRate": "0.18",
+            "o-category": "'General Merchandise'"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i-category",
+            "name": "Product Category",
+            "field": "product.category"
+          },
+          {
+            "id": "i-hsCode",
+            "name": "HS Code",
+            "field": "product.hsCode"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o-baseRate",
+            "name": "Base Duty Rate",
+            "field": "classification.baseRate"
+          },
+          {
+            "id": "o-category",
+            "name": "Product Classification",
+            "field": "classification.category"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "product_classification",
+      "name": "product_classification",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "cr-1",
+            "i-origin": "'CN'",
+            "i-destination": "'US'",
+            "i-hasFTA": "false",
+            "o-countryMultiplier": "1.25",
+            "o-hasSanctions": "false"
+          },
+          {
+            "_id": "cr-2",
+            "i-origin": "'MX'",
+            "i-destination": "'US'",
+            "i-hasFTA": "true",
+            "o-countryMultiplier": "0.0",
+            "o-hasSanctions": "false"
+          },
+          {
+            "_id": "cr-3",
+            "i-origin": "'CA'",
+            "i-destination": "'US'",
+            "i-hasFTA": "true",
+            "o-countryMultiplier": "0.0",
+            "o-hasSanctions": "false"
+          },
+          {
+            "_id": "cr-4",
+            "i-origin": "'GB', 'DE', 'FR', 'IT', 'ES'",
+            "i-destination": "'US'",
+            "i-hasFTA": "false",
+            "o-countryMultiplier": "0.8",
+            "o-hasSanctions": "false"
+          },
+          {
+            "_id": "cr-5",
+            "i-origin": "'KP', 'IR'",
+            "i-destination": "'US'",
+            "i-hasFTA": "",
+            "o-countryMultiplier": "3.0",
+            "o-hasSanctions": "true"
+          },
+          {
+            "_id": "cr-6",
+            "i-origin": "'VN'",
+            "i-destination": "'US'",
+            "i-hasFTA": "false",
+            "o-countryMultiplier": "0.9",
+            "o-hasSanctions": "false"
+          },
+          {
+            "_id": "cr-7",
+            "i-origin": "",
+            "i-destination": "",
+            "i-hasFTA": "",
+            "o-countryMultiplier": "1.0",
+            "o-hasSanctions": "false"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i-origin",
+            "name": "Origin Country",
+            "field": "origin.country"
+          },
+          {
+            "id": "i-destination",
+            "name": "Destination Country",
+            "field": "destination.country"
+          },
+          {
+            "id": "i-hasFTA",
+            "name": "Has FTA",
+            "field": "origin.hasFTA"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o-countryMultiplier",
+            "name": "Country Multiplier",
+            "field": "countryRules.multiplier"
+          },
+          {
+            "id": "o-hasSanctions",
+            "name": "Has Sanctions",
+            "field": "countryRules.hasSanctions"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "country_rules",
+      "name": "country_rules",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "expr1",
+            "key": "baseDuty",
+            "value": "product.value * number(classification.baseRate)"
+          },
+          {
+            "id": "expr2",
+            "key": "countryAdjustment",
+            "value": "$.baseDuty * number(countryRules.multiplier)"
+          },
+          {
+            "id": "expr3",
+            "key": "additionalFees",
+            "value": "countryRules.hasSanctions == true ? product.value * 0.1 : 0"
+          },
+          {
+            "id": "expr4",
+            "key": "preferentialDiscount",
+            "value": "origin.preferentialTreatment == true ? $.countryAdjustment * 0.8 : $.countryAdjustment"
+          },
+          {
+            "id": "expr5",
+            "key": "minDuty",
+            "value": "$.countryAdjustment > 0 ? max([10, $.preferentialDiscount]) : 0"
+          },
+          {
+            "id": "expr6",
+            "key": "totalDuty",
+            "value": "$.minDuty + $.additionalFees"
+          },
+          {
+            "id": "expr7",
+            "key": "dutyRate",
+            "value": "$.totalDuty / product.value"
+          }
+        ],
+        "passThrough": false,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "duty_calculation",
+      "name": "duty_calculation",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "input",
+      "targetId": "product_classification",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "product_classification",
+      "targetId": "country_rules",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "country_rules",
+      "targetId": "duty_calculation",
+      "type": "edge"
+    }
+  ]
+}

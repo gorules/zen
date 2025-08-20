@@ -1,0 +1,228 @@
+{
+  "tests": [
+    {
+      "input": {
+        "policyType": "home",
+        "premiumAmount": 2000,
+        "performanceTier": "gold"
+      },
+      "output": {
+        "baseCommission": 360,
+        "baseCommissionRate": 0.18,
+        "finalCommission": 450,
+        "performanceTier": "gold",
+        "policyType": "home",
+        "premiumAmount": 2000,
+        "tierMultiplier": 1.25
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "ip1",
+      "name": "request",
+      "position": {
+        "x": 110,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r1-1",
+            "i1-1": "'auto'",
+            "i1-2": "> 2000",
+            "o1-1": "0.15"
+          },
+          {
+            "_id": "r1-2",
+            "i1-1": "'auto'",
+            "i1-2": "> 1000",
+            "o1-1": "0.12"
+          },
+          {
+            "_id": "r1-3",
+            "i1-1": "'auto'",
+            "i1-2": "",
+            "o1-1": "0.10"
+          },
+          {
+            "_id": "r1-4",
+            "i1-1": "'home'",
+            "i1-2": "> 1500",
+            "o1-1": "0.18"
+          },
+          {
+            "_id": "r1-5",
+            "i1-1": "'home'",
+            "i1-2": "",
+            "o1-1": "0.15"
+          },
+          {
+            "_id": "r1-6",
+            "i1-1": "'life'",
+            "i1-2": "> 5000",
+            "o1-1": "0.25"
+          },
+          {
+            "_id": "r1-7",
+            "i1-1": "'life'",
+            "i1-2": "> 2500",
+            "o1-1": "0.22"
+          },
+          {
+            "_id": "r1-8",
+            "i1-1": "'life'",
+            "i1-2": "",
+            "o1-1": "0.20"
+          },
+          {
+            "_id": "r1-9",
+            "i1-1": "",
+            "i1-2": "",
+            "o1-1": "0.08"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i1-1",
+            "name": "Policy Type",
+            "field": "policyType"
+          },
+          {
+            "id": "i1-2",
+            "name": "Premium Amount",
+            "field": "premiumAmount"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o1-1",
+            "name": "Base Commission Rate",
+            "field": "baseCommissionRate"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt1",
+      "name": "baseCommissionRates",
+      "position": {
+        "x": 430,
+        "y": 114
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "e1-1",
+            "key": "baseCommission",
+            "value": "premiumAmount * baseCommissionRate"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ex1",
+      "name": "calculateBaseCommission",
+      "position": {
+        "x": 750,
+        "y": 114
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "r2-1",
+            "i2-1": "'platinum'",
+            "o2-1": "1.5",
+            "o2-2": "baseCommission * 1.5"
+          },
+          {
+            "_id": "r2-2",
+            "i2-1": "'gold'",
+            "o2-1": "1.25",
+            "o2-2": "baseCommission * 1.25"
+          },
+          {
+            "_id": "r2-3",
+            "i2-1": "'silver'",
+            "o2-1": "1.1",
+            "o2-2": "baseCommission * 1.1"
+          },
+          {
+            "_id": "r2-4",
+            "i2-1": "",
+            "o2-1": "1.0",
+            "o2-2": "baseCommission"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "i2-1",
+            "name": "Performance Tier",
+            "field": "performanceTier"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o2-1",
+            "name": "Tier Multiplier",
+            "field": "tierMultiplier"
+          },
+          {
+            "id": "o2-2",
+            "name": "Final Commission",
+            "field": "finalCommission"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "dt2",
+      "name": "performanceTierMultipliers",
+      "position": {
+        "x": 1070,
+        "y": 114
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "ed1",
+      "sourceId": "ip1",
+      "targetId": "dt1",
+      "type": "edge"
+    },
+    {
+      "id": "ed2",
+      "sourceId": "dt1",
+      "targetId": "ex1",
+      "type": "edge"
+    },
+    {
+      "id": "ed3",
+      "sourceId": "ex1",
+      "targetId": "dt2",
+      "type": "edge"
+    }
+  ]
+}

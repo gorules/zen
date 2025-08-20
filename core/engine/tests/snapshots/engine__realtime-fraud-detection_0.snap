@@ -1,0 +1,186 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  blockTransaction: false
+  finalRiskScore:
+    "$serde_json::private::Number": "75"
+  reason: Unusual location with amount significantly above average
+  requiresReview: true
+trace:
+  fraudDetection:
+    id: fraudDetection
+    input:
+      transaction:
+        amount:
+          "$serde_json::private::Number": "1250"
+        date: 2023-03-18
+        id: tx-28473
+        location: Germany
+        merchantCategory: Electronics
+        recentCount:
+          "$serde_json::private::Number": "4"
+        time: "23:45"
+      userProfile:
+        averageTransactionAmount:
+          "$serde_json::private::Number": "350"
+        frequentCountries:
+          - Canada
+          - UK
+        homeCountry: USA
+        id: user-5932
+        maxTransactionAmount:
+          "$serde_json::private::Number": "800"
+        usualMerchantCategories:
+          - Groceries
+          - Dining
+          - Retail
+        usualTransactionTimeRange:
+          - "08:00"
+          - "21:00"
+    name: detectSuspiciousActivity
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      fraud:
+        flag: high
+        reason: Unusual location with amount significantly above average
+        riskScore:
+          "$serde_json::private::Number": "75"
+      transaction:
+        amount:
+          "$serde_json::private::Number": "1250"
+        date: 2023-03-18
+        id: tx-28473
+        location: Germany
+        merchantCategory: Electronics
+        recentCount:
+          "$serde_json::private::Number": "4"
+        time: "23:45"
+      userProfile:
+        averageTransactionAmount:
+          "$serde_json::private::Number": "350"
+        frequentCountries:
+          - Canada
+          - UK
+        homeCountry: USA
+        id: user-5932
+        maxTransactionAmount:
+          "$serde_json::private::Number": "800"
+        usualMerchantCategories:
+          - Groceries
+          - Dining
+          - Retail
+        usualTransactionTimeRange:
+          - "08:00"
+          - "21:00"
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "0"
+      reference_map:
+        transaction.amount:
+          "$serde_json::private::Number": "1250"
+        transaction.location: Germany
+        transaction.recentCount:
+          "$serde_json::private::Number": "4"
+        transaction.time: "23:45"
+      rule:
+        _id: rule1
+        "transaction.amount[amountInput]": "> userProfile.averageTransactionAmount * 3"
+        "transaction.location[locationInput]": "!= userProfile.homeCountry and != userProfile.frequentCountries"
+        "transaction.recentCount[frequencyInput]": ""
+        "transaction.time[timeInput]": ""
+  input:
+    id: input
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      transaction:
+        amount:
+          "$serde_json::private::Number": "1250"
+        date: 2023-03-18
+        id: tx-28473
+        location: Germany
+        merchantCategory: Electronics
+        recentCount:
+          "$serde_json::private::Number": "4"
+        time: "23:45"
+      userProfile:
+        averageTransactionAmount:
+          "$serde_json::private::Number": "350"
+        frequentCountries:
+          - Canada
+          - UK
+        homeCountry: USA
+        id: user-5932
+        maxTransactionAmount:
+          "$serde_json::private::Number": "800"
+        usualMerchantCategories:
+          - Groceries
+          - Dining
+          - Retail
+        usualTransactionTimeRange:
+          - "08:00"
+          - "21:00"
+    performance: "[perf]"
+    traceData: ~
+  riskScoring:
+    id: riskScoring
+    input:
+      fraud:
+        flag: high
+        reason: Unusual location with amount significantly above average
+        riskScore:
+          "$serde_json::private::Number": "75"
+      transaction:
+        amount:
+          "$serde_json::private::Number": "1250"
+        date: 2023-03-18
+        id: tx-28473
+        location: Germany
+        merchantCategory: Electronics
+        recentCount:
+          "$serde_json::private::Number": "4"
+        time: "23:45"
+      userProfile:
+        averageTransactionAmount:
+          "$serde_json::private::Number": "350"
+        frequentCountries:
+          - Canada
+          - UK
+        homeCountry: USA
+        id: user-5932
+        maxTransactionAmount:
+          "$serde_json::private::Number": "800"
+        usualMerchantCategories:
+          - Groceries
+          - Dining
+          - Retail
+        usualTransactionTimeRange:
+          - "08:00"
+          - "21:00"
+    name: calculateRiskScore
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      blockTransaction: false
+      finalRiskScore:
+        "$serde_json::private::Number": "75"
+      reason: Unusual location with amount significantly above average
+      requiresReview: true
+    performance: "[perf]"
+    traceData:
+      blockTransaction:
+        result: false
+      finalRiskScore:
+        result:
+          "$serde_json::private::Number": "75"
+      reason:
+        result: Unusual location with amount significantly above average
+      requiresReview:
+        result: true

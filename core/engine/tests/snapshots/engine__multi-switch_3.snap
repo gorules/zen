@@ -1,0 +1,162 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  flag:
+    secretaries: red
+    turnover: amber
+trace:
+  2b06eb6e-f3ed-4a9e-9f36-a0de372d97fe:
+    id: 2b06eb6e-f3ed-4a9e-9f36-a0de372d97fe
+    input:
+      company:
+        directors:
+          - first
+          - second
+        secretaries:
+          - first
+          - second
+        turnover:
+          "$serde_json::private::Number": "10000000"
+        type: Corporation
+    name: switchNode 1
+    order:
+      "$serde_json::private::Number": "2"
+    output:
+      company:
+        directors:
+          - first
+          - second
+        secretaries:
+          - first
+          - second
+        turnover:
+          "$serde_json::private::Number": "10000000"
+        type: Corporation
+    performance: "[perf]"
+    traceData:
+      statements:
+        - id: 2ce01e42-e125-4184-9a8d-2a7ccf8daf14
+        - id: 3fba0ac2-8498-4421-bb1d-c0c8cabd9c39
+  71100c8d-ae90-4529-904e-b3741298b739:
+    id: 71100c8d-ae90-4529-904e-b3741298b739
+    input:
+      company:
+        directors:
+          - first
+          - second
+        secretaries:
+          - first
+          - second
+        turnover:
+          "$serde_json::private::Number": "10000000"
+        type: Corporation
+    name: Model 2b
+    order:
+      "$serde_json::private::Number": "3"
+    output:
+      flag:
+        secretaries: red
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        len(company.secretaries):
+          "$serde_json::private::Number": "2"
+      rule:
+        _id: 3877b676-e4ff-4479-910d-8fa9d32809d6
+        "len(company.secretaries)[9705e5a5-a590-40da-b1a0-43e6af121e1b]": ""
+  d29b5884-76fc-4c55-8646-3d3417e5b366:
+    id: d29b5884-76fc-4c55-8646-3d3417e5b366
+    input:
+      flag:
+        secretaries: red
+        turnover: amber
+    name: Response
+    order:
+      "$serde_json::private::Number": "5"
+    output: ~
+    performance: "[perf]"
+    traceData: ~
+  de6cc00d-ef1b-46f5-9beb-9285d468c39d:
+    id: de6cc00d-ef1b-46f5-9beb-9285d468c39d
+    input:
+      company:
+        directors:
+          - first
+          - second
+        secretaries:
+          - first
+          - second
+        turnover:
+          "$serde_json::private::Number": "10000000"
+        type: Corporation
+    name: switchNode 1
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      company:
+        directors:
+          - first
+          - second
+        secretaries:
+          - first
+          - second
+        turnover:
+          "$serde_json::private::Number": "10000000"
+        type: Corporation
+    performance: "[perf]"
+    traceData:
+      statements:
+        - id: 597a39af-4be4-4626-8de9-c110527a49bb
+  fecde070-38cf-4656-81d7-3a2cb6e38f8f:
+    id: fecde070-38cf-4656-81d7-3a2cb6e38f8f
+    input: ~
+    name: Request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      company:
+        directors:
+          - first
+          - second
+        secretaries:
+          - first
+          - second
+        turnover:
+          "$serde_json::private::Number": "10000000"
+        type: Corporation
+    performance: "[perf]"
+    traceData: ~
+  ff35357b-2a9f-4eb0-aaee-edb56e3a0ca2:
+    id: ff35357b-2a9f-4eb0-aaee-edb56e3a0ca2
+    input:
+      company:
+        directors:
+          - first
+          - second
+        secretaries:
+          - first
+          - second
+        turnover:
+          "$serde_json::private::Number": "10000000"
+        type: Corporation
+    name: Model Turnover Corp
+    order:
+      "$serde_json::private::Number": "4"
+    output:
+      flag:
+        turnover: amber
+    performance: "[perf]"
+    traceData:
+      index:
+        "$serde_json::private::Number": "1"
+      reference_map:
+        company.turnover:
+          "$serde_json::private::Number": "10000000"
+      rule:
+        _id: 6a967f72-ee4d-407d-ad16-d0695170222e
+        "company.turnover[fa0fd31a-8865-43fb-8a60-b729c640140a]": "[1000000..10000000]"

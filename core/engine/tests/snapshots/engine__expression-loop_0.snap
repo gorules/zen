@@ -1,0 +1,118 @@
+---
+source: core/engine/tests/engine.rs
+expression: serialized_result
+---
+performance: "[perf]"
+result:
+  cart:
+    customerId: CUST-001
+    items:
+      - name: Apple
+        price:
+          "$serde_json::private::Number": "0.5"
+        quantity:
+          "$serde_json::private::Number": "3"
+        totalPrice:
+          "$serde_json::private::Number": "1.5"
+      - name: Banana
+        price:
+          "$serde_json::private::Number": "0.3"
+        quantity:
+          "$serde_json::private::Number": "5"
+        totalPrice:
+          "$serde_json::private::Number": "1.5"
+      - name: Orange
+        price:
+          "$serde_json::private::Number": "0.7"
+        quantity:
+          "$serde_json::private::Number": "2"
+        totalPrice:
+          "$serde_json::private::Number": "1.4"
+trace:
+  expression-node-1:
+    id: expression-node-1
+    input:
+      cart:
+        customerId: CUST-001
+        items:
+          - name: Apple
+            price:
+              "$serde_json::private::Number": "0.5"
+            quantity:
+              "$serde_json::private::Number": "3"
+          - name: Banana
+            price:
+              "$serde_json::private::Number": "0.3"
+            quantity:
+              "$serde_json::private::Number": "5"
+          - name: Orange
+            price:
+              "$serde_json::private::Number": "0.7"
+            quantity:
+              "$serde_json::private::Number": "2"
+    name: calculateItemTotal
+    order:
+      "$serde_json::private::Number": "1"
+    output:
+      cart:
+        customerId: CUST-001
+        items:
+          - name: Apple
+            price:
+              "$serde_json::private::Number": "0.5"
+            quantity:
+              "$serde_json::private::Number": "3"
+            totalPrice:
+              "$serde_json::private::Number": "1.5"
+          - name: Banana
+            price:
+              "$serde_json::private::Number": "0.3"
+            quantity:
+              "$serde_json::private::Number": "5"
+            totalPrice:
+              "$serde_json::private::Number": "1.5"
+          - name: Orange
+            price:
+              "$serde_json::private::Number": "0.7"
+            quantity:
+              "$serde_json::private::Number": "2"
+            totalPrice:
+              "$serde_json::private::Number": "1.4"
+    performance: "[perf]"
+    traceData:
+      - totalPrice:
+          result:
+            "$serde_json::private::Number": "1.5"
+      - totalPrice:
+          result:
+            "$serde_json::private::Number": "1.5"
+      - totalPrice:
+          result:
+            "$serde_json::private::Number": "1.4"
+  input-node:
+    id: input-node
+    input: ~
+    name: request
+    order:
+      "$serde_json::private::Number": "0"
+    output:
+      cart:
+        customerId: CUST-001
+        items:
+          - name: Apple
+            price:
+              "$serde_json::private::Number": "0.5"
+            quantity:
+              "$serde_json::private::Number": "3"
+          - name: Banana
+            price:
+              "$serde_json::private::Number": "0.3"
+            quantity:
+              "$serde_json::private::Number": "5"
+          - name: Orange
+            price:
+              "$serde_json::private::Number": "0.7"
+            quantity:
+              "$serde_json::private::Number": "2"
+    performance: "[perf]"
+    traceData: ~

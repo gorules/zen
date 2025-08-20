@@ -39,9 +39,11 @@ trace:
     performance: "[perf]"
     traceData:
       cat_1:
-        result: "3"
+        result:
+          "$serde_json::private::Number": "3"
       cat_2:
-        result: "4"
+        result:
+          "$serde_json::private::Number": "4"
   3a801d19-b611-4163-bfdd-f247a689a275:
     id: 3a801d19-b611-4163-bfdd-f247a689a275
     input:

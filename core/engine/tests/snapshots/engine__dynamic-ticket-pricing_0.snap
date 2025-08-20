@@ -225,11 +225,14 @@ trace:
     performance: "[perf]"
     traceData:
       availabilityRatio:
-        result: "0.0277777777777777777777777778"
+        result:
+          "$serde_json::private::Number": "0.0277777777777777777777777778"
       competitiveIndex:
-        result: "0.1"
+        result:
+          "$serde_json::private::Number": "0.1"
       demandIndex:
-        result: "0.95"
+        result:
+          "$serde_json::private::Number": "0.95"
   ip1:
     id: ip1
     input: ~

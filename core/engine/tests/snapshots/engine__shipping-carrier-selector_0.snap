@@ -216,17 +216,47 @@ trace:
     performance: "[perf]"
     traceData:
       baseCosts:
-        result: "{\"WorldWide\":77.5,\"EcoShip\":21.75,\"SpeedyExpress\":56.25,\"StandardCourier\":28.25,\"FastTrack\":40.5,\"RegularPost\":25,\"GlobalExpress\":87.5,\"QuickShip\":39.75,\"GlobalStandard\":60,\"HeavyHauler\":65}"
+        result:
+          EcoShip:
+            "$serde_json::private::Number": "21.75"
+          FastTrack:
+            "$serde_json::private::Number": "40.5"
+          GlobalExpress:
+            "$serde_json::private::Number": "87.5"
+          GlobalStandard:
+            "$serde_json::private::Number": "60"
+          HeavyHauler:
+            "$serde_json::private::Number": "65"
+          QuickShip:
+            "$serde_json::private::Number": "39.75"
+          RegularPost:
+            "$serde_json::private::Number": "25"
+          SpeedyExpress:
+            "$serde_json::private::Number": "56.25"
+          StandardCourier:
+            "$serde_json::private::Number": "28.25"
+          WorldWide:
+            "$serde_json::private::Number": "77.5"
       carrierCosts:
-        result: "[{\"cost\":40.5,\"carrier\":\"FastTrack\"},{\"carrier\":\"QuickShip\",\"cost\":39.75}]"
+        result:
+          - carrier: FastTrack
+            cost:
+              "$serde_json::private::Number": "40.5"
+          - carrier: QuickShip
+            cost:
+              "$serde_json::private::Number": "39.75"
       chargableWeight:
-        result: "12.5"
+        result:
+          "$serde_json::private::Number": "12.5"
       eligibleCarriers:
-        result: "[\"FastTrack\",\"QuickShip\"]"
+        result:
+          - FastTrack
+          - QuickShip
       isOversized:
-        result: "false"
+        result: false
       volumetricWeight:
-        result: "7.875"
+        result:
+          "$serde_json::private::Number": "7.875"
   input:
     id: input
     input: ~

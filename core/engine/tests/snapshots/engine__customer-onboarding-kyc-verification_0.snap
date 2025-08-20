@@ -419,11 +419,11 @@ trace:
     performance: "[perf]"
     traceData:
       dueDiligenceLevel:
-        result: "\"standard\""
+        result: standard
       isSanctioned:
-        result: "false"
+        result: false
       requiresEDD:
-        result: "false"
+        result: false
   input:
     id: input
     input: ~
@@ -536,13 +536,18 @@ trace:
     performance: "[perf]"
     traceData:
       nextSteps:
-        result: "\"Onboarding approved\""
+        result: Onboarding approved
       requiredActionsCount:
-        result: "0"
+        result:
+          "$serde_json::private::Number": "0"
       requirements:
-        result: "{\"sourceOfFunds\":false,\"enhancedMonitoring\":false,\"faceVerification\":false,\"addressVerification\":false}"
+        result:
+          addressVerification: false
+          enhancedMonitoring: false
+          faceVerification: false
+          sourceOfFunds: false
       verificationStatus:
-        result: "\"approved\""
+        result: approved
   watchlistCheck:
     id: watchlistCheck
     input:

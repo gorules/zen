@@ -414,11 +414,14 @@ trace:
     performance: "[perf]"
     traceData:
       cabinMultiplier:
-        result: "1"
+        result:
+          "$serde_json::private::Number": "1"
       finalScore:
-        result: "80"
+        result:
+          "$serde_json::private::Number": "80"
       totalScore:
-        result: "80"
+        result:
+          "$serde_json::private::Number": "80"
   input:
     id: input
     input: ~

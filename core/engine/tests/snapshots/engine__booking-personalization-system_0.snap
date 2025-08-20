@@ -210,11 +210,16 @@ trace:
     performance: "[perf]"
     traceData:
       allFeatures:
-        result: "[\"standardSearch\",\"standardNavigation\",\"joinLoyaltyBanner\",\"standardOptions\"]"
+        result:
+          - standardSearch
+          - standardNavigation
+          - joinLoyaltyBanner
+          - standardOptions
       bookingFlowTemplate:
-        result: "\"basic\""
+        result: basic
       totalDiscountPercentage:
-        result: "0"
+        result:
+          "$serde_json::private::Number": "0"
   input:
     id: input
     input: ~

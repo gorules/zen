@@ -50,13 +50,18 @@ trace:
     performance: "[perf]"
     traceData:
       baseTariff:
-        result: "0.05"
+        result:
+          "$serde_json::private::Number": "0.05"
       currency:
-        result: "\"EUR\""
+        result: EUR
       finalTariff:
-        result: "0.048"
+        result:
+          "$serde_json::private::Number": "0.048"
       rulesSummary:
-        result: "[\"Base rate: 0.05 per unit\",\"Premium user call discount\",\"Peak hour domestic rate\"]"
+        result:
+          - "Base rate: 0.05 per unit"
+          - Premium user call discount
+          - Peak hour domestic rate
   input:
     id: input
     input: ~

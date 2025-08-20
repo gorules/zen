@@ -339,8 +339,11 @@ trace:
     performance: "[perf]"
     traceData:
       finalPremium:
-        result: "900"
+        result:
+          "$serde_json::private::Number": "900"
       maximumDiscountPercentage:
-        result: "25"
+        result:
+          "$serde_json::private::Number": "25"
       totalDiscountPercentage:
-        result: "25"
+        result:
+          "$serde_json::private::Number": "25"

@@ -194,11 +194,14 @@ trace:
     performance: "[perf]"
     traceData:
       distanceScore:
-        result: "30"
+        result:
+          "$serde_json::private::Number": "30"
       timeWindowScore:
-        result: "30"
+        result:
+          "$serde_json::private::Number": "30"
       totalScore:
-        result: "160"
+        result:
+          "$serde_json::private::Number": "160"
   ip1:
     id: ip1
     input: ~

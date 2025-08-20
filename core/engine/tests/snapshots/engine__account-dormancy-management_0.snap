@@ -20,9 +20,9 @@ trace:
       customerPhone: "+15551234567"
       customerTier: premium
       daysSinceLastActivity:
-        "$serde_json::private::Number": "24054457"
+        "$serde_json::private::Number": "23993702"
       daysToThreshold:
-        "$serde_json::private::Number": "-24054277"
+        "$serde_json::private::Number": "-23993522"
       dormancyThreshold:
         "$serde_json::private::Number": "180"
       lastActivityDate: 2024-11-15
@@ -42,9 +42,9 @@ trace:
       customerPhone: "+15551234567"
       customerTier: premium
       daysSinceLastActivity:
-        "$serde_json::private::Number": "24054457"
+        "$serde_json::private::Number": "23993702"
       daysToThreshold:
-        "$serde_json::private::Number": "-24054277"
+        "$serde_json::private::Number": "-23993522"
       dormancyStatus: dormant
       dormancyThreshold:
         "$serde_json::private::Number": "180"
@@ -57,7 +57,7 @@ trace:
         "$serde_json::private::Number": "0"
       reference_map:
         daysToThreshold:
-          "$serde_json::private::Number": "-24054277"
+          "$serde_json::private::Number": "-23993522"
       rule:
         _id: r1-1
         "daysToThreshold[i1-1]": "< 0"
@@ -74,9 +74,9 @@ trace:
       customerPhone: "+15551234567"
       customerTier: premium
       daysSinceLastActivity:
-        "$serde_json::private::Number": "24054457"
+        "$serde_json::private::Number": "23993702"
       daysToThreshold:
-        "$serde_json::private::Number": "-24054277"
+        "$serde_json::private::Number": "-23993522"
       dormancyStatus: dormant
       dormancyThreshold:
         "$serde_json::private::Number": "180"
@@ -131,9 +131,9 @@ trace:
       customerPhone: "+15551234567"
       customerTier: premium
       daysSinceLastActivity:
-        "$serde_json::private::Number": "24054457"
+        "$serde_json::private::Number": "23993702"
       daysToThreshold:
-        "$serde_json::private::Number": "-24054277"
+        "$serde_json::private::Number": "-23993522"
       dormancyThreshold:
         "$serde_json::private::Number": "180"
       lastActivityDate: 2024-11-15
@@ -142,9 +142,11 @@ trace:
     performance: "[perf]"
     traceData:
       daysSinceLastActivity:
-        result: "24054457"
+        result:
+          "$serde_json::private::Number": "23993702"
       daysToThreshold:
-        result: "-24054277"
+        result:
+          "$serde_json::private::Number": "-23993522"
   ip1:
     id: ip1
     input: ~
@@ -181,9 +183,9 @@ trace:
       customerPhone: "+15551234567"
       customerTier: premium
       daysSinceLastActivity:
-        "$serde_json::private::Number": "24054457"
+        "$serde_json::private::Number": "23993702"
       daysToThreshold:
-        "$serde_json::private::Number": "-24054277"
+        "$serde_json::private::Number": "-23993522"
       dormancyStatus: dormant
       dormancyThreshold:
         "$serde_json::private::Number": "180"
@@ -204,9 +206,9 @@ trace:
       customerPhone: "+15551234567"
       customerTier: premium
       daysSinceLastActivity:
-        "$serde_json::private::Number": "24054457"
+        "$serde_json::private::Number": "23993702"
       daysToThreshold:
-        "$serde_json::private::Number": "-24054277"
+        "$serde_json::private::Number": "-23993522"
       dormancyStatus: dormant
       dormancyThreshold:
         "$serde_json::private::Number": "180"

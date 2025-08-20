@@ -328,13 +328,16 @@ trace:
     performance: "[perf]"
     traceData:
       canConsolidate:
-        result: "true"
+        result: true
       consolidationWeight:
-        result: "20.7"
+        result:
+          "$serde_json::private::Number": "20.7"
       costSavingEstimate:
-        result: "23.75"
+        result:
+          "$serde_json::private::Number": "23.75"
       expectedFuelSavings:
-        result: "5.25"
+        result:
+          "$serde_json::private::Number": "5.25"
   ex2:
     id: ex2
     input:
@@ -478,13 +481,22 @@ trace:
     performance: "[perf]"
     traceData:
       consolidationAction:
-        result: "\"immediate_consolidation\""
+        result: immediate_consolidation
       costSavingsReport:
-        result: "{\"fuelSavings\":5.25,\"laborSavings\":23.75,\"totalSavings\":29}"
+        result:
+          fuelSavings:
+            "$serde_json::private::Number": "5.25"
+          laborSavings:
+            "$serde_json::private::Number": "23.75"
+          totalSavings:
+            "$serde_json::private::Number": "29"
       deliverySchedule:
-        result: "{\"estimatedDeliveryTime\":null,\"type\":\"consolidated\",\"notificationRequired\":false}"
+        result:
+          estimatedDeliveryTime: ~
+          notificationRequired: false
+          type: consolidated
       schedulingPriority:
-        result: "\"high\""
+        result: high
   ip1:
     id: ip1
     input: ~

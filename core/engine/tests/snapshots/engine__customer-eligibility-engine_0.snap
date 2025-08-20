@@ -374,9 +374,15 @@ trace:
     performance: "[perf]"
     traceData:
       eligibility.offerCount:
-        result: "5"
+        result:
+          "$serde_json::private::Number": "5"
       eligibility.specialOffers:
-        result: "{\"dataBooster\":true,\"deviceUpgrade\":true,\"internationalBundle\":true,\"familyPlan\":true,\"loyaltyReward\":true}"
+        result:
+          dataBooster: true
+          deviceUpgrade: true
+          familyPlan: true
+          internationalBundle: true
+          loyaltyReward: true
   upgradeEligibility:
     id: upgradeEligibility
     input:

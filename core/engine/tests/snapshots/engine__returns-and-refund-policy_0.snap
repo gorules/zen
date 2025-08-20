@@ -164,13 +164,15 @@ trace:
     performance: "[perf]"
     traceData:
       processingTimeEstimate:
-        result: "5"
+        result:
+          "$serde_json::private::Number": "5"
       refundAmount:
-        result: "89.99"
+        result:
+          "$serde_json::private::Number": "89.99"
       refundShipping:
-        result: "true"
+        result: true
       returnShippingCovered:
-        result: "true"
+        result: true
   responsibilityDetermination:
     id: responsibilityDetermination
     input:

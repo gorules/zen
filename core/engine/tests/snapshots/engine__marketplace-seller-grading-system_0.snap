@@ -225,8 +225,8 @@ trace:
         inventory:
           "$serde_json::private::Number": "4"
         strengths:
-          - customerSatisfaction
           - inventory
+          - customerSatisfaction
           - delivery
       sellerInfo:
         id: S12345
@@ -302,8 +302,8 @@ trace:
         inventory:
           "$serde_json::private::Number": "4"
         strengths:
-          - customerSatisfaction
           - inventory
+          - customerSatisfaction
           - delivery
       sellerInfo:
         id: S12345
@@ -313,11 +313,15 @@ trace:
     performance: "[perf]"
     traceData:
       averageScore:
-        result: "3.75"
+        result:
+          "$serde_json::private::Number": "3.75"
       improvements:
-        result: "[]"
+        result: []
       strengths:
-        result: "[\"customerSatisfaction\",\"inventory\",\"delivery\"]"
+        result:
+          - inventory
+          - customerSatisfaction
+          - delivery
   ip1:
     id: ip1
     input: ~

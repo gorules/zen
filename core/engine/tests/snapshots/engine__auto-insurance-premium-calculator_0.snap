@@ -319,11 +319,14 @@ trace:
     performance: "[perf]"
     traceData:
       basePremium:
-        result: "1650"
+        result:
+          "$serde_json::private::Number": "1650"
       basePremiumPerThousand:
-        result: "5.5"
+        result:
+          "$serde_json::private::Number": "5.5"
       coverageAmountInThousands:
-        result: "300"
+        result:
+          "$serde_json::private::Number": "300"
   ip1:
     id: ip1
     input: ~

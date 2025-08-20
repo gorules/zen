@@ -282,15 +282,17 @@ trace:
     performance: "[perf]"
     traceData:
       carbonIntensity:
-        result: "185"
+        result:
+          "$serde_json::private::Number": "185"
       exceededThreshold:
-        result: "true"
+        result: true
       hasWasteViolations:
-        result: "true"
+        result: true
       hasWaterViolations:
-        result: "false"
+        result: false
       percentOverThreshold:
-        result: "23.33333333333333333333333333"
+        result:
+          "$serde_json::private::Number": "23.33333333333333333333333333"
   industryRiskTable:
     id: industryRiskTable
     input:

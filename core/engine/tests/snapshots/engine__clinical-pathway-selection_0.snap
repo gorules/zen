@@ -125,13 +125,16 @@ trace:
     performance: "[perf]"
     traceData:
       comorbidityCount:
-        result: "3"
+        result:
+          "$serde_json::private::Number": "3"
       comorbidityRiskScore:
-        result: "9"
+        result:
+          "$serde_json::private::Number": "9"
       hasHighRiskComorbidity:
-        result: "true"
+        result: true
       totalRiskScore:
-        result: "17"
+        result:
+          "$serde_json::private::Number": "17"
   diagnoseTable:
     id: diagnoseTable
     input:
@@ -498,11 +501,15 @@ trace:
     performance: "[perf]"
     traceData:
       followupFrequency:
-        result: "\"daily\""
+        result: daily
       recommendedMonitoring:
-        result: "[\"comprehensive_vitals\",\"medication_adherence\",\"lifestyle_factors\",\"specialist_consultation\"]"
+        result:
+          - comprehensive_vitals
+          - medication_adherence
+          - lifestyle_factors
+          - specialist_consultation
       selectedPathway:
-        result: "\"intensive\""
+        result: intensive
   patientFactorsTable:
     id: patientFactorsTable
     input:

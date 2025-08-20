@@ -185,11 +185,14 @@ trace:
     performance: "[perf]"
     traceData:
       calculatedPoints:
-        result: "9000"
+        result:
+          "$serde_json::private::Number": "9000"
       seasonalPromotion:
-        result: "1.5"
+        result:
+          "$serde_json::private::Number": "1.5"
       totalPoints:
-        result: "9000"
+        result:
+          "$serde_json::private::Number": "9000"
   ip1:
     id: ip1
     input: ~

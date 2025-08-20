@@ -87,9 +87,11 @@ trace:
     performance: "[perf]"
     traceData:
       assessment.final_fine:
-        result: "180"
+        result:
+          "$serde_json::private::Number": "180"
       assessment.final_points:
-        result: "3"
+        result:
+          "$serde_json::private::Number": "3"
   input:
     id: input
     input: ~

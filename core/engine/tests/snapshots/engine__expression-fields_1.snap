@@ -44,7 +44,7 @@ trace:
     performance: "[perf]"
     traceData:
       fullName:
-        result: "\"Jane Smith\""
+        result: Jane Smith
   input-node:
     id: input-node
     input: ~

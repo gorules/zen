@@ -109,11 +109,14 @@ trace:
     performance: "[perf]"
     traceData:
       adjustedRiskScore:
-        result: "57"
+        result:
+          "$serde_json::private::Number": "57"
       geopoliticalFactor:
-        result: "1.3"
+        result:
+          "$serde_json::private::Number": "1.3"
       marketVolatilityFactor:
-        result: "1.1"
+        result:
+          "$serde_json::private::Number": "1.1"
   input:
     id: input
     input: ~

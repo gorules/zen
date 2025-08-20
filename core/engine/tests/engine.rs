@@ -1,4 +1,5 @@
 use crate::support::{create_fs_loader, load_raw_test_data, load_test_data, test_data_root};
+use chrono::{TimeZone, Utc};
 use serde::Deserialize;
 use serde_json::json;
 use std::fs;
@@ -11,6 +12,7 @@ use zen_engine::loader::{LoaderError, MemoryLoader};
 use zen_engine::model::{DecisionContent, DecisionNode, DecisionNodeKind, FunctionNodeContent};
 use zen_engine::Variable;
 use zen_engine::{DecisionEngine, EvaluationError, EvaluationOptions};
+use zen_expression::vm::UTC_OVERRIDE;
 
 mod support;
 
@@ -223,6 +225,8 @@ async fn engine_switch_node() {
 #[tokio::test]
 #[cfg_attr(miri, ignore)]
 async fn engine_graph_tests() {
+    mock_datetime();
+
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]
     struct TestCase {
@@ -264,9 +268,15 @@ async fn engine_graph_tests() {
     }
 }
 
+fn mock_datetime() {
+    *UTC_OVERRIDE.write().unwrap() = Some("2025-08-19T16:55:02.078Z".parse().unwrap());
+}
+
 #[tokio::test]
 #[cfg_attr(miri, ignore)]
 async fn engine_snapshot_tests() {
+    mock_datetime();
+
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]
     struct TestCase {

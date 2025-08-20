@@ -244,9 +244,9 @@ trace:
     performance: "[perf]"
     traceData:
       flags.manual_review:
-        result: "true"
+        result: true
       flags.requires_verification:
-        result: "true"
+        result: true
   ex1:
     id: ex1
     input:
@@ -306,9 +306,12 @@ trace:
     performance: "[perf]"
     traceData:
       risk_factors:
-        result: "[\"Multiple rapid bookings\",\"High-value prepaid card transaction\"]"
+        result:
+          - Multiple rapid bookings
+          - High-value prepaid card transaction
       total_risk_score:
-        result: "70"
+        result:
+          "$serde_json::private::Number": "70"
   ip1:
     id: ip1
     input: ~

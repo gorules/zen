@@ -122,19 +122,26 @@ trace:
     performance: "[perf]"
     traceData:
       additionalFees:
-        result: "0"
+        result:
+          "$serde_json::private::Number": "0"
       baseDuty:
-        result: "180"
+        result:
+          "$serde_json::private::Number": "180"
       countryAdjustment:
-        result: "225"
+        result:
+          "$serde_json::private::Number": "225"
       dutyRate:
-        result: "0.1875"
+        result:
+          "$serde_json::private::Number": "0.1875"
       minDuty:
-        result: "225"
+        result:
+          "$serde_json::private::Number": "225"
       preferentialDiscount:
-        result: "225"
+        result:
+          "$serde_json::private::Number": "225"
       totalDuty:
-        result: "225"
+        result:
+          "$serde_json::private::Number": "225"
   input:
     id: input
     input: ~

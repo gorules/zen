@@ -127,11 +127,14 @@ trace:
     performance: "[perf]"
     traceData:
       commissionAmount:
-        result: "69.3"
+        result:
+          "$serde_json::private::Number": "69.3"
       finalCommissionRate:
-        result: "0.198"
+        result:
+          "$serde_json::private::Number": "0.198"
       promotionMultiplier:
-        result: "1.25"
+        result:
+          "$serde_json::private::Number": "1.25"
   ip1:
     id: ip1
     input: ~

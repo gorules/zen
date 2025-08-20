@@ -248,9 +248,12 @@ trace:
     performance: "[perf]"
     traceData:
       riskDescriptions:
-        result: "[\"High risk medical condition\",\"Multiple pre-existing conditions\"]"
+        result:
+          - High risk medical condition
+          - Multiple pre-existing conditions
       totalRiskScore:
-        result: "30"
+        result:
+          "$serde_json::private::Number": "30"
   ip1:
     id: ip1
     input: ~

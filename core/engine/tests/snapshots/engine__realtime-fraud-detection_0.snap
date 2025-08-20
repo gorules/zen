@@ -176,10 +176,11 @@ trace:
     performance: "[perf]"
     traceData:
       blockTransaction:
-        result: "false"
+        result: false
       finalRiskScore:
-        result: "75"
+        result:
+          "$serde_json::private::Number": "75"
       reason:
-        result: "\"Unusual location with amount significantly above average\""
+        result: Unusual location with amount significantly above average
       requiresReview:
-        result: "true"
+        result: true

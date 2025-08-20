@@ -126,9 +126,10 @@ trace:
     performance: "[perf]"
     traceData:
       majorVersion:
-        result: "14"
+        result:
+          "$serde_json::private::Number": "14"
       normalizedModel:
-        result: "\"iphone 13 pro\""
+        result: iphone 13 pro
   ip1:
     id: ip1
     input: ~

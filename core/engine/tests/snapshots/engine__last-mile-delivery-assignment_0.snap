@@ -9,7 +9,7 @@ result:
       "$serde_json::private::Number": "28"
     deliveryPersonId: DP-789
     estimatedArrival:
-      "$serde_json::private::Number": "1755683930"
+      "$serde_json::private::Number": "1755623438"
     packageId: PKG-12345
   assignmentStatus: assigned
   capacityFactor:
@@ -263,15 +263,19 @@ trace:
     performance: "[perf]"
     traceData:
       capacityFactor:
-        result: "5"
+        result:
+          "$serde_json::private::Number": "5"
       distanceScore:
-        result: "7"
+        result:
+          "$serde_json::private::Number": "7"
       recommendedAssignment:
-        result: "true"
+        result: true
       slaFactor:
-        result: "6"
+        result:
+          "$serde_json::private::Number": "6"
       totalScore:
-        result: "28"
+        result:
+          "$serde_json::private::Number": "28"
   ex2:
     id: ex2
     input:
@@ -335,7 +339,7 @@ trace:
           "$serde_json::private::Number": "28"
         deliveryPersonId: DP-789
         estimatedArrival:
-          "$serde_json::private::Number": "1755683930"
+          "$serde_json::private::Number": "1755623438"
         packageId: PKG-12345
       assignmentStatus: assigned
       capacityFactor:
@@ -393,11 +397,17 @@ trace:
     performance: "[perf]"
     traceData:
       assignmentDetails:
-        result: "{\"deliveryPersonId\":\"DP-789\",\"assignmentScore\":28,\"packageId\":\"PKG-12345\",\"estimatedArrival\":1755683930}"
+        result:
+          assignmentScore:
+            "$serde_json::private::Number": "28"
+          deliveryPersonId: DP-789
+          estimatedArrival:
+            "$serde_json::private::Number": "1755623438"
+          packageId: PKG-12345
       assignmentStatus:
-        result: "\"assigned\""
+        result: assigned
       message:
-        result: "\"Package successfully assigned to delivery person\""
+        result: Package successfully assigned to delivery person
   ip1:
     id: ip1
     input: ~

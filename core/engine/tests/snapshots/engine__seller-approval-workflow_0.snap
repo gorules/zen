@@ -5,7 +5,7 @@ expression: serialized_result
 performance: "[perf]"
 result:
   approvalDate:
-    "$serde_json::private::Number": "1755682992"
+    "$serde_json::private::Number": "1755622502"
   score:
     "$serde_json::private::Number": "85"
   status: APPROVED
@@ -56,18 +56,20 @@ trace:
       "$serde_json::private::Number": "4"
     output:
       approvalDate:
-        "$serde_json::private::Number": "1755682992"
+        "$serde_json::private::Number": "1755622502"
       score:
         "$serde_json::private::Number": "85"
       status: APPROVED
     performance: "[perf]"
     traceData:
       approvalDate:
-        result: "1755682992"
+        result:
+          "$serde_json::private::Number": "1755622502"
       score:
-        result: "85"
+        result:
+          "$serde_json::private::Number": "85"
       status:
-        result: "\"APPROVED\""
+        result: APPROVED
   approvalSwitch:
     id: approvalSwitch
     input:

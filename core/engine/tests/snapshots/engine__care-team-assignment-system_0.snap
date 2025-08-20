@@ -474,19 +474,19 @@ trace:
     performance: "[perf]"
     traceData:
       availableProviders:
-        result: "null"
+        result: ~
       facility:
-        result: "null"
+        result: ~
       mobilityIssues:
-        result: "true"
+        result: true
       patient:
-        result: "null"
+        result: ~
       requiresMentalHealthSupport:
-        result: "true"
+        result: true
       requiresNutritionSupport:
-        result: "true"
+        result: true
       requiresSpecialist:
-        result: "true"
+        result: true
   f1af25e2-126e-4882-8d35-6ae33dbc37bf:
     id: f1af25e2-126e-4882-8d35-6ae33dbc37bf
     input:

@@ -283,7 +283,8 @@ trace:
     performance: "[perf]"
     traceData:
       adjustedFee:
-        result: "188"
+        result:
+          "$serde_json::private::Number": "188"
   ip1:
     id: ip1
     input: ~

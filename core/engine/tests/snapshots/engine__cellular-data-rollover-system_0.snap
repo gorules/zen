@@ -108,11 +108,13 @@ trace:
     performance: "[perf]"
     traceData:
       isPositiveUnusedData:
-        result: "true"
+        result: true
       previousRolloverAmount:
-        result: "5"
+        result:
+          "$serde_json::private::Number": "5"
       unusedData:
-        result: "15"
+        result:
+          "$serde_json::private::Number": "15"
   ex2:
     id: ex2
     input:
@@ -149,11 +151,12 @@ trace:
     performance: "[perf]"
     traceData:
       nextBillingCycle.consecutiveRollovers:
-        result: "2"
+        result:
+          "$serde_json::private::Number": "2"
       nextBillingCycle.status:
-        result: "\"approved\""
+        result: approved
       responseMessage:
-        result: "\"Rollover successful. You have 20 GB of rollover data available for your next billing cycle.\""
+        result: Rollover successful. You have 20 GB of rollover data available for your next billing cycle.
   ip1:
     id: ip1
     input: ~

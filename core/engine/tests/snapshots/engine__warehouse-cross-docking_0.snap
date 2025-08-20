@@ -185,11 +185,13 @@ trace:
     performance: "[perf]"
     traceData:
       hasMatchingOutboundOrders:
-        result: "true"
+        result: true
       timeDifferenceHours:
-        result: "23"
+        result:
+          "$serde_json::private::Number": "23"
       warehouseCapacityPercentage:
-        result: "75"
+        result:
+          "$serde_json::private::Number": "75"
   ex2:
     id: ex2
     input:
@@ -266,11 +268,12 @@ trace:
     performance: "[perf]"
     traceData:
       dockingBay:
-        result: "\"Bay-E4\""
+        result: Bay-E4
       estimatedProcessingTime:
-        result: "30"
+        result:
+          "$serde_json::private::Number": "30"
       priority:
-        result: "\"normal\""
+        result: normal
   ip1:
     id: ip1
     input: ~

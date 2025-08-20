@@ -123,17 +123,18 @@ trace:
     performance: "[perf]"
     traceData:
       hasLowRating:
-        result: "true"
+        result: true
       hasPreviousViolations:
-        result: "true"
+        result: true
       isHighValueBrand:
-        result: "true"
+        result: true
       isNewSeller:
-        result: "true"
+        result: true
       isSensitiveCategory:
-        result: "true"
+        result: true
       priceDeviationScore:
-        result: "36.66666666666666666666666667"
+        result:
+          "$serde_json::private::Number": "36.66666666666666666666666667"
   determineAction:
     id: determineAction
     input:

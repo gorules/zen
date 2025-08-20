@@ -151,11 +151,13 @@ trace:
     performance: "[perf]"
     traceData:
       denialReasons:
-        result: "[]"
+        result: []
       isEligible:
-        result: "true"
+        result: true
       policyDecision:
-        result: "{\"reasons\":null,\"approved\":null}"
+        result:
+          approved: ~
+          reasons: ~
   input:
     id: input
     input: ~

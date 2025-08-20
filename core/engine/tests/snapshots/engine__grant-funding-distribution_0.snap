@@ -154,13 +154,16 @@ trace:
     performance: "[perf]"
     traceData:
       fundingPercentage:
-        result: "76"
+        result:
+          "$serde_json::private::Number": "76"
       fundingStatus:
-        result: "\"Approved\""
+        result: Approved
       grantAmount:
-        result: "57000"
+        result:
+          "$serde_json::private::Number": "57000"
       maxPossibleAmount:
-        result: "57000"
+        result:
+          "$serde_json::private::Number": "57000"
   inputNode:
     id: inputNode
     input: ~

@@ -338,13 +338,16 @@ trace:
     performance: "[perf]"
     traceData:
       dispatchReasons:
-        result: "[{\"flag\":false,\"reason\":\"Extreme wind and low visibility\"}]"
+        result:
+          - flag: false
+            reason: Extreme wind and low visibility
       dispatchSummary:
-        result: "\"Flight dispatch denied\""
+        result: Flight dispatch denied
       failedCriteria:
-        result: "[\"weather\"]"
+        result:
+          - weather
       isDispatchable:
-        result: "false"
+        result: false
   inputNode:
     id: inputNode
     input: ~
@@ -622,13 +625,17 @@ trace:
     performance: "[perf]"
     traceData:
       estimatedTakeoffWeight:
-        result: "44850"
+        result:
+          "$serde_json::private::Number": "44850"
       passengerWeight:
-        result: "850"
+        result:
+          "$serde_json::private::Number": "850"
       totalCargo:
-        result: "2500"
+        result:
+          "$serde_json::private::Number": "2500"
       totalPassengers:
-        result: "10"
+        result:
+          "$serde_json::private::Number": "10"
   weightEligibility:
     id: weightEligibility
     input:

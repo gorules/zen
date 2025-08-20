@@ -32,7 +32,7 @@ trace:
         serviceLevel: standard
         type: individual
       dataRetentionDate:
-        "$serde_json::private::Number": "63963682995"
+        "$serde_json::private::Number": "63963622502"
       serviceRequest:
         dataSharing: false
         internationalRoaming: true
@@ -105,7 +105,7 @@ trace:
         serviceLevel: standard
         type: individual
       dataRetentionDate:
-        "$serde_json::private::Number": "63963682995"
+        "$serde_json::private::Number": "63963622502"
       serviceRequest:
         dataSharing: false
         internationalRoaming: true
@@ -113,11 +113,12 @@ trace:
     performance: "[perf]"
     traceData:
       complianceStatus:
-        result: "\"compliant\""
+        result: compliant
       complianceSummary:
-        result: "\"Region: EU, Framework: GDPR, Retention: 24 months\""
+        result: "Region: EU, Framework: GDPR, Retention: 24 months"
       dataRetentionDate:
-        result: "63963682995"
+        result:
+          "$serde_json::private::Number": "63963622502"
   input:
     id: input
     input: ~

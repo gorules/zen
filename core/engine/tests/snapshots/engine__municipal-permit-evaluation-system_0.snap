@@ -230,15 +230,15 @@ trace:
     performance: "[perf]"
     traceData:
       isCommercialZone:
-        result: "false"
+        result: false
       isIndoorEvent:
-        result: "false"
+        result: false
       isIndustrialZone:
-        result: "false"
+        result: false
       isOutdoorEvent:
-        result: "false"
+        result: false
       isResidentialZone:
-        result: "true"
+        result: true
   ip1:
     id: ip1
     input: ~

@@ -96,17 +96,23 @@ trace:
     performance: "[perf]"
     traceData:
       baseCommission:
-        result: "525000"
+        result:
+          "$serde_json::private::Number": "525000"
       bonusCommission:
-        result: "37950"
+        result:
+          "$serde_json::private::Number": "37950"
       durationMultiplier:
-        result: "1.1"
+        result:
+          "$serde_json::private::Number": "1.1"
       segmentMultiplier:
-        result: "1.15"
+        result:
+          "$serde_json::private::Number": "1.15"
       telcoRevenue:
-        result: "937050"
+        result:
+          "$serde_json::private::Number": "937050"
       totalCommission:
-        result: "562950"
+        result:
+          "$serde_json::private::Number": "562950"
   ip1:
     id: ip1
     input: ~

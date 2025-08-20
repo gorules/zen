@@ -78,9 +78,11 @@ trace:
     performance: "[perf]"
     traceData:
       adjacentSeatsNeeded:
-        result: "3"
+        result:
+          "$serde_json::private::Number": "3"
       cabinFillPercentage:
-        result: "60"
+        result:
+          "$serde_json::private::Number": "60"
   inputNode:
     id: inputNode
     input: ~
@@ -168,11 +170,12 @@ trace:
     performance: "[perf]"
     traceData:
       seatDisplay.displayMessage:
-        result: "\"Select your seats\""
+        result: Select your seats
       seatDisplay.seatMapVersion:
-        result: "\"premium\""
+        result: premium
       seatDisplay.totalAvailableSeats:
-        result: "72"
+        result:
+          "$serde_json::private::Number": "72"
   seatMapRules:
     id: seatMapRules
     input:

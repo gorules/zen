@@ -81,11 +81,14 @@ trace:
     performance: "[perf]"
     traceData:
       - totalPrice:
-          result: "1.5"
+          result:
+            "$serde_json::private::Number": "1.5"
       - totalPrice:
-          result: "1.5"
+          result:
+            "$serde_json::private::Number": "1.5"
       - totalPrice:
-          result: "1.4"
+          result:
+            "$serde_json::private::Number": "1.4"
   input-node:
     id: input-node
     input: ~

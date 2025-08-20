@@ -21,7 +21,7 @@ trace:
     performance: "[perf]"
     traceData:
       nodeData:
-        result: "{}"
+        result: {}
   2a8241f2-a808-4030-afd3-94ba60d93291:
     id: 2a8241f2-a808-4030-afd3-94ba60d93291
     input: ~
@@ -45,9 +45,9 @@ trace:
     performance: "[perf]"
     traceData:
       L1.carbon_accounting.score_commentary:
-        result: "\"There is likely to be\""
+        result: There is likely to be
       L1.carbon_accounting.score_label:
-        result: "\"Moderate risk\""
+        result: Moderate risk
   d438419f-c54a-49b4-b2a0-3bb626b0617f:
     id: d438419f-c54a-49b4-b2a0-3bb626b0617f
     input: {}
@@ -59,4 +59,4 @@ trace:
     performance: "[perf]"
     traceData:
       L1:
-        result: "{}"
+        result: {}

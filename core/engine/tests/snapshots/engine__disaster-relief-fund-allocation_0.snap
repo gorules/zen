@@ -301,9 +301,11 @@ trace:
     performance: "[perf]"
     traceData:
       householdMultiplier:
-        result: "1.6"
+        result:
+          "$serde_json::private::Number": "1.6"
       initialAllocation:
-        result: "14400"
+        result:
+          "$serde_json::private::Number": "14400"
   ip1:
     id: ip1
     input: ~

@@ -179,11 +179,13 @@ trace:
     performance: "[perf]"
     traceData:
       isQualifiedSeller:
-        result: "true"
+        result: true
       seasonalityFactor:
-        result: "1.2"
+        result:
+          "$serde_json::private::Number": "1.2"
       sellerFactor:
-        result: "1.5"
+        result:
+          "$serde_json::private::Number": "1.5"
   determineEligibility:
     id: determineEligibility
     input:

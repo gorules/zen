@@ -55,9 +55,9 @@ trace:
         scores.vitalScore + scores.symptomScore + scores.complaintScore:
           "$serde_json::private::Number": "40"
         values(flags):
-          - orange
-          - orange
           - green
+          - orange
+          - orange
       rule:
         _id: cp3
         "scores.vitalScore + scores.symptomScore + scores.complaintScore[i2]": ">= 40"

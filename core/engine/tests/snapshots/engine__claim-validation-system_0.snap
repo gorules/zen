@@ -115,11 +115,11 @@ trace:
     performance: "[perf]"
     traceData:
       isValid:
-        result: "false"
+        result: false
       nextStep:
-        result: "\"rejection\""
+        result: rejection
       validationMessage:
-        result: "\"Claim reported more than 60 days after incident\""
+        result: Claim reported more than 60 days after incident
   evaluateTimeframes:
     id: evaluateTimeframes
     input:

@@ -194,19 +194,26 @@ trace:
     performance: "[perf]"
     traceData:
       acquisitionCostRatio:
-        result: "0.0095436036647438072616219885"
+        result:
+          "$serde_json::private::Number": "0.0095436036647438072616219885"
       adjustedLTV:
-        result: "15567.333333333333333333333334"
+        result:
+          "$serde_json::private::Number": "15567.333333333333333333333334"
       averageOrderValue:
-        result: "168.4"
+        result:
+          "$serde_json::private::Number": "168.4"
       basicLTV:
-        result: "15717.333333333333333333333334"
+        result:
+          "$serde_json::private::Number": "15717.333333333333333333333334"
       customerLifetimeMonths:
-        result: "80"
+        result:
+          "$serde_json::private::Number": "80"
       grossMargin:
-        result: "0.35"
+        result:
+          "$serde_json::private::Number": "0.35"
       purchaseFrequency:
-        result: "3.3333333333333333333333333336"
+        result:
+          "$serde_json::private::Number": "3.3333333333333333333333333336"
   ip1:
     id: ip1
     input: ~

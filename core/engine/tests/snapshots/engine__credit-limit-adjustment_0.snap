@@ -161,9 +161,11 @@ trace:
     performance: "[perf]"
     traceData:
       recommendation.amount_change:
-        result: "1500"
+        result:
+          "$serde_json::private::Number": "1500"
       recommendation.new_credit_limit:
-        result: "6500"
+        result:
+          "$serde_json::private::Number": "6500"
   financialBehaviorNode:
     id: financialBehaviorNode
     input:
@@ -443,7 +445,8 @@ trace:
     performance: "[perf]"
     traceData:
       total_adjustment_score:
-        result: "80"
+        result:
+          "$serde_json::private::Number": "80"
   utilizationNode:
     id: utilizationNode
     input:

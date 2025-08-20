@@ -126,13 +126,15 @@ trace:
     performance: "[perf]"
     traceData:
       allocatedLocation:
-        result: "\"prime-picking-area-pallet-rack-bottom\""
+        result: prime-picking-area-pallet-rack-bottom
       pickingEfficiencyScore:
-        result: "7"
+        result:
+          "$serde_json::private::Number": "7"
       recommendedQuantity:
-        result: "1250"
+        result:
+          "$serde_json::private::Number": "1250"
       replenishmentFrequency:
-        result: "\"weekly\""
+        result: weekly
   input:
     id: input
     input: ~

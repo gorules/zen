@@ -133,13 +133,16 @@ trace:
     performance: "[perf]"
     traceData:
       finalCommissionRate:
-        result: "0.168"
+        result:
+          "$serde_json::private::Number": "0.168"
       isPromotionActive:
-        result: "false"
+        result: false
       promotionAdjustment:
-        result: "0"
+        result:
+          "$serde_json::private::Number": "0"
       volumeMultiplier:
-        result: "1.2"
+        result:
+          "$serde_json::private::Number": "1.2"
   sellerPerformance:
     id: sellerPerformance
     input:

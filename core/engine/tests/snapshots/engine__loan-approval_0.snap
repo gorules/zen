@@ -70,7 +70,8 @@ trace:
     performance: "[perf]"
     traceData:
       dtiRatio:
-        result: "30"
+        result:
+          "$serde_json::private::Number": "30"
   calculateInterestRate:
     id: calculateInterestRate
     input:
@@ -118,15 +119,19 @@ trace:
     performance: "[perf]"
     traceData:
       approval:
-        result: "true"
+        result: true
       baseRate:
-        result: "5.5"
+        result:
+          "$serde_json::private::Number": "5.5"
       interestRate:
-        result: "6.5"
+        result:
+          "$serde_json::private::Number": "6.5"
       riskAdjustment:
-        result: "20"
+        result:
+          "$serde_json::private::Number": "20"
       totalRiskScore:
-        result: "80"
+        result:
+          "$serde_json::private::Number": "80"
   determineApproval:
     id: determineApproval
     input:

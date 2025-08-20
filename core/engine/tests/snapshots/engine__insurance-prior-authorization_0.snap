@@ -7,7 +7,7 @@ result:
   reason: Advanced imaging requires prior authorization
   requiresAuthorization: true
   timestamp:
-    "$serde_json::private::Number": "1755682995"
+    "$serde_json::private::Number": "1755622502"
 trace:
   commercialRules:
     id: commercialRules
@@ -116,15 +116,16 @@ trace:
       reason: Advanced imaging requires prior authorization
       requiresAuthorization: true
       timestamp:
-        "$serde_json::private::Number": "1755682995"
+        "$serde_json::private::Number": "1755622502"
     performance: "[perf]"
     traceData:
       reason:
-        result: "\"Advanced imaging requires prior authorization\""
+        result: Advanced imaging requires prior authorization
       requiresAuthorization:
-        result: "true"
+        result: true
       timestamp:
-        result: "1755682995"
+        result:
+          "$serde_json::private::Number": "1755622502"
   inputNode:
     id: inputNode
     input: ~

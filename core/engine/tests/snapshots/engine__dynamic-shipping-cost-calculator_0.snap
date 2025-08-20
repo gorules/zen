@@ -177,7 +177,7 @@ trace:
         "$serde_json::private::Number": "2"
       reference_map:
         "dayOfYear('now')":
-          "$serde_json::private::Number": "232"
+          "$serde_json::private::Number": "231"
       rule:
         _id: r3-3
         "dayOfYear('now')[i3-1]": "> 172 and < 265"
@@ -227,11 +227,14 @@ trace:
     performance: "[perf]"
     traceData:
       dimensionalWeight:
-        result: "4.8"
+        result:
+          "$serde_json::private::Number": "4.8"
       distanceFactor:
-        result: "2.5"
+        result:
+          "$serde_json::private::Number": "2.5"
       effectiveWeight:
-        result: "25"
+        result:
+          "$serde_json::private::Number": "25"
   ip1:
     id: ip1
     input: ~

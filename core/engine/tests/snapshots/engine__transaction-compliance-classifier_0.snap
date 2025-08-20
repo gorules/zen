@@ -303,15 +303,16 @@ trace:
     performance: "[perf]"
     traceData:
       has_compliance_flags:
-        result: "false"
+        result: false
       report_instructions:
-        result: "\"File FinCEN Form 112 within 24 hours\""
+        result: File FinCEN Form 112 within 24 hours
       reporting_deadline:
-        result: "1743330600"
+        result:
+          "$serde_json::private::Number": "1743330600"
       reporting_status:
-        result: "\"urgent_filing_required\""
+        result: urgent_filing_required
       requires_immediate_filing:
-        result: "true"
+        result: true
   risk_assessment:
     id: risk_assessment
     input:
@@ -404,17 +405,23 @@ trace:
     performance: "[perf]"
     traceData:
       amount_score:
-        result: "15"
+        result:
+          "$serde_json::private::Number": "15"
       base_risk_score:
-        result: "0"
+        result:
+          "$serde_json::private::Number": "0"
       customer_score:
-        result: "0"
+        result:
+          "$serde_json::private::Number": "0"
       priority_score:
-        result: "25"
+        result:
+          "$serde_json::private::Number": "25"
       total_risk_score:
-        result: "55"
+        result:
+          "$serde_json::private::Number": "55"
       transaction_history_score:
-        result: "0"
+        result:
+          "$serde_json::private::Number": "0"
   threshold_checks:
     id: threshold_checks
     input:

@@ -95,11 +95,13 @@ trace:
     performance: "[perf]"
     traceData:
       negativeFactors:
-        result: "[]"
+        result: []
       negativeFactorsCount:
-        result: "0"
+        result:
+          "$serde_json::private::Number": "0"
       totalRiskScore:
-        result: "55"
+        result:
+          "$serde_json::private::Number": "55"
   classifyRisk:
     id: classifyRisk
     input:
@@ -257,11 +259,12 @@ trace:
     performance: "[perf]"
     traceData:
       approvalStatus:
-        result: "\"manual-review\""
+        result: manual-review
       interestRateModifier:
-        result: "0"
+        result:
+          "$serde_json::private::Number": "0"
       riskCategory:
-        result: "\"medium\""
+        result: medium
   scoreCreditHistory:
     id: scoreCreditHistory
     input:

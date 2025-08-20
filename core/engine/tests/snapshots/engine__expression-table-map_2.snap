@@ -89,7 +89,8 @@ trace:
     performance: "[perf]"
     traceData:
       exprItemsSum:
-        result: "51"
+        result:
+          "$serde_json::private::Number": "51"
   5f56e61b-5687-4758-8524-8121df13b2ba:
     id: 5f56e61b-5687-4758-8524-8121df13b2ba
     input:
@@ -131,7 +132,8 @@ trace:
     performance: "[perf]"
     traceData:
       - discount:
-          result: "5"
+          result:
+            "$serde_json::private::Number": "5"
   8ceca45e-e6ff-4613-984c-5846e53c5a39:
     id: 8ceca45e-e6ff-4613-984c-5846e53c5a39
     input:
@@ -190,7 +192,8 @@ trace:
     performance: "[perf]"
     traceData:
       tblItemsSum:
-        result: "1051"
+        result:
+          "$serde_json::private::Number": "1051"
   b8ebb212-e290-4131-9703-0bb7b1fd2328:
     id: b8ebb212-e290-4131-9703-0bb7b1fd2328
     input:

@@ -106,7 +106,8 @@ trace:
     performance: "[perf]"
     traceData:
       baseCommission:
-        result: "360"
+        result:
+          "$serde_json::private::Number": "360"
   ip1:
     id: ip1
     input: ~

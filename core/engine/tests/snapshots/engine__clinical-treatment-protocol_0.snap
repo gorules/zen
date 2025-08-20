@@ -292,6 +292,13 @@ trace:
     performance: "[perf]"
     traceData:
       protocol_name:
-        result: "\"oral_medication_moderate\""
+        result: oral_medication_moderate
       treatment_protocol:
-        result: "{\"follow_up_frequency\":\"bi-weekly\",\"risk_adjustment\":\"modified_treatment\",\"base_treatment\":\"oral_medication\",\"protocol_intensity\":\"intensive\",\"dosage_instruction\":\"standard_elderly\",\"protocol_id\":\"oral_medication_moderate_intensive\",\"severity_level\":\"moderate_diabetes\"}"
+        result:
+          base_treatment: oral_medication
+          dosage_instruction: standard_elderly
+          follow_up_frequency: bi-weekly
+          protocol_id: oral_medication_moderate_intensive
+          protocol_intensity: intensive
+          risk_adjustment: modified_treatment
+          severity_level: moderate_diabetes

@@ -95,11 +95,14 @@ trace:
     performance: "[perf]"
     traceData:
       effectiveFeeRate:
-        result: "0.07"
+        result:
+          "$serde_json::private::Number": "0.07"
       totalMonthlyFee:
-        result: "5139.99"
+        result:
+          "$serde_json::private::Number": "5139.99"
       transactionFee:
-        result: "5040"
+        result:
+          "$serde_json::private::Number": "5040"
   input:
     id: input
     input: ~

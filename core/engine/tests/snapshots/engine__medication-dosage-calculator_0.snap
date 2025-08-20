@@ -122,21 +122,25 @@ trace:
     performance: "[perf]"
     traceData:
       hasLiverImpairment:
-        result: "false"
+        result: false
       hasRenalImpairment:
-        result: "true"
+        result: true
       isChild:
-        result: "false"
+        result: false
       isElderly:
-        result: "true"
+        result: true
       liverAdjustmentFactor:
-        result: "1"
+        result:
+          "$serde_json::private::Number": "1"
       renalAdjustmentFactor:
-        result: "0.75"
+        result:
+          "$serde_json::private::Number": "0.75"
       weightFactorAdult:
-        result: "0.9285714285714285714285714286"
+        result:
+          "$serde_json::private::Number": "0.9285714285714285714285714286"
       weightFactorChild:
-        result: "2.1666666666666666666666666667"
+        result:
+          "$serde_json::private::Number": "2.1666666666666666666666666667"
   ip1:
     id: ip1
     input: ~

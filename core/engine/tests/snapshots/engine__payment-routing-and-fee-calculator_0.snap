@@ -355,13 +355,17 @@ trace:
     performance: "[perf]"
     traceData:
       fee.final_amount:
-        result: "72.5"
+        result:
+          "$serde_json::private::Number": "72.5"
       fee_amount:
-        result: "72.5"
+        result:
+          "$serde_json::private::Number": "72.5"
       final_fee_percentage:
-        result: "2.9"
+        result:
+          "$serde_json::private::Number": "2.9"
       payment.net_amount:
-        result: "2427.5"
+        result:
+          "$serde_json::private::Number": "2427.5"
   payment-input:
     id: payment-input
     input: ~
@@ -573,12 +577,19 @@ trace:
     performance: "[perf]"
     traceData:
       routing.processing_instructions:
-        result: "{\"priority\":\"medium\",\"velocity_check\":true,\"fraud_scan\":\"standard\",\"manual_review\":true,\"verification_required\":\"3ds\",\"processor\":\"credit_processor\"}"
+        result:
+          fraud_scan: standard
+          manual_review: true
+          priority: medium
+          processor: credit_processor
+          velocity_check: true
+          verification_required: 3ds
       security.fraud_scan_level:
-        result: "\"standard\""
+        result: standard
       security.high_risk_flag:
-        result: "true"
+        result: true
       security.total_risk_score:
-        result: "50"
+        result:
+          "$serde_json::private::Number": "50"
       security.velocity_check_required:
-        result: "true"
+        result: true

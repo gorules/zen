@@ -139,13 +139,15 @@ trace:
     performance: "[perf]"
     traceData:
       isDataRoamingEnabled:
-        result: "true"
+        result: true
       isVoiceRoamingEnabled:
-        result: "true"
+        result: true
       remainingDataAllowance:
-        result: "3750"
+        result:
+          "$serde_json::private::Number": "3750"
       totalEstimatedDailyCost:
-        result: "252.75"
+        result:
+          "$serde_json::private::Number": "252.75"
   ip1:
     id: ip1
     input: ~

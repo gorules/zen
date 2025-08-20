@@ -102,11 +102,11 @@ trace:
     performance: "[perf]"
     traceData:
       result.annualFilingRequirement:
-        result: "\"990-EZ\""
+        result: 990-EZ
       result.effectiveDate:
-        result: "\"2025-03-20\""
+        result: 2025-03-20
       result.publicDisclosureRequired:
-        result: "true"
+        result: true
   ip1:
     id: ip1
     input: ~

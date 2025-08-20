@@ -299,10 +299,29 @@ trace:
     performance: "[perf]"
     traceData:
       breakdown:
-        result: "{\"inventoryAvailability\":{\"score\":8},\"descriptionCompleteness\":{\"category\":\"good\",\"score\":25},\"keywordOptimization\":{\"score\":15},\"pricingCompetitiveness\":{\"score\":8},\"imageQuality\":{\"score\":25,\"category\":\"good\"}}"
+        result:
+          descriptionCompleteness:
+            category: good
+            score:
+              "$serde_json::private::Number": "25"
+          imageQuality:
+            category: good
+            score:
+              "$serde_json::private::Number": "25"
+          inventoryAvailability:
+            score:
+              "$serde_json::private::Number": "8"
+          keywordOptimization:
+            score:
+              "$serde_json::private::Number": "15"
+          pricingCompetitiveness:
+            score:
+              "$serde_json::private::Number": "8"
       maximumPossibleScore:
-        result: "100"
+        result:
+          "$serde_json::private::Number": "100"
       overallScoreCategory:
-        result: "\"excellent\""
+        result: excellent
       totalScore:
-        result: "81"
+        result:
+          "$serde_json::private::Number": "81"

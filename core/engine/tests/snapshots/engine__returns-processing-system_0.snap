@@ -154,13 +154,13 @@ trace:
     performance: "[perf]"
     traceData:
       isFrequentReturner:
-        result: "false"
+        result: false
       isHighValueCustomer:
-        result: "true"
+        result: true
       isHighValueItem:
-        result: "true"
+        result: true
       isPurchaseWithinWarranty:
-        result: "true"
+        result: true
   input1:
     id: input1
     input: ~

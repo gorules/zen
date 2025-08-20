@@ -588,12 +588,15 @@ trace:
     performance: "[perf]"
     traceData:
       customerTier:
-        result: "\"premium\""
+        result: premium
       downtimeDuration:
-        result: "45"
+        result:
+          "$serde_json::private::Number": "45"
       isDowntime:
-        result: "true"
+        result: true
       packetLoss:
-        result: "0.8"
+        result:
+          "$serde_json::private::Number": "0.8"
       responseTime:
-        result: "320"
+        result:
+          "$serde_json::private::Number": "320"

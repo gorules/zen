@@ -55,11 +55,11 @@ trace:
     performance: "[perf]"
     traceData:
       customer:
-        result: "null"
+        result: ~
       plan:
-        result: "null"
+        result: ~
       planDetails:
-        result: "null"
+        result: ~
   migrationEligibility:
     id: migrationEligibility
     input:

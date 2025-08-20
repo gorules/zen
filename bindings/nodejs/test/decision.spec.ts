@@ -17,6 +17,37 @@ const loader = async (key: string) => fs.readFile(path.join(testDataRoot, key))
 
 jest.useRealTimers();
 
+interface PropertyMatcher {
+  [key: string]: any;
+}
+
+const defaultMatchers: PropertyMatcher = {
+  timestamp: expect.any(Number),
+  estimatedArrival: expect.any(Number),
+  approvalDate: expect.any(Number),
+};
+
+function addJestMatchers(obj: any, matchers: PropertyMatcher = defaultMatchers): any {
+  if (obj === null || typeof obj !== 'object') {
+    return obj;
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map((item: any) => addJestMatchers(item, matchers));
+  }
+
+  const result: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (matchers[key]) {
+      result[key] = matchers[key];
+    } else {
+      result[key] = addJestMatchers(value, matchers);
+    }
+  }
+
+  return result;
+}
+
 describe('ZenEngine', () => {
   it('Evaluates decisions using loader', async () => {
     const engine = new ZenEngine({
@@ -128,9 +159,10 @@ describe('ZenEngine', () => {
 
         assert.ok(engineResponse.success, 'Engine response must be ok');
         assert.ok(decisionResponse.success, 'Decision response must be ok');
+        const expectedObject = addJestMatchers(testCase.output);
 
-        expect(engineResponse.data.result).toMatchObject(testCase.output);
-        expect(decisionResponse.data.result).toMatchObject(testCase.output);
+        expect(engineResponse.data.result).toMatchObject(expectedObject);
+        expect(decisionResponse.data.result).toMatchObject(expectedObject);
       }
     }
 

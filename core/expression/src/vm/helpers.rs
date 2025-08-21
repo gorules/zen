@@ -1,8 +1,6 @@
 use crate::vm::date::utc_now;
 use crate::vm::error::{VMError, VMResult};
-use chrono::{
-    DateTime, Datelike, Days, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Utc, Weekday,
-};
+use chrono::{DateTime, Datelike, Days, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Weekday};
 use once_cell::sync::Lazy;
 
 #[allow(clippy::unwrap_used)]

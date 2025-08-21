@@ -43,7 +43,6 @@ default = ["regex-deprecated", "stack-protection"]
 regex-lite = ["dep:regex-lite"]
 regex-deprecated = ["dep:regex"]
 stack-protection = ["dep:recursive"]
-time-override = []
 
 [[bench]]
 harness = false

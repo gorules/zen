@@ -4,9 +4,11 @@ import json
 import os.path
 import time
 import unittest
+import os
 
 import zen
 
+os.environ['__ZEN_MOCK_UTC_TIME'] = '2025-08-19T16:55:02.078Z'
 
 async def loader(key):
     with open("../../test-data/" + key, "r") as f:

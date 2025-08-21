@@ -12,7 +12,6 @@ use zen_engine::loader::{LoaderError, MemoryLoader};
 use zen_engine::model::{DecisionContent, DecisionNode, DecisionNodeKind, FunctionNodeContent};
 use zen_engine::{DecisionEngine, EvaluationError, EvaluationOptions};
 use zen_engine::{NodeError, Variable};
-use zen_expression::vm::UTC_OVERRIDE;
 
 mod support;
 
@@ -271,7 +270,7 @@ async fn engine_graph_tests() {
 }
 
 fn mock_datetime() {
-    *UTC_OVERRIDE.write().unwrap() = Some("2025-08-19T16:55:02.078Z".parse().unwrap());
+    std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-08-19T16:55:02.078Z");
 }
 
 #[tokio::test]

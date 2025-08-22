@@ -111,7 +111,7 @@ jobs:
               yarn build --target aarch64-unknown-linux-musl
               /aarch64-linux-musl-cross/bin/aarch64-linux-musl-strip *.node
 
-    name: stable - ${{ matrix.settings.target }} - node@18
+    name: stable - ${{ matrix.settings.target }} - node@22
     runs-on: ${{ matrix.settings.host }}
     defaults:
       run:
@@ -235,7 +235,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [ '18', '20', '22' ]
+        node: [ '20', '22' ]
     runs-on: ubuntu-latest
 
     steps:
@@ -286,7 +286,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [ '18', '20', '22' ]
+        node: [ '20', '22' ]
     runs-on: ubuntu-latest
 
     steps:
@@ -337,7 +337,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [ '18', '20', '22' ]
+        node: [ '20', '22' ]
     runs-on: ubuntu-latest
 
     steps:

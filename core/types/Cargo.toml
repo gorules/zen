@@ -1,6 +1,6 @@
 [package]
 name = "zen-types"
-version = "0.49.1"
+version = "0.50.0"
 edition = "2024"
 publish = false
 

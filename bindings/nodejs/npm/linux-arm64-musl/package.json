@@ -1,6 +1,6 @@
 {
   "name": "@gorules/zen-engine-linux-arm64-musl",
-  "version": "0.48.0",
+  "version": "0.49.0",
   "private": false,
   "os": [
     "linux"

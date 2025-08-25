@@ -120,6 +120,12 @@ jobs:
       - name: Login to Crates.IO
         run: cargo login ${{ secrets.CRATES_TOKEN }}
 
+      - name: Publish Macros
+        run: cd core/macros && cargo publish
+
+      - name: Publish Types
+        run: cd core/types && cargo publish
+
       - name: Publish Expression
         run: cd core/expression && cargo publish
 

@@ -34068,10 +34068,14 @@ var toml = __nccwpck_require__(2132);
 const versionRegex = /version = "[0-9]+\.[0-9]+\.[0-9]+"$/im;
 const expressionDep = /zen-expression =.*$/im;
 const templateDep = /zen-tmpl =.*$/im;
+const macroDep = /zen-macros =.*$/im;
+const typesDep = /zen-types =.*$/im;
 const updateCargoContents = (contents, { version }) => {
     return contents
         .replace(versionRegex, `version = "${version}"`)
         .replace(expressionDep, `zen-expression = { path = "../expression", version = "${version}" }`)
+        .replace(macroDep, `zen-macros = { path = "../macros", version = "${version}" }`)
+        .replace(typesDep, `zen-types = { path = "../types", version = "${version}" }`)
         .replace(templateDep, `zen-tmpl = { path = "../template", version = "${version}" }`);
 };
 const getCargoVersion = (contents) => {

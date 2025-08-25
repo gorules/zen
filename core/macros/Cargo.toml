@@ -2,7 +2,6 @@
 name = "zen-macros"
 version = "0.50.0"
 edition = "2024"
-publish = false
 
 [lib]
 proc-macro = true

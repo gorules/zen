@@ -1,7 +1,9 @@
 [package]
 name = "zen-types"
+description = "Zen Core Types"
 version = "0.50.1"
 edition = "2024"
+license = "MIT"
 
 [dependencies]
 ahash = { workspace = true }

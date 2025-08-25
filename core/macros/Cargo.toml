@@ -1,7 +1,9 @@
 [package]
 name = "zen-macros"
+description = "Zen Helper Macros"
 version = "0.50.1"
 edition = "2024"
+license = "MIT"
 
 [lib]
 proc-macro = true

@@ -1,7 +1,7 @@
 use crate::handler::custom_node_adapter::CustomNodeAdapter;
 use crate::handler::function::function::Function;
-use crate::handler::graph::{DecisionGraph, DecisionGraphConfig};
-use crate::handler::node::{NodeRequest, NodeResponse, NodeResult};
+use crate::handler::graph::{error_trace, DecisionGraph, DecisionGraphConfig};
+use crate::handler::node::{NodeError, NodeRequest, NodeResponse, NodeResult};
 use crate::loader::DecisionLoader;
 use crate::model::DecisionNodeKind;
 use crate::util::validator_cache::ValidatorCache;
@@ -54,7 +54,11 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionHandle
                 _ => Err(anyhow!("Unexpected node type")),
             }?;
 
-            let sub_decision = self.loader.load(&content.key).await?;
+            let sub_decision = self
+                .loader
+                .load(&content.key)
+                .await
+                .map_err(|err| NodeError::Display(err.to_string()))?;
             let sub_tree = DecisionGraph::try_new(DecisionGraphConfig {
                 content: sub_decision,
                 max_depth: self.max_depth,
@@ -63,7 +67,8 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionHandle
                 iteration: request.iteration + 1,
                 trace: self.trace,
                 validator_cache: Some(self.validator_cache.clone()),
-            })?
+            })
+            .map_err(|err| NodeError::Display(err.to_string()))?
             .with_function(self.js_function.clone());
 
             let sub_tree_mutex = Arc::new(Mutex::new(sub_tree));
@@ -77,14 +82,10 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionHandle
                         let mut sub_tree_ref = sub_tree_mutex.lock().await;
 
                         sub_tree_ref.reset_graph();
-                        sub_tree_ref
-                            .evaluate(input)
-                            .await
-                            .map(|r| NodeResponse {
-                                output: r.result,
-                                trace_data: serde_json::to_value(r.trace).ok(),
-                            })
-                            .map_err(|e| e.source)
+                        sub_tree_ref.evaluate(input).await.map(|r| NodeResponse {
+                            output: r.result,
+                            trace_data: error_trace(&r.trace),
+                        })
                     }
                 })
                 .await

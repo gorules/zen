@@ -71,9 +71,9 @@ impl<T> From<&IsolateError> for ZenResult<T> {
     }
 }
 
-impl<T> From<&Box<LoaderError>> for ZenResult<T> {
-    fn from(loader_error: &Box<LoaderError>) -> Self {
-        match loader_error.as_ref() {
+impl<T> From<&LoaderError> for ZenResult<T> {
+    fn from(loader_error: &LoaderError) -> Self {
+        match loader_error {
             LoaderError::NotFound(key) => {
                 ZenResult::error(ZenError::LoaderKeyNotFound { key: key.clone() })
             }

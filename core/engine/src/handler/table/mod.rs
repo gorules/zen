@@ -1,13 +1,13 @@
 pub mod zen;
 
-use zen_expression::variable::Variable;
+use zen_expression::variable::{ToVariable, Variable};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, ToVariable)]
 pub(crate) enum RowOutputKind {
     Variable(Variable),
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, ToVariable)]
 pub(crate) struct RowOutput {
     output: OutputMap,
 }

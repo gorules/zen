@@ -49,11 +49,11 @@ impl ZenCustomNodeResult {
 
         if let Some(c_error) = maybe_error {
             let maybe_str = c_error.to_str().unwrap_or("unknown error");
-            return Err(anyhow!("{maybe_str}"));
+            return Err(anyhow!("{maybe_str}").into());
         }
 
         if self.content.is_null() {
-            return Err(anyhow!("response not provided"));
+            return Err(anyhow!("response not provided").into());
         }
 
         let content_cstr = unsafe { CString::from_raw(self.content) };

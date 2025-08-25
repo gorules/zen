@@ -1,12 +1,15 @@
-use crate::variable::{DynamicVariable, RcCell};
+use crate::variable::DynamicVariable;
 use crate::Variable;
 use ahash::HashMap;
 use anyhow::Context;
 use rust_decimal::Decimal;
+use std::cell::RefCell;
 use std::ops::Deref;
 use std::rc::Rc;
 
 pub struct Arguments<'a>(pub &'a [Variable]);
+
+type RcCell<T> = Rc<RefCell<T>>;
 
 impl<'a> Deref for Arguments<'a> {
     type Target = [Variable];

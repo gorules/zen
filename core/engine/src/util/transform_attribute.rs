@@ -1,7 +1,6 @@
 use crate::handler::node::{NodeResponse, NodeResult};
 use crate::model::{TransformAttributes, TransformExecutionMode};
 use anyhow::Context;
-use serde_json::Value;
 use std::future::Future;
 use zen_expression::{Isolate, Variable};
 
@@ -16,7 +15,9 @@ impl TransformAttributes {
             Some(input_field) => {
                 let mut isolate = Isolate::new();
                 isolate.set_environment(node_input.clone());
-                let calculated_input = isolate.run_standard(input_field.as_str())?;
+                let calculated_input = isolate
+                    .run_standard(input_field.as_str())
+                    .context("Failed to run standard")?;
 
                 let nodes = node_input.dot("$nodes").unwrap_or(Variable::Null);
                 match &calculated_input {
@@ -42,7 +43,7 @@ impl TransformAttributes {
             }
         };
 
-        let mut trace_data: Option<Value> = None;
+        let mut trace_data: Option<Variable> = None;
         let mut output = match self.execution_mode {
             TransformExecutionMode::Single => {
                 let response = evaluate(input).await?;
@@ -73,7 +74,7 @@ impl TransformAttributes {
                     output_array.push(response.output);
                 }
 
-                trace_data.replace(Value::Array(trace_datum));
+                trace_data.replace(Variable::from_array(trace_datum));
                 Variable::from_array(output_array)
             }
         };

@@ -9,6 +9,7 @@ use zen_engine::handler::custom_node_adapter::CustomDecisionNode;
 use zen_engine::{DecisionGraphResponse, DecisionGraphTrace};
 use zen_expression::Variable;
 
+#[allow(dead_code)]
 #[napi(object)]
 pub struct ZenEngineTrace {
     pub id: String,
@@ -28,12 +29,13 @@ impl From<DecisionGraphTrace> for ZenEngineTrace {
             input: value.input.to_value(),
             output: value.output.to_value(),
             performance: value.performance,
-            trace_data: value.trace_data,
+            trace_data: value.trace_data.map(Value::from),
             order: value.order,
         }
     }
 }
 
+#[allow(dead_code)]
 #[napi(object)]
 pub struct ZenEngineResponse {
     pub performance: String,

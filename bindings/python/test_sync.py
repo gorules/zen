@@ -2,9 +2,11 @@ import json
 import os.path
 import unittest
 import glob
+import os
 
 import zen
 
+os.environ['__ZEN_MOCK_UTC_TIME'] = '2025-08-19T16:55:02.078Z'
 
 def loader(key):
     with open("../../test-data/" + key, "r") as f:
@@ -111,8 +113,8 @@ class ZenEngine(unittest.TestCase):
                 decision = engine.get_decision(key)
                 decision_response = decision.evaluate(test_case["input"])
 
-                self.assertEqual(engine_response["result"], test_case["output"])
-                self.assertEqual(decision_response["result"], test_case["output"])
+                self.assertEqual(engine_response["result"], test_case["output"], key)
+                self.assertEqual(decision_response["result"], test_case["output"], key)
 
 if __name__ == '__main__':
     unittest.main()

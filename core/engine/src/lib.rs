@@ -125,7 +125,7 @@
 mod config;
 mod decision;
 mod engine;
-mod error;
+pub mod error;
 pub mod handler;
 pub mod loader;
 #[path = "model/mod.rs"]
@@ -134,7 +134,9 @@ mod util;
 
 pub use config::ZEN_CONFIG;
 pub use decision::Decision;
-pub use engine::{DecisionEngine, EvaluationOptions};
+pub use engine::{
+    DecisionEngine, EvaluationOptions, EvaluationSerializedOptions, EvaluationTraceKind,
+};
 pub use error::EvaluationError;
 pub use handler::graph::DecisionGraphResponse;
 pub use handler::graph::DecisionGraphTrace;

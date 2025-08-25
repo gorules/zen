@@ -29,15 +29,15 @@ impl DecisionLoader for ZenDecisionLoaderCallbackWrapper {
             let maybe_json_buffer = match self.0.load(key.into()).await {
                 Ok(r) => r,
                 Err(error) => {
-                    return Err(Box::new(LoaderError::Internal {
+                    return Err(LoaderError::Internal {
                         key: key.to_string(),
                         source: anyhow!(error),
-                    }));
+                    });
                 }
             };
 
             let Some(json_buffer) = maybe_json_buffer else {
-                return Err(Box::new(LoaderError::NotFound(key.to_string())));
+                return Err(LoaderError::NotFound(key.to_string()));
             };
 
             let decision_content: DecisionContent =

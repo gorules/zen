@@ -1,12 +1,13 @@
-use std::future::Future;
-use std::sync::Arc;
-
 use crate::decision::Decision;
 use crate::handler::custom_node_adapter::{CustomNodeAdapter, NoopCustomNode};
 use crate::handler::graph::DecisionGraphResponse;
 use crate::loader::{ClosureLoader, DecisionLoader, LoaderResponse, LoaderResult, NoopLoader};
 use crate::model::DecisionContent;
 use crate::EvaluationError;
+use serde_json::Value;
+use std::future::Future;
+use std::sync::Arc;
+use strum::{EnumString, IntoStaticStr};
 use zen_expression::variable::Variable;
 
 /// Structure used for generating and evaluating JDM decisions
@@ -24,6 +25,41 @@ where
 pub struct EvaluationOptions {
     pub trace: Option<bool>,
     pub max_depth: Option<u8>,
+}
+
+#[derive(Debug, Default)]
+pub struct EvaluationSerializedOptions {
+    pub trace: EvaluationTraceKind,
+    pub max_depth: Option<u8>,
+}
+
+#[derive(Debug, Default, PartialEq, Eq, EnumString, IntoStaticStr)]
+#[strum(serialize_all = "camelCase")]
+pub enum EvaluationTraceKind {
+    #[default]
+    None,
+    Default,
+    String,
+    Reference,
+    ReferenceString,
+}
+
+impl EvaluationTraceKind {
+    pub fn serialize_trace(&self, trace: &Variable) -> Value {
+        match self {
+            EvaluationTraceKind::None => Value::Null,
+            EvaluationTraceKind::Default => serde_json::to_value(&trace).unwrap_or_default(),
+            EvaluationTraceKind::String => {
+                Value::String(serde_json::to_string(&trace).unwrap_or_default())
+            }
+            EvaluationTraceKind::Reference => {
+                serde_json::to_value(&trace.serialize_ref()).unwrap_or_default()
+            }
+            EvaluationTraceKind::ReferenceString => {
+                Value::String(serde_json::to_string(&trace.serialize_ref()).unwrap_or_default())
+            }
+        }
+    }
 }
 
 impl Default for DecisionEngine<NoopLoader, NoopCustomNode> {
@@ -97,6 +133,25 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionEngine
         let content = self.loader.load(key.as_ref()).await?;
         let decision = self.create_decision(content);
         decision.evaluate_with_opts(context, options).await
+    }
+
+    pub async fn evaluate_serialized<K>(
+        &self,
+        key: K,
+        context: Variable,
+        options: EvaluationSerializedOptions,
+    ) -> Result<Value, Value>
+    where
+        K: AsRef<str>,
+    {
+        let content = self
+            .loader
+            .load(key.as_ref())
+            .await
+            .map_err(|err| Value::String(err.to_string()))?;
+
+        let decision = self.create_decision(content);
+        decision.evaluate_serialized(context, options).await
     }
 
     /// Creates a decision from DecisionContent, exists for easier binding creation

@@ -77,12 +77,12 @@ impl PyZenDecision {
                         )
                         .await
                         .map(serde_json::to_value)
+                        .map_err(|e| {
+                            anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))
+                        })
                 })
                 .await
-                .context("Failed to join threads")?
-                .map_err(|e| {
-                    anyhow!(serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string()))
-                })?
+                .context("Failed to join threads")??
                 .context("Failed to serialize result")?;
 
             Python::with_gil(|py| PyValue(value).into_py_any(py))

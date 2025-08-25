@@ -5,8 +5,8 @@ use crate::intellisense::types::type_info::TypeInfo;
 use crate::lexer::{ArithmeticOperator, ComparisonOperator, LogicalOperator, Operator};
 use crate::parser::Node;
 use crate::variable::VariableType;
+use ahash::{HashMap, HashMapExt};
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::iter::once;
 use std::ops::Deref;
 use std::rc::Rc;
@@ -151,7 +151,6 @@ impl TypesProvider {
                             .root_data
                             .dot_insert_detached(key_type.as_ref(), value_type.kind.shallow_clone())
                         {
-                            println!("NewVar: {new_var:?}");
                             scope.root_data = new_var;
                         };
 

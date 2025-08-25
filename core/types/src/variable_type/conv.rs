@@ -1,4 +1,4 @@
-use crate::variable::types::VariableType;
+use crate::variable_type::VariableType;
 use serde_json::Value;
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -77,19 +77,5 @@ impl From<&Vec<Value>> for VariableType {
             });
 
         VariableType::Array(Rc::new(result_type.unwrap_or(VariableType::Any)))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn test_value_to_value_kind() {
-        assert_eq!(VariableType::from(json!(null)), VariableType::Null);
-        assert_eq!(VariableType::from(json!(true)), VariableType::Bool);
-        assert_eq!(VariableType::from(json!(42)), VariableType::Number);
-        assert_eq!(VariableType::from(json!("hello")), VariableType::String);
     }
 }

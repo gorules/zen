@@ -1,4 +1,4 @@
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use either::Either;
 use pyo3::types::PyDict;
 use pyo3::{Bound, IntoPyObjectExt, Py, PyAny, PyObject, PyResult, Python};
@@ -26,15 +26,17 @@ impl PyCustomNode {
 }
 
 fn extract_custom_node_response(py: Python<'_>, result: PyObject) -> NodeResult {
-    let dict = result.extract::<Bound<'_, PyDict>>(py)?;
-    let response: NodeResponse = depythonize(&dict)?;
+    let dict = result
+        .extract::<Bound<'_, PyDict>>(py)
+        .context("Failed to extract response")?;
+    let response: NodeResponse = depythonize(&dict).context("Failed to depythonize response")?;
     Ok(response)
 }
 
 impl CustomNodeAdapter for PyCustomNode {
     async fn handle(&self, request: CustomNodeRequest) -> NodeResult {
         let Some(callable) = &self.callback else {
-            return Err(anyhow!("Custom node handler not provided"));
+            return Err(anyhow!("Custom node handler not provided").into());
         };
 
         let maybe_result: PyResult<_> = Python::with_gil(|py| {
@@ -57,10 +59,10 @@ impl CustomNodeAdapter for PyCustomNode {
             Ok(Either::Right(result_future))
         });
 
-        match maybe_result? {
+        match maybe_result.context("Failed to run custom node handler")? {
             Either::Left(result) => result,
             Either::Right(future) => {
-                let result = future.await?;
+                let result = future.await.context("Failed to run custom node handler")?;
                 Python::with_gil(|py| extract_custom_node_response(py, result))
             }
         }

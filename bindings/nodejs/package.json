@@ -55,6 +55,7 @@
     "@types/express": "^5.0.1",
     "@types/node": "^22.14.1",
     "babel-jest": "^29.7.0",
+    "cross-env": "^10.0.0",
     "express": "^5.1.0",
     "jest": "^29.7.0",
     "lerna": "6",
@@ -78,7 +79,7 @@
     "build": "napi build --dts temp.d.ts --platform --release",
     "build:debug": "napi build --platform --js index.js --dts index.d.ts",
     "watch": "cargo watch --ignore '{index.js,index.d.ts}' -- npm run build:debug",
-    "test": "jest",
+    "test": "cross-env __ZEN_MOCK_UTC_TIME=2025-08-19T16:55:02.078Z jest",
     "artifacts": "napi artifacts -d ../../artifacts",
     "prepublishOnly": "napi prepublish",
     "version": "napi version"

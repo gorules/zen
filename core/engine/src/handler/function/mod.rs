@@ -2,18 +2,18 @@ use std::rc::Rc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use ::serde::{Deserialize, Serialize};
-use anyhow::anyhow;
-use rquickjs::{async_with, CatchResultExt, Object};
-use serde_json::json;
-
 use crate::handler::function::error::FunctionResult;
 use crate::handler::function::function::{Function, HandlerResponse};
 use crate::handler::function::module::console::Log;
 use crate::handler::function::serde::JsValue;
-use crate::handler::node::{NodeRequest, NodeResponse, NodeResult, PartialTraceError};
+use crate::handler::node::{NodeError, NodeRequest, NodeResponse, NodeResult};
 use crate::model::{DecisionNodeKind, FunctionNodeContent};
 use crate::ZEN_CONFIG;
+use ::serde::{Deserialize, Serialize};
+use anyhow::anyhow;
+use rquickjs::{async_with, CatchResultExt, Object};
+use serde_json::json;
+use zen_expression::variable::ToVariable;
 
 pub(crate) mod error;
 pub(crate) mod function;
@@ -33,6 +33,12 @@ pub struct FunctionHandler {
     iteration: u8,
     max_depth: u8,
     max_duration: Duration,
+}
+
+#[derive(ToVariable)]
+#[serde(rename_all = "camelCase")]
+struct FunctionTrace {
+    pub log: Vec<Log>,
 }
 
 impl FunctionHandler {
@@ -93,7 +99,12 @@ impl FunctionHandler {
 
                 Ok(NodeResponse {
                     output: response.data,
-                    trace_data: self.trace.then(|| json!({ "log": response.logs })),
+                    trace_data: self.trace.then(|| {
+                        FunctionTrace {
+                            log: response.logs.clone(),
+                        }
+                        .to_variable()
+                    }),
                 })
             }
             Err(e) => {
@@ -103,10 +114,10 @@ impl FunctionHandler {
                     ms_since_run: start.elapsed().as_millis() as usize,
                 });
 
-                Err(anyhow!(PartialTraceError {
+                Err(NodeError::PartialTrace {
                     message: e.to_string(),
-                    trace: Some(json!({ "log": log })),
-                }))
+                    trace: Some(FunctionTrace { log }.to_variable()),
+                })
             }
         }
     }

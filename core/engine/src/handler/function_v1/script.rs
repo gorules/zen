@@ -7,7 +7,7 @@ use std::fmt::Debug;
 use std::rc::Rc;
 use zen_expression::variable::Variable;
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EvaluateResponse {
     pub output: Variable,

@@ -18,7 +18,7 @@ mod filesystem;
 mod memory;
 mod noop;
 
-pub type LoaderResult<T> = Result<T, Box<LoaderError>>;
+pub type LoaderResult<T> = Result<T, LoaderError>;
 pub type LoaderResponse = LoaderResult<Arc<DecisionContent>>;
 
 /// Trait used for implementing a loader for decisions

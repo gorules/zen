@@ -1,6 +1,5 @@
 use crate::error::ZenError;
 use crate::types::{DecisionNode, ZenEngineHandlerRequest, ZenEngineHandlerResponse};
-use serde_json::Value;
 use uniffi::deps::anyhow::anyhow;
 use zen_engine::handler::custom_node_adapter::{CustomNodeAdapter, CustomNodeRequest};
 use zen_engine::handler::node::{NodeResponse, NodeResult};
@@ -49,7 +48,8 @@ impl CustomNodeAdapter for ZenCustomNodeCallbackWrapper {
             .try_into()
             .map_err(|err: ZenError| anyhow!(err))?;
 
-        let trace_data: Option<Value> = result.trace_data.and_then(|trace| trace.try_into().ok());
+        let trace_data: Option<Variable> =
+            result.trace_data.and_then(|trace| trace.try_into().ok());
 
         Ok(NodeResponse { output, trace_data })
     }

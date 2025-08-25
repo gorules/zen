@@ -304,6 +304,7 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
 
 pub(crate) mod imp {
     use crate::functions::arguments::Arguments;
+    use crate::vm::date::DynamicVariableExt;
     use crate::vm::VmDate;
     use crate::{Variable as V, Variable};
     use anyhow::{anyhow, Context};

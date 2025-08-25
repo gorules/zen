@@ -1,5 +1,6 @@
+use crate::engine::EvaluationTraceKind;
 use crate::handler::graph::DecisionGraphValidationError;
-use crate::handler::node::NodeError;
+pub use crate::handler::node::NodeError;
 use crate::loader::LoaderError;
 use jsonschema::{ErrorIterator, ValidationError};
 use serde::ser::SerializeMap;
@@ -11,43 +12,65 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum EvaluationError {
     #[error("Loader error")]
-    LoaderError(Box<LoaderError>),
+    LoaderError(LoaderError),
 
     #[error("Node error")]
-    NodeError(Box<NodeError>),
+    NodeError(NodeError),
 
     #[error("Depth limit exceeded")]
     DepthLimitExceeded,
 
     #[error("Invalid graph")]
-    InvalidGraph(Box<DecisionGraphValidationError>),
+    InvalidGraph(DecisionGraphValidationError),
 
     #[error("Validation failed")]
-    Validation(Box<Value>),
+    Validation(Value),
 }
 
-impl Serialize for EvaluationError {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+impl EvaluationError {
+    pub fn serialize_with_mode<S>(
+        &self,
+        serializer: S,
+        mode: EvaluationTraceKind,
+    ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         let mut map = serializer.serialize_map(None)?;
+
         match self {
             EvaluationError::DepthLimitExceeded => {
                 map.serialize_entry("type", "DepthLimitExceeded")?;
             }
             EvaluationError::NodeError(err) => {
                 map.serialize_entry("type", "NodeError")?;
-                map.serialize_entry("nodeId", &err.node_id)?;
-                map.serialize_entry("source", &err.source.to_string())?;
 
-                if let Some(trace) = &err.trace {
-                    map.serialize_entry("trace", &trace)?;
+                match err {
+                    NodeError::Internal => map.serialize_entry("source", "Internal")?,
+                    NodeError::Other(o) => map.serialize_entry("source", &o.to_string())?,
+                    NodeError::Display(d) => map.serialize_entry("source", d.as_str())?,
+                    NodeError::Node {
+                        node_id,
+                        source,
+                        trace,
+                    } => {
+                        map.serialize_entry("nodeId", node_id.as_str())?;
+                        map.serialize_entry("source", &source.to_string())?;
+                        if let Some(trace) = &trace {
+                            map.serialize_entry("trace", &mode.serialize_trace(trace))?;
+                        }
+                    }
+                    NodeError::PartialTrace { trace, message } => {
+                        map.serialize_entry("source", message.as_str())?;
+                        if let Some(trace) = &trace {
+                            map.serialize_entry("trace", &mode.serialize_trace(trace))?;
+                        }
+                    }
                 }
             }
             EvaluationError::LoaderError(err) => {
                 map.serialize_entry("type", "LoaderError")?;
-                match err.as_ref() {
+                match err {
                     LoaderError::Internal { key, source } => {
                         map.serialize_entry("key", key)?;
                         map.serialize_entry("source", &source.to_string())?;
@@ -71,27 +94,24 @@ impl Serialize for EvaluationError {
     }
 }
 
+impl Serialize for EvaluationError {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.serialize_with_mode(serializer, Default::default())
+    }
+}
+
 impl From<LoaderError> for Box<EvaluationError> {
     fn from(error: LoaderError) -> Self {
         Box::new(EvaluationError::LoaderError(error.into()))
     }
 }
 
-impl From<Box<LoaderError>> for Box<EvaluationError> {
-    fn from(error: Box<LoaderError>) -> Self {
-        Box::new(EvaluationError::LoaderError(error))
-    }
-}
-
 impl From<NodeError> for Box<EvaluationError> {
-    fn from(error: NodeError) -> Self {
-        Box::new(EvaluationError::NodeError(error.into()))
-    }
-}
-
-impl From<Box<NodeError>> for Box<EvaluationError> {
-    fn from(error: Box<NodeError>) -> Self {
-        Box::new(EvaluationError::NodeError(error))
+    fn from(value: NodeError) -> Self {
+        Box::new(EvaluationError::NodeError(value))
     }
 }
 
@@ -127,9 +147,7 @@ impl<'a> From<ErrorIterator<'a>> for Box<EvaluationError> {
             serde_json::to_value(errors).unwrap_or_default(),
         );
 
-        Box::new(EvaluationError::Validation(Box::new(Value::Object(
-            json_map,
-        ))))
+        Box::new(EvaluationError::Validation(Value::Object(json_map)))
     }
 }
 

@@ -1,10 +1,11 @@
-use crate::engine::EvaluationOptions;
+use crate::engine::{EvaluationOptions, EvaluationSerializedOptions, EvaluationTraceKind};
 use crate::handler::custom_node_adapter::{CustomNodeAdapter, NoopCustomNode};
 use crate::handler::graph::{DecisionGraph, DecisionGraphConfig, DecisionGraphResponse};
 use crate::loader::{CachedLoader, DecisionLoader, NoopLoader};
 use crate::model::DecisionContent;
 use crate::util::validator_cache::ValidatorCache;
 use crate::{DecisionGraphValidationError, EvaluationError};
+use serde_json::Value;
 use std::sync::Arc;
 use zen_expression::variable::Variable;
 
@@ -102,6 +103,31 @@ where
         let response = decision_graph.evaluate(context).await?;
 
         Ok(response)
+    }
+
+    pub async fn evaluate_serialized(
+        &self,
+        context: Variable,
+        options: EvaluationSerializedOptions,
+    ) -> Result<Value, Value> {
+        let response = self
+            .evaluate_with_opts(
+                context,
+                EvaluationOptions {
+                    trace: Some(options.trace != EvaluationTraceKind::None),
+                    max_depth: options.max_depth,
+                },
+            )
+            .await;
+
+        match response {
+            Ok(ok) => Ok(ok
+                .serialize_with_mode(serde_json::value::Serializer, options.trace)
+                .unwrap_or_default()),
+            Err(err) => Err(err
+                .serialize_with_mode(serde_json::value::Serializer, options.trace)
+                .unwrap_or_default()),
+        }
     }
 
     pub fn validate(&self) -> Result<(), DecisionGraphValidationError> {

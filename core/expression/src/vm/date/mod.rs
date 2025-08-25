@@ -7,7 +7,7 @@ use chrono_tz::Tz;
 use serde_json::Value;
 use std::any::Any;
 use std::fmt::{Display, Formatter};
-use std::sync::{LazyLock, RwLock};
+use std::sync::OnceLock;
 
 // Duration is a modified copy of `humantime`
 mod duration;
@@ -176,7 +176,7 @@ impl VmDate {
 }
 
 mod helper {
-    use crate::vm::date::{utc_now, Duration, DurationUnit};
+    use crate::vm::date::{utc_now, Duration, DurationUnit, DynamicVariableExt};
     use crate::Variable;
     use chrono::{
         DateTime, Datelike, Days, LocalResult, Month, Months, NaiveDate, NaiveDateTime, Offset,
@@ -476,25 +476,26 @@ mod helper {
     }
 }
 
-impl dyn DynamicVariable {
-    pub(crate) fn as_date(&self) -> Option<&VmDate> {
+pub(crate) trait DynamicVariableExt {
+    fn as_date(&self) -> Option<&VmDate>;
+}
+
+impl DynamicVariableExt for dyn DynamicVariable {
+    fn as_date(&self) -> Option<&VmDate> {
         self.as_any().downcast_ref::<VmDate>()
     }
 }
 
-#[cfg(feature = "time-override")]
-pub static UTC_OVERRIDE: LazyLock<RwLock<Option<DateTime<Utc>>>> =
-    LazyLock::new(|| RwLock::new(None));
-
 pub(crate) fn utc_now() -> DateTime<Utc> {
-    #[cfg(feature = "time-override")]
-    {
-        if let Ok(override_time) = UTC_OVERRIDE.read() {
-            if let Some(time) = *override_time {
-                return time;
-            }
-        }
-    }
+    static CURRENT_DATE_VALUE: OnceLock<Option<DateTime<Utc>>> = OnceLock::new();
 
-    Utc::now()
+    CURRENT_DATE_VALUE
+        .get_or_init(|| match std::env::var("__ZEN_MOCK_UTC_TIME") {
+            Ok(v) => {
+                let now = v.parse::<DateTime<Utc>>().unwrap();
+                Some(now)
+            }
+            Err(_) => None,
+        })
+        .unwrap_or_else(|| Utc::now())
 }

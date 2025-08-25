@@ -9,7 +9,7 @@ use crate::handler::function::serde::JsValue;
 use rquickjs::promise::MaybePromise;
 use rquickjs::{async_with, AsyncContext, AsyncRuntime, CatchResultExt, Ctx, Module};
 use serde::{Deserialize, Serialize};
-use zen_expression::variable::Variable;
+use zen_expression::variable::{ToVariable, Variable};
 
 pub struct FunctionConfig {
     pub(crate) listeners: Option<Vec<Box<dyn RuntimeListener>>>,
@@ -129,7 +129,7 @@ impl Function {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, ToVariable)]
 pub struct HandlerResponse {
     pub logs: Vec<Log>,
     pub data: Variable,

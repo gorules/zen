@@ -154,7 +154,7 @@ impl<'a> Node<'a> {
         };
     }
 
-    pub fn first_error(&self) -> Option<AstNodeError> {
+    pub fn first_error(&'a self) -> Option<AstNodeError<'a>> {
         let error_cell = Cell::new(None);
         self.walk(|n| {
             if let Node::Error { error, .. } = n {

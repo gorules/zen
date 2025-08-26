@@ -1,4 +1,5 @@
 use crate::functions::defs::FunctionDefinition;
+use crate::functions::mf_function::MfFunctionRegistry;
 use crate::functions::{DeprecatedFunction, FunctionKind, InternalFunction};
 use nohash_hasher::{BuildNoHashHasher, IsEnabled};
 use std::cell::RefCell;
@@ -33,6 +34,9 @@ impl FunctionRegistry {
                 Self::INSTANCE.with_borrow(|i| i.deprecated_functions.get(&deprecated).cloned())
             }
             FunctionKind::Closure(_) => None,
+            FunctionKind::Mf(mf) => {
+                MfFunctionRegistry::get_definition(&mf.name)
+            },
         }
     }
 

@@ -140,6 +140,17 @@ impl<'a> Isolate<'a> {
         Ok(result)
     }
 
+    pub fn run_standard_with_state<S: Send + Sync + 'static>(
+        &mut self,
+        source: &'a str,
+        state: Arc<S>,
+    ) -> Result<Variable, IsolateError> {
+        // 使用 StateGuard 自动管理 State 生命周期
+        let _guard = crate::functions::StateGuard::new(state);
+
+        // 运行表达式，即使发生异常，State 也会被正确清理
+        self.run_standard(source)
+    }
     pub fn compile_unary(&mut self, source: &'a str) -> Result<Expression<Unary>, IsolateError> {
         self.run_internal(source, ExpressionKind::Unary)?;
         let bytecode = self.compiler.get_bytecode().to_vec();
@@ -156,6 +167,17 @@ impl<'a> Isolate<'a> {
             .run(bytecode, self.environment.clone().unwrap_or(Variable::Null))?;
 
         result.as_bool().ok_or_else(|| IsolateError::ValueCastError)
+    }
+    pub fn run_unary_with_state<S: Send + Sync + 'static>(
+        &mut self,
+        source: &'a str,
+        state: Arc<S>,
+    ) -> Result<bool, IsolateError> {
+        // 使用 StateGuard 自动管理 State 生命周期
+        let _guard = crate::functions::StateGuard::new(state);
+
+        // 运行表达式，即使发生异常，State 也会被正确清理
+        self.run_unary(source)
     }
 }
 

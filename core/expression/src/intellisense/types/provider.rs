@@ -402,7 +402,7 @@ impl TypesProvider {
                 }
 
                 match kind {
-                    FunctionKind::Internal(_) | FunctionKind::Deprecated(_) => {
+                    FunctionKind::Internal(_) | FunctionKind::Deprecated(_) | FunctionKind::Mf(_) => {
                         let Some(def) = FunctionRegistry::get_definition(kind) else {
                             return V(VariableType::Any);
                         };

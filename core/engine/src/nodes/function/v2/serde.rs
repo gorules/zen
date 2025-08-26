@@ -131,3 +131,41 @@ impl<'js> IntoJs<'js> for JsValue {
         Ok(res)
     }
 }
+
+pub struct JsValueWithNodes(pub JsValue);
+
+impl<'js> IntoJs<'js> for JsValueWithNodes {
+    fn into_js(self, ctx: &Ctx<'js>) -> rquickjs::Result<QValue<'js>> {
+        let base_js = self.0.into_js(ctx)?;
+        if !base_js.is_object() {
+            return Ok(base_js);
+        }
+
+        let obj = base_js.into_object().or_throw(ctx)?;
+        let nodes_proxy: QValue<'js> = ctx.eval(
+            r#"
+            (() => {
+              const _data = { loaded: false, inner: null };
+              const data = () => {
+                if (!_data.loaded) {
+                  _data.loaded = true;
+                  _data.inner = __getNodesData();
+                }
+
+                return _data.inner;
+              };
+
+              return new Proxy({}, {
+                get: (target, prop) => data()[prop],
+                has: (target, prop) => prop in data(),
+                ownKeys: () => Object.keys(data()),
+                getOwnPropertyDescriptor: (target, prop) => Object.getOwnPropertyDescriptor(data(), prop),
+              });
+            })();
+        "#,
+        )?;
+
+        obj.set("$nodes", nodes_proxy)?;
+        Ok(obj.into_value())
+    }
+}

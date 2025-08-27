@@ -1,25 +1,33 @@
 use crate::handler::node::{NodeResponse, NodeResult};
 use crate::model::{TransformAttributes, TransformExecutionMode};
-use anyhow::Context;
+use crate::nodes::{NodeContextBase, NodeContextExt};
 use std::future::Future;
+use std::ops::Deref;
 use zen_expression::{Isolate, Variable};
 
-impl TransformAttributes {
-    pub(crate) async fn run_with<F, Fut>(&self, node_input: Variable, evaluate: F) -> NodeResult
+pub trait TransformAttributesExecution {
+    async fn run_with<F, Fut>(&self, ctx: NodeContextBase, evaluate: F) -> NodeResult
+    where
+        F: Fn(Variable) -> Fut,
+        Fut: Future<Output = NodeResult>;
+}
+
+impl TransformAttributesExecution for TransformAttributes {
+    async fn run_with<F, Fut>(&self, ctx: NodeContextBase, evaluate: F) -> NodeResult
     where
         F: Fn(Variable) -> Fut,
         Fut: Future<Output = NodeResult>,
     {
         let input = match &self.input_field {
-            None => node_input.clone(),
+            None => ctx.input.clone(),
             Some(input_field) => {
                 let mut isolate = Isolate::new();
-                isolate.set_environment(node_input.clone());
+                isolate.set_environment(ctx.input.clone());
                 let calculated_input = isolate
-                    .run_standard(input_field.as_str())
-                    .context("Failed to run standard")?;
+                    .run_standard(input_field.deref())
+                    .node_context_message(&ctx, "Failed to evaluate expression")?;
 
-                let nodes = node_input.dot("$nodes").unwrap_or(Variable::Null);
+                let nodes = ctx.input.dot("$nodes").unwrap_or(Variable::Null);
                 match &calculated_input {
                     Variable::Array(arr) => {
                         let arr = arr.borrow();
@@ -55,7 +63,9 @@ impl TransformAttributes {
                 response.output
             }
             TransformExecutionMode::Loop => {
-                let input_array_ref = input.as_array().context("Expected an array")?;
+                let input_array_ref = input
+                    .as_array()
+                    .node_context_message(&ctx, "Expected an array")?;
                 let input_array = input_array_ref.borrow();
 
                 let mut output_array = Vec::with_capacity(input_array.len());
@@ -81,13 +91,13 @@ impl TransformAttributes {
 
         if let Some(output_path) = &self.output_path {
             let new_output = Variable::empty_object();
-            new_output.dot_insert(output_path.as_str(), output);
+            new_output.dot_insert(output_path.deref(), output);
 
             output = new_output;
         }
 
         if self.pass_through {
-            let mut node_input = node_input;
+            let mut node_input = ctx.input;
             output = node_input.merge_clone(&output)
         }
 

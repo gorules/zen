@@ -1,6 +1,7 @@
-use std::future::Future;
-
 use crate::loader::{DecisionLoader, LoaderResponse};
+use std::fmt::Debug;
+use std::future::Future;
+use std::pin::Pin;
 
 /// Loads decisions using an async closure
 #[derive(Debug)]
@@ -23,13 +24,13 @@ where
 
 impl<F, O> DecisionLoader for ClosureLoader<F>
 where
-    F: Fn(String) -> O + Sync + Send,
+    F: Fn(String) -> O + Sync + Send + Debug,
     O: Future<Output = LoaderResponse> + Send,
 {
-    fn load<'a>(&'a self, key: &'a str) -> impl Future<Output = LoaderResponse> + 'a {
-        async move {
+    fn load<'a>(&'a self, key: &'a str) -> Pin<Box<dyn Future<Output = LoaderResponse> + 'a>> {
+        Box::pin(async move {
             let closure = &self.closure;
             closure(key.to_string()).await
-        }
+        })
     }
 }

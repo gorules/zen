@@ -1,6 +1,6 @@
-use crate::handler::function::error::ResultExt;
-use crate::handler::function::module::export_default;
-use crate::handler::function::serde::JsValue;
+use crate::nodes::function::v2::error::ResultExt;
+use crate::nodes::function::v2::module::export_default;
+use crate::nodes::function::v2::serde::JsValue;
 use reqwest::header::{HeaderMap, HeaderName};
 use reqwest::Method;
 use rquickjs::module::{Declarations, Exports, ModuleDef};

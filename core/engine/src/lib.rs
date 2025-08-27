@@ -128,9 +128,8 @@ mod engine;
 pub mod error;
 pub mod handler;
 pub mod loader;
-#[path = "model/mod.rs"]
 pub mod model;
-mod util;
+mod nodes;
 
 pub use config::ZEN_CONFIG;
 pub use decision::Decision;

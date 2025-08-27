@@ -22,10 +22,11 @@ pub trait CustomNodeAdapter: Debug {
 pub struct NoopCustomNode;
 
 impl CustomNodeAdapter for NoopCustomNode {
-    async fn handle(&self, _: CustomNodeRequest) -> NodeResult {
-        Err(NodeError::Display(
-            "Custom node handler not provided".to_string(),
-        ))
+    fn handle(
+        &self,
+        request: CustomNodeRequest,
+    ) -> Pin<Box<dyn Future<Output = NodeResult> + Send>> {
+        Box::pin(async move { Err(NodeError("Custom node handler not provided".to_string())) })
     }
 }
 
@@ -91,5 +92,3 @@ impl TryFrom<&DecisionNode> for CustomDecisionNode {
         })
     }
 }
-
-pub type DynamicCustomNode = Arc<dyn CustomNodeAdapter>;

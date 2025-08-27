@@ -1,11 +1,11 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
 
-use crate::handler::function::error::{FunctionError, FunctionResult, ResultExt};
-use crate::handler::function::listener::{RuntimeEvent, RuntimeListener};
-use crate::handler::function::module::console::{Console, Log};
-use crate::handler::function::module::ModuleLoader;
-use crate::handler::function::serde::JsValue;
+use crate::nodes::function::v2::error::{FunctionError, FunctionResult, ResultExt};
+use crate::nodes::function::v2::listener::{RuntimeEvent, RuntimeListener};
+use crate::nodes::function::v2::module::console::{Console, Log};
+use crate::nodes::function::v2::module::ModuleLoader;
+use crate::nodes::function::v2::serde::JsValue;
 use rquickjs::promise::MaybePromise;
 use rquickjs::{async_with, AsyncContext, AsyncRuntime, CatchResultExt, Ctx, Module};
 use serde::{Deserialize, Serialize};

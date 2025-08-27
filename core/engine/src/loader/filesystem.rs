@@ -3,6 +3,7 @@ use std::fs::File;
 use std::future::Future;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -82,7 +83,7 @@ impl FilesystemLoader {
 }
 
 impl DecisionLoader for FilesystemLoader {
-    fn load<'a>(&'a self, key: &'a str) -> impl Future<Output = LoaderResponse> + 'a {
-        async move { self.read_from_file(key).await }
+    fn load<'a>(&'a self, key: &'a str) -> Pin<Box<dyn Future<Output = LoaderResponse> + 'a>> {
+        Box::pin(async move { self.read_from_file(key).await })
     }
 }

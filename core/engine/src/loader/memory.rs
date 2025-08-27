@@ -2,6 +2,7 @@ use crate::loader::{DecisionLoader, LoaderError, LoaderResponse};
 use crate::model::DecisionContent;
 use ahash::HashMap;
 use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, RwLock};
 
 /// Loads decisions from in-memory hashmap
@@ -38,10 +39,10 @@ impl MemoryLoader {
 }
 
 impl DecisionLoader for MemoryLoader {
-    fn load<'a>(&'a self, key: &'a str) -> impl Future<Output = LoaderResponse> + 'a {
-        async move {
-            self.get(&key)
+    fn load<'a>(&'a self, key: &'a str) -> Pin<Box<dyn Future<Output = LoaderResponse> + 'a>> {
+        Box::pin(async move {
+            self.get(key)
                 .ok_or_else(|| LoaderError::NotFound(key.to_string()).into())
-        }
+        })
     }
 }

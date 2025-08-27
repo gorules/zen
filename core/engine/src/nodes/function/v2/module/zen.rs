@@ -2,25 +2,23 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use crate::handler::custom_node_adapter::CustomNodeAdapter;
-use crate::handler::function::error::{FunctionResult, ResultExt};
-use crate::handler::function::listener::{RuntimeEvent, RuntimeListener};
-use crate::handler::function::module::export_default;
-use crate::handler::function::serde::JsValue;
+use crate::handler::custom_node_adapter::DynamicCustomNode;
 use crate::handler::graph::{DecisionGraph, DecisionGraphConfig};
-use crate::loader::DecisionLoader;
+use crate::loader::{DecisionLoader, DynamicLoader};
+use crate::nodes::function::v2::error::{FunctionResult, ResultExt};
+use crate::nodes::function::v2::listener::{RuntimeEvent, RuntimeListener};
+use crate::nodes::function::v2::module::export_default;
+use crate::nodes::function::v2::serde::JsValue;
 use rquickjs::module::{Declarations, Exports, ModuleDef};
 use rquickjs::prelude::{Async, Func, Opt};
 use rquickjs::{CatchResultExt, Ctx, Function, Object};
 
-pub(crate) struct ZenListener<Loader, Adapter> {
-    pub loader: Arc<Loader>,
-    pub adapter: Arc<Adapter>,
+pub(crate) struct ZenListener {
+    pub loader: Arc<DynamicLoader>,
+    pub adapter: Arc<DynamicCustomNode>,
 }
 
-impl<Loader: DecisionLoader + 'static, Adapter: CustomNodeAdapter + 'static> RuntimeListener
-    for ZenListener<Loader, Adapter>
-{
+impl RuntimeListener for ZenListener {
     fn on_event<'js>(
         &self,
         ctx: Ctx<'js>,

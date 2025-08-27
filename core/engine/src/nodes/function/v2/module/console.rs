@@ -3,8 +3,8 @@ use std::future::Future;
 use std::pin::Pin;
 use std::time::{Duration, Instant};
 
-use crate::handler::function::error::{FunctionResult, ResultExt};
-use crate::handler::function::listener::{RuntimeEvent, RuntimeListener};
+use crate::nodes::function::v2::error::{FunctionResult, ResultExt};
+use crate::nodes::function::v2::listener::{RuntimeEvent, RuntimeListener};
 use rquickjs::prelude::Rest;
 use rquickjs::{Ctx, Object, Value};
 use serde::{Deserialize, Serialize};
@@ -29,7 +29,7 @@ impl RuntimeListener for ConsoleListener {
     }
 }
 
-#[derive(Serialize, Deserialize, ToVariable, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToVariable)]
 #[serde(rename_all = "camelCase")]
 pub struct Log {
     pub lines: Vec<String>,

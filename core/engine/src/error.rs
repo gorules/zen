@@ -44,28 +44,14 @@ impl EvaluationError {
             }
             EvaluationError::NodeError(err) => {
                 map.serialize_entry("type", "NodeError")?;
+                map.serialize_entry("source", &err.source.to_string())?;
 
-                match err {
-                    NodeError::Internal => map.serialize_entry("source", "Internal")?,
-                    NodeError::Other(o) => map.serialize_entry("source", &o.to_string())?,
-                    NodeError::Display(d) => map.serialize_entry("source", d.as_str())?,
-                    NodeError::Node {
-                        node_id,
-                        source,
-                        trace,
-                    } => {
-                        map.serialize_entry("nodeId", node_id.as_str())?;
-                        map.serialize_entry("source", &source.to_string())?;
-                        if let Some(trace) = &trace {
-                            map.serialize_entry("trace", &mode.serialize_trace(trace))?;
-                        }
-                    }
-                    NodeError::PartialTrace { trace, message } => {
-                        map.serialize_entry("source", message.as_str())?;
-                        if let Some(trace) = &trace {
-                            map.serialize_entry("trace", &mode.serialize_trace(trace))?;
-                        }
-                    }
+                if let Some(node_id) = &err.node_id {
+                    map.serialize_entry("nodeId", node_id)?;
+                }
+
+                if let Some(trace) = &err.trace {
+                    map.serialize_entry("trace", &mode.serialize_trace(trace))?;
                 }
             }
             EvaluationError::LoaderError(err) => {

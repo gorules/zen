@@ -3,59 +3,51 @@ use crate::handler::custom_node_adapter::{CustomNodeAdapter, NoopCustomNode};
 use crate::handler::graph::{DecisionGraph, DecisionGraphConfig, DecisionGraphResponse};
 use crate::loader::{CachedLoader, DecisionLoader, NoopLoader};
 use crate::model::DecisionContent;
-use crate::util::validator_cache::ValidatorCache;
+use crate::nodes::validator_cache::ValidatorCache;
 use crate::{DecisionGraphValidationError, EvaluationError};
 use serde_json::Value;
 use std::sync::Arc;
 use zen_expression::variable::Variable;
 
+type DynamicLoader = Arc<dyn DecisionLoader>;
+type DynamicCustomNode = Arc<dyn CustomNodeAdapter>;
+
 /// Represents a JDM decision which can be evaluated
 #[derive(Debug, Clone)]
-pub struct Decision<Loader, CustomNode>
-where
-    Loader: DecisionLoader + 'static,
-    CustomNode: CustomNodeAdapter + 'static,
-{
+pub struct Decision {
     content: Arc<DecisionContent>,
-    loader: Arc<Loader>,
-    adapter: Arc<CustomNode>,
+    loader: DynamicLoader,
+    adapter: DynamicCustomNode,
 
     validator_cache: ValidatorCache,
 }
 
-impl From<DecisionContent> for Decision<NoopLoader, NoopCustomNode> {
+impl From<DecisionContent> for Decision {
     fn from(value: DecisionContent) -> Self {
         Self {
             content: value.into(),
-            loader: NoopLoader::default().into(),
-            adapter: NoopCustomNode::default().into(),
+            loader: Arc::new(NoopLoader::default()),
+            adapter: Arc::new(NoopCustomNode::default()),
 
             validator_cache: Default::default(),
         }
     }
 }
 
-impl From<Arc<DecisionContent>> for Decision<NoopLoader, NoopCustomNode> {
+impl From<Arc<DecisionContent>> for Decision {
     fn from(value: Arc<DecisionContent>) -> Self {
         Self {
             content: value,
-            loader: NoopLoader::default().into(),
-            adapter: NoopCustomNode::default().into(),
+            loader: Arc::new(NoopLoader::default()),
+            adapter: Arc::new(NoopCustomNode::default()),
 
             validator_cache: Default::default(),
         }
     }
 }
 
-impl<L, A> Decision<L, A>
-where
-    L: DecisionLoader + 'static,
-    A: CustomNodeAdapter + 'static,
-{
-    pub fn with_loader<Loader>(self, loader: Arc<Loader>) -> Decision<Loader, A>
-    where
-        Loader: DecisionLoader,
-    {
+impl Decision {
+    pub fn with_loader(self, loader: DynamicLoader) -> Self {
         Decision {
             loader,
             adapter: self.adapter,
@@ -64,13 +56,10 @@ where
         }
     }
 
-    pub fn with_adapter<Adapter>(self, adapter: Arc<Adapter>) -> Decision<L, Adapter>
-    where
-        Adapter: CustomNodeAdapter,
-    {
+    pub fn with_adapter(self, adapter: DynamicCustomNode) -> Self {
         Decision {
-            loader: self.loader,
             adapter,
+            loader: self.loader,
             content: self.content,
             validator_cache: self.validator_cache,
         }

@@ -1,9 +1,8 @@
 use std::future::Future;
 use std::pin::Pin;
 
+use crate::nodes::function::v2::error::FunctionResult;
 use rquickjs::Ctx;
-
-use crate::handler::function::error::FunctionResult;
 
 #[derive(Clone, PartialEq)]
 pub(crate) enum RuntimeEvent {

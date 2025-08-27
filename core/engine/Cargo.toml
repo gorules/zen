@@ -26,6 +26,7 @@ tokio = { workspace = true, features = ["sync", "time"] }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 rquickjs = { version = "0.9", features = ["macro", "loader", "rust-alloc", "futures", "either", "properties"] }
 jsonschema = "0.29"
+zen-types = { path = "../types", version = "0.50.2" }
 zen-expression = { path = "../expression", version = "0.50.2" }
 zen-tmpl = { path = "../template", version = "0.50.2" }
 

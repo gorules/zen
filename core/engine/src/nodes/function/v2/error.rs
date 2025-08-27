@@ -1,10 +1,11 @@
 use std::fmt::{Display, Formatter};
 
 use rquickjs::{CaughtError, Ctx, Error, Exception};
+use thiserror::Error;
 
 pub type FunctionResult<Ok = ()> = Result<Ok, FunctionError>;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum FunctionError {
     Caught(String),
     Runtime(Error),

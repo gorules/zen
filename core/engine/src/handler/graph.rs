@@ -13,7 +13,7 @@ use crate::handler::table::zen::DecisionTableHandler;
 use crate::handler::traversal::{GraphWalker, StableDiDecisionGraph};
 use crate::loader::DecisionLoader;
 use crate::model::{DecisionContent, DecisionNodeKind, FunctionNodeContent};
-use crate::util::validator_cache::ValidatorCache;
+use crate::nodes::validator_cache::ValidatorCache;
 use crate::{EvaluationError, NodeError};
 use ahash::{HashMap, HashMapExt};
 use anyhow::anyhow;

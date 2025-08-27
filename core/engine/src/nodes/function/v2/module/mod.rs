@@ -3,12 +3,11 @@ use std::collections::HashSet;
 use std::ops::DerefMut;
 use std::rc::Rc;
 
+use crate::nodes::function::v2::module::http::HttpModule;
+use crate::nodes::function::v2::module::zen::ZenModule;
 use rquickjs::loader::{Bundle, Loader, ModuleLoader as MDLoader, Resolver};
 use rquickjs::module::{Declared, Exports};
 use rquickjs::{embed, Ctx, Error, Module, Object};
-
-use crate::handler::function::module::http::HttpModule;
-use crate::handler::function::module::zen::ZenModule;
 
 pub(crate) mod console;
 pub(crate) mod http;

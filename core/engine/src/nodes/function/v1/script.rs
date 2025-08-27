@@ -1,4 +1,4 @@
-use crate::handler::function::serde::JsValue;
+use crate::nodes::function::v2::serde::JsValue;
 use anyhow::Context as _;
 use rquickjs::{Context, Ctx, Error as QError, FromJs, Module, Runtime};
 use serde::{Deserialize, Serialize};

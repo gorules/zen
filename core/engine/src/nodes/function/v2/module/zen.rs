@@ -2,8 +2,8 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use crate::decision_graph::graph::{DecisionGraph, DecisionGraphConfig};
 use crate::handler::custom_node_adapter::DynamicCustomNode;
-use crate::handler::graph::{DecisionGraph, DecisionGraphConfig};
 use crate::loader::{DecisionLoader, DynamicLoader};
 use crate::nodes::function::v2::error::{FunctionResult, ResultExt};
 use crate::nodes::function::v2::listener::{RuntimeEvent, RuntimeListener};

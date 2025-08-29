@@ -10,7 +10,7 @@ use crate::variable::PyVariable;
 use zen_engine::handler::custom_node_adapter::{
     CustomDecisionNode as BaseCustomDecisionNode, CustomNodeRequest,
 };
-use zen_engine::handler::node::NodeResponse;
+use zen_engine::nodes::result::NodeResponse;
 use zen_expression::Variable;
 
 #[derive(Serialize)]

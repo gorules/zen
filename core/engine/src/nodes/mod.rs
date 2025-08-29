@@ -8,6 +8,7 @@ mod extensions;
 pub(crate) mod function;
 mod input;
 mod output;
+pub mod result;
 mod transform_attributes;
 pub mod validator_cache;
 

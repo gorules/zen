@@ -4,7 +4,7 @@ use napi::threadsafe_function::{ErrorStrategy, ThreadsafeFunction};
 
 use crate::types::{ZenEngineHandlerRequest, ZenEngineHandlerResponse};
 use zen_engine::handler::custom_node_adapter::{CustomNodeAdapter, CustomNodeRequest};
-use zen_engine::handler::node::{NodeResponse, NodeResult};
+use zen_engine::nodes::result::{NodeResponse, NodeResult};
 use zen_engine::Variable;
 
 #[derive(Default)]

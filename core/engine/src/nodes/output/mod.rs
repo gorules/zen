@@ -1,5 +1,5 @@
-use crate::handler::node::NodeResult;
 use crate::nodes::definition::NodeHandler;
+use crate::nodes::result::NodeResult;
 use crate::nodes::NodeContext;
 use zen_types::decision::OutputNodeContent;
 use zen_types::variable::Variable;

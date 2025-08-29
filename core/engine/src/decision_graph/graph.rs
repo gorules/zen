@@ -1,18 +1,7 @@
 use crate::engine::EvaluationTraceKind;
-use crate::handler::custom_node_adapter::{CustomNodeAdapter, CustomNodeRequest};
-use crate::handler::decision::DecisionHandler;
-use crate::handler::expression::ExpressionHandler;
-use crate::handler::function::function::{Function, FunctionConfig};
-use crate::handler::function::module::console::ConsoleListener;
-use crate::handler::function::module::zen::ZenListener;
-use crate::handler::function::FunctionHandler;
-use crate::handler::function_v1;
-use crate::handler::function_v1::runtime::create_runtime;
-use crate::handler::node::NodeRequest;
-use crate::handler::table::zen::DecisionTableHandler;
-use crate::handler::traversal::{GraphWalker, StableDiDecisionGraph};
 use crate::loader::DecisionLoader;
 use crate::model::{DecisionContent, DecisionNodeKind, FunctionNodeContent};
+use crate::nodes::result::NodeRequest;
 use crate::nodes::validator_cache::ValidatorCache;
 use crate::{EvaluationError, NodeError};
 use ahash::{HashMap, HashMapExt};
@@ -537,7 +526,7 @@ pub struct DecisionGraphResponse {
     pub performance: String,
     pub result: Variable,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub trace: Option<HashMap<String, DecisionGraphTrace>>,
+    pub trace: Option<HashMap<Arc<str>, DecisionGraphTrace>>,
 }
 
 impl DecisionGraphResponse {
@@ -565,9 +554,9 @@ impl DecisionGraphResponse {
 pub struct DecisionGraphTrace {
     pub input: Variable,
     pub output: Variable,
-    pub name: String,
-    pub id: String,
-    pub performance: Option<String>,
+    pub name: Arc<str>,
+    pub id: Arc<str>,
+    pub performance: Option<Arc<str>>,
     pub trace_data: Option<Variable>,
     pub order: u32,
 }

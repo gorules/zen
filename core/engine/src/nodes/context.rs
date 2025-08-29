@@ -1,11 +1,12 @@
-use crate::handler::node::{NodeResponse, NodeResult};
 use crate::nodes::definition::{NodeDataType, TraceDataType};
 use crate::nodes::extensions::NodeHandlerExtensions;
 use crate::nodes::function::v2::function::Function;
+use crate::nodes::result::{NodeResponse, NodeResult};
 use crate::NodeError;
 use std::cell::RefCell;
 use std::future::Future;
 use std::rc::Rc;
+use std::sync::Arc;
 use zen_types::variable::Variable;
 
 pub struct NodeContext<NodeData, TraceData>
@@ -13,8 +14,8 @@ where
     NodeData: NodeDataType,
     TraceData: TraceDataType,
 {
-    pub id: Rc<str>,
-    pub name: Rc<str>,
+    pub id: Arc<str>,
+    pub name: Arc<str>,
     pub node: NodeData,
     pub input: Variable,
     pub trace: Option<RefCell<TraceData>>,
@@ -147,8 +148,8 @@ where
 }
 
 pub struct NodeContextBase {
-    pub id: Rc<str>,
-    pub name: Rc<str>,
+    pub id: Arc<str>,
+    pub name: Arc<str>,
     pub input: Variable,
 }
 

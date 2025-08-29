@@ -124,6 +124,7 @@
 
 mod config;
 mod decision;
+mod decision_graph;
 mod engine;
 pub mod error;
 pub mod handler;
@@ -133,12 +134,12 @@ mod nodes;
 
 pub use config::ZEN_CONFIG;
 pub use decision::Decision;
+pub use decision_graph::graph::DecisionGraphResponse;
+pub use decision_graph::graph::DecisionGraphTrace;
+pub use decision_graph::graph::DecisionGraphValidationError;
 pub use engine::{
     DecisionEngine, EvaluationOptions, EvaluationSerializedOptions, EvaluationTraceKind,
 };
 pub use error::EvaluationError;
-pub use handler::graph::DecisionGraphResponse;
-pub use handler::graph::DecisionGraphTrace;
-pub use handler::graph::DecisionGraphValidationError;
-pub use handler::node::NodeError;
+pub use nodes::result::NodeError;
 pub use zen_expression::Variable;

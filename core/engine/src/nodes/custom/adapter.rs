@@ -1,5 +1,4 @@
-use crate::handler::node::{NodeError, NodeRequest, NodeResult};
-use crate::model::{DecisionNode, DecisionNodeKind};
+use crate::nodes::result::{NodeError, NodeRequest, NodeResult};
 use json_dotpath::DotPaths;
 use serde::Serialize;
 use serde_json::Value;
@@ -7,6 +6,7 @@ use std::fmt::Debug;
 use std::future::Future;
 use std::ops::Deref;
 use std::pin::Pin;
+use std::rc::Rc;
 use std::sync::Arc;
 use zen_expression::variable::Variable;
 use zen_tmpl::TemplateRenderError;
@@ -22,10 +22,17 @@ pub trait CustomNodeAdapter: Debug {
 pub struct NoopCustomNode;
 
 impl CustomNodeAdapter for NoopCustomNode {
-    async fn handle(&self, _: CustomNodeRequest) -> NodeResult {
-        Err(NodeError::Display(
-            "Custom node handler not provided".to_string(),
-        ))
+    fn handle(
+        &self,
+        request: CustomNodeRequest,
+    ) -> Pin<Box<dyn Future<Output = NodeResult> + Send>> {
+        Box::pin(async move {
+            Err(NodeError {
+                trace: None,
+                node_id: Some(Rc::from(request.node.id.deref())),
+                source: "Custom node handler not provided".to_string().into(),
+            })
+        })
     }
 }
 
@@ -69,27 +76,10 @@ impl CustomNodeRequest {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CustomDecisionNode {
-    pub id: String,
-    pub name: String,
-    pub kind: String,
+    pub id: Arc<str>,
+    pub name: Arc<str>,
+    pub kind: Arc<str>,
     pub config: Arc<Value>,
-}
-
-impl TryFrom<&DecisionNode> for CustomDecisionNode {
-    type Error = ();
-
-    fn try_from(value: &DecisionNode) -> Result<Self, Self::Error> {
-        let DecisionNodeKind::CustomNode { content } = &value.kind else {
-            return Err(());
-        };
-
-        Ok(Self {
-            id: value.id.clone(),
-            name: value.name.clone(),
-            kind: content.kind.clone(),
-            config: content.config.clone(),
-        })
-    }
 }
 
 pub type DynamicCustomNode = Arc<dyn CustomNodeAdapter>;

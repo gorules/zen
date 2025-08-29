@@ -6,6 +6,7 @@ use petgraph::prelude::{EdgeIndex, NodeIndex, StableDiGraph};
 use petgraph::visit::{EdgeRef, IntoNodeIdentifiers, VisitMap, Visitable};
 use petgraph::{Incoming, Outgoing};
 use serde_json::json;
+use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -93,7 +94,7 @@ impl GraphWalker {
             .iter()
             .filter_map(|(idx, value)| {
                 let weight = g.node_weight(*idx)?;
-                Some((Rc::from(weight.name.as_str()), value.clone()))
+                Some((Rc::from(weight.name.deref()), value.clone()))
             })
             .collect();
 
@@ -186,7 +187,7 @@ impl GraphWalker {
                                 let v = Variable::empty_object();
                                 v.dot_insert(
                                     "id",
-                                    Variable::String(Rc::from(statement.id.as_str())),
+                                    Variable::String(Rc::from(statement.id.deref())),
                                 );
 
                                 v
@@ -215,7 +216,9 @@ impl GraphWalker {
                         .edges_directed(nid, Outgoing)
                         .filter(|edge| {
                             edge.weight().source_handle.as_ref().map_or(true, |handle| {
-                                !valid_statements.iter().any(|s| s.id == *handle)
+                                !valid_statements
+                                    .iter()
+                                    .any(|s| s.id.deref() == handle.as_str())
                             })
                         })
                         .map(|edge| edge.id())
@@ -268,7 +271,7 @@ fn switch_statement_evaluate<'a>(
     }
 
     isolate
-        .run_standard(switch_statement.condition.as_str())
+        .run_standard(switch_statement.condition.deref())
         .map_or(false, |v| v.as_bool().unwrap_or(false))
 }
 

@@ -2,12 +2,12 @@ use std::ops::Deref;
 use std::rc::Rc;
 use std::time::Duration;
 
-use crate::handler::node::NodeResult;
 use crate::nodes::definition::NodeHandler;
 use crate::nodes::function::v2::error::FunctionResult;
 use crate::nodes::function::v2::function::{Function, HandlerResponse};
 use crate::nodes::function::v2::module::console::Log;
 use crate::nodes::function::v2::serde::JsValue;
+use crate::nodes::result::NodeResult;
 use crate::nodes::{NodeContext, NodeContextExt};
 use ::serde::{Deserialize, Serialize};
 use rquickjs::{async_with, CatchResultExt, Object};

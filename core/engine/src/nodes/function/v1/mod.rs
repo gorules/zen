@@ -2,10 +2,10 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::handler::node::NodeResult;
 use crate::nodes::definition::NodeHandler;
 use crate::nodes::function::v1::runtime::create_runtime;
 use crate::nodes::function::v1::script::Script;
+use crate::nodes::result::NodeResult;
 use crate::nodes::{NodeContext, NodeContextExt};
 use serde_json::Value;
 use zen_expression::variable::ToVariable;

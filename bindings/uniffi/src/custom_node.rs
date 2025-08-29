@@ -2,7 +2,7 @@ use crate::error::ZenError;
 use crate::types::{DecisionNode, ZenEngineHandlerRequest, ZenEngineHandlerResponse};
 use uniffi::deps::anyhow::anyhow;
 use zen_engine::handler::custom_node_adapter::{CustomNodeAdapter, CustomNodeRequest};
-use zen_engine::handler::node::{NodeResponse, NodeResult};
+use zen_engine::nodes::result::{NodeResponse, NodeResult};
 use zen_expression::Variable;
 
 #[uniffi::export(callback_interface)]

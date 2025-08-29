@@ -5,7 +5,7 @@ use anyhow::anyhow;
 use zen_engine::handler::custom_node_adapter::{
     CustomNodeAdapter, CustomNodeRequest, NoopCustomNode,
 };
-use zen_engine::handler::node::{NodeResponse, NodeResult};
+use zen_engine::nodes::result::{NodeResponse, NodeResult};
 
 use crate::languages::native::NativeCustomNode;
 

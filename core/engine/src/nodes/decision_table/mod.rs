@@ -1,5 +1,5 @@
-use crate::handler::node::NodeResult;
 use crate::nodes::definition::NodeHandler;
+use crate::nodes::result::NodeResult;
 use crate::nodes::NodeContext;
 use ahash::HashMap;
 use serde::Serialize;

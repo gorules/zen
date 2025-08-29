@@ -3,8 +3,8 @@ use std::ffi::{c_char, CString};
 use std::future::Future;
 
 use zen_engine::handler::custom_node_adapter::{CustomNodeAdapter, CustomNodeRequest};
-use zen_engine::handler::node::NodeResult;
 use zen_engine::loader::{DecisionLoader, LoaderError, LoaderResponse};
+use zen_engine::nodes::result::NodeResult;
 
 use crate::custom_node::{DynamicCustomNode, ZenCustomNodeResult};
 use crate::engine::{ZenEngine, ZenEngineStruct};

@@ -1,10 +1,10 @@
 pub(crate) mod v1;
 pub(crate) mod v2;
 
-use crate::handler::node::NodeResult;
 use crate::nodes::definition::NodeHandler;
 use crate::nodes::function::v1::{FunctionV1NodeHandler, FunctionV1Trace};
 use crate::nodes::function::v2::{FunctionV2NodeHandler, FunctionV2Trace};
+use crate::nodes::result::NodeResult;
 use crate::nodes::NodeContext;
 use std::sync::Arc;
 use zen_types::decision::{FunctionContent, FunctionNodeContent};

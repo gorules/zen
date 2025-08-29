@@ -1,5 +1,5 @@
-use crate::handler::custom_node_adapter::DynamicCustomNode;
 use crate::loader::DynamicLoader;
+use crate::nodes::custom::DynamicCustomNode;
 use crate::nodes::function::v2::function::{Function, FunctionConfig};
 use crate::nodes::function::v2::module::console::ConsoleListener;
 use crate::nodes::function::v2::module::zen::ZenListener;
@@ -13,8 +13,8 @@ pub struct NodeHandlerExtensions {
     tokio_runtime: Arc<OnceCell<tokio::runtime::Runtime>>,
     function_runtime: Arc<OnceCell<Function>>,
 
-    decision_loader: Arc<DynamicLoader>,
-    custom_node_adapter: Arc<DynamicCustomNode>,
+    loader: DynamicLoader,
+    custom_node_adapter: DynamicCustomNode,
 }
 
 impl NodeHandlerExtensions {
@@ -57,5 +57,13 @@ impl NodeHandlerExtensions {
         self.function_runtime
             .get()
             .context("Tokio runtime is not initialized")
+    }
+
+    pub fn custom_node(&self) -> &DynamicCustomNode {
+        &self.custom_node_adapter
+    }
+
+    pub fn loader(&self) -> &DynamicLoader {
+        &self.loader
     }
 }

@@ -1,7 +1,7 @@
+use crate::decision_graph::graph::DecisionGraphValidationError;
 use crate::engine::EvaluationTraceKind;
-use crate::handler::graph::DecisionGraphValidationError;
-pub use crate::handler::node::NodeError;
 use crate::loader::LoaderError;
+pub use crate::nodes::result::NodeError;
 use jsonschema::{ErrorIterator, ValidationError};
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};

@@ -1,6 +1,6 @@
 use crate::decision::Decision;
+use crate::decision_graph::graph::DecisionGraphResponse;
 use crate::handler::custom_node_adapter::{CustomNodeAdapter, NoopCustomNode};
-use crate::handler::graph::DecisionGraphResponse;
 use crate::loader::{
     ClosureLoader, DecisionLoader, DynamicLoader, LoaderResponse, LoaderResult, NoopLoader,
 };

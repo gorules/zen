@@ -1,8 +1,8 @@
-use crate::handler::node::NodeResult;
 use crate::nodes::context::NodeContext;
 use crate::nodes::function::FunctionNodeTrace;
 use crate::nodes::input::InputNodeTrace;
 use crate::nodes::output::OutputNodeTrace;
+use crate::nodes::result::NodeResult;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::sync::Arc;

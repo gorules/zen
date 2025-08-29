@@ -1,5 +1,5 @@
-use crate::handler::node::{NodeResponse, NodeResult};
 use crate::model::{TransformAttributes, TransformExecutionMode};
+use crate::nodes::result::{NodeResponse, NodeResult};
 use crate::nodes::{NodeContextBase, NodeContextExt};
 use std::future::Future;
 use std::ops::Deref;

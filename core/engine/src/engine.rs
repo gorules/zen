@@ -1,25 +1,24 @@
 use crate::decision::Decision;
 use crate::decision_graph::graph::DecisionGraphResponse;
-use crate::handler::custom_node_adapter::{CustomNodeAdapter, NoopCustomNode};
 use crate::loader::{
     ClosureLoader, DecisionLoader, DynamicLoader, LoaderResponse, LoaderResult, NoopLoader,
 };
 use crate::model::DecisionContent;
+use crate::nodes::custom::{DynamicCustomNode, NoopCustomNode};
 use crate::EvaluationError;
 use serde_json::Value;
 use std::fmt::Debug;
 use std::future::Future;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use strum::{EnumString, IntoStaticStr};
 use zen_expression::variable::Variable;
-
-type DynamicCustomNode = Arc<dyn CustomNodeAdapter>;
 
 /// Structure used for generating and evaluating JDM decisions
 #[derive(Debug, Clone)]
 pub struct DecisionEngine {
     loader: DynamicLoader,
     adapter: DynamicCustomNode,
+    runtime: Arc<OnceLock<tokio::runtime::Runtime>>,
 }
 
 #[derive(Debug, Default)]
@@ -68,41 +67,37 @@ impl Default for DecisionEngine {
         Self {
             loader: Arc::new(NoopLoader::default()),
             adapter: Arc::new(NoopCustomNode::default()),
+            runtime: Arc::new(OnceLock::new()),
         }
     }
 }
 
 impl DecisionEngine {
     pub fn new(loader: DynamicLoader, adapter: DynamicCustomNode) -> Self {
-        Self { loader, adapter }
-    }
-
-    pub fn with_adapter<CustomNode>(self, adapter: DynamicCustomNode) -> Self
-    where
-        CustomNode: CustomNodeAdapter,
-    {
-        DecisionEngine {
-            loader: self.loader,
-            adapter,
-        }
-    }
-
-    pub fn with_loader(self, loader: DynamicLoader) -> Self {
-        DecisionEngine {
+        Self {
             loader,
-            adapter: self.adapter,
+            adapter,
+            ..Default::default()
         }
     }
 
-    pub fn with_closure_loader<F, O>(self, loader: F) -> Self
+    pub fn with_adapter(mut self, adapter: DynamicCustomNode) -> Self {
+        self.adapter = adapter;
+        self
+    }
+
+    pub fn with_loader(mut self, loader: DynamicLoader) -> Self {
+        self.loader = loader;
+        self
+    }
+
+    pub fn with_closure_loader<F, O>(mut self, loader: F) -> Self
     where
         F: Fn(String) -> O + Sync + Send + Debug + 'static,
         O: Future<Output = LoaderResponse> + Send,
     {
-        DecisionEngine {
-            loader: Arc::new(ClosureLoader::new(loader)),
-            adapter: self.adapter,
-        }
+        self.loader = Arc::new(ClosureLoader::new(loader));
+        self
     }
 
     /// Evaluates a decision through loader using a key
@@ -130,7 +125,7 @@ impl DecisionEngine {
     {
         let content = self.loader.load(key.as_ref()).await?;
         let decision = self.create_decision(content);
-        decision.evaluate_with_opts(context, options).await
+        decision.evaluate_with_opts(context, options)
     }
 
     pub async fn evaluate_serialized<K>(
@@ -149,7 +144,7 @@ impl DecisionEngine {
             .map_err(|err| Value::String(err.to_string()))?;
 
         let decision = self.create_decision(content);
-        decision.evaluate_serialized(context, options).await
+        decision.evaluate_serialized(context, options)
     }
 
     /// Creates a decision from DecisionContent, exists for easier binding creation
@@ -157,6 +152,7 @@ impl DecisionEngine {
         Decision::from(content)
             .with_loader(self.loader.clone())
             .with_adapter(self.adapter.clone())
+            .with_runtime(self.runtime.clone())
     }
 
     /// Retrieves a decision based on the loader

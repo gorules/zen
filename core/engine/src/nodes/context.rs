@@ -2,11 +2,17 @@ use crate::nodes::definition::{NodeDataType, TraceDataType};
 use crate::nodes::extensions::NodeHandlerExtensions;
 use crate::nodes::function::v2::function::Function;
 use crate::nodes::result::{NodeResponse, NodeResult};
-use crate::NodeError;
+use crate::nodes::NodeError;
+use ahash::AHasher;
+use jsonschema::ValidationError;
+use serde::Serialize;
+use serde_json::Value;
 use std::cell::RefCell;
+use std::fmt::{Display, Formatter};
 use std::future::Future;
-use std::rc::Rc;
+use std::hash::Hasher;
 use std::sync::Arc;
+use thiserror::Error;
 use zen_types::variable::Variable;
 
 pub struct NodeContext<NodeData, TraceData>
@@ -20,6 +26,7 @@ where
     pub input: Variable,
     pub trace: Option<RefCell<TraceData>>,
     pub extensions: NodeHandlerExtensions,
+    pub iteration: u8,
 }
 
 impl<NodeData, TraceData> NodeContext<NodeData, TraceData>
@@ -27,6 +34,18 @@ where
     NodeData: NodeDataType,
     TraceData: TraceDataType,
 {
+    pub fn from_base(base: NodeContextBase, data: NodeData) -> Self {
+        Self {
+            id: base.id,
+            name: base.name,
+            input: base.input,
+            extensions: base.extensions,
+            iteration: base.iteration,
+            trace: base.trace.then(|| Default::default()),
+            node: data,
+        }
+    }
+
     pub fn trace<Function>(&self, mutator: Function)
     where
         Function: FnOnce(&mut TraceData),
@@ -69,7 +88,7 @@ where
     where
         Fut: Future,
     {
-        let tokio_runtime = self.extensions.tokio_runtime().node_context(self)?;
+        let tokio_runtime = self.extensions.tokio_runtime();
         Ok(tokio_runtime.block_on(future))
     }
 
@@ -81,7 +100,30 @@ where
     }
 
     pub(crate) fn function_runtime(&self) -> Result<&Function, NodeError> {
-        self.extensions.function_runtime().node_context(self)
+        Ok(self.extensions.function_runtime())
+    }
+
+    pub fn validate(&self, schema: &Value, value: &Value) -> Result<(), NodeError> {
+        let validator_cache = self.extensions.validator_cache();
+        let hash = self.hash_node();
+
+        let validator = validator_cache
+            .get_or_insert(hash, schema)
+            .node_context(self)?;
+
+        validator
+            .validate(value)
+            .map_err(|err| ValidationErrorJson::from(err))
+            .node_context(self)?;
+
+        Ok(())
+    }
+
+    fn hash_node(&self) -> u64 {
+        let mut hasher = AHasher::default();
+        hasher.write(self.id.as_bytes());
+        hasher.write(self.name.as_bytes());
+        hasher.finish()
     }
 }
 
@@ -151,6 +193,9 @@ pub struct NodeContextBase {
     pub id: Arc<str>,
     pub name: Arc<str>,
     pub input: Variable,
+    pub iteration: u8,
+    pub extensions: NodeHandlerExtensions,
+    pub trace: bool,
 }
 
 impl NodeContextBase {
@@ -187,9 +232,12 @@ where
 {
     fn from(value: NodeContext<NodeData, TraceData>) -> Self {
         Self {
-            id: value.id.clone(),
-            name: value.name.clone(),
-            input: value.input.clone(),
+            id: value.id,
+            name: value.name,
+            input: value.input,
+            extensions: value.extensions,
+            iteration: value.iteration,
+            trace: value.trace.is_some(),
         }
     }
 }
@@ -226,5 +274,27 @@ impl<T> NodeContextExt<T, NodeContextBase> for Option<T> {
         NewError: Into<Box<dyn std::error::Error>>,
     {
         self.ok_or_else(|| ctx.make_error(f("None")))
+    }
+}
+
+#[derive(Debug, Serialize, Error)]
+#[serde(rename_all = "camelCase")]
+struct ValidationErrorJson {
+    path: String,
+    message: String,
+}
+
+impl Display for ValidationErrorJson {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.path, self.message)
+    }
+}
+
+impl<'a> From<ValidationError<'a>> for ValidationErrorJson {
+    fn from(value: ValidationError<'a>) -> Self {
+        ValidationErrorJson {
+            path: value.instance_path.to_string(),
+            message: format!("{}", value),
+        }
     }
 }

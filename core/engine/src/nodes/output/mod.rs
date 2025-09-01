@@ -6,13 +6,19 @@ use zen_types::variable::Variable;
 
 pub struct OutputNodeHandler;
 
+pub type OutputNodeData = OutputNodeContent;
+pub type OutputNodeTrace = Variable;
+
 impl NodeHandler for OutputNodeHandler {
-    type NodeData = OutputNodeContent;
+    type NodeData = OutputNodeData;
     type TraceData = OutputNodeTrace;
 
     fn handle(&self, ctx: NodeContext<Self::NodeData, Self::TraceData>) -> NodeResult {
+        if let Some(json_schema) = &ctx.node.schema {
+            let input_json = ctx.input.to_value();
+            ctx.validate(json_schema, &input_json)?;
+        };
+
         ctx.success(ctx.input.clone())
     }
 }
-
-pub type OutputNodeTrace = Variable;

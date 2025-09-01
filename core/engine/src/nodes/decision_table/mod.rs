@@ -8,15 +8,18 @@ use std::rc::Rc;
 use std::sync::Arc;
 use zen_expression::variable::ToVariable;
 use zen_expression::Isolate;
-use zen_types::decision::{DecisionTableContent, TransformAttributes};
+use zen_types::decision::{DecisionTableContent, DecisionTableHitPolicy, TransformAttributes};
 use zen_types::variable::Variable;
 
-pub struct DecisionTableHandler;
-type DecisionTableContext = NodeContext<DecisionTableContent, DecisionTableTrace>;
+pub struct DecisionTableNodeHandler;
 
-impl NodeHandler for DecisionTableHandler {
-    type NodeData = DecisionTableContent;
-    type TraceData = DecisionTableTrace;
+pub type DecisionTableNodeData = DecisionTableContent;
+
+type DecisionTableContext = NodeContext<DecisionTableNodeData, DecisionTableNodeTrace>;
+
+impl NodeHandler for DecisionTableNodeHandler {
+    type NodeData = DecisionTableNodeData;
+    type TraceData = DecisionTableNodeTrace;
 
     fn transform_attributes(
         &self,
@@ -26,12 +29,15 @@ impl NodeHandler for DecisionTableHandler {
     }
 
     fn handle(&self, ctx: NodeContext<Self::NodeData, Self::TraceData>) -> NodeResult {
-        todo!()
+        match ctx.node.hit_policy {
+            DecisionTableHitPolicy::First => self.handle_first_hit(ctx),
+            DecisionTableHitPolicy::Collect => self.handle_collect(ctx),
+        }
     }
 }
 
-impl DecisionTableHandler {
-    fn handle_first_hit(&mut self, ctx: DecisionTableContext) -> NodeResult {
+impl DecisionTableNodeHandler {
+    fn handle_first_hit(&self, ctx: DecisionTableContext) -> NodeResult {
         let mut isolate = Isolate::new();
 
         for (index, rule) in ctx.node.rules.iter().enumerate() {
@@ -44,7 +50,7 @@ impl DecisionTableHandler {
                         rule,
                     } => {
                         ctx.trace(|t| {
-                            *t = DecisionTableTrace::FirstHit(DecisionTableRowTrace {
+                            *t = DecisionTableNodeTrace::FirstHit(DecisionTableRowTrace {
                                 reference_map,
                                 index,
                                 rule,
@@ -60,7 +66,7 @@ impl DecisionTableHandler {
         ctx.success(Variable::Null)
     }
 
-    fn handle_collect(&mut self, ctx: DecisionTableContext) -> NodeResult {
+    fn handle_collect(&self, ctx: DecisionTableContext) -> NodeResult {
         let mut isolate = Isolate::new();
         let mut outputs = Vec::new();
         let mut traces = Vec::new();
@@ -88,14 +94,14 @@ impl DecisionTableHandler {
         }
 
         ctx.trace(|t| {
-            *t = DecisionTableTrace::Collect(traces);
+            *t = DecisionTableNodeTrace::Collect(traces);
         });
 
         ctx.success(Variable::from_array(outputs))
     }
 
     fn evaluate_row<'a>(
-        &mut self,
+        &self,
         ctx: &'a DecisionTableContext,
         rule: &'a HashMap<Arc<str>, Arc<str>>,
         isolate: &mut Isolate<'a>,
@@ -191,7 +197,7 @@ enum RowResult {
 }
 
 #[derive(Debug, Clone, Serialize, ToVariable)]
-struct DecisionTableRowTrace {
+pub struct DecisionTableRowTrace {
     index: usize,
     reference_map: HashMap<Rc<str>, Variable>,
     rule: HashMap<Rc<str>, Rc<str>>,
@@ -199,13 +205,13 @@ struct DecisionTableRowTrace {
 
 #[derive(Debug, Clone, Serialize, ToVariable)]
 #[serde(untagged)]
-enum DecisionTableTrace {
+pub enum DecisionTableNodeTrace {
     FirstHit(DecisionTableRowTrace),
     Collect(Vec<DecisionTableRowTrace>),
 }
 
-impl Default for DecisionTableTrace {
+impl Default for DecisionTableNodeTrace {
     fn default() -> Self {
-        DecisionTableTrace::Collect(Default::default())
+        DecisionTableNodeTrace::Collect(Default::default())
     }
 }

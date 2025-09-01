@@ -12,8 +12,12 @@ use zen_types::variable::Variable;
 
 pub struct FunctionNodeHandler;
 
+pub type FunctionNodeData = FunctionNodeContent;
+
+pub type FunctionNodeTrace = Variable;
+
 impl NodeHandler for FunctionNodeHandler {
-    type NodeData = FunctionNodeContent;
+    type NodeData = FunctionNodeData;
     type TraceData = FunctionNodeTrace;
 
     fn handle(&self, ctx: NodeContext<Self::NodeData, Self::TraceData>) -> NodeResult {
@@ -24,6 +28,7 @@ impl NodeHandler for FunctionNodeHandler {
                     name: ctx.name.clone(),
                     input: ctx.input.clone(),
                     extensions: ctx.extensions.clone(),
+                    iteration: ctx.iteration,
                     node: source.clone(),
                     trace: None,
                 };
@@ -36,6 +41,7 @@ impl NodeHandler for FunctionNodeHandler {
                     name: ctx.name.clone(),
                     input: ctx.input.clone(),
                     extensions: ctx.extensions.clone(),
+                    iteration: ctx.iteration,
                     node: content.clone(),
                     trace: None,
                 };
@@ -45,5 +51,3 @@ impl NodeHandler for FunctionNodeHandler {
         }
     }
 }
-
-pub type FunctionNodeTrace = Variable;

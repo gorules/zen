@@ -127,10 +127,9 @@ mod decision;
 mod decision_graph;
 mod engine;
 pub mod error;
-pub mod handler;
 pub mod loader;
 pub mod model;
-mod nodes;
+pub mod nodes;
 
 pub use config::ZEN_CONFIG;
 pub use decision::Decision;
@@ -141,5 +140,4 @@ pub use engine::{
     DecisionEngine, EvaluationOptions, EvaluationSerializedOptions, EvaluationTraceKind,
 };
 pub use error::EvaluationError;
-pub use nodes::result::NodeError;
 pub use zen_expression::Variable;

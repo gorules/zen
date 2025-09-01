@@ -1,12 +1,10 @@
 use crate::decision_graph::graph::DecisionGraphValidationError;
 use crate::engine::EvaluationTraceKind;
 use crate::loader::LoaderError;
-pub use crate::nodes::result::NodeError;
-use jsonschema::{ErrorIterator, ValidationError};
+use crate::nodes::NodeError;
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
-use serde_json::{Map, Value};
-use std::iter::once;
+use serde_json::Value;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -104,42 +102,5 @@ impl From<NodeError> for Box<EvaluationError> {
 impl From<DecisionGraphValidationError> for Box<EvaluationError> {
     fn from(error: DecisionGraphValidationError) -> Self {
         Box::new(EvaluationError::InvalidGraph(error.into()))
-    }
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ValidationErrorJson {
-    path: String,
-    message: String,
-}
-
-impl<'a> From<ValidationError<'a>> for ValidationErrorJson {
-    fn from(value: ValidationError<'a>) -> Self {
-        ValidationErrorJson {
-            path: value.instance_path.to_string(),
-            message: format!("{}", value),
-        }
-    }
-}
-
-impl<'a> From<ErrorIterator<'a>> for Box<EvaluationError> {
-    fn from(error_iter: ErrorIterator<'a>) -> Self {
-        let errors: Vec<ValidationErrorJson> = error_iter.into_iter().map(From::from).collect();
-
-        let mut json_map = Map::new();
-        json_map.insert(
-            "errors".to_string(),
-            serde_json::to_value(errors).unwrap_or_default(),
-        );
-
-        Box::new(EvaluationError::Validation(Value::Object(json_map)))
-    }
-}
-
-impl<'a> From<ValidationError<'a>> for Box<EvaluationError> {
-    fn from(value: ValidationError<'a>) -> Self {
-        let iterator: ErrorIterator<'a> = Box::new(once(value));
-        Box::<EvaluationError>::from(iterator)
     }
 }

@@ -1,2 +1,2 @@
 pub mod graph;
-mod traversal;
+mod walker;

@@ -3,6 +3,7 @@ use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -92,6 +93,20 @@ where
         Variable::from_object(
             self.iter()
                 .map(|(k, v)| (k.clone(), v.to_variable()))
+                .collect(),
+        )
+    }
+}
+
+impl<V, S> ToVariable for HashMap<Arc<str>, V, S>
+where
+    V: ToVariable,
+    S: std::hash::BuildHasher,
+{
+    fn to_variable(&self) -> Variable {
+        Variable::from_object(
+            self.iter()
+                .map(|(k, v)| (Rc::<str>::from(k.deref()), v.to_variable()))
                 .collect(),
         )
     }

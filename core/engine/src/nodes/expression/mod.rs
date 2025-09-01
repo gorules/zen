@@ -11,9 +11,12 @@ use zen_types::decision::TransformAttributes;
 
 pub struct ExpressionNodeHandler;
 
+pub type ExpressionNodeData = ExpressionNodeContent;
+pub type ExpressionNodeTrace = HashMap<Rc<str>, ExpressionNodeTraceItem>;
+
 impl NodeHandler for ExpressionNodeHandler {
-    type NodeData = ExpressionNodeContent;
-    type TraceData = HashMap<Rc<str>, ExpressionTrace>;
+    type NodeData = ExpressionNodeData;
+    type TraceData = ExpressionNodeTrace;
 
     fn transform_attributes(
         &self,
@@ -41,7 +44,7 @@ impl NodeHandler for ExpressionNodeHandler {
             ctx.trace(|trace| {
                 trace.insert(
                     Rc::from(&*expression.key),
-                    ExpressionTrace {
+                    ExpressionNodeTraceItem {
                         result: value.clone(),
                     },
                 );
@@ -64,6 +67,6 @@ impl NodeHandler for ExpressionNodeHandler {
 }
 
 #[derive(Debug, Clone, ToVariable)]
-pub struct ExpressionTrace {
+pub struct ExpressionNodeTraceItem {
     result: Variable,
 }

@@ -24,7 +24,7 @@ pub type NodeResult = Result<NodeResponse, NodeError>;
 
 #[derive(Debug, Error)]
 pub struct NodeError {
-    pub node_id: Option<Rc<str>>,
+    pub node_id: Option<Arc<str>>,
     pub trace: Option<Variable>,
     pub source: Box<dyn std::error::Error>,
 }

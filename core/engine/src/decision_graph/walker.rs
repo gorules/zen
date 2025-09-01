@@ -3,9 +3,8 @@ use fixedbitset::FixedBitSet;
 use petgraph::data::DataMap;
 use petgraph::matrix_graph::Zero;
 use petgraph::prelude::{EdgeIndex, NodeIndex, StableDiGraph};
-use petgraph::visit::{EdgeRef, IntoNodeIdentifiers, VisitMap, Visitable};
+use petgraph::visit::{EdgeRef, IntoEdgesDirected, IntoNodeIdentifiers, VisitMap, Visitable};
 use petgraph::{Incoming, Outgoing};
-use serde_json::json;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::atomic::Ordering;
@@ -17,16 +16,21 @@ use crate::model::{
     DecisionEdge, DecisionNode, DecisionNodeKind, SwitchStatement, SwitchStatementHitPolicy,
 };
 use crate::DecisionGraphTrace;
-use zen_expression::variable::Variable;
+use zen_expression::variable::{ToVariable, Variable};
 use zen_expression::Isolate;
 
 pub(crate) type StableDiDecisionGraph = StableDiGraph<Arc<DecisionNode>, Arc<DecisionEdge>>;
 
+pub(crate) struct NodeData {
+    pub name: Rc<str>,
+    pub data: Variable,
+}
+
 pub(crate) struct GraphWalker {
+    iter: usize,
+    node_data: HashMap<NodeIndex, NodeData>,
     ordered: FixedBitSet,
     to_visit: Vec<NodeIndex>,
-    node_data: HashMap<NodeIndex, Variable>,
-    iter: usize,
     visited_switch_nodes: Vec<NodeIndex>,
 
     nodes_in_context: bool,
@@ -36,9 +40,9 @@ const ITER_MAX: usize = 1_000;
 
 impl GraphWalker {
     pub fn new(graph: &StableDiDecisionGraph) -> Self {
-        let mut topo = Self::empty(graph);
-        topo.extend_with_initials(graph);
-        topo
+        let mut walker = Self::empty(graph);
+        walker.extend_with_initials(graph);
+        walker
     }
 
     fn extend_with_initials(&mut self, g: &StableDiDecisionGraph) {
@@ -71,7 +75,7 @@ impl GraphWalker {
     }
 
     pub fn get_node_data(&self, node_id: NodeIndex) -> Option<Variable> {
-        self.node_data.get(&node_id).cloned()
+        Some(self.node_data.get(&node_id)?.data.clone())
     }
 
     pub fn ending_variables(&self, g: &StableDiDecisionGraph) -> Variable {
@@ -83,7 +87,7 @@ impl GraphWalker {
             .fold(Variable::empty_object(), |mut acc, curr| {
                 match self.node_data.get(&curr) {
                     None => acc,
-                    Some(data) => acc.merge(data),
+                    Some(nd) => acc.merge(&nd.data),
                 }
             })
     }
@@ -92,16 +96,13 @@ impl GraphWalker {
         let node_values = self
             .node_data
             .iter()
-            .filter_map(|(idx, value)| {
-                let weight = g.node_weight(*idx)?;
-                Some((Rc::from(weight.name.deref()), value.clone()))
-            })
+            .filter_map(|(_, nd)| Some((nd.name.clone(), nd.data.clone())))
             .collect();
 
         Variable::from_object(node_values)
     }
 
-    pub fn set_node_data(&mut self, node_id: NodeIndex, value: Variable) {
+    pub fn set_node_data(&mut self, node_id: NodeIndex, value: NodeData) {
         self.node_data.insert(node_id, value);
     }
 
@@ -114,6 +115,7 @@ impl GraphWalker {
         let value = self
             .merge_node_data(g.neighbors_directed(node_id, Incoming))
             .depth_clone(1);
+
         if self.nodes_in_context {
             if let Some(object_ref) = with_nodes.then_some(value.as_object()).flatten() {
                 let mut object = object_ref.borrow_mut();
@@ -128,11 +130,10 @@ impl GraphWalker {
     where
         I: Iterator<Item = NodeIndex>,
     {
-        let default_map = Variable::empty_object();
-        iter.fold(Variable::empty_object(), |mut prev, curr| {
-            let data = self.node_data.get(&curr).unwrap_or(&default_map);
-            prev.merge_clone(data)
-        })
+        iter.filter_map(|nid| self.node_data.get(&nid))
+            .fold(Variable::empty_object(), |mut prev, nd| {
+                prev.merge_clone(&nd.data)
+            })
     }
 
     pub fn next<F: FnMut(DecisionGraphTrace)>(
@@ -146,7 +147,6 @@ impl GraphWalker {
         }
         // Take an unvisited element and find which of its neighbors are next
         while let Some(nid) = self.to_visit.pop() {
-            let decision_node = g.node_weight(nid)?.clone();
             if self.ordered.is_visited(&nid) {
                 continue;
             }
@@ -160,40 +160,26 @@ impl GraphWalker {
 
             self.ordered.visit(nid);
 
+            let decision_node = g.node_weight(nid)?.clone();
             if let DecisionNodeKind::SwitchNode { content } = &decision_node.kind {
                 if !self.visited_switch_nodes.contains(&nid) {
                     let input_data = self.incoming_node_data(g, nid, true);
-
-                    let env = input_data.depth_clone(1);
-                    env.dot_insert("$", input_data.depth_clone(1));
-
-                    let mut isolate = Isolate::with_environment(env);
+                    let mut isolate = Isolate::with_environment(input_data.clone());
 
                     let mut statement_iter = content.statements.iter();
-                    let valid_statements: Vec<&SwitchStatement> = match content.hit_policy {
+                    let valid_statements: Vec<SwitchStatementTraceRow> = match content.hit_policy {
                         SwitchStatementHitPolicy::First => statement_iter
                             .find(|&s| switch_statement_evaluate(&mut isolate, &s))
                             .into_iter()
+                            .cloned()
+                            .map(SwitchStatementTraceRow::from)
                             .collect(),
                         SwitchStatementHitPolicy::Collect => statement_iter
                             .filter(|&s| switch_statement_evaluate(&mut isolate, &s))
+                            .cloned()
+                            .map(SwitchStatementTraceRow::from)
                             .collect(),
                     };
-
-                    let valid_statements_trace = Variable::from_array(
-                        valid_statements
-                            .iter()
-                            .map(|&statement| {
-                                let v = Variable::empty_object();
-                                v.dot_insert(
-                                    "id",
-                                    Variable::String(Rc::from(statement.id.deref())),
-                                );
-
-                                v
-                            })
-                            .collect(),
-                    );
 
                     input_data.dot_remove("$nodes");
 
@@ -204,9 +190,12 @@ impl GraphWalker {
                             input: input_data.shallow_clone(),
                             output: input_data.shallow_clone(),
                             order: 0,
-                            performance: Some(format!("{:.1?}", start.elapsed())),
+                            performance: Some(Arc::from(format!("{:.1?}", start.elapsed()))),
                             trace_data: Some(
-                                json!({ "statements": valid_statements_trace }).into(),
+                                SwitchStatementTrace {
+                                    statements: valid_statements.clone(),
+                                }
+                                .to_variable(),
                             ),
                         });
                     }
@@ -282,37 +271,38 @@ fn remove_edge_recursive(g: &mut StableDiDecisionGraph, edge_id: EdgeIndex) {
 
     g.remove_edge(edge_id);
 
-    // Remove dead branches from target
-    let target_incoming_count = g.edges_directed(target_nid, Incoming).count();
-    if target_incoming_count.is_zero() {
-        let edge_ids: Vec<EdgeIndex> = g
-            .edges_directed(target_nid, Outgoing)
-            .map(|edge| edge.id())
-            .collect();
+    for (nid, direction) in [(target_nid, Incoming), (source_nid, Outgoing)] {
+        let count = g.edges_directed(nid, direction).count();
+        if count.is_zero() {
+            let edge_ids: Vec<EdgeIndex> = g
+                .edges_directed(nid, direction.opposite())
+                .map(|edge| edge.id())
+                .collect();
 
-        edge_ids.iter().for_each(|edge_id| {
-            remove_edge_recursive(g, edge_id.clone());
-        });
+            edge_ids.iter().for_each(|&edge_id| {
+                remove_edge_recursive(g, edge_id);
+            });
 
-        if g.edges(target_nid).count().is_zero() {
-            g.remove_node(target_nid);
+            if g.edges(nid).count().is_zero() {
+                g.remove_node(nid);
+            }
         }
     }
+}
 
-    // Remove dead branches from source
-    let source_outgoing_count = g.edges_directed(source_nid, Outgoing).count();
-    if source_outgoing_count.is_zero() {
-        let edge_ids: Vec<EdgeIndex> = g
-            .edges_directed(source_nid, Incoming)
-            .map(|edge| edge.id())
-            .collect();
+#[derive(ToVariable)]
+struct SwitchStatementTrace {
+    statements: Vec<SwitchStatementTraceRow>,
+}
 
-        edge_ids.iter().for_each(|edge_id| {
-            remove_edge_recursive(g, edge_id.clone());
-        });
+#[derive(ToVariable, Clone)]
+#[serde(rename_all = "camelCase")]
+struct SwitchStatementTraceRow {
+    pub id: Arc<str>,
+}
 
-        if g.edges(source_nid).count().is_zero() {
-            g.remove_node(source_nid);
-        }
+impl From<SwitchStatement> for SwitchStatementTraceRow {
+    fn from(value: SwitchStatement) -> Self {
+        Self { id: value.id }
     }
 }

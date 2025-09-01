@@ -71,15 +71,15 @@ pub enum DecisionNodeKind {
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct InputNodeContent {
-    #[serde(default, deserialize_with = "empty_string_is_none")]
-    pub schema: Option<Arc<str>>,
+    #[serde(default, deserialize_with = "empty_value_string_is_none")]
+    pub schema: Option<Arc<Value>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct OutputNodeContent {
-    #[serde(default, deserialize_with = "empty_string_is_none")]
-    pub schema: Option<Arc<str>>,
+    #[serde(default, deserialize_with = "empty_value_string_is_none")]
+    pub schema: Option<Arc<Value>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -224,4 +224,18 @@ where
         StringOrNull::String(s) => Ok(Some(s)),
         StringOrNull::Null => Ok(None),
     }
+}
+
+fn empty_value_string_is_none<'de, D>(deserializer: D) -> Result<Option<Arc<Value>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = empty_string_is_none(deserializer)?;
+    let Some(data) = s else {
+        return Ok(None);
+    };
+
+    Ok(Some(
+        serde_json::from_str(data.as_ref()).map_err(serde::de::Error::custom)?,
+    ))
 }

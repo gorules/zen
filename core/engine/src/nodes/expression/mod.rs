@@ -9,6 +9,7 @@ use zen_expression::variable::{ToVariable, Variable};
 use zen_expression::Isolate;
 use zen_types::decision::TransformAttributes;
 
+#[derive(Debug, Clone)]
 pub struct ExpressionNodeHandler;
 
 pub type ExpressionNodeData = ExpressionNodeContent;
@@ -25,13 +26,12 @@ impl NodeHandler for ExpressionNodeHandler {
         Some(ctx.node.transform_attributes.clone())
     }
 
-    fn handle(&self, ctx: NodeContext<Self::NodeData, Self::TraceData>) -> NodeResult {
+    async fn handle(&self, ctx: NodeContext<Self::NodeData, Self::TraceData>) -> NodeResult {
         let result = Variable::empty_object();
         let mut isolate = Isolate::new();
-
         isolate.set_environment(ctx.input.depth_clone(1));
 
-        for expression in &ctx.node.expressions {
+        for expression in ctx.node.expressions.iter() {
             if expression.key.is_empty() || expression.value.is_empty() {
                 continue;
             }

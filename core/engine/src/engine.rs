@@ -1,15 +1,13 @@
 use crate::decision::Decision;
 use crate::decision_graph::graph::DecisionGraphResponse;
-use crate::loader::{
-    ClosureLoader, DecisionLoader, DynamicLoader, LoaderResponse, LoaderResult, NoopLoader,
-};
+use crate::loader::{ClosureLoader, DynamicLoader, LoaderResponse, LoaderResult, NoopLoader};
 use crate::model::DecisionContent;
 use crate::nodes::custom::{DynamicCustomNode, NoopCustomNode};
 use crate::EvaluationError;
 use serde_json::Value;
 use std::fmt::Debug;
 use std::future::Future;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use strum::{EnumString, IntoStaticStr};
 use zen_expression::variable::Variable;
 
@@ -18,19 +16,36 @@ use zen_expression::variable::Variable;
 pub struct DecisionEngine {
     loader: DynamicLoader,
     adapter: DynamicCustomNode,
-    runtime: Arc<OnceLock<tokio::runtime::Runtime>>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct EvaluationOptions {
-    pub trace: Option<bool>,
-    pub max_depth: Option<u8>,
+    pub trace: bool,
+    pub max_depth: u8,
 }
 
-#[derive(Debug, Default)]
+impl Default for EvaluationOptions {
+    fn default() -> Self {
+        Self {
+            trace: false,
+            max_depth: 10,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct EvaluationSerializedOptions {
     pub trace: EvaluationTraceKind,
-    pub max_depth: Option<u8>,
+    pub max_depth: u8,
+}
+
+impl Default for EvaluationSerializedOptions {
+    fn default() -> Self {
+        Self {
+            trace: EvaluationTraceKind::None,
+            max_depth: 10,
+        }
+    }
 }
 
 #[derive(Debug, Default, PartialEq, Eq, EnumString, IntoStaticStr)]
@@ -67,7 +82,6 @@ impl Default for DecisionEngine {
         Self {
             loader: Arc::new(NoopLoader::default()),
             adapter: Arc::new(NoopCustomNode::default()),
-            runtime: Arc::new(OnceLock::new()),
         }
     }
 }
@@ -93,7 +107,7 @@ impl DecisionEngine {
 
     pub fn with_closure_loader<F, O>(mut self, loader: F) -> Self
     where
-        F: Fn(String) -> O + Sync + Send + Debug + 'static,
+        F: Fn(String) -> O + Sync + Send + 'static,
         O: Future<Output = LoaderResponse> + Send,
     {
         self.loader = Arc::new(ClosureLoader::new(loader));
@@ -125,7 +139,7 @@ impl DecisionEngine {
     {
         let content = self.loader.load(key.as_ref()).await?;
         let decision = self.create_decision(content);
-        decision.evaluate_with_opts(context, options)
+        decision.evaluate_with_opts(context, options).await
     }
 
     pub async fn evaluate_serialized<K>(
@@ -144,7 +158,7 @@ impl DecisionEngine {
             .map_err(|err| Value::String(err.to_string()))?;
 
         let decision = self.create_decision(content);
-        decision.evaluate_serialized(context, options)
+        decision.evaluate_serialized(context, options).await
     }
 
     /// Creates a decision from DecisionContent, exists for easier binding creation
@@ -152,7 +166,6 @@ impl DecisionEngine {
         Decision::from(content)
             .with_loader(self.loader.clone())
             .with_adapter(self.adapter.clone())
-            .with_runtime(self.runtime.clone())
     }
 
     /// Retrieves a decision based on the loader

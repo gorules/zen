@@ -27,7 +27,7 @@ impl CustomNodeAdapter for NoopCustomNode {
         Box::pin(async move {
             Err(NodeError {
                 trace: None,
-                node_id: Some(request.node.id.clone()),
+                node_id: request.node.id.clone(),
                 source: "Custom node handler not provided".to_string().into(),
             })
         })

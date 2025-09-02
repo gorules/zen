@@ -1,7 +1,6 @@
-use std::future::Future;
-use std::pin::Pin;
-
 use crate::decision_graph::graph::{DecisionGraph, DecisionGraphConfig};
+use crate::loader::DynamicLoader;
+use crate::nodes::custom::DynamicCustomNode;
 use crate::nodes::function::v2::error::{FunctionResult, ResultExt};
 use crate::nodes::function::v2::listener::{RuntimeEvent, RuntimeListener};
 use crate::nodes::function::v2::module::export_default;
@@ -10,9 +9,12 @@ use crate::nodes::NodeHandlerExtensions;
 use rquickjs::module::{Declarations, Exports, ModuleDef};
 use rquickjs::prelude::{Async, Func, Opt};
 use rquickjs::{CatchResultExt, Ctx, Function, Object};
+use std::future::Future;
+use std::pin::Pin;
 
 pub(crate) struct ZenListener {
-    pub extensions: NodeHandlerExtensions,
+    pub loader: DynamicLoader,
+    pub custom_node: DynamicCustomNode,
 }
 
 impl RuntimeListener for ZenListener {
@@ -21,7 +23,9 @@ impl RuntimeListener for ZenListener {
         ctx: Ctx<'js>,
         event: RuntimeEvent,
     ) -> Pin<Box<dyn Future<Output = FunctionResult> + 'js>> {
-        let extensions = self.extensions.clone();
+        let loader = self.loader.clone();
+        let custom_node = self.custom_node.clone();
+
         Box::pin(async move {
             if event != RuntimeEvent::Startup {
                 return Ok(());
@@ -35,7 +39,8 @@ impl RuntimeListener for ZenListener {
                               key: String,
                               context: JsValue,
                               opts: Opt<Object<'js>>| {
-                            let extensions = extensions.clone();
+                            let loader = loader.clone();
+                            let custom_node = custom_node.clone();
 
                             async move {
                                 let config: Object = ctx.globals().get("config").or_throw(&ctx)?;
@@ -47,18 +52,22 @@ impl RuntimeListener for ZenListener {
                                     .map(|opt| opt.get::<_, bool>("trace").unwrap_or_default())
                                     .unwrap_or_default();
 
-                                let load_result = extensions.loader().load(key.as_str()).await;
+                                let load_result = loader.load(key.as_str()).await;
                                 let decision_content = load_result.or_throw(&ctx)?;
                                 let mut sub_tree = DecisionGraph::try_new(DecisionGraphConfig {
                                     content: decision_content,
                                     max_depth,
                                     iteration: iteration + 1,
                                     trace,
-                                    extensions: extensions.clone(),
+                                    extensions: NodeHandlerExtensions {
+                                        loader: loader.clone(),
+                                        custom_node: custom_node.clone(),
+                                        ..Default::default()
+                                    },
                                 })
                                 .or_throw(&ctx)?;
 
-                                let response = sub_tree.evaluate(context.0).or_throw(&ctx)?;
+                                let response = sub_tree.evaluate(context.0).await.or_throw(&ctx)?;
                                 let k = serde_json::to_value(response).or_throw(&ctx)?.into();
 
                                 return rquickjs::Result::Ok(JsValue(k));

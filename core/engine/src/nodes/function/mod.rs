@@ -10,6 +10,7 @@ use std::sync::Arc;
 use zen_types::decision::{FunctionContent, FunctionNodeContent};
 use zen_types::variable::Variable;
 
+#[derive(Debug, Clone)]
 pub struct FunctionNodeHandler;
 
 pub type FunctionNodeData = FunctionNodeContent;
@@ -20,7 +21,7 @@ impl NodeHandler for FunctionNodeHandler {
     type NodeData = FunctionNodeData;
     type TraceData = FunctionNodeTrace;
 
-    fn handle(&self, ctx: NodeContext<Self::NodeData, Self::TraceData>) -> NodeResult {
+    async fn handle(&self, ctx: NodeContext<Self::NodeData, Self::TraceData>) -> NodeResult {
         match &ctx.node {
             FunctionNodeContent::Version1(source) => {
                 let v1_context = NodeContext::<Arc<str>, FunctionV1Trace> {
@@ -28,12 +29,13 @@ impl NodeHandler for FunctionNodeHandler {
                     name: ctx.name.clone(),
                     input: ctx.input.clone(),
                     extensions: ctx.extensions.clone(),
+                    trace: ctx.config.trace.then(|| Default::default()),
                     iteration: ctx.iteration,
+                    config: ctx.config,
                     node: source.clone(),
-                    trace: None,
                 };
 
-                FunctionV1NodeHandler.handle(v1_context)
+                FunctionV1NodeHandler.handle(v1_context).await
             }
             FunctionNodeContent::Version2(content) => {
                 let v2_context = NodeContext::<FunctionContent, FunctionV2Trace> {
@@ -41,12 +43,13 @@ impl NodeHandler for FunctionNodeHandler {
                     name: ctx.name.clone(),
                     input: ctx.input.clone(),
                     extensions: ctx.extensions.clone(),
+                    trace: ctx.config.trace.then(|| Default::default()),
                     iteration: ctx.iteration,
+                    config: ctx.config,
                     node: content.clone(),
-                    trace: None,
                 };
 
-                FunctionV2NodeHandler.handle(v2_context)
+                FunctionV2NodeHandler.handle(v2_context).await
             }
         }
     }

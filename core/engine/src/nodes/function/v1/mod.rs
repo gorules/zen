@@ -13,6 +13,7 @@ use zen_expression::variable::ToVariable;
 pub(crate) mod runtime;
 mod script;
 
+#[derive(Debug, Clone)]
 pub struct FunctionV1NodeHandler;
 
 const MAX_DURATION: Duration = Duration::from_millis(500);
@@ -21,7 +22,7 @@ impl NodeHandler for FunctionV1NodeHandler {
     type NodeData = Arc<str>;
     type TraceData = FunctionV1Trace;
 
-    fn handle(&self, ctx: NodeContext<Self::NodeData, Self::TraceData>) -> NodeResult {
+    async fn handle(&self, ctx: NodeContext<Self::NodeData, Self::TraceData>) -> NodeResult {
         let start = Instant::now();
         let runtime = create_runtime().node_context_message(&ctx, "Failed to create JS Runtime")?;
         let interrupt_handler = Box::new(move || start.elapsed() > MAX_DURATION);
@@ -29,7 +30,7 @@ impl NodeHandler for FunctionV1NodeHandler {
         runtime.set_interrupt_handler(Some(interrupt_handler));
 
         let mut script = Script::new(runtime.clone());
-        let result_response = ctx.block_on(script.call(ctx.node.deref(), &ctx.input))?;
+        let result_response = script.call(ctx.node.deref(), &ctx.input).await;
 
         runtime.set_interrupt_handler(None);
 

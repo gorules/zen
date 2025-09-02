@@ -12,7 +12,7 @@ pub enum EvaluationError {
     #[error("Loader error")]
     LoaderError(LoaderError),
 
-    #[error("Node error")]
+    #[error("{0}")]
     NodeError(NodeError),
 
     #[error("Depth limit exceeded")]
@@ -43,10 +43,7 @@ impl EvaluationError {
             EvaluationError::NodeError(err) => {
                 map.serialize_entry("type", "NodeError")?;
                 map.serialize_entry("source", &err.source.to_string())?;
-
-                if let Some(node_id) = &err.node_id {
-                    map.serialize_entry("nodeId", node_id)?;
-                }
+                map.serialize_entry("nodeId", &err.node_id)?;
 
                 if let Some(trace) = &err.trace {
                     map.serialize_entry("trace", &mode.serialize_trace(trace))?;

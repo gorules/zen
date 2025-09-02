@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Formatter};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
 
@@ -20,6 +21,12 @@ pub struct Function {
     ctx: AsyncContext,
     listeners: Vec<Box<dyn RuntimeListener>>,
     module_loader: ModuleLoader,
+}
+
+impl Debug for Function {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Function")
+    }
 }
 
 impl Function {

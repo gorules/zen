@@ -12,7 +12,8 @@ mod result;
 pub(crate) mod transform_attributes;
 pub(crate) mod validator_cache;
 
-pub use context::{NodeContext, NodeContextBase, NodeContextExt};
-pub use definition::{NodeHandler, NodeHandlerKind};
+pub use context::{NodeContext, NodeContextBase, NodeContextConfig, NodeContextExt};
+pub use definition::NodeHandler;
+pub(crate) use definition::{NodeDataType, TraceDataType};
 pub use extensions::NodeHandlerExtensions;
 pub use result::{NodeError, NodeRequest, NodeResponse, NodeResult};

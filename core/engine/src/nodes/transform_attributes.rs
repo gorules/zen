@@ -5,17 +5,17 @@ use std::future::Future;
 use std::ops::Deref;
 use zen_expression::{Isolate, Variable};
 
-pub trait TransformAttributesExecution {
+pub(crate) trait TransformAttributesExecution {
     async fn run_with<F, Fut>(&self, ctx: NodeContextBase, evaluate: F) -> NodeResult
     where
-        F: Fn(Variable) -> Fut,
+        F: Fn(Variable, bool) -> Fut,
         Fut: Future<Output = NodeResult>;
 }
 
 impl TransformAttributesExecution for TransformAttributes {
     async fn run_with<F, Fut>(&self, ctx: NodeContextBase, evaluate: F) -> NodeResult
     where
-        F: Fn(Variable) -> Fut,
+        F: Fn(Variable, bool) -> Fut,
         Fut: Future<Output = NodeResult>,
     {
         let input = match &self.input_field {
@@ -54,7 +54,7 @@ impl TransformAttributesExecution for TransformAttributes {
         let mut trace_data: Option<Variable> = None;
         let mut output = match self.execution_mode {
             TransformExecutionMode::Single => {
-                let response = evaluate(input).await?;
+                let response = evaluate(input, false).await?;
                 if let Some(td) = response.trace_data {
                     trace_data.replace(td);
                 }
@@ -70,8 +70,9 @@ impl TransformAttributesExecution for TransformAttributes {
 
                 let mut output_array = Vec::with_capacity(input_array.len());
                 let mut trace_datum = Vec::with_capacity(input_array.len());
-                for input in input_array.iter() {
-                    let mut response = evaluate(input.clone()).await?;
+                for (index, input) in input_array.iter().enumerate() {
+                    let has_more = index < input_array.len() - 1;
+                    let mut response = evaluate(input.clone(), has_more).await?;
                     if let Some(td) = response.trace_data {
                         trace_datum.push(td);
                     }

@@ -3,18 +3,20 @@ use crate::nodes::extensions::NodeHandlerExtensions;
 use crate::nodes::function::v2::function::Function;
 use crate::nodes::result::{NodeResponse, NodeResult};
 use crate::nodes::NodeError;
+use crate::ZEN_CONFIG;
 use ahash::AHasher;
 use jsonschema::ValidationError;
 use serde::Serialize;
 use serde_json::Value;
 use std::cell::RefCell;
 use std::fmt::{Display, Formatter};
-use std::future::Future;
 use std::hash::Hasher;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use thiserror::Error;
 use zen_types::variable::Variable;
 
+#[derive(Clone)]
 pub struct NodeContext<NodeData, TraceData>
 where
     NodeData: NodeDataType,
@@ -27,6 +29,7 @@ where
     pub trace: Option<RefCell<TraceData>>,
     pub extensions: NodeHandlerExtensions,
     pub iteration: u8,
+    pub config: NodeContextConfig,
 }
 
 impl<NodeData, TraceData> NodeContext<NodeData, TraceData>
@@ -41,8 +44,9 @@ where
             input: base.input,
             extensions: base.extensions,
             iteration: base.iteration,
-            trace: base.trace.then(|| Default::default()),
+            trace: base.config.trace.then(|| Default::default()),
             node: data,
+            config: base.config,
         }
     }
 
@@ -53,10 +57,6 @@ where
         if let Some(trace) = &self.trace {
             mutator(&mut *trace.borrow_mut());
         }
-    }
-
-    pub fn has_trace(&self) -> bool {
-        self.trace.is_some()
     }
 
     pub fn error<Error>(&self, error: Error) -> NodeResult
@@ -78,29 +78,14 @@ where
         Error: Into<Box<dyn std::error::Error>>,
     {
         NodeError {
-            node_id: Some(self.id.clone()),
+            node_id: self.id.clone(),
             trace: self.trace.as_ref().map(|v| (*v.borrow()).to_variable()),
             source: error.into(),
         }
     }
 
-    pub fn block_on<Fut>(&self, future: Fut) -> Result<Fut::Output, NodeError>
-    where
-        Fut: Future,
-    {
-        let tokio_runtime = self.extensions.tokio_runtime();
-        Ok(tokio_runtime.block_on(future))
-    }
-
-    pub fn try_block_on<Fut, Output>(&self, future: Fut) -> Result<Output, NodeError>
-    where
-        Fut: Future<Output = Result<Output, NodeError>>,
-    {
-        self.block_on(future)?
-    }
-
-    pub(crate) fn function_runtime(&self) -> Result<&Function, NodeError> {
-        Ok(self.extensions.function_runtime())
+    pub(crate) async fn function_runtime(&self) -> Result<&Function, NodeError> {
+        self.extensions.function_runtime().await.node_context(self)
     }
 
     pub fn validate(&self, schema: &Value, value: &Value) -> Result<(), NodeError> {
@@ -189,13 +174,14 @@ where
     }
 }
 
+#[derive(Clone)]
 pub struct NodeContextBase {
     pub id: Arc<str>,
     pub name: Arc<str>,
     pub input: Variable,
     pub iteration: u8,
     pub extensions: NodeHandlerExtensions,
-    pub trace: bool,
+    pub config: NodeContextConfig,
 }
 
 impl NodeContextBase {
@@ -218,7 +204,7 @@ impl NodeContextBase {
         Error: Into<Box<dyn std::error::Error>>,
     {
         NodeError {
-            node_id: Some(self.id.clone()),
+            node_id: self.id.clone(),
             source: error.into(),
             trace: None,
         }
@@ -237,7 +223,7 @@ where
             input: value.input,
             extensions: value.extensions,
             iteration: value.iteration,
-            trace: value.trace.is_some(),
+            config: value.config,
         }
     }
 }
@@ -295,6 +281,25 @@ impl<'a> From<ValidationError<'a>> for ValidationErrorJson {
         ValidationErrorJson {
             path: value.instance_path.to_string(),
             message: format!("{}", value),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct NodeContextConfig {
+    pub trace: bool,
+    pub nodes_in_context: bool,
+    pub max_depth: u8,
+    pub function_timeout_millis: u64,
+}
+
+impl Default for NodeContextConfig {
+    fn default() -> Self {
+        Self {
+            trace: false,
+            nodes_in_context: ZEN_CONFIG.nodes_in_context.load(Ordering::Relaxed),
+            function_timeout_millis: ZEN_CONFIG.function_timeout_millis.load(Ordering::Relaxed),
+            max_depth: 5,
         }
     }
 }

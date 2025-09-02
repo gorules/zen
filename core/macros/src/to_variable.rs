@@ -97,12 +97,6 @@ fn generate_enum_body(
         .filter(|variant| !variant.attrs.skip_serializing())
         .collect();
 
-    // Check if the enum is untagged
-    let is_untagged = matches!(
-        container.attrs.tag(),
-        serde_derive_internals::attr::TagType::None
-    );
-
     match container.attrs.tag() {
         TagType::None => {
             let variant_arms = active_variants

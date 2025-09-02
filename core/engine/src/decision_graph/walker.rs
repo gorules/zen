@@ -3,7 +3,7 @@ use fixedbitset::FixedBitSet;
 use petgraph::data::DataMap;
 use petgraph::matrix_graph::Zero;
 use petgraph::prelude::{EdgeIndex, NodeIndex, StableDiGraph};
-use petgraph::visit::{EdgeRef, IntoEdgesDirected, IntoNodeIdentifiers, VisitMap, Visitable};
+use petgraph::visit::{EdgeRef, IntoNodeIdentifiers, VisitMap, Visitable};
 use petgraph::{Incoming, Outgoing};
 use std::ops::Deref;
 use std::rc::Rc;
@@ -92,7 +92,7 @@ impl GraphWalker {
             })
     }
 
-    pub fn get_all_node_data(&self, g: &StableDiDecisionGraph) -> Variable {
+    pub fn get_all_node_data(&self) -> Variable {
         let node_values = self
             .node_data
             .iter()
@@ -111,19 +111,19 @@ impl GraphWalker {
         g: &StableDiDecisionGraph,
         node_id: NodeIndex,
         with_nodes: bool,
-    ) -> Variable {
-        let value = self
-            .merge_node_data(g.neighbors_directed(node_id, Incoming))
-            .depth_clone(1);
+    ) -> (Variable, Variable) {
+        let value = self.merge_node_data(g.neighbors_directed(node_id, Incoming));
 
-        if self.nodes_in_context {
-            if let Some(object_ref) = with_nodes.then_some(value.as_object()).flatten() {
-                let mut object = object_ref.borrow_mut();
-                object.insert(Rc::from("$nodes"), self.get_all_node_data(g));
+        if self.nodes_in_context && with_nodes {
+            if let Some(object_ref) = value.as_object() {
+                let mut new_object = object_ref.borrow().clone();
+                new_object.insert(Rc::from("$nodes"), self.get_all_node_data());
+
+                return (Variable::from_object(new_object), value);
             }
         }
 
-        value
+        (value.depth_clone(1), value)
     }
 
     pub fn merge_node_data<I>(&self, iter: I) -> Variable
@@ -163,8 +163,8 @@ impl GraphWalker {
             let decision_node = g.node_weight(nid)?.clone();
             if let DecisionNodeKind::SwitchNode { content } = &decision_node.kind {
                 if !self.visited_switch_nodes.contains(&nid) {
-                    let input_data = self.incoming_node_data(g, nid, true);
-                    let mut isolate = Isolate::with_environment(input_data.clone());
+                    let (input, input_trace) = self.incoming_node_data(g, nid, true);
+                    let mut isolate = Isolate::with_environment(input);
 
                     let mut statement_iter = content.statements.iter();
                     let valid_statements: Vec<SwitchStatementTraceRow> = match content.hit_policy {
@@ -181,14 +181,12 @@ impl GraphWalker {
                             .collect(),
                     };
 
-                    input_data.dot_remove("$nodes");
-
                     if let Some(on_trace) = &mut on_trace {
                         on_trace(DecisionGraphTrace {
                             id: decision_node.id.clone(),
                             name: decision_node.name.clone(),
-                            input: input_data.shallow_clone(),
-                            output: input_data.shallow_clone(),
+                            input: input_trace.shallow_clone(),
+                            output: input_trace,
                             order: 0,
                             performance: Some(Arc::from(format!("{:.1?}", start.elapsed()))),
                             trace_data: Some(
@@ -207,7 +205,7 @@ impl GraphWalker {
                             edge.weight().source_handle.as_ref().map_or(true, |handle| {
                                 !valid_statements
                                     .iter()
-                                    .any(|s| s.id.deref() == handle.as_str())
+                                    .any(|s| s.id.deref() == handle.deref())
                             })
                         })
                         .map(|edge| edge.id())

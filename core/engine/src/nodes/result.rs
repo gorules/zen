@@ -1,7 +1,6 @@
 use crate::model::DecisionNode;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
-use std::rc::Rc;
 use std::sync::Arc;
 use thiserror::Error;
 use zen_expression::variable::Variable;
@@ -24,7 +23,7 @@ pub type NodeResult = Result<NodeResponse, NodeError>;
 
 #[derive(Debug, Error)]
 pub struct NodeError {
-    pub node_id: Option<Arc<str>>,
+    pub node_id: Arc<str>,
     pub trace: Option<Variable>,
     pub source: Box<dyn std::error::Error>,
 }

@@ -1,11 +1,16 @@
 use crate::decision_graph::graph::{DecisionGraph, DecisionGraphConfig};
-use crate::nodes::{NodeContext, NodeContextExt, NodeHandler, NodeResult};
+use crate::nodes::{NodeContext, NodeContextExt, NodeError, NodeHandler, NodeResult};
 use crate::EvaluationError;
+use std::cell::RefCell;
 use std::ops::Deref;
+use std::rc::Rc;
 use zen_types::decision::{DecisionNodeContent, TransformAttributes};
 use zen_types::variable::{ToVariable, Variable};
 
-pub struct DecisionNodeHandler;
+#[derive(Debug, Clone, Default)]
+pub struct DecisionNodeHandler {
+    decision_graph: Rc<RefCell<Option<DecisionGraph>>>,
+}
 
 pub type DecisionNodeData = DecisionNodeContent;
 pub type DecisionNodeTrace = Variable;
@@ -21,21 +26,44 @@ impl NodeHandler for DecisionNodeHandler {
         Some(ctx.node.transform_attributes.clone())
     }
 
-    fn handle(&self, ctx: NodeContext<Self::NodeData, Self::TraceData>) -> NodeResult {
+    async fn after_transform_attributes(
+        &self,
+        _ctx: &NodeContext<Self::NodeData, Self::TraceData>,
+    ) -> Result<(), NodeError> {
+        if let Some(graph) = self.decision_graph.borrow_mut().as_mut() {
+            graph.reset_graph();
+        };
+
+        Ok(())
+    }
+
+    async fn handle(&self, ctx: NodeContext<Self::NodeData, Self::TraceData>) -> NodeResult {
         let loader = ctx.extensions.loader();
-        let sub_decision =
-            ctx.try_block_on(async { loader.load(ctx.node.key.deref()).await.node_context(&ctx) })?;
+        let sub_decision = loader.load(ctx.node.key.deref()).await.node_context(&ctx)?;
 
-        let mut decision_graph = DecisionGraph::try_new(DecisionGraphConfig {
-            content: sub_decision,
-            extensions: ctx.extensions.clone(),
-            trace: ctx.has_trace(),
-            iteration: ctx.iteration,
-            max_depth: 10,
-        })
-        .node_context(&ctx)?;
+        let mut decision_graph_ref = self.decision_graph.borrow_mut();
+        let decision_graph = match decision_graph_ref.as_mut() {
+            Some(dg) => dg,
+            None => {
+                let dg = DecisionGraph::try_new(DecisionGraphConfig {
+                    content: sub_decision,
+                    extensions: ctx.extensions.clone(),
+                    trace: ctx.config.trace,
+                    iteration: ctx.iteration + 1,
+                    max_depth: ctx.config.max_depth,
+                })
+                .node_context(&ctx)?;
 
-        match decision_graph.evaluate(ctx.input.clone()) {
+                *decision_graph_ref = Some(dg);
+                match decision_graph_ref.as_mut() {
+                    Some(dg) => dg,
+                    None => return ctx.error("Failed to initialize decision graph".to_string()),
+                }
+            }
+        };
+
+        let evaluate_result = Box::pin(decision_graph.evaluate(ctx.input.clone())).await;
+        match evaluate_result {
             Ok(result) => {
                 ctx.trace(|trace| {
                     *trace = result.trace.to_variable();

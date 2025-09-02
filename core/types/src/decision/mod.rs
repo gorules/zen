@@ -17,7 +17,7 @@ pub struct DecisionEdge {
     pub id: Arc<str>,
     pub source_id: Arc<str>,
     pub target_id: Arc<str>,
-    pub source_handle: Option<String>,
+    pub source_handle: Option<Arc<str>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -109,9 +109,10 @@ pub struct DecisionNodeContent {
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DecisionTableContent {
-    pub rules: Vec<HashMap<Arc<str>, Arc<str>>>,
-    pub inputs: Vec<DecisionTableInputField>,
-    pub outputs: Vec<DecisionTableOutputField>,
+    #[serde(deserialize_with = "deserialize_trim_rules")]
+    pub rules: Arc<Vec<HashMap<Arc<str>, Arc<str>>>>,
+    pub inputs: Arc<Vec<DecisionTableInputField>>,
+    pub outputs: Arc<Vec<DecisionTableOutputField>>,
     pub hit_policy: DecisionTableHitPolicy,
     #[serde(flatten)]
     pub transform_attributes: TransformAttributes,
@@ -144,7 +145,7 @@ pub struct DecisionTableOutputField {
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExpressionNodeContent {
-    pub expressions: Vec<Expression>,
+    pub expressions: Arc<Vec<Expression>>,
     #[serde(flatten)]
     pub transform_attributes: TransformAttributes,
 }
@@ -162,7 +163,7 @@ pub struct Expression {
 pub struct SwitchNodeContent {
     #[serde(default)]
     pub hit_policy: SwitchStatementHitPolicy,
-    pub statements: Vec<SwitchStatement>,
+    pub statements: Arc<Vec<SwitchStatement>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -238,4 +239,24 @@ where
     Ok(Some(
         serde_json::from_str(data.as_ref()).map_err(serde::de::Error::custom)?,
     ))
+}
+
+fn deserialize_trim_rules<'de, D>(
+    deserializer: D,
+) -> Result<Arc<Vec<HashMap<Arc<str>, Arc<str>>>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let rules: Vec<HashMap<Arc<str>, Arc<str>>> = Vec::deserialize(deserializer)?;
+
+    let filtered_rules: Vec<HashMap<Arc<str>, Arc<str>>> = rules
+        .into_iter()
+        .map(|rule| {
+            rule.into_iter()
+                .map(|(k, v)| (k, Arc::from(v.trim())))
+                .collect()
+        })
+        .collect();
+
+    Ok(Arc::new(filtered_rules))
 }

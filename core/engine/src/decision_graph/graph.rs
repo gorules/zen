@@ -1,25 +1,23 @@
 use crate::decision_graph::walker::{GraphWalker, NodeData, StableDiDecisionGraph};
 use crate::engine::EvaluationTraceKind;
 use crate::model::{DecisionContent, DecisionNodeKind};
-use crate::nodes::custom::{CustomNodeData, CustomNodeHandler, CustomNodeTrace};
-use crate::nodes::decision::{DecisionNodeData, DecisionNodeHandler, DecisionNodeTrace};
-use crate::nodes::decision_table::{
-    DecisionTableNodeData, DecisionTableNodeHandler, DecisionTableNodeTrace,
-};
-use crate::nodes::expression::{ExpressionNodeData, ExpressionNodeHandler, ExpressionNodeTrace};
-use crate::nodes::function::{FunctionNodeData, FunctionNodeHandler, FunctionNodeTrace};
-use crate::nodes::input::{InputNodeData, InputNodeHandler, InputNodeTrace};
-use crate::nodes::output::{OutputNodeData, OutputNodeHandler, OutputNodeTrace};
+use crate::nodes::custom::CustomNodeHandler;
+use crate::nodes::decision::DecisionNodeHandler;
+use crate::nodes::decision_table::DecisionTableNodeHandler;
+use crate::nodes::expression::ExpressionNodeHandler;
+use crate::nodes::function::FunctionNodeHandler;
+use crate::nodes::input::InputNodeHandler;
+use crate::nodes::output::OutputNodeHandler;
+use crate::nodes::transform_attributes::TransformAttributesExecution;
 use crate::nodes::{
-    NodeContext, NodeContextBase, NodeHandler, NodeHandlerExtensions, NodeResponse,
+    NodeContext, NodeContextBase, NodeContextConfig, NodeDataType, NodeHandler,
+    NodeHandlerExtensions, NodeResponse, NodeResult, TraceDataType,
 };
 use crate::EvaluationError;
 use ahash::{HashMap, HashMapExt};
 use petgraph::algo::is_cyclic_directed;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize, Serializer};
-use serde_json::Value;
-use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -27,6 +25,7 @@ use std::time::Instant;
 use thiserror::Error;
 use zen_expression::variable::{ToVariable, Variable};
 
+#[derive(Debug)]
 pub struct DecisionGraph {
     initial_graph: StableDiDecisionGraph,
     graph: StableDiDecisionGraph,
@@ -105,14 +104,13 @@ impl DecisionGraph {
             .count()
     }
 
-    pub fn evaluate(
+    pub async fn evaluate(
         &mut self,
         context: Variable,
     ) -> Result<DecisionGraphResponse, Box<EvaluationError>> {
         let root_start = Instant::now();
 
         self.validate()?;
-
         if self.iteration >= self.max_depth {
             return Err(Box::new(EvaluationError::DepthLimitExceeded));
         }
@@ -136,103 +134,71 @@ impl DecisionGraph {
             let mut terminate = false;
             let node = (&self.graph[nid]).clone();
             let start = Instant::now();
-            let incoming_data = walker.incoming_node_data(&self.graph, nid, true);
+            let (input, input_trace) = walker.incoming_node_data(&self.graph, nid, true);
 
             let mut base_ctx = NodeContextBase {
                 id: node.id.clone(),
                 name: node.name.clone(),
-                input: incoming_data.clone(),
+                input,
                 extensions: self.extensions.clone(),
                 iteration: self.iteration,
-                trace: self.trace,
+                config: NodeContextConfig {
+                    max_depth: self.max_depth,
+                    trace: self.trace,
+                    ..Default::default()
+                },
             };
 
             let node_execution = match &node.kind {
                 DecisionNodeKind::InputNode { content } => {
                     base_ctx.input = context.clone();
-                    let ctx = NodeContext::<InputNodeData, InputNodeTrace>::from_base(
-                        base_ctx,
-                        content.clone(),
-                    );
-
-                    InputNodeHandler.handle(ctx)
+                    handle_node(base_ctx, content.clone(), InputNodeHandler).await
                 }
                 DecisionNodeKind::OutputNode { content } => {
                     terminate = true;
-                    let ctx = NodeContext::<OutputNodeData, OutputNodeTrace>::from_base(
-                        base_ctx,
-                        content.clone(),
-                    );
-
-                    OutputNodeHandler.handle(ctx)
+                    handle_node(base_ctx, content.clone(), OutputNodeHandler).await
                 }
-                DecisionNodeKind::SwitchNode { .. } => {
-                    let input_data = walker.incoming_node_data(&self.graph, nid, false);
-
-                    // walker.set_node_data(nid, input_data);
-                    Ok(NodeResponse {
-                        output: Variable::Null,
-                        trace_data: None,
-                    })
-                }
+                DecisionNodeKind::SwitchNode { .. } => Ok(NodeResponse {
+                    output: input_trace.clone(),
+                    trace_data: None,
+                }),
                 DecisionNodeKind::FunctionNode { content } => {
-                    let ctx = NodeContext::<FunctionNodeData, FunctionNodeTrace>::from_base(
-                        base_ctx,
-                        content.clone(),
-                    );
-
-                    FunctionNodeHandler.handle(ctx)
+                    handle_node(base_ctx, content.clone(), FunctionNodeHandler).await
                 }
                 DecisionNodeKind::DecisionNode { content } => {
-                    let ctx = NodeContext::<DecisionNodeData, DecisionNodeTrace>::from_base(
-                        base_ctx,
-                        content.clone(),
-                    );
-
-                    DecisionNodeHandler.handle(ctx)
+                    handle_node(base_ctx, content.clone(), DecisionNodeHandler::default()).await
                 }
                 DecisionNodeKind::DecisionTableNode { content } => {
-                    let ctx =
-                        NodeContext::<DecisionTableNodeData, DecisionTableNodeTrace>::from_base(
-                            base_ctx,
-                            content.clone(),
-                        );
-
-                    DecisionTableNodeHandler.handle(ctx)
+                    handle_node(base_ctx, content.clone(), DecisionTableNodeHandler).await
                 }
                 DecisionNodeKind::ExpressionNode { content } => {
-                    let ctx = NodeContext::<ExpressionNodeData, ExpressionNodeTrace>::from_base(
-                        base_ctx,
-                        content.clone(),
-                    );
-
-                    ExpressionNodeHandler.handle(ctx)
+                    handle_node(base_ctx, content.clone(), ExpressionNodeHandler).await
                 }
                 DecisionNodeKind::CustomNode { content } => {
-                    let ctx = NodeContext::<CustomNodeData, CustomNodeTrace>::from_base(
-                        base_ctx,
-                        content.clone(),
-                    );
-
-                    CustomNodeHandler.handle(ctx)
+                    handle_node(base_ctx, content.clone(), CustomNodeHandler).await
                 }
             };
 
             if let Some(nt) = &mut node_traces {
+                let input_trace = match &node.kind {
+                    DecisionNodeKind::InputNode { .. } => Variable::Null,
+                    _ => input_trace,
+                };
+
                 let trace = match &node_execution {
                     Ok(ok) => DecisionGraphTrace {
                         id: node.id.clone(),
                         name: node.name.clone(),
-                        input: incoming_data,
+                        input: input_trace,
                         order: nt.len() as u32,
-                        output: ok.output.clone(),
+                        output: (!terminate).then(|| ok.output.clone()).unwrap_or_default(),
                         trace_data: ok.trace_data.clone(),
                         performance: Some(Arc::from(format!("{:.1?}", start.elapsed()))),
                     },
                     Err(err) => DecisionGraphTrace {
                         id: node.id.clone(),
                         name: node.name.clone(),
-                        input: incoming_data,
+                        input: input_trace,
                         order: nt.len() as u32,
                         output: Variable::Null,
                         trace_data: err.trace.clone(),
@@ -240,18 +206,24 @@ impl DecisionGraph {
                     },
                 };
 
-                nt.insert(node.id.clone(), trace);
+                if !matches!(node.kind, DecisionNodeKind::SwitchNode { .. }) {
+                    nt.insert(node.id.clone(), trace);
+                }
             }
+
+            let output = node_execution?.output;
+            output.dot_remove("$nodes");
 
             walker.set_node_data(
                 nid,
                 NodeData {
                     name: Rc::from(node.name.deref()),
-                    data: node_execution?.output,
+                    data: output,
                 },
             );
 
-            if terminate {
+            // Terminate once Output node is reached
+            if matches!(node.kind, DecisionNodeKind::OutputNode { .. }) {
                 break;
             }
         }
@@ -349,19 +321,37 @@ pub struct DecisionGraphTrace {
     pub order: u32,
 }
 
-pub(crate) fn error_trace(trace: &Option<HashMap<String, DecisionGraphTrace>>) -> Option<Variable> {
-    trace.as_ref().map(|s| {
-        s.values().for_each(|v| {
-            v.input.dot_remove("$nodes");
-            v.output.dot_remove("$nodes");
-        });
+async fn handle_node<NodeData, TraceData, NodeHandlerType>(
+    base_ctx: NodeContextBase,
+    content: NodeData,
+    handler: NodeHandlerType,
+) -> NodeResult
+where
+    TraceData: TraceDataType,
+    NodeData: NodeDataType,
+    NodeHandlerType: NodeHandler<NodeData = NodeData, TraceData = TraceData>,
+{
+    let ctx = NodeContext::<NodeData, TraceData>::from_base(base_ctx.clone(), content);
+    if let Some(transform_attributes) = handler.transform_attributes(&ctx) {
+        return transform_attributes
+            .run_with(base_ctx, move |input, has_more| {
+                let handler = handler.clone();
+                let mut new_ctx = ctx.clone();
+                new_ctx.input = input;
 
-        s.to_variable()
-    })
-}
+                async move {
+                    match has_more {
+                        false => handler.handle(new_ctx).await,
+                        true => {
+                            let result = handler.handle(new_ctx.clone()).await;
+                            handler.after_transform_attributes(&new_ctx).await?;
+                            result
+                        }
+                    }
+                }
+            })
+            .await;
+    }
 
-fn create_validator_cache_key(content: &Value) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    content.hash(&mut hasher);
-    hasher.finish()
+    handler.handle(ctx).await
 }

@@ -1,6 +1,6 @@
 use crate::nodes::definition::NodeHandler;
 use crate::nodes::result::NodeResult;
-use crate::nodes::NodeContext;
+use crate::nodes::{NodeContext, NodeResponse};
 use ahash::HashMap;
 use serde::Serialize;
 use std::ops::Deref;
@@ -10,7 +10,7 @@ use zen_expression::variable::ToVariable;
 use zen_expression::Isolate;
 use zen_types::decision::{DecisionTableContent, DecisionTableHitPolicy, TransformAttributes};
 use zen_types::variable::Variable;
-
+#[derive(Debug, Clone)]
 pub struct DecisionTableNodeHandler;
 
 pub type DecisionTableNodeData = DecisionTableContent;
@@ -28,7 +28,7 @@ impl NodeHandler for DecisionTableNodeHandler {
         Some(ctx.node.transform_attributes.clone())
     }
 
-    fn handle(&self, ctx: NodeContext<Self::NodeData, Self::TraceData>) -> NodeResult {
+    async fn handle(&self, ctx: NodeContext<Self::NodeData, Self::TraceData>) -> NodeResult {
         match ctx.node.hit_policy {
             DecisionTableHitPolicy::First => self.handle_first_hit(ctx),
             DecisionTableHitPolicy::Collect => self.handle_collect(ctx),
@@ -39,6 +39,7 @@ impl NodeHandler for DecisionTableNodeHandler {
 impl DecisionTableNodeHandler {
     fn handle_first_hit(&self, ctx: DecisionTableContext) -> NodeResult {
         let mut isolate = Isolate::new();
+        isolate.set_environment(ctx.input.depth_clone(1));
 
         for (index, rule) in ctx.node.rules.iter().enumerate() {
             if let Some(result) = self.evaluate_row(&ctx, rule, &mut isolate) {
@@ -63,13 +64,17 @@ impl DecisionTableNodeHandler {
             }
         }
 
-        ctx.success(Variable::Null)
+        Ok(NodeResponse {
+            output: Variable::Null,
+            trace_data: None,
+        })
     }
 
     fn handle_collect(&self, ctx: DecisionTableContext) -> NodeResult {
         let mut isolate = Isolate::new();
         let mut outputs = Vec::new();
         let mut traces = Vec::new();
+        isolate.set_environment(ctx.input.depth_clone(1));
 
         for (index, rule) in ctx.node.rules.iter().enumerate() {
             if let Some(result) = self.evaluate_row(&ctx, rule, &mut isolate) {
@@ -107,9 +112,9 @@ impl DecisionTableNodeHandler {
         isolate: &mut Isolate<'a>,
     ) -> Option<RowResult> {
         let content = &ctx.node;
-        for input in &content.inputs {
+        for input in content.inputs.iter() {
             let rule_value = rule.get(&input.id)?;
-            if rule_value.trim().is_empty() {
+            if rule_value.is_empty() {
                 continue;
             }
 
@@ -129,19 +134,19 @@ impl DecisionTableNodeHandler {
             }
         }
 
-        let mut outputs: HashMap<Rc<str>, Variable> = Default::default();
-        for output in &content.outputs {
+        let outputs = Variable::empty_object();
+        for output in content.outputs.iter() {
             let rule_value = rule.get(&output.id)?;
-            if rule_value.trim().is_empty() {
+            if rule_value.is_empty() {
                 continue;
             }
 
             let res = isolate.run_standard(rule_value).ok()?;
-            outputs.insert(Rc::from(&*output.field), res);
+            outputs.dot_insert(output.field.deref(), res);
         }
 
-        if !ctx.has_trace() {
-            return Some(RowResult::Output(outputs.to_variable()));
+        if !ctx.config.trace {
+            return Some(RowResult::Output(outputs));
         }
 
         let id_str = Rc::<str>::from("_id");
@@ -160,7 +165,7 @@ impl DecisionTableNodeHandler {
             expressions.insert(description_str.clone(), Rc::from(description.deref()));
         }
 
-        for input in &content.inputs {
+        for input in content.inputs.iter() {
             let rule_value = rule.get(input.id.deref())?;
             let Some(input_field) = &input.field else {
                 continue;

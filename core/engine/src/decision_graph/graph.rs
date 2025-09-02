@@ -1,3 +1,4 @@
+use crate::decision_graph::tracer::NodeTracer;
 use crate::decision_graph::walker::{GraphWalker, NodeData, StableDiDecisionGraph};
 use crate::engine::EvaluationTraceKind;
 use crate::model::{DecisionContent, DecisionNodeKind};
@@ -13,7 +14,7 @@ use crate::nodes::{
     NodeContext, NodeContextBase, NodeContextConfig, NodeDataType, NodeHandler,
     NodeHandlerExtensions, NodeResponse, NodeResult, TraceDataType,
 };
-use crate::EvaluationError;
+use crate::{DecisionGraphTrace, DecisionGraphValidationError, EvaluationError};
 use ahash::{HashMap, HashMapExt};
 use petgraph::algo::is_cyclic_directed;
 use serde::ser::SerializeMap;
@@ -22,19 +23,17 @@ use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
-use thiserror::Error;
 use zen_expression::variable::{ToVariable, Variable};
+use zen_types::decision::DecisionNode;
 
 #[derive(Debug)]
 pub struct DecisionGraph {
     initial_graph: StableDiDecisionGraph,
     graph: StableDiDecisionGraph,
-    trace: bool,
-    max_depth: u8,
-    iteration: u8,
-    extensions: NodeHandlerExtensions,
+    config: DecisionGraphConfig,
 }
 
+#[derive(Debug)]
 pub struct DecisionGraphConfig {
     pub content: Arc<DecisionContent>,
     pub trace: bool,
@@ -45,9 +44,19 @@ pub struct DecisionGraphConfig {
 
 impl DecisionGraph {
     pub fn try_new(config: DecisionGraphConfig) -> Result<Self, DecisionGraphValidationError> {
-        let content = config.content;
+        let graph = Self::build_graph(config.content.deref())?;
+        Ok(Self {
+            initial_graph: graph.clone(),
+            graph,
+            config,
+        })
+    }
+
+    fn build_graph(
+        content: &DecisionContent,
+    ) -> Result<StableDiDecisionGraph, DecisionGraphValidationError> {
         let mut graph = StableDiDecisionGraph::new();
-        let mut index_map = HashMap::new();
+        let mut index_map = HashMap::with_capacity(content.nodes.len());
 
         for node in &content.nodes {
             let node_id = node.id.clone();
@@ -56,7 +65,7 @@ impl DecisionGraph {
             index_map.insert(node_id, node_index);
         }
 
-        for (_, edge) in content.edges.iter().enumerate() {
+        for edge in &content.edges {
             let source_index = index_map.get(&edge.source_id).ok_or_else(|| {
                 DecisionGraphValidationError::MissingNode(edge.source_id.to_string())
             })?;
@@ -65,17 +74,10 @@ impl DecisionGraph {
                 DecisionGraphValidationError::MissingNode(edge.target_id.to_string())
             })?;
 
-            graph.add_edge(source_index.clone(), target_index.clone(), edge.clone());
+            graph.add_edge(*source_index, *target_index, edge.clone());
         }
 
-        Ok(Self {
-            initial_graph: graph.clone(),
-            graph,
-            iteration: config.iteration,
-            trace: config.trace,
-            max_depth: config.max_depth,
-            extensions: config.extensions,
-        })
+        Ok(graph)
     }
 
     pub(crate) fn reset_graph(&mut self) {
@@ -83,7 +85,11 @@ impl DecisionGraph {
     }
 
     pub fn validate(&self) -> Result<(), DecisionGraphValidationError> {
-        let input_count = self.input_node_count();
+        let input_count = self
+            .graph
+            .node_weights()
+            .filter(|w| matches!(w.kind, DecisionNodeKind::InputNode { .. }))
+            .count();
         if input_count != 1 {
             return Err(DecisionGraphValidationError::InvalidInputCount(
                 input_count as u32,
@@ -97,11 +103,19 @@ impl DecisionGraph {
         Ok(())
     }
 
-    fn input_node_count(&self) -> usize {
-        self.graph
-            .node_weights()
-            .filter(|weight| matches!(weight.kind, DecisionNodeKind::InputNode { content: _ }))
-            .count()
+    fn build_node_context(&self, node: &DecisionNode, input: Variable) -> NodeContextBase {
+        NodeContextBase {
+            id: node.id.clone(),
+            name: node.name.clone(),
+            input,
+            extensions: self.config.extensions.clone(),
+            iteration: self.config.iteration,
+            config: NodeContextConfig {
+                max_depth: self.config.max_depth,
+                trace: self.config.trace,
+                ..Default::default()
+            },
+        }
     }
 
     pub async fn evaluate(
@@ -111,43 +125,22 @@ impl DecisionGraph {
         let root_start = Instant::now();
 
         self.validate()?;
-        if self.iteration >= self.max_depth {
+        if self.config.iteration >= self.config.max_depth {
             return Err(Box::new(EvaluationError::DepthLimitExceeded));
         }
 
         let mut walker = GraphWalker::new(&self.graph);
-        let mut node_traces = self.trace.then(|| HashMap::default());
+        let mut tracer = NodeTracer::new(self.config.trace);
 
-        while let Some(nid) = walker.next(
-            &mut self.graph,
-            self.trace.then_some(|mut trace: DecisionGraphTrace| {
-                if let Some(nt) = &mut node_traces {
-                    trace.order = nt.len() as u32;
-                    nt.insert(trace.id.clone(), trace);
-                };
-            }),
-        ) {
+        while let Some(nid) = walker.next(&mut self.graph, tracer.trace_callback()) {
             if let Some(_) = walker.get_node_data(nid) {
                 continue;
             }
 
-            let mut terminate = false;
-            let node = (&self.graph[nid]).clone();
+            let node = &self.graph[nid];
             let start = Instant::now();
             let (input, input_trace) = walker.incoming_node_data(&self.graph, nid, true);
-
-            let mut base_ctx = NodeContextBase {
-                id: node.id.clone(),
-                name: node.name.clone(),
-                input,
-                extensions: self.extensions.clone(),
-                iteration: self.iteration,
-                config: NodeContextConfig {
-                    max_depth: self.max_depth,
-                    trace: self.trace,
-                    ..Default::default()
-                },
-            };
+            let mut base_ctx = self.build_node_context(node.deref(), input);
 
             let node_execution = match &node.kind {
                 DecisionNodeKind::InputNode { content } => {
@@ -155,7 +148,6 @@ impl DecisionGraph {
                     handle_node(base_ctx, content.clone(), InputNodeHandler).await
                 }
                 DecisionNodeKind::OutputNode { content } => {
-                    terminate = true;
                     handle_node(base_ctx, content.clone(), OutputNodeHandler).await
                 }
                 DecisionNodeKind::SwitchNode { .. } => Ok(NodeResponse {
@@ -179,37 +171,7 @@ impl DecisionGraph {
                 }
             };
 
-            if let Some(nt) = &mut node_traces {
-                let input_trace = match &node.kind {
-                    DecisionNodeKind::InputNode { .. } => Variable::Null,
-                    _ => input_trace,
-                };
-
-                let trace = match &node_execution {
-                    Ok(ok) => DecisionGraphTrace {
-                        id: node.id.clone(),
-                        name: node.name.clone(),
-                        input: input_trace,
-                        order: nt.len() as u32,
-                        output: (!terminate).then(|| ok.output.clone()).unwrap_or_default(),
-                        trace_data: ok.trace_data.clone(),
-                        performance: Some(Arc::from(format!("{:.1?}", start.elapsed()))),
-                    },
-                    Err(err) => DecisionGraphTrace {
-                        id: node.id.clone(),
-                        name: node.name.clone(),
-                        input: input_trace,
-                        order: nt.len() as u32,
-                        output: Variable::Null,
-                        trace_data: err.trace.clone(),
-                        performance: Some(Arc::from(format!("{:.1?}", start.elapsed()))),
-                    },
-                };
-
-                if !matches!(node.kind, DecisionNodeKind::SwitchNode { .. }) {
-                    nt.insert(node.id.clone(), trace);
-                }
-            }
+            tracer.record_execution(node.deref(), input_trace, &node_execution, start.elapsed());
 
             let output = node_execution?.output;
             output.dot_remove("$nodes");
@@ -231,52 +193,8 @@ impl DecisionGraph {
         Ok(DecisionGraphResponse {
             result: walker.ending_variables(&self.graph),
             performance: format!("{:.1?}", root_start.elapsed()),
-            trace: node_traces,
+            trace: tracer.into_traces(),
         })
-    }
-}
-
-#[derive(Debug, Error)]
-pub enum DecisionGraphValidationError {
-    #[error("Invalid input node count: {0}")]
-    InvalidInputCount(u32),
-
-    #[error("Invalid output node count: {0}")]
-    InvalidOutputCount(u32),
-
-    #[error("Cyclic graph detected")]
-    CyclicGraph,
-
-    #[error("Missing node")]
-    MissingNode(String),
-}
-
-impl Serialize for DecisionGraphValidationError {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut map = serializer.serialize_map(None)?;
-
-        match &self {
-            DecisionGraphValidationError::InvalidInputCount(count) => {
-                map.serialize_entry("type", "invalidInputCount")?;
-                map.serialize_entry("nodeCount", count)?;
-            }
-            DecisionGraphValidationError::InvalidOutputCount(count) => {
-                map.serialize_entry("type", "invalidOutputCount")?;
-                map.serialize_entry("nodeCount", count)?;
-            }
-            DecisionGraphValidationError::MissingNode(node_id) => {
-                map.serialize_entry("type", "missingNode")?;
-                map.serialize_entry("nodeId", node_id)?;
-            }
-            DecisionGraphValidationError::CyclicGraph => {
-                map.serialize_entry("type", "cyclicGraph")?;
-            }
-        }
-
-        map.end()
     }
 }
 
@@ -307,18 +225,6 @@ impl DecisionGraphResponse {
 
         map.end()
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToVariable)]
-#[serde(rename_all = "camelCase")]
-pub struct DecisionGraphTrace {
-    pub input: Variable,
-    pub output: Variable,
-    pub name: Arc<str>,
-    pub id: Arc<str>,
-    pub performance: Option<Arc<str>>,
-    pub trace_data: Option<Variable>,
-    pub order: u32,
 }
 
 async fn handle_node<NodeData, TraceData, NodeHandlerType>(

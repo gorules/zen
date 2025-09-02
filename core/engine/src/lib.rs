@@ -133,9 +133,7 @@ pub mod nodes;
 
 pub use config::ZEN_CONFIG;
 pub use decision::Decision;
-pub use decision_graph::graph::DecisionGraphResponse;
-pub use decision_graph::graph::DecisionGraphTrace;
-pub use decision_graph::graph::DecisionGraphValidationError;
+pub use decision_graph::{DecisionGraphResponse, DecisionGraphTrace, DecisionGraphValidationError};
 pub use engine::{
     DecisionEngine, EvaluationOptions, EvaluationSerializedOptions, EvaluationTraceKind,
 };

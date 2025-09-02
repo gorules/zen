@@ -41,11 +41,11 @@ const ITER_MAX: usize = 1_000;
 impl GraphWalker {
     pub fn new(graph: &StableDiDecisionGraph) -> Self {
         let mut walker = Self::empty(graph);
-        walker.extend_with_initials(graph);
+        walker.initialize_input_nodes(graph);
         walker
     }
 
-    fn extend_with_initials(&mut self, g: &StableDiDecisionGraph) {
+    fn initialize_input_nodes(&mut self, g: &StableDiDecisionGraph) {
         // find all initial nodes (nodes without incoming edges)
         self.to_visit
             .extend(g.node_identifiers().filter(move |&nid| {
@@ -69,7 +69,7 @@ impl GraphWalker {
     pub fn reset(&mut self, g: &StableDiDecisionGraph) {
         self.ordered.clear();
         self.to_visit.clear();
-        self.extend_with_initials(g);
+        self.initialize_input_nodes(g);
 
         self.iter += 1;
     }

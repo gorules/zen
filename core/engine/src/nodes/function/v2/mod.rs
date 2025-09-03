@@ -30,13 +30,14 @@ impl NodeHandler for FunctionV2NodeHandler {
     async fn handle(&self, ctx: NodeContext<Self::NodeData, Self::TraceData>) -> NodeResult {
         let start = std::time::Instant::now();
 
-        // TODO: Smart node omit
+        if ctx.node.omit_nodes {
+            ctx.input.dot_remove("$nodes");
+        }
 
         let function = ctx.function_runtime().await?;
         let module_name = function.suggest_module_name(ctx.id.deref(), ctx.node.source.deref());
 
-        // TODO: Add duration from configuration
-        let max_duration = Duration::from_millis(500);
+        let max_duration = Duration::from_millis(ctx.config.function_timeout_millis);
         let interrupt_handler = Box::new(move || start.elapsed() > max_duration);
 
         function
@@ -44,7 +45,9 @@ impl NodeHandler for FunctionV2NodeHandler {
             .set_interrupt_handler(Some(interrupt_handler))
             .await;
 
-        self.attach_globals(function).await.node_context(&ctx)?;
+        self.attach_globals(function, &ctx)
+            .await
+            .node_context(&ctx)?;
 
         function
             .register_module(&module_name, ctx.node.source.deref())
@@ -81,14 +84,17 @@ impl NodeHandler for FunctionV2NodeHandler {
 }
 
 impl FunctionV2NodeHandler {
-    async fn attach_globals(&self, function: &Function) -> FunctionResult {
+    async fn attach_globals(
+        &self,
+        function: &Function,
+        node_ctx: &NodeContext<FunctionContent, FunctionV2Trace>,
+    ) -> FunctionResult {
         async_with!(function.context() => |ctx| {
             let config = Object::new(ctx.clone()).catch(&ctx)?;
 
-            // TODO: Restore configuration
-            // config.prop("iteration", self.iteration).catch(&ctx)?;
-            // config.prop("maxDepth", self.max_depth).catch(&ctx)?;
-            // config.prop("trace", self.trace).catch(&ctx)?;
+            config.prop("iteration", node_ctx.iteration).catch(&ctx)?;
+            config.prop("maxDepth", node_ctx.config.max_depth).catch(&ctx)?;
+            config.prop("trace", node_ctx.config.trace).catch(&ctx)?;
 
             ctx.globals().set("config", config).catch(&ctx)?;
 

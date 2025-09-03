@@ -113,9 +113,9 @@ async fn engine_errors() {
         .evaluate("infinite-function.json", json!({}).into())
         .await;
     match infinite_fn.unwrap_err().deref() {
-        EvaluationError::NodeError(NodeError {
+        EvaluationError::NodeError {
             node_id, source, ..
-        }) => {
+        } => {
             assert_eq!(node_id.deref(), "e0fd96d0-44dc-4f0e-b825-06e56b442d78");
             assert!(source.to_string().contains("interrupted"));
         }
@@ -126,7 +126,7 @@ async fn engine_errors() {
         .evaluate("recursive-table1.json", json!({}).into())
         .await;
     match recursive.unwrap_err().deref() {
-        EvaluationError::NodeError(NodeError { source, .. }) => {
+        EvaluationError::NodeError { source, .. } => {
             println!("{:?}", source);
             assert_eq!(source.to_string(), "Depth limit exceeded")
         }

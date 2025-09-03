@@ -1,5 +1,5 @@
 use crate::model::{TransformAttributes, TransformExecutionMode};
-use crate::nodes::result::{NodeResponse, NodeResult};
+use crate::nodes::result::NodeResult;
 use crate::nodes::{NodeContextBase, NodeContextExt};
 use std::future::Future;
 use std::ops::Deref;
@@ -51,12 +51,14 @@ impl TransformAttributesExecution for TransformAttributes {
             }
         };
 
-        let mut trace_data: Option<Variable> = None;
+        // let mut trace_data: Option<Variable> = None;
         let mut output = match self.execution_mode {
             TransformExecutionMode::Single => {
                 let response = evaluate(input, false).await?;
                 if let Some(td) = response.trace_data {
-                    trace_data.replace(td);
+                    ctx.trace(|t| {
+                        *t = td;
+                    });
                 }
 
                 response.output.dot_remove("$nodes");
@@ -67,14 +69,21 @@ impl TransformAttributesExecution for TransformAttributes {
                     .as_array()
                     .node_context_message(&ctx, "Expected an array")?;
                 let input_array = input_array_ref.borrow();
+                ctx.trace(|t| {
+                    *t = Variable::from_array(Vec::with_capacity(input_array.len()));
+                });
 
                 let mut output_array = Vec::with_capacity(input_array.len());
-                let mut trace_datum = Vec::with_capacity(input_array.len());
                 for (index, input) in input_array.iter().enumerate() {
                     let has_more = index < input_array.len() - 1;
                     let mut response = evaluate(input.clone(), has_more).await?;
                     if let Some(td) = response.trace_data {
-                        trace_datum.push(td);
+                        ctx.trace(|var| {
+                            if let Variable::Array(arr) = var {
+                                let mut arr_mut = arr.borrow_mut();
+                                arr_mut.push(td);
+                            };
+                        });
                     }
 
                     if self.pass_through {
@@ -85,7 +94,6 @@ impl TransformAttributesExecution for TransformAttributes {
                     output_array.push(response.output);
                 }
 
-                trace_data.replace(Variable::from_array(trace_datum));
                 Variable::from_array(output_array)
             }
         };
@@ -98,10 +106,10 @@ impl TransformAttributesExecution for TransformAttributes {
         }
 
         if self.pass_through {
-            let mut node_input = ctx.input;
+            let mut node_input = ctx.input.clone();
             output = node_input.merge_clone(&output)
         }
 
-        Ok(NodeResponse { output, trace_data })
+        ctx.success(output)
     }
 }

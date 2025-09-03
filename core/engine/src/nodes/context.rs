@@ -14,7 +14,7 @@ use std::hash::Hasher;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use thiserror::Error;
-use zen_types::variable::Variable;
+use zen_types::variable::{ToVariable, Variable};
 
 #[derive(Clone)]
 pub struct NodeContext<NodeData, TraceData>
@@ -172,6 +172,14 @@ where
     {
         self.ok_or_else(|| ctx.make_error(f("None")))
     }
+
+    fn node_context_message(
+        self,
+        ctx: &NodeContext<NodeData, TraceData>,
+        message: &str,
+    ) -> Result<T, NodeError> {
+        self.with_node_context(ctx, |_| message.to_string())
+    }
 }
 
 #[derive(Clone)]
@@ -182,6 +190,7 @@ pub struct NodeContextBase {
     pub iteration: u8,
     pub extensions: NodeHandlerExtensions,
     pub config: NodeContextConfig,
+    pub trace: Option<RefCell<Variable>>,
 }
 
 impl NodeContextBase {
@@ -195,7 +204,7 @@ impl NodeContextBase {
     pub fn success(&self, output: Variable) -> NodeResult {
         Ok(NodeResponse {
             output,
-            trace_data: None,
+            trace_data: self.trace.as_ref().map(|v| v.borrow().to_variable()),
         })
     }
 
@@ -205,8 +214,17 @@ impl NodeContextBase {
     {
         NodeError {
             node_id: self.id.clone(),
+            trace: self.trace.as_ref().map(|t| t.borrow().to_variable()),
             source: error.into(),
-            trace: None,
+        }
+    }
+
+    pub fn trace<Function>(&self, mutator: Function)
+    where
+        Function: FnOnce(&mut Variable),
+    {
+        if let Some(trace) = &self.trace {
+            mutator(&mut *trace.borrow_mut());
         }
     }
 }
@@ -217,6 +235,11 @@ where
     TraceData: TraceDataType,
 {
     fn from(value: NodeContext<NodeData, TraceData>) -> Self {
+        let trace = match value.config.trace {
+            true => Some(RefCell::new(Variable::Null)),
+            false => None,
+        };
+
         Self {
             id: value.id,
             name: value.name,
@@ -224,6 +247,7 @@ where
             extensions: value.extensions,
             iteration: value.iteration,
             config: value.config,
+            trace,
         }
     }
 }
@@ -260,6 +284,10 @@ impl<T> NodeContextExt<T, NodeContextBase> for Option<T> {
         NewError: Into<Box<dyn std::error::Error>>,
     {
         self.ok_or_else(|| ctx.make_error(f("None")))
+    }
+
+    fn node_context_message(self, ctx: &NodeContextBase, message: &str) -> Result<T, NodeError> {
+        self.with_node_context(ctx, |_| message.to_string())
     }
 }
 

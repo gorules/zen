@@ -29,6 +29,7 @@ jsonschema = "0.29"
 zen-types = { path = "../types", version = "0.50.2" }
 zen-expression = { path = "../expression", version = "0.50.2" }
 zen-tmpl = { path = "../template", version = "0.50.2" }
+log = "0.4.27"
 
 [dev-dependencies]
 chrono = { workspace = true }

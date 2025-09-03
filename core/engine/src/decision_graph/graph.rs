@@ -19,6 +19,7 @@ use ahash::{HashMap, HashMapExt};
 use petgraph::algo::is_cyclic_directed;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize, Serializer};
+use std::cell::RefCell;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -110,6 +111,10 @@ impl DecisionGraph {
             input,
             extensions: self.config.extensions.clone(),
             iteration: self.config.iteration,
+            trace: match self.config.trace {
+                true => Some(RefCell::new(Variable::Null)),
+                false => None,
+            },
             config: NodeContextConfig {
                 max_depth: self.config.max_depth,
                 trace: self.config.trace,
@@ -173,7 +178,17 @@ impl DecisionGraph {
 
             tracer.record_execution(node.deref(), input_trace, &node_execution, start.elapsed());
 
-            let output = node_execution?.output;
+            let output = match node_execution {
+                Ok(ok) => ok.output,
+                Err(err) => {
+                    return Err(Box::new(EvaluationError::NodeError {
+                        node_id: err.node_id,
+                        source: err.source,
+                        trace: tracer.into_traces().map(|t| t.to_variable()),
+                    }))
+                }
+            };
+
             output.dot_remove("$nodes");
 
             walker.set_node_data(

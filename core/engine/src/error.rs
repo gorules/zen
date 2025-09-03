@@ -1,19 +1,24 @@
 use crate::engine::EvaluationTraceKind;
 use crate::loader::LoaderError;
-use crate::nodes::NodeError;
 use crate::DecisionGraphValidationError;
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 use serde_json::Value;
+use std::sync::Arc;
 use thiserror::Error;
+use zen_types::variable::Variable;
 
 #[derive(Debug, Error)]
 pub enum EvaluationError {
     #[error("Loader error")]
     LoaderError(LoaderError),
 
-    #[error("{0}")]
-    NodeError(NodeError),
+    #[error("{source}")]
+    NodeError {
+        node_id: Arc<str>,
+        trace: Option<Variable>,
+        source: Box<dyn std::error::Error>,
+    },
 
     #[error("Depth limit exceeded")]
     DepthLimitExceeded,
@@ -40,12 +45,16 @@ impl EvaluationError {
             EvaluationError::DepthLimitExceeded => {
                 map.serialize_entry("type", "DepthLimitExceeded")?;
             }
-            EvaluationError::NodeError(err) => {
+            EvaluationError::NodeError {
+                node_id,
+                trace,
+                source,
+            } => {
                 map.serialize_entry("type", "NodeError")?;
-                map.serialize_entry("source", &err.source.to_string())?;
-                map.serialize_entry("nodeId", &err.node_id)?;
+                map.serialize_entry("source", &source.to_string())?;
+                map.serialize_entry("nodeId", &node_id)?;
 
-                if let Some(trace) = &err.trace {
+                if let Some(trace) = &trace {
                     map.serialize_entry("trace", &mode.serialize_trace(trace))?;
                 }
             }
@@ -87,12 +96,6 @@ impl Serialize for EvaluationError {
 impl From<LoaderError> for Box<EvaluationError> {
     fn from(error: LoaderError) -> Self {
         Box::new(EvaluationError::LoaderError(error.into()))
-    }
-}
-
-impl From<NodeError> for Box<EvaluationError> {
-    fn from(value: NodeError) -> Self {
-        Box::new(EvaluationError::NodeError(value))
     }
 }
 

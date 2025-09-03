@@ -71,14 +71,14 @@ pub enum DecisionNodeKind {
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct InputNodeContent {
-    #[serde(default, deserialize_with = "empty_value_string_is_none")]
+    #[serde(default, deserialize_with = "empty_value_string_is_none_safe")]
     pub schema: Option<Arc<Value>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct OutputNodeContent {
-    #[serde(default, deserialize_with = "empty_value_string_is_none")]
+    #[serde(default, deserialize_with = "empty_value_string_is_none_safe")]
     pub schema: Option<Arc<Value>>,
 }
 
@@ -227,7 +227,7 @@ where
     }
 }
 
-fn empty_value_string_is_none<'de, D>(deserializer: D) -> Result<Option<Arc<Value>>, D::Error>
+fn empty_value_string_is_none_safe<'de, D>(deserializer: D) -> Result<Option<Arc<Value>>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -236,9 +236,7 @@ where
         return Ok(None);
     };
 
-    Ok(Some(
-        serde_json::from_str(data.as_ref()).map_err(serde::de::Error::custom)?,
-    ))
+    Ok(serde_json::from_str(data.as_ref()).ok())
 }
 
 fn deserialize_trim_rules<'de, D>(

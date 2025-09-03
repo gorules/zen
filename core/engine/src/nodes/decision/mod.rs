@@ -72,8 +72,8 @@ impl NodeHandler for DecisionNodeHandler {
                 ctx.success(result.result)
             }
             Err(err) => {
-                if let EvaluationError::NodeError(node_error) = err.deref() {
-                    ctx.trace(|trace| *trace = node_error.trace.to_variable());
+                if let EvaluationError::NodeError { trace, .. } = err.deref() {
+                    ctx.trace(|t| *t = trace.to_variable());
                 }
 
                 ctx.error(err.to_string())

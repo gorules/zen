@@ -83,7 +83,10 @@ impl FilesystemLoader {
 }
 
 impl DecisionLoader for FilesystemLoader {
-    fn load<'a>(&'a self, key: &'a str) -> Pin<Box<dyn Future<Output = LoaderResponse> + 'a>> {
+    fn load<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Pin<Box<dyn Future<Output = LoaderResponse> + 'a + Send>> {
         Box::pin(async move { self.read_from_file(key).await })
     }
 }

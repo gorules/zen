@@ -39,7 +39,10 @@ impl MemoryLoader {
 }
 
 impl DecisionLoader for MemoryLoader {
-    fn load<'a>(&'a self, key: &'a str) -> Pin<Box<dyn Future<Output = LoaderResponse> + 'a>> {
+    fn load<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Pin<Box<dyn Future<Output = LoaderResponse> + 'a + Send>> {
         Box::pin(async move {
             self.get(key)
                 .ok_or_else(|| LoaderError::NotFound(key.to_string()).into())

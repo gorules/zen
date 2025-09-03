@@ -10,20 +10,14 @@ use zen_expression::variable::Variable;
 use zen_tmpl::TemplateRenderError;
 
 pub trait CustomNodeAdapter: Debug + Send {
-    fn handle(
-        &self,
-        request: CustomNodeRequest,
-    ) -> Pin<Box<dyn Future<Output = NodeResult> + Send>>;
+    fn handle(&self, request: CustomNodeRequest) -> Pin<Box<dyn Future<Output = NodeResult> + '_>>;
 }
 
 #[derive(Default, Debug)]
 pub struct NoopCustomNode;
 
 impl CustomNodeAdapter for NoopCustomNode {
-    fn handle(
-        &self,
-        request: CustomNodeRequest,
-    ) -> Pin<Box<dyn Future<Output = NodeResult> + Send>> {
+    fn handle(&self, request: CustomNodeRequest) -> Pin<Box<dyn Future<Output = NodeResult>>> {
         Box::pin(async move {
             Err(NodeError {
                 trace: None,
@@ -60,7 +54,7 @@ impl CustomNodeRequest {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct CustomDecisionNode {
     pub id: Arc<str>,

@@ -35,7 +35,10 @@ where
     F: Fn(String) -> O + Sync + Send,
     O: Future<Output = LoaderResponse> + Send,
 {
-    fn load<'a>(&'a self, key: &'a str) -> Pin<Box<dyn Future<Output = LoaderResponse> + 'a>> {
+    fn load<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Pin<Box<dyn Future<Output = LoaderResponse> + 'a + Send>> {
         Box::pin(async move {
             let closure = &self.closure;
             closure(key.to_string()).await

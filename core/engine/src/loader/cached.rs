@@ -23,7 +23,10 @@ impl From<DynamicLoader> for CachedLoader {
 }
 
 impl DecisionLoader for CachedLoader {
-    fn load<'a>(&'a self, key: &'a str) -> Pin<Box<dyn Future<Output = LoaderResponse> + 'a>> {
+    fn load<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Pin<Box<dyn Future<Output = LoaderResponse> + 'a + Send>> {
         Box::pin(async move {
             let mut cache = self.cache.lock().await;
             if let Some(content) = cache.get(key) {

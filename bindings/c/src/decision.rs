@@ -4,21 +4,19 @@ use std::marker::{PhantomData, PhantomPinned};
 use std::ops::{Deref, DerefMut};
 use zen_engine::Decision;
 
-use crate::custom_node::DynamicCustomNode;
 use crate::engine::ZenEngineEvaluationOptions;
 use crate::error::ZenError;
-use crate::loader::DynamicDecisionLoader;
 use crate::mt::tokio_runtime;
 use crate::result::ZenResult;
 
 #[repr(C)]
 pub(crate) struct ZenDecision {
-    _data: Decision<DynamicDecisionLoader, DynamicCustomNode>,
+    _data: Decision,
     _marker: PhantomData<(*mut c_void, PhantomPinned)>,
 }
 
 impl Deref for ZenDecision {
-    type Target = Decision<DynamicDecisionLoader, DynamicCustomNode>;
+    type Target = Decision;
 
     fn deref(&self) -> &Self::Target {
         &self._data
@@ -31,8 +29,8 @@ impl DerefMut for ZenDecision {
     }
 }
 
-impl From<Decision<DynamicDecisionLoader, DynamicCustomNode>> for ZenDecision {
-    fn from(value: Decision<DynamicDecisionLoader, DynamicCustomNode>) -> Self {
+impl From<Decision> for ZenDecision {
+    fn from(value: Decision) -> Self {
         Self {
             _data: value,
             _marker: PhantomData,

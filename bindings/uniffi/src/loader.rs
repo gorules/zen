@@ -1,6 +1,8 @@
 use crate::error::ZenError;
 use crate::types::JsonBuffer;
+use std::fmt::{Debug, Formatter};
 use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use uniffi::deps::anyhow::anyhow;
 use zen_engine::loader::{DecisionLoader, LoaderError, LoaderResponse};
@@ -23,9 +25,18 @@ impl ZenDecisionLoaderCallback for NoopDecisionLoader {
 
 pub struct ZenDecisionLoaderCallbackWrapper(pub Box<dyn ZenDecisionLoaderCallback>);
 
+impl Debug for ZenDecisionLoaderCallbackWrapper {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ZenDecisionLoaderCallbackWrapper")
+    }
+}
+
 impl DecisionLoader for ZenDecisionLoaderCallbackWrapper {
-    fn load<'a>(&'a self, key: &'a str) -> impl Future<Output = LoaderResponse> + 'a {
-        async move {
+    fn load<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Pin<Box<dyn Future<Output = LoaderResponse> + 'a + Send>> {
+        Box::pin(async move {
             let maybe_json_buffer = match self.0.load(key.into()).await {
                 Ok(r) => r,
                 Err(error) => {
@@ -49,6 +60,6 @@ impl DecisionLoader for ZenDecisionLoaderCallbackWrapper {
                 })?;
 
             Ok(Arc::new(decision_content))
-        }
+        })
     }
 }

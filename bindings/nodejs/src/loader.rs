@@ -1,4 +1,6 @@
+use std::fmt::{Debug, Formatter};
 use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use napi::anyhow::anyhow;
@@ -16,6 +18,12 @@ use crate::content::ZenDecisionContent;
 #[derive(Default)]
 pub(crate) struct DecisionLoader {
     function: Option<ThreadsafeFunction<String, ErrorStrategy::Fatal>>,
+}
+
+impl Debug for DecisionLoader {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "DecisionLoader")
+    }
 }
 
 impl DecisionLoader {
@@ -67,10 +75,13 @@ impl DecisionLoader {
 }
 
 impl DecisionLoaderTrait for DecisionLoader {
-    fn load<'a>(&'a self, key: &'a str) -> impl Future<Output = LoaderResponse> + 'a {
-        async move {
+    fn load<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Pin<Box<dyn Future<Output = LoaderResponse> + Send + 'a>> {
+        Box::pin(async move {
             let decision_content = self.get_key(key).await?;
             Ok(decision_content)
-        }
+        })
     }
 }

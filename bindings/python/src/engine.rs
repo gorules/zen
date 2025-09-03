@@ -20,13 +20,22 @@ use zen_engine::{DecisionEngine, EvaluationOptions};
 #[pyclass]
 #[pyo3(name = "ZenEngine")]
 pub struct PyZenEngine {
-    engine: Arc<DecisionEngine<PyDecisionLoader, PyCustomNode>>,
+    engine: Arc<DecisionEngine>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct PyZenEvaluateOptions {
     pub trace: Option<bool>,
     pub max_depth: Option<u8>,
+}
+
+impl From<PyZenEvaluateOptions> for EvaluationOptions {
+    fn from(value: PyZenEvaluateOptions) -> Self {
+        Self {
+            max_depth: value.max_depth.unwrap_or(5),
+            trace: value.trace.unwrap_or_default(),
+        }
+    }
 }
 
 impl<'py> FromPyObject<'py> for PyZenEvaluateOptions {
@@ -113,10 +122,7 @@ impl PyZenEngine {
         let result = block_on(self.engine.evaluate_with_opts(
             key,
             ctx.into_inner(),
-            EvaluationOptions {
-                max_depth: options.max_depth,
-                trace: options.trace,
-            },
+            options.into(),
         ))
         .map_err(|e| {
             anyhow!(serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string()))
@@ -142,14 +148,7 @@ impl PyZenEngine {
             let value = worker_pool()
                 .spawn_pinned(move || async move {
                     engine
-                        .evaluate_with_opts(
-                            key,
-                            context.into(),
-                            EvaluationOptions {
-                                max_depth: options.max_depth,
-                                trace: options.trace,
-                            },
-                        )
+                        .evaluate_with_opts(key, context.into(), options.into())
                         .await
                         .map(serde_json::to_value)
                         .map_err(|e| {

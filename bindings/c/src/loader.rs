@@ -1,5 +1,6 @@
 use std::ffi::{c_char, CString};
 use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use anyhow::anyhow;
@@ -24,15 +25,18 @@ impl Default for DynamicDecisionLoader {
 }
 
 impl DecisionLoader for DynamicDecisionLoader {
-    fn load<'a>(&'a self, key: &'a str) -> impl Future<Output = LoaderResponse> + 'a {
-        async move {
+    fn load<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Pin<Box<dyn Future<Output = LoaderResponse> + Send + 'a>> {
+        Box::pin(async move {
             match self {
                 DynamicDecisionLoader::Noop(loader) => loader.load(key).await,
                 DynamicDecisionLoader::Native(loader) => loader.load(key).await,
                 #[cfg(feature = "go")]
                 DynamicDecisionLoader::Go(loader) => loader.load(key).await,
             }
-        }
+        })
     }
 }
 

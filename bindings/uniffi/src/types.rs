@@ -1,7 +1,7 @@
 use crate::error::ZenError;
 use serde_json::Value;
 use std::collections::HashMap;
-use zen_engine::handler::custom_node_adapter::CustomDecisionNode;
+use zen_engine::nodes::custom::CustomDecisionNode;
 use zen_engine::{DecisionGraphResponse, DecisionGraphTrace};
 use zen_expression::Variable;
 
@@ -60,11 +60,11 @@ impl TryFrom<DecisionGraphTrace> for ZenEngineTrace {
 
     fn try_from(value: DecisionGraphTrace) -> Result<Self, Self::Error> {
         Ok(Self {
-            id: value.id,
-            name: value.name,
+            id: value.id.to_string(),
+            name: value.name.to_string(),
             input: JsonBuffer::try_from(value.input)?,
             output: JsonBuffer::try_from(value.output)?,
-            performance: value.performance,
+            performance: value.performance.map(|p| p.to_string()),
             trace_data: value.trace_data.map(JsonBuffer::try_from).transpose()?,
             order: value.order,
         })
@@ -89,7 +89,7 @@ impl TryFrom<DecisionGraphResponse> for ZenEngineResponse {
                 .trace
                 .map(|opt| {
                     opt.into_iter()
-                        .map(|(key, value)| Ok((key, ZenEngineTrace::try_from(value)?)))
+                        .map(|(key, value)| Ok((key.to_string(), ZenEngineTrace::try_from(value)?)))
                         .collect::<Result<_, ZenError>>()
                 })
                 .transpose()?,
@@ -114,9 +114,9 @@ pub struct DecisionNode {
 impl From<CustomDecisionNode> for DecisionNode {
     fn from(value: CustomDecisionNode) -> Self {
         Self {
-            id: value.id,
-            name: value.name,
-            kind: value.kind,
+            id: value.id.to_string(),
+            name: value.name.to_string(),
+            kind: value.kind.to_string(),
             config: JsonBuffer(serde_json::to_vec(&value.config).unwrap()),
         }
     }

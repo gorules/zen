@@ -15,7 +15,7 @@ use zen_engine::{DecisionEngine, EvaluationOptions};
 
 #[derive(uniffi::Object)]
 pub(crate) struct ZenEngine {
-    engine: Arc<DecisionEngine<ZenDecisionLoaderCallbackWrapper, ZenCustomNodeCallbackWrapper>>,
+    engine: Arc<DecisionEngine>,
 }
 
 #[derive(uniffi::Record)]
@@ -29,6 +29,15 @@ impl Default for ZenEvaluateOptions {
         Self {
             max_depth: Some(5),
             trace: Some(false),
+        }
+    }
+}
+
+impl From<ZenEvaluateOptions> for EvaluationOptions {
+    fn from(value: ZenEvaluateOptions) -> Self {
+        Self {
+            max_depth: value.max_depth.unwrap_or(5),
+            trace: value.trace.unwrap_or(false),
         }
     }
 }
@@ -62,17 +71,13 @@ impl ZenEngine {
         let context: Value = context.try_into()?;
 
         let engine = self.engine.clone();
-        let evaluation_options = EvaluationOptions {
-            max_depth: options.max_depth,
-            trace: options.trace,
-        };
 
         // Use spawn_blocking to run the non-Send code synchronously
         let response = task::spawn_blocking(move || {
             // The blocking code that uses non-Send types
             Handle::current().block_on(async move {
                 engine
-                    .evaluate_with_opts(key, context.into(), evaluation_options)
+                    .evaluate_with_opts(key, context.into(), options.into())
                     .await
                     .map(|response| ZenEngineResponse::try_from(response))
                     .map_err(|err| {

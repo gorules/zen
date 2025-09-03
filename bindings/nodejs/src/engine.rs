@@ -21,7 +21,7 @@ use zen_engine::{DecisionEngine, EvaluationSerializedOptions, EvaluationTraceKin
 
 #[napi]
 pub struct ZenEngine {
-    graph: Arc<DecisionEngine<DecisionLoader, CustomNode>>,
+    graph: Arc<DecisionEngine>,
 
     loader_ref: Option<ThreadsafeFunction<String, ErrorStrategy::Fatal>>,
     custom_handler_ref: Option<ThreadsafeFunction<ZenEngineHandlerRequest, ErrorStrategy::Fatal>>,
@@ -88,6 +88,15 @@ impl Default for ZenEvaluateOptions {
     }
 }
 
+impl From<ZenEvaluateOptions> for EvaluationSerializedOptions {
+    fn from(value: ZenEvaluateOptions) -> Self {
+        Self {
+            max_depth: value.max_depth.unwrap_or(5),
+            trace: value.trace.unwrap_or_default().0,
+        }
+    }
+}
+
 #[napi(object)]
 pub struct ZenEngineOptions {
     #[napi(ts_type = "(key: string) => Promise<Buffer | ZenDecisionContent>")]
@@ -104,8 +113,8 @@ impl ZenEngine {
         let Some(opts) = options else {
             return Ok(Self {
                 graph: DecisionEngine::new(
-                    DecisionLoader::default().into(),
-                    CustomNode::default().into(),
+                    Arc::new(DecisionLoader::default()),
+                    Arc::new(CustomNode::default()),
                 )
                 .into(),
 
@@ -143,7 +152,7 @@ impl ZenEngine {
         };
 
         Ok(Self {
-            graph: DecisionEngine::new(loader.into(), custom_handler.into()).into(),
+            graph: DecisionEngine::new(Arc::new(loader), Arc::new(custom_handler)).into(),
 
             loader_ref,
             custom_handler_ref,
@@ -163,14 +172,7 @@ impl ZenEngine {
 
             async move {
                 graph
-                    .evaluate_serialized(
-                        key,
-                        context.into(),
-                        EvaluationSerializedOptions {
-                            max_depth: options.max_depth,
-                            trace: options.trace.unwrap_or_default().0,
-                        },
-                    )
+                    .evaluate_serialized(key, context.into(), options.into())
                     .await
             }
         })

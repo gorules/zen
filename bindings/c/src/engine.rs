@@ -13,10 +13,10 @@ use crate::loader::DynamicDecisionLoader;
 use crate::mt::tokio_runtime;
 use crate::result::ZenResult;
 
-pub(crate) struct ZenEngine(DecisionEngine<DynamicDecisionLoader, DynamicCustomNode>);
+pub(crate) struct ZenEngine(DecisionEngine);
 
 impl Deref for ZenEngine {
-    type Target = DecisionEngine<DynamicDecisionLoader, DynamicCustomNode>;
+    type Target = DecisionEngine;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -59,8 +59,8 @@ pub struct ZenEngineEvaluationOptions {
 impl Into<EvaluationOptions> for ZenEngineEvaluationOptions {
     fn into(self) -> EvaluationOptions {
         EvaluationOptions {
-            trace: Some(self.trace),
-            max_depth: Some(self.max_depth),
+            trace: self.trace,
+            max_depth: self.max_depth,
         }
     }
 }

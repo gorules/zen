@@ -27,7 +27,7 @@ trace:
       rule:
         _id: fJxWqBVUNk
         "amount[6xj5CMIFv9]": "> 1_000_000"
-        "second[07795ded-cb9b-4165-9b5e-783b066dda61]": " "
+        "second[07795ded-cb9b-4165-9b5e-783b066dda61]": ""
   4e7e6bb9-f128-41e7-8cc5-b9d79670b96a:
     id: 4e7e6bb9-f128-41e7-8cc5-b9d79670b96a
     input: ~

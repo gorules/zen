@@ -1,79 +1,56 @@
+use crate::decision_graph::graph::{DecisionGraph, DecisionGraphConfig, DecisionGraphResponse};
 use crate::engine::{EvaluationOptions, EvaluationSerializedOptions, EvaluationTraceKind};
-use crate::handler::custom_node_adapter::{CustomNodeAdapter, NoopCustomNode};
-use crate::handler::graph::{DecisionGraph, DecisionGraphConfig, DecisionGraphResponse};
-use crate::loader::{CachedLoader, DecisionLoader, NoopLoader};
+use crate::loader::{DynamicLoader, NoopLoader};
 use crate::model::DecisionContent;
-use crate::util::validator_cache::ValidatorCache;
+use crate::nodes::custom::{DynamicCustomNode, NoopCustomNode};
+use crate::nodes::validator_cache::ValidatorCache;
+use crate::nodes::NodeHandlerExtensions;
 use crate::{DecisionGraphValidationError, EvaluationError};
 use serde_json::Value;
+use std::cell::OnceCell;
 use std::sync::Arc;
 use zen_expression::variable::Variable;
 
 /// Represents a JDM decision which can be evaluated
 #[derive(Debug, Clone)]
-pub struct Decision<Loader, CustomNode>
-where
-    Loader: DecisionLoader + 'static,
-    CustomNode: CustomNodeAdapter + 'static,
-{
+pub struct Decision {
     content: Arc<DecisionContent>,
-    loader: Arc<Loader>,
-    adapter: Arc<CustomNode>,
-
+    loader: DynamicLoader,
+    adapter: DynamicCustomNode,
     validator_cache: ValidatorCache,
 }
 
-impl From<DecisionContent> for Decision<NoopLoader, NoopCustomNode> {
+impl From<DecisionContent> for Decision {
     fn from(value: DecisionContent) -> Self {
         Self {
             content: value.into(),
-            loader: NoopLoader::default().into(),
-            adapter: NoopCustomNode::default().into(),
-
-            validator_cache: Default::default(),
+            loader: Arc::new(NoopLoader::default()),
+            adapter: Arc::new(NoopCustomNode::default()),
+            validator_cache: ValidatorCache::default(),
         }
     }
 }
 
-impl From<Arc<DecisionContent>> for Decision<NoopLoader, NoopCustomNode> {
+impl From<Arc<DecisionContent>> for Decision {
     fn from(value: Arc<DecisionContent>) -> Self {
         Self {
             content: value,
-            loader: NoopLoader::default().into(),
-            adapter: NoopCustomNode::default().into(),
-
-            validator_cache: Default::default(),
+            loader: Arc::new(NoopLoader::default()),
+            adapter: Arc::new(NoopCustomNode::default()),
+            validator_cache: ValidatorCache::default(),
         }
     }
 }
 
-impl<L, A> Decision<L, A>
-where
-    L: DecisionLoader + 'static,
-    A: CustomNodeAdapter + 'static,
-{
-    pub fn with_loader<Loader>(self, loader: Arc<Loader>) -> Decision<Loader, A>
-    where
-        Loader: DecisionLoader,
-    {
-        Decision {
-            loader,
-            adapter: self.adapter,
-            content: self.content,
-            validator_cache: self.validator_cache,
-        }
+impl Decision {
+    pub fn with_loader(mut self, loader: DynamicLoader) -> Self {
+        self.loader = loader;
+        self
     }
 
-    pub fn with_adapter<Adapter>(self, adapter: Arc<Adapter>) -> Decision<L, Adapter>
-    where
-        Adapter: CustomNodeAdapter,
-    {
-        Decision {
-            loader: self.loader,
-            adapter,
-            content: self.content,
-            validator_cache: self.validator_cache,
-        }
+    pub fn with_adapter(mut self, adapter: DynamicCustomNode) -> Self {
+        self.adapter = adapter;
+        self
     }
 
     /// Evaluates a decision using an in-memory reference stored in struct
@@ -92,12 +69,15 @@ where
     ) -> Result<DecisionGraphResponse, Box<EvaluationError>> {
         let mut decision_graph = DecisionGraph::try_new(DecisionGraphConfig {
             content: self.content.clone(),
-            max_depth: options.max_depth.unwrap_or(5),
-            trace: options.trace.unwrap_or_default(),
-            loader: Arc::new(CachedLoader::from(self.loader.clone())),
-            adapter: self.adapter.clone(),
+            max_depth: options.max_depth,
+            trace: options.trace,
             iteration: 0,
-            validator_cache: Some(self.validator_cache.clone()),
+            extensions: NodeHandlerExtensions {
+                loader: self.loader.clone(),
+                custom_node: self.adapter.clone(),
+                validator_cache: Arc::new(OnceCell::from(self.validator_cache.clone())),
+                ..Default::default()
+            },
         })?;
 
         let response = decision_graph.evaluate(context).await?;
@@ -114,7 +94,7 @@ where
             .evaluate_with_opts(
                 context,
                 EvaluationOptions {
-                    trace: Some(options.trace != EvaluationTraceKind::None),
+                    trace: options.trace != EvaluationTraceKind::None,
                     max_depth: options.max_depth,
                 },
             )
@@ -135,10 +115,8 @@ where
             content: self.content.clone(),
             max_depth: 1,
             trace: false,
-            loader: Arc::new(CachedLoader::from(self.loader.clone())),
-            adapter: self.adapter.clone(),
             iteration: 0,
-            validator_cache: Some(self.validator_cache.clone()),
+            extensions: Default::default(),
         })?;
 
         decision_graph.validate()

@@ -1,14 +1,12 @@
-use anyhow::anyhow;
-use std::ffi::{c_char, CString};
-use std::future::Future;
-
-use zen_engine::handler::custom_node_adapter::{CustomNodeAdapter, CustomNodeRequest};
-use zen_engine::handler::node::NodeResult;
-use zen_engine::loader::{DecisionLoader, LoaderResponse};
-
 use crate::custom_node::{DynamicCustomNode, ZenCustomNodeResult};
 use crate::engine::{ZenEngine, ZenEngineStruct};
 use crate::loader::{DynamicDecisionLoader, ZenDecisionLoaderResult};
+use std::ffi::{c_char, CString};
+use std::future::Future;
+use std::pin::Pin;
+use zen_engine::loader::{DecisionLoader, LoaderResponse};
+use zen_engine::nodes::custom::{CustomNodeAdapter, CustomNodeRequest};
+use zen_engine::nodes::{NodeError, NodeResult};
 
 pub type ZenDecisionLoaderNativeCallback =
     extern "C" fn(key: *const c_char) -> ZenDecisionLoaderResult;
@@ -27,13 +25,16 @@ impl NativeDecisionLoader {
 }
 
 impl DecisionLoader for NativeDecisionLoader {
-    fn load<'a>(&'a self, key: &'a str) -> impl Future<Output = LoaderResponse> + 'a {
-        async move {
+    fn load<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Pin<Box<dyn Future<Output = LoaderResponse> + Send + 'a>> {
+        Box::pin(async move {
             let c_key = CString::new(key).unwrap();
             let c_content_ptr = (&self.callback)(c_key.as_ptr());
 
             c_content_ptr.into_loader_response(key)
-        }
+        })
     }
 }
 
@@ -49,14 +50,24 @@ impl NativeCustomNode {
 }
 
 impl CustomNodeAdapter for NativeCustomNode {
-    async fn handle(&self, request: CustomNodeRequest) -> NodeResult {
-        let Ok(request_value) = serde_json::to_string(&request) else {
-            return Err(anyhow!("failed to serialize request json").into());
-        };
+    fn handle(&self, request: CustomNodeRequest) -> Pin<Box<dyn Future<Output = NodeResult> + '_>> {
+        Box::pin(async move {
+            let Ok(request_value) = serde_json::to_string(&request) else {
+                return Err(NodeError {
+                    node_id: request.node.id.clone(),
+                    trace: None,
+                    source: "failed to serialize request json".into(),
+                });
+            };
 
-        let c_request = unsafe { CString::from_vec_unchecked(request_value.into_bytes()) };
-        let c_response_str = (&self.callback)(c_request.as_ptr());
-        c_response_str.into_node_result()
+            let c_request = unsafe { CString::from_vec_unchecked(request_value.into_bytes()) };
+            let c_response_str = (&self.callback)(c_request.as_ptr());
+            c_response_str.into_node_result().map_err(|err| NodeError {
+                node_id: request.node.id.clone(),
+                trace: None,
+                source: err.into(),
+            })
+        })
     }
 }
 

@@ -3,12 +3,12 @@ use serde_json::json;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
-use zen_engine::handler::custom_node_adapter::NoopCustomNode;
 use zen_engine::loader::{FilesystemLoader, FilesystemLoaderOptions};
+use zen_engine::nodes::custom::NoopCustomNode;
 use zen_engine::DecisionEngine;
 use zen_expression::variable::Variable;
 
-fn create_graph() -> DecisionEngine<FilesystemLoader, NoopCustomNode> {
+fn create_graph() -> DecisionEngine {
     let cargo_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let loader = FilesystemLoader::new(FilesystemLoaderOptions {
         keep_in_memory: true,

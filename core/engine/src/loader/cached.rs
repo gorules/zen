@@ -1,18 +1,20 @@
 use ahash::{HashMap, HashMapExt};
 use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::loader::{DecisionLoader, LoaderResponse};
+use crate::loader::{DecisionLoader, DynamicLoader, LoaderResponse};
 use crate::model::DecisionContent;
 
-pub struct CachedLoader<Loader: DecisionLoader + 'static> {
-    loader: Arc<Loader>,
+#[derive(Debug)]
+pub struct CachedLoader {
+    loader: DynamicLoader,
     cache: Mutex<HashMap<String, Arc<DecisionContent>>>,
 }
 
-impl<Loader: DecisionLoader + 'static> From<Arc<Loader>> for CachedLoader<Loader> {
-    fn from(value: Arc<Loader>) -> Self {
+impl From<DynamicLoader> for CachedLoader {
+    fn from(value: DynamicLoader) -> Self {
         Self {
             loader: value,
             cache: Mutex::new(HashMap::new()),
@@ -20,9 +22,12 @@ impl<Loader: DecisionLoader + 'static> From<Arc<Loader>> for CachedLoader<Loader
     }
 }
 
-impl<Loader: DecisionLoader + 'static> DecisionLoader for CachedLoader<Loader> {
-    fn load<'a>(&'a self, key: &'a str) -> impl Future<Output = LoaderResponse> + 'a {
-        async move {
+impl DecisionLoader for CachedLoader {
+    fn load<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Pin<Box<dyn Future<Output = LoaderResponse> + 'a + Send>> {
+        Box::pin(async move {
             let mut cache = self.cache.lock().await;
             if let Some(content) = cache.get(key) {
                 return Ok(content.clone());
@@ -31,6 +36,6 @@ impl<Loader: DecisionLoader + 'static> DecisionLoader for CachedLoader<Loader> {
             let decision_content = self.loader.load(key).await?;
             cache.insert(key.to_string(), decision_content.clone());
             Ok(decision_content)
-        }
+        })
     }
 }

@@ -1,8 +1,9 @@
 use crate::error::ZenError;
 use crate::types::{DecisionNode, ZenEngineHandlerRequest, ZenEngineHandlerResponse};
-use uniffi::deps::anyhow::anyhow;
-use zen_engine::handler::custom_node_adapter::{CustomNodeAdapter, CustomNodeRequest};
-use zen_engine::handler::node::{NodeResponse, NodeResult};
+use std::fmt::Debug;
+use std::pin::Pin;
+use zen_engine::nodes::custom::{CustomNodeAdapter, CustomNodeRequest};
+use zen_engine::nodes::{NodeError, NodeResponse, NodeResult};
 use zen_expression::Variable;
 
 #[uniffi::export(callback_interface)]
@@ -28,29 +29,49 @@ impl ZenCustomNodeCallback for NoopCustomNodeCallback {
 
 pub struct ZenCustomNodeCallbackWrapper(pub Box<dyn ZenCustomNodeCallback>);
 
+impl Debug for ZenCustomNodeCallbackWrapper {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ZenCustomNodeCallbackWrapper")
+    }
+}
+
 impl CustomNodeAdapter for ZenCustomNodeCallbackWrapper {
-    async fn handle(&self, request: CustomNodeRequest) -> NodeResult {
-        let input = request
-            .input
-            .try_into()
-            .map_err(|err: ZenError| anyhow!(err))?;
+    fn handle(&self, request: CustomNodeRequest) -> Pin<Box<dyn Future<Output = NodeResult> + '_>> {
+        Box::pin(async move {
+            let input = request
+                .input
+                .try_into()
+                .map_err(|err: ZenError| NodeError {
+                    trace: None,
+                    node_id: request.node.id.clone(),
+                    source: err.to_string().into(),
+                })?;
 
-        let node = DecisionNode::from(request.node);
+            let node = DecisionNode::from(request.node.clone());
 
-        let result = self
-            .0
-            .handle(ZenEngineHandlerRequest { input, node })
-            .await
-            .map_err(|err| anyhow!(err.details()))?;
+            let result = self
+                .0
+                .handle(ZenEngineHandlerRequest { input, node })
+                .await
+                .map_err(|err| NodeError {
+                    trace: None,
+                    node_id: request.node.id.clone(),
+                    source: err.to_string().into(),
+                })?;
 
-        let output: Variable = result
-            .output
-            .try_into()
-            .map_err(|err: ZenError| anyhow!(err))?;
+            let output: Variable = result
+                .output
+                .try_into()
+                .map_err(|err: ZenError| NodeError {
+                    trace: None,
+                    node_id: request.node.id.clone(),
+                    source: err.to_string().into(),
+                })?;
 
-        let trace_data: Option<Variable> =
-            result.trace_data.and_then(|trace| trace.try_into().ok());
+            let trace_data: Option<Variable> =
+                result.trace_data.and_then(|trace| trace.try_into().ok());
 
-        Ok(NodeResponse { output, trace_data })
+            Ok(NodeResponse { output, trace_data })
+        })
     }
 }

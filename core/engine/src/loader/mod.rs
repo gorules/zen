@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use thiserror::Error;
@@ -18,12 +19,17 @@ mod filesystem;
 mod memory;
 mod noop;
 
+pub type DynamicLoader = Arc<dyn DecisionLoader + Send + Sync>;
+
 pub type LoaderResult<T> = Result<T, LoaderError>;
 pub type LoaderResponse = LoaderResult<Arc<DecisionContent>>;
 
 /// Trait used for implementing a loader for decisions
-pub trait DecisionLoader {
-    fn load<'a>(&'a self, key: &'a str) -> impl Future<Output = LoaderResponse> + 'a;
+pub trait DecisionLoader: Debug + Send {
+    fn load<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Pin<Box<dyn Future<Output = LoaderResponse> + 'a + Send>>;
 }
 
 #[derive(Error, Debug)]

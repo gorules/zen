@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use crate::content::PyZenDecisionContentJson;
@@ -9,7 +10,7 @@ use pyo3_async_runtimes::TaskLocals;
 use zen_engine::loader::{DecisionLoader, LoaderError, LoaderResponse};
 use zen_engine::model::DecisionContent;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub(crate) struct PyDecisionLoader {
     callback: Option<Py<PyAny>>,
     task_locals: Option<TaskLocals>,
@@ -64,8 +65,11 @@ impl PyDecisionLoader {
 }
 
 impl DecisionLoader for PyDecisionLoader {
-    fn load<'a>(&'a self, key: &'a str) -> impl Future<Output = LoaderResponse> + 'a {
-        async move {
+    fn load<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Pin<Box<dyn Future<Output = LoaderResponse> + 'a + Send>> {
+        Box::pin(async move {
             self.load_element(key).await.map_err(|e| {
                 LoaderError::Internal {
                     source: e,
@@ -73,6 +77,6 @@ impl DecisionLoader for PyDecisionLoader {
                 }
                 .into()
             })
-        }
+        })
     }
 }

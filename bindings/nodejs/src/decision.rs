@@ -1,19 +1,17 @@
-use crate::custom_node::CustomNode;
 use crate::engine::ZenEvaluateOptions;
-use crate::loader::DecisionLoader;
 use crate::mt::spawn_worker;
 use crate::safe_result::SafeResult;
 use napi::anyhow::anyhow;
 use napi_derive::napi;
 use serde_json::Value;
 use std::sync::Arc;
-use zen_engine::{Decision, EvaluationSerializedOptions};
+use zen_engine::Decision;
 
 #[napi]
-pub struct ZenDecision(pub(crate) Arc<Decision<DecisionLoader, CustomNode>>);
+pub struct ZenDecision(pub(crate) Arc<Decision>);
 
-impl From<Decision<DecisionLoader, CustomNode>> for ZenDecision {
-    fn from(value: Decision<DecisionLoader, CustomNode>) -> Self {
+impl From<Decision> for ZenDecision {
+    fn from(value: Decision) -> Self {
         Self(value.into())
     }
 }
@@ -37,13 +35,7 @@ impl ZenDecision {
 
             async move {
                 decision
-                    .evaluate_serialized(
-                        context.into(),
-                        EvaluationSerializedOptions {
-                            max_depth: options.max_depth,
-                            trace: options.trace.unwrap_or_default().0,
-                        },
-                    )
+                    .evaluate_serialized(context.into(), options.into())
                     .await
             }
         })

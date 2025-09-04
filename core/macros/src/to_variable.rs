@@ -1,5 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
+use serde_derive_internals::attr::TagType;
 use syn::parse_macro_input;
 
 pub fn to_variable_impl(input: TokenStream) -> TokenStream {
@@ -96,13 +97,113 @@ fn generate_enum_body(
         .filter(|variant| !variant.attrs.skip_serializing())
         .collect();
 
-    let variant_arms = active_variants
-        .iter()
-        .map(|variant| generate_variant_arm(enum_ident, variant, container));
+    match container.attrs.tag() {
+        TagType::None => {
+            let variant_arms = active_variants
+                .iter()
+                .map(|variant| generate_untagged_variant_arm(enum_ident, variant));
 
-    quote! {
-        match self {
-            #(#variant_arms)*
+            quote! {
+                match self {
+                    #(#variant_arms)*
+                }
+            }
+        }
+        _ => {
+            let variant_arms = active_variants
+                .iter()
+                .map(|variant| generate_variant_arm(enum_ident, variant, container));
+
+            quote! {
+                match self {
+                    #(#variant_arms)*
+                }
+            }
+        }
+    }
+}
+
+fn generate_untagged_variant_arm(
+    enum_ident: &syn::Ident,
+    variant: &serde_derive_internals::ast::Variant,
+) -> proc_macro2::TokenStream {
+    let variant_ident = &variant.ident;
+
+    match variant.style {
+        serde_derive_internals::ast::Style::Unit => {
+            // Unit variants in untagged enums typically serialize as null
+            quote! {
+                #enum_ident::#variant_ident => {
+                    _Variable::Null
+                }
+            }
+        }
+
+        serde_derive_internals::ast::Style::Newtype => {
+            // Newtype variants serialize directly as their inner value
+            quote! {
+                #enum_ident::#variant_ident(value) => {
+                    value.to_variable()
+                }
+            }
+        }
+
+        serde_derive_internals::ast::Style::Tuple => {
+            let field_count = variant.fields.len();
+            let field_patterns: Vec<_> = (0..field_count)
+                .map(|i| quote::format_ident!("field_{}", i))
+                .collect();
+
+            if field_count == 1 {
+                quote! {
+                    #enum_ident::#variant_ident(#(#field_patterns),*) => {
+                        (#(#field_patterns)*).to_variable()
+                    }
+                }
+            } else {
+                quote! {
+                    #enum_ident::#variant_ident(#(#field_patterns),*) => {
+                        let mut vec = Vec::with_capacity(#field_count);
+                        #(vec.push((#field_patterns).to_variable());)*
+                        _Variable::from_array(vec)
+                    }
+                }
+            }
+        }
+
+        serde_derive_internals::ast::Style::Struct => {
+            let active_fields: Vec<_> = variant
+                .fields
+                .iter()
+                .filter(|field| !field.attrs.skip_serializing())
+                .collect();
+
+            let field_mappings = active_fields.iter().map(|field| {
+                let field_ident = match &field.member {
+                    syn::Member::Named(ident) => ident,
+                    syn::Member::Unnamed(_) => panic!("Unexpected unnamed field in struct variant"),
+                };
+
+                let field_name = field.attrs.name().serialize_name();
+
+                quote! {
+                    map.insert(_Rc::from(#field_name), #field_ident.to_variable());
+                }
+            });
+
+            let field_patterns = active_fields.iter().map(|field| match &field.member {
+                syn::Member::Named(ident) => quote! { #ident },
+                syn::Member::Unnamed(_) => panic!("Unexpected unnamed field in struct variant"),
+            });
+
+            let field_count = active_fields.len();
+            quote! {
+                #enum_ident::#variant_ident { #(#field_patterns),* } => {
+                    let mut map = _VariableMap::with_capacity(#field_count);
+                    #(#field_mappings)*
+                    _Variable::from_object(map)
+                }
+            }
         }
     }
 }

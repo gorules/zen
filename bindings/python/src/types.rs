@@ -7,17 +7,15 @@ use std::sync::Arc;
 
 use crate::value::{value_to_object, PyValue};
 use crate::variable::PyVariable;
-use zen_engine::handler::custom_node_adapter::{
-    CustomDecisionNode as BaseCustomDecisionNode, CustomNodeRequest,
-};
-use zen_engine::handler::node::NodeResponse;
+use zen_engine::nodes::custom::{CustomDecisionNode as BaseCustomDecisionNode, CustomNodeRequest};
+use zen_engine::nodes::NodeResponse;
 use zen_expression::Variable;
 
 #[derive(Serialize)]
 struct CustomDecisionNode {
-    pub id: String,
-    pub name: String,
-    pub kind: String,
+    pub id: Arc<str>,
+    pub name: Arc<str>,
+    pub kind: Arc<str>,
     pub config: Arc<Value>,
 }
 

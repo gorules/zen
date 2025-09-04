@@ -1,5 +1,4 @@
 use crate::support::{create_fs_loader, load_raw_test_data, load_test_data, test_data_root};
-use chrono::{TimeZone, Utc};
 use serde::Deserialize;
 use serde_json::json;
 use std::fs;
@@ -10,8 +9,9 @@ use std::sync::Arc;
 use tokio::runtime::Builder;
 use zen_engine::loader::{LoaderError, MemoryLoader};
 use zen_engine::model::{DecisionContent, DecisionNode, DecisionNodeKind, FunctionNodeContent};
+use zen_engine::nodes::NodeError;
+use zen_engine::Variable;
 use zen_engine::{DecisionEngine, EvaluationError, EvaluationOptions};
-use zen_engine::{NodeError, Variable};
 
 mod support;
 
@@ -41,7 +41,7 @@ async fn engine_memory_loader() {
 #[tokio::test]
 #[cfg_attr(miri, ignore)]
 async fn engine_filesystem_loader() {
-    let engine = DecisionEngine::default().with_loader(create_fs_loader().into());
+    let engine = DecisionEngine::default().with_loader(Arc::new(create_fs_loader()));
     let table = engine
         .evaluate("table.json", json!({ "input": 12 }).into())
         .await;
@@ -92,7 +92,7 @@ fn engine_noop_loader() {
 #[test]
 fn engine_get_decision() {
     let rt = Builder::new_current_thread().build().unwrap();
-    let engine = DecisionEngine::default().with_loader(create_fs_loader().into());
+    let engine = DecisionEngine::default().with_loader(Arc::new(create_fs_loader()));
 
     assert!(rt.block_on(engine.get_decision("table.json")).is_ok());
     assert!(rt.block_on(engine.get_decision("any.json")).is_err());
@@ -107,16 +107,16 @@ fn engine_create_decision() {
 #[tokio::test]
 #[cfg_attr(miri, ignore)]
 async fn engine_errors() {
-    let engine = DecisionEngine::default().with_loader(create_fs_loader().into());
+    let engine = DecisionEngine::default().with_loader(Arc::new(create_fs_loader()));
 
     let infinite_fn = engine
         .evaluate("infinite-function.json", json!({}).into())
         .await;
     match infinite_fn.unwrap_err().deref() {
-        EvaluationError::NodeError(NodeError::Node {
+        EvaluationError::NodeError {
             node_id, source, ..
-        }) => {
-            assert_eq!(node_id, "e0fd96d0-44dc-4f0e-b825-06e56b442d78");
+        } => {
+            assert_eq!(node_id.deref(), "e0fd96d0-44dc-4f0e-b825-06e56b442d78");
             assert!(source.to_string().contains("interrupted"));
         }
         _ => assert!(false, "Wrong error type"),
@@ -126,7 +126,8 @@ async fn engine_errors() {
         .evaluate("recursive-table1.json", json!({}).into())
         .await;
     match recursive.unwrap_err().deref() {
-        EvaluationError::NodeError(NodeError::Node { source, .. }) => {
+        EvaluationError::NodeError { source, .. } => {
+            println!("{:?}", source);
             assert_eq!(source.to_string(), "Depth limit exceeded")
         }
         _ => assert!(false, "Depth limit not exceeded"),
@@ -136,15 +137,15 @@ async fn engine_errors() {
 #[test]
 fn engine_with_trace() {
     let rt = Builder::new_current_thread().build().unwrap();
-    let engine = DecisionEngine::default().with_loader(create_fs_loader().into());
+    let engine = DecisionEngine::default().with_loader(Arc::new(create_fs_loader()));
 
     let table_r = rt.block_on(engine.evaluate("table.json", json!({ "input": 12 }).into()));
     let table_opt_r = rt.block_on(engine.evaluate_with_opts(
         "table.json",
         json!({ "input": 12 }).into(),
         EvaluationOptions {
-            trace: Some(true),
-            max_depth: None,
+            trace: true,
+            ..Default::default()
         },
     ));
 
@@ -174,7 +175,7 @@ async fn engine_function_imports() {
         .map(|node| match &node.kind {
             DecisionNodeKind::FunctionNode { .. } => {
                 let new_kind = DecisionNodeKind::FunctionNode {
-                    content: FunctionNodeContent::Version1(replace_data.clone()),
+                    content: FunctionNodeContent::Version1(Arc::from(replace_data.as_str())),
                 };
 
                 Arc::new(DecisionNode {
@@ -213,7 +214,7 @@ async fn engine_function_imports() {
 
 #[tokio::test]
 async fn engine_switch_node() {
-    let engine = DecisionEngine::default().with_loader(create_fs_loader().into());
+    let engine = DecisionEngine::default().with_loader(Arc::new(create_fs_loader()));
 
     let switch_node_r = engine
         .evaluate("switch-node.json", json!({ "color": "yellow" }).into())
@@ -318,8 +319,8 @@ async fn engine_snapshot_tests() {
                 .evaluate_with_opts(
                     input.clone(),
                     EvaluationOptions {
-                        trace: Some(true),
-                        max_depth: None,
+                        trace: true,
+                        ..Default::default()
                     },
                 )
                 .await
@@ -336,7 +337,7 @@ async fn engine_snapshot_tests() {
 #[tokio::test]
 #[cfg_attr(miri, ignore)]
 async fn engine_function_v2() {
-    let engine = DecisionEngine::default().with_loader(create_fs_loader().into());
+    let engine = DecisionEngine::default().with_loader(Arc::new(create_fs_loader()));
 
     for _ in 0..1_000 {
         let function_opt_r = engine
@@ -344,8 +345,8 @@ async fn engine_function_v2() {
                 "function-v2.json",
                 json!({ "input": 12 }).into(),
                 EvaluationOptions {
-                    trace: Some(true),
-                    max_depth: None,
+                    trace: true,
+                    ..Default::default()
                 },
             )
             .await;
@@ -365,7 +366,7 @@ async fn engine_function_v2() {
 
 #[tokio::test]
 async fn test_validation() {
-    let engine = DecisionEngine::default().with_loader(create_fs_loader().into());
+    let engine = DecisionEngine::default().with_loader(Arc::new(create_fs_loader()));
 
     let context_valid = json!({
         "color": "red",

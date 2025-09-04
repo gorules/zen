@@ -5,7 +5,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use zen_engine::handler::custom_node_adapter::CustomDecisionNode;
+use zen_engine::nodes::custom::CustomDecisionNode;
 use zen_engine::{DecisionGraphResponse, DecisionGraphTrace};
 use zen_expression::Variable;
 
@@ -24,11 +24,11 @@ pub struct ZenEngineTrace {
 impl From<DecisionGraphTrace> for ZenEngineTrace {
     fn from(value: DecisionGraphTrace) -> Self {
         Self {
-            id: value.id,
-            name: value.name,
+            id: value.id.to_string(),
+            name: value.name.to_string(),
             input: value.input.to_value(),
             output: value.output.to_value(),
-            performance: value.performance,
+            performance: value.performance.map(|p| p.to_string()),
             trace_data: value.trace_data.map(Value::from),
             order: value.order,
         }
@@ -40,7 +40,7 @@ impl From<DecisionGraphTrace> for ZenEngineTrace {
 pub struct ZenEngineResponse {
     pub performance: String,
     pub result: Value,
-    pub trace: Option<HashMap<String, ZenEngineTrace>>,
+    pub trace: Option<HashMap<Arc<str>, ZenEngineTrace>>,
 }
 
 impl From<DecisionGraphResponse> for ZenEngineResponse {
@@ -75,9 +75,9 @@ pub struct DecisionNode {
 impl From<CustomDecisionNode> for DecisionNode {
     fn from(value: CustomDecisionNode) -> Self {
         Self {
-            id: value.id,
-            name: value.name,
-            kind: value.kind,
+            id: value.id.to_string(),
+            name: value.name.to_string(),
+            kind: value.kind.to_string(),
             config: value.config,
         }
     }

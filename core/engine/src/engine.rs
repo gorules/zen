@@ -1,10 +1,11 @@
 use crate::decision::Decision;
-use crate::handler::custom_node_adapter::{CustomNodeAdapter, NoopCustomNode};
-use crate::handler::graph::DecisionGraphResponse;
-use crate::loader::{ClosureLoader, DecisionLoader, LoaderResponse, LoaderResult, NoopLoader};
+use crate::decision_graph::graph::DecisionGraphResponse;
+use crate::loader::{ClosureLoader, DynamicLoader, LoaderResponse, LoaderResult, NoopLoader};
 use crate::model::DecisionContent;
+use crate::nodes::custom::{DynamicCustomNode, NoopCustomNode};
 use crate::EvaluationError;
 use serde_json::Value;
+use std::fmt::Debug;
 use std::future::Future;
 use std::sync::Arc;
 use strum::{EnumString, IntoStaticStr};
@@ -12,25 +13,39 @@ use zen_expression::variable::Variable;
 
 /// Structure used for generating and evaluating JDM decisions
 #[derive(Debug, Clone)]
-pub struct DecisionEngine<Loader, CustomNode>
-where
-    Loader: DecisionLoader + 'static,
-    CustomNode: CustomNodeAdapter + 'static,
-{
-    loader: Arc<Loader>,
-    adapter: Arc<CustomNode>,
+pub struct DecisionEngine {
+    loader: DynamicLoader,
+    adapter: DynamicCustomNode,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct EvaluationOptions {
-    pub trace: Option<bool>,
-    pub max_depth: Option<u8>,
+    pub trace: bool,
+    pub max_depth: u8,
 }
 
-#[derive(Debug, Default)]
+impl Default for EvaluationOptions {
+    fn default() -> Self {
+        Self {
+            trace: false,
+            max_depth: 10,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct EvaluationSerializedOptions {
     pub trace: EvaluationTraceKind,
-    pub max_depth: Option<u8>,
+    pub max_depth: u8,
+}
+
+impl Default for EvaluationSerializedOptions {
+    fn default() -> Self {
+        Self {
+            trace: EvaluationTraceKind::None,
+            max_depth: 10,
+        }
+    }
 }
 
 #[derive(Debug, Default, PartialEq, Eq, EnumString, IntoStaticStr)]
@@ -62,7 +77,7 @@ impl EvaluationTraceKind {
     }
 }
 
-impl Default for DecisionEngine<NoopLoader, NoopCustomNode> {
+impl Default for DecisionEngine {
     fn default() -> Self {
         Self {
             loader: Arc::new(NoopLoader::default()),
@@ -71,40 +86,32 @@ impl Default for DecisionEngine<NoopLoader, NoopCustomNode> {
     }
 }
 
-impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionEngine<L, A> {
-    pub fn new(loader: Arc<L>, adapter: Arc<A>) -> Self {
-        Self { loader, adapter }
-    }
-
-    pub fn with_adapter<CustomNode>(self, adapter: Arc<CustomNode>) -> DecisionEngine<L, CustomNode>
-    where
-        CustomNode: CustomNodeAdapter,
-    {
-        DecisionEngine {
-            loader: self.loader,
-            adapter,
-        }
-    }
-
-    pub fn with_loader<Loader>(self, loader: Arc<Loader>) -> DecisionEngine<Loader, A>
-    where
-        Loader: DecisionLoader,
-    {
-        DecisionEngine {
+impl DecisionEngine {
+    pub fn new(loader: DynamicLoader, adapter: DynamicCustomNode) -> Self {
+        Self {
             loader,
-            adapter: self.adapter,
+            adapter,
+            ..Default::default()
         }
     }
 
-    pub fn with_closure_loader<F, O>(self, loader: F) -> DecisionEngine<ClosureLoader<F>, A>
+    pub fn with_adapter(mut self, adapter: DynamicCustomNode) -> Self {
+        self.adapter = adapter;
+        self
+    }
+
+    pub fn with_loader(mut self, loader: DynamicLoader) -> Self {
+        self.loader = loader;
+        self
+    }
+
+    pub fn with_closure_loader<F, O>(mut self, loader: F) -> Self
     where
-        F: Fn(String) -> O + Sync + Send,
+        F: Fn(String) -> O + Sync + Send + 'static,
         O: Future<Output = LoaderResponse> + Send,
     {
-        DecisionEngine {
-            loader: Arc::new(ClosureLoader::new(loader)),
-            adapter: self.adapter,
-        }
+        self.loader = Arc::new(ClosureLoader::new(loader));
+        self
     }
 
     /// Evaluates a decision through loader using a key
@@ -155,23 +162,15 @@ impl<L: DecisionLoader + 'static, A: CustomNodeAdapter + 'static> DecisionEngine
     }
 
     /// Creates a decision from DecisionContent, exists for easier binding creation
-    pub fn create_decision(&self, content: Arc<DecisionContent>) -> Decision<L, A> {
+    pub fn create_decision(&self, content: Arc<DecisionContent>) -> Decision {
         Decision::from(content)
             .with_loader(self.loader.clone())
             .with_adapter(self.adapter.clone())
     }
 
     /// Retrieves a decision based on the loader
-    pub async fn get_decision(&self, key: &str) -> LoaderResult<Decision<L, A>> {
+    pub async fn get_decision(&self, key: &str) -> LoaderResult<Decision> {
         let content = self.loader.load(key).await?;
         Ok(self.create_decision(content))
-    }
-
-    pub fn loader(&self) -> &L {
-        self.loader.as_ref()
-    }
-
-    pub fn adapter(&self) -> &A {
-        self.adapter.as_ref()
     }
 }

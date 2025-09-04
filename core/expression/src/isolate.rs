@@ -1,8 +1,6 @@
-use ahash::AHasher;
+use ahash::HashMap;
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
-use std::collections::HashMap;
-use std::hash::BuildHasherDefault;
 use std::rc::Rc;
 use std::sync::Arc;
 use thiserror::Error;
@@ -15,8 +13,6 @@ use crate::parser::{Parser, ParserError};
 use crate::variable::Variable;
 use crate::vm::{VMError, VM};
 use crate::{Expression, ExpressionKind};
-
-type ADefHasher = BuildHasherDefault<AHasher>;
 
 /// Isolate is a component that encapsulates an isolated environment for executing expressions.
 ///
@@ -32,7 +28,7 @@ pub struct Isolate<'arena> {
     bump: UnsafeArena<'arena>,
 
     environment: Option<Variable>,
-    references: HashMap<String, Variable, ADefHasher>,
+    references: HashMap<String, Variable>,
 }
 
 impl<'a> Isolate<'a> {

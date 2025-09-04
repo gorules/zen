@@ -1,13 +1,10 @@
-use std::ffi::{c_char, CString};
-
-use anyhow::anyhow;
-
-use zen_engine::handler::custom_node_adapter::{
-    CustomNodeAdapter, CustomNodeRequest, NoopCustomNode,
-};
-use zen_engine::handler::node::{NodeResponse, NodeResult};
-
 use crate::languages::native::NativeCustomNode;
+use anyhow::anyhow;
+use std::ffi::{c_char, CString};
+use std::future::Future;
+use std::pin::Pin;
+use zen_engine::nodes::custom::{CustomNodeAdapter, CustomNodeRequest, NoopCustomNode};
+use zen_engine::nodes::{NodeResponse, NodeResult};
 
 #[derive(Debug)]
 pub(crate) enum DynamicCustomNode {
@@ -24,13 +21,15 @@ impl Default for DynamicCustomNode {
 }
 
 impl CustomNodeAdapter for DynamicCustomNode {
-    async fn handle(&self, request: CustomNodeRequest) -> NodeResult {
-        match self {
-            DynamicCustomNode::Noop(cn) => cn.handle(request).await,
-            DynamicCustomNode::Native(cn) => cn.handle(request).await,
-            #[cfg(feature = "go")]
-            DynamicCustomNode::Go(cn) => cn.handle(request).await,
-        }
+    fn handle(&self, request: CustomNodeRequest) -> Pin<Box<dyn Future<Output = NodeResult> + '_>> {
+        Box::pin(async move {
+            match self {
+                DynamicCustomNode::Noop(cn) => cn.handle(request).await,
+                DynamicCustomNode::Native(cn) => cn.handle(request).await,
+                #[cfg(feature = "go")]
+                DynamicCustomNode::Go(cn) => cn.handle(request).await,
+            }
+        })
     }
 }
 
@@ -41,7 +40,7 @@ pub struct ZenCustomNodeResult {
 }
 
 impl ZenCustomNodeResult {
-    pub fn into_node_result(self) -> NodeResult {
+    pub fn into_node_result(self) -> anyhow::Result<NodeResponse> {
         let maybe_error = match self.error.is_null() {
             false => Some(unsafe { CString::from_raw(self.error) }),
             true => None,
@@ -49,11 +48,11 @@ impl ZenCustomNodeResult {
 
         if let Some(c_error) = maybe_error {
             let maybe_str = c_error.to_str().unwrap_or("unknown error");
-            return Err(anyhow!("{maybe_str}").into());
+            return Err(anyhow!("{maybe_str}"));
         }
 
         if self.content.is_null() {
-            return Err(anyhow!("response not provided").into());
+            return Err(anyhow!("response not provided"));
         }
 
         let content_cstr = unsafe { CString::from_raw(self.content) };

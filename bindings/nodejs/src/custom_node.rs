@@ -17,6 +17,7 @@ type CustomNodeTsfn = Arc<
         ZenEngineHandlerRequest,
         Status,
         false,
+        true,
     >,
 >;
 

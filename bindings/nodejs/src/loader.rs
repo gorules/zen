@@ -22,8 +22,7 @@ type LoaderTsfn = Arc<
         String,
         Status,
         false,
-        false,
-        0,
+        true,
     >,
 >;
 
@@ -85,7 +84,6 @@ impl DecisionLoader {
         Ok(decision_content)
     }
 }
-
 
 impl DecisionLoaderTrait for DecisionLoader {
     fn load<'a>(

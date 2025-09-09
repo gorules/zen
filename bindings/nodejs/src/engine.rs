@@ -3,8 +3,7 @@ use std::sync::Arc;
 
 use napi::anyhow::{anyhow, Context};
 use napi::bindgen_prelude::{
-    Buffer, Either3, FromNapiValue, Function, Object, Promise, SharedReference, ToNapiValue,
-    WeakReference,
+    Buffer, Either3, FromNapiValue, Function, Object, Promise, ToNapiValue,
 };
 use napi::sys::{napi_env, napi_value};
 use napi::{Either, Env, JsValue, Unknown, ValueType};
@@ -130,6 +129,7 @@ impl ZenEngine {
                     .build_threadsafe_function()
                     .max_queue_size::<0>()
                     .callee_handled::<false>()
+                    .weak()
                     .build()?;
 
                 DecisionLoader::new(Arc::new(loader_tsfn))
@@ -143,6 +143,7 @@ impl ZenEngine {
                     .build_threadsafe_function()
                     .max_queue_size::<0>()
                     .callee_handled::<false>()
+                    .weak()
                     .build()?;
 
                 CustomNode::new(Arc::new(custom_tfsn))

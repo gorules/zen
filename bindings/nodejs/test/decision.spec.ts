@@ -31,7 +31,7 @@ describe('ZenEngine', () => {
     expect(r2.result.output).toEqual(0);
     expect(r3.result.output).toEqual(10);
 
-    engine.dispose();
+    // engine.dispose();
   }, 10000);
 
   it('Evaluates decisions using getDecision', async () => {
@@ -50,7 +50,7 @@ describe('ZenEngine', () => {
     expect(r2.result.output).toEqual(0);
     expect(r3.result.output).toEqual(10);
 
-    engine.dispose();
+    // engine.dispose();
   }, 10000);
 
   it('Creates a decision from contents', async () => {
@@ -86,7 +86,7 @@ describe('ZenEngine', () => {
     const r = await engine.evaluate('custom.json', { a: 5 });
     expect(r.result.data).toEqual(25);
 
-    engine.dispose();
+    // engine.dispose();
   });
 
   it('Parses ZenDecisionContent', async () => {
@@ -134,7 +134,7 @@ describe('ZenEngine', () => {
       }
     }
 
-    engine.dispose();
+    // engine.dispose();
   });
 });
 

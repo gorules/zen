@@ -9,8 +9,6 @@
     "moduleResolution": "node",
     "newLine": "LF",
     "noEmitHelpers": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
     "strict": true,
     "skipLibCheck": true,
     "suppressImplicitAnyIndexErrors": true,
@@ -24,8 +22,22 @@
     "resolveJsonModule": true,
     "importsNotUsedAsValues": "remove",
     "outDir": "dist",
-    "lib": ["dom", "DOM.Iterable", "ES2019", "ES2020", "esnext"]
+    "lib": [
+      "dom",
+      "DOM.Iterable",
+      "ES2019",
+      "ES2020",
+      "esnext"
+    ]
   },
-  "include": ["."],
-  "exclude": ["node_modules", "bench", "cli/scripts", "scripts", "target"]
+  "include": [
+    "."
+  ],
+  "exclude": [
+    "node_modules",
+    "bench",
+    "cli/scripts",
+    "scripts",
+    "target"
+  ]
 }

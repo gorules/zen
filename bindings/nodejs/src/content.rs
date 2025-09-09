@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use napi::bindgen_prelude::{Buffer, FromNapiValue, Object, ValidateNapiValue};
+use napi::bindgen_prelude::{Buffer, Object};
 use napi::{Either, Env};
 use napi_derive::napi;
 use serde_json::Value;
@@ -35,22 +35,3 @@ impl ZenDecisionContent {
         Ok(Buffer::from(content_vec))
     }
 }
-
-// impl FromNapiValue for ZenDecisionContent {
-//     unsafe fn from_napi_value(env: napi::sys::napi_env, napi_val: napi::sys::napi_value) -> napi::Result<Self> {
-//         // Convert the JS value to an Object first
-//         let obj = Object::from_napi_value(env, napi_val)?;
-//
-//         // Use your existing constructor logic
-//         let env_wrapper = Env::from_raw(env);
-//         Self::new(env_wrapper, Either::B(obj))
-//     }
-// }
-//
-// impl ValidateNapiValue for ZenDecisionContent {
-//     unsafe fn validate(env: napi::sys::napi_env, napi_val: napi::sys::napi_value) -> napi::Result<napi::sys::napi_value> {
-//         // Validate that the value can be converted to an Object
-//         // This is the most common validation for complex types
-//         Object::validate(env, napi_val)
-//     }
-// }

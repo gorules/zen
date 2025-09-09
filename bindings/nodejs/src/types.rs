@@ -1,9 +1,10 @@
 use json_dotpath::DotPaths;
 use napi::anyhow::{anyhow, Context};
 use napi_derive::napi;
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
-use serde_json::Value;
+
 use zen_engine::nodes::custom::CustomDecisionNode;
 use zen_engine::{DecisionGraphResponse, DecisionGraphTrace};
 use zen_expression::Variable;
@@ -82,10 +83,10 @@ impl From<CustomDecisionNode> for DecisionNode {
     }
 }
 
-#[napi(object)]
+#[napi]
 pub struct ZenEngineHandlerRequest {
-    pub input: Value,
-    pub node: DecisionNode,
+    pub(crate) input: Value,
+    pub(crate) node: DecisionNode,
 }
 
 #[napi]

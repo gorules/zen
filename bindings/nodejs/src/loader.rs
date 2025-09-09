@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use napi::anyhow::anyhow;
 use napi::bindgen_prelude::{Buffer, Promise};
-use napi::threadsafe_function::{ThreadsafeFunction};
+use napi::threadsafe_function::ThreadsafeFunction;
 use napi::{Either, Status};
 
 use zen_engine::loader::{
@@ -15,10 +15,21 @@ use zen_engine::model::DecisionContent;
 
 use crate::content::ZenDecisionContent;
 
-type FatalCallback<T> = ThreadsafeFunction<T, Promise<Option<Either<Buffer, ZenDecisionContent>>>, T, Status, false, false, 0>;
+type LoaderTsfn = Arc<
+    ThreadsafeFunction<
+        String,
+        Promise<Option<Either<Buffer, &'static ZenDecisionContent>>>,
+        String,
+        Status,
+        false,
+        false,
+        0,
+    >,
+>;
+
 #[derive(Default)]
 pub(crate) struct DecisionLoader {
-    function: Option<FatalCallback<String>>,
+    function: Option<LoaderTsfn>,
 }
 
 impl Debug for DecisionLoader {
@@ -28,10 +39,10 @@ impl Debug for DecisionLoader {
 }
 
 impl DecisionLoader {
-    pub fn new(tsf: FatalCallback<String>) -> napi::Result<Self> {
-        Ok(Self {
+    pub fn new(tsf: LoaderTsfn) -> Self {
+        Self {
             function: Some(tsf),
-        })
+        }
     }
 
     pub async fn get_key(&self, key: &str) -> LoaderResult<Arc<DecisionContent>> {
@@ -43,7 +54,7 @@ impl DecisionLoader {
             .into());
         };
 
-        let promise: Promise<Option<Either<Buffer, ZenDecisionContent>>> = function
+        let promise: Promise<Option<Either<Buffer, &ZenDecisionContent>>> = function
             .clone()
             .call_async(key.to_string())
             .await
@@ -80,7 +91,7 @@ impl DecisionLoaderTrait for DecisionLoader {
     fn load<'a>(
         &'a self,
         key: &'a str,
-    ) -> Pin<Box<dyn Future<Output = LoaderResponse> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = LoaderResponse> + 'a + Send>> {
         Box::pin(async move {
             let decision_content = self.get_key(key).await?;
             Ok(decision_content)

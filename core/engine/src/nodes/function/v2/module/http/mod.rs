@@ -1,12 +1,19 @@
+mod auth;
+
 use crate::nodes::function::v2::error::ResultExt;
 use crate::nodes::function::v2::module::export_default;
+use crate::nodes::function::v2::module::http::auth::{HttpConfigAuth, IamAuth};
 use crate::nodes::function::v2::serde::JsValue;
-use reqwest::header::{HeaderMap, HeaderName};
-use reqwest::Method;
+use ::http::Request as HttpRequest;
+use ahash::HashMap;
+use anyhow::Context;
+use reqwest::{Body, Method, Request, Url};
 use rquickjs::module::{Declarations, Exports, ModuleDef};
 use rquickjs::prelude::{Async, Func, Opt};
 use rquickjs::{CatchResultExt, Ctx, FromJs, IntoAtom, IntoJs, Object, Value};
-use std::str::FromStr;
+use serde::Deserialize;
+use sha2::Digest;
+use std::fmt::Debug;
 use std::sync::OnceLock;
 use zen_expression::variable::Variable;
 
@@ -36,24 +43,44 @@ async fn execute_http<'js>(
 ) -> rquickjs::Result<HttpResponse<'js>> {
     static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     let client = HTTP_CLIENT.get_or_init(|| reqwest::Client::new()).clone();
-    let mut builder = client.request(method, url);
-    if let Some(data) = data {
-        builder = builder.json(&data.0);
-    }
 
-    if let Some(config) = config {
-        builder = builder
-            .headers(config.headers)
-            .query(config.params.as_slice());
-
-        if let Some(data) = config.data {
-            if !matches!(data.0, Variable::Null) {
-                builder = builder.json(&data.0);
-            }
+    let mut request_builder = HttpRequest::builder().method(method).uri(url);
+    if let Some(config) = &config {
+        for (k, v) in &config.headers {
+            request_builder = request_builder.header(k.as_str(), v.as_str());
         }
     }
 
-    let response = builder.send().await.or_throw(&ctx)?;
+    let auth_method = config.as_ref().and_then(|c| c.auth.clone());
+
+    let request_data_opt = config
+        .and_then(|c| c.data)
+        .and_then(|_| data.map(|d| d.0.to_value()));
+    let http_request = match request_data_opt {
+        None => request_builder.body(Body::default()).or_throw(&ctx)?,
+        Some(request_data) => {
+            let request_body_json = serde_json::to_vec(&request_data).or_throw(&ctx)?;
+            request_builder
+                .body(Body::from(request_body_json))
+                .or_throw(&ctx)?
+        }
+    };
+
+    let request = match auth_method {
+        Some(HttpConfigAuth::Iam(IamAuth::Aws(config))) => {
+            config.build_request(http_request).await.or_throw(&ctx)?
+        }
+        Some(HttpConfigAuth::Iam(IamAuth::Azure(config))) => {
+            config.build_request(http_request).await.or_throw(&ctx)?
+        }
+        Some(HttpConfigAuth::Iam(IamAuth::Gcp(config))) => {
+            config.build_request(http_request).await.or_throw(&ctx)?
+        }
+        None => Request::try_from(http_request).or_throw(&ctx)?,
+    };
+
+    // Apply auth
+    let response = client.execute(request).await.or_throw(&ctx)?;
     let status = response.status().as_u16();
     let header_object = Object::new(ctx.clone()).catch(&ctx).or_throw(&ctx)?;
     for (key, value) in response.headers() {
@@ -70,96 +97,6 @@ async fn execute_http<'js>(
         headers: header_object,
         status,
     })
-}
-
-#[derive(Default)]
-pub(crate) struct HttpConfig {
-    headers: HeaderMap,
-    params: Vec<(String, String)>,
-    data: Option<JsValue>,
-}
-
-impl<'js> FromJs<'js> for HttpConfig {
-    fn from_js(ctx: &Ctx<'js>, value: Value<'js>) -> rquickjs::Result<Self> {
-        let object = value.into_object().or_throw(ctx)?;
-        let headers_obj: Option<Object<'js>> = object.get("headers").or_throw(ctx)?;
-        let headers = if let Some(headers_obj) = headers_obj {
-            let mut header_map = HeaderMap::with_capacity(headers_obj.len());
-            for result in headers_obj.into_iter() {
-                let Ok((key, value)) = result else {
-                    continue;
-                };
-
-                let value = JsValue::from_js(ctx, value)?;
-                let str_value = match value.0 {
-                    Variable::Bool(b) => Some(b.to_string()),
-                    Variable::Number(n) => Some(n.to_string()),
-                    Variable::String(s) => Some(s.to_string()),
-                    Variable::Null => None,
-                    Variable::Array(_) => None,
-                    Variable::Object(_) => None,
-                    Variable::Dynamic(_) => None,
-                };
-
-                let key_value = key.to_string()?;
-                let key = HeaderName::from_str(key_value.as_str()).or_throw(&ctx)?;
-                if let Some(str_value) = str_value {
-                    header_map.insert(key, str_value.parse().or_throw(&ctx)?);
-                }
-            }
-
-            header_map
-        } else {
-            HeaderMap::default()
-        };
-
-        let params_obj: Option<Object<'js>> = object.get("params").or_throw(ctx)?;
-        let params = if let Some(params_obj) = params_obj {
-            let mut params = Vec::with_capacity(params_obj.len());
-            for result in params_obj.into_iter() {
-                let Ok((key, value)) = result else {
-                    continue;
-                };
-
-                let value = JsValue::from_js(ctx, value)?;
-                let str_value = match value.0 {
-                    Variable::Bool(b) => Some(b.to_string()),
-                    Variable::Number(n) => Some(n.to_string()),
-                    Variable::String(s) => Some(s.to_string()),
-                    Variable::Null => None,
-                    Variable::Array(_) => None,
-                    Variable::Object(_) => None,
-                    Variable::Dynamic(_) => None,
-                };
-
-                let key = key.to_string()?;
-                if let Some(str_value) = str_value {
-                    params.push((key, str_value));
-                }
-            }
-
-            params
-        } else {
-            Vec::default()
-        };
-
-        let data_obj: Option<Value<'js>> = object.get("data").ok();
-        let data = if let Some(data_obj) = data_obj {
-            Some(
-                JsValue::from_js(&ctx, data_obj)
-                    .catch(&ctx)
-                    .or_throw(&ctx)?,
-            )
-        } else {
-            None
-        };
-
-        Ok(Self {
-            headers,
-            params,
-            data,
-        })
-    }
 }
 
 async fn get<'js>(
@@ -241,4 +178,14 @@ impl ModuleDef for HttpModule {
             Ok(())
         })
     }
+}
+
+#[derive(Deserialize)]
+pub(crate) struct HttpConfig {
+    #[serde(default)]
+    headers: HashMap<String, String>,
+    #[serde(default)]
+    params: HashMap<String, String>,
+    data: Option<serde_json::Value>,
+    auth: Option<HttpConfigAuth>,
 }

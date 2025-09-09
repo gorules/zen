@@ -1,13 +1,14 @@
-use std::str::FromStr;
 use std::sync::Arc;
 
 use napi::anyhow::{anyhow, Context};
-use napi::bindgen_prelude::{Buffer, Either3, FromNapiValue, ToNapiValue};
-use napi::sys::{napi_env, napi_value};
-use napi::threadsafe_function::{ErrorStrategy, ThreadSafeCallContext, ThreadsafeFunction};
-use napi::{Env, JsFunction, JsObject, JsUnknown, NapiValue, ValueType};
+use napi::bindgen_prelude::{Buffer, Either3, Function, Object, Promise};
+use napi::threadsafe_function::{ThreadSafeCallContext, ThreadsafeFunction};
+use napi::{Either, Env, JsFunction, Status};
 use napi_derive::napi;
 use serde_json::Value;
+
+use zen_engine::model::DecisionContent;
+use zen_engine::{DecisionEngine, EvaluationOptions};
 
 use crate::content::ZenDecisionContent;
 use crate::custom_node::CustomNode;
@@ -15,84 +16,26 @@ use crate::decision::ZenDecision;
 use crate::loader::DecisionLoader;
 use crate::mt::spawn_worker;
 use crate::safe_result::SafeResult;
-use crate::types::ZenEngineHandlerRequest;
-use zen_engine::model::DecisionContent;
-use zen_engine::{DecisionEngine, EvaluationSerializedOptions, EvaluationTraceKind};
+use crate::types::{ZenEngineHandlerRequest, ZenEngineHandlerResponse, ZenEngineResponse};
 
 #[napi]
 pub struct ZenEngine {
-    graph: Arc<DecisionEngine>,
-
-    loader_ref: Option<ThreadsafeFunction<String, ErrorStrategy::Fatal>>,
-    custom_handler_ref: Option<ThreadsafeFunction<ZenEngineHandlerRequest, ErrorStrategy::Fatal>>,
+    graph: Arc<DecisionEngine<DecisionLoader, CustomNode>>,
+    loader_ref: Option<ThreadsafeFunction<String, Promise<Option<Either<Buffer, ZenDecisionContent>>>, String, Status, false, false, 0>>,
+    custom_handler_ref: Option<ThreadsafeFunction<ZenEngineHandlerRequest, Promise<ZenEngineHandlerResponse>,  ZenEngineHandlerRequest, Status, false, false, 0>>,
 }
 
-#[derive(Debug, Default)]
-pub struct JsEvaluationTraceKind(pub EvaluationTraceKind);
-
-impl FromNapiValue for JsEvaluationTraceKind {
-    unsafe fn from_napi_value(env: napi_env, napi_val: napi_value) -> napi::Result<Self> {
-        let js_value = JsUnknown::from_raw(env, napi_val)?;
-
-        match js_value.get_type()? {
-            ValueType::Undefined | ValueType::Null => Ok(JsEvaluationTraceKind::default()),
-            ValueType::Boolean => {
-                let enabled = js_value.coerce_to_bool()?.get_value()?;
-                let kind = match enabled {
-                    true => EvaluationTraceKind::Default,
-                    false => EvaluationTraceKind::None,
-                };
-
-                Ok(JsEvaluationTraceKind(kind))
-            }
-            ValueType::String => {
-                let kind_utf8 = js_value.coerce_to_string()?.into_utf8()?;
-                let kind_str = kind_utf8.as_str()?;
-                let kind =
-                    EvaluationTraceKind::from_str(kind_str).context("invalid evaluation mode")?;
-
-                Ok(JsEvaluationTraceKind(kind))
-            }
-            _ => Err(anyhow!("Invalid trace setting").into()),
-        }
-    }
-}
-
-impl ToNapiValue for JsEvaluationTraceKind {
-    unsafe fn to_napi_value(env: napi_env, val: Self) -> napi::Result<napi_value> {
-        match val.0 {
-            EvaluationTraceKind::None => ToNapiValue::to_napi_value(env, false),
-            EvaluationTraceKind::Default => ToNapiValue::to_napi_value(env, true),
-            _ => {
-                let mode_str: &'static str = val.0.into();
-                ToNapiValue::to_napi_value(env, mode_str)
-            }
-        }
-    }
-}
-
-#[derive(Debug)]
 #[napi(object)]
 pub struct ZenEvaluateOptions {
     pub max_depth: Option<u8>,
-    #[napi(ts_type = "boolean | 'string' | 'reference' | 'referenceString'")]
-    pub trace: Option<JsEvaluationTraceKind>,
+    pub trace: Option<bool>,
 }
 
 impl Default for ZenEvaluateOptions {
     fn default() -> Self {
         Self {
             max_depth: Some(5),
-            trace: Some(JsEvaluationTraceKind::default()),
-        }
-    }
-}
-
-impl From<ZenEvaluateOptions> for EvaluationSerializedOptions {
-    fn from(value: ZenEvaluateOptions) -> Self {
-        Self {
-            max_depth: value.max_depth.unwrap_or(5),
-            trace: value.trace.unwrap_or_default().0,
+            trace: Some(false),
         }
     }
 }
@@ -100,10 +43,10 @@ impl From<ZenEvaluateOptions> for EvaluationSerializedOptions {
 #[napi(object)]
 pub struct ZenEngineOptions {
     #[napi(ts_type = "(key: string) => Promise<Buffer | ZenDecisionContent>")]
-    pub loader: Option<JsFunction>,
+    pub loader: Option<Function<'static, String, Promise<Option<Either<Buffer, ZenDecisionContent>>> >>,
 
     #[napi(ts_type = "(request: ZenEngineHandlerRequest) => Promise<ZenEngineHandlerResponse>")]
-    pub custom_handler: Option<JsFunction>,
+    pub custom_handler: Option<Function<'static, ZenEngineHandlerRequest, Promise<ZenEngineHandlerResponse>>>,
 }
 
 #[napi]
@@ -113,8 +56,8 @@ impl ZenEngine {
         let Some(opts) = options else {
             return Ok(Self {
                 graph: DecisionEngine::new(
-                    Arc::new(DecisionLoader::default()),
-                    Arc::new(CustomNode::default()),
+                    DecisionLoader::default().into(),
+                    CustomNode::default().into(),
                 )
                 .into(),
 
@@ -125,60 +68,69 @@ impl ZenEngine {
 
         let loader_ref = match opts.loader {
             None => None,
-            Some(l) => Some(l.create_threadsafe_function(
-                0,
-                |cx: ThreadSafeCallContext<String>| {
-                    cx.env.create_string(cx.value.as_str()).map(|v| vec![v])
-                },
-            )?),
+            Some(l) => Some(l.build_threadsafe_function()
+                .max_queue_size::<0>()
+                .callee_handled::<false>()
+                .build()),
         };
 
         let loader = match &loader_ref {
             None => DecisionLoader::default(),
-            Some(loader_fn) => DecisionLoader::new(loader_fn.clone())?,
+            Some(loader_fn) => DecisionLoader::new(loader_ref.unwrap().unwrap())?,
         };
 
         let custom_handler_ref = match opts.custom_handler {
             None => None,
-            Some(custom_handler_fn) => Some(custom_handler_fn.create_threadsafe_function(
-                0,
-                |cx: ThreadSafeCallContext<ZenEngineHandlerRequest>| Ok(vec![cx.value]),
-            )?),
+            Some(custom_handler_fn) => Some(custom_handler_fn.build_threadsafe_function()
+                .max_queue_size::<0>()
+                .callee_handled::<false>()
+                .build()),
         };
 
         let custom_handler = match &custom_handler_ref {
             None => CustomNode::default(),
-            Some(custom_fn) => CustomNode::new(custom_fn.clone()),
+            Some(custom_fn) => CustomNode::default(),
         };
+        let loader_for_struct = loader_ref.as_ref().and_then(|r| r.as_ref().ok()).cloned();
 
         Ok(Self {
-            graph: DecisionEngine::new(Arc::new(loader), Arc::new(custom_handler)).into(),
+            graph: DecisionEngine::new(loader.into(), custom_handler.into()).into(),
 
             loader_ref,
             custom_handler_ref,
         })
     }
 
-    #[napi(ts_return_type = "Promise<ZenEngineResponse>")]
+    #[napi]
     pub async fn evaluate(
         &self,
         key: String,
         context: Value,
         opts: Option<ZenEvaluateOptions>,
-    ) -> napi::Result<Value> {
+    ) -> napi::Result<ZenEngineResponse> {
         let graph = self.graph.clone();
         let result = spawn_worker(|| {
             let options = opts.unwrap_or_default();
 
             async move {
                 graph
-                    .evaluate_serialized(key, context.into(), options.into())
+                    .evaluate_with_opts(
+                        key,
+                        context.into(),
+                        EvaluationOptions {
+                            max_depth: options.max_depth,
+                            trace: options.trace,
+                        },
+                    )
                     .await
+                    .map(ZenEngineResponse::from)
             }
         })
         .await
         .map_err(|_| anyhow!("Hook timed out"))?
-        .map_err(|e| anyhow!(e))?;
+        .map_err(|e| {
+            anyhow!(serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string()))
+        })?;
 
         Ok(result)
     }
@@ -187,7 +139,7 @@ impl ZenEngine {
     pub fn create_decision(
         &self,
         env: Env,
-        content: Either3<&ZenDecisionContent, Buffer, JsObject>,
+        content: Either3<&ZenDecisionContent, Buffer, Object>,
     ) -> napi::Result<ZenDecision> {
         let decision_content: Arc<DecisionContent> = match content {
             Either3::A(c) => c.inner.clone(),
@@ -219,7 +171,7 @@ impl ZenEngine {
         key: String,
         context: Value,
         opts: Option<ZenEvaluateOptions>,
-    ) -> SafeResult<Value> {
+    ) -> SafeResult<ZenEngineResponse> {
         self.evaluate(key, context, opts).await.into()
     }
 
@@ -228,16 +180,16 @@ impl ZenEngine {
         self.get_decision(key).await.into()
     }
 
-    /// Function used to dispose memory allocated for loaders
-    /// In the future, it will likely be removed and made automatic
-    #[napi]
-    pub fn dispose(&self) {
-        if let Some(loader) = self.loader_ref.clone() {
-            let _ = loader.abort();
-        }
-
-        if let Some(loader) = self.custom_handler_ref.clone() {
-            let _ = loader.abort();
-        }
-    }
+    // Function used to dispose memory allocated for loaders
+    // In the future, it will likely be removed and made automatic
+    // #[napi]
+    // pub fn dispose(&self) {
+    //     if let Some(loader) = self.loader_ref {
+    //         let _ = loader.abort();
+    //     }
+    //
+    //     if let Some(loader) = self.custom_handler_ref {
+    //         let _ = loader.abort();
+    //     }
+    // }
 }

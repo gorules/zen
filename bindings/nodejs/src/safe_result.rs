@@ -1,4 +1,4 @@
-use napi::bindgen_prelude::{ToNapiValue, TypeName};
+use napi::bindgen_prelude::{Object, ToNapiValue, TypeName};
 use napi::sys::{napi_env, napi_value};
 use napi::ValueType;
 
@@ -20,8 +20,8 @@ where
     E: ToNapiValue,
 {
     unsafe fn to_napi_value(env: napi_env, val: Self) -> napi::Result<napi_value> {
-        let env_wrapper = napi::bindgen_prelude::Env::from(env);
-        let mut obj = env_wrapper.create_object()?;
+        let env_wrapper = &napi::bindgen_prelude::Env::from(env);
+        let mut obj = Object::new(env_wrapper).unwrap();
 
         match val.0 {
             Ok(data) => {
@@ -33,8 +33,8 @@ where
                 obj.set("error", error)?;
             }
         }
-
-        napi::bindgen_prelude::Object::to_napi_value(env, obj)
+        
+        Object::to_napi_value(env, obj) //TODO BC ?
     }
 }
 

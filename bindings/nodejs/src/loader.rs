@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use napi::anyhow::anyhow;
 use napi::bindgen_prelude::{Buffer, Promise};
-use napi::threadsafe_function::{ErrorStrategy, ThreadsafeFunction};
-use napi::Either;
+use napi::threadsafe_function::{ThreadsafeFunction};
+use napi::{Either, Status};
 
 use zen_engine::loader::{
     DecisionLoader as DecisionLoaderTrait, LoaderError, LoaderResponse, LoaderResult,
@@ -15,9 +15,10 @@ use zen_engine::model::DecisionContent;
 
 use crate::content::ZenDecisionContent;
 
+type FatalCallback<T> = ThreadsafeFunction<T, Promise<Option<Either<Buffer, ZenDecisionContent>>>, T, Status, false, false, 0>;
 #[derive(Default)]
 pub(crate) struct DecisionLoader {
-    function: Option<ThreadsafeFunction<String, ErrorStrategy::Fatal>>,
+    function: Option<FatalCallback<String>>,
 }
 
 impl Debug for DecisionLoader {
@@ -27,7 +28,7 @@ impl Debug for DecisionLoader {
 }
 
 impl DecisionLoader {
-    pub fn new(tsf: ThreadsafeFunction<String, ErrorStrategy::Fatal>) -> napi::Result<Self> {
+    pub fn new(tsf: FatalCallback<String>) -> napi::Result<Self> {
         Ok(Self {
             function: Some(tsf),
         })
@@ -42,18 +43,18 @@ impl DecisionLoader {
             .into());
         };
 
-        let promise: Promise<Option<Either<Buffer, &ZenDecisionContent>>> = function
+        let promise: Promise<Option<Either<Buffer, ZenDecisionContent>>> = function
             .clone()
             .call_async(key.to_string())
             .await
             .map_err(|e| LoaderError::Internal {
                 key: key.to_string(),
-                source: anyhow!(e.reason),
+                source: anyhow!(e.reason.clone()),
             })?;
 
         let result = promise.await.map_err(|e| LoaderError::Internal {
             key: key.to_string(),
-            source: anyhow!(e.reason),
+            source: anyhow!(e.reason.clone()),
         })?;
 
         let Some(buffer) = result else {
@@ -73,6 +74,7 @@ impl DecisionLoader {
         Ok(decision_content)
     }
 }
+
 
 impl DecisionLoaderTrait for DecisionLoader {
     fn load<'a>(

@@ -11,7 +11,6 @@ repository = "https://github.com/gorules/zen.git"
 doctest = false
 
 [dependencies]
-async-trait = "0.1"
 ahash = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
@@ -33,7 +32,8 @@ zen-types = { path = "../types", version = "0.50.2" }
 zen-expression = { path = "../expression", version = "0.50.2" }
 zen-tmpl = { path = "../template", version = "0.50.2" }
 
-# AWS
+# HTTP Auth IAM
+async-trait = "0.1"
 reqsign = { version = "0.17", features = ["aws", "azure", "google", "default-context"] }
 sha2 = "0.10"
 

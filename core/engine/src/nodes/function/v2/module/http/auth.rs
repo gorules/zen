@@ -83,8 +83,12 @@ impl<'de> Deserialize<'de> for AwsRegion {
             Some(region) => Ok(AwsRegion(region)),
             None => {
                 static AWS_REGION_ENV: OnceLock<Option<Arc<str>>> = OnceLock::new();
-                let aws_region_opt =
-                    AWS_REGION_ENV.get_or_init(|| std::env::var("AWS_REGION").map(Arc::from).ok());
+                let aws_region_opt = AWS_REGION_ENV.get_or_init(|| {
+                    std::env::var("AWS_REGION")
+                        .or_else(|_| std::env::var("AWS_DEFAULT_REGION"))
+                        .map(Arc::from)
+                        .ok()
+                });
                 let Some(aws_region) = aws_region_opt else {
                     return Err(serde::de::Error::custom(
                         "AWS_REGION environment variable is missing - region parameter is required",

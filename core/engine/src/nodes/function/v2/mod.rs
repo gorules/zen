@@ -7,7 +7,7 @@ use crate::nodes::function::v2::function::{Function, HandlerResponse};
 use crate::nodes::function::v2::module::console::Log;
 use crate::nodes::function::v2::serde::JsValue;
 use crate::nodes::result::NodeResult;
-use crate::nodes::{NodeContext, NodeContextExt, NodeError};
+use crate::nodes::{NodeContext, NodeError};
 use ::serde::{Deserialize, Serialize};
 use rquickjs::{async_with, CatchResultExt, Object};
 use serde_json::json;
@@ -29,7 +29,6 @@ impl NodeHandler for FunctionV2NodeHandler {
 
     async fn handle(&self, ctx: NodeContext<Self::NodeData, Self::TraceData>) -> NodeResult {
         let start = Instant::now();
-
         if ctx.node.omit_nodes {
             ctx.input.dot_remove("$nodes");
         }
@@ -45,23 +44,22 @@ impl NodeHandler for FunctionV2NodeHandler {
             .set_interrupt_handler(Some(interrupt_handler))
             .await;
 
+        let function_context = FunctionContext {
+            start,
+            context: &ctx,
+            function: &function,
+        };
+
         self.attach_globals(function, &ctx)
             .await
-            .node_context(&ctx)?;
+            .function_context(&function_context)
+            .await?;
 
-        let register_module_result = function
+        function
             .register_module(&module_name, ctx.node.source.deref())
-            .await;
-        if let Err(err) = register_module_result {
-            ctx.trace(|t| {
-                t.log.push(Log {
-                    lines: vec![json!(err.to_string()).to_string()],
-                    ms_since_run: start.elapsed().as_millis() as usize,
-                });
-            });
-
-            return ctx.error(err);
-        }
+            .await
+            .function_context(&function_context)
+            .await?;
 
         let response_result = function
             .call_handler(&module_name, JsValue(ctx.input.clone()))
@@ -69,28 +67,12 @@ impl NodeHandler for FunctionV2NodeHandler {
 
         function.runtime().set_interrupt_handler(None).await;
 
-        match response_result {
-            Ok(response) => {
-                ctx.trace(|t| {
-                    t.log = response.logs.clone();
-                });
+        let response = response_result.function_context(&function_context).await?;
+        ctx.trace(|t| {
+            t.log = response.logs.clone();
+        });
 
-                ctx.success(response.data)
-            }
-            Err(e) => {
-                println!("Function Error {:?}", e);
-                let log = function.extract_logs().await;
-                ctx.trace(|t| {
-                    t.log = log;
-                    t.log.push(Log {
-                        lines: vec![json!(e.to_string()).to_string()],
-                        ms_since_run: start.elapsed().as_millis() as usize,
-                    });
-                });
-
-                ctx.error(e)
-            }
-        }
+        ctx.success(response.data)
     }
 }
 
@@ -151,7 +133,7 @@ impl<T> FunctionErrorExt<T> for Result<T, FunctionError> {
                     });
                 });
 
-                c.context.error(err)
+                Err(c.context.make_error(err))
             }
         }
     }

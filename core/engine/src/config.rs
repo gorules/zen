@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64};
 pub struct ZenConfig {
     pub nodes_in_context: AtomicBool,
     pub function_timeout_millis: AtomicU64,
+    pub http_auth: AtomicBool,
 }
 
 impl Default for ZenConfig {
@@ -12,6 +13,7 @@ impl Default for ZenConfig {
         Self {
             nodes_in_context: AtomicBool::new(true),
             function_timeout_millis: AtomicU64::new(5_000),
+            http_auth: AtomicBool::new(true),
         }
     }
 }

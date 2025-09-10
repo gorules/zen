@@ -4,6 +4,7 @@ use crate::nodes::function::v2::error::ResultExt;
 use crate::nodes::function::v2::module::export_default;
 use crate::nodes::function::v2::module::http::auth::{HttpConfigAuth, IamAuth};
 use crate::nodes::function::v2::serde::JsValue;
+use crate::ZEN_CONFIG;
 use ::http::Request as HttpRequest;
 use ahash::HashMap;
 use reqwest::{Body, Method, Request, Url};
@@ -11,6 +12,7 @@ use rquickjs::module::{Declarations, Exports, ModuleDef};
 use rquickjs::prelude::{Async, Func, Opt};
 use rquickjs::{CatchResultExt, Ctx, IntoAtom, IntoJs, Object, Value};
 use serde::{Deserialize, Deserializer};
+use std::sync::atomic::Ordering;
 use std::sync::OnceLock;
 use zen_expression::variable::Variable;
 
@@ -55,7 +57,11 @@ async fn execute_http<'js>(
         }
     }
 
-    let auth_method = config.as_ref().and_then(|c| c.auth.clone());
+    let auth_method = config
+        .as_ref()
+        .filter(|_| ZEN_CONFIG.http_auth.load(Ordering::Relaxed))
+        .and_then(|c| c.auth.clone());
+
     let request_data_opt = config
         .and_then(|c| c.data)
         .and_then(|_| data.map(|d| d.0.to_value()));

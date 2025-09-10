@@ -7,7 +7,7 @@ use http::HeaderValue;
 use reqsign::{aws, azure, google};
 use reqwest::{Body, Request};
 use rquickjs::{Ctx, FromJs, Value};
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use sha2::{Digest, Sha256};
 use std::fmt::Debug;
 use std::ops::Deref;
@@ -66,8 +66,35 @@ where
 #[derive(Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AwsIamAuth {
-    region: Arc<str>,
+    region: AwsRegion,
     service: Arc<str>,
+}
+
+#[derive(Clone)]
+struct AwsRegion(pub Arc<str>);
+
+impl<'de> Deserialize<'de> for AwsRegion {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let region_str = Option::<Arc<str>>::deserialize(deserializer)?;
+        match region_str {
+            Some(region) => Ok(AwsRegion(region)),
+            None => {
+                static AWS_REGION_ENV: OnceLock<Option<Arc<str>>> = OnceLock::new();
+                let aws_region_opt =
+                    AWS_REGION_ENV.get_or_init(|| std::env::var("AWS_REGION").map(Arc::from).ok());
+                let Some(aws_region) = aws_region_opt else {
+                    return Err(serde::de::Error::custom(
+                        "AWS_REGION environment variable is missing - region parameter is required",
+                    ));
+                };
+
+                Ok(AwsRegion(aws_region.clone()))
+            }
+        }
+    }
 }
 
 impl AwsIamAuth {
@@ -78,7 +105,7 @@ impl AwsIamAuth {
             .get_or_init(|| CachedProvider(Arc::new(aws::DefaultCredentialProvider::new())))
             .clone();
 
-        let signer = aws::default_signer(self.service.deref(), self.region.deref())
+        let signer = aws::default_signer(self.service.deref(), self.region.0.deref())
             .with_credential_provider(provider);
 
         let (mut parts, body) = http_request.into_parts();

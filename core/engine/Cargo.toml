@@ -3,7 +3,7 @@ authors = ["GoRules Team <bot@gorules.io>"]
 description = "Business rules engine"
 name = "zen-engine"
 license = "MIT"
-version = "0.50.2"
+version = "0.51.0"
 edition = "2021"
 repository = "https://github.com/gorules/zen.git"
 
@@ -28,9 +28,9 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-feature
 rquickjs = { version = "0.9", features = ["macro", "loader", "rust-alloc", "futures", "either", "properties"] }
 rquickjs-serde = { version = "0.1" }
 jsonschema = "0.29"
-zen-types = { path = "../types", version = "0.50.2" }
-zen-expression = { path = "../expression", version = "0.50.2" }
-zen-tmpl = { path = "../template", version = "0.50.2" }
+zen-types = { path = "../types", version = "0.51.0" }
+zen-expression = { path = "../expression", version = "0.51.0" }
+zen-tmpl = { path = "../template", version = "0.51.0" }
 
 # HTTP Auth IAM
 async-trait = "0.1"

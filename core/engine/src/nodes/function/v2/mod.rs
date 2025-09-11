@@ -1,13 +1,13 @@
 use std::ops::Deref;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::nodes::definition::NodeHandler;
-use crate::nodes::function::v2::error::FunctionResult;
+use crate::nodes::function::v2::error::{FunctionError, FunctionResult};
 use crate::nodes::function::v2::function::{Function, HandlerResponse};
 use crate::nodes::function::v2::module::console::Log;
 use crate::nodes::function::v2::serde::JsValue;
 use crate::nodes::result::NodeResult;
-use crate::nodes::{NodeContext, NodeContextExt};
+use crate::nodes::{NodeContext, NodeError};
 use ::serde::{Deserialize, Serialize};
 use rquickjs::{async_with, CatchResultExt, Object};
 use serde_json::json;
@@ -28,8 +28,7 @@ impl NodeHandler for FunctionV2NodeHandler {
     type TraceData = FunctionV2Trace;
 
     async fn handle(&self, ctx: NodeContext<Self::NodeData, Self::TraceData>) -> NodeResult {
-        let start = std::time::Instant::now();
-
+        let start = Instant::now();
         if ctx.node.omit_nodes {
             ctx.input.dot_remove("$nodes");
         }
@@ -45,41 +44,35 @@ impl NodeHandler for FunctionV2NodeHandler {
             .set_interrupt_handler(Some(interrupt_handler))
             .await;
 
+        let function_context = FunctionContext {
+            start,
+            context: &ctx,
+            function: &function,
+        };
+
         self.attach_globals(function, &ctx)
             .await
-            .node_context(&ctx)?;
+            .function_context(&function_context)
+            .await?;
 
         function
             .register_module(&module_name, ctx.node.source.deref())
             .await
-            .node_context(&ctx)?;
+            .function_context(&function_context)
+            .await?;
 
         let response_result = function
             .call_handler(&module_name, JsValue(ctx.input.clone()))
             .await;
 
-        match response_result {
-            Ok(response) => {
-                function.runtime().set_interrupt_handler(None).await;
-                ctx.trace(|t| {
-                    t.log = response.logs.clone();
-                });
+        function.runtime().set_interrupt_handler(None).await;
 
-                ctx.success(response.data)
-            }
-            Err(e) => {
-                let log = function.extract_logs().await;
-                ctx.trace(|t| {
-                    t.log = log;
-                    t.log.push(Log {
-                        lines: vec![json!(e.to_string()).to_string()],
-                        ms_since_run: start.elapsed().as_millis() as usize,
-                    });
-                });
+        let response = response_result.function_context(&function_context).await?;
+        ctx.trace(|t| {
+            t.log = response.logs.clone();
+        });
 
-                ctx.error(e)
-            }
-        }
+        ctx.success(response.data)
     }
 }
 
@@ -114,4 +107,34 @@ pub struct FunctionV2Trace {
 pub struct FunctionResponse {
     performance: String,
     data: Option<HandlerResponse>,
+}
+
+struct FunctionContext<'a> {
+    context: &'a NodeContext<FunctionContent, FunctionV2Trace>,
+    function: &'a Function,
+    start: Instant,
+}
+
+trait FunctionErrorExt<T> {
+    async fn function_context(self, ctx: &FunctionContext) -> Result<T, NodeError>;
+}
+
+impl<T> FunctionErrorExt<T> for Result<T, FunctionError> {
+    async fn function_context(self, c: &FunctionContext<'_>) -> Result<T, NodeError> {
+        match self {
+            Ok(ok) => Ok(ok),
+            Err(err) => {
+                let log = c.function.extract_logs().await;
+                c.context.trace(|t| {
+                    t.log = log;
+                    t.log.push(Log {
+                        lines: vec![json!(err.to_string()).to_string()],
+                        ms_since_run: c.start.elapsed().as_millis() as usize,
+                    });
+                });
+
+                Err(c.context.make_error(err))
+            }
+        }
+    }
 }

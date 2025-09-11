@@ -9,7 +9,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-napi = { version = "3", features = ["serde-json", "error_anyhow", "tokio_rt", "compat-mode"] }
+napi = { version = "3", features = ["serde-json", "error_anyhow", "tokio_rt"] }
 napi-derive = "3"
 tokio-util = { workspace = true, features = ["rt"] }
 serde_json = { workspace = true }

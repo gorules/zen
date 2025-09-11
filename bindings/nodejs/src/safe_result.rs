@@ -33,7 +33,7 @@ where
                 obj.set("error", error)?;
             }
         }
-        
+
         Object::to_napi_value(env, obj) //TODO BC ?
     }
 }

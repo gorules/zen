@@ -34,7 +34,7 @@ where
             }
         }
 
-        Object::to_napi_value(env, obj) //TODO BC ?
+        Object::to_napi_value(env, obj)
     }
 }
 

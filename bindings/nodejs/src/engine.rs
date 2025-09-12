@@ -224,5 +224,4 @@ impl ZenEngine {
     pub async fn safe_get_decision(&self, key: String) -> SafeResult<ZenDecision> {
         self.get_decision(key).await.into()
     }
-
 }

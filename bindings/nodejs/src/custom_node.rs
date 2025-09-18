@@ -1,16 +1,29 @@
 use crate::types::{ZenEngineHandlerRequest, ZenEngineHandlerResponse};
 use napi::bindgen_prelude::Promise;
-use napi::threadsafe_function::{ErrorStrategy, ThreadsafeFunction};
+use napi::threadsafe_function::ThreadsafeFunction;
+use napi::Status;
 use std::fmt::{Debug, Formatter};
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 use zen_engine::nodes::custom::{CustomNodeAdapter, CustomNodeRequest};
 use zen_engine::nodes::{NodeError, NodeResponse, NodeResult};
 use zen_engine::Variable;
 
+type CustomNodeTsfn = Arc<
+    ThreadsafeFunction<
+        ZenEngineHandlerRequest,
+        Promise<ZenEngineHandlerResponse>,
+        ZenEngineHandlerRequest,
+        Status,
+        false,
+        true,
+    >,
+>;
+
 #[derive(Default)]
 pub(crate) struct CustomNode {
-    function: Option<ThreadsafeFunction<ZenEngineHandlerRequest, ErrorStrategy::Fatal>>,
+    function: Option<CustomNodeTsfn>,
 }
 
 impl Debug for CustomNode {
@@ -20,7 +33,7 @@ impl Debug for CustomNode {
 }
 
 impl CustomNode {
-    pub fn new(tsf: ThreadsafeFunction<ZenEngineHandlerRequest, ErrorStrategy::Fatal>) -> Self {
+    pub fn new(tsf: CustomNodeTsfn) -> Self {
         Self {
             function: Some(tsf),
         }
@@ -50,13 +63,13 @@ impl CustomNodeAdapter for CustomNode {
                 .map_err(|err| NodeError {
                     node_id: request.node.id.clone(),
                     trace: None,
-                    source: err.reason.into(),
+                    source: err.reason.to_string().into(),
                 })?;
 
             let result = promise.await.map_err(|err| NodeError {
                 node_id: request.node.id.clone(),
                 trace: None,
-                source: err.reason.into(),
+                source: err.reason.to_string().into(),
             })?;
 
             Ok(NodeResponse {

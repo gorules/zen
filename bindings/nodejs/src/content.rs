@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use napi::bindgen_prelude::Buffer;
-use napi::{Either, Env, JsObject};
+use napi::bindgen_prelude::{Buffer, Object};
+use napi::{Either, Env};
 use napi_derive::napi;
 use serde_json::Value;
 
@@ -15,7 +15,7 @@ pub struct ZenDecisionContent {
 #[napi]
 impl ZenDecisionContent {
     #[napi(constructor)]
-    pub fn new(env: Env, content: Either<Buffer, JsObject>) -> napi::Result<Self> {
+    pub fn new(env: Env, content: Either<Buffer, Object>) -> napi::Result<Self> {
         let decision_content: DecisionContent = match content {
             Either::A(buf) => serde_json::from_slice(buf.as_ref())?,
             Either::B(obj) => {

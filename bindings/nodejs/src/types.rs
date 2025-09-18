@@ -85,8 +85,8 @@ impl From<CustomDecisionNode> for DecisionNode {
 
 #[napi]
 pub struct ZenEngineHandlerRequest {
-    pub input: Value,
-    pub node: DecisionNode,
+    pub(crate) input: Value,
+    pub(crate) node: DecisionNode,
 }
 
 #[napi]
@@ -94,6 +94,16 @@ impl ZenEngineHandlerRequest {
     #[napi(constructor)]
     pub fn new() -> napi::Result<Self> {
         Err(anyhow!("Private constructor").into())
+    }
+
+    #[napi(getter)]
+    pub fn node(&self) -> DecisionNode {
+        self.node.clone()
+    }
+
+    #[napi(getter)]
+    pub fn input(&self) -> Value {
+        self.input.clone()
     }
 
     #[napi(ts_return_type = "unknown")]

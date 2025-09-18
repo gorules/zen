@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use napi::anyhow::anyhow;
 use napi::bindgen_prelude::{Buffer, Promise};
-use napi::threadsafe_function::{ErrorStrategy, ThreadsafeFunction};
-use napi::Either;
+use napi::threadsafe_function::ThreadsafeFunction;
+use napi::{Either, Status};
 
 use zen_engine::loader::{
     DecisionLoader as DecisionLoaderTrait, LoaderError, LoaderResponse, LoaderResult,
@@ -15,9 +15,20 @@ use zen_engine::model::DecisionContent;
 
 use crate::content::ZenDecisionContent;
 
+type LoaderTsfn = Arc<
+    ThreadsafeFunction<
+        String,
+        Promise<Option<Either<Buffer, &'static ZenDecisionContent>>>,
+        String,
+        Status,
+        false,
+        true,
+    >,
+>;
+
 #[derive(Default)]
 pub(crate) struct DecisionLoader {
-    function: Option<ThreadsafeFunction<String, ErrorStrategy::Fatal>>,
+    function: Option<LoaderTsfn>,
 }
 
 impl Debug for DecisionLoader {
@@ -27,10 +38,10 @@ impl Debug for DecisionLoader {
 }
 
 impl DecisionLoader {
-    pub fn new(tsf: ThreadsafeFunction<String, ErrorStrategy::Fatal>) -> napi::Result<Self> {
-        Ok(Self {
+    pub fn new(tsf: LoaderTsfn) -> Self {
+        Self {
             function: Some(tsf),
-        })
+        }
     }
 
     pub async fn get_key(&self, key: &str) -> LoaderResult<Arc<DecisionContent>> {
@@ -48,12 +59,12 @@ impl DecisionLoader {
             .await
             .map_err(|e| LoaderError::Internal {
                 key: key.to_string(),
-                source: anyhow!(e.reason),
+                source: anyhow!(e.reason.clone()),
             })?;
 
         let result = promise.await.map_err(|e| LoaderError::Internal {
             key: key.to_string(),
-            source: anyhow!(e.reason),
+            source: anyhow!(e.reason.clone()),
         })?;
 
         let Some(buffer) = result else {
@@ -78,7 +89,7 @@ impl DecisionLoaderTrait for DecisionLoader {
     fn load<'a>(
         &'a self,
         key: &'a str,
-    ) -> Pin<Box<dyn Future<Output = LoaderResponse> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = LoaderResponse> + 'a + Send>> {
         Box::pin(async move {
             let decision_content = self.get_key(key).await?;
             Ok(decision_content)

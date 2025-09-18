@@ -2,12 +2,16 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use napi::anyhow::{anyhow, Context};
-use napi::bindgen_prelude::{Buffer, Either3, FromNapiValue, ToNapiValue};
+use napi::bindgen_prelude::{
+    Buffer, Either3, FromNapiValue, Function, Object, Promise, ToNapiValue,
+};
 use napi::sys::{napi_env, napi_value};
-use napi::threadsafe_function::{ErrorStrategy, ThreadSafeCallContext, ThreadsafeFunction};
-use napi::{Env, JsFunction, JsObject, JsUnknown, NapiValue, ValueType};
+use napi::{Either, Env, JsValue, Unknown, ValueType};
 use napi_derive::napi;
 use serde_json::Value;
+
+use zen_engine::model::DecisionContent;
+use zen_engine::{DecisionEngine, EvaluationSerializedOptions, EvaluationTraceKind};
 
 use crate::content::ZenDecisionContent;
 use crate::custom_node::CustomNode;
@@ -15,16 +19,11 @@ use crate::decision::ZenDecision;
 use crate::loader::DecisionLoader;
 use crate::mt::spawn_worker;
 use crate::safe_result::SafeResult;
-use crate::types::ZenEngineHandlerRequest;
-use zen_engine::model::DecisionContent;
-use zen_engine::{DecisionEngine, EvaluationSerializedOptions, EvaluationTraceKind};
+use crate::types::{ZenEngineHandlerRequest, ZenEngineHandlerResponse};
 
 #[napi]
 pub struct ZenEngine {
     graph: Arc<DecisionEngine>,
-
-    loader_ref: Option<ThreadsafeFunction<String, ErrorStrategy::Fatal>>,
-    custom_handler_ref: Option<ThreadsafeFunction<ZenEngineHandlerRequest, ErrorStrategy::Fatal>>,
 }
 
 #[derive(Debug, Default)]
@@ -32,12 +31,12 @@ pub struct JsEvaluationTraceKind(pub EvaluationTraceKind);
 
 impl FromNapiValue for JsEvaluationTraceKind {
     unsafe fn from_napi_value(env: napi_env, napi_val: napi_value) -> napi::Result<Self> {
-        let js_value = JsUnknown::from_raw(env, napi_val)?;
+        let js_value = Unknown::from_napi_value(env, napi_val)?;
 
         match js_value.get_type()? {
             ValueType::Undefined | ValueType::Null => Ok(JsEvaluationTraceKind::default()),
             ValueType::Boolean => {
-                let enabled = js_value.coerce_to_bool()?.get_value()?;
+                let enabled = js_value.coerce_to_bool()?;
                 let kind = match enabled {
                     true => EvaluationTraceKind::Default,
                     false => EvaluationTraceKind::None,
@@ -100,10 +99,13 @@ impl From<ZenEvaluateOptions> for EvaluationSerializedOptions {
 #[napi(object)]
 pub struct ZenEngineOptions {
     #[napi(ts_type = "(key: string) => Promise<Buffer | ZenDecisionContent>")]
-    pub loader: Option<JsFunction>,
+    pub loader: Option<
+        Function<'static, String, Promise<Option<Either<Buffer, &'static ZenDecisionContent>>>>,
+    >,
 
     #[napi(ts_type = "(request: ZenEngineHandlerRequest) => Promise<ZenEngineHandlerResponse>")]
-    pub custom_handler: Option<JsFunction>,
+    pub custom_handler:
+        Option<Function<'static, ZenEngineHandlerRequest, Promise<ZenEngineHandlerResponse>>>,
 }
 
 #[napi]
@@ -117,45 +119,39 @@ impl ZenEngine {
                     Arc::new(CustomNode::default()),
                 )
                 .into(),
-
-                loader_ref: None,
-                custom_handler_ref: None,
             });
         };
 
-        let loader_ref = match opts.loader {
-            None => None,
-            Some(l) => Some(l.create_threadsafe_function(
-                0,
-                |cx: ThreadSafeCallContext<String>| {
-                    cx.env.create_string(cx.value.as_str()).map(|v| vec![v])
-                },
-            )?),
-        };
-
-        let loader = match &loader_ref {
+        let loader = match opts.loader {
             None => DecisionLoader::default(),
-            Some(loader_fn) => DecisionLoader::new(loader_fn.clone())?,
+            Some(l) => {
+                let loader_tsfn = l
+                    .build_threadsafe_function()
+                    .max_queue_size::<0>()
+                    .callee_handled::<false>()
+                    .weak()
+                    .build()?;
+
+                DecisionLoader::new(Arc::new(loader_tsfn))
+            }
         };
 
-        let custom_handler_ref = match opts.custom_handler {
-            None => None,
-            Some(custom_handler_fn) => Some(custom_handler_fn.create_threadsafe_function(
-                0,
-                |cx: ThreadSafeCallContext<ZenEngineHandlerRequest>| Ok(vec![cx.value]),
-            )?),
-        };
-
-        let custom_handler = match &custom_handler_ref {
+        let custom_node = match opts.custom_handler {
             None => CustomNode::default(),
-            Some(custom_fn) => CustomNode::new(custom_fn.clone()),
+            Some(c) => {
+                let custom_tfsn = c
+                    .build_threadsafe_function()
+                    .max_queue_size::<0>()
+                    .callee_handled::<false>()
+                    .weak()
+                    .build()?;
+
+                CustomNode::new(Arc::new(custom_tfsn))
+            }
         };
 
         Ok(Self {
-            graph: DecisionEngine::new(Arc::new(loader), Arc::new(custom_handler)).into(),
-
-            loader_ref,
-            custom_handler_ref,
+            graph: DecisionEngine::new(Arc::new(loader), Arc::new(custom_node)).into(),
         })
     }
 
@@ -187,7 +183,7 @@ impl ZenEngine {
     pub fn create_decision(
         &self,
         env: Env,
-        content: Either3<&ZenDecisionContent, Buffer, JsObject>,
+        content: Either3<&ZenDecisionContent, Buffer, Object>,
     ) -> napi::Result<ZenDecision> {
         let decision_content: Arc<DecisionContent> = match content {
             Either3::A(c) => c.inner.clone(),
@@ -210,6 +206,7 @@ impl ZenEngine {
             .await
             .with_context(|| format!("Failed to find decision with key = {key}"))?;
 
+        // TODO: Investigate why reference leak?
         Ok(ZenDecision::from(decision))
     }
 
@@ -226,18 +223,5 @@ impl ZenEngine {
     #[napi(ts_return_type = "Promise<SafeResult<ZenDecision>>")]
     pub async fn safe_get_decision(&self, key: String) -> SafeResult<ZenDecision> {
         self.get_decision(key).await.into()
-    }
-
-    /// Function used to dispose memory allocated for loaders
-    /// In the future, it will likely be removed and made automatic
-    #[napi]
-    pub fn dispose(&self) {
-        if let Some(loader) = self.loader_ref.clone() {
-            let _ = loader.abort();
-        }
-
-        if let Some(loader) = self.custom_handler_ref.clone() {
-            let _ = loader.abort();
-        }
     }
 }

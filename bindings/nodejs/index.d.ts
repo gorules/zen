@@ -23,8 +23,6 @@ export declare class ZenEngine {
 
 export declare class ZenEngineHandlerRequest {
   constructor()
-  get node(): DecisionNode
-  get input(): any
   getField(path: string): unknown
   getFieldRaw(path: string): unknown
 }

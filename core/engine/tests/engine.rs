@@ -191,6 +191,7 @@ async fn engine_function_imports() {
     let function_content = DecisionContent {
         edges: function_content.edges,
         nodes: new_nodes,
+        params: None,
     };
     let decision = DecisionEngine::default().create_decision(function_content.into());
     let response = decision.evaluate(json!({}).into()).await.unwrap();

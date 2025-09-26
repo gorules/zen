@@ -224,4 +224,17 @@ impl ZenEngine {
     pub async fn safe_get_decision(&self, key: String) -> SafeResult<ZenDecision> {
         self.get_decision(key).await.into()
     }
+
+    // Function used to dispose memory allocated for loaders
+    // In the future, it will likely be removed and made automatic
+    // #[napi]
+    // pub fn dispose(&self) {
+    //     if let Some(loader) = self.loader_ref {
+    //         let _ = loader.abort();
+    //     }
+    //
+    //     if let Some(loader) = self.custom_handler_ref {
+    //         let _ = loader.abort();
+    //     }
+    // }
 }

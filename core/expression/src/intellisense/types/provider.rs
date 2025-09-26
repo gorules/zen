@@ -52,7 +52,7 @@ impl TypesProvider {
         });
     }
 
-    #[cfg_attr(feature = "stack-protection", recursive::recursive)]
+    #[cfg_attr(not(target_family = "wasm"), recursive::recursive)]
     fn determine(&mut self, node: &Node, mut scope: IntelliSenseScope) -> TypeInfo {
         #[allow(non_snake_case)]
         let V = |vt: VariableType| TypeInfo::from(vt);

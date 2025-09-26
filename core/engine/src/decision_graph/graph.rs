@@ -32,6 +32,7 @@ pub struct DecisionGraph {
     initial_graph: StableDiDecisionGraph,
     graph: StableDiDecisionGraph,
     config: DecisionGraphConfig,
+    params: Option<Variable>,
 }
 
 #[derive(Debug)]
@@ -45,11 +46,14 @@ pub struct DecisionGraphConfig {
 
 impl DecisionGraph {
     pub fn try_new(config: DecisionGraphConfig) -> Result<Self, DecisionGraphValidationError> {
+        let params = config.content.params.as_deref().map(|v| v.to_variable());
         let graph = Self::build_graph(config.content.deref())?;
+
         Ok(Self {
             initial_graph: graph.clone(),
             graph,
             config,
+            params,
         })
     }
 
@@ -134,7 +138,7 @@ impl DecisionGraph {
             return Err(Box::new(EvaluationError::DepthLimitExceeded));
         }
 
-        let mut walker = GraphWalker::new(&self.graph);
+        let mut walker = GraphWalker::new(&self.graph, self.params.clone());
         let mut tracer = NodeTracer::new(self.config.trace);
 
         while let Some(nid) = walker.next(&mut self.graph, tracer.trace_callback()) {
@@ -190,6 +194,7 @@ impl DecisionGraph {
             };
 
             output.dot_remove("$nodes");
+            output.dot_remove("$params");
 
             walker.set_node_data(
                 nid,

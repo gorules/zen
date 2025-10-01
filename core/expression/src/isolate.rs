@@ -4,15 +4,14 @@ use serde::{Serialize, Serializer};
 use std::rc::Rc;
 use std::sync::Arc;
 use thiserror::Error;
-
 use crate::arena::UnsafeArena;
-use crate::compiler::{Compiler, CompilerError};
-use crate::expression::{Standard, Unary};
+use crate::compiler::{Compiler, CompilerError, Opcode};
 use crate::lexer::{Lexer, LexerError};
 use crate::parser::{Parser, ParserError};
 use crate::variable::Variable;
 use crate::vm::{VMError, VM};
 use crate::{Expression, ExpressionKind};
+use crate::expression::{Standard, Unary};
 
 /// Isolate is a component that encapsulates an isolated environment for executing expressions.
 ///
@@ -132,6 +131,14 @@ impl<'a> Isolate<'a> {
         let result = self
             .vm
             .run(bytecode, self.environment.clone().unwrap_or(Variable::Null))?;
+
+        Ok(result)
+    }
+    pub fn run_compiled(&mut self, source: Vec<Opcode>) -> Result<Variable, IsolateError> {
+
+        let result = self
+            .vm
+            .run(source.as_slice(), self.environment.clone().unwrap_or(Variable::Null))?;
 
         Ok(result)
     }

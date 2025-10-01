@@ -7,9 +7,19 @@ use crate::nodes::validator_cache::ValidatorCache;
 use crate::nodes::NodeHandlerExtensions;
 use crate::{DecisionGraphValidationError, EvaluationError};
 use serde_json::Value;
-use std::cell::OnceCell;
-use std::sync::Arc;
+use std::cell::{OnceCell, RefCell};
+use std::sync::{Arc, Mutex};
+use ahash::{HashMap, HashMapExt};
+use zen_expression::compiler::Opcode;
+use zen_expression::{ExpressionKind, Isolate};
 use zen_expression::variable::Variable;
+use zen_types::decision::{DecisionNode, DecisionNodeKind, ExpressionNodeContent};
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct CompilationKey {
+    pub kind: ExpressionKind,
+    pub source: Arc<str>
+}
 
 /// Represents a JDM decision which can be evaluated
 #[derive(Debug, Clone)]
@@ -18,6 +28,7 @@ pub struct Decision {
     loader: DynamicLoader,
     adapter: DynamicCustomNode,
     validator_cache: ValidatorCache,
+    compiled_cache: Arc<RefCell<HashMap<CompilationKey, Vec<Opcode>>>>,
 }
 
 impl From<DecisionContent> for Decision {
@@ -27,6 +38,7 @@ impl From<DecisionContent> for Decision {
             loader: Arc::new(NoopLoader::default()),
             adapter: Arc::new(NoopCustomNode::default()),
             validator_cache: ValidatorCache::default(),
+            compiled_cache: Arc::new(RefCell::new(HashMap::new())),
         }
     }
 }
@@ -38,6 +50,7 @@ impl From<Arc<DecisionContent>> for Decision {
             loader: Arc::new(NoopLoader::default()),
             adapter: Arc::new(NoopCustomNode::default()),
             validator_cache: ValidatorCache::default(),
+            compiled_cache: Arc::new(RefCell::new(HashMap::new())),
         }
     }
 }
@@ -61,6 +74,109 @@ impl Decision {
         self.evaluate_with_opts(context, Default::default()).await
     }
 
+
+
+    //noinspection DuplicatedCode
+    // i onda imas compile_decision npr koji prodje kroz DecisionContent i za
+    // svaki expression koji postoji uradi .compile_standard ili compile_unary pa storuje u compiled_cache
+    pub fn compile_decision(
+        &self,
+    ) -> () {
+        let output_nodes: Vec<(Arc<DecisionNode>, &ExpressionNodeContent)> = self.content.nodes
+            .iter()
+            .filter_map(|node| {
+                if let DecisionNodeKind::ExpressionNode { ref content } = node.kind {
+                    Some((Arc::clone(node), content))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let mut isolate = Isolate::new();
+        for (_node, content) in &output_nodes {
+            for expression in content.expressions.iter() {
+                if expression.key.is_empty() || expression.value.is_empty() {
+                    continue;
+                }
+
+                if let Ok(comp_expression) = isolate.compile_standard(&expression.value) {
+                    let key = CompilationKey {
+                        kind: ExpressionKind::Standard,
+                        source: Arc::from(expression.value.clone()),
+                    };
+                    self.compiled_cache.borrow_mut()
+                        .entry(key.clone())
+                        .or_insert(comp_expression.bytecode().to_vec());
+                }
+
+            }
+
+        }
+
+
+    }
+
+
+
+    //noinspection DuplicatedCode
+    // pub fn compile_decision_debug(
+    //     &self,
+    // ) -> () {
+    //     let output_nodes: Vec<(Arc<DecisionNode>, &ExpressionNodeContent)> = self.content.nodes
+    //         .iter()
+    //         .filter_map(|node| {
+    //             if let DecisionNodeKind::ExpressionNode { ref content } = node.kind {
+    //                 Some((Arc::clone(node), content))
+    //             } else {
+    //                 None
+    //             }
+    //         })
+    //         .collect();
+    //     let times = 10_000;
+    //     let mut isolate = Isolate::new();
+    //     for (_node, content) in &output_nodes {
+    //         for expression in content.expressions.iter() {
+    //             println!(" ");
+    //             println!("Expr ******************************** {:?}", expression);
+    //             if expression.key.is_empty() || expression.value.is_empty() {
+    //                 continue;
+    //             }
+    //
+    //             benchmark("Compile Standard", times, || {
+    //                 let comp = isolate.compile_standard(&expression.value);
+    //             });
+    //
+    //
+    //             let comp = isolate.compile_standard(&expression.value);
+    //             if let Ok(compExpression) = comp {
+    //                 let key = CompilationKey {
+    //                     kind: ExpressionKind::Standard,
+    //                     source: Arc::from(expression.value.clone()),
+    //                 };
+    //                 // println!("Compiled Expression {:?}", compExpression);
+    //
+    //                 // using rmp-Serde
+    //                 // let bytes = rmp_serde::to_vec(compExpression.bytecode().as_ref()).unwrap();
+    //                 // self.content.compiled_cache.lock().unwrap()
+    //                 //     .entry(key.clone())
+    //                 //     .or_insert(bytes);
+    //                 //
+    //                 // benchmark("Deserialize rmp serde", times, || {
+    //                 //     if let Some(bytes) = self.content.compiled_cache.lock().unwrap().get(&key) {
+    //                 //         // let opcodes: Arc<Vec<Opcode>> = bincode::deserialize(bytes).expect("Failed to deserialize opcodes");;
+    //                 //         let opcodes: Vec<Opcode> = rmp_serde::from_slice(bytes).expect("Failed to deserialize opcodes");;
+    //                 //         // println!("Decompiled Expression {:?}", opcodes);
+    //                 //     }
+    //                 // });
+    //             }
+    //
+    //         }
+    //
+    //     }
+    //
+    //
+    // }
+
     /// Evaluates a decision using in-memory reference with advanced options
     pub async fn evaluate_with_opts(
         &self,
@@ -75,11 +191,11 @@ impl Decision {
             extensions: NodeHandlerExtensions {
                 loader: self.loader.clone(),
                 custom_node: self.adapter.clone(),
+                compiled_cache: self.compiled_cache.clone(),
                 validator_cache: Arc::new(OnceCell::from(self.validator_cache.clone())),
                 ..Default::default()
             },
         })?;
-
         let response = decision_graph.evaluate(context).await?;
 
         Ok(response)

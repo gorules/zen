@@ -49,7 +49,7 @@ async fn decision_from_content_recursive() {
 }
 pub fn benchmark<F, T>(name: &str, iterations: u32, mut func: F) -> T
 where
-    F: FnMut() -> T
+    F: FnMut() -> T,
 {
     let start = Instant::now();
     let mut result = None;
@@ -70,9 +70,9 @@ where
 }
 #[test]
 fn decision_expression_node() {
-    let times = 10_000;
+    let times = 100_000;
     let rt = Builder::new_current_thread().build().unwrap();
-    let decision = Decision::from(load_test_data("expression.json"));
+    let mut decision = Decision::from(load_test_data("expression.json"));
     let context = json!({
         "numbers": [1, 5, 15, 25],
         "firstName": "John",

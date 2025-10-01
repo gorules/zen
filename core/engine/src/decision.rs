@@ -6,19 +6,19 @@ use crate::nodes::custom::{DynamicCustomNode, NoopCustomNode};
 use crate::nodes::validator_cache::ValidatorCache;
 use crate::nodes::NodeHandlerExtensions;
 use crate::{DecisionGraphValidationError, EvaluationError};
-use serde_json::Value;
-use std::cell::{OnceCell, RefCell};
-use std::sync::{Arc, Mutex};
 use ahash::{HashMap, HashMapExt};
+use serde_json::Value;
+use std::cell::OnceCell;
+use std::sync::Arc;
 use zen_expression::compiler::Opcode;
-use zen_expression::{ExpressionKind, Isolate};
 use zen_expression::variable::Variable;
+use zen_expression::{ExpressionKind, Isolate};
 use zen_types::decision::{DecisionNode, DecisionNodeKind, ExpressionNodeContent};
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct CompilationKey {
     pub kind: ExpressionKind,
-    pub source: Arc<str>
+    pub source: Arc<str>,
 }
 
 /// Represents a JDM decision which can be evaluated
@@ -28,7 +28,7 @@ pub struct Decision {
     loader: DynamicLoader,
     adapter: DynamicCustomNode,
     validator_cache: ValidatorCache,
-    compiled_cache: Arc<RefCell<HashMap<CompilationKey, Vec<Opcode>>>>,
+    compiled_cache: Option<Arc<HashMap<CompilationKey, Vec<Opcode>>>>,
 }
 
 impl From<DecisionContent> for Decision {
@@ -38,7 +38,7 @@ impl From<DecisionContent> for Decision {
             loader: Arc::new(NoopLoader::default()),
             adapter: Arc::new(NoopCustomNode::default()),
             validator_cache: ValidatorCache::default(),
-            compiled_cache: Arc::new(RefCell::new(HashMap::new())),
+            compiled_cache: None,
         }
     }
 }
@@ -50,7 +50,7 @@ impl From<Arc<DecisionContent>> for Decision {
             loader: Arc::new(NoopLoader::default()),
             adapter: Arc::new(NoopCustomNode::default()),
             validator_cache: ValidatorCache::default(),
-            compiled_cache: Arc::new(RefCell::new(HashMap::new())),
+            compiled_cache: None,
         }
     }
 }
@@ -74,15 +74,13 @@ impl Decision {
         self.evaluate_with_opts(context, Default::default()).await
     }
 
-
-
     //noinspection DuplicatedCode
     // i onda imas compile_decision npr koji prodje kroz DecisionContent i za
     // svaki expression koji postoji uradi .compile_standard ili compile_unary pa storuje u compiled_cache
-    pub fn compile_decision(
-        &self,
-    ) -> () {
-        let output_nodes: Vec<(Arc<DecisionNode>, &ExpressionNodeContent)> = self.content.nodes
+    pub fn compile_decision(&mut self) -> () {
+        let output_nodes: Vec<(Arc<DecisionNode>, &ExpressionNodeContent)> = self
+            .content
+            .nodes
             .iter()
             .filter_map(|node| {
                 if let DecisionNodeKind::ExpressionNode { ref content } = node.kind {
@@ -93,6 +91,8 @@ impl Decision {
             })
             .collect();
         let mut isolate = Isolate::new();
+
+        let mut compiled_cache: HashMap<CompilationKey, Vec<Opcode>> = HashMap::new();
         for (_node, content) in &output_nodes {
             for expression in content.expressions.iter() {
                 if expression.key.is_empty() || expression.value.is_empty() {
@@ -104,19 +104,16 @@ impl Decision {
                         kind: ExpressionKind::Standard,
                         source: Arc::from(expression.value.clone()),
                     };
-                    self.compiled_cache.borrow_mut()
+
+                    compiled_cache
                         .entry(key.clone())
                         .or_insert(comp_expression.bytecode().to_vec());
                 }
-
             }
-
         }
 
-
+        self.compiled_cache.replace(Arc::new(compiled_cache));
     }
-
-
 
     //noinspection DuplicatedCode
     // pub fn compile_decision_debug(

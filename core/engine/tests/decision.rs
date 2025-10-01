@@ -2,6 +2,7 @@ use crate::support::{create_fs_loader, load_test_data};
 use serde_json::json;
 use std::ops::Deref;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::runtime::Builder;
 use zen_engine::{Decision, DecisionGraphValidationError, EvaluationError};
 
@@ -46,15 +47,60 @@ async fn decision_from_content_recursive() {
         _ => assert!(false, "Depth limit not exceeded"),
     }
 }
+pub fn benchmark<F, T>(name: &str, iterations: u32, mut func: F) -> T
+where
+    F: FnMut() -> T
+{
+    let start = Instant::now();
+    let mut result = None;
 
+    for _ in 0..iterations {
+        result = Some(func());
+    }
+
+    let duration = start.elapsed();
+
+    println!("=== {} ===", name);
+    println!("Iterations: {}", iterations);
+    println!("Total time: {:?}", duration);
+    println!("Average: {:?}", duration / iterations);
+    println!("Ops/sec: {:.0}", iterations as f64 / duration.as_secs_f64());
+
+    result.unwrap()
+}
 #[test]
 fn decision_expression_node() {
+    let times = 10_000;
     let rt = Builder::new_current_thread().build().unwrap();
     let decision = Decision::from(load_test_data("expression.json"));
     let context = json!({
         "numbers": [1, 5, 15, 25],
         "firstName": "John",
         "lastName": "Doe"
+    });
+    benchmark("Decision Standard", times, || {
+        let context = json!({
+            "numbers": [1, 5, 15, 25],
+            "firstName": "John",
+            "lastName": "Doe"
+    }   );
+        let r = rt.block_on(decision.evaluate(context.into()));
+        if let Err(e) = r {
+            println!("Error: {}", e);
+        }
+    });
+
+    decision.compile_decision();
+    benchmark("!Decision PreCompiled", times, || {
+        let context = json!({
+            "numbers": [1, 5, 15, 25],
+            "firstName": "John",
+            "lastName": "Doe"
+    }   );
+        let r = rt.block_on(decision.evaluate(context.into()));
+        if let Err(e) = r {
+            println!("Error: {}", e);
+        }
     });
 
     let result = rt.block_on(decision.evaluate(context.into()));

@@ -1,0 +1,9 @@
+# Kotlin Android
+[bindings.kotlin]
+package_name = "io.gorules.zen_engine.kotlin_android"
+generate_immutable_records = true
+android = true
+
+[bindings.kotlin.custom_types.JsonBuffer]
+into_custom = "JsonBuffer({})"
+from_custom = "{}.value"

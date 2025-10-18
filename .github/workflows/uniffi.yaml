@@ -269,15 +269,16 @@ jobs:
       - name: Add Rust Android targets
         run: |
           rustup target add aarch64-linux-android
-          rustup target add armv7-linux-androideabi
-          rustup target add i686-linux-android
-          rustup target add x86_64-linux-android
+#          rustup target add armv7-linux-androideabi
+#          rustup target add i686-linux-android
+#          rustup target add x86_64-linux-android
 
       - name: Build for Android
         env:
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
-          cargo ndk -t arm64-v8a -t armeabi-v7a -t x86 -t x86_64 \
+#          cargo ndk -t arm64-v8a -t armeabi-v7a -t x86 -t x86_64 \
+          cargo ndk -t arm64-v8a \
             --platform 33 \
             -o ./android-libs \
             build -p zen-uniffi --release
@@ -311,30 +312,29 @@ jobs:
           cargo run --bin uniffi-bindgen -- generate \
             --library android-libs/arm64-v8a/libzen_uniffi.so \
             --language kotlin \
+            --config bindings/uniffi/uniffi-android.toml \
             --out-dir build/generated/kotlin-android
 
-      - name: Generate Java bindings
+      - name: Test out dir
         run: |
-          cargo install uniffi-bindgen-java
-          uniffi-bindgen-java generate \
-            --library android-libs/arm64-v8a/libzen_uniffi.so \
-            --out-dir build/generated/java-android
+          ls -la build
+          ls -la build/generated
+          ls -la build/generated/kotlin-android
 
       - name: Create Android package structure
         run: |
-          mkdir -p android-package/libs/{arm64-v8a,armeabi-v7a,x86,x86_64}
+#          mkdir -p android-package/libs/{arm64-v8a,armeabi-v7a,x86,x86_64}
+          mkdir -p android-package/libs/arm64-v8a
           mkdir -p android-package/kotlin
-          mkdir -p android-package/java
 
           # Copy .so files
           cp android-libs/arm64-v8a/libzen_uniffi.so android-package/libs/arm64-v8a/
-          cp android-libs/armeabi-v7a/libzen_uniffi.so android-package/libs/armeabi-v7a/
-          cp android-libs/x86/libzen_uniffi.so android-package/libs/x86/
-          cp android-libs/x86_64/libzen_uniffi.so android-package/libs/x86_64/
+#          cp android-libs/armeabi-v7a/libzen_uniffi.so android-package/libs/armeabi-v7a/
+#          cp android-libs/x86/libzen_uniffi.so android-package/libs/x86/
+#          cp android-libs/x86_64/libzen_uniffi.so android-package/libs/x86_64/
 
           # Copy bindings
           cp -r build/generated/kotlin-android/* android-package/kotlin/
-          cp -r build/generated/java-android/* android-package/java/
 
       - name: Upload Android package
         uses: actions/upload-artifact@v4

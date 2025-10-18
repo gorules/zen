@@ -6,7 +6,7 @@ license = "MIT"
 publish = false
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "staticlib"]
 
 [[bin]]
 name = "uniffi-bindgen"

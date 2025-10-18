@@ -22,7 +22,7 @@ on:
 
 jobs:
   build:
-    if: "!contains(github.event.head_commit.message, 'skip ci')"
+    if: false #"!contains(github.event.head_commit.message, 'skip ci')"
     env:
       OUTPUT_NAME: zen_uniffi
 
@@ -79,7 +79,7 @@ jobs:
   release-java-kotlin:
     runs-on: ubuntu-latest
     needs: [ build ]
-    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
+    if: false # "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
     defaults:
       run:
         working-directory: ${{ env.UNIFFI_DIRECTORY }}
@@ -135,3 +135,105 @@ jobs:
           GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
           GPG_SIGNING_PASSPHRASE: ${{ secrets.GPG_SIGNING_PASSPHRASE }}
         run: ./gradlew publishAllPublicationsToCentralPortal
+
+  build-ios:
+    if: "!contains(github.event.head_commit.message, 'skip ci')"
+    env:
+      OUTPUT_NAME: zen_uniffi
+      IPHONEOS_DEPLOYMENT_TARGET: '16.0'
+
+    strategy:
+      fail-fast: true
+      matrix:
+        settings:
+          - target: 'aarch64-apple-ios'
+            output: 'lib{0}.a'
+            lib_dir: 'ios-aarch64'
+          - target: 'x86_64-apple-ios'
+            output: 'lib{0}.a'
+            lib_dir: 'ios-x86-64'
+          - target: 'aarch64-apple-ios-sim'
+            output: 'lib{0}.a'
+            lib_dir: 'ios-aarch64-sim'
+
+    name: UniFFI iOS - ${{ matrix.settings.target }}
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          target: ${{ matrix.settings.target }}
+
+      - name: Build iOS
+        run: |
+          if [ "${{ matrix.settings.target }}" = "aarch64-apple-ios-sim" ]; then
+            export BINDGEN_EXTRA_CLANG_ARGS="--target=aarch64-apple-ios --sysroot=$(xcrun --sdk iphonesimulator --show-sdk-path)"
+          fi
+          cargo build -p zen-uniffi --target ${{ matrix.settings.target }} --release
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.settings.lib_dir }}
+          path: target/${{ matrix.settings.target }}/release/${{ format(matrix.settings.output, env.OUTPUT_NAME) }}
+          if-no-files-found: error
+
+  create-xcframework:
+    runs-on: macos-latest
+    needs: [ build-ios ]
+    if: "!contains(github.event.head_commit.message, 'skip ci')"
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Download iOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: target-ios
+
+      - name: Reorganize artifacts to match target structure
+        run: |
+          mkdir -p target/aarch64-apple-ios/release
+          mkdir -p target/x86_64-apple-ios/release
+          mkdir -p target/aarch64-apple-ios-sim/release
+          
+          cp target-ios/ios-aarch64/libzen_uniffi.a target/aarch64-apple-ios/release/
+          cp target-ios/ios-x86-64/libzen_uniffi.a target/x86_64-apple-ios/release/
+          cp target-ios/ios-aarch64-sim/libzen_uniffi.a target/aarch64-apple-ios-sim/release/
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Generate Swift bindings
+        run: |
+          cargo run --bin uniffi-bindgen -- generate \
+            --library target/aarch64-apple-ios/release/libzen_uniffi.a \
+            --language swift \
+            --out-dir bindings/uniffi/build/generated/swift
+
+      - name: Create release structure
+        run: |
+          mkdir -p ios-release/ios/swift
+          
+          # Create XCFramework
+          xcodebuild -create-xcframework \
+            -library target/aarch64-apple-ios/release/libzen_uniffi.a \
+            -headers bindings/uniffi/build/generated/swift \
+            -library target/x86_64-apple-ios/release/libzen_uniffi.a \
+            -headers bindings/uniffi/build/generated/swift \
+            -library target/aarch64-apple-ios-sim/release/libzen_uniffi.a \
+            -headers bindings/uniffi/build/generated/swift \
+            -output ios-release/ios/ZenUniffi.xcframework
+          
+          # Copy Swift bindings
+          cp -r bindings/uniffi/build/generated/swift/* ios-release/ios/swift/
+
+      - name: Upload iOS release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-release
+          path: ios-release
+          if-no-files-found: error

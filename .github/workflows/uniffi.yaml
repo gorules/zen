@@ -214,17 +214,23 @@ jobs:
             --language swift \
             --out-dir bindings/uniffi/build/generated/swift
 
+      - name: Create fat simulator library
+        run: |
+          mkdir -p target/universal-sim/release
+          lipo -create \
+            target/x86_64-apple-ios/release/libzen_uniffi.a \
+            target/aarch64-apple-ios-sim/release/libzen_uniffi.a \
+            -output target/universal-sim/release/libzen_uniffi.a
+
       - name: Create release structure
         run: |
           mkdir -p ios-release/ios/swift
-          
-          # Create XCFramework
+
+          # Create XCFramework with device + universal simulator
           xcodebuild -create-xcframework \
             -library target/aarch64-apple-ios/release/libzen_uniffi.a \
             -headers bindings/uniffi/build/generated/swift \
-            -library target/x86_64-apple-ios/release/libzen_uniffi.a \
-            -headers bindings/uniffi/build/generated/swift \
-            -library target/aarch64-apple-ios-sim/release/libzen_uniffi.a \
+            -library target/universal-sim/release/libzen_uniffi.a \
             -headers bindings/uniffi/build/generated/swift \
             -output ios-release/ios/ZenUniffi.xcframework
           

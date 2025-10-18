@@ -137,7 +137,7 @@ jobs:
         run: ./gradlew publishAllPublicationsToCentralPortal
 
   build-ios:
-    if: "!contains(github.event.head_commit.message, 'skip ci')"
+    if: false #"!contains(github.event.head_commit.message, 'skip ci')"
     env:
       OUTPUT_NAME: zen_uniffi
       IPHONEOS_DEPLOYMENT_TARGET: '16.0'
@@ -242,4 +242,103 @@ jobs:
         with:
           name: ios-release
           path: ios-release
+          if-no-files-found: error
+
+  build-android:
+    if: "!contains(github.event.head_commit.message, 'skip ci')"
+    runs-on: ubuntu-latest
+    env:
+      OUTPUT_NAME: zen_uniffi
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r26d
+          add-to-path: true
+
+      - name: Add Rust Android targets
+        run: |
+          rustup target add aarch64-linux-android
+          rustup target add armv7-linux-androideabi
+          rustup target add i686-linux-android
+          rustup target add x86_64-linux-android
+
+      - name: Build for Android
+        env:
+          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          cargo ndk -t arm64-v8a -t armeabi-v7a -t x86 -t x86_64 \
+            --platform 33 \
+            -o ./android-libs \
+            build -p zen-uniffi --release
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-libs
+          path: android-libs/
+          if-no-files-found: error
+
+  prepare-android-bindings:
+    runs-on: ubuntu-latest
+    needs: [ build-android ]
+    if: "!contains(github.event.head_commit.message, 'skip ci')"
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Download Android artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: android-libs
+          path: android-libs
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Generate Kotlin bindings
+        run: |
+          cargo run --bin uniffi-bindgen -- generate \
+            --library android-libs/arm64-v8a/libzen_uniffi.so \
+            --language kotlin \
+            --out-dir build/generated/kotlin-android
+
+      - name: Generate Java bindings
+        run: |
+          cargo install uniffi-bindgen-java
+          uniffi-bindgen-java generate \
+            --library android-libs/arm64-v8a/libzen_uniffi.so \
+            --out-dir build/generated/java-android
+
+      - name: Create Android package structure
+        run: |
+          mkdir -p android-package/libs/{arm64-v8a,armeabi-v7a,x86,x86_64}
+          mkdir -p android-package/kotlin
+          mkdir -p android-package/java
+
+          # Copy .so files
+          cp android-libs/arm64-v8a/libzen_uniffi.so android-package/libs/arm64-v8a/
+          cp android-libs/armeabi-v7a/libzen_uniffi.so android-package/libs/armeabi-v7a/
+          cp android-libs/x86/libzen_uniffi.so android-package/libs/x86/
+          cp android-libs/x86_64/libzen_uniffi.so android-package/libs/x86_64/
+
+          # Copy bindings
+          cp -r build/generated/kotlin-android/* android-package/kotlin/
+          cp -r build/generated/java-android/* android-package/java/
+
+      - name: Upload Android package
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-package
+          path: android-package
           if-no-files-found: error

@@ -306,25 +306,25 @@ jobs:
 
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          target: x86_64-unknown-linux-gnu
 
-      - name: Generate Kotlin bindings
+      - name: Build Linux library for metadata extraction
+        run: |
+          echo "Building Linux x86_64 library to extract UniFFI metadata..."
+          cargo build -p zen-uniffi --target x86_64-unknown-linux-gnu --release
+
+      - name: Generate Kotlin bindings (using Linux library for metadata)
         run: |
           cargo run --bin uniffi-bindgen -- generate \
-            --library android-libs/arm64-v8a/libzen_uniffi.so \
-            --language kotlin \
-            --config bindings/uniffi/uniffi-android.toml \
-            --out-dir build/generated/kotlin-android
-
-      - name: Test out dir
-        run: |
-          ls -la build
-          ls -la build/generated
-          ls -la build/generated/kotlin-android
+          --library target/x86_64-unknown-linux-gnu/release/libzen_uniffi.so \
+          --language kotlin \
+          --config bindings/uniffi/uniffi-android.toml \
+          --out-dir build/generated/kotlin-android
 
       - name: Create Android package structure
         run: |
-          # mkdir -p android-package/libs/{arm64-v8a,armeabi-v7a,x86,x86_64}
-          mkdir -p android-package/libs/arm64-v8a
+          mkdir -p android-package/libs/{arm64-v8a,armeabi-v7a,x86,x86_64}
           mkdir -p android-package/kotlin
 
           # Copy .so files

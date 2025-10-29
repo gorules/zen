@@ -326,9 +326,12 @@ jobs:
           git config http.lowSpeedTime 600
           
           # Commit the changes
-          git add ZenUniffi.xcframework
-          git add Package.swift
-          git add Sources/
+          # Show what we have
+          ls -la
+          
+          # Commit the changes - add all new/modified files
+          git add -A
+          git status
           git commit -m "chore: update XCFramework"
 
       - name: Push changes

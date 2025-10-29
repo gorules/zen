@@ -237,7 +237,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: xcframework
-          path: ZenUniffi.xcframework
+          path: ZenUniffi.xcframework/
           if-no-files-found: error
 
       - name: Upload Swift bindings
@@ -265,7 +265,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: xcframework
-          path: .
+          path: ZenUniffi.xcframework
 
       - name: Download Swift bindings
         uses: actions/download-artifact@v4
@@ -325,7 +325,6 @@ jobs:
           git config http.postBuffer 524288000
           git config http.lowSpeedTime 600
           
-          # Commit the changes
           # Show what we have
           ls -la
           

@@ -265,7 +265,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: xcframework
-          path: xcframework
+          path: .
 
       - name: Download Swift bindings
         uses: actions/download-artifact@v4
@@ -275,10 +275,8 @@ jobs:
 
       - name: Move artifacts to repo
         run: |
-          # Move XCFramework
-          mv xcframework/ZenUniffi.xcframework ./
-
-          # Move Swift bindings to Sources
+          # Remove existing Sources if it exists, then move swift-bindings to Sources
+          rm -rf Sources
           mv swift-bindings Sources
 
       - name: Create Package.swift

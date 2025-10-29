@@ -137,7 +137,7 @@ jobs:
         run: ./gradlew publishAllPublicationsToCentralPortal
 
   build-ios:
-    #    if: false
+#    if: false
     if: "!contains(github.event.head_commit.message, 'skip ci')"
     env:
       OUTPUT_NAME: zen_uniffi
@@ -169,27 +169,23 @@ jobs:
           target: ${{ matrix.settings.target }}
 
       - name: Build iOS
-        working-directory: ${{ env.UNIFFI_DIRECTORY }}
         run: |
           if [ "${{ matrix.settings.target }}" = "aarch64-apple-ios-sim" ]; then
             export BINDGEN_EXTRA_CLANG_ARGS="--target=aarch64-apple-ios --sysroot=$(xcrun --sdk iphonesimulator --show-sdk-path)"
           fi
-          cargo build --lib --target ${{ matrix.settings.target }} --release
+          cargo build -p zen-uniffi --target ${{ matrix.settings.target }} --release
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.settings.lib_dir }}
-          path: ${{ env.UNIFFI_DIRECTORY }}/target/${{ matrix.settings.target }}/release/${{ format(matrix.settings.output, env.OUTPUT_NAME) }}
+          path: target/${{ matrix.settings.target }}/release/${{ format(matrix.settings.output, env.OUTPUT_NAME) }}
           if-no-files-found: error
 
   create-xcframework:
     runs-on: macos-latest
     needs: [ build-ios ]
     if: "!contains(github.event.head_commit.message, 'skip ci')"
-    defaults:
-      run:
-        working-directory: ${{ env.UNIFFI_DIRECTORY }}
 
     steps:
       - uses: actions/checkout@v3
@@ -197,7 +193,7 @@ jobs:
       - name: Download iOS artifacts
         uses: actions/download-artifact@v4
         with:
-          path: ${{ env.UNIFFI_DIRECTORY }}/target-ios
+          path: target-ios
 
       - name: Reorganize artifacts to match target structure
         run: |
@@ -214,11 +210,10 @@ jobs:
 
       - name: Generate Swift bindings
         run: |
-          mkdir -p build/generated/swift
           cargo run --bin uniffi-bindgen -- generate \
             --library target/aarch64-apple-ios/release/libzen_uniffi.a \
             --language swift \
-            --out-dir build/generated/swift
+            --out-dir swift-bindings
 
       - name: Create fat simulator library
         run: |
@@ -230,28 +225,30 @@ jobs:
 
       - name: Create XCFramework
         run: |
-          mkdir -p build/ios-release/ios/swift
-
           # Create XCFramework with device + universal simulator
           xcodebuild -create-xcframework \
             -library target/aarch64-apple-ios/release/libzen_uniffi.a \
-            -headers build/generated/swift \
+            -headers swift-bindings \
             -library target/universal-sim/release/libzen_uniffi.a \
-            -headers build/generated/swift \
-            -output build/ios-release/ios/ZenUniffi.xcframework
-          
-          # Copy Swift bindings
-          cp -r build/generated/swift/* build/ios-release/ios/swift/
+            -headers swift-bindings \
+            -output ZenUniffi.xcframework
 
-      - name: Upload iOS release bundle
+      - name: Upload XCFramework
         uses: actions/upload-artifact@v4
         with:
-          name: ios-release
-          path: ${{ env.UNIFFI_DIRECTORY }}/build/ios-release
+          name: xcframework
+          path: ZenUniffi.xcframework
+          if-no-files-found: error
+
+      - name: Upload Swift bindings
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-bindings
+          path: swift-bindings
           if-no-files-found: error
 
   release-ios:
-    name: Release iOS to zen-ios
+    name: Release iOS
     runs-on: macos-latest
     needs: [ create-xcframework ]
     if: "!contains(github.event.head_commit.message, 'skip ci')"
@@ -264,30 +261,62 @@ jobs:
           persist-credentials: false
           token: ${{ secrets.PAT }}
 
-      - name: Download iOS artifacts
+      - name: Download XCFramework
         uses: actions/download-artifact@v4
         with:
-          name: ios-release
-          path: artifacts
+          name: xcframework
+          path: xcframework
 
-      - name: Move artifacts
+      - name: Download Swift bindings
+        uses: actions/download-artifact@v4
+        with:
+          name: swift-bindings
+          path: swift-bindings
+
+      - name: Move artifacts to repo
         run: |
-          # Remove old XCFramework and Swift files if they exist
-          rm -rf ZenUniffi.xcframework
-          rm -rf swift
-          
-          # Move new artifacts to repository root
-          mv artifacts/ios/ZenUniffi.xcframework ./
-          mv artifacts/ios/swift ./
-          
-          # Clean up
-          rm -rf artifacts
+          # Move XCFramework
+          mv xcframework/ZenUniffi.xcframework ./
+
+          # Move Swift bindings to Sources
+          mv swift-bindings Sources
+
+      - name: Create Package.swift
+        run: |
+          cat > Package.swift << 'EOF'
+          // swift-tools-version:5.9
+          import PackageDescription
+
+          let package = Package(
+              name: "ZenUniffi",
+              platforms: [
+                  .iOS(.v16)
+              ],
+              products: [
+                  .library(
+                      name: "ZenUniffi",
+                      targets: ["ZenUniffiWrapper"]
+                  )
+              ],
+              targets: [
+                  .target(
+                      name: "ZenUniffiWrapper",
+                      dependencies: ["ZenUniffiBinary"],
+                      path: "Sources"
+                  ),
+                  .binaryTarget(
+                      name: "ZenUniffiBinary",
+                      path: "ZenUniffi.xcframework"
+                  )
+              ]
+          )
+          EOF
 
       - name: Set branch name
         run: |
           echo "BRANCH_NAME=chore/${{ github.run_id }}-${{ github.run_attempt }}" >> $GITHUB_ENV
 
-      - name: Commit
+      - name: Commit changes
         run: |
           BRANCH_NAME="${{ env.BRANCH_NAME }}"
           git checkout -b $BRANCH_NAME
@@ -299,8 +328,10 @@ jobs:
           git config http.lowSpeedTime 600
           
           # Commit the changes
-          git add .
-          git commit -m "chore: update iOS bindings"
+          git add ZenUniffi.xcframework
+          git add Package.swift
+          git add Sources/
+          git commit -m "chore: update XCFramework"
 
       - name: Push changes
         uses: ad-m/github-push-action@master
@@ -321,13 +352,13 @@ jobs:
           gh auth login --with-token < token.txt
           gh pr create \
             --body "" \
-            --title "chore: update iOS bindings" \
+            --title "chore: update XCFramework" \
             --head "$BRANCH_NAME" \
             --base "master"
 
   build-android:
     if: false
-    #    if: "!contains(github.event.head_commit.message, 'skip ci')"
+#    if: "!contains(github.event.head_commit.message, 'skip ci')"
     runs-on: ubuntu-latest
     env:
       OUTPUT_NAME: zen_uniffi
@@ -356,7 +387,6 @@ jobs:
           # rustup target add x86_64-linux-android
 
       - name: Build for Android
-        working-directory: ${{ env.UNIFFI_DIRECTORY }}
         env:
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
@@ -364,22 +394,19 @@ jobs:
           cargo ndk -t arm64-v8a \
             --platform 33 \
             -o ./android-libs \
-            build --lib --release
+            build -p zen-uniffi --release
 
       - name: Upload Android artifacts
         uses: actions/upload-artifact@v4
         with:
           name: android-libs
-          path: ${{ env.UNIFFI_DIRECTORY }}/android-libs/
+          path: android-libs/
           if-no-files-found: error
 
-  create-android-bindings:
+  prepare-android-bindings:
     runs-on: ubuntu-latest
     needs: [ build-android ]
     if: "!contains(github.event.head_commit.message, 'skip ci')"
-    defaults:
-      run:
-        working-directory: ${{ env.UNIFFI_DIRECTORY }}
 
     steps:
       - uses: actions/checkout@v3
@@ -388,7 +415,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: android-libs
-          path: ${{ env.UNIFFI_DIRECTORY }}/android-libs
+          path: android-libs
 
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -398,45 +425,33 @@ jobs:
       - name: Build Linux library for metadata extraction
         run: |
           echo "Building Linux x86_64 library to extract UniFFI metadata..."
-          cargo build --lib --target x86_64-unknown-linux-gnu --release
+          cargo build -p zen-uniffi --target x86_64-unknown-linux-gnu --release
 
-      - name: Generate Kotlin bindings
+      - name: Generate Kotlin bindings (using Linux library for metadata)
         run: |
-          mkdir -p build/generated/kotlin-android
-          
-          # Generate Kotlin bindings (with Android config if it exists)
-          if [ -f "uniffi-android.toml" ]; then
-            cargo run --bin uniffi-bindgen -- generate \
-              --library target/x86_64-unknown-linux-gnu/release/libzen_uniffi.so \
-              --language kotlin \
-              --config uniffi-android.toml \
-              --out-dir build/generated/kotlin-android
-          else
-            cargo run --bin uniffi-bindgen -- generate \
-              --library target/x86_64-unknown-linux-gnu/release/libzen_uniffi.so \
-              --language kotlin \
-              --out-dir build/generated/kotlin-android
-          fi
+          cargo run --bin uniffi-bindgen -- generate \
+          --library target/x86_64-unknown-linux-gnu/release/libzen_uniffi.so \
+          --language kotlin \
+          --config bindings/uniffi/uniffi-android.toml \
+          --out-dir build/generated/kotlin-android
 
       - name: Create Android package structure
         run: |
-          mkdir -p build/android-package/libs
-          mkdir -p build/android-package/kotlin
+          mkdir -p android-package/libs/{arm64-v8a,armeabi-v7a,x86,x86_64}
+          mkdir -p android-package/kotlin
 
-          # Copy .so files (cargo ndk creates arch-specific subdirectories)
-          cp -r android-libs/* build/android-package/libs/
+          # Copy .so files
+          cp android-libs/arm64-v8a/libzen_uniffi.so android-package/libs/arm64-v8a/
+          # cp android-libs/armeabi-v7a/libzen_uniffi.so android-package/libs/armeabi-v7a/
+          # cp android-libs/x86/libzen_uniffi.so android-package/libs/x86/
+          # cp android-libs/x86_64/libzen_uniffi.so android-package/libs/x86_64/
 
-          # Copy Kotlin bindings
-          cp -r build/generated/kotlin-android/* build/android-package/kotlin/
-
-      - name: List package contents
-        run: |
-          echo "Android package structure:"
-          find build/android-package -type f
+          # Copy bindings
+          cp -r build/generated/kotlin-android/* android-package/kotlin/
 
       - name: Upload Android package
         uses: actions/upload-artifact@v4
         with:
           name: android-package
-          path: ${{ env.UNIFFI_DIRECTORY }}/build/android-package
+          path: android-package
           if-no-files-found: error

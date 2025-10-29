@@ -1,3 +1,4 @@
+use crate::decision::CompilationKey;
 use crate::model::ExpressionNodeContent;
 use crate::nodes::context::{NodeContext, NodeContextExt};
 use crate::nodes::definition::NodeHandler;
@@ -7,7 +8,6 @@ use std::rc::Rc;
 use zen_expression::variable::{ToVariable, Variable};
 use zen_expression::{ExpressionKind, Isolate};
 use zen_types::decision::TransformAttributes;
-use crate::decision::CompilationKey;
 
 #[derive(Debug, Clone)]
 pub struct ExpressionNodeHandler;
@@ -44,9 +44,10 @@ impl NodeHandler for ExpressionNodeHandler {
                 .extensions
                 .compiled_cache
                 .as_ref()
-                .and_then(|cc| cc.get(&key)) {
-                Some(codes) => {value = isolate.run_compiled(codes.as_slice())},
-                None => {value = isolate.run_standard(&expression.value)}
+                .and_then(|cc| cc.get(&key))
+            {
+                Some(codes) => value = isolate.run_compiled(codes.as_slice()),
+                None => value = isolate.run_standard(&expression.value),
             }
 
             let value = value.with_node_context(&ctx, |_| {

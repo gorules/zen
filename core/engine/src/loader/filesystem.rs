@@ -9,8 +9,8 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-use crate::loader::{DecisionLoader, LoaderError, LoaderResponse};
 use crate::decision::DecisionContent;
+use crate::loader::{DecisionLoader, LoaderError, LoaderResponse};
 
 /// Loads decisions based on filesystem root
 #[derive(Debug)]

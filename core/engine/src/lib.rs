@@ -135,7 +135,7 @@ pub use config::ZEN_CONFIG;
 pub use decision::{Decision, DecisionContent};
 pub use decision_graph::{DecisionGraphResponse, DecisionGraphTrace, DecisionGraphValidationError};
 pub use engine::{
-    DecisionEngine, EvaluationOptions, EvaluationSerializedOptions, EvaluationTraceKind
+    DecisionEngine, EvaluationOptions, EvaluationSerializedOptions, EvaluationTraceKind,
 };
 pub use error::EvaluationError;
 pub use zen_expression::Variable;

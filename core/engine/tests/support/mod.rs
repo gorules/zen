@@ -50,7 +50,13 @@ fn format_with_underscores(n: u32) -> String {
 }
 
 #[allow(dead_code)]
-pub fn benchmark<F, T>(name: &str, iterations: u32, prev_dur: Option<u128>, print: bool, mut func: F) -> (T, u128)
+pub fn benchmark<F, T>(
+    name: &str,
+    iterations: u32,
+    prev_dur: Option<u128>,
+    print: bool,
+    mut func: F,
+) -> (T, u128)
 where
     F: FnMut() -> T,
 {
@@ -72,7 +78,7 @@ where
     if let Some(prev_dur) = prev_dur {
         let c_dur = duration.as_micros();
         let diff = prev_dur as f64 - c_dur as f64;
-        println!("Faster: **{:.1}%**",(diff/prev_dur as f64) * 100.0);
+        println!("Faster: **{:.1}%**", (diff / prev_dur as f64) * 100.0);
     }
     (result.unwrap(), duration.as_micros())
 }

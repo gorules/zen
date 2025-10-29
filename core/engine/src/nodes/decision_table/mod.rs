@@ -1,3 +1,4 @@
+use crate::decision::CompilationKey;
 use crate::nodes::definition::NodeHandler;
 use crate::nodes::result::NodeResult;
 use crate::nodes::{NodeContext, NodeResponse};
@@ -10,7 +11,6 @@ use zen_expression::variable::ToVariable;
 use zen_expression::{ExpressionKind, Isolate};
 use zen_types::decision::{DecisionTableContent, DecisionTableHitPolicy, TransformAttributes};
 use zen_types::variable::Variable;
-use crate::decision::CompilationKey;
 
 #[derive(Debug, Clone)]
 pub struct DecisionTableNodeHandler;
@@ -127,9 +127,12 @@ impl DecisionTableNodeHandler {
                         source: Arc::from(rule_value.clone()),
                     };
                     let result: Variable;
-                    if let Some(codes) = ctx.extensions.compiled_cache
+                    if let Some(codes) = ctx
+                        .extensions
+                        .compiled_cache
                         .as_ref()
-                        .and_then(|cc| cc.get(&key)) {
+                        .and_then(|cc| cc.get(&key))
+                    {
                         result = isolate.run_compiled(codes).ok()?;
                     } else {
                         result = isolate.run_standard(rule_value).ok()?;
@@ -144,9 +147,12 @@ impl DecisionTableNodeHandler {
                         kind: ExpressionKind::Unary,
                         source: Arc::from(rule_value.clone()),
                     };
-                    if let Some(codes) = ctx.extensions.compiled_cache
+                    if let Some(codes) = ctx
+                        .extensions
+                        .compiled_cache
                         .as_ref()
-                        .and_then(|cc| cc.get(&key)) {
+                        .and_then(|cc| cc.get(&key))
+                    {
                         if !isolate.run_unary_compiled(codes).ok()? {
                             return None;
                         }
@@ -175,7 +181,8 @@ impl DecisionTableNodeHandler {
                 .extensions
                 .compiled_cache
                 .as_ref()
-                .and_then(|cc| cc.get(&key)) {
+                .and_then(|cc| cc.get(&key))
+            {
                 res = isolate.run_compiled(codes).ok()?;
             } else {
                 res = isolate.run_standard(rule_value).ok()?;

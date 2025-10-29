@@ -6,10 +6,10 @@ use crate::nodes::validator_cache::ValidatorCache;
 use crate::nodes::NodeHandlerExtensions;
 use crate::{DecisionGraphValidationError, EvaluationError};
 use ahash::{HashMap, HashMapExt};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::cell::OnceCell;
 use std::sync::Arc;
-use serde::{Deserialize, Serialize};
 use zen_expression::compiler::Opcode;
 use zen_expression::variable::Variable;
 use zen_expression::{ExpressionKind, Isolate};
@@ -29,11 +29,9 @@ pub struct DecisionContent {
 
     #[serde(skip)]
     pub compiled_cache: Option<Arc<HashMap<CompilationKey, Vec<Opcode>>>>,
-
 }
 
 impl DecisionContent {
-
     pub fn compile(&mut self) {
         let mut compiled_cache: HashMap<CompilationKey, Vec<Opcode>> = HashMap::new();
         let mut isolate = Isolate::new();
@@ -79,8 +77,11 @@ impl DecisionContent {
                                     };
 
                                     if !compiled_cache.contains_key(&key) {
-                                        if let Ok(comp_expression) = isolate.compile_standard(rule_value) {
-                                            compiled_cache.insert(key, comp_expression.bytecode().to_vec());
+                                        if let Ok(comp_expression) =
+                                            isolate.compile_standard(rule_value)
+                                        {
+                                            compiled_cache
+                                                .insert(key, comp_expression.bytecode().to_vec());
                                         }
                                     }
                                 }
@@ -91,8 +92,11 @@ impl DecisionContent {
                                     };
 
                                     if !compiled_cache.contains_key(&key) {
-                                        if let Ok(comp_expression) = isolate.compile_unary(rule_value) {
-                                            compiled_cache.insert(key, comp_expression.bytecode().to_vec());
+                                        if let Ok(comp_expression) =
+                                            isolate.compile_unary(rule_value)
+                                        {
+                                            compiled_cache
+                                                .insert(key, comp_expression.bytecode().to_vec());
                                         }
                                     }
                                 }
@@ -241,7 +245,7 @@ impl Decision {
         decision_graph.validate()
     }
 
-    pub fn compile(&mut self) -> ()  {
+    pub fn compile(&mut self) -> () {
         let cm = Arc::make_mut(&mut self.content);
         cm.compile();
     }

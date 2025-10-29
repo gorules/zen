@@ -5,8 +5,8 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use uniffi::deps::anyhow::anyhow;
-use zen_engine::loader::{DecisionLoader, LoaderError, LoaderResponse};
 use zen_engine::DecisionContent;
+use zen_engine::loader::{DecisionLoader, LoaderError, LoaderResponse};
 
 #[uniffi::export(callback_interface)]
 #[async_trait::async_trait]

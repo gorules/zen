@@ -14,7 +14,8 @@ pub struct PyZenDecisionContent(pub Arc<DecisionContent>);
 impl PyZenDecisionContent {
     #[new]
     pub fn new(data: &str) -> PyResult<Self> {
-        let mut content: DecisionContent = serde_json::from_str(data).context("Failed to parse JSON")?;
+        let mut content: DecisionContent =
+            serde_json::from_str(data).context("Failed to parse JSON")?;
         content.compile();
         Ok(Self(Arc::new(content)))
     }

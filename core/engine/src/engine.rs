@@ -1,7 +1,7 @@
 use crate::decision::Decision;
+use crate::decision::DecisionContent;
 use crate::decision_graph::graph::DecisionGraphResponse;
 use crate::loader::{ClosureLoader, DynamicLoader, LoaderResponse, LoaderResult, NoopLoader};
-use crate::decision::DecisionContent;
 use crate::nodes::custom::{DynamicCustomNode, NoopCustomNode};
 use crate::EvaluationError;
 use serde_json::Value;

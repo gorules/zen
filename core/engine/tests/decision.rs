@@ -85,7 +85,7 @@ fn decision_expression_node_cmp() {
         "lastName": "Doe"
     });
 
-    let (_, st_dur) = benchmark("Decision Standard", times, None , false, || {
+    let (_, st_dur) = benchmark("Decision Standard", times, None, false, || {
         let context = context.clone();
         let r = rt.block_on(decision.evaluate(context.into()));
         r

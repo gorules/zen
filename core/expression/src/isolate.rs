@@ -159,6 +159,15 @@ impl<'a> Isolate<'a> {
 
         result.as_bool().ok_or_else(|| IsolateError::ValueCastError)
     }
+
+    pub fn run_unary_compiled(&mut self, code:  &[Opcode]) -> Result<bool, IsolateError> {
+
+        let result = self
+            .vm
+            .run(code, self.environment.clone().unwrap_or(Variable::Null))?;
+
+        result.as_bool().ok_or_else(|| IsolateError::ValueCastError)
+    }
 }
 
 /// Errors which happen within isolate or during evaluation

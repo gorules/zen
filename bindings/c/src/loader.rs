@@ -6,7 +6,7 @@ use std::sync::Arc;
 use anyhow::anyhow;
 
 use zen_engine::loader::{DecisionLoader, LoaderError, LoaderResponse, NoopLoader};
-use zen_engine::model::DecisionContent;
+use zen_engine::DecisionContent;
 
 use crate::languages::native::NativeDecisionLoader;
 

@@ -1,7 +1,7 @@
 use crate::decision_graph::tracer::NodeTracer;
 use crate::decision_graph::walker::{GraphWalker, NodeData, StableDiDecisionGraph};
 use crate::engine::EvaluationTraceKind;
-use crate::model::{DecisionContent, DecisionNodeKind};
+use crate::model::DecisionNodeKind;
 use crate::nodes::custom::CustomNodeHandler;
 use crate::nodes::decision::DecisionNodeHandler;
 use crate::nodes::decision_table::DecisionTableNodeHandler;
@@ -26,6 +26,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use zen_expression::variable::{ToVariable, Variable};
 use zen_types::decision::DecisionNode;
+use crate::decision::DecisionContent;
 
 #[derive(Debug)]
 pub struct DecisionGraph {

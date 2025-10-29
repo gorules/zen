@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 use crate::loader::{DecisionLoader, LoaderError, LoaderResponse};
-use crate::model::DecisionContent;
+use crate::decision::DecisionContent;
 
 /// Loads decisions based on filesystem root
 #[derive(Debug)]

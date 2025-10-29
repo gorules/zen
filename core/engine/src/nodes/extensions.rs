@@ -1,4 +1,3 @@
-use crate::decision::CompilationKey;
 use crate::loader::{DynamicLoader, NoopLoader};
 use crate::nodes::custom::{DynamicCustomNode, NoopCustomNode};
 use crate::nodes::function::v2::function::{Function, FunctionConfig};
@@ -9,6 +8,7 @@ use ahash::HashMap;
 use anyhow::Context;
 use std::cell::OnceCell;
 use std::sync::Arc;
+use crate::decision::CompilationKey;
 use zen_expression::compiler::Opcode;
 
 /// This is created on every graph evaluation

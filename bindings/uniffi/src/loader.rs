@@ -6,7 +6,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use uniffi::deps::anyhow::anyhow;
 use zen_engine::loader::{DecisionLoader, LoaderError, LoaderResponse};
-use zen_engine::model::DecisionContent;
+use zen_engine::DecisionContent;
 
 #[uniffi::export(callback_interface)]
 #[async_trait::async_trait]

@@ -38,7 +38,6 @@ reqsign = { version = "0.17", features = ["aws", "azure", "google", "default-con
 sha2 = "0.10"
 
 [dev-dependencies]
-chrono = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 criterion = { workspace = true, features = ["async_tokio"] }
 insta = { version = "1.43", features = ["yaml", "redactions"] }

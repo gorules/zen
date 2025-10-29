@@ -8,10 +8,10 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::runtime::Builder;
 use zen_engine::loader::{LoaderError, MemoryLoader};
-use zen_engine::model::{DecisionContent, DecisionNode, DecisionNodeKind, FunctionNodeContent};
-use zen_engine::nodes::NodeError;
+use zen_engine::model::{DecisionNode, DecisionNodeKind, FunctionNodeContent};
 use zen_engine::Variable;
 use zen_engine::{DecisionEngine, EvaluationError, EvaluationOptions};
+use zen_engine::DecisionContent;
 
 mod support;
 
@@ -191,6 +191,7 @@ async fn engine_function_imports() {
     let function_content = DecisionContent {
         edges: function_content.edges,
         nodes: new_nodes,
+        compiled_cache: None
     };
     let decision = DecisionEngine::default().create_decision(function_content.into());
     let response = decision.evaluate(json!({}).into()).await.unwrap();

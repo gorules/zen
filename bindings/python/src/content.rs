@@ -4,7 +4,7 @@ use pyo3::types::PyString;
 use pyo3::{pyclass, pymethods, Bound, FromPyObject, PyAny, PyResult};
 use pythonize::depythonize;
 use std::sync::Arc;
-use zen_engine::model::DecisionContent;
+use zen_engine::DecisionContent;
 
 #[pyclass]
 #[pyo3(name = "ZenDecisionContent")]
@@ -14,7 +14,8 @@ pub struct PyZenDecisionContent(pub Arc<DecisionContent>);
 impl PyZenDecisionContent {
     #[new]
     pub fn new(data: &str) -> PyResult<Self> {
-        let content = serde_json::from_str(data).context("Failed to parse JSON")?;
+        let mut content: DecisionContent = serde_json::from_str(data).context("Failed to parse JSON")?;
+        content.compile();
         Ok(Self(Arc::new(content)))
     }
 }

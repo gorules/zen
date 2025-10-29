@@ -1,14 +1,13 @@
-use crate::decision::CompilationKey;
 use crate::model::ExpressionNodeContent;
 use crate::nodes::context::{NodeContext, NodeContextExt};
 use crate::nodes::definition::NodeHandler;
 use crate::nodes::result::NodeResult;
 use ahash::HashMap;
 use std::rc::Rc;
-use std::sync::Arc;
 use zen_expression::variable::{ToVariable, Variable};
 use zen_expression::{ExpressionKind, Isolate};
 use zen_types::decision::TransformAttributes;
+use crate::decision::CompilationKey;
 
 #[derive(Debug, Clone)]
 pub struct ExpressionNodeHandler;
@@ -38,28 +37,21 @@ impl NodeHandler for ExpressionNodeHandler {
             }
             let key = CompilationKey {
                 kind: ExpressionKind::Standard,
-                source: Arc::from(expression.value.clone()),
+                source: expression.value.clone(),
             };
-            let value: Variable;
-            if let Some(codes) = ctx
+            let value;
+            match ctx
                 .extensions
                 .compiled_cache
                 .as_ref()
-                .and_then(|cc| cc.get(&key))
-            {
-                value = isolate
-                    .run_compiled(codes.as_slice())
-                    .with_node_context(&ctx, |_| {
-                        format!(r#"Failed to evaluate expression: "{}""#, &expression.value)
-                    })?;
-            } else {
-                value = isolate
-                    .run_standard(&expression.value)
-                    .with_node_context(&ctx, |_| {
-                        format!(r#"Failed to evaluate expression: "{}""#, &expression.value)
-                    })?;
+                .and_then(|cc| cc.get(&key)) {
+                Some(codes) => {value = isolate.run_compiled(codes.as_slice())},
+                None => {value = isolate.run_standard(&expression.value)}
             }
 
+            let value = value.with_node_context(&ctx, |_| {
+                format!(r#"Failed to evaluate expression: "{}""#, &expression.value)
+            })?;
             ctx.trace(|trace| {
                 trace.insert(
                     Rc::from(&*expression.key),

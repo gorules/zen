@@ -1,7 +1,7 @@
 use crate::support::test_data_root;
 use std::fs;
 use std::path::Path;
-use zen_engine::model::DecisionContent;
+use zen_engine::DecisionContent;
 
 mod support;
 

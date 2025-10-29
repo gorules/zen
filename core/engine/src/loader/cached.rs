@@ -5,7 +5,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::loader::{DecisionLoader, DynamicLoader, LoaderResponse};
-use crate::model::DecisionContent;
+use crate::decision::DecisionContent;
 
 #[derive(Debug)]
 pub struct CachedLoader {

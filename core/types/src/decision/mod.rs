@@ -3,14 +3,6 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
 
-/// JDM Decision model
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DecisionContent {
-    pub nodes: Vec<Arc<DecisionNode>>,
-    pub edges: Vec<Arc<DecisionEdge>>,
-}
-
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DecisionEdge {

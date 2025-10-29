@@ -11,7 +11,7 @@ pub use filesystem::{FilesystemLoader, FilesystemLoaderOptions};
 pub use memory::MemoryLoader;
 pub use noop::NoopLoader;
 
-use crate::model::DecisionContent;
+use crate::decision::DecisionContent;
 
 mod cached;
 mod closure;

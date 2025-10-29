@@ -10,7 +10,7 @@ pub struct Standard;
 #[derive(Debug, Clone)]
 pub struct Unary;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum ExpressionKind {
     Standard,
     Unary,

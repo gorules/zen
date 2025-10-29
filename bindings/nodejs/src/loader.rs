@@ -11,7 +11,7 @@ use napi::{Either, Status};
 use zen_engine::loader::{
     DecisionLoader as DecisionLoaderTrait, LoaderError, LoaderResponse, LoaderResult,
 };
-use zen_engine::model::DecisionContent;
+use zen_engine::DecisionContent;
 
 use crate::content::ZenDecisionContent;
 

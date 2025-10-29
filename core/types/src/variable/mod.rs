@@ -160,24 +160,6 @@ impl Variable {
             })
     }
 
-    fn dot_head(&self, key: &str) -> Option<Variable> {
-        let mut parts = Vec::from_iter(key.split('.'));
-        parts.pop();
-
-        parts
-            .iter()
-            .try_fold(self.shallow_clone(), |var, part| match var {
-                Variable::Object(obj) => {
-                    let mut obj_ref = obj.borrow_mut();
-                    Some(match obj_ref.entry(Rc::from(*part)) {
-                        Entry::Occupied(occ) => occ.get().shallow_clone(),
-                        Entry::Vacant(vac) => vac.insert(Self::empty_object()).shallow_clone(),
-                    })
-                }
-                _ => None,
-            })
-    }
-
     fn dot_head_detach(&self, key: &str) -> (Variable, Option<Variable>) {
         let mut parts = Vec::from_iter(key.split('.'));
         parts.pop();
@@ -209,8 +191,18 @@ impl Variable {
     }
 
     pub fn dot_remove(&self, key: &str) -> Option<Variable> {
-        let last_part = key.split('.').last()?;
-        let head = self.dot_head(key)?;
+        let mut parts = key.split('.');
+        let last_part = parts.next_back()?;
+        let head = parts.try_fold(self.shallow_clone(), |var, part| match var {
+            Variable::Object(obj) => {
+                let mut obj_ref = obj.borrow_mut();
+                Some(match obj_ref.entry(Rc::from(part)) {
+                    Entry::Occupied(occ) => occ.get().shallow_clone(),
+                    Entry::Vacant(vac) => vac.insert(Self::empty_object()).shallow_clone(),
+                })
+            }
+            _ => None,
+        })?;
         let Variable::Object(object_ref) = head else {
             return None;
         };
@@ -220,8 +212,18 @@ impl Variable {
     }
 
     pub fn dot_insert(&self, key: &str, variable: Variable) -> Option<Variable> {
-        let last_part = key.split('.').last()?;
-        let head = self.dot_head(key)?;
+        let mut parts = key.split('.');
+        let last_part = parts.next_back()?;
+        let head = parts.try_fold(self.shallow_clone(), |var, part| match var {
+            Variable::Object(obj) => {
+                let mut obj_ref = obj.borrow_mut();
+                Some(match obj_ref.entry(Rc::from(part)) {
+                    Entry::Occupied(occ) => occ.get().shallow_clone(),
+                    Entry::Vacant(vac) => vac.insert(Self::empty_object()).shallow_clone(),
+                })
+            }
+            _ => None,
+        })?;
         let Variable::Object(object_ref) = head else {
             return None;
         };

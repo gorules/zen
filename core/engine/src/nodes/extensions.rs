@@ -1,12 +1,15 @@
+use crate::decision::CompilationKey;
 use crate::loader::{DynamicLoader, NoopLoader};
 use crate::nodes::custom::{DynamicCustomNode, NoopCustomNode};
 use crate::nodes::function::v2::function::{Function, FunctionConfig};
 use crate::nodes::function::v2::module::console::ConsoleListener;
 use crate::nodes::function::v2::module::zen::ZenListener;
 use crate::nodes::validator_cache::ValidatorCache;
+use ahash::HashMap;
 use anyhow::Context;
 use std::cell::OnceCell;
 use std::sync::Arc;
+use zen_expression::compiler::Opcode;
 
 /// This is created on every graph evaluation
 #[derive(Debug, Clone)]
@@ -15,6 +18,7 @@ pub struct NodeHandlerExtensions {
     pub(crate) validator_cache: Arc<OnceCell<ValidatorCache>>,
     pub(crate) loader: DynamicLoader,
     pub(crate) custom_node: DynamicCustomNode,
+    pub(crate) compiled_cache: Option<Arc<HashMap<CompilationKey, Vec<Opcode>>>>,
 }
 
 impl Default for NodeHandlerExtensions {
@@ -25,6 +29,7 @@ impl Default for NodeHandlerExtensions {
 
             loader: Arc::new(NoopLoader::default()),
             custom_node: Arc::new(NoopCustomNode::default()),
+            compiled_cache: None,
         }
     }
 }

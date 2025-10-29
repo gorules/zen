@@ -5,7 +5,7 @@ use napi::{Either, Env};
 use napi_derive::napi;
 use serde_json::Value;
 
-use zen_engine::model::DecisionContent;
+use zen_engine::DecisionContent;
 
 #[napi]
 pub struct ZenDecisionContent {
@@ -16,13 +16,14 @@ pub struct ZenDecisionContent {
 impl ZenDecisionContent {
     #[napi(constructor)]
     pub fn new(env: Env, content: Either<Buffer, Object>) -> napi::Result<Self> {
-        let decision_content: DecisionContent = match content {
+        let mut decision_content: DecisionContent = match content {
             Either::A(buf) => serde_json::from_slice(buf.as_ref())?,
             Either::B(obj) => {
                 let serde_val: Value = env.from_js_value(obj)?;
                 serde_json::from_value(serde_val)?
             }
         };
+        decision_content.compile();
 
         Ok(Self {
             inner: Arc::new(decision_content),

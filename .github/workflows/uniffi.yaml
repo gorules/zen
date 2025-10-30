@@ -137,7 +137,7 @@ jobs:
         run: ./gradlew publishAllPublicationsToCentralPortal
 
   build-ios:
-#    if: false
+    #    if: false
     if: "!contains(github.event.head_commit.message, 'skip ci')"
     env:
       OUTPUT_NAME: zen_uniffi
@@ -213,7 +213,31 @@ jobs:
           cargo run --bin uniffi-bindgen -- generate \
             --library target/aarch64-apple-ios/release/libzen_uniffi.a \
             --language swift \
-            --out-dir swift-bindings
+            --out-dir swift-bindings-temp
+
+      - name: Organize Swift bindings structure
+        run: |
+          # Create the proper directory structure
+          mkdir -p swift-bindings/zen_uniffiFFI
+          mkdir -p swift-bindings/ZenUniffi
+          
+          # Move and rename the header file to zen_uniffiFFI.h in the zen_uniffiFFI folder
+          if [ -f swift-bindings-temp/zen_uniffiFFI.h ]; then
+            mv swift-bindings-temp/zen_uniffiFFI.h swift-bindings/zen_uniffiFFI/
+          fi
+          
+          # Move and rename the modulemap to module.modulemap in the zen_uniffiFFI folder
+          if [ -f swift-bindings-temp/zen_uniffiFFI.modulemap ]; then
+            mv swift-bindings-temp/zen_uniffiFFI.modulemap swift-bindings/zen_uniffiFFI/module.modulemap
+          fi
+          
+          # Move the Swift file to zen_uniffi.swift in the ZenUniffi folder
+          if [ -f swift-bindings-temp/zen_uniffi.swift ]; then
+            mv swift-bindings-temp/zen_uniffi.swift swift-bindings/ZenUniffi/
+          fi
+          
+          # Clean up temp directory
+          rm -rf swift-bindings-temp
 
       - name: Create fat simulator library
         run: |
@@ -228,9 +252,9 @@ jobs:
           # Create XCFramework with device + universal simulator
           xcodebuild -create-xcframework \
             -library target/aarch64-apple-ios/release/libzen_uniffi.a \
-            -headers swift-bindings \
+            -headers swift-bindings/zen_uniffiFFI \
             -library target/universal-sim/release/libzen_uniffi.a \
-            -headers swift-bindings \
+            -headers swift-bindings/zen_uniffiFFI \
             -output ZenUniffi.xcframework
 
       - name: Upload XCFramework
@@ -275,40 +299,11 @@ jobs:
 
       - name: Move artifacts to repo
         run: |
-          # Remove existing Sources if it exists, then move swift-bindings to Sources
+          # Remove existing Sources if it exists
           rm -rf Sources
+          
+          # Move swift-bindings to Sources (already has the proper structure)
           mv swift-bindings Sources
-
-      - name: Create Package.swift
-        run: |
-          cat > Package.swift << 'EOF'
-          // swift-tools-version:5.9
-          import PackageDescription
-
-          let package = Package(
-              name: "ZenUniffi",
-              platforms: [
-                  .iOS(.v16)
-              ],
-              products: [
-                  .library(
-                      name: "ZenUniffi",
-                      targets: ["ZenUniffiWrapper"]
-                  )
-              ],
-              targets: [
-                  .target(
-                      name: "ZenUniffiWrapper",
-                      dependencies: ["ZenUniffiBinary"],
-                      path: "Sources"
-                  ),
-                  .binaryTarget(
-                      name: "ZenUniffiBinary",
-                      path: "ZenUniffi.xcframework"
-                  )
-              ]
-          )
-          EOF
 
       - name: Set branch name
         run: |
@@ -358,7 +353,7 @@ jobs:
 
   build-android:
     if: false
-#    if: "!contains(github.event.head_commit.message, 'skip ci')"
+    #    if: "!contains(github.event.head_commit.message, 'skip ci')"
     runs-on: ubuntu-latest
     env:
       OUTPUT_NAME: zen_uniffi

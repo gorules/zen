@@ -403,6 +403,10 @@ jobs:
     needs: [ build, build-android ]
     if: "!contains(github.event.head_commit.message, 'skip ci')"
 
+    defaults:
+      run:
+        working-directory: ${{ env.UNIFFI_DIRECTORY }}
+
     steps:
       - uses: actions/checkout@v3
 
@@ -410,28 +414,28 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: android-libs
-          path: android-libs
+          path: ${{ env.UNIFFI_DIRECTORY }}/android-libs
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          path: build/generated/resources
+          path: ${{ env.UNIFFI_DIRECTORY }}/build/generated/resources
 
-      - name: Move artifacts
-        run: mv ../../build ./
+      - name: Print directory tree
+        run: tree build
 
       - name: Generate Kotlin sources
         run: |
           cargo run --bin uniffi-bindgen -- generate \
             --library build/generated/resources/darwin-x86-64/libzen_uniffi.dylib \
             --language kotlin \
-            --config bindings/uniffi/uniffi-android.toml \
+            --config uniffi-android.toml \
             --out-dir build/generated/kotlin-android
 
-      - name: Setup Rust Toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          target: x86_64-unknown-linux-gnu
+#      - name: Setup Rust Toolchain
+#        uses: dtolnay/rust-toolchain@stable
+#        with:
+#          target: x86_64-unknown-linux-gnu
 
 #      - name: Build Linux library for metadata extraction
 #        run: |
@@ -460,9 +464,12 @@ jobs:
           # Copy bindings
           cp -r build/generated/kotlin-android/* android-package/kotlin/
 
+      - name: Print directory tree
+        run: tree build
+
       - name: Upload Android package
         uses: actions/upload-artifact@v4
         with:
           name: android-package
-          path: android-package
+          path: ${{ env.UNIFFI_DIRECTORY }}/android-package
           if-no-files-found: error

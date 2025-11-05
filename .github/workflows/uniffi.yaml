@@ -19,6 +19,7 @@ on:
       - 'core/**'
       - 'test-data/**'
       - '.github/workflows/uniffi.yaml'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -137,8 +138,8 @@ jobs:
         run: ./gradlew publishAllPublicationsToCentralPortal
 
   build-ios:
-    #    if: false
-    if: "!contains(github.event.head_commit.message, 'skip ci')"
+    if: false
+    #if: "!contains(github.event.head_commit.message, 'skip ci')"
     env:
       OUTPUT_NAME: zen_uniffi
       IPHONEOS_DEPLOYMENT_TARGET: '16.0'
@@ -352,8 +353,7 @@ jobs:
             --base "master"
 
   build-android:
-    if: false
-    #    if: "!contains(github.event.head_commit.message, 'skip ci')"
+    if: "!contains(github.event.head_commit.message, 'skip ci')"
     runs-on: ubuntu-latest
     env:
       OUTPUT_NAME: zen_uniffi

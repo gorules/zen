@@ -23,7 +23,7 @@ on:
 
 jobs:
   build:
-    if: false #"!contains(github.event.head_commit.message, 'skip ci')"
+    if: "!contains(github.event.head_commit.message, 'skip ci')"
     env:
       OUTPUT_NAME: zen_uniffi
 
@@ -31,26 +31,26 @@ jobs:
       fail-fast: true
       matrix:
         settings:
-          - host: windows-latest
-            target: 'x86_64-pc-windows-msvc'
-            output: '{0}.dll'
-            lib_dir: 'win32-x86-64'
+#          - host: windows-latest
+#            target: 'x86_64-pc-windows-msvc'
+#            output: '{0}.dll'
+#            lib_dir: 'win32-x86-64'
           - host: macos-latest
             target: 'x86_64-apple-darwin'
             output: 'lib{0}.dylib'
             lib_dir: 'darwin-x86-64'
-          - host: macos-latest
-            target: 'aarch64-apple-darwin'
-            output: 'lib{0}.dylib'
-            lib_dir: 'darwin-aarch64'
-          - host: ubuntu-latest
-            target: 'x86_64-unknown-linux-gnu'
-            output: 'lib{0}.so'
-            lib_dir: 'linux-x86-64'
-          - host: ubuntu-latest
-            target: 'aarch64-unknown-linux-gnu'
-            output: 'lib{0}.so'
-            lib_dir: 'linux-aarch64'
+#          - host: macos-latest
+#            target: 'aarch64-apple-darwin'
+#            output: 'lib{0}.dylib'
+#            lib_dir: 'darwin-aarch64'
+#          - host: ubuntu-latest
+#            target: 'x86_64-unknown-linux-gnu'
+#            output: 'lib{0}.so'
+#            lib_dir: 'linux-x86-64'
+#          - host: ubuntu-latest
+#            target: 'aarch64-unknown-linux-gnu'
+#            output: 'lib{0}.so'
+#            lib_dir: 'linux-aarch64'
 
     name: UniFFI - ${{ matrix.settings.target }}
     runs-on: ${{ matrix.settings.host }}
@@ -400,7 +400,7 @@ jobs:
 
   prepare-android-bindings:
     runs-on: ubuntu-latest
-    needs: [ build-android ]
+    needs: [ build, build-android ]
     if: "!contains(github.event.head_commit.message, 'skip ci')"
 
     steps:
@@ -412,23 +412,39 @@ jobs:
           name: android-libs
           path: android-libs
 
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: build/generated/resources
+
+      - name: Move artifacts
+        run: mv ../../build ./
+
+      - name: Generate Kotlin sources
+        run: |
+          cargo run --bin uniffi-bindgen -- generate \
+            --library build/generated/resources/darwin-x86-64/libzen_uniffi.dylib \
+            --language kotlin \
+            --config bindings/uniffi/uniffi-android.toml \
+            --out-dir build/generated/kotlin-android
+
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           target: x86_64-unknown-linux-gnu
 
-      - name: Build Linux library for metadata extraction
-        run: |
-          echo "Building Linux x86_64 library to extract UniFFI metadata..."
-          cargo build -p zen-uniffi --target x86_64-unknown-linux-gnu --release
+#      - name: Build Linux library for metadata extraction
+#        run: |
+#          echo "Building Linux x86_64 library to extract UniFFI metadata..."
+#          cargo build -p zen-uniffi --target x86_64-unknown-linux-gnu --release
 
-      - name: Generate Kotlin bindings (using Linux library for metadata)
-        run: |
-          cargo run --bin uniffi-bindgen -- generate \
-          --library target/x86_64-unknown-linux-gnu/release/libzen_uniffi.so \
-          --language kotlin \
-          --config bindings/uniffi/uniffi-android.toml \
-          --out-dir build/generated/kotlin-android
+#      - name: Generate Kotlin bindings (using Linux library for metadata)
+#        run: |
+#          cargo run --bin uniffi-bindgen -- generate \
+#          --library target/x86_64-unknown-linux-gnu/release/libzen_uniffi.so \
+#          --language kotlin \
+#          --config bindings/uniffi/uniffi-android.toml \
+#          --out-dir build/generated/kotlin-android
 
       - name: Create Android package structure
         run: |

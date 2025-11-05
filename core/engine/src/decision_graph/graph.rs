@@ -1,3 +1,4 @@
+use crate::decision_graph::cleaner::VariableCleaner;
 use crate::decision_graph::tracer::NodeTracer;
 use crate::decision_graph::walker::{GraphWalker, NodeData, StableDiDecisionGraph};
 use crate::engine::EvaluationTraceKind;
@@ -17,6 +18,7 @@ use crate::nodes::{
 use crate::{DecisionGraphTrace, DecisionGraphValidationError, EvaluationError};
 use ahash::{HashMap, HashMapExt};
 use petgraph::algo::is_cyclic_directed;
+use petgraph::matrix_graph::Zero;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize, Serializer};
 use std::cell::RefCell;
@@ -189,8 +191,6 @@ impl DecisionGraph {
                 }
             };
 
-            output.dot_remove("$nodes");
-
             walker.set_node_data(
                 nid,
                 NodeData {
@@ -205,10 +205,30 @@ impl DecisionGraph {
             }
         }
 
+        let result = walker.ending_variables(&self.graph);
+        let trace = tracer.into_traces();
+
+        if self.config.iteration.is_zero() {
+            let start = Instant::now();
+            let mut cleaner = VariableCleaner::new();
+            cleaner.clean(&result);
+            if let Some(t) = &trace {
+                t.values().for_each(|v| {
+                    cleaner.clean(&v.input);
+                    cleaner.clean(&v.output);
+                    if let Some(td) = &v.trace_data {
+                        cleaner.clean(td);
+                    }
+                })
+            }
+
+            println!("{:?}", start.elapsed());
+        }
+
         Ok(DecisionGraphResponse {
-            result: walker.ending_variables(&self.graph),
             performance: format!("{:.1?}", root_start.elapsed()),
-            trace: tracer.into_traces(),
+            result,
+            trace,
         })
     }
 }

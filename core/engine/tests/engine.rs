@@ -417,5 +417,14 @@ async fn test_nodes_reference() {
         .evaluate("$nodes-parent.json", json!({ "hello": "world" }).into())
         .await;
 
-    println!("{:#?}", evaluation);
+    assert!(evaluation.is_ok());
+    assert_eq!(
+        evaluation.unwrap().result.to_value(),
+        json!({
+            "expressionParentNodes": { "request": { "hello": "world" } },
+            "expressionRequest": { "hello": "world" },
+            "functionParentNodes": { "request": { "hello": "world" } },
+            "functionRequest": { "hello": "world" },
+        })
+    );
 }

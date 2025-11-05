@@ -209,7 +209,6 @@ impl DecisionGraph {
         let trace = tracer.into_traces();
 
         if self.config.iteration.is_zero() {
-            let start = Instant::now();
             let mut cleaner = VariableCleaner::new();
             cleaner.clean(&result);
             if let Some(t) = &trace {
@@ -221,8 +220,6 @@ impl DecisionGraph {
                     }
                 })
             }
-
-            println!("{:?}", start.elapsed());
         }
 
         Ok(DecisionGraphResponse {

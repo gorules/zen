@@ -410,6 +410,7 @@ async fn test_validation() {
 }
 
 #[tokio::test]
+#[cfg_attr(miri, ignore)]
 async fn test_nodes_reference() {
     let engine = DecisionEngine::default().with_loader(Arc::new(create_fs_loader()));
 

@@ -5,5 +5,6 @@ generate_immutable_records = true
 android = true
 
 [bindings.kotlin.custom_types.JsonBuffer]
-into_custom = "io.gorules.zen_engine.kotlin.JsonBuffer({})"
+imports = ["io.gorules.zen_engine.kotlin.JsonBuffer"]
+into_custom = "JsonBuffer({})"
 from_custom = "{}.value"

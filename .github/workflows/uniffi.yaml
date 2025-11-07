@@ -174,7 +174,7 @@ jobs:
           if [ "${{ matrix.settings.target }}" = "aarch64-apple-ios-sim" ]; then
             export BINDGEN_EXTRA_CLANG_ARGS="--target=aarch64-apple-ios --sysroot=$(xcrun --sdk iphonesimulator --show-sdk-path)"
           fi
-          cargo build -p zen-uniffi --target ${{ matrix.settings.target }} --release
+          cargo build -p zen-uniffi --target ${{ matrix.settings.target }} --release --features bindgen
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -389,7 +389,7 @@ jobs:
           cargo ndk -t arm64-v8a \
             --platform 33 \
             -o ./android-libs \
-            build -p zen-uniffi --release
+            build -p zen-uniffi --release -features bindgen
 
       - name: Upload Android artifacts
         uses: actions/upload-artifact@v4

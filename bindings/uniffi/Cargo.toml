@@ -23,3 +23,6 @@ tokio = "1.46"
 
 [build-dependencies]
 uniffi = { version = "0.29", features = ["build"] }
+
+[features]
+bindgen = ["zen-engine/bindgen"]

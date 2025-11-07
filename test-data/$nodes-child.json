@@ -1,0 +1,69 @@
+{
+  "contentType": "application/vnd.gorules.decision",
+  "nodes": [
+    {
+      "type": "inputNode",
+      "content": {
+        "schema": ""
+      },
+      "id": "adbcb4f4-015c-429f-a9b5-5e08e50470d8",
+      "name": "request",
+      "position": {
+        "x": 80,
+        "y": 230
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "ffad6138-2b20-4439-b043-b0e835573178",
+            "key": "expressionParentNodes",
+            "value": "$nodes.request.$nodes"
+          },
+          {
+            "id": "ffad6138-2b20-4439-b043-b0e835573178",
+            "key": "expressionRequest",
+            "value": "$nodes.request"
+          }
+        ],
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "ec43772d-7c5a-4d36-852b-cc18f470e2f5",
+      "name": "expression1",
+      "position": {
+        "x": 430,
+        "y": 230
+      }
+    },
+    {
+      "type": "functionNode",
+      "content": {
+        "source": "import zen from 'zen';\n\n/** @type {Handler} **/\nexport const handler = async (input) => {\n  return {\n    functionParentNodes: input['$nodes'].request['$nodes']\n, functionRequest: input['$nodes'].request\n  };\n};\n"
+      },
+      "id": "91b84889-a9f7-4452-bea6-8610f6ba4084",
+      "name": "function1",
+      "position": {
+        "x": 430,
+        "y": 135
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "06c0b8f4-45a3-4422-b58a-27da004d0786",
+      "sourceId": "adbcb4f4-015c-429f-a9b5-5e08e50470d8",
+      "type": "edge",
+      "targetId": "ec43772d-7c5a-4d36-852b-cc18f470e2f5"
+    },
+    {
+      "id": "5ad36d1a-a4a1-4f89-bec4-ed54175655d0",
+      "sourceId": "adbcb4f4-015c-429f-a9b5-5e08e50470d8",
+      "type": "edge",
+      "targetId": "91b84889-a9f7-4452-bea6-8610f6ba4084"
+    }
+  ]
+}

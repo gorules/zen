@@ -9,7 +9,6 @@ use std::sync::Arc;
 use tokio::runtime::Builder;
 use zen_engine::loader::{LoaderError, MemoryLoader};
 use zen_engine::model::{DecisionContent, DecisionNode, DecisionNodeKind, FunctionNodeContent};
-use zen_engine::nodes::NodeError;
 use zen_engine::Variable;
 use zen_engine::{DecisionEngine, EvaluationError, EvaluationOptions};
 
@@ -408,4 +407,25 @@ async fn test_validation() {
         )
         .await
         .is_err());
+}
+
+#[tokio::test]
+#[cfg_attr(miri, ignore)]
+async fn test_nodes_reference() {
+    let engine = DecisionEngine::default().with_loader(Arc::new(create_fs_loader()));
+
+    let evaluation = engine
+        .evaluate("$nodes-parent.json", json!({ "hello": "world" }).into())
+        .await;
+
+    assert!(evaluation.is_ok());
+    assert_eq!(
+        evaluation.unwrap().result.to_value(),
+        json!({
+            "expressionParentNodes": { "request": { "hello": "world" } },
+            "expressionRequest": { "hello": "world" },
+            "functionParentNodes": { "request": { "hello": "world" } },
+            "functionRequest": { "hello": "world" },
+        })
+    );
 }

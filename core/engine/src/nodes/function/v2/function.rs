@@ -6,7 +6,7 @@ use crate::nodes::function::v2::error::{FunctionError, FunctionResult, ResultExt
 use crate::nodes::function::v2::listener::{RuntimeEvent, RuntimeListener};
 use crate::nodes::function::v2::module::console::{Console, Log};
 use crate::nodes::function::v2::module::ModuleLoader;
-use crate::nodes::function::v2::serde::JsValue;
+use crate::nodes::function::v2::serde::{JsValue, JsValueWithNodes};
 use rquickjs::promise::MaybePromise;
 use rquickjs::{async_with, AsyncContext, AsyncRuntime, CatchResultExt, Ctx, Module};
 use serde::{Deserialize, Serialize};
@@ -104,7 +104,7 @@ impl Function {
     pub(crate) async fn call_handler(
         &self,
         name: &str,
-        data: JsValue,
+        data: JsValueWithNodes,
     ) -> FunctionResult<HandlerResponse> {
         let k: FunctionResult<HandlerResponse> = async_with!(&self.ctx => |ctx| {
             self.dispatch_event_inner(&ctx, RuntimeEvent::SoftReset).await?;

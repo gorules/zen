@@ -511,7 +511,7 @@ jobs:
           cp gradle.android/gradle.properties "${{ env.ANDROID_BUILD_DIR }}"
 
       - name: Print directory tree
-        run: tree build
+        run: tree ${{ env.ANDROID_BUILD_DIR }}
 
       - name: Build AAR with Gradle
         env:

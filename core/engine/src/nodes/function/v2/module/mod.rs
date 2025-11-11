@@ -3,15 +3,16 @@ use std::collections::HashSet;
 use std::ops::DerefMut;
 use std::rc::Rc;
 
-use crate::nodes::function::v2::module::http::HttpModule;
 use crate::nodes::function::v2::module::zen::ZenModule;
 use rquickjs::loader::{Bundle, Loader, ModuleLoader as MDLoader, Resolver};
 use rquickjs::module::{Declared, Exports};
 use rquickjs::{embed, Ctx, Error, Module, Object};
 
 pub(crate) mod console;
-pub(crate) mod http;
 pub(crate) mod zen;
+
+#[cfg(not(target_family = "wasm"))]
+pub(crate) mod http;
 
 static JS_BUNDLE: Bundle = embed! {
     "dayjs": "js/dayjs.mjs",
@@ -66,12 +67,19 @@ impl BaseModuleLoader {
             hs.insert(key.to_string());
         });
 
+        #[allow(unused_mut)]
+        let mut md_loader = MDLoader::default().with_module("zen", ZenModule);
+
+        #[cfg(not(target_family = "wasm"))]
+        {
+            md_loader =
+                md_loader.with_module("http", crate::nodes::function::v2::module::http::HttpModule);
+        }
+
         Self {
             bundle: JS_BUNDLE,
             defined_modules: RefCell::new(hs),
-            md_loader: MDLoader::default()
-                .with_module("zen", ZenModule)
-                .with_module("http", HttpModule),
+            md_loader,
         }
     }
 

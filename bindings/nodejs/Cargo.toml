@@ -19,5 +19,8 @@ zen-tmpl = { path = "../../core/template" }
 serde = { workspace = true, features = ["derive"] }
 json_dotpath = { workspace = true }
 
+[target.'cfg(target_family = "wasm")'.dependencies]
+iana-time-zone = { version = "0.1", features = ["fallback"] }
+
 [build-dependencies]
-napi-build = "2.1"
+napi-build = "2.2"

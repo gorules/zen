@@ -9,8 +9,6 @@ use std::sync::Arc;
 pub struct DecisionContent {
     pub nodes: Vec<Arc<DecisionNode>>,
     pub edges: Vec<Arc<DecisionEdge>>,
-    #[serde(default)]
-    pub params: Option<Arc<Value>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]

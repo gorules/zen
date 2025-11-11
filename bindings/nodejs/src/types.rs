@@ -96,6 +96,16 @@ impl ZenEngineHandlerRequest {
         Err(anyhow!("Private constructor").into())
     }
 
+    #[napi(getter)]
+    pub fn node(&self) -> DecisionNode {
+        self.node.clone()
+    }
+
+    #[napi(getter)]
+    pub fn input(&self) -> Value {
+        self.input.clone()
+    }
+
     #[napi(ts_return_type = "unknown")]
     pub fn get_field(&self, path: String) -> napi::Result<Value> {
         let node_config = &self.node.config;

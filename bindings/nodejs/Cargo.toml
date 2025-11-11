@@ -9,14 +9,15 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-napi = { version = "3", features = ["serde-json", "error_anyhow", "tokio_rt", "compat-mode"] }
+napi = { version = "3", features = ["serde-json", "error_anyhow", "tokio_rt"] }
 napi-derive = "3"
 tokio-util = { workspace = true, features = ["rt"] }
 serde_json = { workspace = true }
-json_dotpath = { workspace = true }
 zen-engine = { path = "../../core/engine" }
 zen-expression = { path = "../../core/expression" }
 zen-tmpl = { path = "../../core/template" }
+serde = { workspace = true, features = ["derive"] }
+json_dotpath = { workspace = true }
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 iana-time-zone = { version = "0.1", features = ["fallback"] }

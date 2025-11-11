@@ -32,7 +32,6 @@ pub(crate) struct GraphWalker {
     ordered: FixedBitSet,
     to_visit: Vec<NodeIndex>,
     visited_switch_nodes: Vec<NodeIndex>,
-    params: Option<Variable>,
 
     nodes_in_context: bool,
 }
@@ -40,8 +39,8 @@ pub(crate) struct GraphWalker {
 const ITER_MAX: usize = 1_000;
 
 impl GraphWalker {
-    pub fn new(graph: &StableDiDecisionGraph, params: Option<Variable>) -> Self {
-        let mut walker = Self::empty(graph, params);
+    pub fn new(graph: &StableDiDecisionGraph) -> Self {
+        let mut walker = Self::empty(graph);
         walker.initialize_input_nodes(graph);
         walker
     }
@@ -55,14 +54,13 @@ impl GraphWalker {
             }));
     }
 
-    fn empty(graph: &StableDiDecisionGraph, params: Option<Variable>) -> Self {
+    fn empty(graph: &StableDiDecisionGraph) -> Self {
         Self {
             ordered: graph.visit_map(),
             to_visit: Vec::new(),
             node_data: Default::default(),
             visited_switch_nodes: Default::default(),
             iter: 0,
-            params,
 
             nodes_in_context: ZEN_CONFIG.nodes_in_context.load(Ordering::Relaxed),
         }
@@ -114,15 +112,15 @@ impl GraphWalker {
         node_id: NodeIndex,
         with_nodes: bool,
     ) -> (Variable, Variable) {
-        let base_value = self.merge_node_data(g.neighbors_directed(node_id, Incoming));
-        let value = base_value.depth_clone(1);
-
-        if let Some(params) = &self.params {
-            value.dot_insert("$params", params.clone());
-        }
+        let value = self.merge_node_data(g.neighbors_directed(node_id, Incoming));
 
         if self.nodes_in_context && with_nodes {
-            value.dot_insert("$nodes", self.get_all_node_data());
+            if let Some(object_ref) = value.as_object() {
+                let mut new_object = object_ref.borrow().clone();
+                new_object.insert(Rc::from("$nodes"), self.get_all_node_data());
+
+                return (Variable::from_object(new_object), value);
+            }
         }
 
         (value.depth_clone(1), value)

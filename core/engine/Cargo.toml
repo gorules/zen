@@ -23,7 +23,7 @@ json_dotpath = { workspace = true }
 rust_decimal = { workspace = true, features = ["maths-nopanic"] }
 fixedbitset = "0.5"
 tokio = { workspace = true, features = ["sync", "time"] }
-rquickjs = { version = "0.9", features = ["macro", "loader", "rust-alloc", "futures", "either", "properties", "bindgen"] }
+rquickjs = { version = "0.9", features = ["macro", "loader", "rust-alloc", "futures", "either", "properties"] }
 rquickjs-serde = { version = "0.1" }
 zen-types = { path = "../types", version = "0.51.0" }
 zen-expression = { path = "../expression", version = "0.51.0" }
@@ -45,6 +45,7 @@ jsonschema = { version = "0.33" }
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 jsonschema = { version = "0.33", default-features = false }
+rquickjs = { version = "0.9", features = ["macro", "loader", "rust-alloc", "futures", "either", "properties", "bindgen"] }
 
 [[bench]]
 harness = false

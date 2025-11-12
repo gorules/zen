@@ -122,7 +122,6 @@ jobs:
               rustup default 1.88.0
               rustup target add wasm32-wasip1-threads
               export WASI_SDK_PATH="$(pwd)/wasi-sdk-27.0-x86_64-linux"
-              export BINDGEN_EXTRA_CLANG_ARGS="--sysroot=$WASI_SDK_PATH/share/wasi-sysroot"
               export CMAKE_BUILD_PARALLEL_LEVEL=2
               export TARGET_CXXFLAGS="--target=wasm32-wasi-threads --sysroot=$(pwd)/wasi-sdk-27.0-x86_64-linux/share/wasi-sysroot -pthread -mllvm -wasm-enable-sjlj -lsetjmp"
               export TARGET_CFLAGS="$TARGET_CXXFLAGS"

@@ -184,6 +184,7 @@ jobs:
         shell: bash
 
       - name: 'Check'
+        if: ${{ matrix.settings.target != 'x86_64-pc-windows-msvc' }}
         run: ls -la
 
       - name: Upload artifact
@@ -194,6 +195,9 @@ jobs:
           path: |
             bindings/nodejs/*.node
             bindings/nodejs/zen-engine.wasm32-wasi.wasm
+            bindings/nodejs/zen-engine.wasi*
+            bindings/nodejs/wasi-worker*
+            bindings/nodejs/browser.js
 
   test-macOS-windows-binding:
     name: Test bindings on ${{ matrix.settings.target }} - node@${{ matrix.node }}

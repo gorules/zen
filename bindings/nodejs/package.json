@@ -89,6 +89,7 @@
     "watch": "cargo watch --ignore '{index.js,index.d.ts}' -- npm run build:debug",
     "test": "cross-env __ZEN_MOCK_UTC_TIME=2025-08-19T16:55:02.078Z jest",
     "artifacts": "napi artifacts -d ../../artifacts",
+    "createNpmDirs": "napi create-npm-dirs",
     "prepublishOnly": "napi prepublish",
     "version": "napi version"
   },

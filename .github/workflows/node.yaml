@@ -248,6 +248,10 @@ jobs:
           name: bindings-${{ matrix.settings.target }}
           path: artifacts
 
+      - name: Create dirs
+        run: yarn createNpmDirs
+        shell: bash
+
       - name: Move artifacts
         run: yarn artifacts
         shell: bash
@@ -289,6 +293,10 @@ jobs:
         with:
           name: bindings-x86_64-unknown-linux-gnu
           path: artifacts
+
+      - name: Create dirs
+        run: yarn createNpmDirs
+        shell: bash
 
       - name: Move artifacts
         run: yarn artifacts
@@ -340,6 +348,10 @@ jobs:
         with:
           name: bindings-x86_64-unknown-linux-musl
           path: artifacts
+
+      - name: Create dirs
+        run: yarn createNpmDirs
+        shell: bash
 
       - name: Move artifacts
         run: yarn artifacts
@@ -398,6 +410,10 @@ jobs:
         with:
           name: bindings-aarch64-unknown-linux-musl
           path: artifacts
+
+      - name: Create dirs
+        run: yarn createNpmDirs
+        shell: bash
 
       - name: Move artifacts
         run: yarn artifacts
@@ -507,6 +523,10 @@ jobs:
 
       - name: Copy LICENSE
         run: cp ../../LICENSE .
+
+      - name: Create dirs
+        run: yarn createNpmDirs
+        shell: bash
 
       - name: Move artifacts
         run: yarn artifacts

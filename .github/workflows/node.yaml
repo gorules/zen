@@ -183,6 +183,9 @@ jobs:
         if: ${{ !matrix.settings.docker }}
         shell: bash
 
+      - name: 'Check'
+        run: ls -la
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -190,7 +193,7 @@ jobs:
           if-no-files-found: error
           path: |
             bindings/nodejs/*.node
-            bindings/nodejs/image.wasm32-wasi.wasm
+            bindings/nodejs/zen-engine.wasm32-wasi.wasm
 
   test-macOS-windows-binding:
     name: Test bindings on ${{ matrix.settings.target }} - node@${{ matrix.node }}

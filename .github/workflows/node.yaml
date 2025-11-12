@@ -112,7 +112,7 @@ jobs:
               /aarch64-linux-musl-cross/bin/aarch64-linux-musl-strip *.node
 
           - host: ubuntu-latest
-            target: 'wasm32-wasi'
+            target: 'wasm32-wasip1-threads'
             setup: |
               wget https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-27/wasi-sdk-27.0-x86_64-linux.tar.gz
               tar -xvf wasi-sdk-27.0-x86_64-linux.tar.gz
@@ -188,7 +188,7 @@ jobs:
         run: ls -la
 
       - name: Upload artifact ${{ matrix.settings.target }}
-        if: ${{ matrix.settings.target != 'wasm32-wasi' }}
+        if: ${{ matrix.settings.target != 'wasm32-wasip1-threads' }}
         uses: actions/upload-artifact@v4
         with:
           name: bindings-${{ matrix.settings.target }}
@@ -196,10 +196,10 @@ jobs:
           if-no-files-found: error
 
       - name: Upload artifact ${{ matrix.settings.target }}
-        if: ${{ matrix.settings.target == 'wasm32-wasi' }}
+        if: ${{ matrix.settings.target == 'wasm32-wasip1-threads' }}
         uses: actions/upload-artifact@v4
         with:
-          name: bindings-${{ matrix.settings.target }}
+          name: bindings-wasm32-wasi
           if-no-files-found: error
           path: |
             bindings/nodejs/zen-engine.wasm32-wasi.wasm

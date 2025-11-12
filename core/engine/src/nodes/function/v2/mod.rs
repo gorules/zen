@@ -3,12 +3,11 @@ use std::time::{Duration, Instant};
 
 use crate::nodes::definition::NodeHandler;
 use crate::nodes::function::v2::error::{FunctionError, FunctionResult};
-use crate::nodes::function::v2::function::{Function, HandlerResponse};
+use crate::nodes::function::v2::function::Function;
 use crate::nodes::function::v2::module::console::Log;
 use crate::nodes::function::v2::serde::{JsValue, JsValueWithNodes};
 use crate::nodes::result::NodeResult;
 use crate::nodes::{NodeContext, NodeError};
-use ::serde::{Deserialize, Serialize};
 use rquickjs::prelude::Func;
 use rquickjs::{async_with, CatchResultExt, Object};
 use serde_json::json;

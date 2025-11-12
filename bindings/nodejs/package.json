@@ -12,7 +12,7 @@
     "browser.js",
     "README.md"
   ],
-  "packageManager": "pnpm@10.21.0",
+  "packageManager": "yarn@1.22.22",
   "napi": {
     "binaryName": "zen-engine",
     "targets": [
@@ -25,7 +25,7 @@
       "aarch64-apple-darwin",
       "wasm32-wasi-preview1-threads"
     ],
-    "npmClient": "pnpm",
+    "npmClient": "yarn",
     "wasm": {
       "browser": {
         "fs": false,

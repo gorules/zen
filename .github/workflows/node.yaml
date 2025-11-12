@@ -111,6 +111,24 @@ jobs:
               yarn build --target aarch64-unknown-linux-musl
               /aarch64-linux-musl-cross/bin/aarch64-linux-musl-strip *.node
 
+          - host: ubuntu-latest
+            target: 'wasm32-wasip1-threads'
+            setup: |
+              wget https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-27/wasi-sdk-27.0-x86_64-linux.tar.gz
+              tar -xvf wasi-sdk-27.0-x86_64-linux.tar.gz
+            build: |
+              set -e
+              cd bindings/nodejs
+              rustup install 1.88.0
+              rustup default 1.88.0
+              rustup target add wasm32-wasip1-threads
+              export WASI_SDK_PATH="$(pwd)/wasi-sdk-27.0-x86_64-linux"
+              export BINDGEN_EXTRA_CLANG_ARGS="--sysroot=$WASI_SDK_PATH/share/wasi-sysroot"
+              export CMAKE_BUILD_PARALLEL_LEVEL=2
+              export TARGET_CXXFLAGS="--target=wasm32-wasi-threads --sysroot=$(pwd)/wasi-sdk-27.0-x86_64-linux/share/wasi-sysroot -pthread -mllvm -wasm-enable-sjlj -lsetjmp"
+              export TARGET_CFLAGS="$TARGET_CXXFLAGS"
+              yarn build --target wasm32-wasip1-threads
+
     name: stable - ${{ matrix.settings.target }} - node@22
     runs-on: ${{ matrix.settings.host }}
     defaults:
@@ -171,8 +189,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: bindings-${{ matrix.settings.target }}
-          path: bindings/nodejs/*.node
           if-no-files-found: error
+          path: |
+            bindings/nodejs/*.node
+            bindings/nodejs/image.wasm32-wasi.wasm
 
   test-macOS-windows-binding:
     name: Test bindings on ${{ matrix.settings.target }} - node@${{ matrix.node }}

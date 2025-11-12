@@ -118,7 +118,6 @@ jobs:
               tar -xvf wasi-sdk-27.0-x86_64-linux.tar.gz
             build: |
               set -e
-              cd bindings/nodejs
               rustup install 1.88.0
               rustup default 1.88.0
               rustup target add wasm32-wasip1-threads

@@ -1,3 +1,4 @@
+use ahash::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt::Debug;
@@ -20,9 +21,11 @@ pub struct HttpHandlerRequest {
     #[serde(default)]
     pub body: Option<Value>,
     #[serde(default)]
-    pub headers: Option<Value>,
+    pub headers: HashMap<String, String>,
     #[serde(default)]
-    pub params: Option<Value>,
+    pub params: HashMap<String, String>,
+    #[serde(default)]
+    pub auth: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

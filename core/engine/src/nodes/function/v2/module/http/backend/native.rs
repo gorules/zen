@@ -1,7 +1,7 @@
 use super::{HttpBackend, HttpResponse};
 use crate::nodes::function::v2::error::ResultExt;
 use crate::nodes::function::v2::module::http::auth::{HttpConfigAuth, IamAuth};
-use crate::nodes::function::v2::module::http::HttpConfig;
+use crate::nodes::function::v2::module::http::{HttpMethod, HttpRequestConfig};
 use crate::nodes::function::v2::serde::JsValue;
 use crate::ZEN_CONFIG;
 use ::http::Request as HttpRequest;
@@ -19,12 +19,22 @@ impl HttpBackend for NativeHttpBackend {
     fn execute_http<'js>(
         &self,
         ctx: Ctx<'js>,
-        method: Method,
+        method: HttpMethod,
         url: String,
-        data: Option<JsValue>,
-        config: Option<HttpConfig>,
+        config: HttpRequestConfig,
     ) -> Pin<Box<dyn Future<Output = rquickjs::Result<HttpResponse<'js>>> + 'js>> {
-        Box::pin(async move { execute_http_native(ctx, method, url, data, config).await })
+        Box::pin(async move {
+            let method = match method {
+                HttpMethod::GET => Method::GET,
+                HttpMethod::POST => Method::POST,
+                HttpMethod::DELETE => Method::DELETE,
+                HttpMethod::HEAD => Method::HEAD,
+                HttpMethod::PUT => Method::PUT,
+                HttpMethod::PATCH => Method::PATCH,
+            };
+
+            execute_http_native(ctx, method, url, config).await
+        })
     }
 }
 
@@ -32,35 +42,27 @@ async fn execute_http_native<'js>(
     ctx: Ctx<'js>,
     method: Method,
     url: String,
-    data: Option<JsValue>,
-    config: Option<HttpConfig>,
+    config: HttpRequestConfig,
 ) -> rquickjs::Result<HttpResponse<'js>> {
     static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     let client = HTTP_CLIENT.get_or_init(|| reqwest::Client::new()).clone();
 
     let mut url = Url::parse(&url).or_throw(&ctx)?;
-    if let Some(config) = &config {
-        for (k, v) in &config.params {
-            url.query_pairs_mut().append_pair(k.as_str(), v.0.as_str());
-        }
+    for (k, v) in &config.params {
+        url.query_pairs_mut().append_pair(k.as_str(), v.0.as_str());
     }
 
     let mut request_builder = HttpRequest::builder().method(method).uri(url.as_str());
-    if let Some(config) = &config {
-        for (k, v) in &config.headers {
-            request_builder = request_builder.header(k.as_str(), v.0.as_str());
-        }
+    for (k, v) in &config.headers {
+        request_builder = request_builder.header(k.as_str(), v.0.as_str());
     }
 
     let auth_method = config
-        .as_ref()
-        .filter(|_| ZEN_CONFIG.http_auth.load(Ordering::Relaxed))
-        .and_then(|c| c.auth.clone());
+        .auth
+        .clone()
+        .filter(|_| ZEN_CONFIG.http_auth.load(Ordering::Relaxed));
 
-    let request_data_opt = config
-        .and_then(|c| c.data)
-        .and_then(|_| data.map(|d| d.0.to_value()));
-
+    let request_data_opt = config.data;
     let http_request = match request_data_opt {
         None => request_builder.body(Body::default()).or_throw(&ctx)?,
         Some(request_data) => {

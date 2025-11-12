@@ -9,29 +9,34 @@ use crate::nodes::function::v2::module::http::backend::callback::CallbackHttpBac
 use crate::nodes::function::v2::module::http::backend::{HttpBackend, HttpResponse};
 use crate::nodes::function::v2::serde::JsValue;
 use ahash::HashMap;
-use http::Method;
 use rquickjs::module::{Declarations, Exports, ModuleDef};
 use rquickjs::prelude::{Async, Func, Opt};
 use rquickjs::{Ctx, FromJs, Value};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use strum::Display;
 
 async fn execute_http<'js>(
     ctx: Ctx<'js>,
-    method: Method,
+    method: HttpMethod,
     url: String,
-    data: Option<JsValue>,
-    config: Option<HttpConfig>,
+    data: Option<serde_json::Value>,
+    request: Option<HttpRequestConfig>,
 ) -> rquickjs::Result<HttpResponse<'js>> {
+    let mut request = request.unwrap_or_default();
+    if let Some(data) = data {
+        request.data = Some(data);
+    }
+
     if ctx.globals().contains_key("__executeHttp").unwrap_or(false) {
         let backend = CallbackHttpBackend;
-        let backend_result = backend.execute_http(ctx, method, url, data, config).await;
+        let backend_result = backend.execute_http(ctx, method, url, request).await;
         return backend_result;
     }
 
     #[cfg(not(target_family = "wasm"))]
     {
         let backend = crate::nodes::function::v2::module::http::backend::native::NativeHttpBackend;
-        return backend.execute_http(ctx, method, url, data, config).await;
+        return backend.execute_http(ctx, method, url, request).await;
     }
 
     #[cfg(target_family = "wasm")]
@@ -46,52 +51,66 @@ async fn execute_http<'js>(
 async fn get<'js>(
     ctx: Ctx<'js>,
     url: String,
-    config: Opt<HttpConfig>,
+    config: Opt<HttpRequestConfig>,
 ) -> rquickjs::Result<HttpResponse<'js>> {
-    execute_http(ctx, Method::GET, url, None, config.0).await
+    execute_http(ctx, HttpMethod::GET, url, None, config.0).await
 }
 
 async fn post<'js>(
     ctx: Ctx<'js>,
     url: String,
     data: JsValue,
-    config: Opt<HttpConfig>,
+    config: Opt<HttpRequestConfig>,
 ) -> rquickjs::Result<HttpResponse<'js>> {
-    execute_http(ctx, Method::POST, url, Some(data), config.0).await
+    execute_http(
+        ctx,
+        HttpMethod::POST,
+        url,
+        Some(data.0.to_value()),
+        config.0,
+    )
+    .await
 }
 
 async fn patch<'js>(
     ctx: Ctx<'js>,
     url: String,
     data: JsValue,
-    config: Opt<HttpConfig>,
+    config: Opt<HttpRequestConfig>,
 ) -> rquickjs::Result<HttpResponse<'js>> {
-    execute_http(ctx, Method::PATCH, url, Some(data), config.0).await
+    execute_http(
+        ctx,
+        HttpMethod::PATCH,
+        url,
+        Some(data.0.to_value()),
+        config.0,
+    )
+    .await
 }
 
 async fn put<'js>(
     ctx: Ctx<'js>,
     url: String,
     data: JsValue,
-    config: Opt<HttpConfig>,
+    config: Opt<HttpRequestConfig>,
 ) -> rquickjs::Result<HttpResponse<'js>> {
-    execute_http(ctx, Method::PUT, url, Some(data), config.0).await
+    execute_http(ctx, HttpMethod::PUT, url, Some(data.0.to_value()), config.0).await
 }
 
 async fn delete<'js>(
     ctx: Ctx<'js>,
     url: String,
-    config: Opt<HttpConfig>,
+    config: Opt<HttpRequestConfig>,
 ) -> rquickjs::Result<HttpResponse<'js>> {
-    execute_http(ctx, Method::DELETE, url, None, config.0).await
+    execute_http(ctx, HttpMethod::DELETE, url, None, config.0).await
 }
 
 async fn head<'js>(
     ctx: Ctx<'js>,
     url: String,
-    config: Opt<HttpConfig>,
+    config: Opt<HttpRequestConfig>,
 ) -> rquickjs::Result<HttpResponse<'js>> {
-    execute_http(ctx, Method::HEAD, url, None, config.0).await
+    execute_http(ctx, HttpMethod::HEAD, url, None, config.0).await
 }
 
 pub(crate) struct HttpModule;
@@ -124,8 +143,18 @@ impl ModuleDef for HttpModule {
     }
 }
 
-#[derive(Deserialize, Serialize)]
-pub(crate) struct HttpConfig {
+#[derive(Display)]
+pub(crate) enum HttpMethod {
+    GET,
+    POST,
+    DELETE,
+    HEAD,
+    PUT,
+    PATCH,
+}
+
+#[derive(Deserialize, Serialize, Default)]
+pub(crate) struct HttpRequestConfig {
     #[serde(default)]
     headers: HashMap<String, StringPrimitive>,
     #[serde(default)]
@@ -163,7 +192,7 @@ impl Serialize for StringPrimitive {
     }
 }
 
-impl<'js> FromJs<'js> for HttpConfig {
+impl<'js> FromJs<'js> for HttpRequestConfig {
     fn from_js(ctx: &Ctx<'js>, value: Value<'js>) -> rquickjs::Result<Self> {
         rquickjs_serde::from_value(value).or_throw(&ctx)
     }

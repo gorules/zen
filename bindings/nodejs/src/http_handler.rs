@@ -1,3 +1,4 @@
+use ahash::HashMap;
 use napi::bindgen_prelude::Promise;
 use napi::threadsafe_function::ThreadsafeFunction;
 use napi::Status;
@@ -84,8 +85,8 @@ pub struct ZenHttpHandlerRequest {
     pub method: String,
     pub url: String,
     pub body: Option<Value>,
-    pub headers: Option<Value>,
-    pub params: Option<Value>,
+    pub headers: HashMap<String, String>,
+    pub params: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,7 +1,6 @@
-use crate::nodes::function::v2::module::http::HttpConfig;
-use crate::nodes::function::v2::serde::JsValue;
-use http::Method;
-use rquickjs::{Ctx, IntoJs, Object, Value};
+use crate::nodes::function::v2::error::ResultExt;
+use crate::nodes::function::v2::module::http::{HttpMethod, HttpRequestConfig};
+use rquickjs::{Ctx, FromJs, IntoJs, Object, Value};
 use std::future::Future;
 use std::pin::Pin;
 
@@ -28,14 +27,25 @@ impl<'js> IntoJs<'js> for HttpResponse<'js> {
     }
 }
 
+impl<'js> FromJs<'js> for HttpResponse<'js> {
+    fn from_js(ctx: &Ctx<'js>, value: Value<'js>) -> rquickjs::Result<Self> {
+        let object = value.as_object().or_throw(&ctx)?;
+
+        Ok(HttpResponse {
+            status: object.get("status").or_throw(&ctx)?,
+            data: object.get("data").or_throw(&ctx)?,
+            headers: object.get("headers").or_throw(&ctx)?,
+        })
+    }
+}
+
 /// Trait for HTTP backend implementations
 pub(crate) trait HttpBackend {
     fn execute_http<'js>(
         &self,
         ctx: Ctx<'js>,
-        method: Method,
+        method: HttpMethod,
         url: String,
-        data: Option<JsValue>,
-        config: Option<HttpConfig>,
+        config: HttpRequestConfig,
     ) -> Pin<Box<dyn Future<Output = rquickjs::Result<HttpResponse<'js>>> + 'js>>;
 }

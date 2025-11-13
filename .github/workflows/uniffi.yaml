@@ -19,7 +19,7 @@ on:
       - 'core/**'
       - 'test-data/**'
       - '.github/workflows/uniffi.yaml'
-  workflow_dispatch:
+  workflow_dispatch: #TODO REMOVE
 
 jobs:
   build:
@@ -31,7 +31,7 @@ jobs:
       fail-fast: true
       matrix:
         settings:
-#          - host: windows-latest
+#          - host: windows-latest #TODO UNCOMMENT
 #            target: 'x86_64-pc-windows-msvc'
 #            output: '{0}.dll'
 #            lib_dir: 'win32-x86-64'
@@ -80,7 +80,7 @@ jobs:
   release-java-kotlin:
     runs-on: ubuntu-latest
     needs: [ build ]
-    if: false # "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
+    if: false # "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')" #TODO UNCOMMENT
     defaults:
       run:
         working-directory: ${{ env.UNIFFI_DIRECTORY }}
@@ -135,7 +135,8 @@ jobs:
           SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
           GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
           GPG_SIGNING_PASSPHRASE: ${{ secrets.GPG_SIGNING_PASSPHRASE }}
-        run: ./gradlew publishAllPublicationsToCentralPortal
+        run: ./gradlew publishMavenKotlinPublicationToCentralPortal publishMavenJavaPublicationToCentralPortal
+
 
   build-ios:
     if: false
@@ -410,12 +411,6 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-#      - name: Download Android artifacts
-#        uses: actions/download-artifact@v4
-#        with:
-#          name: android-libs
-#          path: ${{ env.UNIFFI_DIRECTORY }}/android-libs
-
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -539,3 +534,58 @@ jobs:
           name: android-aar
           path: ${{ env.UNIFFI_DIRECTORY }}/${{ env.ANDROID_BUILD_DIR }}/zen-engine-android/build/outputs/aar/zen-engine-android-release.aar
           if-no-files-found: error
+
+  publish-android:
+    runs-on: ubuntu-latest
+    needs: [ build-android-aar ]
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.event.head_commit.message, 'skip ci')
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Download Kotlin bindings
+        uses: actions/download-artifact@v4
+        with:
+          name: kotlin-android-bindings
+          path: ${{ env.UNIFFI_DIRECTORY }}/build/generated/kotlin-android
+
+      - name: Download Android AAR artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: android-aar
+          path: build-android/aar/
+
+      - name: Publish Android Kotlin package to Maven Local
+        run: ./gradlew publishMavenKotlinAndroidPublicationToMavenLocal
+
+      - name: Verify artifact
+        run: |
+          ARTIFACT_PATH="$HOME/.m2/repository/io/gorules/zen-engine-kotlin-android"
+          if [ -d "$ARTIFACT_PATH" ]; then
+            echo "✓ Artifact directory found:"
+            find "$ARTIFACT_PATH" -type f
+          else
+            echo "✗ Artifact not found at $ARTIFACT_PATH"
+          fi
+      - name: Print m2 directory
+        run: |
+          echo "M2 Home: $M2_HOME"
+          echo "M2 Directory contents:"
+          ls -la ~/.m2/
+          echo ""
+          echo "Repository contents:"
+          find ~/.m2/repository -type f -name "*.jar" | head -20
+
+#      - name: Publish Android Kotlin package to Maven Central
+#        env:
+#          SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
+#          SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+#          GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
+#          GPG_SIGNING_PASSPHRASE: ${{ secrets.GPG_SIGNING_PASSPHRASE }}
+#        run: ./gradlew publishMavenKotlinAndroidPublicationToCentralPortal

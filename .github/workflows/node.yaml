@@ -33,28 +33,28 @@ jobs:
       fail-fast: false
       matrix:
         settings:
-          - host: windows-latest
-            target: 'x86_64-pc-windows-msvc'
-            build: |
-              yarn build --target x86_64-pc-windows-msvc
-
-          - host: macos-13
-            target: 'x86_64-apple-darwin'
-            build: |
-              rustup target add x86_64-apple-darwin
-              yarn build --target x86_64-apple-darwin
-              strip -x ./*.node
-
-          - host: macos-14
-            target: 'aarch64-apple-darwin'
-            build: |
-              sudo rm -Rf /Library/Developer/CommandLineTools/SDKs/*;
-              export CC=$(xcrun -f clang);
-              export CXX=$(xcrun -f clang++);
-              SYSROOT=$(xcrun --sdk macosx --show-sdk-path);
-              export CFLAGS="-isysroot $SYSROOT -isystem $SYSROOT";
-              yarn build --target aarch64-apple-darwin
-              strip -x ./*.node
+#          - host: windows-latest
+#            target: 'x86_64-pc-windows-msvc'
+#            build: |
+#              yarn build --target x86_64-pc-windows-msvc
+#
+#          - host: macos-13
+#            target: 'x86_64-apple-darwin'
+#            build: |
+#              rustup target add x86_64-apple-darwin
+#              yarn build --target x86_64-apple-darwin
+#              strip -x ./*.node
+#
+#          - host: macos-14
+#            target: 'aarch64-apple-darwin'
+#            build: |
+#              sudo rm -Rf /Library/Developer/CommandLineTools/SDKs/*;
+#              export CC=$(xcrun -f clang);
+#              export CXX=$(xcrun -f clang++);
+#              SYSROOT=$(xcrun --sdk macosx --show-sdk-path);
+#              export CFLAGS="-isysroot $SYSROOT -isystem $SYSROOT";
+#              yarn build --target aarch64-apple-darwin
+#              strip -x ./*.node
 
           - host: ubuntu-latest
             target: 'x86_64-unknown-linux-gnu'
@@ -245,12 +245,12 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-#          name: bindings-${{ matrix.settings.target }}
+          name: bindings-${{ matrix.settings.target }}
           path: artifacts
 
-      - name: Flat artifacts
-        run: mv ../../artifacts/wasm32-wasi/* ../../artifacts/
-        shell: bash
+#      - name: Flat artifacts
+#        run: mv ../../artifacts/wasm32-wasi/* ../../artifacts/
+#        shell: bash
 
       - name: Create dirs
         run: yarn createNpmDirs
@@ -295,12 +295,24 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-#          name: bindings-x86_64-unknown-linux-gnu
+          name: bindings-x86_64-unknown-linux-gnu
           path: artifacts
 
-      - name: Flat artifacts
-        run: mv ../../artifacts/wasm32-wasi/* ../../artifacts/
+      - name: Download WASM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: bindings-wasm32-wasi
+          path: artifacts
+
+      - name: List artifacts
+        run: |
+          ls -la ../../artifacts
+          ls -la ../../artifacts/wasm32-wasi
         shell: bash
+
+#      - name: Flat artifacts
+#        run: mv ../../artifacts/wasm32-wasi/* ../../artifacts/
+#        shell: bash
 
       - name: Create dirs
         run: yarn createNpmDirs
@@ -354,12 +366,12 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-#          name: bindings-x86_64-unknown-linux-musl
+          name: bindings-x86_64-unknown-linux-musl
           path: artifacts
 
-      - name: Flat artifacts
-        run: mv ../../artifacts/wasm32-wasi/* ../../artifacts/
-        shell: bash
+#      - name: Flat artifacts
+#        run: mv ../../artifacts/wasm32-wasi/* ../../artifacts/
+#        shell: bash
 
       - name: Create dirs
         run: yarn createNpmDirs
@@ -420,12 +432,12 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-#          name: bindings-aarch64-unknown-linux-musl
+          name: bindings-aarch64-unknown-linux-musl
           path: artifacts
 
-      - name: Flat artifacts
-        run: mv ../../artifacts/wasm32-wasi/* ../../artifacts/
-        shell: bash
+#      - name: Flat artifacts
+#        run: mv ../../artifacts/wasm32-wasi/* ../../artifacts/
+#        shell: bash
 
       - name: Create dirs
         run: yarn createNpmDirs
@@ -538,7 +550,7 @@ jobs:
           path: artifacts
 
       - name: Flat artifacts
-        run: mv ../../artifacts/wasm32-wasi/* ../../artifacts/
+        run: mv ../../artifacts/bindings-wasm32-wasi/* ../../artifacts/
         shell: bash
 
       - name: Copy LICENSE

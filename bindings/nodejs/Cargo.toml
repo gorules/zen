@@ -24,4 +24,4 @@ json_dotpath = { workspace = true }
 iana-time-zone = { version = "0.1", features = ["fallback"] }
 
 [build-dependencies]
-napi-build = "2.2"
+napi-build = "2.3"

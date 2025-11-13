@@ -248,9 +248,11 @@ jobs:
           name: bindings-${{ matrix.settings.target }}
           path: artifacts
 
-#      - name: Flat artifacts
-#        run: mv ../../artifacts/wasm32-wasi/* ../../artifacts/
-#        shell: bash
+      - name: Download WASM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: bindings-wasm32-wasi
+          path: artifacts
 
       - name: Create dirs
         run: yarn createNpmDirs
@@ -307,12 +309,7 @@ jobs:
       - name: List artifacts
         run: |
           ls -la ../../artifacts
-          ls -la ../../artifacts/wasm32-wasi
         shell: bash
-
-#      - name: Flat artifacts
-#        run: mv ../../artifacts/wasm32-wasi/* ../../artifacts/
-#        shell: bash
 
       - name: Create dirs
         run: yarn createNpmDirs
@@ -369,9 +366,11 @@ jobs:
           name: bindings-x86_64-unknown-linux-musl
           path: artifacts
 
-#      - name: Flat artifacts
-#        run: mv ../../artifacts/wasm32-wasi/* ../../artifacts/
-#        shell: bash
+      - name: Download WASM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: bindings-wasm32-wasi
+          path: artifacts
 
       - name: Create dirs
         run: yarn createNpmDirs
@@ -435,9 +434,11 @@ jobs:
           name: bindings-aarch64-unknown-linux-musl
           path: artifacts
 
-#      - name: Flat artifacts
-#        run: mv ../../artifacts/wasm32-wasi/* ../../artifacts/
-#        shell: bash
+      - name: Download WASM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: bindings-wasm32-wasi
+          path: artifacts
 
       - name: Create dirs
         run: yarn createNpmDirs
@@ -549,9 +550,8 @@ jobs:
         with:
           path: artifacts
 
-      - name: Flat artifacts
-        run: mv ../../artifacts/bindings-wasm32-wasi/* ../../artifacts/
-        shell: bash
+      - name: List all artifacts
+        run: ls -la ../../artifacts
 
       - name: Copy LICENSE
         run: cp ../../LICENSE .

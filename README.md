@@ -325,9 +325,9 @@ maintainability in complex systems.
 | Browser (N-API) | `wasm32-wasi` | npm (@gorules/zen-engine) |
 | Python (PyO3) | `linux-x64-gnu`, `linux-arm64-gnu`, `darwin-x64`, `darwin-arm64`, `win32-x64-msvc` | PyPI (zen-engine) |
 | Java (UniFFI) | `linux-x64-gnu`, `linux-arm64-gnu`, `darwin-x64`, `darwin-arm64`, `win32-x64-msvc` | Maven Central (zen-engine) |
-| Kotlin (JVM) | `linux-x64-gnu`, `linux-arm64-gnu`, `darwin-x64`, `darwin-arm64`, `win32-x64-msvc` | Maven Central (zen-engine-kotlin) |
-| Kotlin (Android) - coming soon | `android-arm64`, `android-armv7`, `android-i686`, `android-x64` | Maven Central (zen-engine-kotlin-android |
-| Swift (iOS) | `ios-arm64`, `ios-x64`, `ios-arm64-sim` | github.com/gorules/zen-ios (auto-sync via PR) |
+| Kotlin JVM (UniFFI) | `linux-x64-gnu`, `linux-arm64-gnu`, `darwin-x64`, `darwin-arm64`, `win32-x64-msvc` | Maven Central (zen-engine-kotlin) |
+| Kotlin Android (UniFFI) - coming soon | `android-arm64`, `android-armv7`, `android-i686`, `android-x64` | Maven Central (zen-engine-kotlin-android |
+| Swift iOS (UniFFI) | `ios-arm64`, `ios-x64`, `ios-arm64-sim` | github.com/gorules/zen-ios (auto-sync via PR) |
 
 ## Contribution
 

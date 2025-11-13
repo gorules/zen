@@ -194,7 +194,7 @@ signing {
         val signingKey = Base64.getDecoder().decode(signingKeyBase64.get()).toString(Charsets.UTF_8)
 
         useInMemoryPgpKeys(signingKey, signingPassphrase.get())
-        sign(publishing.publications["mavenJava"], publishing.publications["mavenKotlin"])
+        sign(publishing.publications["mavenJava"], publishing.publications["mavenKotlin"], publishing.publications["mavenKotlinAndroid"])
     }
 }
 

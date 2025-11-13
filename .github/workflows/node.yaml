@@ -248,11 +248,11 @@ jobs:
           name: bindings-${{ matrix.settings.target }}
           path: artifacts
 
-      - name: Download WASM artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: bindings-wasm32-wasi
-          path: artifacts
+#      - name: Download WASM artifacts
+#        uses: actions/download-artifact@v4
+#        with:
+#          name: bindings-wasm32-wasi
+#          path: artifacts
 
       - name: Create dirs
         run: yarn createNpmDirs
@@ -300,11 +300,11 @@ jobs:
           name: bindings-x86_64-unknown-linux-gnu
           path: artifacts
 
-      - name: Download WASM artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: bindings-wasm32-wasi
-          path: artifacts
+#      - name: Download WASM artifacts
+#        uses: actions/download-artifact@v4
+#        with:
+#          name: bindings-wasm32-wasi
+#          path: artifacts
 
       - name: List artifacts
         run: |
@@ -366,11 +366,11 @@ jobs:
           name: bindings-x86_64-unknown-linux-musl
           path: artifacts
 
-      - name: Download WASM artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: bindings-wasm32-wasi
-          path: artifacts
+#      - name: Download WASM artifacts
+#        uses: actions/download-artifact@v4
+#        with:
+#          name: bindings-wasm32-wasi
+#          path: artifacts
 
       - name: Create dirs
         run: yarn createNpmDirs
@@ -434,11 +434,11 @@ jobs:
           name: bindings-aarch64-unknown-linux-musl
           path: artifacts
 
-      - name: Download WASM artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: bindings-wasm32-wasi
-          path: artifacts
+#      - name: Download WASM artifacts
+#        uses: actions/download-artifact@v4
+#        with:
+#          name: bindings-wasm32-wasi
+#          path: artifacts
 
       - name: Create dirs
         run: yarn createNpmDirs

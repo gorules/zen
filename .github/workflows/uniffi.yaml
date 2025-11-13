@@ -568,31 +568,31 @@ jobs:
           name: android-aar
           path: ${{ env.UNIFFI_DIRECTORY }}/build-android/aar/
 
-      - name: Publish Android Kotlin package to Maven Local
-        run: ./gradlew publishMavenKotlinAndroidPublicationToMavenLocal
+#      - name: Publish Android Kotlin package to Maven Local
+#        run: ./gradlew publishMavenKotlinAndroidPublicationToMavenLocal
+#
+#      - name: Verify artifact
+#        run: |
+#          ARTIFACT_PATH="$HOME/.m2/repository/io/gorules/zen-engine-kotlin-android"
+#          if [ -d "$ARTIFACT_PATH" ]; then
+#            echo "✓ Artifact directory found:"
+#            find "$ARTIFACT_PATH" -type f
+#          else
+#            echo "✗ Artifact not found at $ARTIFACT_PATH"
+#          fi
+#      - name: Print m2 directory
+#        run: |
+#          echo "M2 Home: $M2_HOME"
+#          echo "M2 Directory contents:"
+#          ls -la ~/.m2/
+#          echo ""
+#          echo "Repository contents:"
+#          find ~/.m2/repository -type f -name "*.jar" | head -20
 
-      - name: Verify artifact
-        run: |
-          ARTIFACT_PATH="$HOME/.m2/repository/io/gorules/zen-engine-kotlin-android"
-          if [ -d "$ARTIFACT_PATH" ]; then
-            echo "✓ Artifact directory found:"
-            find "$ARTIFACT_PATH" -type f
-          else
-            echo "✗ Artifact not found at $ARTIFACT_PATH"
-          fi
-      - name: Print m2 directory
-        run: |
-          echo "M2 Home: $M2_HOME"
-          echo "M2 Directory contents:"
-          ls -la ~/.m2/
-          echo ""
-          echo "Repository contents:"
-          find ~/.m2/repository -type f -name "*.jar" | head -20
-
-#      - name: Publish Android Kotlin package to Maven Central
-#        env:
-#          SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
-#          SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
-#          GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
-#          GPG_SIGNING_PASSPHRASE: ${{ secrets.GPG_SIGNING_PASSPHRASE }}
-#        run: ./gradlew publishMavenKotlinAndroidPublicationToCentralPortal
+      - name: Publish Android Kotlin package to Maven Central
+        env:
+          SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
+          SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+          GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
+          GPG_SIGNING_PASSPHRASE: ${{ secrets.GPG_SIGNING_PASSPHRASE }}
+        run: ./gradlew publishMavenKotlinAndroidPublicationToCentralPortal

@@ -1,163 +1,116 @@
-mod auth;
+pub(crate) mod auth;
+pub(crate) mod backend;
+pub(crate) mod listener;
 
 use crate::nodes::function::v2::error::ResultExt;
 use crate::nodes::function::v2::module::export_default;
-use crate::nodes::function::v2::module::http::auth::{HttpConfigAuth, IamAuth};
+use crate::nodes::function::v2::module::http::auth::HttpConfigAuth;
+use crate::nodes::function::v2::module::http::backend::callback::CallbackHttpBackend;
+use crate::nodes::function::v2::module::http::backend::{HttpBackend, HttpResponse};
 use crate::nodes::function::v2::serde::JsValue;
-use crate::ZEN_CONFIG;
-use ::http::Request as HttpRequest;
 use ahash::HashMap;
-use reqwest::{Body, Method, Request, Url};
 use rquickjs::module::{Declarations, Exports, ModuleDef};
 use rquickjs::prelude::{Async, Func, Opt};
-use rquickjs::{CatchResultExt, Ctx, IntoAtom, IntoJs, Object, Value};
-use serde::{Deserialize, Deserializer};
-use std::sync::atomic::Ordering;
-use std::sync::OnceLock;
-use zen_expression::variable::Variable;
-
-pub(crate) struct HttpResponse<'js> {
-    data: Value<'js>,
-    headers: Object<'js>,
-    status: u16,
-}
-
-impl<'js> IntoJs<'js> for HttpResponse<'js> {
-    fn into_js(self, ctx: &Ctx<'js>) -> rquickjs::Result<Value<'js>> {
-        let object = Object::new(ctx.clone())?;
-        object.set("data", self.data)?;
-        object.set("headers", self.headers)?;
-        object.set("status", self.status)?;
-
-        Ok(object.into_value())
-    }
-}
+use rquickjs::{Ctx, FromJs, Value};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use strum::Display;
 
 async fn execute_http<'js>(
     ctx: Ctx<'js>,
-    method: Method,
+    method: HttpMethod,
     url: String,
-    data: Option<JsValue>,
-    config: Option<HttpConfig>,
+    data: Option<serde_json::Value>,
+    request: Option<HttpRequestConfig>,
 ) -> rquickjs::Result<HttpResponse<'js>> {
-    static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-    let client = HTTP_CLIENT.get_or_init(|| reqwest::Client::new()).clone();
-
-    let mut url = Url::parse(&url).or_throw(&ctx)?;
-    if let Some(config) = &config {
-        for (k, v) in &config.params {
-            url.query_pairs_mut().append_pair(k.as_str(), v.0.as_str());
-        }
+    let mut request = request.unwrap_or_default();
+    if let Some(data) = data {
+        request.data = Some(data);
     }
 
-    let mut request_builder = HttpRequest::builder().method(method).uri(url.as_str());
-    if let Some(config) = &config {
-        for (k, v) in &config.headers {
-            request_builder = request_builder.header(k.as_str(), v.0.as_str());
-        }
+    if ctx.globals().contains_key("__executeHttp").unwrap_or(false) {
+        let backend = CallbackHttpBackend;
+        let backend_result = backend.execute_http(ctx, method, url, request).await;
+        return backend_result;
     }
 
-    let auth_method = config
-        .as_ref()
-        .filter(|_| ZEN_CONFIG.http_auth.load(Ordering::Relaxed))
-        .and_then(|c| c.auth.clone());
-
-    let request_data_opt = config
-        .and_then(|c| c.data)
-        .and_then(|_| data.map(|d| d.0.to_value()));
-
-    let http_request = match request_data_opt {
-        None => request_builder.body(Body::default()).or_throw(&ctx)?,
-        Some(request_data) => {
-            let request_body_json = serde_json::to_vec(&request_data).or_throw(&ctx)?;
-            request_builder
-                .body(Body::from(request_body_json))
-                .or_throw(&ctx)?
-        }
-    };
-
-    let request = match auth_method {
-        Some(HttpConfigAuth::Iam(IamAuth::Aws(config))) => {
-            config.build_request(http_request).await.or_throw(&ctx)?
-        }
-        Some(HttpConfigAuth::Iam(IamAuth::Azure(config))) => {
-            config.build_request(http_request).await.or_throw(&ctx)?
-        }
-        Some(HttpConfigAuth::Iam(IamAuth::Gcp(config))) => {
-            config.build_request(http_request).await.or_throw(&ctx)?
-        }
-        None => Request::try_from(http_request).or_throw(&ctx)?,
-    };
-
-    // Apply auth
-    let response = client.execute(request).await.or_throw(&ctx)?;
-    let status = response.status().as_u16();
-    let header_object = Object::new(ctx.clone()).catch(&ctx).or_throw(&ctx)?;
-    for (key, value) in response.headers() {
-        header_object.set(
-            key.as_str().into_atom(&ctx)?,
-            value.to_str().or_throw(&ctx).into_js(&ctx),
-        )?;
+    #[cfg(not(target_family = "wasm"))]
+    {
+        let backend = crate::nodes::function::v2::module::http::backend::native::NativeHttpBackend;
+        return backend.execute_http(ctx, method, url, request).await;
     }
 
-    let data: Variable = response.json().await.or_throw(&ctx)?;
-
-    Ok(HttpResponse {
-        data: JsValue(data).into_js(&ctx)?,
-        headers: header_object,
-        status,
-    })
+    #[cfg(target_family = "wasm")]
+    {
+        Err(rquickjs::Error::new_from_js(
+            "http",
+            "HTTP not available in WASM environment without callback handler",
+        ))
+    }
 }
 
 async fn get<'js>(
     ctx: Ctx<'js>,
     url: String,
-    config: Opt<HttpConfig>,
+    config: Opt<HttpRequestConfig>,
 ) -> rquickjs::Result<HttpResponse<'js>> {
-    execute_http(ctx, Method::GET, url, None, config.0).await
+    execute_http(ctx, HttpMethod::GET, url, None, config.0).await
 }
 
 async fn post<'js>(
     ctx: Ctx<'js>,
     url: String,
     data: JsValue,
-    config: Opt<HttpConfig>,
+    config: Opt<HttpRequestConfig>,
 ) -> rquickjs::Result<HttpResponse<'js>> {
-    execute_http(ctx, Method::POST, url, Some(data), config.0).await
+    execute_http(
+        ctx,
+        HttpMethod::POST,
+        url,
+        Some(data.0.to_value()),
+        config.0,
+    )
+    .await
 }
 
 async fn patch<'js>(
     ctx: Ctx<'js>,
     url: String,
     data: JsValue,
-    config: Opt<HttpConfig>,
+    config: Opt<HttpRequestConfig>,
 ) -> rquickjs::Result<HttpResponse<'js>> {
-    execute_http(ctx, Method::PATCH, url, Some(data), config.0).await
+    execute_http(
+        ctx,
+        HttpMethod::PATCH,
+        url,
+        Some(data.0.to_value()),
+        config.0,
+    )
+    .await
 }
 
 async fn put<'js>(
     ctx: Ctx<'js>,
     url: String,
     data: JsValue,
-    config: Opt<HttpConfig>,
+    config: Opt<HttpRequestConfig>,
 ) -> rquickjs::Result<HttpResponse<'js>> {
-    execute_http(ctx, Method::PUT, url, Some(data), config.0).await
+    execute_http(ctx, HttpMethod::PUT, url, Some(data.0.to_value()), config.0).await
 }
 
 async fn delete<'js>(
     ctx: Ctx<'js>,
     url: String,
-    config: Opt<HttpConfig>,
+    config: Opt<HttpRequestConfig>,
 ) -> rquickjs::Result<HttpResponse<'js>> {
-    execute_http(ctx, Method::DELETE, url, None, config.0).await
+    execute_http(ctx, HttpMethod::DELETE, url, None, config.0).await
 }
 
 async fn head<'js>(
     ctx: Ctx<'js>,
     url: String,
-    config: Opt<HttpConfig>,
+    config: Opt<HttpRequestConfig>,
 ) -> rquickjs::Result<HttpResponse<'js>> {
-    execute_http(ctx, Method::DELETE, url, None, config.0).await
+    execute_http(ctx, HttpMethod::HEAD, url, None, config.0).await
 }
 
 pub(crate) struct HttpModule;
@@ -190,8 +143,18 @@ impl ModuleDef for HttpModule {
     }
 }
 
-#[derive(Deserialize)]
-pub(crate) struct HttpConfig {
+#[derive(Display)]
+pub(crate) enum HttpMethod {
+    GET,
+    POST,
+    DELETE,
+    HEAD,
+    PUT,
+    PATCH,
+}
+
+#[derive(Deserialize, Serialize, Default)]
+pub(crate) struct HttpRequestConfig {
     #[serde(default)]
     headers: HashMap<String, StringPrimitive>,
     #[serde(default)]
@@ -217,5 +180,20 @@ impl<'de> Deserialize<'de> for StringPrimitive {
         };
 
         Ok(Self(data))
+    }
+}
+
+impl Serialize for StringPrimitive {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.0)
+    }
+}
+
+impl<'js> FromJs<'js> for HttpRequestConfig {
+    fn from_js(ctx: &Ctx<'js>, value: Value<'js>) -> rquickjs::Result<Self> {
+        rquickjs_serde::from_value(value).or_throw(&ctx)
     }
 }

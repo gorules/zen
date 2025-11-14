@@ -1,0 +1,51 @@
+# Gradle
+.gradle/
+build/
+out/
+
+# Local Gradle config
+gradle-app.setting
+gradle-app.properties
+
+# Generated files
+*.class
+*.log
+*.tmp
+
+# IDEs
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Eclipse
+.project
+.classpath
+.settings/
+bin/
+
+# VS Code
+.vscode/
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# Java
+*.jar
+*.war
+*.ear
+
+# But keep Gradle wrapper JAR (must come after *.jar)
+!gradle/wrapper/gradle-wrapper.jar
+
+# Maven local artifacts
+*.pom
+
+# Logs
+logs/
+*.log
+
+# Dependency caches
+**/node_modules/

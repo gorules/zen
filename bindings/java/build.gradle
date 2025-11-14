@@ -1,0 +1,61 @@
+plugins {
+    id 'java-library'
+    id 'idea'
+    id 'com.vanniktech.maven.publish' version '0.29.0'
+}
+
+group 'io.github.java-rules'
+version property('global.version')
+
+sourceCompatibility = 21
+targetCompatibility = 21
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // ZEN Engine UniFFI bindings - keep as 0.4.1
+    api 'io.gorules:zen-engine:0.4.1'
+    api 'net.java.dev.jna:jna:5.17.0'
+    api 'com.fasterxml.jackson.core:jackson-databind:2.15.3'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.1'
+}
+
+// Maven Central publishing configuration
+mavenPublishing {
+    coordinates("io.github.java-rules", "zen-engine-java", project.version.toString())
+
+    pom {
+        name = "Zen Engine - Java Bindings"
+        description = "Java bindings for Zen Rules Engine"
+        url = "https://github.com/java-rules/zen"
+
+        licenses {
+            license {
+                name = "The Apache License, Version 2.0"
+                url = "http://www.apache.org/licenses/LICENSE-2.0.txt"
+            }
+        }
+
+        developers {
+            developer {
+                id = "shahzan"
+                name = "Mohd Shahzan"
+                email = "m.shahzan2003@gmail.com"
+            }
+        }
+
+        scm {
+            url = "https://github.com/java-rules/zen"
+            connection = "scm:git:git://github.com/java-rules/zen.git"
+            developerConnection = "scm:git:ssh://github.com/java-rules/zen.git"
+        }
+    }
+
+    publishToMavenCentral(com.vanniktech.maven.publish.SonatypeHost.CENTRAL_PORTAL)
+
+    signAllPublications()
+}
+

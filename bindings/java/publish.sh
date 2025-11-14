@@ -1,75 +1,86 @@
 #!/bin/bash
+set -e
 
-# Dreamplug Nexus Publishing Script
-# Usage: ./publish.sh
+VERSION=${1:-"0.4.1"}
+WRAPPER_VERSION="${VERSION}-SNAPSHOT"
 
-# Check if credentials are set
+echo "===================================="
+echo "Building Zen Engine Java Bindings"
+echo "Version: $VERSION"
+echo "Wrapper Version: $WRAPPER_VERSION"
+echo "===================================="
+
+# Check prerequisites
+echo ""
+echo "Checking prerequisites..."
+
+if ! command -v cargo &> /dev/null; then
+    echo "❌ Error: Rust/cargo not found. Please install Rust."
+    exit 1
+fi
+
+if ! command -v uniffi-bindgen-java &> /dev/null; then
+    echo "❌ Error: uniffi-bindgen-java not found."
+    echo "   Install it with: cargo install uniffi-bindgen-java"
+    exit 1
+fi
+
 if [ -z "$DP_NEXUS_USER" ] || [ -z "$DP_NEXUS_PASS" ]; then
-    echo "❌ Error: Nexus credentials not set!"
-    echo ""
-    echo "Please set the following environment variables:"
-    echo "  export DP_NEXUS_USER=\"your-username\""
-    echo "  export DP_NEXUS_PASS=\"your-password\""
-    echo ""
-    echo "Or add them to your ~/.zshrc or ~/.bashrc:"
-    echo "  echo 'export DP_NEXUS_USER=\"your-username\"' >> ~/.zshrc"
-    echo "  echo 'export DP_NEXUS_PASS=\"your-password\"' >> ~/.zshrc"
-    echo "  source ~/.zshrc"
-    exit 1
+    echo "⚠️  Warning: DP_NEXUS_USER or DP_NEXUS_PASS not set."
+    echo "   Publishing to Nexus may fail."
+    read -p "Continue anyway? (y/n) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        exit 1
+    fi
 fi
 
-echo "✅ Credentials found"
-echo "   User: $DP_NEXUS_USER"
-echo ""
+echo "✓ All prerequisites met"
 
-# Read version from gradle.properties
-VERSION=$(grep "global.version" gradle.properties | cut -d'=' -f2)
-echo "📦 Publishing version: $VERSION"
-echo ""
+# Save current directory
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# Determine repository type
-if [[ $VERSION == *"-SNAPSHOT"* ]]; then
-    REPO="maven-snapshots"
-else
-    REPO="maven-releases"
-fi
-
-echo "📍 Repository: https://nexus.infra.dreamplug.net/repository/$REPO/"
-echo ""
-
-# Clean and build
-echo "🔨 Building project..."
-./gradlew clean build
-
-if [ $? -ne 0 ]; then
-    echo "❌ Build failed!"
-    exit 1
-fi
+# Navigate to uniffi directory
+cd "$REPO_ROOT/bindings/uniffi"
 
 echo ""
-echo "📤 Publishing to Dreamplug Nexus..."
-./gradlew publish
+echo "[1/6] Building Rust library..."
+make build
 
-if [ $? -eq 0 ]; then
-    echo ""
-    echo "✅ Published successfully!"
-    echo ""
-    echo "📍 Artifact location:"
-    echo "   https://nexus.infra.dreamplug.net/repository/$REPO/cred/club/java-rules/zen-engine-java/$VERSION/"
-    echo ""
-    echo "📦 To use this artifact in another project, add:"
-    echo ""
-    echo "   repositories {"
-    echo "       maven {"
-    echo "           url \"https://nexus.infra.dreamplug.net/repository/maven-public\""
-    echo "       }"
-    echo "   }"
-    echo ""
-    echo "   dependencies {"
-    echo "       implementation 'io.github.java-rules:zen-engine-java:$VERSION'"
-    echo "   }"
-else
-    echo ""
-    echo "❌ Publishing failed!"
-    exit 1
-fi
+echo ""
+echo "[2/6] Generating Java bindings..."
+make generate-java
+
+echo ""
+echo "[3/6] Building zen-engine JAR..."
+./gradlew clean generateJavaJar
+
+echo ""
+echo "[4/6] Publishing zen-engine to Nexus..."
+./gradlew publishMavenJavaPublicationToMavenRepository
+
+echo ""
+echo "[5/6] Installing zen-engine to mavenLocal..."
+./gradlew publishToMavenLocal
+
+# Navigate to java wrapper directory
+cd "$REPO_ROOT/bindings/java"
+
+echo ""
+echo "[6/6] Building and publishing zen-engine-java wrapper..."
+./gradlew clean build publish
+
+echo ""
+echo "===================================="
+echo "✓ Build Complete!"
+echo "===================================="
+echo ""
+echo "Published artifacts:"
+echo "  • io.gorules:zen-engine:$VERSION"
+echo "  • cred.club.java-rules:zen-engine-java:$WRAPPER_VERSION"
+echo ""
+echo "Verify publication:"
+echo "  curl -I https://nexus.infra.dreamplug.net/repository/maven-releases/io/gorules/zen-engine/$VERSION/zen-engine-$VERSION.jar"
+echo "  curl -I https://nexus.infra.dreamplug.net/repository/maven-snapshots/cred/club/java-rules/zen-engine-java/$WRAPPER_VERSION/maven-metadata.xml"
+echo ""

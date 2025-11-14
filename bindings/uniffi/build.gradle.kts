@@ -137,7 +137,17 @@ publishing {
         }
     }
     repositories {
-        mavenLocal()
+        maven {
+            val releasesRepoUrl = uri("https://nexus.infra.dreamplug.net/repository/maven-releases/")
+            val snapshotsRepoUrl = uri("https://nexus.infra.dreamplug.net/repository/maven-snapshots/")
+            val isSnapshot = version.toString().endsWith("-SNAPSHOT")
+            url = if (isSnapshot) snapshotsRepoUrl else releasesRepoUrl
+
+            credentials {
+                username = findProperty("nexusUsername")?.toString() ?: System.getenv("DP_NEXUS_USER")
+                password = findProperty("nexusPassword")?.toString() ?: System.getenv("DP_NEXUS_PASS")
+            }
+        }
     }
 }
 

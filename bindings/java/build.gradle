@@ -24,6 +24,13 @@ repositories {
     mavenLocal()
     mavenCentral()
     maven {
+        url "https://nexus.infra.dreamplug.net/repository/maven-releases"
+        credentials {
+            username = project.hasProperty('nexusUsername') ? project.property('nexusUsername') : System.env.DP_NEXUS_USER
+            password = project.hasProperty('nexusPassword') ? project.property('nexusPassword') : System.env.DP_NEXUS_PASS
+        }
+    }
+    maven {
         url "https://nexus.infra.dreamplug.net/repository/maven-public"
     }
     maven {
@@ -50,10 +57,6 @@ java {
     withSourcesJar()
 }
 
-// Skip compilation since zen-engine classes aren't fully available
-compileJava.enabled = false
-test.enabled = false
-
 publishing {
     publications {
         mavenJava(MavenPublication) {
@@ -61,7 +64,7 @@ publishing {
             artifactId = 'zen-engine-java'
             version = "${project.version}"
 
-            artifact sourcesJar
+            from components.java
 
             pom {
                 name = 'Zen Engine - Java Bindings'

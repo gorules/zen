@@ -1,0 +1,117 @@
+name: Publish Snapshot to Maven Central
+
+on:
+  # Trigger on push to main branches
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'bindings/java/**'
+      - '.github/workflows/publish-snapshot.yml'
+
+  # Allow manual triggering
+  workflow_dispatch:
+
+jobs:
+  publish-snapshot:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: wrapper
+
+      - name: Import GPG key
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: Check if version is SNAPSHOT
+        id: check
+        run: |
+          cd bindings/java
+          VERSION=$(grep "global.version" gradle.properties | cut -d'=' -f2)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+          if [[ $VERSION == *-SNAPSHOT ]]; then
+            echo "is_snapshot=true" >> $GITHUB_OUTPUT
+            echo "✅ Version $VERSION is a SNAPSHOT - will publish"
+          else
+            echo "is_snapshot=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Version $VERSION is not a SNAPSHOT - skipping publish"
+          fi
+
+      - name: Build and verify
+        if: steps.check.outputs.is_snapshot == 'true'
+        run: |
+          cd bindings/java
+          ./gradlew clean build --no-daemon --stacktrace
+
+      - name: Publish SNAPSHOT to Maven Central
+        if: steps.check.outputs.is_snapshot == 'true'
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_TOKEN }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.GPG_PRIVATE_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          cd bindings/java
+          ./gradlew publishAndReleaseToMavenCentral --no-daemon --stacktrace
+
+      - name: Upload build artifacts
+        if: steps.check.outputs.is_snapshot == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapshot-artifacts-${{ github.sha }}
+          path: |
+            bindings/java/build/libs/*.jar
+            bindings/java/build/publications/**/*
+          retention-days: 7
+
+      - name: Summary
+        if: steps.check.outputs.is_snapshot == 'true'
+        run: |
+          echo "## Snapshot Publication Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Version:** ${{ steps.check.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Group ID:** io.github.java-rules" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Artifact ID:** zen-engine-java" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Maven Central Snapshot Coordinates" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`xml" >> $GITHUB_STEP_SUMMARY
+          echo "<dependency>" >> $GITHUB_STEP_SUMMARY
+          echo "    <groupId>io.github.java-rules</groupId>" >> $GITHUB_STEP_SUMMARY
+          echo "    <artifactId>zen-engine-java</artifactId>" >> $GITHUB_STEP_SUMMARY
+          echo "    <version>${{ steps.check.outputs.version }}</version>" >> $GITHUB_STEP_SUMMARY
+          echo "</dependency>" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Gradle" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`groovy" >> $GITHUB_STEP_SUMMARY
+          echo "implementation 'io.github.java-rules:zen-engine-java:${{ steps.check.outputs.version }}'" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 Check snapshots: https://central.sonatype.com/publishing" >> $GITHUB_STEP_SUMMARY
+
+      - name: Skipped Summary
+        if: steps.check.outputs.is_snapshot == 'false'
+        run: |
+          echo "## ⚠️ Snapshot Publication Skipped" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Version **${{ steps.check.outputs.version }}** is not a SNAPSHOT." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "To publish snapshots, ensure the version in \`gradle.properties\` ends with \`-SNAPSHOT\`." >> $GITHUB_STEP_SUMMARY

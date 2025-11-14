@@ -1,0 +1,100 @@
+apply plugin: 'java-library'
+apply plugin: 'idea'
+apply plugin: 'maven-publish'
+
+group 'cred.club.java-rules'
+version property('global.version')
+
+sourceCompatibility = 17
+targetCompatibility = 17
+
+buildscript {
+    repositories {
+        maven {
+            url "https://nexus.infra.dreamplug.net/artifactory/maven-releases"
+        }
+        maven {
+            url = uri("https://plugins.gradle.org/m2/")
+        }
+        mavenCentral()
+    }
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+    maven {
+        url "https://nexus.infra.dreamplug.net/repository/maven-public"
+    }
+    maven {
+        url "https://nexus.infra.dreamplug.net/repository/maven-snapshots"
+    }
+    maven {
+        url "https://nexus.infra.dreamplug.net/repository/protorepo-snapshots"
+    }
+    maven {
+        url "https://nexus.infra.dreamplug.net/repository/protorepo-releases"
+    }
+}
+
+dependencies {
+    // ZEN Engine UniFFI bindings - keep as 0.4.1
+    api 'io.gorules:zen-engine:0.4.1'
+    api 'net.java.dev.jna:jna:5.17.0'
+    api 'com.fasterxml.jackson.core:jackson-databind:2.15.3'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.1'
+}
+
+java {
+    withSourcesJar()
+}
+
+// Skip compilation since zen-engine classes aren't fully available
+compileJava.enabled = false
+test.enabled = false
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            groupId = "${project.group}"
+            artifactId = 'zen-engine-java'
+            version = "${project.version}"
+
+            artifact sourcesJar
+
+            pom {
+                name = 'Zen Engine - Java Bindings'
+                description = 'Java bindings for Zen Rules Engine'
+                url = 'https://github.com/java-rules/zen'
+
+                developers {
+                    developer {
+                        id = 'mohdshahzan'
+                        name = 'Mohd Shahzan'
+                    }
+                }
+
+                scm {
+                    url = 'https://github.com/java-rules/zen'
+                    connection = 'scm:git@github.com:java-rules/zen.git'
+                    developerConnection = 'scm:git@github.com:java-rules/zen.git'
+                }
+            }
+        }
+    }
+
+    repositories {
+        maven {
+            def releasesRepoUrl = "https://nexus.infra.dreamplug.net/repository/maven-releases/"
+            def snapshotsRepoUrl = "https://nexus.infra.dreamplug.net/repository/maven-snapshots/"
+            project.ext.isSnapshot = project.version.toString().endsWith("-SNAPSHOT")
+            url project.ext.isSnapshot ? snapshotsRepoUrl : releasesRepoUrl
+
+            credentials {
+                username = project.hasProperty('nexusUsername') ? project.property('nexusUsername') : System.env.DP_NEXUS_USER
+                password = project.hasProperty('nexusPassword') ? project.property('nexusPassword') : System.env.DP_NEXUS_PASS
+            }
+        }
+    }
+}

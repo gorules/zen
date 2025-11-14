@@ -1,0 +1,49 @@
+# Gradle
+.gradle/
+build/
+out/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Local Gradle config
+gradle-app.setting
+gradle-app.properties
+
+# Generated files
+*.class
+*.log
+*.tmp
+
+# IDEs
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Eclipse
+.project
+.classpath
+.settings/
+bin/
+
+# VS Code
+.vscode/
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# Java
+*.jar
+*.war
+*.ear
+
+# Maven local artifacts
+*.pom
+
+# Logs
+logs/
+*.log
+
+# Dependency caches
+**/node_modules/

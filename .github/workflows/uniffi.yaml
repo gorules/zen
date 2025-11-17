@@ -535,8 +535,7 @@ jobs:
   release-android:
     runs-on: ubuntu-latest
     needs: [ package-android-aar ]
-    if: "!contains(github.event.head_commit.message, 'skip ci')"
-#    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')" TODO UNCOMMENT
+    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
     defaults:
       run:
         working-directory: ${{ env.UNIFFI_DIRECTORY }}

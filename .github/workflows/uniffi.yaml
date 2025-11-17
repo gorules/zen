@@ -505,7 +505,7 @@ jobs:
           cp gradle.android/AndroidManifest.xml "${{ env.ANDROID_BUILD_DIR }}"
           cp gradle.android/gradle.properties "${{ env.ANDROID_BUILD_DIR }}"
 
-      - name: Print directory tree
+      - name: Print directory tree for ${{ env.ANDROID_BUILD_DIR }}
         run: tree ${{ env.ANDROID_BUILD_DIR }}
 
       - name: Build AAR with Gradle

@@ -19,7 +19,6 @@ on:
       - 'core/**'
       - 'test-data/**'
       - '.github/workflows/uniffi.yaml'
-  workflow_dispatch: #TODO REMOVE
 
 jobs:
   build:
@@ -31,26 +30,26 @@ jobs:
       fail-fast: true
       matrix:
         settings:
-#          - host: windows-latest #TODO UNCOMMENT
-#            target: 'x86_64-pc-windows-msvc'
-#            output: '{0}.dll'
-#            lib_dir: 'win32-x86-64'
+          - host: windows-latest
+            target: 'x86_64-pc-windows-msvc'
+            output: '{0}.dll'
+            lib_dir: 'win32-x86-64'
           - host: macos-latest
             target: 'x86_64-apple-darwin'
             output: 'lib{0}.dylib'
             lib_dir: 'darwin-x86-64'
-#          - host: macos-latest
-#            target: 'aarch64-apple-darwin'
-#            output: 'lib{0}.dylib'
-#            lib_dir: 'darwin-aarch64'
-#          - host: ubuntu-latest
-#            target: 'x86_64-unknown-linux-gnu'
-#            output: 'lib{0}.so'
-#            lib_dir: 'linux-x86-64'
-#          - host: ubuntu-latest
-#            target: 'aarch64-unknown-linux-gnu'
-#            output: 'lib{0}.so'
-#            lib_dir: 'linux-aarch64'
+          - host: macos-latest
+            target: 'aarch64-apple-darwin'
+            output: 'lib{0}.dylib'
+            lib_dir: 'darwin-aarch64'
+          - host: ubuntu-latest
+            target: 'x86_64-unknown-linux-gnu'
+            output: 'lib{0}.so'
+            lib_dir: 'linux-x86-64'
+          - host: ubuntu-latest
+            target: 'aarch64-unknown-linux-gnu'
+            output: 'lib{0}.so'
+            lib_dir: 'linux-aarch64'
 
     name: UniFFI - ${{ matrix.settings.target }}
     runs-on: ${{ matrix.settings.host }}
@@ -80,7 +79,7 @@ jobs:
   release-java-kotlin:
     runs-on: ubuntu-latest
     needs: [ build ]
-    if: false # "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')" #TODO UNCOMMENT
+    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
     defaults:
       run:
         working-directory: ${{ env.UNIFFI_DIRECTORY }}
@@ -139,8 +138,7 @@ jobs:
 
 
   build-ios:
-    if: false
-#    if: "!contains(github.event.head_commit.message, 'skip ci')"
+    if: "!contains(github.event.head_commit.message, 'skip ci')"
     env:
       OUTPUT_NAME: zen_uniffi
       IPHONEOS_DEPLOYMENT_TARGET: '16.0'
@@ -277,7 +275,7 @@ jobs:
     name: Release iOS
     runs-on: macos-latest
     needs: [ create-xcframework ]
-    if: "!contains(github.event.head_commit.message, 'skip ci')"
+    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
 
     steps:
       - name: Checkout zen-ios
@@ -386,8 +384,7 @@ jobs:
         env:
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
-          # cargo ndk -t arm64-v8a -t armeabi-v7a -t x86 -t x86_64
-          cargo ndk -t arm64-v8a \
+           cargo ndk -t arm64-v8a -t armeabi-v7a -t x86 -t x86_64
             --platform 33 \
             -o ./android-libs \
             build -p zen-uniffi --release --features bindgen
@@ -437,7 +434,7 @@ jobs:
       - name: Print directory tree
         run: tree build
 
-  build-android-aar:
+  package-android-aar:
     runs-on: ubuntu-latest
     needs: [ build-android, prepare-android-bindings ]
     if: "!contains(github.event.head_commit.message, 'skip ci')"
@@ -535,10 +532,11 @@ jobs:
           path: ${{ env.UNIFFI_DIRECTORY }}/${{ env.ANDROID_BUILD_DIR }}/zen-engine-android/build/outputs/aar/zen-engine-android-release.aar
           if-no-files-found: error
 
-  publish-android:
+  release-android:
     runs-on: ubuntu-latest
-    needs: [ build-android-aar ]
+    needs: [ package-android-aar ]
     if: "!contains(github.event.head_commit.message, 'skip ci')"
+#    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
     defaults:
       run:
         working-directory: ${{ env.UNIFFI_DIRECTORY }}
@@ -567,27 +565,6 @@ jobs:
         with:
           name: android-aar
           path: ${{ env.UNIFFI_DIRECTORY }}/build-android/aar/
-#
-#      - name: Publish Android Kotlin package to Maven Local
-#        run: ./gradlew publishMavenKotlinAndroidPublicationToMavenLocal
-#
-#      - name: Verify artifact
-#        run: |
-#          ARTIFACT_PATH="$HOME/.m2/repository/io/gorules/zen-engine-kotlin-android"
-#          if [ -d "$ARTIFACT_PATH" ]; then
-#            echo "✓ Artifact directory found:"
-#            find "$ARTIFACT_PATH" -type f
-#          else
-#            echo "✗ Artifact not found at $ARTIFACT_PATH"
-#          fi
-#      - name: Print m2 directory
-#        run: |
-#          echo "M2 Home: $M2_HOME"
-#          echo "M2 Directory contents:"
-#          ls -la ~/.m2/
-#          echo ""
-#          echo "Repository contents:"
-#          find ~/.m2/repository -type f -name "*.jar" | head -20
 
       - name: Publish Android Kotlin package to Maven Central
         env:

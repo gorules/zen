@@ -111,6 +111,22 @@ jobs:
               yarn build --target aarch64-unknown-linux-musl
               /aarch64-linux-musl-cross/bin/aarch64-linux-musl-strip *.node
 
+          - host: ubuntu-latest
+            target: 'wasm32-wasip1-threads'
+            setup: |
+              wget https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-27/wasi-sdk-27.0-x86_64-linux.tar.gz
+              tar -xvf wasi-sdk-27.0-x86_64-linux.tar.gz
+            build: |
+              set -e
+              rustup install 1.88.0
+              rustup default 1.88.0
+              rustup target add wasm32-wasip1-threads
+              export WASI_SDK_PATH="$(pwd)/wasi-sdk-27.0-x86_64-linux"
+              export CMAKE_BUILD_PARALLEL_LEVEL=2
+              export TARGET_CXXFLAGS="--target=wasm32-wasi-threads --sysroot=$(pwd)/wasi-sdk-27.0-x86_64-linux/share/wasi-sysroot -pthread -mllvm -wasm-enable-sjlj -lsetjmp"
+              export TARGET_CFLAGS="$TARGET_CXXFLAGS"
+              yarn build --target wasm32-wasip1-threads
+
     name: stable - ${{ matrix.settings.target }} - node@22
     runs-on: ${{ matrix.settings.host }}
     defaults:
@@ -167,12 +183,28 @@ jobs:
         if: ${{ !matrix.settings.docker }}
         shell: bash
 
-      - name: Upload artifact
+      - name: 'Check'
+        if: ${{ matrix.settings.target != 'x86_64-pc-windows-msvc' }}
+        run: ls -la
+
+      - name: Upload artifact ${{ matrix.settings.target }}
+        if: ${{ matrix.settings.target != 'wasm32-wasip1-threads' }}
         uses: actions/upload-artifact@v4
         with:
           name: bindings-${{ matrix.settings.target }}
           path: bindings/nodejs/*.node
           if-no-files-found: error
+
+      - name: Upload artifact ${{ matrix.settings.target }}
+        if: ${{ matrix.settings.target == 'wasm32-wasip1-threads' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: bindings-wasm32-wasi
+          if-no-files-found: error
+          path: |
+            bindings/nodejs/*.wasm
+            bindings/nodejs/zen-engine.wasi*
+            bindings/nodejs/wasi-worker*
 
   test-macOS-windows-binding:
     name: Test bindings on ${{ matrix.settings.target }} - node@${{ matrix.node }}
@@ -216,6 +248,10 @@ jobs:
           name: bindings-${{ matrix.settings.target }}
           path: artifacts
 
+      - name: Create dirs
+        run: yarn createNpmDirs
+        shell: bash
+
       - name: Move artifacts
         run: yarn artifacts
         shell: bash
@@ -257,6 +293,15 @@ jobs:
         with:
           name: bindings-x86_64-unknown-linux-gnu
           path: artifacts
+
+      - name: List artifacts
+        run: |
+          ls -la ../../artifacts
+        shell: bash
+
+      - name: Create dirs
+        run: yarn createNpmDirs
+        shell: bash
 
       - name: Move artifacts
         run: yarn artifacts
@@ -308,6 +353,10 @@ jobs:
         with:
           name: bindings-x86_64-unknown-linux-musl
           path: artifacts
+
+      - name: Create dirs
+        run: yarn createNpmDirs
+        shell: bash
 
       - name: Move artifacts
         run: yarn artifacts
@@ -366,6 +415,10 @@ jobs:
         with:
           name: bindings-aarch64-unknown-linux-musl
           path: artifacts
+
+      - name: Create dirs
+        run: yarn createNpmDirs
+        shell: bash
 
       - name: Move artifacts
         run: yarn artifacts
@@ -473,8 +526,15 @@ jobs:
         with:
           path: artifacts
 
+      - name: List all artifacts
+        run: ls -la ../../artifacts
+
       - name: Copy LICENSE
         run: cp ../../LICENSE .
+
+      - name: Create dirs
+        run: yarn createNpmDirs
+        shell: bash
 
       - name: Move artifacts
         run: yarn artifacts

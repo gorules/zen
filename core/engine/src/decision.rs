@@ -3,6 +3,7 @@ use crate::engine::{EvaluationOptions, EvaluationSerializedOptions, EvaluationTr
 use crate::loader::{DynamicLoader, NoopLoader};
 use crate::model::DecisionContent;
 use crate::nodes::custom::{DynamicCustomNode, NoopCustomNode};
+use crate::nodes::function::http_handler::DynamicHttpHandler;
 use crate::nodes::validator_cache::ValidatorCache;
 use crate::nodes::NodeHandlerExtensions;
 use crate::{DecisionGraphValidationError, EvaluationError};
@@ -17,6 +18,7 @@ pub struct Decision {
     content: Arc<DecisionContent>,
     loader: DynamicLoader,
     adapter: DynamicCustomNode,
+    http_handler: DynamicHttpHandler,
     validator_cache: ValidatorCache,
 }
 
@@ -26,6 +28,7 @@ impl From<DecisionContent> for Decision {
             content: value.into(),
             loader: Arc::new(NoopLoader::default()),
             adapter: Arc::new(NoopCustomNode::default()),
+            http_handler: None,
             validator_cache: ValidatorCache::default(),
         }
     }
@@ -37,6 +40,7 @@ impl From<Arc<DecisionContent>> for Decision {
             content: value,
             loader: Arc::new(NoopLoader::default()),
             adapter: Arc::new(NoopCustomNode::default()),
+            http_handler: None,
             validator_cache: ValidatorCache::default(),
         }
     }
@@ -50,6 +54,11 @@ impl Decision {
 
     pub fn with_adapter(mut self, adapter: DynamicCustomNode) -> Self {
         self.adapter = adapter;
+        self
+    }
+
+    pub fn with_http_handler(mut self, http_handler: DynamicHttpHandler) -> Self {
+        self.http_handler = http_handler;
         self
     }
 
@@ -75,6 +84,7 @@ impl Decision {
             extensions: NodeHandlerExtensions {
                 loader: self.loader.clone(),
                 custom_node: self.adapter.clone(),
+                http_handler: self.http_handler.clone(),
                 validator_cache: Arc::new(OnceCell::from(self.validator_cache.clone())),
                 ..Default::default()
             },

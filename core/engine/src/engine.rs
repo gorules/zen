@@ -3,6 +3,7 @@ use crate::decision_graph::graph::DecisionGraphResponse;
 use crate::loader::{ClosureLoader, DynamicLoader, LoaderResponse, LoaderResult, NoopLoader};
 use crate::model::DecisionContent;
 use crate::nodes::custom::{DynamicCustomNode, NoopCustomNode};
+use crate::nodes::function::http_handler::DynamicHttpHandler;
 use crate::EvaluationError;
 use serde_json::Value;
 use std::fmt::Debug;
@@ -16,6 +17,7 @@ use zen_expression::variable::Variable;
 pub struct DecisionEngine {
     loader: DynamicLoader,
     adapter: DynamicCustomNode,
+    http_handler: DynamicHttpHandler,
 }
 
 #[derive(Debug)]
@@ -82,6 +84,7 @@ impl Default for DecisionEngine {
         Self {
             loader: Arc::new(NoopLoader::default()),
             adapter: Arc::new(NoopCustomNode::default()),
+            http_handler: None,
         }
     }
 }
@@ -91,7 +94,7 @@ impl DecisionEngine {
         Self {
             loader,
             adapter,
-            ..Default::default()
+            http_handler: None,
         }
     }
 
@@ -102,6 +105,11 @@ impl DecisionEngine {
 
     pub fn with_loader(mut self, loader: DynamicLoader) -> Self {
         self.loader = loader;
+        self
+    }
+
+    pub fn with_http_handler(mut self, http_handler: DynamicHttpHandler) -> Self {
+        self.http_handler = http_handler;
         self
     }
 
@@ -166,6 +174,7 @@ impl DecisionEngine {
         Decision::from(content)
             .with_loader(self.loader.clone())
             .with_adapter(self.adapter.clone())
+            .with_http_handler(self.http_handler.clone())
     }
 
     /// Retrieves a decision based on the loader

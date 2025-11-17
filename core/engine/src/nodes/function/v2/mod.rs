@@ -3,12 +3,12 @@ use std::time::{Duration, Instant};
 
 use crate::nodes::definition::NodeHandler;
 use crate::nodes::function::v2::error::{FunctionError, FunctionResult};
-use crate::nodes::function::v2::function::{Function, HandlerResponse};
+use crate::nodes::function::v2::function::Function;
 use crate::nodes::function::v2::module::console::Log;
-use crate::nodes::function::v2::serde::JsValue;
+use crate::nodes::function::v2::serde::{JsValue, JsValueWithNodes};
 use crate::nodes::result::NodeResult;
 use crate::nodes::{NodeContext, NodeError};
-use ::serde::{Deserialize, Serialize};
+use rquickjs::prelude::Func;
 use rquickjs::{async_with, CatchResultExt, Object};
 use serde_json::json;
 use zen_expression::variable::ToVariable;
@@ -29,9 +29,6 @@ impl NodeHandler for FunctionV2NodeHandler {
 
     async fn handle(&self, ctx: NodeContext<Self::NodeData, Self::TraceData>) -> NodeResult {
         let start = Instant::now();
-        if ctx.node.omit_nodes {
-            ctx.input.dot_remove("$nodes");
-        }
 
         let function = ctx.function_runtime().await?;
         let module_name = function.suggest_module_name(ctx.id.deref(), ctx.node.source.deref());
@@ -62,7 +59,7 @@ impl NodeHandler for FunctionV2NodeHandler {
             .await?;
 
         let response_result = function
-            .call_handler(&module_name, JsValue(ctx.input.clone()))
+            .call_handler(&module_name, JsValueWithNodes(JsValue(ctx.input.clone())))
             .await;
 
         function.runtime().set_interrupt_handler(None).await;
@@ -91,6 +88,15 @@ impl FunctionV2NodeHandler {
 
             ctx.globals().set("config", config).catch(&ctx)?;
 
+            let nodes_data = node_ctx.input.dot("$nodes").unwrap_or_default();
+
+            ctx.globals()
+                .set(
+                    "__getNodesData",
+                    Func::from(move || JsValue(nodes_data.clone())),
+                )
+                .catch(&ctx)?;
+
             Ok(())
         })
         .await
@@ -101,12 +107,6 @@ impl FunctionV2NodeHandler {
 #[serde(rename_all = "camelCase")]
 pub struct FunctionV2Trace {
     pub log: Vec<Log>,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct FunctionResponse {
-    performance: String,
-    data: Option<HandlerResponse>,
 }
 
 struct FunctionContext<'a> {

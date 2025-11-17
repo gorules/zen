@@ -23,25 +23,29 @@ json_dotpath = { workspace = true }
 rust_decimal = { workspace = true, features = ["maths-nopanic"] }
 fixedbitset = "0.5"
 tokio = { workspace = true, features = ["sync", "time"] }
-http = { version = "1.3" }
-reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 rquickjs = { version = "0.9", features = ["macro", "loader", "rust-alloc", "futures", "either", "properties"] }
 rquickjs-serde = { version = "0.1" }
-jsonschema = "0.29"
 zen-types = { path = "../types", version = "0.51.0" }
 zen-expression = { path = "../expression", version = "0.51.0" }
 zen-tmpl = { path = "../template", version = "0.51.0" }
-
-# HTTP Auth IAM
-async-trait = "0.1"
-reqsign = { version = "0.17", features = ["aws", "azure", "google", "default-context"] }
-sha2 = "0.10"
 
 [dev-dependencies]
 chrono = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 criterion = { workspace = true, features = ["async_tokio"] }
 insta = { version = "1.43", features = ["yaml", "redactions"] }
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+async-trait = { version = "0.1" }
+http = { version = "1.3" }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+reqsign = { version = "0.17", features = ["aws", "azure", "google", "default-context"] }
+sha2 = { version = "0.10" }
+jsonschema = { version = "0.33" }
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+jsonschema = { version = "0.33", default-features = false }
+rquickjs = { version = "0.9", features = ["macro", "loader", "rust-alloc", "futures", "either", "properties", "bindgen"] }
 
 [[bench]]
 harness = false

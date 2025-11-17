@@ -4,6 +4,7 @@ mod custom_node;
 mod decision;
 mod engine;
 mod expression;
+mod http_handler;
 mod loader;
 mod mt;
 mod safe_result;

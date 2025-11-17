@@ -3,7 +3,6 @@ use std::collections::HashSet;
 use std::ops::DerefMut;
 use std::rc::Rc;
 
-use crate::nodes::function::v2::module::http::HttpModule;
 use crate::nodes::function::v2::module::zen::ZenModule;
 use rquickjs::loader::{Bundle, Loader, ModuleLoader as MDLoader, Resolver};
 use rquickjs::module::{Declared, Exports};
@@ -66,12 +65,14 @@ impl BaseModuleLoader {
             hs.insert(key.to_string());
         });
 
+        let md_loader = MDLoader::default()
+            .with_module("zen", ZenModule)
+            .with_module("http", http::HttpModule);
+
         Self {
             bundle: JS_BUNDLE,
             defined_modules: RefCell::new(hs),
-            md_loader: MDLoader::default()
-                .with_module("zen", ZenModule)
-                .with_module("http", HttpModule),
+            md_loader,
         }
     }
 

@@ -175,7 +175,7 @@ publishing {
             artifact(tasks["javadocJarKotlinAndroid"])
 
             configurePom {
-                dependency("net.java.dev.jna:jna:5.17.0")
+                dependency("net.java.dev.jna:jna:5.14.0", "aar")
                 dependency("androidx.core:core-ktx:1.12.0")
                 dependency("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
             }
@@ -259,20 +259,28 @@ fun MavenPublication.configurePom(dependencyConfig: PomDependencyBuilder.() -> U
 }
 
 class PomDependencyBuilder {
-    private val dependencies = mutableListOf<Triple<String, String, String>>()
+    private val dependencies = mutableListOf<Map<String, String>>()
 
-    fun dependency(notation: String) {
+    fun dependency(notation: String, type: String = "jar") {
         val parts = notation.split(":")
         require(parts.size == 3) { "Dependency notation must be 'group:artifact:version'" }
-        dependencies.add(Triple(parts[0], parts[1], parts[2]))
+        dependencies.add(mapOf(
+            "groupId" to parts[0],
+            "artifactId" to parts[1],
+            "version" to parts[2],
+            "type" to type
+        ))
     }
 
     fun addToXml(dependenciesNode: groovy.util.Node) {
-        dependencies.forEach { (groupId, artifactId, version) ->
+        dependencies.forEach { dep ->
             val dependencyNode = dependenciesNode.appendNode("dependency")
-            dependencyNode.appendNode("groupId", groupId)
-            dependencyNode.appendNode("artifactId", artifactId)
-            dependencyNode.appendNode("version", version)
+            dependencyNode.appendNode("groupId", dep["groupId"])
+            dependencyNode.appendNode("artifactId", dep["artifactId"])
+            dependencyNode.appendNode("version", dep["version"])
+            if (dep["type"] != "jar") {
+                dependencyNode.appendNode("type", dep["type"])
+            }
             dependencyNode.appendNode("scope", "runtime")
         }
     }

@@ -384,7 +384,7 @@ jobs:
         env:
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
-           cargo ndk -t arm64-v8a -t armeabi-v7a -t x86 -t x86_64
+           cargo ndk -t arm64-v8a -t armeabi-v7a -t x86 -t x86_64 \
             --platform 33 \
             -o ./android-libs \
             build -p zen-uniffi --release --features bindgen
@@ -536,7 +536,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [ package-android-aar ]
     if: "!contains(github.event.head_commit.message, 'skip ci')"
-#    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
+#    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')" TODO UNCOMMENT
     defaults:
       run:
         working-directory: ${{ env.UNIFFI_DIRECTORY }}

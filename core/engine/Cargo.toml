@@ -28,6 +28,7 @@ rquickjs-serde = { version = "0.1" }
 zen-types = { path = "../types", version = "0.51.0" }
 zen-expression = { path = "../expression", version = "0.51.0" }
 zen-tmpl = { path = "../template", version = "0.51.0" }
+nohash-hasher = { workspace = true }
 
 [dev-dependencies]
 chrono = { workspace = true }

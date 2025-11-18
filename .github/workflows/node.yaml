@@ -38,7 +38,7 @@ jobs:
             build: |
               yarn build --target x86_64-pc-windows-msvc
 
-          - host: macos-latest
+          - host: macos-15-intel
             target: 'x86_64-apple-darwin'
             build: |
               rustup target add x86_64-apple-darwin
@@ -217,7 +217,7 @@ jobs:
       fail-fast: false
       matrix:
         settings:
-          - host: macos-latest
+          - host: macos-15-intel
             target: 'x86_64-apple-darwin'
           - host: macos-latest
             target: 'aarch64-apple-darwin'

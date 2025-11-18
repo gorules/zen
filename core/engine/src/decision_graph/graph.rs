@@ -183,11 +183,23 @@ impl DecisionGraph {
             let output = match node_execution {
                 Ok(ok) => ok.output,
                 Err(err) => {
+                    let mut cleaner = VariableCleaner::new();
+                    let trace = tracer.into_traces();
+                    if let Some(t) = &trace {
+                        t.values().for_each(|v| {
+                            cleaner.clean(&v.input);
+                            cleaner.clean(&v.output);
+                            if let Some(td) = &v.trace_data {
+                                cleaner.clean(td);
+                            }
+                        })
+                    }
+
                     return Err(Box::new(EvaluationError::NodeError {
                         node_id: err.node_id,
                         source: err.source,
-                        trace: tracer.into_traces().map(|t| t.to_variable()),
-                    }))
+                        trace: trace.map(|t| t.to_variable()),
+                    }));
                 }
             };
 

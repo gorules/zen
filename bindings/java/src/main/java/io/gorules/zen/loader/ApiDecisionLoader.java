@@ -1,6 +1,10 @@
 package io.gorules.zen.loader;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.Weigher;
 import io.gorules.zen_engine.JsonBuffer;
+import lombok.Getter;
 
 import java.net.URI;
 import java.net.URLEncoder;
@@ -10,31 +14,18 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Decision loader that fetches decisions from an HTTP API.
  * Supports flexible header configuration, caching, and automatic retries.
- *
- * <pre>{@code
- * ApiLoaderConfig config = ApiLoaderConfig.builder("https://api.example.com/decisions")
- *     .header("Authorization", "Bearer token123")
- *     .header("X-Custom-Header", "value")
- *     .timeout(Duration.ofSeconds(30))
- *     .caching(true)
- *     .build();
- *
- * ApiDecisionLoader loader = new ApiDecisionLoader(config);
- *
- * // Load decision from: GET https://api.example.com/decisions/pricing.json
- * CompletableFuture<JsonBuffer> decision = loader.load("pricing.json");
- * }</pre>
  */
+@Getter
 public class ApiDecisionLoader implements DecisionLoader {
 
     private final HttpClient httpClient;
     private final ApiLoaderConfig config;
-    private final ConcurrentHashMap<String, JsonBuffer> cache;
+    private final Cache<String, JsonBuffer> cache;
 
     /**
      * Create a new ApiDecisionLoader with the given configuration.
@@ -43,17 +34,63 @@ public class ApiDecisionLoader implements DecisionLoader {
      */
     public ApiDecisionLoader(ApiLoaderConfig config) {
         this.config = config;
-        this.cache = config.isEnableCaching() ? new ConcurrentHashMap<>() : null;
         this.httpClient = HttpClient.newBuilder()
             .connectTimeout(config.getTimeout())
             .build();
+
+        // Build Caffeine cache based on configuration
+        if (config.isEnableCaching()) {
+            this.cache = buildCache(config);
+        } else {
+            this.cache = null;
+        }
+    }
+
+    /**
+     * Build Caffeine cache with configured policies.
+     */
+    private Cache<String, JsonBuffer> buildCache(ApiLoaderConfig config) {
+        Caffeine<Object, Object> builder = Caffeine.newBuilder()
+            .expireAfterWrite(config.getCacheTtl());
+
+        // Configure eviction policy
+        switch (config.getCacheEvictionPolicy()) {
+            case LRU:
+                // LRU is the default behavior with maximumSize
+                builder.maximumSize(config.getCacheMaxSize());
+                break;
+
+            case LFU:
+                // LFU requires frequency tracking
+                builder.maximumSize(config.getCacheMaxSize());
+                // Caffeine uses W-TinyLFU by default which is better than pure LFU
+                break;
+
+            case SIZE_BASED:
+                // Memory-based eviction using weigher
+                long maxBytes = config.getCacheMaxMemoryMb() * 1024 * 1024;
+                builder.maximumWeight(maxBytes)
+                    .weigher((Weigher<String, JsonBuffer>) (key, value) -> {
+                        // Calculate approximate memory size
+                        int keySize = Math.min(Integer.MAX_VALUE / 2, key.length() * 2); // Java chars are 2 bytes
+                        int valueSize = value == null || value.value() == null ? 0 : value.value().length; // JsonBuffer is a record with value() accessor
+                        long size = (long) keySize + (long) valueSize + 64L; // Add overhead for object headers
+                        return (int) Math.min(Integer.MAX_VALUE, size);
+                    });
+                break;
+        }
+
+        return builder.build();
     }
 
     @Override
     public CompletableFuture<JsonBuffer> load(String key) {
         // Check cache first if caching is enabled
-        if (cache != null && cache.containsKey(key)) {
-            return CompletableFuture.completedFuture(cache.get(key));
+        if (cache != null) {
+            JsonBuffer cached = cache.getIfPresent(key);
+            if (cached != null) {
+                return CompletableFuture.completedFuture(cached);
+            }
         }
 
         return loadFromApi(key, 0);
@@ -86,8 +123,15 @@ public class ApiDecisionLoader implements DecisionLoader {
 
             // Send request
             return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray())
-                .thenCompose(response -> handleResponse(response, key, attempt))
-                .exceptionally(ex -> handleException(ex, key, attempt));
+            .handle((response, ex) -> {
+                if (ex != null) {
+                    return handleException(ex, key, attempt);
+                } else {
+                    return handleResponse(response, key, attempt);
+                }
+            })
+            .thenCompose(future -> future);
+        
 
         } catch (Exception e) {
             return CompletableFuture.failedFuture(
@@ -149,32 +193,18 @@ public class ApiDecisionLoader implements DecisionLoader {
         }
     }
 
-    /**
-     * Handle exceptions during HTTP request.
-     *
-     * @param ex      Exception
-     * @param key     Decision key
-     * @param attempt Current attempt number
-     * @return JsonBuffer or throws exception
-     */
-    private JsonBuffer handleException(Throwable ex, String key, int attempt) {
+   
+    private CompletableFuture<JsonBuffer> handleException(Throwable ex, String key, int attempt) {
         if (attempt < config.getMaxRetries()) {
-            // Retry on network errors
-            try {
-                return retryWithBackoff(key, attempt).join();
-            } catch (Exception retryEx) {
-                throw new ApiLoaderException(
-                    "Failed to load decision after " + (attempt + 1) + " attempts: " + key,
-                    retryEx
-                );
-            }
+            return retryWithBackoff(key, attempt);
         }
-
-        throw new ApiLoaderException(
-            "Failed to load decision: " + key,
-            ex
+        Throwable cause = (ex instanceof java.util.concurrent.CompletionException && ex.getCause() != null) ? ex.getCause() : ex;
+        return CompletableFuture.failedFuture(
+            new ApiLoaderException("Failed to load decision: " + key, cause)
         );
     }
+    
+
 
     /**
      * Retry loading with exponential backoff.
@@ -184,55 +214,11 @@ public class ApiDecisionLoader implements DecisionLoader {
      * @return CompletableFuture with retry
      */
     private CompletableFuture<JsonBuffer> retryWithBackoff(String key, int attempt) {
-        long delayMs = config.getRetryDelay().toMillis() * (1L << attempt); // Exponential backoff
+        long baseDelayMs = Math.max(1L, config.getRetryDelay().toMillis());
+        long delayMs = baseDelayMs * (1L << Math.min(attempt, 30)); 
 
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                Thread.sleep(delayMs);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new ApiLoaderException("Retry interrupted for key: " + key, e);
-            }
-            return null;
-        }).thenCompose(v -> loadFromApi(key, attempt + 1));
-    }
-
-    /**
-     * Clear the cache.
-     */
-    public void clearCache() {
-        if (cache != null) {
-            cache.clear();
-        }
-    }
-
-    /**
-     * Evict a specific decision from cache.
-     *
-     * @param key Decision key
-     */
-    public void evict(String key) {
-        if (cache != null) {
-            cache.remove(key);
-        }
-    }
-
-    /**
-     * Check if a decision is cached.
-     *
-     * @param key Decision key
-     * @return true if cached
-     */
-    public boolean isCached(String key) {
-        return cache != null && cache.containsKey(key);
-    }
-
-    /**
-     * Get the configuration for this loader.
-     *
-     * @return ApiLoaderConfig
-     */
-    public ApiLoaderConfig getConfig() {
-        return config;
+        return CompletableFuture
+            .supplyAsync(() -> null, CompletableFuture.delayedExecutor(delayMs, TimeUnit.MILLISECONDS))
+            .thenCompose(v -> loadFromApi(key, attempt + 1));
     }
 }

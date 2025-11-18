@@ -4,18 +4,10 @@ import io.gorules.zen.loader.*;
 
 /**
  * Builder for creating ZenEngineWrapper instances with fluent API.
- *
- * <pre>{@code
- * ZenEngineWrapper engine = ZenEngineBuilder.create()
- *     .withFilesystemLoader("/app/decisions")
- *     .withCaching(true)
- *     .build();
- * }</pre>
  */
 public class ZenEngineBuilder {
 
     private DecisionLoader loader;
-    private boolean enableCaching = true;
     private int maxDepth = 5;
     private boolean enableTrace = false;
 
@@ -37,7 +29,7 @@ public class ZenEngineBuilder {
      * @return this builder
      */
     public ZenEngineBuilder withFilesystemLoader(String rootPath) {
-        this.loader = new FilesystemDecisionLoader(rootPath, enableCaching);
+        this.loader = new FilesystemDecisionLoader(rootPath);
         return this;
     }
 
@@ -48,7 +40,7 @@ public class ZenEngineBuilder {
      * @return this builder
      */
     public ZenEngineBuilder withClasspathLoader(String rootPath) {
-        this.loader = new ClasspathDecisionLoader(rootPath, enableCaching);
+        this.loader = new ClasspathDecisionLoader(rootPath);
         return this;
     }
 
@@ -114,18 +106,6 @@ public class ZenEngineBuilder {
         this.loader = loader;
         return this;
     }
-
-    /**
-     * Enable or disable decision caching.
-     *
-     * @param enable true to enable caching
-     * @return this builder
-     */
-    public ZenEngineBuilder withCaching(boolean enable) {
-        this.enableCaching = enable;
-        return this;
-    }
-
     /**
      * Set maximum evaluation depth.
      *
@@ -156,7 +136,7 @@ public class ZenEngineBuilder {
     public ZenEngineWrapper build() {
         if (loader == null) {
             // Default to classpath loader
-            loader = new ClasspathDecisionLoader("decisions/", enableCaching);
+            loader = new ClasspathDecisionLoader("decisions/");
         }
 
         ZenEngineConfig config = new ZenEngineConfig(

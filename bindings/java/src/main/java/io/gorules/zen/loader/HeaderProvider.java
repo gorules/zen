@@ -6,13 +6,6 @@ import java.util.Map;
  * Functional interface for providing dynamic HTTP headers.
  * Headers can be computed at request time, allowing for dynamic values
  * like timestamps, request IDs, or rotating tokens.
- *
- * <pre>{@code
- * HeaderProvider provider = () -> Map.of(
- *     "X-Request-ID", UUID.randomUUID().toString(),
- *     "X-Timestamp", Instant.now().toString()
- * );
- * }</pre>
  */
 @FunctionalInterface
 public interface HeaderProvider {

@@ -20,6 +20,13 @@ dependencies {
     api 'net.java.dev.jna:jna:5.17.0'
     api 'com.fasterxml.jackson.core:jackson-databind:2.15.3'
 
+    // Caffeine cache for API loader
+    api 'com.github.ben-manes.caffeine:caffeine:3.1.8'
+
+    // Lombok for reducing boilerplate
+    compileOnly 'org.projectlombok:lombok:1.18.30'
+    annotationProcessor 'org.projectlombok:lombok:1.18.30'
+
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.1'
 }
 

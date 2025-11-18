@@ -4,24 +4,15 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.gorules.zen.loader.DecisionLoader;
 import io.gorules.zen_engine.*;
+import lombok.Getter;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 
 /**
  * Simple Java wrapper for ZEN Engine with easy-to-use API.
- *
- * <pre>{@code
- * // Create engine
- * ZenEngineWrapper engine = ZenEngineBuilder.create()
- *     .withFilesystemLoader("/app/decisions")
- *     .build();
- *
- * // Evaluate decision
- * JsonNode input = objectMapper.readTree("{\"amount\": 1000}");
- * JsonNode result = engine.evaluate("pricing.json", input).get();
- * }</pre>
  */
+@Getter
 public class ZenEngineWrapper implements AutoCloseable {
 
     private final ZenEngine engine;
@@ -158,24 +149,6 @@ public class ZenEngineWrapper implements AutoCloseable {
         byte[] contentBytes = jsonContent.getBytes();
         JsonBuffer contentBuffer = new JsonBuffer(contentBytes);
         return engine.createDecision(contentBuffer);
-    }
-
-    /**
-     * Get the underlying ZEN engine for advanced use cases.
-     *
-     * @return ZenEngine instance
-     */
-    public ZenEngine getEngine() {
-        return engine;
-    }
-
-    /**
-     * Get the ObjectMapper used for JSON processing.
-     *
-     * @return ObjectMapper instance
-     */
-    public ObjectMapper getObjectMapper() {
-        return objectMapper;
     }
 
     @Override

@@ -1,5 +1,7 @@
 package io.gorules.zen.loader;
 
+import lombok.Getter;
+
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
@@ -7,17 +9,8 @@ import java.util.*;
 /**
  * Configuration for ApiDecisionLoader.
  * Supports flexible header configuration for any HTTP headers you need.
- *
- * <pre>{@code
- * ApiLoaderConfig config = ApiLoaderConfig.builder("https://api.example.com/decisions")
- *     .header("Authorization", "Bearer token123")
- *     .header("X-API-Key", "your-key")
- *     .header("X-Custom-Header", "any-value")
- *     .timeout(Duration.ofSeconds(30))
- *     .caching(true)
- *     .build();
- * }</pre>
  */
+@Getter
 public class ApiLoaderConfig {
 
     private final String baseUrl;
@@ -27,6 +20,12 @@ public class ApiLoaderConfig {
     private final int maxRetries;
     private final Duration retryDelay;
     private final boolean enableCaching;
+
+    // Cache configuration
+    private final Duration cacheTtl;
+    private final long cacheMaxSize;
+    private final long cacheMaxMemoryMb;
+    private final CacheEvictionPolicy cacheEvictionPolicy;
 
     private ApiLoaderConfig(Builder builder) {
         this.baseUrl = builder.baseUrl.endsWith("/")
@@ -38,6 +37,10 @@ public class ApiLoaderConfig {
         this.maxRetries = builder.maxRetries;
         this.retryDelay = builder.retryDelay;
         this.enableCaching = builder.enableCaching;
+        this.cacheTtl = builder.cacheTtl;
+        this.cacheMaxSize = builder.cacheMaxSize;
+        this.cacheMaxMemoryMb = builder.cacheMaxMemoryMb;
+        this.cacheEvictionPolicy = builder.cacheEvictionPolicy;
     }
 
     /**
@@ -70,75 +73,65 @@ public class ApiLoaderConfig {
     }
 
     /**
-     * Get the base URL for API requests.
-     *
-     * @return Base URL
+     * Cache eviction policy for API loader.
      */
-    public String getBaseUrl() {
-        return baseUrl;
-    }
+    public enum CacheEvictionPolicy {
+        /**
+         * Least Recently Used - evicts entries that haven't been accessed recently.
+         */
+        LRU,
 
-    /**
-     * Get static headers (does not include dynamic headers from provider).
-     *
-     * @return Map of static headers
-     */
-    public Map<String, String> getStaticHeaders() {
-        return staticHeaders;
-    }
+        /**
+         * Least Frequently Used - evicts entries that are accessed least often.
+         */
+        LFU,
 
-    /**
-     * Get request timeout duration.
-     *
-     * @return Timeout duration
-     */
-    public Duration getTimeout() {
-        return timeout;
-    }
-
-    /**
-     * Get maximum number of retry attempts.
-     *
-     * @return Maximum retries
-     */
-    public int getMaxRetries() {
-        return maxRetries;
-    }
-
-    /**
-     * Get delay between retry attempts.
-     *
-     * @return Retry delay duration
-     */
-    public Duration getRetryDelay() {
-        return retryDelay;
-    }
-
-    /**
-     * Check if caching is enabled.
-     *
-     * @return true if caching is enabled
-     */
-    public boolean isEnableCaching() {
-        return enableCaching;
+        /**
+         * Size-based - evicts based on memory size using LRU as tie-breaker.
+         */
+        SIZE_BASED
     }
 
     /**
      * Builder for ApiLoaderConfig with flexible header configuration.
      */
     public static class Builder {
+        private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
+        private static final int DEFAULT_MAX_RETRIES = 3;
+        private static final Duration DEFAULT_RETRY_DELAY = Duration.ofSeconds(1);
+        private static final boolean DEFAULT_CACHING = true;
+        private static final Duration DEFAULT_CACHE_TTL = Duration.ofMinutes(5);
+        private static final long DEFAULT_CACHE_MAX_SIZE = 10_000L;
+        private static final long DEFAULT_CACHE_MAX_MEMORY_MB = 100L;
+        private static final CacheEvictionPolicy DEFAULT_CACHE_EVICTION_POLICY =
+                CacheEvictionPolicy.LRU;
+
         private final String baseUrl;
         private final Map<String, String> staticHeaders = new HashMap<>();
         private HeaderProvider dynamicHeaderProvider;
-        private Duration timeout = Duration.ofSeconds(30);
-        private int maxRetries = 3;
-        private Duration retryDelay = Duration.ofSeconds(1);
-        private boolean enableCaching = true;
+        private Duration timeout = DEFAULT_TIMEOUT;
+        private int maxRetries = DEFAULT_MAX_RETRIES;
+        private Duration retryDelay = DEFAULT_RETRY_DELAY;
+        private boolean enableCaching = DEFAULT_CACHING;
+
+        // Cache configuration defaults
+        private Duration cacheTtl = DEFAULT_CACHE_TTL;
+        private long cacheMaxSize = DEFAULT_CACHE_MAX_SIZE;
+        private long cacheMaxMemoryMb = DEFAULT_CACHE_MAX_MEMORY_MB;
+        private CacheEvictionPolicy cacheEvictionPolicy = DEFAULT_CACHE_EVICTION_POLICY;
 
         private Builder(String baseUrl) {
             Objects.requireNonNull(baseUrl, "baseUrl cannot be null");
-            this.baseUrl = baseUrl;
+            String trimmed = baseUrl.trim();
+            if (trimmed.isEmpty()) {
+                throw new IllegalArgumentException("baseUrl cannot be empty");
+            }
+            if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
+                throw new IllegalArgumentException("baseUrl must start with http:// or https://");
+            }
+            this.baseUrl = trimmed.endsWith("/") ? trimmed.substring(0, trimmed.length()-1) : trimmed;
         }
+        
 
         /**
          * Add a single HTTP header.
@@ -178,18 +171,6 @@ public class ApiLoaderConfig {
         public Builder bearerToken(String token) {
             Objects.requireNonNull(token, "token cannot be null");
             return header("Authorization", "Bearer " + token);
-        }
-
-        /**
-         * Add API key header.
-         * Convenience method for: header("X-API-Key", key)
-         *
-         * @param key API key
-         * @return this builder
-         */
-        public Builder apiKey(String key) {
-            Objects.requireNonNull(key, "API key cannot be null");
-            return header("X-API-Key", key);
         }
 
         /**
@@ -273,12 +254,73 @@ public class ApiLoaderConfig {
         }
 
         /**
+         * Set cache TTL (time to live).
+         * Entries will be automatically expired after this duration from write.
+         *
+         * @param ttl Cache TTL duration (default: 5 minutes)
+         * @return this builder
+         */
+        public Builder cacheTtl(Duration ttl) {
+            Objects.requireNonNull(ttl, "cacheTtl cannot be null");
+            if (ttl.isNegative() || ttl.isZero()) {
+                throw new IllegalArgumentException("cacheTtl must be positive");
+            }
+            this.cacheTtl = ttl;
+            return this;
+        }
+
+        /**
+         * Set maximum cache size (number of entries).
+         *
+         * @param maxSize Maximum number of entries (default: 10000)
+         * @return this builder
+         */
+        public Builder cacheMaxSize(long maxSize) {
+            if (maxSize <= 0) {
+                throw new IllegalArgumentException("cacheMaxSize must be positive");
+            }
+            this.cacheMaxSize = maxSize;
+            return this;
+        }
+
+        /**
+         * Set maximum cache memory in MB.
+         * Cache will evict entries when memory limit is reached.
+         *
+         * @param maxMemoryMb Maximum memory in MB (default: 100)
+         * @return this builder
+         */
+        public Builder cacheMaxMemoryMb(long maxMemoryMb) {
+            if (maxMemoryMb <= 0) {
+                throw new IllegalArgumentException("cacheMaxMemoryMb must be positive");
+            }
+            this.cacheMaxMemoryMb = maxMemoryMb;
+            return this;
+        }
+
+        /**
+         * Set cache eviction policy.
+         *
+         * @param policy Eviction policy (default: LRU)
+         * @return this builder
+         */
+        public Builder cacheEvictionPolicy(CacheEvictionPolicy policy) {
+            Objects.requireNonNull(policy, "cacheEvictionPolicy cannot be null");
+            this.cacheEvictionPolicy = policy;
+            return this;
+        }
+
+        /**
          * Build the ApiLoaderConfig.
          *
          * @return ApiLoaderConfig instance
          */
         public ApiLoaderConfig build() {
+            if (maxRetries > 0 && (retryDelay == null || retryDelay.isZero() || retryDelay.isNegative())) {
+                throw new IllegalArgumentException("retryDelay must be positive when maxRetries > 0");
+            }
             return new ApiLoaderConfig(this);
         }
+        
     }
 }

@@ -173,8 +173,8 @@ public class ApiDecisionLoader implements DecisionLoader {
                 new ApiLoaderException("Decision not found: " + key + " (HTTP 404)")
             );
 
-        } else if (statusCode == 401 || statusCode == 403) {
-            // Authentication/authorization error - don't retry
+        }  else if (statusCode == 401 || statusCode == 403 || statusCode == 400) {
+            // Authentication/authorization error or bad request - don't retry
             return CompletableFuture.failedFuture(
                 new ApiLoaderException(
                     "Authentication failed for key: " + key + " (HTTP " + statusCode + ")"

@@ -13,18 +13,29 @@ import java.util.*;
 @Getter
 public class ApiLoaderConfig {
 
+    /* Base URL for the API */
     private final String baseUrl;
+    /* Static headers for the API */
     private final Map<String, String> staticHeaders;
+    /* Dynamic header provider for the API */
     private final HeaderProvider dynamicHeaderProvider;
+    /* Timeout for the API */
     private final Duration timeout;
+    /* Maximum number of retries for the API */
     private final int maxRetries;
+    /* Delay between retries for the API */
     private final Duration retryDelay;
+    /* Enable caching for the API */
     private final boolean enableCaching;
 
     // Cache configuration
+    /* Cache TTL for the API */
     private final Duration cacheTtl;
+    /* Maximum cache size for the API */
     private final long cacheMaxSize;
+    /* Maximum cache memory in MB for the API */
     private final long cacheMaxMemoryMb;
+    /* Cache eviction policy for the API */
     private final CacheEvictionPolicy cacheEvictionPolicy;
 
     private ApiLoaderConfig(Builder builder) {

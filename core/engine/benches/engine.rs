@@ -31,6 +31,26 @@ fn bench_decision(b: &mut Bencher, key: &str, context: Variable) {
         criterion::black_box(decision.evaluate(context.clone()).await.unwrap());
     });
 }
+fn bench_decision_8k(b: &mut Bencher, key: &str, context: Variable) {
+    let rt = Runtime::new().unwrap();
+    let graph = create_graph();
+
+    let decision = rt.block_on(graph.get_decision(key)).unwrap();
+    b.to_async(&rt).iter(|| async {
+        criterion::black_box(decision.evaluate(context.clone()).await.unwrap());
+    });
+}
+
+fn bench_decision_8k_precompiled(b: &mut Bencher, key: &str, context: Variable) {
+    let rt = Runtime::new().unwrap();
+    let graph = create_graph();
+
+    let mut decision = rt.block_on(graph.get_decision(key)).unwrap();
+    decision.compile();
+    b.to_async(&rt).iter(|| async {
+        criterion::black_box(decision.evaluate(context.clone()).await.unwrap());
+    });
+}
 
 fn bench_loader(b: &mut Bencher, key: &str, context: Variable) {
     let rt = Runtime::new().unwrap();
@@ -51,5 +71,21 @@ fn bench_functions(c: &mut Criterion) {
     });
 }
 
+fn precompile_functions(c: &mut Criterion) {
+    let mut group = c.benchmark_group("decision/8k");
+    group.sample_size(50);
+
+    group.bench_function("uncompiled", |b| {
+        bench_decision_8k(b, "8k.json", json!({ "input": 15 }).into());
+    });
+
+    group.bench_function("precompiled", |b| {
+        bench_decision_8k_precompiled(b, "8k.json", json!({ "input": 15 }).into());
+    });
+
+    group.finish();
+}
+
 criterion_group!(benches, bench_functions);
-criterion_main!(benches);
+criterion_group!(precompiled, precompile_functions);
+criterion_main!(benches, precompiled);

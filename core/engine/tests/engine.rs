@@ -257,14 +257,28 @@ async fn engine_graph_tests() {
         let file_contents = fs::read_to_string(file.path()).expect("valid file data");
         let test_data: TestData = serde_json::from_str(&file_contents).expect("Valid JSON");
 
-        let decision = engine.create_decision(test_data.decision_content.into());
+        let decision = engine.create_decision(test_data.decision_content.clone().into());
+
+        let mut decision_compiled = engine.create_decision(test_data.decision_content.into());
+        decision_compiled.compile();
+
         for test_case in test_data.tests {
             let input = test_case.input.clone();
             let result = decision.evaluate(input.clone()).await.unwrap().result;
+            let result_compiled = decision_compiled
+                .evaluate(input.clone())
+                .await
+                .unwrap()
+                .result;
 
             assert_eq!(
                 test_case.output, result,
                 "Decision file: {file_name}.\nInput:\n {input:#?}"
+            );
+
+            assert_eq!(
+                test_case.output, result_compiled,
+                "Compiled decision file: {file_name}.\nInput:\n {input:#?}"
             );
         }
     }
@@ -283,7 +297,7 @@ async fn engine_snapshot_tests() {
     #[serde(rename_all = "camelCase")]
     struct TestCase {
         input: Variable,
-        output: Variable,
+        _output: Variable,
     }
 
     #[derive(Deserialize)]
@@ -312,7 +326,11 @@ async fn engine_snapshot_tests() {
         let file_contents = fs::read_to_string(file.path()).expect("valid file data");
         let test_data: TestData = serde_json::from_str(&file_contents).expect("Valid JSON");
 
-        let decision = engine.create_decision(test_data.decision_content.into());
+        let decision = engine.create_decision(test_data.decision_content.clone().into());
+
+        let mut decision_compiled = engine.create_decision(test_data.decision_content.into());
+        decision_compiled.compile();
+
         for (index, test_case) in test_data.tests.iter().enumerate() {
             let input = test_case.input.clone();
             let result = decision
@@ -325,8 +343,23 @@ async fn engine_snapshot_tests() {
                 )
                 .await
                 .unwrap();
-            let serialized_result = serde_json::to_value(&result).unwrap();
+            let result_compiled = decision_compiled
+                .evaluate_with_opts(
+                    input.clone(),
+                    EvaluationOptions {
+                        trace: true,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+            let serialized_result = serde_json::to_value(&result_compiled).unwrap();
+            let serialized_result_compiled = serde_json::to_value(&result).unwrap();
             insta::assert_yaml_snapshot!(format!("{}_{}", file_name, index), serialized_result, {
+                ".performance" => "[perf]",
+                ".trace.*.performance" => "[perf]"
+            });
+            insta::assert_yaml_snapshot!(format!("{}_{}", file_name, index), serialized_result_compiled, {
                 ".performance" => "[perf]",
                 ".trace.*.performance" => "[perf]"
             });

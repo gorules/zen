@@ -1,4 +1,4 @@
-use crate::support::{benchmark, create_fs_loader, load_test_data};
+use crate::support::{create_fs_loader, load_test_data};
 use serde_json::json;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -58,45 +58,6 @@ fn decision_expression_node() {
     });
 
     let result = rt.block_on(decision.evaluate(context.into()));
-    assert_eq!(
-        result.unwrap().result,
-        json!({
-            "largeNumbers": [15, 25],
-            "smallNumbers": [1, 5],
-            "fullName": "John Doe",
-            "deep": {
-                "nested": {
-                    "sum": 46
-                }
-            }
-        })
-        .into()
-    )
-}
-
-#[test]
-fn decision_expression_node_cmp() {
-    let times = 10_000;
-    let rt = Builder::new_current_thread().build().unwrap();
-    let mut decision = Decision::from(load_test_data("expression.json"));
-    let context = json!({
-        "numbers": [1, 5, 15, 25],
-        "firstName": "John",
-        "lastName": "Doe"
-    });
-
-    let (_, st_dur) = benchmark("Decision Standard", times, None, false, || {
-        let context = context.clone();
-        let r = rt.block_on(decision.evaluate(context.into()));
-        r
-    });
-    decision.compile();
-    let (result, pc_dur) = benchmark("!Decision PreCompiled", times, Some(st_dur), false, || {
-        let context = context.clone();
-        let r = rt.block_on(decision.evaluate(context.into()));
-        r
-    });
-    assert!(pc_dur < st_dur);
     assert_eq!(
         result.unwrap().result,
         json!({

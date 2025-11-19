@@ -3,7 +3,7 @@ use std::io::BufReader;
 use std::path::Path;
 use std::time::Instant;
 use zen_engine::loader::{FilesystemLoader, FilesystemLoaderOptions};
-use zen_engine::DecisionContent;
+use zen_engine::model::DecisionContent;
 
 #[allow(dead_code)]
 pub fn test_data_root() -> String {

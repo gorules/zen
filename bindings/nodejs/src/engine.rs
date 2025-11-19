@@ -10,8 +10,9 @@ use napi::{Env, JsValue, Unknown, ValueType};
 use napi_derive::napi;
 use serde_json::Value;
 
+use zen_engine::model::DecisionContent;
 use zen_engine::{
-    DecisionContent, DecisionEngine, EvaluationSerializedOptions, EvaluationTraceKind,
+    DecisionEngine, EvaluationSerializedOptions, EvaluationTraceKind,
 };
 
 use crate::content::ZenDecisionContent;

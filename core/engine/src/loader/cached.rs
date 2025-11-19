@@ -4,8 +4,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::decision::DecisionContent;
 use crate::loader::{DecisionLoader, DynamicLoader, LoaderResponse};
+use crate::model::DecisionContent;
 
 #[derive(Debug)]
 pub struct CachedLoader {

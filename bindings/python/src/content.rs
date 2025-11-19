@@ -4,7 +4,7 @@ use pyo3::types::PyString;
 use pyo3::{pyclass, pymethods, Bound, FromPyObject, PyAny, PyResult};
 use pythonize::depythonize;
 use std::sync::Arc;
-use zen_engine::DecisionContent;
+use zen_engine::model::DecisionContent;
 
 #[pyclass]
 #[pyo3(name = "ZenDecisionContent")]

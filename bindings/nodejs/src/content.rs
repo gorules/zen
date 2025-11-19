@@ -5,7 +5,7 @@ use napi::{Either, Env};
 use napi_derive::napi;
 use serde_json::Value;
 
-use zen_engine::DecisionContent;
+use zen_engine::model::DecisionContent;
 
 #[napi]
 pub struct ZenDecisionContent {

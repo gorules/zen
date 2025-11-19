@@ -1,3 +1,10 @@
+use ahash::HashMap;
+use serde::ser::SerializeMap;
+use serde::{Serialize, Serializer};
+use std::rc::Rc;
+use std::sync::Arc;
+use thiserror::Error;
+
 use crate::arena::UnsafeArena;
 use crate::compiler::{Compiler, CompilerError, Opcode};
 use crate::expression::{Standard, Unary};
@@ -6,12 +13,6 @@ use crate::parser::{Parser, ParserError};
 use crate::variable::Variable;
 use crate::vm::{VMError, VM};
 use crate::{Expression, ExpressionKind};
-use ahash::HashMap;
-use serde::ser::SerializeMap;
-use serde::{Serialize, Serializer};
-use std::rc::Rc;
-use std::sync::Arc;
-use thiserror::Error;
 
 /// Isolate is a component that encapsulates an isolated environment for executing expressions.
 ///

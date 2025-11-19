@@ -1,4 +1,4 @@
-use crate::decision::CompilationKey;
+use crate::model::CompilationKey;
 use crate::loader::{DynamicLoader, NoopLoader};
 use crate::nodes::custom::{DynamicCustomNode, NoopCustomNode};
 use crate::nodes::function::http_handler::DynamicHttpHandler;

@@ -8,7 +8,7 @@ use either::Either;
 use pyo3::{IntoPyObjectExt, Py, PyAny, PyResult, Python};
 use pyo3_async_runtimes::TaskLocals;
 use zen_engine::loader::{DecisionLoader, LoaderError, LoaderResponse};
-use zen_engine::DecisionContent;
+use zen_engine::model::DecisionContent;
 
 #[derive(Default, Debug)]
 pub(crate) struct PyDecisionLoader {

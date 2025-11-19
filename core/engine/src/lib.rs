@@ -132,7 +132,7 @@ pub mod model;
 pub mod nodes;
 
 pub use config::ZEN_CONFIG;
-pub use decision::{Decision, DecisionContent};
+pub use decision::Decision;
 pub use decision_graph::{DecisionGraphResponse, DecisionGraphTrace, DecisionGraphValidationError};
 pub use engine::{
     DecisionEngine, EvaluationOptions, EvaluationSerializedOptions, EvaluationTraceKind,

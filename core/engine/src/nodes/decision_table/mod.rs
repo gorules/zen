@@ -1,4 +1,4 @@
-use crate::decision::CompilationKey;
+use crate::model::CompilationKey;
 use crate::nodes::definition::NodeHandler;
 use crate::nodes::result::NodeResult;
 use crate::nodes::{NodeContext, NodeResponse};
@@ -11,7 +11,6 @@ use zen_expression::variable::ToVariable;
 use zen_expression::{ExpressionKind, Isolate};
 use zen_types::decision::{DecisionTableContent, DecisionTableHitPolicy, TransformAttributes};
 use zen_types::variable::Variable;
-
 #[derive(Debug, Clone)]
 pub struct DecisionTableNodeHandler;
 

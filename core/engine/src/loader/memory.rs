@@ -1,5 +1,5 @@
-use crate::decision::DecisionContent;
 use crate::loader::{DecisionLoader, LoaderError, LoaderResponse};
+use crate::model::DecisionContent;
 use ahash::HashMap;
 use std::future::Future;
 use std::pin::Pin;

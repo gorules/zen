@@ -1,12 +1,12 @@
 [package]
 name = "zen-uniffi"
-version = "0.4.1"
+version = "0.4.3"
 edition = "2024"
 license = "MIT"
 publish = false
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "staticlib"]
 
 [[bin]]
 name = "uniffi-bindgen"
@@ -23,3 +23,6 @@ tokio = "1.46"
 
 [build-dependencies]
 uniffi = { version = "0.29", features = ["build"] }
+
+[features]
+bindgen = ["zen-engine/bindgen"]

@@ -134,4 +134,441 @@ jobs:
           SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
           GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
           GPG_SIGNING_PASSPHRASE: ${{ secrets.GPG_SIGNING_PASSPHRASE }}
-        run: ./gradlew publishAllPublicationsToCentralPortal
+        run: ./gradlew publishMavenKotlinPublicationToCentralPortal publishMavenJavaPublicationToCentralPortal
+
+
+  build-ios:
+    if: "!contains(github.event.head_commit.message, 'skip ci')"
+    env:
+      OUTPUT_NAME: zen_uniffi
+      IPHONEOS_DEPLOYMENT_TARGET: '16.0'
+
+    strategy:
+      fail-fast: true
+      matrix:
+        settings:
+          - target: 'aarch64-apple-ios'
+            output: 'lib{0}.a'
+            lib_dir: 'ios-aarch64'
+          - target: 'x86_64-apple-ios'
+            output: 'lib{0}.a'
+            lib_dir: 'ios-x86-64'
+          - target: 'aarch64-apple-ios-sim'
+            output: 'lib{0}.a'
+            lib_dir: 'ios-aarch64-sim'
+
+    name: UniFFI iOS - ${{ matrix.settings.target }}
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          target: ${{ matrix.settings.target }}
+
+      - name: Build iOS
+        run: |
+          if [ "${{ matrix.settings.target }}" = "aarch64-apple-ios-sim" ]; then
+            export BINDGEN_EXTRA_CLANG_ARGS="--target=aarch64-apple-ios --sysroot=$(xcrun --sdk iphonesimulator --show-sdk-path)"
+          fi
+          cargo build -p zen-uniffi --target ${{ matrix.settings.target }} --release --features bindgen
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.settings.lib_dir }}
+          path: target/${{ matrix.settings.target }}/release/${{ format(matrix.settings.output, env.OUTPUT_NAME) }}
+          if-no-files-found: error
+
+  create-xcframework:
+    runs-on: macos-latest
+    needs: [ build-ios ]
+    if: "!contains(github.event.head_commit.message, 'skip ci')"
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Download iOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: target-ios
+
+      - name: Reorganize artifacts to match target structure
+        run: |
+          mkdir -p target/aarch64-apple-ios/release
+          mkdir -p target/x86_64-apple-ios/release
+          mkdir -p target/aarch64-apple-ios-sim/release
+          
+          cp target-ios/ios-aarch64/libzen_uniffi.a target/aarch64-apple-ios/release/
+          cp target-ios/ios-x86-64/libzen_uniffi.a target/x86_64-apple-ios/release/
+          cp target-ios/ios-aarch64-sim/libzen_uniffi.a target/aarch64-apple-ios-sim/release/
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Generate Swift bindings
+        run: |
+          cargo run --bin uniffi-bindgen -- generate \
+            --library target/aarch64-apple-ios/release/libzen_uniffi.a \
+            --language swift \
+            --out-dir swift-bindings-temp
+
+      - name: Organize Swift bindings structure
+        run: |
+          # Create the proper directory structure
+          mkdir -p swift-bindings/zen_uniffiFFI
+          mkdir -p swift-bindings/ZenUniffi
+          
+          # Move and rename the header file to zen_uniffiFFI.h in the zen_uniffiFFI folder
+          if [ -f swift-bindings-temp/zen_uniffiFFI.h ]; then
+            mv swift-bindings-temp/zen_uniffiFFI.h swift-bindings/zen_uniffiFFI/
+          fi
+          
+          # Move and rename the modulemap to module.modulemap in the zen_uniffiFFI folder
+          if [ -f swift-bindings-temp/zen_uniffiFFI.modulemap ]; then
+            mv swift-bindings-temp/zen_uniffiFFI.modulemap swift-bindings/zen_uniffiFFI/module.modulemap
+          fi
+          
+          # Move the Swift file to zen_uniffi.swift in the ZenUniffi folder
+          if [ -f swift-bindings-temp/zen_uniffi.swift ]; then
+            mv swift-bindings-temp/zen_uniffi.swift swift-bindings/ZenUniffi/
+          fi
+          
+          # Clean up temp directory
+          rm -rf swift-bindings-temp
+
+      - name: Create fat simulator library
+        run: |
+          mkdir -p target/universal-sim/release
+          lipo -create \
+            target/x86_64-apple-ios/release/libzen_uniffi.a \
+            target/aarch64-apple-ios-sim/release/libzen_uniffi.a \
+            -output target/universal-sim/release/libzen_uniffi.a
+
+      - name: Create XCFramework
+        run: |
+          # Create XCFramework with device + universal simulator
+          xcodebuild -create-xcframework \
+            -library target/aarch64-apple-ios/release/libzen_uniffi.a \
+            -headers swift-bindings/zen_uniffiFFI \
+            -library target/universal-sim/release/libzen_uniffi.a \
+            -headers swift-bindings/zen_uniffiFFI \
+            -output ZenUniffi.xcframework
+
+      - name: Upload XCFramework
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcframework
+          path: ZenUniffi.xcframework/
+          if-no-files-found: error
+
+      - name: Upload Swift bindings
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-bindings
+          path: swift-bindings
+          if-no-files-found: error
+
+  release-ios:
+    name: Release iOS
+    runs-on: macos-latest
+    needs: [ create-xcframework ]
+    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
+
+    steps:
+      - name: Checkout zen-ios
+        uses: actions/checkout@v3
+        with:
+          repository: gorules/zen-ios
+          persist-credentials: false
+          token: ${{ secrets.PAT }}
+
+      - name: Download XCFramework
+        uses: actions/download-artifact@v4
+        with:
+          name: xcframework
+          path: ZenUniffi.xcframework
+
+      - name: Download Swift bindings
+        uses: actions/download-artifact@v4
+        with:
+          name: swift-bindings
+          path: swift-bindings
+
+      - name: Move artifacts to repo
+        run: |
+          # Remove existing Sources if it exists
+          rm -rf Sources
+          
+          # Move swift-bindings to Sources (already has the proper structure)
+          mv swift-bindings Sources
+
+      - name: Set branch name
+        run: |
+          echo "BRANCH_NAME=chore/${{ github.run_id }}-${{ github.run_attempt }}" >> $GITHUB_ENV
+
+      - name: Commit changes
+        run: |
+          BRANCH_NAME="${{ env.BRANCH_NAME }}"
+          git checkout -b $BRANCH_NAME
+          
+          # Setup the committers identity
+          git config user.email "bot@gorules.io"
+          git config user.name "Bot GoRules"
+          git config http.postBuffer 524288000
+          git config http.lowSpeedTime 600
+          
+          # Show what we have
+          ls -la
+          
+          # Commit the changes - add all new/modified files
+          git add -A
+          git status
+          git commit -m "chore: update XCFramework"
+
+      - name: Push changes
+        uses: ad-m/github-push-action@master
+        with:
+          repository: gorules/zen-ios
+          github_token: ${{ secrets.PAT }}
+          branch: ${{ env.BRANCH_NAME }}
+
+      - name: Create PR
+        run: |
+          BRANCH_NAME="${{ env.BRANCH_NAME }}"
+          
+          # Store the PAT in a file that can be accessed by the GitHub CLI
+          echo "${{ secrets.PAT }}" > token.txt
+          
+          # Authorize GitHub CLI and create a pull request
+          echo "Authorizing for PR"
+          gh auth login --with-token < token.txt
+          gh pr create \
+            --body "" \
+            --title "chore: update XCFramework" \
+            --head "$BRANCH_NAME" \
+            --base "master"
+
+  build-android:
+    if: "!contains(github.event.head_commit.message, 'skip ci')"
+    runs-on: ubuntu-latest
+    env:
+      OUTPUT_NAME: zen_uniffi
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r26d
+          add-to-path: true
+
+      - name: Add Rust Android targets
+        run: |
+          rustup target add aarch64-linux-android
+          rustup target add armv7-linux-androideabi
+          rustup target add i686-linux-android
+          rustup target add x86_64-linux-android
+
+      - name: Build for Android
+        env:
+          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+           cargo ndk -t arm64-v8a -t armeabi-v7a -t x86 -t x86_64 \
+            --platform 33 \
+            -o ./android-libs \
+            build -p zen-uniffi --release --features bindgen
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-libs
+          path: android-libs/
+          if-no-files-found: error
+
+  prepare-android-bindings:
+    runs-on: ubuntu-latest
+    needs: [ build ]
+    if: "!contains(github.event.head_commit.message, 'skip ci')"
+
+    defaults:
+      run:
+        working-directory: ${{ env.UNIFFI_DIRECTORY }}
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ env.UNIFFI_DIRECTORY }}/build/generated/resources
+
+      - name: Print directory tree
+        run: tree build
+
+      - name: Generate Kotlin sources
+        run: |
+          cargo run --bin uniffi-bindgen -- generate \
+            --library build/generated/resources/darwin-x86-64/libzen_uniffi.dylib \
+            --language kotlin \
+            --config uniffi-android.toml \
+            --out-dir build/generated/kotlin-android
+
+      - name: Upload Kotlin bindings
+        uses: actions/upload-artifact@v4
+        with:
+          name: kotlin-android-bindings
+          path: ${{ env.UNIFFI_DIRECTORY }}/build/generated/kotlin-android
+          if-no-files-found: error
+
+      - name: Print directory tree
+        run: tree build
+
+  package-android-aar:
+    runs-on: ubuntu-latest
+    needs: [ build-android, prepare-android-bindings ]
+    if: "!contains(github.event.head_commit.message, 'skip ci')"
+    defaults:
+      run:
+        working-directory: ${{ env.UNIFFI_DIRECTORY }}
+    env:
+      ANDROID_BUILD_DIR: android-build
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v2
+        id: setup-android
+
+      - name: Download Kotlin bindings
+        uses: actions/download-artifact@v4
+        with:
+          name: kotlin-android-bindings
+          path: ${{ env.UNIFFI_DIRECTORY }}/kotlin-bindings
+
+      - name: Download Android native libraries
+        uses: actions/download-artifact@v4
+        with:
+          name: android-libs
+          path: ${{ env.UNIFFI_DIRECTORY }}/android-libs
+
+      - name: Create AAR structure
+        run: |
+          rm -rf "${{ env.ANDROID_BUILD_DIR }}"
+          mkdir -p "${{ env.ANDROID_BUILD_DIR }}/zen-engine-android/src/main/java"
+          mkdir -p "${{ env.ANDROID_BUILD_DIR }}/zen-engine-android/src/main/jniLibs"
+          mkdir -p "${{ env.ANDROID_BUILD_DIR }}/gradle/wrapper"
+
+      - name: Copy native libraries
+        run: |
+          cp -r android-libs/* "${{ env.ANDROID_BUILD_DIR }}/zen-engine-android/src/main/jniLibs/"
+
+      - name: Copy Kotlin bindings
+        run: |
+          cp -r kotlin-bindings/* "${{ env.ANDROID_BUILD_DIR }}/zen-engine-android/src/main/java/"
+
+      - name: Copy custom Kotlin lib
+        run: |
+          cp -r lib/kotlin/* "${{ env.ANDROID_BUILD_DIR }}/zen-engine-android/src/main/java/"
+
+      - name: Copy Gradle configuration files
+        run: |
+          cp gradlew "${{ env.ANDROID_BUILD_DIR }}"
+          cp -r gradle "${{ env.ANDROID_BUILD_DIR }}"
+          cp gradle.properties "${{ env.ANDROID_BUILD_DIR }}"
+
+      - name: Copy Android Gradle files from repo
+        run: |
+          cp gradle.android/build.gradle.kts "${{ env.ANDROID_BUILD_DIR }}/"
+          cp gradle.android/settings.gradle.kts "${{ env.ANDROID_BUILD_DIR }}/"
+          cp gradle.android/zen-engine-android-build.gradle.kts "${{ env.ANDROID_BUILD_DIR }}/zen-engine-android/build.gradle.kts"
+          cp gradle.android/AndroidManifest.xml "${{ env.ANDROID_BUILD_DIR }}"
+          cp gradle.android/gradle.properties "${{ env.ANDROID_BUILD_DIR }}"
+
+      - name: Print directory tree for ${{ env.ANDROID_BUILD_DIR }}
+        run: tree ${{ env.ANDROID_BUILD_DIR }}
+
+      - name: Build AAR with Gradle
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_ROOT }}
+        run: |
+          cd "${{ env.ANDROID_BUILD_DIR }}"
+          chmod +x gradlew
+          ./gradlew :zen-engine-android:assembleRelease --no-daemon --stacktrace
+
+      - name: Verify AAR file
+        run: |
+          AAR_FILE="${{ env.ANDROID_BUILD_DIR }}/zen-engine-android/build/outputs/aar/zen-engine-android-release.aar"
+          if [ -f "$AAR_FILE" ]; then
+            ls -lh "$AAR_FILE"
+            unzip -l "$AAR_FILE" | grep -E "\.so|\.class|AndroidManifest" | head -20
+          else
+            echo "AAR file not found!"
+            exit 1
+          fi
+
+      - name: Upload AAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-aar
+          path: ${{ env.UNIFFI_DIRECTORY }}/${{ env.ANDROID_BUILD_DIR }}/zen-engine-android/build/outputs/aar/zen-engine-android-release.aar
+          if-no-files-found: error
+
+  release-android:
+    runs-on: ubuntu-latest
+    needs: [ package-android-aar ]
+    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
+    defaults:
+      run:
+        working-directory: ${{ env.UNIFFI_DIRECTORY }}
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Validate Gradle wrapper jar
+        uses: gradle/actions/wrapper-validation@v3
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Download Kotlin bindings
+        uses: actions/download-artifact@v4
+        with:
+          name: kotlin-android-bindings
+          path: ${{ env.UNIFFI_DIRECTORY }}/build/generated/kotlin-android
+
+      - name: Download Android AAR artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: android-aar
+          path: ${{ env.UNIFFI_DIRECTORY }}/build-android/aar/
+
+      - name: Publish Android Kotlin package to Maven Central
+        env:
+          SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
+          SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+          GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
+          GPG_SIGNING_PASSPHRASE: ${{ secrets.GPG_SIGNING_PASSPHRASE }}
+        run: ./gradlew publishMavenKotlinAndroidPublicationToCentralPortal

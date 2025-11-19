@@ -50,3 +50,6 @@ rquickjs = { version = "0.9", features = ["macro", "loader", "rust-alloc", "futu
 [[bench]]
 harness = false
 name = "engine"
+
+[features]
+bindgen = ["rquickjs/bindgen"]

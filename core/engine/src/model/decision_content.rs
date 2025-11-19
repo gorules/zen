@@ -1,9 +1,9 @@
-use std::sync::Arc;
-use serde::{Deserialize, Serialize};
-use zen_types::decision::{DecisionEdge, DecisionNode, DecisionNodeKind};
 use ahash::{HashMap, HashMapExt};
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use zen_expression::compiler::Opcode;
 use zen_expression::{ExpressionKind, Isolate};
+use zen_types::decision::{DecisionEdge, DecisionNode, DecisionNodeKind};
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct CompilationKey {

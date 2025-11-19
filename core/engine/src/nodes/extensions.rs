@@ -1,5 +1,5 @@
-use crate::model::CompilationKey;
 use crate::loader::{DynamicLoader, NoopLoader};
+use crate::model::CompilationKey;
 use crate::nodes::custom::{DynamicCustomNode, NoopCustomNode};
 use crate::nodes::function::http_handler::DynamicHttpHandler;
 use crate::nodes::function::v2::function::{Function, FunctionConfig};

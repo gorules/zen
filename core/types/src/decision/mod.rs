@@ -86,8 +86,6 @@ pub enum FunctionNodeContent {
 #[serde(rename_all = "camelCase")]
 pub struct FunctionContent {
     pub source: Arc<str>,
-    #[serde(default)]
-    pub omit_nodes: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]

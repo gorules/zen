@@ -1,8 +1,10 @@
 use crate::decision::CompilationKey;
 use crate::loader::{DynamicLoader, NoopLoader};
 use crate::nodes::custom::{DynamicCustomNode, NoopCustomNode};
+use crate::nodes::function::http_handler::DynamicHttpHandler;
 use crate::nodes::function::v2::function::{Function, FunctionConfig};
 use crate::nodes::function::v2::module::console::ConsoleListener;
+use crate::nodes::function::v2::module::http::listener::HttpListener;
 use crate::nodes::function::v2::module::zen::ZenListener;
 use crate::nodes::validator_cache::ValidatorCache;
 use ahash::HashMap;
@@ -18,6 +20,7 @@ pub struct NodeHandlerExtensions {
     pub(crate) validator_cache: Arc<OnceCell<ValidatorCache>>,
     pub(crate) loader: DynamicLoader,
     pub(crate) custom_node: DynamicCustomNode,
+    pub(crate) http_handler: DynamicHttpHandler,
     pub(crate) compiled_cache: Option<Arc<HashMap<CompilationKey, Vec<Opcode>>>>,
 }
 
@@ -30,6 +33,7 @@ impl Default for NodeHandlerExtensions {
             loader: Arc::new(NoopLoader::default()),
             custom_node: Arc::new(NoopCustomNode::default()),
             compiled_cache: None,
+            http_handler: None,
         }
     }
 }
@@ -41,9 +45,13 @@ impl NodeHandlerExtensions {
                 Function::create(FunctionConfig {
                     listeners: Some(vec![
                         Box::new(ConsoleListener),
+                        Box::new(HttpListener {
+                            http_handler: self.http_handler.clone(),
+                        }),
                         Box::new(ZenListener {
                             loader: self.loader.clone(),
                             custom_node: self.custom_node.clone(),
+                            http_handler: self.http_handler.clone(),
                         }),
                     ]),
                 })
@@ -63,5 +71,9 @@ impl NodeHandlerExtensions {
 
     pub fn loader(&self) -> &DynamicLoader {
         &self.loader
+    }
+
+    pub fn http_handler(&self) -> &DynamicHttpHandler {
+        &self.http_handler
     }
 }

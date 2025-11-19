@@ -14,8 +14,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 
 [features]
-default = ["stack-protection", "regex-deprecated"]
+default = ["regex-deprecated"]
 
-stack-protection = ["zen-expression/stack-protection"]
 regex-lite = ["zen-expression/regex-lite"]
 regex-deprecated = ["zen-expression/regex-deprecated"]

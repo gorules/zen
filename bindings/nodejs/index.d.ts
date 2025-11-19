@@ -53,6 +53,7 @@ export declare function renderTemplateSync(template: string, context: any): any
 export interface ZenConfig {
   nodesInContext?: boolean
   functionTimeoutMillis?: number
+  httpAuth?: boolean
 }
 
 export interface ZenEngineHandlerResponse {
@@ -63,6 +64,7 @@ export interface ZenEngineHandlerResponse {
 export interface ZenEngineOptions {
   loader?: (key: string) => Promise<Buffer | ZenDecisionContent>
   customHandler?: (request: ZenEngineHandlerRequest) => Promise<ZenEngineHandlerResponse>
+  httpHandler?: (request: ZenHttpHandlerRequest) => Promise<ZenHttpHandlerResponse>
 }
 
 export interface ZenEngineResponse {
@@ -84,4 +86,18 @@ export interface ZenEngineTrace {
 export interface ZenEvaluateOptions {
   maxDepth?: number
   trace?: boolean | 'string' | 'reference' | 'referenceString'
+}
+
+export interface ZenHttpHandlerRequest {
+  method: string
+  url: string
+  body?: any
+  headers: Record<string, string>
+  params: Record<string, string>
+}
+
+export interface ZenHttpHandlerResponse {
+  status: number
+  headers: any
+  data: any
 }

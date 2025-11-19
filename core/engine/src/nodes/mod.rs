@@ -16,4 +16,5 @@ pub use context::{NodeContext, NodeContextBase, NodeContextConfig, NodeContextEx
 pub use definition::NodeHandler;
 pub(crate) use definition::{NodeDataType, TraceDataType};
 pub use extensions::NodeHandlerExtensions;
+pub use function::http_handler;
 pub use result::{NodeError, NodeRequest, NodeResponse, NodeResult};

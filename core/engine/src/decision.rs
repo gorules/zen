@@ -1,138 +1,16 @@
 use crate::decision_graph::graph::{DecisionGraph, DecisionGraphConfig, DecisionGraphResponse};
 use crate::engine::{EvaluationOptions, EvaluationSerializedOptions, EvaluationTraceKind};
 use crate::loader::{DynamicLoader, NoopLoader};
+use crate::model::DecisionContent;
 use crate::nodes::custom::{DynamicCustomNode, NoopCustomNode};
+use crate::nodes::function::http_handler::DynamicHttpHandler;
 use crate::nodes::validator_cache::ValidatorCache;
 use crate::nodes::NodeHandlerExtensions;
 use crate::{DecisionGraphValidationError, EvaluationError};
-use ahash::{HashMap, HashMapExt};
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::cell::OnceCell;
 use std::sync::Arc;
-use zen_expression::compiler::Opcode;
 use zen_expression::variable::Variable;
-use zen_expression::{ExpressionKind, Isolate};
-use zen_types::decision::{DecisionEdge, DecisionNode, DecisionNodeKind};
-
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct CompilationKey {
-    pub kind: ExpressionKind,
-    pub source: Arc<str>,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct DecisionContent {
-    pub nodes: Vec<Arc<DecisionNode>>,
-    pub edges: Vec<Arc<DecisionEdge>>,
-
-    #[serde(skip)]
-    pub compiled_cache: Option<Arc<HashMap<CompilationKey, Vec<Opcode>>>>,
-}
-
-impl DecisionContent {
-    pub fn compile(&mut self) {
-        let mut compiled_cache: HashMap<CompilationKey, Vec<Opcode>> = HashMap::new();
-        let mut isolate = Isolate::new();
-
-        for node in &self.nodes {
-            match &node.kind {
-                DecisionNodeKind::ExpressionNode { content } => {
-                    for expression in content.expressions.iter() {
-                        if expression.key.is_empty() || expression.value.is_empty() {
-                            continue;
-                        }
-
-                        let key = CompilationKey {
-                            kind: ExpressionKind::Standard,
-                            source: Arc::clone(&expression.value),
-                        };
-
-                        if compiled_cache.contains_key(&key) {
-                            continue;
-                        }
-
-                        if let Ok(comp_expression) = isolate.compile_standard(&expression.value) {
-                            compiled_cache.insert(key, comp_expression.bytecode().to_vec());
-                        }
-                    }
-                }
-                DecisionNodeKind::DecisionTableNode { content } => {
-                    for rule in content.rules.iter() {
-                        for input in content.inputs.iter() {
-                            let Some(rule_value) = rule.get(&input.id) else {
-                                continue;
-                            };
-
-                            if rule_value.is_empty() {
-                                continue;
-                            }
-
-                            match &input.field {
-                                None => {
-                                    let key = CompilationKey {
-                                        kind: ExpressionKind::Standard,
-                                        source: Arc::clone(rule_value),
-                                    };
-
-                                    if !compiled_cache.contains_key(&key) {
-                                        if let Ok(comp_expression) =
-                                            isolate.compile_standard(rule_value)
-                                        {
-                                            compiled_cache
-                                                .insert(key, comp_expression.bytecode().to_vec());
-                                        }
-                                    }
-                                }
-                                Some(_field) => {
-                                    let key = CompilationKey {
-                                        kind: ExpressionKind::Unary,
-                                        source: Arc::clone(rule_value),
-                                    };
-
-                                    if !compiled_cache.contains_key(&key) {
-                                        if let Ok(comp_expression) =
-                                            isolate.compile_unary(rule_value)
-                                        {
-                                            compiled_cache
-                                                .insert(key, comp_expression.bytecode().to_vec());
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        for output in content.outputs.iter() {
-                            let Some(rule_value) = rule.get(&output.id) else {
-                                continue;
-                            };
-
-                            if rule_value.is_empty() {
-                                continue;
-                            }
-
-                            let key = CompilationKey {
-                                kind: ExpressionKind::Standard,
-                                source: Arc::clone(rule_value),
-                            };
-
-                            if !compiled_cache.contains_key(&key) {
-                                if let Ok(comp_expression) = isolate.compile_standard(rule_value) {
-                                    compiled_cache.insert(key, comp_expression.bytecode().to_vec());
-                                }
-                            }
-                        }
-                    }
-                }
-
-                _ => {}
-            }
-        }
-
-        self.compiled_cache.replace(Arc::new(compiled_cache));
-    }
-}
 
 /// Represents a JDM decision which can be evaluated
 #[derive(Debug, Clone)]
@@ -140,6 +18,7 @@ pub struct Decision {
     content: Arc<DecisionContent>,
     loader: DynamicLoader,
     adapter: DynamicCustomNode,
+    http_handler: DynamicHttpHandler,
     validator_cache: ValidatorCache,
 }
 
@@ -149,6 +28,7 @@ impl From<DecisionContent> for Decision {
             content: value.into(),
             loader: Arc::new(NoopLoader::default()),
             adapter: Arc::new(NoopCustomNode::default()),
+            http_handler: None,
             validator_cache: ValidatorCache::default(),
         }
     }
@@ -160,6 +40,7 @@ impl From<Arc<DecisionContent>> for Decision {
             content: value,
             loader: Arc::new(NoopLoader::default()),
             adapter: Arc::new(NoopCustomNode::default()),
+            http_handler: None,
             validator_cache: ValidatorCache::default(),
         }
     }
@@ -173,6 +54,11 @@ impl Decision {
 
     pub fn with_adapter(mut self, adapter: DynamicCustomNode) -> Self {
         self.adapter = adapter;
+        self
+    }
+
+    pub fn with_http_handler(mut self, http_handler: DynamicHttpHandler) -> Self {
+        self.http_handler = http_handler;
         self
     }
 
@@ -198,11 +84,13 @@ impl Decision {
             extensions: NodeHandlerExtensions {
                 loader: self.loader.clone(),
                 custom_node: self.adapter.clone(),
+                http_handler: self.http_handler.clone(),
                 compiled_cache: self.content.compiled_cache.clone(),
                 validator_cache: Arc::new(OnceCell::from(self.validator_cache.clone())),
                 ..Default::default()
             },
         })?;
+
         let response = decision_graph.evaluate(context).await?;
 
         Ok(response)

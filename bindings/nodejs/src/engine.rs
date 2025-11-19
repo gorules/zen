@@ -3,10 +3,10 @@ use std::sync::Arc;
 
 use napi::anyhow::{anyhow, Context};
 use napi::bindgen_prelude::{
-    Buffer, Either3, FromNapiValue, Function, Object, Promise, ToNapiValue,
+    Buffer, Either, Either3, FromNapiValue, Function, Object, Promise, ToNapiValue,
 };
 use napi::sys::{napi_env, napi_value};
-use napi::{Either, Env, JsValue, Unknown, ValueType};
+use napi::{Env, JsValue, Unknown, ValueType};
 use napi_derive::napi;
 use serde_json::Value;
 
@@ -17,6 +17,7 @@ use zen_engine::{
 use crate::content::ZenDecisionContent;
 use crate::custom_node::CustomNode;
 use crate::decision::ZenDecision;
+use crate::http_handler::{NodeHttpHandler, ZenHttpHandlerRequest, ZenHttpHandlerResponse};
 use crate::loader::DecisionLoader;
 use crate::mt::spawn_worker;
 use crate::safe_result::SafeResult;
@@ -107,6 +108,10 @@ pub struct ZenEngineOptions {
     #[napi(ts_type = "(request: ZenEngineHandlerRequest) => Promise<ZenEngineHandlerResponse>")]
     pub custom_handler:
         Option<Function<'static, ZenEngineHandlerRequest, Promise<ZenEngineHandlerResponse>>>,
+
+    #[napi(ts_type = "(request: ZenHttpHandlerRequest) => Promise<ZenHttpHandlerResponse>")]
+    pub http_handler:
+        Option<Function<'static, ZenHttpHandlerRequest, Promise<ZenHttpHandlerResponse>>>,
 }
 
 #[napi]
@@ -151,8 +156,21 @@ impl ZenEngine {
             }
         };
 
+        let mut decision_engine = DecisionEngine::new(Arc::new(loader), Arc::new(custom_node));
+        if let Some(h) = opts.http_handler {
+            let http_tsfn = h
+                .build_threadsafe_function()
+                .max_queue_size::<0>()
+                .callee_handled::<false>()
+                .weak()
+                .build()?;
+
+            decision_engine = decision_engine
+                .with_http_handler(Some(Arc::new(NodeHttpHandler::new(Arc::new(http_tsfn)))));
+        }
+
         Ok(Self {
-            graph: DecisionEngine::new(Arc::new(loader), Arc::new(custom_node)).into(),
+            graph: Arc::new(decision_engine),
         })
     }
 

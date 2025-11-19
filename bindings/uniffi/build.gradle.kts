@@ -48,6 +48,15 @@ sourceSets {
         compileClasspath += sourceSets["main"].compileClasspath
         runtimeClasspath += sourceSets["main"].runtimeClasspath
     }
+
+    val kotlinAndroid by creating {
+        kotlin {
+            srcDirs("lib/kotlin", "build/generated/kotlin_android")
+        }
+
+        compileClasspath += sourceSets["main"].compileClasspath
+        runtimeClasspath += sourceSets["main"].runtimeClasspath
+    }
 }
 
 
@@ -82,6 +91,12 @@ tasks {
         from(sourceSets["kotlin"].kotlin)
     }
 
+    val generateKotlinAndroidSourcesJar by creating(Jar::class) {
+        archiveBaseName.set("zen_engine_kotlin_android")
+        archiveClassifier.set("sources")
+        from(sourceSets["kotlinAndroid"].kotlin)
+    }
+
     val dokkaJavadocJava by creating(DokkaTask::class) {
         outputDirectory.set(layout.buildDirectory.dir("dokka/java"))
         dokkaSourceSets { named("java") }
@@ -91,6 +106,11 @@ tasks {
     val dokkaJavadocKotlin by creating(DokkaTask::class) {
         outputDirectory.set(layout.buildDirectory.dir("dokka/kotlin"))
         dokkaSourceSets { named("kotlin") }
+    }
+
+    val dokkaJavadocKotlinAndroid by creating(DokkaTask::class) {
+        outputDirectory.set(layout.buildDirectory.dir("dokka/kotlin_android"))
+        dokkaSourceSets { named("kotlinAndroid") }
     }
 
     val javadocJarJava by creating(Jar::class) {
@@ -104,6 +124,14 @@ tasks {
     val javadocJarKotlin by creating(Jar::class) {
         dependsOn(dokkaGeneratePublicationJavadoc)
         archiveBaseName.set("zen_engine_kotlin")
+        archiveClassifier.set("javadoc")
+
+        from(dokkaGeneratePublicationJavadoc.get())
+    }
+
+    val javadocJarKotlinAndroid by creating(Jar::class) {
+        dependsOn(dokkaGeneratePublicationJavadoc)
+        archiveBaseName.set("zen_engine_kotlin_android")
         archiveClassifier.set("javadoc")
 
         from(dokkaGeneratePublicationJavadoc.get())
@@ -135,6 +163,23 @@ publishing {
                 dependency("net.java.dev.jna:jna:5.17.0")
             }
         }
+
+        create<MavenPublication>("mavenKotlinAndroid") {
+            groupId = "io.gorules"
+            artifactId = "zen-engine-kotlin-android"
+
+            artifact("build-android/aar/zen-engine-android-release.aar") {
+                extension = "aar"
+            }
+            artifact(tasks["generateKotlinAndroidSourcesJar"])
+            artifact(tasks["javadocJarKotlinAndroid"])
+
+            configurePom {
+                dependency("net.java.dev.jna:jna:5.14.0", "aar")
+                dependency("androidx.core:core-ktx:1.12.0")
+                dependency("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+            }
+        }
     }
     repositories {
         mavenLocal()
@@ -149,7 +194,7 @@ signing {
         val signingKey = Base64.getDecoder().decode(signingKeyBase64.get()).toString(Charsets.UTF_8)
 
         useInMemoryPgpKeys(signingKey, signingPassphrase.get())
-        sign(publishing.publications["mavenJava"], publishing.publications["mavenKotlin"])
+        sign(publishing.publications["mavenJava"], publishing.publications["mavenKotlin"], publishing.publications["mavenKotlinAndroid"])
     }
 }
 
@@ -214,20 +259,28 @@ fun MavenPublication.configurePom(dependencyConfig: PomDependencyBuilder.() -> U
 }
 
 class PomDependencyBuilder {
-    private val dependencies = mutableListOf<Triple<String, String, String>>()
+    private val dependencies = mutableListOf<Map<String, String>>()
 
-    fun dependency(notation: String) {
+    fun dependency(notation: String, type: String = "jar") {
         val parts = notation.split(":")
         require(parts.size == 3) { "Dependency notation must be 'group:artifact:version'" }
-        dependencies.add(Triple(parts[0], parts[1], parts[2]))
+        dependencies.add(mapOf(
+            "groupId" to parts[0],
+            "artifactId" to parts[1],
+            "version" to parts[2],
+            "type" to type
+        ))
     }
 
     fun addToXml(dependenciesNode: groovy.util.Node) {
-        dependencies.forEach { (groupId, artifactId, version) ->
+        dependencies.forEach { dep ->
             val dependencyNode = dependenciesNode.appendNode("dependency")
-            dependencyNode.appendNode("groupId", groupId)
-            dependencyNode.appendNode("artifactId", artifactId)
-            dependencyNode.appendNode("version", version)
+            dependencyNode.appendNode("groupId", dep["groupId"])
+            dependencyNode.appendNode("artifactId", dep["artifactId"])
+            dependencyNode.appendNode("version", dep["version"])
+            if (dep["type"] != "jar") {
+                dependencyNode.appendNode("type", dep["type"])
+            }
             dependencyNode.appendNode("scope", "runtime")
         }
     }

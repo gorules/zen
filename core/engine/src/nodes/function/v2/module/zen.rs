@@ -12,9 +12,12 @@ use rquickjs::{CatchResultExt, Ctx, Function, Object};
 use std::future::Future;
 use std::pin::Pin;
 
+use crate::nodes::function::http_handler::DynamicHttpHandler;
+
 pub(crate) struct ZenListener {
     pub loader: DynamicLoader,
     pub custom_node: DynamicCustomNode,
+    pub http_handler: DynamicHttpHandler,
 }
 
 impl RuntimeListener for ZenListener {
@@ -25,6 +28,7 @@ impl RuntimeListener for ZenListener {
     ) -> Pin<Box<dyn Future<Output = FunctionResult> + 'js>> {
         let loader = self.loader.clone();
         let custom_node = self.custom_node.clone();
+        let http_handler = self.http_handler.clone();
 
         Box::pin(async move {
             if event != RuntimeEvent::Startup {
@@ -41,6 +45,7 @@ impl RuntimeListener for ZenListener {
                               opts: Opt<Object<'js>>| {
                             let loader = loader.clone();
                             let custom_node = custom_node.clone();
+                            let http_handler = http_handler.clone();
 
                             async move {
                                 let config: Object = ctx.globals().get("config").or_throw(&ctx)?;
@@ -62,6 +67,7 @@ impl RuntimeListener for ZenListener {
                                     extensions: NodeHandlerExtensions {
                                         loader: loader.clone(),
                                         custom_node: custom_node.clone(),
+                                        http_handler: http_handler.clone(),
                                         ..Default::default()
                                     },
                                 })

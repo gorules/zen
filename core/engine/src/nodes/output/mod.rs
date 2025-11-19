@@ -1,3 +1,4 @@
+use crate::decision_graph::cleaner::VariableCleaner;
 use crate::nodes::definition::NodeHandler;
 use crate::nodes::result::NodeResult;
 use crate::nodes::NodeContext;
@@ -16,7 +17,7 @@ impl NodeHandler for OutputNodeHandler {
 
     async fn handle(&self, ctx: NodeContext<Self::NodeData, Self::TraceData>) -> NodeResult {
         if let Some(json_schema) = &ctx.node.schema {
-            let input_json = ctx.input.to_value();
+            let input_json = VariableCleaner::new().clone_clean(&ctx.input).to_value();
             ctx.validate(json_schema, &input_json)?;
         };
 

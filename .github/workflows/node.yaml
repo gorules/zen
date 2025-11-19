@@ -38,14 +38,14 @@ jobs:
             build: |
               yarn build --target x86_64-pc-windows-msvc
 
-          - host: macos-13
+          - host: macos-15-intel
             target: 'x86_64-apple-darwin'
             build: |
               rustup target add x86_64-apple-darwin
               yarn build --target x86_64-apple-darwin
               strip -x ./*.node
 
-          - host: macos-14
+          - host: macos-latest
             target: 'aarch64-apple-darwin'
             build: |
               sudo rm -Rf /Library/Developer/CommandLineTools/SDKs/*;
@@ -217,9 +217,9 @@ jobs:
       fail-fast: false
       matrix:
         settings:
-          - host: macos-13
+          - host: macos-15-intel
             target: 'x86_64-apple-darwin'
-          - host: macos-14
+          - host: macos-latest
             target: 'aarch64-apple-darwin'
           - host: windows-latest
             target: 'x86_64-pc-windows-msvc'

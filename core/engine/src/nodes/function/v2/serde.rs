@@ -1,9 +1,11 @@
 use crate::nodes::function::v2::error::ResultExt;
 use ahash::{HashMap, HashMapExt};
+use nohash_hasher::BuildNoHashHasher;
 use rquickjs::{Ctx, FromJs, IntoAtom, IntoJs, Type, Value as QValue};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde_json::json;
+use std::collections::HashMap as StdHashMap;
 use std::rc::Rc;
 use zen_expression::variable::Variable;
 
@@ -96,39 +98,8 @@ impl<'js> FromJs<'js> for JsValue {
 
 impl<'js> IntoJs<'js> for JsValue {
     fn into_js(self, ctx: &Ctx<'js>) -> rquickjs::Result<QValue<'js>> {
-        let res = match self.0 {
-            Variable::Null => QValue::new_null(ctx.clone()),
-            Variable::Bool(b) => QValue::new_bool(ctx.clone(), b),
-            Variable::Number(n) => QValue::new_number(
-                ctx.clone(),
-                n.to_f64()
-                    .or_throw_msg(ctx, "failed to convert float to number")?,
-            ),
-            Variable::String(str) => str.into_js(ctx)?,
-            Variable::Array(a) => {
-                let qarr = rquickjs::Array::new(ctx.clone())?;
-
-                let arr = a.borrow();
-                for (idx, item) in arr.iter().enumerate() {
-                    qarr.set(idx, JsValue(item.clone()))?;
-                }
-
-                qarr.into_value()
-            }
-            Variable::Object(o) => {
-                let qmap = rquickjs::Object::new(ctx.clone())?;
-
-                let obj = o.borrow();
-                for (key, value) in obj.iter() {
-                    qmap.set(key.into_atom(ctx)?, JsValue(value.clone()))?;
-                }
-
-                qmap.into_value()
-            }
-            Variable::Dynamic(d) => d.to_string().into_js(ctx)?,
-        };
-
-        Ok(res)
+        let converter = JsConverter::new(ctx);
+        converter.convert(self.0)
     }
 }
 
@@ -167,5 +138,70 @@ impl<'js> IntoJs<'js> for JsValueWithNodes {
 
         obj.set("$nodes", nodes_proxy)?;
         Ok(obj.into_value())
+    }
+}
+
+pub(crate) struct JsConverter<'r, 'js> {
+    ctx: &'r Ctx<'js>,
+    cache: StdHashMap<usize, QValue<'js>, BuildNoHashHasher<usize>>,
+}
+
+impl<'r, 'js> JsConverter<'r, 'js> {
+    pub fn new(ctx: &'r Ctx<'js>) -> Self {
+        Self {
+            ctx,
+            cache: StdHashMap::default(),
+        }
+    }
+
+    pub fn convert(mut self, var: Variable) -> rquickjs::Result<QValue<'js>> {
+        self.convert_with_cache(var)
+    }
+
+    fn convert_with_cache(&mut self, var: Variable) -> rquickjs::Result<QValue<'js>> {
+        match var {
+            Variable::Null => Ok(QValue::new_null(self.ctx.clone())),
+            Variable::Bool(b) => Ok(QValue::new_bool(self.ctx.clone(), b)),
+            Variable::Number(n) => Ok(QValue::new_number(
+                self.ctx.clone(),
+                n.to_f64()
+                    .or_throw_msg(self.ctx, "failed to convert float to number")?,
+            )),
+            Variable::String(str) => str.into_js(self.ctx),
+            Variable::Array(a) => {
+                let addr = Rc::as_ptr(&a) as *const () as usize;
+                if let Some(cached) = self.cache.get(&addr) {
+                    return Ok(cached.clone());
+                }
+
+                let qarr = rquickjs::Array::new(self.ctx.clone())?;
+                let arr = a.borrow();
+                for (idx, item) in arr.iter().enumerate() {
+                    qarr.set(idx, self.convert_with_cache(item.clone())?)?;
+                }
+
+                let val = qarr.into_value();
+                self.cache.insert(addr, val.clone());
+                Ok(val)
+            }
+            Variable::Object(o) => {
+                let addr = Rc::as_ptr(&o) as *const () as usize;
+                if let Some(cached) = self.cache.get(&addr) {
+                    return Ok(cached.clone());
+                }
+
+                let qmap = rquickjs::Object::new(self.ctx.clone())?;
+                let obj = o.borrow();
+                for (key, value) in obj.iter() {
+                    let key_atom = key.into_atom(self.ctx)?;
+                    qmap.set(key_atom, self.convert_with_cache(value.clone())?)?;
+                }
+
+                let val = qmap.into_value();
+                self.cache.insert(addr, val.clone());
+                Ok(val)
+            }
+            Variable::Dynamic(d) => d.to_string().into_js(self.ctx),
+        }
     }
 }

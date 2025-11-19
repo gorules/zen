@@ -25,7 +25,7 @@ strum_macros = { workspace = true }
 thiserror = { workspace = true }
 rust_decimal = { workspace = true, features = ["maths-nopanic"] }
 rust_decimal_macros = { workspace = true }
-nohash-hasher = "0.2.0"
+nohash-hasher = { workspace = true }
 strsim = "0.11"
 iana-time-zone = "0.1"
 

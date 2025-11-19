@@ -17,10 +17,7 @@ impl NodeHandler for InputNodeHandler {
 
     async fn handle(&self, ctx: NodeContext<Self::NodeData, Self::TraceData>) -> NodeResult {
         if let Some(json_schema) = &ctx.node.schema {
-            let cloned_input = ctx.input.deep_clone();
-            VariableCleaner::new().clean(&cloned_input);
-
-            let input_json = cloned_input.to_value();
+            let input_json = VariableCleaner::new().clone_clean(&ctx.input).to_value();
             ctx.validate(json_schema, &input_json)?;
         };
 

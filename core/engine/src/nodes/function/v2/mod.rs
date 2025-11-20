@@ -58,8 +58,10 @@ impl NodeHandler for FunctionV2NodeHandler {
             .function_context(&function_context)
             .await?;
 
+        let input_omit_nodes = ctx.input.depth_clone(1);
+        input_omit_nodes.dot_remove("$nodes");
         let response_result = function
-            .call_handler(&module_name, JsValueWithNodes(JsValue(ctx.input.clone())))
+            .call_handler(&module_name, JsValueWithNodes(JsValue(input_omit_nodes)))
             .await;
 
         function.runtime().set_interrupt_handler(None).await;

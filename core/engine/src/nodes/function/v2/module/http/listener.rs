@@ -1,6 +1,7 @@
 use crate::nodes::function::http_handler::{DynamicHttpHandler, HttpHandlerRequest};
 use crate::nodes::function::v2::error::{FunctionResult, ResultExt};
 use crate::nodes::function::v2::listener::{RuntimeEvent, RuntimeListener};
+use crate::nodes::function::v2::serde::rquickjs_conv;
 use rquickjs::prelude::{Async, Func};
 use rquickjs::{CatchResultExt, Ctx};
 use std::future::Future;
@@ -33,14 +34,12 @@ impl RuntimeListener for HttpListener {
                     Func::from(Async(move |ctx: Ctx<'js>, request_obj: rquickjs::Value| {
                         let http_handler = http_handler.clone();
                         let request_result =
-                            rquickjs_serde::from_value::<HttpHandlerRequest>(request_obj)
-                                .or_throw(&ctx);
+                            rquickjs_conv::from_value::<HttpHandlerRequest>(request_obj);
 
                         async move {
                             let request = request_result?;
                             let response = http_handler.handle(request).await.or_throw(&ctx)?;
-                            let response_object =
-                                rquickjs_serde::to_value(ctx.clone(), response).or_throw(&ctx)?;
+                            let response_object = rquickjs_conv::to_value(ctx.clone(), response)?;
                             rquickjs::Result::Ok(response_object)
                         }
                     })),

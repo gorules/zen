@@ -1,6 +1,7 @@
 use super::{HttpBackend, HttpResponse};
 use crate::nodes::function::v2::error::ResultExt;
 use crate::nodes::function::v2::module::http::{HttpMethod, HttpRequestConfig};
+use crate::nodes::function::v2::serde::rquickjs_conv;
 use crate::nodes::http_handler::HttpHandlerRequest;
 use rquickjs::promise::MaybePromise;
 use rquickjs::{CatchResultExt, Ctx};
@@ -34,9 +35,7 @@ impl HttpBackend for CallbackHttpBackend {
                     .or_throw(&ctx)?,
             };
 
-            let http_request_js =
-                rquickjs_serde::to_value(ctx.clone(), http_request).or_throw(&ctx)?;
-
+            let http_request_js = rquickjs_conv::to_value(ctx.clone(), http_request)?;
             let response_promise: MaybePromise = execute_http_fn
                 .call((http_request_js,))
                 .catch(&ctx)

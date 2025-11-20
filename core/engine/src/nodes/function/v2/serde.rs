@@ -205,3 +205,137 @@ impl<'r, 'js> JsConverter<'r, 'js> {
         }
     }
 }
+
+pub(crate) mod rquickjs_conv {
+    use crate::nodes::function::v2::error::ResultExt;
+    use crate::nodes::function::v2::serde::QValue;
+    use rquickjs::{Ctx, FromJs, IntoJs, Type};
+
+    #[derive(Debug, Clone)]
+    struct JsonValue(serde_json::Value);
+
+    impl<'js> FromJs<'js> for JsonValue {
+        fn from_js(ctx: &Ctx<'js>, value: QValue<'js>) -> rquickjs::Result<Self> {
+            let json_value = match value.type_of() {
+                Type::Uninitialized | Type::Undefined | Type::Null => serde_json::Value::Null,
+                Type::Bool => serde_json::Value::Bool(
+                    value
+                        .as_bool()
+                        .or_throw_msg(ctx, "failed to convert to bool")?,
+                ),
+                Type::Int => {
+                    let int_val = value
+                        .as_int()
+                        .or_throw_msg(ctx, "failed to convert to int")?;
+                    serde_json::Value::Number(int_val.into())
+                }
+                Type::Float => {
+                    let float_val = value
+                        .as_float()
+                        .or_throw_msg(ctx, "failed to convert to float")?;
+                    serde_json::Number::from_f64(float_val)
+                        .map(serde_json::Value::Number)
+                        .or_throw_msg(ctx, "failed to convert float to number")?
+                }
+                Type::BigInt => {
+                    let big_int = value
+                        .into_big_int()
+                        .or_throw_msg(ctx, "failed to convert bigint")?
+                        .to_i64()
+                        .or_throw_msg(ctx, "failed to convert bigint to i64")?;
+                    serde_json::Value::Number(big_int.into())
+                }
+                Type::String => {
+                    let str_val = value
+                        .into_string()
+                        .or_throw_msg(ctx, "failed to convert to string")?
+                        .to_string()
+                        .or_throw_msg(ctx, "failed to get string value")?;
+                    serde_json::Value::String(str_val)
+                }
+                Type::Array => {
+                    let arr = value
+                        .into_array()
+                        .or_throw_msg(ctx, "failed to convert to array")?;
+                    let mut json_arr = Vec::with_capacity(arr.len());
+                    for item in arr.into_iter() {
+                        let item_val = item.or_throw(ctx)?;
+                        json_arr.push(JsonValue::from_js(ctx, item_val).or_throw(ctx)?.0);
+                    }
+                    serde_json::Value::Array(json_arr)
+                }
+                Type::Object => {
+                    let obj = value
+                        .into_object()
+                        .or_throw_msg(ctx, "failed to convert to object")?;
+                    let mut json_obj = serde_json::Map::new();
+                    for prop in obj.props::<String, QValue>() {
+                        let (key, val) = prop.or_throw(ctx)?;
+                        json_obj.insert(key, JsonValue::from_js(ctx, val).or_throw(ctx)?.0);
+                    }
+                    serde_json::Value::Object(json_obj)
+                }
+                Type::Promise => {
+                    let promise = value.into_promise().or_throw(ctx)?;
+                    let val: JsonValue = promise.finish()?;
+                    val.0
+                }
+                _ => serde_json::Value::Null,
+            };
+
+            Ok(JsonValue(json_value))
+        }
+    }
+
+    impl<'js> IntoJs<'js> for JsonValue {
+        fn into_js(self, ctx: &Ctx<'js>) -> rquickjs::Result<QValue<'js>> {
+            match self.0 {
+                serde_json::Value::Null => Ok(QValue::new_null(ctx.clone())),
+                serde_json::Value::Bool(b) => Ok(QValue::new_bool(ctx.clone(), b)),
+                serde_json::Value::Number(n) => {
+                    let number = n.as_i64().map(|i| i as f64).or(n.as_f64());
+                    match number {
+                        Some(num) => Ok(QValue::new_number(ctx.clone(), num)),
+                        None => Ok(QValue::new_null(ctx.clone())),
+                    }
+                }
+                serde_json::Value::String(s) => s.into_js(ctx),
+                serde_json::Value::Array(arr) => {
+                    let qarr = rquickjs::Array::new(ctx.clone())?;
+                    for (idx, item) in arr.into_iter().enumerate() {
+                        qarr.set(idx, JsonValue(item).into_js(ctx)?)?;
+                    }
+                    Ok(qarr.into_value())
+                }
+                serde_json::Value::Object(obj) => {
+                    let qobj = rquickjs::Object::new(ctx.clone())?;
+                    for (key, value) in obj.into_iter() {
+                        qobj.set(key, JsonValue(value).into_js(ctx)?)?;
+                    }
+                    Ok(qobj.into_value())
+                }
+            }
+        }
+    }
+
+    pub(crate) fn from_value<T>(value: QValue) -> rquickjs::Result<T>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        let ctx = value.ctx().clone();
+        let js_value = JsonValue::from_js(&ctx, value)?;
+        serde_json::from_value(js_value.0).map_err(|e| {
+            rquickjs::Error::new_from_js_message("serde_json::Value", "rust type", e.to_string())
+        })
+    }
+
+    pub(crate) fn to_value<T>(ctx: Ctx, value: T) -> rquickjs::Result<QValue>
+    where
+        T: serde::Serialize,
+    {
+        let json_value = serde_json::to_value(value).map_err(|e| {
+            rquickjs::Error::new_from_js_message("rust type", "serde_json::Value", e.to_string())
+        })?;
+        JsonValue(json_value).into_js(&ctx)
+    }
+}

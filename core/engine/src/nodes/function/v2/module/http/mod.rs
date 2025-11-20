@@ -2,12 +2,11 @@ pub(crate) mod auth;
 pub(crate) mod backend;
 pub(crate) mod listener;
 
-use crate::nodes::function::v2::error::ResultExt;
 use crate::nodes::function::v2::module::export_default;
 use crate::nodes::function::v2::module::http::auth::HttpConfigAuth;
 use crate::nodes::function::v2::module::http::backend::callback::CallbackHttpBackend;
 use crate::nodes::function::v2::module::http::backend::{HttpBackend, HttpResponse};
-use crate::nodes::function::v2::serde::JsValue;
+use crate::nodes::function::v2::serde::{rquickjs_conv, JsValue};
 use ahash::HashMap;
 use rquickjs::module::{Declarations, Exports, ModuleDef};
 use rquickjs::prelude::{Async, Func, Opt};
@@ -193,7 +192,7 @@ impl Serialize for StringPrimitive {
 }
 
 impl<'js> FromJs<'js> for HttpRequestConfig {
-    fn from_js(ctx: &Ctx<'js>, value: Value<'js>) -> rquickjs::Result<Self> {
-        rquickjs_serde::from_value(value).or_throw(&ctx)
+    fn from_js(_ctx: &Ctx<'js>, value: Value<'js>) -> rquickjs::Result<Self> {
+        rquickjs_conv::from_value(value)
     }
 }

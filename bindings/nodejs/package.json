@@ -1,6 +1,6 @@
 {
   "name": "@gorules/zen-engine",
-  "version": "0.51.0",
+  "version": "0.51.1",
   "main": "index.js",
   "browser": "browser.js",
   "types": "./index.d.ts",

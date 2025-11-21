@@ -47,7 +47,7 @@ impl ZenDecision {
     }
 
     #[napi(
-        ts_return_type = "{ success: true, data: ZenEngineResponse } | { success: false; error: any; }"
+        ts_return_type = "Promise<{ success: true, data: ZenEngineResponse } | { success: false; error: any; }>"
     )]
     pub async fn safe_evaluate(
         &self,

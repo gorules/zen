@@ -253,7 +253,7 @@ impl ZenEngine {
     }
 
     #[napi(
-        ts_return_type = "{ success: true, data: ZenEngineResponse } | { success: false; error: any; }"
+        ts_return_type = "Promise<{ success: true, data: ZenEngineResponse } | { success: false; error: any; }>"
     )]
     pub async fn safe_evaluate(
         &self,
@@ -265,7 +265,7 @@ impl ZenEngine {
     }
 
     #[napi(
-        ts_return_type = "{ success: true, data: ZenDecision } | { success: false; error: any; }"
+        ts_return_type = "Promise<{ success: true, data: ZenDecision } | { success: false; error: any; }>"
     )]
     pub async fn safe_get_decision(&self, key: String) -> SafeResult<ZenDecision> {
         self.get_decision(key).await.into()

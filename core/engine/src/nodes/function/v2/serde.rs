@@ -99,7 +99,7 @@ impl<'js> FromJs<'js> for JsValue {
 impl<'js> IntoJs<'js> for JsValue {
     fn into_js(self, ctx: &Ctx<'js>) -> rquickjs::Result<QValue<'js>> {
         let converter = JsConverter::new(ctx);
-        converter.convert(self.0)
+        converter.convert(&self.0)
     }
 }
 
@@ -154,19 +154,15 @@ impl<'r, 'js> JsConverter<'r, 'js> {
         }
     }
 
-    pub fn convert(mut self, var: Variable) -> rquickjs::Result<QValue<'js>> {
+    pub fn convert(mut self, var: &Variable) -> rquickjs::Result<QValue<'js>> {
         self.convert_with_cache(var)
     }
 
-    fn convert_with_cache(&mut self, var: Variable) -> rquickjs::Result<QValue<'js>> {
+    fn convert_with_cache(&mut self, var: &Variable) -> rquickjs::Result<QValue<'js>> {
         match var {
             Variable::Null => Ok(QValue::new_null(self.ctx.clone())),
-            Variable::Bool(b) => Ok(QValue::new_bool(self.ctx.clone(), b)),
-            Variable::Number(n) => Ok(QValue::new_number(
-                self.ctx.clone(),
-                n.to_f64()
-                    .or_throw_msg(self.ctx, "failed to convert float to number")?,
-            )),
+            Variable::Bool(b) => b.into_js(self.ctx),
+            Variable::Number(n) => n.to_f64().into_js(self.ctx),
             Variable::String(str) => str.into_js(self.ctx),
             Variable::Array(a) => {
                 let addr = Rc::as_ptr(&a) as *const () as usize;
@@ -177,7 +173,7 @@ impl<'r, 'js> JsConverter<'r, 'js> {
                 let qarr = rquickjs::Array::new(self.ctx.clone())?;
                 let arr = a.borrow();
                 for (idx, item) in arr.iter().enumerate() {
-                    qarr.set(idx, self.convert_with_cache(item.clone())?)?;
+                    qarr.set(idx, self.convert_with_cache(item)?)?;
                 }
 
                 let val = qarr.into_value();
@@ -194,7 +190,7 @@ impl<'r, 'js> JsConverter<'r, 'js> {
                 let obj = o.borrow();
                 for (key, value) in obj.iter() {
                     let key_atom = key.into_atom(self.ctx)?;
-                    qmap.set(key_atom, self.convert_with_cache(value.clone())?)?;
+                    qmap.set(key_atom, self.convert_with_cache(value)?)?;
                 }
 
                 let val = qmap.into_value();

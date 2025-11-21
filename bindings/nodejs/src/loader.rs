@@ -15,7 +15,7 @@ use zen_engine::model::DecisionContent;
 
 use crate::content::ZenDecisionContent;
 
-type LoaderTsfn = Arc<
+pub(crate) type LoaderTsfn = Arc<
     ThreadsafeFunction<
         String,
         Promise<Option<Either<Buffer, &'static ZenDecisionContent>>>,

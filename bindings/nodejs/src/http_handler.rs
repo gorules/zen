@@ -14,7 +14,7 @@ use zen_engine::nodes::http_handler::{
     HttpHandlerResponse as EngineHttpHandlerResponse,
 };
 
-type HttpHandlerTsfn = Arc<
+pub(crate) type HttpHandlerTsfn = Arc<
     ThreadsafeFunction<
         ZenHttpHandlerRequest,
         Promise<ZenHttpHandlerResponse>,

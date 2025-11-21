@@ -10,7 +10,7 @@ use zen_engine::nodes::custom::{CustomNodeAdapter, CustomNodeRequest};
 use zen_engine::nodes::{NodeError, NodeResponse, NodeResult};
 use zen_engine::Variable;
 
-type CustomNodeTsfn = Arc<
+pub(crate) type CustomNodeTsfn = Arc<
     ThreadsafeFunction<
         ZenEngineHandlerRequest,
         Promise<ZenEngineHandlerResponse>,

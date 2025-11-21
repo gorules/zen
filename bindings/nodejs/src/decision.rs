@@ -46,7 +46,9 @@ impl ZenDecision {
         Ok(result)
     }
 
-    #[napi(ts_return_type = "Promise<SafeResult<ZenEngineResponse>>")]
+    #[napi(
+        ts_return_type = "{ success: true, data: ZenEngineResponse } | { success: false; error: any; }"
+    )]
     pub async fn safe_evaluate(
         &self,
         context: Value,

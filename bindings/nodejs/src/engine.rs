@@ -10,21 +10,27 @@ use napi::{Env, JsValue, Unknown, ValueType};
 use napi_derive::napi;
 use serde_json::Value;
 
-use zen_engine::model::DecisionContent;
-use zen_engine::{DecisionEngine, EvaluationSerializedOptions, EvaluationTraceKind};
-
 use crate::content::ZenDecisionContent;
-use crate::custom_node::CustomNode;
+use crate::custom_node::{CustomNode, CustomNodeTsfn};
 use crate::decision::ZenDecision;
-use crate::http_handler::{NodeHttpHandler, ZenHttpHandlerRequest, ZenHttpHandlerResponse};
-use crate::loader::DecisionLoader;
+use crate::dispose::DisposeThreadsafeHandler;
+use crate::http_handler::{
+    HttpHandlerTsfn, NodeHttpHandler, ZenHttpHandlerRequest, ZenHttpHandlerResponse,
+};
+use crate::loader::{DecisionLoader, LoaderTsfn};
 use crate::mt::spawn_worker;
 use crate::safe_result::SafeResult;
 use crate::types::{ZenEngineHandlerRequest, ZenEngineHandlerResponse};
+use zen_engine::model::DecisionContent;
+use zen_engine::{DecisionEngine, EvaluationSerializedOptions, EvaluationTraceKind};
 
 #[napi]
 pub struct ZenEngine {
     graph: Arc<DecisionEngine>,
+
+    custom_node_tsfn: Option<CustomNodeTsfn>,
+    loader_tsfn: Option<LoaderTsfn>,
+    http_handler_tsfn: Option<HttpHandlerTsfn>,
 }
 
 #[derive(Debug, Default)]
@@ -124,8 +130,16 @@ impl ZenEngine {
                     Arc::new(CustomNode::default()),
                 )
                 .into(),
+
+                loader_tsfn: None,
+                http_handler_tsfn: None,
+                custom_node_tsfn: None,
             });
         };
+
+        let mut loader_tsfn_opt: Option<LoaderTsfn> = None;
+        let mut http_handler_tsfn_opt: Option<HttpHandlerTsfn> = None;
+        let mut custom_node_tsfn_opt: Option<CustomNodeTsfn> = None;
 
         let loader = match opts.loader {
             None => DecisionLoader::default(),
@@ -137,7 +151,9 @@ impl ZenEngine {
                     .weak()
                     .build()?;
 
-                DecisionLoader::new(Arc::new(loader_tsfn))
+                let arc_loader_tsfn = Arc::new(loader_tsfn);
+                loader_tsfn_opt = Some(arc_loader_tsfn.clone());
+                DecisionLoader::new(arc_loader_tsfn)
             }
         };
 
@@ -151,7 +167,9 @@ impl ZenEngine {
                     .weak()
                     .build()?;
 
-                CustomNode::new(Arc::new(custom_tfsn))
+                let arc_custom_node = Arc::new(custom_tfsn);
+                custom_node_tsfn_opt = Some(arc_custom_node.clone());
+                CustomNode::new(arc_custom_node)
             }
         };
 
@@ -164,12 +182,18 @@ impl ZenEngine {
                 .weak()
                 .build()?;
 
+            let arc_http_handler_tsfn = Arc::new(http_tsfn);
+            http_handler_tsfn_opt = Some(arc_http_handler_tsfn.clone());
             decision_engine = decision_engine
-                .with_http_handler(Some(Arc::new(NodeHttpHandler::new(Arc::new(http_tsfn)))));
+                .with_http_handler(Some(Arc::new(NodeHttpHandler::new(arc_http_handler_tsfn))));
         }
 
         Ok(Self {
             graph: Arc::new(decision_engine),
+
+            loader_tsfn: loader_tsfn_opt,
+            http_handler_tsfn: http_handler_tsfn_opt,
+            custom_node_tsfn: custom_node_tsfn_opt,
         })
     }
 
@@ -228,7 +252,9 @@ impl ZenEngine {
         Ok(ZenDecision::from(decision))
     }
 
-    #[napi(ts_return_type = "Promise<SafeResult<ZenEngineResponse>>")]
+    #[napi(
+        ts_return_type = "{ success: true, data: ZenEngineResponse } | { success: false; error: any; }"
+    )]
     pub async fn safe_evaluate(
         &self,
         key: String,
@@ -238,8 +264,25 @@ impl ZenEngine {
         self.evaluate(key, context, opts).await.into()
     }
 
-    #[napi(ts_return_type = "Promise<SafeResult<ZenDecision>>")]
+    #[napi(
+        ts_return_type = "{ success: true, data: ZenDecision } | { success: false; error: any; }"
+    )]
     pub async fn safe_get_decision(&self, key: String) -> SafeResult<ZenDecision> {
         self.get_decision(key).await.into()
+    }
+
+    #[napi]
+    pub fn dispose(&self) {
+        if let Some(loader_tsfn) = &self.loader_tsfn {
+            let _ = loader_tsfn.handle.dispose();
+        }
+
+        if let Some(http_handler_tsfn) = &self.http_handler_tsfn {
+            let _ = http_handler_tsfn.handle.dispose();
+        }
+
+        if let Some(custom_node) = &self.custom_node_tsfn {
+            let _ = custom_node.handle.dispose();
+        }
     }
 }

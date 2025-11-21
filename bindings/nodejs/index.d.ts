@@ -3,7 +3,7 @@
 export declare class ZenDecision {
   constructor()
   evaluate(context: any, opts?: ZenEvaluateOptions | undefined | null): Promise<ZenEngineResponse>
-  safeEvaluate(context: any, opts?: ZenEvaluateOptions | undefined | null): Promise<SafeResult<ZenEngineResponse>>
+  safeEvaluate(context: any, opts?: ZenEvaluateOptions | undefined | null): { success: true, data: ZenEngineResponse } | { success: false; error: any; }
   validate(): void
 }
 
@@ -17,8 +17,9 @@ export declare class ZenEngine {
   evaluate(key: string, context: any, opts?: ZenEvaluateOptions | undefined | null): Promise<ZenEngineResponse>
   createDecision(content: ZenDecisionContent | Buffer | object): ZenDecision
   getDecision(key: string): Promise<ZenDecision>
-  safeEvaluate(key: string, context: any, opts?: ZenEvaluateOptions | undefined | null): Promise<SafeResult<ZenEngineResponse>>
-  safeGetDecision(key: string): Promise<SafeResult<ZenDecision>>
+  safeEvaluate(key: string, context: any, opts?: ZenEvaluateOptions | undefined | null): { success: true, data: ZenEngineResponse } | { success: false; error: any; }
+  safeGetDecision(key: string): { success: true, data: ZenDecision } | { success: false; error: any; }
+  dispose(): void
 }
 
 export declare class ZenEngineHandlerRequest {

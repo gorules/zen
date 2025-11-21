@@ -2,6 +2,7 @@ mod config;
 mod content;
 mod custom_node;
 mod decision;
+mod dispose;
 mod engine;
 mod expression;
 mod http_handler;

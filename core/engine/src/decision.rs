@@ -85,6 +85,7 @@ impl Decision {
                 loader: self.loader.clone(),
                 custom_node: self.adapter.clone(),
                 http_handler: self.http_handler.clone(),
+                compiled_cache: self.content.compiled_cache.clone(),
                 validator_cache: Arc::new(OnceCell::from(self.validator_cache.clone())),
                 ..Default::default()
             },
@@ -130,5 +131,10 @@ impl Decision {
         })?;
 
         decision_graph.validate()
+    }
+
+    pub fn compile(&mut self) -> () {
+        let cm = Arc::make_mut(&mut self.content);
+        cm.compile();
     }
 }

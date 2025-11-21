@@ -6,7 +6,7 @@ use std::sync::Arc;
 use thiserror::Error;
 
 use crate::arena::UnsafeArena;
-use crate::compiler::{Compiler, CompilerError};
+use crate::compiler::{Compiler, CompilerError, Opcode};
 use crate::expression::{Standard, Unary};
 use crate::lexer::{Lexer, LexerError};
 use crate::parser::{Parser, ParserError};
@@ -135,6 +135,13 @@ impl<'a> Isolate<'a> {
 
         Ok(result)
     }
+    pub fn run_compiled(&mut self, source: &[Opcode]) -> Result<Variable, IsolateError> {
+        let result = self
+            .vm
+            .run(source, self.environment.clone().unwrap_or(Variable::Null))?;
+
+        Ok(result)
+    }
 
     pub fn compile_unary(&mut self, source: &'a str) -> Result<Expression<Unary>, IsolateError> {
         self.run_internal(source, ExpressionKind::Unary)?;
@@ -150,6 +157,14 @@ impl<'a> Isolate<'a> {
         let result = self
             .vm
             .run(bytecode, self.environment.clone().unwrap_or(Variable::Null))?;
+
+        result.as_bool().ok_or_else(|| IsolateError::ValueCastError)
+    }
+
+    pub fn run_unary_compiled(&mut self, code: &[Opcode]) -> Result<bool, IsolateError> {
+        let result = self
+            .vm
+            .run(code, self.environment.clone().unwrap_or(Variable::Null))?;
 
         result.as_bool().ok_or_else(|| IsolateError::ValueCastError)
     }

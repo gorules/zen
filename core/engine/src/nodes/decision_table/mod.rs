@@ -1,3 +1,4 @@
+use crate::model::CompilationKey;
 use crate::nodes::definition::NodeHandler;
 use crate::nodes::result::NodeResult;
 use crate::nodes::{NodeContext, NodeResponse};
@@ -7,7 +8,7 @@ use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
 use zen_expression::variable::ToVariable;
-use zen_expression::Isolate;
+use zen_expression::{ExpressionKind, Isolate};
 use zen_types::decision::{DecisionTableContent, DecisionTableHitPolicy, TransformAttributes};
 use zen_types::variable::Variable;
 #[derive(Debug, Clone)]
@@ -120,15 +121,44 @@ impl DecisionTableNodeHandler {
 
             match &input.field {
                 None => {
-                    let result = isolate.run_standard(rule_value).ok()?;
+                    let key = CompilationKey {
+                        kind: ExpressionKind::Standard,
+                        source: Arc::from(rule_value.clone()),
+                    };
+                    let result: Variable;
+                    if let Some(codes) = ctx
+                        .extensions
+                        .compiled_cache
+                        .as_ref()
+                        .and_then(|cc| cc.get(&key))
+                    {
+                        result = isolate.run_compiled(codes).ok()?;
+                    } else {
+                        result = isolate.run_standard(rule_value).ok()?;
+                    }
                     if !result.as_bool().unwrap_or(false) {
                         return None;
                     }
                 }
                 Some(field) => {
                     isolate.set_reference(&field).ok()?;
-                    if !isolate.run_unary(&rule_value).ok()? {
-                        return None;
+                    let key = CompilationKey {
+                        kind: ExpressionKind::Unary,
+                        source: Arc::from(rule_value.clone()),
+                    };
+                    if let Some(codes) = ctx
+                        .extensions
+                        .compiled_cache
+                        .as_ref()
+                        .and_then(|cc| cc.get(&key))
+                    {
+                        if !isolate.run_unary_compiled(codes).ok()? {
+                            return None;
+                        }
+                    } else {
+                        if !isolate.run_unary(&rule_value).ok()? {
+                            return None;
+                        }
                     }
                 }
             }
@@ -141,7 +171,21 @@ impl DecisionTableNodeHandler {
                 continue;
             }
 
-            let res = isolate.run_standard(rule_value).ok()?;
+            let key = CompilationKey {
+                kind: ExpressionKind::Standard,
+                source: Arc::from(rule_value.clone()),
+            };
+            let res: Variable;
+            if let Some(codes) = ctx
+                .extensions
+                .compiled_cache
+                .as_ref()
+                .and_then(|cc| cc.get(&key))
+            {
+                res = isolate.run_compiled(codes).ok()?;
+            } else {
+                res = isolate.run_standard(rule_value).ok()?;
+            }
             outputs.dot_insert(output.field.deref(), res);
         }
 

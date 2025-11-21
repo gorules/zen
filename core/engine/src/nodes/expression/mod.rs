@@ -1,3 +1,4 @@
+use crate::model::CompilationKey;
 use crate::model::ExpressionNodeContent;
 use crate::nodes::result::NodeResult;
 use ahash::HashMap;
@@ -6,7 +7,7 @@ use std::rc::Rc;
 use crate::nodes::context::{NodeContext, NodeContextExt};
 use crate::nodes::definition::NodeHandler;
 use zen_expression::variable::{ToVariable, Variable};
-use zen_expression::Isolate;
+use zen_expression::{ExpressionKind, Isolate};
 use zen_types::decision::TransformAttributes;
 
 #[derive(Debug, Clone)]
@@ -35,12 +36,24 @@ impl NodeHandler for ExpressionNodeHandler {
             if expression.key.is_empty() || expression.value.is_empty() {
                 continue;
             }
+            let key = CompilationKey {
+                kind: ExpressionKind::Standard,
+                source: expression.value.clone(),
+            };
+            let value;
+            match ctx
+                .extensions
+                .compiled_cache
+                .as_ref()
+                .and_then(|cc| cc.get(&key))
+            {
+                Some(codes) => value = isolate.run_compiled(codes.as_slice()),
+                None => value = isolate.run_standard(&expression.value),
+            }
 
-            let value = isolate
-                .run_standard(&expression.value)
-                .with_node_context(&ctx, |_| {
-                    format!(r#"Failed to evaluate expression: "{}""#, &expression.value)
-                })?;
+            let value = value.with_node_context(&ctx, |_| {
+                format!(r#"Failed to evaluate expression: "{}""#, &expression.value)
+            })?;
             ctx.trace(|trace| {
                 trace.insert(
                     Rc::from(&*expression.key),

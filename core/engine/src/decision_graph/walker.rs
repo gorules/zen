@@ -182,11 +182,14 @@ impl GraphWalker {
                     };
 
                     if let Some(on_trace) = &mut on_trace {
+                        let output = input_trace.depth_clone(1);
+                        output.dot_remove("$nodes");
+
                         on_trace(DecisionGraphTrace {
                             id: decision_node.id.clone(),
                             name: decision_node.name.clone(),
-                            input: input_trace.shallow_clone(),
-                            output: input_trace,
+                            input: input_trace,
+                            output,
                             order: 0,
                             performance: Some(Arc::from(format!("{:.1?}", start.elapsed()))),
                             trace_data: Some(

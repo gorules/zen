@@ -1,7 +1,7 @@
 use crate::nodes::function::v2::error::ResultExt;
 use ahash::{HashMap, HashMapExt};
 use nohash_hasher::BuildNoHashHasher;
-use rquickjs::{Ctx, FromJs, IntoAtom, IntoJs, Type, Value as QValue};
+use rquickjs::{Ctx, FromJs, IntoJs, Type, Value as QValue};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde_json::json;
@@ -49,7 +49,7 @@ impl<'js> FromJs<'js> for JsValue {
 
                 let mut js_arr = Vec::with_capacity(arr.len());
                 for x in arr.into_iter() {
-                    js_arr.push(JsValue::from_js(ctx, x.or_throw(ctx)?).or_throw(ctx)?.0)
+                    js_arr.push(JsValue::from_js(ctx, x?)?.0)
                 }
 
                 Variable::from_array(js_arr)
@@ -61,11 +61,8 @@ impl<'js> FromJs<'js> for JsValue {
 
                 let mut js_object = HashMap::with_capacity(object.len());
                 for p in object.props::<String, QValue>() {
-                    let (k, v) = p.or_throw(ctx)?;
-                    js_object.insert(
-                        Rc::from(k.as_str()),
-                        JsValue::from_js(ctx, v).or_throw(ctx)?.0,
-                    );
+                    let (k, v) = p?;
+                    js_object.insert(Rc::from(k.as_str()), JsValue::from_js(ctx, v)?.0);
                 }
 
                 Variable::from_object(js_object)
@@ -99,7 +96,7 @@ impl<'js> FromJs<'js> for JsValue {
 impl<'js> IntoJs<'js> for JsValue {
     fn into_js(self, ctx: &Ctx<'js>) -> rquickjs::Result<QValue<'js>> {
         let converter = JsConverter::new(ctx);
-        converter.convert(self.0)
+        converter.convert(&self.0)
     }
 }
 
@@ -154,19 +151,15 @@ impl<'r, 'js> JsConverter<'r, 'js> {
         }
     }
 
-    pub fn convert(mut self, var: Variable) -> rquickjs::Result<QValue<'js>> {
+    pub fn convert(mut self, var: &Variable) -> rquickjs::Result<QValue<'js>> {
         self.convert_with_cache(var)
     }
 
-    fn convert_with_cache(&mut self, var: Variable) -> rquickjs::Result<QValue<'js>> {
+    fn convert_with_cache(&mut self, var: &Variable) -> rquickjs::Result<QValue<'js>> {
         match var {
             Variable::Null => Ok(QValue::new_null(self.ctx.clone())),
-            Variable::Bool(b) => Ok(QValue::new_bool(self.ctx.clone(), b)),
-            Variable::Number(n) => Ok(QValue::new_number(
-                self.ctx.clone(),
-                n.to_f64()
-                    .or_throw_msg(self.ctx, "failed to convert float to number")?,
-            )),
+            Variable::Bool(b) => b.into_js(self.ctx),
+            Variable::Number(n) => n.to_f64().into_js(self.ctx),
             Variable::String(str) => str.into_js(self.ctx),
             Variable::Array(a) => {
                 let addr = Rc::as_ptr(&a) as *const () as usize;
@@ -177,7 +170,7 @@ impl<'r, 'js> JsConverter<'r, 'js> {
                 let qarr = rquickjs::Array::new(self.ctx.clone())?;
                 let arr = a.borrow();
                 for (idx, item) in arr.iter().enumerate() {
-                    qarr.set(idx, self.convert_with_cache(item.clone())?)?;
+                    qarr.set(idx, self.convert_with_cache(item)?)?;
                 }
 
                 let val = qarr.into_value();
@@ -193,8 +186,7 @@ impl<'r, 'js> JsConverter<'r, 'js> {
                 let qmap = rquickjs::Object::new(self.ctx.clone())?;
                 let obj = o.borrow();
                 for (key, value) in obj.iter() {
-                    let key_atom = key.into_atom(self.ctx)?;
-                    qmap.set(key_atom, self.convert_with_cache(value.clone())?)?;
+                    qmap.set(key.as_ref(), self.convert_with_cache(value)?)?;
                 }
 
                 let val = qmap.into_value();
@@ -291,11 +283,11 @@ pub(crate) mod rquickjs_conv {
         fn into_js(self, ctx: &Ctx<'js>) -> rquickjs::Result<QValue<'js>> {
             match self.0 {
                 serde_json::Value::Null => Ok(QValue::new_null(ctx.clone())),
-                serde_json::Value::Bool(b) => Ok(QValue::new_bool(ctx.clone(), b)),
+                serde_json::Value::Bool(b) => b.into_js(ctx),
                 serde_json::Value::Number(n) => {
                     let number = n.as_i64().map(|i| i as f64).or(n.as_f64());
                     match number {
-                        Some(num) => Ok(QValue::new_number(ctx.clone(), num)),
+                        Some(num) => num.into_js(ctx),
                         None => Ok(QValue::new_null(ctx.clone())),
                     }
                 }
@@ -305,6 +297,7 @@ pub(crate) mod rquickjs_conv {
                     for (idx, item) in arr.into_iter().enumerate() {
                         qarr.set(idx, JsonValue(item).into_js(ctx)?)?;
                     }
+
                     Ok(qarr.into_value())
                 }
                 serde_json::Value::Object(obj) => {
@@ -312,6 +305,7 @@ pub(crate) mod rquickjs_conv {
                     for (key, value) in obj.into_iter() {
                         qobj.set(key, JsonValue(value).into_js(ctx)?)?;
                     }
+
                     Ok(qobj.into_value())
                 }
             }

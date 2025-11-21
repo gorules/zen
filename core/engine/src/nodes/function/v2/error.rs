@@ -55,10 +55,10 @@ impl<T, E: Display> ResultExt<T> for Result<T, E> {
 
 impl<T> ResultExt<T> for Option<T> {
     fn or_throw_msg(self, ctx: &Ctx, msg: &str) -> rquickjs::Result<T> {
-        self.ok_or(Exception::throw_message(ctx, msg))
+        self.ok_or_else(|| Exception::throw_message(ctx, msg))
     }
 
     fn or_throw(self, ctx: &Ctx) -> rquickjs::Result<T> {
-        self.ok_or(Exception::throw_message(ctx, "Value is not present"))
+        self.ok_or_else(|| Exception::throw_message(ctx, "Value is not present"))
     }
 }

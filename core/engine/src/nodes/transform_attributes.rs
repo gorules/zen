@@ -61,6 +61,7 @@ impl TransformAttributesExecution for TransformAttributes {
                     });
                 }
 
+                response.output.dot_remove("$nodes");
                 response.output
             }
             TransformExecutionMode::Loop => {
@@ -89,6 +90,7 @@ impl TransformAttributesExecution for TransformAttributes {
                         response.output = input.clone().merge_clone(&response.output);
                     }
 
+                    response.output.dot_remove("$nodes");
                     output_array.push(response.output);
                 }
 

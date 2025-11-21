@@ -32,7 +32,7 @@ where
 
 impl<F, O> DecisionLoader for ClosureLoader<F>
 where
-    F: Fn(String) -> O + Sync + Send,
+    F: Fn(String) -> O + Sync + Send + 'static,
     O: Future<Output = LoaderResponse> + Send,
 {
     fn load<'a>(

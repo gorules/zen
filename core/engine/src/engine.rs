@@ -182,4 +182,7 @@ impl DecisionEngine {
         let content = self.loader.load(key).await?;
         Ok(self.create_decision(content))
     }
+    pub fn loader(&self) -> DynamicLoader {
+        self.loader.clone()
+    }
 }

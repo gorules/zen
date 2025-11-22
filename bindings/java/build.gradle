@@ -1,0 +1,31 @@
+plugins {
+    id 'java-library'
+    id 'idea'
+}
+
+group 'io.github.java-rules'
+version property('global.version')
+
+sourceCompatibility = 21
+targetCompatibility = 21
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // ZEN Engine UniFFI bindings - keep as 0.4.1
+    api 'io.gorules:zen-engine:0.4.1'
+    api 'net.java.dev.jna:jna:5.17.0'
+    api 'com.fasterxml.jackson.core:jackson-databind:2.15.3'
+
+    // Caffeine cache for API loader
+    api 'com.github.ben-manes.caffeine:caffeine:3.1.8'
+
+    // Lombok for reducing boilerplate
+    compileOnly 'org.projectlombok:lombok:1.18.30'
+    annotationProcessor 'org.projectlombok:lombok:1.18.30'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.1'
+}
+

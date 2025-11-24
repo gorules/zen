@@ -3,7 +3,7 @@ use std::ops::Deref;
 use std::rc::Rc;
 use zen_types::variable::Variable;
 
-const RESERVED_KEYS: &[&str] = &["$nodes"];
+pub(crate) const ZEN_RESERVED_PROPERTIES: &[&str] = &["$nodes"];
 
 pub(crate) struct VariableCleaner {
     visited: HashSet<usize>,
@@ -43,7 +43,7 @@ impl VariableCleaner {
                 }
 
                 let mut map = obj.borrow_mut();
-                for key in RESERVED_KEYS {
+                for key in ZEN_RESERVED_PROPERTIES {
                     map.remove(*key);
                 }
 
@@ -79,13 +79,15 @@ impl VariableCleaner {
                 }
 
                 let map = obj.borrow();
-                let will_remove_key = map.keys().any(|k| RESERVED_KEYS.contains(&k.as_ref()));
+                let will_remove_key = map
+                    .keys()
+                    .any(|k| ZEN_RESERVED_PROPERTIES.contains(&k.as_ref()));
                 if !will_remove_key {
                     return Variable::Object(obj.clone());
                 }
 
                 let mut new_map = map.deref().clone();
-                for key in RESERVED_KEYS {
+                for key in ZEN_RESERVED_PROPERTIES {
                     new_map.remove(*key);
                 }
 

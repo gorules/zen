@@ -1,3 +1,4 @@
+use crate::decision_graph::cleaner::ZEN_RESERVED_PROPERTIES;
 use crate::nodes::function::v2::error::ResultExt;
 use ahash::{HashMap, HashMapExt};
 use nohash_hasher::BuildNoHashHasher;
@@ -62,6 +63,10 @@ impl<'js> FromJs<'js> for JsValue {
                 let mut js_object = HashMap::with_capacity(object.len());
                 for p in object.props::<String, QValue>() {
                     let (k, v) = p?;
+                    if ZEN_RESERVED_PROPERTIES.contains(&k.as_str()) {
+                        continue;
+                    }
+
                     js_object.insert(Rc::from(k.as_str()), JsValue::from_js(ctx, v)?.0);
                 }
 

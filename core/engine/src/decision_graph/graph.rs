@@ -136,7 +136,7 @@ impl DecisionGraph {
             return Err(Box::new(EvaluationError::DepthLimitExceeded));
         }
 
-        let mut walker = GraphWalker::new(&self.graph);
+        let mut walker = GraphWalker::new(&self.graph, self.config.content.params.clone());
         let mut tracer = NodeTracer::new(self.config.trace);
 
         while let Some(nid) = walker.next(&mut self.graph, tracer.trace_callback()) {

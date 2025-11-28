@@ -1,5 +1,6 @@
 use ahash::{HashMap, HashMapExt};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::sync::Arc;
 use zen_expression::compiler::Opcode;
 use zen_expression::{ExpressionKind, Isolate};
@@ -15,6 +16,8 @@ pub struct CompilationKey {
 pub struct DecisionContent {
     pub nodes: Vec<Arc<DecisionNode>>,
     pub edges: Vec<Arc<DecisionEdge>>,
+    #[serde(default)]
+    pub params: Option<Arc<Value>>,
 
     #[serde(skip)]
     pub compiled_cache: Option<Arc<HashMap<CompilationKey, Vec<Opcode>>>>,

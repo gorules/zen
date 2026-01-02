@@ -23,27 +23,27 @@ The Zen project uses [UniFFI](https://mozilla.github.io/uniffi-rs/) for multi-la
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Your C# Application                       │
+│                    Your C# Application                      │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│              GoRules.Zen (C# Wrapper)                        │
+│              GoRules.Zen (C# Wrapper)                       │
 │  • ZenEngine, ZenDecision, ZenExpression                    │
-│  • Automatic memory management                               │
+│  • Automatic memory management                              │
 │  • Type-safe API with generics                              │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼ P/Invoke
 ┌─────────────────────────────────────────────────────────────┐
-│              libzen_ffi.so / zen_ffi.dll                     │
+│              libzen_ffi.so / zen_ffi.dll                    │
 │  • C FFI exports with extern "C"                            │
 │  • cbindgen-generated headers                               │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                   Zen Core (Rust)                            │
+│                   Zen Core (Rust)                           │
 │  • zen-engine: Decision graph execution                     │
 │  • zen-expression: Expression language VM                   │
 │  • zen-template: Template rendering                         │

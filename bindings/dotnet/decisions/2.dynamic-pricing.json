@@ -1,0 +1,279 @@
+{
+  "contentType": "application/vnd.gorules.decision",
+  "nodes": [
+    {
+      "type": "inputNode",
+      "id": "input1",
+      "name": "Input",
+      "position": {
+        "x": 105,
+        "y": 255
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "1",
+            "demandInput": "\"high\"",
+            "demandOutput": "1.15"
+          },
+          {
+            "_id": "2",
+            "demandInput": "\"medium\"",
+            "demandOutput": "1.0"
+          },
+          {
+            "_id": "3",
+            "demandInput": "\"low\"",
+            "demandOutput": "0.9"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "demandInput",
+            "name": "Demand Level",
+            "field": "pricing.demand"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "demandOutput",
+            "name": "Demand Factor",
+            "field": "adjustments.demand"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "demandTable",
+      "name": "Market Demand Adjustment",
+      "position": {
+        "x": 425,
+        "y": 110
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "1",
+            "timeInput": "\"peak\"",
+            "timeOutput": "1.2"
+          },
+          {
+            "_id": "2",
+            "timeInput": "\"normal\"",
+            "timeOutput": "1.0"
+          },
+          {
+            "_id": "3",
+            "timeInput": "\"off-peak\"",
+            "timeOutput": "0.85"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "timeInput",
+            "name": "Time Period",
+            "field": "pricing.timeOfDay"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "timeOutput",
+            "name": "Time Factor",
+            "field": "adjustments.time"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "timeTable",
+      "name": "Time-based Adjustment",
+      "position": {
+        "x": 425,
+        "y": 205
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "1",
+            "competitorInput": "\"higher\"",
+            "competitorOutput": "1.05"
+          },
+          {
+            "_id": "2",
+            "competitorInput": "\"equal\"",
+            "competitorOutput": "1.0"
+          },
+          {
+            "_id": "3",
+            "competitorInput": "\"lower\"",
+            "competitorOutput": "0.95"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "competitorInput",
+            "name": "Competitor Position",
+            "field": "pricing.competitorPrice"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "competitorOutput",
+            "name": "Competition Factor",
+            "field": "adjustments.competitor"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "competitorTable",
+      "name": "Competitor-based Adjustment",
+      "position": {
+        "x": 425,
+        "y": 305
+      }
+    },
+    {
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "rules": [
+          {
+            "_id": "1",
+            "segmentInput": "\"premium\"",
+            "segmentOutput": "0.95"
+          },
+          {
+            "_id": "2",
+            "segmentInput": "\"regular\"",
+            "segmentOutput": "1.0"
+          },
+          {
+            "_id": "3",
+            "segmentInput": "\"new\"",
+            "segmentOutput": "0.9"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "segmentInput",
+            "name": "Customer Type",
+            "field": "pricing.customerSegment"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "segmentOutput",
+            "name": "Segment Factor",
+            "field": "adjustments.segment"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "customerTable",
+      "name": "Customer Segment Adjustment",
+      "position": {
+        "x": 425,
+        "y": 400
+      }
+    },
+    {
+      "type": "expressionNode",
+      "content": {
+        "expressions": [
+          {
+            "id": "factorCalc",
+            "key": "finalAdjustmentFactor",
+            "value": "adjustments.demand * adjustments.time * adjustments.competitor * adjustments.segment"
+          },
+          {
+            "id": "priceCalc",
+            "key": "adjustedPrice",
+            "value": "round(pricing.basePrice * $.finalAdjustmentFactor * 100) / 100"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      },
+      "id": "priceCalculation",
+      "name": "Calculate Final Price",
+      "position": {
+        "x": 745,
+        "y": 255
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "sourceId": "input1",
+      "targetId": "demandTable",
+      "type": "edge"
+    },
+    {
+      "id": "edge2",
+      "sourceId": "input1",
+      "targetId": "timeTable",
+      "type": "edge"
+    },
+    {
+      "id": "edge3",
+      "sourceId": "input1",
+      "targetId": "competitorTable",
+      "type": "edge"
+    },
+    {
+      "id": "edge4",
+      "sourceId": "input1",
+      "targetId": "customerTable",
+      "type": "edge"
+    },
+    {
+      "id": "e266ae0c-3943-41bb-8b15-7662916b03ac",
+      "sourceId": "demandTable",
+      "type": "edge",
+      "targetId": "priceCalculation"
+    },
+    {
+      "id": "98fa5b83-c1aa-4d72-83e7-e4b89e28083d",
+      "sourceId": "timeTable",
+      "type": "edge",
+      "targetId": "priceCalculation"
+    },
+    {
+      "id": "48a7702a-0751-4283-add4-f43a740b3212",
+      "sourceId": "competitorTable",
+      "type": "edge",
+      "targetId": "priceCalculation"
+    },
+    {
+      "id": "2a2fb756-03a4-4b66-9cad-551bdb180539",
+      "sourceId": "customerTable",
+      "type": "edge",
+      "targetId": "priceCalculation"
+    }
+  ]
+}

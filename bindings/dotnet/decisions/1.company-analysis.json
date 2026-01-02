@@ -1,0 +1,574 @@
+{
+  "contentType": "application/vnd.gorules.decision",
+  "nodes": [
+    {
+      "name": "Input",
+      "id": "6ea65cab-e11d-4fc7-aa61-4c0ffdfd2237",
+      "position": {
+        "x": 30,
+        "y": 325
+      },
+      "type": "inputNode"
+    },
+    {
+      "name": "myResponse",
+      "id": "6d01c66d-09b6-47c7-96dd-8718e2bc2608",
+      "position": {
+        "x": 1035,
+        "y": 325
+      },
+      "type": "outputNode"
+    },
+    {
+      "name": "Annual Revenue",
+      "content": {
+        "hitPolicy": "first",
+        "inputs": [
+          {
+            "id": "04e8b221-0e8c-4755-93f9-90f571b594b2",
+            "name": "Revenue",
+            "type": "expression",
+            "field": "annualRevenue"
+          }
+        ],
+        "outputs": [
+          {
+            "field": "flag.annualRevenue",
+            "id": "aa30057a-bc56-44b1-b311-bfe8f4a6ecfb",
+            "name": "Flag",
+            "type": "expression"
+          },
+          {
+            "id": "c40cde8f-13ca-4c46-9f86-2abb757d2302",
+            "type": "expression",
+            "field": "comment.annualRevenue",
+            "name": "Comment"
+          }
+        ],
+        "rules": [
+          {
+            "_id": "589652c6-03af-4296-8626-831c7cbe73c6",
+            "04e8b221-0e8c-4755-93f9-90f571b594b2": "< 500_000",
+            "aa30057a-bc56-44b1-b311-bfe8f4a6ecfb": "'red'",
+            "c40cde8f-13ca-4c46-9f86-2abb757d2302": "'Small - Higher operational risk'"
+          },
+          {
+            "_id": "8e38f0b3-a08a-4826-9cec-ded699ccb458",
+            "04e8b221-0e8c-4755-93f9-90f571b594b2": ">= 500_000 and < 1_000_000",
+            "aa30057a-bc56-44b1-b311-bfe8f4a6ecfb": "'amber'",
+            "c40cde8f-13ca-4c46-9f86-2abb757d2302": "'Growing - Moderate operational risk'"
+          },
+          {
+            "_id": "e91ef488-362e-43d4-926a-9230c322981e",
+            "04e8b221-0e8c-4755-93f9-90f571b594b2": ">= 1_000_000 and < 10_000_000",
+            "aa30057a-bc56-44b1-b311-bfe8f4a6ecfb": "'amber'",
+            "c40cde8f-13ca-4c46-9f86-2abb757d2302": "'Medium - Established market presence'"
+          },
+          {
+            "_id": "79f423a3-9839-4c6b-b93a-ed87b777f58f",
+            "04e8b221-0e8c-4755-93f9-90f571b594b2": ">= 10_000_000 and < 50_000_000",
+            "aa30057a-bc56-44b1-b311-bfe8f4a6ecfb": "'green'",
+            "c40cde8f-13ca-4c46-9f86-2abb757d2302": "'Large - Significant market presence, lower risk'"
+          },
+          {
+            "_id": "876ee33b-8b8b-4256-b459-aff5b92f7832",
+            "04e8b221-0e8c-4755-93f9-90f571b594b2": ">= 50_000_000",
+            "aa30057a-bc56-44b1-b311-bfe8f4a6ecfb": "'green'",
+            "c40cde8f-13ca-4c46-9f86-2abb757d2302": "'Very Large - High financial stability and growth potential'"
+          }
+        ]
+      },
+      "id": "33506dc8-37b1-412e-9c46-4e3604128eda",
+      "position": {
+        "x": 510,
+        "y": 265
+      },
+      "type": "decisionTableNode"
+    },
+    {
+      "name": "Industry Type",
+      "content": {
+        "hitPolicy": "first",
+        "inputs": [
+          {
+            "id": "3391410a-aa82-48f4-8fcd-6419356be425",
+            "name": "Industry Type",
+            "type": "expression",
+            "field": "industryType"
+          }
+        ],
+        "outputs": [
+          {
+            "field": "flag.industryType",
+            "id": "9d008f22-b67f-4245-948a-3ef424d86624",
+            "name": "Flag",
+            "type": "expression"
+          },
+          {
+            "id": "287ba32f-9d82-4f76-8f34-40a6cf8b7e28",
+            "type": "expression",
+            "field": "comment.industryType",
+            "name": "Comment"
+          }
+        ],
+        "rules": [
+          {
+            "_id": "4efa5c4f-9629-4aa4-80db-67a94c24c441",
+            "3391410a-aa82-48f4-8fcd-6419356be425": "'HC'",
+            "9d008f22-b67f-4245-948a-3ef424d86624": "'green'",
+            "287ba32f-9d82-4f76-8f34-40a6cf8b7e28": "'Essential services with constant demand'"
+          },
+          {
+            "_id": "06bc02ae-a79c-4116-80cf-ee6ddc0d8024",
+            "3391410a-aa82-48f4-8fcd-6419356be425": "'UT'",
+            "9d008f22-b67f-4245-948a-3ef424d86624": "'green'",
+            "287ba32f-9d82-4f76-8f34-40a6cf8b7e28": "'Stable demand, regulated revenues'"
+          },
+          {
+            "_id": "69525927-a566-4fd4-b04e-b147b8a65fac",
+            "3391410a-aa82-48f4-8fcd-6419356be425": "'CS'",
+            "9d008f22-b67f-4245-948a-3ef424d86624": "'green'",
+            "287ba32f-9d82-4f76-8f34-40a6cf8b7e28": "'Essential goods, less economic sensitivity'"
+          },
+          {
+            "_id": "daecd736-b62a-488e-9743-314994348850",
+            "3391410a-aa82-48f4-8fcd-6419356be425": "'ES'",
+            "9d008f22-b67f-4245-948a-3ef424d86624": "'green'",
+            "287ba32f-9d82-4f76-8f34-40a6cf8b7e28": "'Steady demand, resilient to downturns'"
+          },
+          {
+            "_id": "81c0308c-0046-4fc8-a768-475e302d258e",
+            "3391410a-aa82-48f4-8fcd-6419356be425": "'IT'",
+            "9d008f22-b67f-4245-948a-3ef424d86624": "'green'",
+            "287ba32f-9d82-4f76-8f34-40a6cf8b7e28": "'High demand, growth potential'"
+          },
+          {
+            "_id": "49bed386-06fe-464c-a3d4-02215b3e6e6a",
+            "3391410a-aa82-48f4-8fcd-6419356be425": "'BF'",
+            "9d008f22-b67f-4245-948a-3ef424d86624": "'amber'",
+            "287ba32f-9d82-4f76-8f34-40a6cf8b7e28": "'Economic fluctuations, regulatory changes'"
+          },
+          {
+            "_id": "c40161f4-789e-45a2-b49f-561f73c7ed9a",
+            "3391410a-aa82-48f4-8fcd-6419356be425": "'RE'",
+            "9d008f22-b67f-4245-948a-3ef424d86624": "'amber'",
+            "287ba32f-9d82-4f76-8f34-40a6cf8b7e28": "'Economic cycle sensitivity, interest rate impacts'"
+          },
+          {
+            "_id": "72f1ef31-1cb0-41af-a297-ad98cb31a61c",
+            "3391410a-aa82-48f4-8fcd-6419356be425": "'PS'",
+            "9d008f22-b67f-4245-948a-3ef424d86624": "'amber'",
+            "287ba32f-9d82-4f76-8f34-40a6cf8b7e28": "'Fluctuating demand, economic conditions'"
+          },
+          {
+            "_id": "96412ad2-40b9-48bc-af7b-97ecf125ebef",
+            "3391410a-aa82-48f4-8fcd-6419356be425": "'MN'",
+            "9d008f22-b67f-4245-948a-3ef424d86624": "'amber'",
+            "287ba32f-9d82-4f76-8f34-40a6cf8b7e28": "'Steady goods demand, supply chain risks'"
+          },
+          {
+            "_id": "d71a1ab5-909f-405e-9d0a-470179f014f1",
+            "3391410a-aa82-48f4-8fcd-6419356be425": "'RG'",
+            "9d008f22-b67f-4245-948a-3ef424d86624": "'amber'",
+            "287ba32f-9d82-4f76-8f34-40a6cf8b7e28": "'Evolving tech, policy reliance'"
+          },
+          {
+            "_id": "00e9416f-2a40-4912-8d67-73b34dd49084",
+            "3391410a-aa82-48f4-8fcd-6419356be425": "'OG'",
+            "9d008f22-b67f-4245-948a-3ef424d86624": "'red'",
+            "287ba32f-9d82-4f76-8f34-40a6cf8b7e28": "'Price volatility, regulatory challenges'"
+          },
+          {
+            "_id": "2b187dbf-17e6-4c09-a450-8e2e098121e5",
+            "3391410a-aa82-48f4-8fcd-6419356be425": "'TL'",
+            "9d008f22-b67f-4245-948a-3ef424d86624": "'red'",
+            "287ba32f-9d82-4f76-8f34-40a6cf8b7e28": "'Economic downturns, global events sensitivity'"
+          },
+          {
+            "_id": "96e8f462-bf69-4a76-a8ac-7f9c93586a53",
+            "3391410a-aa82-48f4-8fcd-6419356be425": "'AU'",
+            "9d008f22-b67f-4245-948a-3ef424d86624": "'red'",
+            "287ba32f-9d82-4f76-8f34-40a6cf8b7e28": "'Cyclical demand, innovation costs'"
+          },
+          {
+            "_id": "a9476a21-d655-4337-8cc8-035597480c3b",
+            "3391410a-aa82-48f4-8fcd-6419356be425": "'CN'",
+            "9d008f22-b67f-4245-948a-3ef424d86624": "'red'",
+            "287ba32f-9d82-4f76-8f34-40a6cf8b7e28": "'Economic sensitivity, regulatory hurdles'"
+          },
+          {
+            "_id": "0621de3b-74ac-4921-bfab-2cacf4b638b6",
+            "3391410a-aa82-48f4-8fcd-6419356be425": "'RN'",
+            "9d008f22-b67f-4245-948a-3ef424d86624": "'red'",
+            "287ba32f-9d82-4f76-8f34-40a6cf8b7e28": "'Economic vulnerability, competitive pressures'"
+          },
+          {
+            "_id": "1259042d-a279-4349-9353-e7e6fbdb016d",
+            "3391410a-aa82-48f4-8fcd-6419356be425": "'HP'",
+            "9d008f22-b67f-4245-948a-3ef424d86624": "'red'",
+            "287ba32f-9d82-4f76-8f34-40a6cf8b7e28": "'Economic fluctuations, consumer behavior shifts'"
+          },
+          {
+            "_id": "1a1ce846-0ef3-4556-bf57-7f8f6c443edb",
+            "3391410a-aa82-48f4-8fcd-6419356be425": "'AD'",
+            "9d008f22-b67f-4245-948a-3ef424d86624": "'red'",
+            "287ba32f-9d82-4f76-8f34-40a6cf8b7e28": "'Government spending dependence, geopolitical tensions'"
+          },
+          {
+            "_id": "7833c040-9eae-4fd9-a249-bc577e134036",
+            "3391410a-aa82-48f4-8fcd-6419356be425": "'MI'",
+            "9d008f22-b67f-4245-948a-3ef424d86624": "'red'",
+            "287ba32f-9d82-4f76-8f34-40a6cf8b7e28": "'Commodity price swings, environmental regulations'"
+          },
+          {
+            "_id": "070f4263-8a6d-446d-8ee9-26ef42228868",
+            "3391410a-aa82-48f4-8fcd-6419356be425": "'TC'",
+            "9d008f22-b67f-4245-948a-3ef424d86624": "'red'",
+            "287ba32f-9d82-4f76-8f34-40a6cf8b7e28": "'High capital expenditure, rapid tech changes'"
+          },
+          {
+            "_id": "b482b524-d316-47f4-b645-e4a89940a0b3",
+            "3391410a-aa82-48f4-8fcd-6419356be425": "'EM'",
+            "9d008f22-b67f-4245-948a-3ef424d86624": "'red'",
+            "287ba32f-9d82-4f76-8f34-40a6cf8b7e28": "'Technological shifts, copyright issues'"
+          },
+          {
+            "_id": "8b31c188-80b7-48b3-b1fe-0c27575bb5c5",
+            "3391410a-aa82-48f4-8fcd-6419356be425": "",
+            "9d008f22-b67f-4245-948a-3ef424d86624": "'red'",
+            "287ba32f-9d82-4f76-8f34-40a6cf8b7e28": "'Unknown'"
+          }
+        ]
+      },
+      "id": "d509ba53-5840-4448-96d6-a61f11664edf",
+      "position": {
+        "x": 510,
+        "y": 375
+      },
+      "type": "decisionTableNode"
+    },
+    {
+      "name": "Company size",
+      "content": {
+        "hitPolicy": "first",
+        "inputs": [
+          {
+            "id": "9005b1eb-7585-4b32-b2e5-c2ac776c1239",
+            "name": "Size",
+            "type": "expression",
+            "field": "companySize"
+          }
+        ],
+        "outputs": [
+          {
+            "field": "flag.companySize",
+            "id": "0af18ea6-6993-4c77-9842-a12a94b4b2bf",
+            "name": "Flag",
+            "type": "expression"
+          },
+          {
+            "id": "b6914bf4-ddad-46da-8648-2d85e19dfa1a",
+            "type": "expression",
+            "field": "comment.companySize",
+            "name": "Comment"
+          }
+        ],
+        "rules": [
+          {
+            "_id": "42d78116-1679-4660-b75c-63fcf084bb45",
+            "9005b1eb-7585-4b32-b2e5-c2ac776c1239": "'small'",
+            "0af18ea6-6993-4c77-9842-a12a94b4b2bf": "'red'",
+            "b6914bf4-ddad-46da-8648-2d85e19dfa1a": "'High risk due to limited resources'"
+          },
+          {
+            "_id": "142e16ba-7da9-4a76-822b-ddbdfd785cb7",
+            "9005b1eb-7585-4b32-b2e5-c2ac776c1239": "'medium'",
+            "0af18ea6-6993-4c77-9842-a12a94b4b2bf": "'amber'",
+            "b6914bf4-ddad-46da-8648-2d85e19dfa1a": "'Moderate risk with more stability'"
+          },
+          {
+            "_id": "f926d73d-bf5b-4d88-aa65-066a822c4aa7",
+            "9005b1eb-7585-4b32-b2e5-c2ac776c1239": "'large'",
+            "0af18ea6-6993-4c77-9842-a12a94b4b2bf": "'amber'",
+            "b6914bf4-ddad-46da-8648-2d85e19dfa1a": "'Moderate risk with established operations'"
+          },
+          {
+            "_id": "3762a109-d47e-4024-8342-4cfae91f617b",
+            "9005b1eb-7585-4b32-b2e5-c2ac776c1239": "'very-large'",
+            "0af18ea6-6993-4c77-9842-a12a94b4b2bf": "'green'",
+            "b6914bf4-ddad-46da-8648-2d85e19dfa1a": "'Low risk due to extensive resources'"
+          },
+          {
+            "_id": "bf723079-1d82-4e3d-b54d-456ed67f9d4d",
+            "9005b1eb-7585-4b32-b2e5-c2ac776c1239": "",
+            "0af18ea6-6993-4c77-9842-a12a94b4b2bf": "'red'",
+            "b6914bf4-ddad-46da-8648-2d85e19dfa1a": "'Unknown'"
+          }
+        ]
+      },
+      "id": "50abaf5f-bc26-4739-8900-fee6462078ab",
+      "position": {
+        "x": 510,
+        "y": 485
+      },
+      "type": "decisionTableNode"
+    },
+    {
+      "name": "Years In Business",
+      "content": {
+        "hitPolicy": "first",
+        "inputs": [
+          {
+            "id": "609be1b5-cc87-40e1-90d7-1a3dc61f08d7",
+            "name": "Years In Business",
+            "type": "expression",
+            "field": "year(date('now')) - year(date(dateInc))"
+          }
+        ],
+        "outputs": [
+          {
+            "field": "flag.years",
+            "id": "ee031d89-73c6-4df5-9b62-d6282f4f3130",
+            "name": "Flag",
+            "type": "expression"
+          },
+          {
+            "id": "b04da3d4-c87a-4401-bdfc-6563bb4f01d3",
+            "type": "expression",
+            "field": "comment.years",
+            "name": "Comment"
+          }
+        ],
+        "rules": [
+          {
+            "_id": "a2fdc065-7fd9-4c35-9ead-cd4960a461ee",
+            "609be1b5-cc87-40e1-90d7-1a3dc61f08d7": "< 3",
+            "ee031d89-73c6-4df5-9b62-d6282f4f3130": "'red'",
+            "b04da3d4-c87a-4401-bdfc-6563bb4f01d3": "'Start-up phase, higher operational and financial risk'"
+          },
+          {
+            "_id": "ac2ed364-9b92-4143-857e-7b1ad3486f26",
+            "609be1b5-cc87-40e1-90d7-1a3dc61f08d7": ">= 3 and < 5",
+            "ee031d89-73c6-4df5-9b62-d6282f4f3130": "'amber'",
+            "b04da3d4-c87a-4401-bdfc-6563bb4f01d3": "'Early growth stage, evolving stability and market presence'"
+          },
+          {
+            "_id": "57346ed5-d88a-4b0a-804f-73ae12403d06",
+            "609be1b5-cc87-40e1-90d7-1a3dc61f08d7": ">= 5 and < 10",
+            "ee031d89-73c6-4df5-9b62-d6282f4f3130": "'green'",
+            "b04da3d4-c87a-4401-bdfc-6563bb4f01d3": "'Established presence, developing consistency in operations'"
+          },
+          {
+            "_id": "b412bc19-6925-4ab9-9f24-68b6c5247817",
+            "609be1b5-cc87-40e1-90d7-1a3dc61f08d7": ">= 10",
+            "ee031d89-73c6-4df5-9b62-d6282f4f3130": "'green'",
+            "b04da3d4-c87a-4401-bdfc-6563bb4f01d3": "'Mature business, proven market resilience and operational stability'"
+          },
+          {
+            "_id": "80e0214b-ec6b-47e0-8aaf-c928ca38aa36",
+            "609be1b5-cc87-40e1-90d7-1a3dc61f08d7": "",
+            "ee031d89-73c6-4df5-9b62-d6282f4f3130": "'red'",
+            "b04da3d4-c87a-4401-bdfc-6563bb4f01d3": "'Unknown'"
+          }
+        ]
+      },
+      "id": "9397a084-48a9-405d-99eb-6d3a51f17fb9",
+      "position": {
+        "x": 510,
+        "y": 155
+      },
+      "type": "decisionTableNode"
+    },
+    {
+      "name": "Credit Rating",
+      "content": {
+        "hitPolicy": "first",
+        "inputs": [
+          {
+            "id": "b912bacd-490e-456f-82bf-3b9cd32d74b1",
+            "name": "Credit Score",
+            "type": "expression",
+            "field": "creditRating"
+          }
+        ],
+        "outputs": [
+          {
+            "field": "flag.creditRating",
+            "id": "2d7ec775-ee07-48bb-af67-428cb5ba8a9f",
+            "name": "Flag",
+            "type": "expression"
+          },
+          {
+            "id": "60566eb7-2de0-41f8-9e28-51dd0a13b711",
+            "type": "expression",
+            "field": "comment.creditRating",
+            "name": "Comment"
+          }
+        ],
+        "rules": [
+          {
+            "_id": "a807dcb6-8eb1-4974-b9fb-7536cf89acd3",
+            "b912bacd-490e-456f-82bf-3b9cd32d74b1": "< 580",
+            "2d7ec775-ee07-48bb-af67-428cb5ba8a9f": "'red'",
+            "60566eb7-2de0-41f8-9e28-51dd0a13b711": "'Poor - High risk'"
+          },
+          {
+            "_id": "493f0316-e913-4cc6-99a3-80cb63668436",
+            "b912bacd-490e-456f-82bf-3b9cd32d74b1": ">= 580 and < 670",
+            "2d7ec775-ee07-48bb-af67-428cb5ba8a9f": "'amber'",
+            "60566eb7-2de0-41f8-9e28-51dd0a13b711": "'Fair - Moderate risk'"
+          },
+          {
+            "_id": "f10f51ef-703c-4834-a905-f938ab66c5ae",
+            "b912bacd-490e-456f-82bf-3b9cd32d74b1": ">= 670 and < 740",
+            "2d7ec775-ee07-48bb-af67-428cb5ba8a9f": "'amber'",
+            "60566eb7-2de0-41f8-9e28-51dd0a13b711": "'Good - Acceptable risk'"
+          },
+          {
+            "_id": "848ffa2f-ef92-4ff2-91d2-6656e5b90b11",
+            "b912bacd-490e-456f-82bf-3b9cd32d74b1": ">= 740 and < 800",
+            "2d7ec775-ee07-48bb-af67-428cb5ba8a9f": "'green'",
+            "60566eb7-2de0-41f8-9e28-51dd0a13b711": "'Very Good - Low risk'"
+          },
+          {
+            "_id": "10ffec1b-323e-4156-a916-f84d3048afe4",
+            "b912bacd-490e-456f-82bf-3b9cd32d74b1": ">= 800",
+            "2d7ec775-ee07-48bb-af67-428cb5ba8a9f": "'green'",
+            "60566eb7-2de0-41f8-9e28-51dd0a13b711": "'Excellent - Very low risk'"
+          },
+          {
+            "_id": "aa53f673-3891-4fc2-aca0-5bf4b20ccade",
+            "b912bacd-490e-456f-82bf-3b9cd32d74b1": "",
+            "2d7ec775-ee07-48bb-af67-428cb5ba8a9f": "'red'",
+            "60566eb7-2de0-41f8-9e28-51dd0a13b711": "'Unknown'"
+          }
+        ]
+      },
+      "id": "31fecb02-40a5-482d-8e9f-94ea3950dd91",
+      "position": {
+        "x": 510,
+        "y": 595
+      },
+      "type": "decisionTableNode"
+    },
+    {
+      "name": "Country of inc.",
+      "content": {
+        "hitPolicy": "first",
+        "inputs": [
+          {
+            "id": "239831be-5ee9-4131-bb07-a1d10bcddfe7",
+            "name": "Country of inc",
+            "type": "expression",
+            "field": "country"
+          }
+        ],
+        "outputs": [
+          {
+            "field": "flag.country",
+            "id": "0f7dbda6-b06c-41f8-a6aa-72372576d0df",
+            "name": "Flag",
+            "type": "expression"
+          }
+        ],
+        "rules": [
+          {
+            "_id": "8d30a8af-7555-48ed-aa81-5055c013ec92",
+            "239831be-5ee9-4131-bb07-a1d10bcddfe7": "'US', 'CA', 'GB', 'IE'",
+            "0f7dbda6-b06c-41f8-a6aa-72372576d0df": "'green'"
+          },
+          {
+            "_id": "472a6603-a5ba-4307-ade1-4fa7fac79897",
+            "239831be-5ee9-4131-bb07-a1d10bcddfe7": "'FR', 'BR', 'DE', 'MX'",
+            "0f7dbda6-b06c-41f8-a6aa-72372576d0df": "'amber'"
+          },
+          {
+            "_id": "4a383d72-bb84-4f97-99b2-b9accc11dae0",
+            "239831be-5ee9-4131-bb07-a1d10bcddfe7": "",
+            "0f7dbda6-b06c-41f8-a6aa-72372576d0df": "'red'"
+          }
+        ]
+      },
+      "id": "331dd332-ea02-4995-88a2-053d39806bf3",
+      "position": {
+        "x": 510,
+        "y": 45
+      },
+      "type": "decisionTableNode"
+    }
+  ],
+  "edges": [
+    {
+      "id": "b91d1065-5f07-406a-8f1d-33dc12db67a2",
+      "sourceId": "6ea65cab-e11d-4fc7-aa61-4c0ffdfd2237",
+      "type": "edge",
+      "targetId": "d509ba53-5840-4448-96d6-a61f11664edf"
+    },
+    {
+      "id": "024ff625-17ab-4052-9d4b-2f8299d87e5e",
+      "sourceId": "6ea65cab-e11d-4fc7-aa61-4c0ffdfd2237",
+      "type": "edge",
+      "targetId": "50abaf5f-bc26-4739-8900-fee6462078ab"
+    },
+    {
+      "id": "3cb5d563-b8b0-4a1f-bebb-0b3393224a2d",
+      "sourceId": "6ea65cab-e11d-4fc7-aa61-4c0ffdfd2237",
+      "type": "edge",
+      "targetId": "33506dc8-37b1-412e-9c46-4e3604128eda"
+    },
+    {
+      "id": "2052555a-dc68-4c24-8942-f7b38f03b5dd",
+      "sourceId": "6ea65cab-e11d-4fc7-aa61-4c0ffdfd2237",
+      "type": "edge",
+      "targetId": "9397a084-48a9-405d-99eb-6d3a51f17fb9"
+    },
+    {
+      "id": "23aaf5ac-f4f7-46d6-9560-6409b4446575",
+      "sourceId": "6ea65cab-e11d-4fc7-aa61-4c0ffdfd2237",
+      "type": "edge",
+      "targetId": "31fecb02-40a5-482d-8e9f-94ea3950dd91"
+    },
+    {
+      "id": "eebbe90f-bb69-4431-b64f-711c801c5913",
+      "sourceId": "6ea65cab-e11d-4fc7-aa61-4c0ffdfd2237",
+      "type": "edge",
+      "targetId": "331dd332-ea02-4995-88a2-053d39806bf3"
+    },
+    {
+      "id": "8bce7590-a024-490c-a62e-41bedc7a91a5",
+      "sourceId": "331dd332-ea02-4995-88a2-053d39806bf3",
+      "type": "edge",
+      "targetId": "6d01c66d-09b6-47c7-96dd-8718e2bc2608"
+    },
+    {
+      "id": "d4755f03-3eee-45e7-b4a5-3d3c2c0c6ade",
+      "sourceId": "9397a084-48a9-405d-99eb-6d3a51f17fb9",
+      "type": "edge",
+      "targetId": "6d01c66d-09b6-47c7-96dd-8718e2bc2608"
+    },
+    {
+      "id": "a866f011-6c68-42e0-8187-b66d426e7f75",
+      "sourceId": "33506dc8-37b1-412e-9c46-4e3604128eda",
+      "type": "edge",
+      "targetId": "6d01c66d-09b6-47c7-96dd-8718e2bc2608"
+    },
+    {
+      "id": "63f8b150-c212-4dc1-bc1c-9aeabe7a5f71",
+      "sourceId": "d509ba53-5840-4448-96d6-a61f11664edf",
+      "type": "edge",
+      "targetId": "6d01c66d-09b6-47c7-96dd-8718e2bc2608"
+    },
+    {
+      "id": "ebf77cd9-a9d0-44b3-9645-139c0cb7c515",
+      "sourceId": "50abaf5f-bc26-4739-8900-fee6462078ab",
+      "type": "edge",
+      "targetId": "6d01c66d-09b6-47c7-96dd-8718e2bc2608"
+    },
+    {
+      "id": "bbeece23-4cd4-4ef1-8042-1c5e33fa100d",
+      "sourceId": "31fecb02-40a5-482d-8e9f-94ea3950dd91",
+      "type": "edge",
+      "targetId": "6d01c66d-09b6-47c7-96dd-8718e2bc2608"
+    }
+  ]
+}

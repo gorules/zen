@@ -52,9 +52,9 @@ namespace GoRules.Zen
         public bool Trace { get; set; } = false;
 
         /// <summary>
-        /// Maximum recursion depth (0 = default)
+        /// Maximum recursion depth (default: 5)
         /// </summary>
-        public byte MaxDepth { get; set; } = 0;
+        public byte MaxDepth { get; set; } = 5;
 
         internal ZenEngineEvaluationOptions ToNative() => new()
         {

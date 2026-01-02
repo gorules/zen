@@ -4,6 +4,9 @@ members = [
     "core/*",
     "bindings/*"
 ]
+exclude = [
+    "bindings/dotnet"
+]
 
 [workspace.dependencies]
 ahash = "0.8"

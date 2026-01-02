@@ -61,6 +61,32 @@ typedef struct ZenCustomNodeResult {
 typedef struct ZenCustomNodeResult (*ZenCustomNodeNativeCallback)(const char *request);
 
 /**
+ * Allocates a string using Rust's allocator.
+ * The caller must free the returned pointer using zen_free_string.
+ * Returns null if the input is null or if allocation fails.
+ */
+char *zen_alloc_string(const char *ptr, uintptr_t len);
+
+/**
+ * Frees a string that was allocated by Rust.
+ * This must be called for any string returned by zen_* functions to avoid memory leaks.
+ * This is safe to call with a null pointer.
+ */
+void zen_free_string(char *ptr);
+
+/**
+ * Frees an integer pointer that was allocated by Rust.
+ * This must be called for ZenResult<c_int> result field when it's not null.
+ */
+void zen_free_int(int *ptr);
+
+/**
+ * Generic free function for any Rust-allocated memory.
+ * Use zen_free_string for strings returned by Rust functions.
+ */
+void zen_free(void *ptr);
+
+/**
  * Frees ZenDecision
  */
 void zen_decision_free(struct ZenDecisionStruct *decision);

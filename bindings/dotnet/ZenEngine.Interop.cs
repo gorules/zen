@@ -214,59 +214,62 @@ namespace GoRules.Zen.Interop
         // ============================================================
 
         /// <summary>
-        /// Free a C string (cross-platform)
+        /// Allocate a string using Rust's allocator.
+        /// The string must be freed using zen_free_string.
         /// </summary>
-        [DllImport("libc", EntryPoint = "free", CallingConvention = CallingConvention.Cdecl)]
-        private static extern void free_libc(IntPtr ptr);
-
-        [DllImport("msvcrt", EntryPoint = "free", CallingConvention = CallingConvention.Cdecl)]
-        private static extern void free_msvcrt(IntPtr ptr);
+        [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr zen_alloc_string(IntPtr ptr, nuint len);
 
         /// <summary>
-        /// Allocate memory for callback return strings
+        /// Free a string allocated by Rust (zen_ffi library)
         /// </summary>
-        [DllImport("libc", EntryPoint = "malloc", CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr malloc_libc(nuint size);
-
-        [DllImport("msvcrt", EntryPoint = "malloc", CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr malloc_msvcrt(nuint size);
+        [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void zen_free_string(IntPtr ptr);
 
         /// <summary>
-        /// Free a pointer allocated by the Rust library
+        /// Free an integer pointer allocated by Rust (zen_ffi library)
+        /// </summary>
+        [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void zen_free_int(IntPtr ptr);
+
+        /// <summary>
+        /// Free a string pointer allocated by the Rust library.
+        /// This uses zen_free_string which properly deallocates memory on both Windows and Linux.
         /// </summary>
         public static void FreeRustString(IntPtr ptr)
         {
             if (ptr == IntPtr.Zero) return;
-
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                free_msvcrt(ptr);
-            else
-                free_libc(ptr);
+            zen_free_string(ptr);
         }
 
         /// <summary>
-        /// Allocate memory for callback strings (must use matching allocator)
+        /// Free an integer pointer allocated by the Rust library.
+        /// This uses zen_free_int which properly deallocates memory on both Windows and Linux.
+        /// </summary>
+        public static void FreeRustInt(IntPtr ptr)
+        {
+            if (ptr == IntPtr.Zero) return;
+            zen_free_int(ptr);
+        }
+
+        /// <summary>
+        /// Allocate memory for callback strings using Rust's allocator.
+        /// This ensures proper memory management when strings are returned to Rust.
         /// </summary>
         public static IntPtr AllocateCString(string? value)
         {
             if (value == null) return IntPtr.Zero;
 
             var bytes = System.Text.Encoding.UTF8.GetBytes(value);
-            var size = (nuint)(bytes.Length + 1);
-
-            IntPtr ptr;
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                ptr = malloc_msvcrt(size);
-            else
-                ptr = malloc_libc(size);
-
-            if (ptr == IntPtr.Zero)
-                throw new OutOfMemoryException("Failed to allocate native memory");
-
-            Marshal.Copy(bytes, 0, ptr, bytes.Length);
-            Marshal.WriteByte(ptr, bytes.Length, 0); // null terminator
-
-            return ptr;
+            
+            // Use a temporary pinned buffer to pass to Rust
+            unsafe
+            {
+                fixed (byte* pBytes = bytes)
+                {
+                    return zen_alloc_string((IntPtr)pBytes, (nuint)bytes.Length);
+                }
+            }
         }
     }
 }

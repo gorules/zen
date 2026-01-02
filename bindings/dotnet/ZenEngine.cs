@@ -442,7 +442,7 @@ namespace GoRules.Zen
             }
             finally
             {
-                ZenNative.FreeRustString(result.result);
+                ZenNative.FreeRustInt(result.result);
                 ZenNative.FreeRustString(result.details);
             }
         }

@@ -28,6 +28,7 @@
   <!-- Copy test fixtures -->
   <ItemGroup>
     <None Include="fixtures/**/*" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

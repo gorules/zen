@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+
+    <!-- Package Info -->
+    <PackageId>GoRules.Zen</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>GoRules</Authors>
+    <Description>C# bindings for Zen Rules Engine - a high-performance business rules engine</Description>
+    <PackageTags>rules-engine;business-rules;decision-engine;zen</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/gorules/zen</RepositoryUrl>
+
+    <!-- Native library handling -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <!-- Include native libraries in package -->
+  <ItemGroup>
+    <!-- Windows x64 -->
+    <None Include="runtimes/win-x64/native/zen_ffi.dll"
+          Pack="true"
+          PackagePath="runtimes/win-x64/native/"
+          CopyToOutputDirectory="PreserveNewest"
+          Condition="Exists('runtimes/win-x64/native/zen_ffi.dll')" />
+
+    <!-- Linux x64 -->
+    <None Include="runtimes/linux-x64/native/libzen_ffi.so"
+          Pack="true"
+          PackagePath="runtimes/linux-x64/native/"
+          CopyToOutputDirectory="PreserveNewest"
+          Condition="Exists('runtimes/linux-x64/native/libzen_ffi.so')" />
+
+    <!-- macOS x64 -->
+    <None Include="runtimes/osx-x64/native/libzen_ffi.dylib"
+          Pack="true"
+          PackagePath="runtimes/osx-x64/native/"
+          CopyToOutputDirectory="PreserveNewest"
+          Condition="Exists('runtimes/osx-x64/native/libzen_ffi.dylib')" />
+
+    <!-- macOS ARM64 -->
+    <None Include="runtimes/osx-arm64/native/libzen_ffi.dylib"
+          Pack="true"
+          PackagePath="runtimes/osx-arm64/native/"
+          CopyToOutputDirectory="PreserveNewest"
+          Condition="Exists('runtimes/osx-arm64/native/libzen_ffi.dylib')" />
+  </ItemGroup>
+
+</Project>

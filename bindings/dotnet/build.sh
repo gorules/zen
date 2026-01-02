@@ -9,12 +9,16 @@ DOTNET_DIR="$SCRIPT_DIR"
 echo "=== Building Zen Engine .NET Bindings ==="
 echo ""
 
-# Detect platform
+# Detect platform and architecture
+ARCH=$(uname -m)
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    PLATFORM="linux-x64"
+    if [[ "$ARCH" == "aarch64" ]] || [[ "$ARCH" == "arm64" ]]; then
+        PLATFORM="linux-arm64"
+    else
+        PLATFORM="linux-x64"
+    fi
     LIB_NAME="libzen_ffi.so"
 elif [[ "$OSTYPE" == "darwin"* ]]; then
-    ARCH=$(uname -m)
     if [[ "$ARCH" == "arm64" ]]; then
         PLATFORM="osx-arm64"
     else
@@ -22,7 +26,11 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
     fi
     LIB_NAME="libzen_ffi.dylib"
 elif [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]] || [[ "$OSTYPE" == "win32" ]]; then
-    PLATFORM="win-x64"
+    if [[ "$ARCH" == "aarch64" ]] || [[ "$ARCH" == "arm64" ]]; then
+        PLATFORM="win-arm64"
+    else
+        PLATFORM="win-x64"
+    fi
     LIB_NAME="zen_ffi.dll"
 else
     echo "Unsupported platform: $OSTYPE"
@@ -30,13 +38,14 @@ else
 fi
 
 echo "Platform: $PLATFORM"
+echo "Architecture: $ARCH"
 echo "Library: $LIB_NAME"
 echo ""
 
 # Step 1: Build Rust library
 echo "Step 1: Building Rust C bindings..."
 cd "$C_BINDINGS_DIR"
-cargo build --release
+cargo build --release --no-default-features
 echo "Done."
 echo ""
 
@@ -73,8 +82,16 @@ fi
 echo "=== Build Complete ==="
 echo ""
 echo "Output:"
-echo "  Library: $DOTNET_DIR/bin/Release/net8.0/GoRules.Zen.dll"
+echo "  Library: $DOTNET_DIR/bin/Release/net10.0/GoRules.Zen.dll"
 echo "  Native:  $RUNTIME_DIR/$LIB_NAME"
+echo ""
+echo "Supported platforms:"
+echo "  - linux-x64"
+echo "  - linux-arm64"
+echo "  - osx-x64"
+echo "  - osx-arm64"
+echo "  - win-x64"
+echo "  - win-arm64"
 echo ""
 echo "To create NuGet package:"
 echo "  cd $DOTNET_DIR && dotnet pack -c Release"

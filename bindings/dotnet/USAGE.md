@@ -65,22 +65,9 @@ cargo build --release --no-default-features
 
 ### Deploying the Native Library
 
-#### Option A: Place Next to Your Executable
+The library includes a custom native library resolver that automatically searches for the native library in multiple locations. Use the recommended `runtimes/{rid}/native/` folder structure for cross-platform compatibility.
 
-Copy the native library to your application's output directory:
-
-```bash
-# Linux
-cp libzen_ffi.so /path/to/your/app/
-
-# macOS
-cp libzen_ffi.dylib /path/to/your/app/
-
-# Windows
-cp zen_ffi.dll /path/to/your/app/
-```
-
-#### Option B: Use Runtime Folders (Recommended)
+#### Recommended: Runtime Folders Structure
 
 Create platform-specific runtime folders in your project:
 
@@ -92,13 +79,19 @@ YourProject/
     ├── linux-x64/
     │   └── native/
     │       └── libzen_ffi.so
+    ├── linux-arm64/
+    │   └── native/
+    │       └── libzen_ffi.so
     ├── osx-x64/
     │   └── native/
     │       └── libzen_ffi.dylib
     ├── osx-arm64/
     │   └── native/
     │       └── libzen_ffi.dylib
-    └── win-x64/
+    ├── win-x64/
+    │   └── native/
+    │       └── zen_ffi.dll
+    └── win-arm64/
         └── native/
             └── zen_ffi.dll
 ```
@@ -107,10 +100,15 @@ Add to your `.csproj`:
 
 ```xml
 <ItemGroup>
-  <!-- Linux -->
+  <!-- Linux x64 -->
   <None Include="runtimes/linux-x64/native/libzen_ffi.so"
         CopyToOutputDirectory="PreserveNewest"
         Condition="Exists('runtimes/linux-x64/native/libzen_ffi.so')" />
+
+  <!-- Linux ARM64 -->
+  <None Include="runtimes/linux-arm64/native/libzen_ffi.so"
+        CopyToOutputDirectory="PreserveNewest"
+        Condition="Exists('runtimes/linux-arm64/native/libzen_ffi.so')" />
 
   <!-- macOS x64 -->
   <None Include="runtimes/osx-x64/native/libzen_ffi.dylib"
@@ -122,11 +120,40 @@ Add to your `.csproj`:
         CopyToOutputDirectory="PreserveNewest"
         Condition="Exists('runtimes/osx-arm64/native/libzen_ffi.dylib')" />
 
-  <!-- Windows -->
+  <!-- Windows x64 -->
   <None Include="runtimes/win-x64/native/zen_ffi.dll"
         CopyToOutputDirectory="PreserveNewest"
         Condition="Exists('runtimes/win-x64/native/zen_ffi.dll')" />
+
+  <!-- Windows ARM64 -->
+  <None Include="runtimes/win-arm64/native/zen_ffi.dll"
+        CopyToOutputDirectory="PreserveNewest"
+        Condition="Exists('runtimes/win-arm64/native/zen_ffi.dll')" />
 </ItemGroup>
+```
+
+#### Library Search Order
+
+The custom resolver searches for the native library in the following order:
+
+1. `{AssemblyDir}/runtimes/{rid}/native/{libname}`
+2. `{BaseDir}/runtimes/{rid}/native/{libname}`
+3. `{AssemblyDir}/{libname}` (fallback)
+4. `{BaseDir}/{libname}` (fallback)
+5. Paths in `LD_LIBRARY_PATH` (Linux) or `DYLD_LIBRARY_PATH` (macOS)
+
+#### Alternative: Environment Variables
+
+You can also use environment variables to specify library search paths:
+
+```bash
+# Linux
+export LD_LIBRARY_PATH=/path/to/native/libs:$LD_LIBRARY_PATH
+dotnet run
+
+# macOS
+export DYLD_LIBRARY_PATH=/path/to/native/libs:$DYLD_LIBRARY_PATH
+dotnet run
 ```
 
 ## Quick Start Example

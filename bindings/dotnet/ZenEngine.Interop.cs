@@ -1,4 +1,6 @@
 using System;
+using System.IO;
+using System.Reflection;
 using System.Runtime.InteropServices;
 
 namespace GoRules.Zen.Interop
@@ -107,6 +109,98 @@ namespace GoRules.Zen.Interop
     public static class ZenNative
     {
         private const string LibraryName = "zen_ffi";
+
+        /// <summary>
+        /// Static constructor to register custom native library resolver
+        /// </summary>
+        static ZenNative()
+        {
+            NativeLibrary.SetDllImportResolver(typeof(ZenNative).Assembly, ResolveNativeLibrary);
+        }
+
+        /// <summary>
+        /// Custom resolver for the native zen_ffi library.
+        /// Searches in multiple locations to support consistent runtimes/{rid}/native/ structure across all platforms.
+        /// </summary>
+        private static IntPtr ResolveNativeLibrary(string libraryName, Assembly assembly, DllImportSearchPath? searchPath)
+        {
+            if (libraryName != LibraryName)
+            {
+                return IntPtr.Zero; // Let default resolver handle other libraries
+            }
+
+            // Determine platform-specific library name and runtime identifier
+            string rid;
+            string libFileName;
+
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                rid = RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "win-arm64" : "win-x64";
+                libFileName = "zen_ffi.dll";
+            }
+            else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            {
+                rid = RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "linux-arm64" : "linux-x64";
+                libFileName = "libzen_ffi.so";
+            }
+            else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            {
+                rid = RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "osx-arm64" : "osx-x64";
+                libFileName = "libzen_ffi.dylib";
+            }
+            else
+            {
+                return IntPtr.Zero; // Unsupported platform
+            }
+
+            // Get base directories to search
+            var assemblyLocation = Path.GetDirectoryName(assembly.Location) ?? AppContext.BaseDirectory;
+            var baseDirectory = AppContext.BaseDirectory;
+
+            // Build list of search paths
+            var searchPaths = new[]
+            {
+                // 1. runtimes/{rid}/native/ relative to assembly location
+                Path.Combine(assemblyLocation, "runtimes", rid, "native", libFileName),
+                // 2. runtimes/{rid}/native/ relative to base directory
+                Path.Combine(baseDirectory, "runtimes", rid, "native", libFileName),
+                // 3. Direct in assembly directory (fallback)
+                Path.Combine(assemblyLocation, libFileName),
+                // 4. Direct in base directory (fallback)
+                Path.Combine(baseDirectory, libFileName),
+            };
+
+            // Try each path
+            foreach (var path in searchPaths)
+            {
+                if (File.Exists(path) && NativeLibrary.TryLoad(path, out var handle))
+                {
+                    return handle;
+                }
+            }
+
+            // Try LD_LIBRARY_PATH / DYLD_LIBRARY_PATH
+            var envVar = RuntimeInformation.IsOSPlatform(OSPlatform.OSX) 
+                ? "DYLD_LIBRARY_PATH" 
+                : "LD_LIBRARY_PATH";
+            var libraryPath = Environment.GetEnvironmentVariable(envVar);
+
+            if (!string.IsNullOrEmpty(libraryPath))
+            {
+                var paths = libraryPath.Split(Path.PathSeparator);
+                foreach (var dir in paths)
+                {
+                    var fullPath = Path.Combine(dir, libFileName);
+                    if (File.Exists(fullPath) && NativeLibrary.TryLoad(fullPath, out var handle))
+                    {
+                        return handle;
+                    }
+                }
+            }
+
+            // Let the default resolver try as last resort
+            return IntPtr.Zero;
+        }
 
         // ============================================================
         // Engine Lifecycle

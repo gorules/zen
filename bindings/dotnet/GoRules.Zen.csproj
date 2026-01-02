@@ -34,12 +34,26 @@
           CopyToOutputDirectory="PreserveNewest"
           Condition="Exists('runtimes/win-x64/native/zen_ffi.dll')" />
 
+    <!-- Windows ARM64 -->
+    <None Include="runtimes/win-arm64/native/zen_ffi.dll"
+          Pack="true"
+          PackagePath="runtimes/win-arm64/native/"
+          CopyToOutputDirectory="PreserveNewest"
+          Condition="Exists('runtimes/win-arm64/native/zen_ffi.dll')" />
+
     <!-- Linux x64 -->
     <None Include="runtimes/linux-x64/native/libzen_ffi.so"
           Pack="true"
           PackagePath="runtimes/linux-x64/native/"
           CopyToOutputDirectory="PreserveNewest"
           Condition="Exists('runtimes/linux-x64/native/libzen_ffi.so')" />
+
+    <!-- Linux ARM64 -->
+    <None Include="runtimes/linux-arm64/native/libzen_ffi.so"
+          Pack="true"
+          PackagePath="runtimes/linux-arm64/native/"
+          CopyToOutputDirectory="PreserveNewest"
+          Condition="Exists('runtimes/linux-arm64/native/libzen_ffi.so')" />
 
     <!-- macOS x64 -->
     <None Include="runtimes/osx-x64/native/libzen_ffi.dylib"

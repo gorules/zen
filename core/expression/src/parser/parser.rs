@@ -638,7 +638,11 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
     }
 
     /// Closure
-    pub(crate) fn closure<F>(&self, expression_parser: &F) -> &'arena Node<'arena>
+    pub(crate) fn closure<F>(
+        &self,
+        expression_parser: &F,
+        alias: Option<&'arena str>,
+    ) -> &'arena Node<'arena>
     where
         F: Fn(ParserContext) -> &'arena Node<'arena>,
     {
@@ -648,7 +652,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         let node = expression_parser(ParserContext::Closure);
         self.depth.set(self.depth.get() - 1);
 
-        self.node(Node::Closure(node), |_| NodeMetadata {
+        self.node(Node::Closure { body: node, alias }, |_| NodeMetadata {
             span: (start, self.prev_token_end()),
         })
     }
@@ -734,11 +738,42 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 let mut arguments = BumpVec::new_in(&self.bump);
 
                 arguments.push(expression_parser(ParserContext::Global));
+
+                let alias: Option<&'arena str> =
+                    if self
+                        .current()
+                        .is_some_and(|t| t.kind == TokenKind::Literal && t.value == "as")
+                    {
+                        self.next();
+
+                        let alias_token = self.current();
+                        match alias_token {
+                            Some(t) if t.kind == TokenKind::Literal => {
+                                let alias_str = self.bump.alloc_str(t.value);
+                                self.next();
+                                Some(alias_str)
+                            }
+                            _ => {
+                                arguments.push(self.error(AstNodeError::Custom {
+                                    message: afmt!(self, "Expected identifier after 'as'"),
+                                    span:
+                                        alias_token.map(|t| t.span).unwrap_or((
+                                            self.prev_token_end(),
+                                            self.prev_token_end(),
+                                        )),
+                                }));
+                                None
+                            }
+                        }
+                    } else {
+                        None
+                    };
+
                 if let Some(error) = self.expect(TokenKind::Operator(Operator::Comma)) {
                     arguments.push(error);
                 };
 
-                arguments.push(self.closure(&expression_parser));
+                arguments.push(self.closure(&expression_parser, alias));
                 if let Some(error) = self.expect(TokenKind::Bracket(Bracket::RightParenthesis)) {
                     arguments.push(error);
                 }

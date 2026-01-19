@@ -52,6 +52,7 @@ impl<'arena> IntelliSense<'arena> {
                 pointer_data: data.shallow_clone(),
                 root_data: data.shallow_clone(),
                 current_data: data.shallow_clone(),
+                ..Default::default()
             },
         );
 
@@ -98,6 +99,7 @@ impl<'arena> IntelliSense<'arena> {
                 pointer_data: data.shallow_clone(),
                 root_data: data.shallow_clone(),
                 current_data: data.shallow_clone(),
+                ..Default::default()
             },
         );
 

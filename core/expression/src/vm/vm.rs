@@ -845,8 +845,17 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
 
                     self.push(Number(scope.len.into()));
                 }
-                Opcode::Pointer => {
-                    let scope = self.scopes.last().ok_or_else(|| OpcodeErr {
+                Opcode::Pointer(depth) => {
+                    let scope_index = self
+                        .scopes
+                        .len()
+                        .checked_sub(1 + *depth as usize)
+                        .ok_or_else(|| OpcodeErr {
+                            opcode: "Pointer".into(),
+                            message: format!("Scope depth {} out of bounds", depth),
+                        })?;
+
+                    let scope = self.scopes.get(scope_index).ok_or_else(|| OpcodeErr {
                         opcode: "Pointer".into(),
                         message: "Empty scope".into(),
                     })?;

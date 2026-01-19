@@ -38,11 +38,28 @@ impl Compiler {
 struct CompilerInner<'arena, 'bytecode_ref> {
     root: &'arena Node<'arena>,
     bytecode: &'bytecode_ref mut Vec<Opcode>,
+    closure_aliases: Vec<Option<&'arena str>>,
 }
 
 impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
     pub fn new(bytecode: &'bytecode_ref mut Vec<Opcode>, root: &'arena Node<'arena>) -> Self {
-        Self { root, bytecode }
+        Self {
+            root,
+            bytecode,
+            closure_aliases: Vec::new(),
+        }
+    }
+
+    fn lookup_alias(&self, name: &str) -> Option<u32> {
+        self.closure_aliases
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(index, &alias)| {
+                alias.and_then(|a| {
+                    (a == name).then_some((self.closure_aliases.len() - 1 - index) as u32)
+                })
+            })
     }
 
     pub fn compile(&mut self) -> CompilerResult<()> {
@@ -116,10 +133,12 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
     fn compile_member_fast(&mut self, node: &'arena Node<'arena>) -> Option<Vec<FetchFastTarget>> {
         match node {
             Node::Root => Some(vec![FetchFastTarget::Root]),
-            Node::Identifier(v) => Some(vec![
-                FetchFastTarget::Begin,
-                FetchFastTarget::String(Arc::from(*v)),
-            ]),
+            Node::Identifier(v) => self.lookup_alias(v).is_none().then(|| {
+                vec![
+                    FetchFastTarget::Begin,
+                    FetchFastTarget::String(Arc::from(*v)),
+                ]
+            }),
             Node::Member { node, property } => {
                 let mut path = self.compile_member_fast(node)?;
                 match property {
@@ -149,7 +168,7 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
             Node::Bool(v) => Ok(self.emit(Opcode::PushBool(*v))),
             Node::Number(v) => Ok(self.emit(Opcode::PushNumber(*v))),
             Node::String(v) => Ok(self.emit(Opcode::PushString(Arc::from(*v)))),
-            Node::Pointer => Ok(self.emit(Opcode::Pointer)),
+            Node::Pointer => Ok(self.emit(Opcode::Pointer(0))),
             Node::Root => Ok(self.emit(Opcode::FetchRootEnv)),
             Node::Array(v) => {
                 v.iter()
@@ -189,8 +208,16 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                     with_return: output.is_some(),
                 }))
             }
-            Node::Identifier(v) => Ok(self.emit(Opcode::FetchEnv(Arc::from(*v)))),
-            Node::Closure(v) => self.compile_node(v),
+            Node::Identifier(v) => Ok(self.emit(
+                self.lookup_alias(v)
+                    .map_or_else(|| Opcode::FetchEnv(Arc::from(*v)), Opcode::Pointer),
+            )),
+            Node::Closure { body, alias } => {
+                self.closure_aliases.push(*alias);
+                let result = self.compile_node(body);
+                self.closure_aliases.pop();
+                result
+            }
             Node::Parenthesized(v) => self.compile_node(v),
             Node::Member {
                 node: n,
@@ -496,7 +523,7 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                             c.compile_argument(kind, arguments, 1)?;
                             c.emit_cond(|c| {
                                 c.emit(Opcode::IncrementCount);
-                                c.emit(Opcode::Pointer);
+                                c.emit(Opcode::Pointer(0));
                             });
                             Ok(())
                         })?;

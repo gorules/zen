@@ -21,7 +21,10 @@ pub enum Node<'a> {
         output: Option<&'a Node<'a>>,
     },
     Identifier(&'a str),
-    Closure(&'a Node<'a>),
+    Closure {
+        body: &'a Node<'a>,
+        alias: Option<&'a str>,
+    },
     Parenthesized(&'a Node<'a>),
     Root,
     Member {
@@ -106,7 +109,7 @@ impl<'a> Node<'a> {
                     output.walk(func.clone());
                 }
             }
-            Node::Closure(closure) => closure.walk(func.clone()),
+            Node::Closure { body, .. } => body.walk(func.clone()),
             Node::Parenthesized(c) => c.walk(func.clone()),
             Node::Member { node, property } => {
                 node.walk(func.clone());

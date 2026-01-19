@@ -493,7 +493,7 @@ impl TypesProvider {
                     error: typecheck.general,
                 }
             }
-            Node::Closure(c) => self.determine(c, scope.clone()),
+            Node::Closure { body, .. } => self.determine(body, scope.clone()),
             Node::Parenthesized(c) => self.determine(c, scope.clone()),
             Node::Error { node, error } => match node {
                 None => TypeInfo {

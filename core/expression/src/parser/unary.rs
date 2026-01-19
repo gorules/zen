@@ -299,7 +299,7 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
             Node::Pointer => AsBoolean,
             Node::Array(_) => CompareWithReference(In),
             Node::Identifier(_) => CompareWithReference(Equal),
-            Node::Closure(_) => AsBoolean,
+            Node::Closure { .. } => AsBoolean,
             Node::Member { .. } => CompareWithReference(Equal),
             Node::Slice { .. } => CompareWithReference(In),
             Node::Interval { .. } => CompareWithReference(In),

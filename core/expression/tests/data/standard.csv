@@ -614,3 +614,26 @@ round(1.234e2);;123
 "config.debug = true; config.env = 'dev'; config";{};{"debug": true, "env": "dev"}
 "config.debug = true; config.env = 'dev'; $root";{};{"config": {"debug": true, "env": "dev"}}
 "a = 5; b = 10; a + b";{};15
+
+# Closure 'as' alias syntax
+map(products as p, p.price);{"products": [{"name": "A", "price": 10}, {"name": "B", "price": 20}]};[10, 20]
+filter(products as p, p.price > 15);{"products": [{"name": "A", "price": 10}, {"name": "B", "price": 20}]};[{"name": "B", "price": 20}]
+some(items as i, i.active);{"items": [{"active": false}, {"active": true}]};true
+all(items as i, i.value > 0);{"items": [{"value": 1}, {"value": 2}]};true
+none(items as i, i.value < 0);{"items": [{"value": 1}, {"value": 2}]};true
+count(items as i, i.value > 1);{"items": [{"value": 1}, {"value": 2}, {"value": 3}]};2
+one(items as i, i.id == 2);{"items": [{"id": 1}, {"id": 2}, {"id": 3}]};true
+flatMap(groups as g, g.items);{"groups": [{"items": [1, 2]}, {"items": [3, 4]}]};[1, 2, 3, 4]
+
+# Nested closures with 'as' aliases
+map(orders as o, map(o.items as i, i.qty));{"orders": [{"items": [{"qty": 1}, {"qty": 2}]}, {"items": [{"qty": 3}]}]};[[1, 2], [3]]
+map(orders as o, map(o.items as i, o.id + i.qty));{"orders": [{"id": 10, "items": [{"qty": 1}, {"qty": 2}]}]};[[11, 12]]
+filter(orders as o, some(o.items as i, i.qty > 2));{"orders": [{"id": 1, "items": [{"qty": 1}]}, {"id": 2, "items": [{"qty": 3}]}]};[{"id": 2, "items": [{"qty": 3}]}]
+
+# Mixed # and 'as' alias
+map(orders as o, map(o.items, #.qty));{"orders": [{"items": [{"qty": 5}, {"qty": 6}]}]};[[5, 6]]
+map(items, #.value * 2);{"items": [{"value": 1}, {"value": 2}]};[2, 4]
+
+# Backwards compatibility - # still works
+map([1, 2, 3], # * 2);;[2, 4, 6]
+filter([1, 2, 3, 4], # > 2);;[3, 4]

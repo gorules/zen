@@ -51,7 +51,8 @@ pub enum Opcode {
     IncrementCount,
     GetCount,
     GetLen,
-    Pointer,
+    /// The u32 is the depth from innermost scope (0 = innermost, 1 = parent, etc.)
+    Pointer(u32),
     Begin,
     End,
     CallFunction {

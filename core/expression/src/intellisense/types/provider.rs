@@ -165,7 +165,10 @@ impl TypesProvider {
                 }
             }
 
-            Node::Identifier(i) => TypeInfo::from(scope.root_data.get(i)),
+            Node::Identifier(i) => scope
+                .get_alias(i)
+                .map(|t| TypeInfo::from(t.clone()))
+                .unwrap_or_else(|| TypeInfo::from(scope.root_data.get(i))),
             Node::Member { node, property } => {
                 let node_type = self.determine(node, scope.clone());
                 let property_type = self.determine(property, scope.clone());
@@ -389,15 +392,27 @@ impl TypesProvider {
 
                 if let FunctionKind::Closure(_) = kind {
                     let ptr_type = type_list[0].iterator().unwrap_or_default();
-                    let new_type = self.determine(
-                        arguments[1],
-                        IntelliSenseScope {
-                            pointer_data: ptr_type.deref().clone(),
-                            current_data: scope.current_data,
-                            root_data: scope.root_data,
-                        },
-                    );
+                    let ptr_type_inner = ptr_type.deref().clone();
 
+                    let alias = match arguments[1] {
+                        Node::Closure { alias, .. } => *alias,
+                        _ => None,
+                    };
+
+                    let mut closure_scope = IntelliSenseScope {
+                        pointer_data: ptr_type_inner.clone(),
+                        current_data: scope.current_data.clone(),
+                        root_data: scope.root_data.clone(),
+                        aliases: scope.aliases.clone(),
+                    };
+
+                    if let Some(alias_name) = alias {
+                        closure_scope
+                            .aliases
+                            .insert(Rc::from(alias_name), ptr_type_inner);
+                    }
+
+                    let new_type = self.determine(arguments[1], closure_scope);
                     type_list[1] = new_type.kind;
                 }
 

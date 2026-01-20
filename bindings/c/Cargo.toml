@@ -17,7 +17,7 @@ zen-expression = { path = "../../core/expression" }
 zen-tmpl = { path = "../../core/template" }
 
 [lib]
-crate-type = ["staticlib"]
+crate-type = ["staticlib", "cdylib"]
 
 [build-dependencies]
 cbindgen = "0.28"

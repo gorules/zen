@@ -1,0 +1,104 @@
+name: Build Native Libraries
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'bindings/c/**'
+      - 'bindings/dotnet/**'
+      - 'core/**'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-native:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            lib_name: zen_ffi.dll
+            runtime: win-x64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            lib_name: libzen_ffi.so
+            runtime: linux-x64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            lib_name: libzen_ffi.so
+            runtime: linux-arm64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            lib_name: libzen_ffi.dylib
+            runtime: osx-x64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            lib_name: libzen_ffi.dylib
+            runtime: osx-arm64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Linux ARM64 toolchain
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Build native library
+        run: cargo build --release -p zen-ffi --no-default-features --target ${{ matrix.target }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.runtime }}
+          path: target/${{ matrix.target }}/release/${{ matrix.lib_name }}
+
+  package-nuget:
+    needs: build-native
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Copy native libraries to runtime folders
+        run: |
+          mkdir -p bindings/dotnet/runtimes/win-x64/native
+          mkdir -p bindings/dotnet/runtimes/linux-x64/native
+          mkdir -p bindings/dotnet/runtimes/linux-arm64/native
+          mkdir -p bindings/dotnet/runtimes/osx-x64/native
+          mkdir -p bindings/dotnet/runtimes/osx-arm64/native
+          
+          cp artifacts/native-win-x64/zen_ffi.dll bindings/dotnet/runtimes/win-x64/native/
+          cp artifacts/native-linux-x64/libzen_ffi.so bindings/dotnet/runtimes/linux-x64/native/
+          cp artifacts/native-linux-arm64/libzen_ffi.so bindings/dotnet/runtimes/linux-arm64/native/
+          cp artifacts/native-osx-x64/libzen_ffi.dylib bindings/dotnet/runtimes/osx-x64/native/
+          cp artifacts/native-osx-arm64/libzen_ffi.dylib bindings/dotnet/runtimes/osx-arm64/native/
+
+      - name: Build NuGet package
+        working-directory: bindings/dotnet
+        run: dotnet pack -c Release
+
+      - name: Upload NuGet package
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-package
+          path: bindings/dotnet/bin/Release/*.nupkg

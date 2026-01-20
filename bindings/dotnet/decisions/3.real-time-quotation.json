@@ -1,0 +1,249 @@
+{
+  "contentType": "application/vnd.gorules.decision",
+  "nodes": [
+    {
+      "name": "Input",
+      "id": "6ea65cab-e11d-4fc7-aa61-4c0ffdfd2237",
+      "position": {
+        "x": 35,
+        "y": 225
+      },
+      "type": "inputNode"
+    },
+    {
+      "name": "General Liability",
+      "content": {
+        "hitPolicy": "first",
+        "inputs": [
+          {
+            "id": "c3847f3e-8d84-476e-a040-6273958f9f84",
+            "name": "General Liability",
+            "type": "expression",
+            "field": "generalLiability"
+          }
+        ],
+        "outputs": [
+          {
+            "field": "glPremium",
+            "id": "b1097f26-2bce-4cd1-a508-2a36328dc95f",
+            "name": "Premium",
+            "type": "expression"
+          }
+        ],
+        "rules": [
+          {
+            "_id": "ea0c1717-adfe-4855-9d09-4d7a224263c0",
+            "c3847f3e-8d84-476e-a040-6273958f9f84": "1_000_000",
+            "b1097f26-2bce-4cd1-a508-2a36328dc95f": "800"
+          },
+          {
+            "_id": "ba174d0c-a9b3-4ca6-a3c7-3614a6ec05ce",
+            "c3847f3e-8d84-476e-a040-6273958f9f84": "2_000_000",
+            "b1097f26-2bce-4cd1-a508-2a36328dc95f": "1900"
+          },
+          {
+            "_id": "914d3636-340a-4856-9e93-ce14748768a9",
+            "c3847f3e-8d84-476e-a040-6273958f9f84": "5_000_000",
+            "b1097f26-2bce-4cd1-a508-2a36328dc95f": "3000"
+          }
+        ]
+      },
+      "id": "c3bdfa40-9f20-4737-b43c-34ab7f993b6c",
+      "position": {
+        "x": 670,
+        "y": 215
+      },
+      "type": "decisionTableNode"
+    },
+    {
+      "name": "Coverage",
+      "content": {
+        "statements": [
+          {
+            "id": "98569ede-85f1-4522-9e3f-187edff42ae8",
+            "condition": "generalLiability > 0"
+          },
+          {
+            "id": "319b344b-48bc-4a83-a1ef-fcdef2b51c5b",
+            "condition": "commercialProperty > 0"
+          },
+          {
+            "id": "e2f07518-3ba9-49fe-90db-683f02d1e585",
+            "condition": "professionalIndemnity > 0"
+          }
+        ],
+        "hitPolicy": "collect"
+      },
+      "id": "36f72720-ebef-415c-92da-4fe10097271d",
+      "position": {
+        "x": 350,
+        "y": 225
+      },
+      "type": "switchNode"
+    },
+    {
+      "name": "Commercial Property",
+      "content": {
+        "hitPolicy": "first",
+        "inputs": [
+          {
+            "id": "c3847f3e-8d84-476e-a040-6273958f9f84",
+            "name": "Commercial Property",
+            "type": "expression",
+            "field": "commercialProperty"
+          }
+        ],
+        "outputs": [
+          {
+            "field": "cpPremium",
+            "id": "b1097f26-2bce-4cd1-a508-2a36328dc95f",
+            "name": "Premium",
+            "type": "expression"
+          }
+        ],
+        "rules": [
+          {
+            "_id": "ea0c1717-adfe-4855-9d09-4d7a224263c0",
+            "c3847f3e-8d84-476e-a040-6273958f9f84": "500_000",
+            "b1097f26-2bce-4cd1-a508-2a36328dc95f": "1000"
+          },
+          {
+            "_id": "ba174d0c-a9b3-4ca6-a3c7-3614a6ec05ce",
+            "c3847f3e-8d84-476e-a040-6273958f9f84": "1_000_000",
+            "b1097f26-2bce-4cd1-a508-2a36328dc95f": "4000"
+          },
+          {
+            "_id": "914d3636-340a-4856-9e93-ce14748768a9",
+            "c3847f3e-8d84-476e-a040-6273958f9f84": "2_000_000",
+            "b1097f26-2bce-4cd1-a508-2a36328dc95f": "10000"
+          }
+        ]
+      },
+      "id": "9a5a651b-6b68-4cf3-89e3-28076437dc1f",
+      "position": {
+        "x": 670,
+        "y": 320
+      },
+      "type": "decisionTableNode"
+    },
+    {
+      "name": "General Liability",
+      "content": {
+        "hitPolicy": "first",
+        "inputs": [
+          {
+            "id": "c3847f3e-8d84-476e-a040-6273958f9f84",
+            "name": "Professional Indemnity",
+            "type": "expression",
+            "field": "professionalIndemnity"
+          }
+        ],
+        "outputs": [
+          {
+            "field": "plPremium",
+            "id": "b1097f26-2bce-4cd1-a508-2a36328dc95f",
+            "name": "Premium",
+            "type": "expression"
+          }
+        ],
+        "rules": [
+          {
+            "_id": "ea0c1717-adfe-4855-9d09-4d7a224263c0",
+            "c3847f3e-8d84-476e-a040-6273958f9f84": "1_000_000",
+            "b1097f26-2bce-4cd1-a508-2a36328dc95f": "800"
+          },
+          {
+            "_id": "ba174d0c-a9b3-4ca6-a3c7-3614a6ec05ce",
+            "c3847f3e-8d84-476e-a040-6273958f9f84": "2_000_000",
+            "b1097f26-2bce-4cd1-a508-2a36328dc95f": "1900"
+          },
+          {
+            "_id": "914d3636-340a-4856-9e93-ce14748768a9",
+            "c3847f3e-8d84-476e-a040-6273958f9f84": "5_000_000",
+            "b1097f26-2bce-4cd1-a508-2a36328dc95f": "3000"
+          }
+        ]
+      },
+      "id": "50db46e7-6e18-4482-a0a1-5378fd12cd10",
+      "position": {
+        "x": 670,
+        "y": 425
+      },
+      "type": "decisionTableNode"
+    },
+    {
+      "name": "myResponse",
+      "id": "6d01c66d-09b6-47c7-96dd-8718e2bc2608",
+      "position": {
+        "x": 1310,
+        "y": 320
+      },
+      "type": "outputNode"
+    },
+    {
+      "id": "46892434-3f7f-4def-b150-9873b8de2cf2",
+      "type": "functionNode",
+      "position": {
+        "x": 990,
+        "y": 320
+      },
+      "name": "Aggregator",
+      "content": {
+        "source": "import Big from 'big.js';\n\nexport const handler = async (input) => {\n  delete input.$nodes;\n  \n  const totalPremium = Object.entries(input).reduce((acc, [_, value]) => {\n    return Big(value).plus(acc);\n  }, Big(0)).round(2);\n\n  const tax = totalPremium.mul(0.1).round(2);\n\n  const paymentFee = totalPremium.plus(tax).mul(0.035).round(2);\n\n  return {\n    premium: totalPremium.toString(),\n    tax: tax.toString(),\n    paymentFee: paymentFee.toString(),\n    total: totalPremium.plus(tax).plus(paymentFee).toString() \n  };\n};\n"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "4df2ee8c-cdb6-4a51-8af9-0a20f7886aed",
+      "sourceId": "6ea65cab-e11d-4fc7-aa61-4c0ffdfd2237",
+      "type": "edge",
+      "targetId": "36f72720-ebef-415c-92da-4fe10097271d"
+    },
+    {
+      "id": "b1bf30e9-7d78-4fd1-aad8-5681cb4bc990",
+      "sourceId": "36f72720-ebef-415c-92da-4fe10097271d",
+      "type": "edge",
+      "targetId": "c3bdfa40-9f20-4737-b43c-34ab7f993b6c",
+      "sourceHandle": "98569ede-85f1-4522-9e3f-187edff42ae8"
+    },
+    {
+      "id": "956c9295-d30b-4483-9c1b-3ff5f2d570ac",
+      "sourceId": "36f72720-ebef-415c-92da-4fe10097271d",
+      "type": "edge",
+      "targetId": "9a5a651b-6b68-4cf3-89e3-28076437dc1f",
+      "sourceHandle": "319b344b-48bc-4a83-a1ef-fcdef2b51c5b"
+    },
+    {
+      "id": "1e90bc85-edc0-4c21-8119-b49bae2336af",
+      "sourceId": "36f72720-ebef-415c-92da-4fe10097271d",
+      "type": "edge",
+      "targetId": "50db46e7-6e18-4482-a0a1-5378fd12cd10",
+      "sourceHandle": "e2f07518-3ba9-49fe-90db-683f02d1e585"
+    },
+    {
+      "id": "114e0cf6-db6a-407a-8291-332d52a6a0b8",
+      "sourceId": "c3bdfa40-9f20-4737-b43c-34ab7f993b6c",
+      "type": "edge",
+      "targetId": "46892434-3f7f-4def-b150-9873b8de2cf2"
+    },
+    {
+      "id": "e6b12841-e535-46a5-9d55-38a3842ce251",
+      "sourceId": "9a5a651b-6b68-4cf3-89e3-28076437dc1f",
+      "type": "edge",
+      "targetId": "46892434-3f7f-4def-b150-9873b8de2cf2"
+    },
+    {
+      "id": "79b6706c-92a2-4a75-84a2-d76333cc3e2b",
+      "sourceId": "50db46e7-6e18-4482-a0a1-5378fd12cd10",
+      "type": "edge",
+      "targetId": "46892434-3f7f-4def-b150-9873b8de2cf2"
+    },
+    {
+      "id": "a5d7761b-21ad-4a70-b12b-e8131d42e535",
+      "sourceId": "46892434-3f7f-4def-b150-9873b8de2cf2",
+      "type": "edge",
+      "targetId": "6d01c66d-09b6-47c7-96dd-8718e2bc2608"
+    }
+  ]
+}

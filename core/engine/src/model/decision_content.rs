@@ -1,7 +1,6 @@
-use ahash::HashMapExt;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use zen_expression::{CompilationKey, ExpressionKind, Isolate, OpcodeCache};
+use zen_expression::{ExpressionKind, Isolate, OpcodeCache};
 use zen_types::decision::{DecisionEdge, DecisionNode, DecisionNodeKind};
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default)]
@@ -60,12 +59,11 @@ impl DecisionContent {
         let mut isolate = Isolate::new();
 
         for (source, kind) in &sources {
-            let key = CompilationKey {
-                kind: kind.clone(),
-                source: source.clone(),
+            let map = match kind {
+                ExpressionKind::Standard => &mut cache.standard,
+                ExpressionKind::Unary => &mut cache.unary,
             };
-
-            if cache.contains_key(&key) {
+            if map.contains_key(source) {
                 continue;
             }
 
@@ -78,7 +76,7 @@ impl DecisionContent {
                 }
             };
             if let Ok(bytecode) = result {
-                cache.insert(key, Arc::from(bytecode));
+                map.insert(source.clone(), Arc::from(bytecode));
             }
         }
 

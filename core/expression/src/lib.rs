@@ -72,6 +72,6 @@ pub mod vm;
 pub use exports::{
     compile_expression, compile_unary_expression, evaluate_expression, evaluate_unary_expression,
 };
-pub use expression::{CompilationKey, Expression, ExpressionKind, OpcodeCache};
+pub use expression::{Expression, ExpressionKind, OpcodeCache};
 pub use isolate::{Isolate, IsolateError};
 pub use variable::Variable;

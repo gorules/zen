@@ -16,13 +16,20 @@ pub enum ExpressionKind {
     Unary,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct CompilationKey {
-    pub kind: ExpressionKind,
-    pub source: Arc<str>,
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpcodeCache {
+    pub standard: ahash::HashMap<Arc<str>, Arc<[Opcode]>>,
+    pub unary: ahash::HashMap<Arc<str>, Arc<[Opcode]>>,
 }
 
-pub type OpcodeCache = ahash::HashMap<CompilationKey, Arc<[Opcode]>>;
+impl OpcodeCache {
+    pub fn new() -> Self {
+        Self {
+            standard: Default::default(),
+            unary: Default::default(),
+        }
+    }
+}
 
 /// Compiled expression
 #[derive(Debug, Clone)]

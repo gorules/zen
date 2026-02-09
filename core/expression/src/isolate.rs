@@ -7,7 +7,7 @@ use thiserror::Error;
 
 use crate::arena::UnsafeArena;
 use crate::compiler::{Compiler, CompilerError, Opcode};
-use crate::expression::{CompilationKey, OpcodeCache, Standard, Unary};
+use crate::expression::{OpcodeCache, Standard, Unary};
 use crate::lexer::{Lexer, LexerError};
 use crate::parser::{Parser, ParserError};
 use crate::variable::Variable;
@@ -137,14 +137,10 @@ impl<'a> Isolate<'a> {
     }
 
     pub fn run_standard(&mut self, source: &'a str) -> Result<Variable, IsolateError> {
-        let cached = self.cache.as_ref().and_then(|c| {
-            let key = CompilationKey {
-                kind: ExpressionKind::Standard,
-                source: Arc::from(source),
-            };
-
-            c.get(&key).map(|v| v.clone())
-        });
+        let cached = self
+            .cache
+            .as_ref()
+            .and_then(|c| c.standard.get(source).cloned());
         if let Some(codes) = cached {
             return self.run_compiled(codes.as_ref());
         }
@@ -174,13 +170,10 @@ impl<'a> Isolate<'a> {
     }
 
     pub fn run_unary(&mut self, source: &'a str) -> Result<bool, IsolateError> {
-        let cached = self.cache.as_ref().and_then(|c| {
-            let key = CompilationKey {
-                kind: ExpressionKind::Unary,
-                source: Arc::from(source),
-            };
-            c.get(&key).map(|v| v.clone())
-        });
+        let cached = self
+            .cache
+            .as_ref()
+            .and_then(|c| c.unary.get(source).cloned());
         if let Some(codes) = cached {
             return self.run_unary_compiled(codes.as_ref());
         }

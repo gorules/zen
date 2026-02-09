@@ -1,5 +1,4 @@
 use crate::loader::{DynamicLoader, NoopLoader};
-use crate::model::CompilationKey;
 use crate::nodes::custom::{DynamicCustomNode, NoopCustomNode};
 use crate::nodes::function::http_handler::DynamicHttpHandler;
 use crate::nodes::function::v2::function::{Function, FunctionConfig};
@@ -7,11 +6,10 @@ use crate::nodes::function::v2::module::console::ConsoleListener;
 use crate::nodes::function::v2::module::http::listener::HttpListener;
 use crate::nodes::function::v2::module::zen::ZenListener;
 use crate::nodes::validator_cache::ValidatorCache;
-use ahash::HashMap;
 use anyhow::Context;
 use std::cell::OnceCell;
 use std::sync::Arc;
-use zen_expression::compiler::Opcode;
+use zen_expression::OpcodeCache;
 
 /// This is created on every graph evaluation
 #[derive(Debug, Clone)]
@@ -21,7 +19,7 @@ pub struct NodeHandlerExtensions {
     pub(crate) loader: DynamicLoader,
     pub(crate) custom_node: DynamicCustomNode,
     pub(crate) http_handler: DynamicHttpHandler,
-    pub(crate) compiled_cache: Option<Arc<HashMap<CompilationKey, Vec<Opcode>>>>,
+    pub(crate) compiled_cache: Option<Arc<OpcodeCache>>,
 }
 
 impl Default for NodeHandlerExtensions {

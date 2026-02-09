@@ -1,15 +1,9 @@
-use ahash::{HashMap, HashMapExt};
+use ahash::HashMapExt;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use zen_expression::compiler::Opcode;
-use zen_expression::{ExpressionKind, Isolate};
+use zen_expression::{CompilationKey, ExpressionKind, Isolate, OpcodeCache};
 use zen_types::decision::{DecisionEdge, DecisionNode, DecisionNodeKind};
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct CompilationKey {
-    pub kind: ExpressionKind,
-    pub source: Arc<str>,
-}
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct DecisionContent {
@@ -17,33 +11,19 @@ pub struct DecisionContent {
     pub edges: Vec<Arc<DecisionEdge>>,
 
     #[serde(skip)]
-    pub compiled_cache: Option<Arc<HashMap<CompilationKey, Vec<Opcode>>>>,
+    pub compiled_cache: Option<Arc<OpcodeCache>>,
 }
 
 impl DecisionContent {
     pub fn compile(&mut self) {
-        let mut compiled_cache: HashMap<CompilationKey, Vec<Opcode>> = HashMap::new();
-        let mut isolate = Isolate::new();
+        let mut sources: Vec<(Arc<str>, ExpressionKind)> = Vec::new();
 
         for node in &self.nodes {
             match &node.kind {
                 DecisionNodeKind::ExpressionNode { content } => {
-                    for expression in content.expressions.iter() {
-                        if expression.key.is_empty() || expression.value.is_empty() {
-                            continue;
-                        }
-
-                        let key = CompilationKey {
-                            kind: ExpressionKind::Standard,
-                            source: Arc::clone(&expression.value),
-                        };
-
-                        if compiled_cache.contains_key(&key) {
-                            continue;
-                        }
-
-                        if let Ok(comp_expression) = isolate.compile_standard(&expression.value) {
-                            compiled_cache.insert(key, comp_expression.bytecode().to_vec());
+                    for expr in content.expressions.iter() {
+                        if !expr.key.is_empty() && !expr.value.is_empty() {
+                            sources.push((expr.value.clone(), ExpressionKind::Standard));
                         }
                     }
                 }
@@ -54,42 +34,13 @@ impl DecisionContent {
                                 continue;
                             };
 
-                            if rule_value.is_empty() {
-                                continue;
-                            }
+                            let kind = if input.field.is_some() {
+                                ExpressionKind::Unary
+                            } else {
+                                ExpressionKind::Standard
+                            };
 
-                            match &input.field {
-                                None => {
-                                    let key = CompilationKey {
-                                        kind: ExpressionKind::Standard,
-                                        source: Arc::clone(rule_value),
-                                    };
-
-                                    if !compiled_cache.contains_key(&key) {
-                                        if let Ok(comp_expression) =
-                                            isolate.compile_standard(rule_value)
-                                        {
-                                            compiled_cache
-                                                .insert(key, comp_expression.bytecode().to_vec());
-                                        }
-                                    }
-                                }
-                                Some(_field) => {
-                                    let key = CompilationKey {
-                                        kind: ExpressionKind::Unary,
-                                        source: Arc::clone(rule_value),
-                                    };
-
-                                    if !compiled_cache.contains_key(&key) {
-                                        if let Ok(comp_expression) =
-                                            isolate.compile_unary(rule_value)
-                                        {
-                                            compiled_cache
-                                                .insert(key, comp_expression.bytecode().to_vec());
-                                        }
-                                    }
-                                }
-                            }
+                            sources.push((rule_value.clone(), kind));
                         }
 
                         for output in content.outputs.iter() {
@@ -97,28 +48,40 @@ impl DecisionContent {
                                 continue;
                             };
 
-                            if rule_value.is_empty() {
-                                continue;
-                            }
-
-                            let key = CompilationKey {
-                                kind: ExpressionKind::Standard,
-                                source: Arc::clone(rule_value),
-                            };
-
-                            if !compiled_cache.contains_key(&key) {
-                                if let Ok(comp_expression) = isolate.compile_standard(rule_value) {
-                                    compiled_cache.insert(key, comp_expression.bytecode().to_vec());
-                                }
-                            }
+                            sources.push((rule_value.clone(), ExpressionKind::Standard));
                         }
                     }
                 }
-
                 _ => {}
             }
         }
 
-        self.compiled_cache.replace(Arc::new(compiled_cache));
+        let mut cache: OpcodeCache = OpcodeCache::new();
+        let mut isolate = Isolate::new();
+
+        for (source, kind) in &sources {
+            let key = CompilationKey {
+                kind: kind.clone(),
+                source: source.clone(),
+            };
+
+            if cache.contains_key(&key) {
+                continue;
+            }
+
+            let result = match kind {
+                ExpressionKind::Standard => isolate
+                    .compile_standard(source)
+                    .map(|e| e.bytecode().to_vec()),
+                ExpressionKind::Unary => {
+                    isolate.compile_unary(source).map(|e| e.bytecode().to_vec())
+                }
+            };
+            if let Ok(bytecode) = result {
+                cache.insert(key, Arc::from(bytecode));
+            }
+        }
+
+        self.compiled_cache.replace(Arc::new(cache));
     }
 }

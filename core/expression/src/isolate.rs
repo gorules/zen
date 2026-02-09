@@ -7,7 +7,7 @@ use thiserror::Error;
 
 use crate::arena::UnsafeArena;
 use crate::compiler::{Compiler, CompilerError, Opcode};
-use crate::expression::{Standard, Unary};
+use crate::expression::{CompilationKey, OpcodeCache, Standard, Unary};
 use crate::lexer::{Lexer, LexerError};
 use crate::parser::{Parser, ParserError};
 use crate::variable::Variable;
@@ -29,6 +29,7 @@ pub struct Isolate<'arena> {
 
     environment: Option<Variable>,
     references: HashMap<String, Variable>,
+    cache: Option<Arc<OpcodeCache>>,
 }
 
 impl<'a> Isolate<'a> {
@@ -42,6 +43,7 @@ impl<'a> Isolate<'a> {
 
             environment: None,
             references: Default::default(),
+            cache: None,
         }
     }
 
@@ -52,8 +54,17 @@ impl<'a> Isolate<'a> {
         isolate
     }
 
+    pub fn with_cache(mut self, cache: Option<Arc<OpcodeCache>>) -> Self {
+        self.cache = cache;
+        self
+    }
+
     pub fn set_environment(&mut self, variable: Variable) {
         self.environment.replace(variable);
+    }
+
+    pub fn set_cache(&mut self, cache: Arc<OpcodeCache>) {
+        self.cache = Some(cache);
     }
 
     pub fn update_environment<F>(&mut self, mut updater: F)
@@ -122,10 +133,22 @@ impl<'a> Isolate<'a> {
         self.run_internal(source, ExpressionKind::Standard)?;
         let bytecode = self.compiler.get_bytecode().to_vec();
 
-        Ok(Expression::new_standard(Arc::new(bytecode)))
+        Ok(Expression::new_standard(Arc::from(bytecode)))
     }
 
     pub fn run_standard(&mut self, source: &'a str) -> Result<Variable, IsolateError> {
+        let cached = self.cache.as_ref().and_then(|c| {
+            let key = CompilationKey {
+                kind: ExpressionKind::Standard,
+                source: Arc::from(source),
+            };
+
+            c.get(&key).map(|v| v.clone())
+        });
+        if let Some(codes) = cached {
+            return self.run_compiled(codes.as_ref());
+        }
+
         self.run_internal(source, ExpressionKind::Standard)?;
 
         let bytecode = self.compiler.get_bytecode();
@@ -147,10 +170,21 @@ impl<'a> Isolate<'a> {
         self.run_internal(source, ExpressionKind::Unary)?;
         let bytecode = self.compiler.get_bytecode().to_vec();
 
-        Ok(Expression::new_unary(Arc::new(bytecode)))
+        Ok(Expression::new_unary(Arc::from(bytecode)))
     }
 
     pub fn run_unary(&mut self, source: &'a str) -> Result<bool, IsolateError> {
+        let cached = self.cache.as_ref().and_then(|c| {
+            let key = CompilationKey {
+                kind: ExpressionKind::Unary,
+                source: Arc::from(source),
+            };
+            c.get(&key).map(|v| v.clone())
+        });
+        if let Some(codes) = cached {
+            return self.run_unary_compiled(codes.as_ref());
+        }
+
         self.run_internal(source, ExpressionKind::Unary)?;
 
         let bytecode = self.compiler.get_bytecode();

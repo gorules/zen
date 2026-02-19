@@ -174,7 +174,7 @@ jobs:
         run: yarn install --immutable --mode=skip-build
 
       - name: Build in docker
-        uses: stefan-gorules/docker-run-action@main
+        uses: stefan-gorules/docker-run-action@v1
         if: ${{ matrix.settings.docker }}
         with:
           image: ${{ matrix.settings.docker }}
@@ -315,7 +315,7 @@ jobs:
         shell: bash
 
       - name: Test bindings
-        uses: stefan-gorules/docker-run-action@main
+        uses: stefan-gorules/docker-run-action@v1
         with:
           image: node:${{ matrix.node }}-slim
           options: -v ${{ github.workspace }}:/workspace
@@ -370,7 +370,7 @@ jobs:
         shell: bash
 
       - name: Test bindings
-        uses: stefan-gorules/docker-run-action@main
+        uses: stefan-gorules/docker-run-action@v1
         with:
           image: node:${{ matrix.node }}-alpine
           options: -v ${{ github.workspace }}:/workspace
@@ -432,7 +432,7 @@ jobs:
         shell: bash
 
       - name: Test bindings
-        uses: stefan-gorules/docker-run-action@main
+        uses: stefan-gorules/docker-run-action@v1
         with:
           options: --platform linux/arm64 -v ${{ github.workspace }}:/workspace
           image: node:${{ matrix.node }}-alpine
@@ -482,7 +482,7 @@ jobs:
   #        shell: bash
   #
   #      - name: Setup and run tests
-  #        uses: stefan-gorules/docker-run-action@main
+  #        uses: stefan-gorules/docker-run-action@v1
   #        with:
   #          image: ghcr.io/napi-rs/napi-rs/nodejs:aarch64-${{ matrix.node }}
   #          options: -v ${{ github.workspace }}:/workspace -w /workspace

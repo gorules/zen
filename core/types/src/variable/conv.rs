@@ -1,7 +1,7 @@
 use crate::variable::Variable;
+use rust_decimal::Decimal;
 #[cfg(not(feature = "arbitrary_precision"))]
 use rust_decimal::prelude::FromPrimitive;
-use rust_decimal::Decimal;
 use serde_json::{Number, Value};
 use std::rc::Rc;
 #[cfg(not(feature = "arbitrary_precision"))]

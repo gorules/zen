@@ -8,8 +8,12 @@ license = "MIT"
 [dependencies]
 ahash = { workspace = true }
 serde = { workspace = true, features = ["rc", "derive"] }
-serde_json = { workspace = true, features = ["arbitrary_precision"] }
+serde_json = { workspace = true, features = [] }
 rust_decimal = { workspace = true, features = ["maths-nopanic"] }
 rust_decimal_macros = { workspace = true }
 thiserror = { workspace = true }
 nohash-hasher = { workspace = true }
+
+[features]
+default = ["arbitrary_precision"]
+arbitrary_precision = ["serde_json/arbitrary_precision"]

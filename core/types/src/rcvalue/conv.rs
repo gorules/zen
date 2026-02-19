@@ -1,5 +1,7 @@
 use crate::rcvalue::RcValue;
 use crate::variable::{ToVariable, Variable};
+#[cfg(not(feature = "arbitrary_precision"))]
+use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
 use serde_json::Value;
 use std::rc::Rc;
@@ -58,11 +60,32 @@ impl From<&Value> for RcValue {
         match value {
             Value::Null => RcValue::Null,
             Value::Bool(b) => RcValue::Bool(*b),
-            Value::Number(n) => RcValue::Number(
-                Decimal::from_str_exact(n.as_str())
-                    .or_else(|_| Decimal::from_scientific(n.as_str()))
-                    .expect("Allowed number"),
-            ),
+            Value::Number(n) => {
+                #[cfg(feature = "arbitrary_precision")]
+                {
+                    RcValue::Number(
+                        Decimal::from_str_exact(n.as_str())
+                            .or_else(|_| Decimal::from_scientific(n.as_str()))
+                            .expect("Allowed number"),
+                    )
+                }
+
+                #[cfg(not(feature = "arbitrary_precision"))]
+                {
+                    let decimal = match n.as_u64() {
+                        Some(n) => Decimal::from_u64(n).expect("Allowed number"),
+                        None => match n.as_i64() {
+                            Some(n) => Decimal::from(n),
+                            None => match n.as_f64() {
+                                Some(n) => Decimal::from_f64(n).expect("Allowed number"),
+                                None => panic!("Invalid number"),
+                            },
+                        },
+                    };
+
+                    RcValue::Number(decimal)
+                }
+            }
             Value::String(s) => RcValue::String(Rc::from(s.as_str())),
             Value::Array(arr) => RcValue::Array(arr.iter().map(RcValue::from).collect()),
             Value::Object(obj) => RcValue::Object(

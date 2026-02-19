@@ -19,7 +19,7 @@ once_cell = { workspace = true }
 regex = { workspace = true, optional = true }
 regex-lite = { workspace = true, optional = true }
 serde = { workspace = true, features = ["rc", "derive"] }
-serde_json = { workspace = true, features = ["arbitrary_precision"] }
+serde_json = { workspace = true, features = [] }
 strum = { workspace = true }
 strum_macros = { workspace = true }
 thiserror = { workspace = true }
@@ -41,9 +41,10 @@ serde_json5 = "0.2"
 recursive = { workspace = true }
 
 [features]
-default = ["regex-deprecated"]
+default = ["regex-deprecated", "arbitrary_precision"]
 regex-lite = ["dep:regex-lite"]
 regex-deprecated = ["dep:regex"]
+arbitrary_precision = ["serde_json/arbitrary_precision", "zen-types/arbitrary_precision"]
 
 [[bench]]
 harness = false

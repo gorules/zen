@@ -174,15 +174,12 @@ jobs:
         run: yarn install --immutable --mode=skip-build
 
       - name: Build in docker
+        uses: stefan-gorules/docker-run-action@main
         if: ${{ matrix.settings.docker }}
-        run: |
-          docker run --rm --user 0:0 \
-            -v ${{ github.workspace }}/.cargo-cache/.cargo/git:/usr/local/cargo/git \
-            -v ${{ github.workspace }}/.cargo-cache/.cargo/registry:/usr/local/cargo/registry \
-            -v ${{ github.workspace }}:/build \
-            -w /build \
-            ${{ matrix.settings.docker }} \
-            bash -c "${{ matrix.settings.build }}"
+        with:
+          image: ${{ matrix.settings.docker }}
+          options: --user 0:0 -v ${{ github.workspace }}/.cargo-cache/.cargo/git:/usr/local/cargo/git -v ${{ github.workspace }}/.cargo-cache/.cargo/registry:/usr/local/cargo/registry -v ${{ github.workspace }}:/build -w /build
+          run: ${{ matrix.settings.build }}
 
       - name: 'Build'
         run: ${{ matrix.settings.build }}
@@ -318,11 +315,15 @@ jobs:
         shell: bash
 
       - name: Test bindings
-        run: |
-          docker run --rm \
-            -v ${{ github.workspace }}:/workspace \
-            node:${{ matrix.node }}-slim \
-            bash -c "cd workspace/bindings/nodejs && yarn install && yarn link && yarn test"
+        uses: stefan-gorules/docker-run-action@main
+        with:
+          image: node:${{ matrix.node }}-slim
+          options: -v ${{ github.workspace }}:/workspace
+          run: |
+            cd workspace/bindings/nodejs
+            yarn install
+            yarn link
+            yarn test
   test-linux-x64-musl-binding:
     name: Test bindings on Linux-x64-musl - node@${{ matrix.node }}
     needs:
@@ -369,11 +370,15 @@ jobs:
         shell: bash
 
       - name: Test bindings
-        run: |
-          docker run --rm \
-            -v ${{ github.workspace }}:/workspace \
-            node:${{ matrix.node }}-alpine \
-            sh -c "cd workspace/bindings/nodejs && yarn install && yarn link && yarn test"
+        uses: stefan-gorules/docker-run-action@main
+        with:
+          image: node:${{ matrix.node }}-alpine
+          options: -v ${{ github.workspace }}:/workspace
+          run: |
+            cd workspace/bindings/nodejs
+            yarn install
+            yarn link
+            yarn test
   test-linux-aarch64-musl-binding:
     name: Test bindings on Linux-aarch64-musl - node@${{ matrix.node }}
     needs:
@@ -427,11 +432,15 @@ jobs:
         shell: bash
 
       - name: Test bindings
-        run: |
-          docker run --rm --platform linux/arm64 \
-            -v ${{ github.workspace }}:/workspace \
-            node:${{ matrix.node }}-alpine \
-            sh -c "cd workspace/bindings/nodejs && yarn install && yarn link && yarn test"
+        uses: stefan-gorules/docker-run-action@main
+        with:
+          options: --platform linux/arm64 -v ${{ github.workspace }}:/workspace
+          image: node:${{ matrix.node }}-alpine
+          run: |
+            cd workspace/bindings/nodejs
+            yarn install
+            yarn link
+            yarn test
   #  test-linux-aarch64-gnu-binding:
   #    name: Test bindings on aarch64-unknown-linux-gnu - node@${{ matrix.node }}
   #    needs:
@@ -473,7 +482,7 @@ jobs:
   #        shell: bash
   #
   #      - name: Setup and run tests
-  #        uses: addnab/docker-run-action@v3
+  #        uses: stefan-gorules/docker-run-action@main
   #        with:
   #          image: ghcr.io/napi-rs/napi-rs/nodejs:aarch64-${{ matrix.node }}
   #          options: -v ${{ github.workspace }}:/workspace -w /workspace

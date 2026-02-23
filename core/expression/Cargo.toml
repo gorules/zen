@@ -41,7 +41,7 @@ serde_json5 = "0.2"
 recursive = { workspace = true }
 
 [features]
-default = ["regex-deprecated", "arbitrary_precision"]
+default = ["regex-deprecated"]
 regex-lite = ["dep:regex-lite"]
 regex-deprecated = ["dep:regex"]
 arbitrary_precision = ["serde_json/arbitrary_precision", "zen-types/arbitrary_precision"]

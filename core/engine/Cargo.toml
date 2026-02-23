@@ -24,9 +24,9 @@ rust_decimal = { workspace = true, features = ["maths-nopanic"] }
 fixedbitset = "0.5"
 tokio = { workspace = true, features = ["sync", "time"] }
 rquickjs = { version = "0.10", features = ["macro", "loader", "rust-alloc", "futures", "either", "properties"] }
-zen-types = { path = "../types", version = "0.53.0", default-features = false }
-zen-expression = { path = "../expression", version = "0.53.0", default-features = false, features = ["regex-deprecated"] }
-zen-tmpl = { path = "../template", version = "0.53.0", default-features = false, features = ["regex-deprecated"] }
+zen-types = { path = "../types", version = "0.53.0" }
+zen-expression = { path = "../expression", version = "0.53.0" }
+zen-tmpl = { path = "../template", version = "0.53.0" }
 nohash-hasher = { workspace = true }
 downcast-rs = { version = "2.0", features = ["std", "sync"] }
 
@@ -52,6 +52,6 @@ harness = false
 name = "engine"
 
 [features]
-default = ["arbitrary_precision"]
+default = []
 bindgen = ["rquickjs/bindgen"]
 arbitrary_precision = ["serde_json/arbitrary_precision", "zen-expression/arbitrary_precision", "zen-types/arbitrary_precision", "zen-tmpl/arbitrary_precision"]

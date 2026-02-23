@@ -1,0 +1,58 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <PackageId>GoRules.ZenEngine</PackageId>
+    <Authors>GoRules</Authors>
+    <Description>ZEN Engine - Business Rules Engine for .NET. Execute JSON Decision Models (JDM) with native performance via Rust FFI bindings.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/gorules/zen</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/gorules/zen</RepositoryUrl>
+    <PackageTags>rules-engine;business-rules;decision-engine;jdm;gorules</PackageTags>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <!-- C# source files (generated + custom) -->
+  <ItemGroup>
+    <Compile Include="../build/generated/csharp/zen_uniffi.cs" Link="zen_uniffi.cs" />
+    <Compile Include="../lib/csharp/GoRules/ZenEngine/JsonBuffer.cs" Link="JsonBuffer.cs" />
+  </ItemGroup>
+
+  <!-- Native libraries for each platform (NuGet RID layout) -->
+  <ItemGroup>
+    <!-- macOS x64 -->
+    <None Include="../build/generated/resources/darwin-x86-64/libzen_uniffi.dylib"
+          Pack="true"
+          PackagePath="runtimes/osx-x64/native/"
+          Visible="false" />
+
+    <!-- macOS arm64 -->
+    <None Include="../build/generated/resources/darwin-aarch64/libzen_uniffi.dylib"
+          Pack="true"
+          PackagePath="runtimes/osx-arm64/native/"
+          Visible="false" />
+
+    <!-- Linux x64 -->
+    <None Include="../build/generated/resources/linux-x86-64/libzen_uniffi.so"
+          Pack="true"
+          PackagePath="runtimes/linux-x64/native/"
+          Visible="false" />
+
+    <!-- Linux arm64 -->
+    <None Include="../build/generated/resources/linux-aarch64/libzen_uniffi.so"
+          Pack="true"
+          PackagePath="runtimes/linux-arm64/native/"
+          Visible="false" />
+
+    <!-- Windows x64 -->
+    <None Include="../build/generated/resources/win32-x86-64/zen_uniffi.dll"
+          Pack="true"
+          PackagePath="runtimes/win-x64/native/"
+          Visible="false" />
+  </ItemGroup>
+
+</Project>

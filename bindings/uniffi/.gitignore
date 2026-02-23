@@ -1,3 +1,5 @@
 .idea
 .gradle
 build/
+build-android/
+jniLibs/

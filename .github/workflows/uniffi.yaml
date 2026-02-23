@@ -3,6 +3,7 @@ env:
   UNIFFI_DIRECTORY: bindings/uniffi
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - master
@@ -79,7 +80,7 @@ jobs:
   release-java-kotlin:
     runs-on: ubuntu-latest
     needs: [ build ]
-    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
+    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi') && github.event_name != 'workflow_dispatch'"
     defaults:
       run:
         working-directory: ${{ env.UNIFFI_DIRECTORY }}
@@ -140,7 +141,7 @@ jobs:
   release-csharp:
     runs-on: ubuntu-latest
     needs: [ build ]
-    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
+    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi') || github.event_name == 'workflow_dispatch'"
     defaults:
       run:
         working-directory: ${{ env.UNIFFI_DIRECTORY }}
@@ -187,6 +188,7 @@ jobs:
         run: dotnet pack nuget/GoRules.ZenEngine.csproj -c Release -p:Version=$VERSION
 
       - name: Push to NuGet.org
+        if: "github.event_name != 'workflow_dispatch'"
         run: |
           dotnet nuget push nuget/bin/Release/*.nupkg \
             --api-key ${{ secrets.NUGET_API_KEY }} \
@@ -194,7 +196,7 @@ jobs:
             --skip-duplicate
 
   build-ios:
-    if: "!contains(github.event.head_commit.message, 'skip ci')"
+    if: "!contains(github.event.head_commit.message, 'skip ci') && github.event_name != 'workflow_dispatch'"
     env:
       OUTPUT_NAME: zen_uniffi
       IPHONEOS_DEPLOYMENT_TARGET: '16.0'
@@ -408,7 +410,7 @@ jobs:
             --base "master"
 
   build-android:
-    if: "!contains(github.event.head_commit.message, 'skip ci')"
+    if: "!contains(github.event.head_commit.message, 'skip ci') && github.event_name != 'workflow_dispatch'"
     runs-on: ubuntu-latest
     env:
       OUTPUT_NAME: zen_uniffi
@@ -455,7 +457,7 @@ jobs:
   prepare-android-bindings:
     runs-on: ubuntu-latest
     needs: [ build ]
-    if: "!contains(github.event.head_commit.message, 'skip ci')"
+    if: "!contains(github.event.head_commit.message, 'skip ci') && github.event_name != 'workflow_dispatch'"
 
     defaults:
       run:

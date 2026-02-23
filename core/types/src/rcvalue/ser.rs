@@ -26,18 +26,19 @@ impl Serialize for RcValue {
             }
             #[cfg(not(feature = "arbitrary_precision"))]
             RcValue::Number(v) => {
-                if v.scale() == 0 {
-                    if let Some(i) = v.to_i64() {
-                        return serializer.serialize_i64(i);
-                    }
-                    if let Some(u) = v.to_u64() {
-                        return serializer.serialize_u64(u);
-                    }
+                if let Some(u) = v.to_u64() {
+                    return serializer.serialize_u64(u);
                 }
-                let f = v
-                    .to_f64()
-                    .ok_or_else(|| serde::ser::Error::custom("cannot convert to f64"))?;
-                serializer.serialize_f64(f)
+
+                if let Some(i) = v.to_i64() {
+                    return serializer.serialize_i64(i);
+                }
+
+                if let Some(f) = v.to_f64() {
+                    return serializer.serialize_f64(f);
+                }
+
+                Err(serde::ser::Error::custom("cannot convert to f64"))
             }
             RcValue::String(v) => serializer.serialize_str(v),
             RcValue::Array(v) => serializer.collect_seq(v.iter()),

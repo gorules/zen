@@ -24,18 +24,21 @@ impl From<Value> for Variable {
 
                 #[cfg(not(feature = "arbitrary_precision"))]
                 {
-                    let decimal = match n.as_u64() {
-                        Some(n) => Decimal::from_u64(n).expect("Allowed number"),
-                        None => match n.as_i64() {
-                            Some(n) => Decimal::from(n),
-                            None => match n.as_f64() {
-                                Some(n) => Decimal::from_f64(n).expect("Allowed number"),
-                                None => panic!("Invalid number"),
-                            },
-                        },
-                    };
+                    if let Some(n) = n.as_u64() {
+                        return Variable::Number(n.into());
+                    }
 
-                    Variable::Number(decimal)
+                    if let Some(n) = n.as_i64() {
+                        return Variable::Number(n.into());
+                    }
+
+                    if let Some(n) = n.as_f64() {
+                        return Variable::Number(Decimal::from_f64(n).expect("Allowed number"));
+                    }
+
+                    unreachable!(
+                        "serde_json::Number is always u64, i64, or f64 without arbitrary_precision"
+                    )
                 }
             }
             Value::String(s) => Variable::String(Rc::from(s.as_str())),
@@ -68,18 +71,21 @@ impl From<&Value> for Variable {
 
                 #[cfg(not(feature = "arbitrary_precision"))]
                 {
-                    let decimal = match n.as_u64() {
-                        Some(n) => Decimal::from_u64(n).expect("Allowed number"),
-                        None => match n.as_i64() {
-                            Some(n) => Decimal::from(n),
-                            None => match n.as_f64() {
-                                Some(n) => Decimal::from_f64(n).expect("Allowed number"),
-                                None => panic!("Invalid number"),
-                            },
-                        },
-                    };
+                    if let Some(u) = n.as_u64() {
+                        return Variable::Number(u.into());
+                    }
 
-                    Variable::Number(decimal)
+                    if let Some(i) = n.as_i64() {
+                        return Variable::Number(i.into());
+                    }
+
+                    if let Some(f) = n.as_f64() {
+                        return Variable::Number(Decimal::from_f64(f).expect("Allowed number"));
+                    }
+
+                    unreachable!(
+                        "serde_json::Number is always u64, i64, or f64 without arbitrary_precision"
+                    );
                 }
             }
             Value::String(s) => Variable::String(Rc::from(s.as_str())),
@@ -107,8 +113,7 @@ impl From<Variable> for Value {
                 {
                     Value::Number(
                         Number::from_str(n.normalize().to_string().as_str())
-                            .map_err(|_| "Invalid number")
-                            .unwrap(),
+                            .expect("Allowed number"),
                     )
                 }
             }

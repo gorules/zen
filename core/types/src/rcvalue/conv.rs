@@ -72,18 +72,21 @@ impl From<&Value> for RcValue {
 
                 #[cfg(not(feature = "arbitrary_precision"))]
                 {
-                    let decimal = match n.as_u64() {
-                        Some(n) => Decimal::from_u64(n).expect("Allowed number"),
-                        None => match n.as_i64() {
-                            Some(n) => Decimal::from(n),
-                            None => match n.as_f64() {
-                                Some(n) => Decimal::from_f64(n).expect("Allowed number"),
-                                None => panic!("Invalid number"),
-                            },
-                        },
-                    };
+                    if let Some(u) = n.as_u64() {
+                        return RcValue::Number(Decimal::from(u));
+                    }
 
-                    RcValue::Number(decimal)
+                    if let Some(i) = n.as_i64() {
+                        return RcValue::Number(Decimal::from(i));
+                    }
+
+                    if let Some(f) = n.as_f64() {
+                        return RcValue::Number(Decimal::from_f64(f).expect("Allowed number"));
+                    }
+
+                    unreachable!(
+                        "serde_json::Number is always u64, i64, or f64 without arbitrary_precision"
+                    );
                 }
             }
             Value::String(s) => RcValue::String(Rc::from(s.as_str())),

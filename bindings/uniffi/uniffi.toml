@@ -19,7 +19,7 @@ from_custom = "{}"
 # C#
 [bindings.csharp]
 namespace = "GoRules.ZenEngine"
-cdylib_name = "Libs/zen_uniffi"
+cdylib_name = "zen_uniffi"
 access_modifier = "public"
 
 [bindings.csharp.custom_types.JsonBuffer]

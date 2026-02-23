@@ -20,6 +20,7 @@ from_custom = "{}"
 [bindings.csharp]
 namespace = "GoRules.ZenEngine"
 cdylib_name = "Libs/zen_uniffi"
+access_modifier = "public"
 
 [bindings.csharp.custom_types.JsonBuffer]
 into_custom = "new JsonBuffer({})"

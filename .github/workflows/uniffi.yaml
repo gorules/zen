@@ -187,6 +187,13 @@ jobs:
       - name: Pack NuGet package
         run: dotnet pack nuget/GoRules.ZenEngine.csproj -c Release -p:Version=$VERSION
 
+      - name: Upload NuGet package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-package
+          path: ${{ env.UNIFFI_DIRECTORY }}/nuget/bin/Release/*.nupkg
+          if-no-files-found: error
+
       - name: Push to NuGet.org
         if: "github.event_name != 'workflow_dispatch'"
         run: |

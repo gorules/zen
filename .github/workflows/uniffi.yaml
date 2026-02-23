@@ -166,7 +166,7 @@ jobs:
         run: mv ../../build ./
 
       - name: Install uniffi-bindgen-cs
-        run: cargo install uniffi-bindgen-cs --git https://github.com/aspect-build/uniffi-bindgen-cs --tag v0.10.0+v0.29.4
+        run: cargo install uniffi-bindgen-cs --git https://github.com/NordSecurity/uniffi-bindgen-cs --tag v0.10.0+v0.29.4
 
       - name: Generate C# bindings
         run: |

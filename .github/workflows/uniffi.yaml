@@ -172,10 +172,18 @@ jobs:
         run: |
           uniffi-bindgen-cs \
             --library build/generated/resources/darwin-x86-64/libzen_uniffi.dylib \
+            --config uniffi.toml \
             --out-dir build/generated/csharp
 
       - name: Fix async callback interfaces
         run: bash scripts/fix-csharp-bindings.sh build/generated/csharp/zen_uniffi.cs
+
+      - name: Upload generated C# source
+        uses: actions/upload-artifact@v4
+        with:
+          name: csharp-generated-source
+          path: ${{ env.UNIFFI_DIRECTORY }}/build/generated/csharp/zen_uniffi.cs
+          if-no-files-found: error
 
       - name: Extract version from Cargo.toml
         id: version

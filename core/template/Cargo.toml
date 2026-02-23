@@ -8,13 +8,14 @@ edition = "2021"
 repository = "https://github.com/gorules/zen.git"
 
 [dependencies]
-zen-expression = { path = "../expression", version = "0.53.0" }
+zen-expression = { path = "../expression", version = "0.53.0", default-features = false }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
 [features]
-default = ["regex-deprecated"]
+default = ["regex-deprecated", "arbitrary_precision"]
 
 regex-lite = ["zen-expression/regex-lite"]
 regex-deprecated = ["zen-expression/regex-deprecated"]
+arbitrary_precision = ["zen-expression/arbitrary_precision"]

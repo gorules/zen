@@ -15,8 +15,8 @@ napi-sys = "3"
 napi-derive = "3"
 tokio-util = { workspace = true, features = ["rt"] }
 serde_json = { workspace = true }
-zen-engine = { path = "../../core/engine", features = ["arbitrary_precision"] }
-zen-expression = { path = "../../core/expression", features = ["arbitrary_precision"] }
+zen-engine = { path = "../../core/engine" }
+zen-expression = { path = "../../core/expression" }
 zen-tmpl = { path = "../../core/template" }
 serde = { workspace = true, features = ["derive"] }
 json_dotpath = { workspace = true }

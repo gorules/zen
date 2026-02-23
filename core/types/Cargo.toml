@@ -15,5 +15,5 @@ thiserror = { workspace = true }
 nohash-hasher = { workspace = true }
 
 [features]
-default = []
+default = ["arbitrary_precision"]
 arbitrary_precision = ["serde_json/arbitrary_precision"]

@@ -20,6 +20,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 rust_decimal = { workspace = true, features = ["maths-nopanic"] }
 tokio-util = { version = "0.7", features = ["rt"] }
-zen-engine = { path = "../../core/engine", features = ["arbitrary_precision"] }
-zen-expression = { path = "../../core/expression", features = ["arbitrary_precision"] }
+zen-engine = { path = "../../core/engine" }
+zen-expression = { path = "../../core/expression" }
 zen-tmpl = { path = "../../core/template" }

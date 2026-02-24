@@ -166,7 +166,7 @@ jobs:
         run: mv ../../build ./
 
       - name: Install uniffi-bindgen-cs
-        run: cargo install uniffi-bindgen-cs --git https://github.com/NordSecurity/uniffi-bindgen-cs --tag v0.10.0+v0.29.4
+        run: cargo install uniffi-bindgen-cs --git https://github.com/bcrevar-gorules/uniffi-bindgen-cs --branch fix/async-callback-interface-return-type
 
       - name: Generate C# bindings
         run: |
@@ -175,8 +175,8 @@ jobs:
             --config uniffi.toml \
             --out-dir build/generated/csharp
 
-      - name: Fix async callback interfaces
-        run: bash scripts/fix-csharp-bindings.sh build/generated/csharp/zen_uniffi.cs
+#      - name: Fix async callback interfaces
+#        run: bash scripts/fix-csharp-bindings.sh build/generated/csharp/zen_uniffi.cs
 
       - name: Upload generated C# source
         uses: actions/upload-artifact@v4

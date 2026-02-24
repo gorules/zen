@@ -198,12 +198,12 @@ jobs:
           path: ${{ env.UNIFFI_DIRECTORY }}/nuget/bin/Release/*.nupkg
           if-no-files-found: error
 
-#      - name: Push to NuGet.org
-#        run: |
-#          dotnet nuget push nuget/bin/Release/*.nupkg \
-#            --api-key ${{ secrets.NUGET_API_KEY }} \
-#            --source https://api.nuget.org/v3/index.json \
-#            --skip-duplicate
+      - name: Push to NuGet.org
+        run: |
+          dotnet nuget push nuget/bin/Release/*.nupkg \
+            --api-key ${{ secrets.NUGET_API_KEY }} \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate
 
   build-ios:
     if: "!contains(github.event.head_commit.message, 'skip ci')"

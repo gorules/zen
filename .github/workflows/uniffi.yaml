@@ -3,7 +3,6 @@ env:
   UNIFFI_DIRECTORY: bindings/uniffi
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - master
@@ -80,7 +79,7 @@ jobs:
   release-java-kotlin:
     runs-on: ubuntu-latest
     needs: [ build ]
-    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi') && github.event_name != 'workflow_dispatch'"
+    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
     defaults:
       run:
         working-directory: ${{ env.UNIFFI_DIRECTORY }}
@@ -141,7 +140,7 @@ jobs:
   release-csharp:
     runs-on: ubuntu-latest
     needs: [ build ]
-    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi') || github.event_name == 'workflow_dispatch'"
+    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
     defaults:
       run:
         working-directory: ${{ env.UNIFFI_DIRECTORY }}
@@ -175,9 +174,6 @@ jobs:
             --config uniffi.toml \
             --out-dir build/generated/csharp
 
-#      - name: Fix async callback interfaces
-#        run: bash scripts/fix-csharp-bindings.sh build/generated/csharp/zen_uniffi.cs
-
       - name: Upload generated C# source
         uses: actions/upload-artifact@v4
         with:
@@ -202,16 +198,15 @@ jobs:
           path: ${{ env.UNIFFI_DIRECTORY }}/nuget/bin/Release/*.nupkg
           if-no-files-found: error
 
-      - name: Push to NuGet.org
-        if: "github.event_name != 'workflow_dispatch'"
-        run: |
-          dotnet nuget push nuget/bin/Release/*.nupkg \
-            --api-key ${{ secrets.NUGET_API_KEY }} \
-            --source https://api.nuget.org/v3/index.json \
-            --skip-duplicate
+#      - name: Push to NuGet.org
+#        run: |
+#          dotnet nuget push nuget/bin/Release/*.nupkg \
+#            --api-key ${{ secrets.NUGET_API_KEY }} \
+#            --source https://api.nuget.org/v3/index.json \
+#            --skip-duplicate
 
   build-ios:
-    if: "!contains(github.event.head_commit.message, 'skip ci') && github.event_name != 'workflow_dispatch'"
+    if: "!contains(github.event.head_commit.message, 'skip ci')"
     env:
       OUTPUT_NAME: zen_uniffi
       IPHONEOS_DEPLOYMENT_TARGET: '16.0'
@@ -425,7 +420,7 @@ jobs:
             --base "master"
 
   build-android:
-    if: "!contains(github.event.head_commit.message, 'skip ci') && github.event_name != 'workflow_dispatch'"
+    if: "!contains(github.event.head_commit.message, 'skip ci')"
     runs-on: ubuntu-latest
     env:
       OUTPUT_NAME: zen_uniffi
@@ -472,7 +467,7 @@ jobs:
   prepare-android-bindings:
     runs-on: ubuntu-latest
     needs: [ build ]
-    if: "!contains(github.event.head_commit.message, 'skip ci') && github.event_name != 'workflow_dispatch'"
+    if: "!contains(github.event.head_commit.message, 'skip ci')"
 
     defaults:
       run:

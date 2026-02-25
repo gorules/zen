@@ -13,6 +13,12 @@ dotnet add package GoRules.ZenEngine
 ```csharp
 using GoRules.ZenEngine;
 
+// Create engine and evaluate
+var engine = new ZenEngine(loader: new FileLoader(), customNode: null);
+var context = new JsonBuffer("{\"input\": 42}");
+var response = await engine.Evaluate("my-decision.json", context, null);
+Console.WriteLine(response.result.ToString());
+
 // Implement a loader to resolve decision files
 class FileLoader : ZenDecisionLoaderCallback
 {
@@ -22,12 +28,6 @@ class FileLoader : ZenDecisionLoaderCallback
         return Task.FromResult<JsonBuffer?>(new JsonBuffer(bytes));
     }
 }
-
-// Create engine and evaluate
-var engine = new ZenEngine(loader: new FileLoader(), customNode: null);
-var context = new JsonBuffer("{\"input\": 42}");
-var response = await engine.Evaluate("my-decision.json", context, null);
-Console.WriteLine(response.result.ToString());
 ```
 
 ## Features
@@ -66,6 +66,7 @@ var result = ZenUniffiMethods.EvaluateExpression(
 // Compiled expression (reusable, better performance)
 var expr = ZenExpression.Compile("a + b * 2");
 var output = expr.Evaluate(new JsonBuffer("{\"a\": 1, \"b\": 10}"));
+Console.WriteLine($"output: {output}");
 expr.Dispose();
 ```
 
@@ -92,5 +93,5 @@ var engine = new ZenEngine(loader: new FileLoader(), customNode: new MyCustomNod
 ## Links
 
 - [GitHub Repository](https://github.com/gorules/zen)
-- [GoRules Documentation](https://gorules.io/docs)
+- [GoRules Documentation](https://gorules.mintlify.app/developers/sdks/csharp)
 - [JDM Editor](https://editor.gorules.io)

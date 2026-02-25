@@ -4,9 +4,11 @@
     <TargetFramework>net8.0</TargetFramework>
     <PackageId>GoRules.ZenEngine</PackageId>
     <Authors>GoRules</Authors>
+    <Company>GoRules</Company>
     <Description>ZEN Engine - Business Rules Engine for .NET. Execute JSON Decision Models (JDM) with native performance via Rust FFI bindings.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/gorules/zen</PackageProjectUrl>
+    <PackageIcon>icon.png</PackageIcon>
     <RepositoryUrl>https://github.com/gorules/zen</RepositoryUrl>
     <PackageTags>rules-engine;business-rules;decision-engine;jdm;gorules</PackageTags>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -19,6 +21,7 @@
 
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="/" />
+    <None Include="icon.png" Pack="true" PackagePath="" />
   </ItemGroup>
 
   <!-- C# source files (generated + custom) -->

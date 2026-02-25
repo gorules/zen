@@ -201,14 +201,16 @@ jobs:
           path: ${{ env.UNIFFI_DIRECTORY }}/nuget/bin/Release/*.nupkg
           if-no-files-found: error
 
-      - name: Login to NuGet
-        uses: nuget/setup-nuget@v2
+      - name: NuGet login (trusted publishing)
+        uses: NuGet/login@v1
+        id: nuget-login
         with:
-          nuget-api-key-source: trusted-publishing
+          user: ${{ secrets.NUGET_USER }}
 
       - name: Push to NuGet.org
         run: |
           dotnet nuget push nuget/bin/Release/*.nupkg \
+            --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }} \
             --source https://api.nuget.org/v3/index.json \
             --skip-duplicate
 

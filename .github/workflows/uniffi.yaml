@@ -141,6 +141,8 @@ jobs:
   release-csharp:
     runs-on: ubuntu-latest
     needs: [ build ]
+    permissions:
+      id-token: write  # Required for OIDC
     if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi') || github.event_name == 'workflow_dispatch'"
     defaults:
       run:
@@ -199,10 +201,14 @@ jobs:
           path: ${{ env.UNIFFI_DIRECTORY }}/nuget/bin/Release/*.nupkg
           if-no-files-found: error
 
+      - name: Login to NuGet
+        uses: nuget/setup-nuget@v2
+        with:
+          nuget-api-key-source: trusted-publishing
+
       - name: Push to NuGet.org
         run: |
           dotnet nuget push nuget/bin/Release/*.nupkg \
-            --api-key ${{ secrets.NUGET_API_KEY }} \
             --source https://api.nuget.org/v3/index.json \
             --skip-duplicate
 

@@ -13,21 +13,13 @@ dotnet add package GoRules.ZenEngine
 ```csharp
 using GoRules.ZenEngine;
 
-// Create engine and evaluate
-var engine = new ZenEngine(loader: new FileLoader(), customNode: null);
-var context = new JsonBuffer("{\"input\": 42}");
-var response = await engine.Evaluate("my-decision.json", context, null);
-Console.WriteLine(response.result.ToString());
+// Create an engine and evaluate
+var engine = new ZenEngine(loader: null, customNode: null);
+var decision = engine.CreateDecision(new JsonBuffer(File.ReadAllBytes("my-decision.json")));
+var context = new JsonBuffer("""{"input": 42}""");
+var response = await decision.Evaluate(context, null);
+Console.WriteLine(response.result);
 
-// Implement a loader to resolve decision files
-class FileLoader : ZenDecisionLoaderCallback
-{
-    public Task<JsonBuffer?> Load(string key)
-    {
-        var bytes = File.ReadAllBytes(key);
-        return Task.FromResult<JsonBuffer?>(new JsonBuffer(bytes));
-    }
-}
 ```
 
 ## Features
@@ -44,9 +36,9 @@ Enable tracing to inspect the execution of each node:
 
 ```csharp
 var options = new ZenEvaluateOptions(maxDepth: null, trace: true);
-var response = await engine.Evaluate("decision.json", context, options);
+var decided = await decision.Evaluate(context, options);
 
-foreach (var (nodeId, trace) in response.trace!)
+foreach (var (nodeId, trace) in decided.trace!)
 {
     Console.WriteLine($"{trace.name}: {trace.output}");
 }
@@ -75,19 +67,28 @@ expr.Dispose();
 Extend the engine with custom logic:
 
 ```csharp
+
+using var myEngine = new ZenEngine(loader: new FileLoader(), customNode: new MyCustomNode());
+var myResponse = await myEngine.Evaluate("custom.json", context, options);
+Console.WriteLine(myResponse.result); 
+
+// Custom node handler
 class MyCustomNode : ZenCustomNodeCallback
 {
-    public Task<ZenEngineHandlerResponse> Handle(ZenEngineHandlerRequest request)
-    {
-        var output = new JsonBuffer("{\"result\": \"custom\"}");
-        return Task.FromResult(new ZenEngineHandlerResponse(
-            output: output,
+    public Task<ZenEngineHandlerResponse> Handle(ZenEngineHandlerRequest request) =>
+        Task.FromResult(new ZenEngineHandlerResponse(
+            output: new JsonBuffer("""{"result": "custom"}"""),
             traceData: null
         ));
-    }
 }
 
-var engine = new ZenEngine(loader: new FileLoader(), customNode: new MyCustomNode());
+// Implement a loader to resolve decision files
+class FileLoader : ZenDecisionLoaderCallback
+{
+    public Task<JsonBuffer?> Load(string key) =>
+        Task.FromResult<JsonBuffer?>(new JsonBuffer(File.ReadAllBytes(key)));
+}
+
 ```
 
 ## Links

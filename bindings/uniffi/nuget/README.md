@@ -93,5 +93,5 @@ var engine = new ZenEngine(loader: new FileLoader(), customNode: new MyCustomNod
 ## Links
 
 - [GitHub Repository](https://github.com/gorules/zen)
-- [GoRules Documentation](https://gorules.mintlify.app/developers/sdks/csharp)
+- [GoRules Documentation](https://docs.gorules.io/developers/sdks/csharp)
 - [JDM Editor](https://editor.gorules.io)

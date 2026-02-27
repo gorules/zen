@@ -137,6 +137,82 @@ jobs:
         run: ./gradlew publishMavenKotlinPublicationToCentralPortal publishMavenJavaPublicationToCentralPortal
 
 
+  release-csharp:
+    runs-on: ubuntu-latest
+    needs: [ build ]
+    permissions:
+      id-token: write  # Required for OIDC
+    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
+    defaults:
+      run:
+        working-directory: ${{ env.UNIFFI_DIRECTORY }}
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: build/generated/resources
+
+      - name: Move artifacts
+        run: mv ../../build ./
+
+      - name: Install uniffi-bindgen-cs
+        run: cargo install uniffi-bindgen-cs --git https://github.com/bcrevar-gorules/uniffi-bindgen-cs --branch fix/async-callback-interface-return-type
+
+      - name: Generate C# bindings
+        run: |
+          uniffi-bindgen-cs \
+            --library build/generated/resources/darwin-x86-64/libzen_uniffi.dylib \
+            --config uniffi.toml \
+            --out-dir build/generated/csharp
+
+      - name: Upload generated C# source
+        uses: actions/upload-artifact@v4
+        with:
+          name: csharp-generated-source
+          path: ${{ env.UNIFFI_DIRECTORY }}/build/generated/csharp/zen_uniffi.cs
+          if-no-files-found: error
+
+      - name: Extract version from Cargo.toml
+        id: version
+        run: |
+          VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Detected version: $VERSION"
+
+      - name: Pack NuGet package
+        run: dotnet pack nuget/GoRules.ZenEngine.csproj -c Release -p:Version=$VERSION
+
+      - name: Upload NuGet package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-package
+          path: ${{ env.UNIFFI_DIRECTORY }}/nuget/bin/Release/*.nupkg
+          if-no-files-found: error
+
+      - name: NuGet login (trusted publishing)
+        uses: NuGet/login@v1
+        id: nuget-login
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
+      - name: Push to NuGet.org
+        run: |
+          dotnet nuget push nuget/bin/Release/*.nupkg \
+            --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }} \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate
+
   build-ios:
     if: "!contains(github.event.head_commit.message, 'skip ci')"
     env:

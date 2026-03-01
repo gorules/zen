@@ -54,6 +54,7 @@ jobs:
             target: 's390x-unknown-linux-gnu'
             output: 'lib{0}.so'
             lib_dir: 'linux-s390x'
+            extra_args: '--features bindgen'
 
     name: UniFFI - ${{ matrix.settings.target }}
     runs-on: ${{ matrix.settings.host }}
@@ -71,7 +72,7 @@ jobs:
         with:
           working-directory: ${{ env.UNIFFI_DIRECTORY }}
           target: ${{ matrix.settings.target }}
-          args: '--lib --release'
+          args: '--lib --release ${{ matrix.settings.extra_args }}'
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

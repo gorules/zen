@@ -50,6 +50,10 @@ jobs:
             target: 'aarch64-unknown-linux-gnu'
             output: 'lib{0}.so'
             lib_dir: 'linux-aarch64'
+          - host: ubuntu-latest
+            target: 's390x-unknown-linux-gnu'
+            output: 'lib{0}.so'
+            lib_dir: 'linux-s390x'
 
     name: UniFFI - ${{ matrix.settings.target }}
     runs-on: ${{ matrix.settings.host }}

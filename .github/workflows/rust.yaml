@@ -54,6 +54,10 @@ jobs:
         run: rustup install 1.80
       - run: cargo test --workspace --all-features --exclude zen-ffi --exclude zen-nodejs --exclude zen-python
       - run: cargo test --workspace --all-features --exclude zen-ffi --exclude zen-nodejs --exclude zen-python --release
+      - name: Test without arbitrary_precision
+        run: cargo test --workspace --exclude zen-ffi --exclude zen-nodejs --exclude zen-python
+      - name: Test without arbitrary_precision (release)
+        run: cargo test --workspace --exclude zen-ffi --exclude zen-nodejs --exclude zen-python --release
 
   build:
     name: cargo +${{ matrix.rust }} build

@@ -18,3 +18,4 @@ default = ["regex-deprecated"]
 
 regex-lite = ["zen-expression/regex-lite"]
 regex-deprecated = ["zen-expression/regex-deprecated"]
+arbitrary_precision = ["zen-expression/arbitrary_precision"]

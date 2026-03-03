@@ -15,7 +15,7 @@ ahash = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 petgraph = { workspace = true }
-serde_json = { workspace = true, features = ["arbitrary_precision"] }
+serde_json = { workspace = true, features = [] }
 serde = { workspace = true, features = ["derive", "rc"] }
 strum = { workspace = true, features = ["derive"] }
 once_cell = { workspace = true }
@@ -52,4 +52,6 @@ harness = false
 name = "engine"
 
 [features]
+default = []
 bindgen = ["rquickjs/bindgen"]
+arbitrary_precision = ["serde_json/arbitrary_precision", "zen-expression/arbitrary_precision", "zen-types/arbitrary_precision", "zen-tmpl/arbitrary_precision"]

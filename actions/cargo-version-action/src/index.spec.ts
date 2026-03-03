@@ -53,6 +53,34 @@ describe('GitHub Action', () => {
     }
   });
 
+  test('Preserves default-features and features flags', () => {
+    const tomlWithFlags = `
+    [package]
+    name = "zen-engine"
+    version = "0.53.0"
+
+    [dependencies]
+    zen-types = { path = "../types", version = "0.53.0", default-features = false }
+    zen-expression = { path = "../expression", version = "0.53.0", default-features = false }
+    zen-tmpl = { path = "../template", version = "0.53.0", default-features = false }
+    zen-macros = { path = "../macros", version = "0.53.0" }
+`;
+
+    const expected = `
+    [package]
+    name = "zen-engine"
+    version = "1.0.0"
+
+    [dependencies]
+    zen-types = { path = "../types", version = "1.0.0", default-features = false }
+    zen-expression = { path = "../expression", version = "1.0.0", default-features = false }
+    zen-tmpl = { path = "../template", version = "1.0.0", default-features = false }
+    zen-macros = { path = "../macros", version = "1.0.0" }
+`;
+
+    expect(updateCargoContents(tomlWithFlags, { version: '1.0.0' })).toEqual(expected);
+  });
+
   test('Points to right directory', async () => {
     const escapeDir = (count: number) => '../'.repeat(count);
     const coreDirectory = path.join(__dirname, escapeDir(3), 'core');

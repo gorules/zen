@@ -1,3 +1,4 @@
+#[cfg(feature = "arbitrary_precision")]
 use crate::constant::NUMBER_TOKEN;
 use crate::variable::Variable;
 use ahash::{HashMap, HashMapExt};
@@ -7,6 +8,7 @@ use serde::de::{DeserializeSeed, Error, MapAccess, SeqAccess, Unexpected, Visito
 use serde::{Deserialize, Deserializer};
 use std::fmt::Formatter;
 use std::marker::PhantomData;
+#[cfg(feature = "arbitrary_precision")]
 use std::ops::Deref;
 use std::rc::Rc;
 
@@ -84,11 +86,13 @@ impl<'de> Visitor<'de> for VariableVisitor {
         A: MapAccess<'de>,
     {
         let mut m = HashMap::with_capacity(map.size_hint().unwrap_or_default());
+        #[cfg(feature = "arbitrary_precision")]
         let mut first = true;
 
         while let Some((key, value)) =
             map.next_entry_seed(PhantomData::<Rc<str>>, VariableDeserializer)?
         {
+            #[cfg(feature = "arbitrary_precision")]
             if first && key.deref() == NUMBER_TOKEN {
                 let str = value
                     .as_str()
@@ -102,7 +106,10 @@ impl<'de> Visitor<'de> for VariableVisitor {
             }
 
             m.insert(key, value);
-            first = false;
+            #[cfg(feature = "arbitrary_precision")]
+            {
+                first = false;
+            }
         }
 
         Ok(Variable::from_object(m))

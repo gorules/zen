@@ -1,6 +1,8 @@
 use crate::rcvalue::RcValue;
 use crate::variable::{ToVariable, Variable};
 use rust_decimal::Decimal;
+#[cfg(not(feature = "arbitrary_precision"))]
+use rust_decimal::prelude::FromPrimitive;
 use serde_json::Value;
 use std::rc::Rc;
 
@@ -58,11 +60,35 @@ impl From<&Value> for RcValue {
         match value {
             Value::Null => RcValue::Null,
             Value::Bool(b) => RcValue::Bool(*b),
-            Value::Number(n) => RcValue::Number(
-                Decimal::from_str_exact(n.as_str())
-                    .or_else(|_| Decimal::from_scientific(n.as_str()))
-                    .expect("Allowed number"),
-            ),
+            Value::Number(n) => {
+                #[cfg(feature = "arbitrary_precision")]
+                {
+                    RcValue::Number(
+                        Decimal::from_str_exact(n.as_str())
+                            .or_else(|_| Decimal::from_scientific(n.as_str()))
+                            .expect("Allowed number"),
+                    )
+                }
+
+                #[cfg(not(feature = "arbitrary_precision"))]
+                {
+                    if let Some(u) = n.as_u64() {
+                        return RcValue::Number(Decimal::from(u));
+                    }
+
+                    if let Some(i) = n.as_i64() {
+                        return RcValue::Number(Decimal::from(i));
+                    }
+
+                    if let Some(f) = n.as_f64() {
+                        return RcValue::Number(Decimal::from_f64(f).expect("Allowed number"));
+                    }
+
+                    unreachable!(
+                        "serde_json::Number is always u64, i64, or f64 without arbitrary_precision"
+                    );
+                }
+            }
             Value::String(s) => RcValue::String(Rc::from(s.as_str())),
             Value::Array(arr) => RcValue::Array(arr.iter().map(RcValue::from).collect()),
             Value::Object(obj) => RcValue::Object(

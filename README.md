@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Breaking change** for Rust crate consumers: `arbitrary_precision` is no longer enabled by default in zen-engine, zen-expression, zen-types, and zen-tmpl. If you rely on arbitrary precision number handling, add `features = ["arbitrary_precision"]` to your dependency. Bindings (Node.js, Python, C, UniFFI) are unaffected — they opt in automatically.      
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 # Business Rules Engine

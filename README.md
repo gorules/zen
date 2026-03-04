@@ -3,7 +3,7 @@
 # Business Rules Engine
 
 ZEN Engine is a cross-platform, Open-Source Business Rules Engine (BRE). It is written in **Rust** and provides native
-bindings for **NodeJS**, **Python**, **Go**, **Java**, **Kotlin (JVM)**, **Kotlin (Android)**, **Swift (iOS)** and **Browser** (via WASM-wasi). ZEN Engine allows to load and
+bindings for **NodeJS**, **Python**, **Go**, **Java**, **C#**, **Kotlin (JVM)**, **Kotlin (Android)**, **Swift (iOS)** and **Browser** (via WASM-wasi). ZEN Engine allows to load and
 execute [JSON Decision Model (JDM)](https://docs.gorules.io/reference/json-decision-model-jdm) from JSON files.
 
 <img width="800" alt="Open-Source Rules Engine" src="https://gorules.io/images/jdm-editor.gif">
@@ -12,7 +12,7 @@ An open-source React editor is available on our [JDM Editor](https://github.com/
 
 ## Usage
 
-ZEN Engine is built as embeddable BRE for your **NodeJS**, **Python**, **Go**, **Java**, **Kotlin (JVM)**, **Kotlin (Android)**, **Swift (iOS)** or Browser Javascript (via **WASM-wasi**) applications.
+ZEN Engine is built as embeddable BRE for your **NodeJS**, **Python**, **Go**, **Java**, **C#**, **Kotlin (JVM)**, **Kotlin (Android)**, **Swift (iOS)** or Browser Javascript (via **WASM-wasi**) applications.
 It parses JDM from JSON content. It is up to you to obtain the JSON content, e.g. from file system, database or service
 call.
 
@@ -265,13 +265,6 @@ true, allowing branching to multiple paths.
 
 Note: If there are multiple edges from the same condition, there is no guaranteed order of execution.
 
-*Available from:*
-
-* Python 0.16.0
-* NodeJS 0.13.0
-* Rust 0.16.0
-* Go 0.1.0
-
 ### Functions Node
 
 Function nodes are JavaScript snippets that allow for quick and easy parsing, re-mapping or otherwise modifying the data
@@ -324,7 +317,8 @@ maintainability in complex systems.
 | Node.js (N-API) | `linux-x64-gnu`, `linux-arm64-gnu`, `linux-x64-musl`, `linux-arm64-musl`, `darwin-x64`, `darwin-arm64`, `win32-x64-msvc`, `wasm32-wasi` | npm (@gorules/zen-engine) |
 | Browser (N-API) | `wasm32-wasi` | npm (@gorules/zen-engine) |
 | Python (PyO3) | `linux-x64-gnu`, `linux-arm64-gnu`, `darwin-x64`, `darwin-arm64`, `win32-x64-msvc` | PyPI (zen-engine) |
-| Java (UniFFI) | `linux-x64-gnu`, `linux-arm64-gnu`, `darwin-x64`, `darwin-arm64`, `win32-x64-msvc` | Maven Central (zen-engine) |
+| Java (UniFFI) | `linux-x64-gnu`, `linux-arm64-gnu`, `darwin-x64`, `darwin-arm64`, `win32-x64-msvc`, `linux-s390x-gnu` | Maven Central (zen-engine) |
+| C# (UniFFI) | `linux-x64-gnu`, `linux-arm64-gnu`, `darwin-x64`, `darwin-arm64`, `win32-x64-msvc` | NuGet (GoRules.ZenEngine) |
 | Kotlin JVM (UniFFI) | `linux-x64-gnu`, `linux-arm64-gnu`, `darwin-x64`, `darwin-arm64`, `win32-x64-msvc` | Maven Central (zen-engine-kotlin) |
 | Kotlin Android (UniFFI) | `android-arm64`, `android-armv7`, `android-i686`, `android-x64` | Maven Central (zen-engine-kotlin-android |
 | Swift iOS (UniFFI) | `ios-arm64`, `ios-x64`, `ios-arm64-sim` | github.com/gorules/zen-ios (auto-sync via PR) |

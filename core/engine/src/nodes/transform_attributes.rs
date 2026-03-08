@@ -28,6 +28,7 @@ impl TransformAttributesExecution for TransformAttributes {
                     .node_context_message(&ctx, "Failed to evaluate expression")?;
 
                 let nodes = ctx.input.dot("$nodes").unwrap_or(Variable::Null);
+                let params = ctx.input.dot("$params").unwrap_or(Variable::Null);
                 match &calculated_input {
                     Variable::Array(arr) => {
                         let arr = arr.borrow();
@@ -36,6 +37,7 @@ impl TransformAttributesExecution for TransformAttributes {
                             .map(|v| {
                                 let new_v = v.depth_clone(1);
                                 new_v.dot_insert("$nodes", nodes.clone());
+                                new_v.dot_insert("$params", params.clone());
                                 new_v
                             })
                             .collect();
@@ -45,6 +47,7 @@ impl TransformAttributesExecution for TransformAttributes {
                     _ => {
                         let new_input = calculated_input.depth_clone(1);
                         new_input.dot_insert("$nodes", nodes);
+                        new_input.dot_insert("$params", params);
                         new_input
                     }
                 }
@@ -62,6 +65,7 @@ impl TransformAttributesExecution for TransformAttributes {
                 }
 
                 response.output.dot_remove("$nodes");
+                response.output.dot_remove("$params");
                 response.output
             }
             TransformExecutionMode::Loop => {
@@ -91,6 +95,7 @@ impl TransformAttributesExecution for TransformAttributes {
                     }
 
                     response.output.dot_remove("$nodes");
+                    response.output.dot_remove("$params");
                     output_array.push(response.output);
                 }
 

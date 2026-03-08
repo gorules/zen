@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::sync::Arc;
 use zen_expression::{ExpressionKind, Isolate, OpcodeCache};
 use zen_types::decision::{DecisionEdge, DecisionNode, DecisionNodeKind};
@@ -8,6 +9,8 @@ use zen_types::decision::{DecisionEdge, DecisionNode, DecisionNodeKind};
 pub struct DecisionContent {
     pub nodes: Vec<Arc<DecisionNode>>,
     pub edges: Vec<Arc<DecisionEdge>>,
+    #[serde(default)]
+    pub params: Option<Arc<Value>>,
 
     #[serde(skip)]
     pub compiled_cache: Option<Arc<OpcodeCache>>,

@@ -478,7 +478,7 @@ pub(crate) mod imp {
         let arr = a.borrow();
 
         let Some(first) = arr.first() else {
-            return Ok(V::from_array(Vec::new()));
+            return Ok(V::empty_object());
         };
 
         let capacity = arr
@@ -536,7 +536,7 @@ pub(crate) mod imp {
         let a = args.array(0)?;
         let arr = a.borrow();
 
-        let mut result = V::from_object(Default::default());
+        let mut result = V::empty_object();
         for item in arr.iter() {
             match item {
                 V::Object(_) => {

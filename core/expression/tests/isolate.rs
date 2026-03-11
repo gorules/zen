@@ -595,7 +595,7 @@ fn isolate_standard_test() {
                 },
                 TestCase {
                     expr: r#"merge([])"#,
-                    result: json!([]),
+                    result: json!({}),
                 },
             ]),
         },

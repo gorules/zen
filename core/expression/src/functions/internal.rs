@@ -12,6 +12,7 @@ pub enum InternalFunction {
     Contains,
     Flatten,
     Merge,
+    MergeDeep,
 
     // String
     Upper,
@@ -95,6 +96,14 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
                         VT::Object(Default::default()),
                     ),
                 ],
+            }),
+
+            IF::MergeDeep => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::merge_deep),
+                signature: FunctionSignature::single(
+                    VT::Object(Default::default()).array(),
+                    VT::Object(Default::default()),
+                ),
             }),
 
             IF::Upper => Rc::new(StaticFunction {
@@ -520,6 +529,58 @@ pub(crate) mod imp {
                 "merge expects an array of arrays or objects, got {}",
                 other.type_name()
             )),
+        }
+    }
+
+    pub fn merge_deep(args: Arguments) -> anyhow::Result<V> {
+        let a = args.array(0)?;
+        let arr = a.borrow();
+
+        let mut result = V::from_object(Default::default());
+        for item in arr.iter() {
+            match item {
+                V::Object(_) => {
+                    result = deep_merge_variables(&result, item);
+                }
+                V::Null => {}
+                _ => return Err(anyhow!("Expected array of objects")),
+            }
+        }
+
+        Ok(result)
+    }
+
+    fn deep_merge_variables(base: &V, patch: &V) -> V {
+        match (base, patch) {
+            (V::Object(a), V::Object(b)) => {
+                let a = a.borrow();
+                let b = b.borrow();
+                let mut merged: ahash::HashMap<Rc<str>, V> =
+                    ahash::HashMap::with_capacity(a.len() + b.len());
+
+                for (key, value) in a.iter() {
+                    merged.insert(key.clone(), value.clone());
+                }
+
+                for (key, value) in b.iter() {
+                    let entry = merged
+                        .get(key)
+                        .map(|existing| deep_merge_variables(existing, value))
+                        .unwrap_or_else(|| value.clone());
+                    merged.insert(key.clone(), entry);
+                }
+
+                V::from_object(merged)
+            }
+            (V::Array(a), V::Array(b)) => {
+                let a = a.borrow();
+                let b = b.borrow();
+                let mut merged = Vec::with_capacity(a.len() + b.len());
+                merged.extend(a.iter().cloned());
+                merged.extend(b.iter().cloned());
+                V::from_array(merged)
+            }
+            (_, patch) => patch.clone(),
         }
     }
 

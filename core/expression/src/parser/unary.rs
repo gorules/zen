@@ -364,6 +364,8 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                     InternalFunction::Number => CompareWithReference(Equal),
                     InternalFunction::Bool => CompareWithReference(Equal),
                     InternalFunction::Flatten => CompareWithReference(In),
+                    InternalFunction::Merge => CompareWithReference(In),
+                    InternalFunction::MergeDeep => CompareWithReference(In),
                     InternalFunction::Extract => CompareWithReference(In),
                     InternalFunction::Contains => AsBoolean,
                     InternalFunction::StartsWith => AsBoolean,

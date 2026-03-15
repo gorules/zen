@@ -569,6 +569,34 @@ fn isolate_standard_test() {
                     expr: r#"flatMap(nestedArray, #)"#,
                     result: json!([1, 2, 3, 4, 5, 6]),
                 },
+                TestCase {
+                    expr: r#"merge(nestedArray)"#,
+                    result: json!([1, 2, 3, 4, 5, 6]),
+                },
+                TestCase {
+                    expr: r#"merge([[1, 2], [3, 4], [5]])"#,
+                    result: json!([1, 2, 3, 4, 5]),
+                },
+            ]),
+        },
+        TestEnv {
+            env: json!({
+                "objects": [{"a": 1}, {"b": 2}, {"c": 3}],
+                "overlapping": [{"a": 1, "b": 2}, {"b": 3, "c": 4}],
+            }),
+            cases: Vec::from([
+                TestCase {
+                    expr: r#"merge(objects)"#,
+                    result: json!({"a": 1, "b": 2, "c": 3}),
+                },
+                TestCase {
+                    expr: r#"merge(overlapping)"#,
+                    result: json!({"a": 1, "b": 3, "c": 4}),
+                },
+                TestCase {
+                    expr: r#"merge([])"#,
+                    result: json!({}),
+                },
             ]),
         },
         TestEnv {

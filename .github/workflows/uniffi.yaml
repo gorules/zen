@@ -23,7 +23,7 @@ on:
 
 jobs:
   build:
-    if: "!contains(github.event.head_commit.message, 'skip ci')"
+    if: "!contains(github.event.head_commit.message, 'skip ci') || github.event_name == 'workflow_dispatch'"
     env:
       OUTPUT_NAME: zen_uniffi
 
@@ -80,7 +80,7 @@ jobs:
   release-java-kotlin:
     runs-on: ubuntu-latest
     needs: [ build ]
-    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
+    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi') || github.event_name == 'workflow_dispatch'"
     defaults:
       run:
         working-directory: ${{ env.UNIFFI_DIRECTORY }}
@@ -100,17 +100,21 @@ jobs:
         uses: gradle/actions/wrapper-validation@v3
 
       - name: Setup Gradle
+        if: github.event_name != 'workflow_dispatch'
         uses: gradle/actions/setup-gradle@v3
 
       - name: Download all artifacts
+        if: github.event_name != 'workflow_dispatch'
         uses: actions/download-artifact@v4
         with:
           path: build/generated/resources
 
       - name: Move artifacts
+        if: github.event_name != 'workflow_dispatch'
         run: mv ../../build ./
 
       - name: Generate Kotlin sources
+        if: github.event_name != 'workflow_dispatch'
         run: |
           cargo run --bin uniffi-bindgen -- generate \
             --library build/generated/resources/darwin-x86-64/libzen_uniffi.dylib \
@@ -118,18 +122,22 @@ jobs:
             --out-dir build/generated/kotlin
 
       - name: Install uniffi-bindgen-java
+        if: github.event_name != 'workflow_dispatch'
         run: cargo install uniffi-bindgen-java
 
       - name: Generate Java sources
+        if: github.event_name != 'workflow_dispatch'
         run: |
           uniffi-bindgen-java generate \
             --library build/generated/resources/darwin-x86-64/libzen_uniffi.dylib \
             --out-dir build/generated/java
 
       - name: Print directory tree
+        if: github.event_name != 'workflow_dispatch'
         run: tree build
 
       - name: Publish Maven Artifact
+        if: github.event_name != 'workflow_dispatch'
         env:
           SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
           SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}

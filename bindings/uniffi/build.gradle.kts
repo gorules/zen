@@ -17,7 +17,7 @@ plugins {
     id("signing")
     id("org.jetbrains.dokka") version "2.0.0"
     id("org.jetbrains.dokka-javadoc") version "2.0.0"
-    id("com.gradleup.nmcp") version "0.0.9"
+    id("com.gradleup.nmcp") version "1.4.4"
 }
 
 repositories {
@@ -138,46 +138,53 @@ tasks {
     }
 }
 
+// Use -PpublishScope=desktop|android|all to control which publications are included
+val publishScope = (findProperty("publishScope") as String?) ?: "all"
+
 publishing {
     publications {
-        create<MavenPublication>("mavenJava") {
-            groupId = "io.gorules"
-            artifactId = "zen-engine"
-            artifact(tasks["generateJavaJar"])
-            artifact(tasks["generateJavaSourcesJar"])
-            artifact(tasks["javadocJarJava"])
+        if (publishScope == "all" || publishScope == "desktop") {
+            create<MavenPublication>("mavenJava") {
+                groupId = "io.gorules"
+                artifactId = "zen-engine"
+                artifact(tasks["generateJavaJar"])
+                artifact(tasks["generateJavaSourcesJar"])
+                artifact(tasks["javadocJarJava"])
 
-            configurePom {
-                dependency("net.java.dev.jna:jna:5.17.0")
+                configurePom {
+                    dependency("net.java.dev.jna:jna:5.17.0")
+                }
+            }
+
+            create<MavenPublication>("mavenKotlin") {
+                groupId = "io.gorules"
+                artifactId = "zen-engine-kotlin"
+                artifact(tasks["generateKotlinJar"])
+                artifact(tasks["generateKotlinSourcesJar"])
+                artifact(tasks["javadocJarKotlin"])
+
+                configurePom {
+                    dependency("net.java.dev.jna:jna:5.17.0")
+                }
             }
         }
 
-        create<MavenPublication>("mavenKotlin") {
-            groupId = "io.gorules"
-            artifactId = "zen-engine-kotlin"
-            artifact(tasks["generateKotlinJar"])
-            artifact(tasks["generateKotlinSourcesJar"])
-            artifact(tasks["javadocJarKotlin"])
+        if (publishScope == "all" || publishScope == "android") {
+            create<MavenPublication>("mavenKotlinAndroid") {
+                groupId = "io.gorules"
+                artifactId = "zen-engine-kotlin-android"
 
-            configurePom {
-                dependency("net.java.dev.jna:jna:5.17.0")
-            }
-        }
+                artifact("build-android/aar/zen-engine-android-release.aar") {
+                    extension = "aar"
+                }
+                artifact(tasks["generateKotlinAndroidSourcesJar"])
+                artifact(tasks["javadocJarKotlinAndroid"])
 
-        create<MavenPublication>("mavenKotlinAndroid") {
-            groupId = "io.gorules"
-            artifactId = "zen-engine-kotlin-android"
-
-            artifact("build-android/aar/zen-engine-android-release.aar") {
-                extension = "aar"
-            }
-            artifact(tasks["generateKotlinAndroidSourcesJar"])
-            artifact(tasks["javadocJarKotlinAndroid"])
-
-            configurePom {
-                dependency("net.java.dev.jna:jna:5.14.0", "aar")
-                dependency("androidx.core:core-ktx:1.12.0")
-                dependency("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+                configurePom {
+                    dependency("net.java.dev.jna:jna:5.14.0", "aar")
+                    dependency("androidx.core:core-ktx:1.12.0")
+                    dependency("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+                }
             }
         }
     }
@@ -194,13 +201,13 @@ signing {
         val signingKey = Base64.getDecoder().decode(signingKeyBase64.get()).toString(Charsets.UTF_8)
 
         useInMemoryPgpKeys(signingKey, signingPassphrase.get())
-        sign(publishing.publications["mavenJava"], publishing.publications["mavenKotlin"], publishing.publications["mavenKotlinAndroid"])
+        sign(*publishing.publications.toTypedArray())
     }
 }
 
 nmcp {
-    publishAllPublications {
-        publicationType = "USER_MANAGED"
+    publishAllPublicationsToCentralPortal {
+        publishingType = "USER_MANAGED"
 
         val remoteUsername = providers.environmentVariable("SONATYPE_USERNAME")
         val remotePassword = providers.environmentVariable("SONATYPE_PASSWORD")

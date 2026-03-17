@@ -135,7 +135,7 @@ jobs:
           SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
           GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
           GPG_SIGNING_PASSPHRASE: ${{ secrets.GPG_SIGNING_PASSPHRASE }}
-        run: ./gradlew publishMavenKotlinPublicationToCentralPortal publishMavenJavaPublicationToCentralPortal
+        run: ./gradlew publishAllPublicationsToCentralPortal -PpublishScope=desktop
 
 
   release-csharp:
@@ -648,4 +648,4 @@ jobs:
           SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
           GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
           GPG_SIGNING_PASSPHRASE: ${{ secrets.GPG_SIGNING_PASSPHRASE }}
-        run: ./gradlew publishMavenKotlinAndroidPublicationToCentralPortal
+        run: ./gradlew publishAllPublicationsToCentralPortal -PpublishScope=android

@@ -3,6 +3,7 @@ env:
   UNIFFI_DIRECTORY: bindings/uniffi
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - master
@@ -22,7 +23,7 @@ on:
 
 jobs:
   build:
-    if: "!contains(github.event.head_commit.message, 'skip ci')"
+    if: "!contains(github.event.head_commit.message, 'skip ci') && github.event_name != 'workflow_dispatch'"
     env:
       OUTPUT_NAME: zen_uniffi
 
@@ -76,10 +77,18 @@ jobs:
           path: target/${{ matrix.settings.target }}/release/${{ format(matrix.settings.output, env.OUTPUT_NAME) }}
           if-no-files-found: error
 
+  validate-gradle-wrapper:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v3
+      - name: Validate Gradle wrapper jar
+        uses: gradle/actions/wrapper-validation@v3
+
   release-java-kotlin:
     runs-on: ubuntu-latest
     needs: [ build ]
-    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
+    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi') && github.event_name != 'workflow_dispatch'"
     defaults:
       run:
         working-directory: ${{ env.UNIFFI_DIRECTORY }}
@@ -142,7 +151,7 @@ jobs:
     needs: [ build ]
     permissions:
       id-token: write  # Required for OIDC
-    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
+    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi') && github.event_name != 'workflow_dispatch'"
     defaults:
       run:
         working-directory: ${{ env.UNIFFI_DIRECTORY }}
@@ -214,7 +223,7 @@ jobs:
             --skip-duplicate
 
   build-ios:
-    if: "!contains(github.event.head_commit.message, 'skip ci')"
+    if: "!contains(github.event.head_commit.message, 'skip ci') && github.event_name != 'workflow_dispatch'"
     env:
       OUTPUT_NAME: zen_uniffi
       IPHONEOS_DEPLOYMENT_TARGET: '16.0'
@@ -261,7 +270,7 @@ jobs:
   create-xcframework:
     runs-on: macos-latest
     needs: [ build-ios ]
-    if: "!contains(github.event.head_commit.message, 'skip ci')"
+    if: "!contains(github.event.head_commit.message, 'skip ci') && github.event_name != 'workflow_dispatch'"
 
     steps:
       - uses: actions/checkout@v3
@@ -351,7 +360,7 @@ jobs:
     name: Release iOS
     runs-on: macos-latest
     needs: [ create-xcframework ]
-    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
+    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi') && github.event_name != 'workflow_dispatch'"
 
     steps:
       - name: Checkout zen-ios
@@ -428,7 +437,7 @@ jobs:
             --base "master"
 
   build-android:
-    if: "!contains(github.event.head_commit.message, 'skip ci')"
+    if: "!contains(github.event.head_commit.message, 'skip ci') && github.event_name != 'workflow_dispatch'"
     runs-on: ubuntu-latest
     env:
       OUTPUT_NAME: zen_uniffi
@@ -475,7 +484,7 @@ jobs:
   prepare-android-bindings:
     runs-on: ubuntu-latest
     needs: [ build ]
-    if: "!contains(github.event.head_commit.message, 'skip ci')"
+    if: "!contains(github.event.head_commit.message, 'skip ci') && github.event_name != 'workflow_dispatch'"
 
     defaults:
       run:
@@ -513,7 +522,7 @@ jobs:
   package-android-aar:
     runs-on: ubuntu-latest
     needs: [ build-android, prepare-android-bindings ]
-    if: "!contains(github.event.head_commit.message, 'skip ci')"
+    if: "!contains(github.event.head_commit.message, 'skip ci') && github.event_name != 'workflow_dispatch'"
     defaults:
       run:
         working-directory: ${{ env.UNIFFI_DIRECTORY }}
@@ -611,7 +620,7 @@ jobs:
   release-android:
     runs-on: ubuntu-latest
     needs: [ package-android-aar ]
-    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
+    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi') && github.event_name != 'workflow_dispatch'"
     defaults:
       run:
         working-directory: ${{ env.UNIFFI_DIRECTORY }}

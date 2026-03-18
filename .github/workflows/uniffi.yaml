@@ -105,14 +105,17 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Download all artifacts
+        if: github.event_name != 'workflow_dispatch'
         uses: actions/download-artifact@v4
         with:
           path: build/generated/resources
 
       - name: Move artifacts
+        if: github.event_name != 'workflow_dispatch'
         run: mv ../../build ./
 
       - name: Generate Kotlin sources
+        if: github.event_name != 'workflow_dispatch'
         run: |
           cargo run --bin uniffi-bindgen -- generate \
             --library build/generated/resources/darwin-x86-64/libzen_uniffi.dylib \
@@ -120,18 +123,22 @@ jobs:
             --out-dir build/generated/kotlin
 
       - name: Install uniffi-bindgen-java
+        if: github.event_name != 'workflow_dispatch'
         run: cargo install uniffi-bindgen-java
 
       - name: Generate Java sources
+        if: github.event_name != 'workflow_dispatch'
         run: |
           uniffi-bindgen-java generate \
             --library build/generated/resources/darwin-x86-64/libzen_uniffi.dylib \
             --out-dir build/generated/java
 
       - name: Print directory tree
+        if: github.event_name != 'workflow_dispatch'
         run: tree build
 
       - name: Publish Java Maven Artifact
+        if: github.event_name != 'workflow_dispatch'
         env:
           SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
           SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
@@ -140,6 +147,7 @@ jobs:
         run: ./gradlew publishAllPublicationsToCentralPortal -PpublishScope=java
 
       - name: Publish Kotlin Maven Artifact
+        if: github.event_name != 'workflow_dispatch'
         env:
           SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
           SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
@@ -439,7 +447,7 @@ jobs:
             --base "master"
 
   build-android:
-    if: "!contains(github.event.head_commit.message, 'skip ci') || github.event_name == 'workflow_dispatch'"
+    if: "!contains(github.event.head_commit.message, 'skip ci') && github.event_name != 'workflow_dispatch'"
     runs-on: ubuntu-latest
     env:
       OUTPUT_NAME: zen_uniffi
@@ -524,7 +532,7 @@ jobs:
   package-android-aar:
     runs-on: ubuntu-latest
     needs: [ build-android, prepare-android-bindings ]
-    if: "!contains(github.event.head_commit.message, 'skip ci') || github.event_name == 'workflow_dispatch'"
+    if: "!contains(github.event.head_commit.message, 'skip ci') && github.event_name != 'workflow_dispatch'"
     defaults:
       run:
         working-directory: ${{ env.UNIFFI_DIRECTORY }}
@@ -622,7 +630,7 @@ jobs:
   release-android:
     runs-on: ubuntu-latest
     needs: [ package-android-aar ]
-    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi') || github.event_name == 'workflow_dispatch'"
+    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi') && github.event_name != 'workflow_dispatch'"
     defaults:
       run:
         working-directory: ${{ env.UNIFFI_DIRECTORY }}

@@ -1,0 +1,3 @@
+[target.s390x-unknown-linux-gnu]
+image = "ghcr.io/cross-rs/s390x-unknown-linux-gnu:main"
+pre-build = ["apt-get update && apt-get install -y libclang-dev clang"]

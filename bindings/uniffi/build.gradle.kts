@@ -138,12 +138,13 @@ tasks {
     }
 }
 
-// Use -PpublishScope=desktop|android|all to control which publications are included
+// Use -PpublishScope=java|kotlin|desktop|android|all to control which publications are included
+// desktop = java + kotlin
 val publishScope = (findProperty("publishScope") as String?) ?: "all"
 
 publishing {
     publications {
-        if (publishScope == "all" || publishScope == "desktop") {
+        if (publishScope in listOf("all", "desktop", "java")) {
             create<MavenPublication>("mavenJava") {
                 groupId = "io.gorules"
                 artifactId = "zen-engine"
@@ -155,7 +156,9 @@ publishing {
                     dependency("net.java.dev.jna:jna:5.17.0")
                 }
             }
+        }
 
+        if (publishScope in listOf("all", "desktop", "kotlin")) {
             create<MavenPublication>("mavenKotlin") {
                 groupId = "io.gorules"
                 artifactId = "zen-engine-kotlin"
@@ -169,7 +172,7 @@ publishing {
             }
         }
 
-        if (publishScope == "all" || publishScope == "android") {
+        if (publishScope in listOf("all", "android")) {
             create<MavenPublication>("mavenKotlinAndroid") {
                 groupId = "io.gorules"
                 artifactId = "zen-engine-kotlin-android"

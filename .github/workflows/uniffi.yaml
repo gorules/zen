@@ -100,11 +100,8 @@ jobs:
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Validate Gradle wrapper jar
-        uses: gradle/actions/wrapper-validation@v3
-
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -133,13 +130,21 @@ jobs:
       - name: Print directory tree
         run: tree build
 
-      - name: Publish Maven Artifact
+      - name: Publish Java Maven Artifact
         env:
           SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
           SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
           GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
           GPG_SIGNING_PASSPHRASE: ${{ secrets.GPG_SIGNING_PASSPHRASE }}
-        run: ./gradlew publishMavenKotlinPublicationToCentralPortal publishMavenJavaPublicationToCentralPortal
+        run: ./gradlew publishAllPublicationsToCentralPortal -PpublishScope=java
+
+      - name: Publish Kotlin Maven Artifact
+        env:
+          SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
+          SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+          GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
+          GPG_SIGNING_PASSPHRASE: ${{ secrets.GPG_SIGNING_PASSPHRASE }}
+        run: ./gradlew publishAllPublicationsToCentralPortal -PpublishScope=kotlin
 
 
   release-csharp:
@@ -629,10 +634,8 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      - name: Validate Gradle wrapper jar
-        uses: gradle/actions/wrapper-validation@v3
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Download Kotlin bindings
         uses: actions/download-artifact@v4
@@ -652,4 +655,4 @@ jobs:
           SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
           GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
           GPG_SIGNING_PASSPHRASE: ${{ secrets.GPG_SIGNING_PASSPHRASE }}
-        run: ./gradlew publishMavenKotlinAndroidPublicationToCentralPortal
+        run: ./gradlew publishAllPublicationsToCentralPortal -PpublishScope=android

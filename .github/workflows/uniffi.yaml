@@ -138,6 +138,9 @@ jobs:
           GPG_SIGNING_PASSPHRASE: ${{ secrets.GPG_SIGNING_PASSPHRASE }}
         run: ./gradlew publishAllPublicationsToCentralPortal -PpublishScope=java
 
+      - name: Remove s390x artifact (Java-only target)
+        run: rm -rf build/generated/resources/linux-s390x
+
       - name: Publish Kotlin Maven Artifact
         env:
           SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
@@ -175,6 +178,9 @@ jobs:
 
       - name: Move artifacts
         run: mv ../../build ./
+
+      - name: Remove s390x artifact (not needed for C#)
+        run: rm -rf build/generated/resources/linux-s390x
 
       - name: Install uniffi-bindgen-cs
         run: cargo install uniffi-bindgen-cs --git https://github.com/bcrevar-gorules/uniffi-bindgen-cs --branch fix/async-callback-interface-return-type
@@ -459,21 +465,38 @@ jobs:
           ndk-version: r26d
           add-to-path: true
 
-      - name: Add Rust Android targets
+      - name: Add Rust Android targets (all)
+        if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
         run: |
           rustup target add aarch64-linux-android
           rustup target add armv7-linux-androideabi
           rustup target add i686-linux-android
           rustup target add x86_64-linux-android
 
-      - name: Build for Android
+      - name: Add Rust Android targets (arm64 only)
+        if: "!startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
+        run: |
+          rustup target add aarch64-linux-android
+
+      - name: Build for Android (all targets)
+        if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
         env:
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
-           cargo ndk -t arm64-v8a -t armeabi-v7a -t x86 -t x86_64 \
-            --platform 33 \
-            -o ./android-libs \
-            build -p zen-uniffi --release --features bindgen
+          cargo ndk -t arm64-v8a -t armeabi-v7a -t x86 -t x86_64 \
+           --platform 33 \
+           -o ./android-libs \
+           build -p zen-uniffi --release --features bindgen
+
+      - name: Build for Android (arm64 only)
+        if: "!startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
+        env:
+          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          cargo ndk -t arm64-v8a \
+           --platform 33 \
+           -o ./android-libs \
+           build -p zen-uniffi --release --features bindgen
 
       - name: Upload Android artifacts
         uses: actions/upload-artifact@v4

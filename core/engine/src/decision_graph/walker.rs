@@ -1,3 +1,8 @@
+use crate::config::ZEN_CONFIG;
+use crate::model::{
+    DecisionEdge, DecisionNode, DecisionNodeKind, SwitchStatement, SwitchStatementHitPolicy,
+};
+use crate::DecisionGraphTrace;
 use ahash::HashMap;
 use fixedbitset::FixedBitSet;
 use petgraph::data::DataMap;
@@ -5,17 +10,12 @@ use petgraph::matrix_graph::Zero;
 use petgraph::prelude::{EdgeIndex, NodeIndex, StableDiGraph};
 use petgraph::visit::{EdgeRef, IntoNodeIdentifiers, VisitMap, Visitable};
 use petgraph::{Incoming, Outgoing};
+use serde_json::Value;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Instant;
-
-use crate::config::ZEN_CONFIG;
-use crate::model::{
-    DecisionEdge, DecisionNode, DecisionNodeKind, SwitchStatement, SwitchStatementHitPolicy,
-};
-use crate::DecisionGraphTrace;
 use zen_expression::variable::{ToVariable, Variable};
 use zen_expression::Isolate;
 
@@ -32,6 +32,7 @@ pub(crate) struct GraphWalker {
     ordered: FixedBitSet,
     to_visit: Vec<NodeIndex>,
     visited_switch_nodes: Vec<NodeIndex>,
+    params: Option<Variable>,
 
     nodes_in_context: bool,
 }
@@ -39,9 +40,10 @@ pub(crate) struct GraphWalker {
 const ITER_MAX: usize = 1_000;
 
 impl GraphWalker {
-    pub fn new(graph: &StableDiDecisionGraph) -> Self {
+    pub fn new(graph: &StableDiDecisionGraph, params: Option<Arc<Value>>) -> Self {
         let mut walker = Self::empty(graph);
         walker.initialize_input_nodes(graph);
+        walker.params = params.map(|p| Variable::from(p.deref()));
         walker
     }
 
@@ -61,6 +63,7 @@ impl GraphWalker {
             node_data: Default::default(),
             visited_switch_nodes: Default::default(),
             iter: 0,
+            params: None,
 
             nodes_in_context: ZEN_CONFIG.nodes_in_context.load(Ordering::Relaxed),
         }
@@ -114,13 +117,17 @@ impl GraphWalker {
     ) -> (Variable, Variable) {
         let value = self.merge_node_data(g.neighbors_directed(node_id, Incoming));
 
-        if self.nodes_in_context && with_nodes {
-            if let Some(object_ref) = value.as_object() {
-                let mut new_object = object_ref.borrow().clone();
+        if let Some(object_ref) = value.as_object() {
+            let mut new_object = object_ref.borrow().clone();
+            if self.nodes_in_context && with_nodes {
                 new_object.insert(Rc::from("$nodes"), self.get_all_node_data());
-
-                return (Variable::from_object(new_object), value);
             }
+
+            if let Some(params) = &self.params {
+                new_object.insert(Rc::from("$params"), params.clone());
+            }
+
+            return (Variable::from_object(new_object), value);
         }
 
         (value.depth_clone(1), value)
@@ -184,6 +191,7 @@ impl GraphWalker {
                     if let Some(on_trace) = &mut on_trace {
                         let output = input_trace.depth_clone(1);
                         output.dot_remove("$nodes");
+                        output.dot_remove("$params");
 
                         on_trace(DecisionGraphTrace {
                             id: decision_node.id.clone(),

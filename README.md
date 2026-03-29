@@ -18,7 +18,7 @@ An open-source React editor is available on our [JDM Editor](https://github.com/
 ZEN Engine is built as embeddable BRE for your **Rust**, **NodeJS**, **Python** or **Go** applications.
 It parses JDM from JSON content. It is up to you to obtain the JSON content, e.g. from file system, database or service
 call.
-
+# New change
 ### Supported Platforms
 
 List of platforms where Zen Engine is natively available:

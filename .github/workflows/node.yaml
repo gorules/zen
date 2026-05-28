@@ -65,8 +65,7 @@ jobs:
             build: |
               set -e
               sudo apt-get update
-              sudo apt-get install -y patch lld libc6-dev
-              sudo apt-get install -y --reinstall gcc-x86-64-linux-gnu
+              sudo apt-get install -y patch lld
               cd bindings/nodejs
               rustup install 1.88.0
               rustup default 1.88.0
@@ -74,20 +73,16 @@ jobs:
               yarn build --target x86_64-unknown-linux-gnu
               strip ./*.node
 
-          - host: ubuntu-latest
+          - host: ubuntu-24.04-arm
             target: 'aarch64-unknown-linux-gnu'
-            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian-aarch64
             build: |
               set -e
-              sudo apt-get update
-              sudo apt-get install -y patch lld libc6-dev-arm64-cross
-              sudo apt-get install -y --reinstall gcc-aarch64-linux-gnu
               cd bindings/nodejs
               rustup install 1.88.0
               rustup default 1.88.0
               rustup target add aarch64-unknown-linux-gnu
               yarn build --target aarch64-unknown-linux-gnu
-              llvm-strip ./*.node
+              strip ./*.node
 
           - host: ubuntu-latest
             target: 'x86_64-unknown-linux-musl'

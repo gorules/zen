@@ -84,6 +84,7 @@ jobs:
             docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
             build: |
               set -e
+              apk add --no-cache gcc musl-dev libgcc linux-headers
               cd bindings/nodejs
               rustup install 1.88.0
               rustup default 1.88.0
@@ -96,6 +97,7 @@ jobs:
             docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
             build: |
               set -e
+              apk add --no-cache gcc musl-dev libgcc linux-headers
               cd bindings/nodejs
               # Set environment variables for the Rust toolchain
               export CC_aarch64_unknown_linux_musl=aarch64-linux-musl-gcc

@@ -59,7 +59,7 @@ jobs:
               yarn build --target aarch64-apple-darwin
               strip -x ./*.node
 
-          - host: ubuntu-latest
+          - host: ubuntu-22.04
             target: 'x86_64-unknown-linux-gnu'
             build: |
               set -e
@@ -69,7 +69,7 @@ jobs:
               yarn build --target x86_64-unknown-linux-gnu
               strip ./*.node
 
-          - host: ubuntu-24.04-arm
+          - host: ubuntu-22.04-arm
             target: 'aarch64-unknown-linux-gnu'
             build: |
               set -e

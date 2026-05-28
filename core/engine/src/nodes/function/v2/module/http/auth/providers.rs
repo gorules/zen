@@ -79,7 +79,7 @@ impl AzureIamAuth {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(miri)))]
 mod tests {
     use super::*;
     use crate::nodes::function::v2::module::http::auth::AwsRegion;

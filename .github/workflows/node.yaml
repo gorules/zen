@@ -159,7 +159,7 @@ jobs:
             ~/.cargo/git
             target
             .cargo-cache
-          key: ${{ matrix.settings.target }}-cargo-registry
+          key: ${{ matrix.settings.host }}-${{ matrix.settings.target }}-cargo-registry-v2
 
       - name: Setup toolchain
         run: ${{ matrix.settings.setup }}

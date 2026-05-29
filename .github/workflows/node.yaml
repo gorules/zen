@@ -59,40 +59,35 @@ jobs:
               yarn build --target aarch64-apple-darwin
               strip -x ./*.node
 
-          - host: ubuntu-latest
+          - host: ubuntu-22.04
             target: 'x86_64-unknown-linux-gnu'
-            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian
             build: |
               set -e
-              sudo apt-get update
-              sudo apt-get install -y patch
-              cd bindings/nodejs
               rustup install 1.88.0
               rustup default 1.88.0
               rustup target add x86_64-unknown-linux-gnu
               yarn build --target x86_64-unknown-linux-gnu
               strip ./*.node
 
-          - host: ubuntu-latest
+          - host: ubuntu-22.04-arm
             target: 'aarch64-unknown-linux-gnu'
-            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian-aarch64
             build: |
               set -e
-              sudo apt-get update
-              sudo apt-get install -y patch
-              cd bindings/nodejs
               rustup install 1.88.0
               rustup default 1.88.0
               rustup target add aarch64-unknown-linux-gnu
               yarn build --target aarch64-unknown-linux-gnu
-              llvm-strip ./*.node
+              strip ./*.node
 
           - host: ubuntu-latest
             target: 'x86_64-unknown-linux-musl'
             docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
             build: |
               set -e
+              apk add --no-cache gcc musl-dev libgcc linux-headers
               cd bindings/nodejs
+              export CC_x86_64_unknown_linux_musl=gcc
+              export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=gcc
               rustup install 1.88.0
               rustup default 1.88.0
               rustup target add x86_64-unknown-linux-musl
@@ -104,6 +99,7 @@ jobs:
             docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
             build: |
               set -e
+              apk add --no-cache gcc musl-dev libgcc linux-headers
               cd bindings/nodejs
               # Set environment variables for the Rust toolchain
               export CC_aarch64_unknown_linux_musl=aarch64-linux-musl-gcc
@@ -163,7 +159,7 @@ jobs:
             ~/.cargo/git
             target
             .cargo-cache
-          key: ${{ matrix.settings.target }}-cargo-registry
+          key: ${{ matrix.settings.host }}-${{ matrix.settings.target }}-cargo-registry-v2
 
       - name: Setup toolchain
         run: ${{ matrix.settings.setup }}

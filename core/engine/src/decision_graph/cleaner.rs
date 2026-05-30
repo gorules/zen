@@ -3,7 +3,7 @@ use std::ops::Deref;
 use std::rc::Rc;
 use zen_types::variable::Variable;
 
-pub(crate) const ZEN_RESERVED_PROPERTIES: &[&str] = &["$nodes"];
+pub(crate) const ZEN_RESERVED_PROPERTIES: &[&str] = &["$nodes", "$params"];
 
 pub(crate) struct VariableCleaner {
     visited: HashSet<usize>,

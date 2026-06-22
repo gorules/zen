@@ -55,9 +55,10 @@
 //! `regex-deprecated` | Uses standard `regex` crate | Yes
 //! `regex-lite` | Opts for usage of lightweight `regex-lite` crate. Useful for reducing build size, especially in WASM. | No
 
+#![forbid(unsafe_code)]
+
 mod isolate;
 
-mod arena;
 pub mod compiler;
 mod exports;
 pub mod expression;

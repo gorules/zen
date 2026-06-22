@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use colored::Colorize;
 use rustyline::config::Configurer;
 use rustyline::{DefaultEditor, Result};

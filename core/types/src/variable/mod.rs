@@ -27,6 +27,11 @@ pub(crate) type RcCell<T> = Rc<RefCell<T>>;
 
 pub type VariableMap = HashMap<Rc<str>, Variable>;
 
+thread_local! {
+    static DOLLAR_KEY: Rc<str> = Rc::from("$");
+    static ROOT_KEY: Rc<str> = Rc::from("$root");
+}
+
 pub enum Variable {
     Null,
     Bool(bool),
@@ -46,6 +51,14 @@ pub trait DynamicVariable: Display {
 }
 
 impl Variable {
+    pub fn dollar_key() -> Rc<str> {
+        DOLLAR_KEY.with(Rc::clone)
+    }
+
+    pub fn root_key() -> Rc<str> {
+        ROOT_KEY.with(Rc::clone)
+    }
+
     pub fn from_array(arr: Vec<Self>) -> Self {
         Self::Array(Rc::new(RefCell::new(arr)))
     }

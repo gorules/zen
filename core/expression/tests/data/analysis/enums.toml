@@ -1,0 +1,327 @@
+# Enum and Const type support
+# Input uses VariableType serialization for enum types:
+#   {"Object":{"field":{"Enum":[null,["a","b","c"]]}}}
+
+# ── Const return types ───────────────────────────────────────────────────────
+
+[[test]]
+name = "string literal is const"
+expression = "'hello'"
+
+[test.loose]
+return_type = '{"Const":"hello"}'
+
+[test.strict]
+return_type = '{"Const":"hello"}'
+
+[[test]]
+name = "string variable is string not const"
+expression = "name"
+input = '{"name": "world"}'
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '"String"'
+
+[[test]]
+name = "string concat is string"
+expression = "'hello' + ' ' + 'world'"
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '"String"'
+
+# ── Enum return type inference ───────────────────────────────────────────────
+
+[[test]]
+name = "ternary produces enum"
+expression = "x > 10 ? 'high' : 'low'"
+input = '{"x": 15}'
+
+[test.loose]
+return_type = '{"Enum":[null,["high","low"]]}'
+
+[test.strict]
+return_type = '{"Enum":[null,["high","low"]]}'
+
+[[test]]
+name = "nested ternary produces enum"
+expression = "x > 100 ? 'high' : x > 50 ? 'mid' : 'low'"
+input = '{"x": 75}'
+
+[test.loose]
+return_type = '{"Enum":[null,["mid","low","high"]]}'
+
+[test.strict]
+return_type = '{"Enum":[null,["mid","low","high"]]}'
+
+[[test]]
+name = "assignment with enum return"
+expression = "customer.status = customer.revenue > 1000 ? 'approved' : 'rejected'"
+input = '{"Object":{"customer":{"Object":{"revenue":"Number"}}}}'
+
+[test.loose]
+return_type = '{"Object":{"customer.status":{"Enum":[null,["approved","rejected"]]}}}'
+
+[test.strict]
+return_type = '{"Object":{"customer.status":{"Enum":[null,["approved","rejected"]]}}}'
+
+[[test]]
+name = "ternary with one const branch"
+expression = "active ? 'yes' : name"
+input = '{"active": true, "name": "hello"}'
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '"String"'
+
+# ── Enum comparison diagnostics ──────────────────────────────────────────────
+
+[[test]]
+name = "valid enum comparison"
+expression = "status == 'active'"
+input = '{"Object":{"status":{"Enum":[null,["active","inactive","suspended"]]}}}'
+reads = [
+    { type = "direct", path = ["status"] },
+]
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "invalid enum comparison is error"
+expression = "status == 'deleted'"
+input = '{"Object":{"status":{"Enum":[null,["active","inactive","suspended"]]}}}'
+reads = [
+    { type = "direct", path = ["status"] },
+]
+
+[test.loose]
+return_type = '"Bool"'
+diagnostics = [
+    { source = "type_check", severity = "error" },
+]
+
+[test.strict]
+return_type = '"Bool"'
+diagnostics = [
+    { source = "type_check", severity = "error" },
+]
+
+[[test]]
+name = "valid enum not equal"
+expression = "status != 'active'"
+input = '{"Object":{"status":{"Enum":[null,["active","inactive"]]}}}'
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "invalid enum not equal is error"
+expression = "status != 'unknown'"
+input = '{"Object":{"status":{"Enum":[null,["active","inactive"]]}}}'
+
+[test.loose]
+return_type = '"Bool"'
+diagnostics = [
+    { source = "type_check", severity = "error" },
+]
+
+[test.strict]
+return_type = '"Bool"'
+diagnostics = [
+    { source = "type_check", severity = "error" },
+]
+
+# ── Enum in unary ────────────────────────────────────────────────────────────
+
+[[test]]
+name = "unary valid enum comparison"
+expression = "== 'active'"
+input = '{"Object":{"$":{"Enum":[null,["active","inactive"]]}}}'
+unary = true
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "unary invalid enum comparison"
+expression = "== 'deleted'"
+input = '{"Object":{"$":{"Enum":[null,["active","inactive"]]}}}'
+unary = true
+
+[test.loose]
+return_type = '"Bool"'
+diagnostics = [
+    { source = "type_check", severity = "error" },
+]
+
+[test.strict]
+return_type = '"Bool"'
+diagnostics = [
+    { source = "type_check", severity = "error" },
+]
+
+# ── Unary simple value match ─────────────────────────────────────────────────
+
+[[test]]
+name = "unary value match valid"
+expression = "'active'"
+input = '{"Object":{"$":{"Enum":[null,["active","inactive"]]}}}'
+unary = true
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "unary value match invalid"
+expression = "'deleted'"
+input = '{"Object":{"$":{"Enum":[null,["active","inactive"]]}}}'
+unary = true
+
+[test.loose]
+return_type = '"Bool"'
+diagnostics = [
+    { source = "type_check", severity = "error" },
+]
+
+[test.strict]
+return_type = '"Bool"'
+diagnostics = [
+    { source = "type_check", severity = "error" },
+]
+
+# ── Comma-separated unary ────────────────────────────────────────────────────
+
+[[test]]
+name = "unary comma one invalid"
+expression = "'active', 'deleted'"
+input = '{"Object":{"$":{"Enum":[null,["active","inactive"]]}}}'
+unary = true
+
+[test.loose]
+return_type = '"Bool"'
+diagnostics = [
+    { source = "type_check", severity = "error" },
+]
+
+[test.strict]
+return_type = '"Bool"'
+diagnostics = [
+    { source = "type_check", severity = "error" },
+]
+
+[[test]]
+name = "unary comma all valid"
+expression = "'active', 'inactive'"
+input = '{"Object":{"$":{"Enum":[null,["active","inactive"]]}}}'
+unary = true
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "unary comma all invalid"
+expression = "'deleted', 'banned'"
+input = '{"Object":{"$":{"Enum":[null,["active","inactive"]]}}}'
+unary = true
+
+[test.loose]
+return_type = '"Bool"'
+diagnostics = [
+    { source = "type_check", severity = "error" },
+]
+
+[test.strict]
+return_type = '"Bool"'
+diagnostics = [
+    { source = "type_check", severity = "error" },
+]
+
+# ── Enum with in / not in ────────────────────────────────────────────────────
+
+[[test]]
+name = "unary in valid values"
+expression = "in ['active', 'inactive']"
+input = '{"Object":{"$":{"Enum":[null,["active","inactive"]]}}}'
+unary = true
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "unary not in"
+expression = "not in ['active']"
+input = '{"Object":{"$":{"Enum":[null,["active","inactive"]]}}}'
+unary = true
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "enum in array of valid values"
+expression = "status in ['active', 'inactive']"
+input = '{"Object":{"status":{"Enum":[null,["active","inactive","suspended"]]}}}'
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "enum in array of overlapping values is not constant"
+expression = "status in ['active', 'inactive']"
+input = '{"Object":{"status":{"Enum":[null,["active","inactive","suspended"]]}}}'
+
+[test.loose]
+return_type = '"Bool"'
+diagnostics = []
+
+[test.strict]
+return_type = '"Bool"'
+diagnostics = []
+
+[[test]]
+name = "enum in array of disjoint values is always false"
+expression = "status in ['blocked', 'banned']"
+input = '{"Object":{"status":{"Enum":[null,["active","inactive"]]}}}'
+
+[test.loose]
+return_type = '"Bool"'
+diagnostics = [
+    { source = "type_check", severity = "warning" },
+]
+
+[test.strict]
+return_type = '"Bool"'
+diagnostics = [
+    { source = "type_check", severity = "warning" },
+]

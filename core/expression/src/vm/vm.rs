@@ -153,6 +153,12 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                                 let arr_ref = arr.borrow();
                                 arr_ref.get(*num as usize).cloned().unwrap_or(Null)
                             }
+                            String(str) => {
+                                let index = *num as usize;
+                                str.get(index..index + 1)
+                                    .map(|slice| String(Rc::from(slice)))
+                                    .unwrap_or(Null)
+                            }
                             _ => Null,
                         },
                     });

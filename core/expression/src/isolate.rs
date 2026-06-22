@@ -1,11 +1,9 @@
 use ahash::HashMap;
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
-use std::rc::Rc;
 use std::sync::Arc;
 use thiserror::Error;
 
-use crate::arena::UnsafeArena;
 use crate::compiler::{Compiler, CompilerError, Opcode};
 use crate::expression::{OpcodeCache, Standard, Unary};
 use crate::lexer::{Lexer, LexerError};
@@ -13,6 +11,7 @@ use crate::parser::{Parser, ParserError};
 use crate::variable::Variable;
 use crate::vm::{VMError, VM};
 use crate::{Expression, ExpressionKind};
+use bumpalo::Bump;
 
 /// Isolate is a component that encapsulates an isolated environment for executing expressions.
 ///
@@ -20,26 +19,26 @@ use crate::{Expression, ExpressionKind};
 /// The arena allocator optimizes memory management by reusing memory blocks for subsequent evaluations,
 /// contributing to improved performance and resource utilization in scenarios where the Isolate is reused multiple times.
 #[derive(Debug)]
-pub struct Isolate<'arena> {
-    lexer: Lexer<'arena>,
+pub struct Isolate {
+    lexer: Lexer,
     compiler: Compiler,
     vm: VM,
 
-    bump: UnsafeArena<'arena>,
+    bump: Bump,
 
     environment: Option<Variable>,
     references: HashMap<String, Variable>,
     cache: Option<Arc<OpcodeCache>>,
 }
 
-impl<'a> Isolate<'a> {
+impl Isolate {
     pub fn new() -> Self {
         Self {
             lexer: Lexer::new(),
             compiler: Compiler::new(),
             vm: VM::new(),
 
-            bump: UnsafeArena::new(),
+            bump: Bump::new(),
 
             environment: None,
             references: Default::default(),
@@ -61,6 +60,7 @@ impl<'a> Isolate<'a> {
 
     pub fn set_environment(&mut self, variable: Variable) {
         self.environment.replace(variable);
+        self.references.clear();
     }
 
     pub fn set_cache(&mut self, cache: Arc<OpcodeCache>) {
@@ -74,7 +74,7 @@ impl<'a> Isolate<'a> {
         updater(self.environment.as_mut());
     }
 
-    pub fn set_reference(&mut self, reference: &'a str) -> Result<(), IsolateError> {
+    pub fn set_reference(&mut self, reference: &str) -> Result<(), IsolateError> {
         let reference_value = match self.references.get(reference) {
             Some(value) => value.clone(),
             None => {
@@ -85,6 +85,10 @@ impl<'a> Isolate<'a> {
             }
         };
 
+        self.set_reference_value(reference_value)
+    }
+
+    pub fn set_reference_value(&mut self, value: Variable) -> Result<(), IsolateError> {
         if !matches!(&mut self.environment, Some(Variable::Object(_))) {
             self.environment.replace(Variable::empty_object());
         }
@@ -94,7 +98,7 @@ impl<'a> Isolate<'a> {
         };
 
         let mut environment_object = environment_object_ref.borrow_mut();
-        environment_object.insert(Rc::from("$"), reference_value);
+        environment_object.insert(Variable::dollar_key(), value);
 
         Ok(())
     }
@@ -103,17 +107,13 @@ impl<'a> Isolate<'a> {
         self.references.get(reference).cloned()
     }
 
-    pub fn clear_references(&mut self) {
-        self.references.clear();
-    }
+    fn run_internal(&mut self, source: &str, kind: ExpressionKind) -> Result<(), IsolateError> {
+        self.bump.reset();
+        let bump = &self.bump;
 
-    fn run_internal(&mut self, source: &'a str, kind: ExpressionKind) -> Result<(), IsolateError> {
-        self.bump.with_mut(|b| b.reset());
-        let bump = self.bump.get();
+        let tokens = self.lexer.tokenize(bump, source)?;
 
-        let tokens = self.lexer.tokenize(source)?;
-
-        let base_parser = Parser::try_new(tokens, bump)?;
+        let base_parser = Parser::try_new(&tokens, bump)?;
         let parser_result = match kind {
             ExpressionKind::Unary => base_parser.unary().parse(),
             ExpressionKind::Standard => base_parser.standard().parse(),
@@ -128,7 +128,7 @@ impl<'a> Isolate<'a> {
 
     pub fn compile_standard(
         &mut self,
-        source: &'a str,
+        source: &str,
     ) -> Result<Expression<Standard>, IsolateError> {
         self.run_internal(source, ExpressionKind::Standard)?;
         let bytecode = self.compiler.get_bytecode().to_vec();
@@ -136,7 +136,7 @@ impl<'a> Isolate<'a> {
         Ok(Expression::new_standard(Arc::from(bytecode)))
     }
 
-    pub fn run_standard(&mut self, source: &'a str) -> Result<Variable, IsolateError> {
+    pub fn run_standard(&mut self, source: &str) -> Result<Variable, IsolateError> {
         let cached = self
             .cache
             .as_ref()
@@ -162,14 +162,14 @@ impl<'a> Isolate<'a> {
         Ok(result)
     }
 
-    pub fn compile_unary(&mut self, source: &'a str) -> Result<Expression<Unary>, IsolateError> {
+    pub fn compile_unary(&mut self, source: &str) -> Result<Expression<Unary>, IsolateError> {
         self.run_internal(source, ExpressionKind::Unary)?;
         let bytecode = self.compiler.get_bytecode().to_vec();
 
         Ok(Expression::new_unary(Arc::from(bytecode)))
     }
 
-    pub fn run_unary(&mut self, source: &'a str) -> Result<bool, IsolateError> {
+    pub fn run_unary(&mut self, source: &str) -> Result<bool, IsolateError> {
         let cached = self
             .cache
             .as_ref()

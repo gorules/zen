@@ -451,13 +451,14 @@ fn lexer_test() {
     ]);
 
     let mut lexer = Lexer::new();
+    let bump = bumpalo::Bump::new();
 
     for LexerTest { test, result } in tests {
-        let tokens = lexer.tokenize(test);
+        let tokens = lexer.tokenize(&bump, test);
         assert!(tokens.is_ok());
 
         assert_eq!(
-            tokens.unwrap(),
+            tokens.unwrap().as_slice(),
             result.as_slice(),
             "Expression failed: {test}"
         );

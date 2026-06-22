@@ -58,7 +58,7 @@ impl RefSerializer {
             result.insert(Rc::from("$refs"), RcValue::Array(self.ref_data));
         }
 
-        result.insert(Rc::from("$root"), data);
+        result.insert(Variable::root_key(), data);
         RcValue::Object(result)
     }
 

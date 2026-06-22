@@ -314,11 +314,11 @@ mod imp {
             signatures: vec![
                 FunctionSignature {
                     parameters: vec![VT::Date, VT::Date],
-                    return_type: VT::Date,
+                    return_type: VT::Bool,
                 },
                 FunctionSignature {
                     parameters: vec![VT::Date, VT::Date, DurationUnit::variable_type()],
-                    return_type: VT::Date,
+                    return_type: VT::Bool,
                 },
             ],
             implementation: Rc::new(move |args: Arguments| -> anyhow::Result<V> {

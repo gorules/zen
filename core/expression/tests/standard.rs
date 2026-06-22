@@ -295,23 +295,13 @@ fn standard_test() {
     let mut bump = Bump::new();
 
     for StandardTest { src, result } in tests {
-        let tokens = lexer.tokenize(src).unwrap();
-        let unary_parser = Parser::try_new(tokens, &bump).unwrap().standard();
+        bump.reset();
+        let tokens = lexer.tokenize(&bump, src).unwrap();
+        let unary_parser = Parser::try_new(&tokens, &bump).unwrap().standard();
         let parser_result = unary_parser.parse();
-        // let Ok(ast) = parser_result else {
-        //     assert!(
-        //         false,
-        //         "Failed on expression: {}. Error: {:?}.",
-        //         src,
-        //         parser_result.unwrap_err()
-        //     );
-        //     return;
-        // };
 
         assert!(parser_result.error().is_ok(), "Expression failed: {src}");
         assert_eq!(parser_result.root, result, "Failed on expression: {}", src);
-
-        bump.reset();
     }
 }
 
@@ -323,12 +313,11 @@ fn failure_tests() {
     let mut bump = Bump::new();
 
     for test in tests {
-        let tokens = lexer.tokenize(test).unwrap();
-        let parser = Parser::try_new(tokens, &bump).unwrap().standard();
+        bump.reset();
+        let tokens = lexer.tokenize(&bump, test).unwrap();
+        let parser = Parser::try_new(&tokens, &bump).unwrap().standard();
         let parser_result = parser.parse();
 
         assert!(parser_result.error().is_err(), "{parser_result:?}");
-
-        bump.reset();
     }
 }

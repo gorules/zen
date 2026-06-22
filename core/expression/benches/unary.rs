@@ -6,11 +6,12 @@ use zen_expression::parser::Parser;
 
 fn bench_source(b: &mut Bencher, src: &'static str) {
     let mut lexer = Lexer::new();
+    let token_bump = Bump::new();
     let mut bump = Bump::new();
-    let tokens = lexer.tokenize(src).unwrap();
+    let tokens = lexer.tokenize(&token_bump, src).unwrap();
 
     b.iter(|| {
-        let unary_parser = Parser::try_new(tokens, &bump).unwrap().unary();
+        let unary_parser = Parser::try_new(&tokens, &bump).unwrap().unary();
         criterion::black_box(unary_parser.parse());
 
         bump.reset();

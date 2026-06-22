@@ -1,0 +1,315 @@
+# Error and warning diagnostics from all pipeline stages
+
+# Type errors
+
+[[test]]
+name = "type error: string minus number"
+expression = "a - b"
+input = '{"a": "hello", "b": 5}'
+reads = [
+    { type = "direct", path = ["a"] },
+    { type = "direct", path = ["b"] },
+]
+
+[test.loose]
+return_type = '"Any"'
+diagnostics = [
+    { source = "type_check", severity = "error" },
+]
+
+[test.strict]
+return_type = '"Any"'
+diagnostics = [
+    { source = "type_check", severity = "error" },
+]
+
+[[test]]
+name = "type error: not on number"
+expression = "not a"
+input = '{"a": 5}'
+reads = [
+    { type = "direct", path = ["a"] },
+]
+
+[test.loose]
+return_type = '"Bool"'
+diagnostics = [
+    { source = "type_check", severity = "error" },
+]
+
+[test.strict]
+return_type = '"Bool"'
+diagnostics = [
+    { source = "type_check", severity = "error" },
+]
+
+# Type warnings
+
+[[test]]
+name = "type warning: always false comparison"
+expression = "a == b"
+input = '{"a": "hello", "b": 5}'
+reads = [
+    { type = "direct", path = ["a"] },
+    { type = "direct", path = ["b"] },
+]
+
+[test.loose]
+return_type = '"Bool"'
+diagnostics = [
+    { source = "type_check", severity = "warning" },
+]
+
+[test.strict]
+return_type = '"Bool"'
+diagnostics = [
+    { source = "type_check", severity = "warning" },
+]
+
+[[test]]
+name = "type warning: always true not-equal"
+expression = "a != b"
+input = '{"a": "hello", "b": 5}'
+reads = [
+    { type = "direct", path = ["a"] },
+    { type = "direct", path = ["b"] },
+]
+
+[test.loose]
+return_type = '"Bool"'
+diagnostics = [
+    { source = "type_check", severity = "warning" },
+]
+
+[test.strict]
+return_type = '"Bool"'
+diagnostics = [
+    { source = "type_check", severity = "warning" },
+]
+
+# Lexer errors
+
+[[test]]
+name = "lexer error: invalid symbol"
+expression = "@invalid"
+
+[test.loose]
+diagnostics = [
+    { source = "lexer", severity = "error" },
+]
+
+[test.strict]
+diagnostics = [
+    { source = "lexer", severity = "error" },
+]
+
+# Parser errors
+
+[[test]]
+name = "parser error: incomplete expression"
+expression = "a +"
+
+[test.loose]
+diagnostics = [
+    { source = "parser", severity = "error" },
+]
+
+[test.strict]
+diagnostics = [
+    { source = "parser", severity = "error" },
+]
+
+[[test]]
+name = "parser error: unmatched paren"
+expression = "(a + b"
+
+[test.loose]
+diagnostics = [
+    { source = "parser", severity = "error" },
+]
+
+[test.strict]
+diagnostics = [
+    { source = "parser", severity = "error" },
+]
+
+[[test]]
+name = "unknown method call causes parse error"
+expression = "name.upper()"
+input = '{"name": "John"}'
+
+[test.loose]
+diagnostics = [
+    { source = "parser", severity = "error" },
+]
+
+[test.strict]
+diagnostics = [
+    { source = "parser", severity = "error" },
+]
+
+# Invalid member access on typed objects
+
+[[test]]
+name = "invalid member on typed object"
+expression = "customer.nonExistent"
+input = '{"customer": {"name": "John", "age": 30}}'
+
+[test.loose]
+return_type = '"Any"'
+
+[test.strict]
+return_type = '"Any"'
+diagnostics = [
+    { source = "type_check", severity = "error" },
+]
+
+[[test]]
+name = "valid member on typed object no error"
+expression = "customer.name"
+input = '{"customer": {"name": "John", "age": 30}}'
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '"String"'
+
+[[test]]
+name = "invalid nested member"
+expression = "order.customer.nonExistent"
+input = '{"order": {"customer": {"name": "John"}}}'
+
+[test.loose]
+return_type = '"Any"'
+
+[test.strict]
+return_type = '"Any"'
+diagnostics = [
+    { source = "type_check", severity = "error" },
+]
+
+[[test]]
+name = "closure alias invalid member"
+expression = "map(items as item, item.nonExistent)"
+input = '{"items": [{"price": 10, "name": "a"}]}'
+
+[test.loose]
+return_type = '{"Array":"Any"}'
+
+[test.strict]
+return_type = '{"Array":"Any"}'
+diagnostics = [
+    { source = "type_check", severity = "error" },
+]
+
+[[test]]
+name = "closure alias valid member no error"
+expression = "map(items as item, item.price)"
+input = '{"items": [{"price": 10, "name": "a"}]}'
+
+[test.loose]
+return_type = '{"Array":"Number"}'
+
+[test.strict]
+return_type = '{"Array":"Number"}'
+
+[[test]]
+name = "closure callback ref invalid member"
+expression = "map(items, #.nonExistent)"
+input = '{"items": [{"price": 10, "name": "a"}]}'
+
+[test.loose]
+return_type = '{"Array":"Any"}'
+
+[test.strict]
+return_type = '{"Array":"Any"}'
+diagnostics = [
+    { source = "type_check", severity = "error" },
+]
+
+[[test]]
+name = "nested closure invalid inner member"
+expression = "map(groups as g, sum(map(g.items as i, i.nonExistent)))"
+input = '{"groups": [{"items": [{"value": 1}]}]}'
+
+[test.loose]
+
+[test.strict]
+diagnostics = [
+    { source = "type_check", severity = "error" },
+]
+
+[[test]]
+name = "empty object allows any member even in strict"
+expression = "data.anything"
+input = '{"data": {}}'
+
+[test.loose]
+return_type = '"Any"'
+
+[test.strict]
+return_type = '"Any"'
+
+[[test]]
+name = "conditional string vs number merges to any"
+expression = "flag ? a : b"
+input = '{"flag": true, "a": "hello", "b": 123}'
+
+[test.loose]
+return_type = '"Any"'
+
+[test.strict]
+return_type = '"Any"'
+
+[[test]]
+name = "member on conditional any result is permissive in strict"
+expression = "(flag ? obj1 : obj2).name"
+input = '{"flag": true, "obj1": {"name": "John"}, "obj2": {"age": 30}}'
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '"String"'
+
+[[test]]
+name = "slice with non-number from index"
+expression = "arr[bad:2]"
+input = '{"arr": [1, 2, 3], "bad": "x"}'
+
+[test.loose]
+diagnostics = [
+    { source = "type_check", severity = "error" },
+]
+
+[test.strict]
+diagnostics = [
+    { source = "type_check", severity = "error" },
+]
+
+[[test]]
+name = "slice with non-number to index"
+expression = "arr[0:bad]"
+input = '{"arr": [1, 2, 3], "bad": "x"}'
+
+[test.loose]
+diagnostics = [
+    { source = "type_check", severity = "error" },
+]
+
+[test.strict]
+diagnostics = [
+    { source = "type_check", severity = "error" },
+]
+
+[[test]]
+name = "valid slice has no diagnostics"
+expression = "arr[1:2]"
+input = '{"arr": [1, 2, 3]}'
+
+[test.loose]
+return_type = '{"Array":"Number"}'
+
+[test.strict]
+return_type = '{"Array":"Number"}'

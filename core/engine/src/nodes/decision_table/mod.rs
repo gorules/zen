@@ -109,7 +109,7 @@ impl DecisionTableNodeHandler {
         &self,
         ctx: &'a DecisionTableContext,
         rule: &'a HashMap<Arc<str>, Arc<str>>,
-        isolate: &mut Isolate<'a>,
+        isolate: &mut Isolate,
     ) -> Option<RowResult> {
         let content = &ctx.node;
         for input in content.inputs.iter() {

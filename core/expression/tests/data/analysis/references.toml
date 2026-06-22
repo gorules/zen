@@ -1,0 +1,154 @@
+# Reference span tracking for rename refactoring
+# path[i] corresponds to spans[i] — path for matching, spans for replacement
+
+[[test]]
+name = "simple identifier reference"
+expression = "x"
+input = '{"x": 1}'
+references = [
+    { path = ["x"], spans = [[0, 1]] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "member chain reference"
+expression = "customer.firstName"
+input = '{"customer": {"firstName": "John"}}'
+references = [
+    { path = ["customer", "firstName"], spans = [[0, 8], [9, 18]] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "two member references in binary"
+expression = "customer.firstName + customer.lastName"
+input = '{"customer": {"firstName": "John", "lastName": "Doe"}}'
+references = [
+    { path = ["customer", "firstName"], spans = [[0, 8], [9, 18]] },
+    { path = ["customer", "lastName"], spans = [[21, 29], [30, 38]] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "deep member chain"
+expression = "a.b.c.d"
+input = '{"a": {"b": {"c": {"d": 1}}}}'
+references = [
+    { path = ["a", "b", "c", "d"], spans = [[0, 1], [2, 3], [4, 5], [6, 7]] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "iteration collection reference"
+expression = "map(items as item, item.price)"
+input = '{"items": [{"price": 10}]}'
+references = [
+    { path = ["items"], spans = [[4, 9]] },
+    { path = ["item", "price"], spans = [[19, 23], [24, 29]] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "iteration with external ref"
+expression = "filter(items as item, item.price > minPrice)"
+input = '{"items": [{"price": 5}], "minPrice": 3}'
+references = [
+    { path = ["items"], spans = [[7, 12]] },
+    { path = ["item", "price"], spans = [[22, 26], [27, 32]] },
+    { path = ["minPrice"], spans = [[35, 43]] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "nested iteration references"
+expression = "map(groups as group, map(group.items as item, item.total))"
+input = '{"groups": [{"items": [{"total": 1}]}]}'
+references = [
+    { path = ["groups"], spans = [[4, 10]] },
+    { path = ["group", "items"], spans = [[25, 30], [31, 36]] },
+    { path = ["item", "total"], spans = [[46, 50], [51, 56]] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "assignment does not produce references for writes"
+expression = "customer.fullName = customer.firstName + customer.lastName"
+input = '{"customer": {"firstName": "John", "lastName": "Doe"}}'
+references = [
+    { path = ["customer", "firstName"], spans = [[20, 28], [29, 38]] },
+    { path = ["customer", "lastName"], spans = [[41, 49], [50, 58]] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "locals do not produce references"
+expression = "x = a + b; x * 2"
+input = '{"a": 1, "b": 2}'
+references = [
+    { path = ["a"], spans = [[4, 5]] },
+    { path = ["b"], spans = [[8, 9]] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "conditional references"
+expression = "active ? price : discount"
+input = '{"active": true, "price": 100, "discount": 10}'
+references = [
+    { path = ["active"], spans = [[0, 6]] },
+    { path = ["price"], spans = [[9, 14]] },
+    { path = ["discount"], spans = [[17, 25]] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "no references for literals"
+expression = "1 + 2 * 3"
+references = []
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "template string references"
+expression = '`${first} ${last}`'
+input = '{"first": "John", "last": "Doe"}'
+references = [
+    { path = ["first"], spans = [[3, 8]] },
+    { path = ["last"], spans = [[12, 16]] },
+]
+
+[test.loose]
+
+[test.strict]

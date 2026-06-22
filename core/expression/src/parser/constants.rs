@@ -7,16 +7,26 @@ use Associativity::{Left, Right};
 
 type NoHasher = BuildNoHashHasher<Operator>;
 
-#[derive(Debug, PartialEq)]
-pub(crate) enum Associativity {
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum Associativity {
     Left,
     Right,
 }
 
 #[derive(Debug, PartialEq)]
-pub(crate) struct ParserOperator {
+pub struct ParserOperator {
     pub precedence: u8,
     pub associativity: Associativity,
+}
+
+impl ParserOperator {
+    pub fn binary(operator: &Operator) -> Option<&'static ParserOperator> {
+        BINARY_OPERATORS.get(operator)
+    }
+
+    pub fn unary(operator: &Operator) -> Option<&'static ParserOperator> {
+        UNARY_OPERATORS.get(operator)
+    }
 }
 
 macro_rules! hashmap {

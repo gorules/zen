@@ -1,0 +1,456 @@
+# Return type inference for basic types, arithmetic, comparisons, and logical ops
+
+[[test]]
+name = "number literal"
+expression = "42"
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "string literal"
+expression = "'hello'"
+
+[test.loose]
+return_type = '{"Const":"hello"}'
+
+[test.strict]
+return_type = '{"Const":"hello"}'
+
+[[test]]
+name = "boolean literal"
+expression = "true"
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "null literal"
+expression = "null"
+
+[test.loose]
+return_type = '"Null"'
+
+[test.strict]
+return_type = '"Null"'
+
+# Arithmetic
+
+[[test]]
+name = "number addition"
+expression = "a + b"
+input = '{"a": 1, "b": 2}'
+reads = [
+    { type = "direct", path = ["a"] },
+    { type = "direct", path = ["b"] },
+]
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "string concatenation"
+expression = "a + b"
+input = '{"a": "hello", "b": " world"}'
+reads = [
+    { type = "direct", path = ["a"] },
+    { type = "direct", path = ["b"] },
+]
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '"String"'
+
+[[test]]
+name = "number subtraction"
+expression = "a - b"
+input = '{"a": 10, "b": 3}'
+reads = [
+    { type = "direct", path = ["a"] },
+    { type = "direct", path = ["b"] },
+]
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "number multiplication"
+expression = "a * b"
+input = '{"a": 5, "b": 4}'
+reads = [
+    { type = "direct", path = ["a"] },
+    { type = "direct", path = ["b"] },
+]
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "number division"
+expression = "a / b"
+input = '{"a": 10, "b": 2}'
+reads = [
+    { type = "direct", path = ["a"] },
+    { type = "direct", path = ["b"] },
+]
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "number modulus"
+expression = "a % b"
+input = '{"a": 10, "b": 3}'
+reads = [
+    { type = "direct", path = ["a"] },
+    { type = "direct", path = ["b"] },
+]
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "number exponent"
+expression = "a ^ b"
+input = '{"a": 2, "b": 3}'
+reads = [
+    { type = "direct", path = ["a"] },
+    { type = "direct", path = ["b"] },
+]
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+# Comparisons
+
+[[test]]
+name = "equality"
+expression = "a == b"
+input = '{"a": 1, "b": 1}'
+reads = [
+    { type = "direct", path = ["a"] },
+    { type = "direct", path = ["b"] },
+]
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "inequality"
+expression = "a != b"
+input = '{"a": 1, "b": 2}'
+reads = [
+    { type = "direct", path = ["a"] },
+    { type = "direct", path = ["b"] },
+]
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "less than"
+expression = "a < b"
+input = '{"a": 1, "b": 2}'
+reads = [
+    { type = "direct", path = ["a"] },
+    { type = "direct", path = ["b"] },
+]
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "greater than or equal"
+expression = "a >= b"
+input = '{"a": 5, "b": 3}'
+reads = [
+    { type = "direct", path = ["a"] },
+    { type = "direct", path = ["b"] },
+]
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "in operator"
+expression = "a in b"
+input = '{"a": 1, "b": [1, 2, 3]}'
+reads = [
+    { type = "direct", path = ["a"] },
+    { type = "direct", path = ["b"] },
+]
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "not in operator"
+expression = "a not in b"
+input = '{"a": 1, "b": [1, 2, 3]}'
+reads = [
+    { type = "direct", path = ["a"] },
+    { type = "direct", path = ["b"] },
+]
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+# Logical
+
+[[test]]
+name = "logical and"
+expression = "a and b"
+input = '{"a": true, "b": false}'
+reads = [
+    { type = "direct", path = ["a"] },
+    { type = "direct", path = ["b"] },
+]
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "logical or"
+expression = "a or b"
+input = '{"a": true, "b": false}'
+reads = [
+    { type = "direct", path = ["a"] },
+    { type = "direct", path = ["b"] },
+]
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "logical not"
+expression = "not a"
+input = '{"a": true}'
+reads = [
+    { type = "direct", path = ["a"] },
+]
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+# Nullish coalescing
+
+[[test]]
+name = "nullish coalescing"
+expression = "a ?? b"
+input = '{"a": null, "b": 5}'
+reads = [
+    { type = "direct", path = ["a"] },
+    { type = "direct", path = ["b"] },
+]
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+# Conditional
+
+[[test]]
+name = "ternary expression"
+expression = "active ? price * rate : 0"
+input = '{"active": true, "price": 100, "rate": 1.5}'
+reads = [
+    { type = "direct", path = ["active"] },
+    { type = "direct", path = ["price"] },
+    { type = "direct", path = ["rate"] },
+]
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "ternary with string branches"
+expression = "status ? 'yes' : 'no'"
+input = '{"status": true}'
+reads = [
+    { type = "direct", path = ["status"] },
+]
+
+[test.loose]
+return_type = '{"Enum":[null,["yes","no"]]}'
+
+[test.strict]
+return_type = '{"Enum":[null,["yes","no"]]}'
+
+[[test]]
+name = "nested ternary"
+expression = "a > 10 ? a > 20 ? 'high' : 'mid' : 'low'"
+input = '{"a": 15}'
+reads = [
+    { type = "direct", path = ["a"] },
+    { type = "direct", path = ["a"] },
+]
+
+[test.loose]
+return_type = '{"Enum":[null,["high","mid","low"]]}'
+
+[test.strict]
+return_type = '{"Enum":[null,["high","mid","low"]]}'
+
+# Arrays and objects
+
+[[test]]
+name = "array literal with vars"
+expression = "[a, b, c]"
+input = '{"a": 1, "b": 2, "c": 3}'
+reads = [
+    { type = "direct", path = ["a"] },
+    { type = "direct", path = ["b"] },
+    { type = "direct", path = ["c"] },
+]
+
+[test.loose]
+return_type = '{"Array":"Number"}'
+
+[test.strict]
+return_type = '{"Array":"Number"}'
+
+[[test]]
+name = "object literal with vars"
+expression = "{ x: a, y: b }"
+input = '{"a": 1, "b": 2}'
+reads = [
+    { type = "direct", path = ["a"] },
+    { type = "direct", path = ["b"] },
+]
+
+[test.loose]
+
+[test.strict]
+
+# Template strings
+
+[[test]]
+name = "template string"
+expression = '`Hello ${name}`'
+input = '{"name": "world"}'
+reads = [
+    { type = "direct", path = ["name"] },
+]
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '"String"'
+
+[[test]]
+name = "template string multiple vars"
+expression = '`${first} ${last}`'
+input = '{"first": "John", "last": "Doe"}'
+reads = [
+    { type = "direct", path = ["first"] },
+    { type = "direct", path = ["last"] },
+]
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '"String"'
+
+# Slicing an array yields an array of the same element type (not the element).
+# Indexing (`arr[i]`) is a separate node that yields the element.
+[[test]]
+name = "array slice yields array"
+expression = "numbers[0:2]"
+input = '{"numbers": [1, 2, 3]}'
+reads = [
+    { type = "direct", path = ["numbers"] },
+]
+
+[test.loose]
+return_type = '{"Array":"Number"}'
+
+[test.strict]
+return_type = '{"Array":"Number"}'
+
+# A slice feeding an aggregate that expects an array must type-check.
+[[test]]
+name = "sum over array slice"
+expression = "sum(numbers[0:1])"
+input = '{"numbers": [10, 20, 30]}'
+reads = [
+    { type = "direct", path = ["numbers"] },
+]
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+# Empty-array branch unifies with a typed-array branch instead of widening to
+# `any[]` — the empty literal carries no element constraint.
+[[test]]
+name = "ternary empty array unifies with typed array"
+expression = "flag ? [] : [{ amount: 1 }]"
+input = '{"flag": true}'
+
+[test.loose]
+return_type = '{"Array":{"Object":{"amount":"Number"}}}'
+
+[test.strict]
+return_type = '{"Array":{"Object":{"amount":"Number"}}}'

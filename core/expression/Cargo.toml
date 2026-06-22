@@ -36,6 +36,7 @@ zen-types = { path = "../types", version = "0.55.1" }
 criterion = { workspace = true }
 csv = "1"
 serde_json5 = "0.2"
+toml = "0.8"
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 recursive = { workspace = true }

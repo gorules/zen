@@ -1,0 +1,291 @@
+# Built-in function type inference and dependency tracking
+
+[[test]]
+name = "sum function"
+expression = "sum([a, b, c])"
+input = '{"a": 1, "b": 2, "c": 3}'
+reads = [
+    { type = "direct", path = ["a"] },
+    { type = "direct", path = ["b"] },
+    { type = "direct", path = ["c"] },
+]
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "len function"
+expression = "len(items)"
+input = '{"items": [1, 2, 3]}'
+reads = [
+    { type = "direct", path = ["items"] },
+]
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "max function"
+expression = "max([a, b])"
+input = '{"a": 10, "b": 20}'
+reads = [
+    { type = "direct", path = ["a"] },
+    { type = "direct", path = ["b"] },
+]
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "min function"
+expression = "min([a, b])"
+input = '{"a": 10, "b": 20}'
+reads = [
+    { type = "direct", path = ["a"] },
+    { type = "direct", path = ["b"] },
+]
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "floor function"
+expression = "floor(x)"
+input = '{"x": 5.7}'
+reads = [
+    { type = "direct", path = ["x"] },
+]
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "ceil function"
+expression = "ceil(x)"
+input = '{"x": 5.2}'
+reads = [
+    { type = "direct", path = ["x"] },
+]
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "abs function"
+expression = "abs(x)"
+input = '{"x": -5}'
+reads = [
+    { type = "direct", path = ["x"] },
+]
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "upper function"
+expression = "upper(name)"
+input = '{"name": "hello"}'
+reads = [
+    { type = "direct", path = ["name"] },
+]
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '"String"'
+
+[[test]]
+name = "lower function"
+expression = "lower(name)"
+input = '{"name": "HELLO"}'
+reads = [
+    { type = "direct", path = ["name"] },
+]
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '"String"'
+
+[[test]]
+name = "contains function"
+expression = "contains(text, 'world')"
+input = '{"text": "hello world"}'
+reads = [
+    { type = "direct", path = ["text"] },
+]
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "startsWith function"
+expression = "startsWith(text, 'hello')"
+input = '{"text": "hello world"}'
+reads = [
+    { type = "direct", path = ["text"] },
+]
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "endsWith function"
+expression = "endsWith(text, 'world')"
+input = '{"text": "hello world"}'
+reads = [
+    { type = "direct", path = ["text"] },
+]
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "merge of an any-typed array"
+expression = "merge([a, b])"
+input = '{"Object":{"a":"Any","b":"Any"}}'
+
+[test.loose]
+return_type = '"Any"'
+
+[test.strict]
+return_type = '"Any"'
+
+[[test]]
+name = "merge of empty array literal"
+expression = "merge([])"
+
+[test.loose]
+return_type = '"Any"'
+
+[test.strict]
+return_type = '"Any"'
+
+[[test]]
+name = "merge of scalar array errors"
+expression = "merge([1, 2])"
+
+[test.loose]
+diagnostics = [
+    { source = "type_check", severity = "error" },
+]
+
+[test.strict]
+diagnostics = [
+    { source = "type_check", severity = "error" },
+]
+
+[[test]]
+name = "merge nullable object with object"
+expression = "merge([a, {y: 1}])"
+input = '{"Object": {"a": {"Nullable": {"Object": {"x": "Number"}}}}}'
+
+[test.loose]
+return_type = '{"Object": {"x": "Number", "y": "Number"}}'
+
+[test.strict]
+return_type = '{"Object": {"x": "Number", "y": "Number"}}'
+
+[[test]]
+name = "merge null literal with object"
+expression = "merge([null, {y: 1}])"
+
+[test.loose]
+return_type = '{"Object": {"y": "Number"}}'
+
+[test.strict]
+return_type = '{"Object": {"y": "Number"}}'
+
+[[test]]
+name = "mergeDeep nullable object with object"
+expression = "mergeDeep([a, {y: 1}])"
+input = '{"Object": {"a": {"Nullable": {"Object": {"x": "Number"}}}}}'
+
+[test.loose]
+return_type = '{"Object": {"x": "Number", "y": "Number"}}'
+
+[test.strict]
+return_type = '{"Object": {"x": "Number", "y": "Number"}}'
+
+[[test]]
+name = "merge of non-array argument errors"
+expression = "merge(a)"
+input = '{"Object": {"a": {"Object": {"x": "Number"}}}}'
+
+[test.loose]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "mergeDeep of scalar array errors"
+expression = "mergeDeep([1, 2])"
+
+[test.loose]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "date comparison methods return bool"
+expression = "d(a).isSameOrAfter(d(b))"
+input = '{"a": "2023-10-15", "b": "2023-10-14"}'
+reads = [
+    { type = "direct", path = ["a"] },
+    { type = "direct", path = ["b"] },
+]
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "date comparison with unit returns bool"
+expression = "d(a).isBefore(d(b), 'day')"
+input = '{"a": "2023-10-15", "b": "2023-10-14"}'
+reads = [
+    { type = "direct", path = ["a"] },
+    { type = "direct", path = ["b"] },
+]
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'

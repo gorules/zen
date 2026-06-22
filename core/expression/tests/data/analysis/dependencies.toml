@@ -1,0 +1,343 @@
+# Read dependency extraction
+
+# Member access
+
+[[test]]
+name = "simple member access"
+expression = "customer.firstName"
+input = '{"customer": {"firstName": "John"}}'
+reads = [
+    { type = "direct", path = ["customer", "firstName"] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "deep member access"
+expression = "customer.address.city"
+input = '{"customer": {"address": {"city": "NYC"}}}'
+reads = [
+    { type = "direct", path = ["customer", "address", "city"] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "multiple member reads"
+expression = "customer.firstName + customer.lastName"
+input = '{"customer": {"firstName": "John", "lastName": "Doe"}}'
+reads = [
+    { type = "direct", path = ["customer", "firstName"] },
+    { type = "direct", path = ["customer", "lastName"] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "array index access"
+expression = "items[0]"
+input = '{"items": [1, 2, 3]}'
+reads = [
+    { type = "direct", path = ["items"] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "dynamic member access"
+expression = "data[key]"
+input = '{"data": {"a": 1}, "key": "a"}'
+reads = [
+    { type = "direct", path = ["data"] },
+    { type = "direct", path = ["key"] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "deeply nested member"
+expression = "a.b.c.d.e"
+input = '{"a": {"b": {"c": {"d": {"e": 42}}}}}'
+reads = [
+    { type = "direct", path = ["a", "b", "c", "d", "e"] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "root reference"
+expression = "$root.customer.name"
+input = '{"customer": {"name": "John"}}'
+reads = [
+    { type = "direct", path = ["$root", "customer", "name"] },
+]
+
+[test.loose]
+
+[test.strict]
+
+# Assignments — local bindings, not external writes
+
+[[test]]
+name = "assignment reads from value"
+expression = "customer.fullName = customer.firstName + customer.lastName"
+input = '{"customer": {"firstName": "John", "lastName": "Doe"}}'
+reads = [
+    { type = "direct", path = ["customer", "firstName"] },
+    { type = "direct", path = ["customer", "lastName"] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "simple local does not leak as read"
+expression = "x = a + b; y = x * 2"
+input = '{"a": 1, "b": 2}'
+reads = [
+    { type = "direct", path = ["a"] },
+    { type = "direct", path = ["b"] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "local with output"
+expression = "x = a + b; y = x * 2; y + 1"
+input = '{"a": 1, "b": 2}'
+reads = [
+    { type = "direct", path = ["a"] },
+    { type = "direct", path = ["b"] },
+]
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "local does not leak as read"
+expression = "total = price * quantity; total"
+input = '{"price": 10, "quantity": 5}'
+reads = [
+    { type = "direct", path = ["price"] },
+    { type = "direct", path = ["quantity"] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "assignment value reads before binding"
+expression = "x = x + 1"
+input = '{"x": 5}'
+reads = [
+    { type = "direct", path = ["x"] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "property binding reads from value"
+expression = "order.total = order.price * order.quantity"
+input = '{"order": {"price": 10, "quantity": 5}}'
+reads = [
+    { type = "direct", path = ["order", "price"] },
+    { type = "direct", path = ["order", "quantity"] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "assignment with iteration"
+expression = "result.total = sum(map(items as item, item.price * item.qty))"
+input = '{"items": [{"price": 10, "qty": 2}]}'
+reads = [
+    { type = "iteration", collection = ["items"], alias = "item", reads = [
+        { type = "direct", path = ["item", "price"] },
+        { type = "direct", path = ["item", "qty"] },
+    ] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "all static bindings produce no reads"
+expression = "customer.firstName = 'something'; customer.lastName = 'else'; customer.firstName + ' ' + customer.lastName"
+reads = []
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "object binding makes identifier local"
+expression = "customer = { firstName: 'a', lastName: 'b' }; customer.firstName + customer.lastName"
+reads = []
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "partial binding still reads unbound"
+expression = "customer.firstName = 'John'; customer.firstName + customer.lastName"
+input = '{"customer": {"lastName": "Doe"}}'
+reads = [
+    { type = "direct", path = ["customer", "lastName"] },
+]
+
+[test.loose]
+
+[test.strict]
+
+# No dependencies
+
+[[test]]
+name = "no dependencies for pure literals"
+expression = "1 + 2 * 3"
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "no reads for pure literal"
+expression = "'hello'"
+reads = []
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "boolean expression no input"
+expression = "true and false"
+reads = []
+
+[test.loose]
+
+[test.strict]
+
+# Multiple references
+
+[[test]]
+name = "same variable referenced multiple times"
+expression = "x + x + x"
+input = '{"x": 1}'
+reads = [
+    { type = "direct", path = ["x"] },
+    { type = "direct", path = ["x"] },
+    { type = "direct", path = ["x"] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "mixed arithmetic and member access"
+expression = "(order.price * order.quantity) - order.discount"
+input = '{"order": {"price": 100, "quantity": 2, "discount": 10}}'
+reads = [
+    { type = "direct", path = ["order", "price"] },
+    { type = "direct", path = ["order", "quantity"] },
+    { type = "direct", path = ["order", "discount"] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "member access after array index"
+expression = "order.items[0].price"
+input = '{"order": {"items": [{"price": 10}]}}'
+reads = [
+    { type = "direct", path = ["order", "items"] },
+    { type = "direct", path = ["order", "items", "price"], via_index = true },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "bare root read"
+expression = "len(keys($root))"
+input = '{"customer": {"firstName": "John"}}'
+reads = [
+    { type = "direct", path = ["$root"] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "root identity read"
+expression = "$root"
+input = '{"customer": {"firstName": "John"}}'
+reads = [
+    { type = "direct", path = ["$root"] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "alias-rooted nested collection carries via_alias"
+expression = "map(groups as group, filter(group.items as item, item.active))"
+input = '{"groups": [{"items": [{"active": true}]}]}'
+reads = [
+    { type = "iteration", collection = ["groups"], alias = "group", reads = [
+        { type = "iteration", collection = ["group", "items"], alias = "item", reads = [
+            { type = "direct", path = ["item", "active"] },
+        ] },
+    ] },
+]
+references = [
+    { path = ["groups"], spans = [[4, 10]] },
+    { path = ["group", "items"], spans = [[28, 33], [34, 39]], via_alias = { alias = "group", collection = ["groups"] } },
+    { path = ["item", "active"], spans = [[49, 53], [54, 60]], via_alias = { alias = "item", collection = ["groups", "items"] } },
+]
+
+[[test]]
+name = "bare alias collection carries via_alias"
+expression = "map(groups as group, count(group, # > 0))"
+input = '{"groups": [[1, 2], [3]]}'
+reads = [
+    { type = "iteration", collection = ["groups"], alias = "group", reads = [
+        { type = "iteration", collection = ["group"], reads = [] },
+    ] },
+]
+references = [
+    { path = ["groups"], spans = [[4, 10]] },
+    { path = ["group"], spans = [[27, 32]], via_alias = { alias = "group", collection = ["groups"] } },
+]

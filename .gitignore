@@ -2,7 +2,6 @@
 .temp
 
 /target
-/Cargo.lock
 
 .idea
 .env.docker

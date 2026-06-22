@@ -80,11 +80,10 @@ fn parse_data_type(test: &TestCase) -> VariableType {
 fn run_analysis_inner(test: &TestCase, strict: bool, unary: bool) -> ExpressionAnalysis {
     let mut is = IntelliSense::new().with_strict(strict);
     let data_type = parse_data_type(test);
-    let expression: &'static str = Box::leak(test.expression.clone().into_boxed_str());
     let rc = if unary {
-        is.analyze_unary(expression, &data_type)
+        is.analyze_unary(&test.expression, &data_type)
     } else {
-        is.analyze(expression, &data_type)
+        is.analyze(&test.expression, &data_type)
     };
     std::rc::Rc::unwrap_or_clone(rc)
 }
@@ -399,8 +398,7 @@ fn run_completion_test_file(file_name: &str, toml_data: &str) {
             None => VariableType::Any,
         };
 
-        let expression: &'static str = Box::leak(test.expression.clone().into_boxed_str());
-        let completions = is.completions(expression, test.pos, &data_type);
+        let completions = is.completions(&test.expression, test.pos, &data_type);
         let labels: Vec<&str> = completions.iter().map(|c| c.label.as_str()).collect();
 
         for inc in &test.includes {
@@ -461,8 +459,7 @@ fn run_inspect_test_file(file_name: &str, toml_data: &str) {
             None => VariableType::Any,
         };
 
-        let expression: &'static str = Box::leak(test.expression.clone().into_boxed_str());
-        let result = is.inspect(expression, test.pos, &data_type);
+        let result = is.inspect(&test.expression, test.pos, &data_type);
 
         if test.label.is_some() || test.kind.is_some() {
             let result = result.unwrap_or_else(|| {
@@ -531,11 +528,10 @@ fn analysis_nested_closures_complete_quickly() {
     (0..depth).for_each(|_| source.push_str("map([0], "));
     source.push('1');
     (0..depth).for_each(|_| source.push(')'));
-    let expression: &'static str = Box::leak(source.into_boxed_str());
 
     let start = std::time::Instant::now();
     let mut is = IntelliSense::new().with_strict(true);
-    let analysis = is.analyze(expression, &VariableType::Any);
+    let analysis = is.analyze(&source, &VariableType::Any);
     assert!(
         start.elapsed() < std::time::Duration::from_secs(5),
         "nested closure type-check took {:?}",

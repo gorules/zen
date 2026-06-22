@@ -39,7 +39,7 @@ jobs:
           python-version: '3.13'
 
       - name: Build wheels
-        uses: stefan-gorules/maturin-action@main
+        uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter -m bindings/python/Cargo.toml

@@ -1,0 +1,1053 @@
+# Nullable type system: merge behavior, member access, operators, strict mode
+#
+# Tests use [test.loose] and [test.strict] sections to verify both modes in one entry.
+
+# =============================================================================
+# Merge via ternary: T | null => Nullable(T)
+# =============================================================================
+
+[[test]]
+name = "merge: string | null"
+expression = "flag ? name : null"
+input = '{"Object": {"flag": "Bool", "name": "String"}}'
+
+[test.loose]
+return_type = '{"Nullable": "String"}'
+
+[test.strict]
+return_type = '{"Nullable": "String"}'
+
+[[test]]
+name = "merge: null | string"
+expression = "flag ? null : name"
+input = '{"Object": {"flag": "Bool", "name": "String"}}'
+
+[test.loose]
+return_type = '{"Nullable": "String"}'
+
+[test.strict]
+return_type = '{"Nullable": "String"}'
+
+[[test]]
+name = "merge: number | null"
+expression = "flag ? age : null"
+input = '{"Object": {"flag": "Bool", "age": "Number"}}'
+
+[test.loose]
+return_type = '{"Nullable": "Number"}'
+
+[test.strict]
+return_type = '{"Nullable": "Number"}'
+
+[[test]]
+name = "merge: null | number"
+expression = "flag ? null : age"
+input = '{"Object": {"flag": "Bool", "age": "Number"}}'
+
+[test.loose]
+return_type = '{"Nullable": "Number"}'
+
+[test.strict]
+return_type = '{"Nullable": "Number"}'
+
+[[test]]
+name = "merge: bool | null"
+expression = "flag ? active : null"
+input = '{"Object": {"flag": "Bool", "active": "Bool"}}'
+
+[test.loose]
+return_type = '{"Nullable": "Bool"}'
+
+[test.strict]
+return_type = '{"Nullable": "Bool"}'
+
+[[test]]
+name = "merge: date | null"
+expression = "flag ? d : null"
+input = '{"Object": {"flag": "Bool", "d": "Date"}}'
+
+[test.loose]
+return_type = '{"Nullable": "Date"}'
+
+[test.strict]
+return_type = '{"Nullable": "Date"}'
+
+[[test]]
+name = "merge: null | null => Null"
+expression = "flag ? null : null"
+input = '{"Object": {"flag": "Bool"}}'
+
+[test.loose]
+return_type = '"Null"'
+
+[test.strict]
+return_type = '"Null"'
+
+[[test]]
+name = "merge: same type no nullable"
+expression = "flag ? a : b"
+input = '{"Object": {"flag": "Bool", "a": "String", "b": "String"}}'
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '"String"'
+
+[[test]]
+name = "merge: same number no nullable"
+expression = "flag ? a : b"
+input = '{"Object": {"flag": "Bool", "a": "Number", "b": "Number"}}'
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "merge: same bool no nullable"
+expression = "flag ? a : b"
+input = '{"Object": {"flag": "Bool", "a": "Bool", "b": "Bool"}}'
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+# =============================================================================
+# Merge via ternary: Const / Enum interactions
+# =============================================================================
+
+[[test]]
+name = "merge: const | null => Nullable(Const)"
+expression = "flag ? 'hello' : null"
+input = '{"Object": {"flag": "Bool"}}'
+
+[test.loose]
+return_type = '{"Nullable": {"Const": "hello"}}'
+
+[test.strict]
+return_type = '{"Nullable": {"Const": "hello"}}'
+
+[[test]]
+name = "merge: null | const => Nullable(Const)"
+expression = "flag ? null : 'world'"
+input = '{"Object": {"flag": "Bool"}}'
+
+[test.loose]
+return_type = '{"Nullable": {"Const": "world"}}'
+
+[test.strict]
+return_type = '{"Nullable": {"Const": "world"}}'
+
+[[test]]
+name = "merge: const | const => Enum"
+expression = "flag ? 'hello' : 'world'"
+input = '{"Object": {"flag": "Bool"}}'
+
+[test.loose]
+return_type = '{"Enum": [null, ["hello", "world"]]}'
+
+[test.strict]
+return_type = '{"Enum": [null, ["hello", "world"]]}'
+
+[[test]]
+name = "merge: same const => Const"
+expression = "flag ? 'same' : 'same'"
+input = '{"Object": {"flag": "Bool"}}'
+
+[test.loose]
+return_type = '{"Const": "same"}'
+
+[test.strict]
+return_type = '{"Const": "same"}'
+
+[[test]]
+name = "merge: const | string => String"
+expression = "flag ? 'literal' : name"
+input = '{"Object": {"flag": "Bool", "name": "String"}}'
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '"String"'
+
+[[test]]
+name = "merge: string | const => String"
+expression = "flag ? name : 'literal'"
+input = '{"Object": {"flag": "Bool", "name": "String"}}'
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '"String"'
+
+# =============================================================================
+# Merge via ternary: incompatible types
+# =============================================================================
+
+[[test]]
+name = "merge: string | number => Any"
+expression = "flag ? name : age"
+input = '{"Object": {"flag": "Bool", "name": "String", "age": "Number"}}'
+
+[test.loose]
+return_type = '"Any"'
+
+[test.strict]
+return_type = '"Any"'
+
+[[test]]
+name = "merge: bool | string => Any"
+expression = "flag ? active : name"
+input = '{"Object": {"flag": "Bool", "active": "Bool", "name": "String"}}'
+
+[test.loose]
+return_type = '"Any"'
+
+[test.strict]
+return_type = '"Any"'
+
+[[test]]
+name = "merge: number | bool => Any"
+expression = "flag ? age : active"
+input = '{"Object": {"flag": "Bool", "age": "Number", "active": "Bool"}}'
+
+[test.loose]
+return_type = '"Any"'
+
+[test.strict]
+return_type = '"Any"'
+
+[[test]]
+name = "merge: any | T => Any"
+expression = "flag ? x : name"
+input = '{"Object": {"flag": "Bool", "x": "Any", "name": "String"}}'
+
+[test.loose]
+return_type = '"Any"'
+
+[test.strict]
+return_type = '"Any"'
+
+[[test]]
+name = "merge: T | any => Any"
+expression = "flag ? name : x"
+input = '{"Object": {"flag": "Bool", "name": "String", "x": "Any"}}'
+
+[test.loose]
+return_type = '"Any"'
+
+[test.strict]
+return_type = '"Any"'
+
+# =============================================================================
+# Merge via ternary: Nullable inputs
+# =============================================================================
+
+[[test]]
+name = "merge: Nullable(String) | Nullable(String)"
+expression = "flag ? a : b"
+input = '{"Object": {"flag": "Bool", "a": {"Nullable": "String"}, "b": {"Nullable": "String"}}}'
+
+[test.loose]
+return_type = '{"Nullable": "String"}'
+
+[test.strict]
+return_type = '{"Nullable": "String"}'
+
+[[test]]
+name = "merge: Nullable(Number) | Number"
+expression = "flag ? a : b"
+input = '{"Object": {"flag": "Bool", "a": {"Nullable": "Number"}, "b": "Number"}}'
+
+[test.loose]
+return_type = '{"Nullable": "Number"}'
+
+[test.strict]
+return_type = '{"Nullable": "Number"}'
+
+[[test]]
+name = "merge: Number | Nullable(Number)"
+expression = "flag ? a : b"
+input = '{"Object": {"flag": "Bool", "a": "Number", "b": {"Nullable": "Number"}}}'
+
+[test.loose]
+return_type = '{"Nullable": "Number"}'
+
+[test.strict]
+return_type = '{"Nullable": "Number"}'
+
+[[test]]
+name = "merge: Nullable(String) | null"
+expression = "flag ? a : null"
+input = '{"Object": {"flag": "Bool", "a": {"Nullable": "String"}}}'
+
+[test.loose]
+return_type = '{"Nullable": "String"}'
+
+[test.strict]
+return_type = '{"Nullable": "String"}'
+
+[[test]]
+name = "merge: null | Nullable(Bool)"
+expression = "flag ? null : a"
+input = '{"Object": {"flag": "Bool", "a": {"Nullable": "Bool"}}}'
+
+[test.loose]
+return_type = '{"Nullable": "Bool"}'
+
+[test.strict]
+return_type = '{"Nullable": "Bool"}'
+
+[[test]]
+name = "merge: Nullable(String) | Number => Any (incompatible inner)"
+expression = "flag ? a : b"
+input = '{"Object": {"flag": "Bool", "a": {"Nullable": "String"}, "b": "Number"}}'
+
+[test.loose]
+return_type = '"Any"'
+
+[test.strict]
+return_type = '"Any"'
+
+[[test]]
+name = "merge: Any | Nullable(String) => Any"
+expression = "flag ? a : b"
+input = '{"Object": {"flag": "Bool", "a": "Any", "b": {"Nullable": "String"}}}'
+
+[test.loose]
+return_type = '"Any"'
+
+[test.strict]
+return_type = '"Any"'
+
+# =============================================================================
+# Merge via ternary: arrays
+# =============================================================================
+
+[[test]]
+name = "merge: array | null => Nullable(Array)"
+expression = "flag ? items : null"
+input = '{"Object": {"flag": "Bool", "items": {"Array": "Number"}}}'
+
+[test.loose]
+return_type = '{"Nullable": {"Array": "Number"}}'
+
+[test.strict]
+return_type = '{"Nullable": {"Array": "Number"}}'
+
+[[test]]
+name = "merge: array | array => Array"
+expression = "flag ? a : b"
+input = '{"Object": {"flag": "Bool", "a": {"Array": "String"}, "b": {"Array": "String"}}}'
+
+[test.loose]
+return_type = '{"Array": "String"}'
+
+[test.strict]
+return_type = '{"Array": "String"}'
+
+# =============================================================================
+# Nullable member access
+# =============================================================================
+
+[[test]]
+name = "member: nullable object property"
+expression = "user.name"
+input = '{"Object": {"user": {"Nullable": {"Object": {"name": "String"}}}}}'
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '{"Nullable": "String"}'
+
+[[test]]
+name = "member: nullable object nested"
+expression = "user.address"
+input = '{"Object": {"user": {"Nullable": {"Object": {"address": {"Object": {"city": "String"}}}}}}}'
+
+[test.loose]
+return_type = '{"Object": {"city": "String"}}'
+
+[test.strict]
+return_type = '{"Nullable": {"Object": {"city": "String"}}}'
+
+[[test]]
+name = "member: nullable object nested chain"
+expression = "user.address.city"
+input = '{"Object": {"user": {"Nullable": {"Object": {"address": {"Object": {"city": "String"}}}}}}}'
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '{"Nullable": "String"}'
+
+[[test]]
+name = "member: nullable array index"
+expression = "items[0]"
+input = '{"Object": {"items": {"Nullable": {"Array": "Number"}}}}'
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '{"Nullable": "Number"}'
+
+[[test]]
+name = "member: array index introduces nullable in strict"
+expression = "items[0]"
+input = '{"Object": {"items": {"Array": "Number"}}}'
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '{"Nullable": "Number"}'
+
+[[test]]
+name = "member: indexed property is nullable in strict"
+expression = "companies[0].revenue"
+input = '{"Object": {"companies": {"Array": {"Object": {"revenue": "Number"}}}}}'
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '{"Nullable": "Number"}'
+
+[[test]]
+name = "member: coalesce recovers from nullable index"
+expression = "companies[0].revenue ?? 0"
+input = '{"Object": {"companies": {"Array": {"Object": {"revenue": "Number"}}}}}'
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "member: nullable object unknown key"
+expression = "user.unknown"
+input = '{"Object": {"user": {"Nullable": {"Object": {"name": "String"}}}}}'
+
+[test.loose]
+return_type = '"Any"'
+
+[test.strict]
+return_type = '"Any"'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "member: null type returns Null"
+expression = "x.foo"
+input = '{"Object": {"x": "Null"}}'
+
+[test.loose]
+return_type = '"Null"'
+
+[test.strict]
+return_type = '"Null"'
+
+# =============================================================================
+# Nullish coalescing (??)
+# =============================================================================
+
+[[test]]
+name = "coalesce: Nullable(String) ?? const"
+expression = "name ?? 'default'"
+input = '{"Object": {"name": {"Nullable": "String"}}}'
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '"String"'
+
+[[test]]
+name = "coalesce: Nullable(Number) ?? number"
+expression = "val ?? 0"
+input = '{"Object": {"val": {"Nullable": "Number"}}}'
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "coalesce: Null ?? number"
+expression = "x ?? 42"
+input = '{"Object": {"x": "Null"}}'
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "coalesce: non-nullable passes through"
+expression = "name ?? 'fallback'"
+input = '{"Object": {"name": "String"}}'
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '"String"'
+
+[[test]]
+name = "coalesce: Nullable(Const) ?? const => Enum"
+expression = "x ?? 'other'"
+input = '{"Object": {"x": {"Nullable": {"Const": "hello"}}}}'
+
+[test.loose]
+return_type = '{"Enum": [null, ["hello", "other"]]}'
+
+[test.strict]
+return_type = '{"Enum": [null, ["hello", "other"]]}'
+
+[[test]]
+name = "coalesce: Nullable(Bool) ?? bool"
+expression = "active ?? false"
+input = '{"Object": {"active": {"Nullable": "Bool"}}}'
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "coalesce: Any ?? string => Any"
+expression = "x ?? 'hi'"
+input = '{"Object": {"x": "Any"}}'
+
+[test.loose]
+return_type = '"Any"'
+
+[test.strict]
+return_type = '"Any"'
+
+# =============================================================================
+# Nullable in comparisons
+# =============================================================================
+
+[[test]]
+name = "compare: nullable == literal"
+expression = "val == 5"
+input = '{"Object": {"val": {"Nullable": "Number"}}}'
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "compare: nullable != literal"
+expression = "val != 5"
+input = '{"Object": {"val": {"Nullable": "Number"}}}'
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "compare: nullable == null"
+expression = "val == null"
+input = '{"Object": {"val": {"Nullable": "Number"}}}'
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "compare: nullable != null"
+expression = "val != null"
+input = '{"Object": {"val": {"Nullable": "Number"}}}'
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "compare: nullable string == const"
+expression = "name == 'hello'"
+input = '{"Object": {"name": {"Nullable": "String"}}}'
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "compare: nullable < number => error"
+expression = "val < 10"
+input = '{"Object": {"val": {"Nullable": "Number"}}}'
+
+[test.loose]
+return_type = '"Any"'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+return_type = '"Any"'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "compare: nullable > number => error"
+expression = "val > 0"
+input = '{"Object": {"val": {"Nullable": "Number"}}}'
+
+[test.loose]
+return_type = '"Any"'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+return_type = '"Any"'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+# =============================================================================
+# Nullable in arithmetic (must null-check first)
+# =============================================================================
+
+[[test]]
+name = "arith: nullable + number => error"
+expression = "val + 1"
+input = '{"Object": {"val": {"Nullable": "Number"}}}'
+
+[test.loose]
+return_type = '"Any"'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+return_type = '"Any"'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "arith: nullable - number => error"
+expression = "val - 1"
+input = '{"Object": {"val": {"Nullable": "Number"}}}'
+
+[test.loose]
+return_type = '"Any"'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+return_type = '"Any"'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "arith: nullable * number => error"
+expression = "val * 2"
+input = '{"Object": {"val": {"Nullable": "Number"}}}'
+
+[test.loose]
+return_type = '"Any"'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+return_type = '"Any"'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "arith: nullable string + string => error"
+expression = "name + ' world'"
+input = '{"Object": {"name": {"Nullable": "String"}}}'
+
+[test.loose]
+return_type = '"Any"'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+return_type = '"Any"'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+# =============================================================================
+# Nullable in logical operators
+# =============================================================================
+
+[[test]]
+name = "logical: nullable and bool => error"
+expression = "a and b"
+input = '{"Object": {"a": {"Nullable": "Bool"}, "b": "Bool"}}'
+
+[test.loose]
+return_type = '"Any"'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+return_type = '"Any"'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "logical: nullable or bool => error"
+expression = "a or b"
+input = '{"Object": {"a": {"Nullable": "Bool"}, "b": "Bool"}}'
+
+[test.loose]
+return_type = '"Any"'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+return_type = '"Any"'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "logical: not nullable => error"
+expression = "not a"
+input = '{"Object": {"a": {"Nullable": "Bool"}}}'
+
+[test.loose]
+return_type = '"Bool"'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+return_type = '"Bool"'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+# =============================================================================
+# Edge cases
+# =============================================================================
+
+[[test]]
+name = "edge: deeply nested ternary with nulls"
+expression = "a ? (b ? x : null) : null"
+input = '{"Object": {"a": "Bool", "b": "Bool", "x": "Number"}}'
+
+[test.loose]
+return_type = '{"Nullable": "Number"}'
+
+[test.strict]
+return_type = '{"Nullable": "Number"}'
+
+[[test]]
+name = "edge: chained coalesce"
+expression = "a ?? b ?? 'default'"
+input = '{"Object": {"a": {"Nullable": "String"}, "b": {"Nullable": "String"}}}'
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '"String"'
+
+[[test]]
+name = "edge: coalesce then member"
+expression = "(user ?? fallback).name"
+input = '{"Object": {"user": {"Nullable": {"Object": {"name": "String"}}}, "fallback": {"Object": {"name": "String"}}}}'
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '"String"'
+
+[[test]]
+name = "edge: ternary producing Nullable then coalesce"
+expression = "(flag ? name : null) ?? 'none'"
+input = '{"Object": {"flag": "Bool", "name": "String"}}'
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '"String"'
+
+[[test]]
+name = "edge: ternary with Any branch"
+expression = "flag ? x : null"
+input = '{"Object": {"flag": "Bool", "x": "Any"}}'
+
+[test.loose]
+return_type = '"Any"'
+
+[test.strict]
+return_type = '"Any"'
+
+[[test]]
+name = "edge: double nullable merge stays single"
+expression = "a ? (b ? x : null) : null"
+input = '{"Object": {"a": "Bool", "b": "Bool", "x": "String"}}'
+
+[test.loose]
+return_type = '{"Nullable": "String"}'
+
+[test.strict]
+return_type = '{"Nullable": "String"}'
+
+[[test]]
+name = "edge: Nullable(Nullable) does not nest from merge"
+expression = "flag ? a : null"
+input = '{"Object": {"flag": "Bool", "a": {"Nullable": "String"}}}'
+
+[test.loose]
+return_type = '{"Nullable": "String"}'
+
+[test.strict]
+return_type = '{"Nullable": "String"}'
+
+[[test]]
+name = "edge: in operator with nullable array => error"
+expression = "3 in items"
+input = '{"Object": {"items": {"Nullable": {"Array": "Number"}}}}'
+
+[test.loose]
+return_type = '"Any"'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+return_type = '"Any"'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "edge: not in with nullable array => error"
+expression = "3 not in items"
+input = '{"Object": {"items": {"Nullable": {"Array": "Number"}}}}'
+
+[test.loose]
+return_type = '"Any"'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+return_type = '"Any"'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "edge: in with non-nullable array works"
+expression = "3 in items"
+input = '{"Object": {"items": {"Array": "Number"}}}'
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+# =============================================================================
+# Nullable in closures
+# =============================================================================
+
+[[test]]
+name = "closure: map over nullable array"
+expression = "map(items as item, item.price)"
+input = '{"Object": {"items": {"Nullable": {"Array": {"Object": {"price": "Number"}}}}}}'
+
+[test.loose]
+return_type = '{"Array": "Number"}'
+
+[test.strict]
+return_type = '{"Array": "Number"}'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "closure: map over nullable array with fallback"
+expression = "map(items ?? [], #.price)"
+input = '{"Object": {"items": {"Nullable": {"Array": {"Object": {"price": "Number"}}}}}}'
+
+[test.loose]
+return_type = '{"Array": "Number"}'
+
+[test.strict]
+return_type = '{"Array": "Number"}'
+
+[[test]]
+name = "closure: map unknown property on nullable array (strict error)"
+expression = "map(items as item, item.unknown)"
+input = '{"Object": {"items": {"Nullable": {"Array": {"Object": {"price": "Number"}}}}}}'
+
+[test.loose]
+return_type = '{"Array": "Any"}'
+
+[test.strict]
+return_type = '{"Array": "Any"}'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "closure: filter over nullable array"
+expression = "filter(items as item, item.active)"
+input = '{"Object": {"items": {"Nullable": {"Array": {"Object": {"active": "Bool"}}}}}}'
+
+[test.loose]
+return_type = '{"Nullable": {"Array": {"Object": {"active": "Bool"}}}}'
+
+[test.strict]
+return_type = '{"Nullable": {"Array": {"Object": {"active": "Bool"}}}}'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "closure: some over nullable array"
+expression = "some(items as item, item.active)"
+input = '{"Object": {"items": {"Nullable": {"Array": {"Object": {"active": "Bool"}}}}}}'
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "closure: map over non-nullable array valid member"
+expression = "map(companies as c, c.name)"
+input = '{"Object": {"companies": {"Array": {"Object": {"name": "String", "revenue": "Number"}}}}}'
+
+[test.loose]
+return_type = '{"Array": "String"}'
+
+[test.strict]
+return_type = '{"Array": "String"}'
+
+[[test]]
+name = "closure: map over non-nullable array unknown member (strict error)"
+expression = "map(companies as c, c.unknownProperty)"
+input = '{"Object": {"companies": {"Array": {"Object": {"name": "String", "revenue": "Number"}}}}}'
+
+[test.loose]
+return_type = '{"Array": "Any"}'
+
+[test.strict]
+return_type = '{"Array": "Any"}'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "closure: callback ref on nullable array"
+expression = "map(items, #.price)"
+input = '{"Object": {"items": {"Nullable": {"Array": {"Object": {"price": "Number"}}}}}}'
+
+[test.loose]
+return_type = '{"Array": "Number"}'
+
+[test.strict]
+return_type = '{"Array": "Number"}'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "closure: callback ref unknown property (strict error)"
+expression = "map(items, #.unknown)"
+input = '{"Object": {"items": {"Nullable": {"Array": {"Object": {"price": "Number"}}}}}}'
+
+[test.loose]
+return_type = '{"Array": "Any"}'
+
+[test.strict]
+return_type = '{"Array": "Any"}'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "closure: nested nullable array closure"
+expression = "map(groups as g, map(g.items as item, item.value))"
+input = '{"Object": {"groups": {"Nullable": {"Array": {"Object": {"items": {"Array": {"Object": {"value": "Number"}}}}}}}}}'
+
+[test.loose]
+return_type = '{"Array": {"Array": "Number"}}'
+
+[test.strict]
+return_type = '{"Array": {"Array": "Number"}}'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "closure: nested nullable array closure with fallback"
+expression = "map(groups ?? [], map(#.items, #.value))"
+input = '{"Object": {"groups": {"Nullable": {"Array": {"Object": {"items": {"Array": {"Object": {"value": "Number"}}}}}}}}}'
+
+[test.loose]
+return_type = '{"Array": {"Array": "Number"}}'
+
+[test.strict]
+return_type = '{"Array": {"Array": "Number"}}'
+
+[[test]]
+name = "string number index"
+expression = "name[0]"
+input = '{"name": "hello"}'
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '{"Nullable": "String"}'
+
+[[test]]
+name = "string number index concat"
+expression = "name[0] + 'x'"
+input = '{"name": "hello"}'
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+diagnostics = [
+    { source = "type_check", severity = "error" },
+]
+
+[[test]]
+name = "string number index coalesce concat"
+expression = "(name[0] ?? '') + 'x'"
+input = '{"name": "hello"}'
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '"String"'
+
+[[test]]
+name = "flatten nullable array strict error"
+expression = "flatten(matrix)"
+input = '{"Object": {"matrix": {"Nullable": {"Array": {"Array": "Number"}}}}}'
+
+[test.loose]
+return_type = '{"Array": "Number"}'
+
+[test.strict]
+return_type = '{"Array": "Number"}'
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[[test]]
+name = "flatten nullable array with fallback"
+expression = "flatten(matrix ?? [])"
+input = '{"Object": {"matrix": {"Nullable": {"Array": {"Array": "Number"}}}}}'
+
+[test.loose]
+return_type = '{"Array": "Number"}'
+
+[test.strict]
+return_type = '{"Array": "Number"}'
+
+[[test]]
+name = "const string number index"
+expression = "code[0]"
+input = '{"Object": {"code": {"Const": "abc"}}}'
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '{"Nullable": "String"}'
+
+[[test]]
+name = "enum string number index"
+expression = "status[0]"
+input = '{"Object": {"status": {"Enum": [null, ["active", "inactive"]]}}}'
+
+[test.loose]
+return_type = '"String"'
+
+[test.strict]
+return_type = '{"Nullable": "String"}'

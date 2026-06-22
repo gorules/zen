@@ -1,0 +1,203 @@
+# Completion tests — Rust filters by prefix, returns only matching completions
+# includes: these labels MUST appear in results
+# excludes: these labels MUST NOT appear in results
+
+# ── Scope completions ────────────────────────────────────────────────────────
+
+[[test]]
+name = "scope at empty"
+expression = ""
+pos = 0
+input = '{"price": 10, "quantity": 5}'
+includes = ["price", "quantity", "sum", "len", "map", "filter", "$root"]
+
+[[test]]
+name = "scope filters by prefix"
+expression = "p"
+pos = 1
+input = '{"price": 10, "quantity": 5}'
+includes = ["price"]
+excludes = ["quantity", "sum", "len", "$root"]
+
+[[test]]
+name = "scope prefix su"
+expression = "su"
+pos = 2
+input = '{"price": 10}'
+includes = ["sum"]
+excludes = ["price", "len", "filter"]
+
+[[test]]
+name = "scope after operator"
+expression = "a + "
+pos = 4
+input = '{"a": 1, "b": 2}'
+includes = ["a", "b", "sum", "len"]
+
+[[test]]
+name = "scope after operator with prefix"
+expression = "a + b"
+pos = 5
+input = '{"a": 1, "b": 2, "bonus": 3}'
+includes = ["b", "bonus", "bool"]
+excludes = ["a", "sum", "len"]
+
+[[test]]
+name = "scope after open paren"
+expression = "sum("
+pos = 4
+input = '{"items": [1, 2]}'
+includes = ["items", "sum"]
+
+[[test]]
+name = "scope includes closure functions"
+expression = ""
+pos = 0
+input = '{"x": 1}'
+includes = ["all", "none", "some", "one", "filter", "map", "flatMap", "count"]
+
+[[test]]
+name = "scope includes math functions"
+expression = ""
+pos = 0
+input = '{"x": 1}'
+includes = ["abs", "floor", "ceil", "round", "min", "max", "avg", "median"]
+
+[[test]]
+name = "scope includes string functions"
+expression = ""
+pos = 0
+input = '{"x": 1}'
+includes = ["upper", "lower", "trim", "contains", "startsWith", "endsWith", "split"]
+
+[[test]]
+name = "scope prefix case insensitive"
+expression = "S"
+pos = 1
+input = '{"score": 10}'
+includes = ["score", "sum", "split", "startsWith", "string"]
+excludes = ["len", "filter"]
+
+# ── Property completions ─────────────────────────────────────────────────────
+
+[[test]]
+name = "property after dot"
+expression = "customer."
+pos = 9
+input = '{"customer": {"firstName": "John", "lastName": "Doe"}}'
+includes = ["firstName", "lastName"]
+excludes = ["customer", "sum", "len", "$root"]
+
+[[test]]
+name = "property filtered by prefix"
+expression = "customer.first"
+pos = 14
+input = '{"customer": {"firstName": "John", "lastName": "Doe"}}'
+includes = ["firstName"]
+excludes = ["lastName", "customer", "sum"]
+
+[[test]]
+name = "property prefix filters to none"
+expression = "customer.xyz"
+pos = 12
+input = '{"customer": {"firstName": "John", "lastName": "Doe"}}'
+excludes = ["firstName", "lastName"]
+
+[[test]]
+name = "deep property"
+expression = "customer.address."
+pos = 17
+input = '{"customer": {"address": {"city": "NYC", "zip": "10001"}}}'
+includes = ["city", "zip"]
+excludes = ["address", "customer", "sum"]
+
+[[test]]
+name = "deep property filtered"
+expression = "customer.address.c"
+pos = 18
+input = '{"customer": {"address": {"city": "NYC", "zip": "10001"}}}'
+includes = ["city"]
+excludes = ["zip"]
+
+[[test]]
+name = "property on object with many fields"
+expression = "order."
+pos = 6
+input = '{"order": {"total": 100, "items": [1], "status": "active"}}'
+includes = ["total", "items", "status"]
+excludes = ["order", "sum"]
+
+[[test]]
+name = "property does not include scope items"
+expression = "data."
+pos = 5
+input = '{"data": {"x": 1}}'
+includes = ["x"]
+excludes = ["sum", "len", "filter", "map", "$root"]
+
+# ── Edge cases ───────────────────────────────────────────────────────────────
+
+[[test]]
+name = "no input returns functions only"
+expression = ""
+pos = 0
+includes = ["sum", "len", "$root"]
+
+[[test]]
+name = "dollar root prefix"
+expression = "$"
+pos = 1
+input = '{"x": 1}'
+includes = ["$root"]
+excludes = ["x", "sum"]
+
+[[test]]
+name = "after binary returns scope"
+expression = "a * b + "
+pos = 8
+input = '{"a": 1, "b": 2, "c": 3}'
+includes = ["a", "b", "c", "sum"]
+
+# ── Template strings ─────────────────────────────────────────────────────────
+
+[[test]]
+name = "template string property after dot"
+expression = '`Hello ${customer.}`'
+pos = 18
+input = '{"customer": {"firstName": "John", "lastName": "Doe"}}'
+includes = ["firstName", "lastName"]
+excludes = ["customer", "sum"]
+
+[[test]]
+name = "template string property filtered"
+expression = '`${customer.first}`'
+pos = 17
+input = '{"customer": {"firstName": "John", "lastName": "Doe"}}'
+includes = ["firstName"]
+excludes = ["lastName"]
+
+[[test]]
+name = "template string scope inside expression"
+expression = '`Hello ${}`'
+pos = 9
+input = '{"name": "world", "greeting": "Hi"}'
+includes = ["name", "greeting", "sum"]
+
+[[test]]
+name = "incomplete template property completions"
+expression = '`${customer.'
+pos = 12
+input = '{"customer": {"firstName": "John", "lastName": "Doe"}}'
+includes = ["firstName", "lastName"]
+excludes = ["customer", "sum"]
+
+# ── Lexer failure fallback ───────────────────────────────────────────────────
+# When the lexer fails (unmatched quotes/braces), we fall back to
+# scope completions without prefix filtering since there's no parsed context.
+
+[[test]]
+name = "unmatched quote falls back to scope"
+expression = "'hello"
+pos = 6
+input = '{"price": 10, "qty": 5}'
+includes = ["price", "qty", "sum"]

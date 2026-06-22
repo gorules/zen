@@ -1,0 +1,54 @@
+# Inspect tests — type info at cursor position
+# label: the source text at the inspected span
+# kind: JSON-serialized VariableType
+
+[[test]]
+name = "identifier"
+expression = "price"
+pos = 2
+input = '{"price": 42}'
+label = "price"
+kind = '"Number"'
+
+[[test]]
+name = "member - on identifier part"
+expression = "customer.firstName"
+pos = 4
+input = '{"customer": {"firstName": "John"}}'
+label = "customer"
+
+[[test]]
+name = "member - on property part"
+expression = "customer.firstName"
+pos = 10
+input = '{"customer": {"firstName": "John"}}'
+label = "firstName"
+
+[[test]]
+name = "number literal"
+expression = "42"
+pos = 1
+label = "42"
+kind = '"Number"'
+
+[[test]]
+name = "string literal"
+expression = "'hello'"
+pos = 3
+label = "'hello'"
+
+[[test]]
+name = "binary left operand"
+expression = "a + b"
+pos = 0
+input = '{"a": 1, "b": 2}'
+label = "a"
+kind = '"Number"'
+
+[[test]]
+name = "binary right operand"
+expression = "a + b"
+pos = 4
+input = '{"a": 1, "b": 2}'
+label = "b"
+kind = '"Number"'

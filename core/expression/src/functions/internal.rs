@@ -491,7 +491,7 @@ pub(crate) mod imp {
             .sum();
 
         match first {
-            V::Array(_) | V::Null => {
+            V::Array(_) => {
                 let mut merged = Vec::with_capacity(capacity);
 
                 for item in arr.iter() {

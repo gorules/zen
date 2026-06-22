@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use proc_macro::TokenStream;
 
 mod to_variable;

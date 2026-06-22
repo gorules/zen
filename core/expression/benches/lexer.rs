@@ -4,9 +4,11 @@ use zen_expression::lexer::Lexer;
 
 fn bench_source(b: &mut Bencher, source: &'static str) {
     let mut lexer = Lexer::new();
+    let mut bump = bumpalo::Bump::new();
 
     b.iter(|| {
-        criterion::black_box(lexer.tokenize(source).unwrap());
+        bump.reset();
+        criterion::black_box(lexer.tokenize(&bump, source).unwrap());
     })
 }
 

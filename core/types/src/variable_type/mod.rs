@@ -23,6 +23,7 @@ pub enum VariableType {
 
     Const(Rc<str>),
     Enum(Option<Rc<str>>, Vec<Rc<str>>),
+    Nullable(Rc<VariableType>),
 }
 
 impl VariableType {
@@ -69,6 +70,7 @@ impl Display for VariableType {
             }
             VariableType::Array(v) => write!(f, "{v}[]"),
             VariableType::Object(_) => write!(f, "object"),
+            VariableType::Nullable(inner) => write!(f, "{inner}?"),
         }
     }
 }
@@ -104,6 +106,10 @@ impl Hash for VariableType {
                 pairs.sort_by_key(|i| i.0);
 
                 Hash::hash(&pairs, state);
+            }
+            VariableType::Nullable(inner) => {
+                11.hash(state);
+                inner.hash(state);
             }
         }
     }

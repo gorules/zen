@@ -1,0 +1,311 @@
+# Unary expression analysis — conditions tested against $ (current value)
+# return_type is always Bool
+# In unary, $ is the implicit left operand. The caller provides $ in the data.
+
+# ── Basic comparisons ────────────────────────────────────────────────────────
+
+[[test]]
+name = "greater than literal"
+expression = "> 5"
+input = '{"$": 10}'
+reads = []
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "less than literal"
+expression = "< 10"
+input = '{"$": 5}'
+reads = []
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "greater than or equal"
+expression = ">= 100"
+input = '{"$": 100}'
+reads = []
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "equality check string"
+expression = "== 'active'"
+input = '{"$": "active"}'
+reads = []
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "not equal"
+expression = "!= null"
+input = '{"$": 5}'
+reads = []
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+# ── Comparisons with variables ───────────────────────────────────────────────
+
+[[test]]
+name = "greater than variable"
+expression = "> threshold"
+input = '{"$": 15, "threshold": 10}'
+reads = [
+    { type = "direct", path = ["threshold"] },
+]
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "equal to member access"
+expression = "== config.minValue"
+input = '{"$": 5, "config": {"minValue": 5}}'
+reads = [
+    { type = "direct", path = ["config", "minValue"] },
+]
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "comparison with two variables"
+expression = "> minPrice and < maxPrice"
+input = '{"$": 50, "minPrice": 10, "maxPrice": 100}'
+reads = [
+    { type = "direct", path = ["minPrice"] },
+    { type = "direct", path = ["maxPrice"] },
+]
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+# ── Logical combinations ─────────────────────────────────────────────────────
+
+[[test]]
+name = "and combination"
+expression = "> 5 and < 10"
+input = '{"$": 7}'
+reads = []
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "or combination"
+expression = ">= 10 or < 5"
+input = '{"$": 10}'
+reads = []
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "comma separated (or)"
+expression = "> 10, < -5"
+input = '{"$": 15}'
+reads = []
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+# ── Intervals ────────────────────────────────────────────────────────────────
+
+[[test]]
+name = "closed interval"
+expression = "[-10..10]"
+input = '{"$": 0}'
+reads = []
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "open interval"
+expression = "(-10..10)"
+input = '{"$": 0}'
+reads = []
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "interval with variable bounds"
+expression = "[minVal..maxVal]"
+input = '{"$": 50, "minVal": 0, "maxVal": 100}'
+reads = [
+    { type = "direct", path = ["minVal"] },
+    { type = "direct", path = ["maxVal"] },
+]
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "interval combined with comparison"
+expression = "[-10..0] and > -5"
+input = '{"$": -3}'
+reads = []
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+# ── In operator ──────────────────────────────────────────────────────────────
+
+[[test]]
+name = "in array literal"
+expression = "in ['a', 'b', 'c']"
+input = '{"$": "a"}'
+reads = []
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "in variable array"
+expression = "in allowedValues"
+input = '{"$": "x", "allowedValues": ["x", "y"]}'
+reads = [
+    { type = "direct", path = ["allowedValues"] },
+]
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "not in array"
+expression = "not in ['blocked', 'banned']"
+input = '{"$": "ok"}'
+reads = []
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+# ── Boolean literals ─────────────────────────────────────────────────────────
+
+[[test]]
+name = "true literal"
+expression = "true"
+input = '{"$": true}'
+reads = []
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "false literal"
+expression = "false"
+input = '{"$": false}'
+reads = []
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+# ── References ───────────────────────────────────────────────────────────────
+
+[[test]]
+name = "variable reference has spans"
+expression = "> threshold"
+input = '{"$": 15, "threshold": 10}'
+references = [
+    { path = ["threshold"], spans = [[2, 11]] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "member reference has spans"
+expression = "== config.limit"
+input = '{"$": 5, "config": {"limit": 5}}'
+references = [
+    { path = ["config", "limit"], spans = [[3, 9], [10, 15]] },
+]
+
+[test.loose]
+
+[test.strict]
+
+# ── Diagnostics ──────────────────────────────────────────────────────────────
+
+[[test]]
+name = "lexer error in unary"
+expression = "@"
+
+[test.loose]
+return_type = '"Bool"'
+diagnostics = [
+    { source = "lexer", severity = "error" },
+]
+
+[test.strict]
+return_type = '"Bool"'
+diagnostics = [
+    { source = "lexer", severity = "error" },
+]

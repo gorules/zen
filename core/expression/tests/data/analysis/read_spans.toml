@@ -1,0 +1,116 @@
+# Read dependency span tracking
+
+[[test]]
+name = "simple identifier span"
+expression = "price"
+input = '{"price": 10}'
+reads_with_spans = [
+    { type = "direct", path = ["price"], span = [0, 5] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "member access full span"
+expression = "customer.firstName"
+input = '{"customer": {"firstName": "John"}}'
+reads_with_spans = [
+    { type = "direct", path = ["customer", "firstName"], span = [0, 18] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "deep member span"
+expression = "a.b.c"
+input = '{"a": {"b": {"c": 1}}}'
+reads_with_spans = [
+    { type = "direct", path = ["a", "b", "c"], span = [0, 5] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "multiple reads each with span"
+expression = "x + y"
+input = '{"x": 1, "y": 2}'
+reads_with_spans = [
+    { type = "direct", path = ["x"], span = [0, 1] },
+    { type = "direct", path = ["y"], span = [4, 5] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "binary with member spans"
+expression = "order.price * order.quantity"
+input = '{"order": {"price": 10, "quantity": 2}}'
+reads_with_spans = [
+    { type = "direct", path = ["order", "price"], span = [0, 11] },
+    { type = "direct", path = ["order", "quantity"], span = [14, 28] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "iteration collection span"
+expression = "map(items as item, item.price)"
+input = '{"items": [{"price": 10}]}'
+reads_with_spans = [
+    { type = "iteration", collection = ["items"], span = [4, 9], alias = "item", reads = [
+        { type = "direct", path = ["item", "price"], span = [19, 29] },
+    ] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "filter with member collection span"
+expression = "filter(order.items, $.active)"
+input = '{"order": {"items": [{"active": true}]}}'
+reads_with_spans = [
+    { type = "iteration", collection = ["order", "items"], span = [7, 18], reads = [
+    ] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "nested member in arithmetic"
+expression = "customer.age + 10"
+input = '{"customer": {"age": 30}}'
+reads_with_spans = [
+    { type = "direct", path = ["customer", "age"], span = [0, 12] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "conditional spans"
+expression = "flag ? a.x : b.y"
+input = '{"flag": true, "a": {"x": 1}, "b": {"y": 2}}'
+reads_with_spans = [
+    { type = "direct", path = ["flag"], span = [0, 4] },
+    { type = "direct", path = ["a", "x"], span = [7, 10] },
+    { type = "direct", path = ["b", "y"], span = [13, 16] },
+]
+
+[test.loose]
+
+[test.strict]

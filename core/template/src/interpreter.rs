@@ -16,7 +16,7 @@ pub(crate) enum InterpreterResult<'a> {
 #[derive(Debug)]
 pub(crate) struct Interpreter<'source, 'nodes> {
     cursor: Peekable<Iter<'nodes, Node<'source>>>,
-    isolate: Isolate<'source>,
+    isolate: Isolate,
     results: Vec<InterpreterResult<'source>>,
 }
 

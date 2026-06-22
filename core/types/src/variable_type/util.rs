@@ -6,10 +6,18 @@ use std::collections::hash_map::Entry;
 use std::rc::Rc;
 
 impl VariableType {
+    pub fn unwrap_nullable(&self) -> (&VariableType, bool) {
+        match self {
+            VariableType::Nullable(inner) => (inner.as_ref(), true),
+            other => (other, false),
+        }
+    }
+
     pub fn iterator(&self) -> Option<Rc<VariableType>> {
         match self {
             VariableType::Array(item) => Some(item.clone()),
             VariableType::Interval => Some(Rc::new(VariableType::Number)),
+            VariableType::Nullable(inner) => inner.iterator(),
             _ => None,
         }
     }
@@ -17,6 +25,7 @@ impl VariableType {
     pub fn as_const_str(&self) -> Option<Rc<str>> {
         match self {
             VariableType::Const(s) => Some(s.clone()),
+            VariableType::Nullable(inner) => inner.as_const_str(),
             _ => None,
         }
     }
@@ -27,6 +36,7 @@ impl VariableType {
                 let obj = obj.borrow();
                 obj.get(key).cloned().unwrap_or(VariableType::Any)
             }
+            VariableType::Nullable(inner) => inner.get(key),
             _ => VariableType::Null,
         }
     }
@@ -34,6 +44,10 @@ impl VariableType {
     pub fn satisfies(&self, constraint: &Self) -> bool {
         match (self, constraint) {
             (VariableType::Any, _) | (_, VariableType::Any) => true,
+            (VariableType::Nullable(a), VariableType::Nullable(b)) => a.satisfies(b),
+            (VariableType::Nullable(_), _) => false,
+            (other, VariableType::Nullable(inner)) => other.satisfies(inner),
+
             (VariableType::Null, VariableType::Null) => true,
             (VariableType::Bool, VariableType::Bool) => true,
             (VariableType::String, VariableType::String) => true,
@@ -47,8 +61,8 @@ impl VariableType {
                 let o1 = o1.borrow();
                 let o2 = o2.borrow();
 
-                o1.iter()
-                    .all(|(k, v)| o2.get(k).is_some_and(|tv| v.satisfies(tv)))
+                o2.iter()
+                    .all(|(k, v)| o1.get(k).is_some_and(|tv| tv.satisfies(v)))
             }
 
             (VariableType::Const(c1), VariableType::Const(c2)) => c1 == c2,
@@ -70,6 +84,7 @@ impl VariableType {
     pub fn is_array(&self) -> bool {
         match self {
             VariableType::Any | VariableType::Array(_) => true,
+            VariableType::Nullable(inner) => inner.is_array(),
             _ => false,
         }
     }
@@ -77,6 +92,7 @@ impl VariableType {
     pub fn is_iterable(&self) -> bool {
         match self {
             VariableType::Any | VariableType::Interval | VariableType::Array(_) => true,
+            VariableType::Nullable(inner) => inner.is_iterable(),
             _ => false,
         }
     }
@@ -84,6 +100,7 @@ impl VariableType {
     pub fn is_string(&self) -> bool {
         match self {
             VariableType::String => true,
+            VariableType::Nullable(inner) => inner.is_string(),
             _ => false,
         }
     }
@@ -91,6 +108,7 @@ impl VariableType {
     pub fn is_object(&self) -> bool {
         match self {
             VariableType::Any | VariableType::Object(_) => true,
+            VariableType::Nullable(inner) => inner.is_object(),
             _ => false,
         }
     }
@@ -102,17 +120,32 @@ impl VariableType {
         }
     }
 
+    pub fn is_nullable(&self) -> bool {
+        matches!(self, VariableType::Nullable(_) | VariableType::Null)
+    }
+
     pub fn widen(&self) -> Self {
         match self {
             VariableType::Const(_) | VariableType::Enum(_, _) => VariableType::String,
+            VariableType::Nullable(inner) => {
+                let widened = inner.widen();
+                VariableType::Nullable(Rc::new(widened))
+            }
             _ => self.clone(),
         }
     }
 
     pub fn merge(&self, other: &Self) -> Self {
-        match (self, other) {
+        let (left, left_nullable) = self.unwrap_nullable();
+        let (right, right_nullable) = other.unwrap_nullable();
+        let nullable = left_nullable || right_nullable;
+
+        let result = match (left, right) {
             (VariableType::Any, _) | (_, VariableType::Any) => VariableType::Any,
             (VariableType::Null, VariableType::Null) => VariableType::Null,
+            (VariableType::Null, other) | (other, VariableType::Null) => {
+                VariableType::Nullable(Rc::new(other.clone()))
+            }
             (VariableType::Bool, VariableType::Bool) => VariableType::Bool,
             (VariableType::String, VariableType::String) => VariableType::String,
             (VariableType::Number, VariableType::Number) => VariableType::Number,
@@ -122,10 +155,14 @@ impl VariableType {
                 if Rc::ptr_eq(a1, a2) {
                     VariableType::Array(a1.clone())
                 } else {
-                    VariableType::Array(Rc::new(a1.as_ref().merge(a2.as_ref())))
+                    match (a1.as_ref(), a2.as_ref()) {
+                        (VariableType::Any, other) | (other, VariableType::Any) => {
+                            VariableType::Array(Rc::new(other.clone()))
+                        }
+                        (l, r) => VariableType::Array(Rc::new(l.merge(r))),
+                    }
                 }
             }
-
             (VariableType::Object(o1), VariableType::Object(o2)) => {
                 let o1 = o1.borrow();
                 let o2 = o2.borrow();
@@ -139,8 +176,7 @@ impl VariableType {
                     match merged.entry(k.clone()) {
                         Entry::Occupied(mut entry) => {
                             let current = entry.get();
-                            let merged_value = current.merge(v);
-                            entry.insert(merged_value);
+                            entry.insert(current.merge(v));
                         }
                         Entry::Vacant(entry) => {
                             entry.insert(v.clone());
@@ -150,13 +186,11 @@ impl VariableType {
 
                 VariableType::Object(Rc::new(RefCell::new(merged)))
             }
-
             (VariableType::Const(c), VariableType::Enum(_, values)) => {
                 let mut merged = values.clone();
                 if !merged.contains(c) {
                     merged.push(c.clone());
                 }
-
                 VariableType::Enum(None, merged)
             }
             (VariableType::Const(c1), VariableType::Const(c2)) => {
@@ -168,7 +202,6 @@ impl VariableType {
             }
             (VariableType::Const(_), VariableType::String)
             | (VariableType::String, VariableType::Const(_)) => VariableType::String,
-
             (VariableType::Enum(n1, a), VariableType::Enum(n2, b)) => {
                 let mut merged = a.clone();
                 for val in b {
@@ -184,7 +217,6 @@ impl VariableType {
 
                 VariableType::Enum(name, merged)
             }
-
             (VariableType::Enum(_, values), VariableType::Const(c)) => {
                 let mut merged = values.clone();
                 if !merged.contains(c) {
@@ -192,11 +224,20 @@ impl VariableType {
                 }
                 VariableType::Enum(None, merged)
             }
-
             (VariableType::Enum(_, _), VariableType::String)
             | (VariableType::String, VariableType::Enum(_, _)) => VariableType::String,
-
             (_, _) => VariableType::Any,
+        };
+
+        if nullable
+            && !matches!(
+                &result,
+                VariableType::Any | VariableType::Null | VariableType::Nullable(_)
+            )
+        {
+            VariableType::Nullable(Rc::new(result))
+        } else {
+            result
         }
     }
 
@@ -213,6 +254,7 @@ impl VariableType {
             VariableType::Object(obj) => VariableType::Object(obj.clone()),
             VariableType::Const(c) => VariableType::Const(c.clone()),
             VariableType::Enum(name, options) => VariableType::Enum(name.clone(), options.clone()),
+            VariableType::Nullable(inner) => VariableType::Nullable(Rc::new(inner.shallow_clone())),
         }
     }
 
@@ -275,6 +317,9 @@ impl VariableType {
                             .map(|(k, v)| (k.clone(), v.depth_clone(depth - 1)))
                             .collect(),
                     )))
+                }
+                VariableType::Nullable(inner) => {
+                    VariableType::Nullable(Rc::new(inner.depth_clone(depth)))
                 }
                 _ => self.shallow_clone(),
             },

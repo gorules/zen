@@ -1,0 +1,262 @@
+# Closure and iteration dependency tracking
+# # = current iteration item (CallbackReference / Node::Pointer)
+# Closures produce Iteration reads with nested inner reads
+# Alias reads (e.g. item.price) appear as inner direct reads — this is the key
+# information for cross-entity dependency resolution
+
+[[test]]
+name = "filter with callback ref"
+expression = "filter(items, # > 10)"
+input = '{"items": [5, 15, 20]}'
+reads = [
+    { type = "iteration", collection = ["items"], reads = [] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "filter with alias"
+expression = "filter(items as item, item.price > threshold)"
+input = '{"items": [{"price": 5}], "threshold": 10}'
+reads = [
+    { type = "iteration", collection = ["items"], alias = "item", reads = [
+        { type = "direct", path = ["item", "price"] },
+        { type = "direct", path = ["threshold"] },
+    ] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "map with callback ref"
+expression = "map(items, # * 2)"
+input = '{"items": [1, 2, 3]}'
+reads = [
+    { type = "iteration", collection = ["items"], reads = [] },
+]
+
+[test.loose]
+return_type = '{"Array":"Number"}'
+
+[test.strict]
+return_type = '{"Array":"Number"}'
+
+[[test]]
+name = "map with alias"
+expression = "map(orders as order, order.total)"
+input = '{"orders": [{"total": 100}]}'
+reads = [
+    { type = "iteration", collection = ["orders"], alias = "order", reads = [
+        { type = "direct", path = ["order", "total"] },
+    ] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "some with alias"
+expression = "some(items as item, item.active)"
+input = '{"items": [{"active": true}]}'
+reads = [
+    { type = "iteration", collection = ["items"], alias = "item", reads = [
+        { type = "direct", path = ["item", "active"] },
+    ] },
+]
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "all with alias"
+expression = "all(items as item, item.valid)"
+input = '{"items": [{"valid": true}]}'
+reads = [
+    { type = "iteration", collection = ["items"], alias = "item", reads = [
+        { type = "direct", path = ["item", "valid"] },
+    ] },
+]
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "none with alias"
+expression = "none(items as item, item.expired)"
+input = '{"items": [{"expired": false}]}'
+reads = [
+    { type = "iteration", collection = ["items"], alias = "item", reads = [
+        { type = "direct", path = ["item", "expired"] },
+    ] },
+]
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "count with alias"
+expression = "count(items as item, item.active)"
+input = '{"items": [{"active": true}]}'
+reads = [
+    { type = "iteration", collection = ["items"], alias = "item", reads = [
+        { type = "direct", path = ["item", "active"] },
+    ] },
+]
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "one with alias"
+expression = "one(items as item, item.special)"
+input = '{"items": [{"special": true}]}'
+reads = [
+    { type = "iteration", collection = ["items"], alias = "item", reads = [
+        { type = "direct", path = ["item", "special"] },
+    ] },
+]
+
+[test.loose]
+return_type = '"Bool"'
+
+[test.strict]
+return_type = '"Bool"'
+
+[[test]]
+name = "closure with external reference"
+expression = "filter(items as item, item.price > minPrice)"
+input = '{"items": [{"price": 5}], "minPrice": 3}'
+reads = [
+    { type = "iteration", collection = ["items"], alias = "item", reads = [
+        { type = "direct", path = ["item", "price"] },
+        { type = "direct", path = ["minPrice"] },
+    ] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "nested closure"
+expression = "map(groups as group, filter(group.items as item, item.active))"
+input = '{"groups": [{"items": [{"active": true}]}]}'
+reads = [
+    { type = "iteration", collection = ["groups"], alias = "group", reads = [
+        { type = "iteration", collection = ["group", "items"], alias = "item", reads = [
+            { type = "direct", path = ["item", "active"] },
+        ] },
+    ] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "callback ref member access in closure"
+expression = "map(items, #.price)"
+input = '{"items": [{"price": 10}]}'
+reads = [
+    { type = "iteration", collection = ["items"], reads = [] },
+]
+
+[test.loose]
+
+[test.strict]
+
+[[test]]
+name = "flatMap with alias"
+expression = "flatMap(groups as group, group.items)"
+input = '{"groups": [{"items": [1, 2]}]}'
+reads = [
+    { type = "iteration", collection = ["groups"], alias = "group", reads = [
+        { type = "direct", path = ["group", "items"] },
+    ] },
+]
+
+# flatMap(coll, body) = flatten(map(coll, body)). Since `group.items` is
+# Array<Number>, flatMap returns Array<Number>.
+[test.loose]
+return_type = '{"Array":"Number"}'
+
+[test.strict]
+return_type = '{"Array":"Number"}'
+
+# A closure whose collection is itself a `filter(...)` binds the outer alias
+# through the filter to the underlying collection, so `x.price` surfaces as a
+# read of `items.price` (via the alias) rather than leaking an unbound `x`.
+[[test]]
+name = "alias bound through filter collection"
+expression = "map(filter(items as i, i.active) as x, x.price)"
+input = '{"items": [{"active": true, "price": 10}]}'
+reads = [
+    { type = "iteration", collection = ["items"], alias = "i", reads = [
+        { type = "direct", path = ["i", "active"] },
+    ] },
+    { type = "iteration", collection = ["items"], alias = "x", reads = [
+        { type = "direct", path = ["x", "price"] },
+    ] },
+]
+
+[test.loose]
+
+[test.strict]
+
+# A map whose collection is `coll ?? []` binds the alias to `coll` so aliased
+# reads in the body resolve through it instead of leaking an unbound alias.
+[[test]]
+name = "alias bound through nullish-coalesced collection"
+expression = "map(items ?? [] as i, i.price)"
+input = '{"items": [{"price": 10}]}'
+reads = [
+    { type = "direct", path = ["items"] },
+    { type = "iteration", collection = ["items"], alias = "i", reads = [
+        { type = "direct", path = ["i", "price"] },
+    ] },
+]
+
+[test.loose]
+return_type = '{"Array":"Number"}'
+
+[test.strict]
+return_type = '{"Array":"Number"}'
+
+[[test]]
+name = "callback ref over any collection"
+expression = "map(x, # > 1)"
+input = '{"Object": {"x": "Any"}}'
+
+[test.loose]
+return_type = '{"Array": "Bool"}'
+
+[test.strict]
+return_type = '{"Array": "Bool"}'
+
+[[test]]
+name = "callback ref misuse over number collection"
+expression = "map(x, # + '')"
+input = '{"Object": {"x": {"Array": "Number"}}}'
+
+[test.loose]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+diagnostics = [{ source = "type_check", severity = "error" }]

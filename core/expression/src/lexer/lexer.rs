@@ -5,34 +5,41 @@ use crate::lexer::token::{
     Bracket, ComparisonOperator, Identifier, LogicalOperator, Operator, Token, TokenKind,
 };
 use crate::lexer::{LexerError, QuotationMark, TemplateString};
+use bumpalo::collections::Vec as BumpVec;
+use bumpalo::Bump;
 use std::str::FromStr;
 
 #[derive(Debug, Default)]
-pub struct Lexer<'arena> {
-    tokens: Vec<Token<'arena>>,
+pub struct Lexer {
+    capacity_hint: usize,
 }
 
-impl<'arena> Lexer<'arena> {
+impl Lexer {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn tokenize(&mut self, source: &'arena str) -> LexerResult<&[Token<'arena>]> {
-        self.tokens.clear();
+    pub fn tokenize<'arena>(
+        &mut self,
+        bump: &'arena Bump,
+        source: &'arena str,
+    ) -> LexerResult<BumpVec<'arena, Token<'arena>>> {
+        let mut tokens = BumpVec::with_capacity_in(self.capacity_hint, bump);
 
-        Scanner::new(source, &mut self.tokens).scan()?;
-        Ok(&self.tokens)
+        Scanner::new(source, &mut tokens).scan()?;
+        self.capacity_hint = self.capacity_hint.max(tokens.len());
+        Ok(tokens)
     }
 }
 
 struct Scanner<'arena, 'self_ref> {
     cursor: Cursor<'arena>,
-    tokens: &'self_ref mut Vec<Token<'arena>>,
+    tokens: &'self_ref mut BumpVec<'arena, Token<'arena>>,
     source: &'arena str,
 }
 
 impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
-    pub fn new(source: &'arena str, tokens: &'self_ref mut Vec<Token<'arena>>) -> Self {
+    pub fn new(source: &'arena str, tokens: &'self_ref mut BumpVec<'arena, Token<'arena>>) -> Self {
         Self {
             cursor: Cursor::from(source),
             source,
@@ -102,7 +109,24 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
         let mut in_expression = false;
         let mut str_start = start + 1;
         loop {
-            let (e, c) = self.next()?;
+            let Some((e, c)) = self.cursor.next() else {
+                let end = self.source.len();
+                if !in_expression && str_start < end {
+                    self.tokens.push(Token {
+                        kind: TokenKind::Literal,
+                        span: (str_start as u32, end as u32),
+                        value: &self.source[str_start..end],
+                    });
+                }
+
+                self.tokens.push(Token {
+                    kind: TokenKind::QuotationMark(QuotationMark::Backtick),
+                    span: (end as u32, end as u32),
+                    value: QuotationMark::Backtick.into(),
+                });
+
+                break;
+            };
 
             match (c, in_expression) {
                 ('`', _) => {

@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 mod constant;
 pub mod decision;
 pub mod rcvalue;

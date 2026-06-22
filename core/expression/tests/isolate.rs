@@ -641,6 +641,34 @@ fn isolate_standard_test() {
                 },
             ]),
         },
+        TestEnv {
+            env: json!({
+                "name": "hello",
+                "zero": 0,
+            }),
+            cases: Vec::from([
+                TestCase {
+                    expr: "name[0]",
+                    result: json!("h"),
+                },
+                TestCase {
+                    expr: "name[zero]",
+                    result: json!("h"),
+                },
+                TestCase {
+                    expr: "name[4]",
+                    result: json!("o"),
+                },
+                TestCase {
+                    expr: "name[100]",
+                    result: json!(null),
+                },
+                TestCase {
+                    expr: "name[zero + 100]",
+                    result: json!(null),
+                },
+            ]),
+        },
     ]);
 
     let mut isolate = Isolate::new();

@@ -48,7 +48,7 @@ impl From<&Value> for VariableType {
 
 impl From<Vec<Value>> for VariableType {
     fn from(arr: Vec<Value>) -> Self {
-        if arr.len() == 0 {
+        if arr.is_empty() {
             return VariableType::Array(Rc::new(VariableType::Any));
         }
 
@@ -65,7 +65,7 @@ impl From<Vec<Value>> for VariableType {
 
 impl From<&Vec<Value>> for VariableType {
     fn from(arr: &Vec<Value>) -> Self {
-        if arr.len() == 0 {
+        if arr.is_empty() {
             return VariableType::Array(Rc::new(VariableType::Any));
         }
 

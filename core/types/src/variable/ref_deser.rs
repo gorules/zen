@@ -67,7 +67,7 @@ impl RefDeserializer {
         }
 
         let root_value = root_obj
-            .remove(&Rc::from("$root"))
+            .remove(&Variable::root_key())
             .ok_or_else(|| RefDeserializeError::InvalidFormat("Missing $root".into()))?;
 
         self.deserialize_value(&root_value)

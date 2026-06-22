@@ -524,6 +524,7 @@ fn analysis_nullable() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore)]
 fn analysis_nested_closures_complete_quickly() {
     let depth = 25;
     let mut source = String::new();

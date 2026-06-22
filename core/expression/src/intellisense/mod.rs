@@ -10,12 +10,12 @@ use crate::intellisense::scope::IntelliSenseScope;
 use crate::intellisense::type_provider::TypesProvider;
 use crate::lexer::Lexer;
 use crate::parser::{Node, NodeMetadata, Parser};
-use nohash_hasher::BuildNoHashHasher;
-use std::collections::HashMap;
 use crate::variable::VariableType;
 use bumpalo::Bump;
+use nohash_hasher::BuildNoHashHasher;
 use serde::Serialize;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 pub mod completion;
@@ -99,11 +99,7 @@ impl IntelliSense {
         Rc::new(self.analyze_standard_inner(source, data))
     }
 
-    fn analyze_standard_inner(
-        &mut self,
-        source: &str,
-        data: &VariableType,
-    ) -> ExpressionAnalysis {
+    fn analyze_standard_inner(&mut self, source: &str, data: &VariableType) -> ExpressionAnalysis {
         self.arena.reset();
         let arena = &self.arena;
         let mut diagnostics = Vec::new();
@@ -326,19 +322,11 @@ impl IntelliSense {
         result.unwrap_or_default()
     }
 
-    pub fn analyze_unary(
-        &mut self,
-        source: &str,
-        data: &VariableType,
-    ) -> Rc<ExpressionAnalysis> {
+    pub fn analyze_unary(&mut self, source: &str, data: &VariableType) -> Rc<ExpressionAnalysis> {
         Rc::new(self.analyze_unary_inner(source, data))
     }
 
-    fn analyze_unary_inner(
-        &mut self,
-        source: &str,
-        data: &VariableType,
-    ) -> ExpressionAnalysis {
+    fn analyze_unary_inner(&mut self, source: &str, data: &VariableType) -> ExpressionAnalysis {
         self.arena.reset();
         let arena = &self.arena;
         let mut diagnostics = Vec::new();

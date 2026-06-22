@@ -18,7 +18,10 @@ impl FlowSource {
                 path,
                 element: false,
             }),
-            Node::Member { node: base, property } => match property {
+            Node::Member {
+                node: base,
+                property,
+            } => match property {
                 Node::String(_) => Self::path_of(node).map(|path| FlowSource {
                     path,
                     element: false,
@@ -64,7 +67,10 @@ impl FlowSource {
     fn path_of(node: &Node) -> Option<Vec<Rc<str>>> {
         match node {
             Node::Identifier(name) => Some(vec![Rc::from(*name)]),
-            Node::Member { node: base, property } => {
+            Node::Member {
+                node: base,
+                property,
+            } => {
                 let mut path = Self::path_of(base)?;
                 match property {
                     Node::String(key) => {
@@ -178,10 +184,7 @@ mod tests {
 
     #[test]
     fn map_erases_identity() {
-        assert_eq!(
-            flow("map(customer.companies as c, { name: c.name })"),
-            None
-        );
+        assert_eq!(flow("map(customer.companies as c, { name: c.name })"), None);
     }
 
     #[test]

@@ -252,10 +252,7 @@ impl GraphWalker {
     }
 }
 
-fn switch_statement_evaluate(
-    isolate: &mut Isolate,
-    switch_statement: &SwitchStatement,
-) -> bool {
+fn switch_statement_evaluate(isolate: &mut Isolate, switch_statement: &SwitchStatement) -> bool {
     if switch_statement.condition.is_empty() {
         return true;
     }

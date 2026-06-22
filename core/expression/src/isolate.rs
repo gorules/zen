@@ -126,10 +126,7 @@ impl Isolate {
         Ok(())
     }
 
-    pub fn compile_standard(
-        &mut self,
-        source: &str,
-    ) -> Result<Expression<Standard>, IsolateError> {
+    pub fn compile_standard(&mut self, source: &str) -> Result<Expression<Standard>, IsolateError> {
         self.run_internal(source, ExpressionKind::Standard)?;
         let bytecode = self.compiler.get_bytecode().to_vec();
 

@@ -45,8 +45,7 @@ jobs:
           args: --release --out dist --find-interpreter -m bindings/python/Cargo.toml
           manylinux: 2_28
           before-script-linux: |
-            apt update
-            apt install -y patch 
+            dnf install -y patch
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4

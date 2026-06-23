@@ -21,3 +21,20 @@ fn jdm_serde() {
         assert!(serde_json::to_string(&serialized).is_ok());
     }
 }
+
+#[test]
+fn untagged_routing() {
+    let graph_json = r#"{"nodes":[],"edges":[]}"#;
+    let parsed: DecisionContent = serde_json::from_str(graph_json).unwrap();
+    assert!(
+        matches!(parsed, DecisionContent::Graph(_)),
+        "graph JSON should match Graph variant"
+    );
+
+    let policy_json = r#"{"blocks":[]}"#;
+    let parsed: DecisionContent = serde_json::from_str(policy_json).unwrap();
+    assert!(
+        matches!(parsed, DecisionContent::Policy(_)),
+        "policy JSON should match Policy variant"
+    );
+}

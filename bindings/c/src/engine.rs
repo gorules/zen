@@ -97,7 +97,10 @@ pub extern "C" fn zen_engine_create_decision(
     };
 
     let zen_engine = unsafe { &*(engine as *mut ZenEngine) };
-    let decision = zen_engine.create_decision(Arc::new(decision_content));
+    let decision = match zen_engine.create_decision(Arc::new(decision_content)) {
+        Ok(d) => d,
+        Err(_) => return ZenResult::error(ZenError::InvalidArgument),
+    };
 
     let zen_decision = ZenDecision::from(decision);
     ZenResult::ok(Box::into_raw(Box::new(zen_decision)) as *mut ZenDecisionStruct)
@@ -163,7 +166,8 @@ pub extern "C" fn zen_engine_get_decision(
 
     let zen_engine = unsafe { &*(engine as *mut ZenEngine) };
     let decision = match tokio_runtime().block_on(zen_engine.get_decision(str_key)) {
-        Ok(d) => d,
+        Ok(Ok(d)) => d,
+        Ok(Err(_)) => return ZenResult::error(ZenError::InvalidArgument),
         Err(e) => return ZenResult::from(&e),
     };
 

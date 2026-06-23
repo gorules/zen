@@ -1,0 +1,78 @@
+{
+  "blocks": [
+    {
+      "id": "dm-customer",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "customer",
+          "properties": [
+            {
+              "id": "p1",
+              "name": "name",
+              "type": "string",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p2",
+              "name": "companies",
+              "type": "relationship",
+              "target": "company",
+              "array": true,
+              "optional": false
+            }
+          ]
+        }
+      },
+      "children": []
+    },
+    {
+      "id": "dm-company",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "company",
+          "properties": [
+            {
+              "id": "p3",
+              "name": "name",
+              "type": "string",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p4",
+              "name": "revenue",
+              "type": "number",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      },
+      "children": []
+    },
+    {
+      "id": "company-risk",
+      "type": "match",
+      "props": {
+        "data": {
+          "key": "company.riskLevel",
+          "arms": [
+            {
+              "id": "cr1",
+              "condition": "company.revenue >= 200000",
+              "value": "\"low\""
+            },
+            {
+              "id": "cr2",
+              "condition": "",
+              "value": "\"high\""
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

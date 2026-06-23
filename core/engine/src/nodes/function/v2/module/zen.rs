@@ -59,8 +59,15 @@ impl RuntimeListener for ZenListener {
 
                                 let load_result = loader.load(key.as_str()).await;
                                 let decision_content = load_result.or_throw(&ctx)?;
+                                let kind = decision_content.kind();
+                                let Some(graph_content) = decision_content.into_graph_arc() else {
+                                    return Err(rquickjs::Exception::throw_message(
+                                        &ctx,
+                                        &format!("decision '{key}' is a {kind}, expected graph"),
+                                    ));
+                                };
                                 let mut sub_tree = DecisionGraph::try_new(DecisionGraphConfig {
-                                    content: decision_content,
+                                    content: graph_content,
                                     max_depth,
                                     iteration: iteration + 1,
                                     trace,

@@ -1,0 +1,40 @@
+{
+  "blocks": [
+    {
+      "id": "dm-customer",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "customer",
+          "properties": [
+            {
+              "id": "p1",
+              "name": "name",
+              "type": "string",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p2",
+              "name": "age",
+              "type": "number",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      },
+      "children": []
+    },
+    {
+      "id": "s1",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "customer.status",
+          "value": "customer.nonExistentField > 5"
+        }
+      }
+    }
+  ]
+}

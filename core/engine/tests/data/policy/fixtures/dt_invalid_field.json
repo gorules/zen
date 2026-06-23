@@ -1,0 +1,60 @@
+{
+  "blocks": [
+    {
+      "id": "dm-customer",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "customer",
+          "properties": [
+            {
+              "id": "p1",
+              "name": "name",
+              "type": "string",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p2",
+              "name": "age",
+              "type": "number",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      },
+      "children": []
+    },
+    {
+      "id": "dt1",
+      "type": "decisionTable",
+      "props": {
+        "data": {
+          "hitPolicy": "first",
+          "rules": [
+            {
+              "i1": "\"a\"",
+              "o1": "0.1"
+            }
+          ],
+          "inputs": [
+            {
+              "id": "i1",
+              "name": "",
+              "field": "customer.agee"
+            }
+          ],
+          "outputs": [
+            {
+              "id": "o1",
+              "name": "",
+              "field": "customer.discount"
+            }
+          ]
+        }
+      },
+      "children": []
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "blocks": [
+    {
+      "id": "dm-customer",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "customer",
+          "properties": [
+            {
+              "id": "p1",
+              "name": "name",
+              "type": "string",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      },
+      "children": []
+    },
+    {
+      "id": "dm-company",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "company",
+          "properties": [
+            {
+              "id": "p2",
+              "name": "name",
+              "type": "string",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      },
+      "children": []
+    },
+    {
+      "id": "bad-block",
+      "type": "decisionTable",
+      "props": {
+        "data": {
+          "hitPolicy": "first",
+          "inputs": [],
+          "outputs": [
+            {
+              "id": "s1",
+              "name": "",
+              "field": "customer.label"
+            },
+            {
+              "id": "s2",
+              "name": "",
+              "field": "company.label"
+            }
+          ],
+          "rules": [
+            {
+              "_id": "r1",
+              "s1": "\"x\"",
+              "s2": "\"y\""
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

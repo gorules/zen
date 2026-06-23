@@ -8,5 +8,6 @@ mod expression;
 mod http_handler;
 mod loader;
 mod mt;
+mod policy;
 mod safe_result;
 mod types;

@@ -1,0 +1,33 @@
+# Rename across multiple policies
+
+policies = ["multi_main.json", "multi_shared.json"]
+
+# customer.tier: expression read in main/s1 value, written by shared/tree1 match key
+[[test]]
+name = "rename customer.tier finds expression refs and write keys across policies"
+entity = "customer"
+field = "tier"
+new_name = "level"
+edits = [
+    { policy = "multi_main.json", block_id = "s1", expression_id = "s1" },
+    { policy = "multi_shared.json", block_id = "tree1" },
+]
+
+# customer.age IS referenced in shared policy arm condition "customer.age > 50"
+# and defined in multi_main's dm-customer data model.
+[[test]]
+name = "rename customer.age finds reference in shared policy condition"
+entity = "customer"
+field = "age"
+new_name = "years"
+edits = [
+    { policy = "multi_shared.json", block_id = "tree1", expression_id = "b1" },
+    { policy = "multi_main.json", block_id = "dm-customer", target_kind = "fieldName" },
+]
+
+[[test]]
+name = "rename nonexistent field across policies → no edits"
+entity = "customer"
+field = "nonexistent"
+new_name = "other"
+edits = []

@@ -1,0 +1,33 @@
+{
+  "blocks": [
+    {
+      "id": "dm-customer",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "customer",
+          "properties": [
+            {
+              "id": "p1",
+              "name": "name",
+              "type": "string",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      },
+      "children": []
+    },
+    {
+      "id": "s1",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "customer.status",
+          "value": "if (( invalid )) {{"
+        }
+      }
+    }
+  ]
+}

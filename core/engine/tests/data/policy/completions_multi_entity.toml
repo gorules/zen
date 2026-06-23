@@ -1,0 +1,12 @@
+# Completion scoping: block writes to multiple entities → no scoping restriction
+
+policies = ["multi_entity_block.json"]
+
+[[test]]
+name = "multi-entity table: all entities offered (no lock)"
+policy = "multi_entity_block.json"
+block_id = "tree1"
+expression_id = "s1"
+row = "r1"
+pos = 0
+includes = ["customer", "company"]

@@ -48,7 +48,7 @@ impl From<DecisionGraphResponse> for ZenEngineResponse {
         Self {
             performance: value.performance,
             result: value.result.to_value(),
-            trace: value.trace.map(|opt| {
+            trace: value.trace.and_then(|t| t.into_graph()).map(|opt| {
                 opt.into_iter()
                     .map(|(key, value)| (key, ZenEngineTrace::from(value)))
                     .collect()

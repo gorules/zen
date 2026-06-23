@@ -108,6 +108,7 @@ const { instance: __napiInstance, module: __wasiModule, napiModule: __napiModule
   },
 })
 module.exports = __napiModule.exports
+module.exports.PolicyWorkspace = __napiModule.exports.PolicyWorkspace
 module.exports.ZenDecision = __napiModule.exports.ZenDecision
 module.exports.ZenDecisionContent = __napiModule.exports.ZenDecisionContent
 module.exports.ZenEngine = __napiModule.exports.ZenEngine

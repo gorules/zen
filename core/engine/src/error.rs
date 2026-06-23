@@ -4,9 +4,45 @@ use crate::DecisionGraphValidationError;
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 use serde_json::Value;
+use std::fmt;
 use std::sync::Arc;
 use thiserror::Error;
 use zen_types::variable::Variable;
+
+#[derive(Debug, Error)]
+#[error("expected {expected} content, got {got}")]
+pub struct ContentKindError {
+    pub expected: &'static str,
+    pub got: &'static str,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompileFailure {
+    pub key: Arc<str>,
+    pub kind: &'static str,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<crate::policy::Diagnostic>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+impl fmt::Display for CompileFailure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} [{}]: ", self.key, self.kind)?;
+        match &self.error {
+            Some(error) => write!(f, "{error}"),
+            None => {
+                let messages: Vec<&str> = self
+                    .diagnostics
+                    .iter()
+                    .map(|d| d.message.as_str())
+                    .collect();
+                write!(f, "{}", messages.join("; "))
+            }
+        }
+    }
+}
 
 #[derive(Debug, Error)]
 pub enum EvaluationError {
@@ -28,6 +64,17 @@ pub enum EvaluationError {
 
     #[error("Validation failed")]
     Validation(Value),
+
+    #[error("policy evaluation error: {0}")]
+    Policy(crate::policy::EvaluationError),
+
+    #[error("expected {expected} content for key '{key}', got {got}")]
+    ContentKindMismatch {
+        expected: &'static str,
+        got: &'static str,
+        key: Arc<str>,
+    },
+
 }
 
 impl EvaluationError {
@@ -78,6 +125,16 @@ impl EvaluationError {
                 map.serialize_entry("type", "Validation")?;
                 map.serialize_entry("source", err)?;
             }
+            EvaluationError::Policy(err) => {
+                map.serialize_entry("type", "PolicyError")?;
+                err.serialize_into_map(&mut map)?;
+            }
+            EvaluationError::ContentKindMismatch { expected, got, key } => {
+                map.serialize_entry("type", "ContentKindMismatch")?;
+                map.serialize_entry("expected", expected)?;
+                map.serialize_entry("got", got)?;
+                map.serialize_entry("key", key)?;
+            }
         }
 
         map.end()
@@ -102,5 +159,11 @@ impl From<LoaderError> for Box<EvaluationError> {
 impl From<DecisionGraphValidationError> for Box<EvaluationError> {
     fn from(error: DecisionGraphValidationError) -> Self {
         Box::new(EvaluationError::InvalidGraph(error.into()))
+    }
+}
+
+impl From<crate::policy::EvaluationError> for Box<EvaluationError> {
+    fn from(error: crate::policy::EvaluationError) -> Self {
+        Box::new(EvaluationError::Policy(error))
     }
 }

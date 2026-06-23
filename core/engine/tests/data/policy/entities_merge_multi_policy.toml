@@ -1,0 +1,96 @@
+# Entity merging across policies: customer defined in both merge_policy_a and merge_policy_b
+
+policies = ["merge_policy_a.json", "merge_policy_b.json"]
+
+[[test]]
+name = "cross-policy merge: name from A (first wins, local)"
+policy = "merge_policy_a.json"
+entity = "customer"
+field = "name"
+field_kind = { kind = "scalar" }
+property_kind = "input"
+source_is_local = true
+
+[[test]]
+name = "cross-policy merge: age from policy A (local)"
+policy = "merge_policy_a.json"
+entity = "customer"
+field = "age"
+field_kind = { kind = "scalar" }
+property_kind = "input"
+source_is_local = true
+
+[[test]]
+name = "cross-policy merge: country from policy B (imported)"
+policy = "merge_policy_a.json"
+entity = "customer"
+field = "country"
+field_kind = { kind = "scalar" }
+property_kind = "input"
+source = "merge_policy_b.json"
+
+[[test]]
+name = "cross-policy merge: computed greeting from policy A (local)"
+policy = "merge_policy_a.json"
+entity = "customer"
+field = "greeting"
+property_kind = "computed"
+source_is_local = true
+
+[[test]]
+name = "cross-policy merge: computed label from policy B (imported)"
+policy = "merge_policy_a.json"
+entity = "customer"
+field = "label"
+property_kind = "computed"
+source = "merge_policy_b.json"
+
+# ── No duplicate fields after merge ──────────────────────────────────────────
+
+[[test]]
+name = "entities(A): no duplicate fields after cross-policy merge"
+policy = "merge_policy_a.json"
+entity = "customer"
+no_duplicate_fields = true
+
+# ── Visibility from policy B's perspective ───────────────────────────────────
+# v1 visibility was directional (B does not import A → B saw only its own
+# fields). v2 units are import components, so A and B share one unit and B
+# sees A's fields too, with source attribution preserved.
+
+[[test]]
+name = "entities(B): has own fields"
+policy = "merge_policy_b.json"
+entity = "customer"
+field = "name"
+property_kind = "input"
+
+[[test]]
+name = "entities(B): has country"
+policy = "merge_policy_b.json"
+entity = "customer"
+field = "country"
+property_kind = "input"
+
+[[test]]
+name = "entities(B): has own computed label"
+policy = "merge_policy_b.json"
+entity = "customer"
+field = "label"
+property_kind = "computed"
+
+[[test]]
+name = "entities(B): sees age from A via component visibility"
+policy = "merge_policy_b.json"
+entity = "customer"
+field = "age"
+property_kind = "input"
+source = "merge_policy_a.json"
+
+[[test]]
+name = "entities(B): sees greeting computed by A via component visibility"
+policy = "merge_policy_b.json"
+entity = "customer"
+field = "greeting"
+property_kind = "computed"
+source = "merge_policy_a.json"

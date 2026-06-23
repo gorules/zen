@@ -25,6 +25,7 @@
       "aarch64-apple-darwin",
       "wasm32-wasi-preview1-threads"
     ],
+    "dtsHeaderFile": "./dts-header.d.ts",
     "npmClient": "yarn",
     "wasm": {
       "browser": {

@@ -1,0 +1,81 @@
+{
+  "blocks": [
+    {
+      "id": "dm-order",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "order",
+          "properties": [
+            {
+              "id": "p1",
+              "name": "amount",
+              "type": "number",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p2",
+              "name": "region",
+              "type": "string",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      },
+      "children": []
+    },
+    {
+      "id": "dt1",
+      "type": "decisionTable",
+      "props": {
+        "data": {
+          "hitPolicy": "first",
+          "rules": [
+            {
+              "i1": ">= 100",
+              "i2": "\"US\"",
+              "o1": "0"
+            },
+            {
+              "i1": ">= 100",
+              "i2": "\"EU\"",
+              "o1": "5"
+            },
+            {
+              "i1": "",
+              "i2": "\"US\"",
+              "o1": "10"
+            },
+            {
+              "i1": "",
+              "i2": "\"EU\"",
+              "o1": "15"
+            }
+          ],
+          "inputs": [
+            {
+              "id": "i1",
+              "name": "",
+              "field": "order.amount"
+            },
+            {
+              "id": "i2",
+              "name": "",
+              "field": "order.region"
+            }
+          ],
+          "outputs": [
+            {
+              "id": "o1",
+              "name": "",
+              "field": "order.shippingCost"
+            }
+          ]
+        }
+      },
+      "children": []
+    }
+  ]
+}

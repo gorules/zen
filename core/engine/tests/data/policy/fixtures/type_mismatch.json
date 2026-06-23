@@ -1,0 +1,51 @@
+{
+  "blocks": [
+    {
+      "id": "dm-customer",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "customer",
+          "properties": [
+            {
+              "id": "p1",
+              "name": "name",
+              "type": "string",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p2",
+              "name": "age",
+              "type": "number",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      },
+      "children": []
+    },
+    {
+      "id": "tree1",
+      "type": "match",
+      "props": {
+        "data": {
+          "key": "customer.label",
+          "arms": [
+            {
+              "id": "b1",
+              "condition": "customer.age > 30",
+              "value": "\"senior\""
+            },
+            {
+              "id": "b2",
+              "condition": "",
+              "value": "42"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

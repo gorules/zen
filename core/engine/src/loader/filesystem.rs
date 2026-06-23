@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fs::File;
 use std::future::Future;
 use std::io::BufReader;
@@ -7,7 +6,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
 
 use crate::loader::{DecisionLoader, LoaderError, LoaderResponse};
 use crate::model::DecisionContent;
@@ -16,13 +14,11 @@ use crate::model::DecisionContent;
 #[derive(Debug)]
 pub struct FilesystemLoader {
     root: String,
-    memory_refs: Option<RwLock<HashMap<String, Arc<DecisionContent>>>>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct FilesystemLoaderOptions<R: Into<String>> {
     pub root: R,
-    pub keep_in_memory: bool,
 }
 
 impl FilesystemLoader {
@@ -30,34 +26,19 @@ impl FilesystemLoader {
     where
         R: Into<String>,
     {
-        let root = options.root.into();
-        let memory_refs = if options.keep_in_memory {
-            Some(Default::default())
-        } else {
-            None
-        };
-
-        Self { root, memory_refs }
+        Self {
+            root: options.root.into(),
+        }
     }
 
     fn key_to_path<K: AsRef<str>>(&self, key: K) -> PathBuf {
         Path::new(&self.root).join(key.as_ref())
     }
 
-    async fn read_from_file<K>(&self, key: K) -> LoaderResponse
-    where
-        K: AsRef<str>,
-    {
-        if let Some(memory_refs) = &self.memory_refs {
-            let mref = memory_refs.read().await;
-            if let Some(decision_content) = mref.get(key.as_ref()) {
-                return Ok(decision_content.clone());
-            }
-        }
-
+    fn read_content<K: AsRef<str>>(&self, key: K) -> LoaderResponse {
         let path = self.key_to_path(key.as_ref());
         if !Path::exists(&path) {
-            return Err(LoaderError::NotFound(String::from(key.as_ref())).into());
+            return Err(LoaderError::NotFound(String::from(key.as_ref())));
         }
 
         let file = File::open(path).map_err(|e| LoaderError::Internal {
@@ -72,13 +53,7 @@ impl FilesystemLoader {
                 source: e.into(),
             })?;
 
-        let ptr = Arc::new(result);
-        if let Some(memory_refs) = &self.memory_refs {
-            let mut mref = memory_refs.write().await;
-            mref.insert(key.as_ref().to_string(), ptr.clone());
-        }
-
-        Ok(ptr)
+        Ok(Arc::new(result))
     }
 }
 
@@ -87,6 +62,71 @@ impl DecisionLoader for FilesystemLoader {
         &'a self,
         key: &'a str,
     ) -> Pin<Box<dyn Future<Output = LoaderResponse> + 'a + Send>> {
-        Box::pin(async move { self.read_from_file(key).await })
+        Box::pin(async move { self.read_content(key) })
+    }
+
+    fn load_sync(&self, key: &str) -> Option<LoaderResponse> {
+        Some(self.read_content(key))
+    }
+
+    fn keys(&self) -> Option<Vec<Arc<str>>> {
+        let root = Path::new(&self.root);
+        let mut keys = Vec::new();
+        let mut stack = vec![root.to_path_buf()];
+        while let Some(dir) = stack.pop() {
+            let Ok(entries) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    stack.push(path);
+                } else if path.extension().and_then(|e| e.to_str()) == Some("json") {
+                    let key = path.strip_prefix(root).ok().and_then(|rel| {
+                        rel.components()
+                            .map(|component| component.as_os_str().to_str())
+                            .collect::<Option<Vec<_>>>()
+                            .map(|segments| segments.join("/"))
+                    });
+                    if let Some(key) = key {
+                        keys.push(Arc::from(key));
+                    }
+                }
+            }
+        }
+        Some(keys)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_loader() -> FilesystemLoader {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("test-data");
+        FilesystemLoader::new(FilesystemLoaderOptions {
+            root: root.to_string_lossy().to_string(),
+        })
+    }
+
+    #[tokio::test]
+    async fn load_and_load_sync_resolve_existing_key() {
+        let loader = test_loader();
+
+        assert!(loader.load("table.json").await.is_ok());
+        assert!(loader.load_sync("table.json").unwrap().is_ok());
+    }
+
+    #[tokio::test]
+    async fn load_reports_missing_key() {
+        let loader = test_loader();
+
+        assert!(loader.load("missing.json").await.is_err());
+        assert!(loader.load_sync("missing.json").unwrap().is_err());
     }
 }

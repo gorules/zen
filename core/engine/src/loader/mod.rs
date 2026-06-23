@@ -7,6 +7,7 @@ use thiserror::Error;
 
 pub use cached::CachedLoader;
 pub use closure::ClosureLoader;
+pub use config::LoaderConfig;
 pub use filesystem::{FilesystemLoader, FilesystemLoaderOptions};
 pub use memory::MemoryLoader;
 pub use noop::NoopLoader;
@@ -15,6 +16,7 @@ use crate::model::DecisionContent;
 
 mod cached;
 mod closure;
+mod config;
 mod filesystem;
 mod memory;
 mod noop;
@@ -30,6 +32,14 @@ pub trait DecisionLoader: Debug + Send + Sync + DowncastSync {
         &'a self,
         key: &'a str,
     ) -> Pin<Box<dyn Future<Output = LoaderResponse> + 'a + Send>>;
+
+    fn keys(&self) -> Option<Vec<Arc<str>>> {
+        None
+    }
+
+    fn load_sync(&self, _key: &str) -> Option<LoaderResponse> {
+        None
+    }
 }
 
 impl_downcast!(sync DecisionLoader);

@@ -1,0 +1,14 @@
+{
+  "blocks": [
+    {
+      "id": "dm",
+      "type": "dataModel",
+      "props": { "data": { "name": "inputs", "scope": "global", "properties": [
+        { "id": "p1", "name": "revenue", "type": "number", "array": false, "optional": true },
+        { "id": "p2", "name": "rate", "type": "number", "array": false, "optional": true },
+        { "id": "p3", "name": "base", "type": "number", "array": false, "optional": false }
+      ] } }
+    },
+    { "id": "d1", "type": "expression", "props": { "data": { "key": "depTotal", "value": "(revenue ?? 0) * (rate ?? 1) + base" } } }
+  ]
+}

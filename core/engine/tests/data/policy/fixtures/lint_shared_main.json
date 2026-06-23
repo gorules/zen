@@ -1,0 +1,6 @@
+{
+  "imports": ["lint_shared_dep.json"],
+  "blocks": [
+    { "id": "m1", "type": "expression", "props": { "data": { "key": "mainTotal", "value": "(revenue ?? 0) * (rate ?? 1) + base" } } }
+  ]
+}

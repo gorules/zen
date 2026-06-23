@@ -48,7 +48,6 @@
 //!
 //! async fn evaluate() {
 //!     let engine = DecisionEngine::new(FilesystemLoader::new(FilesystemLoaderOptions {
-//!         keep_in_memory: true, // optionally, keep in memory for increase performance
 //!         root: "/app/decisions"
 //!     }));
 //!     
@@ -119,6 +118,7 @@
 //! }
 //! ```
 
+#![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used)]
 #![allow(clippy::module_inception)]
 
@@ -130,12 +130,17 @@ pub mod error;
 pub mod loader;
 pub mod model;
 pub mod nodes;
+pub mod policy;
+
+pub const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub use config::ZEN_CONFIG;
 pub use decision::Decision;
-pub use decision_graph::{DecisionGraphResponse, DecisionGraphTrace, DecisionGraphValidationError};
+pub use decision_graph::{
+    DecisionGraphResponse, DecisionGraphTrace, DecisionGraphValidationError, EvaluationTrace,
+};
 pub use engine::{
     DecisionEngine, EvaluationOptions, EvaluationSerializedOptions, EvaluationTraceKind,
 };
-pub use error::EvaluationError;
+pub use error::{CompileFailure, ContentKindError, EvaluationError};
 pub use zen_expression::Variable;

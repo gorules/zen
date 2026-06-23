@@ -1,0 +1,118 @@
+{
+  "blocks": [
+    {
+      "id": "dm-customer",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "customer",
+          "properties": [
+            {
+              "id": "p1",
+              "name": "name",
+              "type": "string",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p2",
+              "name": "age",
+              "type": "number",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      },
+      "children": []
+    },
+    {
+      "id": "dm-company",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "company",
+          "properties": [
+            {
+              "id": "p3",
+              "name": "id",
+              "type": "string",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p4",
+              "name": "revenue",
+              "type": "number",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      },
+      "children": []
+    },
+    {
+      "id": "tree_unscoped",
+      "type": "match",
+      "props": {
+        "data": {
+          "key": "",
+          "arms": [
+            {
+              "id": "b1",
+              "condition": "x",
+              "value": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "tree_unscoped_empty_keys",
+      "type": "match",
+      "props": {
+        "data": {
+          "key": "",
+          "arms": [
+            {
+              "id": "b1",
+              "condition": "x",
+              "value": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "s_unscoped",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "",
+          "value": "x"
+        }
+      }
+    },
+    {
+      "id": "s_scoped",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "customer.tier",
+          "value": "x"
+        }
+      }
+    },
+    {
+      "id": "s2",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "",
+          "value": "x"
+        }
+      }
+    }
+  ]
+}

@@ -87,6 +87,7 @@ impl TryFrom<DecisionGraphResponse> for ZenEngineResponse {
             result: JsonBuffer::try_from(value.result)?,
             trace: value
                 .trace
+                .and_then(|t| t.into_graph())
                 .map(|opt| {
                     opt.into_iter()
                         .map(|(key, value)| Ok((key.to_string(), ZenEngineTrace::try_from(value)?)))

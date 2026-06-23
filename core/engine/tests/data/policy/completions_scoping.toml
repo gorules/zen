@@ -1,0 +1,88 @@
+# Completion edge cases — different block configurations.
+#
+# NOTE: v1 restricted top-level completions to the block's write-root entity
+# ("scoped" vs "unscoped" blocks). v2 exposes every entity in every block
+# scope, so these cases assert availability plus property-level resolution.
+
+policies = ["company_block.json", "unscoped_block.json", "analysis.json"]
+
+[[test]]
+name = "company block: entities offered at top level"
+policy = "company_block.json"
+block_id = "s1"
+expression_id = "s1"
+pos = 0
+includes = ["company", "customer"]
+
+# Expression: "company.revenue * 0.1" — pos 8 is right after "company."
+[[test]]
+name = "company block: company properties after dot"
+policy = "company_block.json"
+block_id = "s1"
+expression_id = "s1"
+pos = 8
+includes = ["id", "name", "iban", "revenue"]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Scenario: Decision table head cell (column field path) completions
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# head = true targets the column's `field` (variable path) rather than any rule
+# cell. The column o1 has field "customer.discount" — at pos 0 we should see
+# the customer entity offered.
+[[test]]
+name = "table head cell: entity offered at start of column field"
+policy = "analysis.json"
+block_id = "dt1"
+expression_id = "o1"
+pos = 0
+head = true
+includes = ["customer"]
+
+# pos 9 is right after "customer." — offers customer's properties.
+[[test]]
+name = "table head cell: properties offered after dot"
+policy = "analysis.json"
+block_id = "dt1"
+expression_id = "o1"
+pos = 9
+head = true
+includes = ["companies", "creditReport", "age", "name", "country", "favoriteProduct"]
+
+# Sanity: a rule cell resolves through the rule-cell path.
+[[test]]
+name = "table rule cell: rule path still works"
+policy = "analysis.json"
+block_id = "dt1"
+expression_id = "o1"
+row = "r1"
+pos = 0
+includes = ["customer"]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Blocks with and without write keys all see the full entity set in v2.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[test]]
+name = "match block with empty key: all entities offered"
+policy = "unscoped_block.json"
+block_id = "tree_unscoped"
+expression_id = "b1"
+pos = 0
+includes = ["customer", "company"]
+
+[[test]]
+name = "expression block with empty key: all entities offered"
+policy = "unscoped_block.json"
+block_id = "s_unscoped"
+expression_id = "s_unscoped"
+pos = 0
+includes = ["customer", "company"]
+
+[[test]]
+name = "expression block with customer key: entities still offered"
+policy = "unscoped_block.json"
+block_id = "s_scoped"
+expression_id = "s_scoped"
+pos = 0
+includes = ["customer", "company"]

@@ -11,7 +11,6 @@ use zen_expression::variable::Variable;
 fn create_graph() -> DecisionEngine {
     let cargo_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let loader = FilesystemLoader::new(FilesystemLoaderOptions {
-        keep_in_memory: true,
         root: cargo_root
             .join("../../")
             .join("test-data")
@@ -26,7 +25,7 @@ fn bench_decision(b: &mut Bencher, key: &str, context: Variable) {
     let rt = Runtime::new().unwrap();
     let graph = create_graph();
 
-    let decision = rt.block_on(graph.get_decision(key)).unwrap();
+    let decision = rt.block_on(graph.get_decision(key)).unwrap().unwrap();
     b.to_async(&rt).iter(|| async {
         criterion::black_box(decision.evaluate(context.clone()).await.unwrap());
     });
@@ -35,7 +34,7 @@ fn bench_decision_8k(b: &mut Bencher, key: &str, context: Variable) {
     let rt = Runtime::new().unwrap();
     let graph = create_graph();
 
-    let decision = rt.block_on(graph.get_decision(key)).unwrap();
+    let decision = rt.block_on(graph.get_decision(key)).unwrap().unwrap();
     b.to_async(&rt).iter(|| async {
         criterion::black_box(decision.evaluate(context.clone()).await.unwrap());
     });
@@ -45,7 +44,7 @@ fn bench_decision_8k_precompiled(b: &mut Bencher, key: &str, context: Variable) 
     let rt = Runtime::new().unwrap();
     let graph = create_graph();
 
-    let mut decision = rt.block_on(graph.get_decision(key)).unwrap();
+    let mut decision = rt.block_on(graph.get_decision(key)).unwrap().unwrap();
     decision.compile();
     b.to_async(&rt).iter(|| async {
         criterion::black_box(decision.evaluate(context.clone()).await.unwrap());

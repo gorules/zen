@@ -27,7 +27,7 @@ inputs:
     required: false
     default: '0.16.0'
   glibc-version:
-    description: 'Target glibc for cargo-zigbuild gnu builds — exported as $GLIBC_VERSION (use `--target <triple>.${{ env.GLIBC_VERSION }}`). Bump here.'
+    description: 'Target glibc for cargo-zigbuild gnu builds. Exported as the GLIBC_VERSION env var; reference it in the build command as the target suffix. Bump here.'
     required: false
     default: '2.17'
 

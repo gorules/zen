@@ -26,9 +26,16 @@ inputs:
 runs:
   using: 'composite'
   steps:
+    - name: Fast profile on PRs (no LTO)
+      if: ${{ github.event_name == 'pull_request' }}
+      shell: bash
+      run: |
+        echo "CARGO_PROFILE_RELEASE_LTO=false" >> "$GITHUB_ENV"
+        echo "CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16" >> "$GITHUB_ENV"
+
     - name: Install sccache
       if: ${{ inputs.sccache == 'true' }}
-      uses: mozilla-actions/sccache-action@v0.0.6
+      uses: mozilla-actions/sccache-action@v0.0.10
 
     - name: Enable sccache
       if: ${{ inputs.sccache == 'true' }}

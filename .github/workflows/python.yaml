@@ -36,7 +36,7 @@ jobs:
     strategy:
       fail-fast: false
       # Per-platform maturin config lives in the matrix rows (steps stay uniform).
-      # Linux builds on the host via zig; win/mac build natively (uncached for now).
+      # Linux builds on the host via zig; win/mac use maturin's sccache (their only cache).
       # NOTE: linux aarch64 is non-abi3, so it needs the target Python — if it fails
       # under zig, switch it to abi3 or keep it on the manylinux container.
       matrix:
@@ -56,14 +56,17 @@ jobs:
             target: x64
             architecture: x64
             args: --release --out dist --find-interpreter -m bindings/python/Cargo.toml
+            sccache: 'true'
           - os: macos-latest
             platform: macos
             target: x86_64
             args: --release --out dist --find-interpreter -m bindings/python/Cargo.toml
+            sccache: 'true'
           - os: macos-latest
             platform: macos
             target: aarch64
             args: --release --out dist --find-interpreter -m bindings/python/Cargo.toml
+            sccache: 'true'
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
@@ -77,6 +80,7 @@ jobs:
           target: ${{ matrix.target }}
           args: ${{ matrix.args }}
           manylinux: ${{ matrix.manylinux || 'auto' }}
+          sccache: ${{ matrix.sccache || 'false' }}
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4

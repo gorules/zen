@@ -137,7 +137,7 @@ jobs:
           toolchain: stable
           targets: ${{ matrix.settings.target }}
 
-      - name: Rust cache (+ zig for linux legs)
+      - name: Rust cache + sccache (+ zig for linux legs)
         uses: ./.github/actions/setup-rust
         with:
           shared-key: nodejs-${{ matrix.settings.target }}

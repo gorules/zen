@@ -21,6 +21,7 @@ jobs:
       - uses: ./.github/actions/setup-rust
         with:
           shared-key: rust-miri
+          sccache: 'false'
       - run: cargo miri test --workspace --all-features
         env:
           MIRIFLAGS: -Zmiri-strict-provenance -Zmiri-symbolic-alignment-check -Zmiri-disable-isolation

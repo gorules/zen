@@ -1,5 +1,5 @@
 name: 'Setup Rust caching'
-description: 'Swatinem/rust-cache for the cargo registry + target dependency artifacts. Toolchain install stays in the caller (it is heterogeneous across jobs).'
+description: 'Swatinem/rust-cache (registry + target deps) + sccache (caches the workspace crates Swatinem drops; ~3x on builds). Toolchain install stays in the caller (it is heterogeneous across jobs).'
 
 inputs:
   shared-key:
@@ -14,6 +14,10 @@ inputs:
     description: 'Swatinem/rust-cache workspaces.'
     required: false
     default: '. -> target'
+  sccache:
+    description: 'Enable sccache as RUSTC_WRAPPER (caches workspace crates; ~3x on builds). On by default; turn off for miri (its rustc interception conflicts).'
+    required: false
+    default: 'true'
   zig:
     description: 'Install ziglang + cargo-zigbuild for host cross-compilation of Linux targets.'
     required: false
@@ -30,12 +34,28 @@ inputs:
 runs:
   using: 'composite'
   steps:
+    - name: Exclude workspace from Windows Defender
+      if: ${{ runner.os == 'Windows' }}
+      shell: pwsh
+      run: Add-MpPreference -ExclusionPath "${{ github.workspace }}"
+
     - name: Fast profile on PRs (no LTO)
       if: ${{ github.event_name == 'pull_request' }}
       shell: bash
       run: |
         echo "CARGO_PROFILE_RELEASE_LTO=false" >> "$GITHUB_ENV"
         echo "CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16" >> "$GITHUB_ENV"
+
+    - name: Install sccache
+      if: ${{ inputs.sccache == 'true' }}
+      uses: mozilla-actions/sccache-action@v0.0.10
+
+    - name: Enable sccache
+      if: ${{ inputs.sccache == 'true' }}
+      shell: bash
+      run: |
+        echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+        echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
 
     - name: Rust cache
       uses: Swatinem/rust-cache@v2

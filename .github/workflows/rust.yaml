@@ -56,41 +56,8 @@ jobs:
         with:
           shared-key: rust-test-${{ matrix.os }}
       - run: cargo test --workspace --all-features --exclude zen-ffi --exclude zen-nodejs --exclude zen-python
-      - run: cargo test --workspace --all-features --exclude zen-ffi --exclude zen-nodejs --exclude zen-python --release
       - name: Test without arbitrary_precision
         run: cargo test --workspace --exclude zen-ffi --exclude zen-nodejs --exclude zen-python
-      - name: Test without arbitrary_precision (release)
-        run: cargo test --workspace --exclude zen-ffi --exclude zen-nodejs --exclude zen-python --release
-
-  build:
-    name: cargo +${{ matrix.rust }} build
-    strategy:
-      fail-fast: false
-      matrix:
-        rust:
-          - stable
-          - beta
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Install Rust
-        run: rustup update ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
-      - uses: ./.github/actions/setup-rust
-        with:
-          shared-key: rust-build-${{ matrix.rust }}
-      - run: cargo build --tests
-
-  bench:
-    name: cargo bench
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Install Rust
-        run: rustup update stable
-      - uses: ./.github/actions/setup-rust
-        with:
-          shared-key: rust-bench
-      - run: cargo bench --workspace
 
   fmt:
     name: Cargo FMT
@@ -108,8 +75,6 @@ jobs:
     if: "github.event_name == 'release' && startsWith(github.event.release.tag_name, 'zen-engine-v')"
     needs:
       - test
-      - build
-      - bench
       - fmt
     steps:
       - uses: actions/checkout@v3

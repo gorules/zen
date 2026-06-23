@@ -27,7 +27,7 @@ on:
   # Stable publish is driven by the GitHub Release that release-please creates
   # for the `nodejs` component (tag `nodejs-v<version>`).
   release:
-    types: [published]
+    types: [ published ]
 
 permissions:
   contents: write
@@ -71,7 +71,7 @@ jobs:
             build: |
               set -e
               rustup target add x86_64-unknown-linux-gnu
-              yarn build --target x86_64-unknown-linux-gnu --cross-compile
+              yarn build --target x86_64-unknown-linux-gnu --use-napi-cross
               strip ./*.node
 
           - host: ubuntu-latest
@@ -80,7 +80,7 @@ jobs:
             build: |
               set -e
               rustup target add aarch64-unknown-linux-gnu
-              yarn build --target aarch64-unknown-linux-gnu --cross-compile
+              yarn build --target aarch64-unknown-linux-gnu --use-napi-cross
 
           - host: ubuntu-latest
             target: 'x86_64-unknown-linux-musl'
@@ -106,8 +106,6 @@ jobs:
               tar -xvf wasi-sdk-27.0-x86_64-linux.tar.gz
             build: |
               set -e
-              rustup install 1.88.0
-              rustup default 1.88.0
               rustup target add wasm32-wasip1-threads
               export WASI_SDK_PATH="$(pwd)/wasi-sdk-27.0-x86_64-linux"
               export CMAKE_BUILD_PARALLEL_LEVEL=2

@@ -80,7 +80,7 @@ jobs:
       - name: Build (zig, linux)
         if: ${{ matrix.settings.host == 'ubuntu-latest' }}
         working-directory: ${{ env.UNIFFI_DIRECTORY }}
-        run: cargo zigbuild --lib --release --target ${{ matrix.settings.target }} ${{ matrix.settings.extra_args }}
+        run: cargo zigbuild --lib --release --target ${{ matrix.settings.target }}.${{ env.GLIBC_VERSION }} ${{ matrix.settings.extra_args }}
       - name: Build (native)
         if: ${{ matrix.settings.host != 'ubuntu-latest' }}
         uses: houseabsolute/actions-rust-cross@v1

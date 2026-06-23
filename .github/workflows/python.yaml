@@ -22,7 +22,7 @@ on:
   # Stable publish is driven by the GitHub Release that release-please creates
   # for the `python` component (tag `python-v<version>`).
   release:
-    types: [published]
+    types: [ published ]
 
 permissions:
   contents: read
@@ -79,8 +79,8 @@ jobs:
         with:
           target: ${{ matrix.target }}
           args: ${{ matrix.args }}
-          manylinux: ${{ matrix.manylinux }}
-          sccache: ${{ matrix.sccache }}
+          manylinux: ${{ matrix.manylinux || 'auto' }}
+          sccache: ${{ matrix.sccache || 'false' }}
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4

@@ -22,6 +22,14 @@ inputs:
     description: 'Install ziglang + cargo-zigbuild for host cross-compilation of Linux targets.'
     required: false
     default: 'false'
+  zig-version:
+    description: 'Zig version for mlugg/setup-zig — single source of truth, bump here.'
+    required: false
+    default: '0.16.0'
+  glibc-version:
+    description: 'Target glibc for cargo-zigbuild gnu builds — exported as $GLIBC_VERSION (use `--target <triple>.${{ env.GLIBC_VERSION }}`). Bump here.'
+    required: false
+    default: '2.17'
 
 runs:
   using: 'composite'
@@ -53,7 +61,19 @@ runs:
 
     - name: Install zig
       if: ${{ inputs.zig == 'true' }}
+      uses: mlugg/setup-zig@v2
+      with:
+        version: ${{ inputs.zig-version }}
+
+    - name: Install cargo-zigbuild
+      if: ${{ inputs.zig == 'true' }}
+      uses: taiki-e/install-action@v2
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      with:
+        tool: cargo-zigbuild
+
+    - name: Export target glibc version
+      if: ${{ inputs.zig == 'true' }}
       shell: bash
-      run: |
-        pip3 install ziglang
-        cargo install --locked cargo-zigbuild
+      run: echo "GLIBC_VERSION=${{ inputs.glibc-version }}" >> "$GITHUB_ENV"

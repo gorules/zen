@@ -69,7 +69,7 @@ jobs:
       - name: Build (zig, linux)
         if: ${{ matrix.settings.host == 'ubuntu-latest' }}
         working-directory: bindings/c
-        run: cargo zigbuild --release --all-features --target ${{ matrix.settings.target }} --locked
+        run: cargo zigbuild --release --all-features --target ${{ matrix.settings.target }}.${{ env.GLIBC_VERSION }} --locked
       - name: Build (native)
         if: ${{ matrix.settings.host != 'ubuntu-latest' }}
         uses: marcopolo/cargo@master

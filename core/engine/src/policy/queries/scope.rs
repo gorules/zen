@@ -675,6 +675,8 @@ pub trait VariableTypeScope {
     fn with_dollar(&self, field_type: &VariableType) -> VariableType;
 
     fn to_acyclic(&self) -> VariableType;
+
+    fn break_cycles(&self);
 }
 
 impl VariableTypeScope for VariableType {
@@ -731,6 +733,30 @@ impl VariableTypeScope for VariableType {
     fn to_acyclic(&self) -> VariableType {
         let mut visited: HashSet<*const ()> = HashSet::default();
         AcyclicCloner::clone_type(self, &mut visited)
+    }
+
+    fn break_cycles(&self) {
+        let mut visited: HashSet<*const ()> = HashSet::default();
+        let mut cells = Vec::new();
+        let mut stack: Vec<VariableType> = vec![self.shallow_clone()];
+        while let Some(current) = stack.pop() {
+            match current {
+                VariableType::Object(obj) => {
+                    if !visited.insert(Rc::as_ptr(&obj) as *const ()) {
+                        continue;
+                    }
+                    stack.extend(obj.borrow().values().map(VariableType::shallow_clone));
+                    cells.push(obj);
+                }
+                VariableType::Array(inner) | VariableType::Nullable(inner) => {
+                    stack.push(inner.shallow_clone());
+                }
+                _ => {}
+            }
+        }
+        for cell in cells {
+            cell.borrow_mut().clear();
+        }
     }
 }
 

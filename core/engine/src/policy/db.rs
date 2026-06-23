@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use ahash::{HashMap, HashMapExt, HashSet};
 use zen_expression::intellisense::IntelliSense;
+use zen_expression::variable::VariableType;
 use zen_expression::{Isolate, OpcodeCache};
 
 use crate::policy::blocks::{
@@ -18,6 +19,7 @@ use crate::policy::queries::dependency::{
 use crate::policy::queries::path::PathClassifier;
 use crate::policy::queries::scope::{
     DataModelEntry, EntityForm, EntityGraph, EntitySources, ImportGraph, ReferenceField,
+    VariableTypeScope,
 };
 use crate::policy::raw::PolicyDocument;
 use crate::policy::types::{BlockRef, Diagnostic, ExpressionKind, InstanceTarget};
@@ -113,6 +115,7 @@ struct Inputs {
 }
 
 pub struct Snapshot {
+    pub(crate) base_scope: VariableType,
     pub(crate) all_parsed: Arc<HashMap<Arc<str>, Arc<ParsedPolicy>>>,
     pub(crate) rule_by_ref: Arc<HashMap<BlockRef, Arc<Block>>>,
     pub(crate) import_graph: Arc<ImportGraph>,
@@ -145,6 +148,15 @@ pub struct Db {
     snapshot: RefCell<Option<Arc<Snapshot>>>,
     cache: PolicyDerivedCache,
     intellisense: SharedIntelliSense,
+    scope_roots: RefCell<Vec<VariableType>>,
+}
+
+impl Drop for Db {
+    fn drop(&mut self) {
+        for root in self.scope_roots.borrow().iter() {
+            root.break_cycles();
+        }
+    }
 }
 
 impl Db {
@@ -156,6 +168,7 @@ impl Db {
             snapshot: RefCell::new(None),
             cache: PolicyDerivedCache::default(),
             intellisense: Rc::new(RefCell::new(IntelliSense::new().with_strict(true))),
+            scope_roots: RefCell::new(Vec::new()),
         }
     }
 
@@ -197,6 +210,9 @@ impl Db {
             &self.intellisense,
             &self.cache,
         ));
+        self.scope_roots
+            .borrow_mut()
+            .push(s.base_scope.shallow_clone());
         *self.snapshot.borrow_mut() = Some(s.clone());
         s
     }
@@ -283,6 +299,9 @@ impl Db {
                     .map(|(p, v)| (p.clone(), v.clone()))
                     .collect();
                 let base_scope = Snapshot::compute_base_scope(&subset, &unit.entity_sources);
+                self.scope_roots
+                    .borrow_mut()
+                    .push(base_scope.shallow_clone());
                 Arc::new(Snapshot::compute_enriched(
                     &base_scope,
                     &unit.dep_graph,
@@ -501,6 +520,7 @@ impl Snapshot {
             Self::compute_components(&import_graph, &all_parsed);
 
         Snapshot {
+            base_scope,
             all_parsed,
             rule_by_ref,
             import_graph,

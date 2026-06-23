@@ -1,0 +1,52 @@
+name: 'Setup Rust caching'
+description: 'Swatinem/rust-cache + sccache (compiler cache shared across jobs via the GitHub Actions backend). Toolchain install stays in the caller (it is heterogeneous across jobs).'
+
+inputs:
+  shared-key:
+    description: 'Swatinem/rust-cache shared-key — groups the cache across jobs.'
+    required: false
+    default: ''
+  key:
+    description: 'Swatinem/rust-cache extra key.'
+    required: false
+    default: ''
+  workspaces:
+    description: 'Swatinem/rust-cache workspaces.'
+    required: false
+    default: '. -> target'
+  sccache:
+    description: 'Enable sccache as RUSTC_WRAPPER (turn off for miri).'
+    required: false
+    default: 'true'
+  zig:
+    description: 'Install ziglang + cargo-zigbuild for host cross-compilation of Linux targets.'
+    required: false
+    default: 'false'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install sccache
+      if: ${{ inputs.sccache == 'true' }}
+      uses: mozilla-actions/sccache-action@v0.0.6
+
+    - name: Enable sccache
+      if: ${{ inputs.sccache == 'true' }}
+      shell: bash
+      run: |
+        echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+        echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+
+    - name: Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: ${{ inputs.shared-key }}
+        key: ${{ inputs.key }}
+        workspaces: ${{ inputs.workspaces }}
+
+    - name: Install zig
+      if: ${{ inputs.zig == 'true' }}
+      shell: bash
+      run: |
+        pip3 install ziglang
+        cargo install --locked cargo-zigbuild

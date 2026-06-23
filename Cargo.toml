@@ -35,3 +35,11 @@ thiserror = "1"
 lto = true
 codegen-units = 1
 strip = "symbols"
+
+# Fast profile for PR/CI validation builds ONLY — never ships.
+# Same opt-level as release (behaviourally identical) but no LTO and parallel
+# codegen, so PR builds are ~2-4x faster. Release artifacts keep `--release`.
+[profile.ci]
+inherits = "release"
+lto = false
+codegen-units = 16

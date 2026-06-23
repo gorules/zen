@@ -1,0 +1,31 @@
+name: Miri
+
+# UB / memory-model checker. Slow, so it's manual-only — run it from the
+# Actions tab: Miri → "Run workflow". Not part of PR / push / release CI.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  RUST_BACKTRACE: 1
+  RUSTUP_MAX_RETRIES: 10
+
+jobs:
+  miri:
+    name: cargo miri test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install Rust
+        run: rustup toolchain install nightly-2025-05-08 --component miri && rustup default nightly-2025-05-08
+      - uses: ./.github/actions/setup-rust
+        with:
+          shared-key: rust-miri
+          sccache: 'false'
+      - run: cargo miri test --workspace --all-features
+        env:
+          MIRIFLAGS: -Zmiri-strict-provenance -Zmiri-symbolic-alignment-check -Zmiri-disable-isolation
+          RUSTFLAGS: ${{ env.RUSTFLAGS }} -Z randomize-layout

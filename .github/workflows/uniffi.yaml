@@ -19,6 +19,10 @@ on:
       - 'core/**'
       - 'test-data/**'
       - '.github/workflows/uniffi.yaml'
+  # Stable publish is driven by the GitHub Release that release-please creates
+  # for the `uniffi` component (tag `uniffi-v<version>`).
+  release:
+    types: [published]
 
 jobs:
   build:
@@ -67,7 +71,19 @@ jobs:
         with:
           target: ${{ matrix.settings.target }}
 
-      - name: Build
+      - uses: ./.github/actions/setup-rust
+        with:
+          shared-key: uniffi-${{ matrix.settings.target }}
+          sccache: 'false'
+          zig: ${{ matrix.settings.host == 'ubuntu-latest' }}
+
+      # Linux targets (incl. s390x) build on the host via zig; mac/windows build natively.
+      - name: Build (zig, linux)
+        if: ${{ matrix.settings.host == 'ubuntu-latest' }}
+        working-directory: ${{ env.UNIFFI_DIRECTORY }}
+        run: cargo zigbuild --lib --release --target ${{ matrix.settings.target }} ${{ matrix.settings.extra_args }}
+      - name: Build (native)
+        if: ${{ matrix.settings.host != 'ubuntu-latest' }}
         uses: houseabsolute/actions-rust-cross@v1
         with:
           working-directory: ${{ env.UNIFFI_DIRECTORY }}
@@ -84,7 +100,7 @@ jobs:
   release-java-kotlin:
     runs-on: ubuntu-latest
     needs: [ build ]
-    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
+    if: "github.event_name == 'release' && startsWith(github.event.release.tag_name, 'uniffi-v')"
     defaults:
       run:
         working-directory: ${{ env.UNIFFI_DIRECTORY }}
@@ -99,6 +115,10 @@ jobs:
 
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          shared-key: uniffi-java-kotlin
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -155,7 +175,7 @@ jobs:
     needs: [ build ]
     permissions:
       id-token: write  # Required for OIDC
-    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
+    if: "github.event_name == 'release' && startsWith(github.event.release.tag_name, 'uniffi-v')"
     defaults:
       run:
         working-directory: ${{ env.UNIFFI_DIRECTORY }}
@@ -170,6 +190,10 @@ jobs:
 
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          shared-key: uniffi-csharp
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -260,6 +284,10 @@ jobs:
         with:
           target: ${{ matrix.settings.target }}
 
+      - uses: ./.github/actions/setup-rust
+        with:
+          shared-key: uniffi-ios-${{ matrix.settings.target }}
+
       - name: Build iOS
         run: |
           if [ "${{ matrix.settings.target }}" = "aarch64-apple-ios-sim" ]; then
@@ -299,6 +327,10 @@ jobs:
 
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          shared-key: uniffi-swift
 
       - name: Generate Swift bindings
         run: |
@@ -367,7 +399,7 @@ jobs:
     name: Release iOS
     runs-on: macos-latest
     needs: [ create-xcframework ]
-    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
+    if: "github.event_name == 'release' && startsWith(github.event.release.tag_name, 'uniffi-v')"
 
     steps:
       - name: Checkout zen-ios
@@ -455,6 +487,10 @@ jobs:
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - uses: ./.github/actions/setup-rust
+        with:
+          shared-key: uniffi-android
+
       - name: Install cargo-ndk
         run: cargo install cargo-ndk
 
@@ -466,7 +502,7 @@ jobs:
           add-to-path: true
 
       - name: Add Rust Android targets (all)
-        if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
+        if: "github.event_name == 'release' && startsWith(github.event.release.tag_name, 'uniffi-v')"
         run: |
           rustup target add aarch64-linux-android
           rustup target add armv7-linux-androideabi
@@ -474,12 +510,12 @@ jobs:
           rustup target add x86_64-linux-android
 
       - name: Add Rust Android targets (arm64 only)
-        if: "!startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
+        if: "github.event_name != 'release' || !startsWith(github.event.release.tag_name, 'uniffi-v')"
         run: |
           rustup target add aarch64-linux-android
 
       - name: Build for Android (all targets)
-        if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
+        if: "github.event_name == 'release' && startsWith(github.event.release.tag_name, 'uniffi-v')"
         env:
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
@@ -489,7 +525,7 @@ jobs:
            build -p zen-uniffi --release --features bindgen
 
       - name: Build for Android (arm64 only)
-        if: "!startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
+        if: "github.event_name != 'release' || !startsWith(github.event.release.tag_name, 'uniffi-v')"
         env:
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
@@ -644,7 +680,7 @@ jobs:
   release-android:
     runs-on: ubuntu-latest
     needs: [ package-android-aar ]
-    if: "startsWith(github.event.head_commit.message, 'chore(release): publish uniffi')"
+    if: "github.event_name == 'release' && startsWith(github.event.release.tag_name, 'uniffi-v')"
     defaults:
       run:
         working-directory: ${{ env.UNIFFI_DIRECTORY }}

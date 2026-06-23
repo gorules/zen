@@ -19,100 +19,78 @@ on:
       - 'core/**'
       - 'test-data/**'
       - '.github/workflows/python.yaml'
+  # Stable publish is driven by the GitHub Release that release-please creates
+  # for the `python` component (tag `python-v<version>`).
+  release:
+    types: [published]
 
 permissions:
   contents: read
 
 jobs:
-  linux:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ${{ env.WORKING_DIRECTORY }}
+  # The build jobs skip on release events for other components (release-please fires
+  # one `release` event per component; only `python-v*` should build/publish here).
+  wheels:
+    if: "github.event_name != 'release' || startsWith(github.event.release.tag_name, 'python-v')"
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
+      # Per-platform maturin config lives in the matrix rows (steps stay uniform).
+      # Linux builds on the host via zig; win/mac use maturin's sccache.
+      # NOTE: linux aarch64 is non-abi3, so it needs the target Python — if it fails
+      # under zig, switch it to abi3 or keep it on the manylinux container.
       matrix:
-        target: [ x86_64, aarch64 ]
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            target: x86_64
+            args: --release --out dist --find-interpreter -m bindings/python/Cargo.toml --zig --compatibility manylinux_2_28
+            manylinux: auto
+          - os: ubuntu-latest
+            platform: linux
+            target: aarch64
+            args: --release --out dist --find-interpreter -m bindings/python/Cargo.toml --zig --compatibility manylinux_2_28
+            manylinux: auto
+          - os: windows-latest
+            platform: windows
+            target: x64
+            architecture: x64
+            args: --release --out dist --find-interpreter -m bindings/python/Cargo.toml
+            sccache: 'true'
+          - os: macos-latest
+            platform: macos
+            target: x86_64
+            args: --release --out dist --find-interpreter -m bindings/python/Cargo.toml
+            sccache: 'true'
+          - os: macos-latest
+            platform: macos
+            target: aarch64
+            args: --release --out dist --find-interpreter -m bindings/python/Cargo.toml
+            sccache: 'true'
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
         with:
           python-version: '3.13'
+          architecture: ${{ matrix.architecture }}
 
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist --find-interpreter -m bindings/python/Cargo.toml
-          manylinux: 2_28
-          before-script-linux: |
-            if command -v dnf > /dev/null; then
-              dnf install -y patch
-            elif command -v apt-get > /dev/null; then
-              apt-get update && apt-get install -y patch
-            fi
+          args: ${{ matrix.args }}
+          manylinux: ${{ matrix.manylinux }}
+          sccache: ${{ matrix.sccache }}
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-linux-${{ matrix.target }}
-          path: dist
-
-  windows:
-    runs-on: windows-latest
-    defaults:
-      run:
-        working-directory: ${{ env.WORKING_DIRECTORY }}
-    strategy:
-      matrix:
-        target: [ x64 ]
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.13'
-          architecture: ${{ matrix.target }}
-      - name: Build wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.target }}
-          args: --release --out dist --find-interpreter -m bindings/python/Cargo.toml
-          sccache: 'true'
-      - name: Upload wheels
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheels-windows-${{ matrix.target }}
-          path: dist
-
-  macos:
-    runs-on: macos-latest
-    defaults:
-      run:
-        working-directory: ${{ env.WORKING_DIRECTORY }}
-    strategy:
-      matrix:
-        target: [ x86_64, aarch64 ]
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.13'
-      - name: Build wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.target }}
-          args: --release --out dist --find-interpreter -m bindings/python/Cargo.toml
-          sccache: 'true'
-      - name: Upload wheels
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheels-macos-${{ matrix.target }}
+          name: wheels-${{ matrix.platform }}-${{ matrix.target }}
           path: dist
 
   sdist:
+    if: "github.event_name != 'release' || startsWith(github.event.release.tag_name, 'python-v')"
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ${{ env.WORKING_DIRECTORY }}
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
@@ -133,10 +111,9 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ${{ env.WORKING_DIRECTORY }}
-    needs: [ linux, windows, macos, sdist ]
+    # Publishes only on the release-please GitHub Release for the python component.
+    if: "github.event_name == 'release' && startsWith(github.event.release.tag_name, 'python-v')"
+    needs: [ wheels, sdist ]
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -144,7 +121,6 @@ jobs:
           merge-multiple: true
 
       - name: Publish to PyPI
-        if: "startsWith(github.event.head_commit.message, 'chore(release): publish python')"
         uses: PyO3/maturin-action@v1
         env:
           MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}

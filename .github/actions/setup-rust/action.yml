@@ -30,6 +30,10 @@ inputs:
     description: 'Target glibc for cargo-zigbuild gnu builds. Exported as the GLIBC_VERSION env var; reference it in the build command as the target suffix. Bump here.'
     required: false
     default: '2.17'
+  xwin:
+    description: 'Install cargo-xwin for cross-compiling Windows MSVC targets from Linux (napi routes msvc targets to it).'
+    required: false
+    default: 'false'
 
 runs:
   using: 'composite'
@@ -77,3 +81,23 @@ runs:
       if: ${{ inputs.zig == 'true' }}
       shell: bash
       run: echo "GLIBC_VERSION=${{ inputs.glibc-version }}" >> "$GITHUB_ENV"
+
+    - name: Cache xwin sysroot
+      if: ${{ inputs.xwin == 'true' }}
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/.xwin
+        key: xwin-cache-v1
+
+    - name: Install cargo-xwin
+      if: ${{ inputs.xwin == 'true' }}
+      uses: taiki-e/install-action@v2
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      with:
+        tool: cargo-xwin
+
+    - name: Export xwin cache dir
+      if: ${{ inputs.xwin == 'true' }}
+      shell: bash
+      run: echo "XWIN_CACHE_DIR=${{ github.workspace }}/.xwin" >> "$GITHUB_ENV"

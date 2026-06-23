@@ -62,7 +62,6 @@ jobs:
       - uses: ./.github/actions/setup-rust
         with:
           shared-key: go-${{ matrix.settings.target }}
-          sccache: 'false'
           zig: ${{ matrix.settings.host == 'ubuntu-latest' }}
 
       # Linux targets cross-compile on the host via zig (zig cc builds the C deps);

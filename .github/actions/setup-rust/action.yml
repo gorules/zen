@@ -15,7 +15,7 @@ inputs:
     required: false
     default: '. -> target'
   sccache:
-    description: 'Enable sccache as RUSTC_WRAPPER (turn off for miri).'
+    description: 'Enable sccache as RUSTC_WRAPPER. On by default; turn off for miri (its rustc interception conflicts).'
     required: false
     default: 'true'
   zig:

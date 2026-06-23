@@ -71,7 +71,7 @@ jobs:
             build: |
               set -e
               rustup target add x86_64-unknown-linux-gnu
-              yarn build --target x86_64-unknown-linux-gnu --zig
+              yarn build --target x86_64-unknown-linux-gnu --cross-compile
               strip ./*.node
 
           - host: ubuntu-latest
@@ -80,7 +80,7 @@ jobs:
             build: |
               set -e
               rustup target add aarch64-unknown-linux-gnu
-              yarn build --target aarch64-unknown-linux-gnu --zig
+              yarn build --target aarch64-unknown-linux-gnu --cross-compile
 
           - host: ubuntu-latest
             target: 'x86_64-unknown-linux-musl'
@@ -88,7 +88,7 @@ jobs:
             build: |
               set -e
               rustup target add x86_64-unknown-linux-musl
-              yarn build --target x86_64-unknown-linux-musl --zig
+              yarn build --target x86_64-unknown-linux-musl --cross-compile
               strip ./*.node
 
           - host: ubuntu-latest
@@ -97,7 +97,7 @@ jobs:
             build: |
               set -e
               rustup target add aarch64-unknown-linux-musl
-              yarn build --target aarch64-unknown-linux-musl --zig
+              yarn build --target aarch64-unknown-linux-musl --cross-compile
 
           - host: ubuntu-latest
             target: 'wasm32-wasip1-threads'

@@ -74,7 +74,6 @@ jobs:
       - uses: ./.github/actions/setup-rust
         with:
           shared-key: uniffi-${{ matrix.settings.target }}
-          sccache: 'false'
           zig: ${{ matrix.settings.host == 'ubuntu-latest' }}
 
       # Linux targets (incl. s390x) build on the host via zig; mac/windows build natively.

@@ -95,9 +95,13 @@ impl ZenEngine {
     }
 
     pub fn create_decision(&self, content: JsonBuffer) -> Result<ZenDecision, ZenError> {
-        let decision = self.engine.create_decision(Arc::new(
-            serde_json::from_slice(&content.0).map_err(|_| ZenError::JsonDeserializationFailed)?,
-        ));
+        let decision = self
+            .engine
+            .create_decision(Arc::new(
+                serde_json::from_slice(&content.0)
+                    .map_err(|_| ZenError::JsonDeserializationFailed)?,
+            ))
+            .map_err(|e| ZenError::ValidationError(e.to_string()))?;
 
         Ok(ZenDecision::from(decision))
     }
@@ -106,21 +110,23 @@ impl ZenEngine {
         let engine = self.engine.clone();
 
         // Use spawn_blocking to run the non-Send code synchronously
-        let decision = task::spawn_blocking(move || {
-            // The blocking code that uses non-Send types
-            Handle::current().block_on(async move {
-                engine
-                    .get_decision(&key)
-                    .await
-                    .map_err(|e| ZenError::LoaderInternalError {
-                        key,
-                        details: e.to_string(),
-                    })
-                    .map(ZenDecision::from)
+        let decision =
+            task::spawn_blocking(move || {
+                // The blocking code that uses non-Send types
+                Handle::current().block_on(async move {
+                    let outer = engine.get_decision(&key).await.map_err(|e| {
+                        ZenError::LoaderInternalError {
+                            key: key.clone(),
+                            details: e.to_string(),
+                        }
+                    })?;
+                    outer
+                        .map_err(|e| ZenError::ValidationError(e.to_string()))
+                        .map(ZenDecision::from)
+                })
             })
-        })
-        .await
-        .map_err(|e| ZenError::EvaluationError(format!("Task failed: {:?}", e)))??;
+            .await
+            .map_err(|e| ZenError::EvaluationError(format!("Task failed: {:?}", e)))??;
 
         Ok(decision)
     }

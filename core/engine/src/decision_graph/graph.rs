@@ -2,7 +2,7 @@ use crate::decision_graph::cleaner::VariableCleaner;
 use crate::decision_graph::tracer::NodeTracer;
 use crate::decision_graph::walker::{GraphWalker, NodeData, StableDiDecisionGraph};
 use crate::engine::EvaluationTraceKind;
-use crate::model::{DecisionContent, DecisionNodeKind};
+use crate::model::{DecisionNodeKind, GraphContent};
 use crate::nodes::custom::CustomNodeHandler;
 use crate::nodes::decision::DecisionNodeHandler;
 use crate::nodes::decision_table::DecisionTableNodeHandler;
@@ -20,7 +20,7 @@ use ahash::{HashMap, HashMapExt};
 use petgraph::algo::is_cyclic_directed;
 use petgraph::matrix_graph::Zero;
 use serde::ser::SerializeMap;
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Serialize, Serializer};
 use std::cell::RefCell;
 use std::ops::Deref;
 use std::rc::Rc;
@@ -38,7 +38,7 @@ pub struct DecisionGraph {
 
 #[derive(Debug)]
 pub struct DecisionGraphConfig {
-    pub content: Arc<DecisionContent>,
+    pub content: Arc<GraphContent>,
     pub trace: bool,
     pub iteration: u8,
     pub max_depth: u8,
@@ -56,7 +56,7 @@ impl DecisionGraph {
     }
 
     fn build_graph(
-        content: &DecisionContent,
+        content: &GraphContent,
     ) -> Result<StableDiDecisionGraph, DecisionGraphValidationError> {
         let mut graph = StableDiDecisionGraph::new();
         let mut index_map = HashMap::with_capacity(content.nodes.len());
@@ -237,18 +237,41 @@ impl DecisionGraph {
         Ok(DecisionGraphResponse {
             performance: format!("{:.1?}", root_start.elapsed()),
             result,
-            trace,
+            trace: trace.map(EvaluationTrace::Graph),
         })
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub enum EvaluationTrace {
+    Graph(HashMap<Arc<str>, DecisionGraphTrace>),
+    Policy(crate::policy::Trace),
+}
+
+impl EvaluationTrace {
+    pub fn as_graph(&self) -> Option<&HashMap<Arc<str>, DecisionGraphTrace>> {
+        match self {
+            Self::Graph(m) => Some(m),
+            Self::Policy(_) => None,
+        }
+    }
+
+    pub fn into_graph(self) -> Option<HashMap<Arc<str>, DecisionGraphTrace>> {
+        match self {
+            Self::Graph(m) => Some(m),
+            Self::Policy(_) => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DecisionGraphResponse {
     pub performance: String,
     pub result: Variable,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub trace: Option<HashMap<Arc<str>, DecisionGraphTrace>>,
+    pub trace: Option<EvaluationTrace>,
 }
 
 impl DecisionGraphResponse {
@@ -264,7 +287,25 @@ impl DecisionGraphResponse {
         map.serialize_entry("performance", &self.performance)?;
         map.serialize_entry("result", &self.result)?;
         if let Some(trace) = &self.trace {
-            map.serialize_entry("trace", &mode.serialize_trace(&trace.to_variable()))?;
+            match trace {
+                EvaluationTrace::Graph(graph_trace) => {
+                    map.serialize_entry(
+                        "trace",
+                        &mode.serialize_trace(&graph_trace.to_variable()),
+                    )?;
+                }
+                EvaluationTrace::Policy(policy_trace) => match mode {
+                    EvaluationTraceKind::String | EvaluationTraceKind::ReferenceString => {
+                        map.serialize_entry(
+                            "trace",
+                            &serde_json::to_string(policy_trace).unwrap_or_default(),
+                        )?;
+                    }
+                    _ => {
+                        map.serialize_entry("trace", policy_trace)?;
+                    }
+                },
+            }
         }
 
         map.end()

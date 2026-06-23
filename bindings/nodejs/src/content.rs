@@ -23,7 +23,9 @@ impl ZenDecisionContent {
                 serde_json::from_value(serde_val)?
             }
         };
-        decision_content.compile();
+        if let DecisionContent::Graph(g) = &mut decision_content {
+            g.compile();
+        }
 
         Ok(Self {
             inner: Arc::new(decision_content),

@@ -1,0 +1,77 @@
+# Policy prepare_rename tests
+# Each test places cursor at block_id/expression_id/pos
+# If expected_entity is absent, result should be None
+
+policies = ["analysis.json"]
+
+# ── Expression block ds1: "sum(map(customer.companies as c, c.revenue))" ────
+
+[[test]]
+name = "cursor on 'companies' → customer.companies"
+policy = "analysis.json"
+block_id = "ds1"
+expression_id = "ds1"
+pos = 20
+expected_entity = "customer"
+expected_field = "companies"
+
+[[test]]
+name = "cursor on 'customer' → entity customer (no field)"
+policy = "analysis.json"
+block_id = "ds1"
+expression_id = "ds1"
+pos = 10
+expected_entity = "customer"
+expected_field = ""
+
+[[test]]
+name = "cursor on 'revenue' via alias c → company.revenue"
+policy = "analysis.json"
+block_id = "ds1"
+expression_id = "ds1"
+pos = 37
+expected_entity = "company"
+expected_field = "revenue"
+
+# v1 resolved the alias root `c` to entity company; v2 treats alias roots as
+# local bindings with no rename target (the field segment still resolves).
+[[test]]
+name = "cursor on alias 'c' → not renameable"
+policy = "analysis.json"
+block_id = "ds1"
+expression_id = "ds1"
+pos = 33
+
+[[test]]
+name = "cursor on builtin 'sum' → not renameable"
+policy = "analysis.json"
+block_id = "ds1"
+expression_id = "ds1"
+pos = 1
+
+# ── Match arm condition f1/db1: "customer.creditReport.score >= 750" ────────
+
+[[test]]
+name = "cursor on 'creditReport' in condition"
+policy = "analysis.json"
+block_id = "f1"
+expression_id = "db1"
+pos = 15
+expected_entity = "customer"
+expected_field = "creditReport"
+
+[[test]]
+name = "cursor on 'customer' in condition"
+policy = "analysis.json"
+block_id = "f1"
+expression_id = "db1"
+pos = 3
+expected_entity = "customer"
+expected_field = ""
+
+[[test]]
+name = "cursor past expression end → not renameable"
+policy = "analysis.json"
+block_id = "f1"
+expression_id = "db1"
+pos = 100

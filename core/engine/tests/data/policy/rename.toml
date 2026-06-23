@@ -1,0 +1,139 @@
+# Policy rename tests
+# Each test resolves a RenameTarget (entity/field; empty field = entity rename)
+# and checks workspace.references() sites plus that rename() emits edits.
+#
+# Expected edit forms:
+#   { policy, block_id, expression_id }      — expression read or write-key site
+#   { policy, block_id }                     — write-key site without expression id (match key)
+#   { policy, block_id, target_kind = "…" }  — data-model declaration site
+
+policies = ["analysis.json"]
+
+# ── Direct references ────────────────────────────────────────────────────────
+
+[[test]]
+name = "rename customer.companies in map expression"
+entity = "customer"
+field = "companies"
+new_name = "orgs"
+edits = [
+    { policy = "analysis.json", block_id = "ds1", expression_id = "ds1" },
+    { policy = "analysis.json", block_id = "dm-customer", target_kind = "fieldName" },
+]
+
+[[test]]
+name = "rename customer.creditReport in condition"
+entity = "customer"
+field = "creditReport"
+new_name = "report"
+edits = [
+    { policy = "analysis.json", block_id = "f1", expression_id = "db1" },
+    { policy = "analysis.json", block_id = "dm-customer", target_kind = "fieldName" },
+]
+
+# ── Alias resolution ────────────────────────────────────────────────────────
+
+[[test]]
+name = "rename company.revenue resolves alias c → company"
+entity = "company"
+field = "revenue"
+new_name = "income"
+edits = [
+    { policy = "analysis.json", block_id = "ds1", expression_id = "ds1" },
+    { policy = "analysis.json", block_id = "dm-company", target_kind = "fieldName" },
+]
+
+# ── No matches ───────────────────────────────────────────────────────────────
+
+[[test]]
+name = "nonexistent field → no edits"
+entity = "customer"
+field = "nonexistent"
+new_name = "something"
+edits = []
+
+# customer.name exists in the data model but is not referenced by expressions —
+# only the dataModel property edit is emitted.
+[[test]]
+name = "field only in data model → single data model edit"
+entity = "customer"
+field = "name"
+new_name = "fullName"
+edits = [
+    { policy = "analysis.json", block_id = "dm-customer", target_kind = "fieldName" },
+]
+
+# totalRevenue: write key of expression block ds1 + input column field dt1/i2
+[[test]]
+name = "field in write keys and column fields also renamed"
+entity = "customer"
+field = "totalRevenue"
+new_name = "totalIncome"
+edits = [
+    { policy = "analysis.json", block_id = "ds1", expression_id = "ds1" },
+    { policy = "analysis.json", block_id = "dt1", expression_id = "i2" },
+]
+
+# creditTier: written by match block f1 (key, no expression id) + input column dt1/i1
+[[test]]
+name = "rename creditTier updates keys and column fields"
+entity = "customer"
+field = "creditTier"
+new_name = "riskBand"
+edits = [
+    { policy = "analysis.json", block_id = "f1" },
+    { policy = "analysis.json", block_id = "dt1", expression_id = "i1" },
+]
+
+# discount: output column dt1/o1
+[[test]]
+name = "rename discount updates output column field"
+entity = "customer"
+field = "discount"
+new_name = "rebate"
+edits = [
+    { policy = "analysis.json", block_id = "dt1", expression_id = "o1" },
+]
+
+[[test]]
+name = "nonexistent entity → no edits"
+entity = "phantom"
+field = "field"
+new_name = "other"
+edits = []
+
+# ── Entity renames (field = "") ──────────────────────────────────────────────
+
+# Renaming entity "customer" → "client" touches:
+#  - dm-customer data model's name
+#  - expression reads rooted at customer. (ds1 value, f1/db1 condition)
+#  - write keys rooted at customer. (ds1 key; f1 match key; dt1 column heads)
+[[test]]
+name = "rename customer entity"
+entity = "customer"
+field = ""
+new_name = "client"
+edits = [
+    { policy = "analysis.json", block_id = "dm-customer", target_kind = "entityName" },
+    { policy = "analysis.json", block_id = "ds1", expression_id = "ds1" },
+    { policy = "analysis.json", block_id = "ds1", expression_id = "ds1" },
+    { policy = "analysis.json", block_id = "f1", expression_id = "db1" },
+    { policy = "analysis.json", block_id = "f1" },
+    { policy = "analysis.json", block_id = "dt1", expression_id = "i1" },
+    { policy = "analysis.json", block_id = "dt1", expression_id = "i2" },
+    { policy = "analysis.json", block_id = "dt1", expression_id = "o1" },
+]
+
+# Renaming entity "company" → "org" touches:
+#  - dm-company data model's name
+#  - dm-customer.companies relationship target ("company" → "org")
+#  - the alias c in ds1 refers to company only indirectly — no expression edit.
+[[test]]
+name = "rename company entity updates data model and relationship targets"
+entity = "company"
+field = ""
+new_name = "org"
+edits = [
+    { policy = "analysis.json", block_id = "dm-company", target_kind = "entityName" },
+    { policy = "analysis.json", block_id = "dm-customer", target_kind = "relationshipTarget" },
+]

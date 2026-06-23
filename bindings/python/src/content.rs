@@ -16,7 +16,9 @@ impl PyZenDecisionContent {
     pub fn new(data: &str) -> PyResult<Self> {
         let mut content: DecisionContent =
             serde_json::from_str(data).context("Failed to parse JSON")?;
-        content.compile();
+        if let DecisionContent::Graph(g) = &mut content {
+            g.compile();
+        }
         Ok(Self(Arc::new(content)))
     }
 }

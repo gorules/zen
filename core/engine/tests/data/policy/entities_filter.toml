@@ -1,0 +1,30 @@
+# Entity metadata for computed properties produced by filter/map expressions.
+#
+# Identity-preserving expressions (filter / index / slice over a declared
+# relationship) carry `instance_of` on the computed origin; expressions that
+# build new values (map into fresh objects, arithmetic) erase it.
+
+policies = ["filter_instanceof.json"]
+
+[[test]]
+name = "filtered array keeps company identity"
+policy = "filter_instanceof.json"
+entity = "customer"
+field = "profitableCompanies"
+property_kind = "computed"
+instance_of = { target = "company", array = true }
+
+[[test]]
+name = "mapped array erases identity (new objects, not instances)"
+policy = "filter_instanceof.json"
+entity = "customer"
+field = "companySummaries"
+property_kind = "computed"
+no_instance_of = true
+
+[[test]]
+name = "company.profitMargin is scalar computed"
+policy = "filter_instanceof.json"
+entity = "company"
+field = "profitMargin"
+property_kind = "computed"

@@ -1,0 +1,58 @@
+{
+  "imports": [
+    "cross_dep_base.json"
+  ],
+  "blocks": [
+    {
+      "id": "dt1",
+      "type": "decisionTable",
+      "props": {
+        "data": {
+          "hitPolicy": "first",
+          "rules": [
+            {
+              "i1": "true",
+              "i2": ">= 100000",
+              "o1": "\"platinum\""
+            },
+            {
+              "i1": "true",
+              "i2": ">= 50000",
+              "o1": "\"gold\""
+            },
+            {
+              "i1": "true",
+              "i2": "",
+              "o1": "\"silver\""
+            },
+            {
+              "i1": "false",
+              "i2": "",
+              "o1": "\"rejected\""
+            }
+          ],
+          "inputs": [
+            {
+              "id": "i1",
+              "name": "",
+              "field": "customer.isEligible"
+            },
+            {
+              "id": "i2",
+              "name": "",
+              "field": "customer.income"
+            }
+          ],
+          "outputs": [
+            {
+              "id": "o1",
+              "name": "",
+              "field": "customer.tier"
+            }
+          ]
+        }
+      },
+      "children": []
+    }
+  ]
+}

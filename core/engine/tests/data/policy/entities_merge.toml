@@ -1,0 +1,29 @@
+# Entity merging: same entity from multiple data models merges properties
+
+# ── Single policy, two data model blocks ─────────────────────────────────────
+
+policies = ["merge_entity.json"]
+
+[[test]]
+name = "merged entity has all fields from both definitions"
+policy = "merge_entity.json"
+entity = "customer"
+field = "name"
+field_kind = { kind = "scalar" }
+property_kind = "input"
+
+[[test]]
+name = "merged entity has age from first definition"
+policy = "merge_entity.json"
+entity = "customer"
+field = "age"
+field_kind = { kind = "scalar" }
+property_kind = "input"
+
+[[test]]
+name = "merged entity has country from second definition"
+policy = "merge_entity.json"
+entity = "customer"
+field = "country"
+field_kind = { kind = "scalar" }
+property_kind = "input"

@@ -1,0 +1,419 @@
+# Policy evaluation tests
+# Each test loads policies, compiles, provides input, and checks output + trace
+#
+# policies: list of fixture JSON filenames to load into the workspace
+# input: JSON object matching the data model (the initial property store)
+# output: JSON object of expected written properties (partial match)
+#
+# Trace expectations (optional):
+# trace.blocks.<block_id>.kind = "assertion" | "decisionTable" | "expression" | "match"
+# trace.blocks.<block_id>.result = true/false  (assertion)
+# trace.blocks.<block_id>.conditions = [{id, result}]  (assertion)
+# trace.blocks.<block_id>.matched_rows = [0, 1, ...]  (decision table)
+# trace.blocks.<block_id>.property = "customer.x"  (expression — the write key)
+# trace.blocks.<block_id>.value = <json>  (expression / match — the written value)
+# trace.blocks.<block_id>.matchedArm = "armId"  (match — id of the first matching arm, omitted if none)
+# trace.blocks.<block_id>.arms = [{id, result}]  (match — arm condition results)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Assertion tests
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[test]]
+name = "assertion — eligible customer (both conditions true)"
+policies = ["assertion_policy.json"]
+input = { customer = { name = "Alice", age = 25, country = "US", companies = [], creditReport = { score = 750, delinquencies = 0, totalDebt = 1000 } } }
+output = { customer = { isEligible = true } }
+
+[test.trace.blocks.assert1]
+kind = "assertion"
+result = true
+conditions = [
+    { id = "c1", result = true },
+    { id = "c2", result = true },
+]
+
+[[test]]
+name = "assertion — underage customer fails"
+policies = ["assertion_policy.json"]
+input = { customer = { name = "Bob", age = 16, country = "US", companies = [], creditReport = { score = 750, delinquencies = 0, totalDebt = 0 } } }
+output = { customer = { isEligible = false } }
+
+[test.trace.blocks.assert1]
+kind = "assertion"
+result = false
+conditions = [
+    { id = "c1", result = false },
+    { id = "c2", result = true },
+]
+
+[[test]]
+name = "assertion — low credit score fails"
+policies = ["assertion_policy.json"]
+input = { customer = { name = "Carol", age = 30, country = "UK", companies = [], creditReport = { score = 500, delinquencies = 2, totalDebt = 5000 } } }
+output = { customer = { isEligible = false } }
+
+[test.trace.blocks.assert1]
+kind = "assertion"
+result = false
+conditions = [
+    { id = "c1", result = true },
+    { id = "c2", result = false },
+]
+
+[[test]]
+name = "assertion — both conditions fail"
+policies = ["assertion_policy.json"]
+input = { customer = { name = "Dave", age = 15, country = "DE", companies = [], creditReport = { score = 400, delinquencies = 5, totalDebt = 10000 } } }
+output = { customer = { isEligible = false } }
+
+[test.trace.blocks.assert1]
+kind = "assertion"
+result = false
+conditions = [
+    { id = "c1", result = false },
+    { id = "c2", result = false },
+]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Expression + match + decision table pipeline (analysis.json)
+# ds1 (expression): computes totalRevenue
+# f1 (match): computes creditTier (arm db1 condition, arm db2 default)
+# dt1 (table): uses creditTier + totalRevenue to compute discount
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[test]]
+name = "analysis — excellent tier, high revenue → 20% discount"
+policies = ["analysis.json"]
+input = { customer = { name = "Alice", age = 35, country = "US", companies = [{ id = "c1", name = "ACME", iban = "DE123", revenue = 300000 }, { id = "c2", name = "Globex", iban = "DE456", revenue = 250000 }], creditReport = { score = 800, delinquencies = 0, totalDebt = 5000 } } }
+output = { customer = { totalRevenue = 550000, creditTier = "excellent", discount = 0.2 } }
+
+[test.trace.blocks.ds1]
+kind = "expression"
+property = "customer.totalRevenue"
+value = 550000
+
+[test.trace.blocks.f1]
+kind = "match"
+matchedArm = "db1"
+value = "excellent"
+arms = [
+    { id = "db1", result = true },
+]
+
+[test.trace.blocks.dt1]
+kind = "decisionTable"
+matched_rows = [0]
+
+[[test]]
+name = "analysis — excellent tier, low revenue → 15% discount"
+policies = ["analysis.json"]
+input = { customer = { name = "Bob", age = 40, country = "UK", companies = [{ id = "c1", name = "SmallCo", iban = "GB123", revenue = 50000 }], creditReport = { score = 760, delinquencies = 0, totalDebt = 2000 } } }
+output = { customer = { totalRevenue = 50000, creditTier = "excellent", discount = 0.15 } }
+
+[test.trace.blocks.ds1]
+kind = "expression"
+property = "customer.totalRevenue"
+value = 50000
+
+[test.trace.blocks.f1]
+kind = "match"
+matchedArm = "db1"
+value = "excellent"
+arms = [
+    { id = "db1", result = true },
+]
+
+[test.trace.blocks.dt1]
+kind = "decisionTable"
+matched_rows = [1]
+
+[[test]]
+name = "analysis — good tier, any revenue → 5% discount"
+policies = ["analysis.json"]
+input = { customer = { name = "Carol", age = 28, country = "DE", companies = [{ id = "c1", name = "MidCo", iban = "DE789", revenue = 100000 }], creditReport = { score = 650, delinquencies = 1, totalDebt = 15000 } } }
+output = { customer = { totalRevenue = 100000, creditTier = "good", discount = 0.05 } }
+
+[test.trace.blocks.ds1]
+kind = "expression"
+property = "customer.totalRevenue"
+value = 100000
+
+[test.trace.blocks.f1]
+kind = "match"
+matchedArm = "db2"
+value = "good"
+arms = [
+    { id = "db1", result = false },
+    { id = "db2", result = true },
+]
+
+[test.trace.blocks.dt1]
+kind = "decisionTable"
+matched_rows = [2]
+
+[[test]]
+name = "analysis — good tier, no companies → 5% discount"
+policies = ["analysis.json"]
+input = { customer = { name = "Dave", age = 50, country = "FR", companies = [], creditReport = { score = 700, delinquencies = 0, totalDebt = 0 } } }
+output = { customer = { totalRevenue = 0, creditTier = "good", discount = 0.05 } }
+
+[test.trace.blocks.ds1]
+kind = "expression"
+property = "customer.totalRevenue"
+value = 0
+
+[test.trace.blocks.f1]
+kind = "match"
+matchedArm = "db2"
+value = "good"
+arms = [
+    { id = "db1", result = false },
+    { id = "db2", result = true },
+]
+
+[test.trace.blocks.dt1]
+kind = "decisionTable"
+matched_rows = [2]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Decision table with collect hit policy
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[test]]
+name = "collect table — senior gets senior + adult + minor tags"
+policies = ["collect_table.json"]
+input = { customer = { name = "Edna", age = 70, country = "US", companies = [] } }
+output = { customer = { tags = ["senior", "adult", "minor"] } }
+
+[test.trace.blocks.dt1]
+kind = "decisionTable"
+matched_rows = [0, 1, 2]
+
+[[test]]
+name = "collect table — adult gets adult + minor tags"
+policies = ["collect_table.json"]
+input = { customer = { name = "Frank", age = 30, country = "US", companies = [] } }
+output = { customer = { tags = ["adult", "minor"] } }
+
+[test.trace.blocks.dt1]
+kind = "decisionTable"
+matched_rows = [1, 2]
+
+[[test]]
+name = "collect table — child gets only minor tag"
+policies = ["collect_table.json"]
+input = { customer = { name = "Grace", age = 10, country = "US", companies = [] } }
+output = { customer = { tags = ["minor"] } }
+
+[test.trace.blocks.dt1]
+kind = "decisionTable"
+matched_rows = [2]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Decision table — multi-entity writes (multi-scope block → decisionTable)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[test]]
+name = "multi-entity table — writes to customer and company"
+policies = ["multi_entity_block.json"]
+input = { customer = { name = "Hank", age = 40, country = "NL", companies = [], creditReport = { score = 700, delinquencies = 0, totalDebt = 0 } }, company = { id = "c1", name = "TechCo", iban = "NL001", revenue = 500000 } }
+output = { customer = { status = "active" }, company = { status = "verified" } }
+
+[test.trace.blocks.tree1]
+kind = "decisionTable"
+matched_rows = [0]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Expression — simple statement, per instance (company_block.json)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[test]]
+name = "company block — computes profit margin per instance"
+policies = ["company_block.json"]
+input = { customer = { name = "Ivy", age = 30, country = "US", creditReport = { score = 700, delinquencies = 0, totalDebt = 0 }, companies = [{ id = "c1", name = "BigCo", iban = "US123", revenue = 1000000 }, { id = "c2", name = "Smol", iban = "US456", revenue = 50000 }] } }
+output = { customer = { companies = [{ profitMargin = 100000 }, { profitMargin = 5000 }] } }
+
+# Block s1 runs once per company instance; value differs per instance
+# (100000, then 5000), so only the write property is asserted here.
+[test.trace.blocks.s1]
+kind = "expression"
+property = "company.profitMargin"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Multi-policy — independent blocks from imported policy both execute
+# merge_policy_a imports merge_policy_b. Both write to customer.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[test]]
+name = "multi-policy import — both policies write to customer"
+policies = ["merge_policy_a.json", "merge_policy_b.json"]
+input = { customer = { name = "Alice", age = 30, country = "France" } }
+output = { customer = { greeting = "Alice", label = "France" } }
+
+# Note: both policies have block id "s1" — trace shows the last executed one,
+# so the asserted property/value is order-dependent and left unspecified.
+# Output check verifies both actually ran.
+[test.trace.blocks.s1]
+kind = "expression"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Multi-policy — cross-policy dependency
+# cross_dep_base: assertion writes customer.isEligible
+# cross_dep_consumer: imports base, table reads isEligible to compute tier
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[test]]
+name = "cross-policy — eligible high-income → platinum"
+policies = ["cross_dep_base.json", "cross_dep_consumer.json"]
+input = { customer = { name = "Alice", age = 30, income = 120000 } }
+output = { customer = { isEligible = true, tier = "platinum" } }
+
+[test.trace.blocks.assert1]
+kind = "assertion"
+result = true
+
+[test.trace.blocks.dt1]
+kind = "decisionTable"
+matched_rows = [0]
+
+[[test]]
+name = "cross-policy — eligible mid-income → gold"
+policies = ["cross_dep_base.json", "cross_dep_consumer.json"]
+input = { customer = { name = "Bob", age = 25, income = 60000 } }
+output = { customer = { isEligible = true, tier = "gold" } }
+
+[test.trace.blocks.assert1]
+kind = "assertion"
+result = true
+
+[test.trace.blocks.dt1]
+kind = "decisionTable"
+matched_rows = [1]
+
+[[test]]
+name = "cross-policy — eligible low-income → silver"
+policies = ["cross_dep_base.json", "cross_dep_consumer.json"]
+input = { customer = { name = "Carol", age = 40, income = 35000 } }
+output = { customer = { isEligible = true, tier = "silver" } }
+
+[test.trace.blocks.dt1]
+kind = "decisionTable"
+matched_rows = [2]
+
+[[test]]
+name = "cross-policy — ineligible (underage) → rejected"
+policies = ["cross_dep_base.json", "cross_dep_consumer.json"]
+input = { customer = { name = "Dave", age = 16, income = 50000 } }
+output = { customer = { isEligible = false, tier = "rejected" } }
+
+[test.trace.blocks.assert1]
+kind = "assertion"
+result = false
+conditions = [
+    { id = "c1", result = false },
+    { id = "c2", result = true },
+]
+
+[test.trace.blocks.dt1]
+kind = "decisionTable"
+matched_rows = [3]
+
+[[test]]
+name = "cross-policy — ineligible (low income) → rejected"
+policies = ["cross_dep_base.json", "cross_dep_consumer.json"]
+input = { customer = { name = "Eve", age = 25, income = 20000 } }
+output = { customer = { isEligible = false, tier = "rejected" } }
+
+[test.trace.blocks.assert1]
+kind = "assertion"
+result = false
+
+[test.trace.blocks.dt1]
+kind = "decisionTable"
+matched_rows = [3]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Per-instance execution — block scoped to a relationship-array entity runs
+# once per item; reads/writes resolve against the current instance.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[test]]
+name = "per-instance — company-risk runs per company"
+policies = ["per_instance.json"]
+input = { customer = { name = "Alice", companies = [{ name = "Acme", revenue = 300000 }, { name = "Smol", revenue = 50000 }] } }
+output = { customer = { companies = [{ riskLevel = "low" }, { riskLevel = "high" }] } }
+
+[[test]]
+name = "inverse relationship — company reads company.customer.age"
+policies = ["inverse_relationship.json"]
+input = { customer = { name = "Alice", age = 42, companies = [{ name = "Acme" }, { name = "Smol" }] } }
+output = { customer = { companies = [{ ownerAge = 42 }, { ownerAge = 42 }] } }
+
+[[test]]
+name = "reference iteration — customer.companies ids hydrated from top-level company[]"
+policies = ["reference_iteration.json"]
+input = { customer = { name = "Alice", companies = ["c1", "c2"] }, company = [{ id = "c1", revenue = 300000 }, { id = "c2", revenue = 50000 }] }
+output = { customer = { totalRevenue = 350000 }, company = [{ id = "c1", riskLevel = "low" }, { id = "c2", riskLevel = "high" }] }
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Scope enrichment — within a single block, later statements read earlier values
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[test]]
+name = "scope enrichment — s2 reads computed value from s1"
+policies = ["scope_enrichment.json"]
+input = { customer = { name = "Alice", age = 45 } }
+output = { customer = { ageGroup = true, label = true } }
+
+[test.trace.blocks.s1]
+kind = "expression"
+property = "customer.ageGroup"
+value = true
+
+[test.trace.blocks.s2]
+kind = "expression"
+property = "customer.label"
+value = true
+
+[[test]]
+name = "scope enrichment — young customer"
+policies = ["scope_enrichment.json"]
+input = { customer = { name = "Bob", age = 20 } }
+output = { customer = { ageGroup = false, label = false } }
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Decision table — no matching rows (strict table, no catch-all)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[test]]
+name = "strict table — US large order, free shipping"
+policies = ["strict_table.json"]
+input = { order = { amount = 200, region = "US" } }
+output = { order = { shippingCost = 0 } }
+
+[test.trace.blocks.dt1]
+kind = "decisionTable"
+matched_rows = [0]
+
+[[test]]
+name = "strict table — EU small order"
+policies = ["strict_table.json"]
+input = { order = { amount = 50, region = "EU" } }
+output = { order = { shippingCost = 15 } }
+
+[test.trace.blocks.dt1]
+kind = "decisionTable"
+matched_rows = [3]
+
+# TOML has no null literal — `nulls` lists paths that must be explicitly null.
+[[test]]
+name = "strict table — unknown region, no rows match writes null"
+policies = ["strict_table.json"]
+input = { order = { amount = 50, region = "JP" } }
+output = {}
+nulls = ["order.shippingCost"]
+
+[test.trace.blocks.dt1]
+kind = "decisionTable"
+matched_rows = []

@@ -1,0 +1,24 @@
+{
+  "blocks": [
+    {
+      "id": "dm-customer",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "customer",
+          "properties": [
+            {
+              "id": "p1",
+              "name": "orders",
+              "type": "relationship",
+              "target": "nonExistent",
+              "array": true,
+              "optional": false
+            }
+          ]
+        }
+      },
+      "children": []
+    }
+  ]
+}

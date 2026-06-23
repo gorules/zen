@@ -1,0 +1,61 @@
+{
+  "blocks": [
+    {
+      "id": "dm-customer",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "customer",
+          "properties": [
+            {
+              "id": "p1",
+              "name": "name",
+              "type": "string",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p2",
+              "name": "age",
+              "type": "number",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p3",
+              "name": "income",
+              "type": "number",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      },
+      "children": []
+    },
+    {
+      "id": "assert1",
+      "type": "assertion",
+      "props": {
+        "data": {
+          "output": "customer.isEligible",
+          "conditions": [
+            {
+              "id": "c1",
+              "expression": "customer.age >= 18",
+              "operator": "and",
+              "depth": 0
+            },
+            {
+              "id": "c2",
+              "expression": "customer.income >= 30000",
+              "operator": "and",
+              "depth": 0
+            }
+          ]
+        }
+      },
+      "children": []
+    }
+  ]
+}

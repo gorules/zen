@@ -1,0 +1,196 @@
+{
+  "blocks": [
+    {
+      "id": "dm-customer",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "customer",
+          "properties": [
+            {
+              "id": "p1",
+              "name": "name",
+              "type": "string",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p2",
+              "name": "age",
+              "type": "number",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p3",
+              "name": "country",
+              "type": "string",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p4",
+              "name": "companies",
+              "type": "relationship",
+              "target": "company",
+              "array": true,
+              "optional": false
+            },
+            {
+              "id": "p5",
+              "name": "creditReport",
+              "type": "relationship",
+              "target": "creditReport",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p6",
+              "name": "favoriteProduct",
+              "type": "reference",
+              "target": "product",
+              "array": false,
+              "optional": true
+            }
+          ]
+        }
+      },
+      "children": []
+    },
+    {
+      "id": "dm-company",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "company",
+          "properties": [
+            {
+              "id": "p7",
+              "name": "id",
+              "type": "string",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p8",
+              "name": "name",
+              "type": "string",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p9",
+              "name": "iban",
+              "type": "string",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p10",
+              "name": "revenue",
+              "type": "number",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      },
+      "children": []
+    },
+    {
+      "id": "dm-credit-report",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "creditReport",
+          "properties": [
+            {
+              "id": "p11",
+              "name": "score",
+              "type": "number",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p12",
+              "name": "delinquencies",
+              "type": "number",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p13",
+              "name": "totalDebt",
+              "type": "number",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      },
+      "children": []
+    },
+    {
+      "id": "dm-product",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "product",
+          "properties": [
+            {
+              "id": "p14",
+              "name": "id",
+              "type": "string",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p15",
+              "name": "name",
+              "type": "string",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p16",
+              "name": "price",
+              "type": "number",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      },
+      "children": []
+    },
+    {
+      "id": "tree1",
+      "type": "decisionTable",
+      "props": {
+        "data": {
+          "hitPolicy": "first",
+          "inputs": [],
+          "outputs": [
+            {
+              "id": "s1",
+              "name": "",
+              "field": "customer.status"
+            },
+            {
+              "id": "s2",
+              "name": "",
+              "field": "company.status"
+            }
+          ],
+          "rules": [
+            {
+              "_id": "r1",
+              "s1": "\"active\"",
+              "s2": "\"verified\""
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

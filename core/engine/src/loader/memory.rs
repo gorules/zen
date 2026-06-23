@@ -48,4 +48,16 @@ impl DecisionLoader for MemoryLoader {
                 .ok_or_else(|| LoaderError::NotFound(key.to_string()).into())
         })
     }
+
+    fn keys(&self) -> Option<Vec<Arc<str>>> {
+        let mref = self.memory_refs.read().unwrap();
+        Some(mref.keys().map(|k| Arc::from(k.as_str())).collect())
+    }
+
+    fn load_sync(&self, key: &str) -> Option<LoaderResponse> {
+        Some(
+            self.get(key)
+                .ok_or_else(|| LoaderError::NotFound(key.to_string())),
+        )
+    }
 }

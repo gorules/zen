@@ -1,0 +1,110 @@
+# Per-property dependency-lineage tests (`PolicyWorkspace::dependencies`).
+#
+# policies / content / policy: load policies into the workspace (same as
+#   diagnostics.toml — fixtures by filename, or inline `content`).
+# target: the property whose dependency tree is built. May be a sub-path of a
+#   computed object/array-of-object (per-field lineage).
+#
+# Assertions check classification of any node in the tree by its dotted path:
+#   computed   = paths that must resolve to a writer block (lineage continues)
+#   inputs     = paths that must be plain inputs (no writer, resolvable)
+#   unresolved = paths the analyzer could not pin down (flagged, not silently
+#                treated as inputs)
+
+[[test]]
+name = "loan summary traces through per-account computed interest"
+policies = ["loan_summary.json"]
+target = "accountSummaries"
+computed = ["account.interestDue"]
+inputs = ["accounts.id", "account.balance", "account.apr"]
+
+[[test]]
+name = "per-field: projected computed field traces to its specific source"
+policies = ["loan_summary.json"]
+target = "accountSummaries.interest"
+computed = ["account.interestDue"]
+
+[[test]]
+name = "per-field: projected input field traces to the input, not the computed sibling"
+policies = ["loan_summary.json"]
+target = "accountSummaries.id"
+inputs = ["accounts.id"]
+
+[[test]]
+name = "per-field: ternary-of-objects unions both branches"
+target = "summary.total"
+computed = ["base", "bonus"]
+content = '''
+{
+  "blocks": [
+    { "id": "dm", "type": "dataModel", "props": { "data": {
+      "name": "globals", "scope": "global",
+      "properties": [
+        { "id": "g1", "name": "amount", "type": "number", "array": false, "optional": false },
+        { "id": "g2", "name": "flag", "type": "boolean", "array": false, "optional": false }
+      ]
+    }}},
+    { "id": "s1", "type": "expression", "props": { "data": { "key": "base", "value": "amount * 2" } } },
+    { "id": "s2", "type": "expression", "props": { "data": { "key": "bonus", "value": "amount * 3" } } },
+    { "id": "s3", "type": "expression", "props": { "data": { "key": "summary", "value": "flag ? { total: base } : { total: bonus }" } } }
+  ]
+}
+'''
+
+[[test]]
+name = "per-field: non-decomposable computed object field is flagged unresolved, not silent"
+target = "wrapper.a"
+unresolved = ["wrapper.a"]
+content = '''
+{
+  "blocks": [
+    { "id": "dm", "type": "dataModel", "props": { "data": {
+      "name": "globals", "scope": "global",
+      "properties": [
+        { "id": "g1", "name": "amount", "type": "number", "array": false, "optional": false }
+      ]
+    }}},
+    { "id": "s1", "type": "expression", "props": { "data": { "key": "base", "value": "{ a: amount }" } } },
+    { "id": "s2", "type": "expression", "props": { "data": { "key": "wrapper", "value": "base" } } }
+  ]
+}
+'''
+
+[[test]]
+name = "untrackable closure collection is flagged, resolvable operands stay inputs"
+target = "ledgerTotals"
+unresolved = ["t.amount"]
+inputs = ["deposits", "withdrawals"]
+content = '''
+{
+  "blocks": [
+    { "id": "dm-ledger", "type": "dataModel", "props": { "data": {
+      "name": "ledger", "scope": "global",
+      "properties": [
+        { "id": "g1", "name": "deposits", "type": "number", "array": true, "optional": false },
+        { "id": "g2", "name": "withdrawals", "type": "number", "array": true, "optional": false }
+      ]
+    }}},
+    { "id": "s1", "type": "expression", "props": { "data": { "key": "ledgerTotals", "value": "map(deposits or withdrawals as t, t.amount)" } } }
+  ]
+}
+'''
+
+[[test]]
+name = "nested write parent unions its leaf writers' dependencies"
+target = "loanSummary"
+inputs = ["principal"]
+content = '''
+{
+  "blocks": [
+    { "id": "dm", "type": "dataModel", "props": { "data": {
+      "name": "globals", "scope": "global",
+      "properties": [
+        { "id": "g1", "name": "principal", "type": "number", "array": false, "optional": false }
+      ]
+    }}},
+    { "id": "s1", "type": "expression", "props": { "data": { "key": "loanSummary.byBucket.CURRENT.interestDue", "value": "principal * 0.04" } } },
+    { "id": "s2", "type": "expression", "props": { "data": { "key": "loanSummary.grandTotal", "value": "principal * 1.04" } } }
+  ]
+}
+'''

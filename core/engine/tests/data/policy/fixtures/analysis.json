@@ -1,0 +1,253 @@
+{
+  "blocks": [
+    {
+      "id": "dm-heading",
+      "type": "heading",
+      "props": {},
+      "children": []
+    },
+    {
+      "id": "dm-customer",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "customer",
+          "properties": [
+            {
+              "id": "p1",
+              "name": "name",
+              "type": "string",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p2",
+              "name": "age",
+              "type": "number",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p3",
+              "name": "country",
+              "type": "string",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p4",
+              "name": "companies",
+              "type": "relationship",
+              "target": "company",
+              "array": true,
+              "optional": false
+            },
+            {
+              "id": "p5",
+              "name": "creditReport",
+              "type": "relationship",
+              "target": "creditReport",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p6",
+              "name": "favoriteProduct",
+              "type": "reference",
+              "target": "product",
+              "array": false,
+              "optional": true
+            }
+          ]
+        }
+      },
+      "children": []
+    },
+    {
+      "id": "dm-company",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "company",
+          "properties": [
+            {
+              "id": "p7",
+              "name": "id",
+              "type": "string",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p8",
+              "name": "name",
+              "type": "string",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p9",
+              "name": "iban",
+              "type": "string",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p10",
+              "name": "revenue",
+              "type": "number",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      },
+      "children": []
+    },
+    {
+      "id": "dm-credit-report",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "creditReport",
+          "properties": [
+            {
+              "id": "p11",
+              "name": "score",
+              "type": "number",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p12",
+              "name": "delinquencies",
+              "type": "number",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p13",
+              "name": "totalDebt",
+              "type": "number",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      },
+      "children": []
+    },
+    {
+      "id": "dm-product",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "product",
+          "properties": [
+            {
+              "id": "p14",
+              "name": "id",
+              "type": "string",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p15",
+              "name": "name",
+              "type": "string",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p16",
+              "name": "price",
+              "type": "number",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      },
+      "children": []
+    },
+    {
+      "id": "ds1",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "customer.totalRevenue",
+          "value": "sum(map(customer.companies as c, c.revenue))"
+        }
+      }
+    },
+    {
+      "id": "f1",
+      "type": "match",
+      "props": {
+        "data": {
+          "key": "customer.creditTier",
+          "arms": [
+            {
+              "id": "db1",
+              "condition": "customer.creditReport.score >= 750",
+              "value": "\"excellent\""
+            },
+            {
+              "id": "db2",
+              "condition": "",
+              "value": "\"good\""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "dt1",
+      "type": "decisionTable",
+      "props": {
+        "data": {
+          "hitPolicy": "first",
+          "rules": [
+            {
+              "i1": "\"excellent\"",
+              "i2": ">= 500000",
+              "o1": "0.2",
+              "_id": "r1"
+            },
+            {
+              "i1": "\"excellent\"",
+              "i2": "",
+              "o1": "0.15",
+              "_id": "r2"
+            },
+            {
+              "i1": "",
+              "i2": "",
+              "o1": "0.05",
+              "_id": "r3"
+            }
+          ],
+          "inputs": [
+            {
+              "id": "i1",
+              "name": "",
+              "field": "customer.creditTier"
+            },
+            {
+              "id": "i2",
+              "name": "",
+              "field": "customer.totalRevenue"
+            }
+          ],
+          "outputs": [
+            {
+              "id": "o1",
+              "name": "",
+              "field": "customer.discount"
+            }
+          ]
+        }
+      },
+      "children": []
+    }
+  ]
+}

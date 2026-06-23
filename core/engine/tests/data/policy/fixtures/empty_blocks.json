@@ -1,0 +1,53 @@
+{
+  "blocks": [
+    {
+      "id": "dm-customer",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "customer",
+          "properties": [
+            {
+              "id": "p1",
+              "name": "name",
+              "type": "string",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      },
+      "children": []
+    },
+    {
+      "id": "assert1",
+      "type": "assertion",
+      "props": {
+        "data": {
+          "output": "customer.valid",
+          "conditions": []
+        }
+      },
+      "children": []
+    },
+    {
+      "id": "dt1",
+      "type": "decisionTable",
+      "props": {
+        "data": {
+          "hitPolicy": "first",
+          "rules": [],
+          "inputs": [],
+          "outputs": [
+            {
+              "id": "o1",
+              "name": "",
+              "field": "customer.status"
+            }
+          ]
+        }
+      },
+      "children": []
+    }
+  ]
+}

@@ -1,0 +1,74 @@
+# Policy entities() tests
+# Each test loads policies, compiles, and checks entity metadata
+
+policies = ["analysis.json"]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Entity existence
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[test]]
+name = "all four entities present"
+policy = "analysis.json"
+entity_count = 4
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Field kinds — DataModel fields
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[test]]
+name = "customer.companies is relationship to company (array)"
+policy = "analysis.json"
+entity = "customer"
+field = "companies"
+field_kind = { kind = "relationship", target = "company", array = true }
+property_kind = "input"
+
+[[test]]
+name = "customer.creditReport is relationship to creditReport (non-array)"
+policy = "analysis.json"
+entity = "customer"
+field = "creditReport"
+field_kind = { kind = "relationship", target = "creditReport", array = false }
+property_kind = "input"
+
+[[test]]
+name = "customer.favoriteProduct is reference to product"
+policy = "analysis.json"
+entity = "customer"
+field = "favoriteProduct"
+field_kind = { kind = "reference", target = "product", array = false }
+property_kind = "input"
+
+[[test]]
+name = "customer.name is scalar input"
+policy = "analysis.json"
+entity = "customer"
+field = "name"
+field_kind = { kind = "scalar" }
+property_kind = "input"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Computed properties — property kind
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[test]]
+name = "customer.creditTier is computed"
+policy = "analysis.json"
+entity = "customer"
+field = "creditTier"
+property_kind = "computed"
+
+[[test]]
+name = "customer.totalRevenue is computed"
+policy = "analysis.json"
+entity = "customer"
+field = "totalRevenue"
+property_kind = "computed"
+
+[[test]]
+name = "customer.discount is computed"
+policy = "analysis.json"
+entity = "customer"
+field = "discount"
+property_kind = "computed"

@@ -168,13 +168,17 @@ impl PyZenEngine {
     }
 
     pub fn create_decision(&self, content: PyZenDecisionContentJson) -> PyResult<PyZenDecision> {
-        let decision = self.engine.create_decision(content.0 .0);
+        let decision = self
+            .engine
+            .create_decision(content.0 .0)
+            .map_err(|e| anyhow!(e.to_string()))?;
         Ok(PyZenDecision::from(decision))
     }
 
     pub fn get_decision<'py>(&'py self, _py: Python<'py>, key: &str) -> PyResult<PyZenDecision> {
         let decision = block_on(self.engine.get_decision(key))
-            .context("Failed to find decision with given key")?;
+            .context("Failed to find decision with given key")?
+            .map_err(|e| anyhow!(e.to_string()))?;
 
         Ok(PyZenDecision::from(decision))
     }

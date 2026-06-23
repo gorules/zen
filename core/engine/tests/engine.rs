@@ -8,7 +8,7 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::runtime::Builder;
 use zen_engine::loader::{LoaderError, MemoryLoader};
-use zen_engine::model::{DecisionContent, DecisionNode, DecisionNodeKind, FunctionNodeContent};
+use zen_engine::model::{DecisionNode, DecisionNodeKind, FunctionNodeContent, GraphContent};
 use zen_engine::Variable;
 use zen_engine::{DecisionEngine, EvaluationError, EvaluationOptions};
 
@@ -39,6 +39,24 @@ async fn engine_memory_loader() {
 
 #[tokio::test]
 #[cfg_attr(miri, ignore)]
+async fn engine_precompiles_graphs() {
+    let memory_loader = Arc::new(MemoryLoader::default());
+    memory_loader.add("table", load_test_data("table.json"));
+
+    let engine = DecisionEngine::default().with_loader(memory_loader.clone());
+    let failures = engine.compile();
+    assert!(failures.is_empty());
+
+    memory_loader.remove("table");
+    let table = engine
+        .evaluate("table", json!({ "input": 12 }).into())
+        .await;
+
+    assert_eq!(table.unwrap().result, json!({"output": 10}).into());
+}
+
+#[tokio::test]
+#[cfg_attr(miri, ignore)]
 async fn engine_filesystem_loader() {
     let engine = DecisionEngine::default().with_loader(Arc::new(create_fs_loader()));
     let table = engine
@@ -59,8 +77,8 @@ async fn engine_filesystem_loader() {
 async fn engine_closure_loader() {
     let engine = DecisionEngine::default().with_closure_loader(|key| async {
         match key.as_str() {
-            "function" => Ok(Arc::new(load_test_data("function.json"))),
-            "table" => Ok(Arc::new(load_test_data("table.json"))),
+            "function" => Ok(Arc::new(load_test_data("function.json").into())),
+            "table" => Ok(Arc::new(load_test_data("table.json").into())),
             _ => Err(LoaderError::NotFound(key).into()),
         }
     });
@@ -93,14 +111,18 @@ fn engine_get_decision() {
     let rt = Builder::new_current_thread().build().unwrap();
     let engine = DecisionEngine::default().with_loader(Arc::new(create_fs_loader()));
 
-    assert!(rt.block_on(engine.get_decision("table.json")).is_ok());
+    assert!(rt
+        .block_on(engine.get_decision("table.json"))
+        .is_ok_and(|inner| inner.is_ok()));
     assert!(rt.block_on(engine.get_decision("any.json")).is_err());
 }
 
 #[test]
 fn engine_create_decision() {
     let engine = DecisionEngine::default();
-    engine.create_decision(load_test_data("table.json").into());
+    let _ = engine
+        .create_decision(Arc::new(load_test_data("table.json").into()))
+        .unwrap();
 }
 
 #[tokio::test]
@@ -154,7 +176,7 @@ fn engine_with_trace() {
     assert!(table.trace.is_none());
     assert!(table_opt.trace.is_some());
 
-    let trace = table_opt.trace.unwrap();
+    let trace = table_opt.trace.unwrap().into_graph().unwrap();
     assert_eq!(trace.len(), 3); // trace for each node
 }
 
@@ -187,12 +209,14 @@ async fn engine_function_imports() {
         })
         .collect::<Vec<_>>();
 
-    let function_content = DecisionContent {
+    let function_content = GraphContent {
         edges: function_content.edges,
         nodes: new_nodes,
         compiled_cache: None,
     };
-    let decision = DecisionEngine::default().create_decision(function_content.into());
+    let decision = DecisionEngine::default()
+        .create_decision(Arc::new(function_content.into()))
+        .unwrap();
     let response = decision.evaluate(json!({}).into()).await.unwrap();
 
     #[derive(Deserialize, Debug)]
@@ -241,7 +265,7 @@ async fn engine_graph_tests() {
     struct TestData {
         tests: Vec<TestCase>,
         #[serde(flatten)]
-        decision_content: DecisionContent,
+        decision_content: GraphContent,
     }
 
     let engine = DecisionEngine::default();
@@ -257,9 +281,13 @@ async fn engine_graph_tests() {
         let file_contents = fs::read_to_string(file.path()).expect("valid file data");
         let test_data: TestData = serde_json::from_str(&file_contents).expect("Valid JSON");
 
-        let decision = engine.create_decision(test_data.decision_content.clone().into());
+        let decision = engine
+            .create_decision(Arc::new(test_data.decision_content.clone().into()))
+            .unwrap();
 
-        let mut decision_compiled = engine.create_decision(test_data.decision_content.into());
+        let mut decision_compiled = engine
+            .create_decision(Arc::new(test_data.decision_content.into()))
+            .unwrap();
         decision_compiled.compile();
 
         for test_case in test_data.tests {
@@ -305,7 +333,7 @@ async fn engine_snapshot_tests() {
     struct TestData {
         tests: Vec<TestCase>,
         #[serde(flatten)]
-        decision_content: DecisionContent,
+        decision_content: GraphContent,
     }
 
     let engine = DecisionEngine::default();
@@ -326,9 +354,13 @@ async fn engine_snapshot_tests() {
         let file_contents = fs::read_to_string(file.path()).expect("valid file data");
         let test_data: TestData = serde_json::from_str(&file_contents).expect("Valid JSON");
 
-        let decision = engine.create_decision(test_data.decision_content.clone().into());
+        let decision = engine
+            .create_decision(Arc::new(test_data.decision_content.clone().into()))
+            .unwrap();
 
-        let mut decision_compiled = engine.create_decision(test_data.decision_content.into());
+        let mut decision_compiled = engine
+            .create_decision(Arc::new(test_data.decision_content.into()))
+            .unwrap();
         decision_compiled.compile();
 
         for (index, test_case) in test_data.tests.iter().enumerate() {
@@ -387,7 +419,7 @@ async fn engine_function_v2() {
         assert!(function_opt_r.is_ok(), "function v2 has errored");
 
         let function_opt = function_opt_r.unwrap();
-        let trace = function_opt.trace.unwrap();
+        let trace = function_opt.trace.unwrap().into_graph().unwrap();
         assert_eq!(trace.len(), 3); // trace for each node
 
         assert_eq!(

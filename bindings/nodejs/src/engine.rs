@@ -21,6 +21,7 @@ use crate::loader::{DecisionLoader, LoaderTsfn};
 use crate::mt::spawn_worker;
 use crate::safe_result::SafeResult;
 use crate::types::{ZenEngineHandlerRequest, ZenEngineHandlerResponse};
+use zen_engine::loader::{DynamicLoader, LoaderConfig};
 use zen_engine::model::DecisionContent;
 use zen_engine::{DecisionEngine, EvaluationSerializedOptions, EvaluationTraceKind};
 
@@ -104,10 +105,28 @@ impl From<ZenEvaluateOptions> for EvaluationSerializedOptions {
 }
 
 #[napi(object)]
+pub struct EvaluateBatchRequest {
+    pub key: String,
+    pub context: Value,
+}
+
+#[napi(object)]
+pub struct EvaluateBatchResult {
+    pub success: bool,
+    pub data: Option<Value>,
+    pub error: Option<Value>,
+}
+
+#[napi(object)]
 pub struct ZenEngineOptions {
-    #[napi(ts_type = "(key: string) => Promise<Buffer | ZenDecisionContent>")]
+    #[napi(
+        ts_type = "((key: string) => Promise<Buffer | ZenDecisionContent>) | { type: 'static'; content: Record<string, object> } | { type: 'fs'; path: string } | { type: 'zip'; bytes: Buffer }"
+    )]
     pub loader: Option<
-        Function<'static, String, Promise<Option<Either<Buffer, &'static ZenDecisionContent>>>>,
+        Either<
+            Function<'static, String, Promise<Option<Either<Buffer, &'static ZenDecisionContent>>>>,
+            Object<'static>,
+        >,
     >,
 
     #[napi(ts_type = "(request: ZenEngineHandlerRequest) => Promise<ZenEngineHandlerResponse>")]
@@ -122,7 +141,7 @@ pub struct ZenEngineOptions {
 #[napi]
 impl ZenEngine {
     #[napi(constructor)]
-    pub fn new(options: Option<ZenEngineOptions>) -> napi::Result<Self> {
+    pub fn new(env: Env, options: Option<ZenEngineOptions>) -> napi::Result<Self> {
         let Some(opts) = options else {
             return Ok(Self {
                 graph: DecisionEngine::new(
@@ -141,10 +160,10 @@ impl ZenEngine {
         let mut http_handler_tsfn_opt: Option<HttpHandlerTsfn> = None;
         let mut custom_node_tsfn_opt: Option<CustomNodeTsfn> = None;
 
-        let loader = match opts.loader {
-            None => DecisionLoader::default(),
-            Some(l) => {
-                let loader_tsfn = l
+        let loader: DynamicLoader = match opts.loader {
+            None => Arc::new(DecisionLoader::default()),
+            Some(Either::A(func)) => {
+                let loader_tsfn = func
                     .build_threadsafe_function()
                     .max_queue_size::<0>()
                     .callee_handled::<false>()
@@ -153,7 +172,23 @@ impl ZenEngine {
 
                 let arc_loader_tsfn = Arc::new(loader_tsfn);
                 loader_tsfn_opt = Some(arc_loader_tsfn.clone());
-                DecisionLoader::new(arc_loader_tsfn)
+                Arc::new(DecisionLoader::new(arc_loader_tsfn))
+            }
+            Some(Either::B(config_obj)) => {
+                let loader_type: Option<String> = config_obj.get("type")?;
+                let config: LoaderConfig = match loader_type.as_deref() {
+                    Some("zip") => {
+                        let bytes: Buffer = config_obj
+                            .get("bytes")?
+                            .ok_or_else(|| anyhow!("zip loader requires a 'bytes' buffer"))?;
+                        LoaderConfig::Zip {
+                            bytes: bytes.to_vec(),
+                        }
+                    }
+                    _ => env.from_js_value(config_obj)?,
+                };
+
+                config.into_loader().map_err(|e| anyhow!(e))?
             }
         };
 
@@ -173,7 +208,7 @@ impl ZenEngine {
             }
         };
 
-        let mut decision_engine = DecisionEngine::new(Arc::new(loader), Arc::new(custom_node));
+        let mut decision_engine = DecisionEngine::new(loader, Arc::new(custom_node));
         if let Some(h) = opts.http_handler {
             let http_tsfn = h
                 .build_threadsafe_function()
@@ -187,6 +222,8 @@ impl ZenEngine {
             decision_engine = decision_engine
                 .with_http_handler(Some(Arc::new(NodeHttpHandler::new(arc_http_handler_tsfn))));
         }
+
+        decision_engine.compile();
 
         Ok(Self {
             graph: Arc::new(decision_engine),
@@ -236,7 +273,10 @@ impl ZenEngine {
             }
         };
 
-        let decision = self.graph.create_decision(decision_content);
+        let decision = self
+            .graph
+            .create_decision(decision_content)
+            .map_err(|e| anyhow!(e.to_string()))?;
         Ok(ZenDecision::from(decision))
     }
 
@@ -246,7 +286,8 @@ impl ZenEngine {
             .graph
             .get_decision(&key)
             .await
-            .with_context(|| format!("Failed to find decision with key = {key}"))?;
+            .with_context(|| format!("Failed to find decision with key = {key}"))?
+            .map_err(|e| anyhow!(e.to_string()))?;
 
         // TODO: Investigate why reference leak?
         Ok(ZenDecision::from(decision))
@@ -269,6 +310,66 @@ impl ZenEngine {
     )]
     pub async fn safe_get_decision(&self, key: String) -> SafeResult<ZenDecision> {
         self.get_decision(key).await.into()
+    }
+
+    #[napi]
+    pub async fn evaluate_batch(
+        &self,
+        requests: Vec<EvaluateBatchRequest>,
+        opts: Option<ZenEvaluateOptions>,
+    ) -> napi::Result<Vec<EvaluateBatchResult>> {
+        let options: EvaluationSerializedOptions = opts.unwrap_or_default().into();
+
+        let mut handles = Vec::with_capacity(requests.len());
+        for req in requests {
+            let engine = self.graph.clone();
+            let EvaluateBatchRequest { key, context } = req;
+            handles.push(spawn_worker(move || async move {
+                engine
+                    .evaluate_serialized(&key, context.into(), options)
+                    .await
+            }));
+        }
+
+        let mut out = Vec::with_capacity(handles.len());
+        for handle in handles {
+            out.push(match handle.await {
+                Ok(Ok(data)) => EvaluateBatchResult {
+                    success: true,
+                    data: Some(data),
+                    error: None,
+                },
+                Ok(Err(error)) => EvaluateBatchResult {
+                    success: false,
+                    data: None,
+                    error: Some(error),
+                },
+                Err(_) => EvaluateBatchResult {
+                    success: false,
+                    data: None,
+                    error: Some(Value::String("evaluation worker panicked".into())),
+                },
+            });
+        }
+
+        Ok(out)
+    }
+
+    #[napi]
+    pub async fn reload(&self) -> napi::Result<()> {
+        let graph = self.graph.clone();
+        spawn_worker(|| async move { graph.compile() })
+            .await
+            .map_err(|_| anyhow!("Hook timed out"))?;
+        Ok(())
+    }
+
+    #[napi(
+        ts_return_type = "Array<{ key: string; kind: string; diagnostics?: Array<{ code: string; message: string; severity: string }>; error?: string }>"
+    )]
+    pub fn compile_failures(&self) -> napi::Result<serde_json::Value> {
+        let failures = self.graph.compile_failures();
+        Ok(serde_json::to_value(&failures).map_err(|e| anyhow!(e))?)
     }
 
     #[napi]

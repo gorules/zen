@@ -1,0 +1,61 @@
+# Policy completion tests
+# policies: list of fixture filenames loaded into workspace
+# Each test targets a block/expression and checks includes/excludes.
+# Optional: head = true targets a decision-table column head; row = "<rule _id>"
+# targets a decision-table rule cell.
+#
+# NOTE: v1 scoped top-level completions to the block's write-root entity.
+# v2 exposes every entity in every block scope (cross-entity reads are legal),
+# so top-level cases assert all entities are offered; the meaningful scoping
+# checks live at the property level (after a dot).
+
+policies = ["analysis.json"]
+
+[[test]]
+name = "expression top-level: all entities offered"
+policy = "analysis.json"
+block_id = "ds1"
+expression_id = "ds1"
+pos = 0
+includes = ["customer", "company", "product", "creditReport"]
+
+[[test]]
+name = "expression top-level: builtins still available"
+policy = "analysis.json"
+block_id = "ds1"
+expression_id = "ds1"
+pos = 0
+includes = ["sum", "map", "filter"]
+
+[[test]]
+name = "expression after customer dot: entity properties offered"
+policy = "analysis.json"
+block_id = "ds1"
+expression_id = "ds1"
+pos = 17
+includes = ["companies", "name", "age", "country", "creditReport", "favoriteProduct"]
+
+[[test]]
+name = "expression after customer dot: other entities not offered as properties"
+policy = "analysis.json"
+block_id = "ds1"
+expression_id = "ds1"
+pos = 17
+excludes = ["company", "product"]
+
+[[test]]
+name = "match arm condition: entities offered"
+policy = "analysis.json"
+block_id = "f1"
+expression_id = "db1"
+pos = 0
+includes = ["customer"]
+
+[[test]]
+name = "table output cell: entities offered"
+policy = "analysis.json"
+block_id = "dt1"
+expression_id = "o1"
+row = "r1"
+pos = 0
+includes = ["customer"]

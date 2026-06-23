@@ -1,0 +1,24 @@
+{
+  "blocks": [
+    { "id": "dm-ledger", "type": "dataModel", "props": { "data": {
+      "name": "ledger", "scope": "global",
+      "properties": [
+        { "id": "g1", "name": "accounts", "type": "relationship", "target": "account", "array": true, "optional": false }
+      ]
+    }}},
+    { "id": "dm-account", "type": "dataModel", "props": { "data": {
+      "name": "account",
+      "properties": [
+        { "id": "p1", "name": "id", "type": "string", "array": false, "optional": false },
+        { "id": "p2", "name": "balance", "type": "number", "array": false, "optional": false },
+        { "id": "p3", "name": "apr", "type": "number", "array": false, "optional": false }
+      ]
+    }}},
+    { "id": "s1", "type": "expression", "props": { "data": {
+      "key": "account.interestDue", "value": "account.balance * account.apr"
+    }}},
+    { "id": "s2", "type": "expression", "props": { "data": {
+      "key": "accountSummaries", "value": "map(accounts as a, { id: a.id, interest: a.interestDue })"
+    }}}
+  ]
+}

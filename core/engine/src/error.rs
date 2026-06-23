@@ -74,7 +74,6 @@ pub enum EvaluationError {
         got: &'static str,
         key: Arc<str>,
     },
-
 }
 
 impl EvaluationError {

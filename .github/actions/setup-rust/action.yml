@@ -1,5 +1,5 @@
 name: 'Setup Rust caching'
-description: 'Swatinem/rust-cache + sccache (compiler cache shared across jobs via the GitHub Actions backend). Toolchain install stays in the caller (it is heterogeneous across jobs).'
+description: 'Swatinem/rust-cache for the cargo registry + target dependency artifacts. Toolchain install stays in the caller (it is heterogeneous across jobs).'
 
 inputs:
   shared-key:
@@ -14,10 +14,6 @@ inputs:
     description: 'Swatinem/rust-cache workspaces.'
     required: false
     default: '. -> target'
-  sccache:
-    description: 'Enable sccache as RUSTC_WRAPPER. On by default; turn off for miri (its rustc interception conflicts).'
-    required: false
-    default: 'true'
   zig:
     description: 'Install ziglang + cargo-zigbuild for host cross-compilation of Linux targets.'
     required: false
@@ -30,10 +26,6 @@ inputs:
     description: 'Target glibc for cargo-zigbuild gnu builds. Exported as the GLIBC_VERSION env var; reference it in the build command as the target suffix. Bump here.'
     required: false
     default: '2.17'
-  xwin:
-    description: 'Install cargo-xwin for cross-compiling Windows MSVC targets from Linux (napi routes msvc targets to it).'
-    required: false
-    default: 'false'
 
 runs:
   using: 'composite'
@@ -44,17 +36,6 @@ runs:
       run: |
         echo "CARGO_PROFILE_RELEASE_LTO=false" >> "$GITHUB_ENV"
         echo "CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16" >> "$GITHUB_ENV"
-
-    - name: Install sccache
-      if: ${{ inputs.sccache == 'true' }}
-      uses: mozilla-actions/sccache-action@v0.0.10
-
-    - name: Enable sccache
-      if: ${{ inputs.sccache == 'true' }}
-      shell: bash
-      run: |
-        echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
-        echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
 
     - name: Rust cache
       uses: Swatinem/rust-cache@v2
@@ -81,23 +62,3 @@ runs:
       if: ${{ inputs.zig == 'true' }}
       shell: bash
       run: echo "GLIBC_VERSION=${{ inputs.glibc-version }}" >> "$GITHUB_ENV"
-
-    - name: Cache xwin sysroot
-      if: ${{ inputs.xwin == 'true' }}
-      uses: actions/cache@v4
-      with:
-        path: ${{ github.workspace }}/.xwin
-        key: xwin-cache-v1
-
-    - name: Install cargo-xwin
-      if: ${{ inputs.xwin == 'true' }}
-      uses: taiki-e/install-action@v2
-      env:
-        GITHUB_TOKEN: ${{ github.token }}
-      with:
-        tool: cargo-xwin
-
-    - name: Export xwin cache dir
-      if: ${{ inputs.xwin == 'true' }}
-      shell: bash
-      run: echo "XWIN_CACHE_DIR=${{ github.workspace }}/.xwin" >> "$GITHUB_ENV"

@@ -38,41 +38,71 @@ jobs:
     if: "(github.event_name != 'release' || startsWith(github.event.release.tag_name, 'nodejs-v')) && !contains(github.event.head_commit.message, 'skip ci')"
     strategy:
       fail-fast: false
-      # Every leg cross-compiles on ubuntu-latest: mac/musl via cargo-zigbuild (-x),
-      # windows-msvc via cargo-xwin (-x), gnu via napi's glibc-2.17 sysroot.
-      # UNVALIDATED: rquickjs-sys (bindgen/C) + ring (asm) cross to mac/windows — the
-      # native test legs run the resulting .node on real hardware and are the gate.
+      # mac + windows build NATIVELY on their own runners (their SDKs can't be
+      # cross-supplied from Linux — Apple's by license, so ring/quickjs C can't link).
+      # Only the linux legs cross-compile on ubuntu via zig (validated: ring + quickjs
+      # build fine under zig for Linux): gnu via napi's glibc-2.17 sysroot, musl static.
       matrix:
         settings:
-          - target: 'x86_64-pc-windows-msvc'
-            xwin: true
-            build: yarn build --target x86_64-pc-windows-msvc -x
+          - host: windows-latest
+            target: 'x86_64-pc-windows-msvc'
+            build: |
+              yarn build --target x86_64-pc-windows-msvc
 
-          - target: 'x86_64-apple-darwin'
+          - host: macos-15-intel
+            target: 'x86_64-apple-darwin'
+            build: |
+              rustup target add x86_64-apple-darwin
+              yarn build --target x86_64-apple-darwin
+              strip -x ./*.node
+
+          - host: macos-latest
+            target: 'aarch64-apple-darwin'
+            build: |
+              sudo rm -Rf /Library/Developer/CommandLineTools/SDKs/*;
+              export CC=$(xcrun -f clang);
+              export CXX=$(xcrun -f clang++);
+              SYSROOT=$(xcrun --sdk macosx --show-sdk-path);
+              export CFLAGS="-isysroot $SYSROOT -isystem $SYSROOT";
+              yarn build --target aarch64-apple-darwin
+              strip -x ./*.node
+
+          - host: ubuntu-latest
+            target: 'x86_64-unknown-linux-gnu'
             zig: true
-            build: yarn build --target x86_64-apple-darwin -x
+            build: |
+              set -e
+              rustup target add x86_64-unknown-linux-gnu
+              yarn build --target x86_64-unknown-linux-gnu --use-napi-cross
+              strip ./*.node
 
-          - target: 'aarch64-apple-darwin'
+          - host: ubuntu-latest
+            target: 'aarch64-unknown-linux-gnu'
             zig: true
-            build: yarn build --target aarch64-apple-darwin -x
+            build: |
+              set -e
+              rustup target add aarch64-unknown-linux-gnu
+              yarn build --target aarch64-unknown-linux-gnu --use-napi-cross
 
-          - target: 'x86_64-unknown-linux-gnu'
+          - host: ubuntu-latest
+            target: 'x86_64-unknown-linux-musl'
             zig: true
-            build: yarn build --target x86_64-unknown-linux-gnu --use-napi-cross
+            build: |
+              set -e
+              rustup target add x86_64-unknown-linux-musl
+              yarn build --target x86_64-unknown-linux-musl --cross-compile
+              strip ./*.node
 
-          - target: 'aarch64-unknown-linux-gnu'
+          - host: ubuntu-latest
+            target: 'aarch64-unknown-linux-musl'
             zig: true
-            build: yarn build --target aarch64-unknown-linux-gnu --use-napi-cross
+            build: |
+              set -e
+              rustup target add aarch64-unknown-linux-musl
+              yarn build --target aarch64-unknown-linux-musl --cross-compile
 
-          - target: 'x86_64-unknown-linux-musl'
-            zig: true
-            build: yarn build --target x86_64-unknown-linux-musl -x
-
-          - target: 'aarch64-unknown-linux-musl'
-            zig: true
-            build: yarn build --target aarch64-unknown-linux-musl -x
-
-          - target: 'wasm32-wasip1-threads'
+          - host: ubuntu-latest
+            target: 'wasm32-wasip1-threads'
             setup: |
               wget https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-27/wasi-sdk-27.0-x86_64-linux.tar.gz
               tar -xvf wasi-sdk-27.0-x86_64-linux.tar.gz
@@ -85,7 +115,7 @@ jobs:
               yarn build --target wasm32-wasip1-threads
 
     name: stable - ${{ matrix.settings.target }} - node@22
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.settings.host }}
     defaults:
       run:
         working-directory: ${{ env.WORKING_DIRECTORY }}
@@ -107,13 +137,12 @@ jobs:
           toolchain: stable
           targets: ${{ matrix.settings.target }}
 
-      - name: Rust cache + sccache (+ zig / xwin for cross legs)
+      - name: Rust cache (+ zig for linux legs)
         uses: ./.github/actions/setup-rust
         with:
           shared-key: nodejs-${{ matrix.settings.target }}
           key: ${{ matrix.settings.target }}
           zig: ${{ matrix.settings.zig }}
-          xwin: ${{ matrix.settings.xwin }}
 
       - name: Setup toolchain
         run: ${{ matrix.settings.setup }}

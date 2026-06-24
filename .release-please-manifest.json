@@ -8,5 +8,5 @@
   "bindings/nodejs": "0.54.0",
   "bindings/python": "0.53.0",
   "bindings/uniffi": "0.7.2",
-  "bindings/c": "0.20.0"
+  "bindings/c": "1.0.0-beta.0"
 }

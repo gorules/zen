@@ -1,13 +1,13 @@
 name: 'Setup Rust caching'
-description: 'Swatinem/rust-cache (registry + target deps) + sccache (caches the workspace crates Swatinem drops; ~3x on builds). Toolchain install stays in the caller (it is heterogeneous across jobs).'
+description: 'Swatinem/rust-cache + sccache.'
 
 inputs:
   shared-key:
-    description: 'Swatinem/rust-cache shared-key — groups the cache across jobs.'
+    description: 'Swatinem/rust-cache shared-key.'
     required: false
     default: ''
   key:
-    description: 'Swatinem/rust-cache extra key.'
+    description: 'Swatinem/rust-cache key.'
     required: false
     default: ''
   workspaces:
@@ -15,19 +15,19 @@ inputs:
     required: false
     default: '. -> target'
   sccache:
-    description: 'Enable sccache as RUSTC_WRAPPER (caches workspace crates; ~3x on builds). On by default; turn off for miri (its rustc interception conflicts). Auto-disabled on cross-compile (zig) legs: cc-rs wraps the C compiler too, and sccache breaks ring ARM assembly on cross builds (__ARM_ARCH undefined).'
+    description: 'Enable sccache as RUSTC_WRAPPER.'
     required: false
     default: 'true'
   zig:
-    description: 'Install ziglang + cargo-zigbuild for host cross-compilation of Linux targets.'
+    description: 'Install ziglang + cargo-zigbuild.'
     required: false
     default: 'false'
   zig-version:
-    description: 'Zig version for mlugg/setup-zig — single source of truth, bump here.'
+    description: 'Zig version for mlugg/setup-zig.'
     required: false
     default: '0.16.0'
   glibc-version:
-    description: 'Target glibc for cargo-zigbuild gnu builds. Exported as the GLIBC_VERSION env var; reference it in the build command as the target suffix. Bump here.'
+    description: 'Target glibc for cargo-zigbuild, exported as GLIBC_VERSION.'
     required: false
     default: '2.17'
 
@@ -47,11 +47,11 @@ runs:
         echo "CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16" >> "$GITHUB_ENV"
 
     - name: Install sccache
-      if: ${{ inputs.sccache == 'true' && inputs.zig != 'true' }}
+      if: ${{ inputs.sccache == 'true' }}
       uses: mozilla-actions/sccache-action@v0.0.10
 
     - name: Enable sccache
-      if: ${{ inputs.sccache == 'true' && inputs.zig != 'true' }}
+      if: ${{ inputs.sccache == 'true' }}
       shell: bash
       run: |
         echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"

@@ -38,10 +38,6 @@ jobs:
     if: "(github.event_name != 'release' || startsWith(github.event.release.tag_name, 'nodejs-v')) && !contains(github.event.head_commit.message, 'skip ci')"
     strategy:
       fail-fast: false
-      # mac + windows build NATIVELY on their own runners (their SDKs can't be
-      # cross-supplied from Linux — Apple's by license, so ring/quickjs C can't link).
-      # Only the linux legs cross-compile on ubuntu via zig (validated: ring + quickjs
-      # build fine under zig for Linux): gnu via napi's glibc-2.17 sysroot, musl static.
       matrix:
         settings:
           - host: windows-latest
@@ -73,7 +69,7 @@ jobs:
             build: |
               set -e
               rustup target add x86_64-unknown-linux-gnu
-              yarn build --target x86_64-unknown-linux-gnu --use-napi-cross
+              yarn build --target x86_64-unknown-linux-gnu.$GLIBC_VERSION --cross-compile
               strip ./*.node
 
           - host: ubuntu-latest
@@ -82,7 +78,7 @@ jobs:
             build: |
               set -e
               rustup target add aarch64-unknown-linux-gnu
-              yarn build --target aarch64-unknown-linux-gnu --use-napi-cross
+              yarn build --target aarch64-unknown-linux-gnu.$GLIBC_VERSION --cross-compile
 
           - host: ubuntu-latest
             target: 'x86_64-unknown-linux-musl'

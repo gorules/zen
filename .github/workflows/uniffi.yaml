@@ -309,6 +309,13 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          shared-key: uniffi-swift
+
       - name: Download iOS artifacts
         uses: actions/download-artifact@v4
         with:
@@ -323,13 +330,6 @@ jobs:
           cp target-ios/ios-aarch64/libzen_uniffi.a target/aarch64-apple-ios/release/
           cp target-ios/ios-x86-64/libzen_uniffi.a target/x86_64-apple-ios/release/
           cp target-ios/ios-aarch64-sim/libzen_uniffi.a target/aarch64-apple-ios-sim/release/
-
-      - name: Setup Rust Toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - uses: ./.github/actions/setup-rust
-        with:
-          shared-key: uniffi-swift
 
       - name: Generate Swift bindings
         run: |

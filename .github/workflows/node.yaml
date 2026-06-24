@@ -43,13 +43,13 @@ jobs:
           - host: windows-latest
             target: 'x86_64-pc-windows-msvc'
             build: |
-              yarn build --target x86_64-pc-windows-msvc
+              yarn build --target x86_64-pc-windows-msvc -- --locked
 
           - host: macos-15-intel
             target: 'x86_64-apple-darwin'
             build: |
               rustup target add x86_64-apple-darwin
-              yarn build --target x86_64-apple-darwin
+              yarn build --target x86_64-apple-darwin -- --locked
               strip -x ./*.node
 
           - host: macos-latest
@@ -60,7 +60,7 @@ jobs:
               export CXX=$(xcrun -f clang++);
               SYSROOT=$(xcrun --sdk macosx --show-sdk-path);
               export CFLAGS="-isysroot $SYSROOT -isystem $SYSROOT";
-              yarn build --target aarch64-apple-darwin
+              yarn build --target aarch64-apple-darwin -- --locked
               strip -x ./*.node
 
           - host: ubuntu-latest
@@ -71,7 +71,7 @@ jobs:
               rustup target add x86_64-unknown-linux-gnu
               mkdir -p ../../target
               ln -sfn x86_64-unknown-linux-gnu ../../target/x86_64-unknown-linux-gnu.$GLIBC_VERSION
-              yarn build --target x86_64-unknown-linux-gnu.$GLIBC_VERSION --cross-compile
+              yarn build --target x86_64-unknown-linux-gnu.$GLIBC_VERSION --cross-compile -- --locked
               mv -f zen-engine.linux-x64-gnu.$GLIBC_VERSION.node zen-engine.linux-x64-gnu.node
               strip zen-engine.linux-x64-gnu.node
 
@@ -83,7 +83,7 @@ jobs:
               rustup target add aarch64-unknown-linux-gnu
               mkdir -p ../../target
               ln -sfn aarch64-unknown-linux-gnu ../../target/aarch64-unknown-linux-gnu.$GLIBC_VERSION
-              yarn build --target aarch64-unknown-linux-gnu.$GLIBC_VERSION --cross-compile
+              yarn build --target aarch64-unknown-linux-gnu.$GLIBC_VERSION --cross-compile -- --locked
               mv -f zen-engine.linux-arm64-gnu.$GLIBC_VERSION.node zen-engine.linux-arm64-gnu.node
 
           - host: ubuntu-latest
@@ -92,7 +92,7 @@ jobs:
             build: |
               set -e
               rustup target add x86_64-unknown-linux-musl
-              yarn build --target x86_64-unknown-linux-musl --cross-compile
+              yarn build --target x86_64-unknown-linux-musl --cross-compile -- --locked
               strip ./*.node
 
           - host: ubuntu-latest
@@ -101,7 +101,7 @@ jobs:
             build: |
               set -e
               rustup target add aarch64-unknown-linux-musl
-              yarn build --target aarch64-unknown-linux-musl --cross-compile
+              yarn build --target aarch64-unknown-linux-musl --cross-compile -- --locked
 
           - host: ubuntu-latest
             target: 'wasm32-wasip1-threads'
@@ -114,7 +114,7 @@ jobs:
               export CMAKE_BUILD_PARALLEL_LEVEL=2
               export TARGET_CXXFLAGS="--target=wasm32-wasi-threads --sysroot=$(pwd)/wasi-sdk-27.0-x86_64-linux/share/wasi-sysroot -pthread -mllvm -wasm-enable-sjlj -lsetjmp"
               export TARGET_CFLAGS="$TARGET_CXXFLAGS"
-              yarn build --target wasm32-wasip1-threads
+              yarn build --target wasm32-wasip1-threads -- --locked
 
     name: stable - ${{ matrix.settings.target }} - node@22
     runs-on: ${{ matrix.settings.host }}

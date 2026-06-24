@@ -40,26 +40,26 @@ jobs:
           - os: ubuntu-latest
             platform: linux
             target: x86_64
-            args: --release --out dist --find-interpreter -m bindings/python/Cargo.toml --zig --compatibility manylinux_2_28
+            args: --release --out dist --find-interpreter --locked -m bindings/python/Cargo.toml --zig --compatibility manylinux_2_28
             manylinux: auto
           - os: ubuntu-latest
             platform: linux
             target: aarch64
-            args: --release --out dist --find-interpreter -m bindings/python/Cargo.toml --zig --compatibility manylinux_2_28
+            args: --release --out dist --find-interpreter --locked -m bindings/python/Cargo.toml --zig --compatibility manylinux_2_28
             manylinux: auto
           - os: windows-latest
             platform: windows
             target: x64
             architecture: x64
-            args: --release --out dist --find-interpreter -m bindings/python/Cargo.toml
+            args: --release --out dist --find-interpreter --locked -m bindings/python/Cargo.toml
           - os: macos-latest
             platform: macos
             target: x86_64
-            args: --release --out dist --find-interpreter -m bindings/python/Cargo.toml
+            args: --release --out dist --find-interpreter --locked -m bindings/python/Cargo.toml
           - os: macos-latest
             platform: macos
             target: aarch64
-            args: --release --out dist --find-interpreter -m bindings/python/Cargo.toml
+            args: --release --out dist --find-interpreter --locked -m bindings/python/Cargo.toml
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4

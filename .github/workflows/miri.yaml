@@ -22,7 +22,7 @@ jobs:
         with:
           shared-key: rust-miri
           sccache: 'false'
-      - run: cargo miri test --workspace --all-features
+      - run: cargo miri test --workspace --all-features --locked
         env:
           MIRIFLAGS: -Zmiri-strict-provenance -Zmiri-symbolic-alignment-check -Zmiri-disable-isolation
           RUSTFLAGS: ${{ env.RUSTFLAGS }} -Z randomize-layout

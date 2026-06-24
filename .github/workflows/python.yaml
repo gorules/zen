@@ -104,6 +104,7 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    environment: release
     # Publishes only on the release-please GitHub Release for the python component.
     if: "github.event_name == 'release' && startsWith(github.event.release.tag_name, 'python-v')"
     needs: [ wheels, sdist ]

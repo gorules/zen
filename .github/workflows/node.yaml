@@ -279,6 +279,7 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    environment: release
     # Publishes only on the release-please GitHub Release for the nodejs component.
     if: "github.event_name == 'release' && startsWith(github.event.release.tag_name, 'nodejs-v')"
     defaults:

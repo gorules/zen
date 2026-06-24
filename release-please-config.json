@@ -35,6 +35,7 @@
     "core/expression_repl": { "release-type": "rust", "component": "expression_repl" },
     "bindings/nodejs": { "release-type": "node", "component": "nodejs" },
     "bindings/python": { "release-type": "rust", "component": "python", "package-name": "zen-engine-python" },
-    "bindings/uniffi": { "release-type": "rust", "component": "uniffi" }
+    "bindings/uniffi": { "release-type": "rust", "component": "uniffi" },
+    "bindings/c": { "release-type": "rust", "component": "go" }
   }
 }

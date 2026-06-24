@@ -20,11 +20,8 @@ on:
       - 'core/**'
       - 'test-data/**'
       - '.github/workflows/go.yaml'
-  # The zen-go sync (release job) fires on a core release — Go embeds the C FFI,
-  # which embeds core — or manually. Push/PR only build for CI validation.
   release:
     types: [published]
-  workflow_dispatch:
 
 permissions: write-all
 
@@ -114,8 +111,8 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
-    # Sync to gorules/zen-go only on a core release or manual dispatch — never on push/PR.
-    if: "github.event_name == 'workflow_dispatch' || (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'zen-engine-v'))"
+    environment: release
+    if: "github.event_name == 'release' && startsWith(github.event.release.tag_name, 'go-v')"
     needs:
       - build
       - copy-common

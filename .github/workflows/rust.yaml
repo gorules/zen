@@ -71,6 +71,7 @@ jobs:
   release:
     name: Cargo Release
     runs-on: ubuntu-latest
+    environment: release
     # Publishes only on the release-please GitHub Release for the core group.
     if: "github.event_name == 'release' && startsWith(github.event.release.tag_name, 'zen-engine-v')"
     needs:

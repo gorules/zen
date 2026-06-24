@@ -35,10 +35,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
-      # Per-platform maturin config lives in the matrix rows (steps stay uniform).
-      # Linux builds on the host via zig; win/mac use maturin's sccache (their only cache).
-      # NOTE: linux aarch64 is non-abi3, so it needs the target Python — if it fails
-      # under zig, switch it to abi3 or keep it on the manylinux container.
       matrix:
         include:
           - os: ubuntu-latest

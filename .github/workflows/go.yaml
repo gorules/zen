@@ -64,8 +64,6 @@ jobs:
           shared-key: go-${{ matrix.settings.target }}
           zig: ${{ matrix.settings.host == 'ubuntu-latest' }}
 
-      # Linux targets cross-compile on the host via zig (zig cc builds the C deps);
-      # mac/windows build natively on their own runners.
       - name: Build (zig, linux)
         if: ${{ matrix.settings.host == 'ubuntu-latest' }}
         working-directory: bindings/c

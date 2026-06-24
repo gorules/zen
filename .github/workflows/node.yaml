@@ -69,8 +69,11 @@ jobs:
             build: |
               set -e
               rustup target add x86_64-unknown-linux-gnu
+              mkdir -p ../../target
+              ln -sfn x86_64-unknown-linux-gnu ../../target/x86_64-unknown-linux-gnu.$GLIBC_VERSION
               yarn build --target x86_64-unknown-linux-gnu.$GLIBC_VERSION --cross-compile
-              strip ./*.node
+              mv -f zen-engine.linux-x64-gnu.$GLIBC_VERSION.node zen-engine.linux-x64-gnu.node
+              strip zen-engine.linux-x64-gnu.node
 
           - host: ubuntu-latest
             target: 'aarch64-unknown-linux-gnu'
@@ -78,7 +81,10 @@ jobs:
             build: |
               set -e
               rustup target add aarch64-unknown-linux-gnu
+              mkdir -p ../../target
+              ln -sfn aarch64-unknown-linux-gnu ../../target/aarch64-unknown-linux-gnu.$GLIBC_VERSION
               yarn build --target aarch64-unknown-linux-gnu.$GLIBC_VERSION --cross-compile
+              mv -f zen-engine.linux-arm64-gnu.$GLIBC_VERSION.node zen-engine.linux-arm64-gnu.node
 
           - host: ubuntu-latest
             target: 'x86_64-unknown-linux-musl'

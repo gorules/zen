@@ -15,7 +15,7 @@ inputs:
     required: false
     default: '. -> target'
   sccache:
-    description: 'Enable sccache as RUSTC_WRAPPER (caches workspace crates; ~3x on builds). On by default; turn off for miri (its rustc interception conflicts).'
+    description: 'Enable sccache as RUSTC_WRAPPER (caches workspace crates; ~3x on builds). On by default; turn off for miri (its rustc interception conflicts). Auto-disabled on cross-compile (zig) legs: cc-rs wraps the C compiler too, and sccache breaks ring ARM assembly on cross builds (__ARM_ARCH undefined).'
     required: false
     default: 'true'
   zig:
@@ -47,11 +47,11 @@ runs:
         echo "CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16" >> "$GITHUB_ENV"
 
     - name: Install sccache
-      if: ${{ inputs.sccache == 'true' }}
+      if: ${{ inputs.sccache == 'true' && inputs.zig != 'true' }}
       uses: mozilla-actions/sccache-action@v0.0.10
 
     - name: Enable sccache
-      if: ${{ inputs.sccache == 'true' }}
+      if: ${{ inputs.sccache == 'true' && inputs.zig != 'true' }}
       shell: bash
       run: |
         echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"

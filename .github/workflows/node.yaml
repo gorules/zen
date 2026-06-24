@@ -158,6 +158,7 @@ jobs:
 
       - name: 'Check'
         run: ls -la
+        shell: bash
 
       - name: Upload artifact ${{ matrix.settings.target }}
         if: ${{ matrix.settings.target != 'wasm32-wasip1-threads' }}

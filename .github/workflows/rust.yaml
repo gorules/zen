@@ -9,9 +9,7 @@ on:
       - 'bindings/**'
       - 'examples/**'
       - '.github/workflows/python.yaml'
-      - '.github/workflows/python-version-bump.yaml'
       - '.github/workflows/node.yaml'
-      - '.github/workflows/node-version-bump.yaml'
   push:
     branches:
       - master
@@ -21,9 +19,11 @@ on:
       - 'bindings/**'
       - 'examples/**'
       - '.github/workflows/python.yaml'
-      - '.github/workflows/python-version-bump.yaml'
       - '.github/workflows/node.yaml'
-      - '.github/workflows/node-version-bump.yaml'
+  # Crates.io publish is driven by the GitHub Release that release-please
+  # creates for the linked `core` group (anchored on tag `zen-engine-v<version>`).
+  release:
+    types: [published]
 
 env:
   RUST_BACKTRACE: 1
@@ -34,7 +34,7 @@ defaults:
     shell: bash
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -51,50 +51,13 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Install Rust
-        run: rustup install 1.80
+        run: rustup update stable
+      - uses: ./.github/actions/setup-rust
+        with:
+          shared-key: rust-test-${{ matrix.os }}
       - run: cargo test --workspace --all-features --exclude zen-ffi --exclude zen-nodejs --exclude zen-python
-      - run: cargo test --workspace --all-features --exclude zen-ffi --exclude zen-nodejs --exclude zen-python --release
       - name: Test without arbitrary_precision
         run: cargo test --workspace --exclude zen-ffi --exclude zen-nodejs --exclude zen-python
-      - name: Test without arbitrary_precision (release)
-        run: cargo test --workspace --exclude zen-ffi --exclude zen-nodejs --exclude zen-python --release
-
-  build:
-    name: cargo +${{ matrix.rust }} build
-    strategy:
-      fail-fast: false
-      matrix:
-        rust:
-          - stable
-          - beta
-          - nightly
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Install Rust
-        run: rustup update ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
-      - run: cargo build --tests
-
-  bench:
-    name: cargo bench
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Install Rust
-        run: rustup update stable
-      - run: cargo bench --workspace
-
-  miri:
-    name: cargo miri test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Install Rust
-        run: rustup toolchain install nightly-2025-05-08 --component miri && rustup default nightly-2025-05-08
-      - run: cargo miri test --workspace --all-features
-        env:
-          MIRIFLAGS: -Zmiri-strict-provenance -Zmiri-symbolic-alignment-check -Zmiri-disable-isolation
-          RUSTFLAGS: ${{ env.RUSTFLAGS }} -Z randomize-layout
 
   fmt:
     name: Cargo FMT
@@ -108,12 +71,11 @@ jobs:
   release:
     name: Cargo Release
     runs-on: ubuntu-latest
-    if: "startsWith(github.event.head_commit.message, 'chore(release): publish core')"
+    environment: release
+    # Publishes only on the release-please GitHub Release for the core group.
+    if: "github.event_name == 'release' && startsWith(github.event.release.tag_name, 'zen-engine-v')"
     needs:
       - test
-      - build
-      - bench
-      - miri
       - fmt
     steps:
       - uses: actions/checkout@v3

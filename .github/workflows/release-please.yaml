@@ -1,0 +1,44 @@
+name: Release Please
+
+# Single source of truth for STABLE version bumps + changelogs + tags.
+#
+# On every push to master it maintains one "Release PR" per component
+# (separate-pull-requests). Merging a Release PR:
+#   * bumps the version(s) in the relevant Cargo.toml / package.json,
+#   * updates the CHANGELOG,
+#   * creates a git tag + GitHub Release for that component.
+#
+# The GitHub Release is what triggers the matching publish workflow
+# (node.yaml / python.yaml / rust.yaml / uniffi.yaml) via its
+# `on: release` trigger. We use a PAT (not GITHUB_TOKEN) so the created
+# release is allowed to trigger those downstream workflows.
+#
+# Tags (include-component-in-tag + tag-separator "-"):
+#   core   -> zen-engine-v<ver> (+ the 5 linked core crates), python -> python-v<ver>,
+#   nodejs -> nodejs-v<ver>, uniffi -> uniffi-v<ver>
+#
+# Betas use this SAME flow: during a prerelease window set `prerelease: true`
+# + `prerelease-type: "beta"` on the components in release-please-config.json,
+# and merges cut X.Y.Z-beta.N for every component (incl. uniffi). The publish
+# workflows pick npm/dist-tag behaviour from `github.event.release.prerelease`.
+# (One-time per-component `release-as: 1.0.0-beta.0` bootstraps the v1 base.)
+
+on:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    name: Release Please
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.PAT }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

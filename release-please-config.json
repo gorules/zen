@@ -1,0 +1,45 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "separate-pull-requests": true,
+  "include-component-in-tag": true,
+  "tag-separator": "-",
+  "pull-request-title-pattern": "chore(release): ${component} ${version}",
+  "release-as": "1.0.0-beta.0",
+  "prerelease": true,
+  "prerelease-type": "beta",
+  "versioning": "prerelease",
+  "changelog-sections": [
+    { "type": "feat", "section": "Features" },
+    { "type": "fix", "section": "Bug Fixes" },
+    { "type": "perf", "section": "Performance" },
+    { "type": "deps", "section": "Dependencies" },
+    { "type": "chore", "section": "Miscellaneous", "hidden": true }
+  ],
+  "plugins": [
+    { "type": "cargo-workspace", "merge": false },
+    {
+      "type": "linked-versions",
+      "groupName": "core",
+      "components": [
+        "zen-engine",
+        "zen-expression",
+        "zen-types",
+        "zen-tmpl",
+        "zen-macros",
+        "expression_repl"
+      ]
+    }
+  ],
+  "packages": {
+    "core/engine": { "release-type": "rust", "component": "zen-engine" },
+    "core/expression": { "release-type": "rust", "component": "zen-expression" },
+    "core/types": { "release-type": "rust", "component": "zen-types" },
+    "core/template": { "release-type": "rust", "component": "zen-tmpl" },
+    "core/macros": { "release-type": "rust", "component": "zen-macros" },
+    "core/expression_repl": { "release-type": "rust", "component": "expression_repl" },
+    "bindings/nodejs": { "release-type": "node", "component": "nodejs" },
+    "bindings/python": { "release-type": "rust", "component": "python", "package-name": "zen-engine-python" },
+    "bindings/uniffi": { "release-type": "rust", "component": "uniffi" },
+    "bindings/c": { "release-type": "rust", "component": "go" }
+  }
+}

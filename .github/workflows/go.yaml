@@ -4,7 +4,24 @@ env:
   MACOSX_DEPLOYMENT_TARGET: '10.13'
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - master
+    tags-ignore:
+      - '**'
+    paths:
+      - 'bindings/c/**'
+      - 'core/**'
+      - 'test-data/**'
+      - '.github/workflows/go.yaml'
+  pull_request:
+    paths:
+      - 'bindings/c/**'
+      - 'core/**'
+      - 'test-data/**'
+      - '.github/workflows/go.yaml'
+  release:
+    types: [published]
 
 permissions: write-all
 
@@ -39,9 +56,19 @@ jobs:
           toolchain: stable
           override: true
           target: ${{ matrix.settings.target }}
-      - uses: marcopolo/cargo@master
+      - uses: ./.github/actions/setup-rust
         with:
-          use-cross: true
+          shared-key: go-${{ matrix.settings.target }}
+          zig: ${{ matrix.settings.host == 'ubuntu-latest' }}
+
+      - name: Build (zig, linux)
+        if: ${{ matrix.settings.host == 'ubuntu-latest' }}
+        working-directory: bindings/c
+        run: cargo zigbuild --release --all-features --target ${{ matrix.settings.target }}.${{ env.GLIBC_VERSION }} --locked
+      - name: Build (native)
+        if: ${{ matrix.settings.host != 'ubuntu-latest' }}
+        uses: marcopolo/cargo@master
+        with:
           working-directory: bindings/c
           args: --release --all-features --target=${{ matrix.settings.target }} --locked
           command: build
@@ -84,6 +111,8 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    environment: release
+    if: "github.event_name == 'release' && startsWith(github.event.release.tag_name, 'go-v')"
     needs:
       - build
       - copy-common

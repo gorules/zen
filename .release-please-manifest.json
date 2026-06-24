@@ -1,0 +1,12 @@
+{
+  "core/engine": "0.55.1",
+  "core/expression": "0.55.1",
+  "core/types": "0.55.1",
+  "core/template": "0.55.1",
+  "core/macros": "0.55.1",
+  "core/expression_repl": "0.55.1",
+  "bindings/nodejs": "0.54.0",
+  "bindings/python": "0.53.0",
+  "bindings/uniffi": "0.7.2",
+  "bindings/c": "0.20.0"
+}

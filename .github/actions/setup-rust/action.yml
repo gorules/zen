@@ -1,0 +1,84 @@
+name: 'Setup Rust caching'
+description: 'Swatinem/rust-cache + sccache.'
+
+inputs:
+  shared-key:
+    description: 'Swatinem/rust-cache shared-key.'
+    required: false
+    default: ''
+  key:
+    description: 'Swatinem/rust-cache key.'
+    required: false
+    default: ''
+  workspaces:
+    description: 'Swatinem/rust-cache workspaces.'
+    required: false
+    default: '. -> target'
+  sccache:
+    description: 'Enable sccache as RUSTC_WRAPPER.'
+    required: false
+    default: 'true'
+  zig:
+    description: 'Install ziglang + cargo-zigbuild.'
+    required: false
+    default: 'false'
+  zig-version:
+    description: 'Zig version for mlugg/setup-zig.'
+    required: false
+    default: '0.16.0'
+  glibc-version:
+    description: 'Target glibc for cargo-zigbuild, exported as GLIBC_VERSION.'
+    required: false
+    default: '2.17'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Exclude workspace from Windows Defender
+      if: ${{ runner.os == 'Windows' }}
+      shell: pwsh
+      run: Add-MpPreference -ExclusionPath "${{ github.workspace }}"
+
+    - name: Fast profile on PRs (no LTO)
+      if: ${{ github.event_name == 'pull_request' }}
+      shell: bash
+      run: |
+        echo "CARGO_PROFILE_RELEASE_LTO=false" >> "$GITHUB_ENV"
+        echo "CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16" >> "$GITHUB_ENV"
+
+    - name: Install sccache
+      if: ${{ inputs.sccache == 'true' }}
+      uses: mozilla-actions/sccache-action@v0.0.10
+
+    - name: Enable sccache
+      if: ${{ inputs.sccache == 'true' }}
+      shell: bash
+      run: |
+        echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+        echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+
+    - name: Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: ${{ inputs.shared-key }}
+        key: ${{ inputs.key }}
+        workspaces: ${{ inputs.workspaces }}
+
+    - name: Install zig
+      if: ${{ inputs.zig == 'true' }}
+      uses: mlugg/setup-zig@v2
+      with:
+        version: ${{ inputs.zig-version }}
+
+    - name: Install cargo-zigbuild
+      if: ${{ inputs.zig == 'true' }}
+      uses: taiki-e/install-action@v2
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      with:
+        tool: cargo-zigbuild
+
+    - name: Export target glibc version
+      if: ${{ inputs.zig == 'true' }}
+      shell: bash
+      run: echo "GLIBC_VERSION=${{ inputs.glibc-version }}" >> "$GITHUB_ENV"

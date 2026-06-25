@@ -1,0 +1,1 @@
+{"blocks":[{"id":"dm","type":"dataModel","props":{"data":{"name":"customer","properties":[{"id":"p0","name":"age","type":"number","array":false,"optional":false}]}},"children":[]},{"id":"a1","type":"assertion","props":{"data":{"output":"customer.isAdult","conditions":[{"id":"a1c","expression":"customer.age >= 18","operator":"and","depth":0}]}},"children":[]}]}

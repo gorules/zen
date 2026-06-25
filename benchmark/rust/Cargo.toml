@@ -1,0 +1,12 @@
+[package]
+name = "zen-benchmark"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+zen-engine = { path = "../../core/engine" }
+zen-expression = { path = "../../core/expression" }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

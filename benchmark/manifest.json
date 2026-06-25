@@ -1,0 +1,5105 @@
+[
+  {
+    "name": "decision-table-discounts",
+    "kind": "graph",
+    "file": "graphs/decision-table-discounts.json",
+    "input": {
+      "code": "WELCOME_2023",
+      "order": {
+        "createdAt": "2023-01-15"
+      },
+      "customer": {
+        "joinDate": "2023-02-01",
+        "pastPurchases": []
+      }
+    }
+  },
+  {
+    "name": "expression-table-map",
+    "kind": "graph",
+    "file": "graphs/expression-table-map.json",
+    "input": {
+      "customer": {
+        "name": "John Doe",
+        "country": "US"
+      },
+      "items": [
+        {
+          "name": "item0",
+          "amount": 10,
+          "group": "accessories",
+          "qty": 1
+        },
+        {
+          "name": "item1",
+          "amount": 11,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item2",
+          "amount": 12,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item3",
+          "amount": 13,
+          "group": "accessories",
+          "qty": 4
+        },
+        {
+          "name": "item4",
+          "amount": 14,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item5",
+          "amount": 15,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item6",
+          "amount": 16,
+          "group": "accessories",
+          "qty": 2
+        },
+        {
+          "name": "item7",
+          "amount": 17,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item8",
+          "amount": 18,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item9",
+          "amount": 19,
+          "group": "accessories",
+          "qty": 5
+        },
+        {
+          "name": "item10",
+          "amount": 20,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item11",
+          "amount": 21,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item12",
+          "amount": 22,
+          "group": "accessories",
+          "qty": 3
+        },
+        {
+          "name": "item13",
+          "amount": 23,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item14",
+          "amount": 24,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item15",
+          "amount": 25,
+          "group": "accessories",
+          "qty": 1
+        },
+        {
+          "name": "item16",
+          "amount": 26,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item17",
+          "amount": 27,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item18",
+          "amount": 28,
+          "group": "accessories",
+          "qty": 4
+        },
+        {
+          "name": "item19",
+          "amount": 29,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item20",
+          "amount": 30,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item21",
+          "amount": 31,
+          "group": "accessories",
+          "qty": 2
+        },
+        {
+          "name": "item22",
+          "amount": 32,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item23",
+          "amount": 33,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item24",
+          "amount": 34,
+          "group": "accessories",
+          "qty": 5
+        },
+        {
+          "name": "item25",
+          "amount": 35,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item26",
+          "amount": 36,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item27",
+          "amount": 37,
+          "group": "accessories",
+          "qty": 3
+        },
+        {
+          "name": "item28",
+          "amount": 38,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item29",
+          "amount": 39,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item30",
+          "amount": 40,
+          "group": "accessories",
+          "qty": 1
+        },
+        {
+          "name": "item31",
+          "amount": 41,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item32",
+          "amount": 42,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item33",
+          "amount": 43,
+          "group": "accessories",
+          "qty": 4
+        },
+        {
+          "name": "item34",
+          "amount": 44,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item35",
+          "amount": 45,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item36",
+          "amount": 46,
+          "group": "accessories",
+          "qty": 2
+        },
+        {
+          "name": "item37",
+          "amount": 47,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item38",
+          "amount": 48,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item39",
+          "amount": 49,
+          "group": "accessories",
+          "qty": 5
+        },
+        {
+          "name": "item40",
+          "amount": 50,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item41",
+          "amount": 51,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item42",
+          "amount": 52,
+          "group": "accessories",
+          "qty": 3
+        },
+        {
+          "name": "item43",
+          "amount": 53,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item44",
+          "amount": 54,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item45",
+          "amount": 55,
+          "group": "accessories",
+          "qty": 1
+        },
+        {
+          "name": "item46",
+          "amount": 56,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item47",
+          "amount": 57,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item48",
+          "amount": 58,
+          "group": "accessories",
+          "qty": 4
+        },
+        {
+          "name": "item49",
+          "amount": 59,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item50",
+          "amount": 60,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item51",
+          "amount": 61,
+          "group": "accessories",
+          "qty": 2
+        },
+        {
+          "name": "item52",
+          "amount": 62,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item53",
+          "amount": 63,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item54",
+          "amount": 64,
+          "group": "accessories",
+          "qty": 5
+        },
+        {
+          "name": "item55",
+          "amount": 65,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item56",
+          "amount": 66,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item57",
+          "amount": 67,
+          "group": "accessories",
+          "qty": 3
+        },
+        {
+          "name": "item58",
+          "amount": 68,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item59",
+          "amount": 69,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item60",
+          "amount": 70,
+          "group": "accessories",
+          "qty": 1
+        },
+        {
+          "name": "item61",
+          "amount": 71,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item62",
+          "amount": 72,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item63",
+          "amount": 73,
+          "group": "accessories",
+          "qty": 4
+        },
+        {
+          "name": "item64",
+          "amount": 74,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item65",
+          "amount": 75,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item66",
+          "amount": 76,
+          "group": "accessories",
+          "qty": 2
+        },
+        {
+          "name": "item67",
+          "amount": 77,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item68",
+          "amount": 78,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item69",
+          "amount": 79,
+          "group": "accessories",
+          "qty": 5
+        },
+        {
+          "name": "item70",
+          "amount": 80,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item71",
+          "amount": 81,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item72",
+          "amount": 82,
+          "group": "accessories",
+          "qty": 3
+        },
+        {
+          "name": "item73",
+          "amount": 83,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item74",
+          "amount": 84,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item75",
+          "amount": 85,
+          "group": "accessories",
+          "qty": 1
+        },
+        {
+          "name": "item76",
+          "amount": 86,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item77",
+          "amount": 87,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item78",
+          "amount": 88,
+          "group": "accessories",
+          "qty": 4
+        },
+        {
+          "name": "item79",
+          "amount": 89,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item80",
+          "amount": 90,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item81",
+          "amount": 91,
+          "group": "accessories",
+          "qty": 2
+        },
+        {
+          "name": "item82",
+          "amount": 92,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item83",
+          "amount": 93,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item84",
+          "amount": 94,
+          "group": "accessories",
+          "qty": 5
+        },
+        {
+          "name": "item85",
+          "amount": 95,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item86",
+          "amount": 96,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item87",
+          "amount": 97,
+          "group": "accessories",
+          "qty": 3
+        },
+        {
+          "name": "item88",
+          "amount": 98,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item89",
+          "amount": 99,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item90",
+          "amount": 10,
+          "group": "accessories",
+          "qty": 1
+        },
+        {
+          "name": "item91",
+          "amount": 11,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item92",
+          "amount": 12,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item93",
+          "amount": 13,
+          "group": "accessories",
+          "qty": 4
+        },
+        {
+          "name": "item94",
+          "amount": 14,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item95",
+          "amount": 15,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item96",
+          "amount": 16,
+          "group": "accessories",
+          "qty": 2
+        },
+        {
+          "name": "item97",
+          "amount": 17,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item98",
+          "amount": 18,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item99",
+          "amount": 19,
+          "group": "accessories",
+          "qty": 5
+        },
+        {
+          "name": "item100",
+          "amount": 20,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item101",
+          "amount": 21,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item102",
+          "amount": 22,
+          "group": "accessories",
+          "qty": 3
+        },
+        {
+          "name": "item103",
+          "amount": 23,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item104",
+          "amount": 24,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item105",
+          "amount": 25,
+          "group": "accessories",
+          "qty": 1
+        },
+        {
+          "name": "item106",
+          "amount": 26,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item107",
+          "amount": 27,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item108",
+          "amount": 28,
+          "group": "accessories",
+          "qty": 4
+        },
+        {
+          "name": "item109",
+          "amount": 29,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item110",
+          "amount": 30,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item111",
+          "amount": 31,
+          "group": "accessories",
+          "qty": 2
+        },
+        {
+          "name": "item112",
+          "amount": 32,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item113",
+          "amount": 33,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item114",
+          "amount": 34,
+          "group": "accessories",
+          "qty": 5
+        },
+        {
+          "name": "item115",
+          "amount": 35,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item116",
+          "amount": 36,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item117",
+          "amount": 37,
+          "group": "accessories",
+          "qty": 3
+        },
+        {
+          "name": "item118",
+          "amount": 38,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item119",
+          "amount": 39,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item120",
+          "amount": 40,
+          "group": "accessories",
+          "qty": 1
+        },
+        {
+          "name": "item121",
+          "amount": 41,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item122",
+          "amount": 42,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item123",
+          "amount": 43,
+          "group": "accessories",
+          "qty": 4
+        },
+        {
+          "name": "item124",
+          "amount": 44,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item125",
+          "amount": 45,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item126",
+          "amount": 46,
+          "group": "accessories",
+          "qty": 2
+        },
+        {
+          "name": "item127",
+          "amount": 47,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item128",
+          "amount": 48,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item129",
+          "amount": 49,
+          "group": "accessories",
+          "qty": 5
+        },
+        {
+          "name": "item130",
+          "amount": 50,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item131",
+          "amount": 51,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item132",
+          "amount": 52,
+          "group": "accessories",
+          "qty": 3
+        },
+        {
+          "name": "item133",
+          "amount": 53,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item134",
+          "amount": 54,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item135",
+          "amount": 55,
+          "group": "accessories",
+          "qty": 1
+        },
+        {
+          "name": "item136",
+          "amount": 56,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item137",
+          "amount": 57,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item138",
+          "amount": 58,
+          "group": "accessories",
+          "qty": 4
+        },
+        {
+          "name": "item139",
+          "amount": 59,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item140",
+          "amount": 60,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item141",
+          "amount": 61,
+          "group": "accessories",
+          "qty": 2
+        },
+        {
+          "name": "item142",
+          "amount": 62,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item143",
+          "amount": 63,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item144",
+          "amount": 64,
+          "group": "accessories",
+          "qty": 5
+        },
+        {
+          "name": "item145",
+          "amount": 65,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item146",
+          "amount": 66,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item147",
+          "amount": 67,
+          "group": "accessories",
+          "qty": 3
+        },
+        {
+          "name": "item148",
+          "amount": 68,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item149",
+          "amount": 69,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item150",
+          "amount": 70,
+          "group": "accessories",
+          "qty": 1
+        },
+        {
+          "name": "item151",
+          "amount": 71,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item152",
+          "amount": 72,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item153",
+          "amount": 73,
+          "group": "accessories",
+          "qty": 4
+        },
+        {
+          "name": "item154",
+          "amount": 74,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item155",
+          "amount": 75,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item156",
+          "amount": 76,
+          "group": "accessories",
+          "qty": 2
+        },
+        {
+          "name": "item157",
+          "amount": 77,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item158",
+          "amount": 78,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item159",
+          "amount": 79,
+          "group": "accessories",
+          "qty": 5
+        },
+        {
+          "name": "item160",
+          "amount": 80,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item161",
+          "amount": 81,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item162",
+          "amount": 82,
+          "group": "accessories",
+          "qty": 3
+        },
+        {
+          "name": "item163",
+          "amount": 83,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item164",
+          "amount": 84,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item165",
+          "amount": 85,
+          "group": "accessories",
+          "qty": 1
+        },
+        {
+          "name": "item166",
+          "amount": 86,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item167",
+          "amount": 87,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item168",
+          "amount": 88,
+          "group": "accessories",
+          "qty": 4
+        },
+        {
+          "name": "item169",
+          "amount": 89,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item170",
+          "amount": 90,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item171",
+          "amount": 91,
+          "group": "accessories",
+          "qty": 2
+        },
+        {
+          "name": "item172",
+          "amount": 92,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item173",
+          "amount": 93,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item174",
+          "amount": 94,
+          "group": "accessories",
+          "qty": 5
+        },
+        {
+          "name": "item175",
+          "amount": 95,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item176",
+          "amount": 96,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item177",
+          "amount": 97,
+          "group": "accessories",
+          "qty": 3
+        },
+        {
+          "name": "item178",
+          "amount": 98,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item179",
+          "amount": 99,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item180",
+          "amount": 10,
+          "group": "accessories",
+          "qty": 1
+        },
+        {
+          "name": "item181",
+          "amount": 11,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item182",
+          "amount": 12,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item183",
+          "amount": 13,
+          "group": "accessories",
+          "qty": 4
+        },
+        {
+          "name": "item184",
+          "amount": 14,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item185",
+          "amount": 15,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item186",
+          "amount": 16,
+          "group": "accessories",
+          "qty": 2
+        },
+        {
+          "name": "item187",
+          "amount": 17,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item188",
+          "amount": 18,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item189",
+          "amount": 19,
+          "group": "accessories",
+          "qty": 5
+        },
+        {
+          "name": "item190",
+          "amount": 20,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item191",
+          "amount": 21,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item192",
+          "amount": 22,
+          "group": "accessories",
+          "qty": 3
+        },
+        {
+          "name": "item193",
+          "amount": 23,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item194",
+          "amount": 24,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item195",
+          "amount": 25,
+          "group": "accessories",
+          "qty": 1
+        },
+        {
+          "name": "item196",
+          "amount": 26,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item197",
+          "amount": 27,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item198",
+          "amount": 28,
+          "group": "accessories",
+          "qty": 4
+        },
+        {
+          "name": "item199",
+          "amount": 29,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item200",
+          "amount": 30,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item201",
+          "amount": 31,
+          "group": "accessories",
+          "qty": 2
+        },
+        {
+          "name": "item202",
+          "amount": 32,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item203",
+          "amount": 33,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item204",
+          "amount": 34,
+          "group": "accessories",
+          "qty": 5
+        },
+        {
+          "name": "item205",
+          "amount": 35,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item206",
+          "amount": 36,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item207",
+          "amount": 37,
+          "group": "accessories",
+          "qty": 3
+        },
+        {
+          "name": "item208",
+          "amount": 38,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item209",
+          "amount": 39,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item210",
+          "amount": 40,
+          "group": "accessories",
+          "qty": 1
+        },
+        {
+          "name": "item211",
+          "amount": 41,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item212",
+          "amount": 42,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item213",
+          "amount": 43,
+          "group": "accessories",
+          "qty": 4
+        },
+        {
+          "name": "item214",
+          "amount": 44,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item215",
+          "amount": 45,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item216",
+          "amount": 46,
+          "group": "accessories",
+          "qty": 2
+        },
+        {
+          "name": "item217",
+          "amount": 47,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item218",
+          "amount": 48,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item219",
+          "amount": 49,
+          "group": "accessories",
+          "qty": 5
+        },
+        {
+          "name": "item220",
+          "amount": 50,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item221",
+          "amount": 51,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item222",
+          "amount": 52,
+          "group": "accessories",
+          "qty": 3
+        },
+        {
+          "name": "item223",
+          "amount": 53,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item224",
+          "amount": 54,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item225",
+          "amount": 55,
+          "group": "accessories",
+          "qty": 1
+        },
+        {
+          "name": "item226",
+          "amount": 56,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item227",
+          "amount": 57,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item228",
+          "amount": 58,
+          "group": "accessories",
+          "qty": 4
+        },
+        {
+          "name": "item229",
+          "amount": 59,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item230",
+          "amount": 60,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item231",
+          "amount": 61,
+          "group": "accessories",
+          "qty": 2
+        },
+        {
+          "name": "item232",
+          "amount": 62,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item233",
+          "amount": 63,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item234",
+          "amount": 64,
+          "group": "accessories",
+          "qty": 5
+        },
+        {
+          "name": "item235",
+          "amount": 65,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item236",
+          "amount": 66,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item237",
+          "amount": 67,
+          "group": "accessories",
+          "qty": 3
+        },
+        {
+          "name": "item238",
+          "amount": 68,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item239",
+          "amount": 69,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item240",
+          "amount": 70,
+          "group": "accessories",
+          "qty": 1
+        },
+        {
+          "name": "item241",
+          "amount": 71,
+          "group": "electronics",
+          "qty": 2
+        },
+        {
+          "name": "item242",
+          "amount": 72,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item243",
+          "amount": 73,
+          "group": "accessories",
+          "qty": 4
+        },
+        {
+          "name": "item244",
+          "amount": 74,
+          "group": "electronics",
+          "qty": 5
+        },
+        {
+          "name": "item245",
+          "amount": 75,
+          "group": "electronics",
+          "qty": 1
+        },
+        {
+          "name": "item246",
+          "amount": 76,
+          "group": "accessories",
+          "qty": 2
+        },
+        {
+          "name": "item247",
+          "amount": 77,
+          "group": "electronics",
+          "qty": 3
+        },
+        {
+          "name": "item248",
+          "amount": 78,
+          "group": "electronics",
+          "qty": 4
+        },
+        {
+          "name": "item249",
+          "amount": 79,
+          "group": "accessories",
+          "qty": 5
+        }
+      ]
+    }
+  },
+  {
+    "name": "credit-limit-adjustment",
+    "kind": "graph",
+    "file": "graphs/credit-limit-adjustment.json",
+    "input": {
+      "account": {
+        "customer_id": "CUST10025",
+        "current_credit_limit": 5000,
+        "payment_history": {
+          "on_time_payment_percentage": 98,
+          "late_payments_last_12_months": 0,
+          "total_payments": 24
+        },
+        "utilization": {
+          "current_percentage": 25,
+          "average_last_6_months": 40,
+          "highest_balance": 2800
+        },
+        "financial_behavior": {
+          "credit_inquiries_last_12_months": 0,
+          "years_with_institution": 4,
+          "income_verified": true,
+          "has_other_products": true
+        }
+      }
+    }
+  },
+  {
+    "name": "dynamic-shipping-cost-calculator",
+    "kind": "graph",
+    "file": "graphs/dynamic-shipping-cost-calculator.json",
+    "input": {
+      "shipments": [
+        {
+          "weight": 5,
+          "length": 20,
+          "width": 15,
+          "height": 10,
+          "distance": 50,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 6,
+          "length": 21,
+          "width": 16,
+          "height": 11,
+          "distance": 51,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 7,
+          "length": 22,
+          "width": 17,
+          "height": 12,
+          "distance": 52,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 8,
+          "length": 23,
+          "width": 18,
+          "height": 13,
+          "distance": 53,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 9,
+          "length": 24,
+          "width": 19,
+          "height": 14,
+          "distance": 54,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 10,
+          "length": 25,
+          "width": 20,
+          "height": 15,
+          "distance": 55,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 11,
+          "length": 26,
+          "width": 21,
+          "height": 16,
+          "distance": 56,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 12,
+          "length": 27,
+          "width": 22,
+          "height": 17,
+          "distance": 57,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 13,
+          "length": 28,
+          "width": 23,
+          "height": 18,
+          "distance": 58,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 14,
+          "length": 29,
+          "width": 24,
+          "height": 19,
+          "distance": 59,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 15,
+          "length": 30,
+          "width": 25,
+          "height": 20,
+          "distance": 60,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 16,
+          "length": 31,
+          "width": 26,
+          "height": 21,
+          "distance": 61,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 17,
+          "length": 32,
+          "width": 27,
+          "height": 22,
+          "distance": 62,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 18,
+          "length": 33,
+          "width": 28,
+          "height": 23,
+          "distance": 63,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 19,
+          "length": 34,
+          "width": 29,
+          "height": 24,
+          "distance": 64,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 20,
+          "length": 35,
+          "width": 30,
+          "height": 10,
+          "distance": 65,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 21,
+          "length": 36,
+          "width": 31,
+          "height": 11,
+          "distance": 66,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 22,
+          "length": 37,
+          "width": 32,
+          "height": 12,
+          "distance": 67,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 23,
+          "length": 38,
+          "width": 33,
+          "height": 13,
+          "distance": 68,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 24,
+          "length": 39,
+          "width": 34,
+          "height": 14,
+          "distance": 69,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 25,
+          "length": 40,
+          "width": 15,
+          "height": 15,
+          "distance": 70,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 26,
+          "length": 41,
+          "width": 16,
+          "height": 16,
+          "distance": 71,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 27,
+          "length": 42,
+          "width": 17,
+          "height": 17,
+          "distance": 72,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 28,
+          "length": 43,
+          "width": 18,
+          "height": 18,
+          "distance": 73,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 29,
+          "length": 44,
+          "width": 19,
+          "height": 19,
+          "distance": 74,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 30,
+          "length": 45,
+          "width": 20,
+          "height": 20,
+          "distance": 75,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 31,
+          "length": 46,
+          "width": 21,
+          "height": 21,
+          "distance": 76,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 32,
+          "length": 47,
+          "width": 22,
+          "height": 22,
+          "distance": 77,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 33,
+          "length": 48,
+          "width": 23,
+          "height": 23,
+          "distance": 78,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 34,
+          "length": 49,
+          "width": 24,
+          "height": 24,
+          "distance": 79,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 35,
+          "length": 20,
+          "width": 25,
+          "height": 10,
+          "distance": 80,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 36,
+          "length": 21,
+          "width": 26,
+          "height": 11,
+          "distance": 81,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 37,
+          "length": 22,
+          "width": 27,
+          "height": 12,
+          "distance": 82,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 38,
+          "length": 23,
+          "width": 28,
+          "height": 13,
+          "distance": 83,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 39,
+          "length": 24,
+          "width": 29,
+          "height": 14,
+          "distance": 84,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 40,
+          "length": 25,
+          "width": 30,
+          "height": 15,
+          "distance": 85,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 41,
+          "length": 26,
+          "width": 31,
+          "height": 16,
+          "distance": 86,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 42,
+          "length": 27,
+          "width": 32,
+          "height": 17,
+          "distance": 87,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 43,
+          "length": 28,
+          "width": 33,
+          "height": 18,
+          "distance": 88,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 44,
+          "length": 29,
+          "width": 34,
+          "height": 19,
+          "distance": 89,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 5,
+          "length": 30,
+          "width": 15,
+          "height": 20,
+          "distance": 90,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 6,
+          "length": 31,
+          "width": 16,
+          "height": 21,
+          "distance": 91,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 7,
+          "length": 32,
+          "width": 17,
+          "height": 22,
+          "distance": 92,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 8,
+          "length": 33,
+          "width": 18,
+          "height": 23,
+          "distance": 93,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 9,
+          "length": 34,
+          "width": 19,
+          "height": 24,
+          "distance": 94,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 10,
+          "length": 35,
+          "width": 20,
+          "height": 10,
+          "distance": 95,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 11,
+          "length": 36,
+          "width": 21,
+          "height": 11,
+          "distance": 96,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 12,
+          "length": 37,
+          "width": 22,
+          "height": 12,
+          "distance": 97,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 13,
+          "length": 38,
+          "width": 23,
+          "height": 13,
+          "distance": 98,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 14,
+          "length": 39,
+          "width": 24,
+          "height": 14,
+          "distance": 99,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 15,
+          "length": 40,
+          "width": 25,
+          "height": 15,
+          "distance": 100,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 16,
+          "length": 41,
+          "width": 26,
+          "height": 16,
+          "distance": 101,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 17,
+          "length": 42,
+          "width": 27,
+          "height": 17,
+          "distance": 102,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 18,
+          "length": 43,
+          "width": 28,
+          "height": 18,
+          "distance": 103,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 19,
+          "length": 44,
+          "width": 29,
+          "height": 19,
+          "distance": 104,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 20,
+          "length": 45,
+          "width": 30,
+          "height": 20,
+          "distance": 105,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 21,
+          "length": 46,
+          "width": 31,
+          "height": 21,
+          "distance": 106,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 22,
+          "length": 47,
+          "width": 32,
+          "height": 22,
+          "distance": 107,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 23,
+          "length": 48,
+          "width": 33,
+          "height": 23,
+          "distance": 108,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 24,
+          "length": 49,
+          "width": 34,
+          "height": 24,
+          "distance": 109,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 25,
+          "length": 20,
+          "width": 15,
+          "height": 10,
+          "distance": 110,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 26,
+          "length": 21,
+          "width": 16,
+          "height": 11,
+          "distance": 111,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 27,
+          "length": 22,
+          "width": 17,
+          "height": 12,
+          "distance": 112,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 28,
+          "length": 23,
+          "width": 18,
+          "height": 13,
+          "distance": 113,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 29,
+          "length": 24,
+          "width": 19,
+          "height": 14,
+          "distance": 114,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 30,
+          "length": 25,
+          "width": 20,
+          "height": 15,
+          "distance": 115,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 31,
+          "length": 26,
+          "width": 21,
+          "height": 16,
+          "distance": 116,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 32,
+          "length": 27,
+          "width": 22,
+          "height": 17,
+          "distance": 117,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 33,
+          "length": 28,
+          "width": 23,
+          "height": 18,
+          "distance": 118,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 34,
+          "length": 29,
+          "width": 24,
+          "height": 19,
+          "distance": 119,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 35,
+          "length": 30,
+          "width": 25,
+          "height": 20,
+          "distance": 120,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 36,
+          "length": 31,
+          "width": 26,
+          "height": 21,
+          "distance": 121,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 37,
+          "length": 32,
+          "width": 27,
+          "height": 22,
+          "distance": 122,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 38,
+          "length": 33,
+          "width": 28,
+          "height": 23,
+          "distance": 123,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 39,
+          "length": 34,
+          "width": 29,
+          "height": 24,
+          "distance": 124,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 40,
+          "length": 35,
+          "width": 30,
+          "height": 10,
+          "distance": 125,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 41,
+          "length": 36,
+          "width": 31,
+          "height": 11,
+          "distance": 126,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 42,
+          "length": 37,
+          "width": 32,
+          "height": 12,
+          "distance": 127,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 43,
+          "length": 38,
+          "width": 33,
+          "height": 13,
+          "distance": 128,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 44,
+          "length": 39,
+          "width": 34,
+          "height": 14,
+          "distance": 129,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 5,
+          "length": 40,
+          "width": 15,
+          "height": 15,
+          "distance": 130,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 6,
+          "length": 41,
+          "width": 16,
+          "height": 16,
+          "distance": 131,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 7,
+          "length": 42,
+          "width": 17,
+          "height": 17,
+          "distance": 132,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 8,
+          "length": 43,
+          "width": 18,
+          "height": 18,
+          "distance": 133,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 9,
+          "length": 44,
+          "width": 19,
+          "height": 19,
+          "distance": 134,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 10,
+          "length": 45,
+          "width": 20,
+          "height": 20,
+          "distance": 135,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 11,
+          "length": 46,
+          "width": 21,
+          "height": 21,
+          "distance": 136,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 12,
+          "length": 47,
+          "width": 22,
+          "height": 22,
+          "distance": 137,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 13,
+          "length": 48,
+          "width": 23,
+          "height": 23,
+          "distance": 138,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 14,
+          "length": 49,
+          "width": 24,
+          "height": 24,
+          "distance": 139,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 15,
+          "length": 20,
+          "width": 25,
+          "height": 10,
+          "distance": 140,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 16,
+          "length": 21,
+          "width": 26,
+          "height": 11,
+          "distance": 141,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 17,
+          "length": 22,
+          "width": 27,
+          "height": 12,
+          "distance": 142,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 18,
+          "length": 23,
+          "width": 28,
+          "height": 13,
+          "distance": 143,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 19,
+          "length": 24,
+          "width": 29,
+          "height": 14,
+          "distance": 144,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 20,
+          "length": 25,
+          "width": 30,
+          "height": 15,
+          "distance": 145,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 21,
+          "length": 26,
+          "width": 31,
+          "height": 16,
+          "distance": 146,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 22,
+          "length": 27,
+          "width": 32,
+          "height": 17,
+          "distance": 147,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 23,
+          "length": 28,
+          "width": 33,
+          "height": 18,
+          "distance": 148,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 24,
+          "length": 29,
+          "width": 34,
+          "height": 19,
+          "distance": 149,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 25,
+          "length": 30,
+          "width": 15,
+          "height": 20,
+          "distance": 150,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 26,
+          "length": 31,
+          "width": 16,
+          "height": 21,
+          "distance": 151,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 27,
+          "length": 32,
+          "width": 17,
+          "height": 22,
+          "distance": 152,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 28,
+          "length": 33,
+          "width": 18,
+          "height": 23,
+          "distance": 153,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 29,
+          "length": 34,
+          "width": 19,
+          "height": 24,
+          "distance": 154,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 30,
+          "length": 35,
+          "width": 20,
+          "height": 10,
+          "distance": 155,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 31,
+          "length": 36,
+          "width": 21,
+          "height": 11,
+          "distance": 156,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 32,
+          "length": 37,
+          "width": 22,
+          "height": 12,
+          "distance": 157,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 33,
+          "length": 38,
+          "width": 23,
+          "height": 13,
+          "distance": 158,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 34,
+          "length": 39,
+          "width": 24,
+          "height": 14,
+          "distance": 159,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 35,
+          "length": 40,
+          "width": 25,
+          "height": 15,
+          "distance": 160,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 36,
+          "length": 41,
+          "width": 26,
+          "height": 16,
+          "distance": 161,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 37,
+          "length": 42,
+          "width": 27,
+          "height": 17,
+          "distance": 162,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 38,
+          "length": 43,
+          "width": 28,
+          "height": 18,
+          "distance": 163,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 39,
+          "length": 44,
+          "width": 29,
+          "height": 19,
+          "distance": 164,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 40,
+          "length": 45,
+          "width": 30,
+          "height": 20,
+          "distance": 165,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 41,
+          "length": 46,
+          "width": 31,
+          "height": 21,
+          "distance": 166,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 42,
+          "length": 47,
+          "width": 32,
+          "height": 22,
+          "distance": 167,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 43,
+          "length": 48,
+          "width": 33,
+          "height": 23,
+          "distance": 168,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 44,
+          "length": 49,
+          "width": 34,
+          "height": 24,
+          "distance": 169,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 5,
+          "length": 20,
+          "width": 15,
+          "height": 10,
+          "distance": 170,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 6,
+          "length": 21,
+          "width": 16,
+          "height": 11,
+          "distance": 171,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 7,
+          "length": 22,
+          "width": 17,
+          "height": 12,
+          "distance": 172,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 8,
+          "length": 23,
+          "width": 18,
+          "height": 13,
+          "distance": 173,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 9,
+          "length": 24,
+          "width": 19,
+          "height": 14,
+          "distance": 174,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 10,
+          "length": 25,
+          "width": 20,
+          "height": 15,
+          "distance": 175,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 11,
+          "length": 26,
+          "width": 21,
+          "height": 16,
+          "distance": 176,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 12,
+          "length": 27,
+          "width": 22,
+          "height": 17,
+          "distance": 177,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 13,
+          "length": 28,
+          "width": 23,
+          "height": 18,
+          "distance": 178,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 14,
+          "length": 29,
+          "width": 24,
+          "height": 19,
+          "distance": 179,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 15,
+          "length": 30,
+          "width": 25,
+          "height": 20,
+          "distance": 180,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 16,
+          "length": 31,
+          "width": 26,
+          "height": 21,
+          "distance": 181,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 17,
+          "length": 32,
+          "width": 27,
+          "height": 22,
+          "distance": 182,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 18,
+          "length": 33,
+          "width": 28,
+          "height": 23,
+          "distance": 183,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 19,
+          "length": 34,
+          "width": 29,
+          "height": 24,
+          "distance": 184,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 20,
+          "length": 35,
+          "width": 30,
+          "height": 10,
+          "distance": 185,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 21,
+          "length": 36,
+          "width": 31,
+          "height": 11,
+          "distance": 186,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 22,
+          "length": 37,
+          "width": 32,
+          "height": 12,
+          "distance": 187,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 23,
+          "length": 38,
+          "width": 33,
+          "height": 13,
+          "distance": 188,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 24,
+          "length": 39,
+          "width": 34,
+          "height": 14,
+          "distance": 189,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 25,
+          "length": 40,
+          "width": 15,
+          "height": 15,
+          "distance": 190,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 26,
+          "length": 41,
+          "width": 16,
+          "height": 16,
+          "distance": 191,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 27,
+          "length": 42,
+          "width": 17,
+          "height": 17,
+          "distance": 192,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 28,
+          "length": 43,
+          "width": 18,
+          "height": 18,
+          "distance": 193,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 29,
+          "length": 44,
+          "width": 19,
+          "height": 19,
+          "distance": 194,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 30,
+          "length": 45,
+          "width": 20,
+          "height": 20,
+          "distance": 195,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 31,
+          "length": 46,
+          "width": 21,
+          "height": 21,
+          "distance": 196,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        },
+        {
+          "weight": 32,
+          "length": 47,
+          "width": 22,
+          "height": 22,
+          "distance": 197,
+          "shippingType": "standard",
+          "customerTier": "gold"
+        },
+        {
+          "weight": 33,
+          "length": 48,
+          "width": 23,
+          "height": 23,
+          "distance": 198,
+          "shippingType": "express",
+          "customerTier": "silver"
+        },
+        {
+          "weight": 34,
+          "length": 49,
+          "width": 24,
+          "height": 24,
+          "distance": 199,
+          "shippingType": "priority",
+          "customerTier": "standard"
+        }
+      ]
+    }
+  },
+  {
+    "name": "customer-eligibility-engine",
+    "kind": "graph",
+    "file": "graphs/customer-eligibility-engine.json",
+    "input": {
+      "accountInfo": {
+        "accountAge": 28,
+        "paymentHistory": "excellent",
+        "currentPlan": "Family Premium 50GB",
+        "monthlySpend": 95,
+        "contractStatus": "pending_renewal"
+      },
+      "usageStats": {
+        "dataUsageGB": 42.5,
+        "dataUtilizationPercent": 85,
+        "callMinutes": 350,
+        "textMessages": 1250
+      },
+      "customerProfile": {
+        "segment": "consumer",
+        "location": "Seattle, WA",
+        "devices": [
+          "iPhone 14",
+          "iPad Air",
+          "Apple Watch"
+        ],
+        "previousComplaints": 0
+      },
+      "usageHistory": [
+        {
+          "day": 0,
+          "dataGB": 1,
+          "minutes": 100,
+          "texts": 10
+        },
+        {
+          "day": 1,
+          "dataGB": 2,
+          "minutes": 101,
+          "texts": 11
+        },
+        {
+          "day": 2,
+          "dataGB": 3,
+          "minutes": 102,
+          "texts": 12
+        },
+        {
+          "day": 3,
+          "dataGB": 4,
+          "minutes": 103,
+          "texts": 13
+        },
+        {
+          "day": 4,
+          "dataGB": 5,
+          "minutes": 104,
+          "texts": 14
+        },
+        {
+          "day": 5,
+          "dataGB": 1,
+          "minutes": 105,
+          "texts": 15
+        },
+        {
+          "day": 6,
+          "dataGB": 2,
+          "minutes": 106,
+          "texts": 16
+        },
+        {
+          "day": 7,
+          "dataGB": 3,
+          "minutes": 107,
+          "texts": 17
+        },
+        {
+          "day": 8,
+          "dataGB": 4,
+          "minutes": 108,
+          "texts": 18
+        },
+        {
+          "day": 9,
+          "dataGB": 5,
+          "minutes": 109,
+          "texts": 19
+        },
+        {
+          "day": 10,
+          "dataGB": 1,
+          "minutes": 110,
+          "texts": 20
+        },
+        {
+          "day": 11,
+          "dataGB": 2,
+          "minutes": 111,
+          "texts": 21
+        },
+        {
+          "day": 12,
+          "dataGB": 3,
+          "minutes": 112,
+          "texts": 22
+        },
+        {
+          "day": 13,
+          "dataGB": 4,
+          "minutes": 113,
+          "texts": 23
+        },
+        {
+          "day": 14,
+          "dataGB": 5,
+          "minutes": 114,
+          "texts": 24
+        },
+        {
+          "day": 15,
+          "dataGB": 1,
+          "minutes": 115,
+          "texts": 25
+        },
+        {
+          "day": 16,
+          "dataGB": 2,
+          "minutes": 116,
+          "texts": 26
+        },
+        {
+          "day": 17,
+          "dataGB": 3,
+          "minutes": 117,
+          "texts": 27
+        },
+        {
+          "day": 18,
+          "dataGB": 4,
+          "minutes": 118,
+          "texts": 28
+        },
+        {
+          "day": 19,
+          "dataGB": 5,
+          "minutes": 119,
+          "texts": 29
+        },
+        {
+          "day": 20,
+          "dataGB": 1,
+          "minutes": 120,
+          "texts": 30
+        },
+        {
+          "day": 21,
+          "dataGB": 2,
+          "minutes": 121,
+          "texts": 31
+        },
+        {
+          "day": 22,
+          "dataGB": 3,
+          "minutes": 122,
+          "texts": 32
+        },
+        {
+          "day": 23,
+          "dataGB": 4,
+          "minutes": 123,
+          "texts": 33
+        },
+        {
+          "day": 24,
+          "dataGB": 5,
+          "minutes": 124,
+          "texts": 34
+        },
+        {
+          "day": 25,
+          "dataGB": 1,
+          "minutes": 125,
+          "texts": 35
+        },
+        {
+          "day": 26,
+          "dataGB": 2,
+          "minutes": 126,
+          "texts": 36
+        },
+        {
+          "day": 27,
+          "dataGB": 3,
+          "minutes": 127,
+          "texts": 37
+        },
+        {
+          "day": 28,
+          "dataGB": 4,
+          "minutes": 128,
+          "texts": 38
+        },
+        {
+          "day": 29,
+          "dataGB": 5,
+          "minutes": 129,
+          "texts": 39
+        },
+        {
+          "day": 30,
+          "dataGB": 1,
+          "minutes": 130,
+          "texts": 40
+        },
+        {
+          "day": 31,
+          "dataGB": 2,
+          "minutes": 131,
+          "texts": 41
+        },
+        {
+          "day": 32,
+          "dataGB": 3,
+          "minutes": 132,
+          "texts": 42
+        },
+        {
+          "day": 33,
+          "dataGB": 4,
+          "minutes": 133,
+          "texts": 43
+        },
+        {
+          "day": 34,
+          "dataGB": 5,
+          "minutes": 134,
+          "texts": 44
+        },
+        {
+          "day": 35,
+          "dataGB": 1,
+          "minutes": 135,
+          "texts": 45
+        },
+        {
+          "day": 36,
+          "dataGB": 2,
+          "minutes": 136,
+          "texts": 46
+        },
+        {
+          "day": 37,
+          "dataGB": 3,
+          "minutes": 137,
+          "texts": 47
+        },
+        {
+          "day": 38,
+          "dataGB": 4,
+          "minutes": 138,
+          "texts": 48
+        },
+        {
+          "day": 39,
+          "dataGB": 5,
+          "minutes": 139,
+          "texts": 49
+        },
+        {
+          "day": 40,
+          "dataGB": 1,
+          "minutes": 140,
+          "texts": 50
+        },
+        {
+          "day": 41,
+          "dataGB": 2,
+          "minutes": 141,
+          "texts": 51
+        },
+        {
+          "day": 42,
+          "dataGB": 3,
+          "minutes": 142,
+          "texts": 52
+        },
+        {
+          "day": 43,
+          "dataGB": 4,
+          "minutes": 143,
+          "texts": 53
+        },
+        {
+          "day": 44,
+          "dataGB": 5,
+          "minutes": 144,
+          "texts": 54
+        },
+        {
+          "day": 45,
+          "dataGB": 1,
+          "minutes": 145,
+          "texts": 55
+        },
+        {
+          "day": 46,
+          "dataGB": 2,
+          "minutes": 146,
+          "texts": 56
+        },
+        {
+          "day": 47,
+          "dataGB": 3,
+          "minutes": 147,
+          "texts": 57
+        },
+        {
+          "day": 48,
+          "dataGB": 4,
+          "minutes": 148,
+          "texts": 58
+        },
+        {
+          "day": 49,
+          "dataGB": 5,
+          "minutes": 149,
+          "texts": 59
+        },
+        {
+          "day": 50,
+          "dataGB": 1,
+          "minutes": 150,
+          "texts": 10
+        },
+        {
+          "day": 51,
+          "dataGB": 2,
+          "minutes": 151,
+          "texts": 11
+        },
+        {
+          "day": 52,
+          "dataGB": 3,
+          "minutes": 152,
+          "texts": 12
+        },
+        {
+          "day": 53,
+          "dataGB": 4,
+          "minutes": 153,
+          "texts": 13
+        },
+        {
+          "day": 54,
+          "dataGB": 5,
+          "minutes": 154,
+          "texts": 14
+        },
+        {
+          "day": 55,
+          "dataGB": 1,
+          "minutes": 155,
+          "texts": 15
+        },
+        {
+          "day": 56,
+          "dataGB": 2,
+          "minutes": 156,
+          "texts": 16
+        },
+        {
+          "day": 57,
+          "dataGB": 3,
+          "minutes": 157,
+          "texts": 17
+        },
+        {
+          "day": 58,
+          "dataGB": 4,
+          "minutes": 158,
+          "texts": 18
+        },
+        {
+          "day": 59,
+          "dataGB": 5,
+          "minutes": 159,
+          "texts": 19
+        },
+        {
+          "day": 60,
+          "dataGB": 1,
+          "minutes": 160,
+          "texts": 20
+        },
+        {
+          "day": 61,
+          "dataGB": 2,
+          "minutes": 161,
+          "texts": 21
+        },
+        {
+          "day": 62,
+          "dataGB": 3,
+          "minutes": 162,
+          "texts": 22
+        },
+        {
+          "day": 63,
+          "dataGB": 4,
+          "minutes": 163,
+          "texts": 23
+        },
+        {
+          "day": 64,
+          "dataGB": 5,
+          "minutes": 164,
+          "texts": 24
+        },
+        {
+          "day": 65,
+          "dataGB": 1,
+          "minutes": 165,
+          "texts": 25
+        },
+        {
+          "day": 66,
+          "dataGB": 2,
+          "minutes": 166,
+          "texts": 26
+        },
+        {
+          "day": 67,
+          "dataGB": 3,
+          "minutes": 167,
+          "texts": 27
+        },
+        {
+          "day": 68,
+          "dataGB": 4,
+          "minutes": 168,
+          "texts": 28
+        },
+        {
+          "day": 69,
+          "dataGB": 5,
+          "minutes": 169,
+          "texts": 29
+        },
+        {
+          "day": 70,
+          "dataGB": 1,
+          "minutes": 170,
+          "texts": 30
+        },
+        {
+          "day": 71,
+          "dataGB": 2,
+          "minutes": 171,
+          "texts": 31
+        },
+        {
+          "day": 72,
+          "dataGB": 3,
+          "minutes": 172,
+          "texts": 32
+        },
+        {
+          "day": 73,
+          "dataGB": 4,
+          "minutes": 173,
+          "texts": 33
+        },
+        {
+          "day": 74,
+          "dataGB": 5,
+          "minutes": 174,
+          "texts": 34
+        },
+        {
+          "day": 75,
+          "dataGB": 1,
+          "minutes": 175,
+          "texts": 35
+        },
+        {
+          "day": 76,
+          "dataGB": 2,
+          "minutes": 176,
+          "texts": 36
+        },
+        {
+          "day": 77,
+          "dataGB": 3,
+          "minutes": 177,
+          "texts": 37
+        },
+        {
+          "day": 78,
+          "dataGB": 4,
+          "minutes": 178,
+          "texts": 38
+        },
+        {
+          "day": 79,
+          "dataGB": 5,
+          "minutes": 179,
+          "texts": 39
+        },
+        {
+          "day": 80,
+          "dataGB": 1,
+          "minutes": 180,
+          "texts": 40
+        },
+        {
+          "day": 81,
+          "dataGB": 2,
+          "minutes": 181,
+          "texts": 41
+        },
+        {
+          "day": 82,
+          "dataGB": 3,
+          "minutes": 182,
+          "texts": 42
+        },
+        {
+          "day": 83,
+          "dataGB": 4,
+          "minutes": 183,
+          "texts": 43
+        },
+        {
+          "day": 84,
+          "dataGB": 5,
+          "minutes": 184,
+          "texts": 44
+        },
+        {
+          "day": 85,
+          "dataGB": 1,
+          "minutes": 185,
+          "texts": 45
+        },
+        {
+          "day": 86,
+          "dataGB": 2,
+          "minutes": 186,
+          "texts": 46
+        },
+        {
+          "day": 87,
+          "dataGB": 3,
+          "minutes": 187,
+          "texts": 47
+        },
+        {
+          "day": 88,
+          "dataGB": 4,
+          "minutes": 188,
+          "texts": 48
+        },
+        {
+          "day": 89,
+          "dataGB": 5,
+          "minutes": 189,
+          "texts": 49
+        },
+        {
+          "day": 90,
+          "dataGB": 1,
+          "minutes": 190,
+          "texts": 50
+        },
+        {
+          "day": 91,
+          "dataGB": 2,
+          "minutes": 191,
+          "texts": 51
+        },
+        {
+          "day": 92,
+          "dataGB": 3,
+          "minutes": 192,
+          "texts": 52
+        },
+        {
+          "day": 93,
+          "dataGB": 4,
+          "minutes": 193,
+          "texts": 53
+        },
+        {
+          "day": 94,
+          "dataGB": 5,
+          "minutes": 194,
+          "texts": 54
+        },
+        {
+          "day": 95,
+          "dataGB": 1,
+          "minutes": 195,
+          "texts": 55
+        },
+        {
+          "day": 96,
+          "dataGB": 2,
+          "minutes": 196,
+          "texts": 56
+        },
+        {
+          "day": 97,
+          "dataGB": 3,
+          "minutes": 197,
+          "texts": 57
+        },
+        {
+          "day": 98,
+          "dataGB": 4,
+          "minutes": 198,
+          "texts": 58
+        },
+        {
+          "day": 99,
+          "dataGB": 5,
+          "minutes": 199,
+          "texts": 59
+        },
+        {
+          "day": 100,
+          "dataGB": 1,
+          "minutes": 200,
+          "texts": 10
+        },
+        {
+          "day": 101,
+          "dataGB": 2,
+          "minutes": 201,
+          "texts": 11
+        },
+        {
+          "day": 102,
+          "dataGB": 3,
+          "minutes": 202,
+          "texts": 12
+        },
+        {
+          "day": 103,
+          "dataGB": 4,
+          "minutes": 203,
+          "texts": 13
+        },
+        {
+          "day": 104,
+          "dataGB": 5,
+          "minutes": 204,
+          "texts": 14
+        },
+        {
+          "day": 105,
+          "dataGB": 1,
+          "minutes": 205,
+          "texts": 15
+        },
+        {
+          "day": 106,
+          "dataGB": 2,
+          "minutes": 206,
+          "texts": 16
+        },
+        {
+          "day": 107,
+          "dataGB": 3,
+          "minutes": 207,
+          "texts": 17
+        },
+        {
+          "day": 108,
+          "dataGB": 4,
+          "minutes": 208,
+          "texts": 18
+        },
+        {
+          "day": 109,
+          "dataGB": 5,
+          "minutes": 209,
+          "texts": 19
+        },
+        {
+          "day": 110,
+          "dataGB": 1,
+          "minutes": 210,
+          "texts": 20
+        },
+        {
+          "day": 111,
+          "dataGB": 2,
+          "minutes": 211,
+          "texts": 21
+        },
+        {
+          "day": 112,
+          "dataGB": 3,
+          "minutes": 212,
+          "texts": 22
+        },
+        {
+          "day": 113,
+          "dataGB": 4,
+          "minutes": 213,
+          "texts": 23
+        },
+        {
+          "day": 114,
+          "dataGB": 5,
+          "minutes": 214,
+          "texts": 24
+        },
+        {
+          "day": 115,
+          "dataGB": 1,
+          "minutes": 215,
+          "texts": 25
+        },
+        {
+          "day": 116,
+          "dataGB": 2,
+          "minutes": 216,
+          "texts": 26
+        },
+        {
+          "day": 117,
+          "dataGB": 3,
+          "minutes": 217,
+          "texts": 27
+        },
+        {
+          "day": 118,
+          "dataGB": 4,
+          "minutes": 218,
+          "texts": 28
+        },
+        {
+          "day": 119,
+          "dataGB": 5,
+          "minutes": 219,
+          "texts": 29
+        },
+        {
+          "day": 120,
+          "dataGB": 1,
+          "minutes": 220,
+          "texts": 30
+        },
+        {
+          "day": 121,
+          "dataGB": 2,
+          "minutes": 221,
+          "texts": 31
+        },
+        {
+          "day": 122,
+          "dataGB": 3,
+          "minutes": 222,
+          "texts": 32
+        },
+        {
+          "day": 123,
+          "dataGB": 4,
+          "minutes": 223,
+          "texts": 33
+        },
+        {
+          "day": 124,
+          "dataGB": 5,
+          "minutes": 224,
+          "texts": 34
+        },
+        {
+          "day": 125,
+          "dataGB": 1,
+          "minutes": 225,
+          "texts": 35
+        },
+        {
+          "day": 126,
+          "dataGB": 2,
+          "minutes": 226,
+          "texts": 36
+        },
+        {
+          "day": 127,
+          "dataGB": 3,
+          "minutes": 227,
+          "texts": 37
+        },
+        {
+          "day": 128,
+          "dataGB": 4,
+          "minutes": 228,
+          "texts": 38
+        },
+        {
+          "day": 129,
+          "dataGB": 5,
+          "minutes": 229,
+          "texts": 39
+        },
+        {
+          "day": 130,
+          "dataGB": 1,
+          "minutes": 230,
+          "texts": 40
+        },
+        {
+          "day": 131,
+          "dataGB": 2,
+          "minutes": 231,
+          "texts": 41
+        },
+        {
+          "day": 132,
+          "dataGB": 3,
+          "minutes": 232,
+          "texts": 42
+        },
+        {
+          "day": 133,
+          "dataGB": 4,
+          "minutes": 233,
+          "texts": 43
+        },
+        {
+          "day": 134,
+          "dataGB": 5,
+          "minutes": 234,
+          "texts": 44
+        },
+        {
+          "day": 135,
+          "dataGB": 1,
+          "minutes": 235,
+          "texts": 45
+        },
+        {
+          "day": 136,
+          "dataGB": 2,
+          "minutes": 236,
+          "texts": 46
+        },
+        {
+          "day": 137,
+          "dataGB": 3,
+          "minutes": 237,
+          "texts": 47
+        },
+        {
+          "day": 138,
+          "dataGB": 4,
+          "minutes": 238,
+          "texts": 48
+        },
+        {
+          "day": 139,
+          "dataGB": 5,
+          "minutes": 239,
+          "texts": 49
+        },
+        {
+          "day": 140,
+          "dataGB": 1,
+          "minutes": 240,
+          "texts": 50
+        },
+        {
+          "day": 141,
+          "dataGB": 2,
+          "minutes": 241,
+          "texts": 51
+        },
+        {
+          "day": 142,
+          "dataGB": 3,
+          "minutes": 242,
+          "texts": 52
+        },
+        {
+          "day": 143,
+          "dataGB": 4,
+          "minutes": 243,
+          "texts": 53
+        },
+        {
+          "day": 144,
+          "dataGB": 5,
+          "minutes": 244,
+          "texts": 54
+        },
+        {
+          "day": 145,
+          "dataGB": 1,
+          "minutes": 245,
+          "texts": 55
+        },
+        {
+          "day": 146,
+          "dataGB": 2,
+          "minutes": 246,
+          "texts": 56
+        },
+        {
+          "day": 147,
+          "dataGB": 3,
+          "minutes": 247,
+          "texts": 57
+        },
+        {
+          "day": 148,
+          "dataGB": 4,
+          "minutes": 248,
+          "texts": 58
+        },
+        {
+          "day": 149,
+          "dataGB": 5,
+          "minutes": 249,
+          "texts": 59
+        },
+        {
+          "day": 150,
+          "dataGB": 1,
+          "minutes": 250,
+          "texts": 10
+        },
+        {
+          "day": 151,
+          "dataGB": 2,
+          "minutes": 251,
+          "texts": 11
+        },
+        {
+          "day": 152,
+          "dataGB": 3,
+          "minutes": 252,
+          "texts": 12
+        },
+        {
+          "day": 153,
+          "dataGB": 4,
+          "minutes": 253,
+          "texts": 13
+        },
+        {
+          "day": 154,
+          "dataGB": 5,
+          "minutes": 254,
+          "texts": 14
+        },
+        {
+          "day": 155,
+          "dataGB": 1,
+          "minutes": 255,
+          "texts": 15
+        },
+        {
+          "day": 156,
+          "dataGB": 2,
+          "minutes": 256,
+          "texts": 16
+        },
+        {
+          "day": 157,
+          "dataGB": 3,
+          "minutes": 257,
+          "texts": 17
+        },
+        {
+          "day": 158,
+          "dataGB": 4,
+          "minutes": 258,
+          "texts": 18
+        },
+        {
+          "day": 159,
+          "dataGB": 5,
+          "minutes": 259,
+          "texts": 19
+        },
+        {
+          "day": 160,
+          "dataGB": 1,
+          "minutes": 260,
+          "texts": 20
+        },
+        {
+          "day": 161,
+          "dataGB": 2,
+          "minutes": 261,
+          "texts": 21
+        },
+        {
+          "day": 162,
+          "dataGB": 3,
+          "minutes": 262,
+          "texts": 22
+        },
+        {
+          "day": 163,
+          "dataGB": 4,
+          "minutes": 263,
+          "texts": 23
+        },
+        {
+          "day": 164,
+          "dataGB": 5,
+          "minutes": 264,
+          "texts": 24
+        },
+        {
+          "day": 165,
+          "dataGB": 1,
+          "minutes": 265,
+          "texts": 25
+        },
+        {
+          "day": 166,
+          "dataGB": 2,
+          "minutes": 266,
+          "texts": 26
+        },
+        {
+          "day": 167,
+          "dataGB": 3,
+          "minutes": 267,
+          "texts": 27
+        },
+        {
+          "day": 168,
+          "dataGB": 4,
+          "minutes": 268,
+          "texts": 28
+        },
+        {
+          "day": 169,
+          "dataGB": 5,
+          "minutes": 269,
+          "texts": 29
+        },
+        {
+          "day": 170,
+          "dataGB": 1,
+          "minutes": 270,
+          "texts": 30
+        },
+        {
+          "day": 171,
+          "dataGB": 2,
+          "minutes": 271,
+          "texts": 31
+        },
+        {
+          "day": 172,
+          "dataGB": 3,
+          "minutes": 272,
+          "texts": 32
+        },
+        {
+          "day": 173,
+          "dataGB": 4,
+          "minutes": 273,
+          "texts": 33
+        },
+        {
+          "day": 174,
+          "dataGB": 5,
+          "minutes": 274,
+          "texts": 34
+        },
+        {
+          "day": 175,
+          "dataGB": 1,
+          "minutes": 275,
+          "texts": 35
+        },
+        {
+          "day": 176,
+          "dataGB": 2,
+          "minutes": 276,
+          "texts": 36
+        },
+        {
+          "day": 177,
+          "dataGB": 3,
+          "minutes": 277,
+          "texts": 37
+        },
+        {
+          "day": 178,
+          "dataGB": 4,
+          "minutes": 278,
+          "texts": 38
+        },
+        {
+          "day": 179,
+          "dataGB": 5,
+          "minutes": 279,
+          "texts": 39
+        },
+        {
+          "day": 180,
+          "dataGB": 1,
+          "minutes": 280,
+          "texts": 40
+        },
+        {
+          "day": 181,
+          "dataGB": 2,
+          "minutes": 281,
+          "texts": 41
+        },
+        {
+          "day": 182,
+          "dataGB": 3,
+          "minutes": 282,
+          "texts": 42
+        },
+        {
+          "day": 183,
+          "dataGB": 4,
+          "minutes": 283,
+          "texts": 43
+        },
+        {
+          "day": 184,
+          "dataGB": 5,
+          "minutes": 284,
+          "texts": 44
+        },
+        {
+          "day": 185,
+          "dataGB": 1,
+          "minutes": 285,
+          "texts": 45
+        },
+        {
+          "day": 186,
+          "dataGB": 2,
+          "minutes": 286,
+          "texts": 46
+        },
+        {
+          "day": 187,
+          "dataGB": 3,
+          "minutes": 287,
+          "texts": 47
+        },
+        {
+          "day": 188,
+          "dataGB": 4,
+          "minutes": 288,
+          "texts": 48
+        },
+        {
+          "day": 189,
+          "dataGB": 5,
+          "minutes": 289,
+          "texts": 49
+        },
+        {
+          "day": 190,
+          "dataGB": 1,
+          "minutes": 290,
+          "texts": 50
+        },
+        {
+          "day": 191,
+          "dataGB": 2,
+          "minutes": 291,
+          "texts": 51
+        },
+        {
+          "day": 192,
+          "dataGB": 3,
+          "minutes": 292,
+          "texts": 52
+        },
+        {
+          "day": 193,
+          "dataGB": 4,
+          "minutes": 293,
+          "texts": 53
+        },
+        {
+          "day": 194,
+          "dataGB": 5,
+          "minutes": 294,
+          "texts": 54
+        },
+        {
+          "day": 195,
+          "dataGB": 1,
+          "minutes": 295,
+          "texts": 55
+        },
+        {
+          "day": 196,
+          "dataGB": 2,
+          "minutes": 296,
+          "texts": 56
+        },
+        {
+          "day": 197,
+          "dataGB": 3,
+          "minutes": 297,
+          "texts": 57
+        },
+        {
+          "day": 198,
+          "dataGB": 4,
+          "minutes": 298,
+          "texts": 58
+        },
+        {
+          "day": 199,
+          "dataGB": 5,
+          "minutes": 299,
+          "texts": 59
+        }
+      ]
+    }
+  },
+  {
+    "name": "simple-assertion",
+    "kind": "policy",
+    "file": "policies/simple-assertion.json",
+    "input": {
+      "customer": {
+        "age": 30
+      }
+    }
+  },
+  {
+    "name": "expression",
+    "kind": "policy",
+    "file": "policies/expression.json",
+    "input": {
+      "customer": {
+        "age": 35,
+        "income": 60000
+      }
+    }
+  },
+  {
+    "name": "multi-assertion",
+    "kind": "policy",
+    "file": "policies/multi-assertion.json",
+    "input": {
+      "customer": {
+        "age": 40,
+        "income": 60000,
+        "employmentYears": 5,
+        "scores": [
+          0,
+          13,
+          26,
+          39,
+          52,
+          65,
+          78,
+          91,
+          4,
+          17,
+          30,
+          43,
+          56,
+          69,
+          82,
+          95,
+          8,
+          21,
+          34,
+          47,
+          60,
+          73,
+          86,
+          99,
+          12,
+          25,
+          38,
+          51,
+          64,
+          77,
+          90,
+          3,
+          16,
+          29,
+          42,
+          55,
+          68,
+          81,
+          94,
+          7,
+          20,
+          33,
+          46,
+          59,
+          72,
+          85,
+          98,
+          11,
+          24,
+          37,
+          50,
+          63,
+          76,
+          89,
+          2,
+          15,
+          28,
+          41,
+          54,
+          67,
+          80,
+          93,
+          6,
+          19,
+          32,
+          45,
+          58,
+          71,
+          84,
+          97,
+          10,
+          23,
+          36,
+          49,
+          62,
+          75,
+          88,
+          1,
+          14,
+          27,
+          40,
+          53,
+          66,
+          79,
+          92,
+          5,
+          18,
+          31,
+          44,
+          57,
+          70,
+          83,
+          96,
+          9,
+          22,
+          35,
+          48,
+          61,
+          74,
+          87,
+          0,
+          13,
+          26,
+          39,
+          52,
+          65,
+          78,
+          91,
+          4,
+          17,
+          30,
+          43,
+          56,
+          69,
+          82,
+          95,
+          8,
+          21,
+          34,
+          47,
+          60,
+          73,
+          86,
+          99,
+          12,
+          25,
+          38,
+          51,
+          64,
+          77,
+          90,
+          3,
+          16,
+          29,
+          42,
+          55,
+          68,
+          81,
+          94,
+          7,
+          20,
+          33,
+          46,
+          59,
+          72,
+          85,
+          98,
+          11,
+          24,
+          37,
+          50,
+          63,
+          76,
+          89,
+          2,
+          15,
+          28,
+          41,
+          54,
+          67,
+          80,
+          93,
+          6,
+          19,
+          32,
+          45,
+          58,
+          71,
+          84,
+          97,
+          10,
+          23,
+          36,
+          49,
+          62,
+          75,
+          88,
+          1,
+          14,
+          27,
+          40,
+          53,
+          66,
+          79,
+          92,
+          5,
+          18,
+          31,
+          44,
+          57,
+          70,
+          83,
+          96,
+          9,
+          22,
+          35,
+          48,
+          61,
+          74,
+          87,
+          0,
+          13,
+          26,
+          39,
+          52,
+          65,
+          78,
+          91,
+          4,
+          17,
+          30,
+          43,
+          56,
+          69,
+          82,
+          95,
+          8,
+          21,
+          34,
+          47,
+          60,
+          73,
+          86,
+          99,
+          12,
+          25,
+          38,
+          51,
+          64,
+          77,
+          90,
+          3,
+          16,
+          29,
+          42,
+          55,
+          68,
+          81,
+          94,
+          7,
+          20,
+          33,
+          46,
+          59,
+          72,
+          85,
+          98,
+          11,
+          24,
+          37,
+          50,
+          63,
+          76,
+          89,
+          2,
+          15,
+          28,
+          41,
+          54,
+          67,
+          80,
+          93,
+          6,
+          19,
+          32,
+          45,
+          58,
+          71,
+          84,
+          97,
+          10,
+          23,
+          36,
+          49,
+          62,
+          75,
+          88,
+          1,
+          14,
+          27,
+          40,
+          53,
+          66,
+          79,
+          92,
+          5,
+          18,
+          31,
+          44,
+          57,
+          70,
+          83,
+          96,
+          9,
+          22,
+          35,
+          48,
+          61,
+          74,
+          87
+        ]
+      }
+    }
+  },
+  {
+    "name": "expression-chain",
+    "kind": "policy",
+    "file": "policies/expression-chain.json",
+    "input": {
+      "customer": {
+        "amounts": [
+          -20,
+          -13,
+          -6,
+          1,
+          8,
+          15,
+          -19,
+          -12,
+          -5,
+          2,
+          9,
+          16,
+          -18,
+          -11,
+          -4,
+          3,
+          10,
+          17,
+          -17,
+          -10,
+          -3,
+          4,
+          11,
+          18,
+          -16,
+          -9,
+          -2,
+          5,
+          12,
+          19,
+          -15,
+          -8,
+          -1,
+          6,
+          13,
+          20,
+          -14,
+          -7,
+          0,
+          7,
+          14,
+          -20,
+          -13,
+          -6,
+          1,
+          8,
+          15,
+          -19,
+          -12,
+          -5,
+          2,
+          9,
+          16,
+          -18,
+          -11,
+          -4,
+          3,
+          10,
+          17,
+          -17,
+          -10,
+          -3,
+          4,
+          11,
+          18,
+          -16,
+          -9,
+          -2,
+          5,
+          12,
+          19,
+          -15,
+          -8,
+          -1,
+          6,
+          13,
+          20,
+          -14,
+          -7,
+          0,
+          7,
+          14,
+          -20,
+          -13,
+          -6,
+          1,
+          8,
+          15,
+          -19,
+          -12,
+          -5,
+          2,
+          9,
+          16,
+          -18,
+          -11,
+          -4,
+          3,
+          10,
+          17,
+          -17,
+          -10,
+          -3,
+          4,
+          11,
+          18,
+          -16,
+          -9,
+          -2,
+          5,
+          12,
+          19,
+          -15,
+          -8,
+          -1,
+          6,
+          13,
+          20,
+          -14,
+          -7,
+          0,
+          7,
+          14,
+          -20,
+          -13,
+          -6,
+          1,
+          8,
+          15,
+          -19,
+          -12,
+          -5,
+          2,
+          9,
+          16,
+          -18,
+          -11,
+          -4,
+          3,
+          10,
+          17,
+          -17,
+          -10,
+          -3,
+          4,
+          11,
+          18,
+          -16,
+          -9,
+          -2,
+          5,
+          12,
+          19,
+          -15,
+          -8,
+          -1,
+          6,
+          13,
+          20,
+          -14,
+          -7,
+          0,
+          7,
+          14,
+          -20,
+          -13,
+          -6,
+          1,
+          8,
+          15,
+          -19,
+          -12,
+          -5,
+          2,
+          9,
+          16,
+          -18,
+          -11,
+          -4,
+          3,
+          10,
+          17,
+          -17,
+          -10,
+          -3,
+          4,
+          11,
+          18,
+          -16,
+          -9,
+          -2,
+          5,
+          12,
+          19,
+          -15,
+          -8,
+          -1,
+          6,
+          13,
+          20,
+          -14,
+          -7,
+          0,
+          7,
+          14,
+          -20,
+          -13,
+          -6,
+          1,
+          8,
+          15,
+          -19,
+          -12,
+          -5,
+          2,
+          9,
+          16,
+          -18,
+          -11,
+          -4,
+          3,
+          10,
+          17,
+          -17,
+          -10,
+          -3,
+          4,
+          11,
+          18,
+          -16,
+          -9,
+          -2,
+          5,
+          12,
+          19,
+          -15,
+          -8,
+          -1,
+          6,
+          13,
+          20,
+          -14,
+          -7,
+          0,
+          7,
+          14,
+          -20,
+          -13,
+          -6,
+          1,
+          8,
+          15,
+          -19,
+          -12,
+          -5,
+          2,
+          9,
+          16,
+          -18,
+          -11,
+          -4,
+          3,
+          10,
+          17,
+          -17,
+          -10,
+          -3,
+          4,
+          11,
+          18,
+          -16,
+          -9,
+          -2,
+          5,
+          12,
+          19,
+          -15,
+          -8,
+          -1,
+          6,
+          13,
+          20,
+          -14,
+          -7,
+          0,
+          7,
+          14,
+          -20,
+          -13,
+          -6,
+          1,
+          8,
+          15,
+          -19,
+          -12,
+          -5,
+          2,
+          9,
+          16,
+          -18,
+          -11,
+          -4,
+          3,
+          10,
+          17,
+          -17,
+          -10,
+          -3,
+          4,
+          11,
+          18,
+          -16,
+          -9,
+          -2,
+          5,
+          12,
+          19,
+          -15,
+          -8,
+          -1,
+          6,
+          13,
+          20,
+          -14,
+          -7,
+          0,
+          7,
+          14,
+          -20,
+          -13,
+          -6,
+          1,
+          8,
+          15,
+          -19,
+          -12,
+          -5,
+          2,
+          9,
+          16,
+          -18,
+          -11,
+          -4,
+          3,
+          10,
+          17,
+          -17,
+          -10,
+          -3,
+          4,
+          11,
+          18,
+          -16,
+          -9,
+          -2,
+          5,
+          12,
+          19,
+          -15,
+          -8,
+          -1,
+          6,
+          13,
+          20,
+          -14,
+          -7,
+          0,
+          7,
+          14,
+          -20,
+          -13,
+          -6,
+          1,
+          8,
+          15,
+          -19,
+          -12,
+          -5,
+          2,
+          9,
+          16,
+          -18,
+          -11,
+          -4,
+          3,
+          10,
+          17,
+          -17,
+          -10,
+          -3,
+          4,
+          11,
+          18,
+          -16,
+          -9,
+          -2,
+          5,
+          12,
+          19,
+          -15,
+          -8,
+          -1,
+          6,
+          13,
+          20,
+          -14,
+          -7,
+          0,
+          7,
+          14,
+          -20,
+          -13,
+          -6,
+          1,
+          8,
+          15,
+          -19,
+          -12,
+          -5,
+          2,
+          9,
+          16,
+          -18,
+          -11,
+          -4,
+          3,
+          10,
+          17,
+          -17,
+          -10,
+          -3,
+          4,
+          11,
+          18,
+          -16,
+          -9,
+          -2,
+          5,
+          12,
+          19,
+          -15,
+          -8,
+          -1,
+          6,
+          13,
+          20,
+          -14,
+          -7,
+          0,
+          7,
+          14,
+          -20,
+          -13,
+          -6,
+          1,
+          8,
+          15,
+          -19,
+          -12,
+          -5,
+          2,
+          9,
+          16,
+          -18,
+          -11,
+          -4,
+          3,
+          10,
+          17,
+          -17,
+          -10,
+          -3,
+          4,
+          11,
+          18,
+          -16,
+          -9,
+          -2,
+          5,
+          12,
+          19,
+          -15,
+          -8,
+          -1,
+          6,
+          13,
+          20,
+          -14,
+          -7,
+          0,
+          7,
+          14,
+          -20,
+          -13,
+          -6,
+          1,
+          8,
+          15,
+          -19,
+          -12,
+          -5,
+          2,
+          9,
+          16,
+          -18,
+          -11,
+          -4,
+          3,
+          10,
+          17,
+          -17,
+          -10,
+          -3,
+          4,
+          11,
+          18,
+          -16,
+          -9,
+          -2,
+          5,
+          12,
+          19,
+          -15,
+          -8,
+          -1,
+          6,
+          13,
+          20,
+          -14,
+          -7,
+          0,
+          7,
+          14,
+          -20,
+          -13,
+          -6,
+          1,
+          8,
+          15,
+          -19,
+          -12,
+          -5,
+          2,
+          9,
+          16,
+          -18,
+          -11,
+          -4,
+          3,
+          10,
+          17,
+          -17,
+          -10,
+          -3,
+          4,
+          11,
+          18,
+          -16,
+          -9,
+          -2,
+          5,
+          12,
+          19,
+          -15,
+          -8,
+          -1,
+          6,
+          13,
+          20,
+          -14,
+          -7,
+          0,
+          7,
+          14,
+          -20,
+          -13,
+          -6,
+          1,
+          8,
+          15,
+          -19,
+          -12,
+          -5,
+          2,
+          9,
+          16,
+          -18,
+          -11,
+          -4,
+          3,
+          10,
+          17,
+          -17,
+          -10,
+          -3,
+          4,
+          11,
+          18,
+          -16,
+          -9
+        ],
+        "label": "batch"
+      }
+    }
+  },
+  {
+    "name": "match",
+    "kind": "policy",
+    "file": "policies/match.json",
+    "input": {
+      "customer": {
+        "score": 85
+      }
+    }
+  }
+]

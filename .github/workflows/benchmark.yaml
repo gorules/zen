@@ -1,0 +1,124 @@
+name: Benchmark
+
+on:
+  release:
+    types: [ published ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  BENCH_ITERS: '500'
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install Rust
+        run: rustup update stable
+      - uses: ./.github/actions/setup-rust
+        with:
+          shared-key: benchmark-rust
+          sccache: 'false'
+      - name: Build
+        run: cargo build --release -p zen-benchmark
+      - name: Run
+        run: ./target/release/zen-benchmark benchmark/manifest.json "$GITHUB_WORKSPACE/bench-rust.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-rust
+          path: bench-rust.json
+          if-no-files-found: error
+
+  node:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bindings/nodejs
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 22
+          cache: yarn
+          cache-dependency-path: 'bindings/nodejs/yarn.lock'
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: x86_64-unknown-linux-gnu
+      - uses: ./.github/actions/setup-rust
+        with:
+          shared-key: benchmark-node
+          sccache: 'false'
+      - run: yarn install --immutable --mode=skip-build
+      - run: yarn build
+      - name: Run
+        working-directory: ${{ github.workspace }}
+        run: node benchmark/node/bench.mjs "$GITHUB_WORKSPACE/bench-node.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-node
+          path: bench-node.json
+          if-no-files-found: error
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.13'
+      - name: Install Rust
+        run: rustup update stable
+      - uses: ./.github/actions/setup-rust
+        with:
+          shared-key: benchmark-python
+          sccache: 'false'
+      - run: pip install maturin
+      - name: Build + install wheel
+        run: |
+          maturin build --release --out dist -m bindings/python/Cargo.toml
+          pip install dist/*.whl
+      - name: Run
+        run: python benchmark/python/bench.py "$GITHUB_WORKSPACE/bench-python.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-python
+          path: bench-python.json
+          if-no-files-found: error
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: [ rust, node, python ]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/download-artifact@v4
+        with:
+          path: results
+          merge-multiple: true
+      - name: Merge results
+        run: |
+          node -e '
+            const fs = require("fs");
+            const out = [];
+            for (const lang of ["rust", "node", "python"]) {
+              const r = JSON.parse(fs.readFileSync(`results/bench-${lang}.json`, "utf8"));
+              for (const e of r) out.push({ ...e, name: `${lang} · ${e.name}` });
+            }
+            fs.writeFileSync("bench-all.json", JSON.stringify(out, null, 2));
+          '
+      - name: Store + publish
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: ZEN cross-language
+          tool: customSmallerIsBetter
+          output-file-path: bench-all.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          alert-threshold: '150%'
+          comment-on-alert: true
+          fail-on-alert: false

@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.0.1-beta.0](https://github.com/gorules/zen/compare/nodejs-v1.0.0-beta.0...nodejs-v1.0.1-beta.0) (2026-06-25)
+## [1.0.0-beta.1](https://github.com/gorules/zen/compare/nodejs-v1.0.0-beta.0...nodejs-v1.0.0-beta.1) (2026-06-25)
 
 ## [1.0.0-beta.0](https://github.com/gorules/zen/compare/nodejs-v0.54.0...nodejs-v1.0.0-beta.0) (2026-06-25)
 

@@ -69,8 +69,10 @@ jobs:
             build: |
               set -e
               rustup target add x86_64-unknown-linux-gnu
-              yarn build --target x86_64-unknown-linux-gnu.$GLIBC_VERSION --cross-compile -- -- --locked
+              cargo zigbuild -p zen-nodejs --release --locked --target x86_64-unknown-linux-gnu.$GLIBC_VERSION
+              cp ../../target/x86_64-unknown-linux-gnu/release/libzen_nodejs.so zen-engine.linux-x64-gnu.node
               strip zen-engine.linux-x64-gnu.node
+              echo "max glibc:"; readelf --dyn-syms zen-engine.linux-x64-gnu.node | grep -oE 'GLIBC_[0-9.]+' | sort -V | tail -1
 
           - host: ubuntu-latest
             target: 'aarch64-unknown-linux-gnu'
@@ -78,7 +80,9 @@ jobs:
             build: |
               set -e
               rustup target add aarch64-unknown-linux-gnu
-              yarn build --target aarch64-unknown-linux-gnu.$GLIBC_VERSION --cross-compile -- -- --locked
+              cargo zigbuild -p zen-nodejs --release --locked --target aarch64-unknown-linux-gnu.$GLIBC_VERSION
+              cp ../../target/aarch64-unknown-linux-gnu/release/libzen_nodejs.so zen-engine.linux-arm64-gnu.node
+              echo "max glibc:"; readelf --dyn-syms zen-engine.linux-arm64-gnu.node | grep -oE 'GLIBC_[0-9.]+' | sort -V | tail -1
 
           - host: ubuntu-latest
             target: 'x86_64-unknown-linux-musl'

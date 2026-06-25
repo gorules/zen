@@ -5,7 +5,7 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use zen_engine::loader::{FilesystemLoader, FilesystemLoaderOptions};
-use zen_engine::DecisionEngine;
+use zen_engine::{DecisionEngine, EvaluationOptions};
 use zen_expression::Variable;
 
 #[derive(Deserialize)]
@@ -53,30 +53,42 @@ async fn main() {
     let mut results = Vec::new();
     for e in &manifest {
         let input: Variable = e.input.clone().into();
-        engine
-            .evaluate(e.file.as_str(), input.clone())
-            .await
-            .unwrap_or_else(|err| panic!("warmup {} failed: {err:?}", e.name));
-
-        let start = Instant::now();
-        for _ in 0..iters {
+        for trace in [false, true] {
+            let opts = || EvaluationOptions {
+                trace,
+                max_depth: 10,
+            };
             engine
-                .evaluate(e.file.as_str(), input.clone())
+                .evaluate_with_opts(e.file.as_str(), input.clone(), opts())
                 .await
-                .unwrap();
-        }
-        let per = start.elapsed().as_nanos() as f64 / f64::from(iters);
+                .unwrap_or_else(|err| panic!("warmup {} failed: {err:?}", e.name));
 
-        results.push(BenchResult {
-            name: format!("{} ({})", e.name, e.kind),
-            unit: "ns/op".to_string(),
-            value: per,
-        });
+            let start = Instant::now();
+            for _ in 0..iters {
+                engine
+                    .evaluate_with_opts(e.file.as_str(), input.clone(), opts())
+                    .await
+                    .unwrap();
+            }
+            let per = start.elapsed().as_nanos() as f64 / f64::from(iters);
+
+            results.push(BenchResult {
+                name: format!("{} ({}){}", e.name, e.kind, if trace { " +trace" } else { "" }),
+                unit: "ns/op".to_string(),
+                value: per,
+            });
+        }
     }
 
-    let json = serde_json::to_string_pretty(&results).expect("serialize results");
     match out_path {
-        Some(p) => std::fs::write(p, json).expect("write output"),
-        None => println!("{json}"),
+        Some(p) => {
+            let json = serde_json::to_string_pretty(&results).expect("serialize results");
+            std::fs::write(p, json).expect("write output");
+        }
+        None => {
+            for r in &results {
+                println!("{:<44} {:>12.0} ns/op", r.name, r.value);
+            }
+        }
     }
 }

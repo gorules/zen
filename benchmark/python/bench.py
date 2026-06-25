@@ -21,16 +21,19 @@ engine = zen.ZenEngine({"loader": loader})
 
 results = []
 for e in manifest:
-    engine.evaluate(e["file"], e["input"])
-    start = time.perf_counter_ns()
-    for _ in range(iters):
-        engine.evaluate(e["file"], e["input"])
-    per = (time.perf_counter_ns() - start) / iters
-    results.append({"name": f'{e["name"]} ({e["kind"]})', "unit": "ns/op", "value": per})
+    for trace in (False, True):
+        opts = {"trace": trace}
+        engine.evaluate(e["file"], e["input"], opts)
+        start = time.perf_counter_ns()
+        for _ in range(iters):
+            engine.evaluate(e["file"], e["input"], opts)
+        per = (time.perf_counter_ns() - start) / iters
+        suffix = " +trace" if trace else ""
+        results.append({"name": f'{e["name"]} ({e["kind"]}){suffix}', "unit": "ns/op", "value": per})
 
-out = json.dumps(results, indent=2)
 if out_path:
     with open(out_path, "w") as f:
-        f.write(out)
+        f.write(json.dumps(results, indent=2))
 else:
-    print(out)
+    for r in results:
+        print(f'{r["name"]:<44} {r["value"]:>12.0f} ns/op')

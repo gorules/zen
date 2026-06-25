@@ -20,17 +20,24 @@ const engine = new ZenEngine({ loader });
 
 const results = [];
 for (const e of manifest) {
-  await engine.evaluate(e.file, e.input);
-  const start = hrtime.bigint();
-  for (let i = 0; i < iters; i++) {
-    await engine.evaluate(e.file, e.input);
+  for (const trace of [false, true]) {
+    const opts = { trace };
+    await engine.evaluate(e.file, e.input, opts);
+    const start = hrtime.bigint();
+    for (let i = 0; i < iters; i++) {
+      await engine.evaluate(e.file, e.input, opts);
+    }
+    const per = Number(hrtime.bigint() - start) / iters;
+    results.push({ name: `${e.name} (${e.kind})${trace ? ' +trace' : ''}`, unit: 'ns/op', value: per });
   }
-  const per = Number(hrtime.bigint() - start) / iters;
-  results.push({ name: `${e.name} (${e.kind})`, unit: 'ns/op', value: per });
 }
 
 engine.dispose?.();
 
-const json = JSON.stringify(results, null, 2);
-if (outPath) writeFileSync(outPath, json);
-else console.log(json);
+if (outPath) {
+  writeFileSync(outPath, JSON.stringify(results, null, 2));
+} else {
+  for (const r of results) {
+    console.log(`${r.name.padEnd(44)} ${r.value.toFixed(0).padStart(12)} ns/op`);
+  }
+}

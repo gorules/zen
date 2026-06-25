@@ -2,7 +2,7 @@ name: Benchmark
 
 on:
   release:
-    types: [published]
+    types: [ published ]
   workflow_dispatch:
 
 permissions:
@@ -10,7 +10,7 @@ permissions:
   pull-requests: write
 
 env:
-  BENCH_ITERS: '5000'
+  BENCH_ITERS: '500'
 
 jobs:
   rust:
@@ -93,7 +93,7 @@ jobs:
 
   publish:
     runs-on: ubuntu-latest
-    needs: [rust, node, python]
+    needs: [ rust, node, python ]
     steps:
       - uses: actions/checkout@v3
       - uses: actions/download-artifact@v4

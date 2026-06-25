@@ -73,7 +73,12 @@ async fn main() {
             let per = start.elapsed().as_nanos() as f64 / f64::from(iters);
 
             results.push(BenchResult {
-                name: format!("{} ({}){}", e.name, e.kind, if trace { " +trace" } else { "" }),
+                name: format!(
+                    "{} ({}){}",
+                    e.name,
+                    e.kind,
+                    if trace { " +trace" } else { "" }
+                ),
                 unit: "ns/op".to_string(),
                 value: per,
             });

@@ -1,0 +1,5 @@
+.idea
+.temp
+benchmark/
+bindings/
+target/

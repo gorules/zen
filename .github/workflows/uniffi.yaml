@@ -3,30 +3,18 @@ env:
   UNIFFI_DIRECTORY: bindings/uniffi
 
 on:
-  push:
-    branches:
-      - master
-    tags-ignore:
-      - '**'
-    paths:
-      - 'bindings/uniffi/**'
-      - 'core/**'
-      - 'test-data/**'
-      - '.github/workflows/uniffi.yaml'
   pull_request:
     paths:
       - 'bindings/uniffi/**'
       - 'core/**'
       - 'test-data/**'
       - '.github/workflows/uniffi.yaml'
-  # Stable publish is driven by the GitHub Release that release-please creates
-  # for the `uniffi` component (tag `uniffi-v<version>`).
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'uniffi-v*'
 
 jobs:
   build:
-    if: "!contains(github.event.head_commit.message, 'skip ci')"
     env:
       OUTPUT_NAME: zen_uniffi
 
@@ -100,7 +88,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: release
     needs: [ build ]
-    if: "github.event_name == 'release' && startsWith(github.event.release.tag_name, 'uniffi-v')"
+    if: "github.ref_type == 'tag'"
     defaults:
       run:
         working-directory: ${{ env.UNIFFI_DIRECTORY }}
@@ -176,7 +164,7 @@ jobs:
     needs: [ build ]
     permissions:
       id-token: write  # Required for OIDC
-    if: "github.event_name == 'release' && startsWith(github.event.release.tag_name, 'uniffi-v')"
+    if: "github.ref_type == 'tag'"
     defaults:
       run:
         working-directory: ${{ env.UNIFFI_DIRECTORY }}
@@ -255,7 +243,6 @@ jobs:
             --skip-duplicate
 
   build-ios:
-    if: "!contains(github.event.head_commit.message, 'skip ci')"
     env:
       OUTPUT_NAME: zen_uniffi
       IPHONEOS_DEPLOYMENT_TARGET: '16.0'
@@ -306,7 +293,6 @@ jobs:
   create-xcframework:
     runs-on: macos-latest
     needs: [ build-ios ]
-    if: "!contains(github.event.head_commit.message, 'skip ci')"
 
     steps:
       - uses: actions/checkout@v3
@@ -401,7 +387,7 @@ jobs:
     runs-on: macos-latest
     environment: release
     needs: [ create-xcframework ]
-    if: "github.event_name == 'release' && startsWith(github.event.release.tag_name, 'uniffi-v')"
+    if: "github.ref_type == 'tag'"
 
     steps:
       - name: Checkout zen-ios
@@ -478,7 +464,6 @@ jobs:
             --base "master"
 
   build-android:
-    if: "!contains(github.event.head_commit.message, 'skip ci')"
     runs-on: ubuntu-latest
     env:
       OUTPUT_NAME: zen_uniffi
@@ -504,7 +489,7 @@ jobs:
           add-to-path: true
 
       - name: Add Rust Android targets (all)
-        if: "github.event_name == 'release' && startsWith(github.event.release.tag_name, 'uniffi-v')"
+        if: "github.ref_type == 'tag'"
         run: |
           rustup target add aarch64-linux-android
           rustup target add armv7-linux-androideabi
@@ -512,12 +497,12 @@ jobs:
           rustup target add x86_64-linux-android
 
       - name: Add Rust Android targets (arm64 only)
-        if: "github.event_name != 'release' || !startsWith(github.event.release.tag_name, 'uniffi-v')"
+        if: "github.ref_type != 'tag'"
         run: |
           rustup target add aarch64-linux-android
 
       - name: Build for Android (all targets)
-        if: "github.event_name == 'release' && startsWith(github.event.release.tag_name, 'uniffi-v')"
+        if: "github.ref_type == 'tag'"
         env:
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
@@ -527,7 +512,7 @@ jobs:
            build -p zen-uniffi --release --locked --features bindgen
 
       - name: Build for Android (arm64 only)
-        if: "github.event_name != 'release' || !startsWith(github.event.release.tag_name, 'uniffi-v')"
+        if: "github.ref_type != 'tag'"
         env:
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
@@ -546,7 +531,6 @@ jobs:
   prepare-android-bindings:
     runs-on: ubuntu-latest
     needs: [ build ]
-    if: "!contains(github.event.head_commit.message, 'skip ci')"
 
     defaults:
       run:
@@ -584,7 +568,6 @@ jobs:
   package-android-aar:
     runs-on: ubuntu-latest
     needs: [ build-android, prepare-android-bindings ]
-    if: "!contains(github.event.head_commit.message, 'skip ci')"
     defaults:
       run:
         working-directory: ${{ env.UNIFFI_DIRECTORY }}
@@ -683,7 +666,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: release
     needs: [ package-android-aar ]
-    if: "github.event_name == 'release' && startsWith(github.event.release.tag_name, 'uniffi-v')"
+    if: "github.ref_type == 'tag'"
     defaults:
       run:
         working-directory: ${{ env.UNIFFI_DIRECTORY }}

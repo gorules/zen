@@ -4,24 +4,15 @@ env:
   MACOSX_DEPLOYMENT_TARGET: '10.13'
 
 on:
-  push:
-    branches:
-      - master
-    tags-ignore:
-      - '**'
-    paths:
-      - 'bindings/c/**'
-      - 'core/**'
-      - 'test-data/**'
-      - '.github/workflows/go.yaml'
   pull_request:
     paths:
       - 'bindings/c/**'
       - 'core/**'
       - 'test-data/**'
       - '.github/workflows/go.yaml'
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'go-v*'
 
 permissions: write-all
 
@@ -112,7 +103,7 @@ jobs:
     name: Release
     runs-on: ubuntu-latest
     environment: release
-    if: "github.event_name == 'release' && startsWith(github.event.release.tag_name, 'go-v')"
+    if: "github.ref_type == 'tag'"
     needs:
       - build
       - copy-common

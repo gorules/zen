@@ -11,19 +11,8 @@ on:
       - '.github/workflows/python.yaml'
       - '.github/workflows/node.yaml'
   push:
-    branches:
-      - master
-    tags-ignore:
-      - '**'
-    paths-ignore:
-      - 'bindings/**'
-      - 'examples/**'
-      - '.github/workflows/python.yaml'
-      - '.github/workflows/node.yaml'
-  # Crates.io publish is driven by the GitHub Release that release-please
-  # creates for the linked `core` group (anchored on tag `zen-engine-v<version>`).
-  release:
-    types: [published]
+    tags:
+      - 'zen-engine-v*'
 
 env:
   RUST_BACKTRACE: 1
@@ -72,8 +61,7 @@ jobs:
     name: Cargo Release
     runs-on: ubuntu-latest
     environment: release
-    # Publishes only on the release-please GitHub Release for the core group.
-    if: "github.event_name == 'release' && startsWith(github.event.release.tag_name, 'zen-engine-v')"
+    if: "github.ref_type == 'tag'"
     needs:
       - test
       - fmt

@@ -9,34 +9,21 @@ env:
   CARGO_TARGET_APPLIES_TO_HOST: false
 
 on:
-  push:
-    branches:
-      - master
-    tags-ignore:
-      - '**'
-    paths:
-      - 'bindings/nodejs/**'
-      - 'core/**'
-      - 'test-data/**'
-      - '.github/workflows/node.yaml'
   pull_request:
     paths:
       - 'bindings/nodejs/**'
       - 'core/**'
       - 'test-data/**'
       - '.github/workflows/node.yaml'
-  # Stable publish is driven by the GitHub Release that release-please creates
-  # for the `nodejs` component (tag `nodejs-v<version>`).
-  release:
-    types: [ published ]
+  push:
+    tags:
+      - 'nodejs-v*'
 
 permissions:
   contents: write
 
 jobs:
   build:
-    # On release events, only build for this component's tag.
-    if: "(github.event_name != 'release' || startsWith(github.event.release.tag_name, 'nodejs-v')) && !contains(github.event.head_commit.message, 'skip ci')"
     strategy:
       fail-fast: false
       matrix:
@@ -282,7 +269,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: release
     # Publishes only on the release-please GitHub Release for the nodejs component.
-    if: "github.event_name == 'release' && startsWith(github.event.release.tag_name, 'nodejs-v')"
+    if: "github.ref_type == 'tag'"
     defaults:
       run:
         working-directory: ${{ env.WORKING_DIRECTORY }}
@@ -328,8 +315,7 @@ jobs:
         shell: bash
 
       - name: Lerna publish
-        # Prereleases (release-please beta window) go to the `next` dist-tag, not `latest`.
-        run: yarn lerna publish from-package --dist-tag ${{ github.event.release.prerelease && 'next' || 'latest' }} --no-verify-access --yes
+        run: yarn lerna publish from-package --dist-tag ${{ contains(github.ref, '-beta') && 'beta' || 'latest' }} --no-verify-access --yes
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -1,5 +1,7 @@
 # Changelog
 
+## [1.0.1-beta.0](https://github.com/gorules/zen/compare/python-v1.0.0-beta.0...python-v1.0.1-beta.0) (2026-06-25)
+
 ## [1.0.0-beta.0](https://github.com/gorules/zen/compare/python-v0.53.0...python-v1.0.0-beta.0) (2026-06-25)
 
 

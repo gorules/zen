@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.0.0-beta.1](https://github.com/gorules/zen/compare/zen-engine-v1.0.0-beta.0...zen-engine-v1.0.0-beta.1) (2026-06-25)
+
+
+### Bug Fixes
+
+* switch releases to tag based workflow triggers ([#465](https://github.com/gorules/zen/issues/465)) ([bb53a52](https://github.com/gorules/zen/commit/bb53a5298fc6e419052c6ab1f36b8839aa20f3fb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * zen-types bumped from 1.0.0-beta.0 to 1.0.0-beta.1
+    * zen-expression bumped from 1.0.0-beta.0 to 1.0.0-beta.1
+    * zen-tmpl bumped from 1.0.0-beta.0 to 1.0.0-beta.1
+
 ## [1.0.0-beta.0](https://github.com/gorules/zen/compare/zen-engine-v0.55.1...zen-engine-v1.0.0-beta.0) (2026-06-25)
 
 

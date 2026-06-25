@@ -4934,6 +4934,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "zen-benchmark"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tokio",
+ "zen-engine",
+ "zen-expression",
+]
+
+[[package]]
 name = "zen-engine"
 version = "0.55.1"
 dependencies = [

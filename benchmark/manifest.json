@@ -1,0 +1,171 @@
+[
+  {
+    "name": "decision-table-discounts",
+    "kind": "graph",
+    "file": "graphs/decision-table-discounts.json",
+    "input": {
+      "code": "WELCOME_2023",
+      "order": {
+        "createdAt": "2023-01-15"
+      },
+      "customer": {
+        "joinDate": "2023-02-01",
+        "pastPurchases": []
+      }
+    }
+  },
+  {
+    "name": "expression-table-map",
+    "kind": "graph",
+    "file": "graphs/expression-table-map.json",
+    "input": {
+      "customer": {
+        "name": "John Doe",
+        "country": "US"
+      },
+      "items": [
+        {
+          "name": "Laptop",
+          "amount": 1000,
+          "group": "electronics"
+        },
+        {
+          "name": "Mouse",
+          "amount": 50,
+          "group": "accessories"
+        }
+      ]
+    }
+  },
+  {
+    "name": "credit-limit-adjustment",
+    "kind": "graph",
+    "file": "graphs/credit-limit-adjustment.json",
+    "input": {
+      "account": {
+        "customer_id": "CUST10025",
+        "current_credit_limit": 5000,
+        "payment_history": {
+          "on_time_payment_percentage": 98,
+          "late_payments_last_12_months": 0,
+          "total_payments": 24
+        },
+        "utilization": {
+          "current_percentage": 25,
+          "average_last_6_months": 40,
+          "highest_balance": 2800
+        },
+        "financial_behavior": {
+          "credit_inquiries_last_12_months": 0,
+          "years_with_institution": 4,
+          "income_verified": true,
+          "has_other_products": true
+        }
+      }
+    }
+  },
+  {
+    "name": "dynamic-shipping-cost-calculator",
+    "kind": "graph",
+    "file": "graphs/dynamic-shipping-cost-calculator.json",
+    "input": {
+      "shippingType": "express",
+      "weight": 25,
+      "length": 40,
+      "width": 30,
+      "height": 20,
+      "distance": 250,
+      "customerTier": "gold"
+    }
+  },
+  {
+    "name": "customer-eligibility-engine",
+    "kind": "graph",
+    "file": "graphs/customer-eligibility-engine.json",
+    "input": {
+      "customerId": "CUST12345",
+      "accountInfo": {
+        "accountAge": 28,
+        "paymentHistory": "excellent",
+        "currentPlan": "Family Premium 50GB",
+        "monthlySpend": 95,
+        "contractStatus": "pending_renewal"
+      },
+      "usageStats": {
+        "dataUsageGB": 42.5,
+        "dataUtilizationPercent": 85,
+        "callMinutes": 350,
+        "textMessages": 1250
+      },
+      "customerProfile": {
+        "segment": "consumer",
+        "location": "Seattle, WA",
+        "devices": [
+          "iPhone 14",
+          "iPad Air",
+          "Apple Watch"
+        ],
+        "previousComplaints": 0
+      }
+    }
+  },
+  {
+    "name": "simple-assertion",
+    "kind": "policy",
+    "file": "policies/simple-assertion.json",
+    "input": {
+      "customer": {
+        "age": 30
+      }
+    }
+  },
+  {
+    "name": "expression",
+    "kind": "policy",
+    "file": "policies/expression.json",
+    "input": {
+      "customer": {
+        "age": 35,
+        "income": 60000
+      }
+    }
+  },
+  {
+    "name": "multi-assertion",
+    "kind": "policy",
+    "file": "policies/multi-assertion.json",
+    "input": {
+      "customer": {
+        "age": 40,
+        "income": 60000,
+        "employmentYears": 5
+      }
+    }
+  },
+  {
+    "name": "expression-chain",
+    "kind": "policy",
+    "file": "policies/expression-chain.json",
+    "input": {
+      "customer": {
+        "amounts": [
+          10,
+          -5,
+          20,
+          -3,
+          15
+        ]
+      }
+    }
+  },
+  {
+    "name": "match",
+    "kind": "policy",
+    "file": "policies/match.json",
+    "input": {
+      "customer": {
+        "score": 85
+      }
+    }
+  }
+]

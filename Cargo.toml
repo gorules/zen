@@ -2,7 +2,8 @@
 resolver = "2"
 members = [
     "core/*",
-    "bindings/*"
+    "bindings/*",
+    "benchmark/rust"
 ]
 
 [workspace.dependencies]

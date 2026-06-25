@@ -1,4 +1,5 @@
 name: NodeJS
+
 env:
   WORKING_DIRECTORY: bindings/nodejs
   DEBUG: 'napi:*'

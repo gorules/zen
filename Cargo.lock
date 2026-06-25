@@ -1049,7 +1049,7 @@ dependencies = [
 
 [[package]]
 name = "expression_repl"
-version = "0.55.1"
+version = "1.0.0-beta.0"
 dependencies = [
  "colored",
  "rustyline",
@@ -4935,7 +4935,7 @@ dependencies = [
 
 [[package]]
 name = "zen-benchmark"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -4946,7 +4946,7 @@ dependencies = [
 
 [[package]]
 name = "zen-engine"
-version = "0.55.1"
+version = "1.0.0-beta.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -4985,7 +4985,7 @@ dependencies = [
 
 [[package]]
 name = "zen-expression"
-version = "0.55.1"
+version = "1.0.0-beta.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5018,7 +5018,7 @@ dependencies = [
 
 [[package]]
 name = "zen-ffi"
-version = "0.20.0"
+version = "1.0.0-beta.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -5034,7 +5034,7 @@ dependencies = [
 
 [[package]]
 name = "zen-macros"
-version = "0.55.1"
+version = "1.0.0-beta.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5044,7 +5044,7 @@ dependencies = [
 
 [[package]]
 name = "zen-nodejs"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ahash 0.8.12",
  "iana-time-zone",
@@ -5063,7 +5063,7 @@ dependencies = [
 
 [[package]]
 name = "zen-python"
-version = "0.53.0"
+version = "1.0.0-beta.0"
 dependencies = [
  "anyhow",
  "either",
@@ -5082,7 +5082,7 @@ dependencies = [
 
 [[package]]
 name = "zen-tmpl"
-version = "0.55.1"
+version = "1.0.0-beta.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -5092,7 +5092,7 @@ dependencies = [
 
 [[package]]
 name = "zen-types"
-version = "0.55.1"
+version = "1.0.0-beta.0"
 dependencies = [
  "ahash 0.8.12",
  "nohash-hasher",
@@ -5105,7 +5105,7 @@ dependencies = [
 
 [[package]]
 name = "zen-uniffi"
-version = "0.7.2"
+version = "1.0.0-beta.0"
 dependencies = [
  "async-trait",
  "serde",

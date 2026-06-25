@@ -1,9 +1,9 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
-  "separate-pull-requests": true,
+  "separate-pull-requests": false,
   "include-component-in-tag": true,
   "tag-separator": "-",
-  "pull-request-title-pattern": "chore(release): ${component} ${version}",
+  "pull-request-title-pattern": "chore(release): publish",
   "release-as": "1.0.0-beta.0",
   "prerelease": true,
   "prerelease-type": "beta",

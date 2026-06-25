@@ -37,8 +37,29 @@ jobs:
     name: Release Please
     runs-on: ubuntu-latest
     steps:
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v5
+        id: release
         with:
           token: ${{ secrets.PAT }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+      - uses: actions/checkout@v4
+        if: steps.release.outputs.pr
+        with:
+          ref: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
+          token: ${{ secrets.PAT }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.release.outputs.pr
+
+      - name: Update Cargo.lock on release PR
+        if: steps.release.outputs.pr
+        run: |
+          cargo update --workspace
+          git diff --quiet Cargo.lock && exit 0
+          git config user.name "Bot GoRules"
+          git config user.email "bot@gorules.io"
+          git add Cargo.lock
+          git commit -m "chore: update Cargo.lock for release"
+          git push

@@ -80,14 +80,14 @@ jobs:
       - name: Build (zig, linux)
         if: ${{ matrix.settings.host == 'ubuntu-latest' }}
         working-directory: ${{ env.UNIFFI_DIRECTORY }}
-        run: cargo zigbuild --lib --release --target ${{ matrix.settings.target }}.${{ env.GLIBC_VERSION }} ${{ matrix.settings.extra_args }}
+        run: cargo zigbuild --lib --release --locked --target ${{ matrix.settings.target }}.${{ env.GLIBC_VERSION }} ${{ matrix.settings.extra_args }}
       - name: Build (native)
         if: ${{ matrix.settings.host != 'ubuntu-latest' }}
         uses: houseabsolute/actions-rust-cross@v1
         with:
           working-directory: ${{ env.UNIFFI_DIRECTORY }}
           target: ${{ matrix.settings.target }}
-          args: '--lib --release ${{ matrix.settings.extra_args }}'
+          args: '--lib --release --locked ${{ matrix.settings.extra_args }}'
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -133,7 +133,7 @@ jobs:
 
       - name: Generate Kotlin sources
         run: |
-          cargo run --bin uniffi-bindgen -- generate \
+          cargo run --locked --bin uniffi-bindgen -- generate \
             --library build/generated/resources/darwin-x86-64/libzen_uniffi.dylib \
             --language kotlin \
             --out-dir build/generated/kotlin
@@ -294,7 +294,7 @@ jobs:
           if [ "${{ matrix.settings.target }}" = "aarch64-apple-ios-sim" ]; then
             export BINDGEN_EXTRA_CLANG_ARGS="--target=aarch64-apple-ios --sysroot=$(xcrun --sdk iphonesimulator --show-sdk-path)"
           fi
-          cargo build -p zen-uniffi --target ${{ matrix.settings.target }} --release --features bindgen
+          cargo build -p zen-uniffi --target ${{ matrix.settings.target }} --release --locked --features bindgen
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -335,7 +335,7 @@ jobs:
 
       - name: Generate Swift bindings
         run: |
-          cargo run --bin uniffi-bindgen -- generate \
+          cargo run --locked --bin uniffi-bindgen -- generate \
             --library target/aarch64-apple-ios/release/libzen_uniffi.a \
             --language swift \
             --out-dir swift-bindings-temp
@@ -524,7 +524,7 @@ jobs:
           cargo ndk -t arm64-v8a -t armeabi-v7a -t x86 -t x86_64 \
            --platform 33 \
            -o ./android-libs \
-           build -p zen-uniffi --release --features bindgen
+           build -p zen-uniffi --release --locked --features bindgen
 
       - name: Build for Android (arm64 only)
         if: "github.event_name != 'release' || !startsWith(github.event.release.tag_name, 'uniffi-v')"
@@ -534,7 +534,7 @@ jobs:
           cargo ndk -t arm64-v8a \
            --platform 33 \
            -o ./android-libs \
-           build -p zen-uniffi --release --features bindgen
+           build -p zen-uniffi --release --locked --features bindgen
 
       - name: Upload Android artifacts
         uses: actions/upload-artifact@v4
@@ -565,7 +565,7 @@ jobs:
 
       - name: Generate Kotlin sources
         run: |
-          cargo run --bin uniffi-bindgen -- generate \
+          cargo run --locked --bin uniffi-bindgen -- generate \
             --library build/generated/resources/darwin-x86-64/libzen_uniffi.dylib \
             --language kotlin \
             --config uniffi-android.toml \

@@ -5044,7 +5044,7 @@ dependencies = [
 
 [[package]]
 name = "zen-nodejs"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "ahash 0.8.12",
  "iana-time-zone",

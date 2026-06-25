@@ -1,8 +1,9 @@
 name: Benchmark
 
 on:
-  release:
-    types: [ published ]
+  push:
+    tags:
+      - 'zen-engine-v*'
   workflow_dispatch:
 
 permissions:

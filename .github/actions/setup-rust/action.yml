@@ -47,11 +47,11 @@ runs:
         echo "CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16" >> "$GITHUB_ENV"
 
     - name: Install sccache
-      if: ${{ inputs.sccache == 'true' }}
+      if: ${{ inputs.sccache == 'true' && github.ref_type != 'tag' }}
       uses: mozilla-actions/sccache-action@v0.0.10
 
     - name: Enable sccache
-      if: ${{ inputs.sccache == 'true' }}
+      if: ${{ inputs.sccache == 'true' && github.ref_type != 'tag' }}
       shell: bash
       run: |
         echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"

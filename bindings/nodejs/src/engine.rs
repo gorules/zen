@@ -11,6 +11,7 @@ use napi_derive::napi;
 use serde_json::Value;
 
 use crate::content::ZenDecisionContent;
+use crate::convert::NodeEvalResponse;
 use crate::custom_node::{CustomNode, CustomNodeTsfn};
 use crate::decision::ZenDecision;
 use crate::dispose::DisposeThreadsafeHandler;
@@ -23,7 +24,9 @@ use crate::safe_result::SafeResult;
 use crate::types::{ZenEngineHandlerRequest, ZenEngineHandlerResponse};
 use zen_engine::loader::{DynamicLoader, LoaderConfig};
 use zen_engine::model::DecisionContent;
-use zen_engine::{DecisionEngine, EvaluationSerializedOptions, EvaluationTraceKind};
+use zen_engine::{
+    DecisionEngine, EvaluationOptions, EvaluationSerializedOptions, EvaluationTraceKind,
+};
 
 #[napi]
 pub struct ZenEngine {
@@ -110,11 +113,21 @@ pub struct EvaluateBatchRequest {
     pub context: Value,
 }
 
-#[napi(object)]
 pub struct EvaluateBatchResult {
     pub success: bool,
-    pub data: Option<Value>,
+    pub data: Option<NodeEvalResponse>,
     pub error: Option<Value>,
+}
+
+impl ToNapiValue for EvaluateBatchResult {
+    unsafe fn to_napi_value(env: napi_env, val: Self) -> napi::Result<napi_value> {
+        let env_wrapper = &Env::from(env);
+        let mut obj = Object::new(env_wrapper)?;
+        obj.set("success", val.success)?;
+        obj.set("data", val.data)?;
+        obj.set("error", val.error)?;
+        Object::to_napi_value(env, obj)
+    }
 }
 
 #[napi(object)]
@@ -240,15 +253,25 @@ impl ZenEngine {
         key: String,
         context: Value,
         opts: Option<ZenEvaluateOptions>,
-    ) -> napi::Result<Value> {
+    ) -> napi::Result<NodeEvalResponse> {
         let graph = self.graph.clone();
         let result = spawn_worker(|| {
-            let options = opts.unwrap_or_default();
+            let serialized: EvaluationSerializedOptions = opts.unwrap_or_default().into();
+            let mode = serialized.trace;
+            let options = EvaluationOptions {
+                trace: mode != EvaluationTraceKind::None,
+                max_depth: serialized.max_depth,
+            };
 
             async move {
                 graph
-                    .evaluate_serialized(key, context.into(), options.into())
+                    .evaluate_with_opts(key, context.into(), options)
                     .await
+                    .map(|response| NodeEvalResponse::build(response, mode))
+                    .map_err(|e| {
+                        e.serialize_with_mode(serde_json::value::Serializer, mode)
+                            .unwrap_or_default()
+                    })
             }
         })
         .await
@@ -301,7 +324,7 @@ impl ZenEngine {
         key: String,
         context: Value,
         opts: Option<ZenEvaluateOptions>,
-    ) -> SafeResult<Value> {
+    ) -> SafeResult<NodeEvalResponse> {
         self.evaluate(key, context, opts).await.into()
     }
 
@@ -312,22 +335,36 @@ impl ZenEngine {
         self.get_decision(key).await.into()
     }
 
-    #[napi]
+    #[napi(
+        ts_return_type = "Promise<Array<{ success: true; data: ZenEngineResponse } | { success: false; error: any }>>"
+    )]
     pub async fn evaluate_batch(
         &self,
         requests: Vec<EvaluateBatchRequest>,
         opts: Option<ZenEvaluateOptions>,
     ) -> napi::Result<Vec<EvaluateBatchResult>> {
         let options: EvaluationSerializedOptions = opts.unwrap_or_default().into();
+        let mode = options.trace;
+        let max_depth = options.max_depth;
 
         let mut handles = Vec::with_capacity(requests.len());
         for req in requests {
             let engine = self.graph.clone();
             let EvaluateBatchRequest { key, context } = req;
             handles.push(spawn_worker(move || async move {
+                let eval_opts = EvaluationOptions {
+                    trace: mode != EvaluationTraceKind::None,
+                    max_depth,
+                };
+
                 engine
-                    .evaluate_serialized(&key, context.into(), options)
+                    .evaluate_with_opts(key, context.into(), eval_opts)
                     .await
+                    .map(|response| NodeEvalResponse::build(response, mode))
+                    .map_err(|e| {
+                        e.serialize_with_mode(serde_json::value::Serializer, mode)
+                            .unwrap_or_default()
+                    })
             }));
         }
 

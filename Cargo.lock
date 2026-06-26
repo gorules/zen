@@ -1049,7 +1049,7 @@ dependencies = [
 
 [[package]]
 name = "expression_repl"
-version = "1.0.0-beta.1"
+version = "1.0.1-beta.1"
 dependencies = [
  "colored",
  "rustyline",
@@ -4935,7 +4935,7 @@ dependencies = [
 
 [[package]]
 name = "zen-benchmark"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "serde",
  "serde_json",
@@ -5018,7 +5018,7 @@ dependencies = [
 
 [[package]]
 name = "zen-ffi"
-version = "1.0.0-beta.1"
+version = "1.0.1-beta.1"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -5044,7 +5044,7 @@ dependencies = [
 
 [[package]]
 name = "zen-nodejs"
-version = "1.0.0-beta.1"
+version = "1.0.1-beta.1"
 dependencies = [
  "ahash 0.8.12",
  "iana-time-zone",
@@ -5063,7 +5063,7 @@ dependencies = [
 
 [[package]]
 name = "zen-python"
-version = "1.0.0-beta.1"
+version = "1.0.1-beta.1"
 dependencies = [
  "anyhow",
  "either",
@@ -5105,7 +5105,7 @@ dependencies = [
 
 [[package]]
 name = "zen-uniffi"
-version = "1.0.0-beta.1"
+version = "1.0.1-beta.1"
 dependencies = [
  "async-trait",
  "serde",

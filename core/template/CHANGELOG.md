@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.2](https://github.com/gorules/zen/compare/zen-tmpl-v1.0.0-beta.1...zen-tmpl-v1.0.0-beta.2) (2026-06-26)
+
+
+### Miscellaneous
+
+* **zen-tmpl:** Synchronize core versions
+
 ## [1.0.0-beta.1](https://github.com/gorules/zen/compare/zen-tmpl-v1.0.0-beta.0...zen-tmpl-v1.0.0-beta.1) (2026-06-25)
 
 

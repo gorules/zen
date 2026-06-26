@@ -21,6 +21,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   build:
@@ -133,6 +134,9 @@ jobs:
           shared-key: nodejs-${{ matrix.settings.target }}
           key: ${{ matrix.settings.target }}
           zig: ${{ matrix.settings.zig }}
+          sccache-bucket: ${{ secrets.SCCACHE_S3_BUCKET }}
+          sccache-region: ${{ secrets.SCCACHE_AWS_REGION }}
+          sccache-role-arn: ${{ secrets.SCCACHE_AWS_ROLE_ARN }}
 
       - name: Setup toolchain
         run: ${{ matrix.settings.setup }}

@@ -15,6 +15,9 @@ on:
 
 jobs:
   build:
+    permissions:
+      contents: read
+      id-token: write
     env:
       OUTPUT_NAME: zen_uniffi
 
@@ -63,6 +66,9 @@ jobs:
         with:
           shared-key: uniffi-${{ matrix.settings.target }}
           zig: ${{ matrix.settings.host == 'ubuntu-latest' }}
+          sccache-bucket: ${{ secrets.SCCACHE_S3_BUCKET }}
+          sccache-region: ${{ secrets.SCCACHE_AWS_REGION }}
+          sccache-role-arn: ${{ secrets.SCCACHE_AWS_ROLE_ARN }}
 
       # Linux targets (incl. s390x) build on the host via zig; mac/windows build natively.
       - name: Build (zig, linux)
@@ -243,6 +249,9 @@ jobs:
             --skip-duplicate
 
   build-ios:
+    permissions:
+      contents: read
+      id-token: write
     env:
       OUTPUT_NAME: zen_uniffi
       IPHONEOS_DEPLOYMENT_TARGET: '16.0'
@@ -275,6 +284,9 @@ jobs:
       - uses: ./.github/actions/setup-rust
         with:
           shared-key: uniffi-ios-${{ matrix.settings.target }}
+          sccache-bucket: ${{ secrets.SCCACHE_S3_BUCKET }}
+          sccache-region: ${{ secrets.SCCACHE_AWS_REGION }}
+          sccache-role-arn: ${{ secrets.SCCACHE_AWS_ROLE_ARN }}
 
       - name: Build iOS
         run: |
@@ -293,6 +305,9 @@ jobs:
   create-xcframework:
     runs-on: macos-latest
     needs: [ build-ios ]
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - uses: actions/checkout@v3
@@ -303,6 +318,9 @@ jobs:
       - uses: ./.github/actions/setup-rust
         with:
           shared-key: uniffi-swift
+          sccache-bucket: ${{ secrets.SCCACHE_S3_BUCKET }}
+          sccache-region: ${{ secrets.SCCACHE_AWS_REGION }}
+          sccache-role-arn: ${{ secrets.SCCACHE_AWS_ROLE_ARN }}
 
       - name: Download iOS artifacts
         uses: actions/download-artifact@v4
@@ -465,6 +483,9 @@ jobs:
 
   build-android:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     env:
       OUTPUT_NAME: zen_uniffi
 
@@ -477,6 +498,9 @@ jobs:
       - uses: ./.github/actions/setup-rust
         with:
           shared-key: uniffi-android
+          sccache-bucket: ${{ secrets.SCCACHE_S3_BUCKET }}
+          sccache-region: ${{ secrets.SCCACHE_AWS_REGION }}
+          sccache-role-arn: ${{ secrets.SCCACHE_AWS_ROLE_ARN }}
 
       - name: Install cargo-ndk
         run: cargo install cargo-ndk

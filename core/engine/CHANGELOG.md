@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.0.0-beta.1](https://github.com/gorules/zen/compare/zen-engine-v1.0.0-beta.1...zen-engine-v1.0.0-beta.1) (2026-06-26)
+## [1.0.0-beta.2](https://github.com/gorules/zen/compare/zen-engine-v1.0.0-beta.1...zen-engine-v1.0.0-beta.2) (2026-06-26)
 
 
 ### Bug Fixes

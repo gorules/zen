@@ -1,5 +1,5 @@
 name: 'Setup Rust caching'
-description: 'Swatinem/rust-cache + sccache.'
+description: 'Swatinem/rust-cache + sccache (s3 backend via oidc, gha fallback).'
 
 inputs:
   shared-key:
@@ -18,6 +18,18 @@ inputs:
     description: 'Enable sccache as RUSTC_WRAPPER.'
     required: false
     default: 'true'
+  sccache-bucket:
+    description: 'S3 bucket for the sccache backend.'
+    required: false
+    default: ''
+  sccache-region:
+    description: 'AWS region for the sccache S3 bucket.'
+    required: false
+    default: ''
+  sccache-role-arn:
+    description: 'IAM role ARN to assume via OIDC for sccache S3 access.'
+    required: false
+    default: ''
   zig:
     description: 'Install ziglang + cargo-zigbuild.'
     required: false
@@ -50,8 +62,24 @@ runs:
       if: ${{ inputs.sccache == 'true' && github.ref_type != 'tag' }}
       uses: mozilla-actions/sccache-action@v0.0.10
 
-    - name: Enable sccache
-      if: ${{ inputs.sccache == 'true' && github.ref_type != 'tag' }}
+    - name: Configure aws credentials for sccache
+      if: ${{ inputs.sccache == 'true' && github.ref_type != 'tag' && inputs.sccache-bucket != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+      uses: aws-actions/configure-aws-credentials@v6
+      with:
+        role-to-assume: ${{ inputs.sccache-role-arn }}
+        aws-region: ${{ inputs.sccache-region }}
+
+    - name: Enable sccache (s3)
+      if: ${{ inputs.sccache == 'true' && github.ref_type != 'tag' && inputs.sccache-bucket != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+      shell: bash
+      run: |
+        echo "SCCACHE_BUCKET=${{ inputs.sccache-bucket }}" >> "$GITHUB_ENV"
+        echo "SCCACHE_REGION=${{ inputs.sccache-region }}" >> "$GITHUB_ENV"
+        echo "SCCACHE_S3_KEY_PREFIX=zen" >> "$GITHUB_ENV"
+        echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+
+    - name: Enable sccache (gha fallback)
+      if: ${{ inputs.sccache == 'true' && github.ref_type != 'tag' && (inputs.sccache-bucket == '' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) }}
       shell: bash
       run: |
         echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"

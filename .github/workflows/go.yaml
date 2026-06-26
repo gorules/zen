@@ -51,6 +51,9 @@ jobs:
         with:
           shared-key: go-${{ matrix.settings.target }}
           zig: ${{ matrix.settings.host == 'ubuntu-latest' }}
+          sccache-bucket: ${{ secrets.SCCACHE_S3_BUCKET }}
+          sccache-region: ${{ secrets.SCCACHE_AWS_REGION }}
+          sccache-role-arn: ${{ secrets.SCCACHE_AWS_ROLE_ARN }}
 
       - name: Build (zig, linux)
         if: ${{ matrix.settings.host == 'ubuntu-latest' }}

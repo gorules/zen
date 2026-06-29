@@ -13,8 +13,15 @@ class EvaluateResponse(TypedDict):
     trace: dict
 
 
+class BatchEvaluateResult(TypedDict):
+    success: bool
+    data: Optional[EvaluateResponse]
+    error: Optional[Any]
+
+
 ZenContext: TypeAlias = Union[str, bytes, dict]
 ZenDecisionContentInput: TypeAlias = Union[str, ZenDecisionContent]
+ZenBatchRequest: TypeAlias = "tuple[str, ZenContext]"
 
 
 class ZenEngine:
@@ -25,6 +32,13 @@ class ZenEngine:
 
     def async_evaluate(self, key: str, context: ZenContext, options: Optional[DecisionEvaluateOptions] = None) -> \
             Awaitable[EvaluateResponse]: ...
+
+    def evaluate_batch(self, requests: "list[ZenBatchRequest]",
+                       options: Optional[DecisionEvaluateOptions] = None) -> "list[BatchEvaluateResult]": ...
+
+    def async_evaluate_batch(self, requests: "list[ZenBatchRequest]",
+                             options: Optional[DecisionEvaluateOptions] = None) -> \
+            Awaitable["list[BatchEvaluateResult]"]: ...
 
     def create_decision(self, content: ZenDecisionContentInput) -> ZenDecision: ...
 

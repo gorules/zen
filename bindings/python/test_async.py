@@ -79,6 +79,22 @@ class AsyncZenEngine(unittest.IsolatedAsyncioTestCase):
         r = await functionDecision.async_evaluate({"input": 15})
         self.assertEqual(r["result"]["output"], 30)
 
+    async def test_async_evaluate_batch(self):
+        engine = zen.ZenEngine({"loader": loader})
+        results = await engine.async_evaluate_batch([
+            ("table.json", {"input": 12}),
+            ("table.json", {"input": 2}),
+            ("does-not-exist.json", {}),
+        ])
+
+        self.assertEqual(len(results), 3)
+        self.assertTrue(results[0]["success"])
+        self.assertEqual(results[0]["data"]["result"]["output"], 10)
+        self.assertTrue(results[1]["success"])
+        self.assertEqual(results[1]["data"]["result"]["output"], 0)
+        self.assertFalse(results[2]["success"])
+        self.assertIsNotNone(results[2]["error"])
+
     async def test_evaluate_graphs(self):
         engine = zen.ZenEngine({"loader": graph_loader})
         json_files = glob.glob("../../test-data/graphs/*.json")

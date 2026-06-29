@@ -58,6 +58,22 @@ class ZenEngine(unittest.TestCase):
         r = functionDecision.evaluate({"input": 15})
         self.assertEqual(r["result"]["output"], 30)
 
+    def test_evaluate_batch(self):
+        engine = zen.ZenEngine({"loader": loader})
+        results = engine.evaluate_batch([
+            ("table.json", {"input": 12}),
+            ("table.json", {"input": 2}),
+            ("does-not-exist.json", {}),
+        ])
+
+        self.assertEqual(len(results), 3)
+        self.assertTrue(results[0]["success"])
+        self.assertEqual(results[0]["data"]["result"]["output"], 10)
+        self.assertTrue(results[1]["success"])
+        self.assertEqual(results[1]["data"]["result"]["output"], 0)
+        self.assertFalse(results[2]["success"])
+        self.assertIsNotNone(results[2]["error"])
+
     def test_engine_custom_handler(self):
         engine = zen.ZenEngine({"loader": loader, "customHandler": custom_handler})
         r1 = engine.evaluate("custom.json", {"a": 10})

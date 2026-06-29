@@ -293,3 +293,30 @@ pub fn response_to_py(py: Python<'_>, response: DecisionGraphResponse) -> PyResu
 
     Ok(dict.into_any().unbind())
 }
+
+pub fn batch_results_to_py(
+    py: Python<'_>,
+    outcomes: Vec<Result<PortableResponse, Value>>,
+) -> PyResult<Py<PyAny>> {
+    let list = PyList::empty(py);
+
+    for outcome in outcomes {
+        let item = PyDict::new(py);
+        match outcome {
+            Ok(response) => {
+                item.set_item("success", true)?;
+                item.set_item("data", response.into_py(py)?)?;
+                item.set_item("error", py.None())?;
+            }
+            Err(error) => {
+                item.set_item("success", false)?;
+                item.set_item("data", py.None())?;
+                item.set_item("error", value_to_object(py, &error)?)?;
+            }
+        }
+
+        list.append(item)?;
+    }
+
+    Ok(list.into_any().unbind())
+}

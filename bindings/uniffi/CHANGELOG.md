@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.3](https://github.com/gorules/zen/compare/uniffi-v1.0.0-beta.2...uniffi-v1.0.0-beta.3) (2026-06-29)
+
+
+### Bug Fixes
+
+* uniffi add additional config fields ([#473](https://github.com/gorules/zen/issues/473)) ([6c7bc27](https://github.com/gorules/zen/commit/6c7bc2703922fe3d7d0ad7456bb0d154d1f728f8))
+
 ## [1.0.0-beta.2](https://github.com/gorules/zen/compare/uniffi-v1.0.0-beta.1...uniffi-v1.0.0-beta.2) (2026-06-26)
 
 ## [1.0.0-beta.1](https://github.com/gorules/zen/compare/uniffi-v1.0.0-beta.0...uniffi-v1.0.0-beta.1) (2026-06-25)

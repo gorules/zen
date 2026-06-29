@@ -10,6 +10,7 @@ use pyo3::types::PyModule;
 use pyo3::{pymodule, wrap_pyfunction, Bound, PyResult, Python};
 
 mod content;
+mod convert;
 mod custom_node;
 mod decision;
 mod engine;

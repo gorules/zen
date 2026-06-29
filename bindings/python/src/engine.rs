@@ -128,8 +128,7 @@ impl PyZenEngine {
             anyhow!(serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string()))
         })?;
 
-        let value = serde_json::to_value(&result).context("Failed to serialize result")?;
-        PyValue(value).into_py_any(py)
+        crate::convert::response_to_py(py, result)
     }
 
     #[pyo3(signature = (key, ctx, opts=None))]
@@ -145,12 +144,12 @@ impl PyZenEngine {
 
         let engine = self.engine.clone();
         let result = tokio::future_into_py_with_locals(py, get_current_locals(py)?, async move {
-            let value = worker_pool()
+            let response = worker_pool()
                 .spawn_pinned(move || async move {
                     engine
                         .evaluate_with_opts(key, context.into(), options.into())
                         .await
-                        .map(serde_json::to_value)
+                        .map(crate::convert::PortableResponse::build)
                         .map_err(|e| {
                             anyhow!(
                                 serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string())
@@ -158,10 +157,9 @@ impl PyZenEngine {
                         })
                 })
                 .await
-                .context("Failed to join threads")??
-                .context("Failed to serialize result")?;
+                .context("Failed to join threads")??;
 
-            Python::with_gil(|py| PyValue(value).into_py_any(py))
+            Python::with_gil(|py| response.into_py(py))
         })?;
 
         Ok(result.unbind())

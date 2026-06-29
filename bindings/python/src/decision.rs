@@ -5,7 +5,7 @@ use crate::mt::worker_pool;
 use crate::value::PyValue;
 use crate::variable::PyVariable;
 use anyhow::{anyhow, Context};
-use pyo3::{pyclass, pymethods, IntoPyObjectExt, Py, PyAny, PyResult, Python};
+use pyo3::{pyclass, pymethods, Py, PyAny, PyResult, Python};
 use pyo3_async_runtimes::tokio;
 use pyo3_async_runtimes::tokio::get_current_locals;
 use pyo3_async_runtimes::tokio::re_exports::runtime::Runtime;
@@ -41,8 +41,7 @@ impl PyZenDecision {
                 anyhow!(serde_json::to_string(e.as_ref()).unwrap_or_else(|_| e.to_string()))
             })?;
 
-        let value = serde_json::to_value(&result).context("Fail")?;
-        PyValue(value).into_py_any(py)
+        crate::convert::response_to_py(py, result)
     }
 
     #[pyo3(signature = (ctx, opts=None))]
@@ -57,21 +56,20 @@ impl PyZenDecision {
 
         let decision = self.0.clone();
         let result = tokio::future_into_py_with_locals(py, get_current_locals(py)?, async move {
-            let value = worker_pool()
+            let response = worker_pool()
                 .spawn_pinned(move || async move {
                     decision
                         .evaluate_with_opts(context.into(), options.into())
                         .await
-                        .map(serde_json::to_value)
+                        .map(crate::convert::PortableResponse::build)
                         .map_err(|e| {
                             anyhow!(serde_json::to_string(&e).unwrap_or_else(|_| e.to_string()))
                         })
                 })
                 .await
-                .context("Failed to join threads")??
-                .context("Failed to serialize result")?;
+                .context("Failed to join threads")??;
 
-            Python::with_gil(|py| PyValue(value).into_py_any(py))
+            Python::with_gil(|py| response.into_py(py))
         })?;
 
         Ok(result.unbind())

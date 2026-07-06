@@ -24,8 +24,7 @@ pub use types::{
     ExpressionKind, FieldOrigin, GuardedProperty, InputProperty, InputValidationError,
     InspectResult, NlExpression, OutputProperty, PrepareRename, PropertyKind, ReferenceKind,
     ReferenceSite, RenameTarget, SchemaFieldKind, SchemaGroup, ScopeRequest, Severity, Span, Trace,
-    WriteConflict,
-    WriteTrace,
+    WriteConflict, WriteTrace,
 };
 pub use workspace::PolicyWorkspace;
 

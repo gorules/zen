@@ -10,11 +10,11 @@ pub use cursor::{
     Cursor, CursorTarget, ExpressionKind, InspectResult, PrepareRename, ReferenceKind,
     ReferenceSite, RenameTarget,
 };
-pub use nl::NlExpression;
 pub(crate) use diagnostic::SpanOps;
 pub use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticLocation, Severity, Span};
 pub use edit::EngineEdit;
 pub use error::{EvaluationError, InputValidationError};
+pub use nl::NlExpression;
 pub use request::{EvaluateRequest, ScopeRequest};
 pub use result::{
     BlockExecution, BlockRef, BlockTrace, Completion, ConditionTrace, ConditionalSchema,

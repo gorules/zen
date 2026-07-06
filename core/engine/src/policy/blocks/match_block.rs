@@ -439,9 +439,7 @@ impl MatchIr {
                     is,
                     policy_path,
                     block_id,
-                    CursorTarget::Expression {
-                        id: arm.id.clone(),
-                    },
+                    CursorTarget::Expression { id: arm.id.clone() },
                     ExpressionKind::Standard,
                     arm.condition.as_ref(),
                     scope,
@@ -452,9 +450,7 @@ impl MatchIr {
                     is,
                     policy_path,
                     block_id,
-                    CursorTarget::MatchValue {
-                        id: arm.id.clone(),
-                    },
+                    CursorTarget::MatchValue { id: arm.id.clone() },
                     ExpressionKind::Standard,
                     arm.value.as_ref(),
                     scope,

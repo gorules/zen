@@ -99,8 +99,8 @@ pub fn nl_tokenize_batch(
         .nl_tokenize_batch(&core_requests, &root)
         .iter()
         .map(|result| {
-            let mut value =
-                serde_json::to_value(result).map_err(|e| napi::Error::from_reason(e.to_string()))?;
+            let mut value = serde_json::to_value(result)
+                .map_err(|e| napi::Error::from_reason(e.to_string()))?;
             if let (Some(subject), Some(obj)) = (&result.subject_type, value.as_object_mut()) {
                 obj.insert(
                     "subjectType".into(),

@@ -780,7 +780,8 @@ impl DecisionTableIr {
         is: &mut IntelliSense,
     ) -> Vec<NlExpression> {
         let mut out = Vec::new();
-        let mut input_scopes: HashMap<Arc<str>, (ExpressionKind, VariableType)> = HashMap::default();
+        let mut input_scopes: HashMap<Arc<str>, (ExpressionKind, VariableType)> =
+            HashMap::default();
 
         for col in &self.inputs {
             match col.field.as_ref().filter(|f| !f.is_empty()) {
@@ -803,8 +804,10 @@ impl DecisionTableIr {
                     );
                 }
                 None => {
-                    input_scopes
-                        .insert(col.id.clone(), (ExpressionKind::Standard, scope.shallow_clone()));
+                    input_scopes.insert(
+                        col.id.clone(),
+                        (ExpressionKind::Standard, scope.shallow_clone()),
+                    );
                 }
             }
         }

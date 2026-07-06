@@ -16,7 +16,7 @@ use base64::Engine as _;
 use crate::policy::queries::scope::VariableTypeScope;
 use crate::policy::types::{
     BlockTrace, Cursor, CursorTarget, DecisionTableExtras, Diagnostic, DiagnosticCode,
-    ExpressionKind,
+    ExpressionKind, NlExpression,
 };
 
 use crate::policy::ArcStrTrim;
@@ -770,6 +770,106 @@ impl DecisionTableIr {
     pub(super) fn execute(&self, cx: &ExecutionContext) -> Result<BlockTrace, ExecutionError> {
         let selection = self.select(cx)?;
         self.commit(cx, &selection)
+    }
+
+    pub(super) fn nl(
+        &self,
+        policy_path: &Arc<str>,
+        block_id: &Arc<str>,
+        scope: &VariableType,
+        is: &mut IntelliSense,
+    ) -> Vec<NlExpression> {
+        let mut out = Vec::new();
+        let mut input_scopes: HashMap<Arc<str>, (ExpressionKind, VariableType)> = HashMap::default();
+
+        for col in &self.inputs {
+            match col.field.as_ref().filter(|f| !f.is_empty()) {
+                Some(field) => {
+                    out.push(NlExpression::project(
+                        is,
+                        policy_path,
+                        block_id,
+                        CursorTarget::DecisionTableHead {
+                            col: col.id.clone(),
+                        },
+                        ExpressionKind::Standard,
+                        field.as_ref(),
+                        scope,
+                    ));
+                    let field_type = is.analyze(field.as_ref(), scope).return_type.clone();
+                    input_scopes.insert(
+                        col.id.clone(),
+                        (ExpressionKind::Unary, scope.with_dollar(&field_type)),
+                    );
+                }
+                None => {
+                    input_scopes
+                        .insert(col.id.clone(), (ExpressionKind::Standard, scope.shallow_clone()));
+                }
+            }
+        }
+
+        for rule in &self.rules {
+            let Some(row) = rule.get(ROW_ID_KEY) else {
+                continue;
+            };
+            for col in &self.inputs {
+                let cell: &str = rule.get(&col.id).map(|c| c.as_ref()).unwrap_or("");
+                let Some((kind, cell_scope)) = input_scopes.get(&col.id) else {
+                    continue;
+                };
+                out.push(NlExpression::project(
+                    is,
+                    policy_path,
+                    block_id,
+                    CursorTarget::DecisionTableCell {
+                        row: row.clone(),
+                        col: col.id.clone(),
+                    },
+                    *kind,
+                    cell,
+                    cell_scope,
+                ));
+            }
+            for col in &self.outputs {
+                let cell: &str = rule.get(&col.id).map(|c| c.as_ref()).unwrap_or("");
+                out.push(NlExpression::project(
+                    is,
+                    policy_path,
+                    block_id,
+                    CursorTarget::DecisionTableCell {
+                        row: row.clone(),
+                        col: col.id.clone(),
+                    },
+                    ExpressionKind::Standard,
+                    cell,
+                    scope,
+                ));
+            }
+        }
+
+        out
+    }
+
+    pub(super) fn nl_scope(
+        &self,
+        cursor: &Cursor,
+        scope: VariableType,
+        is: &mut IntelliSense,
+    ) -> (ExpressionKind, VariableType) {
+        let CursorTarget::DecisionTableCell { col, .. } = &cursor.target else {
+            return (ExpressionKind::Standard, scope);
+        };
+        let Some(ColumnRef::Input(column)) = self.column_by_id(col) else {
+            return (ExpressionKind::Standard, scope);
+        };
+        match column.field.as_ref().filter(|f| !f.is_empty()) {
+            Some(field) => {
+                let field_type = is.analyze(field.as_ref(), &scope).return_type.clone();
+                (ExpressionKind::Unary, scope.with_dollar(&field_type))
+            }
+            None => (ExpressionKind::Standard, scope),
+        }
     }
 
     pub(super) fn resolve_cursor(

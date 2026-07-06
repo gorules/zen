@@ -2,13 +2,14 @@ use std::sync::Arc;
 
 use ahash::HashSet;
 use serde::{Deserialize, Serialize};
-use zen_expression::intellisense::{ArmTest, NumberCover};
+use zen_expression::intellisense::{ArmTest, IntelliSense, NumberCover};
 use zen_expression::variable::{Variable, VariableType};
 
 use crate::policy::queries::scope::VariableTypeScope;
 
 use crate::policy::types::{
     BlockTrace, ConditionTrace, Cursor, CursorTarget, Diagnostic, DiagnosticCode, ExpressionKind,
+    NlExpression,
 };
 
 use crate::policy::ArcStrTrim;
@@ -411,6 +412,56 @@ impl MatchIr {
     pub(super) fn execute(&self, cx: &ExecutionContext) -> Result<BlockTrace, ExecutionError> {
         let selection = self.select(cx)?;
         self.commit(cx, &selection)
+    }
+
+    pub(super) fn nl(
+        &self,
+        policy_path: &Arc<str>,
+        block_id: &Arc<str>,
+        scope: &VariableType,
+        is: &mut IntelliSense,
+    ) -> Vec<NlExpression> {
+        let mut out = Vec::new();
+        if !self.key.is_empty() {
+            out.push(NlExpression::project(
+                is,
+                policy_path,
+                block_id,
+                CursorTarget::MatchTarget,
+                ExpressionKind::Standard,
+                self.key.as_ref(),
+                scope,
+            ));
+        }
+        for arm in &self.arms {
+            if !arm.condition.is_empty() {
+                out.push(NlExpression::project(
+                    is,
+                    policy_path,
+                    block_id,
+                    CursorTarget::Expression {
+                        id: arm.id.clone(),
+                    },
+                    ExpressionKind::Standard,
+                    arm.condition.as_ref(),
+                    scope,
+                ));
+            }
+            if !arm.value.is_empty() {
+                out.push(NlExpression::project(
+                    is,
+                    policy_path,
+                    block_id,
+                    CursorTarget::MatchValue {
+                        id: arm.id.clone(),
+                    },
+                    ExpressionKind::Standard,
+                    arm.value.as_ref(),
+                    scope,
+                ));
+            }
+        }
+        out
     }
 
     pub(super) fn resolve_cursor(

@@ -2,10 +2,11 @@ use std::sync::Arc;
 
 use ahash::HashSet;
 use serde::{Deserialize, Serialize};
+use zen_expression::intellisense::IntelliSense;
 use zen_expression::variable::{Variable, VariableType};
 
 use crate::policy::types::{
-    BlockTrace, Cursor, CursorTarget, Diagnostic, DiagnosticCode, ExpressionKind,
+    BlockTrace, Cursor, CursorTarget, Diagnostic, DiagnosticCode, ExpressionKind, NlExpression,
 };
 
 use crate::policy::ArcStrTrim;
@@ -157,6 +158,29 @@ impl ExpressionIr {
             property: self.key.clone(),
             value: traced.unwrap_or(Variable::Null),
         })
+    }
+
+    pub(super) fn nl(
+        &self,
+        policy_path: &Arc<str>,
+        block_id: &Arc<str>,
+        scope: &VariableType,
+        is: &mut IntelliSense,
+    ) -> Vec<NlExpression> {
+        if self.value.is_empty() {
+            return Vec::new();
+        }
+        vec![NlExpression::project(
+            is,
+            policy_path,
+            block_id,
+            CursorTarget::Expression {
+                id: self.id.clone(),
+            },
+            ExpressionKind::Standard,
+            self.value.as_ref(),
+            scope,
+        )]
     }
 
     pub(super) fn resolve_cursor(

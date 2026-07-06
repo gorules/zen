@@ -22,8 +22,9 @@ pub use types::{
     Diagnostic, DiagnosticCode, DiagnosticLocation, DiscriminantVariant, DiscriminatedUnion,
     EngineEdit, Entity, EntityField, EvaluateRequest, EvaluationError, EvaluationResult,
     ExpressionKind, FieldOrigin, GuardedProperty, InputProperty, InputValidationError,
-    InspectResult, OutputProperty, PrepareRename, PropertyKind, ReferenceKind, ReferenceSite,
-    RenameTarget, SchemaFieldKind, SchemaGroup, ScopeRequest, Severity, Span, Trace, WriteConflict,
+    InspectResult, NlExpression, OutputProperty, PrepareRename, PropertyKind, ReferenceKind,
+    ReferenceSite, RenameTarget, SchemaFieldKind, SchemaGroup, ScopeRequest, Severity, Span, Trace,
+    WriteConflict,
     WriteTrace,
 };
 pub use workspace::PolicyWorkspace;

@@ -390,12 +390,6 @@ impl Snapshot {
             }
         }
 
-        for (name, dict) in &dictionaries {
-            scope_fields
-                .entry(Rc::from(name.as_ref()))
-                .or_insert_with(|| dict.scope_type());
-        }
-
         VariableType::Object(Rc::new(RefCell::new(scope_fields)))
     }
 

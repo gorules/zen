@@ -499,29 +499,6 @@ impl DictionaryIr {
                 .collect(),
         )
     }
-
-    pub(crate) fn scope_type(&self) -> VariableType {
-        let mut fields: HashMap<Rc<str>, VariableType> = HashMap::new();
-        for entry in &self.entries {
-            fields.insert(
-                Rc::from(entry.value.as_ref()),
-                VariableType::Const(Rc::from(entry.value.as_ref())),
-            );
-        }
-        VariableType::Object(Rc::new(RefCell::new(fields)))
-    }
-
-    pub(crate) fn runtime_value(&self) -> zen_expression::variable::Variable {
-        use zen_expression::variable::Variable;
-        let mut fields: HashMap<Rc<str>, Variable> = HashMap::new();
-        for entry in &self.entries {
-            fields.insert(
-                Rc::from(entry.value.as_ref()),
-                Variable::String(Rc::from(entry.value.as_ref())),
-            );
-        }
-        Variable::from_object(fields)
-    }
 }
 
 impl PropertyTypeIr {

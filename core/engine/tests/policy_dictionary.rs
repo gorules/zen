@@ -62,44 +62,45 @@ fn evaluate(
 }
 
 #[test]
-fn dictionary_member_access_yields_canonical_value() {
-    let ws = workspace_with(vec![
-        tier_dictionary(),
-        expression_block("e1", "tier", "customerTier.VIP"),
-    ]);
+fn dictionary_is_not_referenceable_in_expressions() {
+    for member in ["customerTier.VIP", "customerTier.GOLD"] {
+        let ws = workspace_with(vec![
+            tier_dictionary(),
+            expression_block("e1", "tier", member),
+        ]);
 
-    let output = evaluate(&ws, json!({})).unwrap();
-    assert_eq!(output["tier"], json!("VIP"));
-    assert!(output.get("customerTier").is_none());
+        let diagnostics = ws.diagnostics("main");
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| format!("{d:?}").contains("customerTier")),
+            "expected '{member}' to be an unknown property, got: {diagnostics:?}"
+        );
+    }
 }
 
 #[test]
-fn dictionary_supports_comparisons_and_values() {
+fn dictionary_typed_field_compares_as_plain_string() {
     let ws = workspace_with(vec![
         tier_dictionary(),
-        expression_block("e1", "isVip", "input == customerTier.VIP"),
-        expression_block("e2", "count", "len(values(customerTier))"),
-    ]);
-
-    let output = evaluate(&ws, json!({ "input": "VIP" })).unwrap();
-    assert_eq!(output["isVip"], json!(true));
-    assert_eq!(output["count"], json!(2));
-}
-
-#[test]
-fn unknown_dictionary_member_is_diagnosed() {
-    let ws = workspace_with(vec![
-        tier_dictionary(),
-        expression_block("e1", "tier", "customerTier.GOLD"),
+        json!({
+            "id": "dm1",
+            "type": "dataModel",
+            "props": { "data": {
+                "name": "customer",
+                "properties": [
+                    { "id": "p1", "name": "tier", "type": "relationship", "target": "customerTier", "array": false, "optional": false }
+                ]
+            }}
+        }),
+        expression_block("e1", "customer.isVip", "customer.tier == 'VIP'"),
     ]);
 
     let diagnostics = ws.diagnostics("main");
-    assert!(
-        diagnostics
-            .iter()
-            .any(|d| format!("{d:?}").contains("GOLD")),
-        "expected a diagnostic mentioning the unknown member, got: {diagnostics:?}"
-    );
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+
+    let output = evaluate(&ws, json!({ "customer": { "tier": "VIP" } })).unwrap();
+    assert_eq!(output["customer"]["isVip"], json!(true));
 }
 
 #[test]
@@ -169,7 +170,7 @@ fn data_model_property_can_reference_dictionary() {
                 ]
             }}
         }),
-        expression_block("e1", "customer.isVip", "customer.tier == customerTier.VIP"),
+        expression_block("e1", "customer.isVip", "customer.tier == 'VIP'"),
     ]);
 
     let diagnostics = ws.diagnostics("main");
@@ -248,17 +249,15 @@ fn dictionary_membership_is_validated_for_arrays_and_globals() {
 }
 
 #[test]
-fn input_key_colliding_with_dictionary_is_rejected() {
+fn input_key_matching_dictionary_name_is_plain_data() {
     let ws = workspace_with(vec![
         tier_dictionary(),
-        expression_block("e1", "tier", "customerTier.VIP"),
+        expression_block("e1", "echo", "input"),
     ]);
 
-    let result = evaluate(&ws, json!({ "customerTier": "boom" }));
-    assert!(matches!(
-        result,
-        Err(EvaluationError::InputValidationFailed { .. })
-    ));
+    let output = evaluate(&ws, json!({ "input": 1, "customerTier": "boom" })).unwrap();
+    assert_eq!(output["echo"], json!(1));
+    assert_eq!(output["customerTier"], json!("boom"));
 }
 
 #[test]

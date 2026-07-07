@@ -431,10 +431,6 @@ impl Db {
             })
             .collect();
 
-        let mut dictionaries: Vec<Arc<DictionaryIr>> =
-            unit.dictionaries.values().cloned().collect();
-        dictionaries.sort_by(|a, b| a.name.cmp(&b.name));
-
         let artifact = Arc::new(EvalArtifact {
             members: unit.members.clone(),
             eval_graph,
@@ -448,7 +444,6 @@ impl Db {
             input_schema,
             reads,
             read_plans,
-            dictionaries,
         });
         snap.eval_artifacts
             .borrow_mut()

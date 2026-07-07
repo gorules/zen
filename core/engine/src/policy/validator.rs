@@ -101,13 +101,7 @@ impl InputSchema {
                 continue;
             }
             let key_str: &str = key.as_ref();
-            if self.dictionaries.contains_key(key_str) {
-                validator.errors.push(InputValidationError {
-                    path: key_str.to_string(),
-                    expected: "no value (name is reserved by a dictionary)".into(),
-                    got: val.type_name().into(),
-                });
-            } else if self.ref_targets.contains(key_str) {
+            if self.ref_targets.contains(key_str) {
                 validator.validate_array_of_entity(val, key_str, key_str.to_string());
             } else if self.roots.contains(key_str) {
                 validator.validate_entity(val, key_str, key_str.to_string());

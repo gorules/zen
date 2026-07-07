@@ -5,9 +5,9 @@
   "core/template": "1.0.0-beta.3",
   "core/macros": "1.0.0-beta.3",
   "bindings/nodejs": "1.0.0-beta.4",
-  "bindings/python": "1.0.1-beta.3",
-  "bindings/uniffi": "1.0.1-beta.3",
-  "bindings/c": "1.0.1-beta.2",
+  "bindings/python": "1.0.0-beta.4",
+  "bindings/uniffi": "1.0.0-beta.4",
+  "bindings/c": "1.0.0-beta.3",
   "benchmark/rust": "0.0.4",
-  "core/expression_repl": "1.0.1-beta.2"
+  "core/expression_repl": "1.0.0-beta.3"
 }

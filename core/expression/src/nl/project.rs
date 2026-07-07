@@ -2,9 +2,8 @@ use std::rc::Rc;
 
 use crate::functions::FunctionKind;
 use crate::intellisense::type_provider::TypesProvider;
-use crate::intellisense::AstMetadata;
-use crate::lexer::{Bracket, Operator};
-use crate::nl::encode_string;
+use crate::intellisense::{AstMetadata, NlLabelResolver};
+use crate::lexer::{Bracket, ComparisonOperator, Operator};
 use crate::nl::token::{
     EditHint, EnumOption, NlToken, NlTokenKind, OpChoice, OpSym, TypeTag, WordSym,
 };
@@ -21,6 +20,7 @@ pub(crate) struct Projector<'a> {
     types: &'a TypesProvider,
     metadata: &'a AstMetadata,
     unary: bool,
+    labels: Option<NlLabelResolver>,
     aliases: Vec<AliasScope>,
     pending_elide: bool,
     pending_implied: bool,
@@ -34,12 +34,14 @@ impl<'a> Projector<'a> {
         types: &'a TypesProvider,
         metadata: &'a AstMetadata,
         unary: bool,
+        labels: Option<NlLabelResolver>,
     ) -> Self {
         Self {
             source,
             types,
             metadata,
             unary,
+            labels,
             aliases: Vec::new(),
             pending_elide: false,
             pending_implied: false,
@@ -67,8 +69,8 @@ impl<'a> Projector<'a> {
             ),
             Node::String(value) => {
                 let hint = match Self::enum_values(expected.as_ref()) {
-                    Some(values) => Some(EditHint::Select {
-                        options: self.intern_enum(&values),
+                    Some((name, values)) => Some(EditHint::Select {
+                        options: self.intern_enum(name.as_deref(), &values),
                     }),
                     None if Self::expects_date(expected.as_ref()) => Some(EditHint::DatePicker),
                     None => None,
@@ -141,7 +143,14 @@ impl<'a> Projector<'a> {
                 operator,
                 right,
             } => {
-                let (exp_left, exp_right) = self.operand_expectations(*operator, left, right);
+                let (exp_left, exp_right) = if matches!(
+                    operator,
+                    Operator::Logical(crate::lexer::LogicalOperator::NullishCoalescing)
+                ) {
+                    (expected.clone(), expected)
+                } else {
+                    self.operand_expectations(*operator, left, right)
+                };
                 let context_subject = matches!(operator, Operator::Comparison(_))
                     && matches!(left, Node::Identifier(name) if *name == "$");
                 if !context_subject && !self.is_elided_subject(left) {
@@ -195,14 +204,14 @@ impl<'a> Projector<'a> {
                     NlTokenKind::Word { sym: WordSym::Then },
                     (self.span_of(condition).1, self.span_of(on_true).0),
                 );
-                self.project(on_true, None);
+                self.project(on_true, expected.clone());
                 self.push(
                     NlTokenKind::Word {
                         sym: WordSym::Otherwise,
                     },
                     (self.span_of(on_true).1, self.span_of(on_false).0),
                 );
-                self.project(on_false, None);
+                self.project(on_false, expected);
             }
 
             Node::Interval {
@@ -242,7 +251,7 @@ impl<'a> Projector<'a> {
             Node::Array(items) => {
                 let enum_domain = Self::enum_values(expected.as_ref())
                     .filter(|_| items.iter().all(|item| matches!(item, Node::String(_))));
-                if let Some(values) = enum_domain {
+                if let Some((name, values)) = enum_domain {
                     let selected = items
                         .iter()
                         .filter_map(|item| match item {
@@ -251,7 +260,7 @@ impl<'a> Projector<'a> {
                         })
                         .collect();
                     let hint = EditHint::MultiSelect {
-                        options: self.intern_enum(&values),
+                        options: self.intern_enum(name.as_deref(), &values),
                     };
                     self.push_hint(NlTokenKind::EnumList { selected }, span, Some(hint));
                     return;
@@ -355,7 +364,11 @@ impl<'a> Projector<'a> {
                     },
                     (self.span_of(left).1, self.span_of(right).0),
                 );
-                self.project(right, None);
+                let needle_expected = match self.type_of(left) {
+                    haystack @ VariableType::Array(_) => Some(haystack),
+                    _ => None,
+                };
+                self.project(right, needle_expected);
                 return;
             }
             if !(self.unary && sym.as_ref() == "bool" && self.out.is_empty()) {
@@ -393,8 +406,9 @@ impl<'a> Projector<'a> {
             );
             self.push(NlTokenKind::Word { sym: WordSym::In }, (span.0, span.0));
         }
+        let membership = self.closure_membership_expectation(arguments, alias);
         if let Some(collection) = arguments.first() {
-            self.project(collection, None);
+            self.project(collection, membership);
         }
         let leftmost = match arguments.get(1) {
             Some(Node::Closure { body, .. }) => Some(Self::leftmost_leaf(body)),
@@ -436,6 +450,36 @@ impl<'a> Projector<'a> {
             Node::Member { .. } => Self::field_path(node).is_some(),
             _ => false,
         }
+    }
+
+    fn closure_membership_expectation(
+        &self,
+        arguments: &[&Node],
+        alias: Option<&str>,
+    ) -> Option<VariableType> {
+        let Some(Node::Closure { body, .. }) = arguments.get(1) else {
+            return None;
+        };
+        let mut node: &Node = body;
+        while let Node::Parenthesized(inner) = node {
+            node = inner;
+        }
+        let Node::Binary {
+            left,
+            operator: Operator::Comparison(cmp),
+            right,
+        } = node
+        else {
+            return None;
+        };
+        if !matches!(cmp, ComparisonOperator::In | ComparisonOperator::NotIn) {
+            return None;
+        }
+        if !Self::is_binding_leaf(left, alias) {
+            return None;
+        }
+        let rhs = self.type_of(right);
+        Self::enum_values(Some(&rhs)).map(|(name, values)| VariableType::Enum(name, values))
     }
 
     fn leftmost_leaf<'n>(body: &'n Node<'n>) -> &'n Node<'n> {
@@ -561,14 +605,10 @@ impl<'a> Projector<'a> {
         left: &Node,
         right: &Node,
     ) -> (Option<VariableType>, Option<VariableType>) {
-        use crate::lexer::ComparisonOperator::{In, NotIn};
-        let Operator::Comparison(comparison) = operator else {
+        let Operator::Comparison(_) = operator else {
             return (None, None);
         };
-        match comparison {
-            In | NotIn => (None, Some(self.type_of(left))),
-            _ => (Some(self.type_of(right)), Some(self.type_of(left))),
-        }
+        (Some(self.type_of(right)), Some(self.type_of(left)))
     }
 
     fn code(&mut self, span: (u32, u32)) {
@@ -616,8 +656,8 @@ impl<'a> Projector<'a> {
             VariableType::Object(_) => TypeTag::Object,
             VariableType::Null => TypeTag::Null,
             VariableType::Any => TypeTag::Unknown,
-            VariableType::Enum(_, values) => TypeTag::Enum {
-                index: self.intern_enum(values),
+            VariableType::Enum(name, values) => TypeTag::Enum {
+                index: self.intern_enum(name.as_deref(), values),
             },
             VariableType::Array(inner) => TypeTag::Array {
                 items: Box::new(self.tag_of(inner)),
@@ -626,28 +666,19 @@ impl<'a> Projector<'a> {
         }
     }
 
-    fn intern_enum(&mut self, values: &[Rc<str>]) -> u32 {
-        let existing = self.enums.iter().position(|e| {
-            e.len() == values.len() && e.iter().zip(values).all(|(a, b)| a.label == b.as_ref())
-        });
+    fn intern_enum(&mut self, name: Option<&str>, values: &[Rc<str>]) -> u32 {
+        let options = crate::nl::enum_options(name, values, self.labels.as_ref());
+        let existing = self.enums.iter().position(|e| *e == options);
         if let Some(index) = existing {
             return index as u32;
         }
-        self.enums.push(
-            values
-                .iter()
-                .map(|v| EnumOption {
-                    label: v.to_string(),
-                    source: encode_string(v),
-                })
-                .collect(),
-        );
+        self.enums.push(options);
         (self.enums.len() - 1) as u32
     }
 
-    fn enum_values(ty: Option<&VariableType>) -> Option<Vec<Rc<str>>> {
+    fn enum_values(ty: Option<&VariableType>) -> Option<(Option<Rc<str>>, Vec<Rc<str>>)> {
         match ty? {
-            VariableType::Enum(_, values) => Some(values.clone()),
+            VariableType::Enum(name, values) => Some((name.clone(), values.clone())),
             VariableType::Nullable(inner) | VariableType::Array(inner) => {
                 Self::enum_values(Some(inner))
             }

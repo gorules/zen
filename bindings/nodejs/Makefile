@@ -15,8 +15,8 @@ prepareLocalPublish:
 	yarn createNpmDirs
 
 publish:
-	cd npm/wasm32-wasi && npm publish --registry $(REGISTRY) --ignore-scripts
-	cd npm/darwin-arm64 && npm publish --registry $(REGISTRY) --ignore-scripts
-	npm publish --registry $(REGISTRY) --ignore-scripts
+	cd npm/wasm32-wasi && npm publish --registry $(REGISTRY) --ignore-scripts --tag latest
+	cd npm/darwin-arm64 && npm publish --registry $(REGISTRY) --ignore-scripts --tag latest
+	npm publish --registry $(REGISTRY) --ignore-scripts --tag latest
 
 publishLocal: prepareLocalPublish wasm darwinArm publish

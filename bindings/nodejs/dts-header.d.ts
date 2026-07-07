@@ -193,6 +193,8 @@ export interface NlResult {
   diagnostics: NlDiagnostic[];
   /** Resolved `$` type for unary requests (decision-table input cells); present even for empty text. */
   subjectType?: PolicyVariableType;
+  /** Labeled options when the unary subject is an enum (dictionary labels applied); present even for empty text. */
+  subjectOptions?: NlEnumOption[];
 }
 
 /**
@@ -212,6 +214,8 @@ export interface PolicyNlExpression {
   diagnostics: NlDiagnostic[];
   /** Resolved `$` type for unary cells. */
   subjectType?: PolicyVariableType;
+  /** Labeled options when the unary subject is an enum (dictionary labels applied). */
+  subjectOptions?: NlEnumOption[];
 }
 
 /**

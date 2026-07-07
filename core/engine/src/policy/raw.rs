@@ -34,6 +34,10 @@ pub enum BlockDoc {
         id: Arc<str>,
         data: DataModelDoc,
     },
+    Dictionary {
+        id: Arc<str>,
+        data: DictionaryDoc,
+    },
     Ignored(serde_json::Value),
 }
 
@@ -44,7 +48,8 @@ impl BlockDoc {
             | Self::DecisionTable { id, .. }
             | Self::Expression { id, .. }
             | Self::Match { id, .. }
-            | Self::DataModel { id, .. } => Some(id),
+            | Self::DataModel { id, .. }
+            | Self::Dictionary { id, .. } => Some(id),
             Self::Ignored(value) => value.get("id").and_then(serde_json::Value::as_str),
         }
     }
@@ -75,6 +80,10 @@ impl BlockDoc {
                 data: serde_json::from_value(data)?,
             }),
             BlockTag::DataModel => Ok(Self::DataModel {
+                id,
+                data: serde_json::from_value(data)?,
+            }),
+            BlockTag::Dictionary => Ok(Self::Dictionary {
                 id,
                 data: serde_json::from_value(data)?,
             }),
@@ -124,6 +133,9 @@ impl Serialize for BlockDoc {
             Self::DataModel { id, data } => {
                 TaggedBlockRef::new(BlockTag::DataModel, id, data).serialize(serializer)
             }
+            Self::Dictionary { id, data } => {
+                TaggedBlockRef::new(BlockTag::Dictionary, id, data).serialize(serializer)
+            }
             Self::Ignored(value) => value.serialize(serializer),
         }
     }
@@ -136,6 +148,7 @@ enum BlockTag {
     Expression,
     Match,
     DataModel,
+    Dictionary,
 }
 
 impl BlockTag {
@@ -146,6 +159,7 @@ impl BlockTag {
             "expression" => Some(Self::Expression),
             "match" => Some(Self::Match),
             "dataModel" => Some(Self::DataModel),
+            "dictionary" => Some(Self::Dictionary),
             _ => None,
         }
     }
@@ -157,6 +171,7 @@ impl BlockTag {
             Self::Expression => "expression",
             Self::Match => "match",
             Self::DataModel => "dataModel",
+            Self::Dictionary => "dictionary",
         }
     }
 }
@@ -225,6 +240,24 @@ pub struct PropertyDoc {
     pub array: bool,
     #[serde(default)]
     pub optional: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DictionaryDoc {
+    pub name: Arc<str>,
+    #[serde(default)]
+    pub entries: Vec<DictionaryEntryDoc>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DictionaryEntryDoc {
+    #[serde(default)]
+    pub id: Arc<str>,
+    pub value: Arc<str>,
+    #[serde(default)]
+    pub label: Arc<str>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

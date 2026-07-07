@@ -44,27 +44,61 @@ impl Db {
             return Vec::new();
         };
         let scope = self.enriched(policy).scope.shallow_clone();
+        let labels = self.nl_label_resolver(policy);
         let intellisense = self.intellisense();
         let mut is = intellisense.borrow_mut();
+        is.set_nl_labels(labels);
         let mut out = Vec::new();
         for rule in parsed.policy.rules() {
             out.extend(rule.nl(&policy_arc, &scope, &mut is));
         }
+        is.set_nl_labels(None);
         out
     }
 
     pub fn nl_tokenize(&self, cursor: &Cursor, text: &str) -> Option<NlResult> {
         let (kind, scope) = self.nl_scope(cursor)?;
         let unary = matches!(kind, ExpressionKind::Unary);
+        let labels = self.nl_label_resolver(&cursor.policy_path);
         let intellisense = self.intellisense();
-        let mut result =
-            intellisense
-                .borrow_mut()
-                .nl_tokenize_scoped(&cursor.block_id, text, unary, &scope);
+        let mut is = intellisense.borrow_mut();
+        is.set_nl_labels(labels);
+        let mut result = is.nl_tokenize_scoped(&cursor.block_id, text, unary, &scope);
         if unary {
-            result.subject_type = Some(scope.get("$"));
+            let subject = scope.get("$");
+            result.subject_options = is.nl_subject_options(&subject);
+            result.subject_type = Some(subject);
         }
+        is.set_nl_labels(None);
         Some(result)
+    }
+
+    fn nl_label_resolver(
+        &self,
+        policy: &str,
+    ) -> Option<zen_expression::intellisense::NlLabelResolver> {
+        let unit = self.unit(policy);
+        if unit.dictionary_blocks.is_empty() {
+            return None;
+        }
+        let mut labels: HashMap<Arc<str>, HashMap<Arc<str>, Arc<str>>> = HashMap::new();
+        for (name, dict) in &unit.dictionaries {
+            let entries: HashMap<Arc<str>, Arc<str>> = dict
+                .entries
+                .iter()
+                .filter(|e| !e.label.is_empty())
+                .map(|e| (e.value.clone(), e.label.clone()))
+                .collect();
+            if !entries.is_empty() {
+                labels.insert(name.clone(), entries);
+            }
+        }
+        if labels.is_empty() {
+            return None;
+        }
+        Some(std::rc::Rc::new(move |name: &str, value: &str| {
+            labels.get(name)?.get(value).map(|l| l.to_string())
+        }))
     }
 
     fn nl_scope(&self, cursor: &Cursor) -> Option<(ExpressionKind, VariableType)> {

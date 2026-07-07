@@ -4,7 +4,7 @@ use ahash::{HashMap, HashMapExt, HashSet};
 use zen_expression::variable::Variable;
 
 use crate::policy::db::Db;
-use crate::policy::ir::{DataModelIr, Property, PropertyTypeIr};
+use crate::policy::ir::{DataModelIr, DictionaryIr, Property, PropertyTypeIr};
 use crate::policy::refs::RefPoolIndex;
 use crate::policy::types::InputValidationError;
 use crate::policy::MAX_RECURSION_DEPTH;
@@ -21,6 +21,7 @@ impl Db {
             globals,
             roots,
             ref_targets,
+            dictionaries: self.unit(policy_path).dictionaries.clone(),
         }
     }
 
@@ -70,6 +71,7 @@ pub(crate) struct InputSchema {
     globals: HashMap<Arc<str>, Property>,
     roots: HashSet<Arc<str>>,
     ref_targets: HashSet<Arc<str>>,
+    dictionaries: HashMap<Arc<str>, Arc<DictionaryIr>>,
 }
 
 impl InputSchema {
@@ -77,6 +79,7 @@ impl InputSchema {
         let ref_pools = RefPoolIndex::from_input(input, self.ref_targets.iter().cloned());
         let mut validator = InputValidator {
             entities: &self.entities,
+            dictionaries: &self.dictionaries,
             ref_pools: &ref_pools,
             errors: Vec::new(),
             depth: 0,
@@ -98,7 +101,13 @@ impl InputSchema {
                 continue;
             }
             let key_str: &str = key.as_ref();
-            if self.ref_targets.contains(key_str) {
+            if self.dictionaries.contains_key(key_str) {
+                validator.errors.push(InputValidationError {
+                    path: key_str.to_string(),
+                    expected: "no value (name is reserved by a dictionary)".into(),
+                    got: val.type_name().into(),
+                });
+            } else if self.ref_targets.contains(key_str) {
                 validator.validate_array_of_entity(val, key_str, key_str.to_string());
             } else if self.roots.contains(key_str) {
                 validator.validate_entity(val, key_str, key_str.to_string());
@@ -113,6 +122,7 @@ impl InputSchema {
 
 struct InputValidator<'a> {
     entities: &'a HashMap<Arc<str>, Arc<DataModelIr>>,
+    dictionaries: &'a HashMap<Arc<str>, Arc<DictionaryIr>>,
     ref_pools: &'a RefPoolIndex,
     errors: Vec<InputValidationError>,
     depth: usize,
@@ -220,6 +230,13 @@ impl InputValidator<'_> {
                 return;
             }
             PropertyTypeIr::Relationship { target } => {
+                if !self.entities.contains_key(target) {
+                    if let Some(dict) = self.dictionaries.get(target) {
+                        let values: Vec<Arc<str>> = dict.values().cloned().collect();
+                        self.validate_enum(value, &values, path);
+                        return;
+                    }
+                }
                 self.validate_entity(value, target, path);
                 return;
             }

@@ -29,7 +29,9 @@ impl NlExpression {
         let unary = matches!(kind, ExpressionKind::Unary);
         let mut result = is.nl_tokenize_scoped(block_id, source, unary, scope);
         if unary {
-            result.subject_type = Some(scope.get("$"));
+            let subject = scope.get("$");
+            result.subject_options = is.nl_subject_options(&subject);
+            result.subject_type = Some(subject);
         }
         Self {
             policy_path: policy_path.clone(),

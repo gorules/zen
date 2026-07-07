@@ -13,7 +13,7 @@ use crate::policy::blocks::{
     PropertyRead, TableSelection,
 };
 use crate::policy::db::Db;
-use crate::policy::ir::PropertyPath;
+use crate::policy::ir::{DictionaryIr, PropertyPath};
 use crate::policy::queries::dependency::{DataModelPaths, EvalGraph, WriteScope};
 use crate::policy::queries::path::PathClassifier;
 use crate::policy::queries::scope::{EntitySources, ReferenceField};
@@ -36,6 +36,7 @@ pub(crate) struct EvalArtifact {
     pub(crate) input_schema: InputSchema,
     pub(crate) reads: HashMap<BlockRef, Arc<[PropertyRead]>>,
     pub(crate) read_plans: HashMap<BlockRef, BlockReadPlan>,
+    pub(crate) dictionaries: Vec<Arc<DictionaryIr>>,
 }
 
 impl Db {
@@ -120,6 +121,7 @@ impl EvalArtifact {
             .collect();
         let pool_index = RefPoolIndex::from_input(&store, ref_targets);
         store.hydrate_references(&self.reference_fields, &pool_index);
+        self.bind_dictionaries(&store);
 
         let roots: Vec<Arc<str>> = if req.goals.is_empty() {
             self.eval_graph.terminal_sinks(&self.members)
@@ -134,6 +136,7 @@ impl EvalArtifact {
             properties: store.snapshot(&order_to_run),
             executions: driver.executions,
         });
+        self.unbind_dictionaries(&store);
 
         if let Err(error) = outcome {
             return Err(error.with_partial_trace(trace));
@@ -144,6 +147,31 @@ impl EvalArtifact {
             duration: start.elapsed(),
             trace,
         })
+    }
+
+    fn bind_dictionaries(&self, store: &Variable) {
+        let Some(fields) = store.as_object() else {
+            return;
+        };
+        let mut fields = fields.borrow_mut();
+        for dict in &self.dictionaries {
+            fields.insert(Rc::from(dict.name.as_ref()), dict.runtime_value());
+        }
+    }
+
+    fn unbind_dictionaries(&self, store: &Variable) {
+        let Some(fields) = store.as_object() else {
+            return;
+        };
+        let mut fields = fields.borrow_mut();
+        for dict in &self.dictionaries {
+            fields.remove(dict.name.as_ref());
+        }
+    }
+
+    fn is_dictionary_path(&self, path: &str) -> bool {
+        let root = path.split_once('.').map_or(path, |(r, _)| r);
+        self.dictionaries.iter().any(|d| d.name.as_ref() == root)
     }
 
     fn validate_request(&self, req: &EvaluateRequest) -> Result<(), EvaluationError> {
@@ -187,7 +215,9 @@ impl EvalArtifact {
             .reachable_input_paths(&req.goals, visible)
             .into_iter()
             .filter(|p| {
-                !self.data_model_paths.is_optional(p) && !self.input_satisfied(&req.input, p)
+                !self.data_model_paths.is_optional(p)
+                    && !self.is_dictionary_path(p)
+                    && !self.input_satisfied(&req.input, p)
             })
             .collect();
         if !missing.is_empty() {

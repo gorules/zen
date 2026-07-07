@@ -18,8 +18,8 @@ pub use nl::NlExpression;
 pub use request::{EvaluateRequest, ScopeRequest};
 pub use result::{
     BlockExecution, BlockRef, BlockTrace, Completion, ConditionTrace, ConditionalSchema,
-    DecisionTableExtras, DependencyNode, DiscriminantVariant, DiscriminatedUnion, Entity,
-    EntityField, EvaluationResult, FieldOrigin, Global, GuardedProperty, InputProperty,
-    InstanceTarget, OutputProperty, PropertyKind, SchemaFieldKind, SchemaGroup, Trace,
-    WriteConflict, WriteTrace,
+    DecisionTableExtras, DependencyNode, Dictionary, DictionaryEntryInfo, DiscriminantVariant,
+    DiscriminatedUnion, Entity, EntityField, EvaluationResult, FieldOrigin, Global,
+    GuardedProperty, InputProperty, InstanceTarget, OutputProperty, PropertyKind, SchemaFieldKind,
+    SchemaGroup, Trace, WriteConflict, WriteTrace,
 };

@@ -193,6 +193,8 @@ export interface NlResult {
   diagnostics: NlDiagnostic[];
   /** Resolved `$` type for unary requests (decision-table input cells); present even for empty text. */
   subjectType?: PolicyVariableType;
+  /** Labeled options when the unary subject is an enum (dictionary labels applied); present even for empty text. */
+  subjectOptions?: NlEnumOption[];
 }
 
 /**
@@ -212,6 +214,8 @@ export interface PolicyNlExpression {
   diagnostics: NlDiagnostic[];
   /** Resolved `$` type for unary cells. */
   subjectType?: PolicyVariableType;
+  /** Labeled options when the unary subject is an enum (dictionary labels applied). */
+  subjectOptions?: NlEnumOption[];
 }
 
 /**
@@ -362,30 +366,14 @@ export declare class PolicyWorkspace {
   constructor()
   setPolicy(path: string, document: any): void
   removePolicy(path: string): boolean
-  /**
-   * Upsert a single block in an existing policy (replace-by-id or append).
-   * Errors when the policy does not exist — call `setPolicy` first to
-   * create one.
-   */
   updateBlock(req: PolicyUpdateBlockRequest): void
-  /**
-   * Remove a block from an existing policy by id. Returns `true` when a
-   * block was removed, `false` when the policy or block didn't exist.
-   */
   removeBlock(req: PolicyRemoveBlockRequest): boolean
   policyPaths(): Array<string>
-  /**
-   * `max_diagnostics` caps the returned list (default: 100). Pass `0` for
-   * no cap.
-   */
   diagnostics(policyPath: string, maxDiagnostics?: number | undefined | null): Array<PolicyDiagnostic>
-  /**
-   * `max_diagnostics` caps the returned list (default: 100). Pass `0` for
-   * no cap.
-   */
   allDiagnostics(maxDiagnostics?: number | undefined | null): Array<PolicyDiagnostic>
   entities(req: PolicyScopeRequest): Array<PolicyEntityInfo>
   globals(req: PolicyScopeRequest): Array<PolicyGlobalInfo>
+  dictionaries(req: PolicyScopeRequest): Array<PolicyDictionaryInfo>
   inputs(req: PolicyScopeRequest): Array<PolicyInputProperty>
   outputs(req: PolicyScopeRequest): Array<PolicyOutputProperty>
   conditionalSchema(req: PolicyScopeRequest): PolicyConditionalSchema
@@ -394,32 +382,9 @@ export declare class PolicyWorkspace {
   nlTokenize(cursor: PolicyExpressionCursor, text: string): NlResult | null
   completions(cursor: PolicyExpressionCursor): Array<PolicyCompletion>
   prepareRename(cursor: PolicyExpressionCursor): PolicyPrepareRenameResult | null
-  /**
-   * Returns block-level edits the host applies via id-keyed swap (same
-   * path as `update_block`). Each edit's `kind` field discriminates the
-   * variant; `replaceBlock` carries a `newBlock` payload that is the
-   * rewritten wire-format `BlockDoc`.
-   */
   rename(req: PolicyRenameRequest): PolicyEngineEdit[]
-  /**
-   * Returns every site in the workspace where `target` is used. Same
-   * visitor as `rename`; carries policy/block/expression/source/span/kind
-   * for each site so hosts can render a "find references" panel or drive
-   * navigation.
-   */
   references(target: any): PolicyReferenceSite[]
-  /**
-   * Default-valued JSON object that matches the workspace's input shape
-   * for `req.policy_path` (and optionally `req.goals`). Hosts use it as
-   * the initial value of a "Run simulation" panel so `evaluate` can be
-   * called immediately without first authoring an input by hand.
-   */
   inputSkeleton(req: PolicyScopeRequest): unknown
-  /**
-   * Returns the transitive dependency tree rooted at `target`. Inverse
-   * of `references()`. Per-write granularity — multi-output blocks
-   * don't conflate sibling outputs' deps.
-   */
   dependencies(target: string): PolicyDependencyNode
   evaluate(req: PolicyEvaluateRequest): PolicyEvaluationResult
   enhanceTrace(req: PolicyEvaluateRequest): PolicyEvaluationResult
@@ -446,7 +411,7 @@ export declare class ZenEngine {
   getDecision(key: string): Promise<ZenDecision>
   safeEvaluate(key: string, context: any, opts?: ZenEvaluateOptions | undefined | null): Promise<{ success: true, data: ZenEngineResponse } | { success: false; error: any; }>
   safeGetDecision(key: string): Promise<{ success: true, data: ZenDecision } | { success: false; error: any; }>
-  evaluateBatch(requests: Array<EvaluateBatchRequest>, opts?: ZenEvaluateOptions | undefined | null): Promise<Array<EvaluateBatchResult>>
+  evaluateBatch(requests: Array<EvaluateBatchRequest>, opts?: ZenEvaluateOptions | undefined | null): Promise<Array<{ success: true; data: ZenEngineResponse } | { success: false; error: any }>>
   reload(): Promise<void>
   compileFailures(): Array<{ key: string; kind: string; diagnostics?: Array<{ code: string; message: string; severity: string }>; error?: string }>
   dispose(): void
@@ -470,12 +435,6 @@ export interface DecisionNode {
 export interface EvaluateBatchRequest {
   key: string
   context: any
-}
-
-export interface EvaluateBatchResult {
-  success: boolean
-  data?: any
-  error?: any
 }
 
 export declare function evaluateExpression(expression: string, context?: any | undefined | null): Promise<any>
@@ -524,6 +483,17 @@ export interface PolicyDiagnostic {
   target?: PolicyCursorTarget
 }
 
+export interface PolicyDictionaryEntryInfo {
+  value: string
+  label: string
+}
+
+export interface PolicyDictionaryInfo {
+  name: string
+  source: string
+  entries: Array<PolicyDictionaryEntryInfo>
+}
+
 export interface PolicyDiscriminantVariant {
   value?: string
   arm: string
@@ -550,7 +520,6 @@ export interface PolicyEntityInfo {
 export interface PolicyEvaluateRequest {
   policyPath: string
   input: unknown
-  /** Goals to evaluate. Omit or pass empty for full evaluation. */
   goals?: Array<string>
   trace?: boolean
 }
@@ -559,18 +528,9 @@ export interface PolicyExpressionCursor {
   policyPath: string
   blockId: string
   pos: number
-  /**
-   * Tagged `{ kind, ...payload }` discriminating what kind of span the
-   * cursor sits in. See `PolicyCursorTarget` in the TypeScript types.
-   */
   target: PolicyCursorTarget
 }
 
-/**
- * Kept as a `#[napi(object)]` struct purely so NAPI-RS emits the TS type
- * used by `PolicyFieldOrigin.schema.fieldKind`. The runtime shape is
- * hand-built in [`field_kind_to_json`].
- */
 export interface PolicyFieldKindInfo {
   kind: PolicyFieldKind
   target?: string
@@ -640,19 +600,11 @@ export interface PolicySchemaGroup {
 
 export interface PolicyScopeRequest {
   policyPath: string
-  /**
-   * Goals to constrain schema introspection to. Omit or pass empty
-   * for everything reachable from the policy.
-   */
   goals?: Array<string>
 }
 
 export interface PolicyUpdateBlockRequest {
   policyPath: string
-  /**
-   * A single wire block (same shape as one entry of `PolicyDocument.blocks`).
-   * Upserted by `block.id`: replaces in place if present, appends otherwise.
-   */
   block: unknown
 }
 

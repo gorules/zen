@@ -6,7 +6,9 @@ use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use zen_expression::variable::VariableType;
 
 use crate::policy::blocks::{AssertionIr, Block, DecisionTableIr, ExpressionIr, MatchIr};
-use crate::policy::raw::{BlockDoc, DataModelDoc, PolicyDocument, PropertyTypeDoc, ScopeDoc};
+use crate::policy::raw::{
+    BlockDoc, DataModelDoc, DictionaryDoc, PolicyDocument, PropertyTypeDoc, ScopeDoc,
+};
 use crate::policy::types::{Diagnostic, DiagnosticCode, DiagnosticLocation, SchemaFieldKind};
 use crate::policy::ArcStrTrim;
 
@@ -16,6 +18,7 @@ pub type PropertyPath = Arc<str>;
 pub struct Policy {
     pub rules: Vec<Block>,
     pub data_models: Vec<DataModelBlock>,
+    pub dictionaries: Vec<DictionaryBlock>,
     pub imports: Vec<Arc<str>>,
 }
 
@@ -23,6 +26,12 @@ pub struct Policy {
 pub struct DataModelBlock {
     pub id: Arc<str>,
     pub ir: Arc<DataModelIr>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DictionaryBlock {
+    pub id: Arc<str>,
+    pub ir: Arc<DictionaryIr>,
 }
 
 #[derive(Debug, Clone)]
@@ -36,6 +45,7 @@ impl Policy {
         let mut diagnostics = Vec::new();
         let mut rules = Vec::new();
         let mut data_models = Vec::new();
+        let mut dictionaries = Vec::new();
 
         for env in &doc.blocks {
             match env {
@@ -59,6 +69,14 @@ impl Policy {
                         });
                     }
                 }
+                BlockDoc::Dictionary { id, data } => {
+                    if let Some(ir) = DictionaryIr::parse(id, data, path, &mut diagnostics) {
+                        dictionaries.push(DictionaryBlock {
+                            id: id.clone(),
+                            ir: Arc::new(ir),
+                        });
+                    }
+                }
                 BlockDoc::Ignored(_) => {}
             }
         }
@@ -74,6 +92,7 @@ impl Policy {
             policy: Arc::new(Policy {
                 rules,
                 data_models,
+                dictionaries,
                 imports,
             }),
             diagnostics: Arc::new(diagnostics),
@@ -94,6 +113,10 @@ impl Policy {
 
     pub fn global_data_models(&self) -> impl Iterator<Item = (&Arc<str>, &DataModelIr)> {
         self.data_models().filter(|(_, dm)| dm.scope.is_global())
+    }
+
+    pub fn dictionaries(&self) -> impl Iterator<Item = (&Arc<str>, &Arc<DictionaryIr>)> {
+        self.dictionaries.iter().map(|b| (&b.id, &b.ir))
     }
 
     pub fn imports(&self) -> &[Arc<str>] {
@@ -194,6 +217,7 @@ impl DataModelIr {
     pub(crate) fn wire_property_type(
         prop: &Property,
         entities: &HashMap<Arc<str>, Arc<DataModelIr>>,
+        dictionaries: &HashMap<Arc<str>, Arc<DictionaryIr>>,
         visited: &mut HashSet<Arc<str>>,
     ) -> VariableType {
         let inner = match &prop.kind {
@@ -202,7 +226,10 @@ impl DataModelIr {
             PropertyTypeIr::Number => VariableType::Number,
             PropertyTypeIr::Boolean => VariableType::Bool,
             PropertyTypeIr::Reference { .. } => VariableType::String,
-            PropertyTypeIr::Relationship { target } => Self::wire_object(target, entities, visited),
+            PropertyTypeIr::Relationship { target } => match dictionaries.get(target.as_ref()) {
+                Some(dict) if !entities.contains_key(target.as_ref()) => dict.enum_type(),
+                _ => Self::wire_object(target, entities, dictionaries, visited),
+            },
         };
         if prop.array {
             inner.array()
@@ -214,6 +241,7 @@ impl DataModelIr {
     pub(crate) fn wire_object(
         name: &Arc<str>,
         entities: &HashMap<Arc<str>, Arc<DataModelIr>>,
+        dictionaries: &HashMap<Arc<str>, Arc<DictionaryIr>>,
         visited: &mut HashSet<Arc<str>>,
     ) -> VariableType {
         if !visited.insert(name.clone()) {
@@ -224,7 +252,7 @@ impl DataModelIr {
             for prop in &dm.properties {
                 fields.insert(
                     Rc::from(prop.name.as_ref()),
-                    Self::wire_property_type(prop, entities, visited),
+                    Self::wire_property_type(prop, entities, dictionaries, visited),
                 );
             }
         }
@@ -232,7 +260,7 @@ impl DataModelIr {
         VariableType::Object(Rc::new(RefCell::new(fields)))
     }
 
-    fn validate_identifier(name: &str) -> Result<(), &'static str> {
+    pub(crate) fn validate_identifier(name: &str) -> Result<(), &'static str> {
         if name.is_empty() {
             return Err("is empty");
         }
@@ -390,6 +418,109 @@ impl DataModelIr {
             scope,
             properties,
         })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DictionaryIr {
+    pub name: Arc<str>,
+    pub entries: Vec<DictionaryEntry>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DictionaryEntry {
+    pub value: Arc<str>,
+    pub label: Arc<str>,
+}
+
+impl DictionaryIr {
+    pub fn parse(
+        id: &Arc<str>,
+        doc: &DictionaryDoc,
+        policy_path: &Arc<str>,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<Self> {
+        let name = doc.name.trimmed();
+        if name.is_empty() {
+            diagnostics.push(Diagnostic::error(
+                DiagnosticCode::ParseError,
+                DiagnosticLocation::block(policy_path.clone(), id.clone()),
+                "dictionary is missing a name",
+            ));
+            return None;
+        }
+        if let Err(reason) = DataModelIr::validate_identifier(&name) {
+            diagnostics.push(Diagnostic::error(
+                DiagnosticCode::InvalidName,
+                DiagnosticLocation::block(policy_path.clone(), id.clone()),
+                format!("dictionary name '{name}' {reason}"),
+            ));
+            return None;
+        }
+
+        let mut entries: Vec<DictionaryEntry> = Vec::with_capacity(doc.entries.len());
+        for entry in &doc.entries {
+            let value = entry.value.trimmed();
+            if value.is_empty() {
+                continue;
+            }
+            if entries.iter().any(|e| e.value == value) {
+                diagnostics.push(Diagnostic::error(
+                    DiagnosticCode::DuplicateEnumValue,
+                    DiagnosticLocation::expression(
+                        policy_path.clone(),
+                        id.clone(),
+                        entry.id.clone(),
+                        None,
+                    ),
+                    format!("duplicate value '{value}' in dictionary '{name}'"),
+                ));
+                continue;
+            }
+            entries.push(DictionaryEntry {
+                value,
+                label: entry.label.trimmed(),
+            });
+        }
+
+        Some(DictionaryIr { name, entries })
+    }
+
+    pub fn values(&self) -> impl Iterator<Item = &Arc<str>> {
+        self.entries.iter().map(|e| &e.value)
+    }
+
+    pub(crate) fn enum_type(&self) -> VariableType {
+        VariableType::Enum(
+            Some(Rc::from(self.name.as_ref())),
+            self.entries
+                .iter()
+                .map(|e| Rc::from(e.value.as_ref()))
+                .collect(),
+        )
+    }
+
+    pub(crate) fn scope_type(&self) -> VariableType {
+        let mut fields: HashMap<Rc<str>, VariableType> = HashMap::new();
+        for entry in &self.entries {
+            fields.insert(
+                Rc::from(entry.value.as_ref()),
+                VariableType::Const(Rc::from(entry.value.as_ref())),
+            );
+        }
+        VariableType::Object(Rc::new(RefCell::new(fields)))
+    }
+
+    pub(crate) fn runtime_value(&self) -> zen_expression::variable::Variable {
+        use zen_expression::variable::Variable;
+        let mut fields: HashMap<Rc<str>, Variable> = HashMap::new();
+        for entry in &self.entries {
+            fields.insert(
+                Rc::from(entry.value.as_ref()),
+                Variable::String(Rc::from(entry.value.as_ref())),
+            );
+        }
+        Variable::from_object(fields)
     }
 }
 

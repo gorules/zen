@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.0.0-beta.3](https://github.com/gorules/zen/compare/zen-engine-v1.0.0-beta.2...zen-engine-v1.0.0-beta.3) (2026-07-07)
+
+
+### Features
+
+* natural language ([#477](https://github.com/gorules/zen/issues/477)) ([6858c1b](https://github.com/gorules/zen/commit/6858c1bd045e9e00ade70b734f4a7ca065a36659))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * zen-types bumped from 1.0.0-beta.2 to 1.0.0-beta.3
+    * zen-expression bumped from 1.0.0-beta.2 to 1.0.0-beta.3
+    * zen-tmpl bumped from 1.0.0-beta.2 to 1.0.0-beta.3
+
 ## [1.0.0-beta.2](https://github.com/gorules/zen/compare/zen-engine-v1.0.0-beta.1...zen-engine-v1.0.0-beta.2) (2026-06-26)
 
 

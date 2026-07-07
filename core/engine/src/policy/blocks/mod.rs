@@ -9,11 +9,12 @@ mod type_check;
 use std::sync::Arc;
 
 use ahash::{HashMap, HashMapExt, HashSet};
+use zen_expression::intellisense::IntelliSense;
 use zen_expression::variable::VariableType;
 
 use crate::policy::types::{
     BlockTrace, Cursor, CursorTarget, Diagnostic, DiagnosticCode, DiagnosticLocation,
-    ExpressionKind, Span,
+    ExpressionKind, NlExpression, Span,
 };
 
 #[derive(Debug, Clone)]
@@ -230,6 +231,27 @@ impl Block {
     ) -> Option<(Arc<str>, ExpressionKind, VariableType)> {
         self.kind.resolve_cursor(cursor, scope)
     }
+
+    pub fn nl(
+        &self,
+        policy_path: &Arc<str>,
+        scope: &VariableType,
+        is: &mut IntelliSense,
+    ) -> Vec<NlExpression> {
+        self.kind.nl(policy_path, &self.id, scope, is)
+    }
+
+    pub fn nl_scope(
+        &self,
+        cursor: &Cursor,
+        scope: VariableType,
+        is: &mut IntelliSense,
+    ) -> (ExpressionKind, VariableType) {
+        match &self.kind {
+            BlockKind::DecisionTable(d) => d.nl_scope(cursor, scope, is),
+            _ => (ExpressionKind::Standard, scope),
+        }
+    }
 }
 
 impl BlockKind {
@@ -316,6 +338,21 @@ impl BlockKind {
             BlockKind::DecisionTable(d) => d.resolve_cursor(cursor, scope),
             BlockKind::Expression(e) => e.resolve_cursor(cursor, scope),
             BlockKind::Match(m) => m.resolve_cursor(cursor, scope),
+        }
+    }
+
+    pub fn nl(
+        &self,
+        policy_path: &Arc<str>,
+        block_id: &Arc<str>,
+        scope: &VariableType,
+        is: &mut IntelliSense,
+    ) -> Vec<NlExpression> {
+        match self {
+            BlockKind::Assertion(a) => a.nl(policy_path, block_id, scope, is),
+            BlockKind::DecisionTable(d) => d.nl(policy_path, block_id, scope, is),
+            BlockKind::Expression(e) => e.nl(policy_path, block_id, scope, is),
+            BlockKind::Match(m) => m.nl(policy_path, block_id, scope, is),
         }
     }
 

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use ahash::{HashMap, HashMapExt};
 use serde_json::Value;
 use zen_expression::intellisense::Reference;
+use zen_expression::nl::NlResult;
 use zen_expression::variable::VariableType;
 
 use crate::policy::blocks::IntelliSenseSource;
@@ -11,7 +12,7 @@ use crate::policy::ir::{DataModelIr, PropertyTypeIr};
 use crate::policy::queries::scope::EntityGraph;
 use crate::policy::types::{
     BlockRef, Completion, Cursor, CursorTarget, EngineEdit, ExpressionKind, InspectResult,
-    PrepareRename, ReferenceKind, ReferenceSite, RenameTarget, Span, SpanOps,
+    NlExpression, PrepareRename, ReferenceKind, ReferenceSite, RenameTarget, Span, SpanOps,
 };
 
 impl Db {
@@ -35,6 +36,46 @@ impl Db {
         self.intellisense()
             .borrow_mut()
             .completions(&source, cursor.pos, &scope)
+    }
+
+    pub fn nl(&self, policy: &str) -> Vec<NlExpression> {
+        let policy_arc: Arc<str> = Arc::from(policy);
+        let Some(parsed) = self.parsed(&policy_arc) else {
+            return Vec::new();
+        };
+        let scope = self.enriched(policy).scope.shallow_clone();
+        let intellisense = self.intellisense();
+        let mut is = intellisense.borrow_mut();
+        let mut out = Vec::new();
+        for rule in parsed.policy.rules() {
+            out.extend(rule.nl(&policy_arc, &scope, &mut is));
+        }
+        out
+    }
+
+    pub fn nl_tokenize(&self, cursor: &Cursor, text: &str) -> Option<NlResult> {
+        let (kind, scope) = self.nl_scope(cursor)?;
+        let unary = matches!(kind, ExpressionKind::Unary);
+        let intellisense = self.intellisense();
+        let mut result =
+            intellisense
+                .borrow_mut()
+                .nl_tokenize_scoped(&cursor.block_id, text, unary, &scope);
+        if unary {
+            result.subject_type = Some(scope.get("$"));
+        }
+        Some(result)
+    }
+
+    fn nl_scope(&self, cursor: &Cursor) -> Option<(ExpressionKind, VariableType)> {
+        let block = self.block_ir(&BlockRef {
+            policy_path: cursor.policy_path.clone(),
+            block_id: cursor.block_id.clone(),
+        })?;
+        let scope = self.enriched(&cursor.policy_path).scope.shallow_clone();
+        let intellisense = self.intellisense();
+        let mut is = intellisense.borrow_mut();
+        Some(block.nl_scope(cursor, scope, &mut is))
     }
 
     pub fn prepare_rename(&self, cursor: &Cursor) -> Option<PrepareRename> {

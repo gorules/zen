@@ -3,10 +3,13 @@ use std::sync::Arc;
 use crate::policy::db::Db;
 use crate::policy::evaluator::EvalArtifact;
 use crate::policy::raw::PolicyDocument;
+use zen_expression::nl::NlResult;
+
 use crate::policy::types::{
     Completion, ConditionalSchema, Cursor, DependencyNode, Diagnostic, EngineEdit, Entity,
     EvaluateRequest, EvaluationError, EvaluationResult, Global, InputProperty, InspectResult,
-    OutputProperty, PrepareRename, ReferenceSite, RenameTarget, ScopeRequest, WriteConflict,
+    NlExpression, OutputProperty, PrepareRename, ReferenceSite, RenameTarget, ScopeRequest,
+    WriteConflict,
 };
 
 pub struct PolicyWorkspace {
@@ -96,6 +99,14 @@ impl PolicyWorkspace {
 
     pub fn completions(&self, cursor: &Cursor) -> Vec<Completion> {
         self.db.completions(cursor)
+    }
+
+    pub fn nl(&self, policy_path: &str) -> Vec<NlExpression> {
+        self.db.nl(policy_path)
+    }
+
+    pub fn nl_tokenize(&self, cursor: &Cursor, text: &str) -> Option<NlResult> {
+        self.db.nl_tokenize(cursor, text)
     }
 
     pub fn prepare_rename(&self, cursor: &Cursor) -> Option<PrepareRename> {

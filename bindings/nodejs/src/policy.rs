@@ -331,7 +331,7 @@ fn resolve_diagnostic_cap(max: Option<u32>) -> usize {
     }
 }
 
-fn variable_type_to_json(vt: &zen_expression::variable::VariableType) -> Value {
+pub(crate) fn variable_type_to_json(vt: &zen_expression::variable::VariableType) -> Value {
     use zen_expression::variable::VariableType;
 
     match vt {
@@ -589,6 +589,58 @@ impl PolicyWorkspace {
                 kind: variable_type_to_json(&result.kind),
                 label: result.label,
             }))
+    }
+
+    #[napi(ts_return_type = "PolicyNlExpression[]")]
+    pub fn nl(&self, policy_path: String) -> napi::Result<Vec<Value>> {
+        self.inner
+            .nl(&policy_path)
+            .iter()
+            .map(|e| {
+                let mut value = serde_json::to_value(&e.result)
+                    .map_err(|err| napi::Error::from_reason(err.to_string()))?;
+                let obj = value
+                    .as_object_mut()
+                    .ok_or_else(|| napi::Error::from_reason("nl result is not an object"))?;
+                obj.remove("id");
+                obj.insert("blockId".into(), Value::String(e.block_id.to_string()));
+                obj.insert(
+                    "kind".into(),
+                    serde_json::to_value(e.kind)
+                        .map_err(|err| napi::Error::from_reason(err.to_string()))?,
+                );
+                obj.insert(
+                    "target".into(),
+                    serde_json::to_value(&e.target)
+                        .map_err(|err| napi::Error::from_reason(err.to_string()))?,
+                );
+                obj.insert("source".into(), Value::String(e.source.clone()));
+                if let Some(subject) = &e.result.subject_type {
+                    obj.insert("subjectType".into(), variable_type_to_json(subject));
+                }
+                Ok(value)
+            })
+            .collect()
+    }
+
+    #[napi(ts_return_type = "NlResult | null")]
+    pub fn nl_tokenize(
+        &self,
+        cursor: PolicyExpressionCursor,
+        text: String,
+    ) -> napi::Result<Option<Value>> {
+        let cursor: policy::Cursor = cursor.try_into()?;
+        self.inner
+            .nl_tokenize(&cursor, &text)
+            .map(|result| {
+                let mut value = serde_json::to_value(&result)
+                    .map_err(|err| napi::Error::from_reason(err.to_string()))?;
+                if let (Some(subject), Some(obj)) = (&result.subject_type, value.as_object_mut()) {
+                    obj.insert("subjectType".into(), variable_type_to_json(subject));
+                }
+                Ok(value)
+            })
+            .transpose()
     }
 
     #[napi]

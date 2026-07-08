@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.0.0-beta.4](https://github.com/gorules/zen/compare/zen-engine-v1.0.0-beta.3...zen-engine-v1.0.0-beta.4) (2026-07-08)
+
+
+### Features
+
+* policy dictionary ([#479](https://github.com/gorules/zen/issues/479)) ([b4b59eb](https://github.com/gorules/zen/commit/b4b59eb7c50eebb7d04d172c8686dd05b56eb761))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * zen-types bumped from 1.0.0-beta.3 to 1.0.0-beta.4
+    * zen-expression bumped from 1.0.0-beta.3 to 1.0.0-beta.4
+    * zen-tmpl bumped from 1.0.0-beta.3 to 1.0.0-beta.4
+
 ## [1.0.0-beta.3](https://github.com/gorules/zen/compare/zen-engine-v1.0.0-beta.2...zen-engine-v1.0.0-beta.3) (2026-07-07)
 
 

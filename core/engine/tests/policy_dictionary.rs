@@ -513,3 +513,29 @@ fn dictionary_block_round_trips_through_wire_format() {
     let serialized = serde_json::to_value(&block).unwrap();
     assert_eq!(serialized, block_json);
 }
+
+#[test]
+fn non_member_literal_comparison_is_diagnosed() {
+    let ws = workspace_with(vec![
+        tier_dictionary(),
+        json!({
+            "id": "dm1",
+            "type": "dataModel",
+            "props": { "data": {
+                "name": "customer",
+                "properties": [
+                    { "id": "p1", "name": "tier", "type": "relationship", "target": "customerTier", "array": false, "optional": false }
+                ]
+            }}
+        }),
+        expression_block("e1", "customer.flag", "customer.tier == 'GOLD'"),
+    ]);
+
+    let diagnostics = ws.diagnostics("main");
+    assert!(
+        diagnostics
+            .iter()
+            .any(|d| format!("{d:?}").contains("GOLD")),
+        "expected non-member literal to be diagnosed, got: {diagnostics:?}"
+    );
+}

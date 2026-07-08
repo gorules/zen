@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.5](https://github.com/gorules/zen/compare/nodejs-v1.0.0-beta.4...nodejs-v1.0.0-beta.5) (2026-07-08)
+
+
+### Features
+
+* policy dictionary ([#479](https://github.com/gorules/zen/issues/479)) ([b4b59eb](https://github.com/gorules/zen/commit/b4b59eb7c50eebb7d04d172c8686dd05b56eb761))
+
 ## [1.0.0-beta.4](https://github.com/gorules/zen/compare/nodejs-v1.0.0-beta.3...nodejs-v1.0.0-beta.4) (2026-07-07)
 
 

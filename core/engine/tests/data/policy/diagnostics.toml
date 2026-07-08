@@ -11,311 +11,6 @@
 #   - `error_codes = [...]` — every listed code must appear at least once.
 #   - `warning_codes = [...]` — same, for warnings.
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Clean compilations — no errors expected
-# ═══════════════════════════════════════════════════════════════════════════════
-
-[[test]]
-name = "analysis document compiles cleanly"
-policies = ["analysis.json"]
-policy = "analysis.json"
-no_errors = true
-
-[[test]]
-name = "assertion policy compiles cleanly"
-policies = ["assertion_policy.json"]
-policy = "assertion_policy.json"
-no_errors = true
-
-[[test]]
-name = "collect table compiles cleanly"
-policies = ["collect_table.json"]
-policy = "collect_table.json"
-no_errors = true
-
-# Write-then-read across separate expression blocks: `s1` writes
-# `customer.ageGroup`, `s2` reads it. The dependency graph orders `s1`
-# before `s2`, so the read resolves with no self-reference.
-[[test]]
-name = "scope enrichment — write then read across blocks"
-policies = ["scope_enrichment.json"]
-policy = "scope_enrichment.json"
-no_errors = true
-
-# Ordered use-after-write across blocks: `ds2` reads
-# `customer.profitableCompanies` written by `ds1`. With each assignment
-# in its own expression block the dependency graph orders `ds1` before
-# `ds2`, so the read resolves cleanly.
-[[test]]
-name = "filter then read across blocks"
-policies = ["filter_instanceof.json"]
-policy = "filter_instanceof.json"
-no_errors = true
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Error diagnostics
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# Mutually-dependent computed properties trip the rule-level cyclic
-# dependency detector. (The previous expectation of UndefinedVariable
-# reflected an older behavior where the dep-graph edges weren't built
-# from dynamic reads.)
-[[test]]
-name = "mutually dependent computed properties form a dependency cycle"
-policies = ["cyclic_deps.json"]
-policy = "cyclic_deps.json"
-error_codes = ["CyclicDependency"]
-
-[[test]]
-name = "duplicate writer detected"
-policies = ["duplicate_writer.json"]
-policy = "duplicate_writer.json"
-error_codes = ["DuplicateWriter"]
-
-[[test]]
-name = "writing to a DataModel input is rejected"
-policies = ["input_override.json"]
-policy = "input_override.json"
-error_codes = ["InputOverride"]
-
-[[test]]
-name = "undefined variable in expression"
-policies = ["undefined_var.json"]
-policy = "undefined_var.json"
-error_codes = ["UndefinedVariable"]
-
-[[test]]
-name = "parse error in expression"
-policies = ["parse_error.json"]
-policy = "parse_error.json"
-error_codes = ["ParseError"]
-
-[[test]]
-name = "unknown relationship target"
-policies = ["unknown_target.json"]
-policy = "unknown_target.json"
-error_codes = ["UnknownDataModelTarget"]
-
-[[test]]
-name = "conflicting property types across data models"
-policies = ["duplicate_entity.json"]
-policy = "duplicate_entity.json"
-error_codes = ["DataModelCollision"]
-
-[[test]]
-name = "compatible entity merge — same property same type is fine"
-policies = ["merge_entity.json"]
-policy = "merge_entity.json"
-no_errors = true
-
-[[test]]
-name = "compatible entity merge across policies"
-policies = ["merge_policy_a.json", "merge_policy_b.json"]
-policy = "merge_policy_a.json"
-no_errors = true
-
-[[test]]
-name = "import not found"
-policies = ["import_not_found.json"]
-policy = "import_not_found.json"
-error_codes = ["ImportNotFound"]
-
-[[test]]
-name = "circular imports"
-policies = ["circular_import_a.json", "circular_import_b.json"]
-policy = "circular_import_a.json"
-error_codes = ["CircularImport"]
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Match exhaustiveness
-# ═══════════════════════════════════════════════════════════════════════════════
-
-[[test]]
-name = "non-exhaustive match without a default arm errors"
-policies = ["missing_default_branch.json"]
-policy = "missing_default_branch.json"
-error_codes = ["MissingDefaultBranch"]
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Warning diagnostics
-# ═══════════════════════════════════════════════════════════════════════════════
-
-[[test]]
-name = "empty assertion block warns"
-policies = ["empty_blocks.json"]
-policy = "empty_blocks.json"
-warning_codes = ["EmptyBlock"]
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Type mismatch
-# ═══════════════════════════════════════════════════════════════════════════════
-
-[[test]]
-name = "type mismatch across branches"
-policies = ["type_mismatch.json"]
-policy = "type_mismatch.json"
-error_codes = ["TypeMismatch"]
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Multi-policy
-# ═══════════════════════════════════════════════════════════════════════════════
-
-[[test]]
-name = "decision table input column invalid field"
-policies = ["dt_invalid_field.json"]
-policy = "dt_invalid_field.json"
-error_codes = ["UndefinedVariable"]
-
-[[test]]
-name = "closure alias invalid member access"
-policies = ["closure_invalid_member.json"]
-policy = "closure_invalid_member.json"
-error_codes = ["UndefinedVariable"]
-
-[[test]]
-name = "block writing to multiple entities is mixed scope"
-policies = ["mixed_scope.json"]
-policy = "mixed_scope.json"
-error_codes = ["MixedScope"]
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Multi-policy
-# ═══════════════════════════════════════════════════════════════════════════════
-
-[[test]]
-name = "multi-policy with imports compiles cleanly"
-policies = ["multi_main.json", "multi_shared.json"]
-policy = "multi_main.json"
-no_errors = true
-
-[[test]]
-name = "shared policy also clean"
-policies = ["multi_main.json", "multi_shared.json"]
-policy = "multi_shared.json"
-no_errors = true
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Inline-content tests — self-contained fixtures for focused type-system
-# behaviors (any-escape detection, built-in call-type inference, etc.).
-# `content` inlines the policy JSON so the behavior under test lives next
-# to the assertion.
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# Any-typed value ends up written to a property → must error.
-[[test]]
-name = "merge([]) yields any[] and errors on write"
-content = '''
-{
-  "blocks": [
-    {
-      "id": "dm",
-      "type": "dataModel",
-      "props": {
-        "data": {
-          "name": "customer",
-          "properties": [
-            {
-              "id": "p1",
-              "name": "id",
-              "type": "string",
-              "array": false,
-              "optional": false
-            }
-          ]
-        }
-      }
-    },
-    {
-      "id": "s1",
-      "type": "expression",
-      "props": {
-        "data": {
-          "key": "customer.mystery",
-          "value": "merge([])"
-        }
-      }
-    }
-  ]
-}
-'''
-error_codes = ["TypeMismatch"]
-
-[[test]]
-name = "reading undefined property surfaces any and errors on write"
-content = '''
-{
-  "blocks": [
-    {
-      "id": "dm",
-      "type": "dataModel",
-      "props": {
-        "data": {
-          "name": "customer",
-          "properties": [
-            {
-              "id": "p1",
-              "name": "id",
-              "type": "string",
-              "array": false,
-              "optional": false
-            }
-          ]
-        }
-      }
-    },
-    {
-      "id": "s1",
-      "type": "expression",
-      "props": {
-        "data": {
-          "key": "customer.x",
-          "value": "customer.phantom"
-        }
-      }
-    }
-  ]
-}
-'''
-error_codes = ["UndefinedVariable", "TypeMismatch"]
-
-[[test]]
-name = "flatten of any-typed input yields array of any and errors"
-content = '''
-{
-  "blocks": [
-    {
-      "id": "dm",
-      "type": "dataModel",
-      "props": {
-        "data": {
-          "name": "customer",
-          "properties": [
-            {
-              "id": "p1",
-              "name": "id",
-              "type": "string",
-              "array": false,
-              "optional": false
-            }
-          ]
-        }
-      }
-    },
-    {
-      "id": "s1",
-      "type": "expression",
-      "props": {
-        "data": {
-          "key": "customer.x",
-          "value": "flatten(customer.phantom)"
-        }
-      }
-    }
-  ]
-}
-'''
-error_codes = ["TypeMismatch"]
-
 # Branch merge widens incompatible types to any → must error.
 [[test]]
 name = "two branches writing incompatible types to the same key errors"
@@ -323,14 +18,14 @@ content = '''
 {
   "blocks": [
     {
-      "id": "dm",
+      "id": "schema",
       "type": "dataModel",
       "props": {
         "data": {
           "name": "customer",
           "properties": [
             {
-              "id": "p1",
+              "id": "prop1",
               "name": "age",
               "type": "number",
               "array": false,
@@ -341,19 +36,19 @@ content = '''
       }
     },
     {
-      "id": "tree",
+      "id": "grid",
       "type": "match",
       "props": {
         "data": {
           "key": "customer.tag",
           "arms": [
             {
-              "id": "b1",
+              "id": "branch1",
               "condition": "customer.age > 18",
               "value": "42"
             },
             {
-              "id": "b2",
+              "id": "branch2",
               "condition": "",
               "value": "\"young\""
             }
@@ -366,207 +61,100 @@ content = '''
 '''
 error_codes = ["TypeMismatch"]
 
-# Built-in call-type inference — each of these should type-check cleanly
-# (no `any` escapes) with the updated type provider.
 [[test]]
-name = "keys and values calls type-check"
-content = '''
-{
-  "blocks": [
-    {
-      "id": "dm",
-      "type": "dataModel",
-      "props": {
-        "data": {
-          "name": "customer",
-          "properties": [
-            {
-              "id": "p1",
-              "name": "id",
-              "type": "string",
-              "array": false,
-              "optional": false
-            }
-          ]
-        }
-      }
-    },
-    {
-      "id": "s1",
-      "type": "expression",
-      "props": {
-        "data": {
-          "key": "customer.keyCount",
-          "value": "len(keys({a: 1, b: 2}))"
-        }
-      }
-    },
-    {
-      "id": "s2",
-      "type": "expression",
-      "props": {
-        "data": {
-          "key": "customer.valueSum",
-          "value": "sum(values({a: 1, b: 2}))"
-        }
-      }
-    }
-  ]
-}
-'''
+name = "collect table compiles cleanly"
+policies = ["collect_table.json"]
+policy = "collect_table.json"
 no_errors = true
 
 [[test]]
-name = "merge of object literals"
+name = "single ternary does not suggest a match block"
 content = '''
 {
   "blocks": [
     {
-      "id": "dm",
+      "id": "schema",
       "type": "dataModel",
-      "props": {
-        "data": {
-          "name": "customer",
-          "properties": [
-            {
-              "id": "p1",
-              "name": "id",
-              "type": "string",
-              "array": false,
-              "optional": false
-            }
-          ]
-        }
-      }
+      "props": { "data": { "name": "inputs", "scope": "global", "properties": [
+        { "id": "prop1", "name": "minutes", "type": "number", "array": false, "optional": false }
+      ] } }
     },
     {
-      "id": "s1",
+      "id": "calc1",
       "type": "expression",
-      "props": {
-        "data": {
-          "key": "customer.merged",
-          "value": "merge([{a: 10}, {b: 20}])"
-        }
-      }
+      "props": { "data": { "key": "threshold", "value": "minutes <= 30 ? 10000 : 18000" } }
     }
   ]
 }
 '''
+no_errors = true
+hint_count = 0
+
+[[test]]
+name = "parse error in expression"
+policies = ["parse_error.json"]
+policy = "parse_error.json"
+error_codes = ["ParseError"]
+
+[[test]]
+name = "conflicting property types across data models"
+policies = ["duplicate_entity.json"]
+policy = "duplicate_entity.json"
+error_codes = ["DataModelCollision"]
+
+[[test]]
+name = "necessary or clarifying parentheses are not flagged"
+content = '''
+{
+  "blocks": [
+    {
+      "id": "schema",
+      "type": "dataModel",
+      "props": { "data": { "name": "inputs", "scope": "global", "properties": [
+        { "id": "prop1", "name": "a", "type": "number", "array": false, "optional": false },
+        { "id": "prop2", "name": "b", "type": "number", "array": false, "optional": false },
+        { "id": "prop3", "name": "c", "type": "number", "array": false, "optional": false },
+        { "id": "prop4", "name": "flag", "type": "boolean", "array": false, "optional": false },
+        { "id": "prop5", "name": "other", "type": "boolean", "array": false, "optional": false },
+        { "id": "prop6", "name": "revenue", "type": "number", "array": false, "optional": true }
+      ] } }
+    },
+    { "id": "calc1", "type": "expression", "props": { "data": { "key": "row1", "value": "(a + b) * c" } } },
+    { "id": "calc2", "type": "expression", "props": { "data": { "key": "row2", "value": "a - (b - c)" } } },
+    { "id": "calc3", "type": "expression", "props": { "data": { "key": "row3", "value": "(revenue ?? 0) * 2" } } },
+    { "id": "calc4", "type": "expression", "props": { "data": { "key": "row4", "value": "(flag and other) or (a > b)" } } },
+    { "id": "calc5", "type": "expression", "props": { "data": { "key": "row5", "value": "flag ? (a + b) : c" } } }
+  ]
+}
+'''
+no_errors = true
+hint_count = 0
+
+[[test]]
+name = "analysis document compiles cleanly"
+policies = ["analysis.json"]
+policy = "analysis.json"
 no_errors = true
 
 [[test]]
-name = "mergeDeep of object literals"
-content = '''
-{
-  "blocks": [
-    {
-      "id": "dm",
-      "type": "dataModel",
-      "props": {
-        "data": {
-          "name": "customer",
-          "properties": [
-            {
-              "id": "p1",
-              "name": "id",
-              "type": "string",
-              "array": false,
-              "optional": false
-            }
-          ]
-        }
-      }
-    },
-    {
-      "id": "s1",
-      "type": "expression",
-      "props": {
-        "data": {
-          "key": "customer.cfg",
-          "value": "mergeDeep([{a: 1, nested: {x: 10}}, {b: 2, nested: {y: 20}}])"
-        }
-      }
-    }
-  ]
-}
-'''
-no_errors = true
+name = "writing to a DataModel input is rejected"
+policies = ["input_override.json"]
+policy = "input_override.json"
+error_codes = ["InputOverride"]
+
+# Warning diagnostics
 
 [[test]]
-name = "flatten of nested array peels to concrete element type"
-content = '''
-{
-  "blocks": [
-    {
-      "id": "dm",
-      "type": "dataModel",
-      "props": {
-        "data": {
-          "name": "customer",
-          "properties": [
-            {
-              "id": "p1",
-              "name": "id",
-              "type": "string",
-              "array": false,
-              "optional": false
-            }
-          ]
-        }
-      }
-    },
-    {
-      "id": "s1",
-      "type": "expression",
-      "props": {
-        "data": {
-          "key": "customer.nums",
-          "value": "flatten([[1, 2], [3, 4]])"
-        }
-      }
-    }
-  ]
-}
-'''
-no_errors = true
+name = "empty assertion block warns"
+policies = ["empty_blocks.json"]
+policy = "empty_blocks.json"
+warning_codes = ["EmptyBlock"]
 
 [[test]]
-name = "values yields union of field types"
-content = '''
-{
-  "blocks": [
-    {
-      "id": "dm",
-      "type": "dataModel",
-      "props": {
-        "data": {
-          "name": "customer",
-          "properties": [
-            {
-              "id": "p1",
-              "name": "id",
-              "type": "string",
-              "array": false,
-              "optional": false
-            }
-          ]
-        }
-      }
-    },
-    {
-      "id": "s1",
-      "type": "expression",
-      "props": {
-        "data": {
-          "key": "customer.vs",
-          "value": "values({a: 1, b: 2, c: 3})"
-        }
-      }
-    }
-  ]
-}
-'''
-no_errors = true
+name = "circular imports"
+policies = ["circular_import_a.json", "circular_import_b.json"]
+policy = "circular_import_a.json"
+error_codes = ["CircularImport"]
 
 # A single malformed expression must produce at most one diagnostic per
 # failure mode: the real error (`+` on incompatible types) plus the `any`
@@ -577,14 +165,14 @@ content = '''
 {
   "blocks": [
     {
-      "id": "dm",
+      "id": "schema",
       "type": "dataModel",
       "props": {
         "data": {
           "name": "employee",
           "properties": [
             {
-              "id": "p1",
+              "id": "prop1",
               "name": "id",
               "type": "string",
               "array": false,
@@ -595,7 +183,7 @@ content = '''
       }
     },
     {
-      "id": "s1",
+      "id": "step1",
       "type": "expression",
       "props": {
         "data": {
@@ -610,54 +198,64 @@ content = '''
 error_codes = ["TypeMismatch"]
 error_count = 2
 
-# Intra-tree forward reads: statement 2 sees statement 1's write.
+# Disjoint nested assembly across blocks (no whole-object write of
+# `portfolio`) merges cleanly at runtime via `dot_insert`, so it is allowed.
 [[test]]
-name = "intra-tree forward reads see earlier top-level writes"
+name = "disjoint nested assembly across blocks is allowed"
+policy = "p"
+no_errors = true
+content = '''
+{
+  "blocks": [
+    { "id": "schema", "type": "dataModel", "props": { "data": {
+      "name": "globals", "scope": "global",
+      "properties": [
+        { "id": "gate1", "name": "principal", "type": "number", "array": false, "optional": false }
+      ]
+    }}},
+    { "id": "step1", "type": "expression", "props": { "data": { "key": "portfolio.byBucket.CURRENT.balance", "value": "principal * 0.7" } } },
+    { "id": "step2", "type": "expression", "props": { "data": { "key": "portfolio.byBucket.LATE.balance", "value": "principal * 0.3" } } }
+  ]
+}
+'''
+
+# Ordered use-after-write across blocks: `ds2` reads
+# `customer.profitableCompanies` written by `ds1`. With each assignment
+# in its own expression block the dependency graph orders `ds1` before
+# `ds2`, so the read resolves cleanly.
+[[test]]
+name = "filter then read across blocks"
+policies = ["filter_instanceof.json"]
+policy = "filter_instanceof.json"
+no_errors = true
+
+[[test]]
+name = "import not found"
+policies = ["import_not_found.json"]
+policy = "import_not_found.json"
+error_codes = ["ImportNotFound"]
+
+[[test]]
+name = "parentheses around higher-precedence arithmetic are flagged"
 content = '''
 {
   "blocks": [
     {
-      "id": "dm",
+      "id": "schema",
       "type": "dataModel",
-      "props": {
-        "data": {
-          "name": "employee",
-          "properties": [
-            {
-              "id": "p1",
-              "name": "id",
-              "type": "string",
-              "array": false,
-              "optional": false
-            }
-          ]
-        }
-      }
+      "props": { "data": { "name": "inputs", "scope": "global", "properties": [
+        { "id": "prop1", "name": "a", "type": "number", "array": false, "optional": false },
+        { "id": "prop2", "name": "b", "type": "number", "array": false, "optional": false },
+        { "id": "prop3", "name": "c", "type": "number", "array": false, "optional": false }
+      ] } }
     },
-    {
-      "id": "s1",
-      "type": "expression",
-      "props": {
-        "data": {
-          "key": "employee.som",
-          "value": "merge([{a: 10}])"
-        }
-      }
-    },
-    {
-      "id": "s2",
-      "type": "expression",
-      "props": {
-        "data": {
-          "key": "employee.aa",
-          "value": "employee.som"
-        }
-      }
-    }
+    { "id": "calc1", "type": "expression", "props": { "data": { "key": "due", "value": "(a * b) + c" } } }
   ]
 }
 '''
 no_errors = true
+hint_codes = ["RedundantParentheses"]
+hint_count = 1
 
 # Indexing an optional relationship array then reading a field of the element
 # must not surface a false UndefinedVariable: `customer.companies[0].revenue`
@@ -675,8 +273,8 @@ content = '''
         "data": {
           "name": "company",
           "properties": [
-            { "id": "p1", "name": "id", "type": "string", "array": false, "optional": false },
-            { "id": "p2", "name": "revenue", "type": "number", "array": false, "optional": false }
+            { "id": "prop1", "name": "id", "type": "string", "array": false, "optional": false },
+            { "id": "prop2", "name": "revenue", "type": "number", "array": false, "optional": false }
           ]
         }
       }
@@ -688,14 +286,14 @@ content = '''
         "data": {
           "name": "customer",
           "properties": [
-            { "id": "p3", "name": "name", "type": "string", "array": false, "optional": false },
-            { "id": "p4", "name": "companies", "type": "relationship", "target": "company", "array": true, "optional": true }
+            { "id": "prop3", "name": "name", "type": "string", "array": false, "optional": false },
+            { "id": "prop4", "name": "companies", "type": "relationship", "target": "company", "array": true, "optional": true }
           ]
         }
       }
     },
     {
-      "id": "s1",
+      "id": "step1",
       "type": "expression",
       "props": {
         "data": { "key": "customer.topRevenue", "value": "customer.companies[0].revenue" }
@@ -705,6 +303,675 @@ content = '''
 }
 '''
 no_errors = true
+
+[[test]]
+name = "merge of object literals"
+content = '''
+{
+  "blocks": [
+    {
+      "id": "schema",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "customer",
+          "properties": [
+            {
+              "id": "prop1",
+              "name": "id",
+              "type": "string",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "step1",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "customer.merged",
+          "value": "merge([{a: 10}, {b: 20}])"
+        }
+      }
+    }
+  ]
+}
+'''
+no_errors = true
+
+[[test]]
+name = "assertion policy compiles cleanly"
+policies = ["assertion_policy.json"]
+policy = "assertion_policy.json"
+no_errors = true
+
+[[test]]
+name = "unknown relationship target"
+policies = ["unknown_target.json"]
+policy = "unknown_target.json"
+error_codes = ["UnknownDataModelTarget"]
+
+[[test]]
+name = "closure alias invalid member access"
+policies = ["closure_invalid_member.json"]
+policy = "closure_invalid_member.json"
+error_codes = ["UndefinedVariable"]
+
+# Multi-policy
+
+[[test]]
+name = "decision table input column invalid field"
+policies = ["dt_invalid_field.json"]
+policy = "dt_invalid_field.json"
+error_codes = ["UndefinedVariable"]
+
+[[test]]
+name = "duplicate row and non-discriminating column are flagged"
+content = '''
+{
+  "blocks": [
+    {
+      "id": "schema",
+      "type": "dataModel",
+      "props": { "data": { "name": "inputs", "scope": "global", "properties": [
+        { "id": "prop1", "name": "kind", "type": "string", "array": false, "optional": false },
+        { "id": "prop2", "name": "tier", "type": "string", "array": false, "optional": false }
+      ] } }
+    },
+    {
+      "id": "table1",
+      "type": "decisionTable",
+      "props": { "data": {
+        "hitPolicy": "first",
+        "inputs": [
+          { "id": "col1", "name": "Kind", "field": "kind" },
+          { "id": "col2", "name": "Tier", "field": "tier" }
+        ],
+        "outputs": [ { "id": "out1", "name": "Rate", "field": "rate" } ],
+        "rules": [
+          { "_id": "row1", "col1": "\"card\"", "col2": "\"high\"", "out1": "0.012" },
+          { "_id": "row2", "col1": "\"loan\"", "col2": "\"high\"", "out1": "0.012" },
+          { "_id": "row3", "col1": "\"card\"", "col2": "\"high\"", "out1": "0.012" },
+          { "_id": "row4", "col1": "", "col2": "", "out1": "0.012" }
+        ]
+      } }
+    }
+  ]
+}
+'''
+no_errors = true
+hint_codes = ["RedundantTableRow", "NonDiscriminatingColumn"]
+hint_count = 2
+
+# Multi-policy
+
+[[test]]
+name = "multi-policy with imports compiles cleanly"
+policies = ["multi_main.json", "multi_shared.json"]
+policy = "multi_main.json"
+no_errors = true
+
+[[test]]
+name = "flatten of any-typed input yields array of any and errors"
+content = '''
+{
+  "blocks": [
+    {
+      "id": "schema",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "customer",
+          "properties": [
+            {
+              "id": "prop1",
+              "name": "id",
+              "type": "string",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "step1",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "customer.x",
+          "value": "flatten(customer.phantom)"
+        }
+      }
+    }
+  ]
+}
+'''
+error_codes = ["TypeMismatch"]
+
+[[test]]
+name = "shared policy also clean"
+policies = ["multi_main.json", "multi_shared.json"]
+policy = "multi_shared.json"
+no_errors = true
+
+[[test]]
+name = "compatible entity merge across policies"
+policies = ["merge_policy_a.json", "merge_policy_b.json"]
+policy = "merge_policy_a.json"
+no_errors = true
+
+[[test]]
+name = "valued column gating fall-through to a different-output catch-all is not flagged"
+content = '''
+{
+  "blocks": [
+    {
+      "id": "schema",
+      "type": "dataModel",
+      "props": { "data": { "name": "inputs", "scope": "global", "properties": [
+        { "id": "prop1", "name": "dateKey", "type": "string", "array": false, "optional": false },
+        { "id": "prop2", "name": "item", "type": "string", "array": false, "optional": false }
+      ] } }
+    },
+    {
+      "id": "table1",
+      "type": "decisionTable",
+      "props": { "data": {
+        "hitPolicy": "first",
+        "inputs": [
+          { "id": "col1", "name": "Date", "field": "dateKey" },
+          { "id": "col2", "name": "Item", "field": "item" }
+        ],
+        "outputs": [ { "id": "out1", "name": "Pct", "field": "pct" } ],
+        "rules": [
+          { "_id": "row1", "col1": "\"2024-01-01\"", "col2": "\"PREMIUM\"", "out1": "0.25" },
+          { "_id": "row2", "col1": "\"2024-01-01\"", "col2": "\"STANDARD\"", "out1": "0.25" },
+          { "_id": "row3", "col1": "\"2018-01-01\"", "col2": "\"PREMIUM\"", "out1": "0.2" },
+          { "_id": "row4", "col1": "\"2018-01-01\"", "col2": "\"STANDARD\"", "out1": "0.2" },
+          { "_id": "row5", "col1": "", "col2": "", "out1": "0" }
+        ]
+      } }
+    }
+  ]
+}
+'''
+no_errors = true
+hint_count = 0
+
+[[test]]
+name = "values yields union of field types"
+content = '''
+{
+  "blocks": [
+    {
+      "id": "schema",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "customer",
+          "properties": [
+            {
+              "id": "prop1",
+              "name": "id",
+              "type": "string",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "step1",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "customer.vs",
+          "value": "values({a: 1, b: 2, c: 3})"
+        }
+      }
+    }
+  ]
+}
+'''
+no_errors = true
+
+[[test]]
+name = "duplicate writer detected"
+policies = ["duplicate_writer.json"]
+policy = "duplicate_writer.json"
+error_codes = ["DuplicateWriter"]
+
+# Inline-content tests — self-contained fixtures for focused type-system
+# behaviors (any-escape detection, built-in call-type inference, etc.).
+# `content` inlines the policy JSON so the behavior under test lives next
+# to the assertion.
+
+# Any-typed value ends up written to a property → must error.
+[[test]]
+name = "merge([]) yields any[] and errors on write"
+content = '''
+{
+  "blocks": [
+    {
+      "id": "schema",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "customer",
+          "properties": [
+            {
+              "id": "prop1",
+              "name": "id",
+              "type": "string",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "step1",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "customer.mystery",
+          "value": "merge([])"
+        }
+      }
+    }
+  ]
+}
+'''
+error_codes = ["TypeMismatch"]
+
+[[test]]
+name = "nested computed write paths build an object spine without errors"
+policy = "p"
+no_errors = true
+content = '''
+{
+  "blocks": [
+    { "id": "schema", "type": "dataModel", "props": { "data": {
+      "name": "globals", "scope": "global",
+      "properties": [
+        { "id": "gate1", "name": "principal", "type": "number", "array": false, "optional": false }
+      ]
+    }}},
+    { "id": "assert1", "type": "expression", "props": { "data": { "key": "rate", "value": "principal > 100000 ? 0.05 : 0.04" } } },
+    { "id": "step1", "type": "expression", "props": { "data": { "key": "loanSummary.byBucket.CURRENT.interestDue", "value": "principal * rate" } } },
+    { "id": "step2", "type": "expression", "props": { "data": { "key": "loanSummary.grandTotal", "value": "principal * (1 + rate)" } } },
+    { "id": "unit1", "type": "expression", "props": { "data": { "key": "tierLabel", "value": "loanSummary.grandTotal > 10000 ? \"large\" : \"standard\"" } } },
+    { "id": "unit2", "type": "expression", "props": { "data": { "key": "bucketCount", "value": "len(keys(loanSummary.byBucket))" } } }
+  ]
+}
+'''
+
+# Type mismatch
+
+[[test]]
+name = "type mismatch across branches"
+policies = ["type_mismatch.json"]
+policy = "type_mismatch.json"
+error_codes = ["TypeMismatch"]
+
+[[test]]
+name = "small derivation repeated only twice is not flagged"
+content = '''
+{
+  "blocks": [
+    {
+      "id": "schema",
+      "type": "dataModel",
+      "props": { "data": { "name": "inputs", "scope": "global", "properties": [
+        { "id": "prop1", "name": "revenue", "type": "number", "array": false, "optional": true }
+      ] } }
+    },
+    { "id": "calc1", "type": "expression", "props": { "data": { "key": "a", "value": "(revenue ?? 0) * 2" } } },
+    { "id": "calc2", "type": "expression", "props": { "data": { "key": "b", "value": "(revenue ?? 0) + 1" } } }
+  ]
+}
+'''
+no_errors = true
+hint_count = 0
+
+[[test]]
+name = "row shadowed by an earlier wildcard row is flagged as unreachable"
+content = '''
+{
+  "blocks": [
+    {
+      "id": "schema",
+      "type": "dataModel",
+      "props": { "data": { "name": "inputs", "scope": "global", "properties": [
+        { "id": "prop1", "name": "kind", "type": "string", "array": false, "optional": false },
+        { "id": "prop2", "name": "tier", "type": "string", "array": false, "optional": false }
+      ] } }
+    },
+    {
+      "id": "table1",
+      "type": "decisionTable",
+      "props": { "data": {
+        "hitPolicy": "first",
+        "inputs": [
+          { "id": "col1", "name": "Kind", "field": "kind" },
+          { "id": "col2", "name": "Tier", "field": "tier" }
+        ],
+        "outputs": [ { "id": "out1", "name": "Rate", "field": "rate" } ],
+        "rules": [
+          { "_id": "row1", "col1": "", "col2": "\"high\"", "out1": "1" },
+          { "_id": "row2", "col1": "\"card\"", "col2": "\"high\"", "out1": "2" }
+        ]
+      } }
+    }
+  ]
+}
+'''
+no_errors = true
+hint_codes = ["RedundantTableRow"]
+hint_count = 1
+
+[[test]]
+name = "redundant parentheses inside arguments and at the root are flagged"
+content = '''
+{
+  "blocks": [
+    {
+      "id": "schema",
+      "type": "dataModel",
+      "props": { "data": { "name": "inputs", "scope": "global", "properties": [
+        { "id": "prop1", "name": "a", "type": "number", "array": false, "optional": false },
+        { "id": "prop2", "name": "b", "type": "number", "array": false, "optional": false }
+      ] } }
+    },
+    { "id": "calc1", "type": "expression", "props": { "data": { "key": "row1", "value": "(a + b)" } } },
+    { "id": "calc2", "type": "expression", "props": { "data": { "key": "row2", "value": "abs((a + b))" } } }
+  ]
+}
+'''
+no_errors = true
+hint_codes = ["RedundantParentheses"]
+hint_count = 2
+
+# Lints (hint severity)
+
+[[test]]
+name = "chained ternary over one scrutinee suggests a match block"
+content = '''
+{
+  "blocks": [
+    {
+      "id": "schema",
+      "type": "dataModel",
+      "props": { "data": { "name": "inputs", "scope": "global", "properties": [
+        { "id": "prop1", "name": "minutes", "type": "number", "array": false, "optional": false }
+      ] } }
+    },
+    {
+      "id": "calc1",
+      "type": "expression",
+      "props": { "data": { "key": "threshold", "value": "minutes <= 30 ? 10000 : minutes <= 60 ? 18000 : minutes <= 90 ? 24000 : 18000" } }
+    }
+  ]
+}
+'''
+no_errors = true
+hint_codes = ["PreferMatch"]
+hint_count = 1
+
+[[test]]
+name = "complex derivation repeated twice is flagged without double-counting nested fragments"
+content = '''
+{
+  "blocks": [
+    {
+      "id": "schema",
+      "type": "dataModel",
+      "props": { "data": { "name": "inputs", "scope": "global", "properties": [
+        { "id": "prop1", "name": "revenue", "type": "number", "array": false, "optional": true },
+        { "id": "prop2", "name": "rate", "type": "number", "array": false, "optional": true },
+        { "id": "prop3", "name": "base", "type": "number", "array": false, "optional": false }
+      ] } }
+    },
+    { "id": "calc1", "type": "expression", "props": { "data": { "key": "a", "value": "(revenue ?? 0) * (rate ?? 1) + base" } } },
+    { "id": "calc2", "type": "expression", "props": { "data": { "key": "b", "value": "(revenue ?? 0) * (rate ?? 1) + base" } } }
+  ]
+}
+'''
+no_errors = true
+hint_codes = ["RepeatedDerivation"]
+hint_count = 2
+
+# A single block writing an object whole AND into a nested path of it: the
+# whole-object write clobbers the nested write at runtime. Must be flagged.
+[[test]]
+name = "single block writes whole object and a nested path is flagged"
+policy = "p"
+error_codes = ["PartialObjectWrite"]
+content = '''
+{
+  "blocks": [
+    { "id": "schema", "type": "dataModel", "props": { "data": {
+      "name": "globals", "scope": "global",
+      "properties": [
+        { "id": "gate1", "name": "principal", "type": "number", "array": false, "optional": false }
+      ]
+    }}},
+    { "id": "step1", "type": "expression", "props": { "data": { "key": "summary", "value": "{ grandTotal: principal }" } } },
+    { "id": "step2", "type": "expression", "props": { "data": { "key": "summary.byBucket.CURRENT.balance", "value": "principal * 0.7" } } }
+  ]
+}
+'''
+
+# Write-then-read across separate expression blocks: `s1` writes
+# `customer.ageGroup`, `s2` reads it. The dependency graph orders `s1`
+# before `s2`, so the read resolves with no self-reference.
+[[test]]
+name = "scope enrichment — write then read across blocks"
+policies = ["scope_enrichment.json"]
+policy = "scope_enrichment.json"
+no_errors = true
+
+[[test]]
+name = "small derivation repeated three times is flagged at every site"
+content = '''
+{
+  "blocks": [
+    {
+      "id": "schema",
+      "type": "dataModel",
+      "props": { "data": { "name": "inputs", "scope": "global", "properties": [
+        { "id": "prop1", "name": "revenue", "type": "number", "array": false, "optional": true }
+      ] } }
+    },
+    { "id": "calc1", "type": "expression", "props": { "data": { "key": "a", "value": "(revenue ?? 0) * 2" } } },
+    { "id": "calc2", "type": "expression", "props": { "data": { "key": "b", "value": "(revenue ?? 0) + 1" } } },
+    { "id": "calc3", "type": "expression", "props": { "data": { "key": "c", "value": "(revenue ?? 0) / 4" } } }
+  ]
+}
+'''
+no_errors = true
+hint_codes = ["RepeatedDerivation"]
+hint_count = 3
+
+# Built-in call-type inference — each of these should type-check cleanly
+# (no `any` escapes) with the updated type provider.
+[[test]]
+name = "keys and values calls type-check"
+content = '''
+{
+  "blocks": [
+    {
+      "id": "schema",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "customer",
+          "properties": [
+            {
+              "id": "prop1",
+              "name": "id",
+              "type": "string",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "step1",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "customer.keyCount",
+          "value": "len(keys({a: 1, b: 2}))"
+        }
+      }
+    },
+    {
+      "id": "step2",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "customer.valueSum",
+          "value": "sum(values({a: 1, b: 2}))"
+        }
+      }
+    }
+  ]
+}
+'''
+no_errors = true
+
+[[test]]
+name = "nullish coalesce on an optional property is not flagged"
+content = '''
+{
+  "blocks": [
+    {
+      "id": "schema",
+      "type": "dataModel",
+      "props": { "data": { "name": "inputs", "scope": "global", "properties": [
+        { "id": "prop1", "name": "score", "type": "number", "array": false, "optional": true }
+      ] } }
+    },
+    { "id": "calc1", "type": "expression", "props": { "data": { "key": "adjusted", "value": "(score ?? 0) + 1" } } }
+  ]
+}
+'''
+no_errors = true
+hint_count = 0
+
+[[test]]
+name = "parentheses around a lone identifier are flagged"
+content = '''
+{
+  "blocks": [
+    {
+      "id": "schema",
+      "type": "dataModel",
+      "props": { "data": { "name": "inputs", "scope": "global", "properties": [
+        { "id": "prop1", "name": "principal", "type": "number", "array": false, "optional": false },
+        { "id": "prop2", "name": "interestRate", "type": "number", "array": false, "optional": false },
+        { "id": "prop3", "name": "feePct", "type": "number", "array": false, "optional": false }
+      ] } }
+    },
+    { "id": "calc1", "type": "expression", "props": { "data": { "key": "due", "value": "(principal) * interestRate * feePct" } } }
+  ]
+}
+'''
+no_errors = true
+hint_codes = ["RedundantParentheses"]
+hint_count = 1
+
+[[test]]
+name = "mergeDeep of object literals"
+content = '''
+{
+  "blocks": [
+    {
+      "id": "schema",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "customer",
+          "properties": [
+            {
+              "id": "prop1",
+              "name": "id",
+              "type": "string",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "step1",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "customer.cfg",
+          "value": "mergeDeep([{a: 1, nested: {x: 10}}, {b: 2, nested: {y: 20}}])"
+        }
+      }
+    }
+  ]
+}
+'''
+no_errors = true
+
+# Error diagnostics
+
+# Mutually-dependent computed properties trip the rule-level cyclic
+# dependency detector. (The previous expectation of UndefinedVariable
+# reflected an older behavior where the dep-graph edges weren't built
+# from dynamic reads.)
+[[test]]
+name = "mutually dependent computed properties form a dependency cycle"
+policies = ["cyclic_deps.json"]
+policy = "cyclic_deps.json"
+error_codes = ["CyclicDependency"]
+
+[[test]]
+name = "undefined variable in expression"
+policies = ["undefined_var.json"]
+policy = "undefined_var.json"
+error_codes = ["UndefinedVariable"]
+
+# Match exhaustiveness
+
+[[test]]
+name = "non-exhaustive match without a default arm errors"
+policies = ["missing_default_branch.json"]
+policy = "missing_default_branch.json"
+error_codes = ["MissingDefaultBranch"]
+
+[[test]]
+name = "whole-object write plus a nested write to the same object is flagged"
+policy = "p"
+error_codes = ["PartialObjectWrite"]
+content = '''
+{
+  "blocks": [
+    { "id": "schema", "type": "dataModel", "props": { "data": {
+      "name": "globals", "scope": "global",
+      "properties": [
+        { "id": "gate1", "name": "principal", "type": "number", "array": false, "optional": false }
+      ]
+    }}},
+    { "id": "step1", "type": "expression", "props": { "data": { "key": "summary", "value": "{ byBucket: { CURRENT: { balance: principal } }, grandTotal: principal }" } } },
+    { "id": "step2", "type": "expression", "props": { "data": { "key": "summary.byBucket.CURRENT.balance", "value": "0" } } }
+  ]
+}
+'''
 
 # A field computed per-entity (`customer.riskScore`) must be visible in a
 # global-scope expression that reaches the entity through a relationship array
@@ -723,9 +990,9 @@ content = '''
         "data": {
           "name": "customer",
           "properties": [
-            { "id": "p1", "name": "name", "type": "string", "array": false, "optional": false },
-            { "id": "p2", "name": "country", "type": "string", "array": false, "optional": false },
-            { "id": "p3", "name": "income", "type": "number", "array": false, "optional": false }
+            { "id": "prop1", "name": "name", "type": "string", "array": false, "optional": false },
+            { "id": "prop2", "name": "country", "type": "string", "array": false, "optional": false },
+            { "id": "prop3", "name": "income", "type": "number", "array": false, "optional": false }
           ]
         }
       }
@@ -738,20 +1005,20 @@ content = '''
           "name": "globals",
           "scope": "global",
           "properties": [
-            { "id": "g1", "name": "customers", "type": "relationship", "target": "customer", "array": true, "optional": false }
+            { "id": "gate1", "name": "customers", "type": "relationship", "target": "customer", "array": true, "optional": false }
           ]
         }
       }
     },
     {
-      "id": "rs1",
+      "id": "rule1",
       "type": "expression",
       "props": {
         "data": { "key": "customer.riskScore", "value": "customer.income * 0.1" }
       }
     },
     {
-      "id": "as1",
+      "id": "check1",
       "type": "expression",
       "props": {
         "data": { "key": "totalRisk", "value": "sum(map(filter(customers as c, c.country == \"US\") as x, x.riskScore))" }
@@ -777,7 +1044,7 @@ content = '''
           "name": "entry",
           "scope": "entity",
           "properties": [
-            { "id": "e1", "name": "amount", "type": "number", "array": false, "optional": false }
+            { "id": "calc1", "name": "amount", "type": "number", "array": false, "optional": false }
           ]
         }
       }
@@ -790,15 +1057,15 @@ content = '''
           "name": "globals",
           "scope": "global",
           "properties": [
-            { "id": "g1", "name": "flag", "type": "boolean", "array": false, "optional": false },
-            { "id": "g2", "name": "listA", "type": "relationship", "target": "entry", "array": true, "optional": false },
-            { "id": "g3", "name": "listB", "type": "relationship", "target": "entry", "array": true, "optional": false }
+            { "id": "gate1", "name": "flag", "type": "boolean", "array": false, "optional": false },
+            { "id": "gate2", "name": "listA", "type": "relationship", "target": "entry", "array": true, "optional": false },
+            { "id": "gate3", "name": "listB", "type": "relationship", "target": "entry", "array": true, "optional": false }
           ]
         }
       }
     },
     {
-      "id": "s1",
+      "id": "step1",
       "type": "expression",
       "props": {
         "data": { "key": "total", "value": "sum(map((flag ? listA : listB) as t, t.amount))" }
@@ -809,390 +1076,32 @@ content = '''
 '''
 
 [[test]]
-name = "nested computed write paths build an object spine without errors"
-policy = "p"
-no_errors = true
-content = '''
-{
-  "blocks": [
-    { "id": "dm", "type": "dataModel", "props": { "data": {
-      "name": "globals", "scope": "global",
-      "properties": [
-        { "id": "g1", "name": "principal", "type": "number", "array": false, "optional": false }
-      ]
-    }}},
-    { "id": "ra1", "type": "expression", "props": { "data": { "key": "rate", "value": "principal > 100000 ? 0.05 : 0.04" } } },
-    { "id": "s1", "type": "expression", "props": { "data": { "key": "loanSummary.byBucket.CURRENT.interestDue", "value": "principal * rate" } } },
-    { "id": "s2", "type": "expression", "props": { "data": { "key": "loanSummary.grandTotal", "value": "principal * (1 + rate)" } } },
-    { "id": "u1", "type": "expression", "props": { "data": { "key": "tierLabel", "value": "loanSummary.grandTotal > 10000 ? \"large\" : \"standard\"" } } },
-    { "id": "u2", "type": "expression", "props": { "data": { "key": "bucketCount", "value": "len(keys(loanSummary.byBucket))" } } }
-  ]
-}
-'''
-
-# Disjoint nested assembly across blocks (no whole-object write of
-# `portfolio`) merges cleanly at runtime via `dot_insert`, so it is allowed.
-[[test]]
-name = "disjoint nested assembly across blocks is allowed"
-policy = "p"
-no_errors = true
-content = '''
-{
-  "blocks": [
-    { "id": "dm", "type": "dataModel", "props": { "data": {
-      "name": "globals", "scope": "global",
-      "properties": [
-        { "id": "g1", "name": "principal", "type": "number", "array": false, "optional": false }
-      ]
-    }}},
-    { "id": "s1", "type": "expression", "props": { "data": { "key": "portfolio.byBucket.CURRENT.balance", "value": "principal * 0.7" } } },
-    { "id": "s2", "type": "expression", "props": { "data": { "key": "portfolio.byBucket.LATE.balance", "value": "principal * 0.3" } } }
-  ]
-}
-'''
-
-# A single block writing an object whole AND into a nested path of it: the
-# whole-object write clobbers the nested write at runtime. Must be flagged.
-[[test]]
-name = "single block writes whole object and a nested path is flagged"
-policy = "p"
-error_codes = ["PartialObjectWrite"]
-content = '''
-{
-  "blocks": [
-    { "id": "dm", "type": "dataModel", "props": { "data": {
-      "name": "globals", "scope": "global",
-      "properties": [
-        { "id": "g1", "name": "principal", "type": "number", "array": false, "optional": false }
-      ]
-    }}},
-    { "id": "s1", "type": "expression", "props": { "data": { "key": "summary", "value": "{ grandTotal: principal }" } } },
-    { "id": "s2", "type": "expression", "props": { "data": { "key": "summary.byBucket.CURRENT.balance", "value": "principal * 0.7" } } }
-  ]
-}
-'''
-
-[[test]]
-name = "whole-object write plus a nested write to the same object is flagged"
-policy = "p"
-error_codes = ["PartialObjectWrite"]
-content = '''
-{
-  "blocks": [
-    { "id": "dm", "type": "dataModel", "props": { "data": {
-      "name": "globals", "scope": "global",
-      "properties": [
-        { "id": "g1", "name": "principal", "type": "number", "array": false, "optional": false }
-      ]
-    }}},
-    { "id": "s1", "type": "expression", "props": { "data": { "key": "summary", "value": "{ byBucket: { CURRENT: { balance: principal } }, grandTotal: principal }" } } },
-    { "id": "s2", "type": "expression", "props": { "data": { "key": "summary.byBucket.CURRENT.balance", "value": "0" } } }
-  ]
-}
-'''
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Lints (hint severity)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-[[test]]
-name = "chained ternary over one scrutinee suggests a match block"
-content = '''
-{
-  "blocks": [
-    {
-      "id": "dm",
-      "type": "dataModel",
-      "props": { "data": { "name": "inputs", "scope": "global", "properties": [
-        { "id": "p1", "name": "minutes", "type": "number", "array": false, "optional": false }
-      ] } }
-    },
-    {
-      "id": "e1",
-      "type": "expression",
-      "props": { "data": { "key": "threshold", "value": "minutes <= 30 ? 10000 : minutes <= 60 ? 18000 : minutes <= 90 ? 24000 : 18000" } }
-    }
-  ]
-}
-'''
-no_errors = true
-hint_codes = ["PreferMatch"]
-hint_count = 1
-
-[[test]]
-name = "single ternary does not suggest a match block"
-content = '''
-{
-  "blocks": [
-    {
-      "id": "dm",
-      "type": "dataModel",
-      "props": { "data": { "name": "inputs", "scope": "global", "properties": [
-        { "id": "p1", "name": "minutes", "type": "number", "array": false, "optional": false }
-      ] } }
-    },
-    {
-      "id": "e1",
-      "type": "expression",
-      "props": { "data": { "key": "threshold", "value": "minutes <= 30 ? 10000 : 18000" } }
-    }
-  ]
-}
-'''
-no_errors = true
-hint_count = 0
-
-[[test]]
-name = "small derivation repeated three times is flagged at every site"
-content = '''
-{
-  "blocks": [
-    {
-      "id": "dm",
-      "type": "dataModel",
-      "props": { "data": { "name": "inputs", "scope": "global", "properties": [
-        { "id": "p1", "name": "revenue", "type": "number", "array": false, "optional": true }
-      ] } }
-    },
-    { "id": "e1", "type": "expression", "props": { "data": { "key": "a", "value": "(revenue ?? 0) * 2" } } },
-    { "id": "e2", "type": "expression", "props": { "data": { "key": "b", "value": "(revenue ?? 0) + 1" } } },
-    { "id": "e3", "type": "expression", "props": { "data": { "key": "c", "value": "(revenue ?? 0) / 4" } } }
-  ]
-}
-'''
-no_errors = true
-hint_codes = ["RepeatedDerivation"]
-hint_count = 3
-
-[[test]]
-name = "small derivation repeated only twice is not flagged"
-content = '''
-{
-  "blocks": [
-    {
-      "id": "dm",
-      "type": "dataModel",
-      "props": { "data": { "name": "inputs", "scope": "global", "properties": [
-        { "id": "p1", "name": "revenue", "type": "number", "array": false, "optional": true }
-      ] } }
-    },
-    { "id": "e1", "type": "expression", "props": { "data": { "key": "a", "value": "(revenue ?? 0) * 2" } } },
-    { "id": "e2", "type": "expression", "props": { "data": { "key": "b", "value": "(revenue ?? 0) + 1" } } }
-  ]
-}
-'''
-no_errors = true
-hint_count = 0
-
-[[test]]
-name = "complex derivation repeated twice is flagged without double-counting nested fragments"
-content = '''
-{
-  "blocks": [
-    {
-      "id": "dm",
-      "type": "dataModel",
-      "props": { "data": { "name": "inputs", "scope": "global", "properties": [
-        { "id": "p1", "name": "revenue", "type": "number", "array": false, "optional": true },
-        { "id": "p2", "name": "rate", "type": "number", "array": false, "optional": true },
-        { "id": "p3", "name": "base", "type": "number", "array": false, "optional": false }
-      ] } }
-    },
-    { "id": "e1", "type": "expression", "props": { "data": { "key": "a", "value": "(revenue ?? 0) * (rate ?? 1) + base" } } },
-    { "id": "e2", "type": "expression", "props": { "data": { "key": "b", "value": "(revenue ?? 0) * (rate ?? 1) + base" } } }
-  ]
-}
-'''
-no_errors = true
-hint_codes = ["RepeatedDerivation"]
-hint_count = 2
-
-[[test]]
-name = "derivation repeated across imported policies is flagged in the importing policy"
-policies = ["lint_shared_main.json", "lint_shared_dep.json"]
-policy = "lint_shared_main.json"
-no_errors = true
-hint_codes = ["RepeatedDerivation"]
-hint_count = 1
-
-[[test]]
-name = "duplicate row and non-discriminating column are flagged"
-content = '''
-{
-  "blocks": [
-    {
-      "id": "dm",
-      "type": "dataModel",
-      "props": { "data": { "name": "inputs", "scope": "global", "properties": [
-        { "id": "p1", "name": "kind", "type": "string", "array": false, "optional": false },
-        { "id": "p2", "name": "tier", "type": "string", "array": false, "optional": false }
-      ] } }
-    },
-    {
-      "id": "t1",
-      "type": "decisionTable",
-      "props": { "data": {
-        "hitPolicy": "first",
-        "inputs": [
-          { "id": "i1", "name": "Kind", "field": "kind" },
-          { "id": "i2", "name": "Tier", "field": "tier" }
-        ],
-        "outputs": [ { "id": "o1", "name": "Rate", "field": "rate" } ],
-        "rules": [
-          { "_id": "r1", "i1": "\"card\"", "i2": "\"high\"", "o1": "0.012" },
-          { "_id": "r2", "i1": "\"loan\"", "i2": "\"high\"", "o1": "0.012" },
-          { "_id": "r3", "i1": "\"card\"", "i2": "\"high\"", "o1": "0.012" },
-          { "_id": "r4", "i1": "", "i2": "", "o1": "0.012" }
-        ]
-      } }
-    }
-  ]
-}
-'''
-no_errors = true
-hint_codes = ["RedundantTableRow", "NonDiscriminatingColumn"]
-hint_count = 2
-
-[[test]]
-name = "row shadowed by an earlier wildcard row is flagged as unreachable"
-content = '''
-{
-  "blocks": [
-    {
-      "id": "dm",
-      "type": "dataModel",
-      "props": { "data": { "name": "inputs", "scope": "global", "properties": [
-        { "id": "p1", "name": "kind", "type": "string", "array": false, "optional": false },
-        { "id": "p2", "name": "tier", "type": "string", "array": false, "optional": false }
-      ] } }
-    },
-    {
-      "id": "t1",
-      "type": "decisionTable",
-      "props": { "data": {
-        "hitPolicy": "first",
-        "inputs": [
-          { "id": "i1", "name": "Kind", "field": "kind" },
-          { "id": "i2", "name": "Tier", "field": "tier" }
-        ],
-        "outputs": [ { "id": "o1", "name": "Rate", "field": "rate" } ],
-        "rules": [
-          { "_id": "r1", "i1": "", "i2": "\"high\"", "o1": "1" },
-          { "_id": "r2", "i1": "\"card\"", "i2": "\"high\"", "o1": "2" }
-        ]
-      } }
-    }
-  ]
-}
-'''
-no_errors = true
-hint_codes = ["RedundantTableRow"]
-hint_count = 1
-
-[[test]]
-name = "nullish coalesce on a non-nullable property is redundant"
-content = '''
-{
-  "blocks": [
-    {
-      "id": "dm",
-      "type": "dataModel",
-      "props": { "data": { "name": "inputs", "scope": "global", "properties": [
-        { "id": "p1", "name": "score", "type": "number", "array": false, "optional": false }
-      ] } }
-    },
-    { "id": "e1", "type": "expression", "props": { "data": { "key": "adjusted", "value": "(score ?? 0) + 1" } } }
-  ]
-}
-'''
-no_errors = true
-hint_codes = ["RedundantNullish"]
-hint_count = 1
-
-[[test]]
-name = "nullish coalesce on an optional property is not flagged"
-content = '''
-{
-  "blocks": [
-    {
-      "id": "dm",
-      "type": "dataModel",
-      "props": { "data": { "name": "inputs", "scope": "global", "properties": [
-        { "id": "p1", "name": "score", "type": "number", "array": false, "optional": true }
-      ] } }
-    },
-    { "id": "e1", "type": "expression", "props": { "data": { "key": "adjusted", "value": "(score ?? 0) + 1" } } }
-  ]
-}
-'''
-no_errors = true
-hint_count = 0
-
-[[test]]
-name = "valued column gating fall-through to a different-output catch-all is not flagged"
-content = '''
-{
-  "blocks": [
-    {
-      "id": "dm",
-      "type": "dataModel",
-      "props": { "data": { "name": "inputs", "scope": "global", "properties": [
-        { "id": "p1", "name": "dateKey", "type": "string", "array": false, "optional": false },
-        { "id": "p2", "name": "item", "type": "string", "array": false, "optional": false }
-      ] } }
-    },
-    {
-      "id": "t1",
-      "type": "decisionTable",
-      "props": { "data": {
-        "hitPolicy": "first",
-        "inputs": [
-          { "id": "i1", "name": "Date", "field": "dateKey" },
-          { "id": "i2", "name": "Item", "field": "item" }
-        ],
-        "outputs": [ { "id": "o1", "name": "Pct", "field": "pct" } ],
-        "rules": [
-          { "_id": "r1", "i1": "\"2022-07-01\"", "i2": "\"SVOD\"", "o1": "0.198" },
-          { "_id": "r2", "i1": "\"2022-07-01\"", "i2": "\"NBC\"", "o1": "0.198" },
-          { "_id": "r3", "i1": "\"2014-07-01\"", "i2": "\"SVOD\"", "o1": "0.166" },
-          { "_id": "r4", "i1": "\"2014-07-01\"", "i2": "\"NBC\"", "o1": "0.166" },
-          { "_id": "r5", "i1": "", "i2": "", "o1": "0" }
-        ]
-      } }
-    }
-  ]
-}
-'''
-no_errors = true
-hint_count = 0
-
-[[test]]
 name = "valued column with an in-group wildcard row is safe to flag"
 content = '''
 {
   "blocks": [
     {
-      "id": "dm",
+      "id": "schema",
       "type": "dataModel",
       "props": { "data": { "name": "inputs", "scope": "global", "properties": [
-        { "id": "p1", "name": "dateKey", "type": "string", "array": false, "optional": false },
-        { "id": "p2", "name": "item", "type": "string", "array": false, "optional": false }
+        { "id": "prop1", "name": "dateKey", "type": "string", "array": false, "optional": false },
+        { "id": "prop2", "name": "item", "type": "string", "array": false, "optional": false }
       ] } }
     },
     {
-      "id": "t1",
+      "id": "table1",
       "type": "decisionTable",
       "props": { "data": {
         "hitPolicy": "first",
         "inputs": [
-          { "id": "i1", "name": "Date", "field": "dateKey" },
-          { "id": "i2", "name": "Item", "field": "item" }
+          { "id": "col1", "name": "Date", "field": "dateKey" },
+          { "id": "col2", "name": "Item", "field": "item" }
         ],
-        "outputs": [ { "id": "o1", "name": "Pct", "field": "pct" } ],
+        "outputs": [ { "id": "out1", "name": "Pct", "field": "pct" } ],
         "rules": [
-          { "_id": "r1", "i1": "\"2022-07-01\"", "i2": "\"SVOD\"", "o1": "0.198" },
-          { "_id": "r2", "i1": "\"2022-07-01\"", "i2": "", "o1": "0.198" },
-          { "_id": "r3", "i1": "", "i2": "", "o1": "0" }
+          { "_id": "row1", "col1": "\"2024-01-01\"", "col2": "\"PREMIUM\"", "out1": "0.25" },
+          { "_id": "row2", "col1": "\"2024-01-01\"", "col2": "", "out1": "0.25" },
+          { "_id": "row3", "col1": "", "col2": "", "out1": "0" }
         ]
       } }
     }
@@ -1204,26 +1113,169 @@ hint_codes = ["NonDiscriminatingColumn"]
 hint_count = 1
 
 [[test]]
-name = "parentheses around a lone identifier are flagged"
+name = "block writing to multiple entities is mixed scope"
+policies = ["mixed_scope.json"]
+policy = "mixed_scope.json"
+error_codes = ["MixedScope"]
+
+[[test]]
+name = "reading undefined property surfaces any and errors on write"
 content = '''
 {
   "blocks": [
     {
-      "id": "dm",
+      "id": "schema",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "customer",
+          "properties": [
+            {
+              "id": "prop1",
+              "name": "id",
+              "type": "string",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "step1",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "customer.x",
+          "value": "customer.phantom"
+        }
+      }
+    }
+  ]
+}
+'''
+error_codes = ["UndefinedVariable", "TypeMismatch"]
+
+[[test]]
+name = "nullish coalesce on a non-nullable property is redundant"
+content = '''
+{
+  "blocks": [
+    {
+      "id": "schema",
       "type": "dataModel",
       "props": { "data": { "name": "inputs", "scope": "global", "properties": [
-        { "id": "p1", "name": "principal", "type": "number", "array": false, "optional": false },
-        { "id": "p2", "name": "interestRate", "type": "number", "array": false, "optional": false },
-        { "id": "p3", "name": "feePct", "type": "number", "array": false, "optional": false }
+        { "id": "prop1", "name": "score", "type": "number", "array": false, "optional": false }
       ] } }
     },
-    { "id": "e1", "type": "expression", "props": { "data": { "key": "due", "value": "(principal) * interestRate * feePct" } } }
+    { "id": "calc1", "type": "expression", "props": { "data": { "key": "adjusted", "value": "(score ?? 0) + 1" } } }
   ]
 }
 '''
 no_errors = true
-hint_codes = ["RedundantParentheses"]
+hint_codes = ["RedundantNullish"]
 hint_count = 1
+
+[[test]]
+name = "compatible entity merge — same property same type is fine"
+policies = ["merge_entity.json"]
+policy = "merge_entity.json"
+no_errors = true
+
+[[test]]
+name = "derivation repeated across imported policies is flagged in the importing policy"
+policies = ["lint_shared_main.json", "lint_shared_dep.json"]
+policy = "lint_shared_main.json"
+no_errors = true
+hint_codes = ["RepeatedDerivation"]
+hint_count = 1
+
+[[test]]
+name = "flatten of nested array peels to concrete element type"
+content = '''
+{
+  "blocks": [
+    {
+      "id": "schema",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "customer",
+          "properties": [
+            {
+              "id": "prop1",
+              "name": "id",
+              "type": "string",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "step1",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "customer.nums",
+          "value": "flatten([[1, 2], [3, 4]])"
+        }
+      }
+    }
+  ]
+}
+'''
+no_errors = true
+
+# Intra-tree forward reads: statement 2 sees statement 1's write.
+[[test]]
+name = "intra-tree forward reads see earlier top-level writes"
+content = '''
+{
+  "blocks": [
+    {
+      "id": "schema",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "employee",
+          "properties": [
+            {
+              "id": "prop1",
+              "name": "id",
+              "type": "string",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "step1",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "employee.som",
+          "value": "merge([{a: 10}])"
+        }
+      }
+    },
+    {
+      "id": "step2",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "employee.aa",
+          "value": "employee.som"
+        }
+      }
+    }
+  ]
+}
+'''
+no_errors = true
 
 [[test]]
 name = "parentheses matching left associativity are flagged"
@@ -1231,90 +1283,18 @@ content = '''
 {
   "blocks": [
     {
-      "id": "dm",
+      "id": "schema",
       "type": "dataModel",
       "props": { "data": { "name": "inputs", "scope": "global", "properties": [
-        { "id": "p1", "name": "principal", "type": "number", "array": false, "optional": false },
-        { "id": "p2", "name": "interestRate", "type": "number", "array": false, "optional": false },
-        { "id": "p3", "name": "feePct", "type": "number", "array": false, "optional": false }
+        { "id": "prop1", "name": "principal", "type": "number", "array": false, "optional": false },
+        { "id": "prop2", "name": "interestRate", "type": "number", "array": false, "optional": false },
+        { "id": "prop3", "name": "feePct", "type": "number", "array": false, "optional": false }
       ] } }
     },
-    { "id": "e1", "type": "expression", "props": { "data": { "key": "due", "value": "(principal * interestRate) * feePct" } } }
+    { "id": "calc1", "type": "expression", "props": { "data": { "key": "due", "value": "(principal * interestRate) * feePct" } } }
   ]
 }
 '''
 no_errors = true
 hint_codes = ["RedundantParentheses"]
 hint_count = 1
-
-[[test]]
-name = "parentheses around higher-precedence arithmetic are flagged"
-content = '''
-{
-  "blocks": [
-    {
-      "id": "dm",
-      "type": "dataModel",
-      "props": { "data": { "name": "inputs", "scope": "global", "properties": [
-        { "id": "p1", "name": "a", "type": "number", "array": false, "optional": false },
-        { "id": "p2", "name": "b", "type": "number", "array": false, "optional": false },
-        { "id": "p3", "name": "c", "type": "number", "array": false, "optional": false }
-      ] } }
-    },
-    { "id": "e1", "type": "expression", "props": { "data": { "key": "due", "value": "(a * b) + c" } } }
-  ]
-}
-'''
-no_errors = true
-hint_codes = ["RedundantParentheses"]
-hint_count = 1
-
-[[test]]
-name = "necessary or clarifying parentheses are not flagged"
-content = '''
-{
-  "blocks": [
-    {
-      "id": "dm",
-      "type": "dataModel",
-      "props": { "data": { "name": "inputs", "scope": "global", "properties": [
-        { "id": "p1", "name": "a", "type": "number", "array": false, "optional": false },
-        { "id": "p2", "name": "b", "type": "number", "array": false, "optional": false },
-        { "id": "p3", "name": "c", "type": "number", "array": false, "optional": false },
-        { "id": "p4", "name": "flag", "type": "boolean", "array": false, "optional": false },
-        { "id": "p5", "name": "other", "type": "boolean", "array": false, "optional": false },
-        { "id": "p6", "name": "revenue", "type": "number", "array": false, "optional": true }
-      ] } }
-    },
-    { "id": "e1", "type": "expression", "props": { "data": { "key": "r1", "value": "(a + b) * c" } } },
-    { "id": "e2", "type": "expression", "props": { "data": { "key": "r2", "value": "a - (b - c)" } } },
-    { "id": "e3", "type": "expression", "props": { "data": { "key": "r3", "value": "(revenue ?? 0) * 2" } } },
-    { "id": "e4", "type": "expression", "props": { "data": { "key": "r4", "value": "(flag and other) or (a > b)" } } },
-    { "id": "e5", "type": "expression", "props": { "data": { "key": "r5", "value": "flag ? (a + b) : c" } } }
-  ]
-}
-'''
-no_errors = true
-hint_count = 0
-
-[[test]]
-name = "redundant parentheses inside arguments and at the root are flagged"
-content = '''
-{
-  "blocks": [
-    {
-      "id": "dm",
-      "type": "dataModel",
-      "props": { "data": { "name": "inputs", "scope": "global", "properties": [
-        { "id": "p1", "name": "a", "type": "number", "array": false, "optional": false },
-        { "id": "p2", "name": "b", "type": "number", "array": false, "optional": false }
-      ] } }
-    },
-    { "id": "e1", "type": "expression", "props": { "data": { "key": "r1", "value": "(a + b)" } } },
-    { "id": "e2", "type": "expression", "props": { "data": { "key": "r2", "value": "abs((a + b))" } } }
-  ]
-}
-'''
-no_errors = true
-hint_codes = ["RedundantParentheses"]
-hint_count = 2

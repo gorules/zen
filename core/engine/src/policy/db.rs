@@ -12,7 +12,9 @@ use crate::policy::blocks::{
     SharedIntelliSense,
 };
 use crate::policy::evaluator::EvalArtifact;
-use crate::policy::ir::{DataModelIr, ParsedPolicy, Policy, Property, PropertyPath, Scope};
+use crate::policy::ir::{
+    DataModelIr, DictionaryIr, ParsedPolicy, Policy, Property, PropertyPath, Scope,
+};
 use crate::policy::queries::dependency::{
     DataModelPaths, DependencyGraph, EnrichedState, EvalGraph, RuleShallowAnalysis, ShallowAnalyses,
 };
@@ -141,6 +143,14 @@ pub struct Unit {
     opcode_cache: OnceCell<Arc<OpcodeCache>>,
     pub data_models: Vec<DataModelEntry>,
     pub entities: HashMap<Arc<str>, Arc<DataModelIr>>,
+    pub dictionaries: HashMap<Arc<str>, Arc<DictionaryIr>>,
+    pub dictionary_blocks: Vec<DictionaryUnitEntry>,
+}
+
+pub struct DictionaryUnitEntry {
+    pub policy_path: Arc<str>,
+    pub block_id: Arc<str>,
+    pub ir: Arc<DictionaryIr>,
 }
 
 pub struct Db {
@@ -624,6 +634,26 @@ impl Snapshot {
         });
 
         let entities = Self::compute_unit_entities(&subset);
+        let dictionaries = Self::compute_dictionary_map(&subset);
+
+        let mut dictionary_blocks: Vec<DictionaryUnitEntry> = subset
+            .iter()
+            .flat_map(|(path, p)| {
+                p.policy
+                    .dictionaries
+                    .iter()
+                    .map(move |block| DictionaryUnitEntry {
+                        policy_path: path.clone(),
+                        block_id: block.id.clone(),
+                        ir: block.ir.clone(),
+                    })
+            })
+            .collect();
+        dictionary_blocks.sort_by(|a, b| {
+            a.ir.name
+                .cmp(&b.ir.name)
+                .then_with(|| a.policy_path.cmp(&b.policy_path))
+        });
 
         Unit {
             members: member_set,
@@ -639,6 +669,8 @@ impl Snapshot {
             opcode_cache: OnceCell::new(),
             data_models,
             entities,
+            dictionaries,
+            dictionary_blocks,
         }
     }
 

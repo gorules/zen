@@ -49,6 +49,8 @@ impl Db {
 
         out.extend(self.data_model_diagnostics(path));
 
+        out.extend(self.dictionary_diagnostics(path));
+
         out.extend(self.unreachable_reads_diagnostics(path));
 
         out.extend(self.nested_iteration_diagnostics(path));
@@ -476,7 +478,10 @@ impl Db {
                 if let PropertyTypeIr::Relationship { target: t }
                 | PropertyTypeIr::Reference { target: t } = &prop.kind
                 {
-                    if !known_entities.contains(t) && policy_path == target {
+                    let dictionary_target =
+                        matches!(prop.kind, PropertyTypeIr::Relationship { .. })
+                            && unit.dictionaries.contains_key(t);
+                    if !known_entities.contains(t) && !dictionary_target && policy_path == target {
                         let owner = if is_global {
                             format!("global property '{}'", prop.name)
                         } else {
@@ -494,6 +499,69 @@ impl Db {
                         ));
                     }
                 }
+            }
+        }
+
+        out
+    }
+
+    fn dictionary_diagnostics(&self, target: &Arc<str>) -> Vec<Diagnostic> {
+        let mut out = Vec::new();
+        let unit = self.unit(target);
+        let known_entities: HashSet<Arc<str>> = unit
+            .data_models
+            .iter()
+            .filter(|e| !e.ir.scope.is_global())
+            .map(|e| e.ir.name.clone())
+            .collect();
+        let global_property_names: HashSet<Arc<str>> = unit
+            .data_models
+            .iter()
+            .filter(|e| e.ir.scope.is_global())
+            .flat_map(|e| e.ir.properties.iter().map(|p| p.name.clone()))
+            .collect();
+
+        let mut first_by_name: HashMap<Arc<str>, (Arc<str>, Arc<str>)> = HashMap::default();
+        for entry in &unit.dictionary_blocks {
+            let name = &entry.ir.name;
+            if let Some((prev_policy, prev_block)) = first_by_name.get(name) {
+                if entry.policy_path == *target {
+                    out.push(Diagnostic::error(
+                        DiagnosticCode::DataModelCollision,
+                        DiagnosticLocation::block(
+                            entry.policy_path.clone(),
+                            entry.block_id.clone(),
+                        ),
+                        format!(
+                            "dictionary '{name}' is already defined in '{prev_policy}' (block '{prev_block}')"
+                        ),
+                    ));
+                }
+                continue;
+            }
+            first_by_name.insert(
+                name.clone(),
+                (entry.policy_path.clone(), entry.block_id.clone()),
+            );
+
+            if entry.policy_path != *target {
+                continue;
+            }
+            if known_entities.contains(name) {
+                out.push(Diagnostic::error(
+                    DiagnosticCode::DataModelCollision,
+                    DiagnosticLocation::block(entry.policy_path.clone(), entry.block_id.clone()),
+                    format!("dictionary name '{name}' collides with an entity of the same name"),
+                ));
+            }
+            if global_property_names.contains(name) {
+                out.push(Diagnostic::error(
+                    DiagnosticCode::DataModelCollision,
+                    DiagnosticLocation::block(entry.policy_path.clone(), entry.block_id.clone()),
+                    format!(
+                        "dictionary name '{name}' collides with a global property of the same name"
+                    ),
+                ));
             }
         }
 

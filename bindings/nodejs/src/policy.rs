@@ -104,6 +104,19 @@ pub struct PolicyGlobalInfo {
 }
 
 #[napi(object)]
+pub struct PolicyDictionaryInfo {
+    pub name: String,
+    pub source: String,
+    pub entries: Vec<PolicyDictionaryEntryInfo>,
+}
+
+#[napi(object)]
+pub struct PolicyDictionaryEntryInfo {
+    pub value: String,
+    pub label: String,
+}
+
+#[napi(object)]
 pub struct PolicyInputProperty {
     pub path: String,
     #[napi(ts_type = "PolicyVariableType")]
@@ -536,6 +549,26 @@ impl PolicyWorkspace {
                 name: g.name.to_string(),
                 resolved_type: variable_type_to_json(&g.resolved_type),
                 origin: serde_json::to_value(&g.origin).expect("FieldOrigin serializes"),
+            })
+            .collect()
+    }
+
+    #[napi]
+    pub fn dictionaries(&self, req: PolicyScopeRequest) -> Vec<PolicyDictionaryInfo> {
+        self.inner
+            .dictionaries(&req.into())
+            .into_iter()
+            .map(|d| PolicyDictionaryInfo {
+                name: d.name.to_string(),
+                source: d.source.to_string(),
+                entries: d
+                    .entries
+                    .iter()
+                    .map(|e| PolicyDictionaryEntryInfo {
+                        value: e.value.to_string(),
+                        label: e.label.to_string(),
+                    })
+                    .collect(),
             })
             .collect()
     }

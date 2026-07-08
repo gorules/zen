@@ -19,12 +19,12 @@ mod workspace;
 pub use raw::{BlockDoc, PolicyDocument};
 pub use types::{
     BlockExecution, BlockRef, Completion, ConditionalSchema, Cursor, CursorTarget, DependencyNode,
-    Diagnostic, DiagnosticCode, DiagnosticLocation, DiscriminantVariant, DiscriminatedUnion,
-    EngineEdit, Entity, EntityField, EvaluateRequest, EvaluationError, EvaluationResult,
-    ExpressionKind, FieldOrigin, GuardedProperty, InputProperty, InputValidationError,
-    InspectResult, NlExpression, OutputProperty, PrepareRename, PropertyKind, ReferenceKind,
-    ReferenceSite, RenameTarget, SchemaFieldKind, SchemaGroup, ScopeRequest, Severity, Span, Trace,
-    WriteConflict, WriteTrace,
+    Diagnostic, DiagnosticCode, DiagnosticLocation, Dictionary, DictionaryEntryInfo,
+    DiscriminantVariant, DiscriminatedUnion, EngineEdit, Entity, EntityField, EvaluateRequest,
+    EvaluationError, EvaluationResult, ExpressionKind, FieldOrigin, GuardedProperty, InputProperty,
+    InputValidationError, InspectResult, NlExpression, OutputProperty, PrepareRename, PropertyKind,
+    ReferenceKind, ReferenceSite, RenameTarget, SchemaFieldKind, SchemaGroup, ScopeRequest,
+    Severity, Span, Trace, WriteConflict, WriteTrace,
 };
 pub use workspace::PolicyWorkspace;
 

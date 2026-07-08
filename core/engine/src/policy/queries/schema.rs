@@ -8,8 +8,8 @@ use crate::policy::ir::DataModelIr;
 use crate::policy::queries::dependency::{DependencyGraph, PathPrefix};
 use crate::policy::queries::scope::PropertyScope;
 use crate::policy::types::{
-    Entity, EntityField, FieldOrigin, Global, InputProperty, OutputProperty, PropertyKind,
-    ScopeRequest,
+    Dictionary, DictionaryEntryInfo, Entity, EntityField, FieldOrigin, Global, InputProperty,
+    OutputProperty, PropertyKind, ScopeRequest,
 };
 
 impl Db {
@@ -59,8 +59,12 @@ impl Db {
                 }
             }
             let mut visited: HashSet<Arc<str>> = HashSet::default();
-            let resolved_type =
-                DataModelIr::wire_property_type(&vp.property, entities_map, &mut visited);
+            let resolved_type = DataModelIr::wire_property_type(
+                &vp.property,
+                entities_map,
+                &unit.dictionaries,
+                &mut visited,
+            );
             out.push(Global {
                 name: vp.property.name.clone(),
                 resolved_type,
@@ -99,6 +103,31 @@ impl Db {
         out
     }
 
+    pub fn dictionaries(&self, req: &ScopeRequest) -> Vec<Dictionary> {
+        let unit = self.unit(&req.policy_path);
+        let mut seen: HashSet<Arc<str>> = HashSet::default();
+        let mut out: Vec<Dictionary> = Vec::new();
+        for entry in &unit.dictionary_blocks {
+            if !seen.insert(entry.ir.name.clone()) {
+                continue;
+            }
+            out.push(Dictionary {
+                name: entry.ir.name.clone(),
+                source: entry.policy_path.clone(),
+                entries: entry
+                    .ir
+                    .entries
+                    .iter()
+                    .map(|e| DictionaryEntryInfo {
+                        value: e.value.clone(),
+                        label: e.label.clone(),
+                    })
+                    .collect(),
+            });
+        }
+        out
+    }
+
     pub fn inputs(&self, req: &ScopeRequest) -> Vec<InputProperty> {
         let unit = self.unit(&req.policy_path);
         let visible = &unit.members;
@@ -119,6 +148,7 @@ impl Db {
                     resolved_type: DataModelIr::wire_property_type(
                         &vp.property,
                         entities,
+                        &unit.dictionaries,
                         &mut visited,
                     ),
                 }
@@ -130,7 +160,8 @@ impl Db {
                 continue;
             }
             let mut visited: HashSet<Arc<str>> = HashSet::default();
-            let entity_type = DataModelIr::wire_object(target, entities, &mut visited);
+            let entity_type =
+                DataModelIr::wire_object(target, entities, &unit.dictionaries, &mut visited);
             if !matches!(entity_type, VariableType::Any) {
                 result.push(InputProperty {
                     path: target.clone(),
@@ -184,8 +215,12 @@ impl Db {
                     return None;
                 };
                 let mut visited: HashSet<Arc<str>> = HashSet::default();
-                let resolved_type =
-                    DataModelIr::wire_property_type(&vp.property, entities, &mut visited);
+                let resolved_type = DataModelIr::wire_property_type(
+                    &vp.property,
+                    entities,
+                    &unit.dictionaries,
+                    &mut visited,
+                );
                 let origin = FieldOrigin::Schema {
                     source: vp.policy_path,
                     kind: vp.property.kind.to_schema_field_kind(vp.property.array),

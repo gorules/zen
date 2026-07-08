@@ -53,10 +53,13 @@ pub struct ExpressionAnalysis {
     pub diagnostics: Vec<Diagnostic>,
 }
 
+pub type NlLabelResolver = Rc<dyn Fn(&str, &str) -> Option<String>>;
+
 pub struct IntelliSense {
     arena: Bump,
     lexer: Lexer,
     strict: bool,
+    nl_labels: Option<NlLabelResolver>,
 }
 
 impl IntelliSense {
@@ -65,12 +68,17 @@ impl IntelliSense {
             arena: Bump::new(),
             lexer: Lexer::new(),
             strict: false,
+            nl_labels: None,
         }
     }
 
     pub fn with_strict(mut self, strict: bool) -> Self {
         self.strict = strict;
         self
+    }
+
+    pub fn set_nl_labels(&mut self, labels: Option<NlLabelResolver>) {
+        self.nl_labels = labels;
     }
 
     pub fn completions(
@@ -203,9 +211,15 @@ impl IntelliSense {
         let mut result =
             self.nl_tokenize_scoped(&request.id, &request.expression, request.unary, &scope);
         if request.unary {
-            result.subject_type = Some(scope.get("$"));
+            let subject = scope.get("$");
+            result.subject_options = self.nl_subject_options(&subject);
+            result.subject_type = Some(subject);
         }
         result
+    }
+
+    pub fn nl_subject_options(&self, subject: &VariableType) -> Option<Vec<crate::nl::EnumOption>> {
+        crate::nl::subject_enum_options(subject, self.nl_labels.as_ref())
     }
 
     pub fn nl_tokenize_scoped(
@@ -221,6 +235,7 @@ impl IntelliSense {
             enums: Vec::new(),
             diagnostics: Vec::new(),
             subject_type: None,
+            subject_options: None,
         };
 
         self.arena.reset();
@@ -270,7 +285,8 @@ impl IntelliSense {
         let type_data = TypesProvider::generate(ast, scope, self.strict);
         collect_type_diagnostics(ast, &type_data, &metadata, &mut result.diagnostics);
 
-        let (tokens, enums) = Projector::new(source, &type_data, &metadata, unary).run(ast);
+        let (tokens, enums) =
+            Projector::new(source, &type_data, &metadata, unary, self.nl_labels.clone()).run(ast);
         result.tokens = tokens;
         result.enums = enums;
         result

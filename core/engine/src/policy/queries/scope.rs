@@ -8,7 +8,7 @@ use zen_expression::variable::{Variable, VariableType};
 
 use crate::policy::blocks::InstanceSource;
 use crate::policy::db::{Db, Snapshot};
-use crate::policy::ir::{DataModelIr, ParsedPolicy, Property, PropertyTypeIr};
+use crate::policy::ir::{DataModelIr, DictionaryIr, ParsedPolicy, Property, PropertyTypeIr};
 use crate::policy::queries::dependency::DependencyGraph;
 use crate::policy::types::InstanceTarget;
 
@@ -288,6 +288,20 @@ impl Snapshot {
         })
     }
 
+    pub(crate) fn compute_dictionary_map(
+        all_parsed: &HashMap<Arc<str>, Arc<ParsedPolicy>>,
+    ) -> HashMap<Arc<str>, Arc<DictionaryIr>> {
+        let mut sorted: Vec<(&Arc<str>, &Arc<ParsedPolicy>)> = all_parsed.iter().collect();
+        sorted.sort_by(|a, b| a.0.cmp(b.0));
+        let mut out: HashMap<Arc<str>, Arc<DictionaryIr>> = HashMap::new();
+        for (_, parsed) in sorted {
+            for (_, dict) in parsed.policy.dictionaries() {
+                out.entry(dict.name.clone()).or_insert_with(|| dict.clone());
+            }
+        }
+        out
+    }
+
     pub(crate) fn compute_entity_graph(
         all_parsed: &HashMap<Arc<str>, Arc<ParsedPolicy>>,
         entity_sources: &Arc<EntitySources>,
@@ -320,6 +334,7 @@ impl Snapshot {
         entity_sources: &EntitySources,
     ) -> VariableType {
         let mut entity_map: HashMap<Arc<str>, VariableType> = HashMap::new();
+        let dictionaries = Self::compute_dictionary_map(all_parsed);
 
         let mut models: Vec<(Arc<str>, &DataModelIr)> =
             Self::iter_data_models(all_parsed).collect();
@@ -336,7 +351,7 @@ impl Snapshot {
         }
 
         for (_, dm) in models.iter().filter(|(_, dm)| !dm.scope.is_global()) {
-            dm.wire_relationships(&entity_map);
+            dm.wire_relationships(&entity_map, &dictionaries);
         }
 
         for (entity_name, source) in entity_sources.iter() {
@@ -370,7 +385,7 @@ impl Snapshot {
         for (_, dm) in models.iter().filter(|(_, dm)| dm.scope.is_global()) {
             for prop in &dm.properties {
                 let key = Rc::from(prop.name.as_ref());
-                let value_type = prop.build_global_type(&entity_map);
+                let value_type = prop.build_global_type(&entity_map, &dictionaries);
                 scope_fields.entry(key).or_insert(value_type);
             }
         }
@@ -594,7 +609,11 @@ impl DataModelIr {
         }
     }
 
-    fn wire_relationships(&self, entity_map: &HashMap<Arc<str>, VariableType>) {
+    fn wire_relationships(
+        &self,
+        entity_map: &HashMap<Arc<str>, VariableType>,
+        dictionaries: &HashMap<Arc<str>, Arc<DictionaryIr>>,
+    ) {
         for prop in &self.properties {
             let target_name = match &prop.kind {
                 PropertyTypeIr::Relationship { target } | PropertyTypeIr::Reference { target } => {
@@ -603,14 +622,20 @@ impl DataModelIr {
                 _ => continue,
             };
 
-            let Some(target_entity) = entity_map.get(target_name.as_ref()) else {
-                continue;
+            let target_type = match entity_map.get(target_name.as_ref()) {
+                Some(target_entity) => target_entity.shallow_clone(),
+                None => match dictionaries.get(target_name.as_ref()) {
+                    Some(dict) if matches!(prop.kind, PropertyTypeIr::Relationship { .. }) => {
+                        dict.enum_type()
+                    }
+                    _ => continue,
+                },
             };
 
             let mut final_type = if prop.array {
-                target_entity.shallow_clone().array()
+                target_type.array()
             } else {
-                target_entity.shallow_clone()
+                target_type
             };
             if prop.optional {
                 final_type = VariableType::Nullable(Rc::new(final_type));
@@ -644,6 +669,7 @@ impl Property {
     pub(crate) fn build_global_type(
         &self,
         entity_map: &HashMap<Arc<str>, VariableType>,
+        dictionaries: &HashMap<Arc<str>, Arc<DictionaryIr>>,
     ) -> VariableType {
         let inner = match &self.kind {
             PropertyTypeIr::String | PropertyTypeIr::Date => VariableType::String,
@@ -655,7 +681,12 @@ impl Property {
             PropertyTypeIr::Relationship { target } | PropertyTypeIr::Reference { target } => {
                 match entity_map.get(target.as_ref()) {
                     Some(t) => t.shallow_clone(),
-                    None => VariableType::Any,
+                    None => match dictionaries.get(target.as_ref()) {
+                        Some(dict) if matches!(self.kind, PropertyTypeIr::Relationship { .. }) => {
+                            dict.enum_type()
+                        }
+                        _ => VariableType::Any,
+                    },
                 }
             }
         };

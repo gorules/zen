@@ -6,10 +6,10 @@ use crate::policy::raw::PolicyDocument;
 use zen_expression::nl::NlResult;
 
 use crate::policy::types::{
-    Completion, ConditionalSchema, Cursor, DependencyNode, Diagnostic, EngineEdit, Entity,
-    EvaluateRequest, EvaluationError, EvaluationResult, Global, InputProperty, InspectResult,
-    NlExpression, OutputProperty, PrepareRename, ReferenceSite, RenameTarget, ScopeRequest,
-    WriteConflict,
+    Completion, ConditionalSchema, Cursor, DependencyNode, Diagnostic, Dictionary, EngineEdit,
+    Entity, EvaluateRequest, EvaluationError, EvaluationResult, Global, InputProperty,
+    InspectResult, NlExpression, OutputProperty, PrepareRename, ReferenceSite, RenameTarget,
+    ScopeRequest, WriteConflict,
 };
 
 pub struct PolicyWorkspace {
@@ -62,6 +62,10 @@ impl PolicyWorkspace {
 
     pub fn globals(&self, req: &ScopeRequest) -> Vec<Global> {
         self.db.globals(req)
+    }
+
+    pub fn dictionaries(&self, req: &ScopeRequest) -> Vec<Dictionary> {
+        self.db.dictionaries(req)
     }
 
     pub fn inputs(&self, req: &ScopeRequest) -> Vec<InputProperty> {

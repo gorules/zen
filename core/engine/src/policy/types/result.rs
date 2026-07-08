@@ -228,6 +228,21 @@ pub struct Global {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct Dictionary {
+    pub name: Arc<str>,
+    pub source: Arc<str>,
+    pub entries: Vec<DictionaryEntryInfo>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DictionaryEntryInfo {
+    pub value: Arc<str>,
+    pub label: Arc<str>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EntityField {
     pub name: Arc<str>,
     pub resolved_type: VariableType,

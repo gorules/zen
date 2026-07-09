@@ -29,7 +29,7 @@ pub use assertion::{AssertionDoc, AssertionIr};
 pub(crate) use context::IntelliSenseSource;
 pub use context::{
     AnalysisContext, AnalysisSummary, ExecutionContext, ExecutionError, ExpressionLocation,
-    InstanceSource, PropertyRead, SharedIntelliSense, WriteTarget,
+    InstanceSource, PropertyRead, SharedDictionaryTypes, SharedIntelliSense, WriteTarget,
 };
 pub(crate) use decision_table::TableSelection;
 pub use decision_table::{DecisionTableDoc, DecisionTableIr};
@@ -237,8 +237,9 @@ impl Block {
         policy_path: &Arc<str>,
         scope: &VariableType,
         is: &mut IntelliSense,
+        dictionaries: &HashMap<Arc<str>, VariableType>,
     ) -> Vec<NlExpression> {
-        self.kind.nl(policy_path, &self.id, scope, is)
+        self.kind.nl(policy_path, &self.id, scope, is, dictionaries)
     }
 
     pub fn nl_scope(
@@ -246,10 +247,11 @@ impl Block {
         cursor: &Cursor,
         scope: VariableType,
         is: &mut IntelliSense,
-    ) -> (ExpressionKind, VariableType) {
+        dictionaries: &HashMap<Arc<str>, VariableType>,
+    ) -> (ExpressionKind, VariableType, Option<VariableType>) {
         match &self.kind {
-            BlockKind::DecisionTable(d) => d.nl_scope(cursor, scope, is),
-            _ => (ExpressionKind::Standard, scope),
+            BlockKind::DecisionTable(d) => d.nl_scope(cursor, scope, is, dictionaries),
+            _ => (ExpressionKind::Standard, scope, None),
         }
     }
 }
@@ -347,10 +349,11 @@ impl BlockKind {
         block_id: &Arc<str>,
         scope: &VariableType,
         is: &mut IntelliSense,
+        dictionaries: &HashMap<Arc<str>, VariableType>,
     ) -> Vec<NlExpression> {
         match self {
             BlockKind::Assertion(a) => a.nl(policy_path, block_id, scope, is),
-            BlockKind::DecisionTable(d) => d.nl(policy_path, block_id, scope, is),
+            BlockKind::DecisionTable(d) => d.nl(policy_path, block_id, scope, is, dictionaries),
             BlockKind::Expression(e) => e.nl(policy_path, block_id, scope, is),
             BlockKind::Match(m) => m.nl(policy_path, block_id, scope, is),
         }

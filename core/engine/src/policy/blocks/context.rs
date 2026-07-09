@@ -56,6 +56,8 @@ pub struct ExecutionError {
     pub source: IsolateError,
 }
 
+pub type SharedDictionaryTypes = Rc<ahash::HashMap<Arc<str>, VariableType>>;
+
 pub struct AnalysisContext {
     scope: VariableType,
     policy_path: Arc<str>,
@@ -65,6 +67,7 @@ pub struct AnalysisContext {
     diagnostics: Vec<Diagnostic>,
     pass: AnalysisPass,
     intellisense: SharedIntelliSense,
+    dictionary_types: SharedDictionaryTypes,
 }
 
 impl AnalysisContext {
@@ -74,6 +77,7 @@ impl AnalysisContext {
         block_id: Arc<str>,
         intellisense: SharedIntelliSense,
         pass: AnalysisPass,
+        dictionary_types: SharedDictionaryTypes,
     ) -> Self {
         Self {
             scope,
@@ -84,11 +88,16 @@ impl AnalysisContext {
             diagnostics: Vec::new(),
             pass,
             intellisense,
+            dictionary_types,
         }
     }
 
     pub(super) fn scope(&self) -> &VariableType {
         &self.scope
+    }
+
+    pub(super) fn dictionary_types(&self) -> &ahash::HashMap<Arc<str>, VariableType> {
+        &self.dictionary_types
     }
 
     pub fn analyze_standard(

@@ -208,12 +208,23 @@ impl IntelliSense {
         } else {
             root_type.shallow_clone()
         };
-        let mut result =
-            self.nl_tokenize_scoped(&request.id, &request.expression, request.unary, &scope);
+        let expected = (!request.unary)
+            .then_some(request.subject_type.as_ref())
+            .flatten();
+        let mut result = self.nl_tokenize_scoped(
+            &request.id,
+            &request.expression,
+            request.unary,
+            &scope,
+            expected,
+        );
         if request.unary {
             let subject = scope.get("$");
             result.subject_options = self.nl_subject_options(&subject);
             result.subject_type = Some(subject);
+        } else if let Some(expected) = expected {
+            result.subject_options = self.nl_subject_options(expected);
+            result.subject_type = Some(expected.shallow_clone());
         }
         result
     }
@@ -228,6 +239,7 @@ impl IntelliSense {
         source: &str,
         unary: bool,
         scope_type: &VariableType,
+        expected: Option<&VariableType>,
     ) -> NlResult {
         let mut result = NlResult {
             id: id.to_string(),
@@ -286,7 +298,8 @@ impl IntelliSense {
         collect_type_diagnostics(ast, &type_data, &metadata, &mut result.diagnostics);
 
         let (tokens, enums) =
-            Projector::new(source, &type_data, &metadata, unary, self.nl_labels.clone()).run(ast);
+            Projector::new(source, &type_data, &metadata, unary, self.nl_labels.clone())
+                .run(ast, expected.map(|e| e.shallow_clone()));
         result.tokens = tokens;
         result.enums = enums;
         result

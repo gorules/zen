@@ -1,6 +1,6 @@
 [package]
 name = "zen-ffi"
-version = "1.0.0-beta.4"
+version = "1.0.1-beta.4"
 edition = "2021"
 license = "MIT"
 publish = false

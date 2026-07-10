@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.5](https://github.com/gorules/zen/compare/zen-types-v1.0.0-beta.4...zen-types-v1.0.0-beta.5) (2026-07-10)
+
+
+### Features
+
+* policy table output type ([#481](https://github.com/gorules/zen/issues/481)) ([9a11ae4](https://github.com/gorules/zen/commit/9a11ae4f48f631564c44444edc1ec0bda6081dec))
+
 ## [1.0.0-beta.4](https://github.com/gorules/zen/compare/zen-types-v1.0.0-beta.3...zen-types-v1.0.0-beta.4) (2026-07-08)
 
 

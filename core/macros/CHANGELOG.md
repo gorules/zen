@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.5](https://github.com/gorules/zen/compare/zen-macros-v1.0.0-beta.4...zen-macros-v1.0.0-beta.5) (2026-07-10)
+
+
+### Miscellaneous
+
+* **zen-macros:** Synchronize core versions
+
 ## [1.0.0-beta.4](https://github.com/gorules/zen/compare/zen-macros-v1.0.0-beta.3...zen-macros-v1.0.0-beta.4) (2026-07-08)
 
 

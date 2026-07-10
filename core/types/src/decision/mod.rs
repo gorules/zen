@@ -141,6 +141,13 @@ pub struct DecisionTableOutputField {
     #[serde(default = "empty_arc_str")]
     pub name: Arc<str>,
     pub field: Arc<str>,
+    #[serde(
+        rename = "type",
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "empty_string_is_none"
+    )]
+    pub column_type: Option<Arc<str>>,
 }
 
 fn empty_arc_str() -> Arc<str> {

@@ -50,8 +50,12 @@ impl<'a> Projector<'a> {
         }
     }
 
-    pub(crate) fn run(mut self, root: &Node) -> (Vec<NlToken>, Vec<Vec<EnumOption>>) {
-        self.project(root, None);
+    pub(crate) fn run(
+        mut self,
+        root: &Node,
+        expected: Option<VariableType>,
+    ) -> (Vec<NlToken>, Vec<Vec<EnumOption>>) {
+        self.project(root, expected);
         (self.out, self.enums)
     }
 

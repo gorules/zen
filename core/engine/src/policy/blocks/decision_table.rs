@@ -228,6 +228,80 @@ pub struct OutputColumn {
     pub field: Arc<str>,
     pub raw_field: Arc<str>,
     pub collect: bool,
+    pub declared: Option<DeclaredType>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DeclaredBase {
+    String,
+    Number,
+    Bool,
+    Date,
+    Dictionary(Arc<str>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeclaredType {
+    pub base: DeclaredBase,
+    pub array: bool,
+}
+
+impl DeclaredType {
+    pub(crate) fn parse(raw: &str) -> Result<Option<DeclaredType>, String> {
+        let raw = raw.trim();
+        if raw.is_empty() {
+            return Ok(None);
+        }
+        let (base_raw, array) = match raw.strip_suffix("[]") {
+            Some(base) => (base.trim_end(), true),
+            None => (raw, false),
+        };
+        let base = match base_raw {
+            "string" => DeclaredBase::String,
+            "number" => DeclaredBase::Number,
+            "boolean" => DeclaredBase::Bool,
+            "date" => DeclaredBase::Date,
+            other => {
+                if crate::policy::ir::DataModelIr::validate_identifier(other).is_err() {
+                    return Err(format!(
+                        "invalid output type '{raw}': expected string, number, boolean, date or a dictionary name, optionally suffixed with []"
+                    ));
+                }
+                DeclaredBase::Dictionary(Arc::from(other))
+            }
+        };
+        Ok(Some(DeclaredType { base, array }))
+    }
+
+    pub(crate) fn resolve(
+        &self,
+        dictionaries: &HashMap<Arc<str>, VariableType>,
+    ) -> Option<VariableType> {
+        let base = match &self.base {
+            DeclaredBase::String => VariableType::String,
+            DeclaredBase::Number => VariableType::Number,
+            DeclaredBase::Bool => VariableType::Bool,
+            DeclaredBase::Date => VariableType::Date,
+            DeclaredBase::Dictionary(name) => dictionaries.get(name)?.shallow_clone(),
+        };
+        Some(if self.array { base.array() } else { base })
+    }
+}
+
+impl std::fmt::Display for DeclaredType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.base {
+            DeclaredBase::String => write!(f, "string")?,
+            DeclaredBase::Number => write!(f, "number")?,
+            DeclaredBase::Bool => write!(f, "boolean")?,
+            DeclaredBase::Date => write!(f, "date")?,
+            DeclaredBase::Dictionary(name) => write!(f, "{name}")?,
+        }
+        if self.array {
+            write!(f, "[]")?;
+        }
+        Ok(())
+    }
 }
 
 impl DecisionTableIr {
@@ -315,11 +389,28 @@ impl DecisionTableIr {
             Arc::from(path)
         };
 
+        let declared = match DeclaredType::parse(col.column_type.as_deref().unwrap_or("")) {
+            Ok(declared) => declared,
+            Err(message) => {
+                cx.target_error(
+                    &col.id,
+                    CursorTarget::DecisionTableHead {
+                        col: col.id.clone(),
+                    },
+                    None,
+                    DiagnosticCode::TypeMismatch,
+                    message,
+                );
+                None
+            }
+        };
+
         OutputColumn {
             id: col.id.clone(),
             field,
             raw_field,
             collect,
+            declared,
         }
     }
 
@@ -424,29 +515,66 @@ impl DecisionTableIr {
                 continue;
             }
 
+            let declared = (cx.is_enriched())
+                .then(|| self.resolve_declared(col, cx))
+                .flatten();
+
             let mut cell_types: Vec<VariableType> = Vec::new();
             for rule in &self.rules {
                 let Some(cell) = rule.get(&col.id).filter(|c| !c.is_empty()) else {
                     continue;
                 };
                 let analysis = cx.analyze_standard(cell, Some(col.id.clone()));
-                cell_types.push(analysis.return_type.clone());
+                match &declared {
+                    Some(expected) => {
+                        let actual = &analysis.return_type;
+                        if !actual.is_null() && !actual.satisfies(expected) {
+                            let target =
+                                rule.get(ROW_ID_KEY)
+                                    .map(|row| CursorTarget::DecisionTableCell {
+                                        row: row.clone(),
+                                        col: col.id.clone(),
+                                    });
+                            cx.error_with_target(
+                                DiagnosticCode::TypeMismatch,
+                                Some(col.id.clone()),
+                                None,
+                                target,
+                                format!("output cell must be `{expected}`, got `{actual}`"),
+                            );
+                        }
+                    }
+                    None => cell_types.push(analysis.return_type.clone()),
+                }
             }
 
-            if !col.collect && cx.is_enriched() && !self.column_covered(col, cx, &input_field_types)
-            {
-                cell_types.push(VariableType::Null);
-            }
-
+            let covered = col.collect
+                || !cx.is_enriched()
+                || self.column_covered(col, cx, &input_field_types);
             let target = Some(CursorTarget::DecisionTableHead {
                 col: col.id.clone(),
             });
-            let mut resolved = cx.merge_types(
-                &cell_types,
-                &col.field,
-                Some(col.id.clone()),
-                target.clone(),
-            );
+
+            let mut resolved = match declared {
+                Some(expected) => {
+                    if covered {
+                        expected
+                    } else {
+                        VariableType::Nullable(std::rc::Rc::new(expected))
+                    }
+                }
+                None => {
+                    if !covered {
+                        cell_types.push(VariableType::Null);
+                    }
+                    cx.merge_types(
+                        &cell_types,
+                        &col.field,
+                        Some(col.id.clone()),
+                        target.clone(),
+                    )
+                }
+            };
 
             if col.collect {
                 resolved = resolved.array();
@@ -454,6 +582,29 @@ impl DecisionTableIr {
 
             cx.record_write(col.field.clone(), resolved, Some(col.id.clone()), target);
         }
+    }
+
+    fn resolve_declared(
+        &self,
+        col: &OutputColumn,
+        cx: &mut AnalysisContext,
+    ) -> Option<VariableType> {
+        let declared = col.declared.as_ref()?;
+        let resolved = declared.resolve(cx.dictionary_types());
+        if resolved.is_none() {
+            cx.error_with_target(
+                DiagnosticCode::TypeMismatch,
+                Some(col.id.clone()),
+                None,
+                Some(CursorTarget::DecisionTableHead {
+                    col: col.id.clone(),
+                }),
+                format!(
+                    "unknown output type '{declared}': no dictionary with that name is in scope"
+                ),
+            );
+        }
+        resolved
     }
 
     fn column_covered(
@@ -778,6 +929,7 @@ impl DecisionTableIr {
         block_id: &Arc<str>,
         scope: &VariableType,
         is: &mut IntelliSense,
+        dictionaries: &HashMap<Arc<str>, VariableType>,
     ) -> Vec<NlExpression> {
         let mut out = Vec::new();
         let mut input_scopes: HashMap<Arc<str>, (ExpressionKind, VariableType)> =
@@ -836,7 +988,8 @@ impl DecisionTableIr {
             }
             for col in &self.outputs {
                 let cell: &str = rule.get(&col.id).map(|c| c.as_ref()).unwrap_or("");
-                out.push(NlExpression::project(
+                let expected = col.declared.as_ref().and_then(|d| d.resolve(dictionaries));
+                out.push(NlExpression::project_expected(
                     is,
                     policy_path,
                     block_id,
@@ -847,6 +1000,7 @@ impl DecisionTableIr {
                     ExpressionKind::Standard,
                     cell,
                     scope,
+                    expected.as_ref(),
                 ));
             }
         }
@@ -859,19 +1013,29 @@ impl DecisionTableIr {
         cursor: &Cursor,
         scope: VariableType,
         is: &mut IntelliSense,
-    ) -> (ExpressionKind, VariableType) {
+        dictionaries: &HashMap<Arc<str>, VariableType>,
+    ) -> (ExpressionKind, VariableType, Option<VariableType>) {
         let CursorTarget::DecisionTableCell { col, .. } = &cursor.target else {
-            return (ExpressionKind::Standard, scope);
+            return (ExpressionKind::Standard, scope, None);
         };
-        let Some(ColumnRef::Input(column)) = self.column_by_id(col) else {
-            return (ExpressionKind::Standard, scope);
-        };
-        match column.field.as_ref().filter(|f| !f.is_empty()) {
-            Some(field) => {
-                let field_type = is.analyze(field.as_ref(), &scope).return_type.clone();
-                (ExpressionKind::Unary, scope.with_dollar(&field_type))
+        match self.column_by_id(col) {
+            Some(ColumnRef::Input(column)) => {
+                match column.field.as_ref().filter(|f| !f.is_empty()) {
+                    Some(field) => {
+                        let field_type = is.analyze(field.as_ref(), &scope).return_type.clone();
+                        (ExpressionKind::Unary, scope.with_dollar(&field_type), None)
+                    }
+                    None => (ExpressionKind::Standard, scope, None),
+                }
             }
-            None => (ExpressionKind::Standard, scope),
+            Some(ColumnRef::Output(column)) => {
+                let expected = column
+                    .declared
+                    .as_ref()
+                    .and_then(|d| d.resolve(dictionaries));
+                (ExpressionKind::Standard, scope, expected)
+            }
+            None => (ExpressionKind::Standard, scope, None),
         }
     }
 

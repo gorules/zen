@@ -44,30 +44,35 @@ impl Db {
             return Vec::new();
         };
         let scope = self.enriched(policy).scope.shallow_clone();
+        let dictionaries = self.unit(policy).dictionary_types();
         let labels = self.nl_label_resolver(policy);
         let intellisense = self.intellisense();
         let mut is = intellisense.borrow_mut();
         is.set_nl_labels(labels);
         let mut out = Vec::new();
         for rule in parsed.policy.rules() {
-            out.extend(rule.nl(&policy_arc, &scope, &mut is));
+            out.extend(rule.nl(&policy_arc, &scope, &mut is, &dictionaries));
         }
         is.set_nl_labels(None);
         out
     }
 
     pub fn nl_tokenize(&self, cursor: &Cursor, text: &str) -> Option<NlResult> {
-        let (kind, scope) = self.nl_scope(cursor)?;
+        let (kind, scope, expected) = self.nl_scope(cursor)?;
         let unary = matches!(kind, ExpressionKind::Unary);
         let labels = self.nl_label_resolver(&cursor.policy_path);
         let intellisense = self.intellisense();
         let mut is = intellisense.borrow_mut();
         is.set_nl_labels(labels);
-        let mut result = is.nl_tokenize_scoped(&cursor.block_id, text, unary, &scope);
+        let mut result =
+            is.nl_tokenize_scoped(&cursor.block_id, text, unary, &scope, expected.as_ref());
         if unary {
             let subject = scope.get("$");
             result.subject_options = is.nl_subject_options(&subject);
             result.subject_type = Some(subject);
+        } else if let Some(expected) = &expected {
+            result.subject_options = is.nl_subject_options(expected);
+            result.subject_type = Some(expected.shallow_clone());
         }
         is.set_nl_labels(None);
         Some(result)
@@ -101,15 +106,19 @@ impl Db {
         }))
     }
 
-    fn nl_scope(&self, cursor: &Cursor) -> Option<(ExpressionKind, VariableType)> {
+    fn nl_scope(
+        &self,
+        cursor: &Cursor,
+    ) -> Option<(ExpressionKind, VariableType, Option<VariableType>)> {
         let block = self.block_ir(&BlockRef {
             policy_path: cursor.policy_path.clone(),
             block_id: cursor.block_id.clone(),
         })?;
         let scope = self.enriched(&cursor.policy_path).scope.shallow_clone();
+        let dictionaries = self.unit(&cursor.policy_path).dictionary_types();
         let intellisense = self.intellisense();
         let mut is = intellisense.borrow_mut();
-        Some(block.nl_scope(cursor, scope, &mut is))
+        Some(block.nl_scope(cursor, scope, &mut is, &dictionaries))
     }
 
     pub fn prepare_rename(&self, cursor: &Cursor) -> Option<PrepareRename> {

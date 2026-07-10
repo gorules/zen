@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use std::sync::Arc;
 
 use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
@@ -6,8 +7,8 @@ use petgraph::prelude::{NodeIndex, StableDiGraph};
 use zen_expression::variable::VariableType;
 
 use crate::policy::blocks::{
-    AnalysisContext, AnalysisSummary, Block, InstanceSource, PropertyRead, SharedIntelliSense,
-    WriteTarget,
+    AnalysisContext, AnalysisSummary, Block, InstanceSource, PropertyRead, SharedDictionaryTypes,
+    SharedIntelliSense, WriteTarget,
 };
 use crate::policy::db::{AnalysisPass, PolicyDerivedCache, Snapshot};
 use crate::policy::ir::{DataModelIr, ParsedPolicy, PropertyPath};
@@ -298,6 +299,7 @@ impl Snapshot {
         rule_scope: VariableType,
         pass: AnalysisPass,
         intellisense: &SharedIntelliSense,
+        dictionary_types: &SharedDictionaryTypes,
     ) -> AnalysisSummary {
         let mut ctx = AnalysisContext::new(
             rule_scope,
@@ -305,6 +307,7 @@ impl Snapshot {
             rule.id.clone(),
             intellisense.clone(),
             pass,
+            dictionary_types.clone(),
         );
         rule.kind.analyze(&mut ctx);
         ctx.finish()
@@ -329,6 +332,7 @@ impl Snapshot {
                 rule.check_single_entity_scope(path, classifier, &mut diagnostics);
             }
 
+            let no_dictionaries: SharedDictionaryTypes = Rc::new(ahash::HashMap::default());
             let policy_shallow = cache.shallow_or_compute(path, p, || {
                 p.policy
                     .rules()
@@ -339,6 +343,7 @@ impl Snapshot {
                             base_scope.shallow_clone(),
                             AnalysisPass::Shallow,
                             intellisense,
+                            &no_dictionaries,
                         );
                         RuleShallowAnalysis {
                             policy_path: path.clone(),
@@ -531,6 +536,7 @@ impl Snapshot {
         rule_by_ref: &HashMap<BlockRef, Arc<Block>>,
         members: &HashSet<Arc<str>>,
         intellisense: &SharedIntelliSense,
+        dictionary_types: SharedDictionaryTypes,
     ) -> EnrichedState {
         let scope = base_scope.shallow_clone();
         let mut per_rule: Vec<RuleEnrichedAnalysis> = Vec::new();
@@ -576,6 +582,7 @@ impl Snapshot {
                 scope.shallow_clone(),
                 AnalysisPass::Enriched,
                 intellisense,
+                &dictionary_types,
             );
 
             if splice {

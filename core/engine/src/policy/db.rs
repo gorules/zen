@@ -147,6 +147,15 @@ pub struct Unit {
     pub dictionary_blocks: Vec<DictionaryUnitEntry>,
 }
 
+impl Unit {
+    pub(crate) fn dictionary_types(&self) -> HashMap<Arc<str>, VariableType> {
+        self.dictionaries
+            .iter()
+            .map(|(name, dict)| (name.clone(), dict.enum_type()))
+            .collect()
+    }
+}
+
 pub struct DictionaryUnitEntry {
     pub policy_path: Arc<str>,
     pub block_id: Arc<str>,
@@ -319,6 +328,7 @@ impl Db {
                     &snap.rule_by_ref,
                     &unit.members,
                     &self.intellisense,
+                    Rc::new(unit.dictionary_types()),
                 ))
             })
             .clone()

@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.0.1-beta.5](https://github.com/gorules/zen/compare/go-v1.0.0-beta.5...go-v1.0.1-beta.5) (2026-07-16)
+## [1.0.0-beta.6](https://github.com/gorules/zen/compare/go-v1.0.0-beta.5...go-v1.0.0-beta.6) (2026-07-16)
 
 ## [1.0.0-beta.5](https://github.com/gorules/zen/compare/go-v1.0.0-beta.4...go-v1.0.0-beta.5) (2026-07-10)
 

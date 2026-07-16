@@ -1142,7 +1142,7 @@ dependencies = [
 
 [[package]]
 name = "expression_repl"
-version = "1.0.1-beta.5"
+version = "1.0.0-beta.6"
 dependencies = [
  "colored",
  "rustyline",
@@ -5633,7 +5633,7 @@ dependencies = [
 
 [[package]]
 name = "zen-ffi"
-version = "1.0.1-beta.5"
+version = "1.0.0-beta.6"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -5678,7 +5678,7 @@ dependencies = [
 
 [[package]]
 name = "zen-python"
-version = "1.0.1-beta.6"
+version = "1.0.0-beta.7"
 dependencies = [
  "anyhow",
  "either",
@@ -5720,7 +5720,7 @@ dependencies = [
 
 [[package]]
 name = "zen-uniffi"
-version = "1.0.1-beta.6"
+version = "1.0.0-beta.7"
 dependencies = [
  "async-trait",
  "serde",

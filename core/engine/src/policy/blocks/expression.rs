@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use zen_expression::intellisense::IntelliSense;
 use zen_expression::variable::{Variable, VariableType};
 
-use crate::policy::types::{
+use crate::workspace::types::{
     BlockTrace, Cursor, CursorTarget, Diagnostic, DiagnosticCode, ExpressionKind, NlExpression,
 };
 
@@ -190,10 +190,11 @@ impl ExpressionIr {
     ) -> Option<(Arc<str>, ExpressionKind, VariableType)> {
         match &cursor.target {
             CursorTarget::ExpressionKey => {
-                (!self.key.is_empty()).then(|| (self.key.clone(), ExpressionKind::Standard, scope))
+                Some((self.key.clone(), ExpressionKind::Standard, scope))
             }
-            CursorTarget::Expression { .. } => (!self.value.is_empty())
-                .then(|| (self.value.clone(), ExpressionKind::Standard, scope)),
+            CursorTarget::Expression { .. } => {
+                Some((self.value.clone(), ExpressionKind::Standard, scope))
+            }
             _ => None,
         }
     }

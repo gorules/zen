@@ -3,8 +3,8 @@ use std::sync::Arc;
 use serde_json::{Map, Value};
 use zen_expression::variable::VariableType;
 
-use crate::policy::db::Db;
-use crate::policy::types::ScopeRequest;
+use crate::workspace::db::Db;
+use crate::workspace::types::ScopeRequest;
 
 impl Db {
     pub fn input_skeleton(&self, req: &ScopeRequest) -> Value {

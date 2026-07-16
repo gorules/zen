@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::functions::FunctionKind;
+use crate::functions::{ClosureFunction, FunctionKind};
 use crate::intellisense::type_provider::TypesProvider;
 use crate::intellisense::{AstMetadata, NlLabelResolver};
 use crate::lexer::{Bracket, ComparisonOperator, Operator};
@@ -147,6 +147,10 @@ impl<'a> Projector<'a> {
                 operator,
                 right,
             } => {
+                if let Some(sym) = self.contains_sym(*operator, right) {
+                    self.contains_flipped(sym, left, right);
+                    return;
+                }
                 let (exp_left, exp_right) = if matches!(
                     operator,
                     Operator::Logical(crate::lexer::LogicalOperator::NullishCoalescing)
@@ -357,7 +361,7 @@ impl<'a> Projector<'a> {
 
     fn function_call(&mut self, kind: &FunctionKind, arguments: &[&Node], span: (u32, u32)) {
         let sym = kind.to_string().into_boxed_str();
-        let FunctionKind::Closure(_) = kind else {
+        let FunctionKind::Closure(cf) = kind else {
             if Self::is_infix_predicate(&sym) && arguments.len() == 2 {
                 let (left, right) = (arguments[0], arguments[1]);
                 self.project(left, None);
@@ -375,7 +379,8 @@ impl<'a> Projector<'a> {
                 self.project(right, needle_expected);
                 return;
             }
-            if !(self.unary && sym.as_ref() == "bool" && self.out.is_empty()) {
+            let suppressed = self.unary && sym.as_ref() == "bool" && self.out.is_empty();
+            if !suppressed {
                 self.push(
                     NlTokenKind::Func {
                         sym,
@@ -385,7 +390,7 @@ impl<'a> Projector<'a> {
                 );
             }
             if let [only] = arguments {
-                if Self::is_simple_arg(only) {
+                if suppressed || Self::is_simple_arg(only) {
                     self.project(only, None);
                     return;
                 }
@@ -394,7 +399,22 @@ impl<'a> Projector<'a> {
             return;
         };
 
-        self.push(NlTokenKind::Func { sym, closure: true }, (span.0, span.0));
+        if self.quantified_membership(*cf, arguments, span) {
+            return;
+        }
+
+        let quant = Self::is_quantifier(*cf)
+            && arguments.len() == 2
+            && matches!(arguments[1], Node::Closure { .. });
+        let name_span = if quant {
+            (span.0, span.0 + sym.len() as u32)
+        } else {
+            (span.0, span.0)
+        };
+        let hint = quant.then(|| EditHint::FuncSelect {
+            options: vec!["all".into(), "some".into(), "none".into()],
+        });
+        self.push_hint(NlTokenKind::Func { sym, closure: true }, name_span, hint);
 
         let alias = match arguments.get(1) {
             Some(Node::Closure { alias, .. }) => *alias,
@@ -440,6 +460,176 @@ impl<'a> Projector<'a> {
         matches!(
             sym,
             "contains" | "startsWith" | "endsWith" | "matches" | "fuzzyMatch"
+        )
+    }
+
+    fn is_quantifier(cf: ClosureFunction) -> bool {
+        matches!(
+            cf,
+            ClosureFunction::All | ClosureFunction::Some | ClosureFunction::None
+        )
+    }
+
+    fn is_array(ty: &VariableType) -> bool {
+        match ty {
+            VariableType::Array(_) => true,
+            VariableType::Nullable(inner) => Self::is_array(inner),
+            _ => false,
+        }
+    }
+
+    fn contains_sym(&self, operator: Operator, right: &Node) -> Option<OpSym> {
+        let Operator::Comparison(cmp) = operator else {
+            return None;
+        };
+        let sym = match cmp {
+            ComparisonOperator::In => OpSym::Contains,
+            ComparisonOperator::NotIn => OpSym::NotContains,
+            _ => return None,
+        };
+        if matches!(right, Node::Array(_) | Node::Interval { .. }) {
+            return None;
+        }
+        Self::is_array(&self.type_of(right)).then_some(sym)
+    }
+
+    fn contains_flipped(&mut self, sym: OpSym, left: &Node, right: &Node) {
+        let context_subject = matches!(right, Node::Identifier(name) if *name == "$");
+        if !context_subject && !self.is_elided_subject(right) {
+            self.project(right, None);
+        }
+        let op_span = (self.span_of(left).1, self.span_of(right).0);
+        let hint = EditHint::OpSelect {
+            options: vec![
+                OpChoice::from(OpSym::Contains),
+                OpChoice::from(OpSym::NotContains),
+            ],
+        };
+        let implied = context_subject || std::mem::take(&mut self.pending_implied);
+        self.push_hint(
+            NlTokenKind::Op {
+                sym,
+                implied,
+                between: false,
+            },
+            op_span,
+            Some(hint),
+        );
+        let expected = Some(self.type_of(right));
+        self.project(left, expected);
+    }
+
+    fn quantified_membership(
+        &mut self,
+        cf: ClosureFunction,
+        arguments: &[&Node],
+        span: (u32, u32),
+    ) -> bool {
+        if !Self::is_quantifier(cf) {
+            return false;
+        }
+        let [collection, closure] = arguments else {
+            return false;
+        };
+        let Node::Closure { body, alias } = closure else {
+            return false;
+        };
+        let mut node: &Node = body;
+        while let Node::Parenthesized(inner) = node {
+            node = inner;
+        }
+        let Node::Binary {
+            left,
+            operator: Operator::Comparison(cmp),
+            right,
+        } = node
+        else {
+            return false;
+        };
+        let negated = match cmp {
+            ComparisonOperator::In => false,
+            ComparisonOperator::NotIn => true,
+            _ => return false,
+        };
+        if !Self::is_binding_leaf(left, *alias) {
+            return false;
+        }
+        if !Self::membership_operand(right, *alias) {
+            return false;
+        }
+        let flipped = matches!(collection, Node::Array(_)) && !matches!(right, Node::Array(_));
+        let (subject, list): (&Node, &Node) = if flipped {
+            (right, collection)
+        } else {
+            (collection, right)
+        };
+        let subject_ty = self.type_of(subject);
+        if !matches!(subject_ty, VariableType::Any) && !Self::is_array(&subject_ty) {
+            return false;
+        }
+        let sym = match (flipped, cf, negated) {
+            (false, ClosureFunction::Some, false) => OpSym::ContainsAny,
+            (false, ClosureFunction::None, false) => OpSym::ContainsNone,
+            (false, ClosureFunction::All, false) => OpSym::ContainsOnly,
+            (false, ClosureFunction::All, true) => OpSym::ContainsNone,
+            (false, ClosureFunction::None, true) => OpSym::ContainsOnly,
+            (true, ClosureFunction::Some, false) => OpSym::ContainsAny,
+            (true, ClosureFunction::All, false) => OpSym::ContainsAll,
+            (true, ClosureFunction::None, false) => OpSym::ContainsNone,
+            (true, ClosureFunction::All, true) => OpSym::ContainsNone,
+            (true, ClosureFunction::None, true) => OpSym::ContainsAll,
+            _ => return false,
+        };
+        let implied = matches!(subject, Node::Identifier(name) if *name == "$");
+        if !implied {
+            self.project(subject, None);
+        }
+        let hint = EditHint::QuantSelect {
+            options: vec![
+                OpSym::ContainsAny,
+                OpSym::ContainsAll,
+                OpSym::ContainsNone,
+                OpSym::ContainsOnly,
+            ],
+            subject: self.slice(self.span_of(subject)),
+            list: self.slice(self.span_of(list)),
+        };
+        self.push_hint(
+            NlTokenKind::Op {
+                sym,
+                implied,
+                between: false,
+            },
+            span,
+            Some(hint),
+        );
+        self.project(list, Some(subject_ty));
+        true
+    }
+
+    fn membership_operand(node: &Node, alias: Option<&str>) -> bool {
+        match node {
+            Node::Array(items) => items
+                .iter()
+                .all(|item| matches!(item, Node::String(_) | Node::Number(_) | Node::Bool(_))),
+            Node::Identifier(name) => alias != Some(*name),
+            Node::Member { .. } => match Self::field_path(node) {
+                Some(path) => match (path.first(), alias) {
+                    (Some(head), Some(bound)) => head.as_ref() != bound && head.as_ref() != "#",
+                    (Some(head), None) => head.as_ref() != "#",
+                    _ => false,
+                },
+                None => false,
+            },
+            _ => false,
+        }
+    }
+
+    fn slice(&self, span: (u32, u32)) -> Box<str> {
+        Box::from(
+            self.source
+                .get(span.0 as usize..span.1 as usize)
+                .unwrap_or_default(),
         )
     }
 

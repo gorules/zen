@@ -5,7 +5,9 @@ use ahash::{HashMap, HashMapExt, HashSet};
 use zen_expression::parser::Node;
 
 use crate::policy::blocks::BlockKind;
-use crate::policy::types::{Diagnostic, DiagnosticCode, DiagnosticLocation, ExpressionKind, Span};
+use crate::workspace::types::{
+    Diagnostic, DiagnosticCode, DiagnosticLocation, ExpressionKind, Span,
+};
 
 use super::{AstOps, LintContext, LintRule};
 

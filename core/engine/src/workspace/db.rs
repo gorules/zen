@@ -7,6 +7,7 @@ use zen_expression::intellisense::IntelliSense;
 use zen_expression::variable::VariableType;
 use zen_expression::{Isolate, OpcodeCache};
 
+use crate::model::{DecisionContent, PolicyContent};
 use crate::policy::blocks::{
     Block, BlockKind, BlockReadPlan, IntelliSenseSource, PropertyRead, ReadFlattener,
     SharedIntelliSense,
@@ -24,7 +25,11 @@ use crate::policy::queries::scope::{
     VariableTypeScope,
 };
 use crate::policy::raw::PolicyDocument;
-use crate::policy::types::{BlockRef, Diagnostic, ExpressionKind, InstanceTarget};
+use crate::workspace::graph::function::{
+    FunctionKey, FunctionResolutionRequest, FunctionTypeResolver, ResolvedFunction,
+};
+use crate::workspace::graph::GraphAnalysis;
+use crate::workspace::types::{BlockRef, Diagnostic, ExpressionKind, InstanceTarget};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum AnalysisPass {
@@ -32,15 +37,21 @@ pub enum AnalysisPass {
     Enriched,
 }
 
+pub(crate) struct GraphDeps {
+    docs: Vec<(Arc<str>, Option<Arc<DecisionContent>>)>,
+    functions: Vec<(FunctionKey, u64)>,
+}
+
 #[derive(Default)]
 pub(crate) struct PolicyDerivedCache {
     parsed: RefCell<HashMap<Arc<str>, (Arc<PolicyDocument>, Arc<ParsedPolicy>)>>,
     shallow: RefCell<HashMap<Arc<str>, (Arc<ParsedPolicy>, Arc<Vec<RuleShallowAnalysis>>)>>,
     units: RefCell<HashMap<Vec<Arc<str>>, (Vec<Arc<ParsedPolicy>>, Arc<Unit>)>>,
+    graphs: RefCell<HashMap<Arc<str>, (GraphDeps, Arc<GraphAnalysis>)>>,
 }
 
 impl PolicyDerivedCache {
-    fn retain(&self, live: &HashMap<Arc<str>, Arc<PolicyDocument>>) {
+    fn retain(&self, live: &HashMap<Arc<str>, Arc<DecisionContent>>) {
         self.parsed
             .borrow_mut()
             .retain(|path, _| live.contains_key(path));
@@ -50,6 +61,9 @@ impl PolicyDerivedCache {
         self.units
             .borrow_mut()
             .retain(|members, _| members.iter().all(|m| live.contains_key(m)));
+        self.graphs
+            .borrow_mut()
+            .retain(|path, _| live.contains_key(path));
     }
 
     fn unit_or_compute(
@@ -113,12 +127,13 @@ impl PolicyDerivedCache {
 }
 
 struct Inputs {
-    policies: HashMap<Arc<str>, Arc<PolicyDocument>>,
+    documents: HashMap<Arc<str>, Arc<DecisionContent>>,
 }
 
 pub struct Snapshot {
     pub(crate) base_scope: VariableType,
     pub(crate) all_parsed: Arc<HashMap<Arc<str>, Arc<ParsedPolicy>>>,
+    pub(crate) graphs: HashMap<Arc<str>, Arc<DecisionContent>>,
     pub(crate) rule_by_ref: Arc<HashMap<BlockRef, Arc<Block>>>,
     pub(crate) import_graph: Arc<ImportGraph>,
     pub(crate) shallow: Arc<ShallowAnalyses>,
@@ -167,6 +182,14 @@ pub struct Db {
     snapshot: RefCell<Option<Arc<Snapshot>>>,
     cache: PolicyDerivedCache,
     intellisense: SharedIntelliSense,
+    graph_intellisense: SharedIntelliSense,
+    pub(crate) graph_stack: RefCell<Vec<Arc<str>>>,
+    graph_dep_frames: RefCell<Vec<HashSet<Arc<str>>>>,
+    graph_fn_frames: RefCell<Vec<HashMap<FunctionKey, u64>>>,
+    function_types: RefCell<HashMap<FunctionKey, ResolvedFunction>>,
+    function_requests: RefCell<Vec<FunctionResolutionRequest>>,
+    function_requested: RefCell<HashSet<FunctionKey>>,
+    function_resolver: RefCell<Option<Box<FunctionTypeResolver>>>,
     scope_roots: RefCell<Vec<VariableType>>,
 }
 
@@ -182,42 +205,177 @@ impl Db {
     pub fn new() -> Self {
         Self {
             inputs: RefCell::new(Inputs {
-                policies: HashMap::default(),
+                documents: HashMap::default(),
             }),
             snapshot: RefCell::new(None),
             cache: PolicyDerivedCache::default(),
             intellisense: Rc::new(RefCell::new(IntelliSense::new().with_strict(true))),
+            graph_intellisense: Rc::new(RefCell::new(IntelliSense::new().with_strict(true))),
+            graph_stack: RefCell::new(Vec::new()),
+            graph_dep_frames: RefCell::new(Vec::new()),
+            graph_fn_frames: RefCell::new(Vec::new()),
+            function_types: RefCell::new(HashMap::default()),
+            function_requests: RefCell::new(Vec::new()),
+            function_requested: RefCell::new(HashSet::default()),
+            function_resolver: RefCell::new(None),
             scope_roots: RefCell::new(Vec::new()),
         }
     }
 
-    pub fn set_policy(&mut self, path: Arc<str>, doc: Arc<PolicyDocument>) {
-        self.inputs.borrow_mut().policies.insert(path, doc);
-        self.bump();
+    pub fn set_document(&mut self, path: Arc<str>, doc: Arc<DecisionContent>) {
+        self.inputs.borrow_mut().documents.insert(path, doc);
+        self.invalidate_snapshot();
     }
 
-    pub fn remove_policy(&mut self, path: &str) -> bool {
-        let existed = self.inputs.borrow_mut().policies.remove(path).is_some();
+    pub fn set_policy(&mut self, path: Arc<str>, doc: Arc<PolicyDocument>) {
+        self.set_document(path, Arc::new(DecisionContent::Policy(PolicyContent(doc))));
+    }
+
+    pub fn remove_document(&mut self, path: &str) -> bool {
+        let existed = self.inputs.borrow_mut().documents.remove(path).is_some();
         if existed {
-            self.bump();
+            self.invalidate_snapshot();
         }
         existed
     }
 
-    pub fn policy_paths(&self) -> Vec<Arc<str>> {
-        self.inputs.borrow().policies.keys().cloned().collect()
+    pub fn document_paths(&self) -> Vec<Arc<str>> {
+        self.inputs.borrow().documents.keys().cloned().collect()
+    }
+
+    pub fn raw_document(&self, path: &str) -> Option<Arc<DecisionContent>> {
+        self.inputs.borrow().documents.get(path).cloned()
     }
 
     pub fn raw_policy(&self, path: &str) -> Option<Arc<PolicyDocument>> {
-        self.inputs.borrow().policies.get(path).cloned()
-    }
-
-    fn bump(&mut self) {
-        *self.snapshot.borrow_mut() = None;
+        match self.raw_document(path)?.as_ref() {
+            DecisionContent::Policy(policy) => Some(policy.0.clone()),
+            DecisionContent::Graph(_) => None,
+        }
     }
 
     pub fn intellisense(&self) -> SharedIntelliSense {
         self.intellisense.clone()
+    }
+
+    pub fn graph_intellisense(&self) -> SharedIntelliSense {
+        self.graph_intellisense.clone()
+    }
+
+    pub(crate) fn invalidate_snapshot(&self) {
+        *self.snapshot.borrow_mut() = None;
+    }
+
+    pub(crate) fn set_function_resolver(&self, resolver: Option<Box<FunctionTypeResolver>>) {
+        *self.function_resolver.borrow_mut() = resolver;
+        self.invalidate_snapshot();
+    }
+
+    pub(crate) fn function_types(&self) -> &RefCell<HashMap<FunctionKey, ResolvedFunction>> {
+        &self.function_types
+    }
+
+    pub(crate) fn function_requests(&self) -> &RefCell<Vec<FunctionResolutionRequest>> {
+        &self.function_requests
+    }
+
+    pub(crate) fn function_requested(&self) -> &RefCell<HashSet<FunctionKey>> {
+        &self.function_requested
+    }
+
+    pub(crate) fn function_resolver(&self) -> &RefCell<Option<Box<FunctionTypeResolver>>> {
+        &self.function_resolver
+    }
+
+    pub(crate) fn graph_fn_record(&self, key: FunctionKey, state: u64) {
+        if let Some(frame) = self.graph_fn_frames.borrow_mut().last_mut() {
+            frame.insert(key, state);
+        }
+    }
+
+    pub(crate) fn graph_dep_record(&self, path: &Arc<str>) {
+        if let Some(frame) = self.graph_dep_frames.borrow_mut().last_mut() {
+            frame.insert(path.clone());
+        }
+    }
+
+    pub(crate) fn graph_dep_record_many(&self, paths: impl IntoIterator<Item = Arc<str>>) {
+        if let Some(frame) = self.graph_dep_frames.borrow_mut().last_mut() {
+            frame.extend(paths);
+        }
+    }
+
+    pub(crate) fn graph_dep_frame_push(&self, path: &Arc<str>) {
+        let mut frame = HashSet::default();
+        frame.insert(path.clone());
+        self.graph_dep_frames.borrow_mut().push(frame);
+        self.graph_fn_frames.borrow_mut().push(HashMap::default());
+    }
+
+    pub(crate) fn graph_dep_frame_pop(&self) -> (HashSet<Arc<str>>, HashMap<FunctionKey, u64>) {
+        let docs = self.graph_dep_frames.borrow_mut().pop().unwrap_or_default();
+        let functions = self.graph_fn_frames.borrow_mut().pop().unwrap_or_default();
+        (docs, functions)
+    }
+
+    pub(crate) fn cached_graph_analysis(&self, path: &Arc<str>) -> Option<Arc<GraphAnalysis>> {
+        let (dep_paths, fn_stamps, analysis) = {
+            let cache = self.cache.graphs.borrow();
+            let (deps, analysis) = cache.get(path)?;
+            let inputs = self.inputs.borrow();
+            let docs_valid = deps.docs.iter().all(|(dep_path, stamp)| match stamp {
+                Some(stamp) => inputs
+                    .documents
+                    .get(dep_path)
+                    .is_some_and(|doc| Arc::ptr_eq(doc, stamp)),
+                None => !inputs.documents.contains_key(dep_path),
+            });
+            if !docs_valid {
+                return None;
+            }
+            let functions_valid = deps
+                .functions
+                .iter()
+                .all(|&(key, state)| self.function_state(key) == state);
+            if !functions_valid {
+                return None;
+            }
+            let dep_paths: Vec<Arc<str>> = deps.docs.iter().map(|(p, _)| p.clone()).collect();
+            (dep_paths, deps.functions.clone(), analysis.clone())
+        };
+        self.graph_dep_record_many(dep_paths);
+        for (key, state) in fn_stamps {
+            self.graph_fn_record(key, state);
+        }
+        Some(analysis)
+    }
+
+    pub(crate) fn store_graph_analysis(
+        &self,
+        path: &Arc<str>,
+        docs: HashSet<Arc<str>>,
+        functions: HashMap<FunctionKey, u64>,
+        analysis: Arc<GraphAnalysis>,
+    ) {
+        let deps = {
+            let inputs = self.inputs.borrow();
+            let mut sorted: Vec<Arc<str>> = docs.into_iter().collect();
+            sorted.sort();
+            let docs = sorted
+                .into_iter()
+                .map(|p| {
+                    let stamp = inputs.documents.get(&p).cloned();
+                    (p, stamp)
+                })
+                .collect();
+            let mut functions: Vec<(FunctionKey, u64)> = functions.into_iter().collect();
+            functions.sort_unstable();
+            GraphDeps { docs, functions }
+        };
+        self.cache
+            .graphs
+            .borrow_mut()
+            .insert(path.clone(), (deps, analysis));
     }
 
     pub fn snapshot(&self) -> Arc<Snapshot> {
@@ -225,7 +383,7 @@ impl Db {
             return s;
         }
         let s = Arc::new(Snapshot::compute(
-            &self.inputs.borrow().policies,
+            &self.inputs.borrow().documents,
             &self.intellisense,
             &self.cache,
         ));
@@ -491,7 +649,15 @@ impl Db {
         if let Some(d) = snap.policy_diagnostics.borrow().get(path).cloned() {
             return d;
         }
-        let value = Arc::new(self.compute_policy_diagnostics(path));
+        let value = if snap.graphs.contains_key(path) {
+            Arc::new(
+                self.graph_analysis(path)
+                    .map(|analysis| analysis.diagnostics.clone())
+                    .unwrap_or_default(),
+            )
+        } else {
+            Arc::new(self.compute_policy_diagnostics(path))
+        };
         snap.policy_diagnostics
             .borrow_mut()
             .insert(path.clone(), value.clone());
@@ -499,7 +665,7 @@ impl Db {
     }
 
     pub fn all_diagnostics(&self) -> Vec<Diagnostic> {
-        let mut paths = self.policy_paths();
+        let mut paths = self.document_paths();
         paths.sort();
         paths
             .iter()
@@ -516,11 +682,24 @@ impl Default for Db {
 
 impl Snapshot {
     fn compute(
-        policies: &HashMap<Arc<str>, Arc<PolicyDocument>>,
+        documents: &HashMap<Arc<str>, Arc<DecisionContent>>,
         intellisense: &SharedIntelliSense,
         cache: &PolicyDerivedCache,
     ) -> Snapshot {
-        cache.retain(policies);
+        let mut policies: HashMap<Arc<str>, Arc<PolicyDocument>> = HashMap::default();
+        let mut graphs: HashMap<Arc<str>, Arc<DecisionContent>> = HashMap::default();
+        for (path, doc) in documents {
+            match doc.as_ref() {
+                DecisionContent::Policy(policy) => {
+                    policies.insert(path.clone(), policy.0.clone());
+                }
+                DecisionContent::Graph(_) => {
+                    graphs.insert(path.clone(), doc.clone());
+                }
+            }
+        }
+        cache.retain(documents);
+        let policies = &policies;
         let all_parsed = Arc::new(Self::parse_all(policies, cache));
         let rule_by_ref = Arc::new(Self::build_rule_by_ref(&all_parsed));
         let import_graph = Arc::new(Self::compute_import_graph(&all_parsed));
@@ -542,6 +721,7 @@ impl Snapshot {
         Snapshot {
             base_scope,
             all_parsed,
+            graphs,
             rule_by_ref,
             import_graph,
             shallow,

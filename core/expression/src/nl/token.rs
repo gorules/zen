@@ -101,9 +101,23 @@ pub enum TypeTag {
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum EditHint {
     DatePicker,
-    Select { options: u32 },
-    MultiSelect { options: u32 },
-    OpSelect { options: Vec<OpChoice> },
+    Select {
+        options: u32,
+    },
+    MultiSelect {
+        options: u32,
+    },
+    OpSelect {
+        options: Vec<OpChoice>,
+    },
+    QuantSelect {
+        options: Vec<OpSym>,
+        subject: Box<str>,
+        list: Box<str>,
+    },
+    FuncSelect {
+        options: Vec<Box<str>>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -141,6 +155,12 @@ pub enum OpSym {
     Ne,
     In,
     NotIn,
+    Contains,
+    NotContains,
+    ContainsAny,
+    ContainsAll,
+    ContainsNone,
+    ContainsOnly,
     Add,
     Sub,
     Mul,
@@ -164,6 +184,12 @@ impl OpSym {
             OpSym::Ne => "!=",
             OpSym::In => "in",
             OpSym::NotIn => "not in",
+            OpSym::Contains => "in",
+            OpSym::NotContains => "not in",
+            OpSym::ContainsAny => "some",
+            OpSym::ContainsAll => "all",
+            OpSym::ContainsNone => "none",
+            OpSym::ContainsOnly => "all",
             OpSym::Add => "+",
             OpSym::Sub => "-",
             OpSym::Mul => "*",

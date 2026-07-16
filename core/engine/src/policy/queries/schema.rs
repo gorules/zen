@@ -3,11 +3,11 @@ use std::sync::Arc;
 use ahash::{HashMap, HashSet};
 use zen_expression::variable::VariableType;
 
-use crate::policy::db::Db;
 use crate::policy::ir::DataModelIr;
 use crate::policy::queries::dependency::{DependencyGraph, PathPrefix};
 use crate::policy::queries::scope::PropertyScope;
-use crate::policy::types::{
+use crate::workspace::db::{Db, DictionaryUnitEntry};
+use crate::workspace::types::{
     Dictionary, DictionaryEntryInfo, Entity, EntityField, FieldOrigin, Global, InputProperty,
     OutputProperty, PropertyKind, ScopeRequest,
 };
@@ -104,6 +104,13 @@ impl Db {
     }
 
     pub fn dictionaries(&self, req: &ScopeRequest) -> Vec<Dictionary> {
+        if self.is_graph(&req.policy_path) {
+            return self
+                .graph_dictionary_blocks(&self.graph_imports(&req.policy_path))
+                .iter()
+                .map(Self::dictionary_of)
+                .collect();
+        }
         let unit = self.unit(&req.policy_path);
         let mut seen: HashSet<Arc<str>> = HashSet::default();
         let mut out: Vec<Dictionary> = Vec::new();
@@ -111,24 +118,31 @@ impl Db {
             if !seen.insert(entry.ir.name.clone()) {
                 continue;
             }
-            out.push(Dictionary {
-                name: entry.ir.name.clone(),
-                source: entry.policy_path.clone(),
-                entries: entry
-                    .ir
-                    .entries
-                    .iter()
-                    .map(|e| DictionaryEntryInfo {
-                        value: e.value.clone(),
-                        label: e.label.clone(),
-                    })
-                    .collect(),
-            });
+            out.push(Self::dictionary_of(entry));
         }
         out
     }
 
+    fn dictionary_of(entry: &DictionaryUnitEntry) -> Dictionary {
+        Dictionary {
+            name: entry.ir.name.clone(),
+            source: entry.policy_path.clone(),
+            entries: entry
+                .ir
+                .entries
+                .iter()
+                .map(|e| DictionaryEntryInfo {
+                    value: e.value.clone(),
+                    label: e.label.clone(),
+                })
+                .collect(),
+        }
+    }
+
     pub fn inputs(&self, req: &ScopeRequest) -> Vec<InputProperty> {
+        if self.is_graph(&req.policy_path) {
+            return self.graph_inputs(&req.policy_path);
+        }
         let unit = self.unit(&req.policy_path);
         let visible = &unit.members;
         let entities = &unit.entities;
@@ -184,6 +198,9 @@ impl Db {
     }
 
     pub fn outputs(&self, req: &ScopeRequest) -> Vec<OutputProperty> {
+        if self.is_graph(&req.policy_path) {
+            return self.graph_outputs(&req.policy_path);
+        }
         let unit = self.unit(&req.policy_path);
         let enriched = self.enriched_of_unit(&unit);
         let goal_filter =
@@ -241,7 +258,7 @@ impl Db {
         let unit = self.unit(&req.policy_path);
         let enriched = self.enriched_of_unit(&unit);
 
-        let mut sorted: Vec<(&Arc<str>, &crate::policy::types::BlockRef, &_)> =
+        let mut sorted: Vec<(&Arc<str>, &crate::workspace::types::BlockRef, &_)> =
             unit.dep_graph.computed_in(&unit.members).collect();
         sorted.sort_by(|a, b| a.0.cmp(b.0));
 

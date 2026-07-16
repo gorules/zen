@@ -7,10 +7,10 @@ use petgraph::stable_graph::StableDiGraph;
 use zen_expression::variable::{Variable, VariableType};
 
 use crate::policy::blocks::InstanceSource;
-use crate::policy::db::{Db, Snapshot};
 use crate::policy::ir::{DataModelIr, DictionaryIr, ParsedPolicy, Property, PropertyTypeIr};
 use crate::policy::queries::dependency::DependencyGraph;
-use crate::policy::types::InstanceTarget;
+use crate::workspace::db::{Db, Snapshot};
+use crate::workspace::types::InstanceTarget;
 
 #[derive(Debug, Clone)]
 pub struct EntitySource {
@@ -714,6 +714,14 @@ impl VariableTypeScope for VariableType {
     fn resolve_at(&self, path: &str) -> VariableType {
         let mut current = self.shallow_clone();
         for segment in path.split('.') {
+            loop {
+                let element = match current.unwrap_nullable().0 {
+                    VariableType::Array(item) => item.as_ref().shallow_clone(),
+                    VariableType::Any => return VariableType::Any,
+                    _ => break,
+                };
+                current = element;
+            }
             current = current.get(segment);
         }
         current

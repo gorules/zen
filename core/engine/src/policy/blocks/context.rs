@@ -8,10 +8,10 @@ use zen_expression::{Isolate, IsolateError};
 
 use super::property_read::ReadFlattener;
 use super::type_check::TypeCheck;
-use crate::policy::db::AnalysisPass;
 use crate::policy::ir::PropertyPath;
 use crate::policy::queries::scope::VariableTypeScope;
-use crate::policy::types::{
+use crate::workspace::db::AnalysisPass;
+use crate::workspace::types::{
     CursorTarget, Diagnostic, DiagnosticCode, DiagnosticLocation, ExpressionKind, Severity,
     WriteTrace,
 };

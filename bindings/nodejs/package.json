@@ -1,6 +1,6 @@
 {
   "name": "@gorules/zen-engine",
-  "version": "1.0.0-beta.6",
+  "version": "1.0.44",
   "main": "index.js",
   "browser": "browser.js",
   "types": "./index.d.ts",
@@ -10,7 +10,9 @@
     "index.js",
     "index.d.ts",
     "browser.js",
-    "README.md"
+    "README.md",
+    "ts-support.js",
+    "ts-support.d.ts"
   ],
   "packageManager": "yarn@1.22.22",
   "napi": {
@@ -96,5 +98,23 @@
   },
   "resolutions": {
     "form-data@^4.0.0": "4.0.4"
+  },
+  "optionalDependencies": {
+    "@gorules/zen-engine-darwin-x64": "1.0.44",
+    "@gorules/zen-engine-linux-x64-gnu": "1.0.44",
+    "@gorules/zen-engine-linux-x64-musl": "1.0.44",
+    "@gorules/zen-engine-win32-x64-msvc": "1.0.44",
+    "@gorules/zen-engine-linux-arm64-gnu": "1.0.44",
+    "@gorules/zen-engine-linux-arm64-musl": "1.0.44",
+    "@gorules/zen-engine-darwin-arm64": "1.0.44",
+    "@gorules/zen-engine-wasm32-wasi": "1.0.44"
+  },
+  "peerDependencies": {
+    "typescript": ">=5"
+  },
+  "peerDependenciesMeta": {
+    "typescript": {
+      "optional": true
+    }
   }
 }

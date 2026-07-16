@@ -13,6 +13,19 @@ impl SpanOps {
         s.chars().count() as u32
     }
 
+    pub(crate) fn char_span(source: &str, span: Span) -> Span {
+        if source.is_ascii() {
+            return span;
+        }
+        let to_char = |byte: u32| {
+            source
+                .char_indices()
+                .take_while(|(at, _)| (*at as u32) < byte)
+                .count() as u32
+        };
+        (to_char(span.0), to_char(span.1))
+    }
+
     pub(crate) fn replace_at_char_spans(source: &str, spans: &[Span], new_text: &str) -> String {
         let mut sorted = spans.to_vec();
         sorted.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| b.1.cmp(&a.1)));
@@ -153,6 +166,13 @@ pub enum DiagnosticCode {
 
     ImportNotFound,
     CircularImport,
+
+    InvalidGraphStructure,
+    UnreachableNode,
+    MissingInputSchema,
+    UnresolvedFunctionType,
+    ImplicitAny,
+    UncheckedNode,
 
     RedundantNullish,
     RepeatedDerivation,

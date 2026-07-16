@@ -11,10 +11,10 @@ use crate::loader::DynamicLoader;
 use crate::model::{DecisionContent, GraphContent};
 use crate::policy::evaluator::EvalArtifact;
 use crate::policy::raw::PolicyDocument;
-use crate::policy::types::{
+use crate::workspace::types::{
     Diagnostic, EvaluateRequest, EvaluationError as PolicyEvaluationError, Severity,
 };
-use crate::policy::workspace::PolicyWorkspace;
+use crate::workspace::Workspace;
 use crate::{CompileFailure, EvaluationError};
 
 pub(crate) async fn evaluate_policy(
@@ -28,7 +28,7 @@ pub(crate) async fn evaluate_policy(
 
     let documents = collect_transitive_policies(loader, entry_path.clone(), entry_content).await?;
 
-    let mut workspace = PolicyWorkspace::new();
+    let mut workspace = Workspace::new();
     for (path, doc) in documents {
         workspace.set_policy_arc(path, doc);
     }
@@ -118,7 +118,7 @@ pub(crate) struct CompiledSet {
 
 impl CompiledSet {
     pub(crate) fn build_sync(loader: &DynamicLoader, keys: &[Arc<str>]) -> CompiledSet {
-        let mut workspace = PolicyWorkspace::new();
+        let mut workspace = Workspace::new();
         let mut policy_keys: Vec<Arc<str>> = Vec::new();
         let mut failures: Vec<CompileFailure> = Vec::new();
         let mut entries: HashMap<Arc<str>, CompiledEntry> = HashMap::default();
@@ -182,7 +182,7 @@ impl CompiledSet {
         CompiledSet { entries, failures }
     }
 
-    fn closure_error_diagnostics(workspace: &PolicyWorkspace, key: &Arc<str>) -> Vec<Diagnostic> {
+    fn closure_error_diagnostics(workspace: &Workspace, key: &Arc<str>) -> Vec<Diagnostic> {
         let mut diagnostics: Vec<Diagnostic> = Vec::new();
         let mut enqueued: HashSet<Arc<str>> = HashSet::new();
         let mut queue: VecDeque<Arc<str>> = VecDeque::new();

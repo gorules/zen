@@ -108,6 +108,7 @@ where
         let mut hasher = AHasher::default();
         hasher.write(self.id.as_bytes());
         hasher.write(self.name.as_bytes());
+        hasher.write_u64(self.config.validation_salt);
         hasher.finish()
     }
 }
@@ -320,6 +321,7 @@ pub struct NodeContextConfig {
     pub max_depth: u8,
     pub function_timeout_millis: u64,
     pub http_auth: bool,
+    pub validation_salt: u64,
 }
 
 impl Default for NodeContextConfig {
@@ -330,6 +332,7 @@ impl Default for NodeContextConfig {
             function_timeout_millis: ZEN_CONFIG.function_timeout_millis.load(Ordering::Relaxed),
             http_auth: ZEN_CONFIG.http_auth.load(Ordering::Relaxed),
             max_depth: 5,
+            validation_salt: 0,
         }
     }
 }

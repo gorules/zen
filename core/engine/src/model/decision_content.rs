@@ -1,8 +1,10 @@
+use crate::nodes::function::v2::strip::TypeStripper;
 use crate::policy::PolicyDocument;
+use ahash::{HashMap, HashMapExt};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::sync::Arc;
 use zen_expression::{ExpressionKind, Isolate, OpcodeCache};
-use zen_types::decision::{DecisionEdge, DecisionNode, DecisionNodeKind};
+use zen_types::decision::{DecisionEdge, DecisionNode, DecisionNodeKind, FunctionNodeContent};
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(untagged)]
@@ -95,8 +97,14 @@ pub struct GraphContent {
     pub nodes: Vec<Arc<DecisionNode>>,
     pub edges: Vec<Arc<DecisionEdge>>,
 
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub imports: Vec<Arc<str>>,
+
     #[serde(skip)]
     pub compiled_cache: Option<Arc<OpcodeCache>>,
+
+    #[serde(skip)]
+    pub stripped_functions: Option<Arc<HashMap<Arc<str>, Arc<str>>>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -105,6 +113,7 @@ pub struct PolicyContent(pub Arc<PolicyDocument>);
 
 impl GraphContent {
     pub fn compile(&mut self) {
+        self.compile_functions();
         if self.compiled_cache.is_some() {
             return;
         }
@@ -175,6 +184,25 @@ impl GraphContent {
 
         self.compiled_cache.replace(Arc::new(cache));
     }
+
+    fn compile_functions(&mut self) {
+        if self.stripped_functions.is_some() {
+            return;
+        }
+        let mut stripped: HashMap<Arc<str>, Arc<str>> = HashMap::new();
+        for node in &self.nodes {
+            let DecisionNodeKind::FunctionNode {
+                content: FunctionNodeContent::Version2(function),
+            } = &node.kind
+            else {
+                continue;
+            };
+            stripped
+                .entry(function.source.clone())
+                .or_insert_with(|| TypeStripper::strip(&function.source));
+        }
+        self.stripped_functions.replace(Arc::new(stripped));
+    }
 }
 
 #[cfg(test)]
@@ -196,6 +224,17 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(error.contains("output"), "{error}");
+    }
+
+    #[test]
+    fn compile_strips_function_sources() {
+        let json = r#"{"nodes":[{"id":"f","name":"f","type":"functionNode","content":{"source":"export const handler = (input: { age: number }) => ({ total: input.age });"}}],"edges":[]}"#;
+        let mut content: GraphContent = serde_json::from_str(json).unwrap();
+        content.compile();
+        let stripped = content.stripped_functions.as_ref().unwrap();
+        assert_eq!(stripped.len(), 1);
+        let value = stripped.values().next().unwrap();
+        assert!(!value.contains(": number"), "{value}");
     }
 
     #[test]

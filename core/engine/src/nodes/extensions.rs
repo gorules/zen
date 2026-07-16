@@ -20,6 +20,7 @@ pub struct NodeHandlerExtensions {
     pub(crate) custom_node: DynamicCustomNode,
     pub(crate) http_handler: DynamicHttpHandler,
     pub(crate) compiled_cache: Option<Arc<OpcodeCache>>,
+    pub(crate) stripped_functions: Option<Arc<ahash::HashMap<Arc<str>, Arc<str>>>>,
 }
 
 impl Default for NodeHandlerExtensions {
@@ -31,6 +32,7 @@ impl Default for NodeHandlerExtensions {
             loader: Arc::new(NoopLoader::default()),
             custom_node: Arc::new(NoopCustomNode::default()),
             compiled_cache: None,
+            stripped_functions: None,
             http_handler: None,
         }
     }

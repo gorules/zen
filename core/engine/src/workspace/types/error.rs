@@ -27,6 +27,9 @@ pub enum EvaluationError {
     #[error("policy '{0}' not found in workspace")]
     PolicyNotFound(Arc<str>),
 
+    #[error("document '{0}' is a graph; evaluate it through the decision engine")]
+    GraphNotEvaluable(Arc<str>),
+
     #[error("policy '{policy_path}' imports '{import}' which is not in the workspace")]
     ImportNotFound {
         policy_path: Arc<str>,
@@ -60,7 +63,7 @@ pub enum EvaluationError {
         block_id: Arc<str>,
         expression: Arc<str>,
         source: IsolateError,
-        partial_trace: Option<Box<crate::policy::types::Trace>>,
+        partial_trace: Option<Box<crate::workspace::types::Trace>>,
     },
 }
 
@@ -69,6 +72,10 @@ impl EvaluationError {
         match self {
             Self::PolicyNotFound(path) => {
                 map.serialize_entry("kind", "PolicyNotFound")?;
+                map.serialize_entry("policyPath", path)?;
+            }
+            Self::GraphNotEvaluable(path) => {
+                map.serialize_entry("kind", "GraphNotEvaluable")?;
                 map.serialize_entry("policyPath", path)?;
             }
             Self::ImportNotFound {

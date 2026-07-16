@@ -3,9 +3,9 @@ use std::sync::Arc;
 use ahash::{HashMap, HashSet, HashSetExt};
 
 use crate::policy::blocks::{IntelliSenseSource, ReadFlattener};
-use crate::policy::db::{Db, Snapshot};
 use crate::policy::queries::scope::{EntityForm, VariableTypeScope};
-use crate::policy::types::{BlockRef, DependencyNode};
+use crate::workspace::db::{Db, Snapshot};
+use crate::workspace::types::{BlockRef, DependencyNode};
 use zen_expression::variable::VariableType;
 
 impl Db {

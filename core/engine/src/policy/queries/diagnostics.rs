@@ -3,12 +3,12 @@ use std::sync::Arc;
 use ahash::{HashMap, HashMapExt, HashSet};
 use petgraph::algo::tarjan_scc;
 
-use crate::policy::db::Db;
 use crate::policy::ir::PropertyTypeIr;
 use crate::policy::linter::Linter;
 use crate::policy::queries::dependency::WriteScope;
 use crate::policy::queries::path::PathRoot;
-use crate::policy::types::{BlockRef, Diagnostic, DiagnosticCode, DiagnosticLocation};
+use crate::workspace::db::Db;
+use crate::workspace::types::{BlockRef, Diagnostic, DiagnosticCode, DiagnosticLocation};
 
 impl Db {
     pub fn compute_policy_diagnostics(&self, path: &Arc<str>) -> Vec<Diagnostic> {
@@ -340,7 +340,7 @@ impl Db {
         let Some(parsed) = self.parsed(target) else {
             return out;
         };
-        let all_paths: HashSet<Arc<str>> = self.policy_paths().into_iter().collect();
+        let all_paths: HashSet<Arc<str>> = self.document_paths().into_iter().collect();
 
         for imported in parsed.policy.imports() {
             if !all_paths.contains(imported) {

@@ -86,3 +86,14 @@ block_id = "s_scoped"
 expression_id = "s_scoped"
 pos = 0
 includes = ["customer", "company"]
+
+# Unary input cells check against scope+$ (with_dollar), so completions must
+# offer the root entities and the `$` subject, not just the field type.
+[[test]]
+name = "table unary input cell: root entities and $ offered"
+policy = "analysis.json"
+block_id = "dt1"
+expression_id = "i1"
+row = "r1"
+pos = 0
+includes = ["customer", "$"]

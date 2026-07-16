@@ -34,6 +34,10 @@ downcast-rs = { version = "2.0", features = ["std", "sync"] }
 arc-swap = "1"
 flate2 = { version = "1", features = ["rust_backend"] }
 zip = { version = "8", default-features = false, features = ["deflate-flate2"] }
+swc_ts_fast_strip = "53.0.0"
+swc_common = "23"
+swc_ecma_parser = "41"
+swc_ecma_ast = "25"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

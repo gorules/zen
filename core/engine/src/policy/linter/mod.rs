@@ -9,9 +9,9 @@ use zen_expression::intellisense::AstMetadata;
 use zen_expression::parser::Node;
 
 use crate::policy::blocks::Block;
-use crate::policy::db::Db;
 use crate::policy::ir::ParsedPolicy;
-use crate::policy::types::{Diagnostic, ExpressionKind, Span};
+use crate::workspace::db::Db;
+use crate::workspace::types::{Diagnostic, ExpressionKind, Span};
 
 pub(crate) use prefer_match::PreferMatch;
 pub(crate) use redundant_parentheses::RedundantParentheses;

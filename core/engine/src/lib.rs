@@ -131,6 +131,7 @@ pub mod loader;
 pub mod model;
 pub mod nodes;
 pub mod policy;
+pub mod workspace;
 
 pub const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -143,4 +144,5 @@ pub use engine::{
     DecisionEngine, EvaluationOptions, EvaluationSerializedOptions, EvaluationTraceKind,
 };
 pub use error::{CompileFailure, ContentKindError, EvaluationError};
+pub use workspace::Workspace;
 pub use zen_expression::Variable;

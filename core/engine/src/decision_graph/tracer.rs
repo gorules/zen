@@ -77,11 +77,20 @@ impl NodeTracer {
 #[derive(Debug, Clone, Serialize, Deserialize, ToVariable)]
 #[serde(rename_all = "camelCase")]
 pub struct DecisionGraphTrace {
+    #[serde(default = "null_variable")]
     pub input: Variable,
+    #[serde(default = "null_variable")]
     pub output: Variable,
     pub name: Arc<str>,
     pub id: Arc<str>,
+    #[serde(default)]
     pub performance: Option<Arc<str>>,
+    #[serde(default)]
     pub trace_data: Option<Variable>,
+    #[serde(default)]
     pub order: u32,
+}
+
+fn null_variable() -> Variable {
+    Variable::Null
 }

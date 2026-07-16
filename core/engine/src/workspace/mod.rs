@@ -1,24 +1,48 @@
+pub(crate) mod db;
+pub(crate) mod editor;
+pub(crate) mod graph;
+pub(crate) mod types;
+
 use std::sync::Arc;
 
-use crate::policy::db::Db;
+use crate::model::DecisionContent;
 use crate::policy::evaluator::EvalArtifact;
 use crate::policy::raw::PolicyDocument;
+use db::Db;
 use zen_expression::nl::NlResult;
+use zen_expression::variable::VariableType;
 
-use crate::policy::types::{
-    Completion, ConditionalSchema, Cursor, DependencyNode, Diagnostic, Dictionary, EngineEdit,
-    Entity, EvaluateRequest, EvaluationError, EvaluationResult, Global, InputProperty,
-    InspectResult, NlExpression, OutputProperty, PrepareRename, ReferenceSite, RenameTarget,
-    ScopeRequest, WriteConflict,
+pub use graph::{
+    FunctionResolutionRequest, FunctionTypeResolver, GraphAnalysis, GraphNodeAnalysis,
+    GraphSignature, GraphTraceMap,
+};
+pub use types::{
+    BlockExecution, BlockRef, BlockTrace, Completion, ConditionTrace, ConditionalSchema, Cursor,
+    CursorTarget, DependencyNode, Diagnostic, DiagnosticCode, DiagnosticLocation, Dictionary,
+    DictionaryEntryInfo, DiscriminantVariant, DiscriminatedUnion, EngineEdit, Entity, EntityField,
+    EvaluateRequest, EvaluationError, EvaluationResult, ExpressionKind, FieldOrigin,
+    GuardedProperty, InputProperty, InputValidationError, InspectResult, NlExpression,
+    OutputProperty, PrepareRename, PropertyKind, ReferenceKind, ReferenceSite, RenameTarget,
+    SchemaFieldKind, SchemaGroup, ScopeRequest, Severity, Span, Trace, WriteConflict, WriteTrace,
 };
 
-pub struct PolicyWorkspace {
+use types::Global;
+
+pub struct Workspace {
     db: Db,
 }
 
-impl PolicyWorkspace {
+impl Workspace {
     pub fn new() -> Self {
         Self { db: Db::new() }
+    }
+
+    pub fn set_document(&mut self, path: impl Into<Arc<str>>, document: DecisionContent) {
+        self.db.set_document(path.into(), Arc::new(document));
+    }
+
+    pub fn set_document_arc(&mut self, path: impl Into<Arc<str>>, document: Arc<DecisionContent>) {
+        self.db.set_document(path.into(), document);
     }
 
     pub fn set_policy(&mut self, path: impl Into<Arc<str>>, document: PolicyDocument) {
@@ -29,16 +53,24 @@ impl PolicyWorkspace {
         self.db.set_policy(path.into(), document);
     }
 
-    pub fn remove_policy(&mut self, path: &str) -> bool {
-        self.db.remove_policy(path)
+    pub fn remove_path(&mut self, path: &str) -> bool {
+        self.db.remove_document(path)
     }
 
-    pub fn policy_paths(&self) -> Vec<Arc<str>> {
-        self.db.policy_paths()
+    pub fn paths(&self) -> Vec<Arc<str>> {
+        self.db.document_paths()
+    }
+
+    pub fn get_document(&self, path: &str) -> Option<Arc<DecisionContent>> {
+        self.db.raw_document(path)
     }
 
     pub fn get_policy(&self, path: &str) -> Option<Arc<PolicyDocument>> {
         self.db.raw_policy(path)
+    }
+
+    pub fn is_graph(&self, path: &str) -> bool {
+        self.db.is_graph(path)
     }
 
     pub fn evaluate(&self, req: &EvaluateRequest) -> Result<EvaluationResult, EvaluationError> {
@@ -52,15 +84,29 @@ impl PolicyWorkspace {
         self.db.enhance_trace(req)
     }
 
+    pub fn enhance_graph_trace(
+        &self,
+        document: &Arc<str>,
+        trace: &GraphTraceMap,
+    ) -> Result<Trace, EvaluationError> {
+        self.db.enhance_graph_trace(document, trace)
+    }
+
     pub(crate) fn eval_artifact(&self, policy: &str) -> Arc<EvalArtifact> {
         self.db.eval_artifact(policy)
     }
 
     pub fn entities(&self, req: &ScopeRequest) -> Vec<Entity> {
+        if self.db.is_graph(&req.policy_path) {
+            return Vec::new();
+        }
         self.db.entities(req)
     }
 
     pub fn globals(&self, req: &ScopeRequest) -> Vec<Global> {
+        if self.db.is_graph(&req.policy_path) {
+            return Vec::new();
+        }
         self.db.globals(req)
     }
 
@@ -95,6 +141,30 @@ impl PolicyWorkspace {
 
     pub fn all_diagnostics(&self) -> Vec<Diagnostic> {
         self.db.all_diagnostics()
+    }
+
+    pub fn set_function_resolver(
+        &mut self,
+        resolver: impl Fn(&str, &VariableType) -> Option<String> + 'static,
+    ) {
+        self.db.set_function_resolver(Some(Box::new(resolver)));
+    }
+
+    pub fn function_resolution_requests(&self) -> Vec<FunctionResolutionRequest> {
+        self.db.function_resolution_requests()
+    }
+
+    pub fn set_function_type(&self, source: &str, input: &VariableType, ts_type: Option<&str>) {
+        self.db.set_function_type(source, input, ts_type);
+    }
+
+    pub fn graph_analysis(&self, path: &str) -> Option<Arc<GraphAnalysis>> {
+        let path_arc: Arc<str> = Arc::from(path);
+        self.db.graph_analysis(&path_arc)
+    }
+
+    pub fn unchecked_nodes(&self, path: &str) -> Vec<Arc<str>> {
+        self.db.graph_unchecked_nodes(path)
     }
 
     pub fn inspect(&self, cursor: &Cursor) -> Option<InspectResult> {
@@ -132,9 +202,19 @@ impl PolicyWorkspace {
     pub fn dependencies(&self, target: &str) -> DependencyNode {
         self.db.dependencies(target)
     }
+
+    pub fn dependencies_scoped(&self, target: &str, document: Option<&str>) -> DependencyNode {
+        if let Some(doc) = document {
+            if self.db.is_graph(doc) {
+                let doc_arc: Arc<str> = Arc::from(doc);
+                return self.db.graph_dependencies(&doc_arc, target);
+            }
+        }
+        self.db.dependencies(target)
+    }
 }
 
-impl Default for PolicyWorkspace {
+impl Default for Workspace {
     fn default() -> Self {
         Self::new()
     }

@@ -432,14 +432,18 @@ impl IntelliSense {
     }
 
     pub fn reads(&mut self, source: &str) -> Vec<ReadDependency> {
-        self.reads_inner(source, false)
+        self.reads_inner(source, false).reads
     }
 
     pub fn reads_unary(&mut self, source: &str) -> Vec<ReadDependency> {
-        self.reads_inner(source, true)
+        self.reads_inner(source, true).reads
     }
 
-    fn reads_inner(&mut self, source: &str, unary: bool) -> Vec<ReadDependency> {
+    pub fn dependencies(&mut self, source: &str) -> DependencyResult {
+        self.reads_inner(source, false)
+    }
+
+    fn reads_inner(&mut self, source: &str, unary: bool) -> DependencyResult {
         self.arena.reset();
         let arena = &self.arena;
         let result = (|| {
@@ -460,7 +464,7 @@ impl IntelliSense {
             } else {
                 DependencyResolutionWalker::walk(ast, &metadata)
             };
-            Some(dep.reads)
+            Some(dep)
         })();
         result.unwrap_or_default()
     }

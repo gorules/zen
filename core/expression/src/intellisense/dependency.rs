@@ -367,7 +367,11 @@ impl<'a> DependencyResolutionWalker<'a> {
 
         let root_name: Rc<str> = match chain.root {
             Node::Identifier(name) if *name == "$" => {
-                self.resolve_pointer_chain(&chain, scope);
+                if scope.pointer_collection.is_some() {
+                    self.resolve_pointer_chain(&chain, scope);
+                } else {
+                    self.reference_dollar_chain(&chain, scope);
+                }
                 return;
             }
             Node::Identifier(name) => Rc::from(*name),
@@ -480,6 +484,33 @@ impl<'a> DependencyResolutionWalker<'a> {
                 via_index_for_group,
                 scope,
             );
+        }
+    }
+
+    fn reference_dollar_chain(&mut self, chain: &FlatChain, scope: &mut Scope) {
+        let mut path: Vec<Rc<str>> = vec![Rc::from("$")];
+        let mut spans = vec![self.node_span(chain.root)];
+        let mut grouping = true;
+        for segment in &chain.segments {
+            match segment {
+                ChainSegment::Field { name, prop } if grouping => {
+                    path.push(name.clone());
+                    spans.push(self.node_span(prop));
+                }
+                ChainSegment::Field { .. } => {}
+                ChainSegment::Dynamic { prop } => {
+                    grouping = false;
+                    self.resolve(prop, scope);
+                }
+            }
+        }
+        if path.len() > 1 {
+            self.references.push(Reference {
+                path,
+                spans,
+                via_alias: None,
+                via_index: None,
+            });
         }
     }
 

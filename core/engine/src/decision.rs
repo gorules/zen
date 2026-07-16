@@ -86,6 +86,7 @@ impl Decision {
                 custom_node: self.adapter.clone(),
                 http_handler: self.http_handler.clone(),
                 compiled_cache: self.content.compiled_cache.clone(),
+                stripped_functions: self.content.stripped_functions.clone(),
                 validator_cache: Arc::new(OnceCell::from(self.validator_cache.clone())),
                 ..Default::default()
             },

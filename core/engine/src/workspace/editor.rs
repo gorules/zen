@@ -7,10 +7,10 @@ use zen_expression::nl::NlResult;
 use zen_expression::variable::VariableType;
 
 use crate::policy::blocks::IntelliSenseSource;
-use crate::policy::db::{Db, Snapshot};
-use crate::policy::ir::{DataModelIr, PropertyTypeIr};
+use crate::policy::ir::{DataModelIr, DictionaryIr, PropertyTypeIr};
 use crate::policy::queries::scope::EntityGraph;
-use crate::policy::types::{
+use crate::workspace::db::{Db, Snapshot};
+use crate::workspace::types::{
     BlockRef, Completion, Cursor, CursorTarget, EngineEdit, ExpressionKind, InspectResult,
     NlExpression, PrepareRename, ReferenceKind, ReferenceSite, RenameTarget, Span, SpanOps,
 };
@@ -19,7 +19,7 @@ impl Db {
     pub fn inspect(&self, cursor: &Cursor) -> Option<InspectResult> {
         let (source, _, scope) = self.resolve_cursor(cursor)?;
         let r = self
-            .intellisense()
+            .cursor_intellisense(cursor)
             .borrow_mut()
             .inspect(&source, cursor.pos, &scope)?;
         Some(InspectResult {
@@ -33,12 +33,24 @@ impl Db {
         let Some((source, _, scope)) = self.resolve_cursor(cursor) else {
             return Vec::new();
         };
-        self.intellisense()
+        let pos = cursor.pos.min(SpanOps::char_len(&source));
+        self.cursor_intellisense(cursor)
             .borrow_mut()
-            .completions(&source, cursor.pos, &scope)
+            .completions(&source, pos, &scope)
+    }
+
+    fn cursor_intellisense(&self, cursor: &Cursor) -> crate::policy::blocks::SharedIntelliSense {
+        if self.is_graph(&cursor.policy_path) {
+            self.graph_intellisense()
+        } else {
+            self.intellisense()
+        }
     }
 
     pub fn nl(&self, policy: &str) -> Vec<NlExpression> {
+        if self.is_graph(policy) {
+            return self.graph_nl(policy);
+        }
         let policy_arc: Arc<str> = Arc::from(policy);
         let Some(parsed) = self.parsed(&policy_arc) else {
             return Vec::new();
@@ -61,7 +73,7 @@ impl Db {
         let (kind, scope, expected) = self.nl_scope(cursor)?;
         let unary = matches!(kind, ExpressionKind::Unary);
         let labels = self.nl_label_resolver(&cursor.policy_path);
-        let intellisense = self.intellisense();
+        let intellisense = self.cursor_intellisense(cursor);
         let mut is = intellisense.borrow_mut();
         is.set_nl_labels(labels);
         let mut result =
@@ -78,16 +90,12 @@ impl Db {
         Some(result)
     }
 
-    fn nl_label_resolver(
+    pub(crate) fn nl_label_resolver(
         &self,
         policy: &str,
     ) -> Option<zen_expression::intellisense::NlLabelResolver> {
-        let unit = self.unit(policy);
-        if unit.dictionary_blocks.is_empty() {
-            return None;
-        }
         let mut labels: HashMap<Arc<str>, HashMap<Arc<str>, Arc<str>>> = HashMap::new();
-        for (name, dict) in &unit.dictionaries {
+        let mut add = |name: Arc<str>, dict: &DictionaryIr| {
             let entries: HashMap<Arc<str>, Arc<str>> = dict
                 .entries
                 .iter()
@@ -95,7 +103,17 @@ impl Db {
                 .map(|e| (e.value.clone(), e.label.clone()))
                 .collect();
             if !entries.is_empty() {
-                labels.insert(name.clone(), entries);
+                labels.insert(name, entries);
+            }
+        };
+        if self.is_graph(policy) {
+            for entry in self.graph_dictionary_blocks(&self.graph_imports(policy)) {
+                add(entry.ir.name.clone(), entry.ir.as_ref());
+            }
+        } else {
+            let unit = self.unit(policy);
+            for (name, dict) in &unit.dictionaries {
+                add(name.clone(), dict.as_ref());
             }
         }
         if labels.is_empty() {
@@ -110,6 +128,13 @@ impl Db {
         &self,
         cursor: &Cursor,
     ) -> Option<(ExpressionKind, VariableType, Option<VariableType>)> {
+        if self.is_graph(&cursor.policy_path) {
+            let (_, kind, scope) = self.graph_resolve_cursor(cursor)?;
+            let expected = (!matches!(kind, ExpressionKind::Unary))
+                .then(|| self.graph_cell_expected(cursor))
+                .flatten();
+            return Some((kind, scope, expected));
+        }
         let block = self.block_ir(&BlockRef {
             policy_path: cursor.policy_path.clone(),
             block_id: cursor.block_id.clone(),
@@ -122,6 +147,9 @@ impl Db {
     }
 
     pub fn prepare_rename(&self, cursor: &Cursor) -> Option<PrepareRename> {
+        if self.is_graph(&cursor.policy_path) {
+            return self.graph_prepare_rename(cursor);
+        }
         if let Some(result) = self.prepare_rename_data_model(cursor) {
             return Some(result);
         }
@@ -139,6 +167,7 @@ impl Db {
                 let Some(&span) = reference.spans.get(i) else {
                     return;
                 };
+                let span = SpanOps::char_span(&source, span);
                 if span.0 <= cursor.pos && cursor.pos < span.1 {
                     found = Some(PrepareRename { target: t, span });
                 }
@@ -151,6 +180,12 @@ impl Db {
     }
 
     pub fn rename(&self, target: &RenameTarget, new_name: &str) -> Vec<EngineEdit> {
+        if let RenameTarget::GraphProperty { document, path } = target {
+            return self.graph_rename(document, path, new_name);
+        }
+        if let RenameTarget::GraphNode { document, node_id } = target {
+            return self.graph_node_rename(document, node_id, new_name);
+        }
         let mut per_block: HashMap<BlockRef, Vec<RenameSite>> = HashMap::new();
         self.walk_renamable(target, |site| {
             let key = BlockRef {
@@ -159,10 +194,12 @@ impl Db {
             };
             per_block.entry(key).or_default().push(site);
         });
-        per_block
+        let mut edits: Vec<EngineEdit> = per_block
             .into_iter()
             .filter_map(|(block_ref, sites)| self.build_replace_block(block_ref, sites, new_name))
-            .collect()
+            .collect();
+        edits.extend(self.replace_node_edits(self.policy_caller_sites(target), new_name));
+        edits
     }
 
     fn build_replace_block(
@@ -185,18 +222,22 @@ impl Db {
     }
 
     pub fn references(&self, target: &RenameTarget) -> Vec<ReferenceSite> {
+        if let RenameTarget::GraphProperty { document, path } = target {
+            return self.graph_references(document, path);
+        }
+        if let RenameTarget::GraphNode { document, node_id } = target {
+            return self.graph_node_references(document, node_id);
+        }
         let mut sites = Vec::new();
         self.walk_renamable(target, |site| {
             sites.push(site.into_reference());
         });
-        sites.sort_by(|a, b| {
-            a.kind
-                .display_order()
-                .cmp(&b.kind.display_order())
-                .then_with(|| a.policy_path.cmp(&b.policy_path))
-                .then_with(|| a.block_id.cmp(&b.block_id))
-                .then_with(|| a.span.0.cmp(&b.span.0))
-        });
+        sites.extend(
+            self.policy_caller_sites(target)
+                .into_iter()
+                .map(RenameSite::into_reference),
+        );
+        sites.sort_by(ReferenceSite::display_cmp);
         sites
     }
 
@@ -244,29 +285,31 @@ impl Db {
     }
 
     fn resolve_cursor(&self, cursor: &Cursor) -> Option<(Arc<str>, ExpressionKind, VariableType)> {
+        if self.is_graph(&cursor.policy_path) {
+            return self.graph_resolve_cursor(cursor);
+        }
         let rule = self.block_ir(&BlockRef {
             policy_path: cursor.policy_path.clone(),
             block_id: cursor.block_id.clone(),
         })?;
-        let (source, kind, narrowed) = rule.resolve_cursor(
+        rule.resolve_cursor(
             cursor,
             self.enriched(&cursor.policy_path).scope.shallow_clone(),
-        )?;
-        (cursor.pos as usize <= source.chars().count()).then_some((source, kind, narrowed))
+        )
     }
 }
 
-struct RenameSite {
-    policy_path: Arc<str>,
-    block_id: Arc<str>,
-    expression_id: Option<Arc<str>>,
-    source: Arc<str>,
-    span: Span,
-    kind: ReferenceKind,
+pub(crate) struct RenameSite {
+    pub(crate) policy_path: Arc<str>,
+    pub(crate) block_id: Arc<str>,
+    pub(crate) expression_id: Option<Arc<str>>,
+    pub(crate) source: Arc<str>,
+    pub(crate) span: Span,
+    pub(crate) kind: ReferenceKind,
 }
 
 impl RenameSite {
-    fn into_reference(self) -> ReferenceSite {
+    pub(crate) fn into_reference(self) -> ReferenceSite {
         ReferenceSite {
             policy_path: self.policy_path,
             block_id: self.block_id,
@@ -296,6 +339,7 @@ impl RenameSite {
                 let start = SpanOps::char_len(src_entity) + 1;
                 Some((start, start + SpanOps::char_len(src_field)))
             }
+            RenameTarget::GraphProperty { .. } | RenameTarget::GraphNode { .. } => None,
         }
     }
 }
@@ -309,7 +353,7 @@ impl Db {
         policies.sort();
         let units: Vec<(
             Arc<str>,
-            std::sync::Arc<crate::policy::db::Unit>,
+            std::sync::Arc<crate::workspace::db::Unit>,
             std::sync::Arc<crate::policy::queries::dependency::EnrichedState>,
         )> = policies
             .iter()
@@ -340,7 +384,7 @@ impl Db {
                                 block_id: loc.block_id.clone(),
                                 expression_id: Some(loc.expression_id.clone()),
                                 source: loc.source.clone(),
-                                span,
+                                span: SpanOps::char_span(&loc.source, span),
                                 kind: ReferenceKind::ExpressionRead,
                             });
                         });
@@ -484,12 +528,13 @@ impl EntityGraph {
     }
 }
 
-struct RenameRewrites {
+pub(crate) struct RenameRewrites {
     by_source: HashMap<Arc<str>, String>,
+    protect_node_keys: bool,
 }
 
 impl RenameRewrites {
-    fn from_sites(sites: &[RenameSite], new_name: &str) -> Self {
+    pub(crate) fn from_sites(sites: &[RenameSite], new_name: &str) -> Self {
         let mut spans_by_source: HashMap<Arc<str>, Vec<Span>> = HashMap::new();
         for site in sites {
             spans_by_source
@@ -504,10 +549,18 @@ impl RenameRewrites {
                 (source, new)
             })
             .collect();
-        Self { by_source }
+        Self {
+            by_source,
+            protect_node_keys: false,
+        }
     }
 
-    fn apply_to(&self, value: &mut Value) {
+    pub(crate) fn protecting_node_keys(mut self) -> Self {
+        self.protect_node_keys = true;
+        self
+    }
+
+    pub(crate) fn apply_to(&self, value: &mut Value) {
         match value {
             Value::String(s) => {
                 if let Some(new) = self.by_source.get(s.as_str()) {
@@ -517,6 +570,21 @@ impl RenameRewrites {
             Value::Array(arr) => arr.iter_mut().for_each(|v| self.apply_to(v)),
             Value::Object(obj) => {
                 for (key, child) in obj.iter_mut() {
+                    if self.protect_node_keys
+                        && matches!(
+                            key.as_str(),
+                            "id" | "_id"
+                                | "type"
+                                | "name"
+                                | "kind"
+                                | "sourceId"
+                                | "targetId"
+                                | "sourceHandle"
+                                | "targetHandle"
+                        )
+                    {
+                        continue;
+                    }
                     if matches!(key.as_str(), "dataJson" | "schemaJson") {
                         self.apply_to_json_envelope(child);
                     } else {

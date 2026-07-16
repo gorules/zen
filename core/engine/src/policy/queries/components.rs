@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use ahash::{HashMap, HashMapExt, HashSet};
 
-use crate::policy::db::Db;
-use crate::policy::types::WriteConflict;
+use crate::workspace::db::Db;
+use crate::workspace::types::WriteConflict;
 
 impl Db {
     pub fn component_members(&self, policy: &str) -> Vec<Arc<str>> {

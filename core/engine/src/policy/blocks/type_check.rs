@@ -3,7 +3,7 @@ use std::sync::Arc;
 use zen_expression::variable::VariableType;
 
 use super::context::AnalysisContext;
-use crate::policy::types::{CursorTarget, DiagnosticCode};
+use crate::workspace::types::{CursorTarget, DiagnosticCode};
 
 pub(super) struct TypeCheck;
 

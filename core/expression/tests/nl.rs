@@ -713,3 +713,229 @@ fn complex_single_arg_keeps_group() {
     assert_eq!(k[1], NlTokenKind::GroupOpen);
     assert_eq!(*k.last().unwrap(), NlTokenKind::GroupClose);
 }
+
+fn ticket_array() -> VariableType {
+    array(enum_t("Ticket", &["award", "regular", "upgrade"]))
+}
+
+fn quant_hint(result: &NlResult) -> (&EditHint, NlTokenKind) {
+    let token = result
+        .tokens
+        .iter()
+        .find(|t| matches!(t.token, NlTokenKind::Op { .. }))
+        .unwrap();
+    (token.hint.as_ref().unwrap(), token.token.clone())
+}
+
+#[test]
+fn contains_any_unary() {
+    let result = run(
+        "some($, # in ['award'])",
+        true,
+        Some(ticket_array()),
+        &VariableType::Any,
+    );
+
+    assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+
+    let k = kinds(&result);
+    assert_eq!(k[0], op_implied(OpSym::ContainsAny));
+    assert_eq!(
+        k[1],
+        NlTokenKind::EnumList {
+            selected: vec!["award".into()],
+        }
+    );
+    assert_eq!(k.len(), 2);
+
+    let (hint, _) = quant_hint(&result);
+    let EditHint::QuantSelect {
+        options,
+        subject,
+        list,
+    } = hint
+    else {
+        panic!("expected quant select, got {hint:?}");
+    };
+    assert_eq!(subject.as_ref(), "$");
+    assert_eq!(list.as_ref(), "['award']");
+    assert_eq!(
+        options,
+        &vec![
+            OpSym::ContainsAny,
+            OpSym::ContainsAll,
+            OpSym::ContainsNone,
+            OpSym::ContainsOnly,
+        ]
+    );
+}
+
+#[test]
+fn contains_all_flipped_unary() {
+    let result = run(
+        "all(['award', 'regular'], # in $)",
+        true,
+        Some(ticket_array()),
+        &VariableType::Any,
+    );
+
+    assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+
+    let k = kinds(&result);
+    assert_eq!(k[0], op_implied(OpSym::ContainsAll));
+    assert_eq!(
+        k[1],
+        NlTokenKind::EnumList {
+            selected: vec!["award".into(), "regular".into()],
+        }
+    );
+
+    let (hint, _) = quant_hint(&result);
+    let EditHint::QuantSelect { subject, list, .. } = hint else {
+        panic!("expected quant select, got {hint:?}");
+    };
+    assert_eq!(subject.as_ref(), "$");
+    assert_eq!(list.as_ref(), "['award', 'regular']");
+}
+
+#[test]
+fn contains_none_unary() {
+    let result = run(
+        "none($, # in ['award'])",
+        true,
+        Some(ticket_array()),
+        &VariableType::Any,
+    );
+    assert_eq!(kinds(&result)[0], op_implied(OpSym::ContainsNone));
+
+    let negated = run(
+        "all($, # not in ['award'])",
+        true,
+        Some(ticket_array()),
+        &VariableType::Any,
+    );
+    assert_eq!(kinds(&negated)[0], op_implied(OpSym::ContainsNone));
+}
+
+#[test]
+fn contains_only_unary() {
+    let result = run(
+        "all($, # in ['award', 'regular'])",
+        true,
+        Some(ticket_array()),
+        &VariableType::Any,
+    );
+    assert_eq!(kinds(&result)[0], op_implied(OpSym::ContainsOnly));
+}
+
+#[test]
+fn contains_any_field_subject() {
+    let root = obj(&[(
+        "order",
+        obj(&[("tags", array(enum_t("Tag", &["vip", "fragile"])))]),
+    )]);
+    let result = run("some(order.tags, # in ['vip'])", false, None, &root);
+
+    assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+
+    let k = kinds(&result);
+    assert!(
+        matches!(&k[0], NlTokenKind::Field { path, .. } if path.len() == 2 && path[0].as_ref() == "order")
+    );
+    assert_eq!(k[1], op(OpSym::ContainsAny));
+    assert_eq!(
+        k[2],
+        NlTokenKind::EnumList {
+            selected: vec!["vip".into()],
+        }
+    );
+}
+
+#[test]
+fn contains_single_flip_unary() {
+    let result = run(
+        "'award' in $",
+        true,
+        Some(ticket_array()),
+        &VariableType::Any,
+    );
+
+    assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+
+    let k = kinds(&result);
+    assert_eq!(k[0], op_implied(OpSym::Contains));
+    assert_eq!(
+        k[1],
+        NlTokenKind::Str {
+            value: "award".into(),
+        }
+    );
+
+    let op_token = &result.tokens[0];
+    assert_eq!(
+        op_token.hint,
+        Some(EditHint::OpSelect {
+            options: choices(&[OpSym::Contains, OpSym::NotContains]),
+        })
+    );
+    let needle = &result.tokens[1];
+    assert!(matches!(needle.hint, Some(EditHint::Select { .. })));
+
+    let negated = run(
+        "'award' not in $",
+        true,
+        Some(ticket_array()),
+        &VariableType::Any,
+    );
+    assert_eq!(kinds(&negated)[0], op_implied(OpSym::NotContains));
+}
+
+#[test]
+fn contains_flip_keeps_literal_lists() {
+    let root = obj(&[("tier", enum_t("Tier", &["gold", "silver"]))]);
+    let result = run("tier in ['gold']", false, None, &root);
+
+    let k = kinds(&result);
+    assert!(!k.iter().any(|kind| matches!(
+        kind,
+        NlTokenKind::Op {
+            sym: OpSym::Contains,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn quantifier_func_select() {
+    let root = obj(&[("orders", array(VariableType::Number))]);
+    let result = run("some(orders, # > 100)", false, None, &root);
+
+    let func = result
+        .tokens
+        .iter()
+        .find(|t| matches!(t.token, NlTokenKind::Func { .. }))
+        .unwrap();
+    assert_eq!(func.span, (0, 4));
+    let Some(EditHint::FuncSelect { options }) = &func.hint else {
+        panic!("expected func select, got {:?}", func.hint);
+    };
+    assert_eq!(
+        options
+            .iter()
+            .map(|option| option.as_ref())
+            .collect::<Vec<_>>(),
+        vec!["all", "some", "none"]
+    );
+}
+
+#[test]
+fn non_array_subject_falls_through() {
+    let root = obj(&[("name", VariableType::String)]);
+    let result = run("some(name, # in ['a'])", false, None, &root);
+
+    let k = kinds(&result);
+    assert!(matches!(
+        &k[0],
+        NlTokenKind::Func { sym, closure: true } if sym.as_ref() == "some"
+    ));
+}

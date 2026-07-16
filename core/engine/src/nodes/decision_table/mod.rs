@@ -2,6 +2,7 @@ use crate::nodes::definition::NodeHandler;
 use crate::nodes::result::NodeResult;
 use crate::nodes::{NodeContext, NodeResponse};
 use ahash::HashMap;
+use base64::Engine as _;
 use serde::Serialize;
 use std::ops::Deref;
 use std::rc::Rc;
@@ -41,33 +42,67 @@ impl DecisionTableNodeHandler {
         let mut isolate = Isolate::with_environment(ctx.input.depth_clone(1))
             .with_cache(ctx.extensions.compiled_cache.clone());
 
-        for (index, rule) in ctx.node.rules.iter().enumerate() {
-            if let Some(result) = self.evaluate_row(&ctx, rule, &mut isolate) {
-                return match result {
-                    RowResult::Output(output) => ctx.success(output),
-                    RowResult::WithTrace {
-                        output,
-                        reference_map,
-                        rule,
-                    } => {
-                        ctx.trace(|t| {
-                            *t = DecisionTableNodeTrace::FirstHit(DecisionTableRowTrace {
-                                reference_map,
-                                index,
-                                rule,
-                            })
-                        });
-
-                        ctx.success(output)
-                    }
-                };
+        if !ctx.config.trace {
+            for rule in ctx.node.rules.iter() {
+                if let Some(RowResult::Output(output)) = self.evaluate_row(&ctx, rule, &mut isolate)
+                {
+                    return ctx.success(output);
+                }
             }
+            return Ok(NodeResponse {
+                output: Variable::Null,
+                trace_data: None,
+            });
         }
 
-        Ok(NodeResponse {
-            output: Variable::Null,
-            trace_data: None,
-        })
+        let bytes_per_row = ctx.node.inputs.len().div_ceil(8);
+        let mut bits = vec![0u8; bytes_per_row * ctx.node.rules.len()];
+        for (row, rule) in ctx.node.rules.iter().enumerate() {
+            for (col, input) in ctx.node.inputs.iter().enumerate() {
+                if Self::cell_passes(rule, input, &mut isolate) {
+                    bits[row * bytes_per_row + (col >> 3)] |= 1 << (col & 7);
+                }
+            }
+        }
+        let input_pass: Rc<str> = Rc::from(base64::engine::general_purpose::STANDARD.encode(&bits));
+
+        let hit = ctx.node.rules.iter().enumerate().find_map(|(index, rule)| {
+            match self.evaluate_row(&ctx, rule, &mut isolate)? {
+                RowResult::WithTrace {
+                    output,
+                    reference_map,
+                    rule,
+                } => Some((index, output, reference_map, rule)),
+                RowResult::Output(output) => {
+                    Some((index, output, Default::default(), Default::default()))
+                }
+            }
+        });
+
+        match hit {
+            Some((index, output, reference_map, rule)) => {
+                ctx.trace(|t| {
+                    *t = DecisionTableNodeTrace::FirstHit(DecisionTableRowTrace {
+                        reference_map,
+                        index: Some(index),
+                        rule,
+                        input_pass: Some(input_pass.clone()),
+                    })
+                });
+                ctx.success(output)
+            }
+            None => {
+                ctx.trace(|t| {
+                    *t = DecisionTableNodeTrace::FirstHit(DecisionTableRowTrace {
+                        reference_map: Default::default(),
+                        index: None,
+                        rule: Default::default(),
+                        input_pass: Some(input_pass),
+                    })
+                });
+                ctx.success(Variable::Null)
+            }
+        }
     }
 
     fn handle_collect(&self, ctx: DecisionTableContext) -> NodeResult {
@@ -89,9 +124,10 @@ impl DecisionTableNodeHandler {
                     } => {
                         outputs.push(output);
                         traces.push(DecisionTableRowTrace {
-                            index,
+                            index: Some(index),
                             rule,
                             reference_map,
+                            input_pass: None,
                         });
                     }
                 }
@@ -105,6 +141,30 @@ impl DecisionTableNodeHandler {
         ctx.success(Variable::from_array(outputs))
     }
 
+    fn cell_passes(
+        rule: &HashMap<Arc<str>, Arc<str>>,
+        input: &zen_types::decision::DecisionTableInputField,
+        isolate: &mut Isolate,
+    ) -> bool {
+        let rule_value = rule.get(&input.id).map(Deref::deref).unwrap_or("");
+        if rule_value.is_empty() {
+            return true;
+        }
+        match &input.field {
+            None => isolate
+                .run_standard(rule_value)
+                .ok()
+                .and_then(|result| result.as_bool())
+                .unwrap_or(false),
+            Some(field) => {
+                if isolate.set_reference(field).is_err() {
+                    return false;
+                }
+                isolate.run_unary(rule_value).unwrap_or(false)
+            }
+        }
+    }
+
     fn evaluate_row<'a>(
         &self,
         ctx: &'a DecisionTableContext,
@@ -113,10 +173,9 @@ impl DecisionTableNodeHandler {
     ) -> Option<RowResult> {
         let content = &ctx.node;
         for input in content.inputs.iter() {
-            let rule_value = rule.get(&input.id)?;
-            if rule_value.is_empty() {
+            let Some(rule_value) = rule.get(&input.id).filter(|value| !value.is_empty()) else {
                 continue;
-            }
+            };
 
             match &input.field {
                 None => {
@@ -136,10 +195,9 @@ impl DecisionTableNodeHandler {
 
         let outputs = Variable::empty_object();
         for output in content.outputs.iter() {
-            let rule_value = rule.get(&output.id)?;
-            if rule_value.is_empty() {
+            let Some(rule_value) = rule.get(&output.id).filter(|value| !value.is_empty()) else {
                 continue;
-            }
+            };
 
             let res = isolate.run_standard(rule_value).ok()?;
             outputs.dot_insert(output.field.deref(), res);
@@ -166,7 +224,7 @@ impl DecisionTableNodeHandler {
         }
 
         for input in content.inputs.iter() {
-            let rule_value = rule.get(input.id.deref())?;
+            let rule_value = rule.get(input.id.deref()).map(Deref::deref).unwrap_or("");
             let Some(input_field) = &input.field else {
                 continue;
             };
@@ -178,10 +236,7 @@ impl DecisionTableNodeHandler {
             }
 
             let input_identifier = format!("{input_field}[{}]", &input.id);
-            expressions.insert(
-                Rc::from(input_identifier.as_str()),
-                Rc::from(rule_value.deref()),
-            );
+            expressions.insert(Rc::from(input_identifier.as_str()), Rc::from(rule_value));
         }
 
         Some(RowResult::WithTrace {
@@ -203,9 +258,11 @@ enum RowResult {
 
 #[derive(Debug, Clone, Serialize, ToVariable)]
 pub struct DecisionTableRowTrace {
-    index: usize,
+    index: Option<usize>,
     reference_map: HashMap<Rc<str>, Variable>,
     rule: HashMap<Rc<str>, Rc<str>>,
+    #[serde(rename = "inputPass")]
+    input_pass: Option<Rc<str>>,
 }
 
 #[derive(Debug, Clone, Serialize, ToVariable)]

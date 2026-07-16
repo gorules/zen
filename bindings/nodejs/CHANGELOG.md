@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.7](https://github.com/gorules/zen/compare/nodejs-v1.0.0-beta.6...nodejs-v1.0.0-beta.7) (2026-07-16)
+
+
+### Features
+
+* graph workspace and static analysis ([#483](https://github.com/gorules/zen/issues/483)) ([8d1910c](https://github.com/gorules/zen/commit/8d1910cc4ed31153e724173d10b5a612b3cbdfae))
+
 ## [1.0.0-beta.6](https://github.com/gorules/zen/compare/nodejs-v1.0.0-beta.5...nodejs-v1.0.0-beta.6) (2026-07-10)
 
 ## [1.0.0-beta.5](https://github.com/gorules/zen/compare/nodejs-v1.0.0-beta.4...nodejs-v1.0.0-beta.5) (2026-07-08)

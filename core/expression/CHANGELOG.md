@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.0.0-beta.6](https://github.com/gorules/zen/compare/zen-expression-v1.0.0-beta.5...zen-expression-v1.0.0-beta.6) (2026-07-16)
+
+
+### Features
+
+* graph workspace and static analysis ([#483](https://github.com/gorules/zen/issues/483)) ([8d1910c](https://github.com/gorules/zen/commit/8d1910cc4ed31153e724173d10b5a612b3cbdfae))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * zen-macros bumped from 1.0.0-beta.5 to 1.0.0-beta.6
+    * zen-types bumped from 1.0.0-beta.5 to 1.0.0-beta.6
+
 ## [1.0.0-beta.5](https://github.com/gorules/zen/compare/zen-expression-v1.0.0-beta.4...zen-expression-v1.0.0-beta.5) (2026-07-10)
 
 

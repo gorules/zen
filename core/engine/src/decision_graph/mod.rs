@@ -1,6 +1,7 @@
 pub(crate) mod cleaner;
 mod error;
 pub(crate) mod graph;
+mod schema_dict;
 mod tracer;
 mod walker;
 

@@ -9,8 +9,8 @@ use crate::policy::blocks::{AssertionIr, Block, DecisionTableIr, ExpressionIr, M
 use crate::policy::raw::{
     BlockDoc, DataModelDoc, DictionaryDoc, PolicyDocument, PropertyTypeDoc, ScopeDoc,
 };
-use crate::policy::types::{Diagnostic, DiagnosticCode, DiagnosticLocation, SchemaFieldKind};
 use crate::policy::ArcStrTrim;
+use crate::workspace::types::{Diagnostic, DiagnosticCode, DiagnosticLocation, SchemaFieldKind};
 
 pub type PropertyPath = Arc<str>;
 

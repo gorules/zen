@@ -14,7 +14,7 @@ use zen_types::decision::{
 use base64::Engine as _;
 
 use crate::policy::queries::scope::VariableTypeScope;
-use crate::policy::types::{
+use crate::workspace::types::{
     BlockTrace, Cursor, CursorTarget, DecisionTableExtras, Diagnostic, DiagnosticCode,
     ExpressionKind, NlExpression,
 };
@@ -659,7 +659,7 @@ impl DecisionTableIr {
         })
     }
 
-    fn cells_cover(tests: &[ArmTest], resolved_type: &VariableType) -> bool {
+    pub(crate) fn cells_cover(tests: &[ArmTest], resolved_type: &VariableType) -> bool {
         let (resolved, nullable) = resolved_type.unwrap_nullable();
         if nullable {
             return false;
@@ -1062,11 +1062,14 @@ impl DecisionTableIr {
             .rules
             .iter()
             .find(|r| r.get(ROW_ID_KEY).map(|s| s.as_ref()) == Some(row_id.as_ref()))?;
-        let source = rule.get(&col_id).filter(|c| !c.is_empty()).cloned()?;
+        let source = rule.get(&col_id).cloned().unwrap_or_else(|| Arc::from(""));
 
         let (kind, narrowed_scope) = match column {
             ColumnRef::Input(c) => match c.field.as_deref() {
-                Some(f) if !f.is_empty() => (ExpressionKind::Unary, scope.resolve_at(f)),
+                Some(f) if !f.is_empty() => {
+                    let field_type = scope.resolve_at(f);
+                    (ExpressionKind::Unary, scope.with_dollar(&field_type))
+                }
                 _ => (ExpressionKind::Standard, scope),
             },
             ColumnRef::Output(_) => (ExpressionKind::Standard, scope),

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use ahash::HashSet;
 
 use crate::policy::blocks::{BlockKind, DecisionTableIr};
-use crate::policy::types::{Diagnostic, DiagnosticCode, DiagnosticLocation};
+use crate::workspace::types::{Diagnostic, DiagnosticCode, DiagnosticLocation};
 
 use super::{LintContext, LintRule};
 

@@ -12,16 +12,16 @@ use crate::policy::blocks::{
     Block, BlockKind, BlockReadPlan, ExecutionContext, ExecutionError, MatchSelection,
     PropertyRead, TableSelection,
 };
-use crate::policy::db::Db;
 use crate::policy::ir::PropertyPath;
 use crate::policy::queries::dependency::{DataModelPaths, EvalGraph, WriteScope};
 use crate::policy::queries::path::PathClassifier;
 use crate::policy::queries::scope::{EntitySources, ReferenceField};
 use crate::policy::refs::RefPoolIndex;
-use crate::policy::types::{
+use crate::policy::validator::InputSchema;
+use crate::workspace::db::Db;
+use crate::workspace::types::{
     BlockExecution, BlockRef, BlockTrace, EvaluateRequest, EvaluationError, EvaluationResult, Trace,
 };
-use crate::policy::validator::InputSchema;
 
 pub(crate) struct EvalArtifact {
     pub(crate) members: HashSet<Arc<str>>,
@@ -40,6 +40,9 @@ pub(crate) struct EvalArtifact {
 
 impl Db {
     pub fn evaluate(&self, req: &EvaluateRequest) -> Result<EvaluationResult, EvaluationError> {
+        if self.is_graph(&req.policy_path) {
+            return Err(EvaluationError::GraphNotEvaluable(req.policy_path.clone()));
+        }
         if self.raw_policy(&req.policy_path).is_none() {
             return Err(EvaluationError::PolicyNotFound(req.policy_path.clone()));
         }
@@ -51,6 +54,9 @@ impl Db {
         &self,
         req: &EvaluateRequest,
     ) -> Result<EvaluationResult, EvaluationError> {
+        if self.is_graph(&req.policy_path) {
+            return Err(EvaluationError::GraphNotEvaluable(req.policy_path.clone()));
+        }
         if self.raw_policy(&req.policy_path).is_none() {
             return Err(EvaluationError::PolicyNotFound(req.policy_path.clone()));
         }

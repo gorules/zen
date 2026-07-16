@@ -6,7 +6,7 @@ use zen_expression::intellisense::IntelliSense;
 use zen_expression::variable::{Variable, VariableType};
 use zen_expression::Isolate;
 
-use crate::policy::types::{
+use crate::workspace::types::{
     BlockTrace, ConditionTrace, Cursor, CursorTarget, Diagnostic, DiagnosticCode, ExpressionKind,
     NlExpression,
 };
@@ -253,9 +253,6 @@ impl AssertionIr {
     ) -> Option<(Arc<str>, ExpressionKind, VariableType)> {
         match &cursor.target {
             CursorTarget::AssertionOutput => {
-                if self.output.is_empty() {
-                    return None;
-                }
                 Some((self.output.clone(), ExpressionKind::Standard, scope))
             }
             CursorTarget::Expression { id } => {

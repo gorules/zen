@@ -5,14 +5,17 @@ export type PolicyPropertyKind = 'input' | 'computed';
 export type PolicyFieldKind = 'scalar' | 'enum' | 'relationship' | 'reference';
 export type PolicySeverity = 'error' | 'warning' | 'hint';
 
-/** Text range, `[start, end)` byte offsets. */
+/** Text range, `[start, end)` character offsets. */
 export type PolicySpan = [number, number];
 
-/** Rename target — a top-level entity, an entity field, or a global property. */
+/** Rename target — a top-level entity, an entity field, a global property,
+ *  or a property path within a graph document. */
 export type PolicyRenameTarget =
   | { kind: 'entity'; name: string }
   | { kind: 'field'; entity: string; field: string }
-  | { kind: 'global'; name: string };
+  | { kind: 'global'; name: string }
+  | { kind: 'graphProperty'; document: string; path: string }
+  | { kind: 'graphNode'; document: string; nodeId: string };
 
 /** What kind of span a cursor is sitting in, with any disambiguation. */
 export type PolicyCursorTarget =
@@ -24,7 +27,8 @@ export type PolicyCursorTarget =
   | { kind: 'decisionTableHead'; col: string }
   | { kind: 'decisionTableCell'; row: string; col: string }
   | { kind: 'dataModelName' }
-  | { kind: 'dataModelProperty'; id: string };
+  | { kind: 'dataModelProperty'; id: string }
+  | { kind: 'transformInput' };
 
 /**
  * How an entity field came into existence — declared by a DataModel
@@ -58,6 +62,13 @@ export type PolicyDiagnosticCode =
   | 'MAX_DEPTH_EXCEEDED'
   | 'IMPORT_NOT_FOUND'
   | 'CIRCULAR_IMPORT'
+  | 'UNSUPPORTED_NESTED_ITERATION'
+  | 'INVALID_GRAPH_STRUCTURE'
+  | 'UNREACHABLE_NODE'
+  | 'MISSING_INPUT_SCHEMA'
+  | 'UNRESOLVED_FUNCTION_TYPE'
+  | 'IMPLICIT_ANY'
+  | 'UNCHECKED_NODE'
   | 'REDUNDANT_NULLISH'
   | 'REPEATED_DERIVATION'
   | 'PREFER_MATCH'
@@ -82,6 +93,8 @@ export type PolicyVariableType =
 /** Language-agnostic symbol key for an infix operator. The client maps the key to a localized phrase. */
 export type NlOpSym =
   | 'gt' | 'gte' | 'lt' | 'lte' | 'eq' | 'ne' | 'in' | 'notIn'
+  | 'contains' | 'notContains'
+  | 'containsAny' | 'containsAll' | 'containsNone' | 'containsOnly'
   | 'add' | 'sub' | 'mul' | 'div' | 'mod' | 'pow'
   | 'and' | 'or' | 'not' | 'coalesce';
 
@@ -128,11 +141,19 @@ export interface NlEnumOption {
  * (`options` indexes the `enums` table), expected dates, or the operator choices valid for the
  * operand types — ordered comparisons only for number/date/unknown operands, eq/ne otherwise.
  */
+/**
+ * `quantSelect` marks a quantified-membership phrase (contains any/all/none/only). `subject` and
+ * `list` are ready-to-splice ZEN source slices; the client rebuilds the whole spanned expression
+ * from its canonical template for the picked symbol. `funcSelect` swaps a closure-function name
+ * in place (all/some/none); the token span covers exactly the name.
+ */
 export type NlEditHint =
   | { kind: 'datePicker' }
   | { kind: 'select'; options: number }
   | { kind: 'multiSelect'; options: number }
-  | { kind: 'opSelect'; options: NlOpChoice[] };
+  | { kind: 'opSelect'; options: NlOpChoice[] }
+  | { kind: 'quantSelect'; options: NlOpSym[]; subject: string; list: string }
+  | { kind: 'funcSelect'; options: string[] };
 
 /**
  * One token in the symbolic NL stream. Structure is explicit via the
@@ -251,6 +272,12 @@ export type PolicyEngineEdit =
       policyPath: string;
       afterBlockId?: string;
       newBlock: PolicyWireBlock;
+    }
+  | {
+      kind: 'replaceNode';
+      document: string;
+      nodeId: string;
+      newNode: unknown;
     };
 
 /**

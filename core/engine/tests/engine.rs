@@ -212,7 +212,9 @@ async fn engine_function_imports() {
     let function_content = GraphContent {
         edges: function_content.edges,
         nodes: new_nodes,
+        imports: Vec::new(),
         compiled_cache: None,
+        stripped_functions: None,
     };
     let decision = DecisionEngine::default()
         .create_decision(Arc::new(function_content.into()))

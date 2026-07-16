@@ -7,7 +7,7 @@ use zen_expression::variable::{Variable, VariableType};
 
 use crate::policy::queries::scope::VariableTypeScope;
 
-use crate::policy::types::{
+use crate::workspace::types::{
     BlockTrace, ConditionTrace, Cursor, CursorTarget, Diagnostic, DiagnosticCode, ExpressionKind,
     NlExpression,
 };
@@ -466,18 +466,14 @@ impl MatchIr {
         scope: VariableType,
     ) -> Option<(Arc<str>, ExpressionKind, VariableType)> {
         match &cursor.target {
-            CursorTarget::MatchTarget => {
-                (!self.key.is_empty()).then(|| (self.key.clone(), ExpressionKind::Standard, scope))
-            }
+            CursorTarget::MatchTarget => Some((self.key.clone(), ExpressionKind::Standard, scope)),
             CursorTarget::Expression { id } => {
                 let arm = self.arms.iter().find(|a| a.id == *id)?;
-                (!arm.condition.is_empty())
-                    .then(|| (arm.condition.clone(), ExpressionKind::Standard, scope))
+                Some((arm.condition.clone(), ExpressionKind::Standard, scope))
             }
             CursorTarget::MatchValue { id } => {
                 let arm = self.arms.iter().find(|a| a.id == *id)?;
-                (!arm.value.is_empty())
-                    .then(|| (arm.value.clone(), ExpressionKind::Standard, scope))
+                Some((arm.value.clone(), ExpressionKind::Standard, scope))
             }
             _ => None,
         }

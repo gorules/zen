@@ -41,33 +41,48 @@ impl DecisionTableNodeHandler {
         let mut isolate = Isolate::with_environment(ctx.input.depth_clone(1))
             .with_cache(ctx.extensions.compiled_cache.clone());
 
-        for (index, rule) in ctx.node.rules.iter().enumerate() {
-            if let Some(result) = self.evaluate_row(&ctx, rule, &mut isolate) {
-                return match result {
-                    RowResult::Output(output) => ctx.success(output),
-                    RowResult::WithTrace {
-                        output,
-                        reference_map,
-                        rule,
-                    } => {
-                        ctx.trace(|t| {
-                            *t = DecisionTableNodeTrace::FirstHit(DecisionTableRowTrace {
-                                reference_map,
-                                index,
-                                rule,
-                            })
-                        });
-
-                        ctx.success(output)
-                    }
-                };
+        if !ctx.config.trace {
+            for rule in ctx.node.rules.iter() {
+                if let Some(RowResult::Output(output)) = self.evaluate_row(&ctx, rule, &mut isolate)
+                {
+                    return ctx.success(output);
+                }
             }
+            return Ok(NodeResponse {
+                output: Variable::Null,
+                trace_data: None,
+            });
         }
 
-        Ok(NodeResponse {
-            output: Variable::Null,
-            trace_data: None,
-        })
+        let hit = ctx.node.rules.iter().enumerate().find_map(|(index, rule)| {
+            match self.evaluate_row(&ctx, rule, &mut isolate)? {
+                RowResult::WithTrace {
+                    output,
+                    reference_map,
+                    rule,
+                } => Some((index, output, reference_map, rule)),
+                RowResult::Output(output) => {
+                    Some((index, output, Default::default(), Default::default()))
+                }
+            }
+        });
+
+        match hit {
+            Some((index, output, reference_map, rule)) => {
+                ctx.trace(|t| {
+                    *t = DecisionTableNodeTrace::FirstHit(DecisionTableRowTrace {
+                        reference_map,
+                        index,
+                        rule,
+                    })
+                });
+                ctx.success(output)
+            }
+            None => Ok(NodeResponse {
+                output: Variable::Null,
+                trace_data: None,
+            }),
+        }
     }
 
     fn handle_collect(&self, ctx: DecisionTableContext) -> NodeResult {
@@ -103,6 +118,32 @@ impl DecisionTableNodeHandler {
         });
 
         ctx.success(Variable::from_array(outputs))
+    }
+
+    pub(crate) fn cell_passes(
+        rule: &HashMap<Arc<str>, Arc<str>>,
+        input: &zen_types::decision::DecisionTableInputField,
+        isolate: &mut Isolate,
+    ) -> bool {
+        let Some(rule_value) = rule.get(&input.id) else {
+            return false;
+        };
+        if rule_value.is_empty() {
+            return true;
+        }
+        match &input.field {
+            None => isolate
+                .run_standard(rule_value)
+                .ok()
+                .and_then(|result| result.as_bool())
+                .unwrap_or(false),
+            Some(field) => {
+                if isolate.set_reference(field).is_err() {
+                    return false;
+                }
+                isolate.run_unary(rule_value).unwrap_or(false)
+            }
+        }
     }
 
     fn evaluate_row<'a>(

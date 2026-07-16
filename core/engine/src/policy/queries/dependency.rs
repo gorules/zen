@@ -10,11 +10,11 @@ use crate::policy::blocks::{
     AnalysisContext, AnalysisSummary, Block, InstanceSource, PropertyRead, SharedDictionaryTypes,
     SharedIntelliSense, WriteTarget,
 };
-use crate::policy::db::{AnalysisPass, PolicyDerivedCache, Snapshot};
 use crate::policy::ir::{DataModelIr, ParsedPolicy, PropertyPath};
 use crate::policy::queries::path::{PathClassifier, PathRoot};
 use crate::policy::queries::scope::{EntityForm, VariableTypeScope};
-use crate::policy::types::{BlockRef, Diagnostic, DiagnosticCode, DiagnosticLocation};
+use crate::workspace::db::{AnalysisPass, PolicyDerivedCache, Snapshot};
+use crate::workspace::types::{BlockRef, Diagnostic, DiagnosticCode, DiagnosticLocation};
 
 #[derive(Debug)]
 pub struct ShallowAnalyses {

@@ -56,7 +56,7 @@ const {
   },
 })
 export default __napiModule.exports
-export const PolicyWorkspace = __napiModule.exports.PolicyWorkspace
+export const Workspace = __napiModule.exports.Workspace
 export const ZenDecision = __napiModule.exports.ZenDecision
 export const ZenDecisionContent = __napiModule.exports.ZenDecisionContent
 export const ZenEngine = __napiModule.exports.ZenEngine

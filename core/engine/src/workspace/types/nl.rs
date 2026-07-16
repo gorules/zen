@@ -4,7 +4,7 @@ use zen_expression::intellisense::IntelliSense;
 use zen_expression::nl::NlResult;
 use zen_expression::variable::VariableType;
 
-use crate::policy::types::{CursorTarget, ExpressionKind};
+use crate::workspace::types::{CursorTarget, ExpressionKind};
 
 #[derive(Debug, Clone)]
 pub struct NlExpression {

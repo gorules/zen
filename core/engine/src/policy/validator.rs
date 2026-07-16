@@ -3,11 +3,11 @@ use std::sync::Arc;
 use ahash::{HashMap, HashMapExt, HashSet};
 use zen_expression::variable::Variable;
 
-use crate::policy::db::Db;
 use crate::policy::ir::{DataModelIr, DictionaryIr, Property, PropertyTypeIr};
 use crate::policy::refs::RefPoolIndex;
-use crate::policy::types::InputValidationError;
 use crate::policy::MAX_RECURSION_DEPTH;
+use crate::workspace::db::Db;
+use crate::workspace::types::InputValidationError;
 
 impl Db {
     pub(crate) fn input_schema(&self, policy_path: &str) -> InputSchema {

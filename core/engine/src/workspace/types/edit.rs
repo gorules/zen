@@ -25,4 +25,9 @@ pub enum EngineEdit {
         after_block_id: Option<Arc<str>>,
         new_block: Value,
     },
+    ReplaceNode {
+        document: Arc<str>,
+        node_id: Arc<str>,
+        new_node: Value,
+    },
 }

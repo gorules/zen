@@ -1,10 +1,15 @@
 use std::sync::Arc;
 
 use napi::anyhow::anyhow;
+use napi::bindgen_prelude::{FnArgs, FunctionRef};
+use napi::Env;
 use napi_derive::napi;
 use serde_json::Value;
 
-use zen_engine::policy;
+use zen_engine::policy::PolicyDocument;
+use zen_engine::workspace;
+
+type ResolverRef = FunctionRef<FnArgs<(String, Value)>, Option<String>>;
 
 #[napi(object)]
 pub struct PolicyExpressionCursor {
@@ -15,7 +20,7 @@ pub struct PolicyExpressionCursor {
     pub target: Value,
 }
 
-impl TryFrom<PolicyExpressionCursor> for policy::Cursor {
+impl TryFrom<PolicyExpressionCursor> for workspace::Cursor {
     type Error = napi::Error;
 
     fn try_from(c: PolicyExpressionCursor) -> napi::Result<Self> {
@@ -54,8 +59,8 @@ pub struct PolicyDiagnostic {
     pub target: Option<Value>,
 }
 
-impl From<&policy::Diagnostic> for PolicyDiagnostic {
-    fn from(d: &policy::Diagnostic) -> Self {
+impl From<&workspace::Diagnostic> for PolicyDiagnostic {
+    fn from(d: &workspace::Diagnostic) -> Self {
         Self {
             code: serde_json::to_value(&d.code)
                 .ok()
@@ -146,8 +151,8 @@ pub struct PolicyPropertyWriter {
     pub block_id: String,
 }
 
-impl From<&policy::BlockRef> for PolicyPropertyWriter {
-    fn from(b: &policy::BlockRef) -> Self {
+impl From<&workspace::BlockRef> for PolicyPropertyWriter {
+    fn from(b: &workspace::BlockRef) -> Self {
         Self {
             policy_path: b.policy_path.to_string(),
             block_id: b.block_id.to_string(),
@@ -199,8 +204,8 @@ pub struct PolicyConditionalSchema {
     pub conditional: Option<PolicySchemaGroup>,
 }
 
-impl From<policy::GuardedProperty> for PolicyGuardedProperty {
-    fn from(p: policy::GuardedProperty) -> Self {
+impl From<workspace::GuardedProperty> for PolicyGuardedProperty {
+    fn from(p: workspace::GuardedProperty) -> Self {
         Self {
             path: p.path.to_string(),
             resolved_type: variable_type_to_json(&p.resolved_type),
@@ -209,8 +214,8 @@ impl From<policy::GuardedProperty> for PolicyGuardedProperty {
     }
 }
 
-impl From<policy::SchemaGroup> for PolicySchemaGroup {
-    fn from(g: policy::SchemaGroup) -> Self {
+impl From<workspace::SchemaGroup> for PolicySchemaGroup {
+    fn from(g: workspace::SchemaGroup) -> Self {
         Self {
             inputs: g.inputs.into_iter().map(Into::into).collect(),
             outputs: g.outputs.into_iter().map(Into::into).collect(),
@@ -218,8 +223,8 @@ impl From<policy::SchemaGroup> for PolicySchemaGroup {
     }
 }
 
-impl From<policy::DiscriminantVariant> for PolicyDiscriminantVariant {
-    fn from(v: policy::DiscriminantVariant) -> Self {
+impl From<workspace::DiscriminantVariant> for PolicyDiscriminantVariant {
+    fn from(v: workspace::DiscriminantVariant) -> Self {
         Self {
             value: v.value.map(|s| s.to_string()),
             arm: v.arm.to_string(),
@@ -228,8 +233,8 @@ impl From<policy::DiscriminantVariant> for PolicyDiscriminantVariant {
     }
 }
 
-impl From<policy::DiscriminatedUnion> for PolicyDiscriminatedUnion {
-    fn from(u: policy::DiscriminatedUnion) -> Self {
+impl From<workspace::DiscriminatedUnion> for PolicyDiscriminatedUnion {
+    fn from(u: workspace::DiscriminatedUnion) -> Self {
         Self {
             property: u.property.to_string(),
             resolved_type: variable_type_to_json(&u.resolved_type),
@@ -238,16 +243,16 @@ impl From<policy::DiscriminatedUnion> for PolicyDiscriminatedUnion {
     }
 }
 
-impl From<policy::ConditionalSchema> for PolicyConditionalSchema {
-    fn from(schema: policy::ConditionalSchema) -> Self {
+impl From<workspace::ConditionalSchema> for PolicyConditionalSchema {
+    fn from(schema: workspace::ConditionalSchema) -> Self {
         match schema {
-            policy::ConditionalSchema::Union { common, union } => Self {
+            workspace::ConditionalSchema::Union { common, union } => Self {
                 kind: "union".to_string(),
                 common: common.into(),
                 union: Some(union.into()),
                 conditional: None,
             },
-            policy::ConditionalSchema::Flat {
+            workspace::ConditionalSchema::Flat {
                 common,
                 conditional,
             } => Self {
@@ -260,7 +265,7 @@ impl From<policy::ConditionalSchema> for PolicyConditionalSchema {
     }
 }
 
-fn entity_field_to_info(f: &policy::EntityField) -> PolicyEntityFieldInfo {
+fn entity_field_to_info(f: &workspace::EntityField) -> PolicyEntityFieldInfo {
     PolicyEntityFieldInfo {
         name: f.name.to_string(),
         resolved_type: variable_type_to_json(&f.resolved_type),
@@ -344,6 +349,62 @@ fn resolve_diagnostic_cap(max: Option<u32>) -> usize {
     }
 }
 
+fn variable_type_from_json(value: &Value) -> zen_expression::variable::VariableType {
+    use std::rc::Rc;
+    use zen_expression::variable::VariableType;
+
+    let kind = value.get("type").and_then(Value::as_str).unwrap_or("any");
+    match kind {
+        "null" => VariableType::Null,
+        "bool" => VariableType::Bool,
+        "string" => VariableType::String,
+        "number" => VariableType::Number,
+        "date" => VariableType::Date,
+        "interval" => VariableType::Interval,
+        "const" => value
+            .get("value")
+            .and_then(Value::as_str)
+            .map(|v| VariableType::Const(Rc::from(v)))
+            .unwrap_or(VariableType::Any),
+        "enum" => {
+            let name = value.get("name").and_then(Value::as_str).map(Rc::from);
+            let values = value
+                .get("values")
+                .and_then(Value::as_array)
+                .map(|list| {
+                    list.iter()
+                        .filter_map(Value::as_str)
+                        .map(Rc::from)
+                        .collect()
+                })
+                .unwrap_or_default();
+            VariableType::Enum(name, values)
+        }
+        "array" => value
+            .get("items")
+            .map(|items| variable_type_from_json(items).array())
+            .unwrap_or(VariableType::Any),
+        "object" => {
+            let fields = value
+                .get("fields")
+                .and_then(Value::as_object)
+                .map(|fields| {
+                    fields
+                        .iter()
+                        .map(|(k, v)| (Rc::from(k.as_str()), variable_type_from_json(v)))
+                        .collect()
+                })
+                .unwrap_or_default();
+            VariableType::Object(Rc::new(std::cell::RefCell::new(fields)))
+        }
+        "nullable" => value
+            .get("inner")
+            .map(|inner| VariableType::Nullable(Rc::new(variable_type_from_json(inner))))
+            .unwrap_or(VariableType::Any),
+        _ => VariableType::Any,
+    }
+}
+
 pub(crate) fn variable_type_to_json(vt: &zen_expression::variable::VariableType) -> Value {
     use zen_expression::variable::VariableType;
 
@@ -386,7 +447,7 @@ pub(crate) fn variable_type_to_json(vt: &zen_expression::variable::VariableType)
     }
 }
 
-fn dependency_node_to_json(node: &policy::DependencyNode) -> Value {
+fn dependency_node_to_json(node: &workspace::DependencyNode) -> Value {
     let mut obj = serde_json::Map::new();
     obj.insert("property".into(), Value::String(node.property.to_string()));
     if let Some(writer) = &node.written_by {
@@ -412,7 +473,7 @@ fn dependency_node_to_json(node: &policy::DependencyNode) -> Value {
     Value::Object(obj)
 }
 
-impl From<PolicyScopeRequest> for policy::ScopeRequest {
+impl From<PolicyScopeRequest> for workspace::ScopeRequest {
     fn from(r: PolicyScopeRequest) -> Self {
         Self {
             policy_path: r.policy_path.into(),
@@ -421,31 +482,123 @@ impl From<PolicyScopeRequest> for policy::ScopeRequest {
     }
 }
 
-#[napi]
-pub struct PolicyWorkspace {
-    inner: policy::PolicyWorkspace,
+#[napi(object)]
+pub struct PolicyFunctionResolutionRequest {
+    pub source: String,
+    #[napi(ts_type = "PolicyVariableType")]
+    pub input_type: Value,
 }
 
 #[napi]
-impl PolicyWorkspace {
+pub struct Workspace {
+    inner: workspace::Workspace,
+    resolver: Option<ResolverRef>,
+}
+
+#[napi]
+impl Workspace {
     #[napi(constructor)]
-    pub fn new() -> Self {
+    pub fn new(
+        #[napi(
+            ts_arg_type = "(source: string, inputType: PolicyVariableType) => string | null | undefined"
+        )]
+        resolve_function_type: Option<ResolverRef>,
+    ) -> Self {
         Self {
-            inner: policy::PolicyWorkspace::new(),
+            inner: workspace::Workspace::new(),
+            resolver: resolve_function_type,
         }
+    }
+
+    fn ensure_function_types(&self, env: &Env) -> napi::Result<()> {
+        let Some(resolver) = &self.resolver else {
+            return Ok(());
+        };
+        for _ in 0..32 {
+            let requests = self.inner.function_resolution_requests();
+            if requests.is_empty() {
+                break;
+            }
+            let function = resolver.borrow_back(env)?;
+            for request in requests {
+                let input_json = variable_type_to_json(&request.input);
+                let resolved: Option<String> =
+                    function.call(FnArgs::from((request.source.to_string(), input_json)))?;
+                self.inner
+                    .set_function_type(&request.source, &request.input, resolved.as_deref());
+            }
+        }
+        Ok(())
+    }
+
+    #[napi]
+    pub fn function_resolution_requests(&self) -> Vec<PolicyFunctionResolutionRequest> {
+        self.inner
+            .function_resolution_requests()
+            .into_iter()
+            .map(|request| PolicyFunctionResolutionRequest {
+                source: request.source.to_string(),
+                input_type: variable_type_to_json(&request.input),
+            })
+            .collect()
+    }
+
+    #[napi]
+    pub fn set_function_type(
+        &self,
+        source: String,
+        #[napi(ts_arg_type = "PolicyVariableType")] input_type: Value,
+        ts_type: Option<String>,
+    ) {
+        let input = variable_type_from_json(&input_type);
+        self.inner
+            .set_function_type(&source, &input, ts_type.as_deref());
+    }
+
+    #[napi]
+    pub fn set_document(&mut self, path: String, document: Value) -> napi::Result<()> {
+        let doc: zen_engine::model::DecisionContent =
+            serde_json::from_value(document).map_err(|e| anyhow!("Invalid document: {e}"))?;
+        self.inner.set_document(path, doc);
+        Ok(())
     }
 
     #[napi]
     pub fn set_policy(&mut self, path: String, document: Value) -> napi::Result<()> {
-        let doc: policy::PolicyDocument = serde_json::from_value(document)
+        let doc: PolicyDocument = serde_json::from_value(document)
             .map_err(|e| anyhow!("Invalid policy document: {e}"))?;
         self.inner.set_policy(path, doc);
         Ok(())
     }
 
     #[napi]
-    pub fn remove_policy(&mut self, path: String) -> bool {
-        self.inner.remove_policy(&path)
+    pub fn remove_path(&mut self, path: String) -> bool {
+        self.inner.remove_path(&path)
+    }
+
+    #[napi]
+    pub fn is_graph(&self, path: String) -> bool {
+        self.inner.is_graph(&path)
+    }
+
+    #[napi]
+    pub fn unchecked_nodes(&self, env: Env, path: String) -> napi::Result<Vec<String>> {
+        self.ensure_function_types(&env)?;
+        Ok(self
+            .inner
+            .unchecked_nodes(&path)
+            .into_iter()
+            .map(|id| id.to_string())
+            .collect())
+    }
+
+    #[napi]
+    pub fn paths(&self) -> Vec<String> {
+        self.inner
+            .paths()
+            .into_iter()
+            .map(|p| p.to_string())
+            .collect()
     }
 
     #[napi]
@@ -494,38 +647,38 @@ impl PolicyWorkspace {
     }
 
     #[napi]
-    pub fn policy_paths(&self) -> Vec<String> {
-        self.inner
-            .policy_paths()
-            .into_iter()
-            .map(|p| p.to_string())
-            .collect()
-    }
-
-    #[napi]
     pub fn diagnostics(
         &self,
+        env: Env,
         policy_path: String,
         max_diagnostics: Option<u32>,
-    ) -> Vec<PolicyDiagnostic> {
+    ) -> napi::Result<Vec<PolicyDiagnostic>> {
+        self.ensure_function_types(&env)?;
         let cap = resolve_diagnostic_cap(max_diagnostics);
-        self.inner
+        Ok(self
+            .inner
             .diagnostics(&policy_path)
             .iter()
             .take(cap)
             .map(PolicyDiagnostic::from)
-            .collect()
+            .collect())
     }
 
     #[napi]
-    pub fn all_diagnostics(&self, max_diagnostics: Option<u32>) -> Vec<PolicyDiagnostic> {
+    pub fn all_diagnostics(
+        &self,
+        env: Env,
+        max_diagnostics: Option<u32>,
+    ) -> napi::Result<Vec<PolicyDiagnostic>> {
+        self.ensure_function_types(&env)?;
         let cap = resolve_diagnostic_cap(max_diagnostics);
-        self.inner
+        Ok(self
+            .inner
             .all_diagnostics()
             .iter()
             .take(cap)
             .map(PolicyDiagnostic::from)
-            .collect()
+            .collect())
     }
 
     #[napi]
@@ -574,20 +727,32 @@ impl PolicyWorkspace {
     }
 
     #[napi]
-    pub fn inputs(&self, req: PolicyScopeRequest) -> Vec<PolicyInputProperty> {
-        self.inner
+    pub fn inputs(
+        &self,
+        env: Env,
+        req: PolicyScopeRequest,
+    ) -> napi::Result<Vec<PolicyInputProperty>> {
+        self.ensure_function_types(&env)?;
+        Ok(self
+            .inner
             .inputs(&req.into())
             .into_iter()
             .map(|p| PolicyInputProperty {
                 path: p.path.to_string(),
                 resolved_type: variable_type_to_json(&p.resolved_type),
             })
-            .collect()
+            .collect())
     }
 
     #[napi]
-    pub fn outputs(&self, req: PolicyScopeRequest) -> Vec<PolicyOutputProperty> {
-        self.inner
+    pub fn outputs(
+        &self,
+        env: Env,
+        req: PolicyScopeRequest,
+    ) -> napi::Result<Vec<PolicyOutputProperty>> {
+        self.ensure_function_types(&env)?;
+        Ok(self
+            .inner
             .outputs(&req.into())
             .into_iter()
             .map(|p| PolicyOutputProperty {
@@ -600,7 +765,7 @@ impl PolicyWorkspace {
                     array: i.array,
                 }),
             })
-            .collect()
+            .collect())
     }
 
     #[napi]
@@ -611,9 +776,11 @@ impl PolicyWorkspace {
     #[napi]
     pub fn inspect(
         &self,
+        env: Env,
         cursor: PolicyExpressionCursor,
     ) -> napi::Result<Option<PolicyInspectResult>> {
-        let cursor: policy::Cursor = cursor.try_into()?;
+        self.ensure_function_types(&env)?;
+        let cursor: workspace::Cursor = cursor.try_into()?;
         Ok(self
             .inner
             .inspect(&cursor)
@@ -625,7 +792,8 @@ impl PolicyWorkspace {
     }
 
     #[napi(ts_return_type = "PolicyNlExpression[]")]
-    pub fn nl(&self, policy_path: String) -> napi::Result<Vec<Value>> {
+    pub fn nl(&self, env: Env, policy_path: String) -> napi::Result<Vec<Value>> {
+        self.ensure_function_types(&env)?;
         self.inner
             .nl(&policy_path)
             .iter()
@@ -659,10 +827,12 @@ impl PolicyWorkspace {
     #[napi(ts_return_type = "NlResult | null")]
     pub fn nl_tokenize(
         &self,
+        env: Env,
         cursor: PolicyExpressionCursor,
         text: String,
     ) -> napi::Result<Option<Value>> {
-        let cursor: policy::Cursor = cursor.try_into()?;
+        self.ensure_function_types(&env)?;
+        let cursor: workspace::Cursor = cursor.try_into()?;
         self.inner
             .nl_tokenize(&cursor, &text)
             .map(|result| {
@@ -679,9 +849,11 @@ impl PolicyWorkspace {
     #[napi]
     pub fn completions(
         &self,
+        env: Env,
         cursor: PolicyExpressionCursor,
     ) -> napi::Result<Vec<PolicyCompletion>> {
-        let cursor: policy::Cursor = cursor.try_into()?;
+        self.ensure_function_types(&env)?;
+        let cursor: workspace::Cursor = cursor.try_into()?;
         Ok(self
             .inner
             .completions(&cursor)
@@ -701,9 +873,11 @@ impl PolicyWorkspace {
     #[napi]
     pub fn prepare_rename(
         &self,
+        env: Env,
         cursor: PolicyExpressionCursor,
     ) -> napi::Result<Option<PolicyPrepareRenameResult>> {
-        let cursor: policy::Cursor = cursor.try_into()?;
+        self.ensure_function_types(&env)?;
+        let cursor: workspace::Cursor = cursor.try_into()?;
         Ok(self
             .inner
             .prepare_rename(&cursor)
@@ -714,8 +888,9 @@ impl PolicyWorkspace {
     }
 
     #[napi(ts_return_type = "PolicyEngineEdit[]")]
-    pub fn rename(&self, req: PolicyRenameRequest) -> napi::Result<Vec<Value>> {
-        let target: policy::RenameTarget = serde_json::from_value(req.target)
+    pub fn rename(&self, env: Env, req: PolicyRenameRequest) -> napi::Result<Vec<Value>> {
+        self.ensure_function_types(&env)?;
+        let target: workspace::RenameTarget = serde_json::from_value(req.target)
             .map_err(|e| napi::Error::from_reason(e.to_string()))?;
         Ok(self
             .inner
@@ -726,8 +901,9 @@ impl PolicyWorkspace {
     }
 
     #[napi(ts_return_type = "PolicyReferenceSite[]")]
-    pub fn references(&self, target: Value) -> napi::Result<Vec<Value>> {
-        let target: policy::RenameTarget =
+    pub fn references(&self, env: Env, target: Value) -> napi::Result<Vec<Value>> {
+        self.ensure_function_types(&env)?;
+        let target: workspace::RenameTarget =
             serde_json::from_value(target).map_err(|e| napi::Error::from_reason(e.to_string()))?;
         Ok(self
             .inner
@@ -738,22 +914,31 @@ impl PolicyWorkspace {
     }
 
     #[napi(ts_return_type = "unknown")]
-    pub fn input_skeleton(&self, req: PolicyScopeRequest) -> Value {
-        let inner = policy::ScopeRequest {
+    pub fn input_skeleton(&self, env: Env, req: PolicyScopeRequest) -> napi::Result<Value> {
+        self.ensure_function_types(&env)?;
+        let inner = workspace::ScopeRequest {
             policy_path: req.policy_path.into(),
             goals: goals_to_arc(req.goals),
         };
-        self.inner.input_skeleton(&inner)
+        Ok(self.inner.input_skeleton(&inner))
     }
 
     #[napi(ts_return_type = "PolicyDependencyNode")]
-    pub fn dependencies(&self, target: String) -> Value {
-        dependency_node_to_json(&self.inner.dependencies(&target))
+    pub fn dependencies(
+        &self,
+        env: Env,
+        target: String,
+        document: Option<String>,
+    ) -> napi::Result<Value> {
+        self.ensure_function_types(&env)?;
+        Ok(dependency_node_to_json(
+            &self.inner.dependencies_scoped(&target, document.as_deref()),
+        ))
     }
 
     #[napi(ts_return_type = "PolicyEvaluationResult")]
     pub fn evaluate(&self, req: PolicyEvaluateRequest) -> napi::Result<Value> {
-        let inner_req = policy::EvaluateRequest {
+        let inner_req = workspace::EvaluateRequest {
             policy_path: req.policy_path.into(),
             input: req.input.into(),
             goals: goals_to_arc(req.goals),
@@ -764,7 +949,7 @@ impl PolicyWorkspace {
 
     #[napi(ts_return_type = "PolicyEvaluationResult")]
     pub fn enhance_trace(&self, req: PolicyEvaluateRequest) -> napi::Result<Value> {
-        let inner_req = policy::EvaluateRequest {
+        let inner_req = workspace::EvaluateRequest {
             policy_path: req.policy_path.into(),
             input: req.input.into(),
             goals: goals_to_arc(req.goals),
@@ -773,14 +958,25 @@ impl PolicyWorkspace {
         Self::eval_to_value(self.inner.enhance_trace(&inner_req))
     }
 
+    #[napi(ts_return_type = "PolicyTrace")]
+    pub fn enhance_graph_trace(&self, path: String, trace: Value) -> napi::Result<Value> {
+        let trace_map: workspace::GraphTraceMap =
+            serde_json::from_value(trace).map_err(|e| napi::Error::from_reason(e.to_string()))?;
+        let result = self
+            .inner
+            .enhance_graph_trace(&Arc::from(path.as_str()), &trace_map)
+            .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+        serde_json::to_value(&result).map_err(|e| napi::Error::from_reason(e.to_string()))
+    }
+
     fn eval_to_value(
-        result: Result<policy::EvaluationResult, policy::EvaluationError>,
+        result: Result<workspace::EvaluationResult, workspace::EvaluationError>,
     ) -> napi::Result<Value> {
         match result {
             Ok(result) => {
                 serde_json::to_value(&result).map_err(|e| napi::Error::from_reason(e.to_string()))
             }
-            Err(policy::EvaluationError::ExpressionFailed {
+            Err(workspace::EvaluationError::ExpressionFailed {
                 partial_trace,
                 policy_path,
                 block_id,

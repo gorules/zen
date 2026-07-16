@@ -44,7 +44,7 @@ impl PathClassifier {
     }
 }
 
-impl crate::policy::db::Snapshot {
+impl crate::workspace::db::Snapshot {
     pub(crate) fn compute_path_classifier(
         all_parsed: &ahash::HashMap<Arc<str>, Arc<crate::policy::ir::ParsedPolicy>>,
     ) -> PathClassifier {

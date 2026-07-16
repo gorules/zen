@@ -6,10 +6,10 @@ use zen_expression::intellisense::ArmTest;
 use zen_expression::variable::VariableType;
 
 use crate::policy::blocks::{BlockKind, IntelliSenseSource, ReadFlattener};
-use crate::policy::db::{Db, Unit};
 use crate::policy::queries::dependency::PathPrefix;
 use crate::policy::queries::scope::VariableTypeScope;
-use crate::policy::types::{
+use crate::workspace::db::{Db, Unit};
+use crate::workspace::types::{
     ConditionalSchema, DiscriminantVariant, DiscriminatedUnion, ExpressionKind, GuardedProperty,
     InputProperty, OutputProperty, SchemaGroup, ScopeRequest,
 };

@@ -32,7 +32,7 @@ fn any_touches_block(edits: &[EngineEdit], block_id: &str) -> bool {
     edits.iter().any(|e| match e {
         EngineEdit::ReplaceBlock { block_id: bid, .. }
         | EngineEdit::DeleteBlock { block_id: bid, .. } => bid.as_ref() == block_id,
-        EngineEdit::InsertBlock { .. } => false,
+        EngineEdit::InsertBlock { .. } | EngineEdit::ReplaceNode { .. } => false,
     })
 }
 use zen_expression::variable::{Variable, VariableType};
@@ -4868,4 +4868,47 @@ fn assertion_with_only_empty_conditions_still_writes_false() {
         "an assertion with no effective conditions must still write false: {output:#?}",
     );
     assert_eq!(output.pointer("/customer/okText"), Some(&json!("no")));
+}
+
+#[test]
+fn completions_offered_for_empty_and_trailing_space_sources() {
+    let doc = json!({
+        "blocks": [
+            { "id": "dm", "type": "dataModel", "props": { "data": json!({
+                "name": "customer",
+                "properties": [
+                    { "id": "p1", "name": "age", "type": "number", "array": false, "optional": false }
+                ]
+            }) }},
+            { "id": "empty", "type": "expression", "props": { "data": json!({ "key": "total", "value": "" }) }},
+            { "id": "partial", "type": "expression", "props": { "data": json!({ "key": "fee", "value": "100 + " }) }}
+        ]
+    });
+
+    let mut ws = PolicyWorkspace::new();
+    ws.set_policy("p", serde_json::from_value(doc).unwrap());
+
+    let labels_at = |block_id: &str, pos: u32| -> Vec<String> {
+        ws.completions(&Cursor {
+            policy_path: Arc::from("p"),
+            block_id: Arc::from(block_id),
+            pos,
+            target: CursorTarget::Expression { id: Arc::from("x") },
+        })
+        .into_iter()
+        .map(|c| c.label)
+        .collect()
+    };
+
+    let empty = labels_at("empty", 0);
+    assert!(
+        empty.iter().any(|l| l == "customer"),
+        "empty expression should offer scope completions: {empty:?}"
+    );
+
+    let partial = labels_at("partial", 7);
+    assert!(
+        partial.iter().any(|l| l == "customer"),
+        "cursor past trimmed source should offer scope completions: {partial:?}"
+    );
 }

@@ -2,7 +2,9 @@ use zen_expression::intellisense::AstMetadata;
 use zen_expression::lexer::Operator;
 use zen_expression::parser::{Associativity, Node, ParserOperator};
 
-use crate::policy::types::{Diagnostic, DiagnosticCode, DiagnosticLocation, ExpressionKind, Span};
+use crate::workspace::types::{
+    Diagnostic, DiagnosticCode, DiagnosticLocation, ExpressionKind, Span,
+};
 
 use super::{AstOps, LintContext, LintRule};
 
@@ -188,6 +190,17 @@ impl ParenScan<'_> {
     }
 }
 
+impl RedundantParentheses {
+    pub(crate) fn scan(root: &Node, metadata: &AstMetadata) -> Vec<(Option<Span>, Option<Span>)> {
+        let mut scan = ParenScan {
+            metadata,
+            findings: Vec::new(),
+        };
+        scan.visit(root, ParenSite::Delimited);
+        scan.findings
+    }
+}
+
 impl LintRule for RedundantParentheses {
     fn check(&self, cx: &LintContext, out: &mut Vec<Diagnostic>) {
         for block in cx.rules() {
@@ -197,12 +210,7 @@ impl LintRule for RedundantParentheses {
                 }
                 let findings = cx
                     .with_ast(&expression.source, expression.kind, |root, metadata| {
-                        let mut scan = ParenScan {
-                            metadata,
-                            findings: Vec::new(),
-                        };
-                        scan.visit(root, ParenSite::Delimited);
-                        scan.findings
+                        RedundantParentheses::scan(root, metadata)
                     })
                     .unwrap_or_default();
                 for (span, inner_span) in findings {

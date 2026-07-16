@@ -1,4 +1,5 @@
 use crate::decision_graph::cleaner::VariableCleaner;
+use crate::decision_graph::schema_dict;
 use crate::decision_graph::tracer::NodeTracer;
 use crate::decision_graph::walker::{GraphWalker, NodeData, StableDiDecisionGraph};
 use crate::engine::EvaluationTraceKind;
@@ -27,7 +28,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 use zen_expression::variable::{ToVariable, Variable};
-use zen_types::decision::DecisionNode;
+use zen_types::decision::{DecisionNode, InputNodeContent, OutputNodeContent};
 
 #[derive(Debug)]
 pub struct DecisionGraph {
@@ -106,6 +107,24 @@ impl DecisionGraph {
         Ok(())
     }
 
+    async fn validation_schema(
+        &self,
+        schema: Option<&serde_json::Value>,
+    ) -> Result<Option<(serde_json::Value, u64)>, String> {
+        let Some(schema) = schema else {
+            return Ok(None);
+        };
+        if !schema_dict::schema_references_dictionary(schema) {
+            return Ok(None);
+        }
+        let dictionaries = schema_dict::load_import_dictionaries(
+            self.config.extensions.loader(),
+            &self.config.content.imports,
+        )
+        .await?;
+        schema_dict::resolve_schema(schema, &dictionaries).map(Some)
+    }
+
     fn build_node_context(&self, node: &DecisionNode, input: Variable) -> NodeContextBase {
         NodeContextBase {
             id: node.id.clone(),
@@ -152,10 +171,30 @@ impl DecisionGraph {
             let node_execution = match &node.kind {
                 DecisionNodeKind::InputNode { content } => {
                     base_ctx.input = context.clone();
-                    handle_node(base_ctx, content.clone(), InputNodeHandler).await
+                    match self.validation_schema(content.schema.as_deref()).await {
+                        Err(message) => base_ctx.error(message),
+                        Ok(None) => handle_node(base_ctx, content.clone(), InputNodeHandler).await,
+                        Ok(Some((schema, salt))) => {
+                            base_ctx.config.validation_salt = salt;
+                            let resolved = InputNodeContent {
+                                schema: Some(Arc::new(schema)),
+                            };
+                            handle_node(base_ctx, resolved, InputNodeHandler).await
+                        }
+                    }
                 }
                 DecisionNodeKind::OutputNode { content } => {
-                    handle_node(base_ctx, content.clone(), OutputNodeHandler).await
+                    match self.validation_schema(content.schema.as_deref()).await {
+                        Err(message) => base_ctx.error(message),
+                        Ok(None) => handle_node(base_ctx, content.clone(), OutputNodeHandler).await,
+                        Ok(Some((schema, salt))) => {
+                            base_ctx.config.validation_salt = salt;
+                            let resolved = OutputNodeContent {
+                                schema: Some(Arc::new(schema)),
+                            };
+                            handle_node(base_ctx, resolved, OutputNodeHandler).await
+                        }
+                    }
                 }
                 DecisionNodeKind::SwitchNode { .. } => Ok(NodeResponse {
                     output: input_trace.clone(),

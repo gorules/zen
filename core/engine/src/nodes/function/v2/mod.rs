@@ -19,6 +19,7 @@ pub(crate) mod function;
 pub(crate) mod listener;
 pub(crate) mod module;
 pub(crate) mod serde;
+pub(crate) mod strip;
 
 #[derive(Debug, Clone)]
 pub struct FunctionV2NodeHandler;
@@ -31,7 +32,13 @@ impl NodeHandler for FunctionV2NodeHandler {
         let start = Instant::now();
 
         let function = ctx.function_runtime().await?;
-        let module_name = function.suggest_module_name(ctx.id.deref(), ctx.node.source.deref());
+        let source = ctx
+            .extensions
+            .stripped_functions
+            .as_ref()
+            .and_then(|stripped| stripped.get(ctx.node.source.as_ref()).cloned())
+            .unwrap_or_else(|| strip::TypeStripper::strip(ctx.node.source.deref()));
+        let module_name = function.suggest_module_name(ctx.id.deref(), source.as_ref());
 
         let max_duration = Duration::from_millis(ctx.config.function_timeout_millis);
         let interrupt_handler = Box::new(move || start.elapsed() > max_duration);
@@ -53,7 +60,7 @@ impl NodeHandler for FunctionV2NodeHandler {
             .await?;
 
         function
-            .register_module(&module_name, ctx.node.source.deref())
+            .register_module(&module_name, source.as_ref())
             .await
             .function_context(&function_context)
             .await?;

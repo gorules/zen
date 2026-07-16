@@ -12,7 +12,7 @@ use ahash::{HashMap, HashMapExt, HashSet};
 use zen_expression::intellisense::IntelliSense;
 use zen_expression::variable::VariableType;
 
-use crate::policy::types::{
+use crate::workspace::types::{
     BlockTrace, Cursor, CursorTarget, Diagnostic, DiagnosticCode, DiagnosticLocation,
     ExpressionKind, NlExpression, Span,
 };
@@ -32,7 +32,7 @@ pub use context::{
     InstanceSource, PropertyRead, SharedDictionaryTypes, SharedIntelliSense, WriteTarget,
 };
 pub(crate) use decision_table::TableSelection;
-pub use decision_table::{DecisionTableDoc, DecisionTableIr};
+pub use decision_table::{DecisionTableDoc, DecisionTableIr, DeclaredType};
 pub use expression::{ExpressionDoc, ExpressionIr};
 pub(crate) use match_block::MatchSelection;
 pub use match_block::{MatchDoc, MatchIr};

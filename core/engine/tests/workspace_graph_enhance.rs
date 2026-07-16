@@ -168,7 +168,7 @@ async fn decision_table_maps_rows_reads_and_evaluations() {
     let BlockTrace::DecisionTable {
         matched_rows,
         evaluations,
-        ..
+        extras,
     } = &table.trace
     else {
         panic!("expected decision table trace");
@@ -178,6 +178,15 @@ async fn decision_table_maps_rows_reads_and_evaluations() {
     assert_eq!(evaluations[0].get("discount"), Some(&json!(0.1).into()));
     assert!(sorted_reads(table).contains(&"cart.total".to_string()));
     assert_eq!(trace.properties.get("discount"), Some(&json!(0.1).into()));
+    assert_eq!(input_pass_bits(extras), vec![0b0, 0b1]);
+}
+
+fn input_pass_bits(extras: &Option<zen_engine::policy::DecisionTableExtras>) -> Vec<u8> {
+    use base64::Engine as _;
+    let extras = extras.as_ref().expect("extras present");
+    base64::engine::general_purpose::STANDARD
+        .decode(&extras.input_pass)
+        .expect("valid base64")
 }
 
 #[tokio::test]
@@ -335,7 +344,7 @@ async fn looped_table_extracts_per_iteration_evaluations_under_output_path() {
     let BlockTrace::DecisionTable {
         matched_rows,
         evaluations,
-        ..
+        extras,
     } = &iterations[0].trace
     else {
         panic!("expected decision table trace");
@@ -345,6 +354,11 @@ async fn looped_table_extracts_per_iteration_evaluations_under_output_path() {
         evaluations[0].get("discounts.discount"),
         Some(&json!(0.2).into())
     );
+    assert_eq!(input_pass_bits(extras), vec![0b1, 0b1]);
+    let BlockTrace::DecisionTable { extras, .. } = &iterations[1].trace else {
+        panic!("expected decision table trace");
+    };
+    assert_eq!(input_pass_bits(extras), vec![0b0, 0b1]);
     assert!(sorted_reads(iterations[0]).contains(&"carts.total".to_string()));
     assert_eq!(
         iterations[0].operand_values.get("total"),

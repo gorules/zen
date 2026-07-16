@@ -1012,11 +1012,16 @@ impl<'a> GraphAnalyzer<'a> {
         if content.rules.is_empty() {
             return false;
         }
+        let row_is_live = |rule: &ahash::HashMap<Arc<str>, Arc<str>>| {
+            content.inputs.iter().all(|ic| rule.contains_key(&ic.id))
+                && content.outputs.iter().all(|oc| rule.contains_key(&oc.id))
+        };
         let row_is_catch_all = |rule: &ahash::HashMap<Arc<str>, Arc<str>>| {
-            content
-                .inputs
-                .iter()
-                .all(|ic| rule.get(&ic.id).is_none_or(|c| c.is_empty()))
+            row_is_live(rule)
+                && content
+                    .inputs
+                    .iter()
+                    .all(|ic| rule.get(&ic.id).is_some_and(|c| c.is_empty()))
         };
         if content.rules.iter().any(row_is_catch_all) {
             return true;
@@ -1025,6 +1030,9 @@ impl<'a> GraphAnalyzer<'a> {
         let intellisense = self.db.graph_intellisense();
         let mut groups: HashMap<Arc<str>, Vec<ArmTest>> = HashMap::new();
         for rule in content.rules.iter() {
+            if !row_is_live(rule) {
+                continue;
+            }
             let mut constrained = content
                 .inputs
                 .iter()

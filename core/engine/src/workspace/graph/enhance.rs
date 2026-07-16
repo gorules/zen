@@ -1,18 +1,24 @@
+use std::rc::Rc;
 use std::sync::Arc;
 
 use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
+use base64::Engine as _;
 use rust_decimal::prelude::ToPrimitive;
 use zen_expression::variable::Variable;
+use zen_expression::Isolate;
 use zen_types::decision::{
-    DecisionNode, DecisionNodeKind, DecisionTableHitPolicy, TransformExecutionMode,
+    DecisionNode, DecisionNodeKind, DecisionTableContent, DecisionTableHitPolicy,
+    TransformExecutionMode,
 };
 
 use crate::model::GraphContent;
+use crate::nodes::decision_table::DecisionTableNodeHandler;
 use crate::workspace::db::{Db, Snapshot};
 use crate::workspace::graph::editor::{NodePaths, ReadBase};
 use crate::workspace::graph::function_source;
 use crate::workspace::types::{
-    BlockExecution, BlockTrace, ConditionTrace, EvaluationError, Trace, WriteTrace,
+    BlockExecution, BlockTrace, ConditionTrace, DecisionTableExtras, EvaluationError, Trace,
+    WriteTrace,
 };
 use crate::DecisionGraphTrace;
 
@@ -23,6 +29,69 @@ struct EnhanceState<'a> {
     snapshot: Arc<Snapshot>,
     executions: Vec<BlockExecution>,
     visiting: HashSet<Arc<str>>,
+}
+
+impl EnhanceState<'_> {
+    fn dt_environment(
+        &self,
+        content: &DecisionTableContent,
+        node_trace: &DecisionGraphTrace,
+        trace: &GraphTraceMap,
+    ) -> Option<Variable> {
+        let nodes = Variable::from_object(
+            trace
+                .values()
+                .filter(|entry| entry.order < node_trace.order)
+                .map(|entry| (Rc::from(entry.name.as_ref()), entry.output.clone()))
+                .collect(),
+        );
+        let base = node_trace.input.depth_clone(1);
+        base.dot_insert("$nodes", nodes.clone());
+        let Some(input_field) = &content.transform_attributes.input_field else {
+            return Some(base);
+        };
+        let mut isolate = Isolate::with_environment(base);
+        let calculated = isolate.run_standard(input_field.as_ref()).ok()?;
+        match &calculated {
+            Variable::Array(items) => {
+                let items = items
+                    .borrow()
+                    .iter()
+                    .map(|item| {
+                        let item = item.depth_clone(1);
+                        item.dot_insert("$nodes", nodes.clone());
+                        item
+                    })
+                    .collect();
+                Some(Variable::from_array(items))
+            }
+            _ => {
+                let calculated = calculated.depth_clone(1);
+                calculated.dot_insert("$nodes", nodes);
+                Some(calculated)
+            }
+        }
+    }
+
+    fn dt_extras(
+        &self,
+        content: &DecisionTableContent,
+        environment: Variable,
+    ) -> DecisionTableExtras {
+        let mut isolate = Isolate::with_environment(environment.depth_clone(1));
+        let bytes_per_row = content.inputs.len().div_ceil(8);
+        let mut bits = vec![0u8; bytes_per_row * content.rules.len()];
+        for (row, rule) in content.rules.iter().enumerate() {
+            for (col, input) in content.inputs.iter().enumerate() {
+                if DecisionTableNodeHandler::cell_passes(rule, input, &mut isolate) {
+                    bits[row * bytes_per_row + (col >> 3)] |= 1 << (col & 7);
+                }
+            }
+        }
+        DecisionTableExtras {
+            input_pass: base64::engine::general_purpose::STANDARD.encode(&bits),
+        }
+    }
 }
 
 impl Db {
@@ -166,6 +235,7 @@ fn walk_graph(
                 let collect = matches!(content.hit_policy, DecisionTableHitPolicy::Collect);
                 let iterations = trace_entries(node_trace.trace_data.as_ref(), loop_mode);
                 let reads = state.db.node_global_reads(node, &paths, None);
+                let environment_root = state.dt_environment(content, node_trace, trace);
                 let outputs_root = match &paths.output_path {
                     Some(path) => node_trace.output.dot(path).unwrap_or(Variable::Null),
                     None => node_trace.output.clone(),
@@ -248,14 +318,14 @@ fn walk_graph(
                         );
                     }
 
-                    let extras = entry.dot("inputPass").and_then(|value| match value {
-                        Variable::String(input_pass) => {
-                            Some(crate::workspace::types::DecisionTableExtras {
-                                input_pass: input_pass.to_string(),
-                            })
-                        }
-                        _ => None,
-                    });
+                    let environment = if loop_mode {
+                        environment_root
+                            .as_ref()
+                            .and_then(|env| element_at(env, index))
+                    } else {
+                        environment_root.clone()
+                    };
+                    let extras = environment.map(|env| state.dt_extras(content, env));
                     state.executions.push(BlockExecution {
                         block_id: block_id.clone(),
                         policy_path: None,

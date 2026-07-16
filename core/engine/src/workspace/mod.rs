@@ -18,12 +18,13 @@ pub use graph::{
 };
 pub use types::{
     BlockExecution, BlockRef, BlockTrace, Completion, ConditionTrace, ConditionalSchema, Cursor,
-    CursorTarget, DependencyNode, Diagnostic, DiagnosticCode, DiagnosticLocation, Dictionary,
-    DictionaryEntryInfo, DiscriminantVariant, DiscriminatedUnion, EngineEdit, Entity, EntityField,
-    EvaluateRequest, EvaluationError, EvaluationResult, ExpressionKind, FieldOrigin,
-    GuardedProperty, InputProperty, InputValidationError, InspectResult, NlExpression,
-    OutputProperty, PrepareRename, PropertyKind, ReferenceKind, ReferenceSite, RenameTarget,
-    SchemaFieldKind, SchemaGroup, ScopeRequest, Severity, Span, Trace, WriteConflict, WriteTrace,
+    CursorTarget, DecisionTableExtras, DependencyNode, Diagnostic, DiagnosticCode,
+    DiagnosticLocation, Dictionary, DictionaryEntryInfo, DiscriminantVariant, DiscriminatedUnion,
+    EngineEdit, Entity, EntityField, EvaluateRequest, EvaluationError, EvaluationResult,
+    ExpressionKind, FieldOrigin, GuardedProperty, InputProperty, InputValidationError,
+    InspectResult, NlExpression, OutputProperty, PrepareRename, PropertyKind, ReferenceKind,
+    ReferenceSite, RenameTarget, SchemaFieldKind, SchemaGroup, ScopeRequest, Severity, Span, Trace,
+    WriteConflict, WriteTrace,
 };
 
 use types::Global;

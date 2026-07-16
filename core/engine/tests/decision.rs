@@ -198,7 +198,7 @@ async fn decision_table_first_hit_trace_matches_untraced() {
 
 #[tokio::test]
 #[cfg_attr(miri, ignore)]
-async fn decision_table_missing_cell_key_is_catch_all() {
+async fn decision_table_missing_cell_key_is_row_miss() {
     let content = serde_json::from_value(json!({
         "nodes": [
             { "id": "in", "name": "in", "type": "inputNode", "content": {} },
@@ -224,5 +224,5 @@ async fn decision_table_missing_cell_key_is_catch_all() {
     let decision = Decision::from(Arc::new(content));
 
     let result = decision.evaluate(json!({ "age": 1 }).into()).await.unwrap();
-    assert_eq!(result.result, json!({ "result": "hit" }).into());
+    assert_eq!(result.result, json!({}).into());
 }

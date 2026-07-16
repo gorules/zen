@@ -14,14 +14,14 @@ pub(crate) mod validator;
 
 pub use crate::workspace::{
     BlockExecution, BlockRef, BlockTrace, Completion, ConditionTrace, ConditionalSchema, Cursor,
-    CursorTarget, DependencyNode, Diagnostic, DiagnosticCode, DiagnosticLocation, Dictionary,
-    DictionaryEntryInfo, DiscriminantVariant, DiscriminatedUnion, EngineEdit, Entity, EntityField,
-    EvaluateRequest, EvaluationError, EvaluationResult, ExpressionKind, FieldOrigin,
-    FunctionResolutionRequest, FunctionTypeResolver, GraphAnalysis, GraphNodeAnalysis,
-    GraphSignature, GraphTraceMap, GuardedProperty, InputProperty, InputValidationError,
-    InspectResult, NlExpression, OutputProperty, PrepareRename, PropertyKind, ReferenceKind,
-    ReferenceSite, RenameTarget, SchemaFieldKind, SchemaGroup, ScopeRequest, Severity, Span, Trace,
-    Workspace, WriteConflict, WriteTrace,
+    CursorTarget, DecisionTableExtras, DependencyNode, Diagnostic, DiagnosticCode,
+    DiagnosticLocation, Dictionary, DictionaryEntryInfo, DiscriminantVariant, DiscriminatedUnion,
+    EngineEdit, Entity, EntityField, EvaluateRequest, EvaluationError, EvaluationResult,
+    ExpressionKind, FieldOrigin, FunctionResolutionRequest, FunctionTypeResolver, GraphAnalysis,
+    GraphNodeAnalysis, GraphSignature, GraphTraceMap, GuardedProperty, InputProperty,
+    InputValidationError, InspectResult, NlExpression, OutputProperty, PrepareRename, PropertyKind,
+    ReferenceKind, ReferenceSite, RenameTarget, SchemaFieldKind, SchemaGroup, ScopeRequest,
+    Severity, Span, Trace, Workspace, WriteConflict, WriteTrace,
 };
 pub use raw::{BlockDoc, PolicyDocument};
 

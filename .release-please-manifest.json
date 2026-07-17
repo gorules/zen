@@ -4,7 +4,7 @@
   "core/types": "1.0.0-beta.6",
   "core/template": "1.0.0-beta.6",
   "core/macros": "1.0.0-beta.6",
-  "bindings/nodejs": "1.0.0-beta.7",
+  "bindings/nodejs": "1.0.0-beta.8",
   "bindings/python": "1.0.0-beta.7",
   "bindings/uniffi": "1.0.0-beta.7",
   "bindings/c": "1.0.0-beta.6",

@@ -5,7 +5,7 @@ export type PolicyPropertyKind = 'input' | 'computed';
 export type PolicyFieldKind = 'scalar' | 'enum' | 'relationship' | 'reference';
 export type PolicySeverity = 'error' | 'warning' | 'hint';
 
-/** Text range, `[start, end)` byte offsets. */
+/** Text range, `[start, end)` character offsets. */
 export type PolicySpan = [number, number];
 
 /** Rename target — a top-level entity, an entity field, a global property,
@@ -420,7 +420,7 @@ export declare class Workspace {
   dependencies(target: string, document?: string | undefined | null): PolicyDependencyNode
   evaluate(req: PolicyEvaluateRequest): PolicyEvaluationResult
   enhanceTrace(req: PolicyEvaluateRequest): PolicyEvaluationResult
-  enhanceGraphTrace(path: string, trace: Record<string, unknown>): PolicyTrace
+  enhanceGraphTrace(path: string, trace: any): PolicyTrace
   componentMembers(policy: string): Array<string>
   crossComponentWriteConflicts(): Array<PolicyWriteConflict>
 }

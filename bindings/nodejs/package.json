@@ -10,6 +10,8 @@
     "index.js",
     "index.d.ts",
     "browser.js",
+    "ts-support.js",
+    "ts-support.d.ts",
     "README.md"
   ],
   "packageManager": "yarn@1.22.22",

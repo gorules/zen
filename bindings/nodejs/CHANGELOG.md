@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.8](https://github.com/gorules/zen/compare/nodejs-v1.0.0-beta.7...nodejs-v1.0.0-beta.8) (2026-07-17)
+
+
+### Bug Fixes
+
+* nodejs types and test timeout ([#485](https://github.com/gorules/zen/issues/485)) ([4990a48](https://github.com/gorules/zen/commit/4990a487cb809cb74dc11183519c13a4804d4efb))
+
 ## [1.0.0-beta.7](https://github.com/gorules/zen/compare/nodejs-v1.0.0-beta.6...nodejs-v1.0.0-beta.7) (2026-07-16)
 
 

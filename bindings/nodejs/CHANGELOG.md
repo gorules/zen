@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.9](https://github.com/gorules/zen/compare/nodejs-v1.0.0-beta.8...nodejs-v1.0.0-beta.9) (2026-07-20)
+
+
+### Bug Fixes
+
+* reduce wasm memory limits ([#489](https://github.com/gorules/zen/issues/489)) ([a9580c8](https://github.com/gorules/zen/commit/a9580c83d774c342f096cb75380fca666da61b35))
+
 ## [1.0.0-beta.8](https://github.com/gorules/zen/compare/nodejs-v1.0.0-beta.7...nodejs-v1.0.0-beta.8) (2026-07-17)
 
 

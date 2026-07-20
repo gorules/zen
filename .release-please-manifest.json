@@ -1,13 +1,13 @@
 {
-  "core/engine": "1.0.0-beta.6",
-  "core/expression": "1.0.0-beta.6",
-  "core/types": "1.0.0-beta.6",
-  "core/template": "1.0.0-beta.6",
-  "core/macros": "1.0.0-beta.6",
-  "bindings/nodejs": "1.0.0-beta.8",
-  "bindings/python": "1.0.0-beta.7",
-  "bindings/uniffi": "1.0.0-beta.7",
-  "bindings/c": "1.0.0-beta.6",
-  "benchmark/rust": "0.0.7",
-  "core/expression_repl": "1.0.0-beta.6"
+  "core/engine": "1.0.0-beta.7",
+  "core/expression": "1.0.0-beta.7",
+  "core/types": "1.0.0-beta.7",
+  "core/template": "1.0.0-beta.7",
+  "core/macros": "1.0.0-beta.7",
+  "bindings/nodejs": "1.0.0-beta.9",
+  "bindings/python": "1.0.0-beta.8",
+  "bindings/uniffi": "1.0.0-beta.8",
+  "bindings/c": "1.0.0-beta.7",
+  "benchmark/rust": "0.0.8",
+  "core/expression_repl": "1.0.1-beta.6"
 }

@@ -5,15 +5,20 @@ use std::sync::Arc;
 
 use anyhow::anyhow;
 
-use zen_engine::loader::{DecisionLoader, LoaderError, LoaderResponse, NoopLoader};
+use zen_engine::loader::{
+    DecisionLoader, DynamicLoader, LoaderConfig, LoaderError, LoaderResponse, NoopLoader,
+};
 use zen_engine::model::DecisionContent;
 
+use crate::error::ZenError;
+use crate::helper::safe_str_from_ptr;
 use crate::languages::native::NativeDecisionLoader;
 
 #[derive(Debug)]
 pub(crate) enum DynamicDecisionLoader {
     Noop(NoopLoader),
     Native(NativeDecisionLoader),
+    Config(DynamicLoader),
     #[cfg(feature = "go")]
     Go(crate::languages::go::GoDecisionLoader),
 }
@@ -33,10 +38,62 @@ impl DecisionLoader for DynamicDecisionLoader {
             match self {
                 DynamicDecisionLoader::Noop(loader) => loader.load(key).await,
                 DynamicDecisionLoader::Native(loader) => loader.load(key).await,
+                DynamicDecisionLoader::Config(loader) => loader.load(key).await,
                 #[cfg(feature = "go")]
                 DynamicDecisionLoader::Go(loader) => loader.load(key).await,
             }
         })
+    }
+}
+
+#[allow(dead_code)]
+#[repr(C)]
+pub enum ZenLoaderConfigKind {
+    Static,
+    Filesystem,
+    Zip,
+}
+
+#[repr(C)]
+pub struct ZenEngineLoaderConfig {
+    pub(crate) kind: ZenLoaderConfigKind,
+    pub(crate) content: *const c_char,
+    pub(crate) bytes: *const u8,
+    pub(crate) bytes_len: usize,
+}
+
+impl ZenEngineLoaderConfig {
+    pub(crate) fn to_dynamic_loader(&self) -> Result<DynamicLoader, ZenError> {
+        let config = match self.kind {
+            ZenLoaderConfigKind::Static => {
+                let content = safe_str_from_ptr(self.content).ok_or(ZenError::InvalidArgument)?;
+                LoaderConfig::Static {
+                    content: serde_json::from_str(content)
+                        .map_err(|_| ZenError::JsonDeserializationFailed)?,
+                }
+            }
+            ZenLoaderConfigKind::Filesystem => {
+                let path = safe_str_from_ptr(self.content).ok_or(ZenError::InvalidArgument)?;
+                LoaderConfig::Filesystem {
+                    path: path.to_string(),
+                }
+            }
+            ZenLoaderConfigKind::Zip => {
+                if self.bytes.is_null() {
+                    return Err(ZenError::InvalidArgument);
+                }
+
+                let bytes =
+                    unsafe { std::slice::from_raw_parts(self.bytes, self.bytes_len) }.to_vec();
+                LoaderConfig::Zip { bytes }
+            }
+        };
+
+        config
+            .into_loader()
+            .map_err(|e| ZenError::LoaderConfigError {
+                message: e.to_string(),
+            })
     }
 }
 

@@ -21,6 +21,8 @@ pub enum ZenError {
     LoaderInternalError { key: String, message: String },
 
     TemplateEngineError { template: String, message: String },
+
+    LoaderConfigError { message: String },
 }
 
 impl ZenError {
@@ -34,6 +36,9 @@ impl ZenError {
             }
             ZenError::TemplateEngineError { template, message } => {
                 Some(json!({ "template": template, "message": message }).to_string())
+            }
+            ZenError::LoaderConfigError { message } => {
+                Some(json!({ "message": message }).to_string())
             }
             _ => None,
         }

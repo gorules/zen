@@ -8,13 +8,15 @@ use crate::mt::{block_on, worker_pool};
 use crate::value::PyValue;
 use crate::variable::PyVariable;
 use anyhow::{anyhow, Context};
-use pyo3::prelude::{PyAnyMethods, PyDictMethods};
-use pyo3::types::PyDict;
+use pyo3::prelude::{PyAnyMethods, PyDictMethods, PyListMethods};
+use pyo3::types::{PyDict, PyList};
 use pyo3::{pyclass, pymethods, Bound, FromPyObject, IntoPyObjectExt, Py, PyAny, PyResult, Python};
 use pyo3_async_runtimes::tokio::get_current_locals;
 use pyo3_async_runtimes::{tokio, TaskLocals};
+use pythonize::{depythonize, pythonize};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use zen_engine::loader::{DynamicLoader, LoaderConfig};
 use zen_engine::{DecisionEngine, EvaluationOptions};
 
 #[pyclass]
@@ -76,6 +78,53 @@ impl Default for PyZenEngine {
     }
 }
 
+pub struct PyBatchRequest {
+    key: String,
+    context: Value,
+}
+
+impl<'py> FromPyObject<'py> for PyBatchRequest {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let dict = ob.downcast::<PyDict>()?;
+
+        let key: String = dict
+            .get_item("key")?
+            .ok_or_else(|| anyhow!("batch request requires a 'key'"))?
+            .extract()?;
+
+        let context = dict
+            .get_item("context")?
+            .ok_or_else(|| anyhow!("batch request requires a 'context'"))?
+            .extract::<PyValue>()?;
+
+        Ok(Self {
+            key,
+            context: context.0,
+        })
+    }
+}
+
+impl PyZenEngine {
+    fn config_loader(config: &Bound<'_, PyDict>) -> PyResult<DynamicLoader> {
+        let loader_type: Option<String> =
+            config.get_item("type")?.map(|v| v.extract()).transpose()?;
+
+        let loader_config = match loader_type.as_deref() {
+            Some("zip") => {
+                let bytes = config
+                    .get_item("bytes")?
+                    .ok_or_else(|| anyhow!("zip loader requires a 'bytes' value"))?;
+                LoaderConfig::Zip {
+                    bytes: bytes.extract()?,
+                }
+            }
+            _ => depythonize(config.as_any())?,
+        };
+
+        Ok(loader_config.into_loader()?)
+    }
+}
+
 #[pymethods]
 impl PyZenEngine {
     #[new]
@@ -83,11 +132,6 @@ impl PyZenEngine {
     pub fn new(py: Python, maybe_options: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
         let Some(options) = maybe_options else {
             return Ok(Default::default());
-        };
-
-        let loader = match options.get_item("loader")? {
-            Some(loader) => Some(loader.into_py_any(py)?),
-            None => None,
         };
 
         let custom_node = match options.get_item("customHandler")? {
@@ -102,11 +146,25 @@ impl PyZenEngine {
                 .flatten()
         };
 
+        let loader: DynamicLoader = match options.get_item("loader")? {
+            Some(loader) => match loader.downcast::<PyDict>() {
+                Ok(config) => Self::config_loader(config)?,
+                Err(_) => Arc::new(PyDecisionLoader::new(
+                    Some(loader.into_py_any(py)?),
+                    make_locals(),
+                )),
+            },
+            None => Arc::new(PyDecisionLoader::default()),
+        };
+
+        let engine = DecisionEngine::new(
+            loader,
+            Arc::new(PyCustomNode::new(custom_node, make_locals())),
+        );
+        engine.compile();
+
         Ok(Self {
-            engine: Arc::new(DecisionEngine::new(
-                Arc::new(PyDecisionLoader::new(loader, make_locals())),
-                Arc::new(PyCustomNode::new(custom_node, make_locals())),
-            )),
+            engine: Arc::new(engine),
         })
     }
 
@@ -129,6 +187,65 @@ impl PyZenEngine {
         })?;
 
         crate::convert::response_to_py(py, result)
+    }
+
+    #[pyo3(signature = (requests, opts=None))]
+    pub fn evaluate_batch(
+        &self,
+        py: Python,
+        requests: Vec<PyBatchRequest>,
+        opts: Option<PyZenEvaluateOptions>,
+    ) -> PyResult<Py<PyAny>> {
+        let options: EvaluationOptions = opts.unwrap_or_default().into();
+
+        let handles: Vec<_> = requests
+            .into_iter()
+            .map(|request| {
+                let engine = self.engine.clone();
+                worker_pool().spawn_pinned(move || async move {
+                    engine
+                        .evaluate_with_opts(request.key, request.context.into(), options)
+                        .await
+                        .map(crate::convert::PortableResponse::build)
+                        .map_err(|e| {
+                            serde_json::to_value(e.as_ref())
+                                .unwrap_or_else(|_| Value::String(e.to_string()))
+                        })
+                })
+            })
+            .collect();
+
+        let results = py.allow_threads(|| {
+            block_on(async move {
+                let mut out = Vec::with_capacity(handles.len());
+                for handle in handles {
+                    out.push(handle.await);
+                }
+                out
+            })
+        });
+
+        let list = PyList::empty(py);
+        for result in results {
+            let item = PyDict::new(py);
+            match result {
+                Ok(Ok(response)) => {
+                    item.set_item("success", true)?;
+                    item.set_item("data", response.into_py(py)?)?;
+                }
+                Ok(Err(error)) => {
+                    item.set_item("success", false)?;
+                    item.set_item("error", pythonize(py, &error)?)?;
+                }
+                Err(_) => {
+                    item.set_item("success", false)?;
+                    item.set_item("error", "evaluation worker panicked")?;
+                }
+            }
+            list.append(item)?;
+        }
+
+        Ok(list.into_py_any(py)?)
     }
 
     #[pyo3(signature = (key, ctx, opts=None))]

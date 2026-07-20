@@ -21,6 +21,9 @@ serde = { workspace = true, features = ["derive"] }
 async-trait = "0.1"
 tokio = "1.46"
 
+[dev-dependencies]
+tokio = { version = "1.46", features = ["macros", "rt-multi-thread"] }
+
 [build-dependencies]
 uniffi = { version = "0.29", features = ["build"] }
 

@@ -1,14 +1,17 @@
 use crate::error::ZenError;
 use crate::types::JsonBuffer;
+use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use uniffi::deps::anyhow::anyhow;
-use zen_engine::loader::{DecisionLoader, LoaderError, LoaderResponse};
+use zen_engine::loader::{
+    DecisionLoader, DynamicLoader, LoaderConfig, LoaderError, LoaderResponse,
+};
 use zen_engine::model::DecisionContent;
 
-#[uniffi::export(callback_interface)]
+#[uniffi::export(with_foreign)]
 #[async_trait::async_trait]
 pub trait ZenDecisionLoaderCallback: Send + Sync {
     async fn load(&self, key: String) -> Result<Option<JsonBuffer>, ZenError>;
@@ -23,7 +26,52 @@ impl ZenDecisionLoaderCallback for NoopDecisionLoader {
     }
 }
 
-pub struct ZenDecisionLoaderCallbackWrapper(pub Box<dyn ZenDecisionLoaderCallback>);
+#[derive(uniffi::Enum)]
+pub enum ZenLoader {
+    Callback {
+        callback: Arc<dyn ZenDecisionLoaderCallback>,
+    },
+    Static {
+        content: HashMap<String, JsonBuffer>,
+    },
+    Filesystem {
+        path: String,
+    },
+    Zip {
+        bytes: Vec<u8>,
+    },
+}
+
+impl ZenLoader {
+    pub fn into_dynamic_loader(self) -> Result<DynamicLoader, ZenError> {
+        let config = match self {
+            ZenLoader::Callback { callback } => {
+                return Ok(Arc::new(ZenDecisionLoaderCallbackWrapper(callback)));
+            }
+            ZenLoader::Static { content } => {
+                let content = content
+                    .into_iter()
+                    .map(|(key, buffer)| {
+                        let decision_content: DecisionContent =
+                            serde_json::from_slice(buffer.0.as_slice())
+                                .map_err(|_| ZenError::JsonDeserializationFailed)?;
+                        Ok((key, decision_content))
+                    })
+                    .collect::<Result<HashMap<_, _>, ZenError>>()?;
+
+                LoaderConfig::Static { content }
+            }
+            ZenLoader::Filesystem { path } => LoaderConfig::Filesystem { path },
+            ZenLoader::Zip { bytes } => LoaderConfig::Zip { bytes },
+        };
+
+        config
+            .into_loader()
+            .map_err(|e| ZenError::ValidationError(e.to_string()))
+    }
+}
+
+pub struct ZenDecisionLoaderCallbackWrapper(pub Arc<dyn ZenDecisionLoaderCallback>);
 
 impl Debug for ZenDecisionLoaderCallbackWrapper {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {

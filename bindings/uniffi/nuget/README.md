@@ -22,6 +22,18 @@ Console.WriteLine(response.result);
 
 ```
 
+## Loader Configurations
+
+The `loader` argument accepts either a callback (`ZenLoader.Callback`) or a loader configuration
+of a known type. With a configuration, decisions are pre-loaded and pre-compiled at engine
+creation for faster evaluations:
+
+```csharp
+var fsEngine = new ZenEngine(loader: new ZenLoader.Filesystem("decisions"));
+var zipEngine = new ZenEngine(loader: new ZenLoader.Zip(File.ReadAllBytes("decisions.zip")));
+var cbEngine = new ZenEngine(loader: new ZenLoader.Callback(new FileLoader()));
+```
+
 ## Features
 
 - **Decision Tables** - Rule tables with first/collect hit policies

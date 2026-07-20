@@ -68,6 +68,62 @@ class ZenEngine(unittest.TestCase):
         self.assertEqual(r2["result"]["sum"], 30)
         self.assertEqual(r3["result"]["sum"], 40)
 
+    def test_static_loader_config(self):
+        with open("../../test-data/table.json", "r") as f:
+            table_content = json.loads(f.read())
+
+        engine = zen.ZenEngine({"loader": {"type": "static", "content": {"table.json": table_content}}})
+        r1 = engine.evaluate("table.json", {"input": 2})
+        r2 = engine.evaluate("table.json", {"input": 12})
+
+        self.assertEqual(r1["result"]["output"], 0)
+        self.assertEqual(r2["result"]["output"], 10)
+        self.assertRaises(RuntimeError, engine.evaluate, "missing.json", {})
+
+    def test_fs_loader_config(self):
+        engine = zen.ZenEngine({"loader": {"type": "fs", "path": "../../test-data"}})
+        r1 = engine.evaluate("table.json", {"input": 2})
+        r2 = engine.evaluate("table.json", {"input": 12})
+
+        self.assertEqual(r1["result"]["output"], 0)
+        self.assertEqual(r2["result"]["output"], 10)
+
+    def test_zip_loader_config(self):
+        import io
+        import zipfile
+
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+            with open("../../test-data/table.json", "rb") as f:
+                archive.writestr("table.json", f.read())
+
+        engine = zen.ZenEngine({"loader": {"type": "zip", "bytes": buffer.getvalue()}})
+        r1 = engine.evaluate("table.json", {"input": 2})
+        r2 = engine.evaluate("table.json", {"input": 12})
+
+        self.assertEqual(r1["result"]["output"], 0)
+        self.assertEqual(r2["result"]["output"], 10)
+
+    def test_evaluate_batch(self):
+        engine = zen.ZenEngine({"loader": {"type": "fs", "path": "../../test-data"}})
+        results = engine.evaluate_batch([
+            {"key": "table.json", "context": {"input": 12}},
+            {"key": "missing.json", "context": {}},
+            {"key": "table.json", "context": {"input": 5}},
+        ])
+
+        self.assertEqual(len(results), 3)
+        self.assertTrue(results[0]["success"])
+        self.assertEqual(results[0]["data"]["result"]["output"], 10)
+        self.assertFalse(results[1]["success"])
+        self.assertIn("error", results[1])
+        self.assertTrue(results[2]["success"])
+        self.assertEqual(results[2]["data"]["result"]["output"], 0)
+
+    def test_evaluate_batch_empty(self):
+        engine = zen.ZenEngine({"loader": loader})
+        self.assertEqual(engine.evaluate_batch([]), [])
+
     def test_evaluate_expression(self):
         result = zen.evaluate_expression("sum(a)", {"a": [1, 2, 3, 4]})
         self.assertEqual(result, 10)

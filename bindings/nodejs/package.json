@@ -30,6 +30,8 @@
     "dtsHeaderFile": "./dts-header.d.ts",
     "npmClient": "yarn",
     "wasm": {
+      "initialMemory": 1024,
+      "maximumMemory": 16384,
       "browser": {
         "fs": false,
         "asyncInit": true

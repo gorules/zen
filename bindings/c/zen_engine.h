@@ -3,6 +3,12 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+typedef enum ZenLoaderConfigKind {
+  ZenLoaderConfigKind_Static,
+  ZenLoaderConfigKind_Filesystem,
+  ZenLoaderConfigKind_Zip,
+} ZenLoaderConfigKind;
+
 typedef struct ZenDecisionStruct {
   uint8_t _data[0];
 } ZenDecisionStruct;
@@ -30,11 +36,38 @@ typedef struct ZenEngineStruct {
  * CResult can be seen as Either<Result, Error>. It cannot, and should not, be initialized
  * manually. Instead, use error or ok functions for initialisation.
  */
+typedef struct ZenResult_ZenEngineStruct {
+  struct ZenEngineStruct *result;
+  uint8_t error;
+  char *details;
+} ZenResult_ZenEngineStruct;
+
+typedef struct ZenEngineLoaderConfig {
+  enum ZenLoaderConfigKind kind;
+  const char *content;
+  const uint8_t *bytes;
+  uintptr_t bytes_len;
+} ZenEngineLoaderConfig;
+
+typedef struct ZenCustomNodeResult {
+  char *content;
+  char *error;
+} ZenCustomNodeResult;
+
+/**
+ * CResult can be seen as Either<Result, Error>. It cannot, and should not, be initialized
+ * manually. Instead, use error or ok functions for initialisation.
+ */
 typedef struct ZenResult_ZenDecisionStruct {
   struct ZenDecisionStruct *result;
   uint8_t error;
   char *details;
 } ZenResult_ZenDecisionStruct;
+
+typedef struct ZenEngineEvaluateBatchRequest {
+  const char *key;
+  const char *context;
+} ZenEngineEvaluateBatchRequest;
 
 /**
  * CResult can be seen as Either<Result, Error>. It cannot, and should not, be initialized
@@ -52,11 +85,6 @@ typedef struct ZenDecisionLoaderResult {
 } ZenDecisionLoaderResult;
 
 typedef struct ZenDecisionLoaderResult (*ZenDecisionLoaderNativeCallback)(const char *key);
-
-typedef struct ZenCustomNodeResult {
-  char *content;
-  char *error;
-} ZenCustomNodeResult;
 
 typedef struct ZenCustomNodeResult (*ZenCustomNodeNativeCallback)(const char *request);
 
@@ -80,6 +108,13 @@ struct ZenResult_c_char zen_decision_evaluate(const struct ZenDecisionStruct *de
 struct ZenEngineStruct *zen_engine_new(void);
 
 /**
+ * Creates a new ZenEngine instance from a loader configuration, caller is responsible for
+ * freeing the returned reference by calling zen_engine_free.
+ */
+struct ZenResult_ZenEngineStruct zen_engine_new_with_loader_config(struct ZenEngineLoaderConfig config,
+                                                                   struct ZenCustomNodeResult (*maybe_custom_node)(const char *request));
+
+/**
  * Frees the ZenEngine instance reference from the memory
  */
 void zen_engine_free(struct ZenEngineStruct *engine);
@@ -99,6 +134,16 @@ struct ZenResult_c_char zen_engine_evaluate(const struct ZenEngineStruct *engine
                                             const char *key,
                                             const char *context,
                                             struct ZenEngineEvaluationOptions options);
+
+/**
+ * Evaluates a batch of requests in parallel using a DecisionEngine reference via loader.
+ * Returns a JSON array of { success, data?, error? } envelopes in request order.
+ * Caller is responsible for freeing: requests and ZenResult.
+ */
+struct ZenResult_c_char zen_engine_evaluate_batch(const struct ZenEngineStruct *engine,
+                                                  const struct ZenEngineEvaluateBatchRequest *requests,
+                                                  uintptr_t requests_len,
+                                                  struct ZenEngineEvaluationOptions options);
 
 /**
  * Loads a Decision through DecisionEngine
@@ -135,3 +180,9 @@ struct ZenEngineStruct *zen_engine_new_native(ZenDecisionLoaderNativeCallback lo
  */
 struct ZenEngineStruct *zen_engine_new_golang(const uintptr_t *maybe_loader,
                                               const uintptr_t *maybe_custom_node);
+
+/**
+ * Creates a DecisionEngine from a loader configuration using GoLang handler (optional). Caller is responsible for freeing DecisionEngine.
+ */
+struct ZenResult_ZenEngineStruct zen_engine_new_golang_with_loader_config(struct ZenEngineLoaderConfig config,
+                                                                          const uintptr_t *maybe_custom_node);

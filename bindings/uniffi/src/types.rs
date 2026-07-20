@@ -99,6 +99,19 @@ impl TryFrom<DecisionGraphResponse> for ZenEngineResponse {
 }
 
 #[derive(uniffi::Record)]
+pub struct ZenBatchRequest {
+    pub key: String,
+    pub context: JsonBuffer,
+}
+
+#[derive(uniffi::Record)]
+pub struct ZenBatchResult {
+    pub success: bool,
+    pub data: Option<ZenEngineResponse>,
+    pub error: Option<String>,
+}
+
+#[derive(uniffi::Record)]
 pub struct ZenEngineHandlerResponse {
     pub output: JsonBuffer,
     pub trace_data: Option<JsonBuffer>,

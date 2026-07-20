@@ -34,7 +34,7 @@ impl Debug for DecisionEngine {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct EvaluationOptions {
     pub trace: bool,
     pub max_depth: u8,

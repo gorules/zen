@@ -1,6 +1,7 @@
 use crate::custom_node::{DynamicCustomNode, ZenCustomNodeResult};
 use crate::engine::{ZenEngine, ZenEngineStruct};
-use crate::loader::{DynamicDecisionLoader, ZenDecisionLoaderResult};
+use crate::loader::{DynamicDecisionLoader, ZenDecisionLoaderResult, ZenEngineLoaderConfig};
+use crate::result::ZenResult;
 use std::ffi::{c_char, CString};
 use std::future::Future;
 use std::pin::Pin;
@@ -101,6 +102,27 @@ pub extern "C" fn zen_engine_new_golang(
     );
 
     Box::into_raw(Box::new(engine)) as *mut ZenEngineStruct
+}
+
+/// Creates a DecisionEngine from a loader configuration using GoLang handler (optional). Caller is responsible for freeing DecisionEngine.
+#[no_mangle]
+pub extern "C" fn zen_engine_new_golang_with_loader_config(
+    config: ZenEngineLoaderConfig,
+    maybe_custom_node: Option<&usize>,
+) -> ZenResult<ZenEngineStruct> {
+    let loader = match config.to_dynamic_loader() {
+        Ok(loader) => loader,
+        Err(error) => return ZenResult::error(error),
+    };
+
+    let custom_node = GoCustomNode::new(map_handler(maybe_custom_node.cloned()));
+    let engine = ZenEngine::new(
+        DynamicDecisionLoader::Config(loader),
+        DynamicCustomNode::Go(custom_node),
+    );
+    engine.compile();
+
+    ZenResult::ok(Box::into_raw(Box::new(engine)) as *mut ZenEngineStruct)
 }
 
 #[allow(unused_doc_comments)]

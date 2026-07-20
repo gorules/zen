@@ -51,6 +51,17 @@ impl<T> ZenResult<T> {
     }
 }
 
+#[cfg(test)]
+impl<T> ZenResult<T> {
+    pub(crate) fn result_ptr(&self) -> *mut T {
+        self.result
+    }
+
+    pub(crate) fn error_code(&self) -> u8 {
+        self.error
+    }
+}
+
 impl<T> From<&Box<EvaluationError>> for ZenResult<T> {
     fn from(evaluation_error: &Box<EvaluationError>) -> Self {
         let Ok(value) = serde_json::to_value(evaluation_error) else {

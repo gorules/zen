@@ -142,6 +142,8 @@ pub struct Snapshot {
     pub(crate) units: RefCell<HashMap<usize, Arc<Unit>>>,
     pub(crate) policy_diagnostics: RefCell<HashMap<Arc<str>, Arc<Vec<Diagnostic>>>>,
     pub(crate) eval_artifacts: RefCell<HashMap<Arc<str>, Arc<EvalArtifact>>>,
+    pub(crate) path_set: OnceCell<Arc<HashSet<Arc<str>>>>,
+    pub(crate) import_cycles: OnceCell<Arc<HashMap<Arc<str>, Vec<Diagnostic>>>>,
 }
 
 pub struct Unit {
@@ -241,6 +243,52 @@ impl Db {
 
     pub fn document_paths(&self) -> Vec<Arc<str>> {
         self.inputs.borrow().documents.keys().cloned().collect()
+    }
+
+    pub(crate) fn path_set(&self) -> Arc<HashSet<Arc<str>>> {
+        let snap = self.snapshot();
+        snap.path_set
+            .get_or_init(|| Arc::new(self.document_paths().into_iter().collect()))
+            .clone()
+    }
+
+    pub(crate) fn import_cycles(&self) -> Arc<HashMap<Arc<str>, Vec<Diagnostic>>> {
+        use crate::workspace::types::{DiagnosticCode, DiagnosticLocation};
+        use petgraph::algo::tarjan_scc;
+
+        let snap = self.snapshot();
+        snap.import_cycles
+            .get_or_init(|| {
+                let import_graph = &snap.import_graph;
+                let mut out: HashMap<Arc<str>, Vec<Diagnostic>> = HashMap::new();
+                for scc in tarjan_scc(&import_graph.graph) {
+                    let is_cycle = scc.len() > 1
+                        || scc
+                            .first()
+                            .is_some_and(|&idx| import_graph.graph.contains_edge(idx, idx));
+                    if !is_cycle {
+                        continue;
+                    }
+                    let mut members: Vec<Arc<str>> = scc
+                        .iter()
+                        .map(|&idx| import_graph.graph[idx].clone())
+                        .collect();
+                    members.sort();
+                    let rendered: Vec<String> = members.iter().map(|p| p.to_string()).collect();
+                    let message = format!("circular import among: {}", rendered.join(", "));
+                    for member in &members {
+                        out.entry(member.clone())
+                            .or_default()
+                            .push(Diagnostic::error(
+                                DiagnosticCode::CircularImport,
+                                DiagnosticLocation::policy(member.clone()),
+                                message.clone(),
+                            ));
+                    }
+                }
+                Arc::new(out)
+            })
+            .clone()
     }
 
     pub fn raw_document(&self, path: &str) -> Option<Arc<DecisionContent>> {
@@ -469,10 +517,10 @@ impl Db {
         unit.enriched_once
             .get_or_init(|| {
                 let snap = self.snapshot();
-                let subset: HashMap<Arc<str>, Arc<ParsedPolicy>> = snap
-                    .all_parsed
+                let subset: HashMap<Arc<str>, Arc<ParsedPolicy>> = unit
+                    .members
                     .iter()
-                    .filter(|(p, _)| unit.members.contains(*p))
+                    .filter_map(|m| snap.all_parsed.get_key_value(m))
                     .map(|(p, v)| (p.clone(), v.clone()))
                     .collect();
                 let base_scope = Snapshot::compute_base_scope(&subset, &unit.entity_sources);
@@ -484,6 +532,7 @@ impl Db {
                     &unit.dep_graph,
                     &unit.execution_order,
                     &snap.rule_by_ref,
+                    &snap.shallow,
                     &unit.members,
                     &self.intellisense,
                     Rc::new(unit.dictionary_types()),
@@ -554,23 +603,39 @@ impl Db {
         let opcode_cache = self.opcode_cache_of_unit(&unit);
         let input_schema = self.input_schema(policy);
         let eval_graph = EvalGraph::from_graph(&unit.dep_graph);
-        let reads: HashMap<BlockRef, Arc<[PropertyRead]>> = snap
-            .rule_by_ref
-            .keys()
-            .filter(|r| unit.members.contains(&r.policy_path))
-            .filter_map(|r| {
-                snap.shallow
-                    .for_block(r)
-                    .map(|s| (r.clone(), Arc::from(s.reads.clone())))
+        let reads: HashMap<BlockRef, Arc<[PropertyRead]>> = unit
+            .members
+            .iter()
+            .flat_map(|m| snap.shallow.rules_for(m))
+            .map(|s| {
+                (
+                    BlockRef {
+                        policy_path: s.policy_path.clone(),
+                        block_id: s.block_id.clone(),
+                    },
+                    Arc::from(s.reads.clone()),
+                )
             })
             .collect();
 
         let intellisense = self.intellisense();
         let entity_form = EntityForm::new(unit.entity_sources.as_ref());
-        let read_plans: HashMap<BlockRef, BlockReadPlan> = snap
-            .rule_by_ref
+        let unit_refs: Vec<(&BlockRef, &Arc<Block>)> = unit
+            .members
             .iter()
-            .filter(|(r, _)| unit.members.contains(&r.policy_path))
+            .flat_map(|m| snap.shallow.rules_for(m))
+            .filter_map(|s| {
+                let block_ref = BlockRef {
+                    policy_path: s.policy_path.clone(),
+                    block_id: s.block_id.clone(),
+                };
+                snap.rule_by_ref
+                    .get_key_value(&block_ref)
+                    .map(|(r, b)| (r, b))
+            })
+            .collect();
+        let read_plans: HashMap<BlockRef, BlockReadPlan> = unit_refs
+            .into_iter()
             .map(|(r, block)| {
                 let mut flatten = |src: &Arc<str>, kind: ExpressionKind| -> Vec<Arc<str>> {
                     if src.is_empty() {
@@ -634,10 +699,6 @@ impl Db {
             .iter()
             .find(|b| b.id() == Some(block_ref.block_id.as_ref()))
             .cloned()
-    }
-
-    pub fn import_graph(&self) -> Arc<ImportGraph> {
-        self.snapshot().import_graph.clone()
     }
 
     pub fn shallow(&self) -> Arc<ShallowAnalyses> {
@@ -730,6 +791,8 @@ impl Snapshot {
             units: RefCell::new(HashMap::new()),
             policy_diagnostics: RefCell::new(HashMap::new()),
             eval_artifacts: RefCell::new(HashMap::new()),
+            path_set: OnceCell::new(),
+            import_cycles: OnceCell::new(),
         }
     }
 
@@ -776,9 +839,9 @@ impl Snapshot {
         shallow: &ShallowAnalyses,
     ) -> Unit {
         let member_set: HashSet<Arc<str>> = members.iter().cloned().collect();
-        let subset: HashMap<Arc<str>, Arc<ParsedPolicy>> = all_parsed
+        let subset: HashMap<Arc<str>, Arc<ParsedPolicy>> = members
             .iter()
-            .filter(|(p, _)| member_set.contains(*p))
+            .filter_map(|m| all_parsed.get_key_value(m))
             .map(|(p, v)| (p.clone(), v.clone()))
             .collect();
 
@@ -788,10 +851,11 @@ impl Snapshot {
         let data_model_paths = Self::compute_data_model_paths(&subset);
         let classifier = Self::compute_path_classifier(&subset);
 
-        let per_rule: Vec<&RuleShallowAnalysis> = shallow
-            .per_rule
+        let mut sorted_members: Vec<&Arc<str>> = members.iter().collect();
+        sorted_members.sort();
+        let per_rule: Vec<&RuleShallowAnalysis> = sorted_members
             .iter()
-            .filter(|r| member_set.contains(&r.policy_path))
+            .flat_map(|m| shallow.rules_for(m))
             .collect();
         let dep_graph = Self::compute_graph(&per_rule, &data_model_paths, &entity_sources);
         let execution_order = Self::compute_execution_order(&dep_graph);

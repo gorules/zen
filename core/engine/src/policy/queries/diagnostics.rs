@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use ahash::{HashMap, HashMapExt, HashSet};
-use petgraph::algo::tarjan_scc;
 
 use crate::policy::ir::PropertyTypeIr;
 use crate::policy::linter::Linter;
@@ -19,13 +18,7 @@ impl Db {
         }
 
         let shallow = self.shallow();
-        out.extend(
-            shallow
-                .diagnostics
-                .iter()
-                .filter(|d| d.is_in(path))
-                .cloned(),
-        );
+        out.extend(shallow.diags_for(path).iter().cloned());
 
         out.extend(self.graph_diagnostics(path));
 
@@ -67,10 +60,7 @@ impl Db {
         let entity_sources = &unit.entity_sources;
         let classifier = &unit.classifier;
 
-        for rule_analysis in &shallow.per_rule {
-            if !rule_analysis.is_in(target) {
-                continue;
-            }
+        for rule_analysis in shallow.rules_for(target) {
             let mut flagged: HashSet<Arc<str>> = HashSet::default();
             for write in &rule_analysis.writes {
                 let PathRoot::Entity { entity, .. } = classifier.classify(&write.path) else {
@@ -110,10 +100,7 @@ impl Db {
         let classifier = &unit.classifier;
         let rule_index = self.rule_by_ref();
 
-        for rule_analysis in &shallow.per_rule {
-            if !rule_analysis.is_in(target) {
-                continue;
-            }
+        for rule_analysis in shallow.rules_for(target) {
             let block_ref = BlockRef {
                 policy_path: rule_analysis.policy_path.clone(),
                 block_id: rule_analysis.block_id.clone(),
@@ -175,10 +162,9 @@ impl Db {
         let mut first_writer: HashMap<Arc<str>, BlockRef> = HashMap::new();
         let mut all_writes: Vec<(BlockRef, bool, Arc<str>)> = Vec::new();
 
-        for rule in &shallow.per_rule {
-            if !visible.contains(&rule.policy_path) {
-                continue;
-            }
+        let mut sorted_members: Vec<&Arc<str>> = visible.iter().collect();
+        sorted_members.sort();
+        for rule in sorted_members.iter().flat_map(|m| shallow.rules_for(m)) {
             let in_target = rule.is_in(target);
             let block_ref = BlockRef {
                 policy_path: rule.policy_path.clone(),
@@ -340,7 +326,7 @@ impl Db {
         let Some(parsed) = self.parsed(target) else {
             return out;
         };
-        let all_paths: HashSet<Arc<str>> = self.document_paths().into_iter().collect();
+        let all_paths = self.path_set();
 
         for imported in parsed.policy.imports() {
             if !all_paths.contains(imported) {
@@ -352,29 +338,8 @@ impl Db {
             }
         }
 
-        let import_graph = self.import_graph();
-        for scc in tarjan_scc(&import_graph.graph) {
-            let is_cycle = scc.len() > 1
-                || scc
-                    .first()
-                    .is_some_and(|&idx| import_graph.graph.contains_edge(idx, idx));
-            if !is_cycle {
-                continue;
-            }
-            let mut members: Vec<Arc<str>> = scc
-                .iter()
-                .map(|&idx| import_graph.graph[idx].clone())
-                .collect();
-            if !members.iter().any(|p| p == target) {
-                continue;
-            }
-            members.sort();
-            let rendered: Vec<String> = members.iter().map(|p| p.to_string()).collect();
-            out.push(Diagnostic::error(
-                DiagnosticCode::CircularImport,
-                DiagnosticLocation::policy(target.clone()),
-                format!("circular import among: {}", rendered.join(", ")),
-            ));
+        if let Some(cycles) = self.import_cycles().get(target) {
+            out.extend(cycles.iter().cloned());
         }
         out
     }

@@ -277,11 +277,13 @@ impl Db {
                     let rendered: Vec<String> = members.iter().map(|p| p.to_string()).collect();
                     let message = format!("circular import among: {}", rendered.join(", "));
                     for member in &members {
-                        out.entry(member.clone()).or_default().push(Diagnostic::error(
-                            DiagnosticCode::CircularImport,
-                            DiagnosticLocation::policy(member.clone()),
-                            message.clone(),
-                        ));
+                        out.entry(member.clone())
+                            .or_default()
+                            .push(Diagnostic::error(
+                                DiagnosticCode::CircularImport,
+                                DiagnosticLocation::policy(member.clone()),
+                                message.clone(),
+                            ));
                     }
                 }
                 Arc::new(out)

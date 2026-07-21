@@ -21,6 +21,8 @@ pub struct ShallowAnalyses {
     pub per_rule: Vec<RuleShallowAnalysis>,
     pub diagnostics: Vec<Diagnostic>,
     by_block: HashMap<BlockRef, usize>,
+    rules_by_path: HashMap<Arc<str>, std::ops::Range<usize>>,
+    diags_by_path: HashMap<Arc<str>, std::ops::Range<usize>>,
 }
 
 impl ShallowAnalyses {
@@ -28,6 +30,20 @@ impl ShallowAnalyses {
         self.by_block
             .get(block_ref)
             .and_then(|&i| self.per_rule.get(i))
+    }
+
+    pub fn rules_for(&self, path: &Arc<str>) -> &[RuleShallowAnalysis] {
+        self.rules_by_path
+            .get(path)
+            .map(|r| &self.per_rule[r.clone()])
+            .unwrap_or(&[])
+    }
+
+    pub fn diags_for(&self, path: &Arc<str>) -> &[Diagnostic] {
+        self.diags_by_path
+            .get(path)
+            .map(|r| &self.diagnostics[r.clone()])
+            .unwrap_or(&[])
     }
 }
 
@@ -322,11 +338,15 @@ impl Snapshot {
     ) -> ShallowAnalyses {
         let mut per_rule: Vec<RuleShallowAnalysis> = Vec::new();
         let mut diagnostics: Vec<Diagnostic> = Vec::new();
+        let mut rules_by_path: HashMap<Arc<str>, std::ops::Range<usize>> = HashMap::new();
+        let mut diags_by_path: HashMap<Arc<str>, std::ops::Range<usize>> = HashMap::new();
 
         let mut sorted_paths: Vec<&Arc<str>> = all_parsed.keys().collect();
         sorted_paths.sort();
         for path in sorted_paths {
             let p = &all_parsed[path];
+            let rules_start = per_rule.len();
+            let diags_start = diagnostics.len();
 
             for rule in p.policy.rules() {
                 rule.check_single_entity_scope(path, classifier, &mut diagnostics);
@@ -355,6 +375,8 @@ impl Snapshot {
                     .collect()
             });
             per_rule.extend(policy_shallow.iter().cloned());
+            rules_by_path.insert(path.clone(), rules_start..per_rule.len());
+            diags_by_path.insert(path.clone(), diags_start..diagnostics.len());
         }
 
         let by_block = per_rule
@@ -375,6 +397,8 @@ impl Snapshot {
             per_rule,
             diagnostics,
             by_block,
+            rules_by_path,
+            diags_by_path,
         }
     }
 
@@ -534,6 +558,7 @@ impl Snapshot {
         graph: &DependencyGraph,
         order: &[PropertyPath],
         rule_by_ref: &HashMap<BlockRef, Arc<Block>>,
+        shallow: &ShallowAnalyses,
         members: &HashSet<Arc<str>>,
         intellisense: &SharedIntelliSense,
         dictionary_types: SharedDictionaryTypes,
@@ -560,16 +585,24 @@ impl Snapshot {
                 }
             }
         }
-        let mut remaining: Vec<&BlockRef> = rule_by_ref
-            .keys()
-            .filter(|key| members.contains(&key.policy_path) && !analyzed.contains(*key))
-            .collect();
+        let mut remaining: Vec<BlockRef> = Vec::new();
+        for member in members {
+            for s in shallow.rules_for(member) {
+                let key = BlockRef {
+                    policy_path: s.policy_path.clone(),
+                    block_id: s.block_id.clone(),
+                };
+                if analyzed.insert(key.clone()) {
+                    remaining.push(key);
+                }
+            }
+        }
         remaining.sort_by(|a, b| {
             a.policy_path
                 .cmp(&b.policy_path)
                 .then_with(|| a.block_id.cmp(&b.block_id))
         });
-        schedule.extend(remaining.into_iter().map(|key| (key.clone(), false)));
+        schedule.extend(remaining.into_iter().map(|key| (key, false)));
 
         for (key, splice) in schedule {
             let Some(rule) = rule_by_ref.get(&key) else {

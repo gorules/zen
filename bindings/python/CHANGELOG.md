@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.8](https://github.com/gorules/zen/compare/python-v1.0.0-beta.7...python-v1.0.0-beta.8) (2026-07-20)
+
+
+### Features
+
+* implement new loaders across languages ([#487](https://github.com/gorules/zen/issues/487)) ([1818371](https://github.com/gorules/zen/commit/1818371c908730b73e69e058d71099dccb537eab))
+
 ## [1.0.0-beta.7](https://github.com/gorules/zen/compare/python-v1.0.0-beta.6...python-v1.0.0-beta.7) (2026-07-16)
 
 ## [1.0.0-beta.6](https://github.com/gorules/zen/compare/python-v1.0.0-beta.5...python-v1.0.0-beta.6) (2026-07-10)

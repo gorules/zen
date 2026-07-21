@@ -9,5 +9,5 @@
   "bindings/uniffi": "1.0.0-beta.8",
   "bindings/c": "1.0.0-beta.7",
   "benchmark/rust": "0.0.8",
-  "core/expression_repl": "1.0.1-beta.6"
+  "core/expression_repl": "1.0.0-beta.7"
 }

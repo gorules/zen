@@ -1,6 +1,7 @@
 pub(crate) mod db;
 pub(crate) mod editor;
 pub(crate) mod graph;
+pub(crate) mod search;
 pub(crate) mod types;
 
 use std::sync::Arc;
@@ -23,8 +24,8 @@ pub use types::{
     EngineEdit, Entity, EntityField, EvaluateRequest, EvaluationError, EvaluationResult,
     ExpressionKind, FieldOrigin, GuardedProperty, InputProperty, InputValidationError,
     InspectResult, NlExpression, OutputProperty, PrepareRename, PropertyKind, ReferenceKind,
-    ReferenceSite, RenameTarget, SchemaFieldKind, SchemaGroup, ScopeRequest, Severity, Span, Trace,
-    WriteConflict, WriteTrace,
+    ReferenceSite, RenameTarget, SchemaFieldKind, SchemaGroup, ScopeRequest, SearchHit,
+    SearchHitKind, Severity, Span, Trace, WriteConflict, WriteTrace,
 };
 
 use types::Global;
@@ -194,6 +195,10 @@ impl Workspace {
 
     pub fn references(&self, target: &RenameTarget) -> Vec<ReferenceSite> {
         self.db.references(target)
+    }
+
+    pub fn search(&self, query: &str, limit: Option<u32>) -> Vec<SearchHit> {
+        self.db.search(query, limit)
     }
 
     pub fn input_skeleton(&self, req: &ScopeRequest) -> serde_json::Value {

@@ -310,6 +310,51 @@ export interface PolicyReferenceSite {
   kind: PolicyReferenceKind;
 }
 
+/** What kind of content a `PolicySearchHit` matched. */
+export type PolicySearchHitKind =
+  | 'document'
+  | 'heading'
+  | 'paragraph'
+  | 'listItem'
+  | 'codeBlock'
+  | 'expression'
+  | 'expressionKey'
+  | 'tableColumn'
+  | 'tableCell'
+  | 'matchKey'
+  | 'matchCondition'
+  | 'matchValue'
+  | 'assertionOutput'
+  | 'assertionCondition'
+  | 'dataModel'
+  | 'dataModelProperty'
+  | 'dictionary'
+  | 'dictionaryEntry'
+  | 'graphNode'
+  | 'switchCondition'
+  | 'function';
+
+/**
+ * One ranked fuzzy-search hit returned by `search()`. Location fields are
+ * populated per kind: policy hits carry `blockId` (plus `expressionId`,
+ * `row`/`column` for table cells), graph hits carry `nodeId`. `span` is a
+ * character range within `text` (which may be a snippet of long sources).
+ */
+export interface PolicySearchHit {
+  path: string;
+  blockId?: string;
+  nodeId?: string;
+  expressionId?: string;
+  row?: number;
+  column?: string;
+  kind: PolicySearchHitKind;
+  text: string;
+  /** Human context for the hit, e.g. column name, entity, or node name. */
+  context?: string;
+  span: PolicySpan;
+  score: number;
+}
+
 /**
  * One node in the transitive dependency tree returned by `dependencies()`.
  * Each node names a property; `writtenBy` is the block that produces it
@@ -418,6 +463,7 @@ export declare class Workspace {
   prepareRename(cursor: PolicyExpressionCursor): PolicyPrepareRenameResult | null
   rename(req: PolicyRenameRequest): PolicyEngineEdit[]
   references(target: any): PolicyReferenceSite[]
+  search(query: string, limit?: number | undefined | null): PolicySearchHit[]
   inputSkeleton(req: PolicyScopeRequest): unknown
   dependencies(target: string, document?: string | undefined | null): PolicyDependencyNode
   evaluate(req: PolicyEvaluateRequest): PolicyEvaluationResult

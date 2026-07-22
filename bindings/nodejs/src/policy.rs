@@ -913,6 +913,16 @@ impl Workspace {
             .collect())
     }
 
+    #[napi(ts_return_type = "PolicySearchHit[]")]
+    pub fn search(&self, query: String, limit: Option<u32>) -> napi::Result<Vec<Value>> {
+        Ok(self
+            .inner
+            .search(&query, limit)
+            .into_iter()
+            .map(|h| serde_json::to_value(h).expect("SearchHit serializes"))
+            .collect())
+    }
+
     #[napi(ts_return_type = "unknown")]
     pub fn input_skeleton(&self, env: Env, req: PolicyScopeRequest) -> napi::Result<Value> {
         self.ensure_function_types(&env)?;

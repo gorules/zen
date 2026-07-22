@@ -5,6 +5,7 @@ mod error;
 mod nl;
 mod request;
 mod result;
+mod search;
 
 pub use cursor::{
     Cursor, CursorTarget, ExpressionKind, InspectResult, PrepareRename, ReferenceKind,
@@ -23,3 +24,4 @@ pub use result::{
     GuardedProperty, InputProperty, InstanceTarget, OutputProperty, PropertyKind, SchemaFieldKind,
     SchemaGroup, Trace, WriteConflict, WriteTrace,
 };
+pub use search::{SearchHit, SearchHitKind};

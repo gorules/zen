@@ -282,6 +282,88 @@ impl PyZenEngine {
         Ok(result.unbind())
     }
 
+    #[pyo3(signature = (requests, opts=None))]
+    pub fn evaluate_batch(
+        &self,
+        py: Python,
+        requests: Vec<(String, PyValue)>,
+        opts: Option<PyZenEvaluateOptions>,
+    ) -> PyResult<Py<PyAny>> {
+        let options: EvaluationOptions = opts.unwrap_or_default().into();
+        let trace = options.trace;
+        let max_depth = options.max_depth;
+        let engine = self.engine.clone();
+
+        let outcomes = py.allow_threads(|| {
+            block_on(async move {
+                let mut handles = Vec::with_capacity(requests.len());
+                for (key, ctx) in requests {
+                    let engine = engine.clone();
+                    handles.push(worker_pool().spawn_pinned(move || async move {
+                        let options = EvaluationOptions { trace, max_depth };
+                        engine
+                            .evaluate_with_opts(key, ctx.0.into(), options)
+                            .await
+                            .map(crate::convert::PortableResponse::build)
+                            .map_err(|e| serde_json::to_value(e.as_ref()).unwrap_or_default())
+                    }));
+                }
+
+                let mut outcomes = Vec::with_capacity(handles.len());
+                for handle in handles {
+                    outcomes.push(match handle.await {
+                        Ok(outcome) => outcome,
+                        Err(_) => Err(Value::String("evaluation worker panicked".to_string())),
+                    });
+                }
+
+                outcomes
+            })
+        });
+
+        crate::convert::batch_results_to_py(py, outcomes)
+    }
+
+    #[pyo3(signature = (requests, opts=None))]
+    pub fn async_evaluate_batch<'py>(
+        &'py self,
+        py: Python<'py>,
+        requests: Vec<(String, PyValue)>,
+        opts: Option<PyZenEvaluateOptions>,
+    ) -> PyResult<Py<PyAny>> {
+        let options: EvaluationOptions = opts.unwrap_or_default().into();
+        let trace = options.trace;
+        let max_depth = options.max_depth;
+        let engine = self.engine.clone();
+
+        let result = tokio::future_into_py_with_locals(py, get_current_locals(py)?, async move {
+            let mut handles = Vec::with_capacity(requests.len());
+            for (key, ctx) in requests {
+                let engine = engine.clone();
+                handles.push(worker_pool().spawn_pinned(move || async move {
+                    let options = EvaluationOptions { trace, max_depth };
+                    engine
+                        .evaluate_with_opts(key, ctx.0.into(), options)
+                        .await
+                        .map(crate::convert::PortableResponse::build)
+                        .map_err(|e| serde_json::to_value(e.as_ref()).unwrap_or_default())
+                }));
+            }
+
+            let mut outcomes = Vec::with_capacity(handles.len());
+            for handle in handles {
+                outcomes.push(match handle.await {
+                    Ok(outcome) => outcome,
+                    Err(_) => Err(Value::String("evaluation worker panicked".to_string())),
+                });
+            }
+
+            Python::with_gil(|py| crate::convert::batch_results_to_py(py, outcomes))
+        })?;
+
+        Ok(result.unbind())
+    }
+
     pub fn create_decision(&self, content: PyZenDecisionContentJson) -> PyResult<PyZenDecision> {
         let decision = self
             .engine

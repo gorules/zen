@@ -234,14 +234,14 @@ impl<'a> Projector<'a> {
                     },
                     (span.0, span.0),
                 );
-                self.project(left, None);
+                self.project(left, expected.clone());
                 self.push(
                     NlTokenKind::Word {
                         sym: WordSym::RangeAnd,
                     },
                     (self.span_of(left).1, self.span_of(right).0),
                 );
-                self.project(right, None);
+                self.project(right, expected);
                 self.push(
                     NlTokenKind::IntervalClose {
                         inclusive: *right_bracket == Bracket::RightSquareBracket,
@@ -294,19 +294,17 @@ impl<'a> Projector<'a> {
             } => {
                 self.project(this, None);
                 let this_end = self.span_of(this).1;
-                self.push(
-                    NlTokenKind::Method {
-                        sym: kind.to_string().into_boxed_str(),
-                    },
-                    (this_end, span.1),
-                );
+                let sym = kind.to_string().into_boxed_str();
+                let arg_expected =
+                    Self::method_expects_date_arg(&sym).then_some(VariableType::Date);
+                self.push(NlTokenKind::Method { sym }, (this_end, span.1));
                 if let [only] = arguments {
                     if Self::is_simple_arg(only) {
-                        self.project(only, None);
+                        self.project(only, arg_expected);
                         return;
                     }
                 }
-                self.group_args(arguments, this_end, span.1);
+                self.group_args_expected(arguments, this_end, span.1, arg_expected);
             }
 
             Node::Closure { body, alias } => {
@@ -377,6 +375,21 @@ impl<'a> Projector<'a> {
                     _ => None,
                 };
                 self.project(right, needle_expected);
+                return;
+            }
+            if sym.as_ref() == "d" && matches!(arguments.first(), Some(Node::String(_))) {
+                if let [only] = arguments {
+                    self.project(only, Some(VariableType::Date));
+                    return;
+                }
+                self.push(
+                    NlTokenKind::Func {
+                        sym,
+                        closure: false,
+                    },
+                    (span.0, span.0),
+                );
+                self.group_args_expected(arguments, span.0, span.1, Some(VariableType::Date));
                 return;
             }
             let suppressed = self.unary && sym.as_ref() == "bool" && self.out.is_empty();
@@ -454,6 +467,13 @@ impl<'a> Projector<'a> {
             self.pending_elide = elide;
             self.project(closure, None);
         }
+    }
+
+    fn method_expects_date_arg(sym: &str) -> bool {
+        matches!(
+            sym,
+            "isSame" | "isBefore" | "isAfter" | "isSameOrBefore" | "isSameOrAfter" | "diff"
+        )
     }
 
     fn is_infix_predicate(sym: &str) -> bool {
@@ -746,13 +766,23 @@ impl<'a> Projector<'a> {
     }
 
     fn group_args(&mut self, arguments: &[&Node], open: u32, close: u32) {
+        self.group_args_expected(arguments, open, close, None);
+    }
+
+    fn group_args_expected(
+        &mut self,
+        arguments: &[&Node],
+        open: u32,
+        close: u32,
+        mut first_expected: Option<VariableType>,
+    ) {
         self.push(NlTokenKind::GroupOpen, (open, open));
         for (i, arg) in arguments.iter().enumerate() {
             if i > 0 {
                 let prev = self.span_of(arguments[i - 1]);
                 self.push(NlTokenKind::Comma, (prev.1, self.span_of(arg).0));
             }
-            self.project(arg, None);
+            self.project(arg, first_expected.take());
         }
         self.push(NlTokenKind::GroupClose, (close, close));
     }

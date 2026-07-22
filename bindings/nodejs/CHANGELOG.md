@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.11](https://github.com/gorules/zen/compare/nodejs-v1.0.0-beta.10...nodejs-v1.0.0-beta.11) (2026-07-22)
+
+
+### Features
+
+* search capability ([#494](https://github.com/gorules/zen/issues/494)) ([c3b9de6](https://github.com/gorules/zen/commit/c3b9de695b871c390c8825d589566c9eff8b2ede))
+
 ## [1.0.0-beta.10](https://github.com/gorules/zen/compare/nodejs-v1.0.0-beta.9...nodejs-v1.0.0-beta.10) (2026-07-22)
 
 

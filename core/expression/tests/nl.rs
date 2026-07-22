@@ -1017,7 +1017,45 @@ fn unary_date_subject_interval_hints_pickers() {
         .filter(|t| matches!(t.token, NlTokenKind::Str { .. }))
         .collect();
     assert_eq!(strs.len(), 2);
-    assert!(strs
+    assert!(strs.iter().all(|t| t.hint == Some(EditHint::DatePicker)));
+}
+
+#[test]
+fn date_method_arg_hints_picker() {
+    let root = obj(&[("startDate", VariableType::Date)]);
+    let result = run("startDate.isAfter('2024-01-15')", false, None, &root);
+
+    let date = result
+        .tokens
         .iter()
-        .all(|t| t.hint == Some(EditHint::DatePicker)));
+        .find(|t| matches!(t.token, NlTokenKind::Str { .. }))
+        .unwrap();
+    assert_eq!(date.hint, Some(EditHint::DatePicker));
+
+    let format = run("startDate.format('%Y-%m')", false, None, &root);
+    let pattern = format
+        .tokens
+        .iter()
+        .find(|t| matches!(t.token, NlTokenKind::Str { .. }))
+        .unwrap();
+    assert_eq!(pattern.hint, None);
+}
+
+#[test]
+fn bare_interval_endpoints_hint_picker() {
+    let root = obj(&[("startDate", VariableType::Date)]);
+    let result = run(
+        "startDate in ['2024-01-01'..'2024-12-31']",
+        false,
+        None,
+        &root,
+    );
+
+    let strs: Vec<_> = result
+        .tokens
+        .iter()
+        .filter(|t| matches!(t.token, NlTokenKind::Str { .. }))
+        .collect();
+    assert_eq!(strs.len(), 2);
+    assert!(strs.iter().all(|t| t.hint == Some(EditHint::DatePicker)));
 }

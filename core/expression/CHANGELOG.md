@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.0.0-beta.9](https://github.com/gorules/zen/compare/zen-expression-v1.0.0-beta.8...zen-expression-v1.0.0-beta.9) (2026-07-22)
+
+
+### Features
+
+* add date natural language ([#493](https://github.com/gorules/zen/issues/493)) ([1cb74e6](https://github.com/gorules/zen/commit/1cb74e6f59e3a8159dd972506b92bc9954dc9acf))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * zen-macros bumped from 1.0.0-beta.8 to 1.0.0-beta.9
+    * zen-types bumped from 1.0.0-beta.8 to 1.0.0-beta.9
+
 ## [1.0.0-beta.8](https://github.com/gorules/zen/compare/zen-expression-v1.0.0-beta.7...zen-expression-v1.0.0-beta.8) (2026-07-22)
 
 

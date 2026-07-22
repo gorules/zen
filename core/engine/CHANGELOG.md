@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.0.0-beta.9](https://github.com/gorules/zen/compare/zen-engine-v1.0.0-beta.8...zen-engine-v1.0.0-beta.9) (2026-07-22)
+
+
+### Features
+
+* search capability ([#494](https://github.com/gorules/zen/issues/494)) ([c3b9de6](https://github.com/gorules/zen/commit/c3b9de695b871c390c8825d589566c9eff8b2ede))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * zen-types bumped from 1.0.0-beta.8 to 1.0.0-beta.9
+    * zen-expression bumped from 1.0.0-beta.8 to 1.0.0-beta.9
+    * zen-tmpl bumped from 1.0.0-beta.8 to 1.0.0-beta.9
+
 ## [1.0.0-beta.8](https://github.com/gorules/zen/compare/zen-engine-v1.0.0-beta.7...zen-engine-v1.0.0-beta.8) (2026-07-22)
 
 

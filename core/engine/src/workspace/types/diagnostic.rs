@@ -173,10 +173,12 @@ pub enum DiagnosticCode {
     UnresolvedFunctionType,
     ImplicitAny,
     UncheckedNode,
+    NullabilityDivergence,
 
     RedundantNullish,
     RepeatedDerivation,
     PreferMatch,
+    PreferDictionary,
     RedundantTableRow,
     NonDiscriminatingColumn,
     RedundantParentheses,

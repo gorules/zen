@@ -510,6 +510,45 @@ impl DecisionTableIr {
             }
         }
 
+        if cx.is_enriched() {
+            for col in &self.inputs {
+                let Some(field) = col.field.as_ref().filter(|f| !f.is_empty()) else {
+                    continue;
+                };
+                let Some(field_type) = input_field_types.get(&col.id) else {
+                    continue;
+                };
+                if !matches!(field_type.unwrap_nullable().0, VariableType::String) {
+                    continue;
+                }
+                let mut tests: Vec<ArmTest> = Vec::new();
+                for rule in &self.rules {
+                    let Some(cell) = rule.get(&col.id).filter(|c| !c.is_empty()) else {
+                        continue;
+                    };
+                    if cell.trim() == "_" {
+                        continue;
+                    }
+                    tests.push(cx.cell_test(cell));
+                }
+                if let Some(values) = DictionaryCandidate::from_literal_tests(&tests) {
+                    cx.hint_with_target(
+                        DiagnosticCode::PreferDictionary,
+                        Some(col.id.clone()),
+                        None,
+                        Some(CursorTarget::DecisionTableHead {
+                            col: col.id.clone(),
+                        }),
+                        format!(
+                            "conditions on '{}' only test the fixed strings {} — define a dictionary and type the field with it for membership checking and labeled editing",
+                            field,
+                            DictionaryCandidate::format_values(&values)
+                        ),
+                    );
+                }
+            }
+        }
+
         for col in &self.outputs {
             if col.field.is_empty() {
                 continue;
@@ -545,6 +584,25 @@ impl DecisionTableIr {
                         }
                     }
                     None => cell_types.push(analysis.return_type.clone()),
+                }
+            }
+
+            if cx.is_enriched() {
+                if let Some(values) = DictionaryCandidate::from_const_cells(&cell_types) {
+                    cx.hint_with_target(
+                        DiagnosticCode::PreferDictionary,
+                        Some(col.id.clone()),
+                        None,
+                        Some(CursorTarget::DecisionTableHead {
+                            col: col.id.clone(),
+                        }),
+                        format!(
+                            "output column '{}' only produces the fixed strings {} — define a dictionary with these values and type the column with it ('out {}: <dictionary>') for membership checking and labeled editing",
+                            col.field,
+                            DictionaryCandidate::format_values(&values),
+                            col.field
+                        ),
+                    );
                 }
             }
 
@@ -1260,6 +1318,79 @@ impl DecisionTableIr {
                     .map_err(|e| cx.expression_error(cell, e))?;
                 Ok(result.as_bool().unwrap_or(false))
             }
+        }
+    }
+}
+
+pub(crate) struct DictionaryCandidate;
+
+impl DictionaryCandidate {
+    const MAX_SHOWN: usize = 6;
+
+    pub(crate) fn from_const_cells(cell_types: &[VariableType]) -> Option<Vec<std::rc::Rc<str>>> {
+        if cell_types.len() < 2 {
+            return None;
+        }
+        let mut values: Vec<std::rc::Rc<str>> = Vec::new();
+        for cell in cell_types {
+            let VariableType::Const(value) = cell else {
+                return None;
+            };
+            if !values.iter().any(|seen| seen == value) {
+                values.push(value.clone());
+            }
+        }
+        (values.len() >= 2 && !Self::all_date_like(&values)).then_some(values)
+    }
+
+    pub(crate) fn from_literal_tests(tests: &[ArmTest]) -> Option<Vec<std::rc::Rc<str>>> {
+        let mut values: Vec<std::rc::Rc<str>> = Vec::new();
+        let mut literal_cells = 0usize;
+        for test in tests {
+            match test {
+                ArmTest::Enum {
+                    values: cell_values,
+                    ..
+                } => {
+                    literal_cells += 1;
+                    for value in cell_values {
+                        if !values.iter().any(|seen| seen == value) {
+                            values.push(value.clone());
+                        }
+                    }
+                }
+                ArmTest::Default => {}
+                _ => return None,
+            }
+        }
+        (literal_cells >= 2 && values.len() >= 2 && !Self::all_date_like(&values)).then_some(values)
+    }
+
+    /// Literal-date value sets are calendars, not enums.
+    fn all_date_like(values: &[std::rc::Rc<str>]) -> bool {
+        let is_date_like = |value: &str| {
+            let bytes = value.as_bytes();
+            bytes.len() >= 10
+                && bytes[..4].iter().all(u8::is_ascii_digit)
+                && bytes[4] == b'-'
+                && bytes[5..7].iter().all(u8::is_ascii_digit)
+                && bytes[7] == b'-'
+                && bytes[8..10].iter().all(u8::is_ascii_digit)
+        };
+        values.iter().all(|value| is_date_like(value))
+    }
+
+    pub(crate) fn format_values(values: &[std::rc::Rc<str>]) -> String {
+        let shown = values
+            .iter()
+            .take(Self::MAX_SHOWN)
+            .map(|value| format!("\"{value}\""))
+            .collect::<Vec<_>>()
+            .join(" | ");
+        if values.len() > Self::MAX_SHOWN {
+            format!("{shown} | …")
+        } else {
+            shown
         }
     }
 }

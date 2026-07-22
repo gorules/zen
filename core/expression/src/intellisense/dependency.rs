@@ -682,10 +682,16 @@ impl<'a> DependencyResolutionWalker<'a> {
 
                                 match (alias, collection_source.as_ref()) {
                                     (Some(alias_name), Some(source)) => {
-                                        inner_scope.aliases.insert(
-                                            Rc::from(*alias_name),
-                                            scope.expand_alias_root(source),
-                                        );
+                                        let expanded = scope.expand_alias_root(source);
+                                        if scope.is_local(&expanded) {
+                                            inner_scope
+                                                .unresolved_aliases
+                                                .insert(Rc::from(*alias_name));
+                                        } else {
+                                            inner_scope
+                                                .aliases
+                                                .insert(Rc::from(*alias_name), expanded);
+                                        }
                                     }
                                     (Some(alias_name), None) => {
                                         inner_scope

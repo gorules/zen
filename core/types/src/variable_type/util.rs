@@ -61,8 +61,13 @@ impl VariableType {
                 let o1 = o1.borrow();
                 let o2 = o2.borrow();
 
-                o2.iter()
-                    .all(|(k, v)| o1.get(k).is_some_and(|tv| tv.satisfies(v)))
+                o2.iter().all(|(k, v)| match o1.get(k) {
+                    Some(tv) => tv.satisfies(v),
+                    None => matches!(
+                        v,
+                        VariableType::Any | VariableType::Null | VariableType::Nullable(_)
+                    ),
+                })
             }
 
             (VariableType::Const(c1), VariableType::Const(c2)) => c1 == c2,

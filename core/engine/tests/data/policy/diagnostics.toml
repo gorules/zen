@@ -403,8 +403,8 @@ content = '''
 }
 '''
 no_errors = true
-hint_codes = ["RedundantTableRow", "NonDiscriminatingColumn"]
-hint_count = 2
+hint_codes = ["RedundantTableRow", "NonDiscriminatingColumn", "PreferDictionary"]
+hint_count = 3
 
 # Multi-policy
 
@@ -500,7 +500,8 @@ content = '''
 }
 '''
 no_errors = true
-hint_count = 0
+hint_codes = ["PreferDictionary"]
+hint_count = 1
 
 [[test]]
 name = "values yields union of field types"
@@ -1297,4 +1298,36 @@ content = '''
 '''
 no_errors = true
 hint_codes = ["RedundantParentheses"]
+hint_count = 1
+
+[[test]]
+name = "static string output column hints a dictionary candidate"
+content = '''
+{
+  "blocks": [
+    {
+      "id": "schema",
+      "type": "dataModel",
+      "props": { "data": { "name": "inputs", "scope": "global", "properties": [
+        { "id": "prop1", "name": "amount", "type": "number", "array": false, "optional": false }
+      ] } }
+    },
+    {
+      "id": "table1",
+      "type": "decisionTable",
+      "props": { "data": {
+        "hitPolicy": "first",
+        "inputs": [ { "id": "col1", "name": "Amount", "field": "amount" } ],
+        "outputs": [ { "id": "out1", "name": "Method", "field": "method" } ],
+        "rules": [
+          { "_id": "row1", "col1": "> 100", "out1": "\"wire\"" },
+          { "_id": "row2", "col1": "", "out1": "\"card\"" }
+        ]
+      } }
+    }
+  ]
+}
+'''
+no_errors = true
+hint_codes = ["PreferDictionary"]
 hint_count = 1

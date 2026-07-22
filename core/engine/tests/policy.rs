@@ -3222,7 +3222,11 @@ fn unrelated_policies_do_not_leak_computed_global_types() {
     ws.set_policy("tier-writer", serde_json::from_value(writer).unwrap());
     ws.set_policy("tier-reader", serde_json::from_value(reader).unwrap());
 
-    let diags = ws.diagnostics("tier-reader");
+    let diags: Vec<_> = ws
+        .diagnostics("tier-reader")
+        .into_iter()
+        .filter(|d| d.severity != Severity::Hint)
+        .collect();
     assert!(
         diags.is_empty(),
         "tier-reader declares its own global tier:string and never imports tier-writer; \

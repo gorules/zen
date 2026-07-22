@@ -13,13 +13,15 @@ use zen_types::decision::{
 use zen_expression::intellisense::ArmTest;
 
 use crate::model::GraphContent;
-use crate::policy::blocks::{DecisionTableIr, DeclaredType, IntelliSenseSource, ReadFlattener};
+use crate::policy::blocks::{
+    DecisionTableIr, DeclaredType, DictionaryCandidate, IntelliSenseSource, ReadFlattener,
+};
 use crate::policy::linter::{AstOps, RedundantParentheses};
 use crate::policy::queries::scope::VariableTypeScope;
 use crate::workspace::db::Db;
 use crate::workspace::graph::function::FunctionTypeOutcome;
 use crate::workspace::types::{
-    CursorTarget, Diagnostic, DiagnosticCode, DiagnosticLocation, ExpressionKind,
+    CursorTarget, Diagnostic, DiagnosticCode, DiagnosticLocation, ExpressionKind, Severity,
 };
 
 const NODES_KEY: &str = "$nodes";
@@ -132,6 +134,7 @@ impl<'a> GraphAnalyzer<'a> {
 
         let output = Self::terminal_output(self.content, &topology, &nodes);
         let inferred_inputs = self.inferred_inputs(&topology, &nodes, &graph_input);
+        self.lint_output_any(&topology, &nodes, &graph_input);
         self.lint_unreachable(&topology);
         self.lint_expressions();
         self.sort_diagnostics(&topology);
@@ -413,6 +416,19 @@ impl<'a> GraphAnalyzer<'a> {
         }
     }
 
+    fn check_schema_enum_candidates(&mut self, node: &DecisionNode, schema: &serde_json::Value) {
+        let paths = super::SchemaType::inline_enum_paths(schema);
+        for path in paths.iter().take(8) {
+            self.diagnostics.push(Diagnostic::hint(
+                DiagnosticCode::PreferDictionary,
+                DiagnosticLocation::block(self.path.clone(), node.id.clone()),
+                format!(
+                    "schema property `{path}` declares an inline enum — reference a dictionary instead ({{\"$dictionary\": \"<name>\"}}) so the value set is defined once, labeled, and membership-checked"
+                ),
+            ));
+        }
+    }
+
     fn analyze_node(
         &mut self,
         node: &'a DecisionNode,
@@ -444,6 +460,7 @@ impl<'a> GraphAnalyzer<'a> {
             DecisionNodeKind::InputNode { content } => {
                 if let Some(schema) = content.schema.as_ref() {
                     self.check_schema_dictionaries(node, schema);
+                    self.check_schema_enum_candidates(node, schema);
                 }
                 analysis.output = graph_input.shallow_clone();
                 if matches!(graph_input, VariableType::Any) {
@@ -466,11 +483,24 @@ impl<'a> GraphAnalyzer<'a> {
                             ),
                         ));
                     }
+                    if let Some(schema) = content.schema.as_ref() {
+                        let divergent = super::SchemaType::nullability_divergences(schema);
+                        for path in divergent.iter().take(8) {
+                            self.diagnostics.push(Diagnostic::warning(
+                                DiagnosticCode::NullabilityDivergence,
+                                DiagnosticLocation::block(self.path.clone(), node.id.clone()),
+                                format!(
+                                    "optional property `{path}` reads as nullable, but its schema does not allow null — a payload carrying `{path}: null` fails validation at runtime; add \"null\" to its type if null is a real value, or ignore this if the field is strictly absent-or-present"
+                                ),
+                            ));
+                        }
+                    }
                 }
             }
             DecisionNodeKind::OutputNode { content } => {
                 if let Some(schema) = content.schema.as_ref() {
                     self.check_schema_dictionaries(node, schema);
+                    self.check_schema_enum_candidates(node, schema);
                 }
                 if let Some(schema) = content.schema.as_ref().filter(|_| self.validate) {
                     let expected =
@@ -692,7 +722,7 @@ impl<'a> GraphAnalyzer<'a> {
                 }
                 let mut output = handler(self, &element);
                 if attributes.pass_through {
-                    output = element.merge(&output);
+                    output = Self::merge_patch_type(&element, &output);
                 }
                 (element, output.array())
             }
@@ -704,20 +734,33 @@ impl<'a> GraphAnalyzer<'a> {
             output = wrapped;
         }
         if attributes.pass_through {
-            output = match &output {
-                VariableType::Array(_) => output,
-                VariableType::Object(_) => scope_input.merge(&output),
-                VariableType::Nullable(inner)
-                    if matches!(inner.as_ref(), VariableType::Object(_)) =>
-                {
-                    scope_input.merge(inner)
-                }
-                VariableType::Any => VariableType::Any,
-                _ => scope_input.shallow_clone(),
-            };
+            output = Self::merge_patch_type(scope_input, &output);
         }
 
         (handler_scope, output)
+    }
+
+    /// Type-level mirror of the runtime pass-through merge (`Variable::merge_clone`).
+    fn merge_patch_type(base: &VariableType, patch: &VariableType) -> VariableType {
+        match patch {
+            VariableType::Any => VariableType::Any,
+            VariableType::Array(_) => patch.shallow_clone(),
+            VariableType::Object(_) => base.merge(patch),
+            VariableType::Nullable(inner) => match inner.as_ref() {
+                VariableType::Object(fields) => {
+                    let optional = VariableType::empty_object();
+                    if let VariableType::Object(target) = &optional {
+                        let mut map = target.borrow_mut();
+                        for (key, value) in fields.borrow().iter() {
+                            map.insert(key.clone(), super::wrap_optional(value.shallow_clone()));
+                        }
+                    }
+                    base.merge(&optional)
+                }
+                _ => base.shallow_clone(),
+            },
+            _ => base.shallow_clone(),
+        }
     }
 
     fn check_expression_rows(
@@ -829,6 +872,51 @@ impl<'a> GraphAnalyzer<'a> {
             }
         }
 
+        for col in content.inputs.iter() {
+            let Some(field) = &col.field else {
+                continue;
+            };
+            let Some(field_type) = input_field_types.get(&col.id) else {
+                continue;
+            };
+            if !matches!(field_type.unwrap_nullable().0, VariableType::String) {
+                continue;
+            }
+            let intellisense = self.db.graph_intellisense();
+            let mut tests: Vec<ArmTest> = Vec::new();
+            for rule in content.rules.iter() {
+                let Some(cell) = rule.get(&col.id).filter(|c| !c.is_empty()) else {
+                    continue;
+                };
+                if cell.trim() == "_" {
+                    continue;
+                }
+                tests.push(IntelliSenseSource::cell_test(
+                    &mut intellisense.borrow_mut(),
+                    cell,
+                ));
+            }
+            if let Some(values) = DictionaryCandidate::from_literal_tests(&tests) {
+                self.diagnostics.push(Diagnostic::hint(
+                    DiagnosticCode::PreferDictionary,
+                    DiagnosticLocation::expression(
+                        self.path.clone(),
+                        node.id.clone(),
+                        col.id.clone(),
+                        None,
+                    )
+                    .with_target(CursorTarget::DecisionTableHead {
+                        col: col.id.clone(),
+                    }),
+                    format!(
+                        "conditions on '{}' only test the fixed strings {} — define a dictionary in an imported policy and type the field with it for membership checking and labeled editing",
+                        field,
+                        DictionaryCandidate::format_values(&values)
+                    ),
+                ));
+            }
+        }
+
         let output = VariableType::empty_object();
         for col in content.outputs.iter() {
             if col.field.is_empty() {
@@ -871,6 +959,28 @@ impl<'a> GraphAnalyzer<'a> {
                         }
                     }
                     None => cell_types.push(resolved),
+                }
+            }
+            if declared.is_none() {
+                if let Some(values) = DictionaryCandidate::from_const_cells(&cell_types) {
+                    self.diagnostics.push(Diagnostic::hint(
+                        DiagnosticCode::PreferDictionary,
+                        DiagnosticLocation::expression(
+                            self.path.clone(),
+                            node.id.clone(),
+                            col.id.clone(),
+                            None,
+                        )
+                        .with_target(CursorTarget::DecisionTableHead {
+                            col: col.id.clone(),
+                        }),
+                        format!(
+                            "output column '{}' only produces the fixed strings {} — define a dictionary with these values in an imported policy and type the column with it ('out {}: <dictionary>') for membership checking and labeled editing",
+                            col.field,
+                            DictionaryCandidate::format_values(&values),
+                            col.field
+                        ),
+                    ));
                 }
             }
             let has_empty_cell = content
@@ -1106,6 +1216,69 @@ impl<'a> GraphAnalyzer<'a> {
                     }
                 }
             }
+        }
+    }
+
+    fn lint_output_any(
+        &mut self,
+        topology: &GraphTopology,
+        nodes: &HashMap<Arc<str>, GraphNodeAnalysis>,
+        graph_input: &VariableType,
+    ) {
+        if matches!(graph_input, VariableType::Any) {
+            return;
+        }
+        if self
+            .diagnostics
+            .iter()
+            .any(|d| d.severity == Severity::Error)
+        {
+            return;
+        }
+        let Some(reachable) = Self::reachable_from_inputs(self.content, topology) else {
+            return;
+        };
+        let Some(order) = &topology.order else {
+            return;
+        };
+        let mut input_any = Vec::new();
+        Self::collect_any_paths(graph_input, String::new(), &mut input_any);
+        let mut seen: HashSet<String> = HashSet::default();
+        for &idx in order {
+            let node = &self.content.nodes[idx];
+            if !reachable[idx] || matches!(node.kind, DecisionNodeKind::InputNode { .. }) {
+                continue;
+            }
+            let Some(analysis) = nodes.get(&node.id) else {
+                continue;
+            };
+            if analysis.unchecked || analysis.opaque || analysis.open {
+                continue;
+            }
+            if matches!(analysis.output, VariableType::Any) {
+                self.diagnostics.push(Diagnostic::error(
+                    DiagnosticCode::ImplicitAny,
+                    DiagnosticLocation::block(self.path.clone(), node.id.clone()),
+                    format!(
+                        "output of node '{}' resolves to `any` — the graph's result type becomes unknown; type the producing expression or give the called sub-decision an input schema",
+                        node.name
+                    ),
+                ));
+                continue;
+            }
+            let mut any_paths = Vec::new();
+            Self::collect_any_paths(&analysis.output, String::new(), &mut any_paths);
+            any_paths.retain(|path| !input_any.contains(path) && !seen.contains(path));
+            for path in any_paths.iter().take(8) {
+                self.diagnostics.push(Diagnostic::error(
+                    DiagnosticCode::ImplicitAny,
+                    DiagnosticLocation::block(self.path.clone(), node.id.clone()),
+                    format!(
+                        "output `{path}` resolves to `any` — everything reading it degrades to `any`; give it a concrete type where it is produced"
+                    ),
+                ));
+            }
+            seen.extend(any_paths);
         }
     }
 
@@ -1376,20 +1549,76 @@ impl<'a> GraphAnalyzer<'a> {
                 DiagnosticCode::TypeMismatch,
                 DiagnosticLocation::block(self.path.clone(), node.id.clone()),
                 format!(
-                    "decision '{}' requires input '{path}' of type `{expected_type}`, but it is not provided",
-                    content.key
+                    "decision '{}' requires input '{path}' of type `{}`, but it is not provided",
+                    content.key,
+                    Self::type_sketch(&expected_type, 0)
                 ),
             ));
         }
         for (path, actual_type, expected_type) in mismatched {
+            let nullability_only = actual_type.is_nullable() && !expected_type.is_nullable() && {
+                let (actual_inner, _) = actual_type.unwrap_nullable();
+                actual_inner.satisfies(&expected_type)
+            };
+            let message = if nullability_only {
+                format!(
+                    "input '{path}' for decision '{}' may be null (`{actual_type}`), but a non-null `{expected_type}` is required",
+                    content.key
+                )
+            } else {
+                format!(
+                    "input '{path}' for decision '{}' has type `{}`, but `{}` is expected",
+                    content.key,
+                    Self::type_sketch(&actual_type, 0),
+                    Self::type_sketch(&expected_type, 0)
+                )
+            };
             self.diagnostics.push(Diagnostic::error(
                 DiagnosticCode::TypeMismatch,
                 DiagnosticLocation::block(self.path.clone(), node.id.clone()),
-                format!(
-                    "input '{path}' for decision '{}' has type `{actual_type}`, but `{expected_type}` is expected",
-                    content.key
-                ),
+                message,
             ));
+        }
+    }
+
+    /// Unlike `Display`, expands object fields so two different types never print identically.
+    fn type_sketch(variable_type: &VariableType, depth: usize) -> String {
+        const MAX_DEPTH: usize = 3;
+        const MAX_FIELDS: usize = 8;
+        match variable_type {
+            VariableType::Nullable(inner) => format!("{}?", Self::type_sketch(inner, depth)),
+            VariableType::Array(items) => {
+                let inner = Self::type_sketch(items, depth);
+                if inner.ends_with('?') {
+                    format!("({inner})[]")
+                } else {
+                    format!("{inner}[]")
+                }
+            }
+            VariableType::Object(fields) => {
+                let map = fields.borrow();
+                if map.is_empty() {
+                    return "{}".to_string();
+                }
+                if depth >= MAX_DEPTH {
+                    return "object".to_string();
+                }
+                let mut keys: Vec<_> = map.keys().cloned().collect();
+                keys.sort();
+                let mut parts: Vec<String> = keys
+                    .iter()
+                    .take(MAX_FIELDS)
+                    .filter_map(|key| {
+                        map.get(key.as_ref())
+                            .map(|field| format!("{key}: {}", Self::type_sketch(field, depth + 1)))
+                    })
+                    .collect();
+                if keys.len() > MAX_FIELDS {
+                    parts.push(format!("…+{} more", keys.len() - MAX_FIELDS));
+                }
+                format!("{{ {} }}", parts.join(", "))
+            }
+            other => other.to_string(),
         }
     }
 
@@ -1419,14 +1648,58 @@ impl<'a> GraphAnalyzer<'a> {
                     }
                 }
                 Some(actual_type) => {
-                    let (actual_inner, _) = actual_type.unwrap_nullable();
+                    let (actual_inner, actual_nullable) = actual_type.unwrap_nullable();
                     if matches!(actual_inner, VariableType::Any) {
+                        continue;
+                    }
+                    if actual_nullable && !optional {
+                        mismatched.push((
+                            path,
+                            actual_type.shallow_clone(),
+                            expected_type.shallow_clone(),
+                        ));
                         continue;
                     }
                     if let (VariableType::Object(e), VariableType::Object(a)) =
                         (expected_inner, actual_inner)
                     {
                         Self::diff_required(path, &e.borrow(), &a.borrow(), missing, mismatched);
+                        continue;
+                    }
+                    if let (VariableType::Array(e_item), VariableType::Array(a_item)) =
+                        (expected_inner, actual_inner)
+                    {
+                        let (e_it, item_optional) = e_item.unwrap_nullable();
+                        let (a_it, item_nullable) = a_item.unwrap_nullable();
+                        let item_path = format!("{path}[]");
+                        if matches!(a_it, VariableType::Any) {
+                            continue;
+                        }
+                        if item_nullable && !item_optional {
+                            mismatched.push((
+                                item_path,
+                                a_item.shallow_clone(),
+                                e_item.shallow_clone(),
+                            ));
+                            continue;
+                        }
+                        if let (VariableType::Object(e), VariableType::Object(a)) = (e_it, a_it) {
+                            Self::diff_required(
+                                item_path,
+                                &e.borrow(),
+                                &a.borrow(),
+                                missing,
+                                mismatched,
+                            );
+                            continue;
+                        }
+                        if !a_it.satisfies(e_it) {
+                            mismatched.push((
+                                item_path,
+                                a_it.shallow_clone(),
+                                e_it.shallow_clone(),
+                            ));
+                        }
                         continue;
                     }
                     if !actual_type.satisfies(expected_type) {
@@ -1454,6 +1727,14 @@ impl<'a> GraphAnalyzer<'a> {
         let analysis =
             IntelliSenseSource::analyze(&mut intellisense.borrow_mut(), source, kind, scope);
         for diagnostic in &analysis.diagnostics {
+            if !self.validate
+                && matches!(
+                    diagnostic.source,
+                    zen_expression::intellisense::diagnostic::DiagnosticSource::TypeCheck
+                )
+            {
+                continue;
+            }
             let location = DiagnosticLocation {
                 policy_path: self.path.clone(),
                 block_id: Some(node_id.clone()),

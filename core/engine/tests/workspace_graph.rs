@@ -3233,7 +3233,10 @@ fn assignment_bound_locals_keep_element_types_in_closures() {
     ];
     for expr in cases {
         let mut ws = Workspace::new();
-        ws.set_document("g", document(single_expression_graph(grouped_items_schema(), expr)));
+        ws.set_document(
+            "g",
+            document(single_expression_graph(grouped_items_schema(), expr)),
+        );
         let codes = error_codes(&ws, "g");
         assert!(
             codes.is_empty(),

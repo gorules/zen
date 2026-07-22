@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.10](https://github.com/gorules/zen/compare/nodejs-v1.0.0-beta.9...nodejs-v1.0.0-beta.10) (2026-07-22)
+
+
+### Features
+
+* workspace lints and type fixes ([#492](https://github.com/gorules/zen/issues/492)) ([63b560c](https://github.com/gorules/zen/commit/63b560c526887537e5764d5a0e62c47ab0c7e6a0))
+
 ## [1.0.0-beta.9](https://github.com/gorules/zen/compare/nodejs-v1.0.0-beta.8...nodejs-v1.0.0-beta.9) (2026-07-20)
 
 

@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.0.0-beta.8](https://github.com/gorules/zen/compare/zen-expression-v1.0.0-beta.7...zen-expression-v1.0.0-beta.8) (2026-07-22)
+
+
+### Features
+
+* workspace lints and type fixes ([#492](https://github.com/gorules/zen/issues/492)) ([63b560c](https://github.com/gorules/zen/commit/63b560c526887537e5764d5a0e62c47ab0c7e6a0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * zen-macros bumped from 1.0.0-beta.7 to 1.0.0-beta.8
+    * zen-types bumped from 1.0.0-beta.7 to 1.0.0-beta.8
+
 ## [1.0.0-beta.7](https://github.com/gorules/zen/compare/zen-expression-v1.0.0-beta.6...zen-expression-v1.0.0-beta.7) (2026-07-20)
 
 

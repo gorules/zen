@@ -83,6 +83,9 @@ fn score_token(hay: &[char], token: &[char]) -> Option<(u32, Span)> {
     }
     let first = first?;
     let spread = (last - first + 1) as u32;
+    if spread > token.len() as u32 * 3 {
+        return None;
+    }
     let compactness = ((token.len() as u32 * 100) / spread).min(100);
     Some((100 + compactness, (first as u32, last as u32 + 1)))
 }
@@ -615,6 +618,13 @@ mod tests {
             .find(|h| h.kind == SearchHitKind::DictionaryEntry)
             .expect("dictionary entry hit");
         assert_eq!(entry.context.as_deref(), Some("Tiers"));
+    }
+
+    #[test]
+    fn scattered_subsequence_is_rejected() {
+        let ws = workspace_with_fixtures();
+        let hits = ws.search("dplc", None);
+        assert!(!hits.iter().any(|h| h.kind == SearchHitKind::Paragraph));
     }
 
     #[test]

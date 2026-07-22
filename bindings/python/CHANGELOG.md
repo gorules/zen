@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.0.1-beta.9](https://github.com/gorules/zen/compare/python-v1.0.0-beta.9...python-v1.0.1-beta.9) (2026-07-22)
+## [1.0.0-beta.10](https://github.com/gorules/zen/compare/python-v1.0.0-beta.9...python-v1.0.0-beta.10) (2026-07-22)
 
 ## [1.0.0-beta.9](https://github.com/gorules/zen/compare/python-v1.0.0-beta.8...python-v1.0.0-beta.9) (2026-07-22)
 

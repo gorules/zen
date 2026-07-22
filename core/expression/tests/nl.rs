@@ -939,3 +939,85 @@ fn non_array_subject_falls_through() {
         NlTokenKind::Func { sym, closure: true } if sym.as_ref() == "some"
     ));
 }
+
+#[test]
+fn date_constructor_string_elides_func_and_hints_picker() {
+    let root = obj(&[("startDate", VariableType::Date)]);
+    let result = run("startDate > d('2024-01-15')", false, None, &root);
+
+    assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+    let k = kinds(&result);
+    assert!(!k
+        .iter()
+        .any(|t| matches!(t, NlTokenKind::Func { .. } | NlTokenKind::GroupOpen)));
+    let date = result
+        .tokens
+        .iter()
+        .find(|t| matches!(t.token, NlTokenKind::Str { .. }))
+        .unwrap();
+    assert_eq!(
+        date.token,
+        NlTokenKind::Str {
+            value: "2024-01-15".into()
+        }
+    );
+    assert_eq!(date.hint, Some(EditHint::DatePicker));
+    assert_eq!(date.span, (14, 26));
+}
+
+#[test]
+fn date_constructor_with_timezone_keeps_func_and_hints_first_arg() {
+    let root = obj(&[("startDate", VariableType::Date)]);
+    let result = run(
+        "startDate > d('2024-01-15 10:30', 'Europe/Berlin')",
+        false,
+        None,
+        &root,
+    );
+
+    let k = kinds(&result);
+    assert!(k
+        .iter()
+        .any(|t| matches!(t, NlTokenKind::Func { sym, closure: false } if sym.as_ref() == "d")));
+    let strs: Vec<_> = result
+        .tokens
+        .iter()
+        .filter(|t| matches!(t.token, NlTokenKind::Str { .. }))
+        .collect();
+    assert_eq!(strs.len(), 2);
+    assert_eq!(strs[0].hint, Some(EditHint::DatePicker));
+    assert_eq!(strs[1].hint, None);
+}
+
+#[test]
+fn bare_string_compared_to_date_field_hints_picker() {
+    let root = obj(&[("startDate", VariableType::Date)]);
+    let result = run("startDate >= '2024-01-15'", false, None, &root);
+
+    let date = result
+        .tokens
+        .iter()
+        .find(|t| matches!(t.token, NlTokenKind::Str { .. }))
+        .unwrap();
+    assert_eq!(date.hint, Some(EditHint::DatePicker));
+}
+
+#[test]
+fn unary_date_subject_interval_hints_pickers() {
+    let result = run(
+        "[d('2024-01-01')..d('2024-12-31')]",
+        true,
+        Some(VariableType::Date),
+        &VariableType::empty_object(),
+    );
+
+    let strs: Vec<_> = result
+        .tokens
+        .iter()
+        .filter(|t| matches!(t.token, NlTokenKind::Str { .. }))
+        .collect();
+    assert_eq!(strs.len(), 2);
+    assert!(strs
+        .iter()
+        .all(|t| t.hint == Some(EditHint::DatePicker)));
+}

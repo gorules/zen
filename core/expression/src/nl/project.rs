@@ -379,6 +379,21 @@ impl<'a> Projector<'a> {
                 self.project(right, needle_expected);
                 return;
             }
+            if sym.as_ref() == "d" && matches!(arguments.first(), Some(Node::String(_))) {
+                if let [only] = arguments {
+                    self.project(only, Some(VariableType::Date));
+                    return;
+                }
+                self.push(
+                    NlTokenKind::Func {
+                        sym,
+                        closure: false,
+                    },
+                    (span.0, span.0),
+                );
+                self.group_args_expected(arguments, span.0, span.1, Some(VariableType::Date));
+                return;
+            }
             let suppressed = self.unary && sym.as_ref() == "bool" && self.out.is_empty();
             if !suppressed {
                 self.push(
@@ -746,13 +761,23 @@ impl<'a> Projector<'a> {
     }
 
     fn group_args(&mut self, arguments: &[&Node], open: u32, close: u32) {
+        self.group_args_expected(arguments, open, close, None);
+    }
+
+    fn group_args_expected(
+        &mut self,
+        arguments: &[&Node],
+        open: u32,
+        close: u32,
+        mut first_expected: Option<VariableType>,
+    ) {
         self.push(NlTokenKind::GroupOpen, (open, open));
         for (i, arg) in arguments.iter().enumerate() {
             if i > 0 {
                 let prev = self.span_of(arguments[i - 1]);
                 self.push(NlTokenKind::Comma, (prev.1, self.span_of(arg).0));
             }
-            self.project(arg, None);
+            self.project(arg, first_expected.take());
         }
         self.push(NlTokenKind::GroupClose, (close, close));
     }

@@ -31,8 +31,8 @@ pub use context::{
     AnalysisContext, AnalysisSummary, ExecutionContext, ExecutionError, ExpressionLocation,
     InstanceSource, PropertyRead, SharedDictionaryTypes, SharedIntelliSense, WriteTarget,
 };
-pub(crate) use decision_table::TableSelection;
 pub use decision_table::{DecisionTableDoc, DecisionTableIr, DeclaredType};
+pub(crate) use decision_table::{DictionaryCandidate, TableSelection};
 pub use expression::{ExpressionDoc, ExpressionIr};
 pub(crate) use match_block::MatchSelection;
 pub use match_block::{MatchDoc, MatchIr};

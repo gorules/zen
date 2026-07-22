@@ -233,6 +233,22 @@ impl AnalysisContext {
             .push(Diagnostic::error(code, location, message));
     }
 
+    pub fn hint_with_target(
+        &mut self,
+        code: DiagnosticCode,
+        expression_id: Option<Arc<str>>,
+        span: Option<(u32, u32)>,
+        target: Option<CursorTarget>,
+        message: impl Into<String>,
+    ) {
+        let mut location = self.location_with(expression_id, span);
+        if let Some(t) = target {
+            location = location.with_target(t);
+        }
+        self.diagnostics
+            .push(Diagnostic::hint(code, location, message));
+    }
+
     fn location_with(
         &self,
         expression_id: Option<Arc<str>>,

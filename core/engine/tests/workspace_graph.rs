@@ -326,7 +326,10 @@ fn decision_table_cells_are_checked() {
         document(linear_graph(Some(person_schema()), vec![table])),
     );
     let diagnostics = ws.diagnostics("g");
-    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    assert!(
+        diagnostics.iter().all(|d| d.severity == Severity::Hint),
+        "{diagnostics:?}"
+    );
 
     let outputs = ws.outputs(&ScopeRequest::for_policy("g"));
     let result = outputs.iter().find(|o| o.path.as_ref() == "result");
@@ -1665,7 +1668,10 @@ fn switch_first_hit_narrows_branches_and_default() {
     let mut ws = Workspace::new();
     ws.set_document("g", document(switch_graph("first")));
     let diagnostics = ws.diagnostics("g");
-    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    assert!(
+        diagnostics.iter().all(|d| d.severity == Severity::Hint),
+        "{diagnostics:?}"
+    );
 
     assert!(
         matches!(node_input_kind(&ws, "g", "nShip"), VariableType::Const(ref c) if c.as_ref() == "shipping")
@@ -2658,5 +2664,606 @@ fn graph_signature_excludes_unreachable_sinks() {
     assert!(
         outputs.iter().any(|o| o.path.as_ref() == "fee"),
         "{outputs:?}"
+    );
+}
+
+fn rates_loop_graph(hit_policy: &str, rules: Value, pass_through: bool) -> Value {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "rates": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": { "region": { "type": "string" }, "amount": { "type": "number" } },
+                    "required": ["region", "amount"]
+                }
+            }
+        },
+        "required": ["rates"]
+    });
+    let table = node(
+        "dt",
+        "decisionTableNode",
+        json!({
+            "hitPolicy": hit_policy,
+            "passThrough": pass_through,
+            "inputField": "rates",
+            "executionMode": "loop",
+            "outputPath": "results",
+            "inputs": [{ "id": "c1", "name": "Amount", "field": "amount" }],
+            "outputs": [{ "id": "o1", "name": "Rate", "field": "rate" }],
+            "rules": rules
+        }),
+    );
+    let reader = node(
+        "read",
+        "expressionNode",
+        json!({
+            "passThrough": true,
+            "expressions": [
+                { "id": "e1", "key": "phantom", "value": "map(results, #.inclusive ?? false)" },
+                { "id": "e2", "key": "real", "value": "map(results, #.rate ?? 0)" },
+                { "id": "e3", "key": "carried", "value": "map(results, #.amount)" }
+            ]
+        }),
+    );
+    json!({
+        "nodes": [
+            node("in", "inputNode", json!({ "schema": schema.to_string() })),
+            table,
+            reader,
+            node("out", "outputNode", json!({})),
+        ],
+        "edges": [
+            edge("g1", "in", "dt"),
+            edge("g2", "dt", "read"),
+            edge("g3", "read", "out"),
+        ]
+    })
+}
+
+#[test]
+fn loop_table_output_columns_propagate_into_element_type() {
+    let mut ws = Workspace::new();
+    ws.set_document(
+        "g",
+        document(rates_loop_graph(
+            "first",
+            json!([
+                { "_id": "r1", "c1": "> 100", "o1": "0.12" },
+                { "_id": "r2", "c1": "", "o1": "0.02" }
+            ]),
+            true,
+        )),
+    );
+    let diagnostics = ws.diagnostics("g");
+    let phantom: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == DiagnosticCode::UndefinedVariable)
+        .collect();
+    assert_eq!(phantom.len(), 1, "{diagnostics:?}");
+    assert!(
+        phantom[0].message.contains("inclusive"),
+        "the never-produced field must be the one flagged: {diagnostics:?}"
+    );
+}
+
+#[test]
+fn loop_collect_table_elements_are_row_arrays() {
+    let mut ws = Workspace::new();
+    ws.set_document(
+        "g",
+        document(rates_loop_graph(
+            "collect",
+            json!([{ "_id": "r1", "c1": "> 100", "o1": "0.12" }]),
+            true,
+        )),
+    );
+    let analysis = ws.graph_analysis("g").expect("analysis");
+    let dt = analysis.nodes.get("dt").expect("dt node");
+    let results = dt.output.get("results");
+    let element = match &results {
+        VariableType::Array(inner) => inner.as_ref().shallow_clone(),
+        other => panic!("results must be an array, got {other:?}"),
+    };
+    assert!(
+        matches!(element, VariableType::Array(_)),
+        "collect in loop must produce row arrays per element, got {element:?}"
+    );
+    let member_errors = analysis
+        .diagnostics
+        .iter()
+        .filter(|d| d.location.block_id.as_deref() == Some("read") && d.severity == Severity::Error)
+        .count();
+    assert!(
+        member_errors >= 3,
+        "member reads on row arrays must be flagged: {:?}",
+        analysis.diagnostics
+    );
+}
+
+#[test]
+fn pass_through_nullable_patch_merges_fields_as_optional() {
+    let mut ws = Workspace::new();
+    let child_table = simple_table(json!([
+        { "_id": "r1", "c1": "> 18", "o1": "\"adult\"" }
+    ]));
+    let mut child = linear_graph(Some(person_schema()), vec![child_table]);
+    child["nodes"].as_array_mut().unwrap()[1]["content"]["passThrough"] = json!(false);
+    ws.set_document("child", document(child));
+
+    let decision = node(
+        "call",
+        "decisionNode",
+        json!({ "key": "child", "passThrough": true }),
+    );
+    ws.set_document(
+        "parent",
+        document(linear_graph(Some(person_schema()), vec![decision])),
+    );
+
+    let outputs = ws.outputs(&ScopeRequest::for_policy("parent"));
+    let result = outputs
+        .iter()
+        .find(|o| o.path.as_ref() == "result")
+        .expect("result output");
+    assert!(
+        matches!(result.resolved_type, VariableType::Nullable(_)),
+        "a nullable pass-through patch must merge its fields as optional, got {:?}",
+        result.resolved_type
+    );
+}
+
+fn line_items_child(required_item_fields: Value) -> Value {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "lineItems": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "amount": { "type": "number" },
+                        "inclusive": { "type": "boolean" }
+                    },
+                    "required": required_item_fields
+                }
+            }
+        },
+        "required": ["lineItems"]
+    });
+    linear_graph(
+        Some(schema),
+        vec![expression_node(
+            "calc",
+            &[("total", "sum(map(lineItems, #.amount))")],
+        )],
+    )
+}
+
+fn line_items_parent() -> Value {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "source": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": { "amount": { "type": "number" } },
+                    "required": ["amount"]
+                }
+            }
+        },
+        "required": ["source"]
+    });
+    let mut mk = expression_node("mk", &[("lineItems", "map(source, { amount: #.amount })")]);
+    mk["content"]["passThrough"] = json!(true);
+    let decision = node("call", "decisionNode", json!({ "key": "child" }));
+    linear_graph(Some(schema), vec![mk, decision])
+}
+
+#[test]
+fn decision_boundary_reports_item_level_diff() {
+    let mut ws = Workspace::new();
+    ws.set_document(
+        "child",
+        document(line_items_child(json!(["amount", "inclusive"]))),
+    );
+    ws.set_document("parent", document(line_items_parent()));
+    let diagnostics = ws.diagnostics("parent");
+    let errors: Vec<&str> = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .map(|d| d.message.as_str())
+        .collect();
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert!(
+        errors[0].contains("lineItems[].inclusive") && errors[0].contains("`bool`"),
+        "the diff must name the item field, not flatten to object[]: {errors:?}"
+    );
+}
+
+#[test]
+fn decision_boundary_allows_missing_optional_item_field() {
+    let mut ws = Workspace::new();
+    ws.set_document("child", document(line_items_child(json!(["amount"]))));
+    ws.set_document("parent", document(line_items_parent()));
+    let diagnostics = ws.diagnostics("parent");
+    assert!(
+        diagnostics.is_empty(),
+        "an optional item field the parent never produces must not break the boundary: {diagnostics:?}"
+    );
+}
+
+#[test]
+fn optional_property_without_null_type_warns_of_divergence() {
+    let mut ws = Workspace::new();
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "age": { "type": "number" },
+            "name": { "type": "string" },
+            "alias": { "type": ["string", "null"] },
+            "tags": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": { "label": { "type": "string" }, "weight": { "type": "number" } },
+                    "required": ["label"]
+                }
+            }
+        },
+        "required": ["age", "tags"]
+    });
+    ws.set_document(
+        "g",
+        document(linear_graph(
+            Some(schema),
+            vec![expression_node("calc", &[("x", "age * 2")])],
+        )),
+    );
+    let diagnostics = ws.diagnostics("g");
+    let divergent: Vec<&str> = diagnostics
+        .iter()
+        .filter(|d| d.code == DiagnosticCode::NullabilityDivergence)
+        .map(|d| d.message.as_str())
+        .collect();
+    assert_eq!(divergent.len(), 2, "{divergent:?}");
+    assert!(
+        divergent.iter().any(|m| m.contains("`name`")),
+        "{divergent:?}"
+    );
+    assert!(
+        divergent.iter().any(|m| m.contains("`tags[].weight`")),
+        "{divergent:?}"
+    );
+    assert!(
+        !divergent.iter().any(|m| m.contains("`alias`")),
+        "a type that allows null must not warn: {divergent:?}"
+    );
+}
+
+#[test]
+fn decision_boundary_names_nullability_delta() {
+    let mut ws = Workspace::new();
+    ws.set_document(
+        "child",
+        document(line_items_child(json!(["amount", "inclusive"]))),
+    );
+    let parent_schema = json!({
+        "type": "object",
+        "properties": {
+            "lineItems": {
+                "type": ["array", "null"],
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "amount": { "type": "number" },
+                        "inclusive": { "type": "boolean" }
+                    },
+                    "required": ["amount", "inclusive"]
+                }
+            }
+        },
+        "required": ["lineItems"]
+    });
+    let decision = node("call", "decisionNode", json!({ "key": "child" }));
+    ws.set_document(
+        "parent",
+        document(linear_graph(Some(parent_schema), vec![decision])),
+    );
+    let diagnostics = ws.diagnostics("parent");
+    let errors: Vec<&str> = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .map(|d| d.message.as_str())
+        .collect();
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert!(
+        errors[0].contains("lineItems") && errors[0].contains("may be null"),
+        "the nullability delta must be stated, not flattened: {errors:?}"
+    );
+}
+
+#[test]
+fn any_typed_graph_output_is_an_error_in_strict_graphs() {
+    let mut ws = Workspace::new();
+    let graph = json!({
+        "nodes": [
+            node("in", "inputNode", json!({ "schema": person_schema().to_string() })),
+            expression_node("a", &[("x", "$nodes.b.marker")]),
+            expression_node("b", &[("marker", "1")]),
+        ],
+        "edges": [edge("e1", "in", "a"), edge("e2", "in", "b")]
+    });
+    ws.set_document("g", document(graph));
+    let diagnostics = ws.diagnostics("g");
+    let implicit: Vec<&str> = diagnostics
+        .iter()
+        .filter(|d| d.code == DiagnosticCode::ImplicitAny && d.severity == Severity::Error)
+        .map(|d| d.message.as_str())
+        .collect();
+    assert_eq!(implicit.len(), 1, "{diagnostics:?}");
+    assert!(
+        implicit[0].contains("`x`"),
+        "the any-typed output path must be named: {implicit:?}"
+    );
+}
+
+#[test]
+fn recursive_decision_any_output_is_an_error() {
+    let mut ws = Workspace::new();
+    let decision = node("call", "decisionNode", json!({ "key": "g" }));
+    ws.set_document(
+        "g",
+        document(linear_graph(Some(person_schema()), vec![decision])),
+    );
+    let diagnostics = ws.diagnostics("g");
+    let implicit: Vec<&str> = diagnostics
+        .iter()
+        .filter(|d| d.code == DiagnosticCode::ImplicitAny && d.severity == Severity::Error)
+        .map(|d| d.message.as_str())
+        .collect();
+    assert!(
+        implicit.iter().any(|m| m.contains("resolves to `any`")),
+        "a recursive sub-decision degrades the result to any and must error: {diagnostics:?}"
+    );
+}
+
+#[test]
+fn schemaless_graph_output_any_stays_warning_only() {
+    let mut ws = Workspace::new();
+    ws.set_document(
+        "g",
+        document(linear_graph(
+            None,
+            vec![expression_node("calc", &[("double", "value * 2")])],
+        )),
+    );
+    let diagnostics = ws.diagnostics("g");
+    assert!(
+        diagnostics.iter().all(|d| d.severity != Severity::Error),
+        "without an input schema the graph stays warning-only: {diagnostics:?}"
+    );
+    assert!(
+        diagnostics
+            .iter()
+            .any(|d| d.code == DiagnosticCode::MissingInputSchema),
+        "{diagnostics:?}"
+    );
+}
+
+#[test]
+fn string_literal_columns_hint_dictionary_candidates() {
+    let mut ws = Workspace::new();
+    let table = node(
+        "dt",
+        "decisionTableNode",
+        json!({
+            "hitPolicy": "first",
+            "inputs": [{ "id": "c1", "name": "Name", "field": "name" }],
+            "outputs": [{ "id": "o1", "name": "Verdict", "field": "verdict" }],
+            "rules": [
+                { "_id": "r1", "c1": "\"gold\"", "o1": "\"approve\"" },
+                { "_id": "r2", "c1": "\"silver\"", "o1": "\"review\"" },
+                { "_id": "r3", "c1": "", "o1": "\"reject\"" }
+            ]
+        }),
+    );
+    ws.set_document(
+        "g",
+        document(linear_graph(Some(person_schema()), vec![table])),
+    );
+    let diagnostics = ws.diagnostics("g");
+    let hints: Vec<&str> = diagnostics
+        .iter()
+        .filter(|d| d.code == DiagnosticCode::PreferDictionary)
+        .map(|d| d.message.as_str())
+        .collect();
+    assert_eq!(hints.len(), 2, "{diagnostics:?}");
+    assert!(
+        hints
+            .iter()
+            .any(|m| m.contains("'name'") && m.contains("\"gold\" | \"silver\"")),
+        "{hints:?}"
+    );
+    assert!(
+        hints
+            .iter()
+            .any(|m| m.contains("'verdict'") && m.contains("\"approve\" | \"review\" | \"reject\"")),
+        "{hints:?}"
+    );
+}
+
+#[test]
+fn inline_schema_enum_hints_dictionary() {
+    let mut ws = Workspace::new();
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "status": { "type": "string", "enum": ["active", "suspended"] },
+            "tier": { "$dictionary": "customerTier" }
+        },
+        "required": ["status"]
+    });
+    ws.set_document(
+        "g",
+        document(linear_graph(
+            Some(schema),
+            vec![expression_node("calc", &[("s", "status")])],
+        )),
+    );
+    let diagnostics = ws.diagnostics("g");
+    let hints: Vec<&str> = diagnostics
+        .iter()
+        .filter(|d| d.code == DiagnosticCode::PreferDictionary)
+        .map(|d| d.message.as_str())
+        .collect();
+    assert_eq!(hints.len(), 1, "{diagnostics:?}");
+    assert!(hints[0].contains("`status`"), "{hints:?}");
+}
+
+#[test]
+fn date_literal_cells_do_not_hint_dictionary() {
+    let mut ws = Workspace::new();
+    let table = node(
+        "dt",
+        "decisionTableNode",
+        json!({
+            "hitPolicy": "first",
+            "inputs": [{ "id": "c1", "name": "Name", "field": "name" }],
+            "outputs": [{ "id": "o1", "name": "Rate", "field": "rate" }],
+            "rules": [
+                { "_id": "r1", "c1": "\"2024-01-01\"", "o1": "0.1" },
+                { "_id": "r2", "c1": "\"2018-01-01\"", "o1": "0.2" }
+            ]
+        }),
+    );
+    ws.set_document(
+        "g",
+        document(linear_graph(Some(person_schema()), vec![table])),
+    );
+    let diagnostics = ws.diagnostics("g");
+    assert!(
+        !diagnostics
+            .iter()
+            .any(|d| d.code == DiagnosticCode::PreferDictionary),
+        "date-keyed columns are calendars, not enums: {diagnostics:?}"
+    );
+}
+
+#[test]
+fn schemaless_graph_suppresses_type_derived_expression_errors() {
+    let mut ws = Workspace::new();
+    let graph = json!({
+        "nodes": [
+            node("in", "inputNode", json!({})),
+            expression_node("first", &[("count", "len(items)")]),
+            expression_node("second", &[("label", "$nodes.first.count + \"!\"")]),
+        ],
+        "edges": [edge("e1", "in", "first"), edge("e2", "first", "second")]
+    });
+    ws.set_document("g", document(graph));
+    let diagnostics = ws.diagnostics("g");
+    assert!(
+        diagnostics.iter().all(|d| d.severity != Severity::Error),
+        "an unchecked graph must not raise type-derived errors: {diagnostics:?}"
+    );
+    assert!(
+        diagnostics
+            .iter()
+            .any(|d| d.code == DiagnosticCode::MissingInputSchema),
+        "{diagnostics:?}"
+    );
+}
+
+#[test]
+fn strict_graph_still_reports_nodes_scope_type_errors() {
+    let mut ws = Workspace::new();
+    let graph = json!({
+        "nodes": [
+            node("in", "inputNode", json!({ "schema": person_schema().to_string() })),
+            expression_node("first", &[("count", "age * 2")]),
+            expression_node("second", &[("label", "$nodes.first.count + \"!\"")]),
+        ],
+        "edges": [edge("e1", "in", "first"), edge("e2", "first", "second")]
+    });
+    ws.set_document("g", document(graph));
+    let codes = error_codes(&ws, "g");
+    assert!(
+        codes.contains(&DiagnosticCode::TypeMismatch),
+        "strict graphs keep type checking: {codes:?}"
+    );
+}
+
+fn grouped_items_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "items": { "type": "array", "items": {
+                "type": "object",
+                "properties": {
+                    "grp": { "type": ["string", "null"] },
+                    "lines": { "type": ["array", "null"], "items": {
+                        "type": "object", "properties": { "idx": { "type": ["number", "null"] } } } }
+                }
+            } }
+        },
+        "required": ["items"]
+    })
+}
+
+fn single_expression_graph(schema: Value, expr: &str) -> Value {
+    json!({
+        "nodes": [
+            node("in", "inputNode", json!({ "schema": schema.to_string() })),
+            node("ex", "expressionNode", json!({ "expressions": [{ "id": "e1", "key": "out", "value": expr }] })),
+        ],
+        "edges": [edge("e1", "in", "ex")]
+    })
+}
+
+#[test]
+fn assignment_bound_locals_keep_element_types_in_closures() {
+    let cases = [
+        r#"map(items as m, (gp = filter(items as x, x.grp == m.grp)[0]; mw = filter(gp.lines ?? [] as c, c.idx == 0)[0]; mw))"#,
+        r#"(loc = filter(items as x, x.grp == "a"); map(loc as e, e.grp))"#,
+        r#"map(items as m, (gp = filter(items as x, x.grp == m.grp); len(gp) + (gp[0].grp == "a" ? 1 : 0)))"#,
+    ];
+    for expr in cases {
+        let mut ws = Workspace::new();
+        ws.set_document(
+            "g",
+            document(single_expression_graph(grouped_items_schema(), expr)),
+        );
+        let codes = error_codes(&ws, "g");
+        assert!(
+            codes.is_empty(),
+            "closure over a ;-bound local must type-check: {expr}\n{codes:?}"
+        );
+    }
+}
+
+#[test]
+fn missing_member_through_local_names_the_member_not_the_alias() {
+    let mut ws = Workspace::new();
+    ws.set_document(
+        "g",
+        document(single_expression_graph(
+            grouped_items_schema(),
+            r#"(loc = filter(items as x, x.grp == "a"); map(loc as e, e.doesNotExist))"#,
+        )),
+    );
+    let diagnostics = ws.diagnostics("g");
+    let errors: Vec<&str> = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .map(|d| d.message.as_str())
+        .collect();
+    assert_eq!(errors.len(), 1, "{diagnostics:?}");
+    assert!(
+        errors[0].contains("doesNotExist") && !errors[0].contains("'e'"),
+        "the specific member must be blamed, not the alias: {errors:?}"
     );
 }

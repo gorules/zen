@@ -61,6 +61,112 @@ impl SchemaType {
         }
     }
 
+    /// Optional properties resolve statically to `T?`, yet the runtime validator
+    /// rejects an explicit `null` unless the type admits it.
+    pub(crate) fn nullability_divergences(schema: &Value) -> Vec<String> {
+        let mut out = Vec::new();
+        Self::collect_divergences(schema, String::new(), &mut out);
+        out
+    }
+
+    fn collect_divergences(schema: &Value, path: String, out: &mut Vec<String>) {
+        let Some(object) = schema.as_object() else {
+            return;
+        };
+        if let Some(items) = object.get("items") {
+            let item_path = if path.is_empty() {
+                "[]".to_string()
+            } else {
+                format!("{path}[]")
+            };
+            Self::collect_divergences(items, item_path, out);
+        }
+        let Some(properties) = object.get("properties").and_then(Value::as_object) else {
+            return;
+        };
+        let required: Vec<&str> = object
+            .get("required")
+            .and_then(Value::as_array)
+            .map(|list| list.iter().filter_map(Value::as_str).collect())
+            .unwrap_or_default();
+        for (name, prop_schema) in properties {
+            let child_path = if path.is_empty() {
+                name.clone()
+            } else {
+                format!("{path}.{name}")
+            };
+            if !required.contains(&name.as_str()) && !Self::admits_null(prop_schema) {
+                out.push(child_path.clone());
+            }
+            Self::collect_divergences(prop_schema, child_path, out);
+        }
+    }
+
+    fn admits_null(schema: &Value) -> bool {
+        let Some(object) = schema.as_object() else {
+            return true;
+        };
+        if object.get("$dictionary").is_some() {
+            return false;
+        }
+        if let Some(cases) = object
+            .get("anyOf")
+            .or_else(|| object.get("oneOf"))
+            .and_then(Value::as_array)
+        {
+            return cases.iter().any(Self::admits_null);
+        }
+        if let Some(values) = object.get("enum").and_then(Value::as_array) {
+            return values.iter().any(Value::is_null);
+        }
+        match object.get("type") {
+            Some(Value::String(kind)) => kind == "null",
+            Some(Value::Array(kinds)) => kinds
+                .iter()
+                .filter_map(Value::as_str)
+                .any(|kind| kind == "null"),
+            _ => true,
+        }
+    }
+
+    pub(crate) fn inline_enum_paths(schema: &Value) -> Vec<String> {
+        let mut out = Vec::new();
+        Self::collect_inline_enums(schema, String::new(), &mut out);
+        out
+    }
+
+    fn collect_inline_enums(schema: &Value, path: String, out: &mut Vec<String>) {
+        let Some(object) = schema.as_object() else {
+            return;
+        };
+        if object.get("$dictionary").is_none() && !path.is_empty() {
+            if let Some(values) = object.get("enum").and_then(Value::as_array) {
+                let strings = values.iter().filter(|value| value.is_string()).count();
+                if strings == values.len() && values.len() >= 2 {
+                    out.push(path.clone());
+                }
+            }
+        }
+        if let Some(items) = object.get("items") {
+            let item_path = if path.is_empty() {
+                "[]".to_string()
+            } else {
+                format!("{path}[]")
+            };
+            Self::collect_inline_enums(items, item_path, out);
+        }
+        if let Some(properties) = object.get("properties").and_then(Value::as_object) {
+            for (name, prop_schema) in properties {
+                let child_path = if path.is_empty() {
+                    name.clone()
+                } else {
+                    format!("{path}.{name}")
+                };
+                Self::collect_inline_enums(prop_schema, child_path, out);
+            }
+        }
+    }
+
     pub(crate) fn dictionary_names(schema: &Value, out: &mut Vec<Arc<str>>) {
         match schema {
             Value::Object(map) => {

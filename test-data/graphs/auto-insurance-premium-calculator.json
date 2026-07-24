@@ -42,7 +42,8 @@
         "riskFactors": {
           "ageRiskFactor": 1.2,
           "driverRiskCategory": "medium",
-          "vehicleRiskFactor": 1
+          "vehicleRiskFactor": 1,
+          "coverageFactor": 1.2
         }
       }
     }

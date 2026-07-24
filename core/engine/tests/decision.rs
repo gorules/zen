@@ -198,7 +198,10 @@ async fn decision_table_first_hit_trace_matches_untraced() {
 
 #[tokio::test]
 #[cfg_attr(miri, ignore)]
-async fn decision_table_missing_cell_key_is_row_miss() {
+async fn decision_table_missing_cell_key_is_treated_as_empty() {
+    // Editors may store sparse rules (only the cells that were filled in).
+    // A missing input cell key behaves like an empty cell ("any") and a
+    // missing output cell key simply writes nothing for that column.
     let content = serde_json::from_value(json!({
         "nodes": [
             { "id": "in", "name": "in", "type": "inputNode", "content": {} },
@@ -207,7 +210,10 @@ async fn decision_table_missing_cell_key_is_row_miss() {
                 "content": {
                     "hitPolicy": "first",
                     "inputs": [{ "id": "i1", "name": "Age", "field": "age" }],
-                    "outputs": [{ "id": "o1", "name": "Result", "field": "result" }],
+                    "outputs": [
+                        { "id": "o1", "name": "Result", "field": "result" },
+                        { "id": "o2", "name": "Extra", "field": "extra" }
+                    ],
                     "rules": [
                         { "_id": "r1", "o1": "'hit'" }
                     ]
@@ -224,5 +230,17 @@ async fn decision_table_missing_cell_key_is_row_miss() {
     let decision = Decision::from(Arc::new(content));
 
     let result = decision.evaluate(json!({ "age": 1 }).into()).await.unwrap();
-    assert_eq!(result.result, json!({}).into());
+    assert_eq!(result.result, json!({ "result": "hit" }).into());
+
+    let traced = decision
+        .evaluate_with_opts(
+            json!({ "age": 1 }).into(),
+            EvaluationOptions {
+                trace: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(traced.result, result.result);
 }

@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.0.1-beta.10](https://github.com/gorules/zen/compare/uniffi-v1.0.0-beta.10...uniffi-v1.0.1-beta.10) (2026-07-24)
+## [1.0.0-beta.11](https://github.com/gorules/zen/compare/uniffi-v1.0.0-beta.10...uniffi-v1.0.0-beta.11) (2026-07-24)
 
 ## [1.0.0-beta.10](https://github.com/gorules/zen/compare/uniffi-v1.0.0-beta.9...uniffi-v1.0.0-beta.10) (2026-07-22)
 

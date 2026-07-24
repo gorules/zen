@@ -125,7 +125,6 @@ impl DecisionTableNodeHandler {
         input: &zen_types::decision::DecisionTableInputField,
         isolate: &mut Isolate,
     ) -> bool {
-        // A missing cell key is equivalent to an empty cell ("any").
         let Some(rule_value) = rule.get(&input.id) else {
             return true;
         };
@@ -155,7 +154,6 @@ impl DecisionTableNodeHandler {
     ) -> Option<RowResult> {
         let content = &ctx.node;
         for input in content.inputs.iter() {
-            // A missing cell key is equivalent to an empty cell ("any").
             let Some(rule_value) = rule.get(&input.id) else {
                 continue;
             };

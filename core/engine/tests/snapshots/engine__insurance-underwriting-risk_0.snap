@@ -31,8 +31,8 @@ result:
   totalRiskScore:
     "$serde_json::private::Number": "30"
   underwriting:
-    needsManualReview: false
-    referralReason: No referral required
+    needsManualReview: true
+    referralReason: Discrepancy in personal information
 trace:
   dt1:
     id: dt1
@@ -170,27 +170,17 @@ trace:
       totalRiskScore:
         "$serde_json::private::Number": "30"
       underwriting:
-        needsManualReview: false
-        referralReason: No referral required
+        needsManualReview: true
+        referralReason: Discrepancy in personal information
     performance: "[perf]"
     traceData:
       index:
-        "$serde_json::private::Number": "5"
+        "$serde_json::private::Number": "3"
       reference_map:
-        answers.coverageAmount:
-          "$serde_json::private::Number": "1200000"
-        answers.hasForeignResidency: false
-        answers.hasIncompleteInformation: false
         answers.hasInformationDiscrepancy: true
-        totalRiskScore:
-          "$serde_json::private::Number": "30"
       rule:
-        _id: r2-6
-        "answers.coverageAmount[i2-1]": ""
-        "answers.hasForeignResidency[i2-5]": ""
-        "answers.hasIncompleteInformation[i2-3]": ""
-        "answers.hasInformationDiscrepancy[i2-4]": ""
-        "totalRiskScore[i2-2]": ""
+        _id: r2-4
+        "answers.hasInformationDiscrepancy[i2-4]": "true"
   ex1:
     id: ex1
     input:

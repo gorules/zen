@@ -33,6 +33,8 @@ result:
   riskFactors:
     ageRiskFactor:
       "$serde_json::private::Number": "1.2"
+    coverageFactor:
+      "$serde_json::private::Number": "1.2"
     driverRiskCategory: medium
     vehicleRiskFactor:
       "$serde_json::private::Number": "1"
@@ -250,11 +252,23 @@ trace:
       riskFactors:
         ageRiskFactor:
           "$serde_json::private::Number": "1.2"
+        coverageFactor:
+          "$serde_json::private::Number": "1.2"
         driverRiskCategory: medium
         vehicleRiskFactor:
           "$serde_json::private::Number": "1"
     performance: "[perf]"
-    traceData: ~
+    traceData:
+      index:
+        "$serde_json::private::Number": "7"
+      reference_map:
+        policy.coverageType: comprehensive
+        policy.deductible:
+          "$serde_json::private::Number": "500"
+      rule:
+        _id: r3-8
+        "policy.coverageType[i3-1]": "'comprehensive'"
+        "policy.deductible[i3-2]": "[500..1000]"
   ex1:
     id: ex1
     input:

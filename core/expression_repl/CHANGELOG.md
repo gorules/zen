@@ -34,6 +34,10 @@
   * dependencies
     * zen-expression bumped from 1.0.0-beta.8 to 1.0.0-beta.9
 
+* The following workspace dependencies were updated
+  * dependencies
+    * zen-expression bumped from 1.0.0-beta.9 to 1.0.0-beta.10
+
 ## [1.0.0-beta.0](https://github.com/gorules/zen/compare/expression_repl-v0.55.1...expression_repl-v1.0.0-beta.0) (2026-06-25)
 
 

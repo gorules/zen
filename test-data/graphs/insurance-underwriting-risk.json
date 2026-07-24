@@ -46,8 +46,8 @@
         ],
         "totalRiskScore": 30,
         "underwriting": {
-          "needsManualReview": false,
-          "referralReason": "No referral required"
+          "needsManualReview": true,
+          "referralReason": "Discrepancy in personal information"
         }
       }
     }

@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.0.0-beta.10](https://github.com/gorules/zen/compare/zen-expression-v1.0.0-beta.9...zen-expression-v1.0.0-beta.10) (2026-07-24)
+
+
+### Miscellaneous
+
+* **zen-expression:** Synchronize core versions
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * zen-macros bumped from 1.0.0-beta.9 to 1.0.0-beta.10
+    * zen-types bumped from 1.0.0-beta.9 to 1.0.0-beta.10
+
 ## [1.0.0-beta.9](https://github.com/gorules/zen/compare/zen-expression-v1.0.0-beta.8...zen-expression-v1.0.0-beta.9) (2026-07-22)
 
 

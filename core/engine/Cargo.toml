@@ -3,7 +3,7 @@ authors = ["GoRules Team <bot@gorules.io>"]
 description = "Business rules engine"
 name = "zen-engine"
 license = "MIT"
-version = "1.0.0-beta.9"
+version = "1.0.0-beta.10"
 edition = "2021"
 repository = "https://github.com/gorules/zen.git"
 
@@ -26,9 +26,9 @@ rust_decimal = { workspace = true, features = ["maths-nopanic"] }
 fixedbitset = "0.5"
 tokio = { workspace = true, features = ["sync", "time"] }
 rquickjs = { version = "0.10", features = ["macro", "loader", "rust-alloc", "futures", "either", "properties"] }
-zen-types = { path = "../types", version = "1.0.0-beta.9" }
-zen-expression = { path = "../expression", version = "1.0.0-beta.9" }
-zen-tmpl = { path = "../template", version = "1.0.0-beta.9" }
+zen-types = { path = "../types", version = "1.0.0-beta.10" }
+zen-expression = { path = "../expression", version = "1.0.0-beta.10" }
+zen-tmpl = { path = "../template", version = "1.0.0-beta.10" }
 nohash-hasher = { workspace = true }
 downcast-rs = { version = "2.0", features = ["std", "sync"] }
 arc-swap = "1"

@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.0.0-beta.10](https://github.com/gorules/zen/compare/zen-engine-v1.0.0-beta.9...zen-engine-v1.0.0-beta.10) (2026-07-24)
+
+
+### Bug Fixes
+
+* dt no cell defaults to true ([#496](https://github.com/gorules/zen/issues/496)) ([37d5e0b](https://github.com/gorules/zen/commit/37d5e0baf7871a03ebcc52738764975d7d2a14e3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * zen-types bumped from 1.0.0-beta.9 to 1.0.0-beta.10
+    * zen-expression bumped from 1.0.0-beta.9 to 1.0.0-beta.10
+    * zen-tmpl bumped from 1.0.0-beta.9 to 1.0.0-beta.10
+
 ## [1.0.0-beta.9](https://github.com/gorules/zen/compare/zen-engine-v1.0.0-beta.8...zen-engine-v1.0.0-beta.9) (2026-07-22)
 
 

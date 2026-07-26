@@ -4,10 +4,10 @@
   "core/types": "1.0.0-beta.11",
   "core/template": "1.0.0-beta.11",
   "core/macros": "1.0.0-beta.11",
-  "bindings/nodejs": "1.0.1-beta.12",
-  "bindings/python": "1.0.1-beta.11",
-  "bindings/uniffi": "1.0.1-beta.11",
-  "bindings/c": "1.0.1-beta.10",
+  "bindings/nodejs": "1.0.0-beta.13",
+  "bindings/python": "1.0.0-beta.12",
+  "bindings/uniffi": "1.0.0-beta.12",
+  "bindings/c": "1.0.0-beta.11",
   "benchmark/rust": "0.0.12",
-  "core/expression_repl": "1.0.1-beta.10"
+  "core/expression_repl": "1.0.0-beta.11"
 }

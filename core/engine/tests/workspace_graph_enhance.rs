@@ -147,6 +147,50 @@ async fn expression_rows_get_ast_reads_including_dollar_refs() {
 }
 
 #[tokio::test]
+async fn dotted_expression_keys_resolve_trace_values() {
+    // Expression trace maps are keyed by the LITERAL row key; a key containing
+    // dots ("quote.annualPremium") must not be resolved as a nested path.
+    let docs = [(
+        "g",
+        linear_graph(vec![expression_node(
+            "calc",
+            &[
+                ("base", "100"),
+                ("quote.annualPremium", "round($.base * 2.5, 2)"),
+                ("doubled", "$.quote.annualPremium * 2"),
+                ("quote.factors.driver", "$.base / 100"),
+            ],
+            json!({}),
+        )]),
+    )];
+    let trace = enhance(&docs, "g", json!({})).await;
+
+    let premium = execution(&trace, "calc:calc-e1");
+    match &premium.trace {
+        BlockTrace::Expression { property, value } => {
+            assert_eq!(property.as_ref(), "quote.annualPremium");
+            assert_eq!(value, &json!(250).into());
+        }
+        other => panic!("unexpected trace: {other:?}"),
+    }
+
+    // The dotted key must also reach the $ scope of subsequent rows.
+    let doubled = execution(&trace, "calc:calc-e2");
+    assert_eq!(
+        doubled.operand_values.get("$.quote.annualPremium"),
+        Some(&json!(250).into())
+    );
+
+    // Depth is irrelevant: two-level keys resolve the same way.
+    let driver = execution(&trace, "calc:calc-e3");
+    assert!(matches!(
+        &driver.trace,
+        BlockTrace::Expression { property, value }
+            if property.as_ref() == "quote.factors.driver" && *value == json!(1).into()
+    ));
+}
+
+#[tokio::test]
 async fn decision_table_maps_rows_reads_and_evaluations() {
     let table = node(
         "pricing",

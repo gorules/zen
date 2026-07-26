@@ -193,9 +193,7 @@ fn walk_graph(
                         .node_local_reads(node, Some(std::slice::from_ref(&row.id)));
                     let property = output_prefixed(&paths, &row.key);
                     for (index, entry) in iterations.iter().enumerate() {
-                        let value = entry
-                            .dot(row.key.as_ref())
-                            .and_then(|slot| slot.dot("result"))
+                        let value = expression_trace_result(entry, row.key.as_ref())
                             .unwrap_or(Variable::Null);
                         let element = iteration_element(node_trace, &paths, loop_mode, index);
                         let dollar = expression_dollar_scope(&content.expressions, entry);
@@ -615,16 +613,22 @@ fn operand_values(
     out
 }
 
+/// Expression-node trace maps are keyed by the literal row key, which may itself
+/// contain dots (e.g. "quote.annualPremium"), so a `dot()` path lookup would miss
+/// those entries — read the map key directly.
+fn expression_trace_result(entry: &Variable, key: &str) -> Option<Variable> {
+    let obj = entry.as_object()?;
+    let slot = obj.borrow().get(key)?.shallow_clone();
+    slot.dot("result")
+}
+
 fn expression_dollar_scope(rows: &[zen_types::decision::Expression], entry: &Variable) -> Variable {
     let scope = Variable::empty_object();
     for row in rows {
         if row.key.is_empty() {
             continue;
         }
-        let Some(value) = entry
-            .dot(row.key.as_ref())
-            .and_then(|slot| slot.dot("result"))
-        else {
+        let Some(value) = expression_trace_result(entry, row.key.as_ref()) else {
             continue;
         };
         scope.dot_insert(row.key.as_ref(), value);

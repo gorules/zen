@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.0.0-beta.11](https://github.com/gorules/zen/compare/zen-engine-v1.0.0-beta.10...zen-engine-v1.0.0-beta.11) (2026-07-26)
+
+
+### Bug Fixes
+
+* graph explain dot ([#498](https://github.com/gorules/zen/issues/498)) ([7b4dc3c](https://github.com/gorules/zen/commit/7b4dc3cfbc5cb0f3c98a6d18b3b9ee92b2b9dd60))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * zen-types bumped from 1.0.0-beta.10 to 1.0.0-beta.11
+    * zen-expression bumped from 1.0.0-beta.10 to 1.0.0-beta.11
+    * zen-tmpl bumped from 1.0.0-beta.10 to 1.0.0-beta.11
+
 ## [1.0.0-beta.10](https://github.com/gorules/zen/compare/zen-engine-v1.0.0-beta.9...zen-engine-v1.0.0-beta.10) (2026-07-24)
 
 

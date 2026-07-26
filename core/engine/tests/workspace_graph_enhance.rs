@@ -158,6 +158,7 @@ async fn dotted_expression_keys_resolve_trace_values() {
                 ("base", "100"),
                 ("quote.annualPremium", "round($.base * 2.5, 2)"),
                 ("doubled", "$.quote.annualPremium * 2"),
+                ("quote.factors.driver", "$.base / 100"),
             ],
             json!({}),
         )]),
@@ -179,6 +180,14 @@ async fn dotted_expression_keys_resolve_trace_values() {
         doubled.operand_values.get("$.quote.annualPremium"),
         Some(&json!(250).into())
     );
+
+    // Depth is irrelevant: two-level keys resolve the same way.
+    let driver = execution(&trace, "calc:calc-e3");
+    assert!(matches!(
+        &driver.trace,
+        BlockTrace::Expression { property, value }
+            if property.as_ref() == "quote.factors.driver" && *value == json!(1).into()
+    ));
 }
 
 #[tokio::test]

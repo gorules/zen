@@ -1,4 +1,3 @@
-use crate::rccell::RcCell;
 use crate::rcvalue::RcValue;
 use crate::variable::Variable;
 use crate::variable::VariableMap;
@@ -27,10 +26,10 @@ impl RefDeserializer {
             for (i, _) in refs_array.iter().enumerate() {
                 match &refs_array[i] {
                     RcValue::Array(_) => {
-                        self.refs[i] = Some(Variable::Array(RcCell::new(Vec::new())));
+                        self.refs[i] = Some(Variable::from_array(Vec::new()));
                     }
                     RcValue::Object(_) => {
-                        self.refs[i] = Some(Variable::Object(RcCell::new(VariableMap::default())));
+                        self.refs[i] = Some(Variable::from_object(VariableMap::default()));
                     }
                     _ => {
                         self.refs[i] = Some(self.deserialize_value(&refs_array[i])?);
@@ -113,7 +112,7 @@ impl RefDeserializer {
                 for item in arr {
                     items.push(self.deserialize_value(item)?);
                 }
-                Ok(Variable::Array(RcCell::new(items)))
+                Ok(Variable::from_array(items))
             }
             RcValue::Object(obj) => {
                 let mut map = VariableMap::with_capacity(obj.len());
@@ -122,7 +121,7 @@ impl RefDeserializer {
                     let value_var = self.deserialize_value(value)?;
                     map.insert(key_var, value_var);
                 }
-                Ok(Variable::Object(RcCell::new(map)))
+                Ok(Variable::from_object(map))
             }
         }
     }

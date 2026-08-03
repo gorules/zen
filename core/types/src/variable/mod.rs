@@ -5,6 +5,7 @@ use rust_decimal::Decimal;
 use rust_decimal::prelude::Zero;
 use serde_json::Value;
 use std::any::Any;
+use std::cell::RefCell;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
 use std::rc::Rc;
@@ -26,6 +27,11 @@ mod ser;
 pub use crate::rccell::RcCell;
 
 pub use crate::variable::map::{Iter as MapIter, VariableMap};
+
+thread_local! {
+    static DOLLAR_KEY_RC: Rc<str> = Rc::from("$");
+    static ROOT_KEY_RC: Rc<str> = Rc::from("$root");
+}
 
 pub enum Variable {
     Null,
@@ -62,8 +68,16 @@ impl Variable {
         Symbol::from(name)
     }
 
+    pub fn dollar_key_rc() -> Rc<str> {
+        DOLLAR_KEY_RC.with(Rc::clone)
+    }
+
+    pub fn root_key_rc() -> Rc<str> {
+        ROOT_KEY_RC.with(Rc::clone)
+    }
+
     pub fn from_array(arr: Vec<Self>) -> Self {
-        Self::Array(RcCell::new(arr))
+        Self::Array(Rc::new(RefCell::new(arr)))
     }
 
     pub fn serialize_ref(&self) -> RcValue {
@@ -75,7 +89,7 @@ impl Variable {
     }
 
     pub fn from_object(obj: VariableMap) -> Self {
-        Self::Object(RcCell::new(obj))
+        Self::Object(Rc::new(RefCell::new(obj)))
     }
 
     pub fn empty_object() -> Self {
@@ -413,7 +427,7 @@ fn merge_variables(
                 // Only update doc if changes were made
                 if changed {
                     if let Some(new_map) = new_map {
-                        *doc = Variable::Object(RcCell::new(new_map));
+                        *doc = Variable::Object(Rc::new(RefCell::new(new_map)));
                     }
                     return true;
                 }

@@ -44,10 +44,6 @@ impl Scope {
     }
 
     pub fn set_local(&mut self, name: Symbol, value: Variable) {
-        if !matches!(self.base, Variable::Object(_)) {
-            self.base = Variable::empty_object();
-        }
-
         match self
             .locals
             .iter_mut()
@@ -100,12 +96,7 @@ impl Scope {
         }
 
         let Variable::Object(base) = &self.base else {
-            return Variable::from_object(
-                self.locals
-                    .iter()
-                    .map(|(key, value)| (key.clone(), value.clone()))
-                    .collect(),
-            );
+            return self.base.shallow_clone();
         };
 
         let mut map = base.borrow().clone();

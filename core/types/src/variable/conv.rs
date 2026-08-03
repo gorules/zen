@@ -119,18 +119,22 @@ impl From<Variable> for Value {
             }
             Variable::String(s) => Value::String(s.to_string()),
             Variable::Array(arr) => {
-                let vec = RcCell::try_unwrap(arr).unwrap_or_else(|s| {
-                    let borrowed = s.borrow();
-                    borrowed.clone()
-                });
+                let vec = RcCell::try_unwrap(arr)
+                    .map(|cell| cell.into_inner())
+                    .unwrap_or_else(|s| {
+                        let borrowed = s.borrow();
+                        borrowed.clone()
+                    });
 
                 Value::Array(vec.into_iter().map(Value::from).collect())
             }
             Variable::Object(obj) => {
-                let hmap = RcCell::try_unwrap(obj).unwrap_or_else(|s| {
-                    let borrowed = s.borrow();
-                    borrowed.clone()
-                });
+                let hmap = RcCell::try_unwrap(obj)
+                    .map(|cell| cell.into_inner())
+                    .unwrap_or_else(|s| {
+                        let borrowed = s.borrow();
+                        borrowed.clone()
+                    });
 
                 Value::Object(
                     hmap.into_iter()

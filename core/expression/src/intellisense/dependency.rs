@@ -1,6 +1,7 @@
 use crate::functions::{ClosureFunction, FunctionKind};
 use crate::lexer::{LogicalOperator, Operator};
 use crate::parser::{Node, NodeMetadata};
+use crate::variable::Variable;
 use ahash::HashSet;
 use nohash_hasher::BuildNoHashHasher;
 use serde::{Deserialize, Serialize};
@@ -292,7 +293,7 @@ impl<'a> DependencyResolutionWalker<'a> {
     fn extract_path_with_spans(&self, node: &Node) -> Option<(Vec<Rc<str>>, Vec<(u32, u32)>)> {
         match node {
             Node::Identifier(name) => Some((vec![Rc::from(*name)], vec![self.node_span(node)])),
-            Node::Root => Some((vec![Rc::<str>::from("$root")], vec![self.node_span(node)])),
+            Node::Root => Some((vec![Variable::root_key_rc()], vec![self.node_span(node)])),
             Node::Member { node: n, property } => {
                 let (mut path, mut spans) = self.extract_path_with_spans(n)?;
                 match property {
@@ -311,7 +312,7 @@ impl<'a> DependencyResolutionWalker<'a> {
     fn collection_source_path(node: &Node) -> Option<Vec<Rc<str>>> {
         match node {
             Node::Identifier(name) => Some(vec![Rc::from(*name)]),
-            Node::Root => Some(vec![Rc::<str>::from("$root")]),
+            Node::Root => Some(vec![Variable::root_key_rc()]),
             Node::Member { .. } => Self::extract_read_path(node),
             Node::Parenthesized(inner) => Self::collection_source_path(inner),
             Node::Binary {
@@ -374,7 +375,7 @@ impl<'a> DependencyResolutionWalker<'a> {
                 return;
             }
             Node::Identifier(name) => Rc::from(*name),
-            Node::Root => Rc::<str>::from("$root"),
+            Node::Root => Variable::root_key_rc(),
             Node::Pointer => {
                 self.resolve_pointer_chain(&chain, scope);
                 return;
@@ -487,7 +488,7 @@ impl<'a> DependencyResolutionWalker<'a> {
     }
 
     fn reference_dollar_chain(&mut self, chain: &FlatChain, scope: &mut Scope) {
-        let mut path: Vec<Rc<str>> = vec![Rc::from("$")];
+        let mut path: Vec<Rc<str>> = vec![Variable::dollar_key_rc()];
         let mut spans = vec![self.node_span(chain.root)];
         let mut grouping = true;
         for segment in &chain.segments {
@@ -673,7 +674,7 @@ impl<'a> DependencyResolutionWalker<'a> {
                         let (alias, inner_reads, inner_refs) = match closure_node {
                             Node::Closure { body, alias } => {
                                 let mut inner_scope = scope.clone();
-                                inner_scope.locals.insert(Rc::<str>::from("$"));
+                                inner_scope.locals.insert(Variable::dollar_key_rc());
                                 inner_scope.pointer_collection = collection_source
                                     .as_ref()
                                     .filter(|source| !scope.is_local(source))
@@ -762,7 +763,7 @@ impl<'a> DependencyResolutionWalker<'a> {
 
             Node::Closure { body, alias: _ } => {
                 let mut inner = scope.clone();
-                inner.locals.insert(Rc::<str>::from("$"));
+                inner.locals.insert(Variable::dollar_key_rc());
                 inner.pointer_collection = None;
                 self.resolve(body, &mut inner);
             }
@@ -836,7 +837,7 @@ impl<'a> DependencyResolutionWalker<'a> {
             }
 
             Node::Root => {
-                let path: Vec<Rc<str>> = vec![Rc::<str>::from("$root")];
+                let path: Vec<Rc<str>> = vec![Variable::root_key_rc()];
                 let span = self.node_span(node);
                 self.reads.push(ReadDependency::Direct {
                     path: path.clone(),
@@ -865,7 +866,7 @@ impl<'a> DependencyResolutionWalker<'a> {
     fn extract_read_path(node: &Node) -> Option<Vec<Rc<str>>> {
         match node {
             Node::Identifier(name) => Some(vec![Rc::from(*name)]),
-            Node::Root => Some(vec![Rc::<str>::from("$root")]),
+            Node::Root => Some(vec![Variable::root_key_rc()]),
             Node::Member { node, property } => {
                 let mut path = Self::extract_read_path(node)?;
                 match property {

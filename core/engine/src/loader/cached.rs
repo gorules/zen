@@ -54,15 +54,25 @@ impl DecisionLoader for CachedLoader {
         key: &'a str,
     ) -> Pin<Box<dyn Future<Output = LoaderResponse> + 'a + Send>> {
         Box::pin(async move {
-            if let Ok(cache) = self.cache.read() {
-                if let Some(content) = cache.get(key) {
-                    return Ok(content.clone());
-                }
-            }
+            let cached = self
+                .cache
+                .read()
+                .ok()
+                .and_then(|cache| cache.get(key).cloned());
 
-            let decision_content = prepared(&self.loader, self.loader.load(key).await?).await;
-            if let Ok(mut cache) = self.cache.write() {
-                cache.insert(key.to_string(), decision_content.clone());
+            let loaded = match &cached {
+                Some(content) => content.clone(),
+                None => self.loader.load(key).await?,
+            };
+
+            let decision_content = prepared(&self.loader, loaded).await;
+            let unchanged = cached
+                .as_ref()
+                .is_some_and(|content| Arc::ptr_eq(content, &decision_content));
+            if !unchanged {
+                if let Ok(mut cache) = self.cache.write() {
+                    cache.insert(key.to_string(), decision_content.clone());
+                }
             }
             Ok(decision_content)
         })

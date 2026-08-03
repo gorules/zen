@@ -49,18 +49,6 @@ impl VariableMap {
         }
     }
 
-    pub fn reset(&mut self) {
-        match &mut self.0 {
-            Repr::Small(entries) => {
-                entries.clear();
-                if entries.spilled() {
-                    *entries = Entries::new();
-                }
-            }
-            Repr::Large(_) => self.0 = Repr::Small(Entries::new()),
-        }
-    }
-
     #[inline]
     pub fn get(&self, key: &Symbol) -> Option<&Variable> {
         match &self.0 {

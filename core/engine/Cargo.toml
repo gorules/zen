@@ -38,6 +38,8 @@ swc_ts_fast_strip = "53.0.0"
 swc_common = "23"
 swc_ecma_parser = "41"
 swc_ecma_ast = "25"
+typed-arena = "2"
+self_cell = "1"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

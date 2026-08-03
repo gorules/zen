@@ -2,6 +2,7 @@ use crate::nodes::definition::{NodeDataType, TraceDataType};
 use crate::nodes::extensions::NodeHandlerExtensions;
 use crate::nodes::function::v2::function::Function;
 use crate::nodes::result::{NodeResponse, NodeResult};
+use crate::nodes::variable_json::{Guards, VariableNode};
 use crate::nodes::NodeError;
 use crate::ZEN_CONFIG;
 use ahash::AHasher;
@@ -39,6 +40,19 @@ where
     NodeData: NodeDataType,
     TraceData: TraceDataType,
 {
+    pub fn input_with_nodes(&self) -> Variable {
+        let Some(nodes) = &self.nodes else {
+            return self.input.shallow_clone();
+        };
+        let Variable::Object(object) = &self.input else {
+            return self.input.shallow_clone();
+        };
+
+        let mut map = object.borrow().clone();
+        map.insert(Variable::nodes_key(), nodes.clone());
+        Variable::from_object(map)
+    }
+
     pub fn from_base(base: NodeContextBase, data: NodeData) -> Self {
         Self {
             id: base.id,
@@ -103,8 +117,9 @@ where
             .get_or_insert(hash, schema)
             .node_context(self)?;
 
+        let guards = Guards::default();
         validator
-            .validate(value)
+            .validate(VariableNode::new(value, &guards))
             .map_err(|err| ValidationErrorJson::from(err))
             .node_context(self)?;
 

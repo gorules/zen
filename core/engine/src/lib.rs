@@ -120,7 +120,7 @@
 
 // `deny` rather than `forbid` so `nodes::variable_json` can opt in: reading a
 // `RefCell` without a guard is the only way to hand jsonschema `'a` borrows.
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used)]
 #![allow(clippy::module_inception)]
 

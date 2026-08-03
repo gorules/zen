@@ -1,8 +1,8 @@
 use rust_decimal_macros::dec;
 use serde_json::json;
+use std::cell::RefCell;
 use std::error::Error;
 use std::rc::Rc;
-use zen_types::rccell::RcCell;
 use zen_types::rcvalue::RcValue;
 use zen_types::variable::Variable;
 use zen_types::variable::VariableMap as HashMap;
@@ -145,7 +145,7 @@ fn no_refs_when_below_threshold() -> TestResult {
 #[test]
 fn serialize_circular_references() -> TestResult {
     // Create a shared object that will be referenced multiple times
-    let shared_obj = RcCell::new({
+    let shared_obj = Rc::new(RefCell::new({
         let mut map = HashMap::new();
         map.insert(
             zen_types::symbol::Symbol::from("shared_data"),
@@ -156,7 +156,7 @@ fn serialize_circular_references() -> TestResult {
             Variable::Number(dec!(42.0)),
         );
         map
-    });
+    }));
 
     // Create a structure where the same object appears in multiple places
     let mut root_map = HashMap::new();
@@ -173,7 +173,7 @@ fn serialize_circular_references() -> TestResult {
         Variable::Object(shared_obj),
     );
 
-    let var = Variable::Object(RcCell::new(root_map));
+    let var = Variable::Object(Rc::new(RefCell::new(root_map)));
 
     let serialized = var.serialize_ref();
     let deserialized = Variable::deserialize_ref(serialized)?;
@@ -186,11 +186,11 @@ fn serialize_circular_references() -> TestResult {
 #[test]
 fn serialize_same_array_multiple_locations() -> TestResult {
     // Create a shared array
-    let shared_array = RcCell::new(vec![
+    let shared_array = Rc::new(RefCell::new(vec![
         Variable::String(("item_one").into()),
         Variable::String(("item_two").into()),
         Variable::Number(dec!(123.0)),
-    ]);
+    ]));
 
     let var = Variable::from(json!({
         "list1": shared_array.clone(),
@@ -223,7 +223,7 @@ fn serialize_mixed_shared_references() -> TestResult {
         Variable::String(shared_string.as_ref().into()),
     );
 
-    let shared_obj = RcCell::new(obj_map);
+    let shared_obj = Rc::new(RefCell::new(obj_map));
 
     // Use the shared object in multiple places
     let var = Variable::from(json!({
@@ -247,11 +247,11 @@ fn serialize_shared_array_with_shared_strings() -> TestResult {
     let shared_string: Rc<str> = Rc::from("shared_string_value");
 
     // Create a shared array containing the shared string
-    let shared_array = RcCell::new(vec![
+    let shared_array = Rc::new(RefCell::new(vec![
         Variable::String(shared_string.as_ref().into()),
         Variable::Number(dec!(42.0)),
         Variable::String(shared_string.as_ref().into()),
-    ]);
+    ]));
 
     // Use the shared array in multiple places
     let mut root_map = HashMap::new();
@@ -268,7 +268,7 @@ fn serialize_shared_array_with_shared_strings() -> TestResult {
         Variable::Array(shared_array),
     );
 
-    let var = Variable::Object(RcCell::new(root_map));
+    let var = Variable::Object(Rc::new(RefCell::new(root_map)));
 
     let serialized = var.serialize_ref();
     let deserialized = Variable::deserialize_ref(serialized)?;

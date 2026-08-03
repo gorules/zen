@@ -1,20 +1,66 @@
-// Safety: `Variable` is `Rc`-based, so reading through a `RefCell` without a
-// guard is the only way to hand out `'a` borrows. Scoped to this module.
-#![allow(unsafe_code)]
-
 use std::borrow::Cow;
+use std::cell::Ref;
 
 use jsonschema::json::{Array, Json, JsonNumber, Node, NodeIdentity, Object};
 use jsonschema::JsonType;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
+use self_cell::self_cell;
 use serde_json::Value;
-use zen_types::variable::{Variable, VariableMap};
+use typed_arena::Arena;
+use zen_types::variable::{MapIter, RcCell, Variable, VariableMap};
 
 pub struct VariableJson;
 
+type MapRef<'a> = Ref<'a, VariableMap>;
+type VecRef<'a> = Ref<'a, Vec<Variable>>;
+
+self_cell!(
+    struct MapGuard {
+        owner: RcCell<VariableMap>,
+
+        #[covariant]
+        dependent: MapRef,
+    }
+);
+
+self_cell!(
+    struct VecGuard {
+        owner: RcCell<Vec<Variable>>,
+
+        #[covariant]
+        dependent: VecRef,
+    }
+);
+
+pub struct Guards {
+    objects: Arena<MapGuard>,
+    arrays: Arena<VecGuard>,
+}
+
+impl Default for Guards {
+    fn default() -> Self {
+        Self {
+            objects: Arena::new(),
+            arrays: Arena::new(),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct VariableNode<'a> {
+    var: &'a Variable,
+    guards: &'a Guards,
+}
+
+impl<'a> VariableNode<'a> {
+    pub fn new(var: &'a Variable, guards: &'a Guards) -> Self {
+        Self { var, guards }
+    }
+}
+
 impl Json for VariableJson {
-    type Node<'a> = &'a Variable;
+    type Node<'a> = VariableNode<'a>;
     type PreparedKey = Box<str>;
     type StringBuffer = Variable;
 
@@ -25,10 +71,11 @@ impl Json for VariableJson {
     fn with_string_node<T>(
         buffer: &mut Variable,
         string: &str,
-        f: impl FnOnce(&Variable) -> T,
+        f: impl FnOnce(VariableNode<'_>) -> T,
     ) -> T {
         *buffer = Variable::String((string).into());
-        f(buffer)
+        let guards = Guards::default();
+        f(VariableNode::new(buffer, &guards))
     }
 }
 
@@ -36,11 +83,11 @@ pub struct VariableNumber(Decimal);
 
 impl JsonNumber for VariableNumber {
     fn as_u64(&self) -> Option<u64> {
-        self.0.to_u64()
+        self.0.is_integer().then(|| self.0.to_u64()).flatten()
     }
 
     fn as_i64(&self) -> Option<i64> {
-        self.0.to_i64()
+        self.0.is_integer().then(|| self.0.to_i64()).flatten()
     }
 
     fn as_f64(&self) -> Option<f64> {
@@ -61,66 +108,69 @@ impl JsonNumber for VariableNumber {
     }
 }
 
-/// # Safety
-///
-/// Validation is a pure read: nothing in `jsonschema` holds a `Variable`, and no
-/// node handler mutates the input while its schema is being checked. The `Rc`
-/// keeps the cell alive for at least `'a`, so reading through the cell's pointer
-/// cannot outlive the allocation and cannot race a `borrow_mut`.
-#[inline]
-unsafe fn cell_ref<'a, T: zen_types::rccell::Recycle>(
-    cell: &zen_types::rccell::RcCell<T>,
-) -> &'a T {
-    unsafe { cell.get_ref() }
-}
-
-impl<'a> Node<'a, VariableJson> for &'a Variable {
-    type Object = &'a VariableMap;
-    type Array = &'a [Variable];
+impl<'a> Node<'a, VariableJson> for VariableNode<'a> {
+    type Object = ObjectNode<'a>;
+    type Array = ArrayNode<'a>;
     type Number = VariableNumber;
 
-    fn as_object(&self) -> Option<&'a VariableMap> {
-        match self {
-            Variable::Object(map) => Some(unsafe { cell_ref(map) }),
-            _ => None,
-        }
+    fn as_object(&self) -> Option<ObjectNode<'a>> {
+        let Variable::Object(cell) = self.var else {
+            return None;
+        };
+
+        let guard = self
+            .guards
+            .objects
+            .alloc(MapGuard::new(cell.clone(), |cell| cell.borrow()));
+        Some(ObjectNode {
+            map: guard.borrow_dependent(),
+            guards: self.guards,
+        })
     }
 
-    fn as_array(&self) -> Option<&'a [Variable]> {
-        match self {
-            Variable::Array(items) => Some(unsafe { cell_ref(items) }.as_slice()),
-            _ => None,
-        }
+    fn as_array(&self) -> Option<ArrayNode<'a>> {
+        let Variable::Array(cell) = self.var else {
+            return None;
+        };
+
+        let guard = self
+            .guards
+            .arrays
+            .alloc(VecGuard::new(cell.clone(), |cell| cell.borrow()));
+        Some(ArrayNode {
+            items: guard.borrow_dependent().as_slice(),
+            guards: self.guards,
+        })
     }
 
     fn as_string(&self) -> Option<Cow<'a, str>> {
-        match self {
-            Variable::String(string) => Some(Cow::Borrowed(string)),
+        match self.var {
+            Variable::String(string) => Some(Cow::Borrowed(string.as_str())),
             Variable::Dynamic(dynamic) => Some(Cow::Owned(dynamic.to_string())),
             _ => None,
         }
     }
 
     fn as_number(&self) -> Option<VariableNumber> {
-        match self {
+        match self.var {
             Variable::Number(number) => Some(VariableNumber(*number)),
             _ => None,
         }
     }
 
     fn as_boolean(&self) -> Option<bool> {
-        match self {
+        match self.var {
             Variable::Bool(boolean) => Some(*boolean),
             _ => None,
         }
     }
 
     fn is_null(&self) -> bool {
-        matches!(self, Variable::Null)
+        matches!(self.var, Variable::Null)
     }
 
     fn json_type(&self) -> JsonType {
-        match self {
+        match self.var {
             Variable::Null => JsonType::Null,
             Variable::Bool(_) => JsonType::Boolean,
             Variable::Number(_) => JsonType::Number,
@@ -132,53 +182,91 @@ impl<'a> Node<'a, VariableJson> for &'a Variable {
     }
 
     fn to_value(&self) -> Cow<'a, Value> {
-        Cow::Owned(Variable::to_value(self))
+        Cow::Owned(Variable::to_value(self.var))
     }
 
     fn identity(&self) -> Option<NodeIdentity> {
         Some(NodeIdentity::new(
-            std::ptr::from_ref::<Variable>(*self) as usize
+            std::ptr::from_ref::<Variable>(self.var) as usize
         ))
     }
 }
 
-impl<'a> Object<'a, VariableJson> for &'a VariableMap {
-    type Node = &'a Variable;
+pub struct ObjectNode<'a> {
+    map: &'a VariableMap,
+    guards: &'a Guards,
+}
+
+impl<'a> Object<'a, VariableJson> for ObjectNode<'a> {
+    type Node = VariableNode<'a>;
     type MemberName = &'a str;
     type MembersIter = VariableMembersIter<'a>;
 
     fn len(&self) -> usize {
-        VariableMap::len(self)
+        self.map.len()
     }
 
-    fn get(&self, key: &Box<str>) -> Option<&'a Variable> {
-        VariableMap::get_str(self, key)
+    fn get(&self, key: &Box<str>) -> Option<VariableNode<'a>> {
+        self.map
+            .get_str(key)
+            .map(|var| VariableNode::new(var, self.guards))
     }
 
     fn members(&self) -> VariableMembersIter<'a> {
-        VariableMembersIter(self.iter())
+        VariableMembersIter {
+            iter: self.map.iter(),
+            guards: self.guards,
+        }
     }
 }
 
-pub struct VariableMembersIter<'a>(zen_types::variable::MapIter<'a>);
+pub struct VariableMembersIter<'a> {
+    iter: MapIter<'a>,
+    guards: &'a Guards,
+}
 
 impl<'a> Iterator for VariableMembersIter<'a> {
-    type Item = (&'a str, &'a Variable);
+    type Item = (&'a str, VariableNode<'a>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(|(name, value)| (name.as_str(), value))
+        self.iter
+            .next()
+            .map(|(name, value)| (name.as_str(), VariableNode::new(value, self.guards)))
     }
 }
 
-impl<'a> Array<'a, VariableJson> for &'a [Variable] {
-    type Node = &'a Variable;
-    type ElementsIter = std::slice::Iter<'a, Variable>;
+pub struct ArrayNode<'a> {
+    items: &'a [Variable],
+    guards: &'a Guards,
+}
+
+impl<'a> Array<'a, VariableJson> for ArrayNode<'a> {
+    type Node = VariableNode<'a>;
+    type ElementsIter = VariableElementsIter<'a>;
 
     fn len(&self) -> usize {
-        <[Variable]>::len(self)
+        self.items.len()
     }
 
-    fn elements(&self) -> std::slice::Iter<'a, Variable> {
-        self.iter()
+    fn elements(&self) -> VariableElementsIter<'a> {
+        VariableElementsIter {
+            iter: self.items.iter(),
+            guards: self.guards,
+        }
+    }
+}
+
+pub struct VariableElementsIter<'a> {
+    iter: std::slice::Iter<'a, Variable>,
+    guards: &'a Guards,
+}
+
+impl<'a> Iterator for VariableElementsIter<'a> {
+    type Item = VariableNode<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter
+            .next()
+            .map(|var| VariableNode::new(var, self.guards))
     }
 }

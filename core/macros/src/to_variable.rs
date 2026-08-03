@@ -47,9 +47,7 @@ pub fn to_variable_impl(input: TokenStream) -> TokenStream {
         const _: () = {
             extern crate zen_expression as _zen_expression;
 
-            use _zen_expression::variable::{Variable as _Variable, VariableMap as _VariableMap, VariableMapExt, ToVariable as _ToVariable};
-            use ::std::rc::Rc as _Rc;
-            use ::zen_types::symbol::Symbol as _Symbol;
+            use _zen_expression::variable::{Variable as _Variable, VariableMap as _VariableMap, VariableMapExt, ToVariable as _ToVariable, Symbol as _Symbol};
 
             #impl_block
         };
@@ -225,7 +223,7 @@ fn generate_variant_arm(
         serde_derive_internals::ast::Style::Unit => {
             quote! {
                 #enum_ident::#variant_ident => {
-                    _Variable::String(_Rc::from(#variant_name))
+                    _Variable::String(_Symbol::from_static(#variant_name))
                 }
             }
         }
@@ -234,7 +232,7 @@ fn generate_variant_arm(
             quote! {
                 #enum_ident::#variant_ident(value) => {
                     let mut map = _VariableMap::with_capacity(2);
-                    map.insert(_Symbol::from(#type_key), _Variable::String(_Rc::from(#variant_name)));
+                    map.insert(_Symbol::from(#type_key), _Variable::String(_Symbol::from_static(#variant_name)));
                     map.insert(_Symbol::from(#value_key), value.to_variable());
                     _Variable::from_object(map)
                 }
@@ -251,7 +249,7 @@ fn generate_variant_arm(
                 quote! {
                     #enum_ident::#variant_ident(#(#field_patterns),*) => {
                         let mut map = _VariableMap::with_capacity(2);
-                        map.insert(_Symbol::from(#type_key), _Variable::String(_Rc::from(#variant_name)));
+                        map.insert(_Symbol::from(#type_key), _Variable::String(_Symbol::from_static(#variant_name)));
                         map.insert(_Symbol::from(#value_key), (#(#field_patterns)*).to_variable());
                         _Variable::from_object(map)
                     }
@@ -267,7 +265,7 @@ fn generate_variant_arm(
                 quote! {
                     #enum_ident::#variant_ident(#(#field_patterns),*) => {
                         let mut map = _VariableMap::with_capacity(#field_count + 1);
-                        map.insert(_Symbol::from(#type_key), _Variable::String(_Rc::from(#variant_name)));
+                        map.insert(_Symbol::from(#type_key), _Variable::String(_Symbol::from_static(#variant_name)));
                         #(#field_mappings)*
                         _Variable::from_object(map)
                     }
@@ -304,7 +302,7 @@ fn generate_variant_arm(
             quote! {
                 #enum_ident::#variant_ident { #(#field_patterns),* } => {
                     let mut map = _VariableMap::with_capacity(#field_count);
-                    map.insert(_Symbol::from(#type_key), _Variable::String(_Rc::from(#variant_name)));
+                    map.insert(_Symbol::from(#type_key), _Variable::String(_Symbol::from_static(#variant_name)));
                     #(#field_mappings)*
                     _Variable::from_object(map)
                 }

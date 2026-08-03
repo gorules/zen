@@ -24,7 +24,7 @@ impl ZenDecisionContent {
             }
         };
         if let DecisionContent::Graph(g) = &mut decision_content {
-            g.compile();
+            Arc::make_mut(g).compile();
         }
 
         Ok(Self {

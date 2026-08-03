@@ -10,6 +10,12 @@ pub struct ValidatorCache {
     inner: Arc<RwLock<HashMap<u64, Arc<Validator<VariableJson>>>>>,
 }
 
+impl PartialEq for ValidatorCache {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
 impl ValidatorCache {
     pub fn get(&self, key: u64) -> Option<Arc<Validator<VariableJson>>> {
         let read = self.inner.read().ok()?;

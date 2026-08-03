@@ -4,7 +4,6 @@ use crate::loader::{DynamicLoader, NoopLoader};
 use crate::model::GraphContent;
 use crate::nodes::custom::{DynamicCustomNode, NoopCustomNode};
 use crate::nodes::function::http_handler::DynamicHttpHandler;
-use crate::nodes::validator_cache::ValidatorCache;
 use crate::nodes::NodeHandlerExtensions;
 use crate::{DecisionGraphValidationError, EvaluationError};
 use serde_json::Value;
@@ -19,7 +18,6 @@ pub struct Decision {
     loader: DynamicLoader,
     adapter: DynamicCustomNode,
     http_handler: DynamicHttpHandler,
-    validator_cache: ValidatorCache,
 }
 
 impl From<GraphContent> for Decision {
@@ -29,7 +27,6 @@ impl From<GraphContent> for Decision {
             loader: Arc::new(NoopLoader::default()),
             adapter: Arc::new(NoopCustomNode::default()),
             http_handler: None,
-            validator_cache: ValidatorCache::default(),
         }
     }
 }
@@ -41,7 +38,6 @@ impl From<Arc<GraphContent>> for Decision {
             loader: Arc::new(NoopLoader::default()),
             adapter: Arc::new(NoopCustomNode::default()),
             http_handler: None,
-            validator_cache: ValidatorCache::default(),
         }
     }
 }
@@ -86,8 +82,9 @@ impl Decision {
                 custom_node: self.adapter.clone(),
                 http_handler: self.http_handler.clone(),
                 compiled_cache: self.content.compiled_cache.clone(),
+                dt_indexes: self.content.dt_indexes.clone(),
                 stripped_functions: self.content.stripped_functions.clone(),
-                validator_cache: Arc::new(OnceCell::from(self.validator_cache.clone())),
+                validator_cache: Arc::new(OnceCell::from(self.content.validator_cache.clone())),
                 ..Default::default()
             },
         })?;

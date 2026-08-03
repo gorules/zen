@@ -209,13 +209,11 @@ async fn engine_function_imports() {
         })
         .collect::<Vec<_>>();
 
-    let function_content = GraphContent {
-        edges: function_content.edges,
-        nodes: new_nodes,
-        imports: Vec::new(),
-        compiled_cache: None,
-        stripped_functions: None,
-        resolved_schemas: None,
+    let function_content = {
+        let mut content = GraphContent::default();
+        content.edges = function_content.edges;
+        content.nodes = new_nodes;
+        content
     };
     let decision = DecisionEngine::default()
         .create_decision(Arc::new(function_content.into()))
@@ -497,4 +495,90 @@ async fn test_nodes_reference() {
             "functionRequest": { "hello": "world" },
         })
     );
+}
+
+#[tokio::test]
+async fn decision_table_index_matches_linear_semantics() {
+    let table_node = json!({
+        "id": "dt-node",
+        "type": "decisionTableNode",
+        "name": "dt",
+        "content": {
+            "hitPolicy": "first",
+            "inputs": [
+                {"id": "c1", "name": "Tier", "field": "tier"},
+                {"id": "c2", "name": "Amount", "field": "amount"},
+                {"id": "c3", "name": "Active", "field": "active"}
+            ],
+            "outputs": [{"id": "o1", "name": "Rate", "field": "rate"}],
+            "rules": [
+                {"_id": "r1", "c1": "'gold'", "c2": "100", "c3": "true", "o1": "1"},
+                {"_id": "r2", "c1": "'gold'", "c2": "> 500", "c3": "", "o1": "2"},
+                {"_id": "r3", "c1": "'silver'", "c2": "[100..200]", "c3": "", "o1": "3"},
+                {"_id": "r4", "c1": "'silver', 'bronze'", "c2": "", "c3": "false", "o1": "4"},
+                {"_id": "r5", "c1": "", "c2": "42", "c3": "", "o1": "5"},
+                {"_id": "r6", "c1": "'gold'", "c2": "", "c3": "", "o1": "6"},
+                {"_id": "r7", "c1": "'bronze'", "c2": "7, 8, 9", "c3": "true", "o1": "7"},
+                {"_id": "r8", "c1": "", "c2": "", "c3": "", "o1": "8"},
+                {"_id": "r9", "c1": "'platinum'", "c2": "1000", "c3": "true", "o1": "9"}
+            ]
+        }
+    });
+    let graph = json!({
+        "nodes": [
+            {"id": "in", "type": "inputNode", "name": "request"},
+            table_node,
+            {"id": "out", "type": "outputNode", "name": "response"}
+        ],
+        "edges": [
+            {"id": "e1", "sourceId": "in", "targetId": "dt-node"},
+            {"id": "e2", "sourceId": "dt-node", "targetId": "out"}
+        ]
+    });
+
+    let probes = [
+        json!({"tier": "gold", "amount": 100, "active": true}),
+        json!({"tier": "gold", "amount": 600, "active": false}),
+        json!({"tier": "silver", "amount": 150, "active": true}),
+        json!({"tier": "silver", "amount": 50, "active": false}),
+        json!({"tier": "bronze", "amount": 8, "active": true}),
+        json!({"tier": "unknown", "amount": 42, "active": false}),
+        json!({"tier": "unknown", "amount": 0, "active": false}),
+        json!({"tier": "platinum", "amount": 1000, "active": true}),
+        json!({"tier": 5, "amount": "x", "active": null}),
+    ];
+
+    for hit_policy in ["first", "collect"] {
+        let mut graph = graph.clone();
+        graph["nodes"][1]["content"]["hitPolicy"] = json!(hit_policy);
+        let mut content: GraphContent = serde_json::from_value(graph).unwrap();
+        content.compile();
+        let decision = DecisionEngine::default()
+            .create_decision(Arc::new(content.into()))
+            .unwrap();
+
+        for probe in &probes {
+            let indexed = decision
+                .evaluate(Variable::from(probe))
+                .await
+                .unwrap()
+                .result;
+            let linear = decision
+                .evaluate_with_opts(
+                    Variable::from(probe),
+                    EvaluationOptions {
+                        trace: true,
+                        max_depth: 5,
+                    },
+                )
+                .await
+                .unwrap()
+                .result;
+            assert_eq!(
+                serde_json::to_value(&indexed).unwrap(),
+                serde_json::to_value(&linear).unwrap(),
+                "hit_policy={hit_policy} probe={probe}"
+            );
+        }
+    }
 }

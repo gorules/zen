@@ -144,21 +144,19 @@ impl CompiledSet {
                     workspace.set_policy_arc(key.clone(), policy.0.clone());
                     policy_keys.push(key.clone());
                 }
-                DecisionContent::Graph(graph) => {
-                    match Decision::from(Arc::new(graph.clone())).validate() {
-                        Err(error) => failures.push(CompileFailure {
-                            key: key.clone(),
-                            kind: "graph",
-                            diagnostics: Vec::new(),
-                            error: Some(error.to_string()),
-                        }),
-                        Ok(()) => {
-                            let mut compiled = graph.clone();
-                            compiled.compile();
-                            entries.insert(key.clone(), CompiledEntry::Graph(Arc::new(compiled)));
-                        }
+                DecisionContent::Graph(graph) => match Decision::from(graph.clone()).validate() {
+                    Err(error) => failures.push(CompileFailure {
+                        key: key.clone(),
+                        kind: "graph",
+                        diagnostics: Vec::new(),
+                        error: Some(error.to_string()),
+                    }),
+                    Ok(()) => {
+                        let mut compiled = graph.clone();
+                        Arc::make_mut(&mut compiled).compile();
+                        entries.insert(key.clone(), CompiledEntry::Graph(compiled));
                     }
-                }
+                },
             }
         }
 

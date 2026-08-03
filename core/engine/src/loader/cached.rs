@@ -29,9 +29,9 @@ fn compiled(content: Arc<DecisionContent>) -> Arc<DecisionContent> {
         return content;
     }
 
-    let mut owned = graph.clone();
+    let mut owned = (**graph).clone();
     owned.compile();
-    Arc::new(DecisionContent::Graph(owned))
+    Arc::new(DecisionContent::Graph(Arc::new(owned)))
 }
 
 async fn prepared(loader: &DynamicLoader, content: Arc<DecisionContent>) -> Arc<DecisionContent> {
@@ -42,10 +42,10 @@ async fn prepared(loader: &DynamicLoader, content: Arc<DecisionContent>) -> Arc<
         return content;
     }
 
-    let mut owned = graph.clone();
+    let mut owned = (**graph).clone();
     owned.compile();
     let _ = owned.resolve_schemas(loader).await;
-    Arc::new(DecisionContent::Graph(owned))
+    Arc::new(DecisionContent::Graph(Arc::new(owned)))
 }
 
 impl DecisionLoader for CachedLoader {

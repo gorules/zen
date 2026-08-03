@@ -17,7 +17,7 @@ impl PyZenDecisionContent {
         let mut content: DecisionContent =
             serde_json::from_str(data).context("Failed to parse JSON")?;
         if let DecisionContent::Graph(g) = &mut content {
-            g.compile();
+            Arc::make_mut(g).compile();
         }
         Ok(Self(Arc::new(content)))
     }

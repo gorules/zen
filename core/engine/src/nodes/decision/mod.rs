@@ -63,6 +63,9 @@ impl NodeHandler for DecisionNodeHandler {
 
             let mut extensions = ctx.extensions.clone();
             extensions.compiled_cache = sub_graph.compiled_cache.clone();
+            extensions.dt_indexes = sub_graph.dt_indexes.clone();
+            extensions.validator_cache =
+                std::sync::Arc::new(std::cell::OnceCell::from(sub_graph.validator_cache.clone()));
 
             let dg = DecisionGraph::try_new(DecisionGraphConfig {
                 content: sub_graph,

@@ -24,7 +24,6 @@ use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 use std::cell::RefCell;
 use std::ops::Deref;
-use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 use zen_expression::variable::{ToVariable, Variable};
@@ -35,6 +34,7 @@ pub struct DecisionGraph {
     initial_graph: StableDiDecisionGraph,
     graph: StableDiDecisionGraph,
     config: DecisionGraphConfig,
+    parent_nodes: Option<Variable>,
 }
 
 #[derive(Debug)]
@@ -53,7 +53,12 @@ impl DecisionGraph {
             initial_graph: graph.clone(),
             graph,
             config,
+            parent_nodes: None,
         })
+    }
+
+    pub(crate) fn set_parent_nodes(&mut self, nodes: Option<Variable>) {
+        self.parent_nodes = nodes;
     }
 
     fn build_graph(
@@ -109,27 +114,39 @@ impl DecisionGraph {
 
     async fn validation_schema(
         &self,
+        node_id: &str,
         schema: Option<&serde_json::Value>,
-    ) -> Result<Option<(serde_json::Value, u64)>, String> {
+    ) -> Result<Option<(Arc<serde_json::Value>, u64)>, String> {
         let Some(schema) = schema else {
             return Ok(None);
         };
+        if let Some(resolved) = &self.config.content.resolved_schemas {
+            return Ok(resolved.get(node_id).cloned());
+        }
         if !schema_dict::schema_references_dictionary(schema) {
             return Ok(None);
         }
+
         let dictionaries = schema_dict::load_import_dictionaries(
             self.config.extensions.loader(),
             &self.config.content.imports,
         )
         .await?;
-        schema_dict::resolve_schema(schema, &dictionaries).map(Some)
+        schema_dict::resolve_schema(schema, &dictionaries)
+            .map(|resolved| Some((Arc::new(resolved.0), resolved.1)))
     }
 
-    fn build_node_context(&self, node: &DecisionNode, input: Variable) -> NodeContextBase {
+    fn build_node_context(
+        &self,
+        node: &DecisionNode,
+        input: Variable,
+        nodes: Option<Variable>,
+    ) -> NodeContextBase {
         NodeContextBase {
             id: node.id.clone(),
             name: node.name.clone(),
             input,
+            nodes,
             extensions: self.config.extensions.clone(),
             iteration: self.config.iteration,
             trace: match self.config.trace {
@@ -164,33 +181,39 @@ impl DecisionGraph {
             }
 
             let node = &self.graph[nid];
-            let start = Instant::now();
-            let (input, input_trace) = walker.incoming_node_data(&self.graph, nid, true);
-            let mut base_ctx = self.build_node_context(node.deref(), input);
+            let start = self.config.trace.then(Instant::now);
+            let (input, input_trace) = walker.incoming_node_data(&self.graph, nid);
+            let mut base_ctx = self.build_node_context(node.deref(), input, walker.nodes_context());
 
             let node_execution = match &node.kind {
                 DecisionNodeKind::InputNode { content } => {
                     base_ctx.input = context.clone();
-                    match self.validation_schema(content.schema.as_deref()).await {
+                    match self
+                        .validation_schema(&node.id, content.schema.as_deref())
+                        .await
+                    {
                         Err(message) => base_ctx.error(message),
                         Ok(None) => handle_node(base_ctx, content.clone(), InputNodeHandler).await,
                         Ok(Some((schema, salt))) => {
                             base_ctx.config.validation_salt = salt;
                             let resolved = InputNodeContent {
-                                schema: Some(Arc::new(schema)),
+                                schema: Some(schema),
                             };
                             handle_node(base_ctx, resolved, InputNodeHandler).await
                         }
                     }
                 }
                 DecisionNodeKind::OutputNode { content } => {
-                    match self.validation_schema(content.schema.as_deref()).await {
+                    match self
+                        .validation_schema(&node.id, content.schema.as_deref())
+                        .await
+                    {
                         Err(message) => base_ctx.error(message),
                         Ok(None) => handle_node(base_ctx, content.clone(), OutputNodeHandler).await,
                         Ok(Some((schema, salt))) => {
                             base_ctx.config.validation_salt = salt;
                             let resolved = OutputNodeContent {
-                                schema: Some(Arc::new(schema)),
+                                schema: Some(schema),
                             };
                             handle_node(base_ctx, resolved, OutputNodeHandler).await
                         }
@@ -217,14 +240,19 @@ impl DecisionGraph {
                 }
             };
 
-            tracer.record_execution(node.deref(), input_trace, &node_execution, start.elapsed());
+            tracer.record_execution(
+                node.deref(),
+                input_trace,
+                &node_execution,
+                start.map(|s| s.elapsed()).unwrap_or_default(),
+            );
 
             let output = match node_execution {
                 Ok(ok) => ok.output,
                 Err(err) => {
-                    let mut cleaner = VariableCleaner::new();
                     let trace = tracer.into_traces();
                     if let Some(t) = &trace {
+                        let mut cleaner = VariableCleaner::new();
                         t.values().for_each(|v| {
                             cleaner.clean(&v.input);
                             cleaner.clean(&v.output);
@@ -242,11 +270,21 @@ impl DecisionGraph {
                 }
             };
 
+            let nodes_view = match (&node.kind, &self.parent_nodes) {
+                (DecisionNodeKind::InputNode { .. }, Some(parent_nodes)) => {
+                    let view = output.depth_clone(1);
+                    view.dot_insert(Variable::nodes_key().as_ref(), parent_nodes.clone());
+                    Some(view)
+                }
+                _ => None,
+            };
+
             walker.set_node_data(
                 nid,
                 NodeData {
-                    name: Rc::from(node.name.deref()),
+                    name: zen_types::symbol::Symbol::from(node.name.deref()),
                     data: output,
+                    nodes_view,
                 },
             );
 

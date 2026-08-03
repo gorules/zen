@@ -1,3 +1,5 @@
+use crate::decision_graph::schema_dict;
+use crate::loader::DynamicLoader;
 use crate::nodes::function::v2::strip::TypeStripper;
 use crate::policy::PolicyDocument;
 use ahash::{HashMap, HashMapExt};
@@ -105,6 +107,9 @@ pub struct GraphContent {
 
     #[serde(skip)]
     pub stripped_functions: Option<Arc<HashMap<Arc<str>, Arc<str>>>>,
+
+    #[serde(skip)]
+    pub resolved_schemas: Option<Arc<HashMap<Arc<str>, (Arc<serde_json::Value>, u64)>>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -183,6 +188,41 @@ impl GraphContent {
         }
 
         self.compiled_cache.replace(Arc::new(cache));
+    }
+
+    pub async fn resolve_schemas(&mut self, loader: &DynamicLoader) -> Result<(), String> {
+        if self.resolved_schemas.is_some() {
+            return Ok(());
+        }
+
+        let mut referencing: Vec<(Arc<str>, Arc<serde_json::Value>)> = Vec::new();
+        for node in &self.nodes {
+            let schema = match &node.kind {
+                DecisionNodeKind::InputNode { content } => content.schema.as_ref(),
+                DecisionNodeKind::OutputNode { content } => content.schema.as_ref(),
+                _ => None,
+            };
+            if let Some(schema) = schema {
+                if schema_dict::schema_references_dictionary(schema) {
+                    referencing.push((node.id.clone(), schema.clone()));
+                }
+            }
+        }
+
+        if referencing.is_empty() {
+            self.resolved_schemas = Some(Arc::new(HashMap::new()));
+            return Ok(());
+        }
+
+        let dictionaries = schema_dict::load_import_dictionaries(loader, &self.imports).await?;
+        let mut resolved = HashMap::with_capacity(referencing.len());
+        for (id, schema) in referencing {
+            let (value, salt) = schema_dict::resolve_schema(&schema, &dictionaries)?;
+            resolved.insert(id, (Arc::new(value), salt));
+        }
+
+        self.resolved_schemas = Some(Arc::new(resolved));
+        Ok(())
     }
 
     fn compile_functions(&mut self) {

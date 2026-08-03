@@ -215,6 +215,7 @@ async fn engine_function_imports() {
         imports: Vec::new(),
         compiled_cache: None,
         stripped_functions: None,
+        resolved_schemas: None,
     };
     let decision = DecisionEngine::default()
         .create_decision(Arc::new(function_content.into()))

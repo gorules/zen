@@ -1,4 +1,5 @@
 use crate::compiler::Opcode;
+use crate::scope::Scope;
 use crate::vm::VM;
 use crate::{IsolateError, Variable};
 use std::marker::PhantomData;
@@ -62,7 +63,15 @@ impl Expression<Standard> {
     }
 
     pub fn evaluate_with(&self, context: Variable, vm: &mut VM) -> Result<Variable, IsolateError> {
-        let output = vm.run(self.bytecode.as_ref(), context)?;
+        self.evaluate_with_scope(&Scope::new(context), vm)
+    }
+
+    pub fn evaluate_with_scope(
+        &self,
+        scope: &Scope,
+        vm: &mut VM,
+    ) -> Result<Variable, IsolateError> {
+        let output = vm.run(self.bytecode.as_ref(), scope)?;
         Ok(output)
     }
 }
@@ -85,17 +94,16 @@ impl Expression<Unary> {
     }
 
     pub fn evaluate_with(&self, context: Variable, vm: &mut VM) -> Result<bool, IsolateError> {
-        let Some(context_object_ref) = context.as_object() else {
-            return Err(IsolateError::MissingContextReference);
-        };
+        self.evaluate_with_scope(&Scope::new(context), vm)
+    }
 
-        let context_object = context_object_ref.borrow();
-        if !context_object.contains_key("$") {
+    pub fn evaluate_with_scope(&self, scope: &Scope, vm: &mut VM) -> Result<bool, IsolateError> {
+        if scope.get(&Variable::dollar_key()).is_none() {
             return Err(IsolateError::MissingContextReference);
         }
 
         let output = vm
-            .run(self.bytecode.as_ref(), context)?
+            .run(self.bytecode.as_ref(), scope)?
             .as_bool()
             .ok_or_else(|| IsolateError::ValueCastError)?;
         Ok(output)

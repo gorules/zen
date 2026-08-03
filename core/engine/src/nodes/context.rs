@@ -14,6 +14,7 @@ use std::hash::Hasher;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use thiserror::Error;
+use zen_expression::Isolate;
 use zen_types::variable::{ToVariable, Variable};
 
 #[derive(Clone)]
@@ -26,6 +27,7 @@ where
     pub name: Arc<str>,
     pub node: NodeData,
     pub input: Variable,
+    pub nodes: Option<Variable>,
     pub trace: Option<RefCell<TraceData>>,
     pub extensions: NodeHandlerExtensions,
     pub iteration: u8,
@@ -42,12 +44,17 @@ where
             id: base.id,
             name: base.name,
             input: base.input,
+            nodes: base.nodes,
             extensions: base.extensions,
             iteration: base.iteration,
             trace: base.config.trace.then(|| Default::default()),
             node: data,
             config: base.config,
         }
+    }
+
+    pub fn isolate(&self) -> Isolate {
+        make_isolate(&self.input, self.nodes.as_ref(), &self.extensions)
     }
 
     pub fn trace<Function>(&self, mutator: Function)
@@ -88,7 +95,7 @@ where
         self.extensions.function_runtime().await.node_context(self)
     }
 
-    pub fn validate(&self, schema: &Value, value: &Value) -> Result<(), NodeError> {
+    pub fn validate(&self, schema: &Value, value: &Variable) -> Result<(), NodeError> {
         let validator_cache = self.extensions.validator_cache();
         let hash = self.hash_node();
 
@@ -188,13 +195,32 @@ pub struct NodeContextBase {
     pub id: Arc<str>,
     pub name: Arc<str>,
     pub input: Variable,
+    pub nodes: Option<Variable>,
     pub iteration: u8,
     pub extensions: NodeHandlerExtensions,
     pub config: NodeContextConfig,
     pub trace: Option<RefCell<Variable>>,
 }
 
+pub(crate) fn make_isolate(
+    input: &Variable,
+    nodes: Option<&Variable>,
+    extensions: &NodeHandlerExtensions,
+) -> Isolate {
+    let mut isolate =
+        Isolate::with_environment(input.clone()).with_cache(extensions.compiled_cache.clone());
+    if let Some(nodes) = nodes {
+        isolate.set_local(Variable::nodes_key(), nodes.clone());
+    }
+
+    isolate
+}
+
 impl NodeContextBase {
+    pub fn isolate(&self) -> Isolate {
+        make_isolate(&self.input, self.nodes.as_ref(), &self.extensions)
+    }
+
     pub fn error<Error>(&self, error: Error) -> NodeResult
     where
         Error: Into<Box<dyn std::error::Error>>,
@@ -245,6 +271,7 @@ where
             id: value.id,
             name: value.name,
             input: value.input,
+            nodes: value.nodes,
             extensions: value.extensions,
             iteration: value.iteration,
             config: value.config,
@@ -308,7 +335,7 @@ impl Display for ValidationErrorJson {
 impl<'a> From<ValidationError<'a>> for ValidationErrorJson {
     fn from(value: ValidationError<'a>) -> Self {
         ValidationErrorJson {
-            path: value.instance_path.to_string(),
+            path: value.instance_path().to_string(),
             message: format!("{}", value),
         }
     }

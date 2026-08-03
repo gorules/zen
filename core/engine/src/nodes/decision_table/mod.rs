@@ -38,8 +38,7 @@ impl NodeHandler for DecisionTableNodeHandler {
 
 impl DecisionTableNodeHandler {
     fn handle_first_hit(&self, ctx: DecisionTableContext) -> NodeResult {
-        let mut isolate = Isolate::with_environment(ctx.input.depth_clone(1))
-            .with_cache(ctx.extensions.compiled_cache.clone());
+        let mut isolate = ctx.isolate();
 
         if !ctx.config.trace {
             for rule in ctx.node.rules.iter() {
@@ -88,8 +87,7 @@ impl DecisionTableNodeHandler {
     fn handle_collect(&self, ctx: DecisionTableContext) -> NodeResult {
         let mut outputs = Vec::new();
         let mut traces = Vec::new();
-        let mut isolate = Isolate::with_environment(ctx.input.depth_clone(1))
-            .with_cache(ctx.extensions.compiled_cache.clone());
+        let mut isolate = ctx.isolate();
 
         for (index, rule) in ctx.node.rules.iter().enumerate() {
             if let Some(result) = self.evaluate_row(&ctx, rule, &mut isolate) {

@@ -214,7 +214,7 @@ impl ColumnIndex {
 
     fn rows_for(&self, value: &Variable) -> Option<&FixedBitSet> {
         match value {
-            Variable::String(s) => self.strings.get(s.as_ref()),
+            Variable::String(s) => self.strings.get(s.as_str()),
             Variable::Number(n) => self.numbers.get(&n.normalize()),
             Variable::Bool(b) => self.bools.get(b),
             _ => None,

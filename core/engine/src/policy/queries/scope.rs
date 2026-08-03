@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use petgraph::stable_graph::StableDiGraph;
-use zen_expression::variable::{Variable, VariableType};
+use zen_expression::variable::VariableType;
 
 use crate::policy::blocks::InstanceSource;
 use crate::policy::ir::{DataModelIr, DictionaryIr, ParsedPolicy, Property, PropertyTypeIr};
@@ -765,7 +765,7 @@ impl VariableTypeScope for VariableType {
             return self.shallow_clone();
         };
         let mut fields: HashMap<Rc<str>, VariableType> = obj.borrow().clone();
-        fields.insert(Variable::dollar_key(), field_type.shallow_clone());
+        fields.insert(Rc::from("$"), field_type.shallow_clone());
         VariableType::Object(Rc::new(RefCell::new(fields)))
     }
 

@@ -49,6 +49,7 @@ pub fn to_variable_impl(input: TokenStream) -> TokenStream {
 
             use _zen_expression::variable::{Variable as _Variable, VariableMap as _VariableMap, VariableMapExt, ToVariable as _ToVariable};
             use ::std::rc::Rc as _Rc;
+            use ::zen_types::symbol::Symbol as _Symbol;
 
             #impl_block
         };
@@ -73,7 +74,7 @@ fn generate_struct_body(fields: &[serde_derive_internals::ast::Field]) -> proc_m
 
         quote! {
             map.insert(
-                _Rc::from(#serialized_name),
+                _Symbol::from(#serialized_name),
                 self.#field_ident.to_variable()
             );
         }
@@ -187,7 +188,7 @@ fn generate_untagged_variant_arm(
                 let field_name = field.attrs.name().serialize_name();
 
                 quote! {
-                    map.insert(_Rc::from(#field_name), #field_ident.to_variable());
+                    map.insert(_Symbol::from(#field_name), #field_ident.to_variable());
                 }
             });
 
@@ -233,8 +234,8 @@ fn generate_variant_arm(
             quote! {
                 #enum_ident::#variant_ident(value) => {
                     let mut map = _VariableMap::with_capacity(2);
-                    map.insert(_Rc::from(#type_key), _Variable::String(_Rc::from(#variant_name)));
-                    map.insert(_Rc::from(#value_key), value.to_variable());
+                    map.insert(_Symbol::from(#type_key), _Variable::String(_Rc::from(#variant_name)));
+                    map.insert(_Symbol::from(#value_key), value.to_variable());
                     _Variable::from_object(map)
                 }
             }
@@ -250,8 +251,8 @@ fn generate_variant_arm(
                 quote! {
                     #enum_ident::#variant_ident(#(#field_patterns),*) => {
                         let mut map = _VariableMap::with_capacity(2);
-                        map.insert(_Rc::from(#type_key), _Variable::String(_Rc::from(#variant_name)));
-                        map.insert(_Rc::from(#value_key), (#(#field_patterns)*).to_variable());
+                        map.insert(_Symbol::from(#type_key), _Variable::String(_Rc::from(#variant_name)));
+                        map.insert(_Symbol::from(#value_key), (#(#field_patterns)*).to_variable());
                         _Variable::from_object(map)
                     }
                 }
@@ -259,14 +260,14 @@ fn generate_variant_arm(
                 let field_mappings = field_patterns.iter().enumerate().map(|(i, pattern)| {
                     let field_key = rename_rule.apply_to_field(&format!("field_{}", i));
                     quote! {
-                        map.insert(_Rc::from(#field_key), (#pattern).to_variable());
+                        map.insert(_Symbol::from(#field_key), (#pattern).to_variable());
                     }
                 });
 
                 quote! {
                     #enum_ident::#variant_ident(#(#field_patterns),*) => {
                         let mut map = _VariableMap::with_capacity(#field_count + 1);
-                        map.insert(_Rc::from(#type_key), _Variable::String(_Rc::from(#variant_name)));
+                        map.insert(_Symbol::from(#type_key), _Variable::String(_Rc::from(#variant_name)));
                         #(#field_mappings)*
                         _Variable::from_object(map)
                     }
@@ -290,7 +291,7 @@ fn generate_variant_arm(
                 let field_name = field.attrs.name().serialize_name();
 
                 quote! {
-                    map.insert(_Rc::from(#field_name), #field_ident.to_variable());
+                    map.insert(_Symbol::from(#field_name), #field_ident.to_variable());
                 }
             });
 
@@ -303,7 +304,7 @@ fn generate_variant_arm(
             quote! {
                 #enum_ident::#variant_ident { #(#field_patterns),* } => {
                     let mut map = _VariableMap::with_capacity(#field_count);
-                    map.insert(_Rc::from(#type_key), _Variable::String(_Rc::from(#variant_name)));
+                    map.insert(_Symbol::from(#type_key), _Variable::String(_Rc::from(#variant_name)));
                     #(#field_mappings)*
                     _Variable::from_object(map)
                 }

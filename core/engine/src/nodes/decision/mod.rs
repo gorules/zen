@@ -38,36 +38,49 @@ impl NodeHandler for DecisionNodeHandler {
     }
 
     async fn handle(&self, ctx: NodeContext<Self::NodeData, Self::TraceData>) -> NodeResult {
-        let loader = ctx.extensions.loader();
-        let sub_decision = loader.load(ctx.node.key.deref()).await.node_context(&ctx)?;
-        let sub_kind = sub_decision.kind();
-        let Some(sub_graph) = sub_decision.into_graph_arc() else {
-            return ctx.error(format!(
-                "sub-decision '{}' is a {sub_kind}, expected graph",
-                ctx.node.key
-            ));
-        };
-
         let mut decision_graph_ref = self.decision_graph.borrow_mut();
-        let decision_graph = match decision_graph_ref.as_mut() {
-            Some(dg) => dg,
-            None => {
-                let dg = DecisionGraph::try_new(DecisionGraphConfig {
-                    content: sub_graph,
-                    extensions: ctx.extensions.clone(),
-                    trace: ctx.config.trace,
-                    iteration: ctx.iteration + 1,
-                    max_depth: ctx.config.max_depth,
-                })
-                .node_context(&ctx)?;
 
-                *decision_graph_ref = Some(dg);
-                match decision_graph_ref.as_mut() {
-                    Some(dg) => dg,
-                    None => return ctx.error("Failed to initialize decision graph".to_string()),
-                }
-            }
+        if decision_graph_ref.is_none() {
+            let loader = ctx.extensions.loader();
+            let sub_decision = loader.load(ctx.node.key.deref()).await.node_context(&ctx)?;
+            let sub_kind = sub_decision.kind();
+            let Some(sub_graph) = sub_decision.into_graph_arc() else {
+                return ctx.error(format!(
+                    "sub-decision '{}' is a {sub_kind}, expected graph",
+                    ctx.node.key
+                ));
+            };
+
+            let sub_graph =
+                if sub_graph.compiled_cache.is_some() && sub_graph.resolved_schemas.is_some() {
+                    sub_graph
+                } else {
+                    let mut owned = (*sub_graph).clone();
+                    owned.compile();
+                    let _ = owned.resolve_schemas(loader).await;
+                    std::sync::Arc::new(owned)
+                };
+
+            let mut extensions = ctx.extensions.clone();
+            extensions.compiled_cache = sub_graph.compiled_cache.clone();
+
+            let dg = DecisionGraph::try_new(DecisionGraphConfig {
+                content: sub_graph,
+                extensions,
+                trace: ctx.config.trace,
+                iteration: ctx.iteration + 1,
+                max_depth: ctx.config.max_depth,
+            })
+            .node_context(&ctx)?;
+
+            *decision_graph_ref = Some(dg);
+        }
+
+        let Some(decision_graph) = decision_graph_ref.as_mut() else {
+            return ctx.error("Failed to initialize decision graph".to_string());
         };
+
+        decision_graph.set_parent_nodes(ctx.nodes.clone());
 
         let evaluate_result = Box::pin(decision_graph.evaluate(ctx.input.clone())).await;
         match evaluate_result {

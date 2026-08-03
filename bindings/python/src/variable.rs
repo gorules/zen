@@ -40,7 +40,7 @@ pub fn variable_to_object<'py>(py: Python<'py>, val: &Variable) -> PyResult<Boun
             let dict = PyDict::new(py);
             let b = m.borrow();
             for (key, value) in b.iter() {
-                dict.set_item(String::from(key.as_ref()), variable_to_object(py, value)?)?;
+                dict.set_item(key.as_str().to_owned(), variable_to_object(py, value)?)?;
             }
 
             dict.into_bound_py_any(py)

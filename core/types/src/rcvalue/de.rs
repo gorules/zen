@@ -59,7 +59,7 @@ impl<'de> Visitor<'de> for RcValueVisitor {
     where
         E: Error,
     {
-        Ok(RcValue::String(Rc::from(v)))
+        Ok(RcValue::String((v).into()))
     }
 
     fn visit_unit<E>(self) -> Result<Self::Value, E>

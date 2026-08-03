@@ -1,11 +1,10 @@
+use crate::symbol::Symbol;
+use crate::variable::map::Entry;
 use crate::variable::ref_ser::RefSerializer;
-use ahash::HashMap;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::Zero;
 use serde_json::Value;
 use std::any::Any;
-use std::cell::RefCell;
-use std::collections::hash_map::Entry;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
 use std::rc::Rc;
@@ -19,24 +18,20 @@ pub use impls::ToVariable;
 mod conv;
 mod de;
 mod impls;
+mod map;
 mod ref_deser;
 mod ref_ser;
 mod ser;
 
-pub(crate) type RcCell<T> = Rc<RefCell<T>>;
+pub use crate::rccell::RcCell;
 
-pub type VariableMap = HashMap<Rc<str>, Variable>;
-
-thread_local! {
-    static DOLLAR_KEY: Rc<str> = Rc::from("$");
-    static ROOT_KEY: Rc<str> = Rc::from("$root");
-}
+pub use crate::variable::map::{Iter as MapIter, VariableMap};
 
 pub enum Variable {
     Null,
     Bool(bool),
     Number(Decimal),
-    String(Rc<str>),
+    String(Symbol),
     Array(RcCell<Vec<Variable>>),
     Object(RcCell<VariableMap>),
     Dynamic(Rc<dyn DynamicVariable>),
@@ -51,16 +46,24 @@ pub trait DynamicVariable: Display {
 }
 
 impl Variable {
-    pub fn dollar_key() -> Rc<str> {
-        DOLLAR_KEY.with(Rc::clone)
+    pub fn dollar_key() -> Symbol {
+        Symbol::from_static("$")
     }
 
-    pub fn root_key() -> Rc<str> {
-        ROOT_KEY.with(Rc::clone)
+    pub fn root_key() -> Symbol {
+        Symbol::from_static("$root")
+    }
+
+    pub fn nodes_key() -> Symbol {
+        Symbol::from_static("$nodes")
+    }
+
+    pub fn key(name: &str) -> Symbol {
+        Symbol::from(name)
     }
 
     pub fn from_array(arr: Vec<Self>) -> Self {
-        Self::Array(Rc::new(RefCell::new(arr)))
+        Self::Array(RcCell::new(arr))
     }
 
     pub fn serialize_ref(&self) -> RcValue {
@@ -71,8 +74,8 @@ impl Variable {
         RefDeserializer::new().deserialize(serialized)
     }
 
-    pub fn from_object(obj: HashMap<Rc<str>, Self>) -> Self {
-        Self::Object(Rc::new(RefCell::new(obj)))
+    pub fn from_object(obj: VariableMap) -> Self {
+        Self::Object(RcCell::new(obj))
     }
 
     pub fn empty_object() -> Self {
@@ -92,7 +95,14 @@ impl Variable {
 
     pub fn as_rc_str(&self) -> Option<Rc<str>> {
         match self {
-            Variable::String(s) => Some(s.clone()),
+            Variable::String(s) => Some(Rc::from(s.as_str())),
+            _ => None,
+        }
+    }
+
+    pub fn as_sym(&self) -> Option<&Symbol> {
+        match self {
+            Variable::String(s) => Some(s),
             _ => None,
         }
     }
@@ -111,7 +121,7 @@ impl Variable {
         }
     }
 
-    pub fn as_object(&self) -> Option<RcCell<HashMap<Rc<str>, Variable>>> {
+    pub fn as_object(&self) -> Option<RcCell<VariableMap>> {
         match self {
             Variable::Object(obj) => Some(obj.clone()),
             _ => None,
@@ -167,7 +177,7 @@ impl Variable {
             .try_fold(self.shallow_clone(), |var, part| match var {
                 Variable::Object(obj) => {
                     let reference = obj.borrow();
-                    reference.get(part).map(|v| v.shallow_clone())
+                    reference.get_str(part).map(|v| v.shallow_clone())
                 }
                 _ => None,
             })
@@ -183,7 +193,7 @@ impl Variable {
             .try_fold(cloned_self.shallow_clone(), |var, part| match var {
                 Variable::Object(obj) => {
                     let mut obj_ref = obj.borrow_mut();
-                    Some(match obj_ref.entry(Rc::from(*part)) {
+                    Some(match obj_ref.entry(Symbol::from(*part)) {
                         Entry::Occupied(mut occ) => {
                             let var = occ.get();
                             let new_obj = match var {
@@ -209,7 +219,7 @@ impl Variable {
         let head = parts.try_fold(self.shallow_clone(), |var, part| match var {
             Variable::Object(obj) => {
                 let mut obj_ref = obj.borrow_mut();
-                Some(match obj_ref.entry(Rc::from(part)) {
+                Some(match obj_ref.entry(Symbol::from(part)) {
                     Entry::Occupied(occ) => occ.get().shallow_clone(),
                     Entry::Vacant(vac) => vac.insert(Self::empty_object()).shallow_clone(),
                 })
@@ -221,7 +231,7 @@ impl Variable {
         };
 
         let mut object = object_ref.borrow_mut();
-        object.remove(last_part)
+        object.remove_str(last_part)
     }
 
     pub fn dot_insert(&self, key: &str, variable: Variable) -> Option<Variable> {
@@ -230,7 +240,7 @@ impl Variable {
         let head = parts.try_fold(self.shallow_clone(), |var, part| match var {
             Variable::Object(obj) => {
                 let mut obj_ref = obj.borrow_mut();
-                Some(match obj_ref.entry(Rc::from(part)) {
+                Some(match obj_ref.entry(Symbol::from(part)) {
                     Entry::Occupied(occ) => occ.get().shallow_clone(),
                     Entry::Vacant(vac) => vac.insert(Self::empty_object()).shallow_clone(),
                 })
@@ -242,7 +252,7 @@ impl Variable {
         };
 
         let mut object = object_ref.borrow_mut();
-        object.insert(Rc::from(last_part), variable)
+        object.insert(Symbol::from(last_part), variable)
     }
 
     pub fn dot_insert_detached(&self, key: &str, variable: Variable) -> Option<Variable> {
@@ -254,7 +264,7 @@ impl Variable {
         };
 
         let mut object = object_ref.borrow_mut();
-        object.insert(Rc::from(last_part), variable);
+        object.insert(Symbol::from(last_part), variable);
         Some(new_var)
     }
 
@@ -353,7 +363,7 @@ fn merge_variables(
     if doc.is_object() && patch.is_object() {
         let doc_ref = doc.as_object().unwrap();
         let patch_ref = patch.as_object().unwrap();
-        if Rc::ptr_eq(&doc_ref, &patch_ref) {
+        if RcCell::ptr_eq(&doc_ref, &patch_ref) {
             return false;
         }
 
@@ -374,7 +384,7 @@ fn merge_variables(
             }
             MergeStrategy::CloneOnWrite => {
                 let mut changed = false;
-                let mut new_map = None;
+                let mut new_map: Option<VariableMap> = None;
 
                 for (key, value) in patch.deref() {
                     // Get or create the new map if we haven't yet
@@ -403,7 +413,7 @@ fn merge_variables(
                 // Only update doc if changes were made
                 if changed {
                     if let Some(new_map) = new_map {
-                        *doc = Variable::Object(Rc::new(RefCell::new(new_map)));
+                        *doc = Variable::Object(RcCell::new(new_map));
                     }
                     return true;
                 }
@@ -474,7 +484,7 @@ impl PartialEq for Variable {
             (Variable::Null, Variable::Null) => true,
             (Variable::Bool(b1), Variable::Bool(b2)) => b1 == b2,
             (Variable::Number(n1), Variable::Number(n2)) => n1 == n2,
-            (Variable::String(s1), Variable::String(s2)) => s1 == s2,
+            (Variable::String(s1), Variable::String(s2)) => s1.as_str() == s2.as_str(),
             (Variable::Array(a1), Variable::Array(a2)) => a1 == a2,
             (Variable::Object(obj1), Variable::Object(obj2)) => obj1 == obj2,
             (Variable::Dynamic(d1), Variable::Dynamic(d2)) => Rc::ptr_eq(d1, d2),

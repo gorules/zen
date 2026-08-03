@@ -1,15 +1,11 @@
 use crate::variable::DynamicVariable;
 use crate::Variable;
-use ahash::HashMap;
 use anyhow::Context;
 use rust_decimal::Decimal;
-use std::cell::RefCell;
 use std::ops::Deref;
-use std::rc::Rc;
+use zen_types::rccell::RcCell;
 
 pub struct Arguments<'a>(pub &'a [Variable]);
-
-type RcCell<T> = Rc<RefCell<T>>;
 
 impl<'a> Deref for Arguments<'a> {
     type Target = [Variable];
@@ -92,7 +88,7 @@ impl<'a> Arguments<'a> {
     pub fn oobject(
         &self,
         pos: usize,
-    ) -> anyhow::Result<Option<RcCell<HashMap<Rc<str>, Variable>>>> {
+    ) -> anyhow::Result<Option<RcCell<crate::variable::VariableMap>>> {
         match self.ovar(pos) {
             Some(v) => v
                 .as_object()
@@ -102,7 +98,7 @@ impl<'a> Arguments<'a> {
         }
     }
 
-    pub fn object(&self, pos: usize) -> anyhow::Result<RcCell<HashMap<Rc<str>, Variable>>> {
+    pub fn object(&self, pos: usize) -> anyhow::Result<RcCell<crate::variable::VariableMap>> {
         self.oobject(pos)?
             .with_context(|| format!("Argument on {pos} position is not a valid object"))
     }

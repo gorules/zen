@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::rc::Rc;
 
 use pyo3::prelude::{PyDictMethods, PyListMethods};
 use pyo3::types::{PyDict, PyList};
@@ -9,7 +8,7 @@ use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde_json::Value;
 use zen_engine::{DecisionGraphResponse, EvaluationTrace};
-use zen_expression::variable::ToVariable;
+use zen_expression::variable::{RcCell, ToVariable};
 use zen_expression::Variable;
 
 use crate::value::value_to_object;
@@ -29,8 +28,8 @@ impl<'py> VariableConverter<'py> {
 
     pub fn convert(&mut self, var: &Variable) -> PyResult<Bound<'py, PyAny>> {
         let addr = match var {
-            Variable::Array(a) => Some(Rc::as_ptr(a) as *const () as usize),
-            Variable::Object(o) => Some(Rc::as_ptr(o) as *const () as usize),
+            Variable::Array(a) => Some(RcCell::as_ptr(a) as *const () as usize),
+            Variable::Object(o) => Some(RcCell::as_ptr(o) as *const () as usize),
             _ => None,
         };
 
@@ -67,7 +66,7 @@ impl<'py> VariableConverter<'py> {
                 let dict = PyDict::new(self.py);
                 let borrowed = o.borrow();
                 for (key, value) in borrowed.iter() {
-                    dict.set_item(key.as_ref(), self.convert(value)?)?;
+                    dict.set_item(key.as_str(), self.convert(value)?)?;
                 }
 
                 dict.into_bound_py_any(self.py)
@@ -148,8 +147,8 @@ impl PortableResponse {
 
     fn add(nodes: &mut Vec<PNode>, memo: &mut HashMap<usize, u32>, var: &Variable) -> u32 {
         let addr = match var {
-            Variable::Array(a) => Some(Rc::as_ptr(a) as *const () as usize),
-            Variable::Object(o) => Some(Rc::as_ptr(o) as *const () as usize),
+            Variable::Array(a) => Some(RcCell::as_ptr(a) as *const () as usize),
+            Variable::Object(o) => Some(RcCell::as_ptr(o) as *const () as usize),
             _ => None,
         };
 

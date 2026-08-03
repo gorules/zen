@@ -221,19 +221,19 @@ mod imp {
     pub fn month_string(args: Arguments) -> anyhow::Result<V> {
         let timestamp = args.var(0)?;
         let time = __internal_convert_datetime(&timestamp)?;
-        Ok(V::String(Rc::from(time.format("%b").to_string())))
+        Ok(V::String((time.format("%b").to_string()).into()))
     }
 
     pub fn weekday_string(args: Arguments) -> anyhow::Result<V> {
         let timestamp = args.var(0)?;
         let time = __internal_convert_datetime(&timestamp)?;
-        Ok(V::String(Rc::from(time.weekday().to_string())))
+        Ok(V::String((time.weekday().to_string()).into()))
     }
 
     pub fn date_string(args: Arguments) -> anyhow::Result<V> {
         let timestamp = args.var(0)?;
         let time = __internal_convert_datetime(&timestamp)?;
-        Ok(V::String(Rc::from(time.to_string())))
+        Ok(V::String((time.to_string()).into()))
     }
 
     pub fn start_of(args: Arguments) -> anyhow::Result<V> {

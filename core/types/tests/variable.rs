@@ -1,7 +1,7 @@
 use rust_decimal_macros::dec;
 use serde_json::json;
 use std::error::Error;
-use std::rc::Rc;
+use zen_types::rccell::RcCell;
 use zen_types::variable::Variable;
 
 type TestResult = Result<(), Box<dyn Error>>;
@@ -19,7 +19,7 @@ fn dot_operations() -> TestResult {
     // Test dot get
     assert_eq!(
         var.dot("user.profile.name"),
-        Some(Variable::String(Rc::from("Alice")))
+        Some(Variable::String(("Alice").into()))
     );
     assert_eq!(var.dot("user.profile.nonexistent"), None);
     assert_eq!(var.dot("nonexistent.path"), None);
@@ -27,21 +27,21 @@ fn dot_operations() -> TestResult {
     // Test dot insert
     let updated = var.dot_insert(
         "user.profile.email",
-        Variable::String(Rc::from("alice@example.com")),
+        Variable::String(("alice@example.com").into()),
     );
     assert!(updated.is_none()); // Returns previous value (none)
     assert_eq!(
         var.dot("user.profile.email"),
-        Some(Variable::String(Rc::from("alice@example.com")))
+        Some(Variable::String(("alice@example.com").into()))
     );
 
     // Test dot insert detached
     let new_var = var
-        .dot_insert_detached("settings.theme", Variable::String(Rc::from("dark")))
+        .dot_insert_detached("settings.theme", Variable::String(("dark").into()))
         .ok_or_else(|| "Failed to insert detached path".to_string())?;
     assert_eq!(
         new_var.dot("settings.theme"),
-        Some(Variable::String(Rc::from("dark")))
+        Some(Variable::String(("dark").into()))
     );
     assert_eq!(var.dot("settings.theme"), None); // Original unchanged
 
@@ -63,33 +63,33 @@ fn clone_operations() -> TestResult {
     // Test shallow clone - shares references
     let shallow = original.shallow_clone();
     if let (Variable::Array(orig_arr), Variable::Array(shallow_arr)) = (&original, &shallow) {
-        assert!(Rc::ptr_eq(orig_arr, shallow_arr));
+        assert!(RcCell::ptr_eq(orig_arr, shallow_arr));
     }
 
     // Test depth clone
     let depth1 = original.depth_clone(1);
     if let (Variable::Array(orig_arr), Variable::Array(depth_arr)) = (&original, &depth1) {
-        assert!(!Rc::ptr_eq(orig_arr, depth_arr)); // Different array refs
+        assert!(!RcCell::ptr_eq(orig_arr, depth_arr)); // Different array refs
 
         let orig_nested = &orig_arr.borrow()[2];
         let depth_nested = &depth_arr.borrow()[2];
         if let (Variable::Object(orig_obj), Variable::Object(depth_obj)) =
             (orig_nested, depth_nested)
         {
-            assert!(Rc::ptr_eq(orig_obj, depth_obj)); // Nested still shared at depth 1
+            assert!(RcCell::ptr_eq(orig_obj, depth_obj)); // Nested still shared at depth 1
         }
     }
 
     // Test deep clone - everything separate
     let deep = original.deep_clone();
     if let (Variable::Array(orig_arr), Variable::Array(deep_arr)) = (&original, &deep) {
-        assert!(!Rc::ptr_eq(orig_arr, deep_arr));
+        assert!(!RcCell::ptr_eq(orig_arr, deep_arr));
 
         let orig_nested = &orig_arr.borrow()[2];
         let deep_nested = &deep_arr.borrow()[2];
         if let (Variable::Object(orig_obj), Variable::Object(deep_obj)) = (orig_nested, deep_nested)
         {
-            assert!(!Rc::ptr_eq(orig_obj, deep_obj)); // Nested also separate
+            assert!(!RcCell::ptr_eq(orig_obj, deep_obj)); // Nested also separate
         }
     }
 
@@ -115,11 +115,11 @@ fn merge_operations() -> TestResult {
     assert_eq!(merged.dot("user.age"), Some(Variable::Number(dec!(31)))); // Merged updated
     assert_eq!(
         merged.dot("user.email"),
-        Some(Variable::String(Rc::from("alice@example.com")))
+        Some(Variable::String(("alice@example.com").into()))
     );
     assert_eq!(
         merged.dot("new_field"),
-        Some(Variable::String(Rc::from("value")))
+        Some(Variable::String(("value").into()))
     );
 
     // Test in-place merge
@@ -127,7 +127,7 @@ fn merge_operations() -> TestResult {
     assert_eq!(doc.dot("user.age"), Some(Variable::Number(dec!(31)))); // Original now changed
     assert_eq!(
         doc.dot("user.name"),
-        Some(Variable::String(Rc::from("Alice")))
+        Some(Variable::String(("Alice").into()))
     ); // Preserved
     assert_eq!(
         doc.dot("settings.notifications"),

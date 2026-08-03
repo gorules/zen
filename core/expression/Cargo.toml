@@ -8,6 +8,7 @@ edition = "2021"
 repository = "https://github.com/gorules/zen.git"
 
 [dependencies]
+smallvec = { version = "1", features = ["union"] }
 anyhow = { workspace = true }
 ahash = { workspace = true }
 bumpalo = { workspace = true, features = ["collections"] }

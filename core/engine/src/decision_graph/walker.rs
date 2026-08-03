@@ -6,7 +6,6 @@ use petgraph::prelude::{EdgeIndex, NodeIndex, StableDiGraph};
 use petgraph::visit::{EdgeRef, IntoNodeIdentifiers, VisitMap, Visitable};
 use petgraph::{Incoming, Outgoing};
 use std::ops::Deref;
-use std::rc::Rc;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Instant;
@@ -22,8 +21,9 @@ use zen_expression::Isolate;
 pub(crate) type StableDiDecisionGraph = StableDiGraph<Arc<DecisionNode>, Arc<DecisionEdge>>;
 
 pub(crate) struct NodeData {
-    pub name: Rc<str>,
+    pub name: zen_types::symbol::Symbol,
     pub data: Variable,
+    pub nodes_view: Option<Variable>,
 }
 
 pub(crate) struct GraphWalker {
@@ -96,7 +96,10 @@ impl GraphWalker {
         let node_values = self
             .node_data
             .iter()
-            .filter_map(|(_, nd)| Some((nd.name.clone(), nd.data.clone())))
+            .filter_map(|(_, nd)| {
+                let value = nd.nodes_view.clone().unwrap_or_else(|| nd.data.clone());
+                Some((nd.name.clone(), value))
+            })
             .collect();
 
         Variable::from_object(node_values)
@@ -106,34 +109,35 @@ impl GraphWalker {
         self.node_data.insert(node_id, value);
     }
 
+    pub fn nodes_context(&self) -> Option<Variable> {
+        self.nodes_in_context.then(|| self.get_all_node_data())
+    }
+
     pub fn incoming_node_data(
         &self,
         g: &StableDiDecisionGraph,
         node_id: NodeIndex,
-        with_nodes: bool,
     ) -> (Variable, Variable) {
         let value = self.merge_node_data(g.neighbors_directed(node_id, Incoming));
 
-        if self.nodes_in_context && with_nodes {
-            if let Some(object_ref) = value.as_object() {
-                let mut new_object = object_ref.borrow().clone();
-                new_object.insert(Rc::from("$nodes"), self.get_all_node_data());
-
-                return (Variable::from_object(new_object), value);
-            }
-        }
-
-        (value.depth_clone(1), value)
+        (value.clone(), value)
     }
 
     pub fn merge_node_data<I>(&self, iter: I) -> Variable
     where
         I: Iterator<Item = NodeIndex>,
     {
-        iter.filter_map(|nid| self.node_data.get(&nid))
-            .fold(Variable::empty_object(), |mut prev, nd| {
-                prev.merge_clone(&nd.data)
-            })
+        let mut incoming = iter.filter_map(|nid| self.node_data.get(&nid));
+        let Some(first) = incoming.next() else {
+            return Variable::empty_object();
+        };
+
+        let head = match &first.data {
+            Variable::Object(_) | Variable::Array(_) => first.data.clone(),
+            _ => Variable::empty_object(),
+        };
+
+        incoming.fold(head, |mut prev, nd| prev.merge_clone(&nd.data))
     }
 
     pub fn next<F: FnMut(DecisionGraphTrace)>(
@@ -163,8 +167,11 @@ impl GraphWalker {
             let decision_node = g.node_weight(nid)?.clone();
             if let DecisionNodeKind::SwitchNode { content } = &decision_node.kind {
                 if !self.visited_switch_nodes.contains(&nid) {
-                    let (input, input_trace) = self.incoming_node_data(g, nid, true);
+                    let (input, input_trace) = self.incoming_node_data(g, nid);
                     let mut isolate = Isolate::with_environment(input);
+                    if let Some(nodes) = self.nodes_context() {
+                        isolate.set_local(Variable::nodes_key(), nodes);
+                    }
 
                     let mut statement_iter = content.statements.iter();
                     let valid_statements: Vec<SwitchStatementTraceRow> = match content.hit_policy {
@@ -183,7 +190,6 @@ impl GraphWalker {
 
                     if let Some(on_trace) = &mut on_trace {
                         let output = input_trace.depth_clone(1);
-                        output.dot_remove("$nodes");
 
                         on_trace(DecisionGraphTrace {
                             id: decision_node.id.clone(),

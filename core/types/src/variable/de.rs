@@ -1,7 +1,7 @@
 #[cfg(feature = "arbitrary_precision")]
 use crate::constant::NUMBER_TOKEN;
 use crate::variable::Variable;
-use ahash::{HashMap, HashMapExt};
+use crate::variable::VariableMap;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
 use serde::de::{DeserializeSeed, Error, MapAccess, SeqAccess, Unexpected, Visitor};
@@ -59,7 +59,7 @@ impl<'de> Visitor<'de> for VariableVisitor {
     where
         E: Error,
     {
-        Ok(Variable::String(Rc::from(v)))
+        Ok(Variable::String((v).into()))
     }
 
     fn visit_unit<E>(self) -> Result<Self::Value, E>
@@ -85,7 +85,7 @@ impl<'de> Visitor<'de> for VariableVisitor {
     where
         A: MapAccess<'de>,
     {
-        let mut m = HashMap::with_capacity(map.size_hint().unwrap_or_default());
+        let mut m = VariableMap::with_capacity(map.size_hint().unwrap_or_default());
         #[cfg(feature = "arbitrary_precision")]
         let mut first = true;
 
@@ -105,7 +105,7 @@ impl<'de> Visitor<'de> for VariableVisitor {
                 ));
             }
 
-            m.insert(key, value);
+            m.insert(crate::symbol::Symbol::from(key.as_ref()), value);
             #[cfg(feature = "arbitrary_precision")]
             {
                 first = false;

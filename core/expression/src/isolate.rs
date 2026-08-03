@@ -8,10 +8,12 @@ use crate::compiler::{Compiler, CompilerError, Opcode};
 use crate::expression::{OpcodeCache, Standard, Unary};
 use crate::lexer::{Lexer, LexerError};
 use crate::parser::{Parser, ParserError};
+use crate::scope::Scope;
 use crate::variable::Variable;
 use crate::vm::{VMError, VM};
 use crate::{Expression, ExpressionKind};
 use bumpalo::Bump;
+use zen_types::symbol::Symbol;
 
 /// Isolate is a component that encapsulates an isolated environment for executing expressions.
 ///
@@ -26,7 +28,7 @@ pub struct Isolate {
 
     bump: Bump,
 
-    environment: Option<Variable>,
+    scope: Scope,
     references: HashMap<String, Variable>,
     cache: Option<Arc<OpcodeCache>>,
 }
@@ -40,7 +42,7 @@ impl Isolate {
 
             bump: Bump::new(),
 
-            environment: None,
+            scope: Scope::default(),
             references: Default::default(),
             cache: None,
         }
@@ -59,7 +61,7 @@ impl Isolate {
     }
 
     pub fn set_environment(&mut self, variable: Variable) {
-        self.environment.replace(variable);
+        self.scope.set_base(variable);
         self.references.clear();
     }
 
@@ -67,11 +69,26 @@ impl Isolate {
         self.cache = Some(cache);
     }
 
-    pub fn update_environment<F>(&mut self, mut updater: F)
-    where
-        F: FnMut(Option<&mut Variable>),
-    {
-        updater(self.environment.as_mut());
+    pub fn scope(&self) -> &Scope {
+        &self.scope
+    }
+
+    pub fn set_local(&mut self, name: Symbol, value: Variable) {
+        self.scope.set_local(name, value);
+    }
+
+    pub fn insert_dollar(&mut self, path: &str, value: Variable) {
+        let dollar = match self.scope.local(&Variable::dollar_key()) {
+            Some(existing @ Variable::Object(_)) => existing.shallow_clone(),
+            _ => {
+                let created = Variable::empty_object();
+                self.scope
+                    .set_local(Variable::dollar_key(), created.clone());
+                created
+            }
+        };
+
+        let _ = dollar.dot_insert(path, value);
     }
 
     pub fn set_reference(&mut self, reference: &str) -> Result<(), IsolateError> {
@@ -89,16 +106,7 @@ impl Isolate {
     }
 
     pub fn set_reference_value(&mut self, value: Variable) -> Result<(), IsolateError> {
-        if !matches!(&mut self.environment, Some(Variable::Object(_))) {
-            self.environment.replace(Variable::empty_object());
-        }
-
-        let Some(Variable::Object(environment_object_ref)) = &self.environment else {
-            return Err(IsolateError::ReferenceError);
-        };
-
-        let mut environment_object = environment_object_ref.borrow_mut();
-        environment_object.insert(Variable::dollar_key(), value);
+        self.scope.set_local(Variable::dollar_key(), value);
 
         Ok(())
     }
@@ -145,16 +153,12 @@ impl Isolate {
         self.run_internal(source, ExpressionKind::Standard)?;
 
         let bytecode = self.compiler.get_bytecode();
-        let result = self
-            .vm
-            .run(bytecode, self.environment.clone().unwrap_or(Variable::Null))?;
+        let result = self.vm.run(bytecode, &self.scope)?;
 
         Ok(result)
     }
     pub fn run_compiled(&mut self, source: &[Opcode]) -> Result<Variable, IsolateError> {
-        let result = self
-            .vm
-            .run(source, self.environment.clone().unwrap_or(Variable::Null))?;
+        let result = self.vm.run(source, &self.scope)?;
 
         Ok(result)
     }
@@ -178,17 +182,13 @@ impl Isolate {
         self.run_internal(source, ExpressionKind::Unary)?;
 
         let bytecode = self.compiler.get_bytecode();
-        let result = self
-            .vm
-            .run(bytecode, self.environment.clone().unwrap_or(Variable::Null))?;
+        let result = self.vm.run(bytecode, &self.scope)?;
 
         result.as_bool().ok_or_else(|| IsolateError::ValueCastError)
     }
 
     pub fn run_unary_compiled(&mut self, code: &[Opcode]) -> Result<bool, IsolateError> {
-        let result = self
-            .vm
-            .run(code, self.environment.clone().unwrap_or(Variable::Null))?;
+        let result = self.vm.run(code, &self.scope)?;
 
         result.as_bool().ok_or_else(|| IsolateError::ValueCastError)
     }

@@ -4,7 +4,6 @@ use rquickjs::{Context, Ctx, Error as QError, FromJs, Module, Runtime};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt::Debug;
-use std::rc::Rc;
 use zen_expression::variable::Variable;
 
 #[derive(Debug, Deserialize)]
@@ -59,7 +58,7 @@ impl Script {
 fn map_js_error(ctx: &Ctx, e: QError) -> anyhow::Error {
     let error = JsValue::from_js(&ctx, ctx.catch())
         .map(|v| v.0)
-        .unwrap_or(Variable::String(Rc::from(e.to_string().as_str())));
+        .unwrap_or(Variable::String((e.to_string().as_str()).into()));
 
     anyhow::Error::msg(error.to_string())
 }

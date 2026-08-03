@@ -807,6 +807,62 @@ fn isolate_unary_tests() {
     }
 }
 
+#[test]
+fn isolate_does_not_mutate_environment() {
+    let environment: Variable = json!({ "a": 1, "nested": { "b": 2 } }).into();
+
+    let mut isolate = Isolate::new();
+    isolate.set_environment(environment.clone());
+
+    isolate.set_reference("a").unwrap();
+    isolate.set_local(Variable::nodes_key(), json!({ "some": "node" }).into());
+    isolate.run_standard("x = 1; y = x + a; y").unwrap();
+    isolate.insert_dollar("computed", Variable::Number(42.into()));
+
+    assert_eq!(
+        environment.to_value(),
+        json!({ "a": 1, "nested": { "b": 2 } }),
+        "the caller's environment must come back exactly as it went in"
+    );
+
+    assert_eq!(
+        isolate.run_standard("$nodes.some").unwrap().to_value(),
+        json!("node")
+    );
+    assert_eq!(
+        isolate.run_standard("$.computed").unwrap().to_value(),
+        json!(42)
+    );
+    assert_eq!(isolate.run_standard("a").unwrap().to_value(), json!(1));
+    let mut root_keys = isolate.run_standard("keys($root)").unwrap().to_value();
+    root_keys
+        .as_array_mut()
+        .unwrap()
+        .sort_by_key(|k| k.to_string());
+    assert_eq!(
+        root_keys,
+        json!(["$", "$nodes", "a", "nested"]),
+        "`$root` still sees the input and the bindings as one object"
+    );
+}
+
+#[test]
+fn assignments_do_not_leak_between_runs() {
+    let environment: Variable = json!({ "a": 1 }).into();
+
+    let mut isolate = Isolate::with_environment(environment.clone());
+    assert_eq!(
+        isolate.run_standard("b = a + 1; b").unwrap().to_value(),
+        json!(2)
+    );
+    assert_eq!(
+        isolate.run_standard("b").unwrap(),
+        Variable::Null,
+        "an assignment lives for one run only"
+    );
+    assert_eq!(environment.to_value(), json!({ "a": 1 }));
+}
+
 #[cfg(test)]
 mod test {
     use anyhow::Context;

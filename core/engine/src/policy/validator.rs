@@ -153,7 +153,7 @@ impl InputValidator<'_> {
             let Some(prop) = dm_props
                 .properties
                 .iter()
-                .find(|p| p.name.as_ref() == key.as_ref())
+                .find(|p| *p.name == *key.as_str())
             else {
                 continue;
             };

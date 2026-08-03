@@ -1,8 +1,7 @@
 use ahash::{HashMap, HashMapExt};
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::sync::{Arc, RwLock};
 
 use crate::loader::{DecisionLoader, DynamicLoader, LoaderResponse};
 use crate::model::DecisionContent;
@@ -10,16 +9,43 @@ use crate::model::DecisionContent;
 #[derive(Debug)]
 pub struct CachedLoader {
     loader: DynamicLoader,
-    cache: Mutex<HashMap<String, Arc<DecisionContent>>>,
+    cache: RwLock<HashMap<String, Arc<DecisionContent>>>,
 }
 
 impl From<DynamicLoader> for CachedLoader {
     fn from(value: DynamicLoader) -> Self {
         Self {
             loader: value,
-            cache: Mutex::new(HashMap::new()),
+            cache: RwLock::new(HashMap::new()),
         }
     }
+}
+
+fn compiled(content: Arc<DecisionContent>) -> Arc<DecisionContent> {
+    let DecisionContent::Graph(graph) = content.as_ref() else {
+        return content;
+    };
+    if graph.compiled_cache.is_some() {
+        return content;
+    }
+
+    let mut owned = graph.clone();
+    owned.compile();
+    Arc::new(DecisionContent::Graph(owned))
+}
+
+async fn prepared(loader: &DynamicLoader, content: Arc<DecisionContent>) -> Arc<DecisionContent> {
+    let DecisionContent::Graph(graph) = content.as_ref() else {
+        return content;
+    };
+    if graph.compiled_cache.is_some() && graph.resolved_schemas.is_some() {
+        return content;
+    }
+
+    let mut owned = graph.clone();
+    owned.compile();
+    let _ = owned.resolve_schemas(loader).await;
+    Arc::new(DecisionContent::Graph(owned))
 }
 
 impl DecisionLoader for CachedLoader {
@@ -28,13 +54,16 @@ impl DecisionLoader for CachedLoader {
         key: &'a str,
     ) -> Pin<Box<dyn Future<Output = LoaderResponse> + 'a + Send>> {
         Box::pin(async move {
-            let mut cache = self.cache.lock().await;
-            if let Some(content) = cache.get(key) {
-                return Ok(content.clone());
+            if let Ok(cache) = self.cache.read() {
+                if let Some(content) = cache.get(key) {
+                    return Ok(content.clone());
+                }
             }
 
-            let decision_content = self.loader.load(key).await?;
-            cache.insert(key.to_string(), decision_content.clone());
+            let decision_content = prepared(&self.loader, self.loader.load(key).await?).await;
+            if let Ok(mut cache) = self.cache.write() {
+                cache.insert(key.to_string(), decision_content.clone());
+            }
             Ok(decision_content)
         })
     }
@@ -44,15 +73,17 @@ impl DecisionLoader for CachedLoader {
     }
 
     fn load_sync(&self, key: &str) -> Option<LoaderResponse> {
-        let Ok(mut cache) = self.cache.try_lock() else {
-            return self.loader.load_sync(key);
-        };
-        if let Some(content) = cache.get(key) {
-            return Some(Ok(content.clone()));
+        if let Ok(cache) = self.cache.read() {
+            if let Some(content) = cache.get(key) {
+                return Some(Ok(content.clone()));
+            }
         }
-        let response = self.loader.load_sync(key)?;
+
+        let response = self.loader.load_sync(key)?.map(compiled);
         if let Ok(content) = &response {
-            cache.insert(key.to_string(), content.clone());
+            if let Ok(mut cache) = self.cache.write() {
+                cache.insert(key.to_string(), content.clone());
+            }
         }
         Some(response)
     }

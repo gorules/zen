@@ -1,4 +1,3 @@
-use std::rc::Rc;
 use std::sync::Arc;
 
 use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
@@ -42,7 +41,12 @@ impl EnhanceState<'_> {
             trace
                 .values()
                 .filter(|entry| entry.order < node_trace.order)
-                .map(|entry| (Rc::from(entry.name.as_ref()), entry.output.clone()))
+                .map(|entry| {
+                    (
+                        zen_types::symbol::Symbol::from(entry.name.as_ref()),
+                        entry.output.clone(),
+                    )
+                })
                 .collect(),
         );
         let base = node_trace.input.depth_clone(1);
@@ -618,7 +622,10 @@ fn operand_values(
 /// those entries — read the map key directly.
 fn expression_trace_result(entry: &Variable, key: &str) -> Option<Variable> {
     let obj = entry.as_object()?;
-    let slot = obj.borrow().get(key)?.shallow_clone();
+    let slot = obj
+        .borrow()
+        .get(&zen_types::symbol::Symbol::from(key))?
+        .shallow_clone();
     slot.dot("result")
 }
 
@@ -645,7 +652,10 @@ fn shallow_writes(input: &Variable, output: &Variable) -> Vec<WriteTrace> {
         if key.starts_with('$') {
             continue;
         }
-        if input.dot(key).is_some_and(|previous| previous == *value) {
+        if input
+            .dot(key.as_str())
+            .is_some_and(|previous| previous == *value)
+        {
             continue;
         }
         writes.push(WriteTrace {

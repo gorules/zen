@@ -1,14 +1,13 @@
 use crate::decision_graph::cleaner::ZEN_RESERVED_PROPERTIES;
 use crate::nodes::function::v2::error::ResultExt;
-use ahash::{HashMap, HashMapExt};
 use nohash_hasher::BuildNoHashHasher;
 use rquickjs::{Ctx, FromJs, IntoJs, Type, Value as QValue};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde_json::json;
 use std::collections::HashMap as StdHashMap;
-use std::rc::Rc;
-use zen_expression::variable::Variable;
+use zen_expression::variable::{Variable, VariableMap};
+use zen_types::rccell::RcCell;
 
 #[derive(Debug)]
 pub(crate) struct JsValue(pub(crate) Variable);
@@ -40,7 +39,7 @@ impl<'js> FromJs<'js> for JsValue {
                 v.into_string()
                     .map(|s| s.to_string().ok())
                     .flatten()
-                    .map(|s| Rc::from(s.as_str()))
+                    .map(|s| zen_types::symbol::Symbol::from(s.as_str()))
                     .or_throw_msg(ctx, "failed to convert to string")?,
             ),
             Type::Array => {
@@ -60,14 +59,17 @@ impl<'js> FromJs<'js> for JsValue {
                     .into_object()
                     .or_throw_msg(ctx, "failed to convert to object")?;
 
-                let mut js_object = HashMap::with_capacity(object.len());
+                let mut js_object = VariableMap::new();
                 for p in object.props::<String, QValue>() {
                     let (k, v) = p?;
                     if ZEN_RESERVED_PROPERTIES.contains(&k.as_str()) {
                         continue;
                     }
 
-                    js_object.insert(Rc::from(k.as_str()), JsValue::from_js(ctx, v)?.0);
+                    js_object.insert(
+                        zen_types::symbol::Symbol::from(k.as_str()),
+                        JsValue::from_js(ctx, v)?.0,
+                    );
                 }
 
                 Variable::from_object(js_object)
@@ -167,7 +169,7 @@ impl<'r, 'js> JsConverter<'r, 'js> {
             Variable::Number(n) => n.to_f64().into_js(self.ctx),
             Variable::String(str) => str.into_js(self.ctx),
             Variable::Array(a) => {
-                let addr = Rc::as_ptr(&a) as *const () as usize;
+                let addr = RcCell::as_ptr(&a) as *const () as usize;
                 if let Some(cached) = self.cache.get(&addr) {
                     return Ok(cached.clone());
                 }
@@ -183,7 +185,7 @@ impl<'r, 'js> JsConverter<'r, 'js> {
                 Ok(val)
             }
             Variable::Object(o) => {
-                let addr = Rc::as_ptr(&o) as *const () as usize;
+                let addr = RcCell::as_ptr(&o) as *const () as usize;
                 if let Some(cached) = self.cache.get(&addr) {
                     return Ok(cached.clone());
                 }
@@ -191,7 +193,7 @@ impl<'r, 'js> JsConverter<'r, 'js> {
                 let qmap = rquickjs::Object::new(self.ctx.clone())?;
                 let obj = o.borrow();
                 for (key, value) in obj.iter() {
-                    qmap.set(key.as_ref(), self.convert_with_cache(value)?)?;
+                    qmap.set(key.as_str(), self.convert_with_cache(value)?)?;
                 }
 
                 let val = qmap.into_value();

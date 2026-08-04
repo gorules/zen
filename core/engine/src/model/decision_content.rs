@@ -1,4 +1,8 @@
+use crate::decision_graph::schema_dict;
+use crate::loader::DynamicLoader;
+use crate::nodes::decision_table::index::TableIndex;
 use crate::nodes::function::v2::strip::TypeStripper;
+use crate::nodes::validator_cache::ValidatorCache;
 use crate::policy::PolicyDocument;
 use ahash::{HashMap, HashMapExt};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -9,7 +13,7 @@ use zen_types::decision::{DecisionEdge, DecisionNode, DecisionNodeKind, Function
 #[derive(Clone, Debug, Serialize)]
 #[serde(untagged)]
 pub enum DecisionContent {
-    Graph(GraphContent),
+    Graph(Arc<GraphContent>),
     Policy(PolicyContent),
 }
 
@@ -26,7 +30,8 @@ impl<'de> Deserialize<'de> for DecisionContent {
         let content = if is_policy {
             serde_path_to_error::deserialize::<_, PolicyContent>(value).map(Self::Policy)
         } else {
-            serde_path_to_error::deserialize::<_, GraphContent>(value).map(Self::Graph)
+            serde_path_to_error::deserialize::<_, GraphContent>(value)
+                .map(|graph| Self::Graph(Arc::new(graph)))
         };
 
         content.map_err(serde::de::Error::custom)
@@ -35,7 +40,7 @@ impl<'de> Deserialize<'de> for DecisionContent {
 
 impl Default for DecisionContent {
     fn default() -> Self {
-        Self::Graph(GraphContent::default())
+        Self::Graph(Arc::new(GraphContent::default()))
     }
 }
 
@@ -62,19 +67,21 @@ impl DecisionContent {
     }
 
     pub fn into_graph_arc(self: Arc<Self>) -> Option<Arc<GraphContent>> {
-        match Arc::try_unwrap(self) {
-            Ok(Self::Graph(g)) => Some(Arc::new(g)),
-            Ok(Self::Policy(_)) => None,
-            Err(arc) => match arc.as_ref() {
-                Self::Graph(g) => Some(Arc::new(g.clone())),
-                Self::Policy(_) => None,
-            },
+        match self.as_ref() {
+            Self::Graph(g) => Some(g.clone()),
+            Self::Policy(_) => None,
         }
     }
 }
 
 impl From<GraphContent> for DecisionContent {
     fn from(value: GraphContent) -> Self {
+        Self::Graph(Arc::new(value))
+    }
+}
+
+impl From<Arc<GraphContent>> for DecisionContent {
+    fn from(value: Arc<GraphContent>) -> Self {
         Self::Graph(value)
     }
 }
@@ -105,6 +112,15 @@ pub struct GraphContent {
 
     #[serde(skip)]
     pub stripped_functions: Option<Arc<HashMap<Arc<str>, Arc<str>>>>,
+
+    #[serde(skip)]
+    pub resolved_schemas: Option<Arc<HashMap<Arc<str>, (Arc<serde_json::Value>, u64)>>>,
+
+    #[serde(skip)]
+    pub(crate) validator_cache: ValidatorCache,
+
+    #[serde(skip)]
+    pub(crate) dt_indexes: Option<Arc<HashMap<Arc<str>, TableIndex>>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -114,6 +130,7 @@ pub struct PolicyContent(pub Arc<PolicyDocument>);
 impl GraphContent {
     pub fn compile(&mut self) {
         self.compile_functions();
+        self.build_dt_indexes();
         if self.compiled_cache.is_some() {
             return;
         }
@@ -183,6 +200,61 @@ impl GraphContent {
         }
 
         self.compiled_cache.replace(Arc::new(cache));
+    }
+
+    fn build_dt_indexes(&mut self) {
+        if self.dt_indexes.is_some() {
+            return;
+        }
+
+        let indexes: HashMap<Arc<str>, TableIndex> = self
+            .nodes
+            .iter()
+            .filter_map(|node| match &node.kind {
+                DecisionNodeKind::DecisionTableNode { content } => {
+                    TableIndex::build(&content.inputs, &content.rules)
+                        .map(|index| (node.id.clone(), index))
+                }
+                _ => None,
+            })
+            .collect();
+
+        self.dt_indexes = Some(Arc::new(indexes));
+    }
+
+    pub async fn resolve_schemas(&mut self, loader: &DynamicLoader) -> Result<(), String> {
+        if self.resolved_schemas.is_some() {
+            return Ok(());
+        }
+
+        let mut referencing: Vec<(Arc<str>, Arc<serde_json::Value>)> = Vec::new();
+        for node in &self.nodes {
+            let schema = match &node.kind {
+                DecisionNodeKind::InputNode { content } => content.schema.as_ref(),
+                DecisionNodeKind::OutputNode { content } => content.schema.as_ref(),
+                _ => None,
+            };
+            if let Some(schema) = schema {
+                if schema_dict::schema_references_dictionary(schema) {
+                    referencing.push((node.id.clone(), schema.clone()));
+                }
+            }
+        }
+
+        if referencing.is_empty() {
+            self.resolved_schemas = Some(Arc::new(HashMap::new()));
+            return Ok(());
+        }
+
+        let dictionaries = schema_dict::load_import_dictionaries(loader, &self.imports).await?;
+        let mut resolved = HashMap::with_capacity(referencing.len());
+        for (id, schema) in referencing {
+            let (value, salt) = schema_dict::resolve_schema(&schema, &dictionaries)?;
+            resolved.insert(id, (Arc::new(value), salt));
+        }
+
+        self.resolved_schemas = Some(Arc::new(resolved));
+        Ok(())
     }
 
     fn compile_functions(&mut self) {

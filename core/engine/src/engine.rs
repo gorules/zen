@@ -306,9 +306,9 @@ impl DecisionEngine {
 
     fn decision_from_graph_arc(&self, content: Arc<DecisionContent>) -> Decision {
         let graph: Arc<GraphContent> = match Arc::try_unwrap(content) {
-            Ok(DecisionContent::Graph(g)) => Arc::new(g),
+            Ok(DecisionContent::Graph(g)) => g,
             Err(arc) => match arc.as_ref() {
-                DecisionContent::Graph(g) => Arc::new(g.clone()),
+                DecisionContent::Graph(g) => g.clone(),
                 DecisionContent::Policy(_) => {
                     panic!("decision_from_graph_arc called with Policy variant")
                 }

@@ -9,6 +9,8 @@ license = "MIT"
 ahash = { workspace = true }
 serde = { workspace = true, features = ["rc", "derive"] }
 serde_json = { workspace = true, features = [] }
+smallvec = { version = "1", features = ["union"] }
+hipstr = { version = "0.8", features = ["serde"] }
 rust_decimal = { workspace = true, features = ["maths-nopanic"] }
 rust_decimal_macros = { workspace = true }
 thiserror = { workspace = true }

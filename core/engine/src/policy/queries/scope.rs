@@ -765,7 +765,7 @@ impl VariableTypeScope for VariableType {
             return self.shallow_clone();
         };
         let mut fields: HashMap<Rc<str>, VariableType> = obj.borrow().clone();
-        fields.insert(Variable::dollar_key(), field_type.shallow_clone());
+        fields.insert(Variable::dollar_key_rc(), field_type.shallow_clone());
         VariableType::Object(Rc::new(RefCell::new(fields)))
     }
 

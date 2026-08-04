@@ -1,9 +1,9 @@
+use crate::rccell::RcCell;
 use crate::variable::Variable;
 use rust_decimal::Decimal;
 #[cfg(not(feature = "arbitrary_precision"))]
 use rust_decimal::prelude::FromPrimitive;
 use serde_json::{Number, Value};
-use std::rc::Rc;
 #[cfg(not(feature = "arbitrary_precision"))]
 use std::str::FromStr;
 
@@ -41,13 +41,13 @@ impl From<Value> for Variable {
                     )
                 }
             }
-            Value::String(s) => Variable::String(Rc::from(s.as_str())),
+            Value::String(s) => Variable::String((s.as_str()).into()),
             Value::Array(arr) => {
                 Variable::from_array(arr.into_iter().map(Variable::from).collect())
             }
             Value::Object(obj) => Variable::from_object(
                 obj.into_iter()
-                    .map(|(k, v)| (Rc::from(k.as_str()), Variable::from(v)))
+                    .map(|(k, v)| (crate::symbol::Symbol::from(k.as_str()), Variable::from(v)))
                     .collect(),
             ),
         }
@@ -88,11 +88,11 @@ impl From<&Value> for Variable {
                     );
                 }
             }
-            Value::String(s) => Variable::String(Rc::from(s.as_str())),
+            Value::String(s) => Variable::String((s.as_str()).into()),
             Value::Array(arr) => Variable::from_array(arr.iter().map(Variable::from).collect()),
             Value::Object(obj) => Variable::from_object(
                 obj.iter()
-                    .map(|(k, v)| (Rc::from(k.as_str()), Variable::from(v)))
+                    .map(|(k, v)| (crate::symbol::Symbol::from(k.as_str()), Variable::from(v)))
                     .collect(),
             ),
         }
@@ -119,8 +119,8 @@ impl From<Variable> for Value {
             }
             Variable::String(s) => Value::String(s.to_string()),
             Variable::Array(arr) => {
-                let vec = Rc::try_unwrap(arr)
-                    .map(|a| a.into_inner())
+                let vec = RcCell::try_unwrap(arr)
+                    .map(|cell| cell.into_inner())
                     .unwrap_or_else(|s| {
                         let borrowed = s.borrow();
                         borrowed.clone()
@@ -129,8 +129,8 @@ impl From<Variable> for Value {
                 Value::Array(vec.into_iter().map(Value::from).collect())
             }
             Variable::Object(obj) => {
-                let hmap = Rc::try_unwrap(obj)
-                    .map(|a| a.into_inner())
+                let hmap = RcCell::try_unwrap(obj)
+                    .map(|cell| cell.into_inner())
                     .unwrap_or_else(|s| {
                         let borrowed = s.borrow();
                         borrowed.clone()

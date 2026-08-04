@@ -3,7 +3,7 @@ use crate::nodes::result::NodeResult;
 use crate::nodes::{NodeContextBase, NodeContextExt};
 use std::future::Future;
 use std::ops::Deref;
-use zen_expression::{Isolate, Variable};
+use zen_expression::Variable;
 
 pub(crate) trait TransformAttributesExecution {
     async fn run_with<F, Fut>(&self, ctx: NodeContextBase, evaluate: F) -> NodeResult
@@ -21,33 +21,10 @@ impl TransformAttributesExecution for TransformAttributes {
         let input = match &self.input_field {
             None => ctx.input.clone(),
             Some(input_field) => {
-                let mut isolate = Isolate::new();
-                isolate.set_environment(ctx.input.clone());
-                let calculated_input = isolate
+                let mut isolate = ctx.isolate();
+                isolate
                     .run_standard(input_field.deref())
-                    .node_context_message(&ctx, "Failed to evaluate expression")?;
-
-                let nodes = ctx.input.dot("$nodes").unwrap_or(Variable::Null);
-                match &calculated_input {
-                    Variable::Array(arr) => {
-                        let arr = arr.borrow();
-                        let s: Vec<_> = arr
-                            .iter()
-                            .map(|v| {
-                                let new_v = v.depth_clone(1);
-                                new_v.dot_insert("$nodes", nodes.clone());
-                                new_v
-                            })
-                            .collect();
-
-                        Variable::from_array(s)
-                    }
-                    _ => {
-                        let new_input = calculated_input.depth_clone(1);
-                        new_input.dot_insert("$nodes", nodes);
-                        new_input
-                    }
-                }
+                    .node_context_message(&ctx, "Failed to evaluate expression")?
             }
         };
 
@@ -61,7 +38,6 @@ impl TransformAttributesExecution for TransformAttributes {
                     });
                 }
 
-                response.output.dot_remove("$nodes");
                 response.output
             }
             TransformExecutionMode::Loop => {
@@ -90,7 +66,6 @@ impl TransformAttributesExecution for TransformAttributes {
                         response.output = input.clone().merge_clone(&response.output);
                     }
 
-                    response.output.dot_remove("$nodes");
                     output_array.push(response.output);
                 }
 

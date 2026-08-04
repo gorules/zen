@@ -1,7 +1,6 @@
 use crate::rcvalue::RcValue;
 use crate::variable::Variable;
-use ahash::{HashMap, HashMapExt};
-use std::cell::RefCell;
+use crate::variable::VariableMap;
 use std::rc::Rc;
 use thiserror::Error;
 
@@ -27,11 +26,10 @@ impl RefDeserializer {
             for (i, _) in refs_array.iter().enumerate() {
                 match &refs_array[i] {
                     RcValue::Array(_) => {
-                        self.refs[i] = Some(Variable::Array(Rc::new(RefCell::new(Vec::new()))));
+                        self.refs[i] = Some(Variable::from_array(Vec::new()));
                     }
                     RcValue::Object(_) => {
-                        self.refs[i] =
-                            Some(Variable::Object(Rc::new(RefCell::new(HashMap::default()))));
+                        self.refs[i] = Some(Variable::from_object(VariableMap::default()));
                     }
                     _ => {
                         self.refs[i] = Some(self.deserialize_value(&refs_array[i])?);
@@ -52,7 +50,7 @@ impl RefDeserializer {
                     }
                     RcValue::Object(obj) => {
                         if let Some(Variable::Object(target)) = &self.refs[i] {
-                            let mut map = HashMap::with_capacity(obj.len());
+                            let mut map = VariableMap::with_capacity(obj.len());
                             for (key, value) in obj {
                                 let key_var = self.deserialize_key(key)?;
                                 let value_var = self.deserialize_value(value)?;
@@ -67,13 +65,13 @@ impl RefDeserializer {
         }
 
         let root_value = root_obj
-            .remove(&Variable::root_key())
+            .remove("$root")
             .ok_or_else(|| RefDeserializeError::InvalidFormat("Missing $root".into()))?;
 
         self.deserialize_value(&root_value)
     }
 
-    fn deserialize_key(&self, key: &Rc<str>) -> Result<Rc<str>, RefDeserializeError> {
+    fn deserialize_key(&self, key: &Rc<str>) -> Result<crate::symbol::Symbol, RefDeserializeError> {
         if let Some(ref_id) = parse_ref_id(key) {
             if ref_id >= self.refs.len() {
                 return Err(RefDeserializeError::InvalidReference(ref_id));
@@ -114,16 +112,16 @@ impl RefDeserializer {
                 for item in arr {
                     items.push(self.deserialize_value(item)?);
                 }
-                Ok(Variable::Array(Rc::new(RefCell::new(items))))
+                Ok(Variable::from_array(items))
             }
             RcValue::Object(obj) => {
-                let mut map = HashMap::with_capacity(obj.len());
+                let mut map = VariableMap::with_capacity(obj.len());
                 for (key, value) in obj {
                     let key_var = self.deserialize_key(key)?;
                     let value_var = self.deserialize_value(value)?;
                     map.insert(key_var, value_var);
                 }
-                Ok(Variable::Object(Rc::new(RefCell::new(map))))
+                Ok(Variable::from_object(map))
             }
         }
     }
@@ -139,11 +137,10 @@ pub enum RefDeserializeError {
     UnresolvedReference(usize),
 }
 
-fn unescape_at_string(s: &Rc<str>) -> Rc<str> {
-    if s.starts_with("@@") {
-        Rc::from(&s[1..])
-    } else {
-        s.clone()
+fn unescape_at_string(s: &Rc<str>) -> crate::symbol::Symbol {
+    match s.starts_with("@@") {
+        true => crate::symbol::Symbol::from(&s[1..]),
+        false => crate::symbol::Symbol::from(s.as_ref()),
     }
 }
 

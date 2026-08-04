@@ -30,7 +30,7 @@ impl NodeHandler for FunctionV1NodeHandler {
         runtime.set_interrupt_handler(Some(interrupt_handler));
 
         let mut script = Script::new(runtime.clone());
-        let result_response = script.call(ctx.node.deref(), &ctx.input).await;
+        let result_response = script.call(ctx.node.deref(), &ctx.input_with_nodes()).await;
 
         runtime.set_interrupt_handler(None);
 

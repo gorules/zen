@@ -26,7 +26,7 @@ pub fn load_raw_test_data(key: &str) -> BufReader<File> {
 pub fn load_test_data(key: &str) -> GraphContent {
     let content: DecisionContent = serde_json::from_reader(load_raw_test_data(key)).unwrap();
     match content {
-        DecisionContent::Graph(g) => g,
+        DecisionContent::Graph(g) => (*g).clone(),
         DecisionContent::Policy(_) => {
             panic!("expected graph test fixture, got policy: {key}")
         }

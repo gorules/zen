@@ -2,14 +2,20 @@ use crate::nodes::definition::NodeHandler;
 use crate::nodes::result::NodeResult;
 use crate::nodes::{NodeContext, NodeResponse};
 use ahash::HashMap;
+use fixedbitset::FixedBitSet;
+use index::TableIndex;
 use serde::Serialize;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
 use zen_expression::variable::ToVariable;
 use zen_expression::Isolate;
-use zen_types::decision::{DecisionTableContent, DecisionTableHitPolicy, TransformAttributes};
+use zen_types::decision::{
+    DecisionTableContent, DecisionTableHitPolicy, DecisionTableInputField, TransformAttributes,
+};
 use zen_types::variable::Variable;
+pub(crate) mod index;
+
 #[derive(Debug, Clone)]
 pub struct DecisionTableNodeHandler;
 
@@ -38,12 +44,20 @@ impl NodeHandler for DecisionTableNodeHandler {
 
 impl DecisionTableNodeHandler {
     fn handle_first_hit(&self, ctx: DecisionTableContext) -> NodeResult {
-        let mut isolate = Isolate::with_environment(ctx.input.depth_clone(1))
-            .with_cache(ctx.extensions.compiled_cache.clone());
+        let mut isolate = ctx.isolate();
 
         if !ctx.config.trace {
-            for rule in ctx.node.rules.iter() {
-                if let Some(RowResult::Output(output)) = self.evaluate_row(&ctx, rule, &mut isolate)
+            let index = Self::table_index(&ctx);
+            let candidates =
+                index.and_then(|ix| Self::candidate_rows(ix, &ctx.node.inputs, &mut isolate));
+            let pruner = candidates.as_ref().and(index);
+            for (row_idx, rule) in ctx.node.rules.iter().enumerate() {
+                if candidates.as_ref().is_some_and(|c| !c.contains(row_idx)) {
+                    continue;
+                }
+                let pruned = pruner.map(|ix| (ix, row_idx));
+                if let Some(RowResult::Output(output)) =
+                    self.evaluate_row(&ctx, rule, &mut isolate, pruned)
                 {
                     return ctx.success(output);
                 }
@@ -55,7 +69,7 @@ impl DecisionTableNodeHandler {
         }
 
         let hit = ctx.node.rules.iter().enumerate().find_map(|(index, rule)| {
-            match self.evaluate_row(&ctx, rule, &mut isolate)? {
+            match self.evaluate_row(&ctx, rule, &mut isolate, None)? {
                 RowResult::WithTrace {
                     output,
                     reference_map,
@@ -88,11 +102,21 @@ impl DecisionTableNodeHandler {
     fn handle_collect(&self, ctx: DecisionTableContext) -> NodeResult {
         let mut outputs = Vec::new();
         let mut traces = Vec::new();
-        let mut isolate = Isolate::with_environment(ctx.input.depth_clone(1))
-            .with_cache(ctx.extensions.compiled_cache.clone());
+        let mut isolate = ctx.isolate();
+
+        let table_index = (!ctx.config.trace)
+            .then(|| Self::table_index(&ctx))
+            .flatten();
+        let candidates =
+            table_index.and_then(|ix| Self::candidate_rows(ix, &ctx.node.inputs, &mut isolate));
+        let pruner = candidates.as_ref().and(table_index);
 
         for (index, rule) in ctx.node.rules.iter().enumerate() {
-            if let Some(result) = self.evaluate_row(&ctx, rule, &mut isolate) {
+            if candidates.as_ref().is_some_and(|c| !c.contains(index)) {
+                continue;
+            }
+            let pruned = pruner.map(|ix| (ix, index));
+            if let Some(result) = self.evaluate_row(&ctx, rule, &mut isolate, pruned) {
                 match result {
                     RowResult::Output(output) => {
                         outputs.push(output);
@@ -146,14 +170,63 @@ impl DecisionTableNodeHandler {
         }
     }
 
+    fn table_index(ctx: &DecisionTableContext) -> Option<&TableIndex> {
+        ctx.extensions.dt_indexes.as_ref()?.get(&ctx.id)
+    }
+
+    fn candidate_rows(
+        index: &TableIndex,
+        inputs: &[DecisionTableInputField],
+        isolate: &mut Isolate,
+    ) -> Option<FixedBitSet> {
+        let mut acc: Option<FixedBitSet> = None;
+        for (col_idx, column) in index.columns.iter().enumerate() {
+            let Some(column) = column else {
+                continue;
+            };
+            let Some(field) = inputs[col_idx].field.as_ref().filter(|f| !f.is_empty()) else {
+                continue;
+            };
+            isolate.set_reference(field).ok()?;
+            let value = isolate.get_reference(field)?;
+            if matches!(value, Variable::Dynamic(_)) {
+                return None;
+            }
+            let hit = column.rows_for(&value);
+            match &mut acc {
+                None => {
+                    let mut first = column.fallback.clone();
+                    if let Some(hit) = hit {
+                        first.union_with(hit);
+                    }
+                    acc = Some(first);
+                }
+                Some(acc) => {
+                    let fallback = column.fallback.as_slice();
+                    let hit = hit.map(FixedBitSet::as_slice).unwrap_or_default();
+                    for (i, word) in acc.as_mut_slice().iter_mut().enumerate() {
+                        let f = fallback.get(i).copied().unwrap_or(0);
+                        let h = hit.get(i).copied().unwrap_or(0);
+                        *word &= f | h;
+                    }
+                }
+            }
+        }
+        acc
+    }
+
     fn evaluate_row<'a>(
         &self,
         ctx: &'a DecisionTableContext,
         rule: &'a HashMap<Arc<str>, Arc<str>>,
         isolate: &mut Isolate,
+        pruned: Option<(&TableIndex, usize)>,
     ) -> Option<RowResult> {
         let content = &ctx.node;
-        for input in content.inputs.iter() {
+        for (col_idx, input) in content.inputs.iter().enumerate() {
+            if pruned.is_some_and(|(ix, row_idx)| ix.decides(col_idx, row_idx)) {
+                continue;
+            }
             let Some(rule_value) = rule.get(&input.id) else {
                 continue;
             };

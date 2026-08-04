@@ -1,5 +1,6 @@
 use crate::loader::{DynamicLoader, NoopLoader};
 use crate::nodes::custom::{DynamicCustomNode, NoopCustomNode};
+use crate::nodes::decision_table::index::TableIndex;
 use crate::nodes::function::http_handler::DynamicHttpHandler;
 use crate::nodes::function::v2::function::{Function, FunctionConfig};
 use crate::nodes::function::v2::module::console::ConsoleListener;
@@ -21,6 +22,7 @@ pub struct NodeHandlerExtensions {
     pub(crate) http_handler: DynamicHttpHandler,
     pub(crate) compiled_cache: Option<Arc<OpcodeCache>>,
     pub(crate) stripped_functions: Option<Arc<ahash::HashMap<Arc<str>, Arc<str>>>>,
+    pub(crate) dt_indexes: Option<Arc<ahash::HashMap<Arc<str>, TableIndex>>>,
 }
 
 impl Default for NodeHandlerExtensions {
@@ -33,6 +35,7 @@ impl Default for NodeHandlerExtensions {
             custom_node: Arc::new(NoopCustomNode::default()),
             compiled_cache: None,
             stripped_functions: None,
+            dt_indexes: None,
             http_handler: None,
         }
     }

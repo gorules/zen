@@ -1,14 +1,13 @@
 use std::collections::HashMap;
 use std::os::raw::c_char;
 use std::ptr;
-use std::rc::Rc;
 
 use napi::bindgen_prelude::ToNapiValue;
 use napi::sys;
 use napi::sys::{napi_env, napi_value};
 use serde_json::Value;
 use zen_engine::{DecisionGraphResponse, EvaluationTrace, EvaluationTraceKind};
-use zen_expression::variable::ToVariable;
+use zen_expression::variable::{RcCell, ToVariable};
 use zen_expression::Variable;
 
 enum PNode {
@@ -32,8 +31,8 @@ impl PortableArena {
 
     pub fn add(&mut self, var: &Variable, memo: &mut HashMap<usize, u32>) -> u32 {
         let addr = match var {
-            Variable::Array(a) => Some(Rc::as_ptr(a) as *const () as usize),
-            Variable::Object(o) => Some(Rc::as_ptr(o) as *const () as usize),
+            Variable::Array(a) => Some(RcCell::as_ptr(a) as *const () as usize),
+            Variable::Object(o) => Some(RcCell::as_ptr(o) as *const () as usize),
             _ => None,
         };
 

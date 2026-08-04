@@ -67,6 +67,7 @@ pub mod intellisense;
 pub mod lexer;
 pub mod nl;
 pub mod parser;
+pub mod scope;
 pub mod validate;
 pub mod variable;
 pub mod vm;
@@ -76,4 +77,5 @@ pub use exports::{
 };
 pub use expression::{Expression, ExpressionKind, OpcodeCache};
 pub use isolate::{Isolate, IsolateError};
+pub use scope::Scope;
 pub use variable::Variable;

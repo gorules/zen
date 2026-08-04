@@ -17,7 +17,7 @@ pub fn evaluate_unary_expression(
     };
 
     let context_object = context_object_ref.borrow();
-    if !context_object.contains_key("$") {
+    if !context_object.contains_key(&Variable::dollar_key()) {
         return Err(IsolateError::MissingContextReference);
     }
 

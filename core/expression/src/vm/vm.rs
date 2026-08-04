@@ -2,20 +2,21 @@ use crate::compiler::{Compare, FetchFastTarget, Jump, Opcode};
 use crate::functions::arguments::Arguments;
 use crate::functions::registry::FunctionRegistry;
 use crate::functions::{internal, MethodRegistry};
+use crate::scope::Scope;
 use crate::variable::Variable;
 use crate::variable::Variable::*;
 use crate::vm::date::DynamicVariableExt;
 use crate::vm::error::VMError::*;
 use crate::vm::error::VMResult;
 use crate::vm::interval::{VmInterval, VmIntervalData};
-use ahash::{HashMap, HashMapExt};
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::{Decimal, MathematicalOps};
 use std::rc::Rc;
 use std::string::String as StdString;
+use zen_types::symbol::Symbol;
 
 #[derive(Debug)]
-pub struct Scope {
+pub struct LoopScope {
     array: Variable,
     len: usize,
     iter: usize,
@@ -24,7 +25,7 @@ pub struct Scope {
 
 #[derive(Debug)]
 pub struct VM {
-    scopes: Vec<Scope>,
+    scopes: Vec<LoopScope>,
     stack: Vec<Variable>,
 }
 
@@ -36,17 +37,17 @@ impl VM {
         }
     }
 
-    pub fn run(&mut self, bytecode: &[Opcode], env: Variable) -> VMResult<Variable> {
+    pub fn run(&mut self, bytecode: &[Opcode], scope: &Scope) -> VMResult<Variable> {
         self.stack.clear();
         self.scopes.clear();
 
-        let s = VMInner::new(bytecode, &mut self.stack, &mut self.scopes).run(env);
+        let s = VMInner::new(bytecode, &mut self.stack, &mut self.scopes).run(scope);
         Ok(s?)
     }
 }
 
 struct VMInner<'parent_ref, 'bytecode_ref> {
-    scopes: &'parent_ref mut Vec<Scope>,
+    scopes: &'parent_ref mut Vec<LoopScope>,
     stack: &'parent_ref mut Vec<Variable>,
     bytecode: &'bytecode_ref [Opcode],
     ip: u32,
@@ -56,7 +57,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
     pub fn new(
         bytecode: &'bytecode_ref [Opcode],
         stack: &'parent_ref mut Vec<Variable>,
-        scopes: &'parent_ref mut Vec<Scope>,
+        scopes: &'parent_ref mut Vec<LoopScope>,
     ) -> Self {
         Self {
             ip: 0,
@@ -76,8 +77,8 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
         })
     }
 
-    pub fn run(&mut self, root_env: Variable) -> VMResult<Variable> {
-        let mut env = root_env.clone();
+    pub fn run(&mut self, root_scope: &Scope) -> VMResult<Variable> {
+        let mut env = root_scope.clone();
         let mut assigned_object: Option<Variable> = None;
         if self.ip != 0 {
             self.ip = 0;
@@ -98,7 +99,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                 Opcode::PushNull => self.push(Null),
                 Opcode::PushBool(b) => self.push(Bool(*b)),
                 Opcode::PushNumber(n) => self.push(Number(*n)),
-                Opcode::PushString(s) => self.push(String(Rc::from(s.as_ref()))),
+                Opcode::PushString(s) => self.push(String((s.as_ref()).into())),
                 Opcode::Pop => {
                     self.pop()?;
                 }
@@ -109,7 +110,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                     match (a, b) {
                         (Object(o), String(s)) => {
                             let obj = o.borrow();
-                            self.push(obj.get(s.as_ref()).cloned().unwrap_or(Null));
+                            self.push(obj.get_str(s.as_str()).cloned().unwrap_or(Null));
                         }
                         (Array(a), Number(n)) => {
                             let arr = a.borrow();
@@ -129,7 +130,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                             })?;
 
                             if let Some(slice) = str.get(index..index + 1) {
-                                self.push(String(Rc::from(slice)));
+                                self.push(String((slice).into()));
                             } else {
                                 self.push(Null)
                             };
@@ -138,13 +139,26 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                     }
                 }
                 Opcode::FetchFast(path) => {
-                    let variable = path.iter().fold(Null, |v, p| match p {
-                        FetchFastTarget::Root => root_env.clone(),
-                        FetchFastTarget::Begin => env.clone(),
+                    let mut steps = path.iter();
+                    let mut variable = match steps.next() {
+                        Some(FetchFastTarget::Root) => root_scope.materialize(),
+                        Some(FetchFastTarget::Begin) => match steps.clone().next() {
+                            Some(FetchFastTarget::String(key)) => {
+                                steps.next();
+                                env.get_str(key).unwrap_or(Null)
+                            }
+                            _ => env.materialize(),
+                        },
+                        _ => Null,
+                    };
+
+                    variable = steps.fold(variable, |v, p| match p {
+                        FetchFastTarget::Root => root_scope.materialize(),
+                        FetchFastTarget::Begin => env.materialize(),
                         FetchFastTarget::String(key) => match v {
                             Object(obj) => {
                                 let obj_ref = obj.borrow();
-                                obj_ref.get(key.as_ref()).cloned().unwrap_or(Null)
+                                obj_ref.get_str(key).cloned().unwrap_or(Null)
                             }
                             _ => Null,
                         },
@@ -156,7 +170,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                             String(str) => {
                                 let index = *num as usize;
                                 str.get(index..index + 1)
-                                    .map(|slice| String(Rc::from(slice)))
+                                    .map(|slice| String((slice).into()))
                                     .unwrap_or(Null)
                             }
                             _ => Null,
@@ -165,24 +179,27 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
 
                     self.push(variable);
                 }
-                Opcode::FetchEnv(f) => match &env {
-                    Object(o) => {
-                        let obj = o.borrow();
-                        match obj.get(f.as_ref()) {
-                            None => self.push(Null),
-                            Some(v) => self.push(v.clone()),
+                Opcode::FetchEnv(f) => match env.local_str(f) {
+                    Some(v) => self.push(v.clone()),
+                    None => match env.base() {
+                        Object(o) => {
+                            let obj = o.borrow();
+                            match obj.get_str(f) {
+                                None => self.push(Null),
+                                Some(v) => self.push(v.clone()),
+                            }
                         }
-                    }
-                    Null => self.push(Null),
-                    _ => {
-                        return Err(OpcodeErr {
-                            opcode: "FetchEnv".into(),
-                            message: "Unsupported type".into(),
-                        });
-                    }
+                        Null => self.push(Null),
+                        _ => {
+                            return Err(OpcodeErr {
+                                opcode: "FetchEnv".into(),
+                                message: "Unsupported type".into(),
+                            });
+                        }
+                    },
                 },
                 Opcode::FetchRootEnv => {
-                    self.push(env.clone());
+                    self.push(env.materialize());
                 }
                 Opcode::Negate => {
                     let a = self.pop()?;
@@ -381,7 +398,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                         }
                         (String(a), Object(b)) => {
                             let obj = b.borrow();
-                            self.push(Bool(obj.contains_key(a.as_ref())));
+                            self.push(Bool(obj.contains_key_str(a.as_str())));
                         }
                         (Bool(a), Array(b)) => {
                             let arr = b.borrow();
@@ -457,7 +474,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                             c.push_str(a.as_ref());
                             c.push_str(b.as_ref());
 
-                            self.push(String(Rc::from(c.as_str())));
+                            self.push(String((c.as_str()).into()));
                         }
                         _ => {
                             return Err(OpcodeErr {
@@ -634,7 +651,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                         }
                     }
 
-                    self.push(String(Rc::from(s)));
+                    self.push(String((s).into()));
                 }
                 Opcode::Slice => {
                     let from_var = self.pop()?;
@@ -668,7 +685,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                                         message: "Index out of range".into(),
                                     })?;
 
-                                    self.push(String(Rc::from(slice)));
+                                    self.push(String((slice).into()));
                                 }
                                 _ => {
                                     return Err(OpcodeErr {
@@ -722,7 +739,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                         message: "Failed to extract argument".into(),
                     })?;
 
-                    let mut map = HashMap::with_capacity(to);
+                    let mut map = crate::variable::VariableMap::with_capacity(to);
                     for _ in 0..to {
                         let value = self.pop()?;
                         let String(key) = self.pop()? else {
@@ -732,7 +749,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                             });
                         };
 
-                        map.insert(key.clone(), value);
+                        map.insert(Symbol::from(key.as_str()), value);
                     }
 
                     self.push(Variable::from_object(map));
@@ -756,14 +773,30 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                         });
                     };
 
-                    let Some(new_env) = env.dot_insert_detached(key.as_ref(), value.clone()) else {
+                    if !matches!(env.base(), Object(_)) {
                         return Err(OpcodeErr {
                             opcode: "AssignedObjectStep".into(),
                             message: "Failed to mutate existing env".to_owned(),
                         });
-                    };
+                    }
 
-                    env = new_env;
+                    match key.contains('.') {
+                        false => env.set_local(Symbol::from(key.as_str()), value.clone()),
+                        true => {
+                            let Some(new_env) = env
+                                .materialize()
+                                .dot_insert_detached(key.as_ref(), value.clone())
+                            else {
+                                return Err(OpcodeErr {
+                                    opcode: "AssignedObjectStep".into(),
+                                    message: "Failed to mutate existing env".to_owned(),
+                                });
+                            };
+
+                            env = Scope::new(new_env);
+                        }
+                    }
+
                     assigned_object.dot_insert(key.as_ref(), value);
                 }
                 Opcode::AssignedObjectEnd { with_return } => {
@@ -891,7 +924,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                     let maybe_scope = match &var {
                         Array(a) => {
                             let arr = a.borrow();
-                            Some(Scope {
+                            Some(LoopScope {
                                 len: arr.len(),
                                 array: var.clone(),
                                 count: 0,
@@ -900,7 +933,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                         }
                         _ => match var.dynamic::<VmInterval>().map(|s| s.to_array()).flatten() {
                             None => None,
-                            Some(arr) => Some(Scope {
+                            Some(arr) => Some(LoopScope {
                                 len: arr.len(),
                                 array: Variable::from_array(arr),
                                 count: 0,

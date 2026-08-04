@@ -451,7 +451,9 @@ impl ExecutionContext<'_> {
         };
         let segment = &path[..path.find('.').unwrap_or(path.len())];
         let store_fields = store_fields.borrow();
-        let Some((key, value)) = store_fields.get_key_value(segment) else {
+        let Some((key, value)) =
+            store_fields.get_key_value(&zen_types::symbol::Symbol::from(segment))
+        else {
             return;
         };
         env_fields

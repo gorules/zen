@@ -6,7 +6,6 @@ use std::rc::Rc;
 use crate::nodes::context::{NodeContext, NodeContextExt};
 use crate::nodes::definition::NodeHandler;
 use zen_expression::variable::{ToVariable, Variable};
-use zen_expression::Isolate;
 use zen_types::decision::TransformAttributes;
 
 #[derive(Debug, Clone)]
@@ -28,8 +27,7 @@ impl NodeHandler for ExpressionNodeHandler {
 
     async fn handle(&self, ctx: NodeContext<Self::NodeData, Self::TraceData>) -> NodeResult {
         let result = Variable::empty_object();
-        let mut isolate = Isolate::with_environment(ctx.input.depth_clone(1))
-            .with_cache(ctx.extensions.compiled_cache.clone());
+        let mut isolate = ctx.isolate();
 
         for expression in ctx.node.expressions.iter() {
             if expression.key.is_empty() || expression.value.is_empty() {
@@ -50,14 +48,7 @@ impl NodeHandler for ExpressionNodeHandler {
                 );
             });
 
-            isolate.update_environment(|env| {
-                let Some(environment) = env else {
-                    return;
-                };
-
-                let key = format!("$.{}", &expression.key);
-                let _ = environment.dot_insert(key.as_str(), value.depth_clone(2));
-            });
+            isolate.insert_dollar(&expression.key, value.clone());
 
             result.dot_insert(&expression.key, value);
         }

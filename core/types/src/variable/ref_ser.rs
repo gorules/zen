@@ -1,3 +1,4 @@
+use crate::rccell::RcCell;
 use crate::rcvalue::RcValue;
 use crate::variable::Variable;
 use ahash::AHashMap;
@@ -26,25 +27,20 @@ impl RefSerializer {
         }
     }
 
-    fn escape_at_string(s: &Rc<str>) -> Rc<str> {
-        if s.starts_with('@') {
-            let string = format!("@{s}");
-            Rc::from(string.as_str())
-        } else {
-            s.clone()
+    fn escape_at_string(s: &crate::symbol::Symbol) -> Rc<str> {
+        match s.starts_with('@') {
+            true => Rc::from(format!("@{s}").as_str()),
+            false => Rc::from(s.as_str()),
         }
     }
 
-    fn intern_string_addr(&mut self, s: &Rc<str>) -> usize {
-        let reference = match self.string_intern.get(s) {
-            Some(interned) => interned,
-            None => {
-                self.string_intern.insert(s.clone(), s.clone());
-                s
-            }
-        };
+    fn intern_string_addr(&mut self, s: &str) -> usize {
+        if !self.string_intern.contains_key(s) {
+            let owned: Rc<str> = Rc::from(s);
+            self.string_intern.insert(owned.clone(), owned);
+        }
 
-        Rc::as_ptr(&reference) as *const () as usize
+        Rc::as_ptr(self.string_intern.get(s).expect("interned")) as *const () as usize
     }
 
     pub fn serialize(mut self, var: &Variable) -> RcValue {
@@ -58,7 +54,7 @@ impl RefSerializer {
             result.insert(Rc::from("$refs"), RcValue::Array(self.ref_data));
         }
 
-        result.insert(Variable::root_key(), data);
+        result.insert(Variable::root_key_rc(), data);
         RcValue::Object(result)
     }
 
@@ -69,11 +65,11 @@ impl RefSerializer {
                     return;
                 }
 
-                let addr = self.intern_string_addr(s);
+                let addr = self.intern_string_addr(s.as_str());
                 *self.ref_counts.entry(addr).or_insert(0) += 1;
             }
             Variable::Array(arr) => {
-                let addr = Rc::as_ptr(arr) as *const () as usize;
+                let addr = RcCell::as_ptr(arr) as *const () as usize;
                 *self.ref_counts.entry(addr).or_insert(0) += 1;
 
                 let borrowed = arr.borrow();
@@ -82,12 +78,12 @@ impl RefSerializer {
                 }
             }
             Variable::Object(obj) => {
-                let addr = Rc::as_ptr(obj) as *const () as usize;
+                let addr = RcCell::as_ptr(obj) as *const () as usize;
                 *self.ref_counts.entry(addr).or_insert(0) += 1;
 
                 let borrowed = obj.borrow();
                 for (key, value) in borrowed.iter() {
-                    let key_addr = self.intern_string_addr(key);
+                    let key_addr = self.intern_string_addr(key.as_str());
                     *self.ref_counts.entry(key_addr).or_insert(0) += 1;
                     self.count_refs(value);
                 }
@@ -121,7 +117,7 @@ impl RefSerializer {
     fn serialize_with_refs(&mut self, var: &Variable) -> RcValue {
         match var {
             Variable::String(s) => {
-                let addr = self.intern_string_addr(s);
+                let addr = self.intern_string_addr(s.as_str());
                 let Some((id, id_str)) = self.refs.get(&addr) else {
                     return RcValue::String(Self::escape_at_string(s));
                 };
@@ -134,7 +130,7 @@ impl RefSerializer {
             }
 
             Variable::Array(arr) => {
-                let addr = Rc::as_ptr(arr) as *const () as usize;
+                let addr = RcCell::as_ptr(arr) as *const () as usize;
                 let data = {
                     let borrowed = arr.borrow();
                     let items: Vec<_> = borrowed
@@ -157,7 +153,7 @@ impl RefSerializer {
             }
 
             Variable::Object(obj) => {
-                let addr = Rc::as_ptr(obj) as *const () as usize;
+                let addr = RcCell::as_ptr(obj) as *const () as usize;
                 let data = {
                     let borrowed = obj.borrow();
                     let mut map = HashMap::with_capacity_and_hasher(
@@ -166,7 +162,7 @@ impl RefSerializer {
                     );
 
                     for (key, value) in borrowed.iter() {
-                        let key_addr = self.intern_string_addr(key);
+                        let key_addr = self.intern_string_addr(key.as_str());
                         let key_str = if let Some((key_id, key_id_str)) = self.refs.get(&key_addr) {
                             if self.ref_data[*key_id] == RcValue::Null {
                                 self.ref_data[*key_id] =

@@ -2,9 +2,11 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
+use zen_types::symbol::Symbol;
 
 use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use zen_expression::variable::Variable;
+use zen_types::rccell::RcCell;
 
 use zen_expression::{Isolate, OpcodeCache};
 
@@ -302,7 +304,9 @@ impl PhaseScope {
         let scoped_fields = self.scoped.as_object()?;
 
         let needs_owner = match (owner_binding, instance.as_object()) {
-            (Some((name, _)), Some(fields)) => !fields.borrow().contains_key(name.as_str()),
+            (Some((name, _)), Some(fields)) => {
+                !fields.borrow().contains_key(&Symbol::from(name.as_str()))
+            }
             _ => false,
         };
 
@@ -310,7 +314,7 @@ impl PhaseScope {
             let wrapper = instance.depth_clone(1);
             let synthetic_owner = match (owner_binding, wrapper.as_object()) {
                 (Some((name, owner_var)), Some(wrapper_fields)) => {
-                    let key: Rc<str> = Rc::from(name.as_str());
+                    let key = Symbol::from(name.as_str());
                     let injected = owner_var.shallow_clone();
                     wrapper_fields
                         .borrow_mut()
@@ -333,8 +337,8 @@ impl PhaseScope {
 
         {
             let mut fields = scoped_fields.borrow_mut();
-            fields.remove("$");
-            fields.insert(self.entity_key.clone(), bound);
+            fields.remove(&Variable::dollar_key());
+            fields.insert(Symbol::from(self.entity_key.as_ref()), bound);
         }
         Some(slot)
     }
@@ -344,7 +348,7 @@ enum InstanceSlot {
     Direct,
     Wrapped {
         wrapper: Variable,
-        synthetic_owner: Option<(Rc<str>, Variable)>,
+        synthetic_owner: Option<(Symbol, Variable)>,
     },
 }
 
@@ -363,7 +367,7 @@ impl InstanceSlot {
         let written = written.borrow();
         let mut target = target.borrow_mut();
         for (key, value) in written.iter() {
-            if Self::is_injected_owner(synthetic_owner, key, value) {
+            if Self::is_injected_owner(synthetic_owner, key.clone(), value) {
                 continue;
             }
             target.insert(key.clone(), value.shallow_clone());
@@ -371,12 +375,12 @@ impl InstanceSlot {
     }
 
     fn is_injected_owner(
-        synthetic_owner: &Option<(Rc<str>, Variable)>,
-        key: &Rc<str>,
+        synthetic_owner: &Option<(Symbol, Variable)>,
+        key: Symbol,
         value: &Variable,
     ) -> bool {
         match synthetic_owner {
-            Some((owner_key, injected)) if owner_key.as_ref() == key.as_ref() => {
+            Some((owner_key, injected)) if owner_key.as_str() == key.as_str() => {
                 Self::same_ref(value, injected)
             }
             _ => false,
@@ -385,9 +389,9 @@ impl InstanceSlot {
 
     fn same_ref(a: &Variable, b: &Variable) -> bool {
         match (a, b) {
-            (Variable::Object(x), Variable::Object(y)) => Rc::ptr_eq(x, y),
-            (Variable::Array(x), Variable::Array(y)) => Rc::ptr_eq(x, y),
-            (Variable::String(x), Variable::String(y)) => Rc::ptr_eq(x, y),
+            (Variable::Object(x), Variable::Object(y)) => RcCell::ptr_eq(x, y),
+            (Variable::Array(x), Variable::Array(y)) => RcCell::ptr_eq(x, y),
+            (Variable::String(x), Variable::String(y)) => x == y,
             _ => a == b,
         }
     }
@@ -419,7 +423,7 @@ impl<'a> Driver<'a> {
 
     fn bind_env(&self, isolate: &RefCell<Isolate>) {
         if let Some(fields) = self.env.as_object() {
-            fields.borrow_mut().remove("$");
+            fields.borrow_mut().remove(&Variable::dollar_key());
         }
         isolate
             .borrow_mut()

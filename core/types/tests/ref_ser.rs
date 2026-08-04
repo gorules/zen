@@ -1,4 +1,3 @@
-use ahash::{HashMap, HashMapExt};
 use rust_decimal_macros::dec;
 use serde_json::json;
 use std::cell::RefCell;
@@ -6,6 +5,7 @@ use std::error::Error;
 use std::rc::Rc;
 use zen_types::rcvalue::RcValue;
 use zen_types::variable::Variable;
+use zen_types::variable::VariableMap as HashMap;
 
 type TestResult = Result<(), Box<dyn Error>>;
 
@@ -46,8 +46,8 @@ fn serialize_deserialize_with_refs() -> TestResult {
 
     // Check that refs were created
     if let RcValue::Object(ref obj) = serialized {
-        assert!(obj.contains_key(&Rc::from("$refs")));
-        assert!(obj.contains_key(&Rc::from("$root")));
+        assert!(obj.contains_key("$refs"));
+        assert!(obj.contains_key("$root"));
     } else {
         panic!("Expected object");
     }
@@ -133,7 +133,7 @@ fn no_refs_when_below_threshold() -> TestResult {
 
     // Should not have refs section
     if let RcValue::Object(ref obj) = serialized {
-        assert!(!obj.contains_key(&Rc::from("$refs")));
+        assert!(!obj.contains_key("$refs"));
     }
 
     let deserialized = Variable::deserialize_ref(serialized)?;
@@ -148,18 +148,30 @@ fn serialize_circular_references() -> TestResult {
     let shared_obj = Rc::new(RefCell::new({
         let mut map = HashMap::new();
         map.insert(
-            Rc::from("shared_data"),
-            Variable::String(Rc::from("important_value")),
+            zen_types::symbol::Symbol::from("shared_data"),
+            Variable::String(("important_value").into()),
         );
-        map.insert(Rc::from("id"), Variable::Number(dec!(42.0)));
+        map.insert(
+            zen_types::symbol::Symbol::from("id"),
+            Variable::Number(dec!(42.0)),
+        );
         map
     }));
 
     // Create a structure where the same object appears in multiple places
     let mut root_map = HashMap::new();
-    root_map.insert(Rc::from("first_ref"), Variable::Object(shared_obj.clone()));
-    root_map.insert(Rc::from("second_ref"), Variable::Object(shared_obj.clone()));
-    root_map.insert(Rc::from("third_ref"), Variable::Object(shared_obj));
+    root_map.insert(
+        zen_types::symbol::Symbol::from("first_ref"),
+        Variable::Object(shared_obj.clone()),
+    );
+    root_map.insert(
+        zen_types::symbol::Symbol::from("second_ref"),
+        Variable::Object(shared_obj.clone()),
+    );
+    root_map.insert(
+        zen_types::symbol::Symbol::from("third_ref"),
+        Variable::Object(shared_obj),
+    );
 
     let var = Variable::Object(Rc::new(RefCell::new(root_map)));
 
@@ -173,12 +185,10 @@ fn serialize_circular_references() -> TestResult {
 
 #[test]
 fn serialize_same_array_multiple_locations() -> TestResult {
-    use std::cell::RefCell;
-
     // Create a shared array
     let shared_array = Rc::new(RefCell::new(vec![
-        Variable::String(Rc::from("item_one")),
-        Variable::String(Rc::from("item_two")),
+        Variable::String(("item_one").into()),
+        Variable::String(("item_two").into()),
         Variable::Number(dec!(123.0)),
     ]));
 
@@ -205,12 +215,12 @@ fn serialize_mixed_shared_references() -> TestResult {
     // Create an object where the same string is used as both key and value
     let mut obj_map = HashMap::new();
     obj_map.insert(
-        shared_string.clone(),
-        Variable::String(shared_string.clone()),
+        zen_types::symbol::Symbol::from(shared_string.as_ref()),
+        Variable::String(shared_string.as_ref().into()),
     );
     obj_map.insert(
-        Rc::from("other_key"),
-        Variable::String(shared_string.clone()),
+        zen_types::symbol::Symbol::from("other_key"),
+        Variable::String(shared_string.as_ref().into()),
     );
 
     let shared_obj = Rc::new(RefCell::new(obj_map));
@@ -238,16 +248,25 @@ fn serialize_shared_array_with_shared_strings() -> TestResult {
 
     // Create a shared array containing the shared string
     let shared_array = Rc::new(RefCell::new(vec![
-        Variable::String(shared_string.clone()),
+        Variable::String(shared_string.as_ref().into()),
         Variable::Number(dec!(42.0)),
-        Variable::String(shared_string.clone()),
+        Variable::String(shared_string.as_ref().into()),
     ]));
 
     // Use the shared array in multiple places
     let mut root_map = HashMap::new();
-    root_map.insert(Rc::from("array1"), Variable::Array(shared_array.clone()));
-    root_map.insert(Rc::from("array2"), Variable::Array(shared_array.clone()));
-    root_map.insert(Rc::from("array3"), Variable::Array(shared_array));
+    root_map.insert(
+        zen_types::symbol::Symbol::from("array1"),
+        Variable::Array(shared_array.clone()),
+    );
+    root_map.insert(
+        zen_types::symbol::Symbol::from("array2"),
+        Variable::Array(shared_array.clone()),
+    );
+    root_map.insert(
+        zen_types::symbol::Symbol::from("array3"),
+        Variable::Array(shared_array),
+    );
 
     let var = Variable::Object(Rc::new(RefCell::new(root_map)));
 

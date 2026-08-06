@@ -99,10 +99,14 @@ impl JsonNumber for VariableNumber {
     }
 
     fn to_number(&self) -> Cow<'_, serde_json::Number> {
-        let number = self
-            .0
-            .to_f64()
-            .and_then(serde_json::Number::from_f64)
+        let normalized = self.0.normalize().to_string();
+        #[cfg(feature = "arbitrary_precision")]
+        let number = serde_json::Number::from_string_unchecked(normalized);
+        #[cfg(not(feature = "arbitrary_precision"))]
+        let number = normalized
+            .parse()
+            .ok()
+            .or_else(|| self.0.to_f64().and_then(serde_json::Number::from_f64))
             .unwrap_or_else(|| serde_json::Number::from(0));
         Cow::Owned(number)
     }

@@ -476,7 +476,7 @@ pub(crate) mod imp {
         let a = args.array(0)?;
         let arr = a.borrow();
 
-        let Some(first) = arr.first() else {
+        let Some(first) = arr.iter().find(|item| !matches!(item, V::Null)) else {
             return Ok(V::empty_object());
         };
 

@@ -6,8 +6,8 @@
   "core/macros": "1.0.0-beta.12",
   "bindings/nodejs": "1.0.0-beta.14",
   "bindings/python": "1.0.0-beta.13",
-  "bindings/uniffi": "1.0.1-beta.12",
-  "bindings/c": "1.0.1-beta.11",
+  "bindings/uniffi": "1.0.0-beta.13",
+  "bindings/c": "1.0.0-beta.12",
   "benchmark/rust": "0.0.13",
-  "core/expression_repl": "1.0.1-beta.11"
+  "core/expression_repl": "1.0.0-beta.12"
 }

@@ -3,7 +3,7 @@ authors = ["GoRules Team <bot@gorules.io>"]
 description = "Zen Expression Language"
 name = "zen-expression"
 license = "MIT"
-version = "1.0.0-beta.11"
+version = "1.0.0-beta.12"
 edition = "2021"
 repository = "https://github.com/gorules/zen.git"
 
@@ -30,8 +30,8 @@ nohash-hasher = { workspace = true }
 strsim = "0.11"
 iana-time-zone = "0.1"
 
-zen-macros = { path = "../macros", version = "1.0.0-beta.11" }
-zen-types = { path = "../types", version = "1.0.0-beta.11" }
+zen-macros = { path = "../macros", version = "1.0.0-beta.12" }
+zen-types = { path = "../types", version = "1.0.0-beta.12" }
 
 [dev-dependencies]
 criterion = { workspace = true }

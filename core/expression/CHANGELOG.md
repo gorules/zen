@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.0.0-beta.12](https://github.com/gorules/zen/compare/zen-expression-v1.0.0-beta.11...zen-expression-v1.0.0-beta.12) (2026-08-07)
+
+
+### Bug Fixes
+
+* v1 behaviour hardening ([#502](https://github.com/gorules/zen/issues/502)) ([ed0c286](https://github.com/gorules/zen/commit/ed0c286d9fcdd5a6bc7f7d7329cbd8b2de2b623e))
+
+
+### Performance
+
+* general performance improvements ([#500](https://github.com/gorules/zen/issues/500)) ([fe43b4c](https://github.com/gorules/zen/commit/fe43b4c1d71fb28c247ffb0ebd9e332d34f5f907))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * zen-macros bumped from 1.0.0-beta.11 to 1.0.0-beta.12
+    * zen-types bumped from 1.0.0-beta.11 to 1.0.0-beta.12
+
 ## [1.0.0-beta.11](https://github.com/gorules/zen/compare/zen-expression-v1.0.0-beta.10...zen-expression-v1.0.0-beta.11) (2026-07-26)
 
 

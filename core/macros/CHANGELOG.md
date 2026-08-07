@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.12](https://github.com/gorules/zen/compare/zen-macros-v1.0.0-beta.11...zen-macros-v1.0.0-beta.12) (2026-08-07)
+
+
+### Performance
+
+* general performance improvements ([#500](https://github.com/gorules/zen/issues/500)) ([fe43b4c](https://github.com/gorules/zen/commit/fe43b4c1d71fb28c247ffb0ebd9e332d34f5f907))
+
 ## [1.0.0-beta.11](https://github.com/gorules/zen/compare/zen-macros-v1.0.0-beta.10...zen-macros-v1.0.0-beta.11) (2026-07-26)
 
 

@@ -45,6 +45,7 @@ impl fmt::Display for CompileFailure {
 }
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum EvaluationError {
     #[error("Loader error")]
     LoaderError(LoaderError),

@@ -3,7 +3,9 @@ use serde_json::json;
 use std::ops::Deref;
 use std::sync::Arc;
 use tokio::runtime::Builder;
-use zen_engine::{Decision, DecisionGraphValidationError, EvaluationError, EvaluationOptions};
+use zen_engine::{
+    Decision, DecisionGraphValidationError, EvaluationError, EvaluationOptions, Variable,
+};
 
 mod support;
 
@@ -243,4 +245,164 @@ async fn decision_table_missing_cell_key_is_treated_as_empty() {
         .await
         .unwrap();
     assert_eq!(traced.result, result.result);
+}
+
+#[tokio::test]
+#[cfg_attr(miri, ignore)]
+async fn node_handlers_do_not_mutate_aliased_inputs() {
+    let content = serde_json::from_value(json!({
+        "nodes": [
+            { "id": "in", "name": "in", "type": "inputNode", "content": {} },
+            {
+                "id": "e1", "name": "e1", "type": "expressionNode",
+                "content": {
+                    "passThrough": true,
+                    "expressions": [{ "id": "x1", "key": "first", "value": "a + 1" }]
+                }
+            },
+            {
+                "id": "sw", "name": "sw", "type": "switchNode",
+                "content": {
+                    "hitPolicy": "first",
+                    "statements": [{ "id": "s1", "condition": "" }]
+                }
+            },
+            {
+                "id": "e2", "name": "e2", "type": "expressionNode",
+                "content": {
+                    "passThrough": true,
+                    "expressions": [{ "id": "x2", "key": "second", "value": "first + 1" }]
+                }
+            },
+            {
+                "id": "dt", "name": "dt", "type": "decisionTableNode",
+                "content": {
+                    "passThrough": true,
+                    "hitPolicy": "first",
+                    "inputs": [{ "id": "i1", "name": "A", "field": "a" }],
+                    "outputs": [{ "id": "o1", "name": "Result", "field": "dtResult" }],
+                    "rules": [{ "_id": "r1", "i1": "", "o1": "'hit'" }]
+                }
+            },
+            { "id": "out", "name": "out", "type": "outputNode", "content": {} }
+        ],
+        "edges": [
+            { "id": "ed1", "sourceId": "in", "targetId": "e1" },
+            { "id": "ed2", "sourceId": "e1", "targetId": "sw" },
+            { "id": "ed3", "sourceId": "sw", "targetId": "e2", "sourceHandle": "s1" },
+            { "id": "ed4", "sourceId": "e2", "targetId": "dt" },
+            { "id": "ed5", "sourceId": "dt", "targetId": "out" }
+        ]
+    }))
+    .unwrap();
+    let decision = Decision::from(Arc::new(content));
+
+    let input: Variable = json!({ "a": 1, "nested": { "k": "v" } }).into();
+    let snapshot = input.to_value();
+
+    let response = decision
+        .evaluate_with_opts(
+            input.clone(),
+            EvaluationOptions {
+                trace: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(input.to_value(), snapshot);
+    assert_eq!(
+        response.result,
+        json!({ "a": 1, "nested": { "k": "v" }, "first": 2, "second": 3, "dtResult": "hit" })
+            .into()
+    );
+
+    let trace = response.trace.unwrap().into_graph().unwrap();
+    let output_of = |id: &str| trace.get(id).unwrap().output.clone();
+
+    assert_eq!(
+        output_of("in"),
+        json!({ "a": 1, "nested": { "k": "v" } }).into()
+    );
+    assert_eq!(
+        output_of("e1"),
+        json!({ "a": 1, "nested": { "k": "v" }, "first": 2 }).into()
+    );
+    assert_eq!(
+        output_of("sw"),
+        json!({ "a": 1, "nested": { "k": "v" }, "first": 2 }).into()
+    );
+    assert_eq!(
+        output_of("e2"),
+        json!({ "a": 1, "nested": { "k": "v" }, "first": 2, "second": 3 }).into()
+    );
+}
+
+#[tokio::test]
+#[cfg_attr(miri, ignore)]
+async fn merged_inputs_do_not_mutate_parent_node_outputs() {
+    let content = serde_json::from_value(json!({
+        "nodes": [
+            { "id": "in", "name": "in", "type": "inputNode", "content": {} },
+            {
+                "id": "pa", "name": "pa", "type": "expressionNode",
+                "content": {
+                    "passThrough": true,
+                    "expressions": [{ "id": "x1", "key": "pa", "value": "10" }]
+                }
+            },
+            {
+                "id": "pb", "name": "pb", "type": "expressionNode",
+                "content": {
+                    "passThrough": true,
+                    "expressions": [{ "id": "x2", "key": "pb", "value": "20" }]
+                }
+            },
+            {
+                "id": "join", "name": "join", "type": "expressionNode",
+                "content": {
+                    "passThrough": true,
+                    "expressions": [{ "id": "x3", "key": "sum", "value": "pa + pb" }]
+                }
+            },
+            { "id": "out", "name": "out", "type": "outputNode", "content": {} }
+        ],
+        "edges": [
+            { "id": "ed1", "sourceId": "in", "targetId": "pa" },
+            { "id": "ed2", "sourceId": "in", "targetId": "pb" },
+            { "id": "ed3", "sourceId": "pa", "targetId": "join" },
+            { "id": "ed4", "sourceId": "pb", "targetId": "join" },
+            { "id": "ed5", "sourceId": "join", "targetId": "out" }
+        ]
+    }))
+    .unwrap();
+    let decision = Decision::from(Arc::new(content));
+
+    let input: Variable = json!({ "a": 1 }).into();
+    let snapshot = input.to_value();
+
+    let response = decision
+        .evaluate_with_opts(
+            input.clone(),
+            EvaluationOptions {
+                trace: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(input.to_value(), snapshot);
+    assert_eq!(
+        response.result,
+        json!({ "a": 1, "pa": 10, "pb": 20, "sum": 30 }).into()
+    );
+
+    let trace = response.trace.unwrap().into_graph().unwrap();
+    let output_of = |id: &str| trace.get(id).unwrap().output.clone();
+
+    assert_eq!(output_of("in"), json!({ "a": 1 }).into());
+    assert_eq!(output_of("pa"), json!({ "a": 1, "pa": 10 }).into());
+    assert_eq!(output_of("pb"), json!({ "a": 1, "pb": 20 }).into());
 }

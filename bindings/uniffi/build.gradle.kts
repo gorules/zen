@@ -61,8 +61,22 @@ sourceSets {
 
 
 dependencies {
-    implementation("net.java.dev.jna:jna:5.17.0")
+    "kotlinImplementation"("net.java.dev.jna:jna:5.17.0")
     "kotlinImplementation"("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+    "kotlinAndroidImplementation"("net.java.dev.jna:jna:5.17.0")
+    "kotlinAndroidImplementation"("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+}
+
+tasks.withType<JavaCompile>().configureEach {
+    options.release = 21
+}
+
+tasks.named<JavaCompile>("compileJavaJava") {
+    options.release = 22
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
 }
 
 
@@ -153,7 +167,6 @@ publishing {
                 artifact(tasks["javadocJarJava"])
 
                 configurePom {
-                    dependency("net.java.dev.jna:jna:5.17.0")
                 }
             }
         }

@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.0.0-beta.13](https://github.com/gorules/zen/compare/zen-tmpl-v1.0.0-beta.12...zen-tmpl-v1.0.0-beta.13) (2026-08-18)
+
+
+### Miscellaneous
+
+* **zen-tmpl:** Synchronize core versions
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * zen-expression bumped from 1.0.0-beta.12 to 1.0.0-beta.13
+
 ## [1.0.0-beta.12](https://github.com/gorules/zen/compare/zen-tmpl-v1.0.0-beta.11...zen-tmpl-v1.0.0-beta.12) (2026-08-07)
 
 

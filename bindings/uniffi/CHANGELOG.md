@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.14](https://github.com/gorules/zen/compare/uniffi-v1.0.0-beta.13...uniffi-v1.0.0-beta.14) (2026-08-18)
+
+
+### Bug Fixes
+
+* repair uniffi release pipeline and bump uniffi to 0.31 ([#504](https://github.com/gorules/zen/issues/504)) ([7259ab2](https://github.com/gorules/zen/commit/7259ab28c39773f22c83f501eeb4269db29a78d4))
+
 ## [1.0.0-beta.13](https://github.com/gorules/zen/compare/uniffi-v1.0.0-beta.12...uniffi-v1.0.0-beta.13) (2026-08-07)
 
 ## [1.0.0-beta.12](https://github.com/gorules/zen/compare/uniffi-v1.0.0-beta.11...uniffi-v1.0.0-beta.12) (2026-07-26)

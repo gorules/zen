@@ -83,6 +83,18 @@ jobs:
           target: ${{ matrix.settings.target }}
           args: '--lib --release --locked ${{ matrix.settings.extra_args }}'
 
+      - name: Verify max glibc requirement
+        if: ${{ matrix.settings.host == 'ubuntu-latest' }}
+        run: |
+          LIB="target/${{ matrix.settings.target }}/release/lib${{ env.OUTPUT_NAME }}.so"
+          MAX=$(grep -aoE 'GLIBC_2\.[0-9]+(\.[0-9]+)?' "$LIB" | sort -uV | tail -1)
+          echo "max required glibc: ${MAX:-none}"
+          HIGHEST=$(printf '%s\nGLIBC_%s\n' "$MAX" "${{ env.GLIBC_VERSION }}" | sort -V | tail -1)
+          if [ -n "$MAX" ] && [ "$HIGHEST" != "GLIBC_${{ env.GLIBC_VERSION }}" ]; then
+            echo "::error::$LIB requires $MAX (> GLIBC_${{ env.GLIBC_VERSION }})"
+            exit 1
+          fi
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -101,10 +113,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-      - name: Set up JDK 21
+      - name: Set up JDK 23
         uses: actions/setup-java@v4
         with:
-          java-version: '21'
+          java-version: '23'
           distribution: 'temurin'
 
       - name: Setup Rust Toolchain
@@ -133,13 +145,13 @@ jobs:
             --out-dir build/generated/kotlin
 
       - name: Install uniffi-bindgen-java
-        run: cargo install uniffi-bindgen-java
+        run: cargo install uniffi-bindgen-java --version 0.4.2 --locked
 
       - name: Generate Java sources
         run: |
           uniffi-bindgen-java generate \
-            --library build/generated/resources/darwin-x86-64/libzen_uniffi.dylib \
-            --out-dir build/generated/java
+            --out-dir build/generated/java \
+            build/generated/resources/darwin-x86-64/libzen_uniffi.dylib
 
       - name: Print directory tree
         run: tree build
@@ -202,7 +214,7 @@ jobs:
         run: rm -rf build/generated/resources/linux-s390x
 
       - name: Install uniffi-bindgen-cs
-        run: cargo install uniffi-bindgen-cs --git https://github.com/bcrevar-gorules/uniffi-bindgen-cs --branch fix/async-callback-interface-return-type
+        run: cargo install uniffi-bindgen-cs --git https://github.com/gorules/uniffi-bindgen-cs --rev d080b41
 
       - name: Generate C# bindings
         run: |
@@ -641,6 +653,7 @@ jobs:
       - name: Copy custom Kotlin lib
         run: |
           cp -r lib/kotlin/* "${{ env.ANDROID_BUILD_DIR }}/zen-engine-android/src/main/java/"
+          cp -r lib/kotlin-android/* "${{ env.ANDROID_BUILD_DIR }}/zen-engine-android/src/main/java/"
 
       - name: Copy Gradle configuration files
         run: |

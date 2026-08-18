@@ -653,6 +653,7 @@ jobs:
       - name: Copy custom Kotlin lib
         run: |
           cp -r lib/kotlin/* "${{ env.ANDROID_BUILD_DIR }}/zen-engine-android/src/main/java/"
+          cp -r lib/kotlin-android/* "${{ env.ANDROID_BUILD_DIR }}/zen-engine-android/src/main/java/"
 
       - name: Copy Gradle configuration files
         run: |

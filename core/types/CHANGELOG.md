@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.0.0-beta.13](https://github.com/gorules/zen/compare/zen-types-v1.0.0-beta.12...zen-types-v1.0.0-beta.13) (2026-08-18)
+
+
+### Features
+
+* compact trace ([#384](https://github.com/gorules/zen/issues/384)) ([80fe402](https://github.com/gorules/zen/commit/80fe4021c216d267bee388a1959a5ae29f279f0d))
+* configurable arbitrary precision ([#433](https://github.com/gorules/zen/issues/433)) ([46688a4](https://github.com/gorules/zen/commit/46688a4d4ce72f23db22b4397827b28529a5d71d))
+* expression static analysis ([#449](https://github.com/gorules/zen/issues/449)) ([602d214](https://github.com/gorules/zen/commit/602d214b9648964c032cdd2b414b0c40e22c6414))
+* lazy load fn nodes ([#389](https://github.com/gorules/zen/issues/389)) ([07040c8](https://github.com/gorules/zen/commit/07040c8a9607032358c476dea8818f1df509f270))
+* policy table output type ([#481](https://github.com/gorules/zen/issues/481)) ([9a11ae4](https://github.com/gorules/zen/commit/9a11ae4f48f631564c44444edc1ec0bda6081dec))
+* precompile decision content ([#401](https://github.com/gorules/zen/issues/401)) ([7bfebd9](https://github.com/gorules/zen/commit/7bfebd90fed78d3250e25f92a4c971b71f850532))
+* refactor engine ([#390](https://github.com/gorules/zen/issues/390)) ([9150982](https://github.com/gorules/zen/commit/91509821be632bc7305648d2f6f4ce62f84b4c60))
+* workspace lints and type fixes ([#492](https://github.com/gorules/zen/issues/492)) ([63b560c](https://github.com/gorules/zen/commit/63b560c526887537e5764d5a0e62c47ab0c7e6a0))
+
+
+### Bug Fixes
+
+* add crate descriptions ([#388](https://github.com/gorules/zen/issues/388)) ([a573ae0](https://github.com/gorules/zen/commit/a573ae00b753fc0519971220fa8c25467a813dc7))
+* improve fn variable conversion performance ([#410](https://github.com/gorules/zen/issues/410)) ([de25f98](https://github.com/gorules/zen/commit/de25f98a7f606f5381e2a98a14c1adb9507144d9))
+* rust version bump ([#387](https://github.com/gorules/zen/issues/387)) ([1e4135f](https://github.com/gorules/zen/commit/1e4135f5fb665d21237054501ac6d671e1b55e64))
+
+
+### Performance
+
+* general performance improvements ([#500](https://github.com/gorules/zen/issues/500)) ([fe43b4c](https://github.com/gorules/zen/commit/fe43b4c1d71fb28c247ffb0ebd9e332d34f5f907))
+
 ## [1.0.0-beta.12](https://github.com/gorules/zen/compare/zen-types-v1.0.0-beta.11...zen-types-v1.0.0-beta.12) (2026-08-07)
 
 

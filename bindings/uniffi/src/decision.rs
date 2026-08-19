@@ -36,8 +36,10 @@ impl ZenDecision {
         let response = task::spawn_blocking(move || {
             // The blocking code that uses non-Send types
             Handle::current().block_on(async move {
+                let context = zen_engine::Variable::try_from_value(context)
+                    .map_err(|e| ZenError::ValidationError(e.to_string()))?;
                 decision
-                    .evaluate_with_opts(context.into(), options.into())
+                    .evaluate_with_opts(context, options.into())
                     .await
                     .map(|response| ZenEngineResponse::try_from(response))
                     .map_err(|err| {

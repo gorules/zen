@@ -156,9 +156,13 @@ pub extern "C" fn zen_engine_evaluate(
 
     let zen_engine = unsafe { &*(engine as *mut ZenEngine) };
 
+    let Ok(var_context) = zen_engine::Variable::try_from_value(val_context) else {
+        return ZenResult::error(ZenError::JsonDeserializationFailed);
+    };
+
     let maybe_result = tokio_runtime().block_on(zen_engine.evaluate_with_opts(
         str_key,
-        val_context.into(),
+        var_context,
         options.into(),
     ));
     let result = match maybe_result {
@@ -232,8 +236,10 @@ pub extern "C" fn zen_engine_evaluate_batch(
             Ok(value) => {
                 let engine = decision_engine.clone();
                 BatchTask::Pending(pool.spawn_pinned(move || async move {
+                    let value = zen_engine::Variable::try_from_value(value)
+                        .map_err(|e| json!(format!("invalid context: {e}")))?;
                     engine
-                        .evaluate_with_opts(key, value.into(), eval_options)
+                        .evaluate_with_opts(key, value, eval_options)
                         .await
                         .map(|response| serde_json::to_value(&response).unwrap_or(Value::Null))
                         .map_err(|e| {

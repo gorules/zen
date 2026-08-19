@@ -966,3 +966,33 @@ mod test {
         }
     }
 }
+
+#[test]
+fn arithmetic_overflow_errors_instead_of_panicking() {
+    let mut isolate = Isolate::new();
+    let max = "79228162514264337593543950335";
+
+    assert!(isolate.run_standard(&format!("{max} + 1")).is_err());
+    assert!(isolate.run_standard(&format!("-{max} - 1")).is_err());
+    assert!(isolate.run_standard(&format!("{max} * 2")).is_err());
+    assert!(isolate
+        .run_standard(&format!("sum([{max}, {max}])"))
+        .is_err());
+    assert!(isolate
+        .run_standard(&format!("avg([{max}, {max}])"))
+        .is_err());
+    assert!(isolate
+        .run_standard(&format!("median([{max}, {max}])"))
+        .is_err());
+}
+
+#[test]
+fn division_and_modulo_by_zero_return_null() {
+    let mut isolate = Isolate::new();
+
+    let division = isolate.run_standard("1 / 0").unwrap();
+    assert_eq!(division, Variable::Null);
+
+    let modulo = isolate.run_standard("1 % 0").unwrap();
+    assert_eq!(modulo, Variable::Null);
+}

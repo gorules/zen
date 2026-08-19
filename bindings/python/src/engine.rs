@@ -203,8 +203,10 @@ impl PyZenEngine {
             .map(|request| {
                 let engine = self.engine.clone();
                 worker_pool().spawn_pinned(move || async move {
+                    let context = zen_engine::Variable::try_from_value(request.context)
+                        .map_err(|e| Value::String(format!("invalid context: {e}")))?;
                     engine
-                        .evaluate_with_opts(request.key, request.context.into(), options)
+                        .evaluate_with_opts(request.key, context, options)
                         .await
                         .map(crate::convert::PortableResponse::build)
                         .map_err(|e| {
@@ -263,8 +265,10 @@ impl PyZenEngine {
         let result = tokio::future_into_py_with_locals(py, get_current_locals(py)?, async move {
             let response = worker_pool()
                 .spawn_pinned(move || async move {
+                    let context =
+                        zen_engine::Variable::try_from_value(context).map_err(|e| anyhow!(e))?;
                     engine
-                        .evaluate_with_opts(key, context.into(), options.into())
+                        .evaluate_with_opts(key, context, options.into())
                         .await
                         .map(crate::convert::PortableResponse::build)
                         .map_err(|e| {

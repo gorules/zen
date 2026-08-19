@@ -101,7 +101,9 @@ impl<'de> Visitor<'de> for VariableVisitor {
                 return Ok(Variable::Number(
                     Decimal::from_str_exact(str)
                         .or_else(|_| Decimal::from_scientific(str))
-                        .map_err(|_| Error::custom("invalid number"))?,
+                        .ok()
+                        .or_else(|| str.parse::<f64>().ok().and_then(Decimal::from_f64))
+                        .ok_or_else(|| Error::custom(format!("number out of range: {str}")))?,
                 ));
             }
 

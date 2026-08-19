@@ -264,8 +264,11 @@ impl ZenEngine {
             };
 
             async move {
+                let context = zen_engine::Variable::try_from_value(context).map_err(
+                    |e| serde_json::json!({ "type": "ContextError", "source": e.to_string() }),
+                )?;
                 graph
-                    .evaluate_with_opts(key, context.into(), options)
+                    .evaluate_with_opts(key, context, options)
                     .await
                     .map(|response| NodeEvalResponse::build(response, mode))
                     .map_err(|e| {
@@ -357,8 +360,11 @@ impl ZenEngine {
                     max_depth,
                 };
 
+                let context = zen_engine::Variable::try_from_value(context).map_err(
+                    |e| serde_json::json!({ "type": "ContextError", "source": e.to_string() }),
+                )?;
                 engine
-                    .evaluate_with_opts(key, context.into(), eval_opts)
+                    .evaluate_with_opts(key, context, eval_opts)
                     .await
                     .map(|response| NodeEvalResponse::build(response, mode))
                     .map_err(|e| {

@@ -312,10 +312,10 @@ mod helper {
             DurationUnit::Hour => date_time.with_minute(59)?.with_second(59)?,
             DurationUnit::Day => date_time.with_hour(23)?.with_minute(59)?.with_second(59)?,
             DurationUnit::Week => {
-                let weekday = date_time.weekday().num_days_from_sunday();
+                let days_until_sunday = 6 - date_time.weekday().num_days_from_monday();
 
                 date_time
-                    .checked_add_days(Days::new(weekday.to_u64()?))?
+                    .checked_add_days(Days::new(days_until_sunday.to_u64()?))?
                     .with_hour(23)?
                     .with_minute(59)?
                     .with_second(59)?

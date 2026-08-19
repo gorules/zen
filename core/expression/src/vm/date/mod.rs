@@ -188,14 +188,29 @@ mod helper {
     use std::str::FromStr;
     use std::sync::OnceLock;
 
+    /// The local timezone, resolved once per process.
+    ///
+    /// `TZ` takes precedence over the system zone, which is how every other date implementation
+    /// on Unix behaves and is the only way to override the zone in a container that ships the
+    /// host's `/etc/localtime`. `iana_time_zone` reads that file and ignores the environment, so
+    /// without this a process started with `TZ=UTC` still computes dates in the host's zone.
+    ///
+    /// Resolution is cached, so `TZ` must be set before the first date operation - setting it
+    /// later in the same process has no effect.
     fn tz() -> Tz {
         static CACHED_TZ: OnceLock<Tz> = OnceLock::new();
 
         *CACHED_TZ.get_or_init(|| {
-            iana_time_zone::get_timezone()
+            std::env::var("TZ")
                 .ok()
+                .filter(|tz| !tz.is_empty())
                 .and_then(|tz| Tz::from_str(&tz).ok())
-                .unwrap_or_else(|| Tz::UTC)
+                .or_else(|| {
+                    iana_time_zone::get_timezone()
+                        .ok()
+                        .and_then(|tz| Tz::from_str(&tz).ok())
+                })
+                .unwrap_or(Tz::UTC)
         })
     }
 

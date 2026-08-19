@@ -34,9 +34,10 @@ impl ZenDecision {
             let options = opts.unwrap_or_default();
 
             async move {
-                decision
-                    .evaluate_serialized(context.into(), options.into())
-                    .await
+                let context = zen_engine::Variable::try_from_value(context).map_err(
+                    |e| serde_json::json!({ "type": "ContextError", "source": e.to_string() }),
+                )?;
+                decision.evaluate_serialized(context, options.into()).await
             }
         })
         .await

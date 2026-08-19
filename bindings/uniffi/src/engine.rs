@@ -83,8 +83,10 @@ impl ZenEngine {
         let response = task::spawn_blocking(move || {
             // The blocking code that uses non-Send types
             Handle::current().block_on(async move {
+                let context = zen_engine::Variable::try_from_value(context)
+                    .map_err(|e| ZenError::ValidationError(e.to_string()))?;
                 engine
-                    .evaluate_with_opts(key, context.into(), options.into())
+                    .evaluate_with_opts(key, context, options.into())
                     .await
                     .map(|response| ZenEngineResponse::try_from(response))
                     .map_err(|err| {
@@ -115,8 +117,10 @@ impl ZenEngine {
                 task::spawn_blocking(move || {
                     Handle::current().block_on(async move {
                         let context: Value = request.context.try_into()?;
+                        let context = zen_engine::Variable::try_from_value(context)
+                            .map_err(|e| ZenError::ValidationError(e.to_string()))?;
                         let response = engine
-                            .evaluate_with_opts(request.key, context.into(), options)
+                            .evaluate_with_opts(request.key, context, options)
                             .await
                             .map_err(|err| {
                                 ZenError::EvaluationError(

@@ -11,6 +11,7 @@ use std::ops::Deref;
 use std::rc::Rc;
 
 use crate::rcvalue::RcValue;
+pub use crate::variable::conv::VariableConversionError;
 pub use crate::variable::ref_deser::RefDeserializeError;
 use crate::variable::ref_deser::RefDeserializer;
 pub use de::VariableDeserializer;

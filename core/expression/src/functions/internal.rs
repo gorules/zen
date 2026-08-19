@@ -661,7 +661,10 @@ pub(crate) mod imp {
 
     pub fn avg(args: Arguments) -> anyhow::Result<V> {
         let a = __internal_number_array(&args, 0)?;
-        let sum = a.iter().fold(Decimal::ZERO, |acc, x| acc + x);
+        let sum = a
+            .iter()
+            .try_fold(Decimal::ZERO, |acc, x| acc.checked_add(*x))
+            .context("Number overflow")?;
 
         Ok(V::Number(Decimal::from(
             sum.checked_div(Decimal::from(a.len()))
@@ -671,7 +674,10 @@ pub(crate) mod imp {
 
     pub fn sum(args: Arguments) -> anyhow::Result<V> {
         let a = __internal_number_array(&args, 0)?;
-        let sum = a.iter().fold(Decimal::ZERO, |acc, v| acc + v);
+        let sum = a
+            .iter()
+            .try_fold(Decimal::ZERO, |acc, v| acc.checked_add(*v))
+            .context("Number overflow")?;
 
         Ok(V::Number(Decimal::from(sum)))
     }
@@ -688,7 +694,10 @@ pub(crate) mod imp {
             let center_left = a.get(center - 1).context("Index out of bounds")?;
             let center_right = a.get(center).context("Index out of bounds")?;
 
-            let median = ((*center_left) + (*center_right)) / dec!(2);
+            let median = center_left
+                .checked_add(*center_right)
+                .context("Number overflow")?
+                / dec!(2);
             Ok(V::Number(median))
         }
     }

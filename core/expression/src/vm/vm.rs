@@ -467,7 +467,13 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                     let a = self.pop()?;
 
                     match (a, b) {
-                        (Number(a), Number(b)) => self.push(Number(a + b)),
+                        (Number(a), Number(b)) => {
+                            let result = a.checked_add(b).ok_or_else(|| OpcodeErr {
+                                opcode: "Add".into(),
+                                message: "Number overflow".into(),
+                            })?;
+                            self.push(Number(result));
+                        }
                         (String(a), String(b)) => {
                             let mut c = StdString::with_capacity(a.len() + b.len());
 
@@ -489,7 +495,13 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                     let a = self.pop()?;
 
                     match (a, b) {
-                        (Number(a), Number(b)) => self.push(Number(a - b)),
+                        (Number(a), Number(b)) => {
+                            let result = a.checked_sub(b).ok_or_else(|| OpcodeErr {
+                                opcode: "Subtract".into(),
+                                message: "Number overflow".into(),
+                            })?;
+                            self.push(Number(result));
+                        }
                         _ => {
                             return Err(OpcodeErr {
                                 opcode: "Subtract".into(),
@@ -503,7 +515,13 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                     let a = self.pop()?;
 
                     match (a, b) {
-                        (Number(a), Number(b)) => self.push(Number(a * b)),
+                        (Number(a), Number(b)) => {
+                            let result = a.checked_mul(b).ok_or_else(|| OpcodeErr {
+                                opcode: "Multiply".into(),
+                                message: "Number overflow".into(),
+                            })?;
+                            self.push(Number(result));
+                        }
                         _ => {
                             return Err(OpcodeErr {
                                 opcode: "Multiply".into(),
@@ -535,7 +553,13 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                     let a = self.pop()?;
 
                     match (a, b) {
-                        (Number(a), Number(b)) => self.push(Number(a % b)),
+                        (Number(a), Number(b)) => {
+                            let result = match a.checked_rem(b) {
+                                Some(r) => Number(r),
+                                None => Null,
+                            };
+                            self.push(result);
+                        }
                         _ => {
                             return Err(OpcodeErr {
                                 opcode: "Modulo".into(),

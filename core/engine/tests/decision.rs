@@ -249,6 +249,154 @@ async fn decision_table_missing_cell_key_is_treated_as_empty() {
 
 #[tokio::test]
 #[cfg_attr(miri, ignore)]
+async fn decision_table_column_collect_from_file() {
+    let decision = Decision::from(load_test_data("table-collect-columns.json"));
+
+    let result = decision
+        .evaluate(json!({ "customer": { "age": 70 } }).into())
+        .await
+        .unwrap();
+    assert_eq!(
+        result.result,
+        json!({
+            "customer": {
+                "tier": "senior",
+                "tags": ["senior-discount", "adult", "age-verified", "customer"]
+            }
+        })
+        .into()
+    );
+
+    let minor = decision
+        .evaluate(json!({ "customer": { "age": 12 } }).into())
+        .await
+        .unwrap();
+    assert_eq!(
+        minor.result,
+        json!({ "customer": { "tags": ["customer"] } }).into()
+    );
+}
+
+#[tokio::test]
+#[cfg_attr(miri, ignore)]
+async fn decision_table_first_hit_column_collect() {
+    let content = serde_json::from_value(json!({
+        "nodes": [
+            { "id": "in", "name": "in", "type": "inputNode", "content": {} },
+            {
+                "id": "dt", "name": "dt", "type": "decisionTableNode",
+                "content": {
+                    "hitPolicy": "first",
+                    "inputs": [{ "id": "i1", "name": "Age", "field": "age" }],
+                    "outputs": [
+                        { "id": "o1", "name": "Tier", "field": "customer.tier" },
+                        { "id": "o2", "name": "Tags", "field": "customer.tags[]" }
+                    ],
+                    "rules": [
+                        { "_id": "r1", "i1": "> 100", "o1": "'unreachable'", "o2": "'unreachable'" },
+                        { "_id": "r2", "i1": "> 10", "o1": "'gold'", "o2": "'adult'" },
+                        { "_id": "r3", "i1": "> 18", "o1": "'silver'", "o2": "'grown-up'" },
+                        { "_id": "r4", "i1": "> 30", "o1": "'bronze'", "o2": "" },
+                        { "_id": "r5", "i1": "", "o1": "", "o2": "'anyone'" }
+                    ]
+                }
+            },
+            { "id": "out", "name": "out", "type": "outputNode", "content": {} }
+        ],
+        "edges": [
+            { "id": "e1", "sourceId": "in", "targetId": "dt" },
+            { "id": "e2", "sourceId": "dt", "targetId": "out" }
+        ]
+    }))
+    .unwrap();
+    let decision = Decision::from(Arc::new(content));
+
+    let untraced = decision
+        .evaluate(json!({ "age": 35 }).into())
+        .await
+        .unwrap();
+    assert_eq!(
+        untraced.result,
+        json!({
+            "customer": {
+                "tier": "gold",
+                "tags": ["adult", "grown-up", "anyone"]
+            }
+        })
+        .into()
+    );
+
+    let traced = decision
+        .evaluate_with_opts(
+            json!({ "age": 35 }).into(),
+            EvaluationOptions {
+                trace: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(traced.result, untraced.result);
+
+    let fallback_only = decision
+        .evaluate(json!({ "age": "not a number" }).into())
+        .await
+        .unwrap();
+    assert_eq!(
+        fallback_only.result,
+        json!({ "customer": { "tags": ["anyone"] } }).into()
+    );
+}
+
+#[tokio::test]
+#[cfg_attr(miri, ignore)]
+async fn decision_table_collect_rows_do_not_alias() {
+    let content = serde_json::from_value(json!({
+        "nodes": [
+            { "id": "in", "name": "in", "type": "inputNode", "content": {} },
+            {
+                "id": "dt", "name": "dt", "type": "decisionTableNode",
+                "content": {
+                    "hitPolicy": "collect",
+                    "inputs": [{ "id": "i1", "name": "Name", "field": "person.name" }],
+                    "outputs": [
+                        { "id": "o1", "name": "Person", "field": "person" },
+                        { "id": "o2", "name": "Age", "field": "person.age" }
+                    ],
+                    "rules": [
+                        { "_id": "r1", "i1": "", "o1": "person", "o2": "2" },
+                        { "_id": "r2", "i1": "", "o1": "person", "o2": "3" },
+                        { "_id": "r3", "i1": "", "o1": "person", "o2": "4" }
+                    ]
+                }
+            },
+            { "id": "out", "name": "out", "type": "outputNode", "content": {} }
+        ],
+        "edges": [
+            { "id": "e1", "sourceId": "in", "targetId": "dt" },
+            { "id": "e2", "sourceId": "dt", "targetId": "out" }
+        ]
+    }))
+    .unwrap();
+    let decision = Decision::from(Arc::new(content));
+
+    let result = decision
+        .evaluate(json!({ "person": { "name": "Ann" } }).into())
+        .await
+        .unwrap();
+    assert_eq!(
+        result.result,
+        json!([
+            { "person": { "name": "Ann", "age": 2 } },
+            { "person": { "name": "Ann", "age": 3 } },
+            { "person": { "name": "Ann", "age": 4 } }
+        ])
+        .into()
+    );
+}
+
+#[tokio::test]
+#[cfg_attr(miri, ignore)]
 async fn node_handlers_do_not_mutate_aliased_inputs() {
     let content = serde_json::from_value(json!({
         "nodes": [

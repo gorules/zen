@@ -368,6 +368,86 @@ fn decision_table_incompatible_output_cells_reported() {
 }
 
 #[test]
+fn decision_table_column_collect_types_as_array() {
+    let mut ws = Workspace::new();
+    let table = node(
+        "dt",
+        "decisionTableNode",
+        json!({
+            "hitPolicy": "first",
+            "inputs": [
+                { "id": "c1", "name": "Age", "field": "age" }
+            ],
+            "outputs": [
+                { "id": "o1", "name": "Tier", "field": "tier" },
+                { "id": "o2", "name": "Tags", "field": "tags[]" }
+            ],
+            "rules": [
+                { "_id": "r1", "c1": "> 18", "o1": "\"gold\"", "o2": "\"adult\"" },
+                { "_id": "r2", "c1": "", "o1": "\"basic\"", "o2": "" }
+            ]
+        }),
+    );
+    ws.set_document(
+        "g",
+        document(linear_graph(Some(person_schema()), vec![table])),
+    );
+    let diagnostics = ws.diagnostics("g");
+    assert!(
+        diagnostics.iter().all(|d| d.severity == Severity::Hint),
+        "{diagnostics:?}"
+    );
+
+    let outputs = ws.outputs(&ScopeRequest::for_policy("g"));
+    let tags = outputs
+        .iter()
+        .find(|o| o.path.as_ref() == "tags")
+        .expect("tags output");
+    assert!(
+        matches!(&tags.resolved_type, VariableType::Array(_)),
+        "{:?}",
+        tags.resolved_type
+    );
+    let tier = outputs.iter().find(|o| o.path.as_ref() == "tier");
+    assert!(tier.is_some(), "{outputs:?}");
+}
+
+#[test]
+fn decision_table_invalid_collect_marker_is_reported() {
+    let mut ws = Workspace::new();
+    let table = node(
+        "dt",
+        "decisionTableNode",
+        json!({
+            "hitPolicy": "first",
+            "inputs": [
+                { "id": "c1", "name": "Age", "field": "age" }
+            ],
+            "outputs": [
+                { "id": "o1", "name": "Bare", "field": "[]" },
+                { "id": "o2", "name": "Interior", "field": "tags[].value" }
+            ],
+            "rules": [
+                { "_id": "r1", "c1": "", "o1": "1", "o2": "2" }
+            ]
+        }),
+    );
+    ws.set_document(
+        "g",
+        document(linear_graph(Some(person_schema()), vec![table])),
+    );
+    let codes = error_codes(&ws, "g");
+    assert_eq!(
+        codes
+            .iter()
+            .filter(|c| **c == DiagnosticCode::InvalidWritePath)
+            .count(),
+        2,
+        "expected invalid write paths, got {codes:?}"
+    );
+}
+
+#[test]
 fn transform_loop_iterates_elements() {
     let mut ws = Workspace::new();
     let schema = json!({

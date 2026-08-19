@@ -1,0 +1,84 @@
+{
+  "nodes": [
+    {
+      "id": "1b6f7a70-2f4a-4cb1-b8d4-0b6c2a4a7f01",
+      "type": "inputNode",
+      "position": { "x": 150, "y": 210 },
+      "name": "Request"
+    },
+    {
+      "id": "9d2c3a44-5c1e-4a2f-a0e3-6f6d2b9c8e02",
+      "type": "decisionTableNode",
+      "position": { "x": 410, "y": 210 },
+      "name": "Customer Tags",
+      "content": {
+        "hitPolicy": "first",
+        "inputs": [
+          {
+            "field": "customer.age",
+            "id": "ageInput001",
+            "name": "Age"
+          }
+        ],
+        "outputs": [
+          {
+            "field": "customer.tier",
+            "id": "tierOutput01",
+            "name": "Tier"
+          },
+          {
+            "field": "customer.tags[]",
+            "id": "tagsOutput01",
+            "name": "Tags"
+          }
+        ],
+        "rules": [
+          {
+            "_id": "row-senior00",
+            "ageInput001": ">= 65",
+            "tierOutput01": "'senior'",
+            "tagsOutput01": "'senior-discount'"
+          },
+          {
+            "_id": "row-adult000",
+            "ageInput001": ">= 18",
+            "tierOutput01": "'standard'",
+            "tagsOutput01": "'adult'"
+          },
+          {
+            "_id": "row-verified",
+            "ageInput001": ">= 21",
+            "tierOutput01": "'unused'",
+            "tagsOutput01": "'age-verified'"
+          },
+          {
+            "_id": "row-everyone",
+            "ageInput001": "",
+            "tierOutput01": "",
+            "tagsOutput01": "'customer'"
+          }
+        ]
+      }
+    },
+    {
+      "id": "c7e9f1a2-8d3b-4e5f-9a6c-1d2e3f4a5b03",
+      "type": "outputNode",
+      "position": { "x": 660, "y": 210 },
+      "name": "Response"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-in-dt-0001",
+      "sourceId": "1b6f7a70-2f4a-4cb1-b8d4-0b6c2a4a7f01",
+      "targetId": "9d2c3a44-5c1e-4a2f-a0e3-6f6d2b9c8e02",
+      "type": "edge"
+    },
+    {
+      "id": "edge-dt-out-001",
+      "sourceId": "9d2c3a44-5c1e-4a2f-a0e3-6f6d2b9c8e02",
+      "targetId": "c7e9f1a2-8d3b-4e5f-9a6c-1d2e3f4a5b03",
+      "type": "edge"
+    }
+  ]
+}

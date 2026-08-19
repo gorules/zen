@@ -204,8 +204,8 @@ impl Db {
                             .local_write_target(&target_segments)
                             .is_some_and(|local| {
                                 content.outputs.iter().any(|col| {
-                                    !col.field.is_empty()
-                                        && PathMatch::key_overlaps(&col.field, local)
+                                    let (path, _) = col.write_path();
+                                    !path.is_empty() && PathMatch::key_overlaps(path, local)
                                 })
                             });
                     if writes {

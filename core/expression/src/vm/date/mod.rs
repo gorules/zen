@@ -184,7 +184,7 @@ mod helper {
     };
     use chrono_tz::Tz;
     use rust_decimal::prelude::ToPrimitive;
-    use std::ops::{Add, Deref};
+    use std::ops::Deref;
     use std::str::FromStr;
     use std::sync::OnceLock;
 
@@ -248,13 +248,13 @@ mod helper {
     }
 
     pub fn add_duration(mut date_time: DateTime<Tz>, duration: Duration) -> Option<DateTime<Tz>> {
-        date_time = date_time.add(TimeDelta::seconds(duration.seconds));
+        date_time = date_time.checked_add_signed(TimeDelta::try_seconds(duration.seconds)?)?;
         date_time = match duration.months < 0 {
             true => date_time.checked_sub_months(Months::new(duration.months.unsigned_abs()))?,
             false => date_time.checked_add_months(Months::new(duration.months.unsigned_abs()))?,
         };
 
-        date_time.with_year(date_time.year() + duration.years)
+        date_time.with_year(date_time.year().checked_add(duration.years)?)
     }
 
     pub fn start_of(date_time: DateTime<Tz>, unit: DurationUnit) -> Option<DateTime<Tz>> {

@@ -94,3 +94,45 @@ fn test_interpolation() {
         );
     }
 }
+
+#[test]
+fn test_multibyte_templates_do_not_panic() {
+    struct TestCase {
+        template: &'static str,
+        context: Value,
+        expected: Value,
+    }
+
+    let test_cases = vec![
+        TestCase {
+            template: "é{{ a }}",
+            context: json!({ "a": 1 }),
+            expected: json!("é1"),
+        },
+        TestCase {
+            template: "prix: {{ a }} €",
+            context: json!({ "a": 10 }),
+            expected: json!("prix: 10 €"),
+        },
+        TestCase {
+            template: "日本語 {{ a }} テスト {{ b }}",
+            context: json!({ "a": "x", "b": "y" }),
+            expected: json!("日本語 x テスト y"),
+        },
+        TestCase {
+            template: "🚀{{ a }}🚀",
+            context: json!({ "a": true }),
+            expected: json!("🚀true🚀"),
+        },
+    ];
+
+    for test_case in test_cases {
+        let result = render(test_case.template, Variable::from(test_case.context)).unwrap();
+        assert_eq!(
+            result.to_value(),
+            test_case.expected,
+            "{}",
+            test_case.template
+        );
+    }
+}

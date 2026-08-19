@@ -1,5 +1,5 @@
-use std::iter::{Enumerate, Peekable};
-use std::str::Chars;
+use std::iter::Peekable;
+use std::str::CharIndices;
 
 #[derive(Debug, PartialOrd, PartialEq)]
 pub(crate) enum Token<'source> {
@@ -9,7 +9,7 @@ pub(crate) enum Token<'source> {
 }
 
 pub(crate) struct Lexer<'source> {
-    cursor: Peekable<Enumerate<Chars<'source>>>,
+    cursor: Peekable<CharIndices<'source>>,
     source: &'source str,
     tokens: Vec<Token<'source>>,
     text_start: Option<usize>,
@@ -24,7 +24,7 @@ where
 
         Self {
             source,
-            cursor: source.chars().enumerate().peekable(),
+            cursor: source.char_indices().peekable(),
             tokens: Default::default(),
             text_start: None,
         }

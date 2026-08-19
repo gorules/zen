@@ -996,3 +996,27 @@ fn division_and_modulo_by_zero_return_null() {
     let modulo = isolate.run_standard("1 % 0").unwrap();
     assert_eq!(modulo, Variable::Null);
 }
+
+#[test]
+fn date_add_out_of_range_is_invalid_instead_of_panicking() {
+    let mut isolate = Isolate::new();
+
+    let huge_seconds = isolate
+        .run_standard("d('2020-01-01').add(10000000000000000, 's').isValid()")
+        .unwrap();
+    assert_eq!(huge_seconds, Variable::Bool(false));
+
+    let huge_days = isolate
+        .run_standard("d('2020-01-01').sub(10000000000000, 'd').isValid()")
+        .unwrap();
+    assert_eq!(huge_days, Variable::Bool(false));
+}
+
+#[test]
+fn string_index_at_usize_max_returns_null() {
+    let mut isolate = Isolate::new();
+    isolate.set_environment(json!({ "s": "abc", "i": 18446744073709551615u64 }).into());
+
+    let result = isolate.run_standard("s[i]").unwrap();
+    assert_eq!(result, Variable::Null);
+}

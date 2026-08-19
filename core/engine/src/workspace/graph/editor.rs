@@ -938,8 +938,9 @@ impl Db {
                     if key.is_empty() {
                         continue;
                     }
-                    if let Some(index) = PathMatch::key_matches(&key, local_write) {
-                        let span = PathMatch::segment_span(&key, index);
+                    let match_key = key.strip_suffix("[]").map(str::trim_end).unwrap_or(&key);
+                    if let Some(index) = PathMatch::key_matches(match_key, local_write) {
+                        let span = PathMatch::segment_span(match_key, index);
                         emit(&node.id, Some(id), &key, span, ReferenceKind::WriteKey);
                     }
                 }

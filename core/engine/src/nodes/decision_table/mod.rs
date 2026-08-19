@@ -35,7 +35,11 @@ impl NodeHandler for DecisionTableNodeHandler {
     }
 
     async fn handle(&self, ctx: NodeContext<Self::NodeData, Self::TraceData>) -> NodeResult {
+        let has_collect_columns = ctx.node.outputs.iter().any(|output| output.write_path().1);
         match ctx.node.hit_policy {
+            DecisionTableHitPolicy::First if has_collect_columns => {
+                self.handle_first_hit_collect(ctx)
+            }
             DecisionTableHitPolicy::First => self.handle_first_hit(ctx),
             DecisionTableHitPolicy::Collect => self.handle_collect(ctx),
         }
@@ -215,15 +219,83 @@ impl DecisionTableNodeHandler {
         acc
     }
 
-    fn evaluate_row<'a>(
-        &self,
-        ctx: &'a DecisionTableContext,
-        rule: &'a HashMap<Arc<str>, Arc<str>>,
+    fn handle_first_hit_collect(&self, ctx: DecisionTableContext) -> NodeResult {
+        let mut isolate = ctx.isolate();
+
+        let table_index = (!ctx.config.trace)
+            .then(|| Self::table_index(&ctx))
+            .flatten();
+        let candidates =
+            table_index.and_then(|ix| Self::candidate_rows(ix, &ctx.node.inputs, &mut isolate));
+        let pruner = candidates.as_ref().and(table_index);
+
+        let mut scalars: Option<Variable> = None;
+        let mut collected: Vec<Vec<Variable>> = vec![Vec::new(); ctx.node.outputs.len()];
+        let mut matched = false;
+        let mut traces = Vec::new();
+
+        for (row_idx, rule) in ctx.node.rules.iter().enumerate() {
+            if candidates.as_ref().is_some_and(|c| !c.contains(row_idx)) {
+                continue;
+            }
+            let pruned = pruner.map(|ix| (ix, row_idx));
+            if !Self::row_matches(&ctx, rule, &mut isolate, pruned) {
+                continue;
+            }
+
+            let Some((row_scalars, row_collects)) =
+                Self::evaluate_row_cells(&ctx, rule, &mut isolate, scalars.is_none())
+            else {
+                continue;
+            };
+            matched = true;
+            if let Some(row_scalars) = row_scalars {
+                scalars = Some(row_scalars);
+            }
+            for (column_idx, value) in row_collects {
+                collected[column_idx].push(value);
+            }
+
+            if ctx.config.trace {
+                let (reference_map, rule_trace) = Self::row_trace_parts(&ctx, rule, &mut isolate);
+                traces.push(DecisionTableRowTrace {
+                    index: row_idx,
+                    reference_map,
+                    rule: rule_trace,
+                });
+            }
+        }
+
+        if !matched {
+            return Ok(NodeResponse {
+                output: Variable::Null,
+                trace_data: None,
+            });
+        }
+
+        let output = scalars.unwrap_or_else(Variable::empty_object);
+        for (column_idx, column) in ctx.node.outputs.iter().enumerate() {
+            let (path, collect) = column.write_path();
+            if !collect || path.is_empty() {
+                continue;
+            }
+            let values = std::mem::take(&mut collected[column_idx]);
+            output.dot_insert(path, Variable::from_array(values));
+        }
+
+        ctx.trace(|t| {
+            *t = DecisionTableNodeTrace::Collect(traces);
+        });
+        ctx.success(output)
+    }
+
+    fn row_matches(
+        ctx: &DecisionTableContext,
+        rule: &HashMap<Arc<str>, Arc<str>>,
         isolate: &mut Isolate,
         pruned: Option<(&TableIndex, usize)>,
-    ) -> Option<RowResult> {
-        let content = &ctx.node;
-        for (col_idx, input) in content.inputs.iter().enumerate() {
+    ) -> bool {
+        for (col_idx, input) in ctx.node.inputs.iter().enumerate() {
             if pruned.is_some_and(|(ix, row_idx)| ix.decides(col_idx, row_idx)) {
                 continue;
             }
@@ -234,24 +306,37 @@ impl DecisionTableNodeHandler {
                 continue;
             }
 
-            match &input.field {
-                None => {
-                    let result = isolate.run_standard(rule_value).ok()?;
-                    if !result.as_bool().unwrap_or(false) {
-                        return None;
-                    }
-                }
+            let passed = match &input.field {
+                None => isolate
+                    .run_standard(rule_value)
+                    .ok()
+                    .and_then(|result| result.as_bool())
+                    .unwrap_or(false),
                 Some(field) => {
-                    isolate.set_reference(&field).ok()?;
-                    if !isolate.run_unary(rule_value).ok()? {
-                        return None;
-                    }
+                    isolate.set_reference(field).is_ok()
+                        && isolate.run_unary(rule_value).unwrap_or(false)
                 }
+            };
+            if !passed {
+                return false;
             }
         }
+        true
+    }
 
-        let outputs = Variable::empty_object();
-        for output in content.outputs.iter() {
+    fn evaluate_row_cells(
+        ctx: &DecisionTableContext,
+        rule: &HashMap<Arc<str>, Arc<str>>,
+        isolate: &mut Isolate,
+        include_scalars: bool,
+    ) -> Option<(Option<Variable>, Vec<(usize, Variable)>)> {
+        let scalars = include_scalars.then(Variable::empty_object);
+        let mut collects = Vec::new();
+        for (column_idx, output) in ctx.node.outputs.iter().enumerate() {
+            let (path, collect) = output.write_path();
+            if path.is_empty() || (!collect && !include_scalars) {
+                continue;
+            }
             let Some(rule_value) = rule.get(&output.id) else {
                 continue;
             };
@@ -259,14 +344,21 @@ impl DecisionTableNodeHandler {
                 continue;
             }
 
-            let res = isolate.run_standard(rule_value).ok()?;
-            outputs.dot_insert(output.field.deref(), res);
+            let value = isolate.run_standard(rule_value).ok()?.deep_clone();
+            if collect {
+                collects.push((column_idx, value));
+            } else if let Some(scalars) = &scalars {
+                scalars.dot_insert(path, value);
+            }
         }
+        Some((scalars, collects))
+    }
 
-        if !ctx.config.trace {
-            return Some(RowResult::Output(outputs));
-        }
-
+    fn row_trace_parts(
+        ctx: &DecisionTableContext,
+        rule: &HashMap<Arc<str>, Arc<str>>,
+        isolate: &mut Isolate,
+    ) -> (HashMap<Rc<str>, Variable>, HashMap<Rc<str>, Rc<str>>) {
         let id_str = Rc::<str>::from("_id");
         let description_str = Rc::<str>::from("_description");
 
@@ -283,7 +375,7 @@ impl DecisionTableNodeHandler {
             expressions.insert(description_str.clone(), Rc::from(description.deref()));
         }
 
-        for input in content.inputs.iter() {
+        for input in ctx.node.inputs.iter() {
             let Some(rule_value) = rule.get(input.id.deref()) else {
                 continue;
             };
@@ -304,6 +396,42 @@ impl DecisionTableNodeHandler {
             );
         }
 
+        (reference_map, expressions)
+    }
+
+    fn evaluate_row<'a>(
+        &self,
+        ctx: &'a DecisionTableContext,
+        rule: &'a HashMap<Arc<str>, Arc<str>>,
+        isolate: &mut Isolate,
+        pruned: Option<(&TableIndex, usize)>,
+    ) -> Option<RowResult> {
+        if !Self::row_matches(ctx, rule, isolate, pruned) {
+            return None;
+        }
+
+        let outputs = Variable::empty_object();
+        for output in ctx.node.outputs.iter() {
+            let (path, _) = output.write_path();
+            if path.is_empty() {
+                continue;
+            }
+            let Some(rule_value) = rule.get(&output.id) else {
+                continue;
+            };
+            if rule_value.is_empty() {
+                continue;
+            }
+
+            let res = isolate.run_standard(rule_value).ok()?;
+            outputs.dot_insert(path, res.deep_clone());
+        }
+
+        if !ctx.config.trace {
+            return Some(RowResult::Output(outputs));
+        }
+
+        let (reference_map, expressions) = Self::row_trace_parts(ctx, rule, isolate);
         Some(RowResult::WithTrace {
             output: outputs.to_variable(),
             reference_map,

@@ -150,6 +150,16 @@ pub struct DecisionTableOutputField {
     pub column_type: Option<Arc<str>>,
 }
 
+impl DecisionTableOutputField {
+    pub fn write_path(&self) -> (&str, bool) {
+        let field = self.field.trim();
+        match field.strip_suffix("[]") {
+            Some(base) => (base.trim_end(), true),
+            None => (field, false),
+        }
+    }
+}
+
 fn empty_arc_str() -> Arc<str> {
     Arc::from("")
 }

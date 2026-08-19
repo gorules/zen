@@ -922,6 +922,31 @@ impl<'a> GraphAnalyzer<'a> {
             if col.field.is_empty() {
                 continue;
             }
+            let (path, collect) = col.write_path();
+            if (collect && path.is_empty()) || path.contains("[]") {
+                let message = if path.is_empty() {
+                    "output field '[]' is missing a path before the collect marker".to_string()
+                } else {
+                    format!(
+                        "invalid write path '{}': `[]` may only appear at the end of an output field",
+                        col.field
+                    )
+                };
+                self.diagnostics.push(Diagnostic::error(
+                    DiagnosticCode::InvalidWritePath,
+                    DiagnosticLocation::expression(
+                        self.path.clone(),
+                        node.id.clone(),
+                        col.id.clone(),
+                        None,
+                    )
+                    .with_target(CursorTarget::DecisionTableHead {
+                        col: col.id.clone(),
+                    }),
+                    message,
+                ));
+                continue;
+            }
             let declared = self.declared_output_type(node, col);
             let mut cell_types: Vec<VariableType> = Vec::new();
             let mut has_null_cell = false;
@@ -990,17 +1015,18 @@ impl<'a> GraphAnalyzer<'a> {
             let mut merged = match &declared {
                 Some(expected) => expected.shallow_clone(),
                 None => {
-                    let Some(merged) = cell_types
+                    let merged = cell_types
                         .iter()
                         .map(VariableType::shallow_clone)
-                        .reduce(|acc, t| acc.merge(&t))
-                    else {
-                        continue;
-                    };
-                    merged
+                        .reduce(|acc, t| acc.merge(&t));
+                    match (merged, collect) {
+                        (Some(merged), _) => merged,
+                        (None, true) => VariableType::Any,
+                        (None, false) => continue,
+                    }
                 }
             };
-            if has_empty_cell || (has_null_cell && declared.is_some()) {
+            if !collect && (has_empty_cell || (has_null_cell && declared.is_some())) {
                 merged = super::wrap_optional(merged);
             }
             if declared.is_none()
@@ -1030,7 +1056,10 @@ impl<'a> GraphAnalyzer<'a> {
                     ),
                 ));
             }
-            output.insert_at_path(&col.field, &merged, true);
+            if collect {
+                merged = merged.array();
+            }
+            output.insert_at_path(path, &merged, true);
         }
 
         match content.hit_policy {

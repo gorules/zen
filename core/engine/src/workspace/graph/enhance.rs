@@ -235,6 +235,8 @@ fn walk_graph(
                     TransformExecutionMode::Loop
                 );
                 let collect = matches!(content.hit_policy, DecisionTableHitPolicy::Collect);
+                let column_collect =
+                    !collect && content.outputs.iter().any(|output| output.write_path().1);
                 let iterations = trace_entries(node_trace.trace_data.as_ref(), loop_mode);
                 let reads = state.db.node_global_reads(node, &paths, None);
                 let environment_root = state.dt_environment(content, node_trace, trace);
@@ -243,7 +245,7 @@ fn walk_graph(
                     None => node_trace.output.clone(),
                 };
                 for (index, entry) in iterations.iter().enumerate() {
-                    let row_traces: Vec<Variable> = if collect {
+                    let row_traces: Vec<Variable> = if collect || column_collect {
                         entry
                             .as_array()
                             .map(|rows| rows.borrow().iter().cloned().collect())
@@ -273,25 +275,63 @@ fn walk_graph(
                             };
                             let mut evaluation: HashMap<Arc<str>, Variable> = HashMap::new();
                             for column in content.outputs.iter() {
-                                if let Some(value) = row.dot(column.field.as_ref()) {
-                                    evaluation.insert(
-                                        output_prefixed(&paths, &column.field),
-                                        value.deep_clone(),
-                                    );
+                                let (path, _) = column.write_path();
+                                if let Some(value) = row.dot(path) {
+                                    evaluation
+                                        .insert(output_prefixed(&paths, path), value.deep_clone());
                                 }
                             }
                             if !evaluation.is_empty() {
                                 evaluations.push(evaluation);
                             }
                         }
+                    } else if column_collect {
+                        let mut collect_positions: HashMap<Arc<str>, usize> = HashMap::new();
+                        for (position, row_idx) in matched_rows.iter().enumerate() {
+                            let rule = content.rules.get(*row_idx as usize);
+                            let mut evaluation: HashMap<Arc<str>, Variable> = HashMap::new();
+                            for column in content.outputs.iter() {
+                                let (path, is_collect) = column.write_path();
+                                if path.is_empty() {
+                                    continue;
+                                }
+                                let cell_filled = rule.is_some_and(|r| {
+                                    r.get(&column.id).is_some_and(|c| !c.is_empty())
+                                });
+                                if !cell_filled {
+                                    continue;
+                                }
+                                if is_collect {
+                                    let counter =
+                                        collect_positions.entry(column.id.clone()).or_default();
+                                    let value = iter_result
+                                        .dot(path)
+                                        .and_then(|values| element_at(&values, *counter));
+                                    *counter += 1;
+                                    if let Some(value) = value {
+                                        evaluation.insert(
+                                            output_prefixed(&paths, path),
+                                            value.deep_clone(),
+                                        );
+                                    }
+                                } else if position == 0 {
+                                    if let Some(value) = iter_result.dot(path) {
+                                        evaluation.insert(
+                                            output_prefixed(&paths, path),
+                                            value.deep_clone(),
+                                        );
+                                    }
+                                }
+                            }
+                            evaluations.push(evaluation);
+                        }
                     } else {
                         let mut evaluation: HashMap<Arc<str>, Variable> = HashMap::new();
                         for column in content.outputs.iter() {
-                            if let Some(value) = iter_result.dot(column.field.as_ref()) {
-                                evaluation.insert(
-                                    output_prefixed(&paths, &column.field),
-                                    value.deep_clone(),
-                                );
+                            let (path, _) = column.write_path();
+                            if let Some(value) = iter_result.dot(path) {
+                                evaluation
+                                    .insert(output_prefixed(&paths, path), value.deep_clone());
                             }
                         }
                         evaluations.push(evaluation);

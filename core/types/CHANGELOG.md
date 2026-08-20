@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.0.0](https://github.com/gorules/zen/compare/zen-types-v1.0.0-beta.13...zen-types-v2.0.0) (2026-08-20)
+
+
+### Features
+
+* graph dt column collect ([#505](https://github.com/gorules/zen/issues/505)) ([c615013](https://github.com/gorules/zen/commit/c615013a2d02f871c4b7a7753c9bc8c826d45e78))
+
+
+### Bug Fixes
+
+* number out of range panics ([#506](https://github.com/gorules/zen/issues/506)) ([1372274](https://github.com/gorules/zen/commit/13722740a1c1af8b2c5b2bbf93536d46b95af812))
+
 ## [1.0.0-beta.13](https://github.com/gorules/zen/compare/zen-types-v1.0.0-beta.12...zen-types-v1.0.0-beta.13) (2026-08-18)
 
 

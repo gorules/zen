@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.0](https://github.com/gorules/zen/compare/python-v1.0.0-beta.14...python-v2.0.0) (2026-08-20)
+
+
+### Bug Fixes
+
+* number out of range panics ([#506](https://github.com/gorules/zen/issues/506)) ([1372274](https://github.com/gorules/zen/commit/13722740a1c1af8b2c5b2bbf93536d46b95af812))
+
 ## [1.0.0-beta.14](https://github.com/gorules/zen/compare/python-v1.0.0-beta.13...python-v1.0.0-beta.14) (2026-08-18)
 
 ## [1.0.0-beta.13](https://github.com/gorules/zen/compare/python-v1.0.0-beta.12...python-v1.0.0-beta.13) (2026-08-07)

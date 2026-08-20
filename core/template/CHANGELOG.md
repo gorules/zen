@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.0.0](https://github.com/gorules/zen/compare/zen-tmpl-v1.0.0-beta.13...zen-tmpl-v2.0.0) (2026-08-20)
+
+
+### Bug Fixes
+
+* panic hardening ([#509](https://github.com/gorules/zen/issues/509)) ([792e77a](https://github.com/gorules/zen/commit/792e77a82e531fc437b536b1e42b73a610f02ae0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * zen-expression bumped from 1.0.0-beta.13 to 2.0.0
+
 ## [1.0.0-beta.13](https://github.com/gorules/zen/compare/zen-tmpl-v1.0.0-beta.12...zen-tmpl-v1.0.0-beta.13) (2026-08-18)
 
 

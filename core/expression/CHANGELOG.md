@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.0.0](https://github.com/gorules/zen/compare/zen-expression-v1.0.0-beta.13...zen-expression-v2.0.0) (2026-08-20)
+
+
+### Bug Fixes
+
+* end of week boundary ([#508](https://github.com/gorules/zen/issues/508)) ([32f7fb8](https://github.com/gorules/zen/commit/32f7fb875c53f86129231a875bb14bd801df0bfc))
+* nested scopes and any cascade ([#513](https://github.com/gorules/zen/issues/513)) ([0b6c6a7](https://github.com/gorules/zen/commit/0b6c6a709af2d9be302bee397e1c1b3f9775fd6c))
+* number out of range panics ([#506](https://github.com/gorules/zen/issues/506)) ([1372274](https://github.com/gorules/zen/commit/13722740a1c1af8b2c5b2bbf93536d46b95af812))
+* panic hardening ([#509](https://github.com/gorules/zen/issues/509)) ([792e77a](https://github.com/gorules/zen/commit/792e77a82e531fc437b536b1e42b73a610f02ae0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * zen-macros bumped from 1.0.0-beta.13 to 2.0.0
+    * zen-types bumped from 1.0.0-beta.13 to 2.0.0
+
 ## [1.0.0-beta.13](https://github.com/gorules/zen/compare/zen-expression-v1.0.0-beta.12...zen-expression-v1.0.0-beta.13) (2026-08-18)
 
 

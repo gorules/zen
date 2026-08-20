@@ -8,26 +8,24 @@ use crate::workspace::types::{CursorTarget, DiagnosticCode};
 pub(super) struct TypeCheck;
 
 impl TypeCheck {
-    pub(super) fn check_no_any(
+    pub(super) fn report_any(
         cx: &mut AnalysisContext,
         ty: &VariableType,
         expression_id: Option<Arc<str>>,
         target: Option<CursorTarget>,
         label: &str,
     ) {
-        if Self::type_contains_any(ty) {
-            let span = target.as_ref().map(|_| (0, label.chars().count() as u32));
-            cx.error_with_target(
-                DiagnosticCode::TypeMismatch,
-                expression_id,
-                span,
-                target,
-                format!("'{label}' resolves to `{ty}` which is `any` — give it a concrete type"),
-            );
-        }
+        let span = target.as_ref().map(|_| (0, label.chars().count() as u32));
+        cx.error_with_target(
+            DiagnosticCode::TypeMismatch,
+            expression_id,
+            span,
+            target,
+            format!("'{label}' resolves to `{ty}` which is `any` — give it a concrete type"),
+        );
     }
 
-    fn type_contains_any(ty: &VariableType) -> bool {
+    pub(super) fn type_contains_any(ty: &VariableType) -> bool {
         let mut visited: ahash::HashSet<*const ()> = ahash::HashSet::default();
         Self::contains_any_rec(ty, &mut visited)
     }

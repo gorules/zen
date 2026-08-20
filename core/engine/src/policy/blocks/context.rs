@@ -9,6 +9,7 @@ use zen_expression::{Isolate, IsolateError};
 use super::property_read::ReadFlattener;
 use super::type_check::TypeCheck;
 use crate::policy::ir::PropertyPath;
+use crate::policy::queries::dependency::PathPrefix;
 use crate::policy::queries::scope::VariableTypeScope;
 use crate::workspace::db::AnalysisPass;
 use crate::workspace::types::{
@@ -57,6 +58,7 @@ pub struct ExecutionError {
 }
 
 pub type SharedDictionaryTypes = Rc<ahash::HashMap<Arc<str>, VariableType>>;
+pub type SharedPoisonedPaths = Rc<RefCell<ahash::HashSet<Arc<str>>>>;
 
 pub struct AnalysisContext {
     scope: VariableType,
@@ -68,6 +70,7 @@ pub struct AnalysisContext {
     pass: AnalysisPass,
     intellisense: SharedIntelliSense,
     dictionary_types: SharedDictionaryTypes,
+    poisoned_paths: SharedPoisonedPaths,
 }
 
 impl AnalysisContext {
@@ -78,6 +81,7 @@ impl AnalysisContext {
         intellisense: SharedIntelliSense,
         pass: AnalysisPass,
         dictionary_types: SharedDictionaryTypes,
+        poisoned_paths: SharedPoisonedPaths,
     ) -> Self {
         Self {
             scope,
@@ -89,6 +93,7 @@ impl AnalysisContext {
             pass,
             intellisense,
             dictionary_types,
+            poisoned_paths,
         }
     }
 
@@ -184,7 +189,14 @@ impl AnalysisContext {
         target: Option<CursorTarget>,
         instance_source: Option<InstanceSource>,
     ) {
-        TypeCheck::check_no_any(self, &resolved_type, expression_id, target, &path);
+        if matches!(self.pass, AnalysisPass::Enriched)
+            && TypeCheck::type_contains_any(&resolved_type)
+        {
+            if !self.any_is_consequence(&expression_id) {
+                TypeCheck::report_any(self, &resolved_type, expression_id, target, &path);
+            }
+            self.poisoned_paths.borrow_mut().insert(path.clone());
+        }
         if matches!(self.pass, AnalysisPass::Enriched) {
             self.scope.insert_at_path(&path, &resolved_type, true);
         }
@@ -193,6 +205,29 @@ impl AnalysisContext {
             resolved_type,
             instance_source,
         });
+    }
+
+    fn any_is_consequence(&self, expression_id: &Option<Arc<str>>) -> bool {
+        let prior_error = self.diagnostics.iter().any(|d| {
+            d.severity == Severity::Error
+                && match expression_id {
+                    Some(id) => d.location.expression_id.as_deref() == Some(id.as_ref()),
+                    None => true,
+                }
+        });
+        if prior_error {
+            return true;
+        }
+
+        let poisoned = self.poisoned_paths.borrow();
+        if poisoned.is_empty() {
+            return false;
+        }
+        self.reads.iter().any(|read| {
+            poisoned
+                .iter()
+                .any(|p| PathPrefix::extends(p, &read.path) || PathPrefix::extends(&read.path, p))
+        })
     }
 
     pub(super) fn flow_source(&mut self, source: &Arc<str>) -> Option<InstanceSource> {

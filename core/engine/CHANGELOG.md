@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.0.0](https://github.com/gorules/zen/compare/zen-engine-v1.0.0-beta.13...zen-engine-v2.0.0) (2026-08-20)
+
+
+### Features
+
+* graph dt column collect ([#505](https://github.com/gorules/zen/issues/505)) ([c615013](https://github.com/gorules/zen/commit/c615013a2d02f871c4b7a7753c9bc8c826d45e78))
+
+
+### Bug Fixes
+
+* nested scopes and any cascade ([#513](https://github.com/gorules/zen/issues/513)) ([0b6c6a7](https://github.com/gorules/zen/commit/0b6c6a709af2d9be302bee397e1c1b3f9775fd6c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * zen-types bumped from 1.0.0-beta.13 to 2.0.0
+    * zen-expression bumped from 1.0.0-beta.13 to 2.0.0
+    * zen-tmpl bumped from 1.0.0-beta.13 to 2.0.0
+
 ## [1.0.0-beta.13](https://github.com/gorules/zen/compare/zen-engine-v1.0.0-beta.12...zen-engine-v1.0.0-beta.13) (2026-08-18)
 
 

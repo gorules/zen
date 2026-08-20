@@ -79,7 +79,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
 
     pub fn run(&mut self, root_scope: &Scope) -> VMResult<Variable> {
         let mut env = root_scope.clone();
-        let mut assigned_object: Option<Variable> = None;
+        let mut assigned_objects: Vec<Variable> = Vec::new();
         if self.ip != 0 {
             self.ip = 0;
         }
@@ -779,7 +779,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                     self.push(Variable::from_object(map));
                 }
                 Opcode::AssignedObjectBegin => {
-                    assigned_object = Some(Variable::empty_object());
+                    assigned_objects.push(Variable::empty_object());
                 }
                 Opcode::AssignedObjectStep => {
                     let value = self.pop()?;
@@ -790,7 +790,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                         });
                     };
 
-                    let Some(assigned_object) = &assigned_object else {
+                    let Some(assigned_object) = assigned_objects.last() else {
                         return Err(OpcodeErr {
                             opcode: "AssignedObjectStep".into(),
                             message: "Assigned object scope must be set".to_owned(),
@@ -824,7 +824,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                     assigned_object.dot_insert(key.as_ref(), value);
                 }
                 Opcode::AssignedObjectEnd { with_return } => {
-                    let Some(assigned_object) = assigned_object.take() else {
+                    let Some(assigned_object) = assigned_objects.pop() else {
                         return Err(OpcodeErr {
                             opcode: "AssignedObjectEnd".into(),
                             message: "Assigned object scope must be set".to_owned(),

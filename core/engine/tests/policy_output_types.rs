@@ -252,3 +252,46 @@ fn untyped_columns_keep_inferred_behavior() {
     assert!(cell.result.tokens[0].hint.is_none());
     assert!(cell.result.subject_options.is_none());
 }
+
+fn expression_block(id: &str, key: &str, value: &str) -> serde_json::Value {
+    json!({ "id": id, "type": "expression", "props": { "data": { "key": key, "value": value } } })
+}
+
+#[test]
+fn any_fallback_does_not_cascade_past_the_root_error() {
+    let ws = workspace_with(vec![
+        expression_block("e1", "frac", "map(123 as p, p * 2)"),
+        expression_block("e2", "l0", "map(frac as p, p)"),
+        expression_block("e3", "l1", "map(l0 as p, p)"),
+    ]);
+    let diagnostics = cell_diagnostics(&ws);
+
+    let cascade: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.contains("which is `any`"))
+        .collect();
+    assert!(cascade.is_empty(), "{cascade:?}");
+
+    let root: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.contains("iterable") && d.contains("Error"))
+        .collect();
+    assert_eq!(root.len(), 1, "{diagnostics:?}");
+}
+
+#[test]
+fn direct_any_write_is_reported_once_and_poisons_downstream() {
+    let ws = workspace_with(vec![
+        expression_block("e1", "bag", "[]"),
+        expression_block("e2", "copy", "bag"),
+        expression_block("e3", "twice", "map(copy as p, p)"),
+    ]);
+    let diagnostics = cell_diagnostics(&ws);
+
+    let any_errors: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.contains("which is `any`"))
+        .collect();
+    assert_eq!(any_errors.len(), 1, "{diagnostics:?}");
+    assert!(any_errors[0].contains("'bag'"), "{any_errors:?}");
+}

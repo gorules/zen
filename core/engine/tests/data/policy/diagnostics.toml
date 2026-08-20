@@ -156,11 +156,11 @@ policies = ["circular_import_a.json", "circular_import_b.json"]
 policy = "circular_import_a.json"
 error_codes = ["CircularImport"]
 
-# A single malformed expression must produce at most one diagnostic per
-# failure mode: the real error (`+` on incompatible types) plus the `any`
-# backstop — not duplicates from nested per-statement / post-merge checks.
+# A single malformed expression must produce exactly one diagnostic: the real
+# error (`+` on incompatible types). The `any` backstop is suppressed as a
+# consequence of the already-reported failure (error-recovery poisoning).
 [[test]]
-name = "malformed expression emits at most one any-error alongside the real error"
+name = "malformed expression emits only the real error, any-backstop suppressed"
 content = '''
 {
   "blocks": [
@@ -196,7 +196,7 @@ content = '''
 }
 '''
 error_codes = ["TypeMismatch"]
-error_count = 2
+error_count = 1
 
 # Disjoint nested assembly across blocks (no whole-object write of
 # `portfolio`) merges cleanly at runtime via `dot_insert`, so it is allowed.
@@ -450,7 +450,7 @@ content = '''
   ]
 }
 '''
-error_codes = ["TypeMismatch"]
+error_codes = ["InvalidExpression"]
 
 [[test]]
 name = "shared policy also clean"
@@ -1120,7 +1120,7 @@ policy = "mixed_scope.json"
 error_codes = ["MixedScope"]
 
 [[test]]
-name = "reading undefined property surfaces any and errors on write"
+name = "reading undefined property errors once, any-backstop suppressed"
 content = '''
 {
   "blocks": [
@@ -1155,7 +1155,8 @@ content = '''
   ]
 }
 '''
-error_codes = ["UndefinedVariable", "TypeMismatch"]
+error_codes = ["UndefinedVariable"]
+error_count = 1
 
 [[test]]
 name = "nullish coalesce on a non-nullable property is redundant"

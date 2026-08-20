@@ -8,7 +8,7 @@ use zen_expression::variable::VariableType;
 
 use crate::policy::blocks::{
     AnalysisContext, AnalysisSummary, Block, InstanceSource, PropertyRead, SharedDictionaryTypes,
-    SharedIntelliSense, WriteTarget,
+    SharedIntelliSense, SharedPoisonedPaths, WriteTarget,
 };
 use crate::policy::ir::{DataModelIr, ParsedPolicy, PropertyPath};
 use crate::policy::queries::path::{PathClassifier, PathRoot};
@@ -316,6 +316,7 @@ impl Snapshot {
         pass: AnalysisPass,
         intellisense: &SharedIntelliSense,
         dictionary_types: &SharedDictionaryTypes,
+        poisoned_paths: &SharedPoisonedPaths,
     ) -> AnalysisSummary {
         let mut ctx = AnalysisContext::new(
             rule_scope,
@@ -324,6 +325,7 @@ impl Snapshot {
             intellisense.clone(),
             pass,
             dictionary_types.clone(),
+            poisoned_paths.clone(),
         );
         rule.kind.analyze(&mut ctx);
         ctx.finish()
@@ -353,6 +355,7 @@ impl Snapshot {
             }
 
             let no_dictionaries: SharedDictionaryTypes = Rc::new(ahash::HashMap::default());
+            let no_poison: SharedPoisonedPaths = Default::default();
             let policy_shallow = cache.shallow_or_compute(path, p, || {
                 p.policy
                     .rules()
@@ -364,6 +367,7 @@ impl Snapshot {
                             AnalysisPass::Shallow,
                             intellisense,
                             &no_dictionaries,
+                            &no_poison,
                         );
                         RuleShallowAnalysis {
                             policy_path: path.clone(),
@@ -604,6 +608,7 @@ impl Snapshot {
         });
         schedule.extend(remaining.into_iter().map(|key| (key, false)));
 
+        let poisoned_paths: SharedPoisonedPaths = Default::default();
         for (key, splice) in schedule {
             let Some(rule) = rule_by_ref.get(&key) else {
                 continue;
@@ -616,6 +621,7 @@ impl Snapshot {
                 AnalysisPass::Enriched,
                 intellisense,
                 &dictionary_types,
+                &poisoned_paths,
             );
 
             if splice {

@@ -996,3 +996,29 @@ fn division_and_modulo_by_zero_return_null() {
     let modulo = isolate.run_standard("1 % 0").unwrap();
     assert_eq!(modulo, Variable::Null);
 }
+
+#[test]
+fn assigned_closure_with_inner_assignment_scopes_nest() {
+    let mut isolate = Isolate::new();
+    isolate.set_environment(json!({}).into());
+
+    let assigned = isolate
+        .run_standard("r = map([1,2,3] as x, (y = x * 2; y + 1)); r")
+        .unwrap();
+    assert_eq!(assigned, Variable::from(json!([3, 5, 7])));
+
+    let flat_mapped = isolate
+        .run_standard("r = flatMap([[1],[2,3]] as x, (y = x; y)); r")
+        .unwrap();
+    assert_eq!(flat_mapped, Variable::from(json!([1, 2, 3])));
+
+    let nested = isolate
+        .run_standard("r = map([1,2] as x, map([10,20] as z, (y = x * z; y))); r")
+        .unwrap();
+    assert_eq!(nested, Variable::from(json!([[10, 20], [20, 40]])));
+
+    let outer_after_inner = isolate
+        .run_standard("a = map([1] as x, (y = x; y)); b = a[0] + 1; b")
+        .unwrap();
+    assert_eq!(outer_after_inner, Variable::from(json!(2)));
+}

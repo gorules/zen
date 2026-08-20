@@ -1,322 +1,134 @@
-> [!WARNING]
-> **Breaking change** for Rust crate consumers: `arbitrary_precision` is no longer enabled by default in zen-engine, zen-expression, zen-types, and zen-tmpl. If you rely on arbitrary precision number handling, add `features = ["arbitrary_precision"]` to your dependency. Bindings (Node.js, Python, C, UniFFI) are unaffected — they opt in automatically.      
+# ZEN Engine
+
+**Business logic humans can read and machines can run.** One copy of your rules: the owner reads it, every system runs it.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![crates.io](https://img.shields.io/crates/v/zen-engine.svg)](https://crates.io/crates/zen-engine)
+[![npm](https://img.shields.io/npm/v/@gorules/zen-engine.svg)](https://www.npmjs.com/package/@gorules/zen-engine)
+[![PyPI](https://img.shields.io/pypi/v/zen-engine.svg)](https://pypi.org/project/zen-engine/)
 
-# Business Rules Engine
+<img width="1280" alt="GoRules ZEN Engine" src=".github/images/hero.png">
 
-ZEN Engine is a cross-platform, Open-Source Business Rules Engine (BRE). It is written in **Rust** and provides native
-bindings for **NodeJS**, **Python** and **Go**. ZEN Engine allows to load and
-execute [JSON Decision Model (JDM)](https://docs.gorules.io/reference/json-decision-model-jdm) from JSON files.
+ZEN Engine is a cross-platform, open-source Business Rules Engine (BRE) written in **Rust**, with native bindings for **Node.js**, **Python** and **Go**. Decisions evaluate in microseconds, run identically on every platform, and are stored as portable JSON. Loading the JSON is up to you: file system, database or service call.
 
-<img width="800" alt="Open-Source Rules Engine" src="https://gorules.io/images/jdm-editor.gif">
+Try it in the free [Online Editor](https://editor.gorules.io) with a built-in simulator, or embed the open-source React [JDM Editor](https://github.com/gorules/jdm-editor) in your own product.
 
-An open-source React editor is available on our [JDM Editor](https://github.com/gorules/jdm-editor) repo.
+## Rules that read like sentences
 
-## Usage
+Conditions are written the way the business says them, in the ZEN Expression Language. The developer view is one toggle away, and the two can never drift apart: there is only one source of truth, and this engine runs it.
 
-ZEN Engine is built as embeddable BRE for your **Rust**, **NodeJS**, **Python** or **Go** applications.
-It parses JDM from JSON content. It is up to you to obtain the JSON content, e.g. from file system, database or service
-call.
+<img width="1280" alt="Readable rules" src=".github/images/tables.png">
 
-### Supported Platforms
+## Rules as graphs, or as documents
 
-List of platforms where Zen Engine is natively available:
+Model a decision on a visual canvas of decision tables, switches, expressions, functions and reusable sub-decisions. Or write it as a policy document with prose, typed data models and tables. Both compile to the same engine and return the same answers.
 
-* **NodeJS** - [GitHub](https://github.com/gorules/zen/blob/master/bindings/nodejs/README.md) | [Documentation](https://gorules.io/docs/developers/bre/engines/nodejs) | [npmjs](https://www.npmjs.com/package/@gorules/zen-engine)
-* **Python** - [GitHub](https://github.com/gorules/zen/blob/master/bindings/python/README.md) | [Documentation](https://gorules.io/docs/developers/bre/engines/python) | [pypi](https://pypi.org/project/zen-engine/)
-* **Go** - [GitHub](https://github.com/gorules/zen-go) | [Documentation](https://gorules.io/docs/developers/bre/engines/go)
-* **Rust (Core)** - [GitHub](https://github.com/gorules/zen) | [Documentation](https://gorules.io/docs/developers/bre/engines/rust) | [crates.io](https://crates.io/crates/zen-engine)
+<img width="1280" alt="Graphs and documents" src=".github/images/graphs-docs.png">
 
-For a complete **Business Rules Management Systems (BRMS)** solution:
+To go deeper on the decision model and each node type, see the [JDM documentation](https://gorules.io/docs/rules-engine/json-decision-model) and the [ZEN Expression Language](https://gorules.io/docs/rules-engine/expression-language/) reference.
 
-* [Self-hosted BRMS](https://gorules.io)
-* [GoRules Cloud BRMS](https://gorules.io/signin/verify-email)
+## What's new in 2.0
+
+Version 2.0 is the first stable release of the new engine line:
+
+- **Policy documents**: model decisions as readable documents with typed data models, expressions, decision tables, match blocks and assertions. Policies compile to the same engine as graphs and return the same answers.
+- **Workspace analysis**: static type checking across policies and graphs. Type flow, exhaustiveness checking, write-conflict detection and precise diagnostics, all available before anything runs.
+- **Per-column collect**: decision table output columns can collect across all matching rows (`tags[]`) while the rest of the table stays first-match.
+- **Pre-compiled engine**: decisions are parsed and compiled once at load; evaluation is allocation-light and repeat-safe.
+- **Hardened runtime**: out-of-range numbers, arithmetic overflow and malformed inputs return errors or nulls instead of crashing the process.
+- **Unified bindings**: configurable loaders, batch evaluation and consistent error envelopes across Node.js, Python, Go and FFI consumers.
+
+> [!IMPORTANT]
+> **Migrating from 0.x (Rust crates):** `arbitrary_precision` is no longer enabled by default in zen-engine, zen-expression, zen-types and zen-tmpl. If you rely on arbitrary-precision number handling, add `features = ["arbitrary_precision"]` to your dependency. Bindings (Node.js, Python, C, UniFFI) are unaffected, they opt in automatically.
+
+## Quickstart
 
 ### Rust
 
 ```toml
 [dependencies]
-zen-engine = "0"
+zen-engine = "2"
 ```
 
 ```rust
 use serde_json::json;
-use zen_engine::DecisionEngine;
+use std::sync::Arc;
 use zen_engine::model::DecisionContent;
+use zen_engine::DecisionEngine;
 
 async fn evaluate() {
-    let decision_content: DecisionContent = serde_json::from_str(include_str!("jdm_graph.json")).unwrap();
+    let decision_content: DecisionContent =
+        serde_json::from_str(include_str!("jdm_graph.json")).unwrap();
     let engine = DecisionEngine::default();
-    let decision = engine.create_decision(decision_content.into());
+    let decision = engine.create_decision(Arc::new(decision_content)).unwrap();
 
-    let result = decision.evaluate(&json!({ "input": 12 })).await;
+    let result = decision.evaluate(json!({ "input": 12 }).into()).await;
 }
 ```
 
-For more advanced use cases visit [Rust Docs](https://gorules.io/docs/developers/bre/engines/rust).
+### Node.js
 
-## JSON Decision Model (JDM)
-
-GoRules JDM (JSON Decision Model) is a modeling framework designed to streamline the representation and implementation
-of decision models.
-
-#### Understanding GoRules JDM
-
-At its core, GoRules JDM revolves around the concept of decision models as interconnected graphs stored in JSON format.
-These graphs capture the intricate relationships between various decision points, conditions, and outcomes in a GoRules
-Zen-Engine.
-
-Graphs are made by linking nodes with edges, which act like pathways for moving information from one node to another,
-usually from the left to the right.
-
-The Input node serves as an entry for all data relevant to the context, while the Output nodes produce the result of
-decision-making process. The progression of data follows a path from the Input Node to the Output Node, traversing all
-interconnected nodes in between. As the data flows through this network, it undergoes evaluation at each node, and
-connections determine where the data is passed along the graph.
-
-To see JDM Graph in action you can use [Free Online Editor](https://editor.gorules.io) with built in Simulator.
-
-There are 5 main node types in addition to a graph Input Node (Request) and Output Node (Response):
-
-* Decision Table Node
-* Switch Node
-* Function Node
-* Expression Node
-* Decision Node
-
-### Decision Table Node
-
-#### Overview
-
-Tables provide a structured representation of decision-making processes, allowing developers and business users to
-express complex rules in a clear and concise manner.
-
-<img width="960" alt="Decision Table" src="https://gorules.io/images/decision-table.png">
-
-#### Structure
-
-At the core of the Decision Table is its schema, defining the structure with inputs and outputs. Inputs encompass
-business-friendly expressions using the ZEN Expression Language, accommodating a range of conditions such as equality,
-numeric comparisons, boolean values, date time functions, array functions and more. The schema's outputs dictate the
-form of results generated by the Decision Table.
-Inputs and outputs are expressed through a user-friendly interface, often resembling a spreadsheet. This facilitates
-easy modification and addition of rules, enabling business users to contribute to decision logic without delving into
-intricate code.
-
-#### Evaluation Process
-
-Decision Tables are evaluated row by row, from top to bottom, adhering to a specified hit policy.
-Single row is evaluated via Inputs columns, from left to right. Each input column represents `AND` operator. If cell is
-empty that column is evaluated **truthfully**, independently of the value.
-
-If a single cell within a row fails (due to error, or otherwise), the row is skipped.
-
-**HitPolicy**
-
-The hit policy determines the outcome calculation based on matching rules.
-
-The result of the evaluation is:
-
-* **an object** if the hit policy of the decision table is `first` and a rule matched. The structure is defined by the
-  output fields. Qualified field names with a dot (.) inside lead to nested objects.
-* **`null`/`undefined`** if no rule matched in `first` hit policy
-* **an array of objects** if the hit policy of the decision table is `collect` (one array item for each matching rule)
-  or empty array if no rules match
-
-#### Inputs
-
-In the assessment of rules or rows, input columns embody the `AND` operator. The values typically consist of (qualified)
-names, such as `customer.country` or `customer.age`.
-
-There are two types of evaluation of inputs, `Unary` and `Expression`.
-
-**Unary Evaluation**
-
-Unary evaluation is usually used when we would like to compare single fields from incoming context separately, for
-example `customer.country` and `cart.total` . It is activated when a column has `field` defined in its schema.
-
-***Example***
-
-For the input:
-
-```json
-{
-  "customer": {
-    "country": "US"
-  },
-  "cart": {
-    "total": 1500
-  }
-}
+```bash
+npm i @gorules/zen-engine
 ```
 
-<img width="960" alt="Decision Table Unary Test" src="https://gorules.io/images/decision-table.png">
+```typescript
+import { ZenEngine } from '@gorules/zen-engine';
+import fs from 'fs/promises';
 
-This evaluation translates to
+const content = await fs.readFile('./jdm_graph.json');
+const engine = new ZenEngine();
 
-```
-IF customer.country == 'US' AND cart.total > 1000 THEN {"fees": {"percent": 2}}
-ELSE IF customer.country == 'US' THEN {"fees": {"flat": 30}}
-ELSE IF customer.country == 'CA' OR customer.country == 'MX' THEN {"fees": {"flat": 50}}
-ELSE {"fees": {"flat": 150}}
-```
-
-List shows basic example of the unary tests in the Input Fields:
-
-| Input entry | Input Expression                               |
-|-------------|------------------------------------------------|
-| "A"         | the field equals "A"                           |
-| "A", "B"    | the field is either "A" or "B"                 |
-| 36          | the numeric value equals 36                    |
-| < 36        | a value less than 36                           |
-| > 36        | a value greater than 36                        |
-| [20..39]    | a value between 20 and 39 (inclusive)          |
-| 20,39       | a value either 20 or 39                        |
-| <20, >39    | a value either less than 20 or greater than 39 |
-| true        | the boolean value true                         |
-| false       | the boolean value false                        |
-|             | any value, even null/undefined                 |
-| null        | the value null or undefined                    |
-
-Note: For the full list please
-visit [ZEN Expression Language](https://gorules.io/docs/rules-engine/expression-language/).
-
-**Expression Evaluation**
-
-Expression evaluation is used when we would like to create more complex evaluation logic inside single cell. It allows
-us to compare multiple fields from the incoming context inside same cell.
-
-It can be used by providing an empty `Selector (field)` inside column configuration.
-
-***Example***
-
-For the input:
-
-```json
-{
-  "transaction": {
-    "country": "US",
-    "createdAt": "2023-11-20T19:00:25Z",
-    "amount": 10000
-  }
-}
+const decision = engine.createDecision(content);
+const result = await decision.evaluate({ input: 15 });
 ```
 
-<img width="960" alt="Decision Table Expression" src="https://gorules.io/images/decision-table-expression.png">
+### Python
 
-```
-IF time(transaction.createdAt) > time("17:00:00") AND transaction.amount > 1000 THEN {"status": "reject"}
-ELSE {"status": "approve"}
-```
-
-Note: For the full list please
-visit [ZEN Expression Language](https://gorules.io/docs/rules-engine/expression-language/).
-
-**Outputs**
-
-Output columns serve as the blueprint for the data that the decision table will generate when the conditions are met
-during evaluation.
-
-When a row in the decision table satisfies its specified conditions, the output columns determine the nature and
-structure of the information that will be returned. Each output column represents a distinct field, and the collective
-set of these fields forms the output or result associated with the validated row. This mechanism allows decision tables
-to precisely define and control the data output.
-
-***Example***
-
-<img width="860" alt="Decision Table Output" src="https://gorules.io/images/decision-table-output.png">
-
-And the result would be:
-
-```json
-{
-  "flatProperty": "A",
-  "output": {
-    "nested": {
-      "property": "B"
-    },
-    "property": 36
-  }
-}
+```bash
+pip install zen-engine
 ```
 
-### Switch Node (NEW)
+```python
+import zen
 
-The Switch node in GoRules JDM introduces a dynamic branching mechanism to decision models, enabling the graph to
-diverge based on conditions.
+with open("./jdm_graph.json", "r") as f:
+    content = f.read()
 
-Conditions are written in a Zen Expression Language.
+engine = zen.ZenEngine()
 
-By incorporating the Switch node, decision models become more flexible and context-aware. This capability is
-particularly valuable in scenarios where diverse decision logic is required based on varying inputs. The Switch node
-efficiently manages branching within the graph, enhancing the overall complexity and realism of decision models in
-GoRules JDM, making it a pivotal component for crafting intelligent and adaptive systems.
-
-The Switch node preserves the incoming data without modification; it forwards the entire context to the output branch(
-es).
-
-<img width="960" alt="Switch / Branching" src="https://gorules.io/images/decision-graph.png">
-
-#### HitPolicy
-
-There are two HitPolicy options for the switch node, `first` and `collect`.
-
-In the context of a first hit policy, the graph branches to the initial matching condition, analogous to the behavior
-observed in a table. Conversely, under a collect hit policy, the graph extends to all branches where conditions hold
-true, allowing branching to multiple paths.
-
-Note: If there are multiple edges from the same condition, there is no guaranteed order of execution.
-
-*Available from:*
-
-* Python 0.16.0
-* NodeJS 0.13.0
-* Rust 0.16.0
-* Go 0.1.0
-
-### Functions Node
-
-Function nodes are JavaScript snippets that allow for quick and easy parsing, re-mapping or otherwise modifying the data
-using JavaScript. Inputs of the node are provided as function's arguments. Functions are executed on top of QuickJS
-Engine that is bundled into the ZEN Engine.
-
-Function timeout is set to a 50ms.
-
-```js
-const handler = (input, {dayjs, Big}) => {
-    return {
-        ...input,
-        someField: 'hello'
-    };
-};
+decision = engine.create_decision(content)
+result = decision.evaluate({"input": 15})
 ```
 
-There are two built in libraries:
+Full guides, including loaders for multi-decision graphs and batch evaluation:
 
-* [dayjs](https://www.npmjs.com/package/dayjs) - for Date Manipulation
-* [big.js](https://www.npmjs.com/package/big.js) - for arbitrary-precision decimal arithmetic.
+* **Node.js** - [GitHub](https://github.com/gorules/zen/blob/master/bindings/nodejs/README.md) | [Documentation](https://gorules.io/docs/developers/bre/engines/nodejs) | [npmjs](https://www.npmjs.com/package/@gorules/zen-engine)
+* **Python** - [GitHub](https://github.com/gorules/zen/blob/master/bindings/python/README.md) | [Documentation](https://gorules.io/docs/developers/bre/engines/python) | [pypi](https://pypi.org/project/zen-engine/)
+* **Go** - [GitHub](https://github.com/gorules/zen-go) | [Documentation](https://gorules.io/docs/developers/bre/engines/go)
+* **Rust (Core)** - [GitHub](https://github.com/gorules/zen) | [Documentation](https://gorules.io/docs/developers/bre/engines/rust) | [crates.io](https://crates.io/crates/zen-engine)
 
-### Expression Node
+## The GoRules platform
 
-The Expression node serves as a tool for transforming input objects into alternative objects using the Zen Expression
-Language. When specifying the output properties, each property requires a separate row. These rows are defined by two
-fields:
+The engine is open at the core; [GoRules](https://gorules.io) is the platform around it. Managed cloud, self-hosted, or embedded with no network hop. SOC 2 Type II.
 
-- Key - qualified name of the output property
-- Value - value expressed through the Zen Expression Language
+### AI that builds rules, and stays reviewable
 
-Note: Any errors within the Expression node will bring the graph to a halt.
+An AI copilot and MCP server that edits rules, runs tests and explains decisions. It never deploys. Releases stay with your reviewers.
 
-<img width="960" alt="Decision Table" src="https://gorules.io/images/expression.png">
+<img width="1280" alt="GoRules AI" src=".github/images/ai.png">
 
-### Decision Node
+### Promote like a release, run like a binary
 
-The "Decision" node is designed to extend the capabilities of decision models. Its function is to invoke and reuse other
-decision models during execution.
+A release moves from testing to staging to production untouched. Approvals, instant rollback, and a paper trail for every change.
 
-By incorporating the "Decision" node, developers can modularize decision logic, promoting reusability and
-maintainability in complex systems.
+<img width="1280" alt="Governance" src=".github/images/governance.png">
+
+### Prove it before it ships
+
+Scenario suites run on every change, coverage is measured against decision paths, and every answer comes with a replayable trace.
+
+<img width="1280" alt="Testing" src=".github/images/tests.png">
 
 ## Support matrix
 
@@ -332,11 +144,8 @@ maintainability in complex systems.
 
 ## Contribution
 
-JDM standard is growing and we need to keep tight control over its development and roadmap as there are number of
-companies that are using GoRules Zen-Engine and GoRules BRMS.
-For this reason we can't accept any code contributions at this moment, apart from help with documentation and additional
-tests.
+The JDM standard is growing and we need to keep tight control over its development and roadmap, as a number of companies use GoRules ZEN Engine and GoRules BRMS. For this reason we can't accept code contributions at this moment, apart from help with documentation and additional tests.
 
 ## License
 
-[MIT License]()
+[MIT License](https://opensource.org/licenses/MIT)

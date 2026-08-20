@@ -5,9 +5,7 @@
   "tag-separator": "-",
   "pull-request-title-pattern": "chore(release): publish${component}",
   "group-pull-request-title-pattern": "chore(release): publish${component}",
-  "prerelease": true,
-  "prerelease-type": "beta",
-  "versioning": "prerelease",
+  "release-as": "2.0.0",
   "changelog-sections": [
     { "type": "feat", "section": "Features" },
     { "type": "fix", "section": "Bug Fixes" },

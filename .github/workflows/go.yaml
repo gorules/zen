@@ -4,6 +4,7 @@ env:
   MACOSX_DEPLOYMENT_TARGET: '10.13'
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - 'bindings/c/**'
@@ -30,8 +31,8 @@ jobs:
             target: 'x86_64-unknown-linux-gnu'
           - host: ubuntu-latest
             target: 'aarch64-unknown-linux-gnu'
-          - host: windows-latest
-            target: 'x86_64-pc-windows-msvc'
+          - host: ubuntu-latest
+            target: 'x86_64-pc-windows-gnu'
 
     name: ${{ matrix.settings.target }}
     runs-on: ${{ matrix.settings.host }}
@@ -56,9 +57,13 @@ jobs:
           sccache-role-arn: ${{ secrets.SCCACHE_AWS_ROLE_ARN }}
 
       - name: Build (zig, linux)
-        if: ${{ matrix.settings.host == 'ubuntu-latest' }}
+        if: ${{ matrix.settings.host == 'ubuntu-latest' && contains(matrix.settings.target, 'linux') }}
         working-directory: bindings/c
         run: cargo zigbuild --release --all-features --target ${{ matrix.settings.target }}.${{ env.GLIBC_VERSION }} --locked
+      - name: Build (zig, windows)
+        if: ${{ contains(matrix.settings.target, 'windows') }}
+        working-directory: bindings/c
+        run: cargo zigbuild --release --all-features --target ${{ matrix.settings.target }} --locked
       - name: Build (native)
         if: ${{ matrix.settings.host != 'ubuntu-latest' }}
         uses: marcopolo/cargo@master
@@ -68,27 +73,13 @@ jobs:
           command: build
 
       - name: List folder
-        if: ${{ matrix.settings.target != 'x86_64-pc-windows-msvc' }}
         run: ls -lh ../../target/${{ matrix.settings.target }}/release
-
-      - name: List folder Windows
-        if: ${{ matrix.settings.target == 'x86_64-pc-windows-msvc' }}
-        run: dir ..\..\target\${{ matrix.settings.target }}\release
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
-        if: ${{ matrix.settings.target != 'x86_64-pc-windows-msvc' }}
         with:
           name: ${{ matrix.settings.target }}
           path: target/${{ matrix.settings.target }}/release/libzen_ffi.a
-          if-no-files-found: error
-
-      - name: Upload artifact Windows
-        uses: actions/upload-artifact@v4
-        if: ${{ matrix.settings.target == 'x86_64-pc-windows-msvc' }}
-        with:
-          name: ${{ matrix.settings.target }}
-          path: target/${{ matrix.settings.target }}/release/zen_ffi.lib
           if-no-files-found: error
   copy-common:
     name: Upload common file
@@ -106,7 +97,7 @@ jobs:
     name: Release
     runs-on: ubuntu-latest
     environment: release
-    if: "github.ref_type == 'tag'"
+    if: "github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'"
     needs:
       - build
       - copy-common
@@ -128,7 +119,8 @@ jobs:
           mv artifacts/x86_64-apple-darwin/libzen_ffi.a deps/darwin_amd64/
           mv artifacts/aarch64-unknown-linux-gnu/libzen_ffi.a deps/linux_arm64/
           mv artifacts/x86_64-unknown-linux-gnu/libzen_ffi.a deps/linux_amd64/
-          mv artifacts/x86_64-pc-windows-msvc/zen_ffi.lib deps/windows_amd64/libzen_ffi.lib
+          mv artifacts/x86_64-pc-windows-gnu/libzen_ffi.a deps/windows_amd64/libzen_ffi.a
+          rm -f deps/windows_amd64/libzen_ffi.lib
           mv artifacts/common/zen_engine.h zen_engine.h
           rm -rf artifacts
 

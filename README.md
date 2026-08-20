@@ -9,7 +9,7 @@
 
 <img width="1280" alt="GoRules ZEN Engine" src=".github/images/hero.png">
 
-ZEN Engine is a cross-platform, open-source Business Rules Engine (BRE) written in **Rust**, with native bindings for **Node.js**, **Python** and **Go**. Decisions evaluate in microseconds, run identically on every platform, and are stored as portable JSON. Loading the JSON is up to you: file system, database or service call.
+ZEN Engine is a cross-platform, open-source Business Rules Engine (BRE) written in **Rust**, with native bindings for **Node.js**, **Python**, **Go**, **Java**, **Kotlin** and **.NET**, plus iOS and Android packages. Decisions evaluate in microseconds, run identically on every platform, and are stored as portable JSON. Loading the JSON is up to you: file system, database or service call.
 
 Try it in the free [Online Editor](https://editor.gorules.io) with a built-in simulator, or embed the open-source React [JDM Editor](https://github.com/gorules/jdm-editor) in your own product.
 
@@ -106,6 +106,8 @@ Full guides, including loaders for multi-decision graphs and batch evaluation:
 * **Node.js** - [GitHub](https://github.com/gorules/zen/blob/master/bindings/nodejs/README.md) | [Documentation](https://gorules.io/docs/developers/bre/engines/nodejs) | [npmjs](https://www.npmjs.com/package/@gorules/zen-engine)
 * **Python** - [GitHub](https://github.com/gorules/zen/blob/master/bindings/python/README.md) | [Documentation](https://gorules.io/docs/developers/bre/engines/python) | [pypi](https://pypi.org/project/zen-engine/)
 * **Go** - [GitHub](https://github.com/gorules/zen-go) | [Documentation](https://gorules.io/docs/developers/bre/engines/go)
+* **Java / Kotlin** - [GitHub](https://github.com/gorules/zen/blob/master/bindings/uniffi) | [Maven Central](https://mvnrepository.com/artifact/io.gorules/zen-engine)
+* **.NET** - [GitHub](https://github.com/gorules/zen/blob/master/bindings/uniffi) | [NuGet](https://www.nuget.org/packages/GoRules.ZenEngine)
 * **Rust (Core)** - [GitHub](https://github.com/gorules/zen) | [Documentation](https://gorules.io/docs/developers/bre/engines/rust) | [crates.io](https://crates.io/crates/zen-engine)
 
 ## The GoRules platform
@@ -116,31 +118,35 @@ The engine is open at the core; [GoRules](https://gorules.io) is the platform ar
 
 An AI copilot and MCP server that edits rules, runs tests and explains decisions. It never deploys. Releases stay with your reviewers.
 
-<img width="1280" alt="GoRules AI" src=".github/images/ai.png">
+<img width="800" alt="GoRules AI" src=".github/images/ai.png">
 
 ### Promote like a release, run like a binary
 
 A release moves from testing to staging to production untouched. Approvals, instant rollback, and a paper trail for every change.
 
-<img width="1280" alt="Governance" src=".github/images/governance.png">
+<img width="800" alt="Governance" src=".github/images/governance.png">
 
 ### Prove it before it ships
 
 Scenario suites run on every change, coverage is measured against decision paths, and every answer comes with a replayable trace.
 
-<img width="1280" alt="Testing" src=".github/images/tests.png">
+<img width="800" alt="Testing" src=".github/images/tests.png">
 
 ## Support matrix
 
-| Arch            | Rust               | NodeJS             | Python             | Go                 |
-|:----------------|:-------------------|:-------------------|:-------------------|:-------------------|
-| linux-x64-gnu   | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
-| linux-arm64-gnu | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
-| darwin-x64      | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
-| darwin-arm64    | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
-| win32-x64-msvc  | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
-| linux-x64-musl  | :x:                | :heavy_check_mark: | :x:                | :x:                |
-| linux-arm64-musl| :x:                | :heavy_check_mark: | :x:                | :x:                |
+| Arch             | Rust               | Node.js            | Python             | Go                 | Java / Kotlin      | .NET               |
+|:-----------------|:-------------------|:-------------------|:-------------------|:-------------------|:-------------------|:-------------------|
+| linux-x64-gnu    | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
+| linux-arm64-gnu  | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
+| darwin-x64       | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
+| darwin-arm64     | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
+| win32-x64-msvc   | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
+| linux-x64-musl   | :heavy_check_mark: | :heavy_check_mark: | :x:                | :x:                | :x:                | :x:                |
+| linux-arm64-musl | :heavy_check_mark: | :heavy_check_mark: | :x:                | :x:                | :x:                | :x:                |
+| linux-s390x      | :heavy_check_mark: | :x:                | :x:                | :x:                | :heavy_check_mark: | :x:                |
+| wasm32 (WASI)    | :heavy_check_mark: | :heavy_check_mark: | :x:                | :x:                | :x:                | :x:                |
+
+Mobile: **Swift (iOS XCFramework)** and **Android (AAR)** packages are published from the same core via UniFFI.
 
 ## Contribution
 

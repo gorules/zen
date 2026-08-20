@@ -1202,7 +1202,7 @@ dependencies = [
 
 [[package]]
 name = "expression_repl"
-version = "1.0.1-beta.13"
+version = "2.0.0"
 dependencies = [
  "colored",
  "rustyline",

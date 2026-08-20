@@ -129,7 +129,8 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                                 message: "Failed to convert to usize".into(),
                             })?;
 
-                            if let Some(slice) = str.get(index..index + 1) {
+                            let slice = index.checked_add(1).and_then(|end| str.get(index..end));
+                            if let Some(slice) = slice {
                                 self.push(String((slice).into()));
                             } else {
                                 self.push(Null)

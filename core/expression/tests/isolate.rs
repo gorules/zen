@@ -917,12 +917,19 @@ mod test {
 
     #[test]
     fn test_standard_csv() {
+        // standard.csv contains date expressions, and the local timezone is resolved once per
+        // process. Whichever date-touching test runs first seeds that cache, so every one of
+        // them must pin the zone or the others inherit the host's.
+        env::set_var("TZ", "UTC");
+
         let csv_data = include_str!("data/standard.csv");
         test_csv_standard(csv_data);
     }
 
     #[test]
     fn test_dates_csv() {
+        // See test_standard_csv: the zone is cached process-wide on first use, so this must be
+        // set before any date expression is evaluated, in this test or a parallel one.
         env::set_var("TZ", "UTC");
 
         let csv_data = include_str!("data/date.csv");

@@ -166,7 +166,13 @@ publishing {
                 artifact(tasks["generateJavaSourcesJar"])
                 artifact(tasks["javadocJarJava"])
 
-                configurePom {
+                configurePom(
+                    pomName = "GoRules ZEN Engine for Java",
+                    pomDescription = "Open-source Business Rules Engine (BRE) for Java, powered by a native Rust core. " +
+                        "Evaluates JSON Decision Models (decision tables, graphs and policies) in microseconds. " +
+                        "Part of the GoRules platform (https://gorules.io). " +
+                        "Documentation: https://docs.gorules.io/developers/sdks/java",
+                ) {
                 }
             }
         }
@@ -179,7 +185,13 @@ publishing {
                 artifact(tasks["generateKotlinSourcesJar"])
                 artifact(tasks["javadocJarKotlin"])
 
-                configurePom {
+                configurePom(
+                    pomName = "GoRules ZEN Engine for Kotlin",
+                    pomDescription = "Open-source Business Rules Engine (BRE) for Kotlin, powered by a native Rust core. " +
+                        "Evaluates JSON Decision Models (decision tables, graphs and policies) in microseconds. " +
+                        "Part of the GoRules platform (https://gorules.io). " +
+                        "Documentation: https://docs.gorules.io/developers/sdks/kotlin",
+                ) {
                     dependency("net.java.dev.jna:jna:5.17.0")
                 }
             }
@@ -196,7 +208,13 @@ publishing {
                 artifact(tasks["generateKotlinAndroidSourcesJar"])
                 artifact(tasks["javadocJarKotlinAndroid"])
 
-                configurePom {
+                configurePom(
+                    pomName = "GoRules ZEN Engine for Android",
+                    pomDescription = "Open-source Business Rules Engine (BRE) for Android (AAR), powered by a native Rust core. " +
+                        "Evaluates JSON Decision Models (decision tables, graphs and policies) on-device, offline-capable. " +
+                        "Part of the GoRules platform (https://gorules.io). " +
+                        "Documentation: https://docs.gorules.io/developers/sdks/android",
+                ) {
                     dependency("net.java.dev.jna:jna:5.14.0", "aar")
                     dependency("androidx.core:core-ktx:1.12.0")
                     dependency("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
@@ -242,13 +260,17 @@ fun loadCargoVersion(): String {
         ?: throw GradleException("Version not found in Cargo.toml")
 }
 
-fun MavenPublication.configurePom(dependencyConfig: PomDependencyBuilder.() -> Unit) {
+fun MavenPublication.configurePom(
+    pomName: String = "GoRules ZEN Engine",
+    pomDescription: String = "GoRules ZEN Engine is a cross-platform, Open-Source Business Rules Engine (BRE)",
+    dependencyConfig: PomDependencyBuilder.() -> Unit,
+) {
     val depBuilder = PomDependencyBuilder()
     depBuilder.dependencyConfig()
 
     pom {
-        name = "GoRules ZEN Engine"
-        description = "GoRules ZEN Engine is a cross-platform, Open-Source Business Rules Engine (BRE)"
+        name = pomName
+        description = pomDescription
         url = "https://gorules.io"
 
         licenses {

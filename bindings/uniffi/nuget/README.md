@@ -1,6 +1,12 @@
-# GoRules.ZenEngine
+# .NET Rules Engine
 
-Open-source Business Rules Engine for .NET. Execute JSON Decision Models (JDM) with native performance powered by Rust.
+**Business logic humans can read and machines can run.** One copy of your rules: the owner reads it, every system runs it.
+
+<img width="1280" alt="GoRules ZEN Engine" src="https://raw.githubusercontent.com/gorules/zen/master/.github/images/hero.png">
+
+ZEN Engine is a cross-platform, open-source [Business Rules Engine (BRE)](https://gorules.io) written in **Rust** with native **.NET** bindings, alongside Node.js, Python, Go, Java and Kotlin. Decisions evaluate in microseconds, run identically on every platform, and are stored as portable JSON Decision Models (JDM). Loading the JSON is up to you: file system, database or service call.
+
+Try it in the free [Online Editor](https://editor.gorules.io) with a built-in simulator, or embed the open-source React [JDM Editor](https://github.com/gorules/jdm-editor) in your own product. Learn more about the [C# rules engine](https://gorules.io/open-source/csharp-rules-engine) on the GoRules website.
 
 ## Installation
 
@@ -103,8 +109,22 @@ class FileLoader : ZenDecisionLoaderCallback
 
 ```
 
+## Other platforms
+
+* **Node.js** - [GitHub](https://github.com/gorules/zen/tree/master/bindings/nodejs) | [Documentation](https://docs.gorules.io/developers/sdks/nodejs) | [npm](https://www.npmjs.com/package/@gorules/zen-engine)
+* **Python** - [GitHub](https://github.com/gorules/zen/tree/master/bindings/python) | [Documentation](https://docs.gorules.io/developers/sdks/python) | [PyPI](https://pypi.org/project/zen-engine/)
+* **Go** - [GitHub](https://github.com/gorules/zen-go) | [Documentation](https://docs.gorules.io/developers/sdks/go)
+* **Java / Kotlin** - [GitHub](https://github.com/gorules/zen/tree/master/bindings/uniffi) | [Documentation](https://docs.gorules.io/developers/sdks/java) | [Maven Central](https://mvnrepository.com/artifact/io.gorules/zen-engine)
+* **.NET** - [GitHub](https://github.com/gorules/zen/tree/master/bindings/uniffi) | [Documentation](https://docs.gorules.io/developers/sdks/csharp) | [NuGet](https://www.nuget.org/packages/GoRules.ZenEngine)
+* **Rust (Core)** - [GitHub](https://github.com/gorules/zen) | [Documentation](https://docs.gorules.io/developers/sdks/rust) | [crates.io](https://crates.io/crates/zen-engine)
+
 ## Links
 
+- [GoRules](https://gorules.io) - the platform around the open-source engine: managed cloud, self-hosted, or embedded. SOC 2 Type II.
+- [.NET SDK Documentation](https://docs.gorules.io/developers/sdks/csharp)
 - [GitHub Repository](https://github.com/gorules/zen)
-- [GoRules Documentation](https://docs.gorules.io/developers/sdks/csharp)
 - [JDM Editor](https://editor.gorules.io)
+
+## License
+
+[MIT License](https://opensource.org/licenses/MIT)

@@ -1,136 +1,104 @@
-# ZEN Engine
+# Rust Rules Engine
 
-ZEN Engine is business friendly Open-Source Business Rules Engine
-(BRE) to execute decision models according to the GoRules JSON
-Decision Model (JDM) standard. It is written in Rust and provides
-native bindings for NodeJS and Python. ZEN Engine allows to load
-and execute JSON Decision Model (JDM) from JSON files.
+**Business logic humans can read and machines can run.** One copy of your rules: the owner reads it, every system runs it.
 
-## Resources
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![crates.io](https://img.shields.io/crates/v/zen-engine.svg)](https://crates.io/crates/zen-engine)
 
-[Documentation](https://gorules.io/docs/)
+<img width="1280" alt="GoRules ZEN Engine" src="https://raw.githubusercontent.com/gorules/zen/master/.github/images/hero.png">
 
-[Online Rules Engine Editor](https://editor.gorules.io/)
+ZEN Engine is a cross-platform, open-source [Business Rules Engine (BRE)](https://gorules.io) written in **Rust**. This crate is the core: the same engine that powers the Node.js, Python, Go, Java, Kotlin and .NET bindings, available with zero FFI overhead. Decisions evaluate in microseconds and are stored as portable JSON. Loading the JSON is up to you: file system, database or service call.
+
+Try it in the free [Online Editor](https://editor.gorules.io) with a built-in simulator, or embed the open-source React [JDM Editor](https://github.com/gorules/jdm-editor) in your own product. Learn more about the [Rust rules engine](https://gorules.io/open-source/rust-rules-engine) on the GoRules website.
+
+## Rules that read like sentences
+
+Conditions are written the way the business says them, in the ZEN Expression Language. The developer view is one toggle away, and the two can never drift apart: there is only one source of truth, and this engine runs it.
+
+<img width="1280" alt="Readable rules" src="https://raw.githubusercontent.com/gorules/zen/master/.github/images/tables.png">
+
+## Rules as graphs, or as documents
+
+Model a decision on a visual canvas of decision tables, switches, expressions, functions and reusable sub-decisions. Or write it as a policy document with prose, typed data models and tables. Both compile to the same engine and return the same answers.
+
+<img width="1280" alt="Graphs and documents" src="https://raw.githubusercontent.com/gorules/zen/master/.github/images/graphs-docs.png">
+
+To go deeper, see the [Rust SDK documentation](https://docs.gorules.io/developers/sdks/rust), the [decision graph guide](https://docs.gorules.io/learn/authoring/decision-graphs) and the [ZEN Expression Language](https://docs.gorules.io/learn/zen-language/syntax) reference.
 
 ## Installation
 
-Add the following to your Cargo.toml file:
-
 ```toml
 [dependencies]
-zen-engine = "0"
+zen-engine = "2"
 ```
 
-## Usage
+> **Upgrading from 0.x?** `arbitrary_precision` is no longer a default feature. If you rely on arbitrary-precision number handling, enable it explicitly: `zen-engine = { version = "2", features = ["arbitrary_precision"] }`. Language bindings are unaffected.
 
-To execute a simple decision using a Noop (default) loader you can use the code below.
+## Quickstart
 
 ```rust
-use serde_json::json;
 use zen_engine::DecisionEngine;
 use zen_engine::model::DecisionContent;
+use serde_json::json;
 
-async fn evaluate() {
-    let decision_content: DecisionContent = serde_json::from_str(include_str!("jdm_graph.json")).unwrap();
+#[tokio::main]
+async fn main() {
+    let decision_content: DecisionContent =
+        serde_json::from_str(include_str!("./pricing-rules.json")).unwrap();
+
     let engine = DecisionEngine::default();
-    let decision = engine.create_decision(decision_content.into());
+    let decision = engine.create_decision(decision_content.into()).unwrap();
 
-    let result = decision.evaluate(&json!({ "input": 12 })).await;
+    let response = decision.evaluate(json!({
+        "customer": { "tier": "gold", "yearsActive": 3 },
+        "order": { "subtotal": 150, "items": 5 }
+    }).into()).await.unwrap();
+
+    println!("{}", response.result);
+    // => {"discount":0.15,"freeShipping":true}
 }
 ```
 
-Alternatively, you may create decision indirectly without constructing the engine utilising
-`Decision::from` function.
+### Loaders
 
-## Loaders
-
-For more advanced use cases where you want to load multiple decisions and utilise graphs you
-may use one of the following pre-made loaders:
-
-- FilesystemLoader - with a given path as a root it tries to load a decision based on relative path
-- MemoryLoader - works as a HashMap (key-value store)
-- ClosureLoader - allows for definition of simple async callback function which takes key as a parameter
-  and returns an `Arc<DecisionContent>` instance
-- NoopLoader - (default) fails to load decision, allows for usage of create_decision
-  (mostly existing for streamlining API across languages)
-
-### Filesystem loader
-
-Assuming that you have a folder with decision models (.json files) which is located under /app/decisions,
-you may use FilesystemLoader in the following way:
+Attach a loader to serve decisions by key. Build one declaratively from `LoaderConfig` (`Static`, `Filesystem`, `Zip`), or construct the loader structs in `zen_engine::loader` directly. With a configuration, decisions are pre-loaded and pre-compiled for faster evaluations.
 
 ```rust
-use serde_json::json;
 use zen_engine::DecisionEngine;
-use zen_engine::loader::{FilesystemLoader, FilesystemLoaderOptions};
+use zen_engine::loader::LoaderConfig;
+use serde_json::json;
 
-async fn evaluate() {
-    let engine = DecisionEngine::new(FilesystemLoader::new(FilesystemLoaderOptions {
-        root: "/app/decisions"
-    }));
+#[tokio::main]
+async fn main() {
+    let loader = LoaderConfig::Filesystem { path: "./rules".to_string() }
+        .into_loader()
+        .unwrap();
+    let engine = DecisionEngine::default().with_loader(loader);
 
-    let context = json!({ "customer": { "joinedAt": "2022-01-01" } });
-    // If you plan on using it multiple times, you may cache JDM for minor performance gains
-    // In case of bindings (in other languages, this increase is much greater)
-    {
-        let promotion_decision = engine.get_decision("commercial/promotion.json").await.unwrap();
-        let result = promotion_decision.evaluate(&context).await.unwrap();
-    }
-
-    // Or on demand
-    {
-        let result = engine.evaluate("commercial/promotion.json", &context).await.unwrap();
-    }
+    let response = engine.evaluate("pricing.json", json!({ "amount": 100 }).into()).await.unwrap();
+    println!("{}", response.result);
 }
 ```
 
-### Custom loader
+Custom backends (REST API, S3, database) implement the `DecisionLoader` trait. Full guides, including all loader variants and expression evaluation, are in the [Rust SDK documentation](https://docs.gorules.io/developers/sdks/rust).
 
-You may create a custom loader for zen engine by implementing `DecisionLoader` trait.
-Here's an example of how MemoryLoader has been implemented.
+## Other platforms
 
-```rust
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
-use zen_engine::loader::{DecisionLoader, LoaderError, LoaderResponse};
-use zen_engine::model::DecisionContent;
+* **Node.js** - [GitHub](https://github.com/gorules/zen/tree/master/bindings/nodejs) | [Documentation](https://docs.gorules.io/developers/sdks/nodejs) | [npm](https://www.npmjs.com/package/@gorules/zen-engine)
+* **Python** - [GitHub](https://github.com/gorules/zen/tree/master/bindings/python) | [Documentation](https://docs.gorules.io/developers/sdks/python) | [PyPI](https://pypi.org/project/zen-engine/)
+* **Go** - [GitHub](https://github.com/gorules/zen-go) | [Documentation](https://docs.gorules.io/developers/sdks/go)
+* **Java / Kotlin** - [GitHub](https://github.com/gorules/zen/tree/master/bindings/uniffi) | [Documentation](https://docs.gorules.io/developers/sdks/java) | [Maven Central](https://central.sonatype.com/artifact/io.gorules/zen-engine)
+* **.NET** - [GitHub](https://github.com/gorules/zen/tree/master/bindings/uniffi) | [Documentation](https://docs.gorules.io/developers/sdks/csharp) | [NuGet](https://www.nuget.org/packages/GoRules.ZenEngine)
+* **Swift (iOS)** - [GitHub](https://github.com/gorules/zen-ios) | [Documentation](https://docs.gorules.io/developers/sdks/ios)
 
-#[derive(Debug, Default)]
-pub struct MemoryLoader {
-    memory_refs: RwLock<HashMap<String, Arc<DecisionContent>>>,
-}
+## The GoRules platform
 
-impl MemoryLoader {
-    pub fn add<K, D>(&self, key: K, content: D)
-    where
-        K: Into<String>,
-        D: Into<DecisionContent>,
-    {
-        let mut mref = self.memory_refs.write().unwrap();
-        mref.insert(key.into(), Arc::new(content.into()));
-    }
-    pub fn get<K>(&self, key: K) -> Option<Arc<DecisionContent>>
-    where
-        K: AsRef<str>,
-    {
-        let mref = self.memory_refs.read().unwrap();
-        mref.get(key.as_ref()).map(|r| r.clone())
-    }
-    pub fn remove<K>(&self, key: K) -> bool
-    where
-        K: AsRef<str>,
-    {
-        let mut mref = self.memory_refs.write().unwrap();
-        mref.remove(key.as_ref()).is_some()
-    }
-}
+The engine is open at the core; [GoRules](https://gorules.io) is the platform around it. Managed cloud, self-hosted, or embedded with no network hop. SOC 2 Type II.
 
-impl DecisionLoader for MemoryLoader {
-    fn load<'a>(&'a self, key: &'a str) -> impl Future<Output=LoaderResponse> + 'a {
-        async move {
-            self.get(&key)
-                .ok_or_else(|| LoaderError::NotFound(key.to_string()).into())
-        }
-    }
-}
-```
+## Contribution
+
+The JDM standard is growing and we need to keep tight control over its development and roadmap, as a number of companies use GoRules ZEN Engine and GoRules BRMS. For this reason we can't accept code contributions at this moment, apart from help with documentation and additional tests.
+
+## License
+
+[MIT License](https://opensource.org/licenses/MIT)

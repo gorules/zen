@@ -1,5 +1,6 @@
 {
   "name": "@gorules/zen-engine",
+  "description": "Open-source Business Rules Engine for Node.js, powered by Rust",
   "version": "2.0.0",
   "main": "index.js",
   "browser": "browser.js",
@@ -56,7 +57,7 @@
     "node-rs"
   ],
   "author": "GoRules <hi@gorules.io> (https://gorules.io)",
-  "homepage": "https://github.com/gorules/zen",
+  "homepage": "https://gorules.io",
   "engines": {
     "node": ">= 14"
   },
@@ -94,7 +95,7 @@
     "watch": "cargo watch --ignore '{index.js,index.d.ts}' -- npm run build:debug",
     "test": "cross-env __ZEN_MOCK_UTC_TIME=2025-08-19T16:55:02.078Z jest",
     "artifacts": "napi artifacts -d ../../artifacts",
-    "createNpmDirs": "napi create-npm-dirs",
+    "createNpmDirs": "napi create-npm-dirs && node enrich-npm-dirs.mjs",
     "prepublishOnly": "napi prepublish --no-gh-release",
     "version": "napi version"
   },

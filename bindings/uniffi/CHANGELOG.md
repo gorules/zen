@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/gorules/zen/compare/uniffi-v2.0.0...uniffi-v2.0.1) (2026-08-22)
+
+
+### Bug Fixes
+
+* improve READMEs across bindings ([#516](https://github.com/gorules/zen/issues/516)) ([692ca2f](https://github.com/gorules/zen/commit/692ca2fe6b503a42da6b311dbefdf603a3ae5df4))
+
 ## [2.0.0](https://github.com/gorules/zen/compare/uniffi-v1.0.0-beta.14...uniffi-v2.0.0) (2026-08-20)
 
 

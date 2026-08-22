@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/gorules/zen/compare/zen-macros-v2.0.0...zen-macros-v2.0.1) (2026-08-22)
+
+
+### Bug Fixes
+
+* improve READMEs across bindings ([#516](https://github.com/gorules/zen/issues/516)) ([692ca2f](https://github.com/gorules/zen/commit/692ca2fe6b503a42da6b311dbefdf603a3ae5df4))
+
 ## [2.0.0](https://github.com/gorules/zen/compare/zen-macros-v1.0.0-beta.13...zen-macros-v2.0.0) (2026-08-20)
 
 

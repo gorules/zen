@@ -33,12 +33,17 @@ try (var engine = new ZenEngine(null, null)) {
     var ruleJson = Main.class.getResourceAsStream("/rules/pricing.json").readAllBytes();
     var decision = engine.createDecision(new JsonBuffer(ruleJson));
 
-    var input = new JsonBuffer("""{ "customer": { "tier": "gold" } }""");
+    var input = new JsonBuffer("""
+        { "customer": { "tier": "gold" } }
+        """);
     var response = decision.evaluate(input, null).join();
 
     System.out.println(response.result());
 }
 ```
+
+> [!NOTE]
+> The Java bindings require JDK 22+ (FFM API). Add `--enable-native-access=ALL-UNNAMED` to silence native-access warnings on JDK 24+. The bundled native library is extracted from the jar automatically; on versions 2.0.1 and earlier, point the JVM at it manually with `-Duniffi.component.zen_uniffi.libraryOverride=/absolute/path/to/libzen_uniffi.dylib` after extracting it from the jar for your platform.
 
 ### Kotlin
 
@@ -70,7 +75,7 @@ var engine = new ZenEngine(loader: null, customNode: null);
 var decision = engine.CreateDecision(new JsonBuffer(File.ReadAllBytes("my-decision.json")));
 var context = new JsonBuffer("""{"input": 42}""");
 var response = await decision.Evaluate(context, null);
-Console.WriteLine(response.result);
+Console.WriteLine(response.Result);
 ```
 
 Each SDK also supports loader configurations (`Static`, `Filesystem`, `Zip`, `Callback`) that pre-load and pre-compile decisions at engine creation, plus tracing, custom nodes and direct expression evaluation. Full guides are in the per-platform documentation linked above.

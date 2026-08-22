@@ -7,7 +7,7 @@
     <Company>GoRules</Company>
     <Description>ZEN Engine - Business Rules Engine for .NET. Execute JSON Decision Models (JDM) with native performance via Rust FFI bindings.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/gorules/zen</PackageProjectUrl>
+    <PackageProjectUrl>https://gorules.io</PackageProjectUrl>
     <PackageIcon>icon.png</PackageIcon>
     <RepositoryUrl>https://github.com/gorules/zen</RepositoryUrl>
     <PackageTags>rules-engine;business-rules;decision-engine;jdm;gorules</PackageTags>

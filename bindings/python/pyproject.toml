@@ -35,7 +35,9 @@ keywords = ["gorules",
 dev = ["black", "bumpver", "isort", "pip-tools", "pytest", "asyncio"]
 
 [project.urls]
-Homepage = "https://github.com/gorules/zen"
+Homepage = "https://gorules.io"
+Documentation = "https://docs.gorules.io/developers/sdks/python"
+Repository = "https://github.com/gorules/zen"
 
 [project.scripts]
 zenengine = "reader.__main__:main"

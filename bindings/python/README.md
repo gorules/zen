@@ -56,6 +56,7 @@ engine = zen.ZenEngine()
 
 decision = engine.create_decision(content)
 result = decision.evaluate({"input": 15})
+print(result)
 ```
 
 ### Loaders
@@ -71,6 +72,7 @@ def loader(key):
 
 engine = zen.ZenEngine({"loader": loader})
 result = engine.evaluate("jdm_graph1.json", {"input": 5})
+print(result)
 ```
 
 The same pattern works for loading from a REST API, S3, a database, or anywhere else. Full guides, including multi-decision graphs and batch evaluation, are in the [Python SDK documentation](https://docs.gorules.io/developers/sdks/python).

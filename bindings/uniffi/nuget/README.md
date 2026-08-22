@@ -24,7 +24,7 @@ var engine = new ZenEngine(loader: null, customNode: null);
 var decision = engine.CreateDecision(new JsonBuffer(File.ReadAllBytes("my-decision.json")));
 var context = new JsonBuffer("""{"input": 42}""");
 var response = await decision.Evaluate(context, null);
-Console.WriteLine(response.result);
+Console.WriteLine(response.Result);
 
 ```
 
@@ -53,12 +53,12 @@ var cbEngine = new ZenEngine(loader: new ZenLoader.Callback(new FileLoader()));
 Enable tracing to inspect the execution of each node:
 
 ```csharp
-var options = new ZenEvaluateOptions(maxDepth: null, trace: true);
+var options = new ZenEvaluateOptions(MaxDepth: null, Trace: true);
 var decided = await decision.Evaluate(context, options);
 
-foreach (var (nodeId, trace) in decided.trace!)
+foreach (var (nodeId, trace) in decided.Trace!)
 {
-    Console.WriteLine($"{trace.name}: {trace.output}");
+    Console.WriteLine($"{trace.Name}: {trace.Output}");
 }
 ```
 
@@ -86,17 +86,17 @@ Extend the engine with custom logic:
 
 ```csharp
 
-using var myEngine = new ZenEngine(loader: new FileLoader(), customNode: new MyCustomNode());
+using var myEngine = new ZenEngine(loader: new ZenLoader.Callback(new FileLoader()), customNode: new MyCustomNode());
 var myResponse = await myEngine.Evaluate("custom.json", context, options);
-Console.WriteLine(myResponse.result); 
+Console.WriteLine(myResponse.Result);
 
 // Custom node handler
 class MyCustomNode : ZenCustomNodeCallback
 {
     public Task<ZenEngineHandlerResponse> Handle(ZenEngineHandlerRequest request) =>
         Task.FromResult(new ZenEngineHandlerResponse(
-            output: new JsonBuffer("""{"result": "custom"}"""),
-            traceData: null
+            Output: new JsonBuffer("""{"result": "custom"}"""),
+            TraceData: null
         ));
 }
 

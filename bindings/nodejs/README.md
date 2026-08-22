@@ -55,6 +55,7 @@ const engine = new ZenEngine();
 
 const decision = engine.createDecision(content);
 const result = await decision.evaluate({ input: 15 });
+console.log(result);
 ```
 
 ### Loaders
@@ -66,10 +67,11 @@ import { ZenEngine } from '@gorules/zen-engine';
 import fs from 'fs/promises';
 import path from 'path';
 
-const loader = async (key: string) => fs.readFile(path.join(__dirname, 'jdm_directory', key));
+const loader = async (key: string) => fs.readFile(path.join(import.meta.dirname, 'jdm_directory', key));
 
 const engine = new ZenEngine({ loader });
 const result = await engine.evaluate('jdm_graph1.json', { input: 5 });
+console.log(result);
 ```
 
 The same pattern works for loading from a REST API, S3, a database, or anywhere else. Full guides, including multi-decision graphs and batch evaluation, are in the [Node.js SDK documentation](https://docs.gorules.io/developers/sdks/nodejs).

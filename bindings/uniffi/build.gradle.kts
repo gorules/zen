@@ -81,6 +81,28 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
 
 
 tasks {
+    val patchJavaNativeLoader by creating {
+        doLast {
+            val namespaceLibrary = file("build/generated/java/io/gorules/zen_engine/NamespaceLibrary.java")
+            if (namespaceLibrary.exists() && !namespaceLibrary.readText().contains("NativeLibraryExtractor")) {
+                namespaceLibrary.writeText(
+                    namespaceLibrary.readText().replace(
+                        "System.loadLibrary(name);",
+                        "try {\n" +
+                            "                System.loadLibrary(name);\n" +
+                            "            } catch (UnsatisfiedLinkError e) {\n" +
+                            "                System.load(NativeLibraryExtractor.extract());\n" +
+                            "            }",
+                    ),
+                )
+            }
+        }
+    }
+
+    named(sourceSets["java"].compileJavaTaskName) {
+        dependsOn(patchJavaNativeLoader)
+    }
+
     val generateJavaJar by creating(Jar::class) {
         archiveBaseName.set("zen_engine")
         from(sourceSets["java"].output)
@@ -91,6 +113,7 @@ tasks {
         archiveBaseName.set("zen_engine")
         archiveClassifier.set("sources")
         from(sourceSets["java"].allJava)
+        dependsOn(patchJavaNativeLoader)
     }
 
     val generateKotlinJar by creating(Jar::class) {

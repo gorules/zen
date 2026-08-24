@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.2](https://github.com/gorules/zen/compare/uniffi-v2.0.1...uniffi-v2.0.2) (2026-08-24)
+
+
+### Bug Fixes
+
+* correct readme examples and java native library loader ([#518](https://github.com/gorules/zen/issues/518)) ([8594f9a](https://github.com/gorules/zen/commit/8594f9a5fbb478b9de1b692851c787064cc5ae66))
+
 ## [2.0.1](https://github.com/gorules/zen/compare/uniffi-v2.0.0...uniffi-v2.0.1) (2026-08-22)
 
 

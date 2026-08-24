@@ -6109,7 +6109,7 @@ dependencies = [
 
 [[package]]
 name = "zen-nodejs"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "ahash 0.8.12",
  "iana-time-zone",
@@ -6128,7 +6128,7 @@ dependencies = [
 
 [[package]]
 name = "zen-python"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "anyhow",
  "either",
@@ -6172,7 +6172,7 @@ dependencies = [
 
 [[package]]
 name = "zen-uniffi"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "async-trait",
  "serde",

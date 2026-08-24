@@ -4,9 +4,9 @@
   "core/types": "2.0.1",
   "core/template": "2.0.1",
   "core/macros": "2.0.1",
-  "bindings/nodejs": "2.0.1",
-  "bindings/python": "2.0.1",
-  "bindings/uniffi": "2.0.1",
+  "bindings/nodejs": "2.0.2",
+  "bindings/python": "2.0.2",
+  "bindings/uniffi": "2.0.2",
   "bindings/c": "2.0.1",
   "benchmark/rust": "0.0.16",
   "core/expression_repl": "2.0.1"

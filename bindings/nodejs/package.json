@@ -1,7 +1,7 @@
 {
   "name": "@gorules/zen-engine",
   "description": "Open-source Business Rules Engine for Node.js, powered by Rust",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "main": "index.js",
   "browser": "browser.js",
   "types": "./index.d.ts",

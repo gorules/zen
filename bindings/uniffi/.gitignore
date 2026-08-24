@@ -1,5 +1,11 @@
 .idea
 .gradle
+.kotlin
 build/
 build-android/
 jniLibs/
+tests/csharp/bin/
+tests/csharp/obj/
+tests/swift/.build/
+tests/swift/Sources/ZenUniffi/
+tests/swift/Sources/zen_uniffiFFI/

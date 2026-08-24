@@ -57,6 +57,24 @@ sourceSets {
         compileClasspath += sourceSets["main"].compileClasspath
         runtimeClasspath += sourceSets["main"].runtimeClasspath
     }
+
+    val testsJava by creating {
+        java {
+            srcDirs("tests/java")
+        }
+
+        compileClasspath += sourceSets["java"].output + sourceSets["java"].compileClasspath
+        runtimeClasspath += sourceSets["java"].output + sourceSets["java"].runtimeClasspath
+    }
+
+    val testsKotlin by creating {
+        kotlin {
+            srcDirs("tests/kotlin")
+        }
+
+        compileClasspath += sourceSets["kotlin"].output + sourceSets["kotlin"].compileClasspath
+        runtimeClasspath += sourceSets["kotlin"].output + sourceSets["kotlin"].runtimeClasspath
+    }
 }
 
 
@@ -65,6 +83,14 @@ dependencies {
     "kotlinImplementation"("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
     "kotlinAndroidImplementation"("net.java.dev.jna:jna:5.17.0")
     "kotlinAndroidImplementation"("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+    "testsJavaImplementation"("org.junit.jupiter:junit-jupiter:5.11.4")
+    "testsJavaImplementation"("com.fasterxml.jackson.core:jackson-databind:2.18.2")
+    "testsJavaRuntimeOnly"("org.junit.platform:junit-platform-launcher:1.11.4")
+    "testsKotlinImplementation"("org.junit.jupiter:junit-jupiter:5.11.4")
+    "testsKotlinImplementation"("com.fasterxml.jackson.core:jackson-databind:2.18.2")
+    "testsKotlinImplementation"("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+    "testsKotlinImplementation"("net.java.dev.jna:jna:5.17.0")
+    "testsKotlinRuntimeOnly"("org.junit.platform:junit-platform-launcher:1.11.4")
 }
 
 tasks.withType<JavaCompile>().configureEach {
@@ -72,6 +98,10 @@ tasks.withType<JavaCompile>().configureEach {
 }
 
 tasks.named<JavaCompile>("compileJavaJava") {
+    options.release = 22
+}
+
+tasks.named<JavaCompile>("compileTestsJavaJava") {
     options.release = 22
 }
 
@@ -101,6 +131,34 @@ tasks {
 
     named(sourceSets["java"].compileJavaTaskName) {
         dependsOn(patchJavaNativeLoader)
+    }
+
+    val testJava by creating(Test::class) {
+        group = "verification"
+        testClassesDirs = sourceSets["testsJava"].output.classesDirs
+        classpath = sourceSets["testsJava"].runtimeClasspath
+        useJUnitPlatform()
+        jvmArgs("--enable-native-access=ALL-UNNAMED")
+        workingDir = projectDir
+        testLogging {
+            events("passed", "failed", "skipped")
+            showExceptions = true
+            exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        }
+    }
+
+    val testKotlin by creating(Test::class) {
+        group = "verification"
+        testClassesDirs = sourceSets["testsKotlin"].output.classesDirs
+        classpath = sourceSets["testsKotlin"].runtimeClasspath
+        useJUnitPlatform()
+        jvmArgs("--enable-native-access=ALL-UNNAMED")
+        workingDir = projectDir
+        testLogging {
+            events("passed", "failed", "skipped")
+            showExceptions = true
+            exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        }
     }
 
     val generateJavaJar by creating(Jar::class) {

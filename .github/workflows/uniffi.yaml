@@ -102,10 +102,123 @@ jobs:
           path: target/${{ matrix.settings.target }}/release/${{ format(matrix.settings.output, env.OUTPUT_NAME) }}
           if-no-files-found: error
 
+  test-jvm-dotnet:
+    name: Test (Java, Kotlin, C#)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.UNIFFI_DIRECTORY }}
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up JDK 23
+        uses: actions/setup-java@v4
+        with:
+          java-version: '23'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          shared-key: uniffi-test
+          sccache-bucket: ${{ secrets.SCCACHE_S3_BUCKET }}
+          sccache-region: ${{ secrets.SCCACHE_AWS_REGION }}
+          sccache-role-arn: ${{ secrets.SCCACHE_AWS_ROLE_ARN }}
+
+      - name: Build native library
+        run: cargo build --lib --release --locked
+
+      - name: Stage native library
+        run: |
+          mkdir -p build/generated/resources/linux-x86-64
+          cp ../../target/release/libzen_uniffi.so build/generated/resources/
+          cp ../../target/release/libzen_uniffi.so build/generated/resources/linux-x86-64/
+
+      - name: Install uniffi-bindgen-java
+        run: cargo install uniffi-bindgen-java --version 0.4.2 --locked
+
+      - name: Install uniffi-bindgen-cs
+        run: cargo install uniffi-bindgen-cs --git https://github.com/gorules/uniffi-bindgen-cs --rev d080b41
+
+      - name: Generate Java sources
+        run: |
+          uniffi-bindgen-java generate \
+            --out-dir build/generated/java \
+            build/generated/resources/libzen_uniffi.so
+
+      - name: Generate Kotlin sources
+        run: |
+          cargo run --locked --bin uniffi-bindgen -- generate \
+            --library build/generated/resources/libzen_uniffi.so \
+            --language kotlin \
+            --out-dir build/generated/kotlin
+
+      - name: Generate C# sources
+        run: |
+          uniffi-bindgen-cs \
+            --library build/generated/resources/libzen_uniffi.so \
+            --config uniffi.toml \
+            --out-dir build/generated/csharp
+
+      - name: Run Java and Kotlin tests
+        run: ./gradlew testJava testKotlin
+
+      - name: Run C# tests
+        run: dotnet test tests/csharp
+
+  test-swift:
+    name: Test (Swift)
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: ${{ env.UNIFFI_DIRECTORY }}
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          shared-key: uniffi-test-swift
+          sccache-bucket: ${{ secrets.SCCACHE_S3_BUCKET }}
+          sccache-region: ${{ secrets.SCCACHE_AWS_REGION }}
+          sccache-role-arn: ${{ secrets.SCCACHE_AWS_ROLE_ARN }}
+
+      - name: Build native library
+        run: cargo build --lib --release --locked
+
+      - name: Stage native library
+        run: |
+          mkdir -p build/generated/resources
+          cp ../../target/release/libzen_uniffi.dylib build/generated/resources/
+
+      - name: Generate Swift sources
+        run: |
+          cargo run --locked --bin uniffi-bindgen -- generate \
+            --library build/generated/resources/libzen_uniffi.dylib \
+            --language swift \
+            --out-dir build/generated/swift
+
+      - name: Run Swift tests
+        run: make test-swift
+
   release-java-kotlin:
     runs-on: ubuntu-latest
     environment: release
-    needs: [ build ]
+    needs: [ build, test-jvm-dotnet ]
     if: "github.ref_type == 'tag'"
     defaults:
       run:
@@ -179,7 +292,7 @@ jobs:
   release-csharp:
     runs-on: ubuntu-latest
     environment: release
-    needs: [ build ]
+    needs: [ build, test-jvm-dotnet ]
     permissions:
       id-token: write  # Required for OIDC
     if: "github.ref_type == 'tag'"
@@ -416,7 +529,7 @@ jobs:
     name: Release iOS
     runs-on: macos-latest
     environment: release
-    needs: [ create-xcframework ]
+    needs: [ create-xcframework, test-swift ]
     if: "github.ref_type == 'tag'"
 
     steps:

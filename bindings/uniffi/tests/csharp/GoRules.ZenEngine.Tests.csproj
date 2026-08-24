@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>GoRules.ZenEngine.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../../build/generated/csharp/zen_uniffi.cs" Link="zen_uniffi.cs" />
+    <Compile Include="../../lib/csharp/GoRules/ZenEngine/JsonBuffer.cs" Link="JsonBuffer.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../../build/generated/resources/darwin-aarch64/libzen_uniffi.dylib"
+          Condition="$([MSBuild]::IsOSPlatform('OSX')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64'"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="libzen_uniffi.dylib" />
+    <None Include="../../build/generated/resources/darwin-x86-64/libzen_uniffi.dylib"
+          Condition="$([MSBuild]::IsOSPlatform('OSX')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="libzen_uniffi.dylib" />
+    <None Include="../../build/generated/resources/linux-x86-64/libzen_uniffi.so"
+          Condition="$([MSBuild]::IsOSPlatform('Linux')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="libzen_uniffi.so" />
+    <None Include="../../build/generated/resources/linux-aarch64/libzen_uniffi.so"
+          Condition="$([MSBuild]::IsOSPlatform('Linux')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64'"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="libzen_uniffi.so" />
+    <None Include="../../build/generated/resources/win32-x86-64/zen_uniffi.dll"
+          Condition="$([MSBuild]::IsOSPlatform('Windows'))"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="zen_uniffi.dll" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+</Project>

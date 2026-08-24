@@ -105,6 +105,9 @@ jobs:
   test-jvm-dotnet:
     name: Test (Java, Kotlin, C#)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     defaults:
       run:
         working-directory: ${{ env.UNIFFI_DIRECTORY }}
@@ -180,6 +183,9 @@ jobs:
   test-swift:
     name: Test (Swift)
     runs-on: macos-latest
+    permissions:
+      contents: read
+      id-token: write
     defaults:
       run:
         working-directory: ${{ env.UNIFFI_DIRECTORY }}

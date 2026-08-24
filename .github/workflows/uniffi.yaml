@@ -140,6 +140,8 @@ jobs:
           sccache-role-arn: ${{ secrets.SCCACHE_AWS_ROLE_ARN }}
 
       - name: Build native library
+        env:
+          CARGO_PROFILE_RELEASE_STRIP: 'none'
         run: cargo build --lib --release --locked
 
       - name: Stage native library
@@ -159,6 +161,7 @@ jobs:
           uniffi-bindgen-java generate \
             --out-dir build/generated/java \
             build/generated/resources/libzen_uniffi.so
+          test -f build/generated/java/io/gorules/zen_engine/ZenEngine.java
 
       - name: Generate Kotlin sources
         run: |
@@ -166,6 +169,7 @@ jobs:
             --library build/generated/resources/libzen_uniffi.so \
             --language kotlin \
             --out-dir build/generated/kotlin
+          test -f build/generated/kotlin/io/gorules/zen_engine/kotlin/zen_uniffi.kt
 
       - name: Generate C# sources
         run: |
@@ -173,6 +177,7 @@ jobs:
             --library build/generated/resources/libzen_uniffi.so \
             --config uniffi.toml \
             --out-dir build/generated/csharp
+          test -f build/generated/csharp/zen_uniffi.cs
 
       - name: Run Java and Kotlin tests
         run: ./gradlew testJava testKotlin

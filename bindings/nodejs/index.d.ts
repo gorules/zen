@@ -493,6 +493,7 @@ export declare class ZenEngine {
   safeEvaluate(key: string, context: any, opts?: ZenEvaluateOptions | undefined | null): Promise<{ success: true, data: ZenEngineResponse } | { success: false; error: any; }>
   safeGetDecision(key: string): Promise<{ success: true, data: ZenDecision } | { success: false; error: any; }>
   evaluateBatch(requests: Array<EvaluateBatchRequest>, opts?: ZenEvaluateOptions | undefined | null): Promise<Array<{ success: true; data: ZenEngineResponse } | { success: false; error: any }>>
+  evaluateBatchRaw(requests: Array<EvaluateBatchRawRequest>, opts?: ZenEvaluateOptions | undefined | null): Promise<Array<{ success: true; data: Buffer } | { success: false; error: any }>>
   reload(): Promise<void>
   compileFailures(): Array<{ key: string; kind: string; diagnostics?: Array<{ code: string; message: string; severity: string }>; error?: string }>
   dispose(): void
@@ -506,11 +507,38 @@ export declare class ZenEngineHandlerRequest {
   getFieldRaw(path: string): unknown
 }
 
+export declare class ZenImpactAnalysis {
+  /**
+   * Candidate and baseline are full engines — they may use different
+   * loaders, documents and configuration.
+   */
+  constructor(candidate: ZenEngine, baseline: ZenEngine)
+  /**
+   * Merge shard aggregate states, finalize, and render the report template
+   * — the closing call of a declarative impact run.
+   */
+  static finish(aggregate: Buffer, states: Array<Buffer>, report?: Buffer | undefined | null): string
+  /**
+   * Both arms AND declarative aggregation in one native pass — per-record
+   * data never crosses the boundary; the response is the tiny additive
+   * aggregate state plus the impact summary: `{state, summary}`.
+   * Synchronous because the browser hosts run this inside a worker over the
+   * wasi build, where the async napi machinery is unreliable; evaluation
+   * futures resolve immediately off a current-thread runtime.
+   */
+  runAggregateSync(candidateKey: string, baselineKey: string, inputs: Array<Buffer>, aggregate: Buffer, startIndex?: number | undefined | null, opts?: ZenEvaluateOptions | undefined | null): string
+}
+
 export interface DecisionNode {
   id: string
   name: string
   kind: string
   config: any
+}
+
+export interface EvaluateBatchRawRequest {
+  key: string
+  context: Buffer
 }
 
 export interface EvaluateBatchRequest {
@@ -520,11 +548,26 @@ export interface EvaluateBatchRequest {
 
 export declare function evaluateExpression(expression: string, context?: any | undefined | null): Promise<any>
 
+/**
+ * Filters raw JSON context buffers through ONE compiled expression — the
+ * expression compiles once and rows never exist as JS objects, so the
+ * per-row boundary conversion that dominates `evaluateExpressionSync`
+ * disappears. Rows that fail to parse or evaluate simply don't match.
+ */
+export declare function evaluateExpressionMany(expression: string, contexts: Array<Buffer>): Promise<Uint32Array>
+
 export declare function evaluateExpressionSync(expression: string, context?: any | undefined | null): any
 
 export declare function evaluateUnaryExpression(expression: string, context: any): Promise<boolean>
 
 export declare function evaluateUnaryExpressionSync(expression: string, context: any): boolean
+
+/**
+ * Root-level context keys the expression can read — `null` when it addresses
+ * the whole context or cannot be analyzed. Lets callers prune columns before
+ * data is ever composed or serialized.
+ */
+export declare function expressionRootReferences(expression: string): Array<string> | null
 
 export declare function nlEncodeString(value: string): string | null
 

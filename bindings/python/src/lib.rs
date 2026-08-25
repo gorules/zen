@@ -9,6 +9,10 @@ use pyo3::prelude::PyModuleMethods;
 use pyo3::types::PyModule;
 use pyo3::{pymodule, wrap_pyfunction, Bound, PyResult, Python};
 
+#[cfg(feature = "arrow")]
+mod columnar;
+#[cfg(feature = "data")]
+mod data;
 mod content;
 mod convert;
 mod custom_node;
@@ -27,6 +31,8 @@ fn zen(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyZenDecision>()?;
     m.add_class::<PyExpression>()?;
     m.add_class::<PyZenDecisionContent>()?;
+    #[cfg(feature = "data")]
+    m.add_class::<data::PyZenImpactAnalysis>()?;
     m.add_function(wrap_pyfunction!(evaluate_expression, m)?)?;
     m.add_function(wrap_pyfunction!(evaluate_unary_expression, m)?)?;
     m.add_function(wrap_pyfunction!(render_template, m)?)?;

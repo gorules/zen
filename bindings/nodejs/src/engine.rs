@@ -113,6 +113,29 @@ pub struct EvaluateBatchRequest {
     pub context: Value,
 }
 
+#[napi(object)]
+pub struct EvaluateBatchRawRequest {
+    pub key: String,
+    pub context: Buffer,
+}
+
+pub struct EvaluateBatchRawResult {
+    pub success: bool,
+    pub data: Option<Buffer>,
+    pub error: Option<Value>,
+}
+
+impl ToNapiValue for EvaluateBatchRawResult {
+    unsafe fn to_napi_value(env: napi_env, val: Self) -> napi::Result<napi_value> {
+        let env_wrapper = &Env::from(env);
+        let mut obj = Object::new(env_wrapper)?;
+        obj.set("success", val.success)?;
+        obj.set("data", val.data)?;
+        obj.set("error", val.error)?;
+        Object::to_napi_value(env, obj)
+    }
+}
+
 pub struct EvaluateBatchResult {
     pub success: bool,
     pub data: Option<NodeEvalResponse>,
@@ -398,6 +421,74 @@ impl ZenEngine {
         Ok(out)
     }
 
+    #[napi(
+        ts_return_type = "Promise<Array<{ success: true; data: Buffer } | { success: false; error: any }>>"
+    )]
+    pub async fn evaluate_batch_raw(
+        &self,
+        requests: Vec<EvaluateBatchRawRequest>,
+        opts: Option<ZenEvaluateOptions>,
+    ) -> napi::Result<Vec<EvaluateBatchRawResult>> {
+        let options: EvaluationSerializedOptions = opts.unwrap_or_default().into();
+        let mode = options.trace;
+        let max_depth = options.max_depth;
+
+        let mut handles = Vec::with_capacity(requests.len());
+        for req in requests {
+            let engine = self.graph.clone();
+            let EvaluateBatchRawRequest { key, context } = req;
+            let bytes = context.to_vec();
+            handles.push(spawn_worker(move || async move {
+                let eval_opts = EvaluationOptions {
+                    trace: mode != EvaluationTraceKind::None,
+                    max_depth,
+                };
+
+                let context: zen_engine::Variable = serde_json::from_slice(&bytes).map_err(
+                    |e| serde_json::json!({ "type": "ContextError", "source": e.to_string() }),
+                )?;
+                let response = engine
+                    .evaluate_with_opts(key, context, eval_opts)
+                    .await
+                    .map_err(|e| {
+                        e.serialize_with_mode(serde_json::value::Serializer, mode)
+                            .unwrap_or_default()
+                    })?;
+                let serialized = response
+                    .serialize_with_mode(serde_json::value::Serializer, mode)
+                    .map_err(|e| {
+                        serde_json::json!({ "type": "SerializeError", "source": e.to_string() })
+                    })?;
+                serde_json::to_vec(&serialized).map_err(
+                    |e| serde_json::json!({ "type": "SerializeError", "source": e.to_string() }),
+                )
+            }));
+        }
+
+        let mut out = Vec::with_capacity(handles.len());
+        for handle in handles {
+            out.push(match handle.await {
+                Ok(Ok(data)) => EvaluateBatchRawResult {
+                    success: true,
+                    data: Some(data.into()),
+                    error: None,
+                },
+                Ok(Err(error)) => EvaluateBatchRawResult {
+                    success: false,
+                    data: None,
+                    error: Some(error),
+                },
+                Err(_) => EvaluateBatchRawResult {
+                    success: false,
+                    data: None,
+                    error: Some(Value::String("evaluation worker panicked".into())),
+                },
+            });
+        }
+
+        Ok(out)
+    }
+
     #[napi]
     pub async fn reload(&self) -> napi::Result<()> {
         let graph = self.graph.clone();
@@ -428,5 +519,116 @@ impl ZenEngine {
         if let Some(custom_node) = &self.custom_node_tsfn {
             let _ = custom_node.handle.dispose();
         }
+    }
+}
+
+#[cfg(feature = "data")]
+#[napi]
+pub struct ZenImpactAnalysis {
+    pub(crate) inner: Arc<zen_engine::data::impact::ImpactAnalysis>,
+}
+
+#[cfg(feature = "data")]
+#[napi]
+impl ZenImpactAnalysis {
+    /// Candidate and baseline are full engines — they may use different
+    /// loaders, documents and configuration.
+    #[napi(constructor)]
+    pub fn new(candidate: &ZenEngine, baseline: &ZenEngine) -> Self {
+        Self {
+            inner: Arc::new(zen_engine::data::impact::ImpactAnalysis::new(
+                candidate.graph.clone(),
+                baseline.graph.clone(),
+            )),
+        }
+    }
+
+    /// Merge shard aggregate states, finalize, and render the report template
+    /// — the closing call of a declarative impact run.
+    #[napi]
+    pub fn finish(
+        aggregate: Buffer,
+        states: Vec<Buffer>,
+        report: Option<Buffer>,
+    ) -> napi::Result<String> {
+        let spec: zen_engine::data::aggregate::AggregateSpec =
+            serde_json::from_slice(aggregate.as_ref())
+                .map_err(|e| anyhow!("aggregate is not a valid spec: {e}"))?;
+        let mut aggregator = zen_engine::data::aggregate::Aggregator::compile(&spec)
+            .map_err(|e| anyhow!(e.to_string()))?;
+        for state in &states {
+            let value: serde_json::Value = serde_json::from_slice(state.as_ref())
+                .map_err(|e| anyhow!("state is not JSON: {e}"))?;
+            aggregator
+                .merge_value(value)
+                .map_err(|e| anyhow!(e.to_string()))?;
+        }
+        let rendered = report
+            .map(|template| -> napi::Result<serde_json::Value> {
+                let template: serde_json::Value = serde_json::from_slice(template.as_ref())
+                    .map_err(|e| anyhow!("report template is not JSON: {e}"))?;
+                Ok(aggregator.render(&template))
+            })
+            .transpose()?;
+
+        serde_json::to_string(&serde_json::json!({
+            "aggregate": aggregator.finalize(),
+            "report": rendered,
+        }))
+        .map_err(|e| anyhow!(e).into())
+    }
+
+    /// Both arms AND declarative aggregation in one native pass — per-record
+    /// data never crosses the boundary; the response is the tiny additive
+    /// aggregate state plus the impact summary: `{state, summary}`.
+    /// Synchronous because the browser hosts run this inside a worker over the
+    /// wasi build, where the async napi machinery is unreliable; evaluation
+    /// futures resolve immediately off a current-thread runtime.
+    #[napi]
+    pub fn run_aggregate_sync(
+        &self,
+        candidate_key: String,
+        baseline_key: String,
+        inputs: Vec<Buffer>,
+        aggregate: Buffer,
+        start_index: Option<f64>,
+        opts: Option<ZenEvaluateOptions>,
+    ) -> napi::Result<String> {
+        let analysis = self.inner.clone();
+        let spec: zen_engine::data::aggregate::AggregateSpec =
+            serde_json::from_slice(aggregate.as_ref())
+                .map_err(|e| anyhow!("aggregate is not a valid spec: {e}"))?;
+        let options: EvaluationSerializedOptions = opts.unwrap_or_default().into();
+        let eval_options = EvaluationOptions {
+            trace: false,
+            max_depth: options.max_depth,
+        };
+        let start = start_index.unwrap_or(0.0) as u64;
+
+        let runtime = napi::tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .map_err(|e| anyhow!(e))?;
+
+        let mut aggregator = zen_engine::data::aggregate::Aggregator::compile(&spec)
+            .map_err(|e| anyhow!(e.to_string()))?;
+        let comparison = runtime
+            .block_on(analysis.compare(&candidate_key, &baseline_key))
+            .map_err(|e| anyhow!(e.to_string()))?;
+
+        let mut summary = zen_engine::data::impact::ImpactSummary::default();
+        for (offset, payload) in inputs.iter().enumerate() {
+            let input: zen_engine::Variable = serde_json::from_slice(payload.as_ref())
+                .map_err(|e| anyhow!("input is not JSON: {e}"))?;
+            let row = runtime.block_on(comparison.run_one_carrying(input.clone(), eval_options));
+            summary.record(&row);
+            aggregator.record_at(row.into_aggregate_context(input), start + offset as u64);
+        }
+
+        serde_json::to_string(&serde_json::json!({
+            "state": aggregator.state(),
+            "summary": summary,
+        }))
+        .map_err(|e| anyhow!(e).into())
     }
 }

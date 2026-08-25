@@ -24,5 +24,9 @@ json_dotpath = { workspace = true }
 [target.'cfg(target_family = "wasm")'.dependencies]
 iana-time-zone = { version = "0.1", features = ["fallback"] }
 
+[features]
+default = []
+data = ["zen-engine/data"]
+
 [build-dependencies]
 napi-build = "2.3"

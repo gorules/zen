@@ -23,3 +23,10 @@ tokio-util = { version = "0.7", features = ["rt"] }
 zen-engine = { path = "../../core/engine", features = ["arbitrary_precision"] }
 zen-expression = { path = "../../core/expression", features = ["arbitrary_precision"] }
 zen-tmpl = { path = "../../core/template" }
+arrow-array = { version = "56", optional = true, features = ["ffi"] }
+arrow-schema = { version = "56", optional = true }
+
+[features]
+default = []
+data = ["zen-engine/data"]
+arrow = ["data", "dep:arrow-array", "dep:arrow-schema"]

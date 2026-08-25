@@ -68,4 +68,5 @@ name = "engine"
 [features]
 default = []
 bindgen = ["rquickjs/bindgen"]
+data = []
 arbitrary_precision = ["serde_json/arbitrary_precision", "zen-expression/arbitrary_precision", "zen-types/arbitrary_precision", "zen-tmpl/arbitrary_precision"]

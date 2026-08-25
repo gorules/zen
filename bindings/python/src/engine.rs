@@ -22,7 +22,7 @@ use zen_engine::{DecisionEngine, EvaluationOptions};
 #[pyclass]
 #[pyo3(name = "ZenEngine")]
 pub struct PyZenEngine {
-    engine: Arc<DecisionEngine>,
+    pub(crate) engine: Arc<DecisionEngine>,
 }
 
 #[derive(Serialize, Deserialize)]

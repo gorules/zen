@@ -35,7 +35,47 @@ async def custom_async_handler(request):
     }
 
 
+def http_handler_decision_content():
+    source = (
+        "import http from 'http';\n"
+        "\n"
+        "export const handler = async (input) => {\n"
+        "  const response = await http.get('https://example.com/products/1');\n"
+        "  return { status: response.status, product: response.data.product };\n"
+        "};\n"
+    )
+    return json.dumps({
+        "contentType": "application/vnd.gorules.decision",
+        "nodes": [
+            {"type": "inputNode", "id": "input1", "name": "request", "position": {"x": 0, "y": 0}},
+            {"type": "functionNode", "id": "function1", "name": "function1",
+             "content": {"source": source}, "position": {"x": 100, "y": 0}},
+            {"type": "outputNode", "id": "output1", "name": "response", "position": {"x": 200, "y": 0}},
+        ],
+        "edges": [
+            {"id": "edge1", "type": "edge", "sourceId": "input1", "targetId": "function1"},
+            {"id": "edge2", "type": "edge", "sourceId": "function1", "targetId": "output1"},
+        ],
+    })
+
+
 class AsyncZenEngine(unittest.IsolatedAsyncioTestCase):
+    async def test_async_http_handler(self):
+        async def http_handler(request):
+            await asyncio.sleep(0.1)
+            return {
+                "status": 200,
+                "headers": {},
+                "data": {"product": "notebook"},
+            }
+
+        engine = zen.ZenEngine({"httpHandler": http_handler})
+        decision = engine.create_decision(http_handler_decision_content())
+        r = await decision.async_evaluate({})
+
+        self.assertEqual(r["result"]["status"], 200)
+        self.assertEqual(r["result"]["product"], "notebook")
+
     async def test_async_evaluate(self):
         engine = zen.ZenEngine({"loader": loader})
         r1 = engine.async_evaluate("function.json", {"input": 5})

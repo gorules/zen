@@ -1,7 +1,8 @@
 use serde_json::json;
 use std::sync::Arc;
 use zen_engine::policy::{
-    EngineEdit, EvaluateRequest, PolicyWorkspace, RenameTarget, ScopeRequest, Severity,
+    CursorTarget, EngineEdit, EvaluateRequest, PolicyWorkspace, RenameTarget, ScopeRequest,
+    Severity,
 };
 use zen_expression::variable::{Variable, VariableType};
 
@@ -589,4 +590,83 @@ fn equality_index_matches_linear_semantics() {
     assert_eq!(bucket_for("US", json!(5000), false), json!("r7"));
     assert_eq!(bucket_for("EU", json!(2.5), false), json!("r8"));
     assert_eq!(bucket_for("US", json!(999), false), json!("r9"));
+}
+
+#[test]
+fn table_diagnostics_carry_cell_and_head_targets() {
+    let ws = workspace_with(json!({
+        "blocks": [
+            order_dm(),
+            { "id": "dt", "type": "decisionTable", "props": { "data": {
+                "inputs": [
+                    { "id": "i1", "name": "", "field": "order.amount" },
+                    { "id": "i2", "name": "", "field": "order.amount +" }
+                ],
+                "outputs": [ { "id": "o1", "name": "", "field": "order.shippingCost", "type": "number" } ],
+                "rules": [
+                    { "_id": "r1", "i1": ">= 100", "i2": "", "o1": "\"free\"" },
+                    { "_id": "r2", "i1": "> ", "i2": "", "o1": "5" }
+                ]
+            } } }
+        ]
+    }));
+    let diagnostics = ws.diagnostics("p");
+    let errors: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .collect();
+    assert!(
+        errors.iter().any(|d| {
+            d.message.contains("output cell must be `number`")
+                && matches!(
+                    &d.location.target,
+                    Some(CursorTarget::DecisionTableCell { row, col })
+                        if row.as_ref() == "r1" && col.as_ref() == "o1"
+                )
+        }),
+        "{errors:?}"
+    );
+    assert!(
+        errors.iter().any(|d| matches!(
+            &d.location.target,
+            Some(CursorTarget::DecisionTableCell { row, col })
+                if row.as_ref() == "r2" && col.as_ref() == "i1"
+        )),
+        "{errors:?}"
+    );
+    assert!(
+        errors.iter().any(|d| matches!(
+            &d.location.target,
+            Some(CursorTarget::DecisionTableHead { col }) if col.as_ref() == "i2"
+        )),
+        "{errors:?}"
+    );
+}
+
+#[test]
+fn diagnostics_carry_expression_codes() {
+    let mut doc = strict_table_doc();
+    doc["blocks"][1]["props"]["data"]["inputs"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({ "id": "i3", "name": "", "field": "" }));
+    doc["blocks"][1]["props"]["data"]["rules"] = json!([
+        { "i1": "amount ==", "i2": "\"XX\"", "i3": "1 + 1", "o1": "0" }
+    ]);
+    let ws = workspace_with(doc);
+    let diagnostics = ws.diagnostics("p");
+    let by_code = |code: &str| {
+        diagnostics
+            .iter()
+            .find(|d| d.expr_code == Some(code))
+            .unwrap_or_else(|| panic!("{code} missing in {diagnostics:?}"))
+    };
+    assert_eq!(by_code("expr.missing-value").args["operator"], "==");
+    let member = by_code("type.invalid-enum-member");
+    assert_eq!(member.args["value"], "XX");
+    assert_eq!(member.args["enum"], "\"US\" | \"EU\"");
+    assert_eq!(by_code("type.condition-not-bool").args["got"], "number");
+    let json = serde_json::to_value(by_code("expr.missing-value")).unwrap();
+    assert_eq!(json["exprCode"], "expr.missing-value");
+    assert_eq!(json["args"]["operator"], "==");
 }

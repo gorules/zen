@@ -14,8 +14,8 @@ use base64::Engine as _;
 
 use crate::policy::queries::scope::VariableTypeScope;
 use crate::workspace::types::{
-    BlockTrace, Cursor, CursorTarget, DecisionTableExtras, Diagnostic, DiagnosticCode,
-    ExpressionKind, NlExpression,
+    BlockTrace, Cursor, CursorTarget, DecisionTableExtras, Diagnostic, DiagnosticArgs,
+    DiagnosticCode, ExpressionKind, NlExpression,
 };
 
 use crate::policy::ArcStrTrim;
@@ -33,7 +33,7 @@ pub(crate) struct TableSelection {
     input_bits: Option<Vec<u8>>,
 }
 
-const ROW_ID_KEY: &str = "_id";
+pub(crate) const ROW_ID_KEY: &str = "_id";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -355,7 +355,11 @@ impl DecisionTableIr {
             let Some(field) = col.field.as_ref().filter(|f| !f.is_empty()) else {
                 continue;
             };
-            let field_analysis = cx.analyze_standard(field, Some(col.id.clone()));
+            let head = Some(CursorTarget::DecisionTableHead {
+                col: col.id.clone(),
+            });
+            let field_analysis =
+                cx.with_target(head, |cx| cx.analyze_standard(field, Some(col.id.clone())));
             input_field_types.insert(col.id.clone(), field_analysis.return_type.clone());
             input_cell_scopes.insert(
                 col.id.clone(),
@@ -364,28 +368,37 @@ impl DecisionTableIr {
         }
 
         for rule in &self.rules {
+            let row_id = rule.get(ROW_ID_KEY).cloned();
             for col in &self.inputs {
                 let Some(cell) = rule.get(&col.id).filter(|c| !c.is_empty()) else {
                     continue;
                 };
+                let target = row_id.clone().map(|row| CursorTarget::DecisionTableCell {
+                    row,
+                    col: col.id.clone(),
+                });
 
-                if let Some(cell_scope) = input_cell_scopes.get(&col.id) {
-                    cx.analyze_unary_in_scope(cell, cell_scope, Some(col.id.clone()));
-                    continue;
-                }
+                cx.with_target(target, |cx| {
+                    if let Some(cell_scope) = input_cell_scopes.get(&col.id) {
+                        cx.analyze_unary_in_scope(cell, cell_scope, Some(col.id.clone()));
+                        return;
+                    }
 
-                let analysis = cx.analyze_standard(cell, Some(col.id.clone()));
-                if !matches!(analysis.return_type, VariableType::Bool | VariableType::Any) {
-                    cx.error(
-                        DiagnosticCode::TypeMismatch,
-                        Some(col.id.clone()),
-                        None,
-                        format!(
-                            "input condition must return a boolean, got {:?}",
-                            analysis.return_type
-                        ),
-                    );
-                }
+                    let analysis = cx.analyze_standard(cell, Some(col.id.clone()));
+                    if !matches!(analysis.return_type, VariableType::Bool | VariableType::Any) {
+                        cx.error_with_expr_code(
+                            DiagnosticCode::TypeMismatch,
+                            "type.condition-not-bool",
+                            DiagnosticArgs::from([("got", analysis.return_type.to_string())]),
+                            Some(col.id.clone()),
+                            None,
+                            format!(
+                                "input condition must return a boolean, got {:?}",
+                                analysis.return_type
+                            ),
+                        );
+                    }
+                });
             }
         }
 
@@ -442,7 +455,12 @@ impl DecisionTableIr {
                 let Some(cell) = rule.get(&col.id).filter(|c| !c.is_empty()) else {
                     continue;
                 };
-                let analysis = cx.analyze_standard(cell, Some(col.id.clone()));
+                let cell_target = rule.get(ROW_ID_KEY).map(|row| CursorTarget::DecisionTableCell {
+                    row: row.clone(),
+                    col: col.id.clone(),
+                });
+                let analysis =
+                    cx.with_target(cell_target, |cx| cx.analyze_standard(cell, Some(col.id.clone())));
                 match &declared {
                     Some(expected) => {
                         let actual = &analysis.return_type;

@@ -245,3 +245,23 @@ min([d('2023-10-15').add(1, 'd'), d('2023-10-15').sub(1, 'd'), d('2023-10-15')])
 max([d('2023-10-15').add(1, 'd'), d('2023-10-15').sub(1, 'd'), d('2023-10-15')]);;'2023-10-16T00:00:00Z'
 min([d('2023-01-01'), d('2023-12-31')]).isBefore(d('2023-06-01'));;true
 max([d('2023-01-01'), d('2023-12-31')]).isAfter(d('2023-06-01'));;true
+
+# Date-typed inputs arrive as ISO strings and compare against dates
+since > d('2024-01-01');{since: '2024-01-15'};true
+since <= d('2024-01-01');{since: '2024-01-15'};false
+d('2024-01-01') < since;{since: '2024-01-15'};true
+since == d('2024-01-15');{since: '2024-01-15'};true
+since == d('2024-01-16');{since: '2024-01-15'};false
+
+# Date-typed inputs arrive as ISO strings and take part in membership and intervals
+since in [d('2024-01-01')..d('2024-12-31')];{since: '2024-06-01'};true
+since in [d('2024-01-01')..d('2024-12-31')];{since: '2025-06-01'};false
+since in (d('2024-01-01')..d('2024-12-31'));{since: '2024-01-01'};false
+since not in [d('2024-01-01')..d('2024-12-31')];{since: '2023-12-31'};true
+since in [d('2024-01-01'), d('2024-02-01')];{since: '2024-02-01'};true
+since in [d('2024-01-01'), d('2024-02-01')];{since: '2024-03-01'};false
+since not in [d('2024-01-01'), d('2024-02-01')];{since: '2024-03-01'};true
+since in [d('2024-01-01'), '2024-02-01'];{since: '2024-02-01'};true
+d('2024-02-01') in [d('2024-01-01'), '2024-02-01'];;true
+d('2024-02-01') in ['2024-01-01', 'nope'];;false
+d('2024-02-01') in [since];{since: '2024-02-01'};true

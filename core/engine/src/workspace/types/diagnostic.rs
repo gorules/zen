@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use serde::Serialize;
@@ -62,7 +63,13 @@ pub struct Diagnostic {
     pub message: String,
     pub severity: Severity,
     pub location: DiagnosticLocation,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expr_code: Option<&'static str>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub args: DiagnosticArgs,
 }
+
+pub type DiagnosticArgs = BTreeMap<&'static str, String>;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -222,6 +229,8 @@ impl Diagnostic {
             message: message.into(),
             severity: Severity::Error,
             location,
+            expr_code: None,
+            args: DiagnosticArgs::new(),
         }
     }
 
@@ -235,6 +244,8 @@ impl Diagnostic {
             message: message.into(),
             severity: Severity::Warning,
             location,
+            expr_code: None,
+            args: DiagnosticArgs::new(),
         }
     }
 
@@ -248,7 +259,15 @@ impl Diagnostic {
             message: message.into(),
             severity: Severity::Hint,
             location,
+            expr_code: None,
+            args: DiagnosticArgs::new(),
         }
+    }
+
+    pub fn with_expr_code(mut self, code: &'static str, args: DiagnosticArgs) -> Self {
+        self.expr_code = Some(code);
+        self.args = args;
+        self
     }
 
     pub(crate) fn from_expression(
@@ -268,6 +287,8 @@ impl Diagnostic {
                 span: location.span.or(Some(diag.span)),
                 ..location
             },
+            expr_code: diag.code,
+            args: diag.args.clone(),
         }
     }
 

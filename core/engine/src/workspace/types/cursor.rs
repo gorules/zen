@@ -5,6 +5,8 @@ use zen_expression::variable::VariableType;
 
 use super::Span;
 
+pub use crate::workspace::slot::SlotRole;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Cursor {

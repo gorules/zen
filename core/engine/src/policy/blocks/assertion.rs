@@ -257,7 +257,7 @@ impl AssertionIr {
             }
             CursorTarget::Expression { id } => {
                 let cond = self.conditions.iter().find(|c| c.id == *id)?;
-                Some((cond.expression.clone(), ExpressionKind::Unary, scope))
+                Some((cond.expression.clone(), ExpressionKind::Standard, scope))
             }
             _ => None,
         }

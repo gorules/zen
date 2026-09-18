@@ -7,7 +7,7 @@ use zen_expression::nl::NlResult;
 use zen_expression::variable::VariableType;
 
 use crate::policy::blocks::IntelliSenseSource;
-use crate::policy::ir::{DataModelIr, DictionaryIr, PropertyTypeIr};
+use crate::policy::ir::{DataModelIr, PropertyTypeIr};
 use crate::policy::queries::scope::EntityGraph;
 use crate::workspace::db::{Db, Snapshot};
 use crate::workspace::types::{
@@ -39,7 +39,10 @@ impl Db {
             .completions(&source, pos, &scope)
     }
 
-    fn cursor_intellisense(&self, cursor: &Cursor) -> crate::policy::blocks::SharedIntelliSense {
+    pub(crate) fn cursor_intellisense(
+        &self,
+        cursor: &Cursor,
+    ) -> crate::policy::blocks::SharedIntelliSense {
         if self.is_graph(&cursor.policy_path) {
             self.graph_intellisense()
         } else {
@@ -94,34 +97,7 @@ impl Db {
         &self,
         policy: &str,
     ) -> Option<zen_expression::intellisense::NlLabelResolver> {
-        let mut labels: HashMap<Arc<str>, HashMap<Arc<str>, Arc<str>>> = HashMap::new();
-        let mut add = |name: Arc<str>, dict: &DictionaryIr| {
-            let entries: HashMap<Arc<str>, Arc<str>> = dict
-                .entries
-                .iter()
-                .filter(|e| !e.label.is_empty())
-                .map(|e| (e.value.clone(), e.label.clone()))
-                .collect();
-            if !entries.is_empty() {
-                labels.insert(name, entries);
-            }
-        };
-        if self.is_graph(policy) {
-            for entry in self.graph_dictionary_blocks(&self.graph_imports(policy)) {
-                add(entry.ir.name.clone(), entry.ir.as_ref());
-            }
-        } else {
-            let unit = self.unit(policy);
-            for (name, dict) in &unit.dictionaries {
-                add(name.clone(), dict.as_ref());
-            }
-        }
-        if labels.is_empty() {
-            return None;
-        }
-        Some(std::rc::Rc::new(move |name: &str, value: &str| {
-            labels.get(name)?.get(value).map(|l| l.to_string())
-        }))
+        self.label_resolver(policy)
     }
 
     fn nl_scope(

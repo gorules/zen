@@ -3,7 +3,7 @@ use crate::intellisense::completion::Completions;
 use crate::intellisense::dependency::DependencyResolutionWalker;
 use crate::intellisense::diagnostic::{
     collect_parser_diagnostics, collect_type_diagnostics, compiler_error_to_diagnostic,
-    lexer_error_to_diagnostic, Diagnostic, DiagnosticSource, Severity,
+    lexer_error_to_diagnostic, Diagnostic,
 };
 use crate::intellisense::inspection::{inspect_at, InspectionResult};
 use crate::intellisense::scope::IntelliSenseScope;
@@ -26,7 +26,7 @@ pub mod diagnostic;
 mod discriminant;
 mod entity_flow;
 mod inspection;
-mod scope;
+pub(crate) mod scope;
 pub(crate) mod type_provider;
 
 pub use dependency::{DependencyResult, ReadDependency, Reference};
@@ -53,13 +53,14 @@ pub struct ExpressionAnalysis {
     pub diagnostics: Vec<Diagnostic>,
 }
 
-pub type NlLabelResolver = Rc<dyn Fn(&str, &str) -> Option<String>>;
+pub use crate::slot::LabelResolver;
+pub type NlLabelResolver = LabelResolver;
 
 pub struct IntelliSense {
-    arena: Bump,
-    lexer: Lexer,
-    strict: bool,
-    nl_labels: Option<NlLabelResolver>,
+    pub(crate) arena: Bump,
+    pub(crate) lexer: Lexer,
+    pub(crate) strict: bool,
+    pub(crate) labels: Option<LabelResolver>,
 }
 
 impl IntelliSense {
@@ -68,7 +69,7 @@ impl IntelliSense {
             arena: Bump::new(),
             lexer: Lexer::new(),
             strict: false,
-            nl_labels: None,
+            labels: None,
         }
     }
 
@@ -77,8 +78,12 @@ impl IntelliSense {
         self
     }
 
+    pub fn set_labels(&mut self, labels: Option<LabelResolver>) {
+        self.labels = labels;
+    }
+
     pub fn set_nl_labels(&mut self, labels: Option<NlLabelResolver>) {
-        self.nl_labels = labels;
+        self.set_labels(labels);
     }
 
     pub fn completions(
@@ -142,12 +147,7 @@ impl IntelliSense {
 
         if !parser_result.is_complete || ast.has_error() {
             if !parser_result.is_complete {
-                diagnostics.push(Diagnostic {
-                    span: (0, 0),
-                    message: "Incomplete expression".to_string(),
-                    severity: Severity::Error,
-                    source: DiagnosticSource::Parser,
-                });
+                diagnostics.push(Diagnostic::incomplete());
             }
             collect_parser_diagnostics(ast, &mut diagnostics);
             return ExpressionAnalysis {
@@ -230,7 +230,7 @@ impl IntelliSense {
     }
 
     pub fn nl_subject_options(&self, subject: &VariableType) -> Option<Vec<crate::nl::EnumOption>> {
-        crate::nl::subject_enum_options(subject, self.nl_labels.as_ref())
+        crate::nl::subject_enum_options(subject, self.labels.as_ref())
     }
 
     pub fn nl_tokenize_scoped(
@@ -274,12 +274,7 @@ impl IntelliSense {
 
         if !parser_result.is_complete || ast.has_error() {
             if !parser_result.is_complete {
-                result.diagnostics.push(Diagnostic {
-                    span: (0, 0),
-                    message: "Incomplete expression".to_string(),
-                    severity: Severity::Error,
-                    source: DiagnosticSource::Parser,
-                });
+                result.diagnostics.push(Diagnostic::incomplete());
             }
             collect_parser_diagnostics(ast, &mut result.diagnostics);
             return result;
@@ -298,7 +293,7 @@ impl IntelliSense {
         collect_type_diagnostics(ast, &type_data, &metadata, &mut result.diagnostics);
 
         let (tokens, enums) =
-            Projector::new(source, &type_data, &metadata, unary, self.nl_labels.clone())
+            Projector::new(source, &type_data, &metadata, unary, self.labels.clone())
                 .run(ast, expected.map(|e| e.shallow_clone()));
         result.tokens = tokens;
         result.enums = enums;
@@ -506,12 +501,7 @@ impl IntelliSense {
 
         if !parser_result.is_complete || ast.has_error() {
             if !parser_result.is_complete {
-                diagnostics.push(Diagnostic {
-                    span: (0, 0),
-                    message: "Incomplete expression".to_string(),
-                    severity: Severity::Error,
-                    source: DiagnosticSource::Parser,
-                });
+                diagnostics.push(Diagnostic::incomplete());
             }
             collect_parser_diagnostics(ast, &mut diagnostics);
             return ExpressionAnalysis {

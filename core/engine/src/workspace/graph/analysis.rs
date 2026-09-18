@@ -21,7 +21,8 @@ use crate::policy::queries::scope::VariableTypeScope;
 use crate::workspace::db::Db;
 use crate::workspace::graph::function::FunctionTypeOutcome;
 use crate::workspace::types::{
-    CursorTarget, Diagnostic, DiagnosticCode, DiagnosticLocation, ExpressionKind, Severity,
+    CursorTarget, Diagnostic, DiagnosticArgs, DiagnosticCode, DiagnosticLocation, ExpressionKind,
+    Severity,
 };
 
 const NODES_KEY: &str = "$nodes";
@@ -855,17 +856,25 @@ impl<'a> GraphAnalyzer<'a> {
                             &base_scope,
                         );
                         if !matches!(resolved, VariableType::Bool | VariableType::Any) {
-                            self.diagnostics.push(Diagnostic::error(
-                                DiagnosticCode::TypeMismatch,
-                                DiagnosticLocation::expression(
-                                    self.path.clone(),
-                                    node.id.clone(),
-                                    col.id.clone(),
-                                    None,
+                            self.diagnostics.push(
+                                Diagnostic::error(
+                                    DiagnosticCode::TypeMismatch,
+                                    DiagnosticLocation::expression(
+                                        self.path.clone(),
+                                        node.id.clone(),
+                                        col.id.clone(),
+                                        None,
+                                    )
+                                    .with_target(target),
+                                    format!(
+                                        "input condition must return a boolean, got `{resolved}`"
+                                    ),
                                 )
-                                .with_target(target),
-                                format!("input condition must return a boolean, got `{resolved}`"),
-                            ));
+                                .with_expr_code(
+                                    "type.condition-not-bool",
+                                    DiagnosticArgs::from([("got", resolved.to_string())]),
+                                ),
+                            );
                         }
                     }
                 }
@@ -1404,16 +1413,22 @@ impl<'a> GraphAnalyzer<'a> {
                     &condition_scope,
                 );
                 if !matches!(resolved, VariableType::Bool | VariableType::Any) {
-                    self.diagnostics.push(Diagnostic::error(
-                        DiagnosticCode::TypeMismatch,
-                        DiagnosticLocation::expression(
-                            self.path.clone(),
-                            node.id.clone(),
-                            statement.id.clone(),
-                            None,
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::TypeMismatch,
+                            DiagnosticLocation::expression(
+                                self.path.clone(),
+                                node.id.clone(),
+                                statement.id.clone(),
+                                None,
+                            ),
+                            format!("switch condition must return a boolean, got `{resolved}`"),
+                        )
+                        .with_expr_code(
+                            "type.condition-not-bool",
+                            DiagnosticArgs::from([("got", resolved.to_string())]),
                         ),
-                        format!("switch condition must return a boolean, got `{resolved}`"),
-                    ));
+                    );
                 }
                 let intellisense = self.db.graph_intellisense();
                 let mut is = intellisense.borrow_mut();

@@ -11,4 +11,5 @@ mod loader;
 mod mt;
 mod policy;
 mod safe_result;
+mod slot;
 mod types;

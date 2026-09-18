@@ -206,6 +206,10 @@ export interface NlDiagnostic {
   message: string;
   severity: PolicySeverity;
   source: NlDiagnosticSource;
+  /** Stable machine code (e.g. `type.mismatch`) for client-side messages; absent on legacy diagnostics. */
+  code?: string;
+  /** Interpolation arguments for `code`. */
+  args?: Record<string, string>;
 }
 
 /** Result of projecting one expression; `enums` is the dedup table referenced by `NlTypeTag` / `NlEditHint` indices. */
@@ -239,6 +243,97 @@ export interface PolicyNlExpression {
   subjectType?: PolicyVariableType;
   /** Labeled options when the unary subject is an enum (dictionary labels applied). */
   subjectOptions?: NlEnumOption[];
+}
+
+/**
+ * Slot-aware autocomplete. `PolicyExpressionCursor.pos` passed to `slot()`, every `span` and
+ * `replaceSpan` below are UTF-16 code units (JavaScript string offsets), not bytes.
+ */
+export type PolicySlotState =
+  | 'start'
+  | 'unaryStart'
+  | 'value'
+  | 'listElement'
+  | 'range'
+  | 'operator'
+  | 'logical'
+  | 'argument'
+  | 'member'
+  | 'closure'
+  | 'inString'
+  | 'path';
+export type PolicySlotRole = 'unary' | 'condition' | 'value' | 'path';
+/** One enum value: `label` for display, `source` the ready-to-splice ZEN literal (null when unquotable). */
+export interface PolicyValueOption {
+  value: string;
+  label: string;
+  source: string | null;
+}
+export interface PolicyEnumTable {
+  name: string | null;
+  options: PolicyValueOption[];
+}
+export interface PolicySlot {
+  state: PolicySlotState;
+  expected: PolicyVariableType | null;
+  operand: PolicyVariableType | null;
+  options: PolicyValueOption[];
+  operators: string[];
+  function: string | null;
+  argument: number | null;
+  /** `[start, end)` UTF-16 range the accepted suggestion replaces. */
+  replaceSpan: PolicySpan;
+  inString: string | null;
+  listed: string[];
+  autoOpen: boolean;
+}
+export type PolicyLiteralFact =
+  | {
+      kind: 'enum';
+      span: PolicySpan;
+      value: string;
+      name: string | null;
+      label: string;
+      valid: boolean;
+      enumIndex: number;
+    }
+  | {
+      kind: 'date';
+      span: PolicySpan;
+      arg:
+        | { kind: 'now' }
+        | { kind: 'today' }
+        | { kind: 'literal'; value: string; valid: boolean; tz?: string }
+        | { kind: 'field'; path: string };
+    }
+  | { kind: 'bool'; span: PolicySpan; value: boolean };
+/** Result of `slot(cursor, text)` and of each `slotBatch` request. */
+export interface PolicySlotResponse {
+  kind: 'standard' | 'unary';
+  role: PolicySlotRole;
+  /** `$` type for unary cells, otherwise the expected value type. */
+  subjectType: PolicyVariableType | null;
+  expectedType: PolicyVariableType | null;
+  slot: PolicySlot;
+  literals: PolicyLiteralFact[];
+  enums: PolicyEnumTable[];
+}
+/**
+ * One expression location of a policy or graph, returned by `facts(policyPath)`. `source` is the
+ * stored text the facts were computed from; `subjectOptions` lists labeled enum values for an
+ * empty unary or value cell.
+ */
+export interface PolicyExpressionFacts {
+  blockId: string;
+  target: PolicyCursorTarget;
+  source: string;
+  kind: 'standard' | 'unary';
+  role: PolicySlotRole;
+  subjectType: PolicyVariableType | null;
+  expectedType: PolicyVariableType | null;
+  literals: PolicyLiteralFact[];
+  enums: PolicyEnumTable[];
+  subjectOptions: PolicyValueOption[];
 }
 
 /**
@@ -471,6 +566,8 @@ export declare class Workspace {
   enhanceGraphTrace(path: string, trace: any): PolicyTrace
   componentMembers(policy: string): Array<string>
   crossComponentWriteConflicts(): Array<PolicyWriteConflict>
+  slot(cursor: PolicyExpressionCursor, text: string): PolicySlotResponse | null
+  facts(policyPath: string): PolicyExpressionFacts[]
 }
 
 export declare class ZenDecision {
@@ -512,6 +609,8 @@ export interface DecisionNode {
   kind: string
   config: any
 }
+
+export declare function encodeZenString(value: string): string | null
 
 export interface EvaluateBatchRequest {
   key: string
@@ -562,6 +661,8 @@ export interface PolicyDiagnostic {
   span?: PolicySpan
   expressionId?: string
   target?: PolicyCursorTarget
+  exprCode?: string
+  args?: Record<string, string>
 }
 
 export interface PolicyDictionaryEntryInfo {
@@ -702,6 +803,21 @@ export interface PolicyWriteConflict {
 export declare function renderTemplate(template: string, context: any): Promise<any>
 
 export declare function renderTemplateSync(template: string, context: any): any
+
+export declare function slotBatch(requests: Array<SlotRequest>, strict?: boolean | undefined | null): Array<{ id: string; result: PolicySlotResponse }>
+
+export interface SlotRequest {
+  id: string
+  text: string
+  /** Caret position in UTF-16 code units. */
+  pos: number
+  unary: boolean
+  role: PolicySlotRole
+  /** Root scope; must already contain `$` for unary requests. */
+  scope: PolicyVariableType
+  expected?: PolicyVariableType | null
+  labels?: Record<string, Record<string, string>> | null
+}
 
 export interface ZenConfig {
   nodesInContext?: boolean

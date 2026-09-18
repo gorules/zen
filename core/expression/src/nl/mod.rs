@@ -10,30 +10,18 @@ use crate::intellisense::diagnostic::Diagnostic;
 use crate::intellisense::NlLabelResolver;
 use crate::variable::VariableType;
 
-pub fn encode_string(value: &str) -> Option<String> {
-    if !value.contains('"') {
-        Some(format!("\"{value}\""))
-    } else if !value.contains('\'') {
-        Some(format!("'{value}'"))
-    } else {
-        None
-    }
-}
+pub use crate::slot::encode_string;
 
 pub(crate) fn enum_options(
     name: Option<&str>,
     values: &[Rc<str>],
     labels: Option<&NlLabelResolver>,
 ) -> Vec<EnumOption> {
-    values
-        .iter()
-        .map(|v| EnumOption {
-            label: labels
-                .zip(name)
-                .and_then(|(resolve, n)| resolve(n, v))
-                .filter(|l| !l.is_empty())
-                .unwrap_or_else(|| v.to_string()),
-            source: encode_string(v),
+    crate::slot::enum_options(name, values, labels)
+        .into_iter()
+        .map(|o| EnumOption {
+            label: o.label,
+            source: o.source,
         })
         .collect()
 }

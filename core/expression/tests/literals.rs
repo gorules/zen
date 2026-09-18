@@ -1085,7 +1085,10 @@ fn anonymous_enum_table_has_no_name() {
 fn const_literal_has_anonymous_table() {
     let scope = "{\"Object\":{\"something\":{\"Const\":\"hello\"}}}";
     let (facts, enums) = run("something == \"hello\"", false, scope, "bool");
-    assert_eq!(facts, vec!["enum@13..20 hello valid #0 hello -".to_string()]);
+    assert_eq!(
+        facts,
+        vec!["enum@13..20 hello valid #0 hello -".to_string()]
+    );
     assert_eq!(enums.len(), 1);
     assert_eq!(enums[0].name, None);
     assert_eq!(enums[0].options.len(), 1);
@@ -1094,7 +1097,10 @@ fn const_literal_has_anonymous_table() {
     assert_eq!(enums[0].options[0].source.as_deref(), Some("\"hello\""));
 
     let (facts, enums) = run("something == \"helloo\"", false, scope, "bool");
-    assert_eq!(facts, vec!["enum@13..21 helloo invalid #0 helloo -".to_string()]);
+    assert_eq!(
+        facts,
+        vec!["enum@13..21 helloo invalid #0 helloo -".to_string()]
+    );
     assert_eq!(enums.len(), 1);
     assert_eq!(enums[0].options[0].value, "hello");
 }

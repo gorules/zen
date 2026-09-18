@@ -14,11 +14,11 @@ use db::Db;
 use zen_expression::nl::NlResult;
 use zen_expression::variable::VariableType;
 
-pub use slot::{CursorScope, ExpressionFacts, SlotResponse};
 pub use graph::{
     FunctionResolutionRequest, FunctionTypeResolver, GraphAnalysis, GraphNodeAnalysis,
     GraphSignature, GraphTraceMap,
 };
+pub use slot::{CursorScope, ExpressionFacts, SlotResponse};
 pub use types::{
     BlockExecution, BlockRef, BlockTrace, Completion, ConditionTrace, ConditionalSchema, Cursor,
     CursorTarget, DecisionTableExtras, DependencyNode, Diagnostic, DiagnosticCode,

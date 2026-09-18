@@ -455,12 +455,15 @@ impl DecisionTableIr {
                 let Some(cell) = rule.get(&col.id).filter(|c| !c.is_empty()) else {
                     continue;
                 };
-                let cell_target = rule.get(ROW_ID_KEY).map(|row| CursorTarget::DecisionTableCell {
-                    row: row.clone(),
-                    col: col.id.clone(),
+                let cell_target = rule
+                    .get(ROW_ID_KEY)
+                    .map(|row| CursorTarget::DecisionTableCell {
+                        row: row.clone(),
+                        col: col.id.clone(),
+                    });
+                let analysis = cx.with_target(cell_target, |cx| {
+                    cx.analyze_standard(cell, Some(col.id.clone()))
                 });
-                let analysis =
-                    cx.with_target(cell_target, |cx| cx.analyze_standard(cell, Some(col.id.clone())));
                 match &declared {
                     Some(expected) => {
                         let actual = &analysis.return_type;

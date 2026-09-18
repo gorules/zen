@@ -812,7 +812,10 @@ fn facts_cover_every_assertion_condition_with_exact_source() {
         ]
     });
     let mut ws = PolicyWorkspace::new();
-    ws.set_policy("policy", serde_json::from_value(doc).expect("valid policy fixture"));
+    ws.set_policy(
+        "policy",
+        serde_json::from_value(doc).expect("valid policy fixture"),
+    );
     let facts = ws.facts("policy");
     let find = |id: &str| {
         facts

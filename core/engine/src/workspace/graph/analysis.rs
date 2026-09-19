@@ -484,18 +484,6 @@ impl<'a> GraphAnalyzer<'a> {
                             ),
                         ));
                     }
-                    if let Some(schema) = content.schema.as_ref() {
-                        let divergent = super::SchemaType::nullability_divergences(schema);
-                        for path in divergent.iter().take(8) {
-                            self.diagnostics.push(Diagnostic::warning(
-                                DiagnosticCode::NullabilityDivergence,
-                                DiagnosticLocation::block(self.path.clone(), node.id.clone()),
-                                format!(
-                                    "optional property `{path}` reads as nullable, but its schema does not allow null — a payload carrying `{path}: null` fails validation at runtime; add \"null\" to its type if null is a real value, or ignore this if the field is strictly absent-or-present"
-                                ),
-                            ));
-                        }
-                    }
                 }
             }
             DecisionNodeKind::OutputNode { content } => {

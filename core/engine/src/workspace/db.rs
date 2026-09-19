@@ -193,6 +193,7 @@ pub struct Db {
     function_requested: RefCell<HashSet<FunctionKey>>,
     function_resolver: RefCell<Option<Box<FunctionTypeResolver>>>,
     scope_roots: RefCell<Vec<VariableType>>,
+    pub(crate) labels: crate::workspace::slot::LabelCache,
 }
 
 impl Drop for Db {
@@ -221,6 +222,7 @@ impl Db {
             function_requested: RefCell::new(HashSet::default()),
             function_resolver: RefCell::new(None),
             scope_roots: RefCell::new(Vec::new()),
+            labels: Default::default(),
         }
     }
 

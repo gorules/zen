@@ -115,7 +115,7 @@ pub fn nl_tokenize_batch(
         .collect()
 }
 
-fn json_to_variable_type(value: &Value) -> zen_expression::variable::VariableType {
+pub(crate) fn json_to_variable_type(value: &Value) -> zen_expression::variable::VariableType {
     use std::rc::Rc;
     use zen_expression::variable::VariableType as VT;
 

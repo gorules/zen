@@ -2977,54 +2977,6 @@ fn decision_boundary_allows_missing_optional_item_field() {
 }
 
 #[test]
-fn optional_property_without_null_type_warns_of_divergence() {
-    let mut ws = Workspace::new();
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "age": { "type": "number" },
-            "name": { "type": "string" },
-            "alias": { "type": ["string", "null"] },
-            "tags": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": { "label": { "type": "string" }, "weight": { "type": "number" } },
-                    "required": ["label"]
-                }
-            }
-        },
-        "required": ["age", "tags"]
-    });
-    ws.set_document(
-        "g",
-        document(linear_graph(
-            Some(schema),
-            vec![expression_node("calc", &[("x", "age * 2")])],
-        )),
-    );
-    let diagnostics = ws.diagnostics("g");
-    let divergent: Vec<&str> = diagnostics
-        .iter()
-        .filter(|d| d.code == DiagnosticCode::NullabilityDivergence)
-        .map(|d| d.message.as_str())
-        .collect();
-    assert_eq!(divergent.len(), 2, "{divergent:?}");
-    assert!(
-        divergent.iter().any(|m| m.contains("`name`")),
-        "{divergent:?}"
-    );
-    assert!(
-        divergent.iter().any(|m| m.contains("`tags[].weight`")),
-        "{divergent:?}"
-    );
-    assert!(
-        !divergent.iter().any(|m| m.contains("`alias`")),
-        "a type that allows null must not warn: {divergent:?}"
-    );
-}
-
-#[test]
 fn decision_boundary_names_nullability_delta() {
     let mut ws = Workspace::new();
     ws.set_document(

@@ -2,6 +2,7 @@ pub(crate) mod db;
 pub(crate) mod editor;
 pub(crate) mod graph;
 pub(crate) mod search;
+pub(crate) mod slot;
 pub(crate) mod types;
 
 use std::sync::Arc;
@@ -17,6 +18,7 @@ pub use graph::{
     FunctionResolutionRequest, FunctionTypeResolver, GraphAnalysis, GraphNodeAnalysis,
     GraphSignature, GraphTraceMap,
 };
+pub use slot::{CursorScope, ExpressionFacts, SlotResponse};
 pub use types::{
     BlockExecution, BlockRef, BlockTrace, Completion, ConditionTrace, ConditionalSchema, Cursor,
     CursorTarget, DecisionTableExtras, DependencyNode, Diagnostic, DiagnosticCode,
@@ -25,7 +27,7 @@ pub use types::{
     ExpressionKind, FieldOrigin, GuardedProperty, InputProperty, InputValidationError,
     InspectResult, NlExpression, OutputProperty, PrepareRename, PropertyKind, ReferenceKind,
     ReferenceSite, RenameTarget, SchemaFieldKind, SchemaGroup, ScopeRequest, SearchHit,
-    SearchHitKind, Severity, Span, Trace, WriteConflict, WriteTrace,
+    SearchHitKind, Severity, SlotRole, Span, Trace, WriteConflict, WriteTrace,
 };
 
 use types::Global;
@@ -183,6 +185,18 @@ impl Workspace {
 
     pub fn nl_tokenize(&self, cursor: &Cursor, text: &str) -> Option<NlResult> {
         self.db.nl_tokenize(cursor, text)
+    }
+
+    pub fn cursor_scope(&self, cursor: &Cursor) -> Option<CursorScope> {
+        self.db.cursor_scope(cursor)
+    }
+
+    pub fn slot(&self, cursor: &Cursor, text: &str) -> Option<SlotResponse> {
+        self.db.slot(cursor, text)
+    }
+
+    pub fn facts(&self, policy_path: &str) -> Vec<ExpressionFacts> {
+        self.db.facts(policy_path)
     }
 
     pub fn prepare_rename(&self, cursor: &Cursor) -> Option<PrepareRename> {

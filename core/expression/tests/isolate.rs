@@ -1046,3 +1046,23 @@ fn string_index_at_usize_max_returns_null() {
     let result = isolate.run_standard("s[i]").unwrap();
     assert_eq!(result, Variable::Null);
 }
+
+#[test]
+fn string_subject_against_date_bounds() {
+    let mut isolate = Isolate::new();
+    isolate.set_environment(json!({ "$": "not a date", "since": "nope" }).into());
+
+    assert!(isolate
+        .run_unary("[d('2024-01-01')..d('2024-12-31')]")
+        .is_err());
+    assert!(isolate
+        .run_standard("since in [d('2024-01-01')..d('2024-12-31')]")
+        .is_err());
+    assert_eq!(
+        isolate
+            .run_standard("since in [d('2024-01-01'), d('2024-02-01')]")
+            .unwrap(),
+        Variable::Bool(false)
+    );
+    assert!(isolate.run_standard("'x' in d('2024-01-01')").is_err());
+}

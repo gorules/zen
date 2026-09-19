@@ -13,8 +13,8 @@ use crate::policy::queries::dependency::PathPrefix;
 use crate::policy::queries::scope::VariableTypeScope;
 use crate::workspace::db::AnalysisPass;
 use crate::workspace::types::{
-    CursorTarget, Diagnostic, DiagnosticCode, DiagnosticLocation, ExpressionKind, Severity,
-    WriteTrace,
+    CursorTarget, Diagnostic, DiagnosticArgs, DiagnosticCode, DiagnosticLocation, ExpressionKind,
+    Severity, WriteTrace,
 };
 
 pub type SharedIntelliSense = Rc<RefCell<IntelliSense>>;
@@ -71,6 +71,8 @@ pub struct AnalysisContext {
     intellisense: SharedIntelliSense,
     dictionary_types: SharedDictionaryTypes,
     poisoned_paths: SharedPoisonedPaths,
+    /// Attached to diagnostics that name no target of their own, e.g. parse errors of one table cell.
+    default_target: Option<CursorTarget>,
 }
 
 impl AnalysisContext {
@@ -94,6 +96,7 @@ impl AnalysisContext {
             intellisense,
             dictionary_types,
             poisoned_paths,
+            default_target: None,
         }
     }
 
@@ -103,6 +106,18 @@ impl AnalysisContext {
 
     pub(super) fn dictionary_types(&self) -> &ahash::HashMap<Arc<str>, VariableType> {
         &self.dictionary_types
+    }
+
+    /// Runs `f` with `target` attached to every diagnostic that does not carry its own.
+    pub fn with_target<R>(
+        &mut self,
+        target: Option<CursorTarget>,
+        f: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let previous = std::mem::replace(&mut self.default_target, target);
+        let result = f(self);
+        self.default_target = previous;
+        result
     }
 
     pub fn analyze_standard(
@@ -268,6 +283,20 @@ impl AnalysisContext {
             .push(Diagnostic::error(code, location, message));
     }
 
+    pub fn error_with_expr_code(
+        &mut self,
+        code: DiagnosticCode,
+        expr_code: &'static str,
+        args: DiagnosticArgs,
+        expression_id: Option<Arc<str>>,
+        span: Option<(u32, u32)>,
+        message: impl Into<String>,
+    ) {
+        let location = self.location_with(expression_id, span);
+        self.diagnostics
+            .push(Diagnostic::error(code, location, message).with_expr_code(expr_code, args));
+    }
+
     pub fn hint_with_target(
         &mut self,
         code: DiagnosticCode,
@@ -294,7 +323,7 @@ impl AnalysisContext {
             block_id: Some(self.block_id.clone()),
             expression_id,
             span,
-            target: None,
+            target: self.default_target.clone(),
         }
     }
 
@@ -429,7 +458,7 @@ impl AnalysisContext {
                 block_id: Some(self.block_id.clone()),
                 expression_id: expression_id.clone(),
                 span: Some(diag.span),
-                target: None,
+                target: self.default_target.clone(),
             };
             self.diagnostics
                 .push(Diagnostic::from_expression(diag, location));

@@ -836,6 +836,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         };
 
         let initial_position = self.position();
+        let start = self.token_start();
         let TokenKind::Bracket(left_bracket) = &self.current()?.kind else {
             self.set_position(initial_position);
             return None;
@@ -874,7 +875,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 right_bracket: *right_bracket,
             },
             |_| NodeMetadata {
-                span: (initial_position as u32, self.position() as u32),
+                span: (start, self.prev_token_end()),
             },
         );
 

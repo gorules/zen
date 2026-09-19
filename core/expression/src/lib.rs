@@ -68,6 +68,7 @@ pub mod lexer;
 pub mod nl;
 pub mod parser;
 pub mod scope;
+pub mod slot;
 pub mod validate;
 pub mod variable;
 pub mod vm;

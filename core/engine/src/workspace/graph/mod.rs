@@ -9,6 +9,7 @@ mod queries;
 mod schema;
 mod ts_type;
 
+pub(crate) use analysis::GraphAnalyzer;
 pub use analysis::{GraphAnalysis, GraphNodeAnalysis, GraphSignature};
 pub use enhance::GraphTraceMap;
 pub use function::{FunctionResolutionRequest, FunctionTypeResolver};

@@ -9,6 +9,7 @@ use crate::vm::date::DynamicVariableExt;
 use crate::vm::error::VMError::*;
 use crate::vm::error::VMResult;
 use crate::vm::interval::{VmInterval, VmIntervalData};
+use crate::vm::VmDate;
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::{Decimal, MathematicalOps};
 use std::rc::Rc;
@@ -250,6 +251,10 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
 
                             self.push(Bool(a.is_some() && b.is_some() && a == b));
                         }
+                        (String(a), Dynamic(b)) | (Dynamic(b), String(a)) => {
+                            let parsed = VmDate::new(String(a), None);
+                            self.push(Bool(parsed.is_valid() && b.as_date() == Some(&parsed)));
+                        }
                         _ => {
                             self.push(Bool(false));
                         }
@@ -383,19 +388,49 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                             let arr = arr.borrow();
                             let is_in = arr.iter().any(|b| match b {
                                 Dynamic(b) => Some(a) == b.as_date(),
+                                String(b) => {
+                                    let parsed = VmDate::new(String(b.clone()), None);
+                                    parsed.is_valid() && *a == parsed
+                                }
                                 _ => false,
                             });
 
                             self.push(Bool(is_in));
                         }
+                        // A date-typed input arrives as an ISO string; date members compare as dates.
                         (String(a), Array(b)) => {
                             let arr = b.borrow();
+                            let parsed = arr
+                                .iter()
+                                .any(|b| matches!(b, Dynamic(_)))
+                                .then(|| VmDate::new(String(a.clone()), None))
+                                .filter(|d| d.is_valid());
                             let is_in = arr.iter().any(|b| match b {
                                 String(b) => &a == b,
+                                Dynamic(b) => {
+                                    parsed.as_ref().is_some_and(|p| Some(p) == b.as_date())
+                                }
                                 _ => false,
                             });
 
                             self.push(Bool(is_in));
+                        }
+                        (String(a), Dynamic(i)) => {
+                            let parsed = VmDate::new(String(a), None);
+                            let interval = i.as_any().downcast_ref::<VmInterval>();
+                            let Some(i) = interval.filter(|_| parsed.is_valid()) else {
+                                return Err(OpcodeErr {
+                                    opcode: "In".into(),
+                                    message: "Unsupported type".into(),
+                                });
+                            };
+
+                            self.push(Bool(i.includes(VmIntervalData::Date(parsed)).map_err(
+                                |err| OpcodeErr {
+                                    opcode: "In".into(),
+                                    message: err.to_string(),
+                                },
+                            )?));
                         }
                         (String(a), Object(b)) => {
                             let obj = b.borrow();
@@ -454,6 +489,29 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                             };
 
                             self.push(Bool(compare(a, b, comparison)));
+                        }
+                        // A date-typed input arrives as an ISO string; against a date it compares as a date.
+                        (String(a), Dynamic(b)) => {
+                            let parsed = VmDate::new(String(a), None);
+                            let Some(b) = b.as_date().filter(|_| parsed.is_valid()) else {
+                                return Err(OpcodeErr {
+                                    opcode: "Compare".into(),
+                                    message: "Unsupported type".into(),
+                                });
+                            };
+
+                            self.push(Bool(compare(&parsed, b, comparison)));
+                        }
+                        (Dynamic(a), String(b)) => {
+                            let parsed = VmDate::new(String(b), None);
+                            let Some(a) = a.as_date().filter(|_| parsed.is_valid()) else {
+                                return Err(OpcodeErr {
+                                    opcode: "Compare".into(),
+                                    message: "Unsupported type".into(),
+                                });
+                            };
+
+                            self.push(Bool(compare(a, &parsed, comparison)));
                         }
                         _ => {
                             return Err(OpcodeErr {

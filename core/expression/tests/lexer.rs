@@ -464,3 +464,90 @@ fn lexer_test() {
         );
     }
 }
+
+#[test]
+fn lexer_lenient_open_string() {
+    let bump = bumpalo::Bump::new();
+    let mut lexer = Lexer::new();
+
+    let result = lexer.tokenize_lenient(&bump, "status == '").unwrap();
+    assert_eq!(result.open_string, Some((QuotationMark::SingleQuote, 10)));
+    assert_eq!(
+        &result.tokens[result.tokens.len() - 3..],
+        &[
+            Token {
+                kind: TokenKind::QuotationMark(QuotationMark::SingleQuote),
+                span: (10, 11),
+                value: "'",
+            },
+            Token {
+                kind: TokenKind::Literal,
+                span: (11, 11),
+                value: "",
+            },
+            Token {
+                kind: TokenKind::QuotationMark(QuotationMark::SingleQuote),
+                span: (11, 11),
+                value: "'",
+            },
+        ]
+    );
+    assert!(lexer.tokenize(&bump, "status == '").is_err());
+
+    let result = lexer.tokenize_lenient(&bump, "x in ['a").unwrap();
+    assert_eq!(result.open_string, Some((QuotationMark::SingleQuote, 6)));
+    assert_eq!(
+        &result.tokens[result.tokens.len() - 3..],
+        &[
+            Token {
+                kind: TokenKind::QuotationMark(QuotationMark::SingleQuote),
+                span: (6, 7),
+                value: "'",
+            },
+            Token {
+                kind: TokenKind::Literal,
+                span: (7, 8),
+                value: "a",
+            },
+            Token {
+                kind: TokenKind::QuotationMark(QuotationMark::SingleQuote),
+                span: (8, 8),
+                value: "'",
+            },
+        ]
+    );
+
+    let result = lexer.tokenize_lenient(&bump, "`abc ${x").unwrap();
+    assert_eq!(result.open_string, None);
+    assert_eq!(
+        result.tokens.last(),
+        Some(&Token {
+            kind: TokenKind::QuotationMark(QuotationMark::Backtick),
+            span: (8, 8),
+            value: "`",
+        })
+    );
+
+    let result = lexer.tokenize_lenient(&bump, "`abc ${x} d").unwrap();
+    assert_eq!(result.open_string, Some((QuotationMark::Backtick, 0)));
+    assert_eq!(
+        &result.tokens[result.tokens.len() - 2..],
+        &[
+            Token {
+                kind: TokenKind::Literal,
+                span: (9, 11),
+                value: " d",
+            },
+            Token {
+                kind: TokenKind::QuotationMark(QuotationMark::Backtick),
+                span: (11, 11),
+                value: "`",
+            },
+        ]
+    );
+
+    let strict = lexer.tokenize(&bump, "a == 'b' and c").unwrap();
+    let lenient = lexer.tokenize_lenient(&bump, "a == 'b' and c").unwrap();
+    assert_eq!(lenient.open_string, None);
+    assert_eq!(strict.as_slice(), lenient.tokens.as_slice());
+}

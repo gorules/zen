@@ -9,10 +9,12 @@ mod search;
 
 pub use cursor::{
     Cursor, CursorTarget, ExpressionKind, InspectResult, PrepareRename, ReferenceKind,
-    ReferenceSite, RenameTarget,
+    ReferenceSite, RenameTarget, SlotRole,
 };
 pub(crate) use diagnostic::SpanOps;
-pub use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticLocation, Severity, Span};
+pub use diagnostic::{
+    Diagnostic, DiagnosticArgs, DiagnosticCode, DiagnosticLocation, Severity, Span,
+};
 pub use edit::EngineEdit;
 pub use error::{EvaluationError, InputValidationError};
 pub use nl::NlExpression;

@@ -31,10 +31,13 @@ impl Db {
     ) -> Option<(Arc<str>, ExpressionKind, VariableType)> {
         if matches!(cursor.target, CursorTarget::TransformInput) {
             let attributes = super::editor::NodePaths::attributes(node)?;
-            let field = attributes.input_field.as_ref()?;
+            let field = attributes
+                .input_field
+                .clone()
+                .unwrap_or_else(|| Arc::from(""));
             let scope =
                 GraphAnalyzer::scope_with_nodes(&node_analysis.input, &node_analysis.nodes_scope);
-            return Some((field.clone(), ExpressionKind::Standard, scope));
+            return Some((field, ExpressionKind::Standard, scope));
         }
 
         match &node.kind {

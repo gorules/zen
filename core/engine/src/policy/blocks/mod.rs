@@ -33,7 +33,7 @@ pub use context::{
     WriteTarget,
 };
 pub use decision_table::{DecisionTableDoc, DecisionTableIr, DeclaredType};
-pub(crate) use decision_table::{DictionaryCandidate, TableSelection};
+pub(crate) use decision_table::{DictionaryCandidate, TableSelection, ROW_ID_KEY};
 pub use expression::{ExpressionDoc, ExpressionIr};
 pub(crate) use match_block::MatchSelection;
 pub use match_block::{MatchDoc, MatchIr};

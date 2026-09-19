@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use napi::anyhow::anyhow;
@@ -57,6 +58,8 @@ pub struct PolicyDiagnostic {
     pub expression_id: Option<String>,
     #[napi(ts_type = "PolicyCursorTarget")]
     pub target: Option<Value>,
+    pub expr_code: Option<String>,
+    pub args: Option<HashMap<String, String>>,
 }
 
 impl From<&workspace::Diagnostic> for PolicyDiagnostic {
@@ -80,6 +83,13 @@ impl From<&workspace::Diagnostic> for PolicyDiagnostic {
                 .target
                 .as_ref()
                 .and_then(|t| serde_json::to_value(t).ok()),
+            expr_code: d.expr_code.map(String::from),
+            args: (!d.args.is_empty()).then(|| {
+                d.args
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.clone()))
+                    .collect()
+            }),
         }
     }
 }
@@ -491,7 +501,7 @@ pub struct PolicyFunctionResolutionRequest {
 
 #[napi]
 pub struct Workspace {
-    inner: workspace::Workspace,
+    pub(crate) inner: workspace::Workspace,
     resolver: Option<ResolverRef>,
 }
 
@@ -510,7 +520,7 @@ impl Workspace {
         }
     }
 
-    fn ensure_function_types(&self, env: &Env) -> napi::Result<()> {
+    pub(crate) fn ensure_function_types(&self, env: &Env) -> napi::Result<()> {
         let Some(resolver) = &self.resolver else {
             return Ok(());
         };

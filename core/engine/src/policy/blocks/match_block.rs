@@ -8,8 +8,8 @@ use zen_expression::variable::{Variable, VariableType};
 use crate::policy::queries::scope::VariableTypeScope;
 
 use crate::workspace::types::{
-    BlockTrace, ConditionTrace, Cursor, CursorTarget, Diagnostic, DiagnosticCode, ExpressionKind,
-    NlExpression,
+    BlockTrace, ConditionTrace, Cursor, CursorTarget, Diagnostic, DiagnosticArgs, DiagnosticCode,
+    ExpressionKind, NlExpression,
 };
 
 use crate::policy::ArcStrTrim;
@@ -199,8 +199,10 @@ impl MatchIr {
             } else {
                 let analysis = cx.analyze_standard(&arm.condition, Some(arm.id.clone()));
                 if !matches!(analysis.return_type, VariableType::Bool | VariableType::Any) {
-                    cx.error(
+                    cx.error_with_expr_code(
                         DiagnosticCode::TypeMismatch,
+                        "type.condition-not-bool",
+                        DiagnosticArgs::from([("got", analysis.return_type.to_string())]),
                         Some(arm.id.clone()),
                         None,
                         format!(

@@ -1,6 +1,7 @@
 mod facts;
 mod graph;
 mod policy;
+mod siblings;
 pub(crate) mod utf16;
 
 use std::cell::RefCell;
@@ -10,7 +11,7 @@ use std::sync::Arc;
 use ahash::{HashMap, HashMapExt};
 use serde::Serialize;
 use zen_expression::intellisense::IntelliSense;
-use zen_expression::slot::{EnumTable, LabelResolver, LiteralFact, Slot, SlotResult};
+use zen_expression::slot::{is_date_type, EnumTable, LabelResolver, LiteralFact, Slot, SlotResult};
 use zen_expression::variable::VariableType;
 
 use crate::policy::ir::DictionaryIr;
@@ -25,6 +26,7 @@ pub use zen_expression::slot::SlotRole;
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SlotResponse {
+    pub complete: bool,
     pub kind: ExpressionKind,
     pub role: SlotRole,
     pub subject_type: Option<VariableType>,
@@ -40,6 +42,7 @@ impl SlotResponse {
         let pos = utf16::utf16_to_byte(text, pos) as u32;
         let SlotResult {
             mut slot,
+            complete,
             literals,
             enums,
             ..
@@ -53,6 +56,7 @@ impl SlotResponse {
         );
         slot.replace_span = utf16::utf16_span(text, slot.replace_span);
         Self {
+            complete,
             kind: scope.kind,
             role: scope.role,
             subject_type: scope.subject_type(),
@@ -207,6 +211,13 @@ impl CursorScope {
         }
     }
 
+    fn unary_with_hint(scope: VariableType, expected: Option<VariableType>) -> Self {
+        Self {
+            expected,
+            ..Self::unary(scope)
+        }
+    }
+
     fn condition(scope: VariableType) -> Self {
         Self {
             kind: ExpressionKind::Standard,
@@ -236,7 +247,13 @@ impl CursorScope {
 
     pub fn subject_type(&self) -> Option<VariableType> {
         match self.kind {
-            ExpressionKind::Unary => Some(self.scope.get("$")),
+            ExpressionKind::Unary => Some(
+                self.expected
+                    .as_ref()
+                    .filter(|hint| is_date_type(hint))
+                    .map(VariableType::shallow_clone)
+                    .unwrap_or_else(|| self.scope.get("$")),
+            ),
             ExpressionKind::Standard => self.expected.as_ref().map(VariableType::shallow_clone),
         }
     }
@@ -244,6 +261,14 @@ impl CursorScope {
 
 impl Db {
     pub fn cursor_scope(&self, cursor: &Cursor) -> Option<CursorScope> {
+        self.cursor_scope_cached(cursor, &mut siblings::SiblingCache::default())
+    }
+
+    fn cursor_scope_cached(
+        &self,
+        cursor: &Cursor,
+        cache: &mut siblings::SiblingCache,
+    ) -> Option<CursorScope> {
         if matches!(
             cursor.target,
             CursorTarget::DataModelName | CursorTarget::DataModelProperty { .. }
@@ -251,9 +276,9 @@ impl Db {
             return None;
         }
         if self.is_graph(&cursor.policy_path) {
-            graph::graph_scope(self, cursor)
+            graph::graph_scope(self, cursor, cache)
         } else {
-            policy::policy_scope(self, cursor)
+            policy::policy_scope(self, cursor, cache)
         }
     }
 }
@@ -262,7 +287,18 @@ fn known_type(resolved: VariableType) -> Option<VariableType> {
     let (base, _) = resolved.unwrap_nullable();
     match base {
         VariableType::Any | VariableType::Null => None,
-        other => Some(other.shallow_clone()),
+        _ => Some(resolved),
+    }
+}
+
+fn date_hint(kind: VariableType) -> VariableType {
+    match kind {
+        VariableType::String => VariableType::Date,
+        VariableType::Array(inner) => date_hint(inner.shallow_clone()).array(),
+        VariableType::Nullable(inner) => {
+            VariableType::Nullable(Rc::new(date_hint(inner.shallow_clone())))
+        }
+        other => other,
     }
 }
 
@@ -275,5 +311,16 @@ fn literal_union(merged: VariableType) -> Option<VariableType> {
         | VariableType::Number
         | VariableType::Date => Some(base.shallow_clone()),
         _ => None,
+    }
+}
+
+fn collected_type(value: VariableType, collect: bool) -> VariableType {
+    if collect {
+        value
+            .iterator()
+            .map(|t| t.as_ref().shallow_clone())
+            .unwrap_or(value)
+    } else {
+        value
     }
 }

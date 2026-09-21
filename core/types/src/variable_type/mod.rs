@@ -15,7 +15,7 @@ type RcCell<T> = Rc<RefCell<T>>;
 /// Object nesting kept when serialising; deeper (or cyclic) objects are emitted empty.
 pub const MAX_TYPE_DEPTH: usize = 32;
 
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Deserialize)]
 pub enum VariableType {
     Any,
     Null,
@@ -140,6 +140,88 @@ impl Serialize for GuardedFields<'_> {
 impl Default for VariableType {
     fn default() -> Self {
         VariableType::Null
+    }
+}
+
+// Preserve the derived debug format while bounding cyclic entity objects.
+impl std::fmt::Debug for VariableType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(
+            &Guarded {
+                inner: self,
+                path: &[],
+            },
+            f,
+        )
+    }
+}
+
+impl std::fmt::Debug for Guarded<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.inner {
+            VariableType::Any => f.write_str("Any"),
+            VariableType::Null => f.write_str("Null"),
+            VariableType::Bool => f.write_str("Bool"),
+            VariableType::String => f.write_str("String"),
+            VariableType::Number => f.write_str("Number"),
+            VariableType::Date => f.write_str("Date"),
+            VariableType::Interval => f.write_str("Interval"),
+            VariableType::Array(inner) | VariableType::Nullable(inner) => {
+                let name = if matches!(self.inner, VariableType::Array(_)) {
+                    "Array"
+                } else {
+                    "Nullable"
+                };
+                f.debug_tuple(name)
+                    .field(&Guarded {
+                        inner,
+                        path: self.path,
+                    })
+                    .finish()
+            }
+            VariableType::Const(value) => f.debug_tuple("Const").field(value).finish(),
+            VariableType::Enum(name, values) => {
+                f.debug_tuple("Enum").field(name).field(values).finish()
+            }
+            VariableType::Object(obj) => {
+                let ptr = Rc::as_ptr(obj) as *const ();
+                if self.path.len() >= MAX_TYPE_DEPTH || self.path.contains(&ptr) {
+                    return f.write_str("Object(<recursive>)");
+                }
+                let mut path = self.path.to_vec();
+                path.push(ptr);
+                f.debug_tuple("Object")
+                    .field(&DebugCell(GuardedFields {
+                        fields: &obj.borrow(),
+                        path,
+                    }))
+                    .finish()
+            }
+        }
+    }
+}
+
+struct DebugCell<'a>(GuardedFields<'a>);
+
+impl std::fmt::Debug for DebugCell<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RefCell").field("value", &self.0).finish()
+    }
+}
+
+impl std::fmt::Debug for GuardedFields<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_map()
+            .entries(self.fields.iter().map(|(key, value)| {
+                (
+                    key,
+                    Guarded {
+                        inner: value,
+                        path: &self.path,
+                    },
+                )
+            }))
+            .finish()
     }
 }
 

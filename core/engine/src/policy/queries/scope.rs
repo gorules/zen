@@ -659,7 +659,8 @@ impl PropertyTypeIr {
             )),
             PropertyTypeIr::Number => Some(VariableType::Number),
             PropertyTypeIr::Boolean => Some(VariableType::Bool),
-            PropertyTypeIr::Date => Some(VariableType::Date),
+            // Declared dates arrive as strings. Only d(...) produces a dynamic date value.
+            PropertyTypeIr::Date => Some(VariableType::String),
             PropertyTypeIr::Relationship { .. } | PropertyTypeIr::Reference { .. } => None,
         }
     }
@@ -706,6 +707,8 @@ pub trait VariableTypeScope {
     fn with_dollar(&self, field_type: &VariableType) -> VariableType;
 
     fn to_acyclic(&self) -> VariableType;
+
+    fn isolated_clone(&self) -> VariableType;
 
     fn break_cycles(&self);
 }
@@ -767,6 +770,32 @@ impl VariableTypeScope for VariableType {
         let mut fields: HashMap<Rc<str>, VariableType> = obj.borrow().clone();
         fields.insert(Variable::dollar_key_rc(), field_type.shallow_clone());
         VariableType::Object(Rc::new(RefCell::new(fields)))
+    }
+
+    fn isolated_clone(&self) -> VariableType {
+        fn copy(t: &VariableType, memo: &mut HashMap<*const (), VariableType>) -> VariableType {
+            match t {
+                VariableType::Object(obj) => {
+                    let key = Rc::as_ptr(obj) as *const ();
+                    if let Some(cached) = memo.get(&key) {
+                        return cached.shallow_clone();
+                    }
+                    let result = VariableType::empty_object();
+                    memo.insert(key, result.shallow_clone());
+                    let VariableType::Object(fields) = &result else {
+                        unreachable!()
+                    };
+                    for (key, value) in obj.borrow().iter() {
+                        fields.borrow_mut().insert(key.clone(), copy(value, memo));
+                    }
+                    result
+                }
+                VariableType::Array(inner) => copy(inner, memo).array(),
+                VariableType::Nullable(inner) => VariableType::Nullable(Rc::new(copy(inner, memo))),
+                other => other.shallow_clone(),
+            }
+        }
+        copy(self, &mut HashMap::default())
     }
 
     fn to_acyclic(&self) -> VariableType {

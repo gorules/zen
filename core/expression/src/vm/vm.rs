@@ -252,7 +252,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                             self.push(Bool(a.is_some() && b.is_some() && a == b));
                         }
                         (String(a), Dynamic(b)) | (Dynamic(b), String(a)) => {
-                            let parsed = VmDate::new(String(a), None);
+                            let parsed = VmDate::from_literal(String(a), None);
                             self.push(Bool(parsed.is_valid() && b.as_date() == Some(&parsed)));
                         }
                         _ => {
@@ -389,7 +389,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                             let is_in = arr.iter().any(|b| match b {
                                 Dynamic(b) => Some(a) == b.as_date(),
                                 String(b) => {
-                                    let parsed = VmDate::new(String(b.clone()), None);
+                                    let parsed = VmDate::from_literal(String(b.clone()), None);
                                     parsed.is_valid() && *a == parsed
                                 }
                                 _ => false,
@@ -403,7 +403,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                             let parsed = arr
                                 .iter()
                                 .any(|b| matches!(b, Dynamic(_)))
-                                .then(|| VmDate::new(String(a.clone()), None))
+                                .then(|| VmDate::from_literal(String(a.clone()), None))
                                 .filter(|d| d.is_valid());
                             let is_in = arr.iter().any(|b| match b {
                                 String(b) => &a == b,
@@ -416,7 +416,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                             self.push(Bool(is_in));
                         }
                         (String(a), Dynamic(i)) => {
-                            let parsed = VmDate::new(String(a), None);
+                            let parsed = VmDate::from_literal(String(a), None);
                             let interval = i.as_any().downcast_ref::<VmInterval>();
                             let Some(i) = interval.filter(|_| parsed.is_valid()) else {
                                 return Err(OpcodeErr {
@@ -484,7 +484,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                                     return Err(OpcodeErr {
                                         opcode: "Compare".into(),
                                         message: "Unsupported type".into(),
-                                    })
+                                    });
                                 }
                             };
 
@@ -492,7 +492,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                         }
                         // A date-typed input arrives as an ISO string; against a date it compares as a date.
                         (String(a), Dynamic(b)) => {
-                            let parsed = VmDate::new(String(a), None);
+                            let parsed = VmDate::from_literal(String(a), None);
                             let Some(b) = b.as_date().filter(|_| parsed.is_valid()) else {
                                 return Err(OpcodeErr {
                                     opcode: "Compare".into(),
@@ -503,7 +503,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                             self.push(Bool(compare(&parsed, b, comparison)));
                         }
                         (Dynamic(a), String(b)) => {
-                            let parsed = VmDate::new(String(b), None);
+                            let parsed = VmDate::from_literal(String(b), None);
                             let Some(a) = a.as_date().filter(|_| parsed.is_valid()) else {
                                 return Err(OpcodeErr {
                                     opcode: "Compare".into(),
@@ -676,7 +676,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                                     return Err(OpcodeErr {
                                         opcode: "Interval".into(),
                                         message: "Unsupported type".into(),
-                                    })
+                                    });
                                 }
                             };
 

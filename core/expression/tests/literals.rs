@@ -18,6 +18,18 @@ fn labels() -> LabelResolver {
     })
 }
 
+#[test]
+fn date_literal_validity_uses_the_explicit_zone() {
+    let (facts, _) = run("d(\"2024-09-08\", \"America/Santiago\")", false, "", "");
+    assert!(facts[0].contains("invalid tz=America/Santiago"));
+    let mut is = IntelliSense::new();
+    let (_, _, complete) = is.literal_analysis("status == \"open\"", false, &scope_for(""), None);
+    assert!(complete);
+    let (_, _, complete) =
+        is.literal_analysis("status == \"open\" and", false, &scope_for(""), None);
+    assert!(!complete);
+}
+
 fn render(fact: &LiteralFact) -> String {
     match fact {
         LiteralFact::Enum {

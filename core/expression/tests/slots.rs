@@ -258,6 +258,117 @@ fn slot_at(
 }
 
 #[test]
+fn review_cursor_context_regressions() {
+    for text in ["map(items as |)", "map(items as x|)"] {
+        let slot = slot_at(text, false, SlotRole::Condition, "", "");
+        assert!(!slot.auto_open, "{text}");
+        assert!(slot.operators.is_empty(), "{text}");
+    }
+    let glued = slot_at("status ??|", false, SlotRole::Value, "", "status");
+    assert_eq!(glued.state, SlotState::Value);
+    assert_eq!(glued.replace_span, (9, 9));
+    assert!(slot_at("age not i|", false, SlotRole::Condition, "", "")
+        .operators
+        .contains(&"not in"));
+    assert_eq!(
+        slot_at(" cust|", false, SlotRole::Path, "", "").state,
+        SlotState::Path
+    );
+    assert!(slot_at("d(customer.|)", false, SlotRole::Condition, "", "")
+        .wanted_scalar()
+        .is_none());
+    for text in ["len(customer.|)", "age in [customer.|]"] {
+        assert!(
+            !slot_at(text, false, SlotRole::Condition, "", "").can_chain,
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn nested_lists_keep_element_expectations() {
+    let expected = array(status());
+    for text in [
+        "[|]",
+        "([|])",
+        "active ? [|] : []",
+        "statuses ?? [|]",
+        "{statuses: [|]}",
+    ] {
+        let wanted = if text.starts_with('{') {
+            obj(&[("statuses", expected.clone())])
+        } else {
+            expected.clone()
+        };
+        let caret = text.find('|').unwrap();
+        let result = IntelliSense::new().slot(
+            &text.replace('|', ""),
+            caret as u32,
+            false,
+            SlotRole::Value,
+            &base_scope(),
+            Some(&wanted),
+        );
+        assert_eq!(result.slot.expected, Some(status()), "{text}");
+        assert_eq!(result.slot.options.len(), 2, "{text}");
+    }
+}
+
+#[test]
+fn enum_options_insert_valid_container_shapes() {
+    for text in ["status in |", "status not in |"] {
+        let slot = slot_at(text, false, SlotRole::Condition, "", "");
+        for option in slot.options {
+            let source = text.replace('|', option.source.as_ref().unwrap());
+            assert!(
+                zen_expression::evaluate_expression(
+                    &source,
+                    serde_json::json!({"status": "open"}).into()
+                )
+                .is_ok(),
+                "{source}"
+            );
+        }
+    }
+    let expected = array(array(status()));
+    let result = IntelliSense::new().slot(
+        "",
+        0,
+        false,
+        SlotRole::Value,
+        &base_scope(),
+        Some(&expected),
+    );
+    assert_eq!(
+        result.slot.options[0].source.as_deref(),
+        Some("[[\"open\"]]")
+    );
+}
+
+#[test]
+fn string_prefix_and_duplicate_unary_values_follow_the_caret() {
+    let slot = slot_at("status == \"op|n\"", false, SlotRole::Condition, "", "");
+    assert_eq!(
+        slot.options
+            .iter()
+            .map(|o| o.value.as_str())
+            .collect::<Vec<_>>(),
+        vec!["open"]
+    );
+    assert_eq!(slot.replace_span, (10, 15));
+    let slot = slot_at("\"open\", \"open|", true, SlotRole::Unary, "$status", "");
+    assert!(slot.options.is_empty());
+    let scope = base_scope();
+    scope.dot_insert("$", VariableType::Nullable(Rc::new(status())));
+    let result = IntelliSense::new().slot("null, ", 6, true, SlotRole::Unary, &scope, None);
+    assert!(!result
+        .slot
+        .options
+        .iter()
+        .any(|o| o.source.as_deref() == Some("null")));
+}
+
+#[test]
 fn argument_carries_function_and_index() {
     let slot = slot_at("d(|", false, SlotRole::Condition, "", "bool");
     assert_eq!(slot.function.as_deref(), Some("d"));

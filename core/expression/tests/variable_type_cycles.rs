@@ -83,3 +83,47 @@ fn merge_and_satisfies_terminate_on_cyclic_objects() {
         .merge(&VariableType::Number)
         .satisfies(&VariableType::Any));
 }
+
+fn branching_cycle(leaf: VariableType) -> VariableType {
+    let nodes: Vec<_> = (0..3).map(|_| VariableType::empty_object()).collect();
+    for (i, node) in nodes.iter().enumerate() {
+        node.dot_insert("left", nodes[(i + 1) % 3].shallow_clone());
+        node.dot_insert("right", nodes[(i + 2) % 3].shallow_clone());
+        node.dot_insert("leaf", leaf.shallow_clone());
+    }
+    nodes[0].shallow_clone()
+}
+
+#[test]
+fn separately_allocated_branching_cycles_are_bounded_and_check_leaves() {
+    let a = branching_cycle(VariableType::Number);
+    let b = branching_cycle(VariableType::Number);
+    assert!(a.satisfies(&b));
+    assert!(!a.satisfies(&branching_cycle(VariableType::Bool)));
+    let merged = a.merge(&b);
+    assert_eq!(merged.get("leaf"), VariableType::Number);
+    assert_eq!(merged.get("left").get("leaf"), VariableType::Number);
+    let mut nested = merged;
+    for _ in 0..12 {
+        nested = nested.get("left");
+        assert_eq!(nested.get("leaf"), VariableType::Number);
+    }
+    assert!(format!("{a:?}").contains("Object(<recursive>)"));
+}
+
+#[test]
+fn debug_preserves_existing_acyclic_format() {
+    let value = VariableType::empty_object();
+    value.dot_insert("age", VariableType::Number.array());
+    assert_eq!(
+        format!("{value:?}"),
+        "Object(RefCell { value: {\"age\": Array(Number)} })"
+    );
+    assert_eq!(
+        format!(
+            "{:?}",
+            VariableType::Nullable(Rc::new(VariableType::String))
+        ),
+        "Nullable(String)"
+    );
+}

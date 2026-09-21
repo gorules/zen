@@ -92,7 +92,7 @@ pub(crate) fn classify(
 ) -> Slot {
     let (role, expected) = effective_role(parsed.source, pos, role, expected);
     let ctx = Ctx::new(parsed, table, unary, role, expected, labels);
-    ctx.run(pos)
+    ctx.classify_at(pos)
 }
 
 pub(crate) fn closure_locals(
@@ -132,7 +132,7 @@ pub(crate) fn fallback(
         expected,
         labels,
     };
-    ctx.run(pos)
+    ctx.classify_at(pos)
 }
 
 /// A path target is only a path while the text before the caret is a bare identifier chain;
@@ -143,7 +143,7 @@ fn effective_role<'p>(
     role: SlotRole,
     expected: Option<&'p VariableType>,
 ) -> (SlotRole, Option<&'p VariableType>) {
-    if role != SlotRole::Path || is_path_prefix(&source.as_bytes()[..pos as usize]) {
+    if role != SlotRole::Path || is_path_prefix(source[..pos as usize].trim_start().as_bytes()) {
         return (role, expected);
     }
     (SlotRole::Value, None)
@@ -323,7 +323,9 @@ fn is_word(kind: Kind) -> bool {
             | Kind::Ref(_)
             | Kind::Number
             | Kind::Bool
-            | Kind::Op(Operator::Logical(_))
+            | Kind::Op(Operator::Logical(
+                LogicalOperator::And | LogicalOperator::Or | LogicalOperator::Not
+            ))
             | Kind::Op(Operator::Comparison(
                 ComparisonOperator::In | ComparisonOperator::NotIn
             ))
@@ -390,9 +392,81 @@ impl<'p, 'a> Ctx<'p, 'a> {
         }
     }
 
+    fn classify_at(&self, pos: u32) -> Slot {
+        let mut slot = self.run(pos);
+        slot.can_chain = matches!(self.role, SlotRole::Condition | SlotRole::Unary)
+            && !self.frames(self.operand_limit(pos)).iter().any(|f| {
+                matches!(
+                    f.kind,
+                    FrameKind::Call { .. }
+                        | FrameKind::List { .. }
+                        | FrameKind::Index
+                        | FrameKind::Object
+                )
+            });
+        // Options describe values valid at this position, including their container shape.
+        if matches!(
+            slot.state,
+            SlotState::Value | SlotState::Argument | SlotState::ListElement
+        ) {
+            let mut expected = slot.expected.as_ref();
+            let mut arrays = 0;
+            while let Some(t) = expected {
+                match t {
+                    VariableType::Nullable(inner) => expected = Some(inner),
+                    VariableType::Array(inner) => {
+                        arrays += 1;
+                        expected = Some(inner);
+                    }
+                    _ => break,
+                }
+            }
+            if arrays > 0 {
+                for option in &mut slot.options {
+                    if !is_null_option(option) {
+                        if let Some(source) = &mut option.source {
+                            *source =
+                                format!("{}{}{}", "[".repeat(arrays), source, "]".repeat(arrays));
+                        }
+                    }
+                }
+            }
+        }
+        slot
+    }
+
     fn run(&self, pos: u32) -> Slot {
         if self.role == SlotRole::Path {
             return self.path_slot(pos);
+        }
+
+        // A closure alias is a declaration, not an expression operand.
+        let limit = self.operand_limit(pos);
+        if let Some(frame) = self.frames(limit).last() {
+            if let FrameKind::Call {
+                name,
+                method: false,
+            } = frame.kind
+            {
+                if frame.commas == 0
+                    && matches!(
+                        FunctionKind::try_from(self.text(self.items[name].span)),
+                        Ok(FunctionKind::Closure(_))
+                    )
+                    && self
+                        .collection_end(frame)
+                        .and_then(|end| self.items.get(end + 1))
+                        .is_some_and(|item| self.text(item.span) == "as" && item.span.1 < pos)
+                {
+                    let span = self
+                        .word_at(pos)
+                        .map(|i| self.items[i].span)
+                        .unwrap_or((pos, pos));
+                    let mut slot = Slot::new(SlotState::Start, span);
+                    slot.suppress_completions = true;
+                    return slot;
+                }
+            }
         }
 
         if let Some((idx, quote, replace)) = self.string_at(pos) {
@@ -400,11 +474,14 @@ impl<'p, 'a> Ctx<'p, 'a> {
             let body = if quote == '`' {
                 self.text((item.span.1, pos)).to_lowercase()
             } else {
-                self.text(item.body).to_lowercase()
+                self.text((item.body.0, pos.min(item.body.1)))
+                    .to_lowercase()
             };
             let mut slot = self.at(item.span.0, idx);
             slot.locals = self.slot_locals(idx);
-            if matches!(slot.state, SlotState::UnaryStart | SlotState::ListElement) {
+            if matches!(slot.state, SlotState::UnaryStart | SlotState::ListElement)
+                && matches!(item.kind, Kind::Str { open: false, .. })
+            {
                 self.unlist(&mut slot, self.text(item.body));
             }
             slot.options.retain(|o| !is_null_option(o));
@@ -493,12 +570,22 @@ impl<'p, 'a> Ctx<'p, 'a> {
         }
         let mut slot = Slot::new(SlotState::Path, (start as u32, end as u32));
         slot.auto_open = self.source.trim().is_empty();
+        if start > 0 && bytes[start - 1] == b'.' {
+            if let Some(dot) = self
+                .items
+                .iter()
+                .position(|i| i.span.0 == (start - 1) as u32)
+            {
+                slot.operand = self.member(dot).operand;
+            }
+        }
         slot
     }
 
     /// `not in` lexes as two words until the trailing space arrives; treat them as one.
     fn not_in_head(&self, w: usize) -> usize {
-        let is_in = self.items[w].kind == Kind::Op(Operator::Comparison(ComparisonOperator::In));
+        let is_in = self.items[w].kind == Kind::Op(Operator::Comparison(ComparisonOperator::In))
+            || (self.items[w].kind == Kind::Ident && self.text(self.items[w].span) == "i");
         match w.checked_sub(1) {
             Some(k)
                 if is_in
@@ -1023,7 +1110,12 @@ impl<'p, 'a> Ctx<'p, 'a> {
     }
 
     fn subject(&self) -> VariableType {
-        self.scope.get("$")
+        // A declared date format guides implicit unary values; explicit reads of $
+        // still use its runtime type (a string until converted with d(...)).
+        self.expected
+            .filter(|hint| self.unary && super::is_date_type(hint))
+            .map(VariableType::shallow_clone)
+            .unwrap_or_else(|| self.scope.get("$"))
     }
 
     fn head(&self) -> Slot {
@@ -1191,14 +1283,19 @@ impl<'p, 'a> Ctx<'p, 'a> {
                 match before {
                     None => item_expectation(self.expected),
                     Some(Kind::Op(Operator::Comparison(_))) => self.left_operand(frame.open - 1),
-                    Some(Kind::Open(Bracket::LeftParenthesis)) => {
-                        self.closure_membership(frame.open)
-                    }
-                    _ => None,
+                    Some(Kind::Open(Bracket::LeftParenthesis)) => self
+                        .closure_membership(frame.open)
+                        .or_else(|| self.list_expected(frame)),
+                    _ => self.list_expected(frame),
                 }
             }
             _ => None,
         }
+    }
+
+    fn list_expected(&self, frame: &Frame) -> Option<VariableType> {
+        let head = self.at(self.items[frame.open].span.0, frame.open);
+        item_expectation(head.expected.as_ref()).filter(|t| !matches!(t, VariableType::Any))
     }
 
     /// `some([...] as x, x in enumField)`: the collection literal expects that field's enum.
@@ -1423,9 +1520,6 @@ impl<'p, 'a> Ctx<'p, 'a> {
             slot.expected = match &kind {
                 FunctionKind::Closure(_) if index >= 1 => return self.closure_head(frames),
                 FunctionKind::Closure(_) => Some(VariableType::Array(Rc::new(VariableType::Any))),
-                FunctionKind::Internal(InternalFunction::Date) if index == 0 => {
-                    Some(VariableType::Date)
-                }
                 FunctionKind::Internal(InternalFunction::Contains) if index == 1 => {
                     self.haystack_element(frame).or_else(|| {
                         FunctionRegistry::get_definition(&kind).and_then(|d| d.param_type(1))
@@ -1656,6 +1750,7 @@ impl<'p, 'a> Ctx<'p, 'a> {
                 Kind::Str { open: false, .. } if depth == 0 => {
                     listed.push(self.text(it.body).to_string());
                 }
+                Kind::Ref(Identifier::Null) if depth == 0 => listed.push(NULL_SOURCE.to_string()),
                 _ => {}
             }
         }
@@ -1691,14 +1786,18 @@ impl<'p, 'a> Ctx<'p, 'a> {
                         list_open = false;
                     }
                 }
-                Kind::Str { open: false, .. } => {
+                Kind::Str { open: false, .. } | Kind::Ref(Identifier::Null) => {
                     let clause_value = depth == 0
                         && before.is_none_or(|k| {
                             is_clause_boundary(k)
                                 || k == Kind::Op(Operator::Comparison(ComparisonOperator::Equal))
                         });
                     if clause_value || (depth == 1 && list_open) {
-                        listed.push(self.text(it.body).to_string());
+                        listed.push(if it.kind == Kind::Ref(Identifier::Null) {
+                            NULL_SOURCE.to_string()
+                        } else {
+                            self.text(it.body).to_string()
+                        });
                     }
                 }
                 _ => {}

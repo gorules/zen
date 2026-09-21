@@ -79,6 +79,10 @@ pub struct Slot {
     pub listed: Vec<String>,
     pub auto_open: bool,
     pub locals: Vec<Local>,
+    #[serde(skip)]
+    pub can_chain: bool,
+    #[serde(skip)]
+    pub suppress_completions: bool,
 }
 
 impl Slot {
@@ -114,6 +118,8 @@ impl Slot {
             listed: Vec::new(),
             auto_open: false,
             locals: Vec::new(),
+            can_chain: false,
+            suppress_completions: false,
         }
     }
 }
@@ -184,6 +190,7 @@ pub struct EnumTable {
 #[serde(rename_all = "camelCase")]
 pub struct SlotResult {
     pub unary: bool,
+    pub complete: bool,
     pub slot: Slot,
     pub literals: Vec<LiteralFact>,
     pub enums: Vec<EnumTable>,
@@ -196,6 +203,15 @@ pub fn encode_string(value: &str) -> Option<String> {
         Some(format!("'{value}'"))
     } else {
         None
+    }
+}
+
+/// Whether a hint describes dates, including optional dates and arrays of dates.
+pub fn is_date_type(kind: &VariableType) -> bool {
+    match kind {
+        VariableType::Date => true,
+        VariableType::Array(inner) | VariableType::Nullable(inner) => is_date_type(inner),
+        _ => false,
     }
 }
 
@@ -364,6 +380,7 @@ impl IntelliSense {
         ) else {
             return SlotResult {
                 unary,
+                complete: source.trim().is_empty(),
                 slot: classify::fallback(
                     source,
                     pos,
@@ -393,6 +410,7 @@ impl IntelliSense {
 
         SlotResult {
             unary,
+            complete: parsed.complete && !parsed.ast.has_error() && parsed.open_string.is_none(),
             slot,
             literals,
             enums,
@@ -431,6 +449,17 @@ impl IntelliSense {
         scope: &VariableType,
         expected: Option<&VariableType>,
     ) -> (Vec<LiteralFact>, Vec<EnumTable>) {
+        let (literals, enums, _) = self.literal_analysis(source, unary, scope, expected);
+        (literals, enums)
+    }
+
+    pub fn literal_analysis(
+        &mut self,
+        source: &str,
+        unary: bool,
+        scope: &VariableType,
+        expected: Option<&VariableType>,
+    ) -> (Vec<LiteralFact>, Vec<EnumTable>, bool) {
         self.arena.reset();
         let Some(parsed) = parse_partial(
             &self.arena,
@@ -440,11 +469,17 @@ impl IntelliSense {
             unary,
             scope,
         ) else {
-            return (Vec::new(), Vec::new());
+            return (Vec::new(), Vec::new(), source.trim().is_empty());
         };
 
         let table = NodeTable::build(&parsed, unary, expected);
-        literals::facts(&parsed, &table, unary, expected, self.labels.as_ref())
+        let (literals, enums) =
+            literals::facts(&parsed, &table, unary, expected, self.labels.as_ref());
+        (
+            literals,
+            enums,
+            parsed.complete && !parsed.ast.has_error() && parsed.open_string.is_none(),
+        )
     }
 }
 

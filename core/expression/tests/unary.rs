@@ -196,3 +196,20 @@ fn joiners_nest_inside_brackets_arguments_and_templates() {
         assert!(result.is_complete, "Parser stopped early for: {src}");
     }
 }
+
+#[test]
+fn nested_logical_precedence_matches_standard_evaluation() {
+    use serde_json::json;
+    use zen_expression::Isolate;
+    let mut isolate = Isolate::new();
+    isolate.set_environment(json!({ "$": true }).into());
+    for source in [
+        "== (true or false and false)",
+        "== (false and false or true)",
+        "== contains([true], true or false and false)",
+        "== [true or false and false][0]",
+        "== (`${true or false and false}` == 'true')",
+    ] {
+        assert!(isolate.run_unary(source).unwrap(), "{source}");
+    }
+}

@@ -192,7 +192,7 @@ pub struct Db {
     function_requests: RefCell<Vec<FunctionResolutionRequest>>,
     function_requested: RefCell<HashSet<FunctionKey>>,
     function_resolver: RefCell<Option<Box<FunctionTypeResolver>>>,
-    scope_roots: RefCell<Vec<VariableType>>,
+    scope_roots: Rc<RefCell<Vec<VariableType>>>,
     pub(crate) labels: crate::workspace::slot::LabelCache,
 }
 
@@ -221,7 +221,7 @@ impl Db {
             function_requests: RefCell::new(Vec::new()),
             function_requested: RefCell::new(HashSet::default()),
             function_resolver: RefCell::new(None),
-            scope_roots: RefCell::new(Vec::new()),
+            scope_roots: Rc::new(RefCell::new(Vec::new())),
             labels: Default::default(),
         }
     }
@@ -531,6 +531,7 @@ impl Db {
                     .push(base_scope.shallow_clone());
                 Arc::new(Snapshot::compute_enriched(
                     &base_scope,
+                    self.scope_roots.clone(),
                     &unit.dep_graph,
                     &unit.execution_order,
                     &snap.rule_by_ref,

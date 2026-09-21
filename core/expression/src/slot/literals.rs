@@ -414,7 +414,9 @@ fn date_arg(arguments: &[&Node]) -> Option<DateArg> {
         }),
         [Node::String(value), Node::String(tz)] => Some(DateArg::Literal {
             value: value.to_string(),
-            valid: date_valid(value) && Tz::from_str(tz).is_ok(),
+            valid: Tz::from_str(tz).ok().is_some_and(|zone| {
+                VmDate::new(Variable::String((*value).into()), Some(zone)).is_valid()
+            }),
             tz: Some(tz.to_string()),
         }),
         [field @ (Node::Identifier(_) | Node::Member { .. })] => Some(DateArg::Field {

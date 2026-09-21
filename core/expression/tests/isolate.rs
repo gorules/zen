@@ -1066,3 +1066,32 @@ fn string_subject_against_date_bounds() {
     );
     assert!(isolate.run_standard("'x' in d('2024-01-01')").is_err());
 }
+
+#[test]
+fn implicit_date_coercion_does_not_interpret_timezones_as_now() {
+    let mut isolate = Isolate::new();
+    for source in [
+        "'UTC' < d('2030-01-01')",
+        "d('2020-01-01') < 'Japan'",
+        "'Japan' in [d('2020-01-01')..d('2030-01-01')]",
+    ] {
+        assert!(isolate.run_standard(source).is_err(), "{source}");
+    }
+    for source in ["'UTC' == d()", "'UTC' in [d()]"] {
+        assert_eq!(
+            isolate.run_standard(source).unwrap(),
+            Variable::Bool(false),
+            "{source}"
+        );
+    }
+    assert_eq!(
+        isolate.run_standard("d('UTC').isValid()").unwrap(),
+        Variable::Bool(true)
+    );
+    assert_eq!(
+        isolate
+            .run_standard("'2024-01-01' < d('2030-01-01')")
+            .unwrap(),
+        Variable::Bool(true)
+    );
+}

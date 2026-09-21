@@ -33,7 +33,7 @@ condition;false;;bool;status == "op|;inString;status;open=Open case;;10..13;true
 condition;false;;bool;status == "clo|sed";inString;status;closed=Closed;;10..18;true
 condition;false;;bool;status in ['op|;inString;status;open=Open case;;11..14;true
 condition;false;;bool;startsWith(name, "|;inString;string;;;17..18;false
-condition;false;;bool;d("|;inString;date;;;2..3;true
+condition;false;;bool;d("|;inString;any;;;2..3;true
 condition;false;;bool;name == "Ünïcode" and status == "|;inString;status;open=Open case,closed=Closed;;34..35;true
 condition;false;;bool;mood == "|;inString;mood;happy=😀 Happy,sad=😢 Sad;;8..9;true
 condition;false;;bool;mood == "😀|;inString;mood;happy=😀 Happy;;8..13;true
@@ -103,7 +103,7 @@ condition;false;;bool;d().|;member;;;;4..4;false
 condition;false;;bool;d("2024-01-01").|;member;;;;16..16;false
 condition;false;;bool;some(items, #.|;member;;;;14..14;false
 # Function arguments and closures
-condition;false;;bool;d(|;argument;date;;;2..2;true
+condition;false;;bool;d(|;argument;any;;;2..2;true
 condition;false;;bool;d("2024-01-01", |;argument;string;;;16..16;true
 condition;false;;bool;len(|;argument;any;;;4..4;true
 condition;false;;bool;contains(name, |;argument;any;;;15..15;true
@@ -159,8 +159,8 @@ unary;true;$number;;(1..5) or |;unaryStart;number;;>,>=,<,<=,==,!=,in,not in;10.
 unary;true;$string;;len($) |;operator;;;==,!=,<,<=,>,>=,in,not in;7..7;true
 unary;true;$string;;contains($, "a") |;logical;bool;;and,or;17..17;true
 unary;true;$date;;|;unaryStart;date;;>,>=,<,<=,==,!=,in,not in;0..0;true
-unary;true;$date;;> d(|;argument;date;;;4..4;true
-unary;true;$date;;> d("|;inString;date;;;4..5;true
+unary;true;$date;;> d(|;argument;any;;;4..4;true
+unary;true;$date;;> d("|;inString;any;;;4..5;true
 unary;true;$date;;[d()..|;range;date;;;6..6;false
 unary;true;$date;;> d() |;logical;bool;;and,or;6..6;true
 unary;true;$bool;;|;unaryStart;bool;;==,!=;0..0;true
@@ -199,7 +199,7 @@ unary;true;$string;;startsWith($, "|;inString;string;;;14..15;false
 unary;true;$string;;contains($, "|;inString;any;;;12..13;false
 unary;true;$string;;len($) > |;value;number;;;9..9;true
 unary;true;$string;;upper($) == "|;inString;string;;;12..13;true
-unary;true;$date;;d($) > d("|;inString;date;;;9..10;true
+unary;true;$date;;d($) > d("|;inString;any;;;9..10;true
 unary;true;$date;;> d("2024-01-01").add(1, "|;inString;DurationUnit;seconds,second,secs,sec,s,minutes,minute,min,mins,m,hours,hour,hr,hrs,h,days,day,d,weeks,week,w,months,month,mo,M,quarters,quarter,qtr,q,years,year,y;;25..26;false
 unary;true;$date;;> d().|;member;date;;;6..6;false
 unary;true;$date;;> d().startOf("|;inString;DurationUnit;seconds,second,secs,sec,s,minutes,minute,min,mins,m,hours,hour,hr,hrs,h,days,day,d,weeks,week,w,months,month,mo,M,quarters,quarter,qtr,q,years,year,y;;14..15;false
@@ -219,7 +219,7 @@ condition;false;;bool;filter(items, #.status == "|;inString;status;open=Open cas
 condition;false;;bool;some(orders, #.sku == "|;inString;string;;;22..23;true
 condition;false;;bool;len(items) > |;value;number;;;13..13;true
 condition;false;;bool;upper(name) == "|;inString;string;;;15..16;true
-condition;false;;bool;since.isAfter(d("|;inString;date;;;16..17;true
+condition;false;;bool;since.isAfter(d("|;inString;any;;;16..17;true
 condition;false;;bool;d(since).add(1, "|;inString;DurationUnit;seconds,second,secs,sec,s,minutes,minute,min,mins,m,hours,hour,hr,hrs,h,days,day,d,weeks,week,w,months,month,mo,M,quarters,quarter,qtr,q,years,year,y;;16..17;false
 condition;false;;bool;age not in (|;range;number;;;12..12;false
 condition;false;;bool;age in (|;range;number;;;8..8;false
@@ -247,7 +247,7 @@ condition;false;;bool;name == `a ${age}` |;logical;bool;;and,or;19..19;true
 value;false;;status;"|;inString;status;open=Open case,closed=Closed;;0..1;true
 value;false;;bool;tr|;value;bool;;;0..2;true
 value;false;;date;|;value;date;;;0..0;true
-value;false;;date;d(|;argument;date;;;2..2;true
+value;false;;date;d(|;argument;any;;;2..2;true
 value;false;;{"Array":{"Enum":["status",["open","closed"]]}};["open", "|;inString;status;closed=Closed;;9..10;true
 value;false;;{"Object":{"status":{"Enum":["status",["open","closed"]]},"n":"Number"}};{ status: "|;inString;status;open=Open case,closed=Closed;;10..11;true
 value;false;;{"Object":{"status":{"Enum":["status",["open","closed"]]},"n":"Number"}};{ n: 1, status: |;value;status;open=Open case,closed=Closed;;16..16;true
@@ -317,12 +317,12 @@ unary;true;$string;;$ in ["a", "|;inString;string;;;11..12;true
 unary;true;$string;;matches($, "|;inString;string;;;11..12;false
 unary;true;$string;;$ == upper(|;argument;string;;;11..11;true
 unary;true;$string;;len($) in [|;listElement;number;;;11..11;true
-unary;true;$date;;$ > d("2024-01-01") and $ < d(|;argument;date;;;30..30;true
+unary;true;$date;;$ > d("2024-01-01") and $ < d(|;argument;any;;;30..30;true
 unary;true;$date;;> d("2024-01-01"|;operator;;;==,!=,in,not in;16..16;false
 unary;true;$date;;> d("2024-01-01").add(1, "day") |;logical;bool;;and,or;32..32;true
 unary;true;$date;;$.isAfter(|;argument;date;;;10..10;true
-unary;true;$date;;$.isAfter(d(|;argument;date;;;12..12;true
-unary;true;$date;;[d("2024-01-01")..d(|;argument;date;;;20..20;true
+unary;true;$date;;$.isAfter(d(|;argument;any;;;12..12;true
+unary;true;$date;;[d("2024-01-01")..d(|;argument;any;;;20..20;true
 unary;true;$date;;in [d("2024-01-01")..|;range;date;;;21..21;false
 unary;true;$date;;> d().startOf("day") |;logical;bool;;and,or;21..21;true
 unary;true;$bool;;== tr|;value;bool;;;3..5;true
@@ -362,7 +362,7 @@ condition;false;;bool;status == "open" ? active : |;start;bool;;;28..28;true
 condition;false;;bool;(status ?? "open") == "|;inString;status;open=Open case,closed=Closed;;22..23;true
 condition;false;;bool;status ?? "open" == "|;inString;string;;;20..21;true
 condition;false;;bool;customer.status != "open" and customer.status != "|;inString;status;open=Open case,closed=Closed;;49..50;true
-condition;false;;bool;since > d("2024-01-01").add(1, "day") and since < d(|;argument;date;;;52..52;true
+condition;false;;bool;since > d("2024-01-01").add(1, "day") and since < d(|;argument;any;;;52..52;true
 condition;false;;bool;since.diff(d(), "days") > |;value;number;;;26..26;true
 condition;false;;bool;since.isSame(|;argument;date;;;13..13;true
 condition;false;;bool;since.format("|;inString;string;;;13..14;false
@@ -380,7 +380,7 @@ condition;false;;bool;age in [18, 21] |;logical;bool;;and,or;16..16;true
 condition;false;;bool;age in [18..|;range;number;;;12..12;false
 condition;false;;bool;age in (18..|;range;number;;;12..12;false
 condition;false;;bool;since in [d("2024-01-01")..|;range;date;;;27..27;false
-condition;false;;bool;since in [d("2024-01-01")..d(|;argument;date;;;29..29;true
+condition;false;;bool;since in [d("2024-01-01")..d(|;argument;any;;;29..29;true
 condition;false;;bool;age not in [1..5] and |;start;bool;;;22..22;true
 condition;false;;bool;age >= 18 and (status == "open" or status == "|;inString;status;open=Open case,closed=Closed;;45..46;true
 condition;false;;bool;age >= 18 and (status == "open" or |;start;bool;;;35..35;true
@@ -433,7 +433,7 @@ value;false;;number;sum(map(items, #.price)) + |;start;number;;;27..27;true
 value;false;;number;round(amount ?? 0, |;argument;number;;;19..19;true
 value;false;;number;len(|;argument;any;;;4..4;true
 value;false;;number;age ?? |;value;number;;;7..7;true
-value;false;;date;d("|;inString;date;;;2..3;true
+value;false;;date;d("|;inString;any;;;2..3;true
 value;false;;date;d().add(|;argument;any;;;8..8;true
 value;false;;date;d().add(1, "|;inString;DurationUnit;seconds,second,secs,sec,s,minutes,minute,min,mins,m,hours,hour,hr,hrs,h,days,day,d,weeks,week,w,months,month,mo,M,quarters,quarter,qtr,q,years,year,y;;11..12;false
 value;false;;date;since.startOf("d|;inString;DurationUnit;days,day,d;;14..16;false
@@ -471,7 +471,7 @@ condition;false;;bool;status ==| "open";value;status;open=Open case,closed=Close
 condition;false;;bool;status =|= "open";operator;;;==,!=,in,not in;8..8;false
 condition;false;;bool;cust|omer.status == "open";start;bool;;;0..8;false
 condition;false;;bool;customer.st|atus == "open";member;;;;9..15;false
-condition;false;;bool;d(|) > since;argument;date;;;2..2;true
+condition;false;;bool;d(|) > since;argument;any;;;2..2;true
 condition;false;;bool;some(items, |#.price > 1);closure;object;;;12..12;true
 condition;false;;bool;some(items, #.price > |1);value;number;;;22..22;true
 condition;false;;bool;age in [1..|5];range;number;;;11..11;false
@@ -544,12 +544,12 @@ unary;true;$string;;startsWith($, "a") or |;unaryStart;string;;!=,in,not in;22..
 unary;true;$string;;!= "|;inString;string;;;3..4;true
 unary;true;$string;;"a"|;logical;bool;;and,or;3..3;false
 unary;true;$string;;not startsWith($, "|;inString;string;;;18..19;false
-unary;true;$date;;== d(|;argument;date;;;5..5;true
-unary;true;$date;;d(|;argument;date;;;2..2;true
+unary;true;$date;;== d(|;argument;any;;;5..5;true
+unary;true;$date;;d(|;argument;any;;;2..2;true
 unary;true;$date;;d("2024-01-01") |;logical;bool;;and,or;16..16;true
 unary;true;$date;;d("2024-01-01"), |;unaryStart;date;;>,>=,<,<=,==,!=,in,not in;17..17;true
 unary;true;$date;;[d("2024-01-01")..d("2024-12-31")] |;logical;bool;;and,or;35..35;true
-unary;true;$date;;> d("2024-01-01") and < d("|;inString;date;;;26..27;true
+unary;true;$date;;> d("2024-01-01") and < d("|;inString;any;;;26..27;true
 unary;true;$date;;d().startOf("day") |;logical;bool;;and,or;19..19;true
 unary;true;$bool;;false |;logical;bool;;and,or;6..6;true
 unary;true;$bool;;!= |;value;bool;;;3..3;true
@@ -557,7 +557,7 @@ unary;true;$any;;"a", |;unaryStart;any;;>,>=,<,<=,==,!=,in,not in;5..5;true
 unary;true;$any;;== |;value;any;;;3..3;true
 condition;false;;bool;age > 1.|;value;number;;;6..8;true
 condition;false;;bool;age in [1, 2, 3] and status in ["open", |;listElement;status;closed=Closed;;40..40;true
-condition;false;;bool;since > d("2024-01-01") and since < d("|;inString;date;;;38..39;true
+condition;false;;bool;since > d("2024-01-01") and since < d("|;inString;any;;;38..39;true
 condition;false;;bool;startsWith(name, "a") and |;start;bool;;;26..26;true
 condition;false;;bool;not startsWith(name, "|;inString;string;;;21..22;false
 condition;false;;bool;len(tags) == 0 or tags[0] == "|;inString;string;;;29..30;true
@@ -582,7 +582,7 @@ condition;false;;bool;age == null|;value;number;;;7..11;true
 condition;false;;bool;age in [1..5]|;logical;bool;;and,or;13..13;false
 condition;false;;bool;age in [1..5] and age not in (|;range;number;;;30..30;false
 condition;false;;bool;age > | garbage here;value;number;;;6..6;true
-condition;false;;bool;status == "|garbage;inString;status;;;10..18;true
+condition;false;;bool;status == "|garbage;inString;status;open=Open case,closed=Closed;;10..18;true
 condition;false;;bool;some(items, #.status == "open"|);logical;bool;;and,or;30..30;false
 condition;false;;bool;status == "open" and age > 1|8;value;number;;;27..29;true
 condition;false;;bool;status == "open" and and |;start;bool;;;25..25;true
@@ -610,8 +610,8 @@ path;false;;;in|;path;;;;0..2;false
 path;false;;;customer.|address;path;;;;9..16;false
 
 # Path role: only a bare identifier chain is a path, anything else classifies as a value expression
-path;false;;;d(|;argument;date;;;2..2;true
-path;false;;;d("|;inString;date;;;2..3;true
+path;false;;;d(|;argument;any;;;2..2;true
+path;false;;;d("|;inString;any;;;2..3;true
 path;false;;;customer.since.|;path;;;;15..15;false
 path;false;;;customer.since.isAfter(|;argument;date;;;23..23;true
 path;false;;;customer.name |;operator;;;==,!=,in,not in;14..14;true

@@ -15,6 +15,7 @@ use crate::workspace::types::{Cursor, CursorTarget, ExpressionKind};
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExpressionFacts {
+    pub complete: bool,
     pub block_id: Arc<str>,
     pub target: CursorTarget,
     pub source: Arc<str>,
@@ -53,6 +54,7 @@ impl Db {
         };
         intellisense.borrow_mut().set_labels(labels.clone());
         let mut out = Vec::with_capacity(sites.len());
+        let mut cache = super::siblings::SiblingCache::default();
         for site in sites {
             let cursor = Cursor {
                 policy_path: path.clone(),
@@ -60,7 +62,7 @@ impl Db {
                 pos: 0,
                 target: site.target.clone(),
             };
-            let Some(scope) = self.cursor_scope(&cursor) else {
+            let Some(scope) = self.cursor_scope_cached(&cursor, &mut cache) else {
                 continue;
             };
             let unary = matches!(scope.kind, ExpressionKind::Unary);
@@ -69,13 +71,14 @@ impl Db {
                 .as_ref()
                 .and_then(|t| subject_enum_options(t, labels.as_ref()))
                 .unwrap_or_default();
-            let (literals, enums) = intellisense.borrow_mut().literals(
+            let (literals, enums, complete) = intellisense.borrow_mut().literal_analysis(
                 &site.source,
                 unary,
                 &scope.scope,
                 scope.expected.as_ref(),
             );
             out.push(ExpressionFacts {
+                complete,
                 block_id: site.block_id,
                 target: site.target,
                 kind: scope.kind,

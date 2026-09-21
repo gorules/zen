@@ -1,16 +1,23 @@
+use std::rc::Rc;
 use std::sync::Arc;
 
 use zen_expression::variable::VariableType;
 
-use super::{known_type, literal_union, CursorScope};
+use super::siblings::SiblingCache;
+use super::{collected_type, date_hint, is_date_type, known_type, literal_union, CursorScope};
 use crate::policy::blocks::{
     BlockKind, DecisionTableIr, ExpressionIr, IntelliSenseSource, MatchIr, ROW_ID_KEY,
 };
+use crate::policy::ir::PropertyTypeIr;
 use crate::policy::queries::scope::VariableTypeScope;
 use crate::workspace::db::{Db, Unit};
 use crate::workspace::types::{BlockRef, Cursor, CursorTarget, ExpressionKind};
 
-pub(super) fn policy_scope(db: &Db, cursor: &Cursor) -> Option<CursorScope> {
+pub(super) fn policy_scope(
+    db: &Db,
+    cursor: &Cursor,
+    cache: &mut SiblingCache,
+) -> Option<CursorScope> {
     let block_ref = BlockRef {
         policy_path: cursor.policy_path.clone(),
         block_id: cursor.block_id.clone(),
@@ -21,11 +28,11 @@ pub(super) fn policy_scope(db: &Db, cursor: &Cursor) -> Option<CursorScope> {
     let scope = enriched.scope_before(&block_ref);
     match &block.kind {
         BlockKind::DecisionTable(table) => {
-            table_scope(db, &unit, table, cursor, scope, &enriched.scope)
+            table_scope(db, &unit, table, cursor, scope, &enriched.scope, cache)
         }
-        BlockKind::Expression(expression) => expression_scope(db, expression, cursor, scope),
+        BlockKind::Expression(expression) => expression_scope(db, &unit, expression, cursor, scope),
         BlockKind::Assertion(_) => assertion_scope(cursor, scope),
-        BlockKind::Match(block) => match_scope(db, block, cursor, scope),
+        BlockKind::Match(block) => match_scope(db, &unit, block, cursor, scope),
     }
 }
 
@@ -36,6 +43,7 @@ fn table_scope(
     cursor: &Cursor,
     scope: VariableType,
     written: &VariableType,
+    cache: &mut SiblingCache,
 ) -> Option<CursorScope> {
     match &cursor.target {
         CursorTarget::DecisionTableHead { col } => {
@@ -43,12 +51,15 @@ fn table_scope(
                 || table.outputs.iter().any(|c| c.id == *col);
             known.then(|| CursorScope::path(scope))
         }
-        CursorTarget::DecisionTableCell { row, col } => {
+        CursorTarget::DecisionTableCell { col, .. } => {
             if let Some(column) = table.inputs.iter().find(|c| c.id == *col) {
                 return Some(match column.field.as_ref().filter(|f| !f.is_empty()) {
                     Some(field) => {
+                        // Calendar hints use the declared date format, while expression
+                        // diagnostics/completions keep the actual string runtime type.
                         let field_type = return_type(db, field, &scope);
-                        CursorScope::unary(scope.with_dollar(&field_type))
+                        let hint = declared_type(db, unit, field).filter(is_date_type);
+                        CursorScope::unary_with_hint(scope.with_dollar(&field_type), hint)
                     }
                     None => CursorScope::condition(scope),
                 });
@@ -58,8 +69,26 @@ fn table_scope(
                 .declared
                 .as_ref()
                 .and_then(|declared| declared.resolve(&unit.dictionary_types()))
-                .or_else(|| written_type(db, written, column.field.as_ref()))
-                .or_else(|| table_sibling_union(db, table, row, col, &scope));
+                .or_else(|| {
+                    written_type(db, unit, written, column.field.as_ref())
+                        .map(|t| collected_type(t, column.collect))
+                })
+                .or_else(|| {
+                    cache.infer(cursor, || {
+                        table
+                            .rules
+                            .iter()
+                            .filter_map(|rule| {
+                                let id = rule.get(ROW_ID_KEY)?.clone();
+                                let t = rule
+                                    .get(col)
+                                    .filter(|cell| !cell.is_empty())
+                                    .map(|cell| return_type(db, cell, &scope));
+                                Some((id, t))
+                            })
+                            .collect()
+                    })
+                });
             Some(CursorScope::value(scope, expected))
         }
         _ => None,
@@ -68,6 +97,7 @@ fn table_scope(
 
 fn expression_scope(
     db: &Db,
+    unit: &Unit,
     expression: &ExpressionIr,
     cursor: &Cursor,
     scope: VariableType,
@@ -75,7 +105,7 @@ fn expression_scope(
     match &cursor.target {
         CursorTarget::ExpressionKey => Some(CursorScope::path(scope)),
         CursorTarget::Expression { .. } => {
-            let expected = declared_type(db, &expression.key);
+            let expected = declared_type(db, unit, &expression.key);
             Some(CursorScope::value(scope, expected))
         }
         _ => None,
@@ -92,6 +122,7 @@ fn assertion_scope(cursor: &Cursor, scope: VariableType) -> Option<CursorScope> 
 
 fn match_scope(
     db: &Db,
+    unit: &Unit,
     block: &MatchIr,
     cursor: &Cursor,
     scope: VariableType,
@@ -100,36 +131,12 @@ fn match_scope(
         CursorTarget::MatchTarget => Some(CursorScope::path(scope)),
         CursorTarget::Expression { .. } => Some(CursorScope::condition(scope)),
         CursorTarget::MatchValue { id } => {
-            let expected =
-                declared_type(db, &block.key).or_else(|| sibling_union(db, block, id, &scope));
+            let expected = declared_type(db, unit, &block.key)
+                .or_else(|| sibling_union(db, block, id, &scope));
             Some(CursorScope::value(scope, expected))
         }
         _ => None,
     }
-}
-
-fn table_sibling_union(
-    db: &Db,
-    table: &DecisionTableIr,
-    row: &Arc<str>,
-    col: &Arc<str>,
-    scope: &VariableType,
-) -> Option<VariableType> {
-    let mut merged: Option<VariableType> = None;
-    for rule in &table.rules {
-        if rule.get(ROW_ID_KEY) == Some(row) {
-            continue;
-        }
-        let Some(cell) = rule.get(col).filter(|c| !c.is_empty()) else {
-            continue;
-        };
-        let cell_type = return_type(db, cell, scope);
-        merged = Some(match merged {
-            Some(acc) => acc.merge(&cell_type),
-            None => cell_type,
-        });
-    }
-    literal_union(merged?)
 }
 
 fn sibling_union(
@@ -160,16 +167,38 @@ fn return_type(db: &Db, source: &Arc<str>, scope: &VariableType) -> VariableType
         .shallow_clone()
 }
 
-fn declared_type(db: &Db, path: &str) -> Option<VariableType> {
+fn declared_type(db: &Db, unit: &Unit, path: &str) -> Option<VariableType> {
     if path.is_empty() {
         return None;
     }
-    known_type(db.snapshot().base_scope.resolve_at(path))
+    let kind = known_type(db.snapshot().base_scope.resolve_at(path))?;
+    let segments: Vec<Rc<str>> = path.split('.').map(Rc::from).collect();
+    let (field, parent) = segments.split_last()?;
+    let property = if parent.is_empty() {
+        unit.entity_graph.global_property(field)
+    } else {
+        unit.entity_graph
+            .resolve_path_to_element(parent)
+            .and_then(|entity| unit.entities.get(&entity))
+            .and_then(|model| {
+                model
+                    .properties
+                    .iter()
+                    .find(|prop| prop.name.as_ref() == field.as_ref())
+            })
+    };
+    Some(
+        if property.is_some_and(|prop| matches!(prop.kind, PropertyTypeIr::Date)) {
+            date_hint(kind)
+        } else {
+            kind
+        },
+    )
 }
 
-fn written_type(db: &Db, scope: &VariableType, path: &str) -> Option<VariableType> {
+fn written_type(db: &Db, unit: &Unit, scope: &VariableType, path: &str) -> Option<VariableType> {
     if path.is_empty() {
         return None;
     }
-    declared_type(db, path).or_else(|| literal_union(scope.resolve_at(path)))
+    declared_type(db, unit, path).or_else(|| literal_union(scope.resolve_at(path)))
 }

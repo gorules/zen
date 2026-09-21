@@ -310,6 +310,8 @@ export type PolicyLiteralFact =
   | { kind: 'bool'; span: PolicySpan; value: boolean };
 /** Result of `slot(cursor, text)` and of each `slotBatch` request. */
 export interface PolicySlotResponse {
+  /** Whether the source is a complete, syntactically valid expression. */
+  complete?: boolean;
   kind: 'standard' | 'unary';
   role: PolicySlotRole;
   /** `$` type for unary cells, otherwise the expected value type. */
@@ -325,6 +327,7 @@ export interface PolicySlotResponse {
  * empty unary or value cell.
  */
 export interface PolicyExpressionFacts {
+  complete?: boolean;
   blockId: string;
   target: PolicyCursorTarget;
   source: string;

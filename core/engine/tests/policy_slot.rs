@@ -140,6 +140,110 @@ fn cursor(block: &str, target: CursorTarget) -> Cursor {
     }
 }
 
+#[test]
+fn unicode_completions_and_nested_member_receivers_use_slot_context() {
+    for source in [
+        "\"é\" == customer.",
+        "\"😀\" == customer.",
+        "  \"😀\" == customer.",
+        "customer.age in [customer.",
+    ] {
+        let mut ws = Workspace::new();
+        ws.set_policy("policy", serde_json::from_value(json!({"blocks":[
+            {"id":"dm", "type":"dataModel", "props":{"data":{"name":"customer", "properties":[
+                {"id":"name", "name":"name", "type":"string", "array":false, "optional":false},
+                {"id":"age", "name":"age", "type":"number", "array":false, "optional":false}
+            ]}}},
+            {"id":"ex_computed", "type":"expression", "props":{"data":{"key":"result", "value":source}}}
+        ]})).unwrap());
+        let mut at = cursor("ex_computed", expression("ex_computed"));
+        at.pos = source.encode_utf16().count() as u32;
+        let items = ws.completions(&at);
+        let expected = if source.starts_with("customer.age in") {
+            "age"
+        } else {
+            "name"
+        };
+        assert!(
+            items.iter().any(|item| item.label == expected),
+            "{source}: {items:?}"
+        );
+        assert!(!items.iter().any(|item| item.label == "year"), "{source}");
+    }
+}
+
+#[test]
+fn scope_before_isolates_nested_writes_and_the_declared_schema() {
+    let mut ws = Workspace::new();
+    ws.set_policy("policy", serde_json::from_value(json!({"blocks":[
+        {"id":"dm", "type":"dataModel", "props":{"data":{"name":"customer", "properties":[
+            {"id":"name", "name":"name", "type":"string", "optional":false, "array":false}
+        ]}}},
+        {"id":"a", "type":"expression", "props":{"data":{"key":"customer.first", "value":"1"}}},
+        {"id":"b", "type":"expression", "props":{"data":{"key":"customer.risk", "value":"\"high\""}}},
+        {"id":"c", "type":"expression", "props":{"data":{"key":"customer.last", "value":"2"}}}
+    ]})).unwrap());
+    for block in ["a", "b", "c", "a"] {
+        let response = slot_at(&ws, block, expression(block), "customer.risk == ");
+        assert_eq!(
+            response.slot.options.iter().any(|o| o.value == "high"),
+            block == "c",
+            "{block}"
+        );
+    }
+}
+
+#[test]
+fn optional_outputs_and_collect_cells_keep_their_actual_value_type() {
+    let mut ws = Workspace::new();
+    ws.set_policy("policy", serde_json::from_value(json!({"blocks":[
+        {"id":"dm", "type":"dataModel", "props":{"data":{"name":"customer", "properties":[
+            {"id":"stage", "name":"stage", "type":"string", "enum":["open","closed"], "optional":true, "array":false},
+            {"id":"tags", "name":"tags", "type":"string", "enum":["open","closed"], "optional":false, "array":true}
+        ]}}},
+        {"id":"e", "type":"expression", "props":{"data":{"key":"customer.stage", "value":""}}},
+        {"id":"dt", "type":"decisionTable", "props":{"data":{"hitPolicy":"collect", "inputs":[],
+            "outputs":[{"id":"out", "name":"Tags", "field":"customer.tags"}], "rules":[{"_id":"r", "out":""}]}}}
+    ]})).unwrap());
+    let optional = slot_at(&ws, "e", expression("e"), "");
+    assert!(optional
+        .slot
+        .options
+        .iter()
+        .any(|o| o.source.as_deref() == Some("null")));
+    let collect = slot_at(&ws, "dt", cell("r", "out"), "");
+    assert!(matches!(
+        collect.expected_type,
+        Some(VariableType::Enum(..))
+    ));
+    assert_eq!(collect.slot.options[0].source.as_deref(), Some("\"open\""));
+}
+
+#[test]
+fn graph_output_path_locates_nested_schema_and_bulk_facts_exclude_active_rows() {
+    let mut ws = Workspace::new();
+    let schema = json!({"type":"object", "required":["result"], "properties":{"result":{
+        "type":"object", "required":["status"], "properties":{"status":{"type":"string", "enum":["open","closed"]}}
+    }}});
+    ws.set_document("g", document(json!({"nodes":[
+        node("in", "inputNode", json!({})),
+        node("calc", "expressionNode", json!({"outputPath":"result", "expressions":[{"id":"e", "key":"status", "value":""}]})),
+        node("out", "outputNode", json!({"schema":schema.to_string()}))
+    ], "edges":[edge("a","in","calc"), edge("b","calc","out")]})));
+    let slot = slot_at_graph(&ws, "calc", expression("e"), "");
+    assert_eq!(slot.slot.options.len(), 2);
+
+    let ws = graph_workspace();
+    for fact in ws.facts("g") {
+        if fact.block_id.as_ref() != "dt_untyped" {
+            continue;
+        }
+        let at = graph_cursor("dt_untyped", fact.target.clone());
+        let live = ws.slot(&at, &fact.source).unwrap();
+        assert_eq!(fact.expected_type, live.expected_type);
+    }
+}
+
 fn cell(row: &str, col: &str) -> CursorTarget {
     CursorTarget::DecisionTableCell {
         row: row.into(),
@@ -1242,6 +1346,11 @@ fn date_cell_keeps_date_with_output_column_writer() {
     let ws = writer_workspace();
     let scope = scope_of(&ws, &cursor("dt", cell("r2", "in_date")));
     assert_eq!(scope.subject_type(), Some(VariableType::Date));
+    assert_eq!(scope.scope.get("$"), VariableType::String);
+    let response = slot_at(&ws, "dt", cell("r2", "in_date"), "> ");
+    assert_eq!(response.slot.expected, Some(VariableType::Date));
+    let response = slot_at(&ws, "dt", cell("r2", "in_date"), "$.");
+    assert_eq!(response.slot.operand, Some(VariableType::String));
     let facts = ws.facts("policy");
     let fact = facts
         .iter()
@@ -1656,4 +1765,87 @@ fn accepted_fields_know_what_follows_them() {
     assert_eq!(follow(&ws, &at, "customer").as_deref(), Some("."));
     let at = cursor_at("dt", head("out_union"), 0);
     assert_eq!(follow(&ws, &at, "customer").as_deref(), Some("."));
+}
+
+#[test]
+fn inspect_and_rename_use_utf16_after_non_ascii_literals() {
+    let mut ws = PolicyWorkspace::new();
+    let source = "\"😀é\" + customer.name";
+    ws.set_policy("p", serde_json::from_value(json!({"blocks":[
+        {"id":"dm", "type":"dataModel", "props":{"data":{"name":"customer", "properties":[
+            {"id":"name", "name":"name", "type":"string", "optional":false, "array":false}
+        ]}}},
+        {"id":"ex_computed", "type":"expression", "props":{"data":{"key":"result", "value":source}}}
+    ]})).unwrap());
+    let mut at = cursor_in("p", "ex_computed", expression("ex_computed"));
+    let start = source[..source.find("name").unwrap()]
+        .encode_utf16()
+        .count() as u32;
+    at.pos = start + 2;
+    let info = ws.inspect(&at).expect("member inspection");
+    assert!(info.span.0 <= start && info.span.1 >= start + 4, "{info:?}");
+    let rename = ws.prepare_rename(&at).expect("field rename");
+    assert_eq!(rename.span, (start, start + 4));
+    let edits = ws.rename(&rename.target, "fullName");
+    assert!(
+        edits.iter().any(|edit| match edit {
+            zen_engine::policy::EngineEdit::ReplaceBlock {
+                block_id,
+                new_block,
+                ..
+            } if block_id.as_ref() == "ex_computed" => {
+                new_block["props"]["data"]["value"] == "\"😀é\" + customer.fullName"
+            }
+            _ => false,
+        }),
+        "{edits:?}"
+    );
+}
+
+#[test]
+fn graph_collect_and_loop_expectations_preserve_array_valued_cells() {
+    for hit_policy in ["first", "collect"] {
+        for looped in [false, true] {
+            for collected_column in [false, true] {
+                let item = json!({"type":"string", "enum":["open","closed"]});
+                let field = if collected_column {
+                    json!({"type":"array", "items":item})
+                } else {
+                    item
+                };
+                let row = json!({"type":"object", "required":["tags"], "properties":{"tags":{
+                    "type":"array", "items":field
+                }}});
+                let output = if hit_policy == "collect" {
+                    json!({"type":"array", "items":row})
+                } else {
+                    row
+                };
+                let output = if looped {
+                    json!({"type":"array", "items":output})
+                } else {
+                    output
+                };
+                let schema =
+                    json!({"type":"object", "required":["result"], "properties":{"result":output}});
+                let mut ws = Workspace::new();
+                ws.set_document("g", document(json!({"nodes":[
+                    node("in", "inputNode", json!({})),
+                    node("calc", "decisionTableNode", json!({
+                        "hitPolicy":hit_policy, "executionMode":if looped { "loop" } else { "single" },
+                        "outputPath":"result", "passThrough":true, "inputs":[],
+                        "outputs":[{"id":"o", "name":"Tags", "field":if collected_column { "tags[]" } else { "tags" }}],
+                        "rules":[{"_id":"r", "o":""}]
+                    })),
+                    node("out", "outputNode", json!({"schema":schema.to_string()}))
+                ], "edges":[edge("a","in","calc"), edge("b","calc","out")]})));
+                let result = slot_at_graph(&ws, "calc", cell("r", "o"), "");
+                assert!(
+                    matches!(result.expected_type, Some(VariableType::Array(_))),
+                    "{hit_policy}/{looped}/{collected_column}: {result:?}"
+                );
+                assert_eq!(result.slot.options[0].source.as_deref(), Some("[\"open\"]"));
+            }
+        }
+    }
 }

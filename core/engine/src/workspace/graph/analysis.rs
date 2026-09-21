@@ -493,7 +493,7 @@ impl<'a> GraphAnalyzer<'a> {
                 }
                 if let Some(schema) = content.schema.as_ref().filter(|_| self.validate) {
                     let expected =
-                        super::SchemaType::variable_type_with(schema, &self.dictionary_types);
+                        super::SchemaType::hint_type_with(schema, &self.dictionary_types);
                     self.check_output_schema(node, &scope_input, &expected);
                 }
                 analysis.output = scope_input;

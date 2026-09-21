@@ -41,6 +41,52 @@ pub struct Completion {
 pub struct Completions;
 
 impl Completions {
+    /// Build suggestions from the same partial parse that classified the caret.
+    pub fn from_slot(
+        source: &str,
+        pos: u32,
+        data: &VariableType,
+        slot: &crate::slot::Slot,
+    ) -> Vec<Completion> {
+        use crate::slot::{field_fits, SlotState};
+        if slot.suppress_completions
+            || matches!(
+                slot.state,
+                SlotState::Operator | SlotState::Logical | SlotState::InString
+            )
+        {
+            return Vec::new();
+        }
+        let locals = slot
+            .locals
+            .iter()
+            .map(|local| (Rc::from(local.name.as_str()), local.kind.shallow_clone()))
+            .collect::<Vec<_>>();
+        let mut items = match slot.state {
+            SlotState::Member => {
+                Self::build_property(slot.operand.as_ref().unwrap_or(&VariableType::Any))
+            }
+            SlotState::Path if slot.operand.is_some() => {
+                Self::build_property(slot.operand.as_ref().unwrap())
+            }
+            _ => Self::build_scope(data, &locals),
+        };
+        if let Some(wanted) = slot.wanted_scalar() {
+            items.retain(|item| item.var_type.as_ref().is_none_or(|t| field_fits(t, wanted)));
+        }
+        for item in &mut items {
+            if let Some(t) = &item.var_type {
+                item.follow = match t.unwrap_nullable().0 {
+                    VariableType::Object(_) => Some("."),
+                    _ if slot.can_chain => Some(" "),
+                    _ => None,
+                };
+            }
+        }
+        let before = source.get(..pos as usize).unwrap_or(source);
+        Self::filter(items, Self::extract_prefix(before))
+    }
+
     pub fn build(
         source: &str,
         pos: u32,
@@ -100,7 +146,13 @@ impl Completions {
             let applies = def
                 .as_ref()
                 .and_then(|d| d.param_type(0))
-                .map(|pt| vt.satisfies(&pt))
+                .map(|pt| match pt {
+                    // Constructor arguments accept strings/numbers; method receivers need d(...).
+                    VariableType::Date => {
+                        matches!(resolved, VariableType::Date | VariableType::Any)
+                    }
+                    _ => vt.satisfies(&pt),
+                })
                 .unwrap_or(false);
 
             if applies || matches!(vt, VariableType::Any) {

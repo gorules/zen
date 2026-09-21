@@ -64,7 +64,12 @@ impl VmDate {
 
     /// Create a new VmDate from the current time
     pub fn new(var: Variable, tz_opt: Option<Tz>) -> Self {
-        Self(helper::parse_date(var, tz_opt))
+        Self(helper::parse_date(var, tz_opt, true))
+    }
+
+    /// Parse a value without treating a time-zone name as the current time.
+    pub fn from_literal(var: Variable, tz_opt: Option<Tz>) -> Self {
+        Self(helper::parse_date(var, tz_opt, false))
     }
 
     pub fn is_valid(&self) -> bool {
@@ -207,7 +212,7 @@ mod helper {
         utc_now().with_timezone(&tz)
     }
 
-    pub fn parse_date(var: Variable, tz_opt: Option<Tz>) -> Option<DateTime<Tz>> {
+    pub fn parse_date(var: Variable, tz_opt: Option<Tz>, allow_zone: bool) -> Option<DateTime<Tz>> {
         let tz = tz_opt.unwrap_or_else(|| tz());
 
         match var {
@@ -237,7 +242,7 @@ mod helper {
                         })
                         .map(|dt| tz.from_local_datetime(&dt).earliest())
                 })
-                .or_else(|| Some(Tz::from_str(&str.deref()).ok().map(now_tz)))
+                .or_else(|| allow_zone.then(|| Tz::from_str(&str.deref()).ok().map(now_tz)))
                 .flatten(),
             Variable::Dynamic(d) => match d.as_date() {
                 Some(d) => d.0.clone(),

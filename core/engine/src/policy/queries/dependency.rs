@@ -71,6 +71,7 @@ pub struct EnrichedState {
     pub per_rule: Vec<RuleEnrichedAnalysis>,
     pub diagnostics: Vec<Diagnostic>,
     base_fields: HashMap<Rc<str>, VariableType>,
+    scope_roots: Rc<RefCell<Vec<VariableType>>>,
     write_log: Vec<(PropertyPath, VariableType)>,
     log_start: HashMap<BlockRef, usize>,
     block_scopes: RefCell<HashMap<BlockRef, VariableType>>,
@@ -85,9 +86,13 @@ impl EnrichedState {
         if let Some(cached) = self.block_scopes.borrow().get(block) {
             return cached.shallow_clone();
         }
-        let scope = VariableType::Object(Rc::new(RefCell::new(self.base_fields.clone())));
+        let scope =
+            VariableType::Object(Rc::new(RefCell::new(self.base_fields.clone()))).isolated_clone();
+        self.scope_roots.borrow_mut().push(scope.shallow_clone());
         for (path, resolved_type) in &self.write_log[..end] {
-            scope.insert_at_path(path, resolved_type, true);
+            let frozen = resolved_type.isolated_clone();
+            self.scope_roots.borrow_mut().push(frozen.shallow_clone());
+            scope.insert_at_path(path, &frozen, true);
         }
         self.block_scopes
             .borrow_mut()
@@ -668,6 +673,7 @@ impl Snapshot {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn compute_enriched(
         base_scope: &VariableType,
+        scope_roots: Rc<RefCell<Vec<VariableType>>>,
         graph: &DependencyGraph,
         order: &[PropertyPath],
         rule_by_ref: &HashMap<BlockRef, Arc<Block>>,
@@ -677,7 +683,8 @@ impl Snapshot {
         dictionary_types: SharedDictionaryTypes,
         declared_paths: SharedDeclaredPaths,
     ) -> EnrichedState {
-        let scope = base_scope.shallow_clone();
+        let scope = base_scope.isolated_clone();
+        scope_roots.borrow_mut().push(scope.shallow_clone());
         let base_fields = match base_scope {
             VariableType::Object(obj) => obj.borrow().clone(),
             _ => HashMap::new(),
@@ -743,7 +750,9 @@ impl Snapshot {
             );
             for tw in &summary.writes {
                 if declared_paths.matches_prefix(&tw.path).is_none() {
-                    write_log.push((tw.path.clone(), tw.resolved_type.shallow_clone()));
+                    let frozen = tw.resolved_type.isolated_clone();
+                    scope_roots.borrow_mut().push(frozen.shallow_clone());
+                    write_log.push((tw.path.clone(), frozen));
                 }
             }
 
@@ -777,6 +786,7 @@ impl Snapshot {
             per_rule,
             diagnostics,
             base_fields,
+            scope_roots,
             write_log,
             log_start,
             block_scopes: RefCell::new(HashMap::new()),

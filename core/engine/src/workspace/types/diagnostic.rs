@@ -11,20 +11,11 @@ pub(crate) struct SpanOps;
 
 impl SpanOps {
     pub(crate) fn char_len(s: &str) -> u32 {
-        s.chars().count() as u32
+        s.encode_utf16().count() as u32
     }
 
     pub(crate) fn char_span(source: &str, span: Span) -> Span {
-        if source.is_ascii() {
-            return span;
-        }
-        let to_char = |byte: u32| {
-            source
-                .char_indices()
-                .take_while(|(at, _)| (*at as u32) < byte)
-                .count() as u32
-        };
-        (to_char(span.0), to_char(span.1))
+        crate::workspace::slot::utf16::utf16_span(source, span)
     }
 
     pub(crate) fn replace_at_char_spans(source: &str, spans: &[Span], new_text: &str) -> String {
@@ -42,14 +33,8 @@ impl SpanOps {
 
         let mut out = source.to_string();
         for (char_start, char_end) in sorted.into_iter().rev() {
-            let byte_start = out
-                .char_indices()
-                .nth(char_start as usize)
-                .map_or(out.len(), |(b, _)| b);
-            let byte_end = out
-                .char_indices()
-                .nth(char_end as usize)
-                .map_or(out.len(), |(b, _)| b);
+            let byte_start = crate::workspace::slot::utf16::utf16_to_byte(&out, char_start);
+            let byte_end = crate::workspace::slot::utf16::utf16_to_byte(&out, char_end);
             out.replace_range(byte_start..byte_end, new_text);
         }
         out

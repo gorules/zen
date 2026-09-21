@@ -42,6 +42,13 @@ impl Db {
 
         match &node.kind {
             DecisionNodeKind::ExpressionNode { content } => {
+                if matches!(cursor.target, CursorTarget::ExpressionKey) {
+                    let scope = GraphAnalyzer::scope_with_nodes(
+                        &node_analysis.input,
+                        &node_analysis.nodes_scope,
+                    );
+                    return Some((Arc::from(""), ExpressionKind::Standard, scope));
+                }
                 let CursorTarget::Expression { id } = &cursor.target else {
                     return None;
                 };
@@ -89,9 +96,12 @@ impl Db {
         );
         match &cursor.target {
             CursorTarget::DecisionTableHead { col } => {
-                let column = content.inputs.iter().find(|c| c.id == *col)?;
-                let field = column.field.as_ref()?;
-                Some((field.clone(), ExpressionKind::Standard, base_scope))
+                let field = if let Some(column) = content.inputs.iter().find(|c| c.id == *col) {
+                    column.field.clone().unwrap_or_else(|| Arc::from(""))
+                } else {
+                    content.outputs.iter().find(|c| c.id == *col)?.field.clone()
+                };
+                Some((field, ExpressionKind::Standard, base_scope))
             }
             CursorTarget::DecisionTableCell { row, col } => {
                 let rule = content

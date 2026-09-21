@@ -172,3 +172,27 @@ fn failure_tests() {
         );
     }
 }
+
+#[test]
+fn joiners_nest_inside_brackets_arguments_and_templates() {
+    let sources = [
+        "(a > 1 and b > 2)",
+        "== (a > 1 or b > 2)",
+        "len([a > 1 and b]) > 0",
+        "contains(x, (a and b))",
+        "`${(a > 30 and d() > d(\"2026-09-19\")) ? true : false}`",
+        "== `${a > 1 or b > 2}`",
+        "[1, 2] and (a > 1 and b)",
+    ];
+
+    let mut lexer = Lexer::new();
+    let mut bump = Bump::new();
+
+    for src in sources {
+        bump.reset();
+        let tokens = lexer.tokenize(&bump, src).unwrap();
+        let result = Parser::try_new(&tokens, &bump).unwrap().unary().parse();
+        assert!(result.error().is_ok(), "Parser failed for: {src}");
+        assert!(result.is_complete, "Parser stopped early for: {src}");
+    }
+}

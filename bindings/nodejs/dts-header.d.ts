@@ -285,6 +285,8 @@ export interface PolicySlot {
   inString: string | null;
   listed: string[];
   autoOpen: boolean;
+  /** Names bound by enclosing closures at the caret, innermost first (`x` for `as x`, `#` otherwise). */
+  locals: Array<{ name: string; type: PolicyVariableType }>;
 }
 export type PolicyLiteralFact =
   | {

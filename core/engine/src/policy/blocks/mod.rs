@@ -29,8 +29,8 @@ pub use assertion::{AssertionDoc, AssertionIr};
 pub(crate) use context::IntelliSenseSource;
 pub use context::{
     AnalysisContext, AnalysisSummary, ExecutionContext, ExecutionError, ExpressionLocation,
-    InstanceSource, PropertyRead, SharedDictionaryTypes, SharedIntelliSense, SharedPoisonedPaths,
-    WriteTarget,
+    InstanceSource, PropertyRead, SharedDeclaredPaths, SharedDictionaryTypes, SharedIntelliSense,
+    SharedPoisonedPaths, WriteTarget,
 };
 pub use decision_table::{DecisionTableDoc, DecisionTableIr, DeclaredType};
 pub(crate) use decision_table::{DictionaryCandidate, TableSelection, ROW_ID_KEY};

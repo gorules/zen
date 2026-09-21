@@ -56,6 +56,14 @@ pub enum SlotState {
     Path,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Local {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub kind: VariableType,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Slot {
@@ -70,9 +78,28 @@ pub struct Slot {
     pub in_string: Option<char>,
     pub listed: Vec<String>,
     pub auto_open: bool,
+    pub locals: Vec<Local>,
 }
 
 impl Slot {
+    /// The scalar a field written here must produce: set when the slot asks for a value of a
+    /// known scalar type, so a field list can drop the fields that could never fit.
+    pub fn wanted_scalar(&self) -> Option<&VariableType> {
+        if !matches!(
+            self.state,
+            SlotState::Value
+                | SlotState::UnaryStart
+                | SlotState::ListElement
+                | SlotState::Range
+                | SlotState::Argument
+                | SlotState::Member
+        ) {
+            return None;
+        }
+        let (t, _) = self.expected.as_ref()?.unwrap_nullable();
+        scalar_class(t).map(|_| t)
+    }
+
     pub(crate) fn new(state: SlotState, replace_span: Span) -> Self {
         Self {
             state,
@@ -86,6 +113,7 @@ impl Slot {
             in_string: None,
             listed: Vec::new(),
             auto_open: false,
+            locals: Vec::new(),
         }
     }
 }
@@ -371,6 +399,30 @@ impl IntelliSense {
         }
     }
 
+    /// Closure-bound names visible at byte `pos`, innermost first: `x` for `map(m as x, ...)`,
+    /// `#` for an unaliased closure, each with the element type.
+    pub fn closure_locals(
+        &mut self,
+        source: &str,
+        pos: u32,
+        scope: &VariableType,
+    ) -> Vec<(Rc<str>, VariableType)> {
+        self.arena.reset();
+        let pos = clamp_pos(source, pos);
+        let Some(parsed) = parse_partial(
+            &self.arena,
+            &mut self.lexer,
+            self.strict,
+            source,
+            false,
+            scope,
+        ) else {
+            return Vec::new();
+        };
+        let table = NodeTable::build(&parsed, false, None);
+        classify::closure_locals(&parsed, &table, pos)
+    }
+
     /// Literal facts only (bulk projection, no caret).
     pub fn literals(
         &mut self,
@@ -402,4 +454,34 @@ fn clamp_pos(source: &str, pos: u32) -> u32 {
         pos -= 1;
     }
     pos as u32
+}
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+enum ScalarClass {
+    Bool,
+    Number,
+    String,
+    Date,
+}
+
+fn scalar_class(t: &VariableType) -> Option<ScalarClass> {
+    match t {
+        VariableType::Bool => Some(ScalarClass::Bool),
+        VariableType::Number => Some(ScalarClass::Number),
+        VariableType::String | VariableType::Const(_) | VariableType::Enum(..) => {
+            Some(ScalarClass::String)
+        }
+        VariableType::Date => Some(ScalarClass::Date),
+        _ => None,
+    }
+}
+
+/// Whether a field of type `field` can stand where `wanted` is expected: scalars must match in
+/// kind, while objects, arrays and untyped values may still lead to a fitting path.
+pub fn field_fits(field: &VariableType, wanted: &VariableType) -> bool {
+    let (field, _) = field.unwrap_nullable();
+    match scalar_class(field) {
+        Some(class) => scalar_class(wanted) == Some(class),
+        None => !matches!(field, VariableType::Null | VariableType::Interval),
+    }
 }

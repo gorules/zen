@@ -4,7 +4,7 @@ const ORDERED: &[&str] = &["==", "!=", "<", "<=", ">", ">=", "in", "not in"];
 const ORDERED_UNARY: &[&str] = &[">", ">=", "<", "<=", "==", "!=", "in", "not in"];
 const TEXT: &[&str] = &["==", "!=", "in", "not in"];
 const TEXT_UNARY: &[&str] = &["!=", "in", "not in"];
-const EQUALITY: &[&str] = &["==", "!="];
+pub(crate) const EQUALITY: &[&str] = &["==", "!="];
 const MEMBERSHIP: &[&str] = &["in", "not in"];
 
 /// Operators a nullable operand adds on top of its inner type's (`??` has no unary form).
@@ -20,9 +20,16 @@ pub(crate) fn nullable_extras(unary: bool) -> &'static [&'static str] {
 pub(crate) fn operators_for(t: &VariableType, unary: bool) -> Vec<&'static str> {
     if let VariableType::Nullable(inner) = t {
         let mut list = operators_for(inner, unary);
+        let mut front = 0;
         for op in nullable_extras(unary) {
-            if !list.contains(op) {
+            if list.contains(op) {
+                continue;
+            }
+            if *op == "??" {
                 list.push(op);
+            } else {
+                list.insert(front, op);
+                front += 1;
             }
         }
         return list;

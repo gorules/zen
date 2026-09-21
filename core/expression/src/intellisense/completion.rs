@@ -5,7 +5,9 @@ use crate::functions::{
 };
 use crate::intellisense::IntelliSenseToken;
 use crate::variable::VariableType;
+use ahash::HashMap;
 use serde::Serialize;
+use std::rc::Rc;
 use strum::IntoEnumIterator;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -28,6 +30,12 @@ pub struct Completion {
     pub boost: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub method_for: Option<VariableType>,
+    /// Type of the field or local a variable or property completion names.
+    #[serde(skip)]
+    pub var_type: Option<VariableType>,
+    /// Text an editor appends after accepting the item: `.` into an object, a space before an operator.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub follow: Option<&'static str>,
 }
 
 pub struct Completions;
@@ -38,6 +46,7 @@ impl Completions {
         pos: u32,
         data: &VariableType,
         tokens: &[IntelliSenseToken],
+        locals: &[(Rc<str>, VariableType)],
     ) -> Vec<Completion> {
         let before = source.get(..pos as usize).unwrap_or(source);
         let prefix = Self::extract_prefix(before);
@@ -58,7 +67,7 @@ impl Completions {
 
                 Self::build_property(&target_type)
             }
-            None => Self::build_scope(data),
+            None => Self::build_scope(data, locals),
         };
 
         Self::filter(completions, prefix)
@@ -72,8 +81,7 @@ impl Completions {
         };
 
         if let VariableType::Object(obj) = resolved {
-            let obj = obj.borrow();
-            for (key, val) in obj.iter() {
+            for (key, val) in Self::sorted_fields(&obj.borrow()) {
                 completions.push(Completion {
                     label: key.to_string(),
                     kind: CompletionKind::Property,
@@ -81,6 +89,8 @@ impl Completions {
                     info: String::new(),
                     boost: Some(10),
                     method_for: None,
+                    var_type: Some(val.shallow_clone()),
+                    follow: None,
                 });
             }
         }
@@ -101,8 +111,22 @@ impl Completions {
         completions
     }
 
-    pub fn build_scope(data: &VariableType) -> Vec<Completion> {
+    /// `locals` are closure-bound names (innermost first); they lead the list above the fields.
+    pub fn build_scope(data: &VariableType, locals: &[(Rc<str>, VariableType)]) -> Vec<Completion> {
         let mut completions = Vec::new();
+
+        for (name, kind) in locals {
+            completions.push(Completion {
+                label: name.to_string(),
+                kind: CompletionKind::Variable,
+                detail: kind.to_string(),
+                info: String::new(),
+                boost: Some(30),
+                method_for: None,
+                var_type: Some(kind.shallow_clone()),
+                follow: None,
+            });
+        }
 
         let resolved_data = match data {
             VariableType::Nullable(inner) => inner.as_ref(),
@@ -110,8 +134,7 @@ impl Completions {
         };
 
         if let VariableType::Object(obj) = resolved_data {
-            let obj = obj.borrow();
-            for (key, val) in obj.iter() {
+            for (key, val) in Self::sorted_fields(&obj.borrow()) {
                 completions.push(Completion {
                     label: key.to_string(),
                     kind: CompletionKind::Variable,
@@ -119,6 +142,8 @@ impl Completions {
                     info: String::new(),
                     boost: Some(20),
                     method_for: None,
+                    var_type: Some(val.shallow_clone()),
+                    follow: None,
                 });
             }
         }
@@ -130,6 +155,8 @@ impl Completions {
             info: String::new(),
             boost: Some(-10),
             method_for: None,
+            var_type: None,
+            follow: None,
         });
 
         completions.extend(
@@ -140,6 +167,15 @@ impl Completions {
         );
 
         completions
+    }
+
+    // Alphabetical, case-insensitive, `$`-prefixed roots last: the map iterates in hash order.
+    fn sorted_fields(fields: &HashMap<Rc<str>, VariableType>) -> Vec<(&Rc<str>, &VariableType)> {
+        let mut out: Vec<_> = fields.iter().collect();
+        out.sort_by_cached_key(|(key, _)| {
+            (key.starts_with('$'), key.to_lowercase(), key.to_string())
+        });
+        out
     }
 
     fn function(fk: FunctionKind, boost_override: Option<i32>) -> Completion {
@@ -159,6 +195,8 @@ impl Completions {
             info,
             boost,
             method_for: None,
+            var_type: None,
+            follow: None,
         }
     }
 
@@ -174,6 +212,8 @@ impl Completions {
             info,
             boost: None,
             method_for,
+            var_type: None,
+            follow: None,
         }
     }
 

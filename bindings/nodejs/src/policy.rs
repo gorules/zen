@@ -306,6 +306,8 @@ pub struct PolicyCompletion {
     pub kind: String,
     pub detail: String,
     pub info: String,
+    /// Text to append after accepting the item: `.` into an object, a space before an operator.
+    pub follow: Option<String>,
 }
 
 #[napi(object)]
@@ -416,7 +418,15 @@ fn variable_type_from_json(value: &Value) -> zen_expression::variable::VariableT
 }
 
 pub(crate) fn variable_type_to_json(vt: &zen_expression::variable::VariableType) -> Value {
-    use zen_expression::variable::VariableType;
+    variable_type_to_json_at(vt, &mut Vec::new())
+}
+
+/// Objects already on the path (cycles) or nested beyond `MAX_TYPE_DEPTH` are emitted without fields.
+fn variable_type_to_json_at(
+    vt: &zen_expression::variable::VariableType,
+    path: &mut Vec<*const ()>,
+) -> Value {
+    use zen_expression::variable::{VariableType, MAX_TYPE_DEPTH};
 
     match vt {
         VariableType::Any => serde_json::json!({ "type": "any" }),
@@ -437,14 +447,18 @@ pub(crate) fn variable_type_to_json(vt: &zen_expression::variable::VariableType)
         }
         VariableType::Array(inner) => serde_json::json!({
             "type": "array",
-            "items": variable_type_to_json(inner),
+            "items": variable_type_to_json_at(inner, path),
         }),
         VariableType::Object(obj) => {
-            let fields: serde_json::Map<std::string::String, Value> = obj
-                .borrow()
-                .iter()
-                .map(|(k, v)| (k.to_string(), variable_type_to_json(v)))
-                .collect();
+            let ptr = std::rc::Rc::as_ptr(obj) as *const ();
+            let mut fields = serde_json::Map::new();
+            if path.len() < MAX_TYPE_DEPTH && !path.contains(&ptr) {
+                path.push(ptr);
+                for (k, v) in obj.borrow().iter() {
+                    fields.insert(k.to_string(), variable_type_to_json_at(v, path));
+                }
+                path.pop();
+            }
             serde_json::json!({
                 "type": "object",
                 "fields": fields,
@@ -452,7 +466,7 @@ pub(crate) fn variable_type_to_json(vt: &zen_expression::variable::VariableType)
         }
         VariableType::Nullable(inner) => serde_json::json!({
             "type": "nullable",
-            "inner": variable_type_to_json(inner),
+            "inner": variable_type_to_json_at(inner, path),
         }),
     }
 }
@@ -876,6 +890,7 @@ impl Workspace {
                     .unwrap_or_default(),
                 detail: c.detail,
                 info: c.info,
+                follow: c.follow.map(String::from),
             })
             .collect())
     }

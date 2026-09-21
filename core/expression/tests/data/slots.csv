@@ -68,7 +68,7 @@ condition;false;;bool;d() |;operator;;;==,!=,<,<=,>,>=,in,not in;4..4;true
 condition;false;;bool;d("2024-01-01") |;operator;;;==,!=,<,<=,>,>=,in,not in;16..16;true
 condition;false;;bool;len(name) |;operator;;;==,!=,<,<=,>,>=,in,not in;10..10;true
 condition;false;;bool;age + 1 |;operator;;;==,!=,<,<=,>,>=,in,not in;8..8;true
-condition;false;;bool;active |;logical;bool;;and,or;7..7;true
+condition;false;;bool;active |;logical;bool;;and,or,==,!=;7..7;true
 condition;false;;bool;not active |;logical;bool;;and,or;11..11;true
 condition;false;;bool;(age > 1) |;logical;bool;;and,or;10..10;true
 condition;false;;bool;age > 1 |;logical;bool;;and,or;8..8;true
@@ -120,16 +120,21 @@ condition;false;;bool;some(items, #.price > 1 |;logical;bool;;and,or;24..24;true
 condition;false;;bool;some(items, #.price |;operator;;;==,!=,<,<=,>,>=,in,not in;20..20;true
 condition;false;;bool;some(items, #.price > 1 and |;closure;object;;;28..28;true
 condition;false;;bool;some(items, (#.price > 1 and |;closure;object;;;29..29;true
+condition;false;;bool;some(items as x, |;closure;object;;;17..17;true
+condition;false;;bool;some(items as x, x|;closure;object;;;17..18;false
+condition;false;;bool;some(statuses as s, |;closure;status;open=Open case,closed=Closed;;20..20;true
+condition;false;;bool;some(statuses as s, s == |;value;status;open=Open case,closed=Closed;;25..25;true
+condition;false;;bool;some(items as x, some(statuses as s, |;closure;status;open=Open case,closed=Closed;;37..37;true
 condition;false;;bool;len(name |;operator;;;==,!=,in,not in;9..9;true
 condition;false;;bool;len(age |;operator;;;==,!=,<,<=,>,>=,in,not in;8..8;true
 # Unary cells
 unary;true;$status;;|;unaryStart;status;open=Open case,closed=Closed;!=,in,not in;0..0;true
-unary;true;$status;;"|;inString;status;open=Open case,closed=Closed;!=,in,not in;0..1;true
-unary;true;$status;;"op|;inString;status;open=Open case;!=,in,not in;0..3;true
+unary;true;$status;;"|;inString;status;open=Open case,closed=Closed;;0..1;true
+unary;true;$status;;"op|;inString;status;open=Open case;;0..3;true
 unary;true;$status;;"open"|;logical;bool;;and,or;6..6;false
 unary;true;$status;;"open" |;logical;bool;;and,or;7..7;true
 unary;true;$status;;"open", |;unaryStart;status;closed=Closed;!=,in,not in;8..8;true
-unary;true;$status;;"open", "|;inString;status;closed=Closed;!=,in,not in;8..9;true
+unary;true;$status;;"open", "|;inString;status;closed=Closed;;8..9;true
 unary;true;$status;;"open" or |;unaryStart;status;closed=Closed;!=,in,not in;10..10;true
 unary;true;$status;;"open" and |;unaryStart;status;closed=Closed;!=,in,not in;11..11;true
 unary;true;$status;;"open", "closed" |;logical;bool;;and,or;17..17;true
@@ -173,7 +178,7 @@ condition;false;;bool;Ünïcode == "|;start;bool;;;14..14;true
 # Adversarial: unary cells
 unary;true;$number;;>= 5 and < |;value;number;;;11..11;true
 unary;true;$number;;$ > 5 and $ < |;value;number;;;14..14;true
-unary;true;$number;;>|;value;number;;;1..1;true
+unary;true;$number;;>|;operator;;;>,>=;0..1;true
 unary;true;$number;;  > |;value;number;;;4..4;true
 unary;true;$number;;> 5 and|;logical;bool;;and,or;4..7;true
 unary;true;$number;;> 5 |);logical;bool;;and,or;4..4;true
@@ -188,7 +193,7 @@ unary;true;$status;;not |;start;bool;;;4..4;true
 unary;true;$status;;in ["open", "cl|;inString;status;closed=Closed;;12..15;true
 unary;true;$status;;== |;value;status;open=Open case,closed=Closed;;3..3;true
 unary;true;$status;;!= "|;inString;status;open=Open case,closed=Closed;;3..4;true
-unary;true;$status;;"open" or "|;inString;status;closed=Closed;!=,in,not in;10..11;true
+unary;true;$status;;"open" or "|;inString;status;closed=Closed;;10..11;true
 unary;true;$status;;"open" or "closed" or |;unaryStart;status;;!=,in,not in;22..22;true
 unary;true;$string;;startsWith($, "|;inString;string;;;14..15;false
 unary;true;$string;;contains($, "|;inString;any;;;12..13;false
@@ -196,7 +201,7 @@ unary;true;$string;;len($) > |;value;number;;;9..9;true
 unary;true;$string;;upper($) == "|;inString;string;;;12..13;true
 unary;true;$date;;d($) > d("|;inString;date;;;9..10;true
 unary;true;$date;;> d("2024-01-01").add(1, "|;inString;DurationUnit;seconds,second,secs,sec,s,minutes,minute,min,mins,m,hours,hour,hr,hrs,h,days,day,d,weeks,week,w,months,month,mo,M,quarters,quarter,qtr,q,years,year,y;;25..26;false
-unary;true;$date;;> d().|;member;;;;6..6;false
+unary;true;$date;;> d().|;member;date;;;6..6;false
 unary;true;$date;;> d().startOf("|;inString;DurationUnit;seconds,second,secs,sec,s,minutes,minute,min,mins,m,hours,hour,hr,hrs,h,days,day,d,weeks,week,w,months,month,mo,M,quarters,quarter,qtr,q,years,year,y;;14..15;false
 unary;true;{"Object":{"$":{"Array":{"Enum":["status",["open","closed"]]}}}};;some($, # == "|;inString;status;open=Open case,closed=Closed;;13..14;true
 unary;true;{"Object":{"$":{"Array":{"Enum":["status",["open","closed"]]}}}};;some($, |;closure;status;open=Open case,closed=Closed;;8..8;true
@@ -273,14 +278,14 @@ condition;false;;bool;status == 'op|;inString;status;open=Open case;;10..13;true
 condition;false;;bool;customer.status == "open" and customer.age > 18 and customer.name == "x" and since > d() and tier == "|;inString;"gold" | "silver";gold,silver;;101..102;true
 condition;false;;bool;inbound > |;value;number;;;10..10;true
 condition;false;;bool;andrew == "|;inString;string;;;10..11;true
-condition;false;;bool;nothing |;logical;bool;;and,or;8..8;true
+condition;false;;bool;nothing |;logical;bool;;and,or,==,!=;8..8;true
 condition;false;;bool;true_value == |;value;number;;;14..14;true
-condition;false;;bool;in_progress |;logical;bool;;and,or;12..12;true
+condition;false;;bool;in_progress |;logical;bool;;and,or,==,!=;12..12;true
 condition;false;;bool;customer.in|;member;;;;9..11;false
 condition;false;;bool;in|;start;bool;;;0..2;false
 condition;false;;bool;not|;start;bool;;;0..3;false
 condition;false;;bool;age > 1 and or |;start;bool;;;15..15;true
-condition;false;;bool;status == "open" "|;inString;bool;;and,or;17..18;true
+condition;false;;bool;status == "open" "|;inString;bool;;;17..18;true
 condition;false;;bool;$root.status == "|;inString;status;open=Open case,closed=Closed;;16..17;true
 condition;false;;bool;age > 1 and $root.|;member;;;;18..18;false
 # Adversarial: second batch
@@ -325,8 +330,8 @@ unary;true;$bool;;true or |;unaryStart;bool;;==,!=;8..8;true
 unary;true;$bool;;not |;start;bool;;;4..4;true
 unary;true;$any;;"x" |;logical;bool;;and,or;4..4;true
 unary;true;$any;;$.|;member;;;;2..2;false
-unary;true;{"Object":{"$":{"Nullable":{"Enum":["status",["open","closed"]]}}}};;|;unaryStart;status?;open=Open case,closed=Closed;!=,in,not in,==;0..0;true
-unary;true;{"Object":{"$":{"Nullable":{"Enum":["status",["open","closed"]]}}}};;"open", |;unaryStart;status?;closed=Closed;!=,in,not in,==;8..8;true
+unary;true;{"Object":{"$":{"Nullable":{"Enum":["status",["open","closed"]]}}}};;|;unaryStart;status?;open=Open case,closed=Closed,null;==,!=,in,not in;0..0;true
+unary;true;{"Object":{"$":{"Nullable":{"Enum":["status",["open","closed"]]}}}};;"open", |;unaryStart;status?;closed=Closed,null;==,!=,in,not in;8..8;true
 unary;true;{"Object":{"$":{"Enum":[null,["a","b"]]}}};;|;unaryStart;"a" | "b";a,b;!=,in,not in;0..0;true
 unary;true;{"Object":{"$":{"Array":"String"}}};;|;unaryStart;string[];;in,not in;0..0;true
 unary;true;{"Object":{"$":{"Array":"String"}}};;contains($, "|;inString;string;;;12..13;false
@@ -408,7 +413,7 @@ value;false;;status;age > 18 ? "op|;inString;status;open=Open case;;11..14;true
 value;false;;status;active ? "open" : (age > 1 ? "closed" : "|;inString;status;open=Open case,closed=Closed;;40..41;true
 value;false;;status;age > 18 ? "open" : age > 10 ? "|;inString;status;open=Open case,closed=Closed;;31..32;true
 value;false;;status;customer.status ?? |;value;status;open=Open case,closed=Closed;;19..19;true
-value;false;;status;customer.|;member;;;;9..9;false
+value;false;;status;customer.|;member;status;;;9..9;false
 value;false;;status;status == "open" ? |;value;status;open=Open case,closed=Closed;;19..19;true
 value;false;;status;status == "|;inString;status;open=Open case,closed=Closed;;10..11;true
 value;false;;status;customer.status == "open" |;logical;bool;;and,or;26..26;true
@@ -472,9 +477,9 @@ condition;false;;bool;some(items, #.price > |1);value;number;;;22..22;true
 condition;false;;bool;age in [1..|5];range;number;;;11..11;false
 condition;false;;bool;age in [|1..5];range;number;;;8..8;false
 unary;true;$number;;> 5 and |< 10;unaryStart;number;;>,>=,<,<=,==,!=,in,not in;8..8;true
-unary;true;$number;;>| 5;value;number;;;1..1;true
-unary;true;$status;;"op|en", "closed";inString;status;open=Open case;!=,in,not in;0..6;true
-unary;true;$status;;"open", "cl|osed";inString;status;closed=Closed;!=,in,not in;8..16;true
+unary;true;$number;;>| 5;operator;;;>,>=;0..1;true
+unary;true;$status;;"op|en", "closed";inString;status;open=Open case;;0..6;true
+unary;true;$status;;"open", "cl|osed";inString;status;closed=Closed;;8..16;true
 unary;true;$status;;|"open";unaryStart;status;closed=Closed;!=,in,not in;0..0;true
 # Adversarial: nasty input, second batch
 condition;false;;bool;)|;start;bool;;;1..1;true
@@ -483,7 +488,7 @@ condition;false;;bool;age > 1) and status == "|;inString;status;open=Open case,c
 condition;false;;bool;((age > 1 |;logical;bool;;and,or;10..10;true
 condition;false;;bool;status == == "|;inString;;;;13..14;true
 condition;false;;bool;status == "open" == "|;inString;string;;;20..21;true
-condition;false;;bool;status "|;inString;;;==,!=,in,not in;7..8;false
+condition;false;;bool;status "|;inString;;;;7..8;false
 condition;false;;bool;status "open" |;operator;;;==,!=,<,<=,>,>=,in,not in;14..14;true
 condition;false;;bool;age > > |;value;;;;8..8;true
 condition;false;;bool;and |;start;bool;;;4..4;true
@@ -519,22 +524,22 @@ condition;false;;bool;status == "open" and status == "|" and age > 1;inString;st
 # Adversarial: third batch
 unary;true;$status;;   |;unaryStart;status;open=Open case,closed=Closed;!=,in,not in;3..3;true
 unary;true;$status;;$ != "|;inString;status;open=Open case,closed=Closed;;5..6;true
-unary;true;$status;;"open" and "|;inString;status;closed=Closed;!=,in,not in;11..12;true
+unary;true;$status;;"open" and "|;inString;status;closed=Closed;;11..12;true
 unary;true;$status;;== "open" or == "|;inString;status;open=Open case,closed=Closed;;16..17;true
 unary;true;$status;;$root.customer.status == "|;inString;status;open=Open case,closed=Closed;;25..26;true
-unary;true;$status;;customer.|;member;;;;9..9;false
+unary;true;$status;;customer.|;member;status;;;9..9;false
 unary;true;$number;;< |;value;number;;;2..2;true
 unary;true;$number;;!= |;value;number;;;3..3;true
 unary;true;$number;;1.|;unaryStart;number;;>,>=,<,<=,==,!=,in,not in;0..2;true
 unary;true;$number;;> 1.5 |;logical;bool;;and,or;6..6;true
 unary;true;$number;;> len(|;argument;any;;;6..6;true
-unary;true;$number;;> customer.|;member;;;;11..11;false
+unary;true;$number;;> customer.|;member;number;;;11..11;false
 unary;true;$number;;== customer.age |;logical;bool;;and,or;16..16;true
 unary;true;$number;;[1..5] or [|;listElement;number;;;11..11;true
 unary;true;$number;;[1, 2] or (|;range;number;;;11..11;false
 unary;true;$number;;> 5 and < 10 and |;unaryStart;number;;>,>=,<,<=,==,!=,in,not in;17..17;true
 unary;true;$number;;[1..5]|;logical;bool;;and,or;6..6;false
-unary;true;$string;;"a" or "b" or "|;inString;string;;!=,in,not in;14..15;true
+unary;true;$string;;"a" or "b" or "|;inString;string;;;14..15;true
 unary;true;$string;;startsWith($, "a") or |;unaryStart;string;;!=,in,not in;22..22;true
 unary;true;$string;;!= "|;inString;string;;;3..4;true
 unary;true;$string;;"a"|;logical;bool;;and,or;3..3;false
@@ -653,6 +658,9 @@ condition;false;{"Object":{"something":{"Nullable":{"Const":"hello"}}}};bool;som
 condition;false;{"Object":{"something":{"Nullable":{"Const":"hello"}}}};bool;something == "|;inString;"hello"?;hello;;13..14;true
 condition;false;{"Object":{"something":{"Nullable":{"Const":"hello"}}}};bool;something |;operator;;;==,!=,in,not in,??;10..10;true
 condition;false;{"Object":{"something":{"Enum":[null,["a","b"]]}}};bool;something == |;value;"a" | "b";a,b;;13..13;true
+value;false;{"Object":{"g":{"Enum":[null,["hello","world"]]}}};;g == |;value;"hello" | "world";hello,world;;5..5;true
+value;false;{"Object":{"g":{"Enum":[null,["hello","world"]]}}};;g == "|;inString;"hello" | "world";hello,world;;5..6;true
+value;false;{"Object":{"g":{"Enum":[null,["hello","world"]]}}};;g != |;value;"hello" | "world";hello,world;;5..5;true
 condition;false;{"Object":{"something":{"Const":"hello"}}};bool;"open" == |;value;string;;;10..10;true
 condition;false;{"Object":{"something":{"Const":"hello"}}};bool;"hello" == |;value;string;;;11..11;true
 value;false;{"Object":{"something":{"Const":"hello"}}};{"Const":"hello"};|;value;"hello";hello;;0..0;true
@@ -673,3 +681,34 @@ condition;false;;bool;amount > |;value;number?;;;9..9;true
 condition;false;;bool;amount == |;value;number?;null;;10..10;true
 value;false;{"Object":{"since":{"Nullable":"Date"}}};date;since ?? |;value;date;;;9..9;true
 condition;false;{"Object":{"since":{"Nullable":"Date"}}};bool;since |;operator;;;==,!=,<,<=,>,>=,in,not in,??;6..6;true
+unary;true;$number;;<|;operator;;;<,<=;0..1;true
+unary;true;$number;;>=|;value;number;;;2..2;true
+condition;false;;bool;age >|;operator;;;>,>=;4..5;true
+condition;false;;bool;age ==|;value;number;;;6..6;true
+unary;true;$number;;=|;operator;;;==;0..1;true
+unary;true;$number;;!|;operator;;;!=;0..1;true
+condition;false;;bool;claim.amount =|;operator;;;==;13..14;true
+condition;false;;bool;name !|;operator;;;!=;5..6;true
+
+# Glued operator prefixes: the typed operator stays replaceable while longer ones begin with it
+condition;false;{"Object":{"status":{"Nullable":{"Enum":["status",["open","closed"]]}}}};bool;status ?|;operator;;;??;7..8;true
+condition;false;;bool;age > 1 ?|;start;bool;;;9..9;true
+unary;true;$number;;>= 1 and >|;operator;;;>,>=;9..10;true
+unary;true;$number;;>= 1 and >| 2;operator;;;>,>=;9..10;true
+unary;true;$string;;>|;value;string;;;1..1;true
+unary;true;$bool;;=|;operator;;;==;0..1;true
+unary;true;$bool;;!|;operator;;;!=;0..1;true
+condition;false;;bool;age <|;operator;;;<,<=;4..5;true
+condition;false;;bool;age <=|;value;number;;;6..6;true
+condition;false;;bool;age ==|;value;number;;;6..6;true
+condition;false;;bool;age !=|;value;number;;;6..6;true
+condition;false;;bool;age >|;operator;;;>,>=;4..5;true
+condition;false;;bool;age >=|;value;number;;;6..6;true
+unary;true;$status;;=|;operator;;;==;0..1;true
+unary;true;$string;;=|;operator;;;==;0..1;true
+
+# Bare bool fields also compare; literals, calls, groups and negations only connect
+condition;false;{"Object":{"aircraft":{"Object":{"apuFault":"Bool"}}}};bool;aircraft.apuFault |;logical;bool;;and,or,==,!=;18..18;true
+condition;false;{"Object":{"aircraft":{"Object":{"apuFault":"Bool"}}}};bool;aircraft.apuFault == |;value;bool;;;21..21;true
+condition;false;{"Object":{"aircraft":{"Object":{"apuFault":"Bool"}}}};bool;(aircraft.apuFault) |;logical;bool;;and,or;20..20;true
+condition;false;{"Object":{"aircraft":{"Object":{"apuFault":"Bool"}}}};bool;not aircraft.apuFault |;logical;bool;;and,or;22..22;true

@@ -247,7 +247,7 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
             let p_start = self.current().map(|s| s.span.0);
 
             self.next();
-            let binary_node = self.binary_expression(0, ParserContext::Global);
+            let binary_node = self.binary_expression(0, ParserContext::Nested);
             if let Some(error_node) = self.expect(TokenKind::Bracket(Bracket::RightParenthesis)) {
                 return error_node;
             };

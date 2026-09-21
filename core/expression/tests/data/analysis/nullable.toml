@@ -494,6 +494,17 @@ return_type = '"Number"'
 return_type = '"Number"'
 
 [[test]]
+name = "coalesce: Nullable(Const) ?? const merges into an enum"
+expression = "kind ?? 'world'"
+input = '{"Object": {"kind": {"Nullable": {"Const": "hello"}}}}'
+
+[test.loose]
+return_type = '{"Enum":[null,["hello","world"]]}'
+
+[test.strict]
+return_type = '{"Enum":[null,["hello","world"]]}'
+
+[[test]]
 name = "coalesce: non-nullable passes through"
 expression = "name ?? 'fallback'"
 input = '{"Object": {"name": "String"}}'

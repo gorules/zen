@@ -4,11 +4,13 @@ use ahash::{HashMap, HashMapExt};
 use serde_json::Value;
 use zen_expression::intellisense::Reference;
 use zen_expression::nl::NlResult;
+use zen_expression::slot::{field_fits, SlotRole, SlotState};
 use zen_expression::variable::VariableType;
 
 use crate::policy::blocks::IntelliSenseSource;
 use crate::policy::ir::{DataModelIr, PropertyTypeIr};
 use crate::policy::queries::scope::EntityGraph;
+use crate::policy::raw::BlockDoc;
 use crate::workspace::db::{Db, Snapshot};
 use crate::workspace::types::{
     BlockRef, Completion, Cursor, CursorTarget, EngineEdit, ExpressionKind, InspectResult,
@@ -33,10 +35,58 @@ impl Db {
         let Some((source, _, scope)) = self.resolve_cursor(cursor) else {
             return Vec::new();
         };
-        let pos = cursor.pos.min(SpanOps::char_len(&source));
-        self.cursor_intellisense(cursor)
+        // The stored source is trimmed: a caret past its end sits in trailing whitespace.
+        let len = SpanOps::char_len(&source);
+        let padded: String;
+        let source: &str = if cursor.pos > len {
+            padded = format!("{source}{}", " ".repeat((cursor.pos - len) as usize));
+            &padded
+        } else {
+            &source
+        };
+        let mut completions = self
+            .cursor_intellisense(cursor)
             .borrow_mut()
-            .completions(&source, pos, &scope)
+            .completions(source, cursor.pos, &scope);
+        let Some(response) = self.slot(cursor, source) else {
+            return completions;
+        };
+        let slot = response.slot;
+        // Only an operator can follow a finished operand: no field or function belongs there.
+        if matches!(slot.state, SlotState::Operator | SlotState::Logical) {
+            return Vec::new();
+        }
+        // A value slot of a known scalar type: fields that can never produce it are noise.
+        if let Some(wanted) = slot.wanted_scalar().map(VariableType::shallow_clone) {
+            completions.retain(|c| c.var_type.as_ref().is_none_or(|t| field_fits(t, &wanted)));
+        }
+        let chains = matches!(response.role, SlotRole::Condition | SlotRole::Unary)
+            && self.operator_follows(cursor, source);
+        for c in &mut completions {
+            let Some(t) = c.var_type.as_ref() else {
+                continue;
+            };
+            c.follow = match t.unwrap_nullable().0 {
+                VariableType::Object(_) => Some("."),
+                _ if chains => Some(" "),
+                _ => None,
+            };
+        }
+        completions
+    }
+
+    // Whether a leaf field completed at the caret would be followed by an operator: classified on
+    // the prefix plus a stand-in field and a space, so a call argument, a list or a path does not
+    // chain.
+    fn operator_follows(&self, cursor: &Cursor, source: &str) -> bool {
+        let prefix: String = char::decode_utf16(source.encode_utf16().take(cursor.pos as usize))
+            .filter_map(Result::ok)
+            .collect();
+        let probe = format!("{prefix}x ");
+        let mut at = cursor.clone();
+        at.pos = cursor.pos + 2;
+        self.slot(&at, &probe)
+            .is_some_and(|r| matches!(r.slot.state, SlotState::Operator | SlotState::Logical))
     }
 
     pub(crate) fn cursor_intellisense(
@@ -111,11 +161,12 @@ impl Db {
                 .flatten();
             return Some((kind, scope, expected));
         }
-        let block = self.block_ir(&BlockRef {
+        let block_ref = BlockRef {
             policy_path: cursor.policy_path.clone(),
             block_id: cursor.block_id.clone(),
-        })?;
-        let scope = self.enriched(&cursor.policy_path).scope.shallow_clone();
+        };
+        let block = self.block_ir(&block_ref)?;
+        let scope = self.enriched(&cursor.policy_path).scope_before(&block_ref);
         let dictionaries = self.unit(&cursor.policy_path).dictionary_types();
         let intellisense = self.intellisense();
         let mut is = intellisense.borrow_mut();
@@ -264,14 +315,32 @@ impl Db {
         if self.is_graph(&cursor.policy_path) {
             return self.graph_resolve_cursor(cursor);
         }
-        let rule = self.block_ir(&BlockRef {
+        let block_ref = BlockRef {
             policy_path: cursor.policy_path.clone(),
             block_id: cursor.block_id.clone(),
-        })?;
-        rule.resolve_cursor(
-            cursor,
-            self.enriched(&cursor.policy_path).scope.shallow_clone(),
-        )
+        };
+        let rule = self.block_ir(&block_ref)?;
+        let scope = self.enriched(&cursor.policy_path).scope_before(&block_ref);
+        rule.resolve_cursor(cursor, scope.shallow_clone())
+            .or_else(|| {
+                let source = self.raw_assertion_condition(cursor)?;
+                Some((source, ExpressionKind::Standard, scope))
+            })
+    }
+
+    fn raw_assertion_condition(&self, cursor: &Cursor) -> Option<Arc<str>> {
+        let CursorTarget::Expression { id } = &cursor.target else {
+            return None;
+        };
+        let policy = self.raw_policy(&cursor.policy_path)?;
+        policy.blocks.iter().find_map(|block| match block {
+            BlockDoc::Assertion { id: block_id, data } if *block_id == cursor.block_id => data
+                .conditions
+                .iter()
+                .find(|c| c.id == *id)
+                .map(|c| c.expression.clone()),
+            _ => None,
+        })
     }
 }
 
@@ -475,10 +544,8 @@ impl EntityGraph {
                             name: first.clone(),
                         },
                     );
-                    match self.next_entity_for_global(&first) {
-                        Some(target) => Some((target, 1)),
-                        None => None,
-                    }
+                    self.next_entity_for_global(&first)
+                        .map(|target| (target, 1))
                 } else {
                     None
                 }

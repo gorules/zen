@@ -4,21 +4,25 @@ use zen_expression::variable::VariableType;
 
 use super::{known_type, literal_union, CursorScope};
 use crate::policy::blocks::{
-    BlockKind, DecisionTableIr, ExpressionIr, IntelliSenseSource, MatchIr,
+    BlockKind, DecisionTableIr, ExpressionIr, IntelliSenseSource, MatchIr, ROW_ID_KEY,
 };
 use crate::policy::queries::scope::VariableTypeScope;
 use crate::workspace::db::{Db, Unit};
 use crate::workspace::types::{BlockRef, Cursor, CursorTarget, ExpressionKind};
 
 pub(super) fn policy_scope(db: &Db, cursor: &Cursor) -> Option<CursorScope> {
-    let block = db.block_ir(&BlockRef {
+    let block_ref = BlockRef {
         policy_path: cursor.policy_path.clone(),
         block_id: cursor.block_id.clone(),
-    })?;
+    };
+    let block = db.block_ir(&block_ref)?;
     let unit = db.unit(&cursor.policy_path);
-    let scope = db.enriched_of_unit(&unit).scope.shallow_clone();
+    let enriched = db.enriched_of_unit(&unit);
+    let scope = enriched.scope_before(&block_ref);
     match &block.kind {
-        BlockKind::DecisionTable(table) => table_scope(db, &unit, table, cursor, scope),
+        BlockKind::DecisionTable(table) => {
+            table_scope(db, &unit, table, cursor, scope, &enriched.scope)
+        }
         BlockKind::Expression(expression) => expression_scope(db, expression, cursor, scope),
         BlockKind::Assertion(_) => assertion_scope(cursor, scope),
         BlockKind::Match(block) => match_scope(db, block, cursor, scope),
@@ -31,6 +35,7 @@ fn table_scope(
     table: &DecisionTableIr,
     cursor: &Cursor,
     scope: VariableType,
+    written: &VariableType,
 ) -> Option<CursorScope> {
     match &cursor.target {
         CursorTarget::DecisionTableHead { col } => {
@@ -38,7 +43,7 @@ fn table_scope(
                 || table.outputs.iter().any(|c| c.id == *col);
             known.then(|| CursorScope::path(scope))
         }
-        CursorTarget::DecisionTableCell { col, .. } => {
+        CursorTarget::DecisionTableCell { row, col } => {
             if let Some(column) = table.inputs.iter().find(|c| c.id == *col) {
                 return Some(match column.field.as_ref().filter(|f| !f.is_empty()) {
                     Some(field) => {
@@ -53,7 +58,8 @@ fn table_scope(
                 .declared
                 .as_ref()
                 .and_then(|declared| declared.resolve(&unit.dictionary_types()))
-                .or_else(|| written_type(db, &scope, column.field.as_ref()));
+                .or_else(|| written_type(db, written, column.field.as_ref()))
+                .or_else(|| table_sibling_union(db, table, row, col, &scope));
             Some(CursorScope::value(scope, expected))
         }
         _ => None,
@@ -100,6 +106,30 @@ fn match_scope(
         }
         _ => None,
     }
+}
+
+fn table_sibling_union(
+    db: &Db,
+    table: &DecisionTableIr,
+    row: &Arc<str>,
+    col: &Arc<str>,
+    scope: &VariableType,
+) -> Option<VariableType> {
+    let mut merged: Option<VariableType> = None;
+    for rule in &table.rules {
+        if rule.get(ROW_ID_KEY) == Some(row) {
+            continue;
+        }
+        let Some(cell) = rule.get(col).filter(|c| !c.is_empty()) else {
+            continue;
+        };
+        let cell_type = return_type(db, cell, scope);
+        merged = Some(match merged {
+            Some(acc) => acc.merge(&cell_type),
+            None => cell_type,
+        });
+    }
+    literal_union(merged?)
 }
 
 fn sibling_union(

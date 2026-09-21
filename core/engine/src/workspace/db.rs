@@ -538,6 +538,7 @@ impl Db {
                     &unit.members,
                     &self.intellisense,
                     Rc::new(unit.dictionary_types()),
+                    Rc::new(unit.data_model_paths.clone()),
                 ))
             })
             .clone()

@@ -9,7 +9,7 @@ use zen_expression::{Isolate, IsolateError};
 use super::property_read::ReadFlattener;
 use super::type_check::TypeCheck;
 use crate::policy::ir::PropertyPath;
-use crate::policy::queries::dependency::PathPrefix;
+use crate::policy::queries::dependency::{DataModelPaths, PathPrefix};
 use crate::policy::queries::scope::VariableTypeScope;
 use crate::workspace::db::AnalysisPass;
 use crate::workspace::types::{
@@ -59,6 +59,7 @@ pub struct ExecutionError {
 
 pub type SharedDictionaryTypes = Rc<ahash::HashMap<Arc<str>, VariableType>>;
 pub type SharedPoisonedPaths = Rc<RefCell<ahash::HashSet<Arc<str>>>>;
+pub type SharedDeclaredPaths = Rc<DataModelPaths>;
 
 pub struct AnalysisContext {
     scope: VariableType,
@@ -71,11 +72,13 @@ pub struct AnalysisContext {
     intellisense: SharedIntelliSense,
     dictionary_types: SharedDictionaryTypes,
     poisoned_paths: SharedPoisonedPaths,
+    declared_paths: SharedDeclaredPaths,
     /// Attached to diagnostics that name no target of their own, e.g. parse errors of one table cell.
     default_target: Option<CursorTarget>,
 }
 
 impl AnalysisContext {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         scope: VariableType,
         policy_path: Arc<str>,
@@ -84,6 +87,7 @@ impl AnalysisContext {
         pass: AnalysisPass,
         dictionary_types: SharedDictionaryTypes,
         poisoned_paths: SharedPoisonedPaths,
+        declared_paths: SharedDeclaredPaths,
     ) -> Self {
         Self {
             scope,
@@ -96,6 +100,7 @@ impl AnalysisContext {
             intellisense,
             dictionary_types,
             poisoned_paths,
+            declared_paths,
             default_target: None,
         }
     }
@@ -212,7 +217,9 @@ impl AnalysisContext {
             }
             self.poisoned_paths.borrow_mut().insert(path.clone());
         }
-        if matches!(self.pass, AnalysisPass::Enriched) {
+        if matches!(self.pass, AnalysisPass::Enriched)
+            && self.declared_paths.matches_prefix(&path).is_none()
+        {
             self.scope.insert_at_path(&path, &resolved_type, true);
         }
         self.writes.push(WriteTarget {

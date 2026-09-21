@@ -648,3 +648,100 @@ fn analysis_disjoint_enum_equality_hint_fires() {
         }
     }
 }
+
+#[test]
+fn completions_order_is_sorted_and_stable() {
+    let mut is = IntelliSense::new();
+    let data: VariableType = serde_json::from_str(
+        r#"{"Object":{"zeta":"Number","Alpha":"String","beta":"Bool","$":"Number","gamma":{"Object":{"y":"Number","X":"String","a":"Bool"}}}}"#,
+    )
+    .unwrap();
+
+    let first: Vec<String> = is
+        .completions("", 0, &data)
+        .into_iter()
+        .map(|c| c.label)
+        .collect();
+    let second: Vec<String> = is
+        .completions("", 0, &data)
+        .into_iter()
+        .map(|c| c.label)
+        .collect();
+    assert_eq!(first, second);
+    assert_eq!(
+        &first[..6],
+        ["Alpha", "beta", "gamma", "zeta", "$", "$root"]
+    );
+    assert_eq!(
+        first[6], "len",
+        "functions keep registry order after the variables"
+    );
+
+    let props: Vec<String> = is
+        .completions("gamma.", 6, &data)
+        .into_iter()
+        .filter(|c| c.kind == zen_expression::intellisense::completion::CompletionKind::Property)
+        .map(|c| c.label)
+        .collect();
+    assert_eq!(props, ["a", "X", "y"]);
+}
+
+#[test]
+fn completions_offer_closure_locals_first() {
+    let mut is = IntelliSense::new();
+    let data: VariableType = serde_json::from_str(
+        r#"{"Object":{"i":{"Array":"String"},"m":{"Array":{"Object":{"a":"Number","tags":{"Array":"String"}}}}}}"#,
+    )
+    .unwrap();
+    let mut labels = |source: &str| -> Vec<(String, String)> {
+        is.completions(source, source.len() as u32, &data)
+            .into_iter()
+            .map(|c| (c.label, c.detail))
+            .collect()
+    };
+
+    let got = labels("map(m as x, ");
+    assert_eq!((got[0].0.as_str(), got[0].1.as_str()), ("x", "object"));
+    assert_eq!(got[1].0, "i");
+    assert_eq!(got[2].0, "m");
+
+    let got = labels("map(m as x, x");
+    assert_eq!(
+        got.iter().map(|(l, _)| l.as_str()).collect::<Vec<_>>(),
+        ["x"]
+    );
+
+    let got = labels("map(m, ");
+    assert_eq!((got[0].0.as_str(), got[0].1.as_str()), ("#", "object"));
+
+    let got = labels("map(m, #");
+    assert_eq!(
+        got.iter().map(|(l, _)| l.as_str()).collect::<Vec<_>>(),
+        ["#"]
+    );
+
+    let got = labels("map(m as x, map(x.tags as y, ");
+    assert_eq!((got[0].0.as_str(), got[0].1.as_str()), ("y", "string"));
+    assert_eq!(got[1].0, "x");
+    assert_eq!(got[2].0, "i");
+
+    let got = labels("map(m as x, map(x.tags as y, y");
+    assert_eq!(
+        got.iter().map(|(l, _)| l.as_str()).collect::<Vec<_>>(),
+        ["y"]
+    );
+
+    let got = labels("filter(m as x, x.a > ");
+    assert_eq!(got[0].0, "x");
+
+    let got = labels("map(m as x, x.a) + ");
+    assert_eq!(got[0].0, "i");
+    assert!(got.iter().all(|(l, _)| l != "x"));
+
+    let boost = IntelliSense::new()
+        .completions("map(m as x, ", 12, &data)
+        .into_iter()
+        .find(|c| c.label == "x")
+        .and_then(|c| c.boost);
+    assert_eq!(boost, Some(30));
+}

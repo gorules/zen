@@ -418,3 +418,68 @@ fn assignments_and_semicolons() {
     let slot = slot_at("x = 1; x |", false, SlotRole::Condition, "", "bool");
     assert_eq!(slot.state, SlotState::Operator);
 }
+
+#[test]
+fn closure_locals_follow_the_caret() {
+    let names = |slot: &zen_expression::slot::Slot| -> Vec<String> {
+        slot.locals.iter().map(|l| l.name.clone()).collect()
+    };
+    let element = |slot: &zen_expression::slot::Slot, i: usize| slot.locals[i].kind.to_string();
+
+    let slot = slot_at("map(items as x, |", false, SlotRole::Value, "", "");
+    assert_eq!(slot.state, SlotState::Closure);
+    assert_eq!(names(&slot), ["x"]);
+    assert!(matches!(slot.locals[0].kind, VariableType::Object(_)));
+    assert!(matches!(slot.operand, Some(VariableType::Object(_))));
+
+    let slot = slot_at("map(items as x, x|", false, SlotRole::Value, "", "");
+    assert_eq!(names(&slot), ["x"]);
+    assert_eq!(slot.replace_span, (16, 17));
+
+    let nested =
+        r#"{"Object":{"m":{"Array":{"Object":{"a":"Number","tags":{"Array":"String"}}}}}}"#;
+    let slot = slot_at(
+        "map(m as x, map(x.tags as y, |",
+        false,
+        SlotRole::Value,
+        nested,
+        "",
+    );
+    assert_eq!(names(&slot), ["y", "x"]);
+    assert_eq!(element(&slot, 0), "string");
+    assert!(matches!(slot.locals[1].kind, VariableType::Object(_)));
+
+    let slot = slot_at("map(m, map(#.tags, |", false, SlotRole::Value, nested, "");
+    assert_eq!(names(&slot), ["#"]);
+    assert_eq!(element(&slot, 0), "string");
+
+    let slot = slot_at("map(items, |", false, SlotRole::Value, "", "");
+    assert_eq!(names(&slot), ["#"]);
+    assert!(matches!(slot.locals[0].kind, VariableType::Object(_)));
+
+    let slot = slot_at(
+        "filter(items as x, x.price > |",
+        false,
+        SlotRole::Condition,
+        "",
+        "bool",
+    );
+    assert_eq!(slot.state, SlotState::Value);
+    assert_eq!(names(&slot), ["x"]);
+
+    let slot = slot_at("map(items as x, len(x|", false, SlotRole::Value, "", "");
+    assert_eq!(names(&slot), ["x"]);
+
+    assert!(slot_at(
+        "map(items as x, x.price) + |",
+        false,
+        SlotRole::Value,
+        "",
+        ""
+    )
+    .locals
+    .is_empty());
+    assert!(slot_at("map(|", false, SlotRole::Value, "", "")
+        .locals
+        .is_empty());
+}

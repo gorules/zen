@@ -337,7 +337,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 TokenKind::TemplateString(template) => match template {
                     TemplateString::ExpressionStart => {
                         self.next();
-                        nodes.push(expression_parser(ParserContext::Global));
+                        nodes.push(expression_parser(ParserContext::Nested));
 
                         if let Some(error) =
                             self.expect(TokenKind::TemplateString(TemplateString::ExpressionEnd))
@@ -404,7 +404,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 break;
             }
 
-            arguments.push(expression_parser(ParserContext::Global));
+            arguments.push(expression_parser(ParserContext::Nested));
             if self.current_kind() != Some(&TokenKind::Operator(Operator::Comma)) {
                 break;
             }
@@ -520,7 +520,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             c = cc;
 
             if c.kind != TokenKind::Bracket(Bracket::RightSquareBracket) {
-                to = Some(expression_parser(ParserContext::Global));
+                to = Some(expression_parser(ParserContext::Nested));
             }
 
             expect!(self, TokenKind::Bracket(Bracket::RightSquareBracket));
@@ -531,7 +531,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 ),
             })
         } else {
-            let from_node = expression_parser(ParserContext::Global);
+            let from_node = expression_parser(ParserContext::Nested);
             from = Some(from_node);
             let Some(cc) = self.current() else {
                 return self.error_with_node(
@@ -568,7 +568,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 c = cc;
 
                 if c.kind != TokenKind::Bracket(Bracket::RightSquareBracket) {
-                    to = Some(expression_parser(ParserContext::Global));
+                    to = Some(expression_parser(ParserContext::Nested));
                 }
 
                 expect!(self, TokenKind::Bracket(Bracket::RightSquareBracket));
@@ -737,7 +737,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             FunctionKind::Closure(_) => {
                 let mut arguments = BumpVec::new_in(&self.bump);
 
-                arguments.push(expression_parser(ParserContext::Global));
+                arguments.push(expression_parser(ParserContext::Nested));
 
                 let alias: Option<&'arena str> =
                     if self
@@ -790,7 +790,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                         break;
                     }
 
-                    arguments.push(expression_parser(ParserContext::Global));
+                    arguments.push(expression_parser(ParserContext::Nested));
                     if self.current_kind() != Some(&TokenKind::Operator(Operator::Comma)) {
                         break;
                     }
@@ -843,7 +843,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         };
 
         self.next();
-        let left = expression_parser(ParserContext::Global);
+        let left = expression_parser(ParserContext::Nested);
         if left.has_error() {
             self.set_position(initial_position);
             return None;
@@ -854,7 +854,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             return None;
         };
 
-        let right = expression_parser(ParserContext::Global);
+        let right = expression_parser(ParserContext::Nested);
         if right.has_error() {
             self.set_position(initial_position);
             return None;
@@ -917,7 +917,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 }
             }
 
-            nodes.push(expression_parser(ParserContext::Global));
+            nodes.push(expression_parser(ParserContext::Nested));
         }
 
         expect!(self, TokenKind::Bracket(Bracket::RightSquareBracket));
@@ -965,7 +965,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         expect!(self, TokenKind::Operator(Operator::Assign));
 
         let mut key_value_pairs = BumpVec::new_in(self.bump);
-        let value = expression_parser(ParserContext::Global);
+        let value = expression_parser(ParserContext::Nested);
 
         key_value_pairs.push((transform_key(starting_key), value));
         let mut checkpoint_for_return = None;
@@ -1005,14 +1005,14 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 );
             }
 
-            let value = expression_parser(ParserContext::Global);
+            let value = expression_parser(ParserContext::Nested);
             key_value_pairs.push((transform_key(key_node), value));
         }
 
         let mut output = None;
         if let Some(starting_position) = checkpoint_for_return {
             self.set_position(starting_position);
-            let value = expression_parser(ParserContext::Global);
+            let value = expression_parser(ParserContext::Nested);
             output.replace(value);
         }
 
@@ -1048,7 +1048,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         loop {
             let key = self.object_key(&expression_parser);
             expect!(self, TokenKind::Operator(Operator::Slice));
-            let value = expression_parser(ParserContext::Global);
+            let value = expression_parser(ParserContext::Nested);
 
             key_value_pairs.push((key, value));
 
@@ -1133,7 +1133,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             TokenKind::Bracket(bracket) => match bracket {
                 Bracket::LeftSquareBracket => {
                     expect!(self, TokenKind::Bracket(Bracket::LeftSquareBracket));
-                    let token = expression_parser(ParserContext::Global);
+                    let token = expression_parser(ParserContext::Nested);
                     expect!(self, TokenKind::Bracket(Bracket::RightSquareBracket));
 
                     token
@@ -1348,5 +1348,7 @@ impl<'a, 'arena> MetadataHelper<'a, 'arena> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ParserContext {
     Global,
+    /// Inside brackets, arguments or a template: unary clause joiners are ordinary operators here.
+    Nested,
     Closure,
 }

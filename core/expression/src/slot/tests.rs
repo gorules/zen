@@ -61,7 +61,7 @@ fn operators_by_type() {
     );
     assert_eq!(
         operators_for(&VariableType::Nullable(Rc::new(status.clone())), true),
-        vec!["!=", "in", "not in", "=="]
+        vec!["==", "!=", "in", "not in"]
     );
     assert_eq!(
         operators_for(&VariableType::Const(Rc::from("hello")), false),

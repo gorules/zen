@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use napi::Env;
 use napi_derive::napi;
-use serde_json::Value;
+use serde_json::{json, Value};
 use zen_engine::workspace::{self, CursorScope, ExpressionKind, SlotResponse, SlotRole};
 use zen_expression::intellisense::IntelliSense;
 use zen_expression::slot::LabelResolver;
@@ -130,6 +130,13 @@ fn slot_response_json(response: SlotResponse) -> napi::Result<Value> {
     let slot = object_mut(slot)?;
     slot.insert("expected".into(), type_json(&response.slot.expected));
     slot.insert("operand".into(), type_json(&response.slot.operand));
+    let locals = response
+        .slot
+        .locals
+        .iter()
+        .map(|l| json!({ "name": l.name, "type": variable_type_to_json(&l.kind) }))
+        .collect();
+    slot.insert("locals".into(), Value::Array(locals));
     Ok(value)
 }
 

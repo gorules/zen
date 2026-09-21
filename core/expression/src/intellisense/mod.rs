@@ -92,12 +92,13 @@ impl IntelliSense {
         pos: u32,
         data: &VariableType,
     ) -> Vec<completion::Completion> {
+        let locals = self.closure_locals(source, pos, data);
         let tokens = match self.type_check(source, data) {
             Some(t) => t,
-            None => return Completions::build_scope(data),
+            None => return Completions::build_scope(data, &locals),
         };
 
-        Completions::build(source, pos, data, &tokens)
+        Completions::build(source, pos, data, &tokens, &locals)
     }
 
     pub fn inspect(

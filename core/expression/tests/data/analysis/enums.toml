@@ -49,6 +49,16 @@ return_type = '{"Enum":[null,["high","low"]]}'
 return_type = '{"Enum":[null,["high","low"]]}'
 
 [[test]]
+name = "ternary over two string literals produces an anonymous enum"
+expression = "true ? 'hello' : 'world'"
+
+[test.loose]
+return_type = '{"Enum":[null,["hello","world"]]}'
+
+[test.strict]
+return_type = '{"Enum":[null,["hello","world"]]}'
+
+[[test]]
 name = "nested ternary produces enum"
 expression = "x > 100 ? 'high' : x > 50 ? 'mid' : 'low'"
 input = '{"x": 75}'

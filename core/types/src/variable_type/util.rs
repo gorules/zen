@@ -1,4 +1,4 @@
-use crate::variable_type::VariableType;
+use crate::variable_type::{MAX_TYPE_DEPTH, VariableType};
 use ahash::{HashMap, HashMapExt};
 use rust_decimal::prelude::Zero;
 use std::cell::RefCell;
@@ -42,11 +42,18 @@ impl VariableType {
     }
 
     pub fn satisfies(&self, constraint: &Self) -> bool {
+        self.satisfies_at(constraint, 0)
+    }
+
+    fn satisfies_at(&self, constraint: &Self, depth: usize) -> bool {
+        if depth > MAX_TYPE_DEPTH {
+            return true;
+        }
         match (self, constraint) {
             (VariableType::Any, _) | (_, VariableType::Any) => true,
-            (VariableType::Nullable(a), VariableType::Nullable(b)) => a.satisfies(b),
+            (VariableType::Nullable(a), VariableType::Nullable(b)) => a.satisfies_at(b, depth),
             (VariableType::Nullable(_), _) => false,
-            (other, VariableType::Nullable(inner)) => other.satisfies(inner),
+            (other, VariableType::Nullable(inner)) => other.satisfies_at(inner, depth),
 
             (VariableType::Null, VariableType::Null) => true,
             (VariableType::Bool, VariableType::Bool) => true,
@@ -56,13 +63,16 @@ impl VariableType {
             (VariableType::Number, VariableType::Date) => true,
             (_, VariableType::Date) if self.widen().is_string() => true,
             (VariableType::Interval, VariableType::Interval) => true,
-            (VariableType::Array(a1), VariableType::Array(a2)) => a1.satisfies(a2),
+            (VariableType::Array(a1), VariableType::Array(a2)) => a1.satisfies_at(a2, depth + 1),
             (VariableType::Object(o1), VariableType::Object(o2)) => {
+                if Rc::ptr_eq(o1, o2) {
+                    return true;
+                }
                 let o1 = o1.borrow();
                 let o2 = o2.borrow();
 
                 o2.iter().all(|(k, v)| match o1.get(k) {
-                    Some(tv) => tv.satisfies(v),
+                    Some(tv) => tv.satisfies_at(v, depth + 1),
                     None => matches!(
                         v,
                         VariableType::Any | VariableType::Null | VariableType::Nullable(_)
@@ -141,6 +151,13 @@ impl VariableType {
     }
 
     pub fn merge(&self, other: &Self) -> Self {
+        self.merge_at(other, 0)
+    }
+
+    fn merge_at(&self, other: &Self, depth: usize) -> Self {
+        if depth > MAX_TYPE_DEPTH {
+            return VariableType::Any;
+        }
         let (left, left_nullable) = self.unwrap_nullable();
         let (right, right_nullable) = other.unwrap_nullable();
         let nullable = left_nullable || right_nullable;
@@ -164,9 +181,12 @@ impl VariableType {
                         (VariableType::Any, other) | (other, VariableType::Any) => {
                             VariableType::Array(Rc::new(other.clone()))
                         }
-                        (l, r) => VariableType::Array(Rc::new(l.merge(r))),
+                        (l, r) => VariableType::Array(Rc::new(l.merge_at(r, depth + 1))),
                     }
                 }
+            }
+            (VariableType::Object(o1), VariableType::Object(o2)) if Rc::ptr_eq(o1, o2) => {
+                VariableType::Object(o1.clone())
             }
             (VariableType::Object(o1), VariableType::Object(o2)) => {
                 let o1 = o1.borrow();
@@ -181,7 +201,7 @@ impl VariableType {
                     match merged.entry(k.clone()) {
                         Entry::Occupied(mut entry) => {
                             let current = entry.get();
-                            entry.insert(current.merge(v));
+                            entry.insert(current.merge_at(v, depth + 1));
                         }
                         Entry::Vacant(entry) => {
                             entry.insert(v.clone());

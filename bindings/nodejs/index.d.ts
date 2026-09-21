@@ -69,7 +69,6 @@ export type PolicyDiagnosticCode =
   | 'UNRESOLVED_FUNCTION_TYPE'
   | 'IMPLICIT_ANY'
   | 'UNCHECKED_NODE'
-  | 'NULLABILITY_DIVERGENCE'
   | 'REDUNDANT_NULLISH'
   | 'REPEATED_DERIVATION'
   | 'PREFER_MATCH'
@@ -286,6 +285,8 @@ export interface PolicySlot {
   inString: string | null;
   listed: string[];
   autoOpen: boolean;
+  /** Names bound by enclosing closures at the caret, innermost first (`x` for `as x`, `#` otherwise). */
+  locals: Array<{ name: string; type: PolicyVariableType }>;
 }
 export type PolicyLiteralFact =
   | {
@@ -643,6 +644,8 @@ export interface PolicyCompletion {
   kind: string
   detail: string
   info: string
+  /** Text to append after accepting the item: `.` into an object, a space before an operator. */
+  follow?: string
 }
 
 export interface PolicyConditionalSchema {

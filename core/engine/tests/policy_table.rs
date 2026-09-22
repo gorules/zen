@@ -1,8 +1,8 @@
 use serde_json::json;
 use std::sync::Arc;
 use zen_engine::policy::{
-    CursorTarget, EngineEdit, EvaluateRequest, PolicyWorkspace, RenameTarget, ScopeRequest,
-    Severity,
+    CursorTarget, EngineEdit, EvaluateRequest, EvaluationError, PolicyWorkspace, RenameTarget,
+    ScopeRequest, Severity,
 };
 use zen_expression::variable::{Variable, VariableType};
 
@@ -70,6 +70,53 @@ fn strict_table_doc() -> serde_json::Value {
             } } }
         ]
     })
+}
+
+#[test]
+fn failed_input_comparisons_report_the_field_and_missing_value() {
+    let ws = workspace_with(strict_table_doc());
+    for (input, value_description) in [
+        (json!({}), "missing or null"),
+        (json!({ "order": { "amount": null } }), "missing or null"),
+    ] {
+        let error = ws.evaluate(&request(input, true)).unwrap_err();
+        let EvaluationError::ExpressionFailed {
+            block_id,
+            expression,
+            source,
+            ..
+        } = error
+        else {
+            panic!("expected a contextual expression error, got {error:?}");
+        };
+        assert_eq!(block_id.as_ref(), "dt");
+        assert_eq!(expression.as_ref(), ">= 100");
+        let serialized = serde_json::to_value(&source).unwrap();
+        assert_eq!(serialized["type"], "contextError");
+        assert_eq!(serialized["source"]["type"], "vmError");
+        let source = source.to_string();
+        assert!(source.contains("order.amount"), "{source}");
+        assert!(source.contains(">= 100"), "{source}");
+        assert!(source.contains(value_description), "{source}");
+        assert!(source.contains("Opcode Compare"), "{source}");
+    }
+    // A failed run must not poison the workspace or silently select a fallback rule.
+    assert_eq!(
+        evaluate_output(&ws, json!({ "order": { "amount": 100, "region": "US" } }))
+            .pointer("/order/shippingCost"),
+        Some(&json!(0))
+    );
+}
+
+#[test]
+fn a_condition_that_handles_missing_input_still_evaluates_normally() {
+    let mut doc = strict_table_doc();
+    doc["blocks"][1]["props"]["data"]["rules"][0]["i1"] = json!("null");
+    let ws = workspace_with(doc);
+    assert_eq!(
+        evaluate_output(&ws, json!({ "order": { "region": "US" } })).pointer("/order/shippingCost"),
+        Some(&json!(0))
+    );
 }
 
 #[test]

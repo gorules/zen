@@ -1403,6 +1403,10 @@ fn graph_table_heads_complete_for_outputs_and_fieldless_inputs() {
 }
 
 fn sibling_writer_workspace() -> PolicyWorkspace {
+    import_scope_workspace(false)
+}
+
+fn import_scope_workspace(import_rule: bool) -> PolicyWorkspace {
     let shared = json!({
         "blocks": [
             {
@@ -1456,7 +1460,7 @@ fn sibling_writer_workspace() -> PolicyWorkspace {
         ]
     });
     let entry = json!({
-        "imports": ["shared"],
+        "imports": if import_rule { vec!["shared", "rule"] } else { vec!["shared"] },
         "blocks": [
             { "id": "ex_triggered", "type": "expression", "props": { "data": { "key": "triggeredRules", "value": "rules.apu.triggered ? [\"APU\"] : []" } } },
             { "id": "ex_count", "type": "expression", "props": { "data": { "key": "triggeredCount", "value": "len(triggeredRules)" } } }
@@ -1545,8 +1549,8 @@ fn sibling_policy_writes_are_hidden_until_scheduled() {
 }
 
 #[test]
-fn upstream_policy_writes_stay_visible_downstream() {
-    let ws = sibling_writer_workspace();
+fn explicitly_imported_policy_writes_stay_visible_downstream() {
+    let ws = import_scope_workspace(true);
 
     let reader = cursor_in("entry", "ex_triggered", expression("ex_triggered"));
     let labels = completion_labels(&ws, &reader);

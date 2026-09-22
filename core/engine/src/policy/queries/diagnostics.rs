@@ -17,10 +17,28 @@ impl Db {
             out.extend(parsed.diagnostics.iter().cloned());
         }
 
-        let shallow = self.shallow();
-        out.extend(shallow.diags_for(path).iter().cloned());
+        let unit = self.unit(path);
+        if let Some(parsed) = self.parsed(path) {
+            for rule in parsed.policy.rules() {
+                rule.check_single_entity_scope(path, &unit.classifier, &mut out);
+            }
+        }
 
-        out.extend(self.graph_diagnostics(path));
+        // Independently valid imports can conflict when composed. Surface those
+        // conflicts on the importing entry, even if neither writer is local.
+        let mut scope_diagnostics = self.graph_diagnostics(path);
+        scope_diagnostics.extend(self.data_model_diagnostics(path));
+        scope_diagnostics.extend(self.dictionary_diagnostics(path));
+        for mut diagnostic in scope_diagnostics {
+            if !diagnostic.is_in(path) {
+                diagnostic.message = format!(
+                    "in imported policy '{}': {}",
+                    diagnostic.location.policy_path, diagnostic.message
+                );
+                diagnostic.location = DiagnosticLocation::policy(path.clone());
+            }
+            out.push(diagnostic);
+        }
 
         let enriched = self.enriched(path);
         out.extend(
@@ -39,10 +57,6 @@ impl Db {
         );
 
         out.extend(self.import_diagnostics(path));
-
-        out.extend(self.data_model_diagnostics(path));
-
-        out.extend(self.dictionary_diagnostics(path));
 
         out.extend(self.unreachable_reads_diagnostics(path));
 
@@ -178,25 +192,20 @@ impl Db {
                     .and_then(|b| b.kind.write_target(&write.path));
 
                 if let Some(matched) = data_model_paths.matches_prefix(&write.path) {
-                    if in_target {
-                        out.push(Diagnostic::error(
-                            DiagnosticCode::InputOverride,
-                            DiagnosticLocation::block(
-                                rule.policy_path.clone(),
-                                rule.block_id.clone(),
-                            )
+                    out.push(Diagnostic::error(
+                        DiagnosticCode::InputOverride,
+                        DiagnosticLocation::block(rule.policy_path.clone(), rule.block_id.clone())
                             .maybe_target(wtarget.clone()),
-                            format!(
-                                "cannot write to '{}': '{}' is defined as a DataModel input",
-                                write.path, matched
-                            ),
-                        ));
-                    }
+                        format!(
+                            "cannot write to '{}': '{}' is defined as a DataModel input",
+                            write.path, matched
+                        ),
+                    ));
                     continue;
                 }
 
                 match first_writer.get(&write.path) {
-                    Some(existing) if in_target => {
+                    Some(existing) => {
                         out.push(Diagnostic::error(
                             DiagnosticCode::DuplicateWriter,
                             DiagnosticLocation::block(
@@ -214,7 +223,6 @@ impl Db {
                             ),
                         ));
                     }
-                    Some(_) => {}
                     None => {
                         first_writer.insert(write.path.clone(), block_ref.clone());
                     }
@@ -276,7 +284,11 @@ impl Db {
                     blocks.push((block_ref, *in_t));
                 }
             }
-            let Some((owner, _)) = blocks.iter().find(|(_, in_t)| *in_t) else {
+            let Some((owner, _)) = blocks
+                .iter()
+                .find(|(_, in_t)| *in_t)
+                .or_else(|| blocks.first())
+            else {
                 continue;
             };
             let cross_policy = blocks
@@ -305,12 +317,7 @@ impl Db {
 
         let graph = &unit.dep_graph;
         let cyclic = graph.cyclic_paths();
-        let target_in_cycle = cyclic.iter().any(|path| {
-            graph
-                .writer_for(path)
-                .is_some_and(|owner| owner.policy_path == *target)
-        });
-        if target_in_cycle {
+        if !cyclic.is_empty() {
             out.push(Diagnostic::error(
                 DiagnosticCode::CyclicDependency,
                 DiagnosticLocation::policy(target.clone()),
@@ -369,7 +376,7 @@ impl Db {
             let dm = &entry.ir;
             let is_global = dm.scope.is_global();
 
-            if !is_global && global_property_names.contains(&dm.name) && policy_path == target {
+            if !is_global && global_property_names.contains(&dm.name) {
                 out.push(Diagnostic::error(
                     DiagnosticCode::DataModelCollision,
                     DiagnosticLocation::block(policy_path.clone(), block_id.clone()),
@@ -381,7 +388,7 @@ impl Db {
             }
 
             for prop in &dm.properties {
-                if is_global && known_entities.contains(&prop.name) && policy_path == target {
+                if is_global && known_entities.contains(&prop.name) {
                     out.push(Diagnostic::error(
                         DiagnosticCode::DataModelCollision,
                         DiagnosticLocation::expression(
@@ -408,7 +415,7 @@ impl Db {
                     let conflicts = !prop.kind.same_shape_as(&prev_kind)
                         || prev_array != prop.array
                         || prev_optional != prop.optional;
-                    if conflicts && policy_path == target {
+                    if conflicts {
                         let location = if is_global {
                             format!("global property '{}'", prop.name)
                         } else {
@@ -490,8 +497,7 @@ impl Db {
         for entry in &unit.dictionary_blocks {
             let name = &entry.ir.name;
             if let Some((prev_policy, prev_block)) = first_by_name.get(name) {
-                if entry.policy_path == *target {
-                    out.push(Diagnostic::error(
+                out.push(Diagnostic::error(
                         DiagnosticCode::DataModelCollision,
                         DiagnosticLocation::block(
                             entry.policy_path.clone(),
@@ -501,7 +507,6 @@ impl Db {
                             "dictionary '{name}' is already defined in '{prev_policy}' (block '{prev_block}')"
                         ),
                     ));
-                }
                 continue;
             }
             first_by_name.insert(
@@ -509,9 +514,6 @@ impl Db {
                 (entry.policy_path.clone(), entry.block_id.clone()),
             );
 
-            if entry.policy_path != *target {
-                continue;
-            }
             if known_entities.contains(name) {
                 out.push(Diagnostic::error(
                     DiagnosticCode::DataModelCollision,

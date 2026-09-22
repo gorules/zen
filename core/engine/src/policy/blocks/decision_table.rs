@@ -5,7 +5,7 @@ use fixedbitset::FixedBitSet;
 use serde::{Deserialize, Serialize};
 use zen_expression::intellisense::{ArmTest, IntelliSense, NumberCover};
 use zen_expression::variable::{Variable, VariableType};
-use zen_expression::Isolate;
+use zen_expression::{Isolate, IsolateError};
 use zen_types::decision::{
     DecisionTableHitPolicy, DecisionTableInputField, DecisionTableOutputField,
 };
@@ -1212,7 +1212,26 @@ impl DecisionTableIr {
                     .map_err(|e| cx.expression_error(field, e))?;
                 isolate
                     .run_unary(cell)
-                    .map_err(|e| cx.expression_error(cell, e))
+                    .map_err(|source| {
+                        let value_type = col_refs[col_idx]
+                            .as_ref()
+                            .map(Variable::type_name)
+                            .unwrap_or("unknown");
+                        let value_description = if value_type == "null" {
+                            "missing or null"
+                        } else {
+                            value_type
+                        };
+                        cx.expression_error(
+                            cell,
+                            IsolateError::ContextError {
+                                context: format!(
+                                    "Cannot evaluate condition {cell:?} for input {field:?} ({value_description})"
+                                ),
+                                source: Box::new(source),
+                            },
+                        )
+                    })
             }
             _ => {
                 let result = isolate

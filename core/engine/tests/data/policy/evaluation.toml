@@ -265,7 +265,7 @@ kind = "expression"
 
 [[test]]
 name = "cross-policy — eligible high-income → platinum"
-policies = ["cross_dep_base.json", "cross_dep_consumer.json"]
+policies = ["cross_dep_consumer.json", "cross_dep_base.json"]
 input = { customer = { name = "Alice", age = 30, income = 120000 } }
 output = { customer = { isEligible = true, tier = "platinum" } }
 
@@ -279,7 +279,7 @@ matched_rows = [0]
 
 [[test]]
 name = "cross-policy — eligible mid-income → gold"
-policies = ["cross_dep_base.json", "cross_dep_consumer.json"]
+policies = ["cross_dep_consumer.json", "cross_dep_base.json"]
 input = { customer = { name = "Bob", age = 25, income = 60000 } }
 output = { customer = { isEligible = true, tier = "gold" } }
 
@@ -293,7 +293,7 @@ matched_rows = [1]
 
 [[test]]
 name = "cross-policy — eligible low-income → silver"
-policies = ["cross_dep_base.json", "cross_dep_consumer.json"]
+policies = ["cross_dep_consumer.json", "cross_dep_base.json"]
 input = { customer = { name = "Carol", age = 40, income = 35000 } }
 output = { customer = { isEligible = true, tier = "silver" } }
 
@@ -303,7 +303,7 @@ matched_rows = [2]
 
 [[test]]
 name = "cross-policy — ineligible (underage) → rejected"
-policies = ["cross_dep_base.json", "cross_dep_consumer.json"]
+policies = ["cross_dep_consumer.json", "cross_dep_base.json"]
 input = { customer = { name = "Dave", age = 16, income = 50000 } }
 output = { customer = { isEligible = false, tier = "rejected" } }
 
@@ -321,7 +321,7 @@ matched_rows = [3]
 
 [[test]]
 name = "cross-policy — ineligible (low income) → rejected"
-policies = ["cross_dep_base.json", "cross_dep_consumer.json"]
+policies = ["cross_dep_consumer.json", "cross_dep_base.json"]
 input = { customer = { name = "Eve", age = 25, income = 20000 } }
 output = { customer = { isEligible = false, tier = "rejected" } }
 

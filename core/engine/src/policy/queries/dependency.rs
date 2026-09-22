@@ -23,10 +23,8 @@ use crate::workspace::types::{BlockRef, Diagnostic, DiagnosticCode, DiagnosticLo
 #[derive(Debug)]
 pub struct ShallowAnalyses {
     pub per_rule: Vec<RuleShallowAnalysis>,
-    pub diagnostics: Vec<Diagnostic>,
     by_block: HashMap<BlockRef, usize>,
     rules_by_path: HashMap<Arc<str>, std::ops::Range<usize>>,
-    diags_by_path: HashMap<Arc<str>, std::ops::Range<usize>>,
 }
 
 impl ShallowAnalyses {
@@ -40,13 +38,6 @@ impl ShallowAnalyses {
         self.rules_by_path
             .get(path)
             .map(|r| &self.per_rule[r.clone()])
-            .unwrap_or(&[])
-    }
-
-    pub fn diags_for(&self, path: &Arc<str>) -> &[Diagnostic] {
-        self.diags_by_path
-            .get(path)
-            .map(|r| &self.diagnostics[r.clone()])
             .unwrap_or(&[])
     }
 }
@@ -372,25 +363,17 @@ impl Snapshot {
     pub(crate) fn compute_shallow(
         base_scope: &VariableType,
         all_parsed: &HashMap<Arc<str>, Arc<ParsedPolicy>>,
-        classifier: &PathClassifier,
         intellisense: &SharedIntelliSense,
         cache: &PolicyDerivedCache,
     ) -> ShallowAnalyses {
         let mut per_rule: Vec<RuleShallowAnalysis> = Vec::new();
-        let mut diagnostics: Vec<Diagnostic> = Vec::new();
         let mut rules_by_path: HashMap<Arc<str>, std::ops::Range<usize>> = HashMap::new();
-        let mut diags_by_path: HashMap<Arc<str>, std::ops::Range<usize>> = HashMap::new();
 
         let mut sorted_paths: Vec<&Arc<str>> = all_parsed.keys().collect();
         sorted_paths.sort();
         for path in sorted_paths {
             let p = &all_parsed[path];
             let rules_start = per_rule.len();
-            let diags_start = diagnostics.len();
-
-            for rule in p.policy.rules() {
-                rule.check_single_entity_scope(path, classifier, &mut diagnostics);
-            }
 
             let no_dictionaries: SharedDictionaryTypes = Rc::new(ahash::HashMap::default());
             let no_poison: SharedPoisonedPaths = Default::default();
@@ -420,7 +403,6 @@ impl Snapshot {
             });
             per_rule.extend(policy_shallow.iter().cloned());
             rules_by_path.insert(path.clone(), rules_start..per_rule.len());
-            diags_by_path.insert(path.clone(), diags_start..diagnostics.len());
         }
 
         let by_block = per_rule
@@ -439,10 +421,8 @@ impl Snapshot {
 
         ShallowAnalyses {
             per_rule,
-            diagnostics,
             by_block,
             rules_by_path,
-            diags_by_path,
         }
     }
 

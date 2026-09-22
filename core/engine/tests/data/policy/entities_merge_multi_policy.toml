@@ -54,9 +54,7 @@ entity = "customer"
 no_duplicate_fields = true
 
 # ── Visibility from policy B's perspective ───────────────────────────────────
-# v1 visibility was directional (B does not import A → B saw only its own
-# fields). v2 units are import components, so A and B share one unit and B
-# sees A's fields too, with source attribution preserved.
+# Imports are directional: B must not see fields declared by its importer A.
 
 [[test]]
 name = "entities(B): has own fields"
@@ -80,17 +78,7 @@ field = "label"
 property_kind = "computed"
 
 [[test]]
-name = "entities(B): sees age from A via component visibility"
+name = "entities(B): importer fields remain hidden"
 policy = "merge_policy_b.json"
 entity = "customer"
-field = "age"
-property_kind = "input"
-source = "merge_policy_a.json"
-
-[[test]]
-name = "entities(B): sees greeting computed by A via component visibility"
-policy = "merge_policy_b.json"
-entity = "customer"
-field = "greeting"
-property_kind = "computed"
-source = "merge_policy_a.json"
+absent_fields = ["age", "greeting"]

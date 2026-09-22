@@ -197,6 +197,12 @@ impl Isolate {
 /// Errors which happen within isolate or during evaluation
 #[derive(Debug, Error)]
 pub enum IsolateError {
+    #[error("{context}: {source}")]
+    ContextError {
+        context: String,
+        source: Box<IsolateError>,
+    },
+
     #[error("Lexer error: {source}")]
     LexerError { source: LexerError },
 
@@ -227,6 +233,11 @@ impl Serialize for IsolateError {
         let mut map = serializer.serialize_map(None)?;
 
         match &self {
+            IsolateError::ContextError { context, source } => {
+                map.serialize_entry("type", "contextError")?;
+                map.serialize_entry("context", context)?;
+                map.serialize_entry("source", source)?;
+            }
             IsolateError::ReferenceError => {
                 map.serialize_entry("type", "referenceError")?;
             }

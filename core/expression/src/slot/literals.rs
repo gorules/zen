@@ -23,8 +23,6 @@ pub(crate) struct Entry<'a> {
     pub span: Span,
     pub expected: Option<VariableType>,
 }
-
-/// Pre-order node list with the expectation each node inherits from its parent.
 pub(crate) struct NodeTable<'a> {
     pub entries: Vec<Entry<'a>>,
 }
@@ -198,8 +196,6 @@ impl<'a> NodeTable<'a> {
 
         Self { entries }
     }
-
-    /// Deepest node whose span is exactly `span`, skipping error wrappers.
     pub(crate) fn node_at(&self, span: Span) -> Option<&'a Node<'a>> {
         self.entries
             .iter()
@@ -207,9 +203,6 @@ impl<'a> NodeTable<'a> {
             .map(|e| e.node)
     }
 }
-
-/// The expectation a comparison operand gives its partner; a bare string literal widens so
-/// `"open" == "x"` expects a string, while a field typed `"hello"` keeps its literal.
 fn comparison_operand(parsed: &Parsed, node: &Node) -> Option<VariableType> {
     match (node, parsed.type_of(node)) {
         (Node::String(_), VariableType::Const(_)) => Some(VariableType::String),
@@ -280,8 +273,6 @@ fn function_expectations(
         _ => Vec::new(),
     }
 }
-
-/// `some(list, # in enumField)`: the collection literal expects that enum.
 fn closure_membership(parsed: &Parsed, arguments: &[&Node]) -> Option<VariableType> {
     let Some(Node::Closure { body, alias }) = arguments.get(1) else {
         return None;
@@ -388,8 +379,6 @@ fn bool_fact(span: Span, value: bool, expected: Option<&VariableType>) -> Option
         .is_some_and(|e| matches!(e.unwrap_nullable().0, VariableType::Bool))
         .then_some(LiteralFact::Bool { span, value })
 }
-
-/// `d().startOf("day")`: the Today preset, rendered as one pill.
 fn is_today_call(node: &Node) -> bool {
     matches!(
         node,
@@ -425,8 +414,6 @@ fn date_arg(arguments: &[&Node]) -> Option<DateArg> {
         _ => None,
     }
 }
-
-/// Closed string, boolean and `d(...)` token runs, in source order.
 enum TokenLiteral<'a> {
     Str {
         span: Span,
@@ -513,8 +500,6 @@ fn token_literals<'a>(tokens: &[Token<'a>]) -> Vec<TokenLiteral<'a>> {
     }
     out
 }
-
-/// Index of the closing paren when `.startOf("day")` follows the call closed at `close`.
 fn today_end(tokens: &[Token], close: usize) -> Option<usize> {
     let rest = tokens.get(close + 1..close + 8)?;
     let quote = match rest[3].kind {
@@ -553,8 +538,6 @@ fn call_end(tokens: &[Token], open: usize) -> Option<usize> {
     }
     None
 }
-
-/// `d(...)` re-parsed from its own tokens; only a clean single-call parse counts.
 fn token_date_arg(parsed: &Parsed, first: usize, last: usize) -> Option<DateArg> {
     let tokens = &parsed.tokens[first..=last];
     let result = Parser::try_new(tokens, parsed.arena)

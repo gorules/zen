@@ -115,7 +115,6 @@ impl LabelKey {
 
 type LabelEntry = (LabelKey, Option<Arc<LabelMap>>);
 
-/// Dictionary labels per policy, keyed by the unit or graph analysis identity.
 #[derive(Default)]
 pub(crate) struct LabelCache {
     entries: RefCell<HashMap<Arc<str>, LabelEntry>>,

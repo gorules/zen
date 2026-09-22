@@ -73,7 +73,6 @@ pub struct AnalysisContext {
     dictionary_types: SharedDictionaryTypes,
     poisoned_paths: SharedPoisonedPaths,
     declared_paths: SharedDeclaredPaths,
-    /// Attached to diagnostics that name no target of their own, e.g. parse errors of one table cell.
     default_target: Option<CursorTarget>,
 }
 
@@ -113,7 +112,6 @@ impl AnalysisContext {
         &self.dictionary_types
     }
 
-    /// Runs `f` with `target` attached to every diagnostic that does not carry its own.
     pub fn with_target<R>(
         &mut self,
         target: Option<CursorTarget>,

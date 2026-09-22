@@ -1,4 +1,3 @@
-//! Slot-aware autocomplete: caret classification and literal facts over a partial parse.
 use std::rc::Rc;
 
 use bumpalo::Bump;
@@ -86,8 +85,7 @@ pub struct Slot {
 }
 
 impl Slot {
-    /// The scalar a field written here must produce: set when the slot asks for a value of a
-    /// known scalar type, so a field list can drop the fields that could never fit.
+    /// Expected scalar type used to filter field completions.
     pub fn wanted_scalar(&self) -> Option<&VariableType> {
         if !matches!(
             self.state,
@@ -206,7 +204,6 @@ pub fn encode_string(value: &str) -> Option<String> {
     }
 }
 
-/// Whether a hint describes dates, including optional dates and arrays of dates.
 pub fn is_date_type(kind: &VariableType) -> bool {
     match kind {
         VariableType::Date => true,
@@ -417,8 +414,7 @@ impl IntelliSense {
         }
     }
 
-    /// Closure-bound names visible at byte `pos`, innermost first: `x` for `map(m as x, ...)`,
-    /// `#` for an unaliased closure, each with the element type.
+    /// Closure bindings visible at byte `pos`, innermost first.
     pub fn closure_locals(
         &mut self,
         source: &str,
@@ -441,7 +437,6 @@ impl IntelliSense {
         classify::closure_locals(&parsed, &table, pos)
     }
 
-    /// Literal facts only (bulk projection, no caret).
     pub fn literals(
         &mut self,
         source: &str,
@@ -511,8 +506,7 @@ fn scalar_class(t: &VariableType) -> Option<ScalarClass> {
     }
 }
 
-/// Whether a field of type `field` can stand where `wanted` is expected: scalars must match in
-/// kind, while objects, arrays and untyped values may still lead to a fitting path.
+/// Scalars must match; containers may provide a matching nested field.
 pub fn field_fits(field: &VariableType, wanted: &VariableType) -> bool {
     let (field, _) = field.unwrap_nullable();
     match scalar_class(field) {

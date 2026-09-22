@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 
-const { Workspace, slotBatch, encodeZenString, nlEncodeString } = require('../index.js');
+const { Workspace, slotBatch, encodeZenString } = require('../index.js');
 
 const policy = {
   blocks: [
@@ -186,6 +186,5 @@ describe('encodeZenString', () => {
     expect(encodeZenString('open')).toBe('"open"');
     expect(encodeZenString('say "hi"')).toBe('\'say "hi"\'');
     expect(encodeZenString('it\'s "x"')).toBeNull();
-    expect(nlEncodeString('open')).toBe('"open"');
   });
 });

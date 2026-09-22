@@ -19,10 +19,10 @@ pub use crate::workspace::{
     EngineEdit, Entity, EntityField, EvaluateRequest, EvaluationError, EvaluationResult,
     ExpressionFacts, ExpressionKind, FieldOrigin, FunctionResolutionRequest, FunctionTypeResolver,
     GraphAnalysis, GraphNodeAnalysis, GraphSignature, GraphTraceMap, GuardedProperty,
-    InputProperty, InputValidationError, InspectResult, NlExpression, OutputProperty,
-    PrepareRename, PropertyKind, ReferenceKind, ReferenceSite, RenameTarget, SchemaFieldKind,
-    SchemaGroup, ScopeRequest, Severity, SlotResponse, SlotRole, Span, Trace, Workspace,
-    WriteConflict, WriteTrace,
+    InputProperty, InputValidationError, InspectResult, OutputProperty, PrepareRename,
+    PropertyKind, ReferenceKind, ReferenceSite, RenameTarget, SchemaFieldKind, SchemaGroup,
+    ScopeRequest, Severity, SlotResponse, SlotRole, Span, Trace, Workspace, WriteConflict,
+    WriteTrace,
 };
 pub use raw::{BlockDoc, PolicyDocument};
 

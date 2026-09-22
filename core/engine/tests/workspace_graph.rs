@@ -878,30 +878,6 @@ fn catch_all_row_covers_table_and_empty_cell_makes_column_nullable() {
 }
 
 #[test]
-fn nl_projects_graph_expressions() {
-    let mut ws = Workspace::new();
-    let switch = node(
-        "sw",
-        "switchNode",
-        json!({
-            "hitPolicy": "first",
-            "statements": [{ "id": "s1", "condition": "age > 18" }]
-        }),
-    );
-    ws.set_document(
-        "g",
-        document(linear_graph(
-            Some(person_schema()),
-            vec![switch, expression_node("calc", &[("total", "age * 2")])],
-        )),
-    );
-    let projected = ws.nl("g");
-    let block_ids: Vec<&str> = projected.iter().map(|e| e.block_id.as_ref()).collect();
-    assert!(block_ids.contains(&"sw"), "{block_ids:?}");
-    assert!(block_ids.contains(&"calc"), "{block_ids:?}");
-}
-
-#[test]
 fn unreachable_node_is_hinted() {
     let mut ws = Workspace::new();
     let content = json!({
@@ -1957,37 +1933,6 @@ fn graph_malformed_output_type_diagnosed() {
 }
 
 #[test]
-fn graph_nl_tokenize_output_cell_uses_declared_type() {
-    let mut ws = Workspace::new();
-    ws.set_document(
-        "g",
-        document(linear_graph(
-            Some(person_schema()),
-            vec![typed_table("number", &["10"])],
-        )),
-    );
-    let result = ws
-        .nl_tokenize(
-            &Cursor {
-                policy_path: "g".into(),
-                block_id: "dt".into(),
-                pos: 0,
-                target: CursorTarget::DecisionTableCell {
-                    row: "r0".into(),
-                    col: "o1".into(),
-                },
-            },
-            "10",
-        )
-        .expect("tokenized");
-    assert!(
-        matches!(result.subject_type, Some(VariableType::Number)),
-        "{:?}",
-        result.subject_type
-    );
-}
-
-#[test]
 fn graph_untyped_output_column_keeps_inferred_behavior() {
     let mut ws = Workspace::new();
     ws.set_document(
@@ -1998,18 +1943,6 @@ fn graph_untyped_output_column_keeps_inferred_behavior() {
         )),
     );
     assert!(ws.diagnostics("g").is_empty(), "{:?}", ws.diagnostics("g"));
-    let results = ws.nl("g");
-    let cell = results
-        .iter()
-        .find(|e| {
-            matches!(
-                &e.target,
-                CursorTarget::DecisionTableCell { row, col }
-                    if row.as_ref() == "r0" && col.as_ref() == "o1"
-            )
-        })
-        .expect("cell projection");
-    assert!(cell.result.subject_options.is_none());
 }
 
 #[test]
@@ -2974,6 +2907,37 @@ fn decision_boundary_allows_missing_optional_item_field() {
         diagnostics.is_empty(),
         "an optional item field the parent never produces must not break the boundary: {diagnostics:?}"
     );
+}
+
+#[test]
+fn optional_properties_do_not_warn_of_nullability_divergence() {
+    let mut ws = Workspace::new();
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "age": { "type": "number" },
+            "name": { "type": "string" },
+            "alias": { "type": ["string", "null"] },
+            "tags": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": { "label": { "type": "string" }, "weight": { "type": "number" } },
+                    "required": ["label"]
+                }
+            }
+        },
+        "required": ["age", "tags"]
+    });
+    ws.set_document(
+        "g",
+        document(linear_graph(
+            Some(schema),
+            vec![expression_node("calc", &[("x", "age * 2")])],
+        )),
+    );
+    let diagnostics = ws.diagnostics("g");
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
 }
 
 #[test]

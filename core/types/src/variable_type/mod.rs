@@ -143,7 +143,6 @@ impl Default for VariableType {
     }
 }
 
-// Preserve the derived debug format while bounding cyclic entity objects.
 impl std::fmt::Debug for VariableType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::Debug::fmt(

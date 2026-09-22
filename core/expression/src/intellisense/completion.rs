@@ -41,7 +41,6 @@ pub struct Completion {
 pub struct Completions;
 
 impl Completions {
-    /// Build suggestions from the same partial parse that classified the caret.
     pub fn from_slot(
         source: &str,
         pos: u32,
@@ -221,7 +220,6 @@ impl Completions {
         completions
     }
 
-    // Alphabetical, case-insensitive, `$`-prefixed roots last: the map iterates in hash order.
     fn sorted_fields(fields: &HashMap<Rc<str>, VariableType>) -> Vec<(&Rc<str>, &VariableType)> {
         let mut out: Vec<_> = fields.iter().collect();
         out.sort_by_cached_key(|(key, _)| {

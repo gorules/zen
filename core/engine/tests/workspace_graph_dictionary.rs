@@ -2,8 +2,7 @@ use std::sync::Arc;
 
 use serde_json::{json, Value};
 use zen_engine::model::DecisionContent;
-use zen_engine::policy::{Cursor, CursorTarget, DiagnosticCode, ScopeRequest, Severity, Workspace};
-use zen_expression::nl::{EditHint, NlTokenKind};
+use zen_engine::policy::{DiagnosticCode, ScopeRequest, Severity, Workspace};
 
 fn document(value: Value) -> DecisionContent {
     serde_json::from_value(value).expect("valid decision content")
@@ -248,42 +247,6 @@ fn dictionary_edit_invalidates_graph_analysis() {
         codes.contains(&DiagnosticCode::TypeMismatch),
         "expected type mismatch after dictionary edit, got {codes:?}"
     );
-}
-
-#[test]
-fn nl_tokenize_graph_cell_uses_dictionary_labels() {
-    let mut ws = Workspace::new();
-    ws.set_document(
-        "dicts",
-        document(dictionary_policy(
-            &[],
-            "customerTier",
-            &[("VIP", "Very important"), ("STD", "Standard")],
-        )),
-    );
-    ws.set_document("g", document(graph(&["dicts"], tier_table("'VIP'"))));
-
-    let cursor = Cursor {
-        policy_path: "g".into(),
-        block_id: "dt".into(),
-        pos: 0,
-        target: CursorTarget::DecisionTableCell {
-            row: "r1".into(),
-            col: "o1".into(),
-        },
-    };
-    let result = ws.nl_tokenize(&cursor, "'VIP'").expect("cursor resolves");
-    let str_tok = result
-        .tokens
-        .iter()
-        .find(|t| matches!(t.token, NlTokenKind::Str { .. }))
-        .expect("string token present");
-    let Some(EditHint::Select { options }) = str_tok.hint else {
-        panic!("expected select hint, got {:?}", str_tok.hint);
-    };
-    let options = &result.enums[options as usize];
-    let labels: Vec<&str> = options.iter().map(|o| o.label.as_str()).collect();
-    assert_eq!(labels, vec!["Very important", "Standard"]);
 }
 
 fn schema_graph(imports: &[&str], tier_schema: Value, output_schema: Option<Value>) -> Value {

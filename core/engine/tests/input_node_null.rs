@@ -14,6 +14,10 @@ fn graph(required: &[&str]) -> Decision {
         },
         "required": ["aircraft"]
     });
+    graph_with_schema(schema)
+}
+
+fn graph_with_schema(schema: serde_json::Value) -> Decision {
     let content = serde_json::from_value(json!({
         "nodes": [
             {
@@ -57,4 +61,27 @@ async fn wrong_type_on_optional_property_still_fails() {
         .evaluate(json!({ "aircraft": { "apuFault": "yes" } }).into())
         .await;
     assert!(error.is_err());
+}
+
+#[tokio::test]
+async fn schema_valid_nulls_are_not_removed_before_validation() {
+    for constraints in [
+        json!({"minProperties": 1}),
+        json!({"anyOf": [{"required": ["value"]}, {"required": ["other"]}]}),
+    ] {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {"value": {"type": ["boolean", "null"]}}
+        });
+        schema
+            .as_object_mut()
+            .unwrap()
+            .extend(constraints.as_object().unwrap().clone());
+        let decision = graph_with_schema(json!({
+            "type": "object", "properties": {"payload": schema}, "required": ["payload"]
+        }));
+        let input = json!({"payload": {"value": null}});
+        let result = decision.evaluate(input.clone().into()).await.unwrap();
+        assert_eq!(result.result, input.into());
+    }
 }

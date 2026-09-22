@@ -6,8 +6,6 @@ const TEXT: &[&str] = &["==", "!=", "in", "not in"];
 const TEXT_UNARY: &[&str] = &["!=", "in", "not in"];
 pub(crate) const EQUALITY: &[&str] = &["==", "!="];
 const MEMBERSHIP: &[&str] = &["in", "not in"];
-
-/// Operators a nullable operand adds on top of its inner type's (`??` has no unary form).
 pub(crate) fn nullable_extras(unary: bool) -> &'static [&'static str] {
     if unary {
         &["==", "!="]
@@ -15,8 +13,6 @@ pub(crate) fn nullable_extras(unary: bool) -> &'static [&'static str] {
         &["==", "!=", "??"]
     }
 }
-
-/// Operators that fit a left operand of type `t`; `unary` means the operand is the implicit `$`.
 pub(crate) fn operators_for(t: &VariableType, unary: bool) -> Vec<&'static str> {
     if let VariableType::Nullable(inner) = t {
         let mut list = operators_for(inner, unary);

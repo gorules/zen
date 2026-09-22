@@ -9,12 +9,11 @@ mod type_check;
 use std::sync::Arc;
 
 use ahash::{HashMap, HashMapExt, HashSet};
-use zen_expression::intellisense::IntelliSense;
 use zen_expression::variable::VariableType;
 
 use crate::workspace::types::{
     BlockTrace, Cursor, CursorTarget, Diagnostic, DiagnosticCode, DiagnosticLocation,
-    ExpressionKind, NlExpression, Span,
+    ExpressionKind, Span,
 };
 
 #[derive(Debug, Clone)]
@@ -232,29 +231,6 @@ impl Block {
     ) -> Option<(Arc<str>, ExpressionKind, VariableType)> {
         self.kind.resolve_cursor(cursor, scope)
     }
-
-    pub fn nl(
-        &self,
-        policy_path: &Arc<str>,
-        scope: &VariableType,
-        is: &mut IntelliSense,
-        dictionaries: &HashMap<Arc<str>, VariableType>,
-    ) -> Vec<NlExpression> {
-        self.kind.nl(policy_path, &self.id, scope, is, dictionaries)
-    }
-
-    pub fn nl_scope(
-        &self,
-        cursor: &Cursor,
-        scope: VariableType,
-        is: &mut IntelliSense,
-        dictionaries: &HashMap<Arc<str>, VariableType>,
-    ) -> (ExpressionKind, VariableType, Option<VariableType>) {
-        match &self.kind {
-            BlockKind::DecisionTable(d) => d.nl_scope(cursor, scope, is, dictionaries),
-            _ => (ExpressionKind::Standard, scope, None),
-        }
-    }
 }
 
 impl BlockKind {
@@ -341,22 +317,6 @@ impl BlockKind {
             BlockKind::DecisionTable(d) => d.resolve_cursor(cursor, scope),
             BlockKind::Expression(e) => e.resolve_cursor(cursor, scope),
             BlockKind::Match(m) => m.resolve_cursor(cursor, scope),
-        }
-    }
-
-    pub fn nl(
-        &self,
-        policy_path: &Arc<str>,
-        block_id: &Arc<str>,
-        scope: &VariableType,
-        is: &mut IntelliSense,
-        dictionaries: &HashMap<Arc<str>, VariableType>,
-    ) -> Vec<NlExpression> {
-        match self {
-            BlockKind::Assertion(a) => a.nl(policy_path, block_id, scope, is),
-            BlockKind::DecisionTable(d) => d.nl(policy_path, block_id, scope, is, dictionaries),
-            BlockKind::Expression(e) => e.nl(policy_path, block_id, scope, is),
-            BlockKind::Match(m) => m.nl(policy_path, block_id, scope, is),
         }
     }
 

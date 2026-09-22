@@ -2,13 +2,11 @@ use std::sync::Arc;
 
 use ahash::HashSet;
 use serde::{Deserialize, Serialize};
-use zen_expression::intellisense::IntelliSense;
 use zen_expression::variable::{Variable, VariableType};
 use zen_expression::Isolate;
 
 use crate::workspace::types::{
     BlockTrace, ConditionTrace, Cursor, CursorTarget, Diagnostic, DiagnosticCode, ExpressionKind,
-    NlExpression,
 };
 
 use crate::policy::ArcStrTrim;
@@ -218,32 +216,6 @@ impl AssertionIr {
             result,
             conditions: traces,
         })
-    }
-
-    pub(super) fn nl(
-        &self,
-        policy_path: &Arc<str>,
-        block_id: &Arc<str>,
-        scope: &VariableType,
-        is: &mut IntelliSense,
-    ) -> Vec<NlExpression> {
-        self.conditions
-            .iter()
-            .filter(|condition| !condition.expression.is_empty())
-            .map(|condition| {
-                NlExpression::project(
-                    is,
-                    policy_path,
-                    block_id,
-                    CursorTarget::Expression {
-                        id: condition.id.clone(),
-                    },
-                    ExpressionKind::Standard,
-                    condition.expression.as_ref(),
-                    scope,
-                )
-            })
-            .collect()
     }
 
     pub(super) fn resolve_cursor(

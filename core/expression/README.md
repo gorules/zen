@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![crates.io](https://img.shields.io/crates/v/zen-expression.svg)](https://crates.io/crates/zen-expression)
 
-ZEN expressions are readable by business users and fast enough for hot paths: a complete language for conditions, calculations and data transformation, with lexer, parser, compiler, VM, type checking and natural-language rendering included in this crate.
+ZEN expressions are readable by business users and fast enough for hot paths: a complete language for conditions, calculations and data transformation, with lexer, parser, compiler, VM, type checking and editor completions included in this crate.
 
 ```rust
 use serde_json::json;

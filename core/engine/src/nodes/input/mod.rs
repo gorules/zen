@@ -17,10 +17,12 @@ impl NodeHandler for InputNodeHandler {
 
     async fn handle(&self, ctx: NodeContext<Self::NodeData, Self::TraceData>) -> NodeResult {
         if let Some(json_schema) = &ctx.node.schema {
-            ctx.validate(
-                json_schema,
-                &without_optional_nulls(json_schema, &ctx.input),
-            )?;
+            ctx.validate(json_schema, &ctx.input).or_else(|_| {
+                ctx.validate(
+                    json_schema,
+                    &without_optional_nulls(json_schema, &ctx.input),
+                )
+            })?;
         };
 
         ctx.success(ctx.input.clone())

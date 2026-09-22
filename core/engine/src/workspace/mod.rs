@@ -11,7 +11,6 @@ use crate::model::DecisionContent;
 use crate::policy::evaluator::EvalArtifact;
 use crate::policy::raw::PolicyDocument;
 use db::Db;
-use zen_expression::nl::NlResult;
 use zen_expression::variable::VariableType;
 
 pub use graph::{
@@ -25,9 +24,9 @@ pub use types::{
     DiagnosticLocation, Dictionary, DictionaryEntryInfo, DiscriminantVariant, DiscriminatedUnion,
     EngineEdit, Entity, EntityField, EvaluateRequest, EvaluationError, EvaluationResult,
     ExpressionKind, FieldOrigin, GuardedProperty, InputProperty, InputValidationError,
-    InspectResult, NlExpression, OutputProperty, PrepareRename, PropertyKind, ReferenceKind,
-    ReferenceSite, RenameTarget, SchemaFieldKind, SchemaGroup, ScopeRequest, SearchHit,
-    SearchHitKind, Severity, SlotRole, Span, Trace, WriteConflict, WriteTrace,
+    InspectResult, OutputProperty, PrepareRename, PropertyKind, ReferenceKind, ReferenceSite,
+    RenameTarget, SchemaFieldKind, SchemaGroup, ScopeRequest, SearchHit, SearchHitKind, Severity,
+    SlotRole, Span, Trace, WriteConflict, WriteTrace,
 };
 
 use types::Global;
@@ -177,14 +176,6 @@ impl Workspace {
 
     pub fn completions(&self, cursor: &Cursor) -> Vec<Completion> {
         self.db.completions(cursor)
-    }
-
-    pub fn nl(&self, policy_path: &str) -> Vec<NlExpression> {
-        self.db.nl(policy_path)
-    }
-
-    pub fn nl_tokenize(&self, cursor: &Cursor, text: &str) -> Option<NlResult> {
-        self.db.nl_tokenize(cursor, text)
     }
 
     pub fn cursor_scope(&self, cursor: &Cursor) -> Option<CursorScope> {

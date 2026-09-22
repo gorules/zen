@@ -2,7 +2,6 @@ mod cursor;
 mod diagnostic;
 mod edit;
 mod error;
-mod nl;
 mod request;
 mod result;
 mod search;
@@ -17,7 +16,6 @@ pub use diagnostic::{
 };
 pub use edit::EngineEdit;
 pub use error::{EvaluationError, InputValidationError};
-pub use nl::NlExpression;
 pub use request::{EvaluateRequest, ScopeRequest};
 pub use result::{
     BlockExecution, BlockRef, BlockTrace, Completion, ConditionTrace, ConditionalSchema,

@@ -4,7 +4,6 @@ mod dependencies;
 mod editor;
 mod enhance;
 pub(crate) mod function;
-mod nl;
 mod queries;
 mod schema;
 mod ts_type;

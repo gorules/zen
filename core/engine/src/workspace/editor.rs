@@ -5,7 +5,6 @@ use ahash::{HashMap, HashMapExt};
 use serde_json::Value;
 use zen_expression::intellisense::completion::Completions;
 use zen_expression::intellisense::Reference;
-use zen_expression::nl::NlResult;
 use zen_expression::variable::VariableType;
 
 use crate::policy::blocks::IntelliSenseSource;
@@ -15,7 +14,7 @@ use crate::policy::raw::BlockDoc;
 use crate::workspace::db::{Db, Snapshot};
 use crate::workspace::types::{
     BlockRef, Completion, Cursor, CursorTarget, EngineEdit, ExpressionKind, InspectResult,
-    NlExpression, PrepareRename, ReferenceKind, ReferenceSite, RenameTarget, Span, SpanOps,
+    PrepareRename, ReferenceKind, ReferenceSite, RenameTarget, Span, SpanOps,
 };
 
 impl Db {
@@ -69,79 +68,6 @@ impl Db {
         } else {
             self.intellisense()
         }
-    }
-
-    pub fn nl(&self, policy: &str) -> Vec<NlExpression> {
-        if self.is_graph(policy) {
-            return self.graph_nl(policy);
-        }
-        let policy_arc: Arc<str> = Arc::from(policy);
-        let Some(parsed) = self.parsed(&policy_arc) else {
-            return Vec::new();
-        };
-        let scope = self.enriched(policy).scope.shallow_clone();
-        let dictionaries = self.unit(policy).dictionary_types();
-        let labels = self.nl_label_resolver(policy);
-        let intellisense = self.intellisense();
-        let mut is = intellisense.borrow_mut();
-        is.set_nl_labels(labels);
-        let mut out = Vec::new();
-        for rule in parsed.policy.rules() {
-            out.extend(rule.nl(&policy_arc, &scope, &mut is, &dictionaries));
-        }
-        is.set_nl_labels(None);
-        out
-    }
-
-    pub fn nl_tokenize(&self, cursor: &Cursor, text: &str) -> Option<NlResult> {
-        let (kind, scope, expected) = self.nl_scope(cursor)?;
-        let unary = matches!(kind, ExpressionKind::Unary);
-        let labels = self.nl_label_resolver(&cursor.policy_path);
-        let intellisense = self.cursor_intellisense(cursor);
-        let mut is = intellisense.borrow_mut();
-        is.set_nl_labels(labels);
-        let mut result =
-            is.nl_tokenize_scoped(&cursor.block_id, text, unary, &scope, expected.as_ref());
-        if unary {
-            let subject = scope.get("$");
-            result.subject_options = is.nl_subject_options(&subject);
-            result.subject_type = Some(subject);
-        } else if let Some(expected) = &expected {
-            result.subject_options = is.nl_subject_options(expected);
-            result.subject_type = Some(expected.shallow_clone());
-        }
-        is.set_nl_labels(None);
-        Some(result)
-    }
-
-    pub(crate) fn nl_label_resolver(
-        &self,
-        policy: &str,
-    ) -> Option<zen_expression::intellisense::NlLabelResolver> {
-        self.label_resolver(policy)
-    }
-
-    fn nl_scope(
-        &self,
-        cursor: &Cursor,
-    ) -> Option<(ExpressionKind, VariableType, Option<VariableType>)> {
-        if self.is_graph(&cursor.policy_path) {
-            let (_, kind, scope) = self.graph_resolve_cursor(cursor)?;
-            let expected = (!matches!(kind, ExpressionKind::Unary))
-                .then(|| self.graph_cell_expected(cursor))
-                .flatten();
-            return Some((kind, scope, expected));
-        }
-        let block_ref = BlockRef {
-            policy_path: cursor.policy_path.clone(),
-            block_id: cursor.block_id.clone(),
-        };
-        let block = self.block_ir(&block_ref)?;
-        let scope = self.enriched(&cursor.policy_path).scope_before(&block_ref);
-        let dictionaries = self.unit(&cursor.policy_path).dictionary_types();
-        let intellisense = self.intellisense();
-        let mut is = intellisense.borrow_mut();
-        Some(block.nl_scope(cursor, scope, &mut is, &dictionaries))
     }
 
     pub fn prepare_rename(&self, cursor: &Cursor) -> Option<PrepareRename> {

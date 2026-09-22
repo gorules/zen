@@ -25,7 +25,6 @@ impl SchemaType {
         Self::resolve::<true>(schema, dictionaries)
     }
 
-    // Only walk the requested path, rather than rebuilding a schema for each table cell.
     pub(crate) fn is_date_path(schema: &Value, path: &str) -> bool {
         if let Some(cases) = schema
             .get("anyOf")

@@ -300,12 +300,7 @@ async fn engine_graph_tests() {
                 .unwrap()
                 .result;
 
-            // Compare SERIALIZED values, not Variables: without the
-            // arbitrary_precision feature the fixture's long decimals
-            // round-trip through f64 while evaluation computes exact
-            // Decimals. Serialization collapses both to what users observe,
-            // and numbers get a few-ULP tolerance because the two
-            // Decimal->f64 paths may differ in the last bit.
+            // Default-feature JSON serialization rounds decimals through f64.
             let expected = serde_json::to_value(&test_case.output).expect("serializable output");
             let actual = serde_json::to_value(&result).expect("serializable result");
             assert!(
@@ -327,10 +322,6 @@ fn mock_datetime() {
     std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-08-19T16:55:02.078Z");
 }
 
-/// Structural equality with a few-ULP tolerance on numbers: exact under
-/// arbitrary_precision (identical strings compare equal first), and immune to
-/// last-bit differences between the fixture's and the engine's Decimal->f64
-/// conversions under default features.
 fn json_approx_eq(a: &serde_json::Value, b: &serde_json::Value) -> bool {
     use serde_json::Value;
     match (a, b) {
@@ -338,10 +329,17 @@ fn json_approx_eq(a: &serde_json::Value, b: &serde_json::Value) -> bool {
             if x == y {
                 return true;
             }
-            let (Some(x), Some(y)) = (x.as_f64(), y.as_f64()) else {
-                return false;
-            };
-            x == y || (x - y).abs() <= f64::EPSILON * x.abs().max(y.abs()) * 4.0
+            #[cfg(feature = "arbitrary_precision")]
+            {
+                false
+            }
+            #[cfg(not(feature = "arbitrary_precision"))]
+            {
+                let (Some(x), Some(y)) = (x.as_f64(), y.as_f64()) else {
+                    return false;
+                };
+                x == y || (x - y).abs() <= f64::EPSILON * x.abs().max(y.abs()) * 4.0
+            }
         }
         (Value::Array(x), Value::Array(y)) => {
             x.len() == y.len() && x.iter().zip(y.iter()).all(|(a, b)| json_approx_eq(a, b))
@@ -355,10 +353,7 @@ fn json_approx_eq(a: &serde_json::Value, b: &serde_json::Value) -> bool {
     }
 }
 
-// Insta snapshots are exact strings and the stored snapshots carry
-// full-precision decimals, so they are only meaningful under the canonical
-// arbitrary_precision mode — the one every shipped binding compiles with.
-// Default-feature numeric behavior is covered by engine_graph_tests above.
+// Stored snapshots contain full-precision decimals.
 #[cfg(feature = "arbitrary_precision")]
 #[tokio::test]
 #[cfg_attr(miri, ignore)]

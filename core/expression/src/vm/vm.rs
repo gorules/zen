@@ -397,7 +397,6 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
 
                             self.push(Bool(is_in));
                         }
-                        // A date-typed input arrives as an ISO string; date members compare as dates.
                         (String(a), Array(b)) => {
                             let arr = b.borrow();
                             let parsed = arr
@@ -490,7 +489,6 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
 
                             self.push(Bool(compare(a, b, comparison)));
                         }
-                        // A date-typed input arrives as an ISO string; against a date it compares as a date.
                         (String(a), Dynamic(b)) => {
                             let parsed = VmDate::from_literal(String(a), None);
                             let Some(b) = b.as_date().filter(|_| parsed.is_valid()) else {

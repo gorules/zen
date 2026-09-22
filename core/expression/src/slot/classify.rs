@@ -134,9 +134,6 @@ pub(crate) fn fallback(
     };
     ctx.classify_at(pos)
 }
-
-/// A path target is only a path while the text before the caret is a bare identifier chain;
-/// anything else (a `d(` head, operators, brackets) classifies as a plain value expression.
 fn effective_role<'p>(
     source: &str,
     pos: u32,
@@ -154,8 +151,6 @@ fn is_path_prefix(bytes: &[u8]) -> bool {
         || bytes.first().is_none_or(|b| is_ident_byte(*b))
             && bytes.iter().all(|b| is_ident_byte(*b) || *b == b'.')
 }
-
-/// The classifier's operand state machine, reused for token-level literal facts.
 pub(crate) struct Operands<'p, 'a> {
     ctx: Ctx<'p, 'a>,
 }
@@ -171,9 +166,6 @@ impl<'p, 'a> Operands<'p, 'a> {
         let ctx = Ctx::new(parsed, table, unary, SlotRole::Condition, expected, labels);
         Self { ctx }
     }
-
-    /// Expectation of the operand starting at byte `start`, following the AST walk's rules:
-    /// a comparison operand takes the other side's type and method arguments stay untyped.
     pub(crate) fn expected_at(&self, start: u32) -> Option<VariableType> {
         let ctx = &self.ctx;
         let idx = ctx.items.iter().position(|it| it.span.0 == start)?;
@@ -350,8 +342,6 @@ fn is_literal_start(kind: Kind) -> bool {
 fn is_bool(t: &VariableType) -> bool {
     matches!(t.unwrap_nullable().0, VariableType::Bool)
 }
-
-/// A constant type widened to its base type: `"open" == |` expects a string, not `"open"`.
 fn widen(t: VariableType) -> VariableType {
     match t {
         VariableType::Const(_) => VariableType::String,
@@ -404,7 +394,6 @@ impl<'p, 'a> Ctx<'p, 'a> {
                         | FrameKind::Object
                 )
             });
-        // Options describe values valid at this position, including their container shape.
         if matches!(
             slot.state,
             SlotState::Value | SlotState::Argument | SlotState::ListElement
@@ -440,7 +429,6 @@ impl<'p, 'a> Ctx<'p, 'a> {
             return self.path_slot(pos);
         }
 
-        // A closure alias is a declaration, not an expression operand.
         let limit = self.operand_limit(pos);
         if let Some(frame) = self.frames(limit).last() {
             if let FrameKind::Call {
@@ -529,7 +517,6 @@ impl<'p, 'a> Ctx<'p, 'a> {
         if inside {
             slot.auto_open = false;
         }
-        // An operand is due (empty editor or after something): offer fields and functions without a keystroke.
         let operand_due = matches!(
             slot.state,
             SlotState::Start | SlotState::Argument | SlotState::Closure
@@ -539,8 +526,6 @@ impl<'p, 'a> Ctx<'p, 'a> {
         }
         slot
     }
-
-    /// Index of the operand run following a comparison (`==`, `in`, `not in`) after item `idx`.
     fn comparison_after(&self, idx: usize) -> Option<usize> {
         let mut next = idx + 1;
         if self.items.get(next)?.kind == Kind::Op(Operator::Logical(LogicalOperator::Not)) {
@@ -581,8 +566,6 @@ impl<'p, 'a> Ctx<'p, 'a> {
         }
         slot
     }
-
-    /// `not in` lexes as two words until the trailing space arrives; treat them as one.
     fn not_in_head(&self, w: usize) -> usize {
         let is_in = self.items[w].kind == Kind::Op(Operator::Comparison(ComparisonOperator::In))
             || (self.items[w].kind == Kind::Ident && self.text(self.items[w].span) == "i");
@@ -611,8 +594,6 @@ impl<'p, 'a> Ctx<'p, 'a> {
         slot.options.retain(|o| !listed.contains(&o.value));
         slot.listed = listed;
     }
-
-    /// Index of the first item at or after `pos` when the caret is not inside a word.
     fn operand_limit(&self, pos: u32) -> usize {
         self.items
             .iter()
@@ -629,8 +610,6 @@ impl<'p, 'a> Ctx<'p, 'a> {
             })
             .collect()
     }
-
-    /// Names bound by enclosing closure bodies, innermost first; a shadowed name keeps the inner binding.
     fn locals(&self, limit: usize) -> Vec<(Rc<str>, VariableType)> {
         let frames = self.frames(limit);
         let mut out: Vec<(Rc<str>, VariableType)> = Vec::new();
@@ -662,8 +641,6 @@ impl<'p, 'a> Ctx<'p, 'a> {
         }
         out
     }
-
-    /// End of a closure's collection run, stopping before an `as` alias.
     fn collection_end(&self, frame: &Frame) -> Option<usize> {
         let end = self.run_end(frame.open + 1)?;
         let mut depth = 0u32;
@@ -1021,9 +998,6 @@ impl<'p, 'a> Ctx<'p, 'a> {
             _ => self.start(None),
         }
     }
-
-    /// Role expectation seen through branch parens (`? (`, `: (`, `?? (`, leading `(`) and
-    /// object literal fields, narrowed by the key of the pair the caret sits in.
     fn whole_expected(&self, frames: &[Frame], limit: usize) -> Option<VariableType> {
         let mut current = self.expected?.shallow_clone();
         for (i, frame) in frames.iter().enumerate() {
@@ -1057,8 +1031,6 @@ impl<'p, 'a> Ctx<'p, 'a> {
             )
         })
     }
-
-    /// Key of the last `key:` pair opened at depth 0 between `open` and `end`.
     fn object_key(&self, open: usize, end: usize) -> Option<&str> {
         let mut depth = 0u32;
         let mut key = None;
@@ -1095,9 +1067,6 @@ impl<'p, 'a> Ctx<'p, 'a> {
         }
         None
     }
-
-    /// A branch value (`? x`, `: x`, `?? x`, object field): a value slot when the type has members
-    /// or the role is Value, otherwise a plain start with the expectation attached.
     fn branch_slot(&self, expected: Option<VariableType>) -> Slot {
         let enumerable = expected
             .as_ref()
@@ -1168,8 +1137,6 @@ impl<'p, 'a> Ctx<'p, 'a> {
         slot.operand = Some(subject);
         slot
     }
-
-    /// Type of the operand run ending at item `end`, or the implicit `$` in unary.
     fn left_operand(&self, op: usize) -> Option<VariableType> {
         let end = op.checked_sub(1)?;
         if !is_operand_end(self.items[end].kind) {
@@ -1178,9 +1145,6 @@ impl<'p, 'a> Ctx<'p, 'a> {
         let start = self.run_start(end, true);
         self.operand_type(start, end)
     }
-
-    /// Type of a comparison operand run; a bare string literal widens so `"open" == |` expects
-    /// a string, while a field or variable typed `"hello"` keeps its literal.
     fn operand_type(&self, start: usize, end: usize) -> Option<VariableType> {
         let t = self.type_of_run(start, end, true)?;
         let literal = start == end && matches!(self.items[start].kind, Kind::Str { .. });
@@ -1193,9 +1157,6 @@ impl<'p, 'a> Ctx<'p, 'a> {
                 .checked_sub(1)
                 .is_none_or(|k| !is_operand_end(self.items[k].kind))
     }
-
-    /// The caret glued to a comparison operator that begins longer ones (`>|` before `>=`,
-    /// `not|` before `not in`): those operators stay on offer, replacing the typed one.
     fn operator_prefix(&self, p: usize) -> Option<Slot> {
         if !matches!(
             self.items[p].kind,
@@ -1214,7 +1175,6 @@ impl<'p, 'a> Ctx<'p, 'a> {
         } else {
             self.left_operand(p)
         };
-        // The full list: a unary text cell hides `==` behind the bare value, but a typed `=` wants it.
         let operators: Vec<&'static str> =
             operators_for(operand.as_ref().unwrap_or(&VariableType::Any), false)
                 .into_iter()
@@ -1257,7 +1217,6 @@ impl<'p, 'a> Ctx<'p, 'a> {
         {
             let start = self.run_start(end, false);
             slot.operand = self.type_of_run(start, end, true);
-            // The whole path stands where its first segment does: that slot's expectation applies.
             let head = self.at(self.items[start].span.0, start);
             if head.wanted_scalar().is_some() && head.state != SlotState::Member {
                 slot.expected = head.expected;
@@ -1297,8 +1256,6 @@ impl<'p, 'a> Ctx<'p, 'a> {
         let head = self.at(self.items[frame.open].span.0, frame.open);
         item_expectation(head.expected.as_ref()).filter(|t| !matches!(t, VariableType::Any))
     }
-
-    /// `some([...] as x, x in enumField)`: the collection literal expects that field's enum.
     fn closure_membership(&self, open: usize) -> Option<VariableType> {
         let paren = open.checked_sub(1)?;
         let name = paren.checked_sub(1)?;
@@ -1538,8 +1495,6 @@ impl<'p, 'a> Ctx<'p, 'a> {
             .unwrap_or_default();
         slot
     }
-
-    /// A bare field path: identifiers and dots only, no literal, call or bracket.
     fn is_field_run(&self, start: usize, end: usize) -> bool {
         self.items[start..=end].iter().all(|it| {
             matches!(
@@ -1583,7 +1538,6 @@ impl<'p, 'a> Ctx<'p, 'a> {
                 )
                 && self.is_field_run(start, p)
             {
-                // A bool field reads as a condition on its own, but comparing it is common too.
                 slot.operators.extend(EQUALITY);
             }
             slot.auto_open = gap;

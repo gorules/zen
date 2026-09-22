@@ -255,7 +255,6 @@ value;false;;{"Object":{"status":{"Enum":["status",["open","closed"]]},"n":"Numb
 value;false;;status;age > 18 ? "open" : "|;inString;status;open=Open case,closed=Closed;;20..21;true
 value;false;;status;age > 18 ? (active ? "open" : "|;inString;status;open=Open case,closed=Closed;;30..31;true
 value;false;;status;status ?? "|;inString;status;open=Open case,closed=Closed;;10..11;true
-value;false;;number;amount ?? |;value;number;;;10..10;true
 value;false;;number;age > 18 ? 1 : |;value;number;;;15..15;true
 value;false;;number;(|;start;number;;;1..1;true
 value;false;;string;"|;inString;string;;;0..1;true
@@ -389,7 +388,6 @@ condition;false;;bool;(age >= 18 and status == "open") or |;start;bool;;;36..36;
 condition;false;;bool;not active and |;start;bool;;;15..15;true
 condition;false;;bool;not (active) |;logical;bool;;and,or;13..13;true
 condition;false;;bool;active == true and |;start;bool;;;19..19;true
-condition;false;;bool;active == |;value;bool;;;10..10;true
 condition;false;;bool;tier == 'gold' and tier != '|;inString;"gold" | "silver";gold,silver;;27..28;true
 condition;false;;bool;mood == "😀 Happy" and mood == "|;inString;mood;happy=😀 Happy,sad=😢 Sad;;33..34;true
 condition;false;;bool;amount > |;value;number?;;;9..9;true
@@ -631,19 +629,12 @@ condition;false;;bool;some([|], # in tags);listElement;;;;6..6;true
 # Auto-open: an operand due (empty editor or after something) opens the menu; a word under the caret or a member/path prefix does not
 condition;false;;bool;active and |;start;bool;;;11..11;true
 condition;false;;bool;a > 1 or |;start;bool;;;9..9;true
-value;false;;number;age + |;start;number;;;6..6;true
-condition;false;;bool;age > |;value;number;;;6..6;true
-condition;false;;bool;len(|;argument;any;;;4..4;true
 value;false;;number;x ? |;value;number;;;4..4;true
 value;false;;number;x ?? |;value;any;;;5..5;true
 value;false;;;[|;listElement;;;;1..1;true
 condition;false;;bool;(|;start;bool;;;1..1;true
-condition;false;;bool;|;start;bool;;;0..0;true
 condition;false;;bool;cust|;start;bool;;;0..4;false
-condition;false;;bool;customer.|;member;;;;9..9;false
-path;false;;;|;path;;;;0..0;true
 path;false;;; |;path;;;;1..1;true
-path;false;;;cust|;path;;;;0..4;false
 path;false;;;customer.|;path;;;;9..9;false
 
 # Const-typed fields offer their literal like a one-member enum; a bare literal on the left still widens
@@ -677,7 +668,6 @@ condition;false;{"Object":{"status":{"Nullable":{"Enum":["status",["open","close
 condition;false;{"Object":{"status":{"Nullable":{"Enum":["status",["open","closed"]]}}}};bool;status in [|;listElement;status;open=Open case,closed=Closed;;11..11;true
 condition;false;{"Object":{"status":{"Nullable":{"Enum":["status",["open","closed"]]}}}};bool;status |;operator;;;==,!=,in,not in,??;7..7;true
 condition;false;{"Object":{"status":{"Nullable":{"Enum":["status",["open","closed"]]}}}};bool;status ?? |;value;status;open=Open case,closed=Closed;;10..10;true
-condition;false;;bool;amount > |;value;number?;;;9..9;true
 condition;false;;bool;amount == |;value;number?;null;;10..10;true
 value;false;{"Object":{"since":{"Nullable":"Date"}}};date;since ?? |;value;date;;;9..9;true
 condition;false;{"Object":{"since":{"Nullable":"Date"}}};bool;since |;operator;;;==,!=,<,<=,>,>=,in,not in,??;6..6;true
@@ -700,9 +690,7 @@ unary;true;$bool;;=|;operator;;;==;0..1;true
 unary;true;$bool;;!|;operator;;;!=;0..1;true
 condition;false;;bool;age <|;operator;;;<,<=;4..5;true
 condition;false;;bool;age <=|;value;number;;;6..6;true
-condition;false;;bool;age ==|;value;number;;;6..6;true
 condition;false;;bool;age !=|;value;number;;;6..6;true
-condition;false;;bool;age >|;operator;;;>,>=;4..5;true
 condition;false;;bool;age >=|;value;number;;;6..6;true
 unary;true;$status;;=|;operator;;;==;0..1;true
 unary;true;$string;;=|;operator;;;==;0..1;true

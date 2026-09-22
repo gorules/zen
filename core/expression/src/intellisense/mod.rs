@@ -9,8 +9,6 @@ use crate::intellisense::inspection::{inspect_at, InspectionResult};
 use crate::intellisense::scope::IntelliSenseScope;
 use crate::intellisense::type_provider::TypesProvider;
 use crate::lexer::Lexer;
-use crate::nl::project::Projector;
-use crate::nl::{NlRequest, NlResult};
 use crate::parser::{Node, NodeMetadata, Parser};
 use crate::variable::VariableType;
 use bumpalo::Bump;
@@ -54,7 +52,6 @@ pub struct ExpressionAnalysis {
 }
 
 pub use crate::slot::LabelResolver;
-pub type NlLabelResolver = LabelResolver;
 
 pub struct IntelliSense {
     pub(crate) arena: Bump,
@@ -80,10 +77,6 @@ impl IntelliSense {
 
     pub fn set_labels(&mut self, labels: Option<LabelResolver>) {
         self.labels = labels;
-    }
-
-    pub fn set_nl_labels(&mut self, labels: Option<NlLabelResolver>) {
-        self.set_labels(labels);
     }
 
     pub fn completions(
@@ -190,134 +183,6 @@ impl IntelliSense {
             references: dep_result.references,
             diagnostics,
         }
-    }
-
-    pub fn nl_tokenize_batch(
-        &mut self,
-        requests: &[NlRequest],
-        root_type: &VariableType,
-    ) -> Vec<NlResult> {
-        requests
-            .iter()
-            .map(|request| self.nl_tokenize(request, root_type))
-            .collect()
-    }
-
-    pub fn nl_tokenize(&mut self, request: &NlRequest, root_type: &VariableType) -> NlResult {
-        let scope = if request.unary {
-            Self::unary_scope(root_type, request.subject_type.as_ref())
-        } else {
-            root_type.shallow_clone()
-        };
-        let expected = (!request.unary)
-            .then_some(request.subject_type.as_ref())
-            .flatten();
-        let mut result = self.nl_tokenize_scoped(
-            &request.id,
-            &request.expression,
-            request.unary,
-            &scope,
-            expected,
-        );
-        if request.unary {
-            let subject = scope.get("$");
-            result.subject_options = self.nl_subject_options(&subject);
-            result.subject_type = Some(subject);
-        } else if let Some(expected) = expected {
-            result.subject_options = self.nl_subject_options(expected);
-            result.subject_type = Some(expected.shallow_clone());
-        }
-        result
-    }
-
-    pub fn nl_subject_options(&self, subject: &VariableType) -> Option<Vec<crate::nl::EnumOption>> {
-        crate::nl::subject_enum_options(subject, self.labels.as_ref())
-    }
-
-    pub fn nl_tokenize_scoped(
-        &mut self,
-        id: &str,
-        source: &str,
-        unary: bool,
-        scope_type: &VariableType,
-        expected: Option<&VariableType>,
-    ) -> NlResult {
-        let mut result = NlResult {
-            id: id.to_string(),
-            tokens: Vec::new(),
-            enums: Vec::new(),
-            diagnostics: Vec::new(),
-            subject_type: None,
-            subject_options: None,
-        };
-
-        self.arena.reset();
-        let arena = &self.arena;
-
-        let tokens = match self.lexer.tokenize(arena, source) {
-            Ok(tokens) => tokens,
-            Err(err) => {
-                result.diagnostics.push(lexer_error_to_diagnostic(&err));
-                return result;
-            }
-        };
-
-        let Ok(parser) = Parser::try_new(&tokens, arena) else {
-            return result;
-        };
-
-        let parser_result = if unary {
-            parser.unary().with_metadata().parse()
-        } else {
-            parser.standard().with_metadata().parse()
-        };
-        let ast = parser_result.root;
-
-        if !parser_result.is_complete || ast.has_error() {
-            if !parser_result.is_complete {
-                result.diagnostics.push(Diagnostic::incomplete());
-            }
-            collect_parser_diagnostics(ast, &mut result.diagnostics);
-            return result;
-        }
-
-        let metadata = parser_result.metadata.unwrap_or_default();
-
-        let scope = IntelliSenseScope {
-            pointer_data: scope_type.shallow_clone(),
-            root_data: scope_type.shallow_clone(),
-            current_data: scope_type.shallow_clone(),
-            ..Default::default()
-        };
-
-        let type_data = TypesProvider::generate(ast, scope, self.strict);
-        collect_type_diagnostics(ast, &type_data, &metadata, &mut result.diagnostics);
-
-        let (tokens, enums) =
-            Projector::new(source, &type_data, &metadata, unary, self.labels.clone())
-                .run(ast, expected.map(|e| e.shallow_clone()));
-        result.tokens = tokens;
-        result.enums = enums;
-        result
-    }
-
-    fn unary_scope(root_type: &VariableType, subject_type: Option<&VariableType>) -> VariableType {
-        let subject = subject_type
-            .map(|s| s.shallow_clone())
-            .unwrap_or(VariableType::Any);
-
-        let object = VariableType::empty_object();
-        if let VariableType::Object(target) = &object {
-            if let VariableType::Object(source) = root_type {
-                for (key, value) in source.borrow().iter() {
-                    target
-                        .borrow_mut()
-                        .insert(key.clone(), value.shallow_clone());
-                }
-            }
-            target.borrow_mut().insert(Rc::from("$"), subject);
-        }
-        object
     }
 
     pub fn with_ast<T>(

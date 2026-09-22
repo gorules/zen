@@ -4,11 +4,10 @@ use zen_expression::intellisense::IntelliSense;
 use zen_expression::slot::{DateArg, EnumTable, LabelResolver, LiteralFact};
 use zen_expression::variable::VariableType;
 
-#[path = "slots.rs"]
-#[allow(dead_code)]
-mod slots;
+#[path = "helpers/slot_scope.rs"]
+mod slot_scope;
 
-use slots::{expected_for, scope_for};
+use slot_scope::{expected_for, scope_for};
 
 fn labels() -> LabelResolver {
     Rc::new(|name: &str, value: &str| match (name, value) {
@@ -418,7 +417,6 @@ const CASES: &[Case] = &[
         expected: "bool",
         facts: &["enum@34..40 open valid #0 Open case status"],
     },
-    // Adversarial: date forms
     Case {
         source: "since > d(\"2024-01-01T10:00:00Z\")",
         unary: false,
@@ -475,7 +473,6 @@ const CASES: &[Case] = &[
         expected: "bool",
         facts: &[],
     },
-    // Zoned literals: the second argument names the wall-clock zone
     Case {
         source: "d(\"2026-09-19 10:00:00\", \"Europe/Berlin\")",
         unary: false,
@@ -615,7 +612,6 @@ const CASES: &[Case] = &[
         expected: "",
         facts: &["date@2..6 field $"],
     },
-    // Adversarial: enums in every position
     Case {
         source: "(status ?? \"open\") == \"closed\"",
         unary: false,
@@ -769,7 +765,6 @@ const CASES: &[Case] = &[
         expected: "bool",
         facts: &["enum@10..16 Open invalid #0 Open status"],
     },
-    // Adversarial: bools
     Case {
         source: "active == false",
         unary: false,
@@ -812,7 +807,6 @@ const CASES: &[Case] = &[
         expected: "",
         facts: &["bool@3..7 true"],
     },
-    // Adversarial: unary enum cells
     Case {
         source: "in [\"open\", \"x\"]",
         unary: true,
@@ -868,7 +862,6 @@ const CASES: &[Case] = &[
         expected: "",
         facts: &[],
     },
-    // Incomplete tails: literals typed before the caret stay facts while the parse is broken
     Case {
         source: "d(\"2024-01-01\") a",
         unary: true,
@@ -1027,7 +1020,6 @@ fn literal_facts() {
     );
 }
 
-/// Every complete expression keeps exactly its facts when an incomplete tail is appended.
 #[test]
 fn incomplete_tails_keep_earlier_facts() {
     let mut failures = Vec::new();

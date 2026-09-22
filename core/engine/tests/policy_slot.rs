@@ -489,23 +489,59 @@ fn match_value_expects_declared_key_type() {
 }
 
 #[test]
-fn match_value_with_undeclared_key_uses_sibling_literal_union() {
+fn match_value_with_undeclared_key_does_not_constrain_outputs_to_sibling_literals() {
     let ws = policy_workspace();
-    let scope = scope_of(
-        &ws,
-        &cursor("m_union", CursorTarget::MatchValue { id: "b1".into() }),
-    );
-    let expected = scope.expected.expect("sibling union");
-    assert_eq!(enum_values(&expected), vec!["kid", "teen"]);
+    for id in ["b1", "b2", "b3"] {
+        let target = CursorTarget::MatchValue { id: id.into() };
+        let scope = scope_of(&ws, &cursor("m_union", target.clone()));
+        assert!(scope.expected.is_none());
+        let response = slot_at(&ws, "m_union", target, "\"teen\"");
+        assert!(response.literals.is_empty());
+        assert!(response.slot.options.is_empty());
+    }
+    for entry in ws.facts("policy").iter().filter(|entry| {
+        entry.block_id.as_ref() == "m_union"
+            && matches!(entry.target, CursorTarget::MatchValue { .. })
+    }) {
+        assert!(entry.expected_type.is_none());
+        assert!(entry.literals.is_empty());
+    }
+}
 
-    let scope = scope_of(
+#[test]
+fn match_outputs_still_infer_enum_values_for_downstream_conditions() {
+    let mut ws = PolicyWorkspace::new();
+    ws.set_policy(
+        "policy",
+        serde_json::from_value(json!({"blocks": [
+            {"id": "decision", "type": "match", "props": {"data": {
+                "key": "decision", "arms": [
+                    {"id": "a", "condition": "true", "value": "\"DECLINE\""},
+                    {"id": "b", "condition": "false", "value": "\"DECLINE\""},
+                    {"id": "c", "condition": "", "value": "\"APPROVE\""}
+                ]
+            }}},
+            {"id": "amount", "type": "match", "props": {"data": {
+                "key": "amount", "arms": [
+                    {"id": "d", "condition": "decision == \"APPROVE\"", "value": "100"},
+                    {"id": "e", "condition": "", "value": "0"}
+                ]
+            }}}
+        ]}))
+        .unwrap(),
+    );
+    let output = slot_at(
         &ws,
-        &cursor("m_union", CursorTarget::MatchValue { id: "b3".into() }),
+        "decision",
+        CursorTarget::MatchValue { id: "a".into() },
+        "\"DECLINE\"",
     );
-    assert_eq!(
-        enum_values(&scope.expected.expect("sibling union")),
-        vec!["senior", "teen"]
-    );
+    assert!(output.literals.is_empty());
+    let condition = slot_at(&ws, "amount", expression("d"), "decision == \"APPROVE\"");
+    assert!(matches!(
+        &condition.literals[..],
+        [LiteralFact::Enum { valid: true, .. }]
+    ));
 }
 
 #[test]

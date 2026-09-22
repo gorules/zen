@@ -130,33 +130,14 @@ fn match_scope(
     match &cursor.target {
         CursorTarget::MatchTarget => Some(CursorScope::path(scope)),
         CursorTarget::Expression { .. } => Some(CursorScope::condition(scope)),
-        CursorTarget::MatchValue { id } => {
-            let expected = declared_type(db, unit, &block.key)
-                .or_else(|| sibling_union(db, block, id, &scope));
+        CursorTarget::MatchValue { .. } => {
+            // Output arms define the inferred type; neighboring literals are not a
+            // declaration constraining what a new arm may return.
+            let expected = declared_type(db, unit, &block.key);
             Some(CursorScope::value(scope, expected))
         }
         _ => None,
     }
-}
-
-fn sibling_union(
-    db: &Db,
-    block: &MatchIr,
-    arm_id: &Arc<str>,
-    scope: &VariableType,
-) -> Option<VariableType> {
-    let mut merged: Option<VariableType> = None;
-    for arm in &block.arms {
-        if arm.id == *arm_id || arm.value.is_empty() {
-            continue;
-        }
-        let arm_type = return_type(db, &arm.value, scope);
-        merged = Some(match merged {
-            Some(acc) => acc.merge(&arm_type),
-            None => arm_type,
-        });
-    }
-    literal_union(merged?)
 }
 
 fn return_type(db: &Db, source: &Arc<str>, scope: &VariableType) -> VariableType {

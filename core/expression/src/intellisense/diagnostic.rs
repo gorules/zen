@@ -133,17 +133,13 @@ fn parser_error_code(
             "expr.unexpected-token",
             vec![("token", boolean.to_string())],
         ),
-        AstNodeError::InvalidProperty { .. } => ("expr.expected-property", Vec::new()),
-        AstNodeError::MissingToken { .. } => ("expr.unexpected-end", Vec::new()),
-        AstNodeError::Custom { message, .. } => {
-            if message.starts_with("Expected a property") {
-                ("expr.expected-property", Vec::new())
-            } else if message.starts_with("Unexpected end") || *message == "Expected a literal" {
-                ("expr.unexpected-end", Vec::new())
-            } else {
-                ("expr.syntax", Vec::new())
-            }
+        AstNodeError::InvalidProperty { .. } | AstNodeError::ExpectedProperty { .. } => {
+            ("expr.expected-property", Vec::new())
         }
+        AstNodeError::MissingToken { .. }
+        | AstNodeError::ExpectedLiteral { .. }
+        | AstNodeError::UnexpectedEnd { .. } => ("expr.unexpected-end", Vec::new()),
+        AstNodeError::Custom { .. } => ("expr.syntax", Vec::new()),
     }
 }
 
@@ -242,43 +238,6 @@ pub(crate) fn collect_parser_diagnostics(ast: &Node, diagnostics: &mut Vec<Diagn
     }
 }
 
-fn backticked(message: &str) -> Vec<String> {
-    message
-        .split('`')
-        .skip(1)
-        .step_by(2)
-        .map(|s| s.to_string())
-        .collect()
-}
-
-fn type_error_code(message: &str) -> Option<(&'static str, Vec<(&'static str, String)>)> {
-    let parts = backticked(message);
-    if message.starts_with("Value `") && message.contains("is not a valid member of") {
-        let value = parts.first()?.trim_matches('"').to_string();
-        return Some((
-            "type.invalid-enum-member",
-            vec![("value", value), ("enum", parts.get(1)?.clone())],
-        ));
-    }
-    if message.starts_with('\'') && message.contains("is not a valid member of") {
-        let name = message.get(1..)?.split('\'').next()?.to_string();
-        return Some((
-            "type.unknown-member",
-            vec![("name", name), ("of", parts.first()?.clone())],
-        ));
-    }
-    if message.starts_with("Argument of type") && message.contains("is not assignable") {
-        return Some((
-            "type.mismatch",
-            vec![
-                ("expected", parts.get(1)?.clone()),
-                ("got", parts.first()?.clone()),
-            ],
-        ));
-    }
-    None
-}
-
 pub(crate) fn collect_type_diagnostics(
     ast: &Node,
     type_data: &TypesProvider,
@@ -310,10 +269,9 @@ pub(crate) fn collect_type_diagnostics(
         };
 
         let mut diagnostic = Diagnostic::new(span, message, severity, DiagnosticSource::TypeCheck);
-        if severity == Severity::Error {
-            if let Some((code, args)) = type_error_code(&diagnostic.message) {
-                diagnostic = diagnostic.with_code(code, &args);
-            }
+        if let Some((code, args)) = type_data.code_of(node) {
+            diagnostic.code = Some(code);
+            diagnostic.args = args.clone();
         }
         collected.borrow_mut().push(diagnostic);
     });

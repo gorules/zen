@@ -301,4 +301,12 @@ impl Diagnostic {
     pub fn is_in(&self, policy_path: &Arc<str>) -> bool {
         self.location.policy_path == *policy_path
     }
+
+    pub(crate) fn same_as(&self, other: &Diagnostic) -> bool {
+        self.code == other.code
+            && self.message == other.message
+            && self.location.policy_path == other.location.policy_path
+            && self.location.block_id == other.location.block_id
+            && self.location.expression_id == other.location.expression_id
+    }
 }

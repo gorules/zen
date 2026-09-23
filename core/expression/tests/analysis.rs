@@ -60,6 +60,9 @@ struct ModeExpectations {
 struct ExpectedDiagnostic {
     source: String,
     severity: String,
+    code: Option<String>,
+    #[serde(default)]
+    args: std::collections::BTreeMap<String, String>,
 }
 
 fn parse_data_type(test: &TestCase) -> VariableType {
@@ -310,15 +313,23 @@ fn check_diagnostics(
         let expected_source = parse_diagnostic_source(&expected.source);
         let expected_severity = parse_severity(&expected.severity);
 
-        let matching = result
-            .diagnostics
-            .iter()
-            .any(|d| d.source == expected_source && d.severity == expected_severity);
+        let matching = result.diagnostics.iter().any(|d| {
+            d.source == expected_source
+                && d.severity == expected_severity
+                && expected
+                    .code
+                    .as_deref()
+                    .is_none_or(|code| d.code == Some(code))
+                && expected
+                    .args
+                    .iter()
+                    .all(|(k, v)| d.args.get(k.as_str()) == Some(v))
+        });
 
         assert!(
             matching,
-            "[{file_name}:{}:{mode}] Diagnostic #{i} not found: expected source={}, severity={}.\n  Expression: {}\n  Got diagnostics: {:?}",
-            test.name, expected.source, expected.severity, test.expression, result.diagnostics
+            "[{file_name}:{}:{mode}] Diagnostic #{i} not found: expected source={}, severity={}, code={:?}, args={:?}.\n  Expression: {}\n  Got diagnostics: {:?}",
+            test.name, expected.source, expected.severity, expected.code, expected.args, test.expression, result.diagnostics
         );
     }
 }

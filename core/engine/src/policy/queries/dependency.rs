@@ -62,10 +62,18 @@ pub struct EnrichedState {
     pub per_rule: Vec<RuleEnrichedAnalysis>,
     pub diagnostics: Vec<Diagnostic>,
     base_fields: HashMap<Rc<str>, VariableType>,
-    scope_roots: Rc<RefCell<Vec<VariableType>>>,
+    owned: RefCell<Vec<VariableType>>,
     write_log: Vec<(PropertyPath, VariableType)>,
     log_start: HashMap<BlockRef, usize>,
     block_scopes: RefCell<HashMap<BlockRef, VariableType>>,
+}
+
+impl Drop for EnrichedState {
+    fn drop(&mut self) {
+        for root in self.owned.borrow().iter() {
+            root.break_cycles();
+        }
+    }
 }
 
 impl EnrichedState {
@@ -78,11 +86,9 @@ impl EnrichedState {
         }
         let scope =
             VariableType::Object(Rc::new(RefCell::new(self.base_fields.clone()))).isolated_clone();
-        self.scope_roots.borrow_mut().push(scope.shallow_clone());
+        self.owned.borrow_mut().push(scope.shallow_clone());
         for (path, resolved_type) in &self.write_log[..end] {
-            let frozen = resolved_type.isolated_clone();
-            self.scope_roots.borrow_mut().push(frozen.shallow_clone());
-            scope.insert_at_path(path, &frozen, true);
+            scope.insert_at_path(path, &resolved_type.isolated_clone(), true);
         }
         self.block_scopes
             .borrow_mut()
@@ -666,6 +672,7 @@ impl Snapshot {
             _ => HashMap::new(),
         };
         let mut write_log: Vec<(PropertyPath, VariableType)> = Vec::new();
+        let mut owned: Vec<VariableType> = Vec::new();
         let mut log_start: HashMap<BlockRef, usize> = HashMap::new();
         let mut per_rule: Vec<RuleEnrichedAnalysis> = Vec::new();
         let mut diagnostics: Vec<Diagnostic> = Vec::new();
@@ -727,7 +734,7 @@ impl Snapshot {
             for tw in &summary.writes {
                 if declared_paths.matches_prefix(&tw.path).is_none() {
                     let frozen = tw.resolved_type.isolated_clone();
-                    scope_roots.borrow_mut().push(frozen.shallow_clone());
+                    owned.push(frozen.shallow_clone());
                     write_log.push((tw.path.clone(), frozen));
                 }
             }
@@ -762,7 +769,7 @@ impl Snapshot {
             per_rule,
             diagnostics,
             base_fields,
-            scope_roots,
+            owned: RefCell::new(owned),
             write_log,
             log_start,
             block_scopes: RefCell::new(HashMap::new()),

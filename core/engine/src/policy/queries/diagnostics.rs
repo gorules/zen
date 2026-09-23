@@ -24,11 +24,14 @@ impl Db {
             }
         }
 
-        let mut scope_diagnostics = self.graph_diagnostics(path);
-        scope_diagnostics.extend(self.data_model_diagnostics(path));
-        scope_diagnostics.extend(self.dictionary_diagnostics(path));
-        for mut diagnostic in scope_diagnostics {
+        let mut imported: Option<Vec<Diagnostic>> = None;
+        for mut diagnostic in self.scope_diagnostics(path) {
             if !diagnostic.is_in(path) {
+                let imported =
+                    imported.get_or_insert_with(|| self.imported_scope_diagnostics(path));
+                if imported.iter().any(|d| d.same_as(&diagnostic)) {
+                    continue;
+                }
                 diagnostic.message = format!(
                     "in imported policy '{}': {}",
                     diagnostic.location.policy_path, diagnostic.message
@@ -62,6 +65,26 @@ impl Db {
 
         out.extend(Linter::standard().run(self, path));
 
+        out
+    }
+
+    fn imported_scope_diagnostics(&self, path: &Arc<str>) -> Vec<Diagnostic> {
+        let Some(parsed) = self.parsed(path) else {
+            return Vec::new();
+        };
+        parsed
+            .policy
+            .imports()
+            .iter()
+            .filter(|import| import.as_ref() != path.as_ref())
+            .flat_map(|import| self.scope_diagnostics(import))
+            .collect()
+    }
+
+    fn scope_diagnostics(&self, path: &Arc<str>) -> Vec<Diagnostic> {
+        let mut out = self.graph_diagnostics(path);
+        out.extend(self.data_model_diagnostics(path));
+        out.extend(self.dictionary_diagnostics(path));
         out
     }
 
@@ -315,7 +338,17 @@ impl Db {
 
         let graph = &unit.dep_graph;
         let cyclic = graph.cyclic_paths();
-        if !cyclic.is_empty() {
+        let owners: HashSet<Arc<str>> = cyclic
+            .iter()
+            .filter_map(|path| graph.writer_for(path))
+            .map(|owner| owner.policy_path.clone())
+            .collect();
+        let owned_here = owners.contains(target);
+        let seen_by_import = owners.iter().any(|owner| {
+            let own = self.unit(owner).dep_graph.cyclic_paths();
+            cyclic.iter().any(|path| own.contains(path))
+        });
+        if !cyclic.is_empty() && (owned_here || !seen_by_import) {
             out.push(Diagnostic::error(
                 DiagnosticCode::CyclicDependency,
                 DiagnosticLocation::policy(target.clone()),

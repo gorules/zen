@@ -1,6 +1,7 @@
 use crate::functions::internal::InternalFunction;
 use crate::functions::registry::FunctionRegistry;
 use crate::functions::{ClosureFunction, FunctionKind, MethodRegistry};
+use crate::intellisense::diagnostic::DiagnosticArgs;
 use crate::intellisense::scope::IntelliSenseScope;
 use crate::lexer::{ArithmeticOperator, ComparisonOperator, LogicalOperator, Operator};
 use crate::parser::Node;
@@ -62,13 +63,17 @@ impl From<Rc<VariableType>> for TypeInfo {
 #[derive(Debug)]
 pub struct TypesProvider {
     types: HashMap<usize, TypeInfo>,
+    codes: HashMap<usize, ErrorCode>,
     strict: bool,
 }
+
+pub(crate) type ErrorCode = (&'static str, DiagnosticArgs);
 
 impl TypesProvider {
     pub fn generate(root: &Node, scope: IntelliSenseScope, strict: bool) -> Self {
         let mut s = Self {
             types: HashMap::new(),
+            codes: HashMap::new(),
             strict,
         };
 
@@ -96,10 +101,38 @@ impl TypesProvider {
         }
     }
 
+    pub(crate) fn code_of(&self, node: &Node) -> Option<&ErrorCode> {
+        self.codes.get(&node_address(node))
+    }
+
     fn set_error(&mut self, node: &Node, message: String) {
+        self.codes.remove(&node_address(node));
         self.update_type(node, |typ| {
             typ.error = Some(message);
         });
+    }
+
+    fn set_coded_error(&mut self, node: &Node, message: String, code: ErrorCode) {
+        self.set_error(node, message);
+        self.set_code(node, code);
+    }
+
+    fn set_code(&mut self, node: &Node, code: ErrorCode) {
+        self.codes.insert(node_address(node), code);
+    }
+
+    fn coded(&mut self, node: &Node, (message, code): (String, Option<ErrorCode>)) -> String {
+        if let Some(code) = code {
+            self.set_code(node, code);
+        }
+        message
+    }
+
+    fn mismatch(expected: String, got: &VariableType) -> ErrorCode {
+        (
+            "type.mismatch",
+            DiagnosticArgs::from([("expected", expected), ("got", got.to_string())]),
+        )
     }
 
     fn maybe_nullable(kind: VariableType, nullable: bool) -> TypeInfo {
@@ -281,9 +314,16 @@ impl TypesProvider {
                                 Some(t) => t.clone(),
                                 None if !self.strict || obj.is_empty() => VariableType::Any,
                                 None => {
-                                    self.set_error(
+                                    self.set_coded_error(
                                         node,
                                         format!("'{key}' is not a valid member of `{node_type}`."),
+                                        (
+                                            "type.unknown-member",
+                                            DiagnosticArgs::from([
+                                                ("name", key.to_string()),
+                                                ("of", node_type.to_string()),
+                                            ]),
+                                        ),
                                     );
                                     VariableType::Any
                                 }
@@ -361,7 +401,7 @@ impl TypesProvider {
                     Operator::Comparison(comp) => match comp {
                         ComparisonOperator::Equal => {
                             match check_enum_comparison(&left_type, &right_type) {
-                                Some(Some(err)) => { on_fly_error.replace(err); }
+                                Some(Some(error)) => { on_fly_error.replace(self.coded(node, error)); }
                                 Some(None) => {}
                                 None => {
                                     let always_false = Self::structured_comparison(&left_type, &right_type)
@@ -378,7 +418,7 @@ impl TypesProvider {
                         },
                         ComparisonOperator::NotEqual => {
                             match check_enum_comparison(&left_type, &right_type) {
-                                Some(Some(err)) => { on_fly_error.replace(err); }
+                                Some(Some(error)) => { on_fly_error.replace(self.coded(node, error)); }
                                 Some(None) => {}
                                 None => {
                                     let always_true = Self::structured_comparison(&left_type, &right_type)
@@ -406,7 +446,7 @@ impl TypesProvider {
                         ComparisonOperator::In | ComparisonOperator::NotIn => match (left_type.widen(), right_type.widen()) {
                             (_, VariableType::Array(inner_type)) => {
                                 match check_enum_comparison(&left_type, &inner_type) {
-                                    Some(Some(err)) => { on_fly_error.replace(err); }
+                                    Some(Some(error)) => { on_fly_error.replace(self.coded(node, error)); }
                                     Some(None) => {}
                                     None => {
                                         if types_disjoint(&left_type, &inner_type) {
@@ -577,7 +617,8 @@ impl TypesProvider {
 
                         let typecheck = def.check_types(type_list.as_slice());
                         for (i, arg_error) in typecheck.arguments {
-                            self.set_error(arguments[i], arg_error);
+                            let code = Self::mismatch(def.param_type_str(i), &type_list[i]);
+                            self.set_coded_error(arguments[i], arg_error, code);
                         }
 
                         TypeInfo {
@@ -669,12 +710,13 @@ impl TypesProvider {
                     self.set_error(this, "Date methods require a date value. Use d(...) to convert a date string or timestamp first.".to_string());
                 }
                 for (i, arg_error) in typecheck.arguments {
+                    let code = Self::mismatch(def.param_type_str(i), &type_list[i]);
                     if i == 0 {
                         if !needs_conversion {
-                            self.set_error(this, arg_error);
+                            self.set_coded_error(this, arg_error, code);
                         }
                     } else {
-                        self.set_error(arguments[i - 1], arg_error);
+                        self.set_coded_error(arguments[i - 1], arg_error, code);
                     }
                 }
 
@@ -726,7 +768,10 @@ fn value_set(t: &VariableType) -> Option<Vec<Rc<str>>> {
     }
 }
 
-fn check_enum_comparison(left: &VariableType, right: &VariableType) -> Option<Option<String>> {
+fn check_enum_comparison(
+    left: &VariableType,
+    right: &VariableType,
+) -> Option<Option<(String, Option<ErrorCode>)>> {
     let (left, _) = left.unwrap_nullable();
     let (right, _) = right.unwrap_nullable();
 
@@ -740,8 +785,15 @@ fn check_enum_comparison(left: &VariableType, right: &VariableType) -> Option<Op
                     (VariableType::Enum(_, _), _) => left,
                     _ => right,
                 };
-                Some(Some(format!(
-                    "Value `\"{c}\"` is not a valid member of `{enum_type}`."
+                Some(Some((
+                    format!("Value `\"{c}\"` is not a valid member of `{enum_type}`."),
+                    Some((
+                        "type.invalid-enum-member",
+                        DiagnosticArgs::from([
+                            ("value", c.to_string()),
+                            ("enum", enum_type.to_string()),
+                        ]),
+                    )),
                 )))
             }
         }
@@ -749,8 +801,9 @@ fn check_enum_comparison(left: &VariableType, right: &VariableType) -> Option<Op
             if c1 == c2 {
                 Some(None)
             } else {
-                Some(Some(format!(
-                    "Value `\"{c1}\"` will never equal `\"{c2}\"`."
+                Some(Some((
+                    format!("Value `\"{c1}\"` will never equal `\"{c2}\"`."),
+                    None,
                 )))
             }
         }

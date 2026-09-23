@@ -1,0 +1,17 @@
+{
+  "imports": [
+    "chain_mid.json"
+  ],
+  "blocks": [
+    {
+      "id": "e1",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "customer.q",
+          "value": "3"
+        }
+      }
+    }
+  ]
+}

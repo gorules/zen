@@ -336,7 +336,7 @@ impl Db {
                 return None;
             }
             let nested = if deep && !local.is_empty() {
-                let child = self.dependencies(&local_joined);
+                let child = self.dependencies(&local_joined, Some(&callee));
                 if child.written_by.is_some() {
                     child.deps
                 } else {

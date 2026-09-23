@@ -417,3 +417,22 @@ nulls = ["order.shippingCost"]
 [test.trace.blocks.dt1]
 kind = "decisionTable"
 matched_rows = []
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Multi-policy — siblings importing the same policy evaluate in isolation
+# merge_policy_a and merge_policy_c both import merge_policy_b and both write
+# customer.greeting from different sources
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[test]]
+name = "sibling A writes greeting from its own data"
+policies = ["merge_policy_a.json", "merge_policy_b.json", "merge_policy_c.json"]
+input = { customer = { name = "Ann", age = 30, country = "NL" } }
+output = { customer = { greeting = "Ann", label = "NL" } }
+
+[[test]]
+name = "sibling C writes greeting from the shared import"
+policies = ["merge_policy_c.json", "merge_policy_b.json", "merge_policy_a.json"]
+input = { customer = { name = "Ann", country = "NL", segment = "retail" } }
+output = { customer = { greeting = "NL", label = "NL", tag = "retail" } }
+

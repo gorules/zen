@@ -514,6 +514,67 @@ async fn test_validation() {
 
 #[tokio::test]
 #[cfg_attr(miri, ignore)]
+async fn input_schema_accepts_null_for_optional_properties() {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "name": { "type": "string" },
+            "age": { "type": "number" },
+            "kind": { "enum": ["a", "b"] },
+            "note": { "type": ["string", "null"] },
+            "items": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": { "label": { "type": "string" } }
+                }
+            }
+        },
+        "required": ["age", "note"]
+    })
+    .to_string();
+    let graph = |schemas: (Option<&str>, Option<&str>)| -> GraphContent {
+        serde_json::from_value(json!({
+            "nodes": [
+                { "id": "in", "name": "in", "type": "inputNode", "content": { "schema": schemas.0 } },
+                { "id": "out", "name": "out", "type": "outputNode", "content": { "schema": schemas.1 } }
+            ],
+            "edges": [{ "id": "e", "sourceId": "in", "targetId": "out" }]
+        }))
+        .unwrap()
+    };
+    let engine = DecisionEngine::default();
+    let input = engine
+        .create_decision(Arc::new(graph((Some(&schema), None)).into()))
+        .unwrap();
+    let output = engine
+        .create_decision(Arc::new(graph((None, Some(&schema))).into()))
+        .unwrap();
+
+    for (context, valid) in [
+        (json!({ "age": 1, "note": null, "name": null }), true),
+        (json!({ "age": 1, "note": null, "kind": null }), true),
+        (
+            json!({ "age": 1, "note": null, "items": [{ "label": null }] }),
+            true,
+        ),
+        (json!({ "age": 1, "note": "x", "name": "n" }), true),
+        (json!({ "age": null, "note": null }), false),
+        (json!({ "age": 1, "note": null, "name": 5 }), false),
+        (json!({ "age": 1, "note": null, "kind": "c" }), false),
+    ] {
+        let result = input.evaluate(context.clone().into()).await;
+        assert_eq!(result.is_ok(), valid, "input {context}");
+    }
+
+    let strict = output
+        .evaluate(json!({ "age": 1, "note": null, "name": null }).into())
+        .await;
+    assert!(strict.is_err());
+}
+
+#[tokio::test]
+#[cfg_attr(miri, ignore)]
 async fn test_nodes_reference() {
     let engine = DecisionEngine::default().with_loader(Arc::new(create_fs_loader()));
 

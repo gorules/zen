@@ -1,0 +1,46 @@
+{
+  "imports": [
+    "merge_policy_b.json"
+  ],
+  "blocks": [
+    {
+      "id": "dm-customer",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "customer",
+          "properties": [
+            {
+              "id": "p5",
+              "name": "segment",
+              "type": "string",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      },
+      "children": []
+    },
+    {
+      "id": "s1",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "customer.greeting",
+          "value": "customer.country"
+        }
+      }
+    },
+    {
+      "id": "s2",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "customer.tag",
+          "value": "customer.segment"
+        }
+      }
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 # Entity merging across policies: customer defined in both merge_policy_a and merge_policy_b
 
-policies = ["merge_policy_a.json", "merge_policy_b.json"]
+policies = ["merge_policy_a.json", "merge_policy_b.json", "merge_policy_c.json"]
 
 [[test]]
 name = "cross-policy merge: name from A (first wins, local)"
@@ -81,4 +81,27 @@ property_kind = "computed"
 name = "entities(B): importer fields remain hidden"
 policy = "merge_policy_b.json"
 entity = "customer"
-absent_fields = ["age", "greeting"]
+absent_fields = ["age", "greeting", "segment", "tag"]
+
+# ── Siblings importing the same policy stay isolated ─────────────────────────
+
+[[test]]
+name = "entities(C): sees fields of the shared import"
+policy = "merge_policy_c.json"
+entity = "customer"
+field = "country"
+field_kind = { kind = "scalar" }
+property_kind = "input"
+source = "merge_policy_b.json"
+
+[[test]]
+name = "entities(C): sibling importer fields remain hidden"
+policy = "merge_policy_c.json"
+entity = "customer"
+absent_fields = ["age"]
+
+[[test]]
+name = "entities(A): sibling importer fields remain hidden"
+policy = "merge_policy_a.json"
+entity = "customer"
+absent_fields = ["segment", "tag"]

@@ -211,7 +211,7 @@ impl Workspace {
     }
 
     pub fn dependencies(&self, target: &str) -> DependencyNode {
-        self.db.dependencies(target)
+        self.db.dependencies(target, None)
     }
 
     pub fn dependencies_scoped(&self, target: &str, document: Option<&str>) -> DependencyNode {
@@ -221,7 +221,7 @@ impl Workspace {
                 return self.db.graph_dependencies(&doc_arc, target);
             }
         }
-        self.db.dependencies(target)
+        self.db.dependencies(target, document)
     }
 }
 

@@ -249,7 +249,10 @@ impl DependencyCase {
         }
 
         let mut nodes: Vec<(String, bool, bool)> = Vec::new();
-        Self::collect(&ws.dependencies(&self.target), &mut nodes);
+        Self::collect(
+            &ws.dependencies_scoped(&self.target, self.policy.as_deref()),
+            &mut nodes,
+        );
         let paths: Vec<&str> = nodes.iter().map(|(p, _, _)| p.as_str()).collect();
         let find = |path: &str| nodes.iter().find(|(p, _, _)| p == path);
 

@@ -479,7 +479,6 @@ export interface PolicyCompletion {
   kind: string
   detail: string
   info: string
-  /** Text to append after accepting the item: `.` into an object, a space before an operator. */
   follow?: string
 }
 
@@ -647,11 +646,9 @@ export declare function slotBatch(requests: Array<SlotRequest>, strict?: boolean
 export interface SlotRequest {
   id: string
   text: string
-  /** Caret position in UTF-16 code units. */
   pos: number
   unary: boolean
   role: PolicySlotRole
-  /** Root scope; must already contain `$` for unary requests. */
   scope: PolicyVariableType
   expected?: PolicyVariableType | null
   labels?: Record<string, Record<string, string>> | null

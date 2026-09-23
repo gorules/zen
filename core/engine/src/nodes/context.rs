@@ -110,11 +110,24 @@ where
     }
 
     pub fn validate(&self, schema: &Value, value: &Variable) -> Result<(), NodeError> {
+        self.validate_schema(schema, value, false)
+    }
+
+    pub fn validate_input(&self, schema: &Value, value: &Variable) -> Result<(), NodeError> {
+        self.validate_schema(schema, value, true)
+    }
+
+    fn validate_schema(
+        &self,
+        schema: &Value,
+        value: &Variable,
+        nullable_optionals: bool,
+    ) -> Result<(), NodeError> {
         let validator_cache = self.extensions.validator_cache();
         let hash = self.hash_node();
 
         let validator = validator_cache
-            .get_or_insert(hash, schema)
+            .get_or_insert(hash, schema, nullable_optionals)
             .node_context(self)?;
 
         let guards = Guards::default();

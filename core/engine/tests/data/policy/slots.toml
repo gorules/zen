@@ -1,0 +1,383 @@
+# Cursor scope per cell: kind, role, expected type and unary subject.
+# Optional `text` (with `|` caret) checks the slot the editor gets there.
+
+policies = ["slots.json"]
+graphs = ["slots_graph_dicts.json", "slots_graph.json"]
+
+# Policy decision table
+
+[[test]]
+name = "input cell on a declared field is unary over the field"
+policy = "slots.json"
+block_id = "dt"
+target = "cell"
+id = "in_declared"
+row = "r1"
+kind = "unary"
+role = "unary"
+subject = "number"
+
+[[test]]
+name = "input cell on a dictionary field offers labelled values"
+policy = "slots.json"
+block_id = "dt"
+target = "cell"
+id = "in_dict"
+row = "r2"
+kind = "unary"
+subject = "status"
+text = "|"
+state = "unaryStart"
+options = ["open=Open case", "closed=Closed"]
+
+[[test]]
+name = "input cell on a declared date field is a string, so no calendar"
+policy = "slots.json"
+block_id = "dt"
+target = "cell"
+id = "in_since"
+row = "r1"
+kind = "unary"
+expected = ""
+subject = "string"
+
+[[test]]
+name = "input cell on d(field) is a real date"
+policy = "slots.json"
+block_id = "dt"
+target = "cell"
+id = "in_since_date"
+row = "r1"
+kind = "unary"
+subject = "date"
+
+[[test]]
+name = "input cell on a computed field is unary over its result"
+policy = "slots.json"
+block_id = "dt"
+target = "cell"
+id = "in_computed"
+row = "r1"
+kind = "unary"
+subject = "number"
+
+[[test]]
+name = "input column without a field is a condition"
+policy = "slots.json"
+block_id = "dt"
+target = "cell"
+id = "in_condition"
+row = "r1"
+kind = "standard"
+role = "condition"
+expected = "bool"
+
+[[test]]
+name = "output cell with a dictionary type offers labelled values"
+policy = "slots.json"
+block_id = "dt"
+target = "cell"
+id = "out_dict"
+row = "r3"
+role = "value"
+expected = "status"
+text = "|"
+state = "value"
+options = ["open=Open case", "closed=Closed"]
+
+[[test]]
+name = "output cell with a declared type"
+policy = "slots.json"
+block_id = "dt"
+target = "cell"
+id = "out_number"
+row = "r3"
+role = "value"
+expected = "number"
+
+[[test]]
+name = "output cell on a declared field expects the field type"
+policy = "slots.json"
+block_id = "dt"
+target = "cell"
+id = "out_declared"
+row = "r3"
+role = "value"
+expected = '"gold" | "silver"'
+
+[[test]]
+name = "undeclared output cell uses the sibling literal union"
+policy = "slots.json"
+block_id = "dt"
+target = "cell"
+id = "out_union"
+row = "r3"
+role = "value"
+expected = '"a" | "b"'
+
+[[test]]
+name = "policy tables keep the written union for every row"
+policy = "slots.json"
+block_id = "dt"
+target = "cell"
+id = "out_union"
+row = "r1"
+expected = '"a" | "b"'
+
+[[test]]
+name = "output cell with non-literal siblings has no expectation"
+policy = "slots.json"
+block_id = "dt"
+target = "cell"
+id = "out_untyped"
+row = "r3"
+role = "value"
+expected = ""
+
+[[test]]
+name = "column head is a path"
+policy = "slots.json"
+block_id = "dt"
+target = "head"
+id = "in_computed"
+kind = "standard"
+role = "path"
+
+# Policy expression, assertion and match blocks
+
+[[test]]
+name = "expression value expects the declared key type"
+policy = "slots.json"
+block_id = "ex_declared"
+target = "expression"
+id = "ex_declared"
+role = "value"
+expected = '"gold" | "silver"'
+
+[[test]]
+name = "expression value with an undeclared key has no expectation"
+policy = "slots.json"
+block_id = "ex_computed"
+target = "expression"
+id = "ex_computed"
+role = "value"
+expected = ""
+
+[[test]]
+name = "expression key is a path"
+policy = "slots.json"
+block_id = "ex_declared"
+target = "expression_key"
+role = "path"
+
+[[test]]
+name = "assertion condition"
+policy = "slots.json"
+block_id = "as1"
+target = "expression"
+id = "c1"
+role = "condition"
+expected = "bool"
+
+[[test]]
+name = "assertion output is a path"
+policy = "slots.json"
+block_id = "as1"
+target = "assertion_output"
+role = "path"
+
+[[test]]
+name = "match target is a path"
+policy = "slots.json"
+block_id = "m_declared"
+target = "match_target"
+role = "path"
+
+[[test]]
+name = "match arm condition"
+policy = "slots.json"
+block_id = "m_declared"
+target = "expression"
+id = "a1"
+role = "condition"
+expected = "bool"
+
+[[test]]
+name = "match value on a declared key offers labelled values"
+policy = "slots.json"
+block_id = "m_declared"
+target = "match_value"
+id = "a1"
+role = "value"
+expected = "status"
+text = "|"
+state = "value"
+options = ["open=Open case", "closed=Closed"]
+
+[[test]]
+name = "match value on an undeclared key ignores sibling arms"
+policy = "slots.json"
+block_id = "m_union"
+target = "match_value"
+id = "b2"
+role = "value"
+expected = ""
+
+[[test]]
+name = "data model has no scope"
+policy = "slots.json"
+block_id = "dm"
+target = "data_model_name"
+
+[[test]]
+name = "unknown block has no scope"
+policy = "slots.json"
+block_id = "missing"
+target = "expression"
+id = "x"
+
+# Graph
+
+[[test]]
+name = "graph expression row expects the output schema type"
+policy = "slots_graph.json"
+block_id = "calc"
+target = "expression"
+id = "row_total"
+role = "value"
+expected = "number"
+
+[[test]]
+name = "graph expression row outside the schema has no expectation"
+policy = "slots_graph.json"
+block_id = "calc"
+target = "expression"
+id = "row_extra"
+role = "value"
+expected = ""
+
+[[test]]
+name = "graph expression key is a path"
+policy = "slots_graph.json"
+block_id = "calc"
+target = "expression_key"
+role = "path"
+
+[[test]]
+name = "graph transform input is a path"
+policy = "slots_graph.json"
+block_id = "calc"
+target = "transform_input"
+role = "path"
+
+[[test]]
+name = "switch node has no transform input"
+policy = "slots_graph.json"
+block_id = "sw"
+target = "transform_input"
+
+[[test]]
+name = "graph switch statement is a condition"
+policy = "slots_graph.json"
+block_id = "sw"
+target = "expression"
+id = "s1"
+role = "condition"
+expected = "bool"
+
+[[test]]
+name = "graph table input cell is unary over the field"
+policy = "slots_graph.json"
+block_id = "dt"
+target = "cell"
+id = "c_field"
+row = "r1"
+kind = "unary"
+subject = "number"
+
+[[test]]
+name = "graph table condition column"
+policy = "slots_graph.json"
+block_id = "dt"
+target = "cell"
+id = "c_condition"
+row = "r1"
+role = "condition"
+
+[[test]]
+name = "graph output cell with a dictionary type offers labelled values"
+policy = "slots_graph.json"
+block_id = "dt"
+target = "cell"
+id = "o_dict"
+row = "r1"
+role = "value"
+expected = "customerTier"
+text = "|"
+state = "value"
+options = ["VIP=Very important", "STD=Standard"]
+
+[[test]]
+name = "graph output cell falls back to the output schema"
+policy = "slots_graph.json"
+block_id = "dt"
+target = "cell"
+id = "o_schema"
+row = "r1"
+expected = "number"
+
+[[test]]
+name = "graph output schema dictionary offers labelled values"
+policy = "slots_graph.json"
+block_id = "dt"
+target = "cell"
+id = "o_schema_dict"
+row = "r1"
+expected = "customerTier"
+text = "|"
+state = "value"
+options = ["VIP=Very important", "STD=Standard"]
+
+[[test]]
+name = "graph undeclared bool column uses sibling literals"
+policy = "slots_graph.json"
+block_id = "dt_untyped"
+target = "cell"
+id = "o_bool"
+row = "u3"
+expected = "bool"
+
+[[test]]
+name = "graph undeclared string column uses the sibling union"
+policy = "slots_graph.json"
+block_id = "dt_untyped"
+target = "cell"
+id = "o_str"
+row = "u3"
+expected = '"a" | "b"'
+
+[[test]]
+name = "graph sibling union excludes the edited row"
+policy = "slots_graph.json"
+block_id = "dt_untyped"
+target = "cell"
+id = "o_str"
+row = "u1"
+expected = '"b"'
+
+[[test]]
+name = "graph mixed sibling literals have no expectation"
+policy = "slots_graph.json"
+block_id = "dt_untyped"
+target = "cell"
+id = "o_mixed"
+row = "u3"
+expected = ""
+
+[[test]]
+name = "graph column head is a path"
+policy = "slots_graph.json"
+block_id = "dt"
+target = "head"
+id = "o_dict"
+role = "path"

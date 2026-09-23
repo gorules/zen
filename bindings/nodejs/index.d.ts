@@ -459,8 +459,6 @@ export interface DecisionNode {
   config: any
 }
 
-export declare function encodeZenString(value: string): string | null
-
 export interface EvaluateBatchRequest {
   key: string
   context: any

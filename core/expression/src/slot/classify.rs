@@ -8,14 +8,12 @@ use crate::lexer::{
     ArithmeticOperator, Bracket, ComparisonOperator, Identifier, LogicalOperator, Operator,
     QuotationMark, TemplateString, Token, TokenKind,
 };
-use crate::parser::Parser;
 use crate::variable::VariableType;
 
-use super::literals::{declared, item_expectation, NodeTable};
-use super::operators::{nullable_extras, operators_for, EQUALITY, LOGICAL};
+use super::literals::NodeTable;
+use super::operators::Operators;
 use super::{
-    enum_values, is_null_option, null_option, subject_enum_options, LabelResolver, Local, Parsed,
-    Slot, SlotRole, SlotState, Span, NULL_SOURCE,
+    LabelResolver, Local, Parsed, Slot, SlotRole, SlotState, Span, ValueOption, VariableTypeSlot,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,7 +66,7 @@ struct Frame {
     commas: u32,
 }
 
-struct Ctx<'p, 'a> {
+pub(crate) struct Classifier<'p, 'a> {
     parsed: Option<&'p Parsed<'a>>,
     table: Option<&'p NodeTable<'a>>,
     source: &'p str,
@@ -80,102 +78,228 @@ struct Ctx<'p, 'a> {
     labels: Option<&'p LabelResolver>,
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn classify(
-    parsed: &Parsed,
-    table: &NodeTable,
-    pos: u32,
-    unary: bool,
-    role: SlotRole,
-    expected: Option<&VariableType>,
-    labels: Option<&LabelResolver>,
-) -> Slot {
-    let (role, expected) = effective_role(parsed.source, pos, role, expected);
-    let ctx = Ctx::new(parsed, table, unary, role, expected, labels);
-    ctx.classify_at(pos)
-}
-
-pub(crate) fn closure_locals(
-    parsed: &Parsed,
-    table: &NodeTable,
-    pos: u32,
-) -> Vec<(Rc<str>, VariableType)> {
-    let ctx = Ctx::new(parsed, table, false, SlotRole::Condition, None, None);
-    let limit = match ctx.string_at(pos) {
-        Some((idx, ..)) => idx,
-        None => match ctx.word_at(pos) {
-            Some(w) => ctx.not_in_head(w),
-            None => ctx.operand_limit(pos),
-        },
-    };
-    ctx.locals(limit)
-}
-
-pub(crate) fn fallback(
-    source: &str,
-    pos: u32,
-    unary: bool,
-    role: SlotRole,
-    scope: &VariableType,
-    expected: Option<&VariableType>,
-    labels: Option<&LabelResolver>,
-) -> Slot {
-    let (role, expected) = effective_role(source, pos, role, expected);
-    let ctx = Ctx {
-        parsed: None,
-        table: None,
-        source,
-        items: Vec::new(),
-        unary,
-        role,
-        scope,
-        expected,
-        labels,
-    };
-    ctx.classify_at(pos)
-}
-fn effective_role<'p>(
-    source: &str,
-    pos: u32,
-    role: SlotRole,
-    expected: Option<&'p VariableType>,
-) -> (SlotRole, Option<&'p VariableType>) {
-    if role != SlotRole::Path || is_path_prefix(source[..pos as usize].trim_start().as_bytes()) {
-        return (role, expected);
+impl Item {
+    fn collect(tokens: &[Token]) -> Vec<Self> {
+        let mut items = Vec::with_capacity(tokens.len());
+        let mut templates: Vec<bool> = Vec::new();
+        let mut i = 0;
+        while i < tokens.len() {
+            let t = &tokens[i];
+            let single = Item {
+                first: i,
+                last: i,
+                span: t.span,
+                body: t.span,
+                kind: Kind::Ident,
+            };
+            let kind = match t.kind {
+                TokenKind::QuotationMark(
+                    q @ (QuotationMark::SingleQuote | QuotationMark::DoubleQuote),
+                ) => {
+                    let closed = tokens
+                        .get(i + 2)
+                        .filter(|c| c.kind == TokenKind::QuotationMark(q));
+                    match (tokens.get(i + 1), closed) {
+                        (Some(body), Some(close)) if body.kind == TokenKind::Literal => {
+                            items.push(Item {
+                                first: i,
+                                last: i + 2,
+                                span: (t.span.0, close.span.1),
+                                body: body.span,
+                                kind: Kind::Str {
+                                    quote: q,
+                                    open: close.span.0 == close.span.1,
+                                },
+                            });
+                            i += 3;
+                            continue;
+                        }
+                        _ => Kind::Str {
+                            quote: q,
+                            open: true,
+                        },
+                    }
+                }
+                TokenKind::QuotationMark(QuotationMark::Backtick) => {
+                    let zero_width = t.span.0 == t.span.1;
+                    match templates.last() {
+                        Some(false) => {
+                            templates.pop();
+                            Kind::TemplateClose
+                        }
+                        Some(true) if zero_width => {
+                            templates.pop();
+                            Kind::TemplateClose
+                        }
+                        _ => {
+                            templates.push(false);
+                            Kind::TemplateOpen
+                        }
+                    }
+                }
+                TokenKind::TemplateString(TemplateString::ExpressionStart) => {
+                    if let Some(top) = templates.last_mut() {
+                        *top = true;
+                    }
+                    Kind::ExprStart
+                }
+                TokenKind::TemplateString(TemplateString::ExpressionEnd) => {
+                    if let Some(top) = templates.last_mut() {
+                        *top = false;
+                    }
+                    Kind::ExprEnd
+                }
+                TokenKind::Literal => {
+                    if templates.last() == Some(&false) {
+                        Kind::TemplateText
+                    } else {
+                        Kind::Ident
+                    }
+                }
+                TokenKind::Identifier(id) => Kind::Ref(id),
+                TokenKind::Boolean(_) => Kind::Bool,
+                TokenKind::Number => Kind::Number,
+                TokenKind::Bracket(b) => match b {
+                    Bracket::LeftParenthesis
+                    | Bracket::LeftSquareBracket
+                    | Bracket::LeftCurlyBracket => Kind::Open(b),
+                    _ => Kind::Close(b),
+                },
+                TokenKind::Operator(op) => Kind::Op(op),
+            };
+            items.push(Item { kind, ..single });
+            i += 1;
+        }
+        items
     }
-    (SlotRole::Value, None)
 }
 
-fn is_path_prefix(bytes: &[u8]) -> bool {
-    bytes.iter().all(|b| b.is_ascii_whitespace())
-        || bytes.first().is_none_or(|b| is_ident_byte(*b))
-            && bytes.iter().all(|b| is_ident_byte(*b) || *b == b'.')
-}
-pub(crate) struct Operands<'p, 'a> {
-    ctx: Ctx<'p, 'a>,
+impl Kind {
+    fn is_operand_end(self) -> bool {
+        matches!(
+            self,
+            Kind::Str { .. }
+                | Kind::TemplateClose
+                | Kind::Ident
+                | Kind::Ref(_)
+                | Kind::Number
+                | Kind::Bool
+                | Kind::Close(_)
+        )
+    }
+
+    fn is_clause_boundary(self) -> bool {
+        matches!(
+            self,
+            Kind::Op(Operator::Logical(_))
+                | Kind::Op(Operator::Comma)
+                | Kind::Op(Operator::QuestionMark)
+                | Kind::Op(Operator::Slice)
+                | Kind::Op(Operator::Assign)
+                | Kind::Op(Operator::Semi)
+                | Kind::Open(Bracket::LeftParenthesis)
+                | Kind::Open(Bracket::LeftCurlyBracket)
+                | Kind::ExprStart
+        )
+    }
+
+    fn is_word(self) -> bool {
+        matches!(
+            self,
+            Kind::Ident
+                | Kind::Ref(_)
+                | Kind::Number
+                | Kind::Bool
+                | Kind::Op(Operator::Logical(
+                    LogicalOperator::And | LogicalOperator::Or | LogicalOperator::Not
+                ))
+                | Kind::Op(Operator::Comparison(
+                    ComparisonOperator::In | ComparisonOperator::NotIn
+                ))
+        )
+    }
+
+    fn is_literal_start(self) -> bool {
+        matches!(
+            self,
+            Kind::Str { .. }
+                | Kind::TemplateOpen
+                | Kind::Number
+                | Kind::Bool
+                | Kind::Ref(Identifier::Null)
+                | Kind::Open(Bracket::LeftSquareBracket)
+                | Kind::Op(Operator::Arithmetic(
+                    ArithmeticOperator::Add | ArithmeticOperator::Subtract
+                ))
+        )
+    }
 }
 
-impl<'p, 'a> Operands<'p, 'a> {
-    pub(crate) fn new(
+impl<'p, 'a> Classifier<'p, 'a> {
+    pub(crate) fn classify(
         parsed: &'p Parsed<'a>,
         table: &'p NodeTable<'a>,
+        pos: u32,
         unary: bool,
+        role: SlotRole,
         expected: Option<&'p VariableType>,
         labels: Option<&'p LabelResolver>,
-    ) -> Self {
-        let ctx = Ctx::new(parsed, table, unary, SlotRole::Condition, expected, labels);
-        Self { ctx }
+    ) -> Slot {
+        let (role, expected) = Self::effective_role(parsed.source, pos, role, expected);
+        Self::new(parsed, table, unary, role, expected, labels).classify_at(pos)
     }
+
+    pub(crate) fn fallback(
+        source: &'p str,
+        pos: u32,
+        unary: bool,
+        role: SlotRole,
+        scope: &'p VariableType,
+        expected: Option<&'p VariableType>,
+        labels: Option<&'p LabelResolver>,
+    ) -> Slot {
+        let (role, expected) = Self::effective_role(source, pos, role, expected);
+        let classifier = Self {
+            parsed: None,
+            table: None,
+            source,
+            items: Vec::new(),
+            unary,
+            role,
+            scope,
+            expected,
+            labels,
+        };
+        classifier.classify_at(pos)
+    }
+
+    pub(crate) fn closure_locals(
+        parsed: &'p Parsed<'a>,
+        table: &'p NodeTable<'a>,
+        pos: u32,
+    ) -> Vec<(Rc<str>, VariableType)> {
+        let classifier = Self::new(parsed, table, false, SlotRole::Condition, None, None);
+        let limit = match classifier.string_at(pos) {
+            Some((idx, ..)) => idx,
+            None => match classifier.word_at(pos) {
+                Some(w) => classifier.not_in_head(w),
+                None => classifier.operand_limit(pos),
+            },
+        };
+        classifier.locals(limit)
+    }
+
     pub(crate) fn expected_at(&self, start: u32) -> Option<VariableType> {
-        let ctx = &self.ctx;
-        let idx = ctx.items.iter().position(|it| it.span.0 == start)?;
-        if let Some(right) = ctx.comparison_after(idx) {
-            let end = ctx.run_end(right)?;
-            return ctx.operand_type(right, end).and_then(declared);
+        let idx = self.items.iter().position(|it| it.span.0 == start)?;
+        if let Some(right) = self.comparison_after(idx) {
+            let end = self.run_end(right)?;
+            return self
+                .operand_type(right, end)
+                .and_then(VariableTypeSlot::declared);
         }
-        let slot = ctx.at(start, idx);
+        let slot = self.at(start, idx);
         let method_arg = slot.state == SlotState::Argument
-            && ctx
+            && self
                 .frames(idx)
                 .last()
                 .is_some_and(|f| matches!(f.kind, FrameKind::Call { method: true, .. }));
@@ -184,184 +308,50 @@ impl<'p, 'a> Operands<'p, 'a> {
         }
         slot.expected
     }
-}
 
-fn build_items(tokens: &[Token]) -> Vec<Item> {
-    let mut items = Vec::with_capacity(tokens.len());
-    let mut templates: Vec<bool> = Vec::new();
-    let mut i = 0;
-    while i < tokens.len() {
-        let t = &tokens[i];
-        let single = Item {
-            first: i,
-            last: i,
-            span: t.span,
-            body: t.span,
-            kind: Kind::Ident,
-        };
-        let kind = match t.kind {
-            TokenKind::QuotationMark(
-                q @ (QuotationMark::SingleQuote | QuotationMark::DoubleQuote),
-            ) => {
-                let closed = tokens
-                    .get(i + 2)
-                    .filter(|c| c.kind == TokenKind::QuotationMark(q));
-                match (tokens.get(i + 1), closed) {
-                    (Some(body), Some(close)) if body.kind == TokenKind::Literal => {
-                        items.push(Item {
-                            first: i,
-                            last: i + 2,
-                            span: (t.span.0, close.span.1),
-                            body: body.span,
-                            kind: Kind::Str {
-                                quote: q,
-                                open: close.span.0 == close.span.1,
-                            },
-                        });
-                        i += 3;
-                        continue;
-                    }
-                    _ => Kind::Str {
-                        quote: q,
-                        open: true,
-                    },
-                }
-            }
-            TokenKind::QuotationMark(QuotationMark::Backtick) => {
-                let zero_width = t.span.0 == t.span.1;
-                match templates.last() {
-                    Some(false) => {
-                        templates.pop();
-                        Kind::TemplateClose
-                    }
-                    Some(true) if zero_width => {
-                        templates.pop();
-                        Kind::TemplateClose
-                    }
-                    _ => {
-                        templates.push(false);
-                        Kind::TemplateOpen
-                    }
-                }
-            }
-            TokenKind::TemplateString(TemplateString::ExpressionStart) => {
-                if let Some(top) = templates.last_mut() {
-                    *top = true;
-                }
-                Kind::ExprStart
-            }
-            TokenKind::TemplateString(TemplateString::ExpressionEnd) => {
-                if let Some(top) = templates.last_mut() {
-                    *top = false;
-                }
-                Kind::ExprEnd
-            }
-            TokenKind::Literal => {
-                if templates.last() == Some(&false) {
-                    Kind::TemplateText
-                } else {
-                    Kind::Ident
-                }
-            }
-            TokenKind::Identifier(id) => Kind::Ref(id),
-            TokenKind::Boolean(_) => Kind::Bool,
-            TokenKind::Number => Kind::Number,
-            TokenKind::Bracket(b) => match b {
-                Bracket::LeftParenthesis
-                | Bracket::LeftSquareBracket
-                | Bracket::LeftCurlyBracket => Kind::Open(b),
-                _ => Kind::Close(b),
-            },
-            TokenKind::Operator(op) => Kind::Op(op),
-        };
-        items.push(Item { kind, ..single });
-        i += 1;
+    fn effective_role(
+        source: &str,
+        pos: u32,
+        role: SlotRole,
+        expected: Option<&'p VariableType>,
+    ) -> (SlotRole, Option<&'p VariableType>) {
+        if role != SlotRole::Path
+            || Self::is_path_prefix(source[..pos as usize].trim_start().as_bytes())
+        {
+            return (role, expected);
+        }
+        (SlotRole::Value, None)
     }
-    items
-}
 
-fn is_operand_end(kind: Kind) -> bool {
-    matches!(
-        kind,
-        Kind::Str { .. }
-            | Kind::TemplateClose
-            | Kind::Ident
-            | Kind::Ref(_)
-            | Kind::Number
-            | Kind::Bool
-            | Kind::Close(_)
-    )
-}
-
-fn is_clause_boundary(kind: Kind) -> bool {
-    matches!(
-        kind,
-        Kind::Op(Operator::Logical(_))
-            | Kind::Op(Operator::Comma)
-            | Kind::Op(Operator::QuestionMark)
-            | Kind::Op(Operator::Slice)
-            | Kind::Op(Operator::Assign)
-            | Kind::Op(Operator::Semi)
-            | Kind::Open(Bracket::LeftParenthesis)
-            | Kind::Open(Bracket::LeftCurlyBracket)
-            | Kind::ExprStart
-    )
-}
-
-fn is_word(kind: Kind) -> bool {
-    matches!(
-        kind,
-        Kind::Ident
-            | Kind::Ref(_)
-            | Kind::Number
-            | Kind::Bool
-            | Kind::Op(Operator::Logical(
-                LogicalOperator::And | LogicalOperator::Or | LogicalOperator::Not
-            ))
-            | Kind::Op(Operator::Comparison(
-                ComparisonOperator::In | ComparisonOperator::NotIn
-            ))
-    )
-}
-
-fn is_literal_start(kind: Kind) -> bool {
-    matches!(
-        kind,
-        Kind::Str { .. }
-            | Kind::TemplateOpen
-            | Kind::Number
-            | Kind::Bool
-            | Kind::Ref(Identifier::Null)
-            | Kind::Open(Bracket::LeftSquareBracket)
-            | Kind::Op(Operator::Arithmetic(
-                ArithmeticOperator::Add | ArithmeticOperator::Subtract
-            ))
-    )
-}
-
-fn is_bool(t: &VariableType) -> bool {
-    matches!(t.unwrap_nullable().0, VariableType::Bool)
-}
-fn widen(t: VariableType) -> VariableType {
-    match t {
-        VariableType::Const(_) => VariableType::String,
-        other => other,
+    fn is_path_prefix(bytes: &[u8]) -> bool {
+        bytes.iter().all(|b| b.is_ascii_whitespace())
+            || bytes.first().is_none_or(|b| Self::is_ident_byte(*b))
+                && bytes.iter().all(|b| Self::is_ident_byte(*b) || *b == b'.')
     }
-}
 
-fn is_ordered(t: &VariableType) -> bool {
-    matches!(
-        t.unwrap_nullable().0,
-        VariableType::Number | VariableType::Date
-    )
-}
+    fn is_bool(t: &VariableType) -> bool {
+        matches!(t.unwrap_nullable().0, VariableType::Bool)
+    }
 
-fn is_ident_byte(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || b == b'_' || b == b'$' || b == b'#'
-}
+    fn widen(t: VariableType) -> VariableType {
+        match t {
+            VariableType::Const(_) => VariableType::String,
+            other => other,
+        }
+    }
 
-impl<'p, 'a> Ctx<'p, 'a> {
-    fn new(
+    fn is_ordered(t: &VariableType) -> bool {
+        matches!(
+            t.unwrap_nullable().0,
+            VariableType::Number | VariableType::Date
+        )
+    }
+
+    fn is_ident_byte(b: u8) -> bool {
+        b.is_ascii_alphanumeric() || b == b'_' || b == b'$' || b == b'#'
+    }
+
+    pub(crate) fn new(
         parsed: &'p Parsed<'a>,
         table: &'p NodeTable<'a>,
         unary: bool,
@@ -373,7 +363,7 @@ impl<'p, 'a> Ctx<'p, 'a> {
             parsed: Some(parsed),
             table: Some(table),
             source: parsed.source,
-            items: build_items(parsed.tokens),
+            items: Item::collect(parsed.tokens),
             unary,
             role,
             scope: &parsed.scope,
@@ -412,7 +402,7 @@ impl<'p, 'a> Ctx<'p, 'a> {
             }
             if arrays > 0 {
                 for option in &mut slot.options {
-                    if !is_null_option(option) {
+                    if !option.is_null() {
                         if let Some(source) = &mut option.source {
                             *source =
                                 format!("{}{}{}", "[".repeat(arrays), source, "]".repeat(arrays));
@@ -437,14 +427,11 @@ impl<'p, 'a> Ctx<'p, 'a> {
             } = frame.kind
             {
                 if frame.commas == 0
-                    && matches!(
-                        FunctionKind::try_from(self.text(self.items[name].span)),
-                        Ok(FunctionKind::Closure(_))
-                    )
+                    && self.is_closure(name)
                     && self
                         .collection_end(frame)
                         .and_then(|end| self.items.get(end + 1))
-                        .is_some_and(|item| self.text(item.span) == "as" && item.span.1 < pos)
+                        .is_some_and(|item| self.is_as(item) && item.span.1 < pos)
                 {
                     let span = self
                         .word_at(pos)
@@ -472,7 +459,7 @@ impl<'p, 'a> Ctx<'p, 'a> {
             {
                 self.unlist(&mut slot, self.text(item.body));
             }
-            slot.options.retain(|o| !is_null_option(o));
+            slot.options.retain(|o| !o.is_null());
             slot.operators.clear();
             if !body.is_empty() {
                 slot.options.retain(|o| {
@@ -546,11 +533,11 @@ impl<'p, 'a> Ctx<'p, 'a> {
     fn path_slot(&self, pos: u32) -> Slot {
         let bytes = self.source.as_bytes();
         let mut start = pos as usize;
-        while start > 0 && is_ident_byte(bytes[start - 1]) {
+        while start > 0 && Self::is_ident_byte(bytes[start - 1]) {
             start -= 1;
         }
         let mut end = pos as usize;
-        while end < bytes.len() && is_ident_byte(bytes[end]) {
+        while end < bytes.len() && Self::is_ident_byte(bytes[end]) {
             end += 1;
         }
         let mut slot = Slot::new(SlotState::Path, (start as u32, end as u32));
@@ -588,11 +575,9 @@ impl<'p, 'a> Ctx<'p, 'a> {
         slot.options = slot
             .operand
             .as_ref()
-            .and_then(|s| subject_enum_options(s, self.labels))
+            .and_then(|s| ValueOption::for_type(s, self.labels))
             .unwrap_or_default();
-        let listed = std::mem::take(&mut slot.listed);
-        slot.options.retain(|o| !listed.contains(&o.value));
-        slot.listed = listed;
+        slot.options.retain(|o| !slot.listed.contains(&o.value));
     }
     fn operand_limit(&self, pos: u32) -> usize {
         self.items
@@ -621,11 +606,7 @@ impl<'p, 'a> Ctx<'p, 'a> {
             else {
                 continue;
             };
-            let closure = matches!(
-                FunctionKind::try_from(self.text(self.items[name].span)),
-                Ok(FunctionKind::Closure(_))
-            );
-            if !closure || frame.commas == 0 {
+            if !self.is_closure(name) || frame.commas == 0 {
                 continue;
             }
             let name: Rc<str> = self
@@ -648,10 +629,9 @@ impl<'p, 'a> Ctx<'p, 'a> {
             match self.items[i].kind {
                 Kind::Open(_) | Kind::TemplateOpen => depth += 1,
                 Kind::Close(_) | Kind::TemplateClose => depth = depth.saturating_sub(1),
-                Kind::Ident
-                    if depth == 0
-                        && self.items[i - 1].kind != Kind::Op(Operator::Dot)
-                        && self.text(self.items[i].span) == "as" =>
+                _ if depth == 0
+                    && self.items[i - 1].kind != Kind::Op(Operator::Dot)
+                    && self.is_as(&self.items[i]) =>
                 {
                     return Some(i - 1);
                 }
@@ -663,7 +643,7 @@ impl<'p, 'a> Ctx<'p, 'a> {
 
     fn closure_alias(&self, end: usize) -> Option<&str> {
         let as_word = self.items.get(end + 1)?;
-        if as_word.kind != Kind::Ident || self.text(as_word.span) != "as" {
+        if !self.is_as(as_word) {
             return None;
         }
         let alias = self
@@ -676,7 +656,7 @@ impl<'p, 'a> Ctx<'p, 'a> {
     fn word_at(&self, pos: u32) -> Option<usize> {
         self.items
             .iter()
-            .position(|it| it.span.0 < pos && pos <= it.span.1 && is_word(it.kind))
+            .position(|it| it.span.0 < pos && pos <= it.span.1 && it.kind.is_word())
     }
 
     fn string_at(&self, pos: u32) -> Option<(usize, char, Span)> {
@@ -772,7 +752,7 @@ impl<'p, 'a> Ctx<'p, 'a> {
                 }
                 Kind::Open(Bracket::LeftSquareBracket) => {
                     let kind = match before {
-                        Some(k) if is_operand_end(k) => FrameKind::Index,
+                        Some(k) if k.is_operand_end() => FrameKind::Index,
                         Some(Kind::Op(Operator::Comparison(
                             ComparisonOperator::In | ComparisonOperator::NotIn,
                         ))) => FrameKind::List {
@@ -783,7 +763,7 @@ impl<'p, 'a> Ctx<'p, 'a> {
                             after_in: None,
                             implicit: self.unary
                                 && frames.is_empty()
-                                && other.is_none_or(is_clause_boundary),
+                                && other.is_none_or(Kind::is_clause_boundary),
                         },
                     };
                     frames.push(Frame {
@@ -867,7 +847,7 @@ impl<'p, 'a> Ctx<'p, 'a> {
             let unary_sign = sign
                 && !p
                     .checked_sub(1)
-                    .is_some_and(|k| is_operand_end(self.items[k].kind));
+                    .is_some_and(|k| self.items[k].kind.is_operand_end());
             if !unary_sign {
                 break;
             }
@@ -915,17 +895,13 @@ impl<'p, 'a> Ctx<'p, 'a> {
                         ComparisonOperator::In | ComparisonOperator::NotIn,
                     ))) = before
                     {
-                        let subject = if self.implicit_subject(p - 1) {
-                            Some(self.subject())
-                        } else {
-                            self.left_operand(p - 1)
-                        };
+                        let subject = self.comparison_left(p - 1);
                         return self.range_slot(None, subject);
                     }
                     let unary_interval = self.unary
                         && frames.len() == 1
-                        && before.is_none_or(is_clause_boundary)
-                        && is_ordered(&self.subject());
+                        && before.is_none_or(Kind::is_clause_boundary)
+                        && Self::is_ordered(&self.subject());
                     if unary_interval {
                         return self.range_slot(None, Some(self.subject()));
                     }
@@ -957,19 +933,11 @@ impl<'p, 'a> Ctx<'p, 'a> {
             Kind::Op(Operator::Logical(LogicalOperator::And | LogicalOperator::Or)) => {
                 if frames.is_empty() && self.unary {
                     self.unary_start()
-                } else if self.closure_frame(frames).is_some() {
-                    self.closure_head(frames)
                 } else {
-                    self.start(Some(VariableType::Bool))
+                    self.closure_head(frames)
                 }
             }
-            Kind::Op(Operator::Logical(LogicalOperator::Not)) => {
-                if self.closure_frame(frames).is_some() {
-                    self.closure_head(frames)
-                } else {
-                    self.start(Some(VariableType::Bool))
-                }
-            }
+            Kind::Op(Operator::Logical(LogicalOperator::Not)) => self.closure_head(frames),
             Kind::Op(Operator::Logical(LogicalOperator::NullishCoalescing)) => {
                 let left = self
                     .left_operand(p)
@@ -985,7 +953,7 @@ impl<'p, 'a> Ctx<'p, 'a> {
             },
             Kind::Op(Operator::Semi) => self.start(self.whole_expected(frames, limit)),
             Kind::Op(Operator::Arithmetic(_)) => {
-                let left = self.left_operand(p).map(widen);
+                let left = self.left_operand(p).map(Self::widen);
                 self.start(left)
             }
             Kind::Op(Operator::Assign)
@@ -994,7 +962,7 @@ impl<'p, 'a> Ctx<'p, 'a> {
             | Kind::TemplateOpen
             | Kind::TemplateText
             | Kind::ExprEnd => self.start(None),
-            kind if is_operand_end(kind) => self.after_operand(p, gap, frames),
+            kind if kind.is_operand_end() => self.after_operand(p, gap, frames),
             _ => self.start(None),
         }
     }
@@ -1005,7 +973,7 @@ impl<'p, 'a> Ctx<'p, 'a> {
             match frame.kind {
                 FrameKind::Paren if self.branch_paren(frame.open) => {}
                 FrameKind::List { after_in: None, .. } => {
-                    current = item_expectation(Some(&current))?;
+                    current = current.innermost().shallow_clone();
                 }
                 FrameKind::Object => {
                     let key = self.object_key(frame.open, end)?;
@@ -1070,7 +1038,7 @@ impl<'p, 'a> Ctx<'p, 'a> {
     fn branch_slot(&self, expected: Option<VariableType>) -> Slot {
         let enumerable = expected
             .as_ref()
-            .is_some_and(|e| subject_enum_options(e, self.labels).is_some());
+            .is_some_and(|e| ValueOption::for_type(e, self.labels).is_some());
         if expected.is_some() && (self.role == SlotRole::Value || enumerable) {
             self.value_slot(expected, None)
         } else {
@@ -1079,12 +1047,7 @@ impl<'p, 'a> Ctx<'p, 'a> {
     }
 
     fn subject(&self) -> VariableType {
-        // A declared date format guides implicit unary values; explicit reads of $
-        // still use its runtime type (a string until converted with d(...)).
-        self.expected
-            .filter(|hint| self.unary && super::is_date_type(hint))
-            .map(VariableType::shallow_clone)
-            .unwrap_or_else(|| self.scope.get("$"))
+        self.scope.get("$")
     }
 
     fn head(&self) -> Slot {
@@ -1109,10 +1072,10 @@ impl<'p, 'a> Ctx<'p, 'a> {
         let mut slot = Slot::new(SlotState::Value, (0, 0));
         slot.options = expected
             .as_ref()
-            .and_then(|e| subject_enum_options(e, self.labels))
+            .and_then(|e| ValueOption::for_type(e, self.labels))
             .unwrap_or_default();
         if matches!(expected, Some(VariableType::Nullable(_))) {
-            slot.options.push(null_option());
+            slot.options.push(ValueOption::null());
         }
         slot.expected = expected;
         slot.operand = operand;
@@ -1124,14 +1087,14 @@ impl<'p, 'a> Ctx<'p, 'a> {
         let subject = self.subject();
         let mut slot = Slot::new(SlotState::UnaryStart, (0, 0));
         slot.listed = self.unary_listed();
-        slot.options = subject_enum_options(&subject, self.labels).unwrap_or_default();
+        slot.options = ValueOption::for_type(&subject, self.labels).unwrap_or_default();
         slot.options.retain(|o| !slot.listed.contains(&o.value));
         if matches!(subject, VariableType::Nullable(_))
-            && !slot.listed.iter().any(|v| v == NULL_SOURCE)
+            && !slot.listed.iter().any(|v| v == ValueOption::NULL)
         {
-            slot.options.push(null_option());
+            slot.options.push(ValueOption::null());
         }
-        slot.operators = operators_for(&subject, true);
+        slot.operators = Operators::for_type(&subject, true);
         slot.auto_open = !slot.options.is_empty() || !slot.operators.is_empty();
         slot.expected = Some(subject.shallow_clone());
         slot.operand = Some(subject);
@@ -1139,7 +1102,7 @@ impl<'p, 'a> Ctx<'p, 'a> {
     }
     fn left_operand(&self, op: usize) -> Option<VariableType> {
         let end = op.checked_sub(1)?;
-        if !is_operand_end(self.items[end].kind) {
+        if !self.items[end].kind.is_operand_end() {
             return None;
         }
         let start = self.run_start(end, true);
@@ -1148,14 +1111,33 @@ impl<'p, 'a> Ctx<'p, 'a> {
     fn operand_type(&self, start: usize, end: usize) -> Option<VariableType> {
         let t = self.type_of_run(start, end, true)?;
         let literal = start == end && matches!(self.items[start].kind, Kind::Str { .. });
-        Some(if literal { widen(t) } else { t })
+        Some(if literal { Self::widen(t) } else { t })
+    }
+
+    fn comparison_left(&self, op: usize) -> Option<VariableType> {
+        if self.implicit_subject(op) {
+            Some(self.subject())
+        } else {
+            self.left_operand(op)
+        }
+    }
+
+    fn is_closure(&self, name: usize) -> bool {
+        matches!(
+            FunctionKind::try_from(self.text(self.items[name].span)),
+            Ok(FunctionKind::Closure(_))
+        )
+    }
+
+    fn is_as(&self, item: &Item) -> bool {
+        item.kind == Kind::Ident && self.text(item.span) == "as"
     }
 
     fn implicit_subject(&self, op: usize) -> bool {
         self.unary
             && op
                 .checked_sub(1)
-                .is_none_or(|k| !is_operand_end(self.items[k].kind))
+                .is_none_or(|k| !self.items[k].kind.is_operand_end())
     }
     fn operator_prefix(&self, p: usize) -> Option<Slot> {
         if !matches!(
@@ -1165,18 +1147,13 @@ impl<'p, 'a> Ctx<'p, 'a> {
         ) {
             return None;
         }
-        // `not` and `in` are words and reach the operator list through prefix filtering.
         let typed = self.text(self.items[p].span);
         if typed.chars().all(|c| c.is_alphabetic()) {
             return None;
         }
-        let operand = if self.implicit_subject(p) {
-            Some(self.subject())
-        } else {
-            self.left_operand(p)
-        };
+        let operand = self.comparison_left(p);
         let operators: Vec<&'static str> =
-            operators_for(operand.as_ref().unwrap_or(&VariableType::Any), false)
+            Operators::for_type(operand.as_ref().unwrap_or(&VariableType::Any), false)
                 .into_iter()
                 .filter(|op| op.starts_with(typed))
                 .collect();
@@ -1191,11 +1168,7 @@ impl<'p, 'a> Ctx<'p, 'a> {
     }
 
     fn value_after(&self, p: usize, op: ComparisonOperator) -> Slot {
-        let left = if self.implicit_subject(p) {
-            Some(self.subject())
-        } else {
-            self.left_operand(p)
-        };
+        let left = self.comparison_left(p);
         let expected = match (op, &left) {
             (ComparisonOperator::In | ComparisonOperator::NotIn, Some(t)) => {
                 Some(VariableType::Array(Rc::new(t.shallow_clone())))
@@ -1204,7 +1177,7 @@ impl<'p, 'a> Ctx<'p, 'a> {
         };
         let mut slot = self.value_slot(expected, left);
         if !matches!(op, ComparisonOperator::Equal | ComparisonOperator::NotEqual) {
-            slot.options.retain(|o| !is_null_option(o));
+            slot.options.retain(|o| !o.is_null());
         }
         slot
     }
@@ -1213,7 +1186,7 @@ impl<'p, 'a> Ctx<'p, 'a> {
         let mut slot = Slot::new(SlotState::Member, (0, 0));
         if let Some(end) = p
             .checked_sub(1)
-            .filter(|&k| is_operand_end(self.items[k].kind))
+            .filter(|&k| self.items[k].kind.is_operand_end())
         {
             let start = self.run_start(end, false);
             slot.operand = self.type_of_run(start, end, true);
@@ -1229,18 +1202,12 @@ impl<'p, 'a> Ctx<'p, 'a> {
         match frame.kind {
             FrameKind::List {
                 after_in: Some(op), ..
-            } => {
-                if self.implicit_subject(op) {
-                    Some(self.subject())
-                } else {
-                    self.left_operand(op)
-                }
-            }
+            } => self.comparison_left(op),
             FrameKind::List { implicit: true, .. } => Some(self.subject()),
             FrameKind::List { .. } => {
                 let before = frame.open.checked_sub(1).map(|k| self.items[k].kind);
                 match before {
-                    None => item_expectation(self.expected),
+                    None => self.expected.map(|t| t.innermost().shallow_clone()),
                     Some(Kind::Op(Operator::Comparison(_))) => self.left_operand(frame.open - 1),
                     Some(Kind::Open(Bracket::LeftParenthesis)) => self
                         .closure_membership(frame.open)
@@ -1254,26 +1221,22 @@ impl<'p, 'a> Ctx<'p, 'a> {
 
     fn list_expected(&self, frame: &Frame) -> Option<VariableType> {
         let head = self.at(self.items[frame.open].span.0, frame.open);
-        item_expectation(head.expected.as_ref()).filter(|t| !matches!(t, VariableType::Any))
+        head.expected
+            .map(|t| t.innermost().shallow_clone())
+            .filter(|t| !matches!(t, VariableType::Any))
     }
     fn closure_membership(&self, open: usize) -> Option<VariableType> {
         let paren = open.checked_sub(1)?;
         let name = paren.checked_sub(1)?;
         let closure = self.items[paren].kind == Kind::Open(Bracket::LeftParenthesis)
             && self.items[name].kind == Kind::Ident
-            && matches!(
-                FunctionKind::try_from(self.text(self.items[name].span)),
-                Ok(FunctionKind::Closure(_))
-            );
+            && self.is_closure(name);
         if !closure {
             return None;
         }
         let mut i = self.matched_close(open)? + 1;
         let mut alias = None;
-        let as_word = self
-            .items
-            .get(i)
-            .is_some_and(|it| it.kind == Kind::Ident && self.text(it.span) == "as");
+        let as_word = self.items.get(i).is_some_and(|it| self.is_as(it));
         if as_word {
             alias = Some(self.text(self.items.get(i + 1)?.span));
             i += 2;
@@ -1299,7 +1262,8 @@ impl<'p, 'a> Ctx<'p, 'a> {
         }
         let end = self.run_end(right)?;
         let rhs = self.type_of_run(right, end, true)?;
-        enum_values(&rhs).map(|(name, values)| VariableType::Enum(name, values))
+        rhs.enum_domain()
+            .map(|(name, values)| VariableType::Enum(name, values))
     }
 
     fn matched_close(&self, open: usize) -> Option<usize> {
@@ -1327,7 +1291,7 @@ impl<'p, 'a> Ctx<'p, 'a> {
             return self.start(Some(VariableType::Number));
         }
         let subject = self.list_subject(frame);
-        if let Some(range) = self.range_ahead(limit, frame.open) {
+        if let Some(range) = self.range_ahead(limit) {
             let partner = self
                 .run_end(range + 1)
                 .and_then(|end| self.type_of_run(range + 1, end, true));
@@ -1338,10 +1302,10 @@ impl<'p, 'a> Ctx<'p, 'a> {
         slot.listed = self.list_listed(frame.open);
         slot.options = subject
             .as_ref()
-            .and_then(|s| subject_enum_options(s, self.labels))
+            .and_then(|s| ValueOption::for_type(s, self.labels))
             .unwrap_or_default();
         slot.options.retain(|o| !slot.listed.contains(&o.value));
-        slot.expected = subject.as_ref().and_then(|s| item_expectation(Some(s)));
+        slot.expected = subject.as_ref().map(|s| s.innermost().shallow_clone());
         slot.operand = subject;
         slot.auto_open = true;
         slot
@@ -1355,21 +1319,14 @@ impl<'p, 'a> Ctx<'p, 'a> {
 
     fn range_slot(&self, bound: Option<VariableType>, subject: Option<VariableType>) -> Slot {
         let mut slot = Slot::new(SlotState::Range, (0, 0));
-        let pick = |t: Option<VariableType>| {
-            t.filter(|t| {
-                matches!(
-                    t.unwrap_nullable().0,
-                    VariableType::Number | VariableType::Date
-                )
-            })
-        };
+        let pick = |t: Option<VariableType>| t.filter(Self::is_ordered);
         slot.expected = pick(bound)
             .or_else(|| pick(subject))
             .or(Some(VariableType::Number));
         slot
     }
 
-    fn range_ahead(&self, limit: usize, open: usize) -> Option<usize> {
+    fn range_ahead(&self, limit: usize) -> Option<usize> {
         let mut depth = 0;
         for (i, it) in self.items.iter().enumerate().skip(limit) {
             match it.kind {
@@ -1385,11 +1342,10 @@ impl<'p, 'a> Ctx<'p, 'a> {
                 _ => {}
             }
         }
-        let _ = open;
         None
     }
 
-    fn closure_frame<'f>(&self, frames: &'f [Frame]) -> Option<&'f Frame> {
+    fn closure_frame<'f>(&self, frames: &'f [Frame]) -> Option<(&'f Frame, usize)> {
         for frame in frames.iter().rev() {
             match frame.kind {
                 FrameKind::Paren => continue,
@@ -1397,11 +1353,7 @@ impl<'p, 'a> Ctx<'p, 'a> {
                     name,
                     method: false,
                 } => {
-                    let closure = matches!(
-                        FunctionKind::try_from(self.text(self.items[name].span)),
-                        Ok(FunctionKind::Closure(_))
-                    );
-                    return (closure && frame.commas >= 1).then_some(frame);
+                    return (self.is_closure(name) && frame.commas >= 1).then_some((frame, name));
                 }
                 _ => return None,
             }
@@ -1424,17 +1376,14 @@ impl<'p, 'a> Ctx<'p, 'a> {
     }
 
     fn closure_head(&self, frames: &[Frame]) -> Slot {
-        let Some(frame) = self.closure_frame(frames) else {
+        let Some((frame, name)) = self.closure_frame(frames) else {
             return self.start(Some(VariableType::Bool));
-        };
-        let FrameKind::Call { name, .. } = frame.kind else {
-            return self.start(None);
         };
         let element = self.element_type(frame);
         let mut slot = Slot::new(SlotState::Closure, (0, 0));
         slot.options = element
             .as_ref()
-            .and_then(|e| subject_enum_options(e, self.labels))
+            .and_then(|e| ValueOption::for_type(e, self.labels))
             .unwrap_or_default();
         slot.expected = element.clone();
         slot.operand = element;
@@ -1465,7 +1414,7 @@ impl<'p, 'a> Ctx<'p, 'a> {
                 .and_then(|d| d.param_type(index as usize + 1));
             if let Some(end) = name
                 .checked_sub(2)
-                .filter(|&k| is_operand_end(self.items[k].kind))
+                .filter(|&k| self.items[k].kind.is_operand_end())
             {
                 let start = self.run_start(end, false);
                 slot.operand = self.type_of_run(start, end, true);
@@ -1491,7 +1440,7 @@ impl<'p, 'a> Ctx<'p, 'a> {
         slot.options = slot
             .expected
             .as_ref()
-            .and_then(|e| subject_enum_options(e, self.labels))
+            .and_then(|e| ValueOption::for_type(e, self.labels))
             .unwrap_or_default();
         slot
     }
@@ -1508,12 +1457,12 @@ impl<'p, 'a> Ctx<'p, 'a> {
         let start = self.run_start(p, true);
         let before = start.checked_sub(1).map(|k| self.items[k].kind);
         let operand = self.type_of_run(start, p, true);
-        let at_clause = before.is_none_or(is_clause_boundary);
+        let at_clause = before.is_none_or(Kind::is_clause_boundary);
         let literal_clause = self.unary
             && frames.is_empty()
             && at_clause
-            && is_literal_start(self.items[start].kind);
-        let bool_clause = at_clause && operand.as_ref().is_some_and(is_bool);
+            && self.items[start].kind.is_literal_start();
+        let bool_clause = at_clause && operand.as_ref().is_some_and(Self::is_bool);
         let date_clause = self.unary
             && frames.is_empty()
             && at_clause
@@ -1526,10 +1475,11 @@ impl<'p, 'a> Ctx<'p, 'a> {
         if after_comparison || literal_clause || bool_clause || date_clause {
             let mut slot = Slot::new(SlotState::Logical, (0, 0));
             slot.expected = Some(VariableType::Bool);
-            slot.operators = LOGICAL.to_vec();
+            slot.operators = Operators::LOGICAL.to_vec();
             let nullable = !after_comparison && matches!(operand, Some(VariableType::Nullable(_)));
             if nullable {
-                slot.operators.extend(nullable_extras(self.unary));
+                slot.operators
+                    .extend(Operators::nullable_extras(self.unary));
             } else if bool_clause
                 && !after_comparison
                 && !matches!(
@@ -1538,14 +1488,14 @@ impl<'p, 'a> Ctx<'p, 'a> {
                 )
                 && self.is_field_run(start, p)
             {
-                slot.operators.extend(EQUALITY);
+                slot.operators.extend(Operators::EQUALITY);
             }
             slot.auto_open = gap;
             return slot;
         }
 
         let mut slot = Slot::new(SlotState::Operator, (0, 0));
-        slot.operators = operators_for(operand.as_ref().unwrap_or(&VariableType::Any), false);
+        slot.operators = Operators::for_type(operand.as_ref().unwrap_or(&VariableType::Any), false);
         slot.operand = operand;
         slot.auto_open = gap && !slot.operators.is_empty();
         slot
@@ -1602,7 +1552,7 @@ impl<'p, 'a> Ctx<'p, 'a> {
             };
             let binary = before
                 .checked_sub(1)
-                .is_some_and(|k| is_operand_end(self.items[k].kind));
+                .is_some_and(|k| self.items[k].kind.is_operand_end());
             if binary {
                 start = self.primary_start(before - 1);
                 continue;
@@ -1662,30 +1612,20 @@ impl<'p, 'a> Ctx<'p, 'a> {
             return Some(parsed.type_of(node));
         }
 
-        let tokens = &parsed.tokens[self.items[start].first..=self.items[end].last];
-        let result = Parser::try_new(tokens, parsed.arena)
-            .ok()?
-            .standard()
-            .parse();
-        if !result.is_complete || result.root.has_error() {
-            return None;
-        }
+        let root = parsed.reparse(self.items[start].first, self.items[end].last)?;
         let pointer = if with_pointer {
             self.pointer_type(start)
         } else {
             None
         };
-        let types = TypesProvider::generate(
-            result.root,
-            parsed.intellisense_scope(pointer),
-            parsed.strict,
-        );
-        types.get_type(result.root).map(|t| t.kind.clone())
+        let types =
+            TypesProvider::generate(root, parsed.intellisense_scope(pointer), parsed.strict);
+        types.get_type(root).map(|t| t.kind.clone())
     }
 
     fn pointer_type(&self, at: usize) -> Option<VariableType> {
         let frames = self.frames(at);
-        let frame = self.closure_frame(&frames)?;
+        let (frame, _) = self.closure_frame(&frames)?;
         self.element_type(frame)
     }
 
@@ -1704,7 +1644,9 @@ impl<'p, 'a> Ctx<'p, 'a> {
                 Kind::Str { open: false, .. } if depth == 0 => {
                     listed.push(self.text(it.body).to_string());
                 }
-                Kind::Ref(Identifier::Null) if depth == 0 => listed.push(NULL_SOURCE.to_string()),
+                Kind::Ref(Identifier::Null) if depth == 0 => {
+                    listed.push(ValueOption::NULL.to_string())
+                }
                 _ => {}
             }
         }
@@ -1722,7 +1664,7 @@ impl<'p, 'a> Ctx<'p, 'a> {
                     if depth == 0 {
                         list_open = b == Bracket::LeftSquareBracket
                             && before.is_none_or(|k| {
-                                is_clause_boundary(k)
+                                k.is_clause_boundary()
                                     || matches!(
                                         k,
                                         Kind::Op(Operator::Comparison(
@@ -1743,12 +1685,12 @@ impl<'p, 'a> Ctx<'p, 'a> {
                 Kind::Str { open: false, .. } | Kind::Ref(Identifier::Null) => {
                     let clause_value = depth == 0
                         && before.is_none_or(|k| {
-                            is_clause_boundary(k)
+                            k.is_clause_boundary()
                                 || k == Kind::Op(Operator::Comparison(ComparisonOperator::Equal))
                         });
                     if clause_value || (depth == 1 && list_open) {
                         listed.push(if it.kind == Kind::Ref(Identifier::Null) {
-                            NULL_SOURCE.to_string()
+                            ValueOption::NULL.to_string()
                         } else {
                             self.text(it.body).to_string()
                         });

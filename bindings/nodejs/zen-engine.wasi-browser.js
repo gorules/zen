@@ -61,7 +61,6 @@ export const ZenDecision = __napiModule.exports.ZenDecision
 export const ZenDecisionContent = __napiModule.exports.ZenDecisionContent
 export const ZenEngine = __napiModule.exports.ZenEngine
 export const ZenEngineHandlerRequest = __napiModule.exports.ZenEngineHandlerRequest
-export const encodeZenString = __napiModule.exports.encodeZenString
 export const evaluateExpression = __napiModule.exports.evaluateExpression
 export const evaluateExpressionSync = __napiModule.exports.evaluateExpressionSync
 export const evaluateUnaryExpression = __napiModule.exports.evaluateUnaryExpression

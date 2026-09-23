@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use serde::Serialize;
@@ -15,7 +14,30 @@ impl SpanOps {
     }
 
     pub(crate) fn char_span(source: &str, span: Span) -> Span {
-        crate::workspace::slot::utf16::utf16_span(source, span)
+        (
+            Self::char_offset(source, span.0 as usize),
+            Self::char_offset(source, span.1 as usize),
+        )
+    }
+
+    pub(crate) fn byte_offset(source: &str, pos: u32) -> usize {
+        let mut units = 0u32;
+        for (byte, ch) in source.char_indices() {
+            let len = ch.len_utf16() as u32;
+            if pos < units + len {
+                return byte;
+            }
+            units += len;
+        }
+        source.len()
+    }
+
+    fn char_offset(source: &str, byte: usize) -> u32 {
+        let mut end = byte.min(source.len());
+        while !source.is_char_boundary(end) {
+            end -= 1;
+        }
+        Self::char_len(&source[..end])
     }
 
     pub(crate) fn replace_at_char_spans(source: &str, spans: &[Span], new_text: &str) -> String {
@@ -33,8 +55,8 @@ impl SpanOps {
 
         let mut out = source.to_string();
         for (char_start, char_end) in sorted.into_iter().rev() {
-            let byte_start = crate::workspace::slot::utf16::utf16_to_byte(&out, char_start);
-            let byte_end = crate::workspace::slot::utf16::utf16_to_byte(&out, char_end);
+            let byte_start = Self::byte_offset(&out, char_start);
+            let byte_end = Self::byte_offset(&out, char_end);
             out.replace_range(byte_start..byte_end, new_text);
         }
         out
@@ -50,11 +72,11 @@ pub struct Diagnostic {
     pub location: DiagnosticLocation,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expr_code: Option<&'static str>,
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(skip_serializing_if = "DiagnosticArgs::is_empty")]
     pub args: DiagnosticArgs,
 }
 
-pub type DiagnosticArgs = BTreeMap<&'static str, String>;
+pub use zen_expression::intellisense::diagnostic::DiagnosticArgs;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -113,7 +113,6 @@ module.exports.ZenDecision = __napiModule.exports.ZenDecision
 module.exports.ZenDecisionContent = __napiModule.exports.ZenDecisionContent
 module.exports.ZenEngine = __napiModule.exports.ZenEngine
 module.exports.ZenEngineHandlerRequest = __napiModule.exports.ZenEngineHandlerRequest
-module.exports.encodeZenString = __napiModule.exports.encodeZenString
 module.exports.evaluateExpression = __napiModule.exports.evaluateExpression
 module.exports.evaluateExpressionSync = __napiModule.exports.evaluateExpressionSync
 module.exports.evaluateUnaryExpression = __napiModule.exports.evaluateUnaryExpression

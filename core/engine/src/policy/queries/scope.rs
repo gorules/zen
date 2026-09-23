@@ -659,7 +659,6 @@ impl PropertyTypeIr {
             )),
             PropertyTypeIr::Number => Some(VariableType::Number),
             PropertyTypeIr::Boolean => Some(VariableType::Bool),
-            // Declared dates arrive as strings. Only d(...) produces a dynamic date value.
             PropertyTypeIr::Date => Some(VariableType::String),
             PropertyTypeIr::Relationship { .. } | PropertyTypeIr::Reference { .. } => None,
         }

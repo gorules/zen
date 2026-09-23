@@ -14,7 +14,6 @@ pub struct Lexer {
     capacity_hint: usize,
 }
 
-/// Tokens of a partial source: an unterminated string at EOF is closed with a zero-width quote.
 #[derive(Debug)]
 pub struct LenientTokens<'arena> {
     pub tokens: BumpVec<'arena, Token<'arena>>,

@@ -13,9 +13,8 @@ use crate::variable::VariableType;
 mod classify;
 mod literals;
 mod operators;
-#[cfg(test)]
-mod tests;
 
+use classify::Classifier;
 pub(crate) use literals::NodeTable;
 
 pub type LabelResolver = Rc<dyn Fn(&str, &str) -> Option<String>>;
@@ -85,7 +84,6 @@ pub struct Slot {
 }
 
 impl Slot {
-    /// Expected scalar type used to filter field completions.
     pub fn wanted_scalar(&self) -> Option<&VariableType> {
         if !matches!(
             self.state,
@@ -99,7 +97,7 @@ impl Slot {
             return None;
         }
         let (t, _) = self.expected.as_ref()?.unwrap_nullable();
-        scalar_class(t).map(|_| t)
+        ScalarClass::of(t).map(|_| t)
     }
 
     pub(crate) fn new(state: SlotState, replace_span: Span) -> Self {
@@ -155,6 +153,15 @@ impl LiteralFact {
             | LiteralFact::Bool { span, .. } => *span,
         }
     }
+
+    pub fn map_span(mut self, f: impl Fn(Span) -> Span) -> Self {
+        match &mut self {
+            LiteralFact::Enum { span, .. }
+            | LiteralFact::Date { span, .. }
+            | LiteralFact::Bool { span, .. } => *span = f(*span),
+        }
+        self
+    }
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -186,83 +193,102 @@ pub struct EnumTable {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SlotResult {
-    pub unary: bool,
+pub struct Literals {
     pub complete: bool,
-    pub slot: Slot,
-    pub literals: Vec<LiteralFact>,
+    #[serde(rename = "literals")]
+    pub facts: Vec<LiteralFact>,
     pub enums: Vec<EnumTable>,
 }
 
-pub fn encode_string(value: &str) -> Option<String> {
-    if !value.contains('"') {
-        Some(format!("\"{value}\""))
-    } else if !value.contains('\'') {
-        Some(format!("'{value}'"))
-    } else {
-        None
-    }
-}
-
-pub fn is_date_type(kind: &VariableType) -> bool {
-    match kind {
-        VariableType::Date => true,
-        VariableType::Array(inner) | VariableType::Nullable(inner) => is_date_type(inner),
-        _ => false,
-    }
-}
-
-pub(crate) fn enum_options(
-    name: Option<&str>,
-    values: &[Rc<str>],
-    labels: Option<&LabelResolver>,
-) -> Vec<ValueOption> {
-    values
-        .iter()
-        .map(|v| ValueOption {
-            value: v.to_string(),
-            label: labels
-                .zip(name)
-                .and_then(|(resolve, n)| resolve(n, v))
-                .filter(|l| !l.is_empty())
-                .unwrap_or_else(|| v.to_string()),
-            source: encode_string(v),
-        })
-        .collect()
-}
-
-pub fn subject_enum_options(
-    t: &VariableType,
-    labels: Option<&LabelResolver>,
-) -> Option<Vec<ValueOption>> {
-    let (name, values) = enum_values(t)?;
-    Some(enum_options(name.as_deref(), &values, labels))
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SlotResult {
+    pub slot: Slot,
+    pub literals: Literals,
 }
 
 pub(crate) type EnumDomain = (Option<Rc<str>>, Vec<Rc<str>>);
 
-pub(crate) const NULL_SOURCE: &str = "null";
+pub trait VariableTypeSlot {
+    fn innermost(&self) -> &VariableType;
+    fn enum_domain(&self) -> Option<EnumDomain>;
+    fn declared(self) -> Option<VariableType>;
+}
 
-pub(crate) fn null_option() -> ValueOption {
-    ValueOption {
-        value: NULL_SOURCE.to_string(),
-        label: NULL_SOURCE.to_string(),
-        source: Some(NULL_SOURCE.to_string()),
+impl VariableTypeSlot for VariableType {
+    fn innermost(&self) -> &VariableType {
+        match self {
+            VariableType::Array(inner) | VariableType::Nullable(inner) => inner.innermost(),
+            other => other,
+        }
+    }
+
+    fn enum_domain(&self) -> Option<EnumDomain> {
+        match self.innermost() {
+            VariableType::Enum(name, values) => Some((name.clone(), values.clone())),
+            VariableType::Const(value) => Some((None, vec![value.clone()])),
+            _ => None,
+        }
+    }
+
+    fn declared(self) -> Option<VariableType> {
+        match self {
+            VariableType::Any => None,
+            other => Some(other),
+        }
     }
 }
 
-pub(crate) fn is_null_option(option: &ValueOption) -> bool {
-    option.value == NULL_SOURCE && option.source.as_deref() == Some(NULL_SOURCE)
-}
+impl ValueOption {
+    pub(crate) const NULL: &'static str = "null";
 
-pub(crate) fn enum_values(t: &VariableType) -> Option<EnumDomain> {
-    let mut current = t;
-    loop {
-        match current {
-            VariableType::Enum(name, values) => return Some((name.clone(), values.clone())),
-            VariableType::Const(value) => return Some((None, vec![value.clone()])),
-            VariableType::Nullable(inner) | VariableType::Array(inner) => current = inner,
-            _ => return None,
+    pub fn for_type(t: &VariableType, labels: Option<&LabelResolver>) -> Option<Vec<Self>> {
+        let (name, values) = t.enum_domain()?;
+        Some(Self::enum_list(name.as_deref(), &values, labels))
+    }
+
+    pub(crate) fn enum_list(
+        name: Option<&str>,
+        values: &[Rc<str>],
+        labels: Option<&LabelResolver>,
+    ) -> Vec<Self> {
+        values
+            .iter()
+            .map(|v| Self {
+                value: v.to_string(),
+                label: Self::label(labels, name, v),
+                source: Self::encode(v),
+            })
+            .collect()
+    }
+
+    pub(crate) fn label(labels: Option<&LabelResolver>, name: Option<&str>, value: &str) -> String {
+        labels
+            .zip(name)
+            .and_then(|(resolve, n)| resolve(n, value))
+            .filter(|l| !l.is_empty())
+            .unwrap_or_else(|| value.to_string())
+    }
+
+    pub(crate) fn null() -> Self {
+        Self {
+            value: Self::NULL.to_string(),
+            label: Self::NULL.to_string(),
+            source: Some(Self::NULL.to_string()),
+        }
+    }
+
+    pub(crate) fn is_null(&self) -> bool {
+        self.value == Self::NULL && self.source.as_deref() == Some(Self::NULL)
+    }
+
+    fn encode(value: &str) -> Option<String> {
+        if !value.contains('"') {
+            Some(format!("\"{value}\""))
+        } else if !value.contains('\'') {
+            Some(format!("'{value}'"))
+        } else {
+            None
         }
     }
 }
@@ -295,7 +321,6 @@ impl<'a> Parsed<'a> {
             .unwrap_or(VariableType::Any)
     }
 
-    /// A run re-parsed on its own sees `#` as an identifier, so the pointer type is aliased too.
     pub(crate) fn intellisense_scope(&self, pointer: Option<VariableType>) -> IntelliSenseScope {
         let mut scope = IntelliSenseScope {
             root_data: self.scope.shallow_clone(),
@@ -313,49 +338,66 @@ impl<'a> Parsed<'a> {
     }
 }
 
-fn parse_partial<'a>(
-    arena: &'a Bump,
-    lexer: &mut Lexer,
-    strict: bool,
-    source: &'a str,
-    unary: bool,
-    scope: &VariableType,
-) -> Option<Parsed<'a>> {
-    let lenient = lexer.tokenize_lenient(arena, source).ok()?;
-    let tokens: &'a [Token<'a>] = lenient.tokens.into_bump_slice();
-    let parser = Parser::try_new(tokens, arena).ok()?;
-    let result = if unary {
-        parser.unary().with_metadata().parse()
-    } else {
-        parser.standard().with_metadata().parse()
-    };
-    let ast = result.root;
-    let complete = result.is_complete;
-    let metadata = result.metadata.unwrap_or_default();
-    let is_scope = IntelliSenseScope {
-        pointer_data: scope.shallow_clone(),
-        root_data: scope.shallow_clone(),
-        current_data: scope.shallow_clone(),
-        ..Default::default()
-    };
-    let types = TypesProvider::generate(ast, is_scope, strict);
+impl<'a> Parsed<'a> {
+    fn new(
+        arena: &'a Bump,
+        lexer: &mut Lexer,
+        strict: bool,
+        source: &'a str,
+        unary: bool,
+        scope: &VariableType,
+    ) -> Option<Self> {
+        let lenient = lexer.tokenize_lenient(arena, source).ok()?;
+        let tokens: &'a [Token<'a>] = lenient.tokens.into_bump_slice();
+        let parser = Parser::try_new(tokens, arena).ok()?;
+        let result = if unary {
+            parser.unary().with_metadata().parse()
+        } else {
+            parser.standard().with_metadata().parse()
+        };
+        let is_scope = IntelliSenseScope {
+            pointer_data: scope.shallow_clone(),
+            root_data: scope.shallow_clone(),
+            current_data: scope.shallow_clone(),
+            ..Default::default()
+        };
 
-    Some(Parsed {
-        arena,
-        source,
-        tokens,
-        open_string: lenient.open_string,
-        ast,
-        complete,
-        metadata,
-        types,
-        scope: scope.shallow_clone(),
-        strict,
-    })
+        Some(Self {
+            arena,
+            source,
+            tokens,
+            open_string: lenient.open_string,
+            ast: result.root,
+            complete: result.is_complete,
+            metadata: result.metadata.unwrap_or_default(),
+            types: TypesProvider::generate(result.root, is_scope, strict),
+            scope: scope.shallow_clone(),
+            strict,
+        })
+    }
+
+    fn clamp(source: &str, pos: u32) -> u32 {
+        let mut pos = (pos as usize).min(source.len());
+        while pos > 0 && !source.is_char_boundary(pos) {
+            pos -= 1;
+        }
+        pos as u32
+    }
+
+    pub(crate) fn reparse(&self, first: usize, last: usize) -> Option<&'a Node<'a>> {
+        let result = Parser::try_new(&self.tokens[first..=last], self.arena)
+            .ok()?
+            .standard()
+            .parse();
+        (result.is_complete && !result.root.has_error()).then_some(result.root)
+    }
+
+    fn is_complete(&self) -> bool {
+        self.complete && !self.ast.has_error() && self.open_string.is_none()
+    }
 }
 
 impl IntelliSense {
-    /// Slot at byte `pos` plus literal facts for the whole `source`. `scope` already holds `$` for unary.
     pub fn slot(
         &mut self,
         source: &str,
@@ -366,8 +408,9 @@ impl IntelliSense {
         expected: Option<&VariableType>,
     ) -> SlotResult {
         self.arena.reset();
-        let pos = clamp_pos(source, pos);
-        let Some(parsed) = parse_partial(
+        let pos = Parsed::clamp(source, pos);
+        let labels = self.labels.as_ref();
+        let Some(parsed) = Parsed::new(
             &self.arena,
             &mut self.lexer,
             self.strict,
@@ -376,45 +419,17 @@ impl IntelliSense {
             scope,
         ) else {
             return SlotResult {
-                unary,
-                complete: source.trim().is_empty(),
-                slot: classify::fallback(
-                    source,
-                    pos,
-                    unary,
-                    role,
-                    scope,
-                    expected,
-                    self.labels.as_ref(),
-                ),
-                literals: Vec::new(),
-                enums: Vec::new(),
+                slot: Classifier::fallback(source, pos, unary, role, scope, expected, labels),
+                literals: Literals::empty(source),
             };
         };
-
         let table = NodeTable::build(&parsed, unary, expected);
-        let (literals, enums) =
-            literals::facts(&parsed, &table, unary, expected, self.labels.as_ref());
-        let slot = classify::classify(
-            &parsed,
-            &table,
-            pos,
-            unary,
-            role,
-            expected,
-            self.labels.as_ref(),
-        );
-
         SlotResult {
-            unary,
-            complete: parsed.complete && !parsed.ast.has_error() && parsed.open_string.is_none(),
-            slot,
-            literals,
-            enums,
+            slot: Classifier::classify(&parsed, &table, pos, unary, role, expected, labels),
+            literals: Literals::collect(&parsed, &table, unary, expected, labels),
         }
     }
 
-    /// Closure bindings visible at byte `pos`, innermost first.
     pub fn closure_locals(
         &mut self,
         source: &str,
@@ -422,8 +437,8 @@ impl IntelliSense {
         scope: &VariableType,
     ) -> Vec<(Rc<str>, VariableType)> {
         self.arena.reset();
-        let pos = clamp_pos(source, pos);
-        let Some(parsed) = parse_partial(
+        let pos = Parsed::clamp(source, pos);
+        let Some(parsed) = Parsed::new(
             &self.arena,
             &mut self.lexer,
             self.strict,
@@ -434,7 +449,7 @@ impl IntelliSense {
             return Vec::new();
         };
         let table = NodeTable::build(&parsed, false, None);
-        classify::closure_locals(&parsed, &table, pos)
+        Classifier::closure_locals(&parsed, &table, pos)
     }
 
     pub fn literals(
@@ -443,20 +458,10 @@ impl IntelliSense {
         unary: bool,
         scope: &VariableType,
         expected: Option<&VariableType>,
-    ) -> (Vec<LiteralFact>, Vec<EnumTable>) {
-        let (literals, enums, _) = self.literal_analysis(source, unary, scope, expected);
-        (literals, enums)
-    }
-
-    pub fn literal_analysis(
-        &mut self,
-        source: &str,
-        unary: bool,
-        scope: &VariableType,
-        expected: Option<&VariableType>,
-    ) -> (Vec<LiteralFact>, Vec<EnumTable>, bool) {
+    ) -> Literals {
         self.arena.reset();
-        let Some(parsed) = parse_partial(
+        let labels = self.labels.as_ref();
+        let Some(parsed) = Parsed::new(
             &self.arena,
             &mut self.lexer,
             self.strict,
@@ -464,53 +469,39 @@ impl IntelliSense {
             unary,
             scope,
         ) else {
-            return (Vec::new(), Vec::new(), source.trim().is_empty());
+            return Literals::empty(source);
         };
-
         let table = NodeTable::build(&parsed, unary, expected);
-        let (literals, enums) =
-            literals::facts(&parsed, &table, unary, expected, self.labels.as_ref());
-        (
-            literals,
-            enums,
-            parsed.complete && !parsed.ast.has_error() && parsed.open_string.is_none(),
-        )
+        Literals::collect(&parsed, &table, unary, expected, labels)
     }
-}
-
-fn clamp_pos(source: &str, pos: u32) -> u32 {
-    let mut pos = (pos as usize).min(source.len());
-    while pos > 0 && !source.is_char_boundary(pos) {
-        pos -= 1;
-    }
-    pos as u32
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
-enum ScalarClass {
+pub(crate) enum ScalarClass {
     Bool,
     Number,
     String,
     Date,
 }
 
-fn scalar_class(t: &VariableType) -> Option<ScalarClass> {
-    match t {
-        VariableType::Bool => Some(ScalarClass::Bool),
-        VariableType::Number => Some(ScalarClass::Number),
-        VariableType::String | VariableType::Const(_) | VariableType::Enum(..) => {
-            Some(ScalarClass::String)
+impl ScalarClass {
+    fn of(t: &VariableType) -> Option<Self> {
+        match t {
+            VariableType::Bool => Some(Self::Bool),
+            VariableType::Number => Some(Self::Number),
+            VariableType::String | VariableType::Const(_) | VariableType::Enum(..) => {
+                Some(Self::String)
+            }
+            VariableType::Date => Some(Self::Date),
+            _ => None,
         }
-        VariableType::Date => Some(ScalarClass::Date),
-        _ => None,
     }
-}
 
-/// Scalars must match; containers may provide a matching nested field.
-pub fn field_fits(field: &VariableType, wanted: &VariableType) -> bool {
-    let (field, _) = field.unwrap_nullable();
-    match scalar_class(field) {
-        Some(class) => scalar_class(wanted) == Some(class),
-        None => !matches!(field, VariableType::Null | VariableType::Interval),
+    pub(crate) fn fits(field: &VariableType, wanted: &VariableType) -> bool {
+        let (field, _) = field.unwrap_nullable();
+        match Self::of(field) {
+            Some(class) => Self::of(wanted) == Some(class),
+            None => !matches!(field, VariableType::Null | VariableType::Interval),
+        }
     }
 }

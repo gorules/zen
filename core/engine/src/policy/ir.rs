@@ -221,8 +221,7 @@ impl DataModelIr {
         visited: &mut HashSet<Arc<str>>,
     ) -> VariableType {
         let inner = match &prop.kind {
-            PropertyTypeIr::String => VariableType::String,
-            PropertyTypeIr::Date => VariableType::Date,
+            PropertyTypeIr::String | PropertyTypeIr::Date => VariableType::String,
             PropertyTypeIr::Enum(values) => VariableType::Enum(None, enum_values_to_rc(values)),
             PropertyTypeIr::Number => VariableType::Number,
             PropertyTypeIr::Boolean => VariableType::Bool,

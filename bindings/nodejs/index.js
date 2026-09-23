@@ -577,7 +577,6 @@ module.exports.ZenDecision = nativeBinding.ZenDecision
 module.exports.ZenDecisionContent = nativeBinding.ZenDecisionContent
 module.exports.ZenEngine = nativeBinding.ZenEngine
 module.exports.ZenEngineHandlerRequest = nativeBinding.ZenEngineHandlerRequest
-module.exports.encodeZenString = nativeBinding.encodeZenString
 module.exports.evaluateExpression = nativeBinding.evaluateExpression
 module.exports.evaluateExpressionSync = nativeBinding.evaluateExpressionSync
 module.exports.evaluateUnaryExpression = nativeBinding.evaluateUnaryExpression

@@ -69,7 +69,6 @@ pub struct EnrichedState {
 }
 
 impl EnrichedState {
-    /// Scope the block was analyzed with: base scope plus the writes scheduled before it.
     pub(crate) fn scope_before(&self, block: &BlockRef) -> VariableType {
         let Some(&end) = self.log_start.get(block) else {
             return self.scope.shallow_clone();
@@ -110,7 +109,6 @@ pub struct PropertyNode {
     pub resolved_type: VariableType,
     pub written_by: Option<BlockRef>,
     pub instance_source: Option<InstanceSource>,
-    /// Writer's document position plus one (0 for a free read): the tie-break between independent paths.
     pub rank: usize,
 }
 
@@ -582,8 +580,6 @@ impl Snapshot {
         out
     }
 
-    // Kahn's algorithm with a stable pick: free reads first, then the policy being scheduled in
-    // document order, then the earliest ready writer of another policy. `None` on a cycle.
     fn stable_toposort(graph: &StableDiGraph<PropertyNode, ()>) -> Option<Vec<NodeIndex>> {
         type Ready = BinaryHeap<Reverse<(usize, usize)>>;
         let policy_of = |idx: NodeIndex| {

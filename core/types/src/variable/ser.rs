@@ -26,8 +26,6 @@ impl Serialize for Variable {
             }
             #[cfg(not(feature = "arbitrary_precision"))]
             Variable::Number(v) => {
-                // to_u64/to_i64 TRUNCATE fractional decimals instead of
-                // returning None; take the integer path only for integers.
                 if v.is_integer() {
                     if let Some(u) = v.to_u64() {
                         return serializer.serialize_u64(u);

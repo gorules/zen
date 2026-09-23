@@ -1,9 +1,215 @@
-use std::ops::Index;
 use std::rc::Rc;
 
+use serde::Deserialize;
 use zen_expression::intellisense::IntelliSense;
-use zen_expression::slot::{LabelResolver, SlotRole, SlotState, ValueOption};
+use zen_expression::slot::{DateArg, LabelResolver, LiteralFact, Literals, Slot, SlotRole};
 use zen_expression::variable::VariableType;
+
+const BASE_SCOPE: &str = r#"{"Object":{
+    "age":"Number","name":"String","active":"Bool","since":"Date",
+    "amount":{"Nullable":"Number"},
+    "status":{"Enum":["status",["open","closed"]]},
+    "tier":{"Enum":[null,["gold","silver"]]},
+    "mood":{"Enum":["mood",["happy","sad"]]},
+    "grade":{"Enum":["grade",["a","b","c","d"]]},
+    "customer":{"Object":{"age":"Number","name":"String","since":"Date",
+        "status":{"Enum":["status",["open","closed"]]},
+        "address":{"Object":{"city":"String"}}}},
+    "items":{"Array":{"Object":{"price":"Number","status":{"Enum":["status",["open","closed"]]}}}},
+    "tags":{"Array":"String"},
+    "statuses":{"Array":{"Enum":["status",["open","closed"]]}},
+    "grounding":{"Object":{"status":{"Enum":["status",["open","closed"]]}}}
+}}"#;
+
+#[derive(Deserialize)]
+struct TestFile {
+    test: Vec<TestCase>,
+}
+
+#[derive(Deserialize)]
+struct TestCase {
+    expression: String,
+    role: Option<String>,
+    subject: Option<String>,
+    scope: Option<String>,
+    expected: Option<String>,
+    slot: Option<ExpectedSlot>,
+    literals: Option<Vec<String>>,
+}
+
+#[derive(Deserialize)]
+struct ExpectedSlot {
+    state: String,
+    #[serde(rename = "type")]
+    kind: Option<String>,
+    options: Option<Vec<String>>,
+    operators: Option<Vec<String>>,
+    span: Option<String>,
+    auto_open: Option<bool>,
+}
+
+impl TestCase {
+    fn role(&self) -> SlotRole {
+        match self.role.as_deref() {
+            None if self.subject.is_some() => SlotRole::Unary,
+            None | Some("condition") => SlotRole::Condition,
+            Some("value") => SlotRole::Value,
+            Some("path") => SlotRole::Path,
+            Some(other) => panic!("unknown role {other}"),
+        }
+    }
+
+    fn scope(&self) -> VariableType {
+        let scope = parse_type(self.scope.as_deref().unwrap_or(BASE_SCOPE));
+        if let (Some(subject), VariableType::Object(map)) = (&self.subject, &scope) {
+            map.borrow_mut().insert(Rc::from("$"), parse_type(subject));
+        }
+        scope
+    }
+
+    fn expected(&self) -> Option<VariableType> {
+        match (&self.expected, self.role()) {
+            (Some(spec), _) => Some(parse_type(spec)),
+            (None, SlotRole::Condition) => Some(VariableType::Bool),
+            _ => None,
+        }
+    }
+
+    fn check(&self, is: &mut IntelliSense) -> Vec<String> {
+        let (source, pos) = match self.expression.find('|') {
+            Some(caret) => (self.expression.replacen('|', "", 1), caret),
+            None => (self.expression.clone(), self.expression.len()),
+        };
+        let result = is.slot(
+            &source,
+            pos as u32,
+            self.subject.is_some(),
+            self.role(),
+            &self.scope(),
+            self.expected().as_ref(),
+        );
+        let mut failures = Vec::new();
+        if let Some(expected) = &self.slot {
+            failures.extend(expected.check(&result.slot));
+        }
+        if let Some(expected) = &self.literals {
+            let actual = render_literals(&source, &result.literals);
+            if &actual != expected {
+                failures.push(format!("literals: wanted {expected:?}, got {actual:?}"));
+            }
+        }
+        failures
+    }
+}
+
+impl ExpectedSlot {
+    fn check(&self, slot: &Slot) -> Vec<String> {
+        let state = serde_json::to_value(slot.state).unwrap();
+        let options: Vec<String> = slot
+            .options
+            .iter()
+            .map(|o| match o.label == o.value {
+                true => o.value.clone(),
+                false => format!("{}={}", o.value, o.label),
+            })
+            .collect();
+        let operators: Vec<String> = slot.operators.iter().map(|o| o.to_string()).collect();
+        let fields = [
+            (
+                "state",
+                Some(self.state.clone()),
+                state.as_str().unwrap().to_string(),
+            ),
+            (
+                "type",
+                self.kind.clone(),
+                slot.expected
+                    .as_ref()
+                    .map(|t| t.to_string())
+                    .unwrap_or_default(),
+            ),
+            (
+                "options",
+                self.options.as_ref().map(|o| o.join(",")),
+                options.join(","),
+            ),
+            (
+                "operators",
+                self.operators.as_ref().map(|o| o.join(",")),
+                operators.join(","),
+            ),
+            (
+                "span",
+                self.span.clone(),
+                format!("{}..{}", slot.replace_span.0, slot.replace_span.1),
+            ),
+            (
+                "auto_open",
+                self.auto_open.map(|a| a.to_string()),
+                slot.auto_open.to_string(),
+            ),
+        ];
+        fields
+            .into_iter()
+            .filter_map(|(field, wanted, actual)| {
+                let wanted = wanted?;
+                (wanted != actual).then(|| format!("{field}: wanted {wanted:?}, got {actual:?}"))
+            })
+            .collect()
+    }
+}
+
+fn parse_type(spec: &str) -> VariableType {
+    let json = match spec {
+        "bool" => r#""Bool""#,
+        "number" => r#""Number""#,
+        "string" => r#""String""#,
+        "date" => r#""Date""#,
+        "any" => r#""Any""#,
+        "status" => r#"{"Enum":["status",["open","closed"]]}"#,
+        "grade" => r#"{"Enum":["grade",["a","b","c","d"]]}"#,
+        other => other,
+    };
+    serde_json::from_str(json).unwrap_or_else(|e| panic!("type {spec}: {e}"))
+}
+
+fn render_literals(source: &str, literals: &Literals) -> Vec<String> {
+    literals
+        .facts
+        .iter()
+        .map(|fact| {
+            let span = fact.span();
+            let text = &source[span.0 as usize..span.1 as usize];
+            match fact {
+                LiteralFact::Enum {
+                    valid, enum_index, ..
+                } => {
+                    let options: Vec<String> = literals.enums[*enum_index as usize]
+                        .options
+                        .iter()
+                        .map(|o| match o.label == o.value {
+                            true => o.value.clone(),
+                            false => format!("{}={}", o.value, o.label),
+                        })
+                        .collect();
+                    let invalid = if *valid { "" } else { " invalid" };
+                    format!("{text} enum {}{invalid}", options.join(","))
+                }
+                LiteralFact::Date { arg, .. } => match arg {
+                    DateArg::Now => format!("{text} date now"),
+                    DateArg::Today => format!("{text} date today"),
+                    DateArg::Field { path } => format!("{text} date field {path}"),
+                    DateArg::Literal { value, valid, tz } => {
+                        let invalid = if *valid { "" } else { " invalid" };
+                        let tz = tz.as_ref().map(|z| format!(" tz={z}")).unwrap_or_default();
+                        format!("{text} date {value}{tz}{invalid}")
+                    }
+                },
+                LiteralFact::Bool { value, .. } => format!("{text} bool {value}"),
+            }
+        })
+        .collect()
+}
 
 fn labels() -> LabelResolver {
     Rc::new(|name: &str, value: &str| {
@@ -18,488 +224,19 @@ fn labels() -> LabelResolver {
     })
 }
 
-#[path = "helpers/slot_scope.rs"]
-mod slot_scope;
-use slot_scope::{array, base_scope, expected_for, obj, scope_for, status};
-
-fn role_for(spec: &str) -> SlotRole {
-    match spec {
-        "unary" => SlotRole::Unary,
-        "condition" => SlotRole::Condition,
-        "value" => SlotRole::Value,
-        "path" => SlotRole::Path,
-        other => panic!("unknown role {other}"),
-    }
-}
-
-fn state_name(state: SlotState) -> &'static str {
-    match state {
-        SlotState::Start => "start",
-        SlotState::UnaryStart => "unaryStart",
-        SlotState::Value => "value",
-        SlotState::ListElement => "listElement",
-        SlotState::Range => "range",
-        SlotState::Operator => "operator",
-        SlotState::Logical => "logical",
-        SlotState::Argument => "argument",
-        SlotState::Member => "member",
-        SlotState::Closure => "closure",
-        SlotState::InString => "inString",
-        SlotState::Path => "path",
-    }
-}
-
-fn options_tag(options: &[ValueOption]) -> String {
-    options
+#[test]
+fn slots() {
+    let file: TestFile = toml::from_str(include_str!("data/slots.toml")).expect("slots.toml");
+    let mut is = IntelliSense::new();
+    is.set_labels(Some(labels()));
+    let failures: Vec<String> = file
+        .test
         .iter()
-        .map(|o| {
-            if o.label == o.value {
-                o.value.clone()
-            } else {
-                format!("{}={}", o.value, o.label)
-            }
+        .flat_map(|test| {
+            test.check(&mut is)
+                .into_iter()
+                .map(move |f| format!("{}\n    {f}", test.expression))
         })
-        .collect::<Vec<_>>()
-        .join(",")
-}
-
-#[test]
-fn slots_csv() {
-    let csv_data = include_str!("data/slots.csv");
-    let mut reader = csv::ReaderBuilder::new()
-        .delimiter(b';')
-        .quoting(false)
-        .flexible(true)
-        .from_reader(csv_data.as_bytes());
-
-    let mut is = IntelliSense::new();
-    is.set_labels(Some(labels()));
-    let mut failures = Vec::new();
-    let mut count = 0;
-
-    for record in reader.records() {
-        let row = record.expect("csv row");
-        if row.len() < 11 || row.index(0).starts_with('#') || row.index(0).is_empty() {
-            continue;
-        }
-        count += 1;
-        let role = role_for(row.index(0));
-        let unary = row.index(1) == "true";
-        let scope = scope_for(row.index(2));
-        let expected = expected_for(row.index(3));
-        let text = row.index(4);
-        let caret = text.find('|').expect("caret");
-        let source = format!("{}{}", &text[..caret], &text[caret + 1..]);
-
-        let result = is.slot(
-            &source,
-            caret as u32,
-            unary,
-            role,
-            &scope,
-            expected.as_ref(),
-        );
-        let slot = result.slot;
-
-        let actual = [
-            state_name(slot.state).to_string(),
-            slot.expected
-                .as_ref()
-                .map(|t| t.to_string())
-                .unwrap_or_default(),
-            options_tag(&slot.options),
-            slot.operators.join(","),
-            format!("{}..{}", slot.replace_span.0, slot.replace_span.1),
-            slot.auto_open.to_string(),
-        ];
-        let wanted = [
-            row.index(5).to_string(),
-            row.index(6).to_string(),
-            row.index(7).to_string(),
-            row.index(8).to_string(),
-            row.index(9).to_string(),
-            row.index(10).to_string(),
-        ];
-        if actual != wanted {
-            failures.push(format!(
-                "{text}\n    wanted {}\n    got    {}",
-                wanted.join(" ; "),
-                actual.join(" ; ")
-            ));
-        }
-        assert_eq!(result.unary, unary);
-    }
-
-    assert!(count >= 80, "only {count} rows");
-    assert!(
-        failures.is_empty(),
-        "{} of {count} rows failed:\n{}",
-        failures.len(),
-        failures.join("\n")
-    );
-}
-
-fn slot_at(
-    text: &str,
-    unary: bool,
-    role: SlotRole,
-    scope: &str,
-    expected: &str,
-) -> zen_expression::slot::Slot {
-    let mut is = IntelliSense::new();
-    is.set_labels(Some(labels()));
-    let caret = text.find('|').expect("caret");
-    let source = format!("{}{}", &text[..caret], &text[caret + 1..]);
-    is.slot(
-        &source,
-        caret as u32,
-        unary,
-        role,
-        &scope_for(scope),
-        expected_for(expected).as_ref(),
-    )
-    .slot
-}
-
-#[test]
-fn review_cursor_context_regressions() {
-    for text in ["map(items as |)", "map(items as x|)"] {
-        let slot = slot_at(text, false, SlotRole::Condition, "", "");
-        assert!(!slot.auto_open, "{text}");
-        assert!(slot.operators.is_empty(), "{text}");
-    }
-    let glued = slot_at("status ??|", false, SlotRole::Value, "", "status");
-    assert_eq!(glued.state, SlotState::Value);
-    assert_eq!(glued.replace_span, (9, 9));
-    assert!(slot_at("age not i|", false, SlotRole::Condition, "", "")
-        .operators
-        .contains(&"not in"));
-    assert_eq!(
-        slot_at(" cust|", false, SlotRole::Path, "", "").state,
-        SlotState::Path
-    );
-    assert!(slot_at("d(customer.|)", false, SlotRole::Condition, "", "")
-        .wanted_scalar()
-        .is_none());
-    for text in ["len(customer.|)", "age in [customer.|]"] {
-        assert!(
-            !slot_at(text, false, SlotRole::Condition, "", "").can_chain,
-            "{text}"
-        );
-    }
-}
-
-#[test]
-fn nested_lists_keep_element_expectations() {
-    let expected = array(status());
-    for text in [
-        "[|]",
-        "([|])",
-        "active ? [|] : []",
-        "statuses ?? [|]",
-        "{statuses: [|]}",
-    ] {
-        let wanted = if text.starts_with('{') {
-            obj(&[("statuses", expected.clone())])
-        } else {
-            expected.clone()
-        };
-        let caret = text.find('|').unwrap();
-        let result = IntelliSense::new().slot(
-            &text.replace('|', ""),
-            caret as u32,
-            false,
-            SlotRole::Value,
-            &base_scope(),
-            Some(&wanted),
-        );
-        assert_eq!(result.slot.expected, Some(status()), "{text}");
-        assert_eq!(result.slot.options.len(), 2, "{text}");
-    }
-}
-
-#[test]
-fn enum_options_insert_valid_container_shapes() {
-    for text in ["status in |", "status not in |"] {
-        let slot = slot_at(text, false, SlotRole::Condition, "", "");
-        for option in slot.options {
-            let source = text.replace('|', option.source.as_ref().unwrap());
-            assert!(
-                zen_expression::evaluate_expression(
-                    &source,
-                    serde_json::json!({"status": "open"}).into()
-                )
-                .is_ok(),
-                "{source}"
-            );
-        }
-    }
-    let expected = array(array(status()));
-    let result = IntelliSense::new().slot(
-        "",
-        0,
-        false,
-        SlotRole::Value,
-        &base_scope(),
-        Some(&expected),
-    );
-    assert_eq!(
-        result.slot.options[0].source.as_deref(),
-        Some("[[\"open\"]]")
-    );
-}
-
-#[test]
-fn string_prefix_and_duplicate_unary_values_follow_the_caret() {
-    let slot = slot_at("status == \"op|n\"", false, SlotRole::Condition, "", "");
-    assert_eq!(
-        slot.options
-            .iter()
-            .map(|o| o.value.as_str())
-            .collect::<Vec<_>>(),
-        vec!["open"]
-    );
-    assert_eq!(slot.replace_span, (10, 15));
-    let slot = slot_at("\"open\", \"open|", true, SlotRole::Unary, "$status", "");
-    assert!(slot.options.is_empty());
-    let scope = base_scope();
-    scope.dot_insert("$", VariableType::Nullable(Rc::new(status())));
-    let result = IntelliSense::new().slot("null, ", 6, true, SlotRole::Unary, &scope, None);
-    assert!(!result
-        .slot
-        .options
-        .iter()
-        .any(|o| o.source.as_deref() == Some("null")));
-}
-
-#[test]
-fn argument_carries_function_and_index() {
-    let slot = slot_at("d(|", false, SlotRole::Condition, "", "bool");
-    assert_eq!(slot.function.as_deref(), Some("d"));
-    assert_eq!(slot.argument, Some(0));
-    assert_eq!(slot.operand, None);
-
-    let slot = slot_at("contains(name, |", false, SlotRole::Condition, "", "bool");
-    assert_eq!(slot.function.as_deref(), Some("contains"));
-    assert_eq!(slot.argument, Some(1));
-
-    let slot = slot_at("since.isAfter(|", false, SlotRole::Condition, "", "bool");
-    assert_eq!(slot.function.as_deref(), Some("isAfter"));
-    assert_eq!(slot.argument, Some(0));
-    assert_eq!(slot.operand, Some(VariableType::Date));
-}
-
-#[test]
-fn closure_carries_element_type() {
-    let slot = slot_at("some(items, |", false, SlotRole::Condition, "", "bool");
-    assert_eq!(slot.state, SlotState::Closure);
-    assert_eq!(slot.function.as_deref(), Some("some"));
-    assert_eq!(slot.argument, Some(1));
-    assert!(matches!(slot.operand, Some(VariableType::Object(_))));
-
-    let slot = slot_at("some(items, #.|", false, SlotRole::Condition, "", "bool");
-    assert_eq!(slot.state, SlotState::Member);
-    assert!(matches!(slot.operand, Some(VariableType::Object(_))));
-}
-
-#[test]
-fn listed_values_are_removed() {
-    let slot = slot_at("\"open\", |", true, SlotRole::Unary, "$status", "");
-    assert_eq!(slot.listed, vec!["open".to_string()]);
-    assert_eq!(slot.options.len(), 1);
-    assert_eq!(slot.options[0].value, "closed");
-    assert_eq!(slot.options[0].source.as_deref(), Some("\"closed\""));
-
-    let slot = slot_at(
-        "status in [\"closed\", |",
-        false,
-        SlotRole::Condition,
-        "",
-        "bool",
-    );
-    assert_eq!(slot.listed, vec!["closed".to_string()]);
-    assert_eq!(slot.options[0].value, "open");
-    assert_eq!(slot.options[0].label, "Open case");
-
-    let slot = slot_at("[\"open\"], \"|", true, SlotRole::Unary, "$status", "");
-    assert_eq!(slot.state, SlotState::InString);
-    assert_eq!(slot.listed, vec!["open".to_string()]);
-}
-
-#[test]
-fn in_string_reports_quote_and_operand() {
-    let slot = slot_at("status == '|", false, SlotRole::Condition, "", "bool");
-    assert_eq!(slot.in_string, Some('\''));
-    assert_eq!(slot.operand, Some(status()));
-    assert!(zen_expression::evaluate_expression(
-        "status == '",
-        serde_json::json!({ "status": "open" }).into(),
-    )
-    .is_err());
-
-    let slot = slot_at(
-        "status == \"open\"|",
-        false,
-        SlotRole::Condition,
-        "",
-        "bool",
-    );
-    assert_eq!(slot.in_string, None);
-    assert_eq!(slot.state, SlotState::Logical);
-
-    let slot = slot_at("`a ${|}`", false, SlotRole::Value, "", "string");
-    assert_eq!(slot.state, SlotState::Start);
-    assert_eq!(slot.in_string, None);
-}
-
-#[test]
-fn operand_types_survive_unclosed_parens() {
-    let slot = slot_at("(customer.age |", false, SlotRole::Condition, "", "bool");
-    assert_eq!(slot.state, SlotState::Operator);
-    assert_eq!(slot.operand, Some(VariableType::Number));
-
-    let slot = slot_at(
-        "(status == \"open\" or status == |",
-        false,
-        SlotRole::Condition,
-        "",
-        "bool",
-    );
-    assert_eq!(slot.operand, Some(status()));
-}
-
-#[test]
-fn unicode_byte_spans() {
-    let text = "name == \"Ünïcode\" and status == \"|";
-    let slot = slot_at(text, false, SlotRole::Condition, "", "bool");
-    let caret = text.find('|').unwrap() as u32;
-    assert_eq!(slot.replace_span, (caret - 1, caret));
-    assert_eq!(slot.options.len(), 2);
-
-    let slot = slot_at("mood == \"😀|", false, SlotRole::Condition, "", "bool");
-    assert_eq!(slot.replace_span, (8, 13));
-    assert_eq!(slot.options[0].label, "😀 Happy");
-
-    let source = "mood == \"😀 Happy\"";
-    let mut is = IntelliSense::new();
-    let inside = is.slot(
-        source,
-        11,
-        false,
-        SlotRole::Condition,
-        &base_scope(),
-        Some(&VariableType::Bool),
-    );
-    assert_eq!(inside.slot.state, SlotState::InString);
-    assert_eq!(inside.slot.replace_span, (8, source.len() as u32));
-}
-
-#[test]
-fn slot_includes_literal_facts() {
-    let mut is = IntelliSense::new();
-    is.set_labels(Some(labels()));
-    let source = "status == \"open\" and since > d(\"2024-01-01\") and tier == ";
-    let result = is.slot(
-        source,
-        source.len() as u32,
-        false,
-        SlotRole::Condition,
-        &base_scope(),
-        Some(&VariableType::Bool),
-    );
-    assert_eq!(result.slot.state, SlotState::Value);
-    assert_eq!(result.literals.len(), 2);
-    assert_eq!(result.enums.len(), 1);
-    assert_eq!(result.enums[0].name.as_deref(), Some("status"));
-    assert_eq!(result.enums[0].options[0].label, "Open case");
-}
-
-#[test]
-fn assignments_and_semicolons() {
-    let slot = slot_at("age > 1;|", false, SlotRole::Condition, "", "bool");
-    assert_eq!(slot.state, SlotState::Start);
-    assert_eq!(slot.expected, Some(VariableType::Bool));
-
-    let slot = slot_at("x = 1; |", false, SlotRole::Condition, "", "bool");
-    assert_eq!(slot.state, SlotState::Start);
-    assert_eq!(slot.expected, Some(VariableType::Bool));
-
-    let slot = slot_at(
-        "x = 1; status == \"|",
-        false,
-        SlotRole::Condition,
-        "",
-        "bool",
-    );
-    assert_eq!(slot.state, SlotState::InString);
-    assert_eq!(slot.options.len(), 2);
-    assert_eq!(slot.replace_span, (17, 18));
-
-    let slot = slot_at("x = 1; x |", false, SlotRole::Condition, "", "bool");
-    assert_eq!(slot.state, SlotState::Operator);
-}
-
-#[test]
-fn closure_locals_follow_the_caret() {
-    let names = |slot: &zen_expression::slot::Slot| -> Vec<String> {
-        slot.locals.iter().map(|l| l.name.clone()).collect()
-    };
-    let element = |slot: &zen_expression::slot::Slot, i: usize| slot.locals[i].kind.to_string();
-
-    let slot = slot_at("map(items as x, |", false, SlotRole::Value, "", "");
-    assert_eq!(slot.state, SlotState::Closure);
-    assert_eq!(names(&slot), ["x"]);
-    assert!(matches!(slot.locals[0].kind, VariableType::Object(_)));
-    assert!(matches!(slot.operand, Some(VariableType::Object(_))));
-
-    let slot = slot_at("map(items as x, x|", false, SlotRole::Value, "", "");
-    assert_eq!(names(&slot), ["x"]);
-    assert_eq!(slot.replace_span, (16, 17));
-
-    let nested =
-        r#"{"Object":{"m":{"Array":{"Object":{"a":"Number","tags":{"Array":"String"}}}}}}"#;
-    let slot = slot_at(
-        "map(m as x, map(x.tags as y, |",
-        false,
-        SlotRole::Value,
-        nested,
-        "",
-    );
-    assert_eq!(names(&slot), ["y", "x"]);
-    assert_eq!(element(&slot, 0), "string");
-    assert!(matches!(slot.locals[1].kind, VariableType::Object(_)));
-
-    let slot = slot_at("map(m, map(#.tags, |", false, SlotRole::Value, nested, "");
-    assert_eq!(names(&slot), ["#"]);
-    assert_eq!(element(&slot, 0), "string");
-
-    let slot = slot_at("map(items, |", false, SlotRole::Value, "", "");
-    assert_eq!(names(&slot), ["#"]);
-    assert!(matches!(slot.locals[0].kind, VariableType::Object(_)));
-
-    let slot = slot_at(
-        "filter(items as x, x.price > |",
-        false,
-        SlotRole::Condition,
-        "",
-        "bool",
-    );
-    assert_eq!(slot.state, SlotState::Value);
-    assert_eq!(names(&slot), ["x"]);
-
-    let slot = slot_at("map(items as x, len(x|", false, SlotRole::Value, "", "");
-    assert_eq!(names(&slot), ["x"]);
-
-    assert!(slot_at(
-        "map(items as x, x.price) + |",
-        false,
-        SlotRole::Value,
-        "",
-        ""
-    )
-    .locals
-    .is_empty());
-    assert!(slot_at("map(|", false, SlotRole::Value, "", "")
-        .locals
-        .is_empty());
+        .collect();
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

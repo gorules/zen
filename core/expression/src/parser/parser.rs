@@ -1348,7 +1348,6 @@ impl<'a, 'arena> MetadataHelper<'a, 'arena> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ParserContext {
     Global,
-    /// Inside brackets, arguments or a template: unary clause joiners are ordinary operators here.
     Nested,
     Closure,
 }

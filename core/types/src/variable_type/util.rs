@@ -209,8 +209,6 @@ impl VariableType {
                 VariableType::Object(o1.clone())
             }
             (VariableType::Object(o1), VariableType::Object(o2)) => {
-                // Include depth to preserve the existing cutoff and the fields available at
-                // each level. Repeated branches reuse work without truncating a cycle early.
                 let key = (
                     Rc::as_ptr(o1) as *const (),
                     Rc::as_ptr(o2) as *const (),

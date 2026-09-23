@@ -399,7 +399,6 @@ impl TypesProvider {
                         | ComparisonOperator::GreaterThanOrEqual => match (left_type.deref(), right_type.deref()) {
                             (VariableType::Date | VariableType::Any, VariableType::Date | VariableType::Any) => V(VariableType::Bool),
                             (VariableType::Number | VariableType::Any, VariableType::Number | VariableType::Any) => V(VariableType::Bool),
-                            (left, right) if date_string_pair(left, right) => V(VariableType::Bool),
                             _ => Error(format!(
                                 "Operator `{operator}` cannot be applied to types `{left_type}` and `{right_type}`."
                             )),
@@ -426,8 +425,6 @@ impl TypesProvider {
                                 V(VariableType::Bool)
                             },
                             (VariableType::Number | VariableType::Date, VariableType::Interval) => V(VariableType::Bool),
-                            // The VM parses string subjects when the interval has date bounds.
-                            (VariableType::String, VariableType::Interval) => V(VariableType::Bool),
                             (VariableType::String, VariableType::Object(_)) => V(VariableType::Bool),
                             (VariableType::Any, _) => V(VariableType::Bool),
                             (_, VariableType::Any) => V(VariableType::Bool),
@@ -669,7 +666,6 @@ impl TypesProvider {
                 let needs_conversion = def.param_type(0) == Some(VariableType::Date)
                     && (receiver.widen().is_string() || matches!(receiver, VariableType::Number));
                 if needs_conversion {
-                    // `satisfies(Date)` also accepts constructor inputs. A receiver is already a value.
                     self.set_error(this, "Date methods require a date value. Use d(...) to convert a date string or timestamp first.".to_string());
                 }
                 for (i, arg_error) in typecheck.arguments {
@@ -716,27 +712,10 @@ impl TypesProvider {
 fn types_disjoint(left: &VariableType, right: &VariableType) -> bool {
     let (left, _) = left.unwrap_nullable();
     let (right, _) = right.unwrap_nullable();
-    if date_string_pair(left, right) {
-        return false;
-    }
     match (value_set(left), value_set(right)) {
         (Some(l), Some(r)) => !l.iter().any(|v| r.contains(v)),
         _ => !left.satisfies(right),
     }
-}
-
-/// Existing VM date/string comparisons parse the string, without changing its stored value.
-fn date_string_pair(left: &VariableType, right: &VariableType) -> bool {
-    matches!(
-        (left, right),
-        (
-            VariableType::Date,
-            VariableType::String | VariableType::Const(_) | VariableType::Enum(..)
-        ) | (
-            VariableType::String | VariableType::Const(_) | VariableType::Enum(..),
-            VariableType::Date
-        )
-    )
 }
 
 fn value_set(t: &VariableType) -> Option<Vec<Rc<str>>> {

@@ -29,7 +29,6 @@ impl NodeHandler for InputNodeHandler {
     }
 }
 
-/// A `null` on a property the schema does not require reads as absent, the way policies treat it.
 fn without_optional_nulls(schema: &Value, value: &Variable) -> Variable {
     if let (Some(props), Some(obj)) = (
         schema.get("properties").and_then(Value::as_object),

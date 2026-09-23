@@ -25,36 +25,6 @@ impl SchemaType {
         Self::resolve::<true>(schema, dictionaries)
     }
 
-    pub(crate) fn is_date_path(schema: &Value, path: &str) -> bool {
-        if let Some(cases) = schema
-            .get("anyOf")
-            .or_else(|| schema.get("oneOf"))
-            .and_then(Value::as_array)
-        {
-            let mut known = cases
-                .iter()
-                .filter(|case| case.get("type").and_then(Value::as_str) != Some("null"));
-            return known
-                .next()
-                .is_some_and(|case| Self::is_date_path(case, path))
-                && known.all(|case| Self::is_date_path(case, path));
-        }
-        if let Some(items) = schema.get("items") {
-            return Self::is_date_path(items, path);
-        }
-        if path.is_empty() {
-            return matches!(
-                schema.get("format").and_then(Value::as_str),
-                Some("date" | "date-time")
-            );
-        }
-        let (field, rest) = path.split_once('.').unwrap_or((path, ""));
-        schema
-            .get("properties")
-            .and_then(|props| props.get(field))
-            .is_some_and(|child| Self::is_date_path(child, rest))
-    }
-
     fn resolve<const DATE_HINTS: bool>(
         schema: &Value,
         dictionaries: &SchemaDictionaries,

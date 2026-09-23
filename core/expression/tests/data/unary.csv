@@ -107,19 +107,12 @@ bool('true'); { "$": true }; true
 bool('false'); { "$": false }; true
 bool(1); { "$": true }; true
 bool(0); { "$": false }; true
+# Nested and/or follow precedence
+some(items, # == 1 or # == 2 and # == 3);{ "$": 1, items: [1] };true
+some(items, (# == 1 or # == 2) and # == 3);{ "$": 1, items: [1] };false
+some(items, # == 2 and # == 3 or # == 1);{ "$": 1, items: [1] };true
+(false or true) and false;{ "$": 1 };false
+(true or false and false);{ "$": 1 };true
 
-# Date-typed subject as an ISO string
-> d('2024-01-01');{$: '2024-01-15'};true
-< d('2024-01-01');{$: '2024-01-15'};false
-== d('2024-01-15');{$: '2024-01-15'};true
-[d('2024-01-01')..d('2024-12-31')];{$: '2024-06-01'};true
-[d('2024-01-01')..d('2024-12-31')];{$: '2025-06-01'};false
-(d('2024-01-01')..d('2024-12-31')];{$: '2024-01-01'};false
-in [d('2024-01-01')..d('2024-12-31')];{$: '2024-12-31'};true
-not in [d('2024-01-01')..d('2024-12-31')];{$: '2023-12-31'};true
-in [d('2024-01-01'), d('2024-02-01')];{$: '2024-02-01'};true
-in [d('2024-01-01'), d('2024-02-01')];{$: '2024-03-01'};false
-not in [d('2024-01-01'), d('2024-02-01')];{$: '2024-03-01'};true
-in [d('2024-01-01'), '2024-02-01'];{$: '2024-02-01'};true
-in [d('2024-01-01'), 'not a date'];{$: '2024-01-01'};true
-in ['2024-01-01', 'x'];{$: 'x'};true
+# Top-level joiners combine left to right
+> 1 or < 0 and > 5;{ "$": 3 };false

@@ -385,52 +385,6 @@ fn data_model_document() -> serde_json::Value {
 }
 
 #[test]
-fn entities_report_date_properties_as_date() {
-    let mut ws = PolicyWorkspace::new();
-    let doc = json!({
-        "blocks": [{
-            "id": "dm",
-            "type": "dataModel",
-            "props": { "data": {
-                "name": "claim",
-                "properties": [
-                    { "id": "p1", "name": "filedAt", "type": "date", "array": false, "optional": false },
-                    { "id": "p2", "name": "note", "type": "string", "array": false, "optional": false }
-                ]
-            } },
-            "children": []
-        }]
-    });
-    ws.set_policy("p", serde_json::from_value(doc).unwrap());
-
-    let entities = ws.entities(&ScopeRequest::for_policy("p"));
-    let claim = entities
-        .iter()
-        .find(|e| e.name.as_ref() == "claim")
-        .unwrap();
-    let field = |name: &str| {
-        claim
-            .fields
-            .iter()
-            .find(|f| f.name.as_ref() == name)
-            .unwrap()
-            .resolved_type
-            .clone()
-    };
-    assert_eq!(field("filedAt"), VariableType::Date);
-    assert_eq!(field("note"), VariableType::String);
-
-    let inputs = ws.inputs(&ScopeRequest::for_policy("p"));
-    let filed = inputs
-        .iter()
-        .find(|p| p.path.as_ref() == "claim.filedAt")
-        .unwrap();
-    assert_eq!(filed.resolved_type, VariableType::Date);
-    let skeleton = ws.input_skeleton(&ScopeRequest::for_policy("p"));
-    assert_eq!(skeleton["claim"]["filedAt"], json!(""));
-}
-
-#[test]
 fn basic_entities_and_inputs() {
     let mut ws = PolicyWorkspace::new();
     let doc = data_model_document();
@@ -4961,38 +4915,4 @@ fn completions_offered_for_empty_and_trailing_space_sources() {
         partial.iter().any(|l| l == "customer"),
         "cursor past trimmed source should offer scope completions: {partial:?}"
     );
-}
-
-#[test]
-fn completions_after_logical_operator_with_trailing_space() {
-    let doc = json!({
-        "blocks": [
-            { "id": "dm", "type": "dataModel", "props": { "data": json!({
-                "name": "customer",
-                "properties": [
-                    { "id": "p1", "name": "age", "type": "number", "array": false, "optional": false }
-                ]
-            }) }},
-            { "id": "partial", "type": "expression", "props": { "data": json!({ "key": "fee", "value": "customer.age > 1 or " }) }}
-        ]
-    });
-    let mut ws = PolicyWorkspace::new();
-    ws.set_policy("p", serde_json::from_value(doc).unwrap());
-
-    let labels: Vec<String> = ws
-        .completions(&Cursor {
-            policy_path: Arc::from("p"),
-            block_id: Arc::from("partial"),
-            pos: 20,
-            target: CursorTarget::Expression { id: Arc::from("x") },
-        })
-        .into_iter()
-        .map(|c| c.label)
-        .collect();
-    for expected in ["customer", "$root", "len"] {
-        assert!(
-            labels.iter().any(|l| l == expected),
-            "caret after `or ` should offer scope completions: {labels:?}"
-        );
-    }
 }

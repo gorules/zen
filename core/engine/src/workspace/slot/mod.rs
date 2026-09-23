@@ -1,8 +1,6 @@
 mod facts;
-mod graph;
-mod policy;
+mod scope;
 mod siblings;
-pub(crate) mod utf16;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -11,88 +9,49 @@ use std::sync::Arc;
 use ahash::{HashMap, HashMapExt};
 use serde::Serialize;
 use zen_expression::intellisense::IntelliSense;
-use zen_expression::slot::{is_date_type, EnumTable, LabelResolver, LiteralFact, Slot, SlotResult};
+use zen_expression::slot::{LabelResolver, Literals, Slot, SlotResult};
 use zen_expression::variable::VariableType;
 
 use crate::policy::ir::DictionaryIr;
 use crate::workspace::db::{Db, Unit};
 use crate::workspace::graph::GraphAnalysis;
-use crate::workspace::types::{Cursor, CursorTarget, ExpressionKind};
+use crate::workspace::types::{Cursor, CursorTarget, ExpressionKind, SpanOps};
 
 pub use facts::ExpressionFacts;
 pub use zen_expression::slot::SlotRole;
 
-/// Slot at the caret plus literal facts for the live text; `pos` and spans are UTF-16 code units.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SlotResponse {
-    pub complete: bool,
     pub kind: ExpressionKind,
     pub role: SlotRole,
     pub subject_type: Option<VariableType>,
     pub expected_type: Option<VariableType>,
     pub slot: Slot,
-    pub literals: Vec<LiteralFact>,
-    pub enums: Vec<EnumTable>,
+    #[serde(flatten)]
+    pub literals: Literals,
 }
 
 impl SlotResponse {
     pub fn compute(is: &mut IntelliSense, scope: &CursorScope, text: &str, pos: u32) -> Self {
-        let unary = matches!(scope.kind, ExpressionKind::Unary);
-        let pos = utf16::utf16_to_byte(text, pos) as u32;
-        let SlotResult {
-            mut slot,
-            complete,
-            literals,
-            enums,
-            ..
-        } = is.slot(
+        let pos = SpanOps::byte_offset(text, pos) as u32;
+        let SlotResult { mut slot, literals } = is.slot(
             text,
             pos,
-            unary,
+            scope.is_unary(),
             scope.role,
             &scope.scope,
             scope.expected.as_ref(),
         );
-        slot.replace_span = utf16::utf16_span(text, slot.replace_span);
+        slot.replace_span = SpanOps::char_span(text, slot.replace_span);
         Self {
-            complete,
             kind: scope.kind,
             role: scope.role,
             subject_type: scope.subject_type(),
             expected_type: scope.expected.as_ref().map(VariableType::shallow_clone),
             slot,
-            literals: literals.into_iter().map(|f| fact_utf16(text, f)).collect(),
-            enums,
+            literals: literals.map_spans(|span| SpanOps::char_span(text, span)),
         }
-    }
-}
-
-pub(crate) fn fact_utf16(text: &str, fact: LiteralFact) -> LiteralFact {
-    match fact {
-        LiteralFact::Enum {
-            span,
-            value,
-            name,
-            label,
-            valid,
-            enum_index,
-        } => LiteralFact::Enum {
-            span: utf16::utf16_span(text, span),
-            value,
-            name,
-            label,
-            valid,
-            enum_index,
-        },
-        LiteralFact::Date { span, arg } => LiteralFact::Date {
-            span: utf16::utf16_span(text, span),
-            arg,
-        },
-        LiteralFact::Bool { span, value } => LiteralFact::Bool {
-            span: utf16::utf16_span(text, span),
-            value,
-        },
     }
 }
 
@@ -120,22 +79,24 @@ pub(crate) struct LabelCache {
     entries: RefCell<HashMap<Arc<str>, LabelEntry>>,
 }
 
-fn label_map(
-    dictionaries: impl Iterator<Item = (Arc<str>, Arc<DictionaryIr>)>,
-) -> Option<Arc<LabelMap>> {
-    let mut labels = LabelMap::new();
-    for (name, dict) in dictionaries {
-        let entries: HashMap<Arc<str>, Arc<str>> = dict
-            .entries
-            .iter()
-            .filter(|e| !e.label.is_empty())
-            .map(|e| (e.value.clone(), e.label.clone()))
-            .collect();
-        if !entries.is_empty() {
-            labels.insert(name, entries);
+impl LabelCache {
+    fn label_map(
+        dictionaries: impl Iterator<Item = (Arc<str>, Arc<DictionaryIr>)>,
+    ) -> Option<Arc<LabelMap>> {
+        let mut labels = LabelMap::new();
+        for (name, dict) in dictionaries {
+            let entries: HashMap<Arc<str>, Arc<str>> = dict
+                .entries
+                .iter()
+                .filter(|e| !e.label.is_empty())
+                .map(|e| (e.value.clone(), e.label.clone()))
+                .collect();
+            if !entries.is_empty() {
+                labels.insert(name, entries);
+            }
         }
+        (!labels.is_empty()).then(|| Arc::new(labels))
     }
-    (!labels.is_empty()).then(|| Arc::new(labels))
 }
 
 impl Db {
@@ -168,12 +129,12 @@ impl Db {
             Some(map) => map,
             None => {
                 let map = match &key {
-                    LabelKey::Graph(_) => label_map(
+                    LabelKey::Graph(_) => LabelCache::label_map(
                         self.graph_dictionary_blocks(&self.graph_imports(policy))
                             .into_iter()
                             .map(|entry| (entry.ir.name.clone(), entry.ir)),
                     ),
-                    LabelKey::Unit(unit) => label_map(
+                    LabelKey::Unit(unit) => LabelCache::label_map(
                         unit.dictionaries
                             .iter()
                             .map(|(name, dict)| (name.clone(), dict.clone())),
@@ -210,13 +171,6 @@ impl CursorScope {
         }
     }
 
-    fn unary_with_hint(scope: VariableType, expected: Option<VariableType>) -> Self {
-        Self {
-            expected,
-            ..Self::unary(scope)
-        }
-    }
-
     fn condition(scope: VariableType) -> Self {
         Self {
             kind: ExpressionKind::Standard,
@@ -244,16 +198,56 @@ impl CursorScope {
         }
     }
 
+    pub fn is_unary(&self) -> bool {
+        matches!(self.kind, ExpressionKind::Unary)
+    }
+
     pub fn subject_type(&self) -> Option<VariableType> {
         match self.kind {
-            ExpressionKind::Unary => Some(
-                self.expected
-                    .as_ref()
-                    .filter(|hint| is_date_type(hint))
-                    .map(VariableType::shallow_clone)
-                    .unwrap_or_else(|| self.scope.get("$")),
-            ),
+            ExpressionKind::Unary => Some(self.scope.get("$")),
             ExpressionKind::Standard => self.expected.as_ref().map(VariableType::shallow_clone),
+        }
+    }
+
+    pub(super) fn known_type(resolved: VariableType) -> Option<VariableType> {
+        let (base, _) = resolved.unwrap_nullable();
+        match base {
+            VariableType::Any | VariableType::Null => None,
+            _ => Some(resolved),
+        }
+    }
+
+    pub(super) fn date_hint(kind: VariableType) -> VariableType {
+        match kind {
+            VariableType::String => VariableType::Date,
+            VariableType::Array(inner) => Self::date_hint(inner.shallow_clone()).array(),
+            VariableType::Nullable(inner) => {
+                VariableType::Nullable(Rc::new(Self::date_hint(inner.shallow_clone())))
+            }
+            other => other,
+        }
+    }
+
+    pub(super) fn literal_union(merged: VariableType) -> Option<VariableType> {
+        let (base, _) = merged.unwrap_nullable();
+        match base {
+            VariableType::Enum(..)
+            | VariableType::Const(_)
+            | VariableType::Bool
+            | VariableType::Number
+            | VariableType::Date => Some(base.shallow_clone()),
+            _ => None,
+        }
+    }
+
+    pub(super) fn collected_type(value: VariableType, collect: bool) -> VariableType {
+        if collect {
+            value
+                .iterator()
+                .map(|t| t.as_ref().shallow_clone())
+                .unwrap_or(value)
+        } else {
+            value
         }
     }
 }
@@ -275,51 +269,9 @@ impl Db {
             return None;
         }
         if self.is_graph(&cursor.policy_path) {
-            graph::graph_scope(self, cursor, cache)
+            self.graph_cursor_scope(cursor, cache)
         } else {
-            policy::policy_scope(self, cursor, cache)
+            self.policy_cursor_scope(cursor, cache)
         }
-    }
-}
-
-fn known_type(resolved: VariableType) -> Option<VariableType> {
-    let (base, _) = resolved.unwrap_nullable();
-    match base {
-        VariableType::Any | VariableType::Null => None,
-        _ => Some(resolved),
-    }
-}
-
-fn date_hint(kind: VariableType) -> VariableType {
-    match kind {
-        VariableType::String => VariableType::Date,
-        VariableType::Array(inner) => date_hint(inner.shallow_clone()).array(),
-        VariableType::Nullable(inner) => {
-            VariableType::Nullable(Rc::new(date_hint(inner.shallow_clone())))
-        }
-        other => other,
-    }
-}
-
-fn literal_union(merged: VariableType) -> Option<VariableType> {
-    let (base, _) = merged.unwrap_nullable();
-    match base {
-        VariableType::Enum(..)
-        | VariableType::Const(_)
-        | VariableType::Bool
-        | VariableType::Number
-        | VariableType::Date => Some(base.shallow_clone()),
-        _ => None,
-    }
-}
-
-fn collected_type(value: VariableType, collect: bool) -> VariableType {
-    if collect {
-        value
-            .iterator()
-            .map(|t| t.as_ref().shallow_clone())
-            .unwrap_or(value)
-    } else {
-        value
     }
 }

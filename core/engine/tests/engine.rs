@@ -300,7 +300,6 @@ async fn engine_graph_tests() {
                 .unwrap()
                 .result;
 
-            // Default-feature JSON serialization rounds decimals through f64.
             let expected = serde_json::to_value(&test_case.output).expect("serializable output");
             let actual = serde_json::to_value(&result).expect("serializable result");
             assert!(
@@ -353,7 +352,6 @@ fn json_approx_eq(a: &serde_json::Value, b: &serde_json::Value) -> bool {
     }
 }
 
-// Stored snapshots contain full-precision decimals.
 #[cfg(feature = "arbitrary_precision")]
 #[tokio::test]
 #[cfg_attr(miri, ignore)]

@@ -321,26 +321,3 @@ fn failure_tests() {
         assert!(parser_result.error().is_err(), "{parser_result:?}");
     }
 }
-
-#[test]
-fn interval_span_is_bytes() {
-    let bump = Bump::new();
-    let mut lexer = Lexer::new();
-    let tokens = lexer.tokenize(&bump, "age in [10..25]").unwrap();
-    let parser = Parser::try_new(&tokens, &bump)
-        .unwrap()
-        .standard()
-        .with_metadata();
-    let result = parser.parse();
-    let metadata = result.metadata.unwrap();
-
-    let Node::Binary { right, .. } = result.root else {
-        panic!("expected binary node");
-    };
-    assert!(matches!(right, Node::Interval { .. }));
-    let span = metadata
-        .get(&(*right as *const Node as usize))
-        .map(|m| m.span)
-        .unwrap();
-    assert_eq!(span, (7, 15));
-}

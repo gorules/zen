@@ -306,7 +306,6 @@ pub struct PolicyCompletion {
     pub kind: String,
     pub detail: String,
     pub info: String,
-    /// Text to append after accepting the item: `.` into an object, a space before an operator.
     pub follow: Option<String>,
 }
 
@@ -421,7 +420,6 @@ pub(crate) fn variable_type_to_json(vt: &zen_expression::variable::VariableType)
     variable_type_to_json_at(vt, &mut Vec::new())
 }
 
-/// Objects already on the path (cycles) or nested beyond `MAX_TYPE_DEPTH` are emitted without fields.
 fn variable_type_to_json_at(
     vt: &zen_expression::variable::VariableType,
     path: &mut Vec<*const ()>,

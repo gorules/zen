@@ -1,0 +1,271 @@
+{
+  "blocks": [
+    {
+      "id": "dict1",
+      "type": "dictionary",
+      "props": {
+        "data": {
+          "name": "status",
+          "entries": [
+            {
+              "id": "e0",
+              "value": "open",
+              "label": "Open case"
+            },
+            {
+              "id": "e1",
+              "value": "closed",
+              "label": "Closed"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "dm",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "customer",
+          "properties": [
+            {
+              "id": "p1",
+              "name": "age",
+              "type": "number",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p2",
+              "name": "tier",
+              "type": "string",
+              "enum": [
+                "gold",
+                "silver"
+              ],
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p3",
+              "name": "name",
+              "type": "string",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p4",
+              "name": "status",
+              "type": "relationship",
+              "target": "status",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p6",
+              "name": "since",
+              "type": "date",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      },
+      "children": []
+    },
+    {
+      "id": "dt",
+      "type": "decisionTable",
+      "props": {
+        "data": {
+          "hitPolicy": "first",
+          "inputs": [
+            {
+              "id": "in_declared",
+              "name": "Age",
+              "field": "customer.age"
+            },
+            {
+              "id": "in_dict",
+              "name": "Status",
+              "field": "customer.status"
+            },
+            {
+              "id": "in_since",
+              "name": "Since",
+              "field": "customer.since"
+            },
+            {
+              "id": "in_since_date",
+              "name": "Since date",
+              "field": "d(customer.since)"
+            },
+            {
+              "id": "in_computed",
+              "name": "Next age",
+              "field": "customer.age + 1"
+            },
+            {
+              "id": "in_condition",
+              "name": "Condition"
+            }
+          ],
+          "outputs": [
+            {
+              "id": "out_dict",
+              "name": "Level",
+              "field": "customer.level",
+              "type": "status"
+            },
+            {
+              "id": "out_number",
+              "name": "Score",
+              "field": "customer.score",
+              "type": "number"
+            },
+            {
+              "id": "out_declared",
+              "name": "Tier",
+              "field": "customer.tier"
+            },
+            {
+              "id": "out_union",
+              "name": "Band",
+              "field": "customer.band"
+            },
+            {
+              "id": "out_untyped",
+              "name": "Label",
+              "field": "customer.label"
+            }
+          ],
+          "rules": [
+            {
+              "_id": "r1",
+              "in_declared": "> 18",
+              "in_dict": "\"open\"",
+              "in_since": "",
+              "in_computed": "> 19",
+              "in_condition": "customer.age > 1",
+              "out_dict": "\"open\"",
+              "out_number": "1",
+              "out_declared": "\"gold\"",
+              "out_union": "\"a\"",
+              "out_untyped": "customer.name",
+              "in_since_date": ""
+            },
+            {
+              "_id": "r2",
+              "in_declared": "",
+              "in_dict": "",
+              "in_since": "",
+              "in_computed": "",
+              "in_condition": "",
+              "out_dict": "\"closed\"",
+              "out_number": "2",
+              "out_declared": "\"silver\"",
+              "out_union": "\"b\"",
+              "out_untyped": "customer.name",
+              "in_since_date": ""
+            },
+            {
+              "_id": "r3",
+              "in_declared": "",
+              "in_dict": "",
+              "in_since": "",
+              "in_computed": "",
+              "in_condition": "",
+              "out_dict": "",
+              "out_number": "",
+              "out_declared": "",
+              "out_union": "",
+              "out_untyped": "",
+              "in_since_date": ""
+            }
+          ]
+        }
+      },
+      "children": []
+    },
+    {
+      "id": "ex_declared",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "customer.tier",
+          "value": "\"gold\""
+        }
+      }
+    },
+    {
+      "id": "ex_computed",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "customer.total",
+          "value": "customer.age * 2"
+        }
+      }
+    },
+    {
+      "id": "as1",
+      "type": "assertion",
+      "props": {
+        "data": {
+          "output": "customer.isAdult",
+          "conditions": [
+            {
+              "id": "c1",
+              "expression": "customer.age >= 18",
+              "operator": "and",
+              "depth": 0
+            }
+          ]
+        }
+      },
+      "children": []
+    },
+    {
+      "id": "m_declared",
+      "type": "match",
+      "props": {
+        "data": {
+          "key": "customer.status",
+          "arms": [
+            {
+              "id": "a1",
+              "condition": "customer.age > 50",
+              "value": "\"open\""
+            },
+            {
+              "id": "a2",
+              "condition": "",
+              "value": "\"closed\""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "m_union",
+      "type": "match",
+      "props": {
+        "data": {
+          "key": "customer.group",
+          "arms": [
+            {
+              "id": "b1",
+              "condition": "customer.age > 50",
+              "value": "\"senior\""
+            },
+            {
+              "id": "b2",
+              "condition": "",
+              "value": "\"kid\""
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

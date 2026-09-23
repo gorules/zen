@@ -12,7 +12,6 @@ use std::rc::Rc;
 
 type RcCell<T> = Rc<RefCell<T>>;
 
-/// Object nesting kept when serialising; deeper (or cyclic) objects are emitted empty.
 pub const MAX_TYPE_DEPTH: usize = 32;
 
 #[derive(Clone, Eq, PartialEq, Deserialize)]

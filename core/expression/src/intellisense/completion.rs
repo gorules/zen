@@ -30,10 +30,8 @@ pub struct Completion {
     pub boost: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub method_for: Option<VariableType>,
-    /// Type of the field or local a variable or property completion names.
     #[serde(skip)]
     pub var_type: Option<VariableType>,
-    /// Text an editor appends after accepting the item: `.` into an object, a space before an operator.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub follow: Option<&'static str>,
 }
@@ -47,7 +45,7 @@ impl Completions {
         data: &VariableType,
         slot: &crate::slot::Slot,
     ) -> Vec<Completion> {
-        use crate::slot::{field_fits, SlotState};
+        use crate::slot::{ScalarClass, SlotState};
         if slot.suppress_completions
             || matches!(
                 slot.state,
@@ -71,7 +69,11 @@ impl Completions {
             _ => Self::build_scope(data, &locals),
         };
         if let Some(wanted) = slot.wanted_scalar() {
-            items.retain(|item| item.var_type.as_ref().is_none_or(|t| field_fits(t, wanted)));
+            items.retain(|item| {
+                item.var_type
+                    .as_ref()
+                    .is_none_or(|t| ScalarClass::fits(t, wanted))
+            });
         }
         for item in &mut items {
             if let Some(t) = &item.var_type {
@@ -146,7 +148,6 @@ impl Completions {
                 .as_ref()
                 .and_then(|d| d.param_type(0))
                 .map(|pt| match pt {
-                    // Constructor arguments accept strings/numbers; method receivers need d(...).
                     VariableType::Date => {
                         matches!(resolved, VariableType::Date | VariableType::Any)
                     }
@@ -162,7 +163,6 @@ impl Completions {
         completions
     }
 
-    /// `locals` are closure-bound names (innermost first); they lead the list above the fields.
     pub fn build_scope(data: &VariableType, locals: &[(Rc<str>, VariableType)]) -> Vec<Completion> {
         let mut completions = Vec::new();
 

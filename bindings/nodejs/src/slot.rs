@@ -50,12 +50,10 @@ impl Workspace {
 pub struct SlotRequest {
     pub id: String,
     pub text: String,
-    /// Caret position in UTF-16 code units.
     pub pos: u32,
     pub unary: bool,
     #[napi(ts_type = "PolicySlotRole")]
     pub role: String,
-    /// Root scope; must already contain `$` for unary requests.
     #[napi(ts_type = "PolicyVariableType")]
     pub scope: Value,
     #[napi(ts_type = "PolicyVariableType | null")]
@@ -89,11 +87,6 @@ pub fn slot_batch(requests: Vec<SlotRequest>, strict: Option<bool>) -> napi::Res
     }
     is.set_labels(None);
     Ok(out)
-}
-
-#[napi]
-pub fn encode_zen_string(value: String) -> Option<String> {
-    zen_expression::slot::encode_string(&value)
 }
 
 fn parse_role(role: &str) -> napi::Result<SlotRole> {

@@ -3,12 +3,14 @@ use std::sync::Arc;
 use ahash::HashMap;
 use zen_expression::variable::VariableType;
 
-use super::literal_union;
+use super::CursorScope;
 use crate::workspace::types::{Cursor, CursorTarget};
+
+type ColumnKey = (Arc<str>, Arc<str>, Arc<str>);
 
 #[derive(Default)]
 pub(super) struct SiblingCache {
-    columns: HashMap<(Arc<str>, Arc<str>, Arc<str>), ColumnTypes>,
+    columns: HashMap<ColumnKey, ColumnTypes>,
 }
 
 struct ColumnTypes {
@@ -25,7 +27,6 @@ fn merge(a: Option<VariableType>, b: Option<&VariableType>) -> Option<VariableTy
 }
 
 impl SiblingCache {
-    /// The cache belongs to one query, so source/scope changes cannot reuse stale types.
     pub(super) fn infer(
         &mut self,
         cursor: &Cursor,
@@ -58,50 +59,6 @@ impl SiblingCache {
             .get(row)
             .unwrap_or(&column.total)
             .clone()
-            .and_then(literal_union)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_column_is_analyzed_once_and_excludes_only_the_active_row() {
-        let mut cache = SiblingCache::default();
-        let mut calls = 0;
-        for (row, expected) in [
-            ("a", vec!["b", "c"]),
-            ("b", vec!["a", "c"]),
-            ("c", vec!["a", "b"]),
-            ("new", vec!["a", "b", "c"]),
-        ] {
-            let cursor = Cursor {
-                policy_path: "p".into(),
-                block_id: "t".into(),
-                pos: 0,
-                target: CursorTarget::DecisionTableCell {
-                    row: row.into(),
-                    col: "out".into(),
-                },
-            };
-            let inferred = cache
-                .infer(&cursor, || {
-                    calls += 1;
-                    ["a", "b", "c"]
-                        .into_iter()
-                        .map(|s| (Arc::from(s), Some(VariableType::Const(s.into()))))
-                        .collect()
-                })
-                .unwrap();
-            let VariableType::Enum(_, values) = inferred else {
-                panic!("expected enum");
-            };
-            assert_eq!(
-                values.iter().map(|v| v.as_ref()).collect::<Vec<_>>(),
-                expected
-            );
-        }
-        assert_eq!(calls, 1);
+            .and_then(CursorScope::literal_union)
     }
 }

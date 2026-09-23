@@ -453,8 +453,6 @@ impl Db {
         if let Some(u) = snap.units.borrow().get(policy).cloned() {
             return u;
         }
-        // Connectivity is useful for workspace navigation, but an import only
-        // makes its dependencies visible. Other importers are separate entries.
         let mut seen = HashSet::default();
         let mut stack = vec![Arc::<str>::from(policy)];
         while let Some(path) = stack.pop() {

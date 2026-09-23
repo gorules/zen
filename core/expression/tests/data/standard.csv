@@ -655,3 +655,8 @@ map(items, #.value * 2);{"items": [{"value": 1}, {"value": 2}]};[2, 4]
 # Backwards compatibility - # still works
 map([1, 2, 3], # * 2);;[2, 4, 6]
 filter([1, 2, 3, 4], # > 2);;[3, 4]
+
+# and binds tighter than or
+true or false and false;;true
+(true or false) and false;;false
+some(items, # == 1 or # == 2 and # == 3);{ items: [1] };true

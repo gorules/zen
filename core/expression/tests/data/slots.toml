@@ -1,0 +1,509 @@
+# Start and values
+
+[[test]]
+expression = "|"
+slot = { state = "start", type = "bool", span = "0..0" }
+
+[[test]]
+expression = "ag|"
+slot = { state = "start", type = "bool", span = "0..2", auto_open = false }
+
+[[test]]
+expression = "|"
+role = "value"
+expected = "status"
+slot = { state = "value", type = "status", options = ["open=Open case", "closed=Closed"], span = "0..0" }
+
+[[test]]
+expression = "age == |"
+slot = { state = "value", type = "number", options = [], span = "7..7" }
+
+[[test]]
+expression = "since < |"
+slot = { state = "value", type = "date", options = [], span = "8..8" }
+
+[[test]]
+expression = "status == |"
+slot = { state = "value", type = "status", options = ["open=Open case", "closed=Closed"], span = "10..10" }
+
+[[test]]
+expression = "tier == |"
+slot = { state = "value", type = "\"gold\" | \"silver\"", options = ["gold", "silver"], span = "8..8" }
+
+[[test]]
+expression = "status in |"
+slot = { state = "value", type = "status[]", options = ["open=Open case", "closed=Closed"], span = "10..10" }
+
+[[test]]
+expression = "age > -|"
+slot = { state = "value", type = "number", options = [], span = "7..7" }
+
+[[test]]
+expression = "(age > 1 and (status == |"
+slot = { state = "value", type = "status", options = ["open=Open case", "closed=Closed"], span = "24..24" }
+
+# Inside strings
+
+[[test]]
+expression = "status == \"op|"
+slot = { state = "inString", type = "status", options = ["open=Open case"], span = "10..13" }
+
+[[test]]
+expression = "status == \"clo|sed\""
+slot = { state = "inString", type = "status", options = ["closed=Closed"], span = "10..18" }
+
+[[test]]
+expression = "status in ['op|"
+slot = { state = "inString", type = "status", options = ["open=Open case"], span = "11..14" }
+
+[[test]]
+expression = "mood == \"😀|"
+slot = { state = "inString", type = "mood", options = ["happy=😀 Happy"], span = "8..13" }
+
+[[test]]
+expression = "startsWith(name, \"|"
+slot = { state = "inString", type = "string", options = [], span = "17..18", auto_open = false }
+
+[[test]]
+expression = "`Hel|lo`"
+role = "value"
+expected = "string"
+slot = { state = "inString", type = "string", options = [], span = "0..7" }
+
+# Lists and ranges
+
+[[test]]
+expression = "status in [|"
+slot = { state = "listElement", type = "status", options = ["open=Open case", "closed=Closed"], span = "11..11" }
+
+[[test]]
+expression = "status in [\"open\", |"
+slot = { state = "listElement", type = "status", options = ["closed=Closed"], span = "19..19" }
+
+[[test]]
+expression = "status in [\"open\", \"closed\", |"
+slot = { state = "listElement", type = "status", options = [], span = "29..29" }
+
+[[test]]
+expression = "age in [1..|"
+slot = { state = "range", type = "number", span = "11..11", auto_open = false }
+
+[[test]]
+expression = "since in [d()..|"
+slot = { state = "range", type = "date", span = "15..15", auto_open = false }
+
+[[test]]
+expression = "items[|"
+slot = { state = "start", type = "number", span = "6..6" }
+
+[[test]]
+expression = "some([|], # in statuses)"
+slot = { state = "listElement", type = "status", options = ["open=Open case", "closed=Closed"], span = "6..6" }
+
+[[test]]
+expression = "some([\"open\", |], # in statuses)"
+slot = { state = "listElement", type = "status", options = ["closed=Closed"], span = "14..14" }
+
+# Operators after an operand
+
+[[test]]
+expression = "age |"
+slot = { state = "operator", operators = ["==", "!=", "<", "<=", ">", ">=", "in", "not in"], span = "4..4" }
+
+[[test]]
+expression = "name |"
+slot = { state = "operator", operators = ["==", "!=", "in", "not in"], span = "5..5" }
+
+[[test]]
+expression = "tags |"
+slot = { state = "operator", operators = ["in", "not in"], span = "5..5" }
+
+[[test]]
+expression = "amount |"
+slot = { state = "operator", operators = ["==", "!=", "<", "<=", ">", ">=", "in", "not in", "??"], span = "7..7" }
+
+[[test]]
+expression = "d() |"
+slot = { state = "operator", operators = ["==", "!=", "<", "<=", ">", ">=", "in", "not in"], span = "4..4" }
+
+[[test]]
+expression = "len(x) |"
+slot = { state = "operator", operators = ["==", "!=", "<", "<=", ">", ">=", "in", "not in"], span = "7..7" }
+
+[[test]]
+expression = "age >|"
+slot = { state = "operator", operators = [">", ">="], span = "4..5" }
+
+[[test]]
+expression = "age <=|"
+slot = { state = "value", type = "number", options = [], span = "6..6" }
+
+[[test]]
+expression = "claim.amount =|"
+slot = { state = "operator", operators = ["=="], span = "13..14" }
+
+# Logical after a condition
+
+[[test]]
+expression = "active |"
+slot = { state = "logical", type = "bool", operators = ["and", "or", "==", "!="], span = "7..7" }
+
+[[test]]
+expression = "not active |"
+slot = { state = "logical", type = "bool", operators = ["and", "or"], span = "11..11" }
+
+[[test]]
+expression = "age > 1 |"
+slot = { state = "logical", type = "bool", operators = ["and", "or"], span = "8..8" }
+
+[[test]]
+expression = "status == \"closed\"|"
+slot = { state = "logical", type = "bool", operators = ["and", "or"], span = "18..18", auto_open = false }
+
+[[test]]
+expression = "age > 1 an|"
+slot = { state = "logical", type = "bool", operators = ["and", "or"], span = "8..10" }
+
+[[test]]
+expression = "age > 1 and age |"
+slot = { state = "operator", operators = ["==", "!=", "<", "<=", ">", ">=", "in", "not in"], span = "16..16" }
+
+[[test]]
+expression = "since > d().startOf(\"day\") |"
+slot = { state = "logical", type = "bool", operators = ["and", "or"], span = "27..27" }
+
+# Connectives, ternary, coalesce, arithmetic
+
+[[test]]
+expression = "age > 1 and |"
+slot = { state = "start", type = "bool", span = "12..12" }
+
+[[test]]
+expression = "not |"
+slot = { state = "start", type = "bool", span = "4..4" }
+
+[[test]]
+expression = "age > 18 ? |"
+role = "value"
+expected = "status"
+slot = { state = "value", type = "status", options = ["open=Open case", "closed=Closed"], span = "11..11" }
+
+[[test]]
+expression = "amount ?? |"
+role = "value"
+expected = "number"
+slot = { state = "value", type = "number", options = [], span = "10..10" }
+
+[[test]]
+expression = "age + |"
+role = "value"
+expected = "number"
+slot = { state = "start", type = "number", span = "6..6" }
+
+[[test]]
+expression = "{ a: |"
+role = "value"
+expected = "number"
+slot = { state = "start", span = "5..5" }
+
+# Member access
+
+[[test]]
+expression = "customer.|"
+slot = { state = "member", span = "9..9", auto_open = false }
+
+[[test]]
+expression = "customer.na|"
+slot = { state = "member", span = "9..11", auto_open = false }
+
+[[test]]
+expression = "d().|"
+slot = { state = "member", span = "4..4", auto_open = false }
+
+[[test]]
+expression = "some(items, #.|"
+slot = { state = "member", span = "14..14", auto_open = false }
+
+# Function arguments and closures
+
+[[test]]
+expression = "d(|"
+slot = { state = "argument", type = "any", span = "2..2" }
+
+[[test]]
+expression = "d(\"2024-01-01\", |"
+slot = { state = "argument", type = "string", span = "16..16" }
+
+[[test]]
+expression = "startsWith(name, |"
+slot = { state = "argument", type = "string", span = "17..17" }
+
+[[test]]
+expression = "since.isAfter(|"
+slot = { state = "argument", type = "date", span = "14..14" }
+
+[[test]]
+expression = "some(|"
+slot = { state = "argument", type = "any[]", span = "5..5" }
+
+[[test]]
+expression = "some(items, |"
+slot = { state = "closure", type = "object", options = [], span = "12..12" }
+
+[[test]]
+expression = "some(statuses, |"
+slot = { state = "closure", type = "status", options = ["open=Open case", "closed=Closed"], span = "15..15" }
+
+[[test]]
+expression = "some(items, #.status == |"
+slot = { state = "value", type = "status", options = ["open=Open case", "closed=Closed"], span = "24..24" }
+
+[[test]]
+expression = "some(statuses as s, s == |"
+slot = { state = "value", type = "status", options = ["open=Open case", "closed=Closed"], span = "25..25" }
+
+[[test]]
+expression = "some(items as x, some(statuses as s, |"
+slot = { state = "closure", type = "status", options = ["open=Open case", "closed=Closed"], span = "37..37" }
+
+[[test]]
+expression = "some(items as x, x|"
+slot = { state = "closure", type = "object", options = [], span = "17..18", auto_open = false }
+
+# Unary cells
+
+[[test]]
+expression = "|"
+subject = "status"
+slot = { state = "unaryStart", type = "status", options = ["open=Open case", "closed=Closed"], operators = ["!=", "in", "not in"], span = "0..0" }
+
+[[test]]
+expression = "\"op|"
+subject = "status"
+slot = { state = "inString", type = "status", options = ["open=Open case"], span = "0..3" }
+
+[[test]]
+expression = "\"open\", |"
+subject = "status"
+slot = { state = "unaryStart", type = "status", options = ["closed=Closed"], operators = ["!=", "in", "not in"], span = "8..8" }
+
+[[test]]
+expression = "\"open\" or |"
+subject = "status"
+slot = { state = "unaryStart", type = "status", options = ["closed=Closed"], operators = ["!=", "in", "not in"], span = "10..10" }
+
+[[test]]
+expression = "\"open\", \"closed\", |"
+subject = "status"
+slot = { state = "unaryStart", type = "status", options = [], operators = ["!=", "in", "not in"], span = "18..18" }
+
+[[test]]
+expression = "!= |"
+subject = "status"
+slot = { state = "value", type = "status", options = ["open=Open case", "closed=Closed"], span = "3..3" }
+
+[[test]]
+expression = "[\"open\", |"
+subject = "status"
+slot = { state = "listElement", type = "status", options = ["closed=Closed"], span = "9..9" }
+
+[[test]]
+expression = "not in [|"
+subject = "status"
+slot = { state = "listElement", type = "status", options = ["open=Open case", "closed=Closed"], span = "8..8" }
+
+[[test]]
+expression = "$ |"
+subject = "status"
+slot = { state = "operator", operators = ["==", "!=", "in", "not in"], span = "2..2" }
+
+[[test]]
+expression = "|"
+subject = "number"
+slot = { state = "unaryStart", type = "number", options = [], operators = [">", ">=", "<", "<=", "==", "!=", "in", "not in"], span = "0..0" }
+
+[[test]]
+expression = "> 5 |"
+subject = "number"
+slot = { state = "logical", type = "bool", operators = ["and", "or"], span = "4..4" }
+
+[[test]]
+expression = "[1..|"
+subject = "number"
+slot = { state = "range", type = "number", span = "4..4", auto_open = false }
+
+[[test]]
+expression = "<|"
+subject = "number"
+slot = { state = "operator", operators = ["<", "<="], span = "0..1" }
+
+[[test]]
+expression = ">= 1 and >| 2"
+subject = "number"
+slot = { state = "operator", operators = [">", ">="], span = "9..10" }
+
+[[test]]
+expression = "|"
+subject = "date"
+slot = { state = "unaryStart", type = "date", options = [], operators = [">", ">=", "<", "<=", "==", "!=", "in", "not in"], span = "0..0" }
+
+[[test]]
+expression = "|"
+subject = "bool"
+slot = { state = "unaryStart", type = "bool", options = [], operators = ["==", "!="], span = "0..0" }
+
+# Path cells
+
+[[test]]
+expression = "grounding.stat|"
+role = "path"
+slot = { state = "path", span = "10..14", auto_open = false }
+
+[[test]]
+expression = "|"
+role = "path"
+slot = { state = "path", span = "0..0" }
+
+[[test]]
+expression = "customer.na|me"
+role = "path"
+slot = { state = "path", span = "9..13", auto_open = false }
+
+[[test]]
+expression = "d(|"
+role = "path"
+slot = { state = "argument", type = "any", span = "2..2" }
+
+[[test]]
+expression = "customer.status == \"|"
+role = "path"
+slot = { state = "inString", type = "status", options = ["open=Open case", "closed=Closed"], span = "19..20" }
+
+# Malformed input
+
+[[test]]
+expression = "age > 1))) |"
+slot = { state = "logical", type = "bool", operators = ["and", "or"], span = "11..11" }
+
+[[test]]
+expression = "== |"
+slot = { state = "value", options = [], span = "3..3" }
+
+[[test]]
+expression = "status == \"open\" \"|"
+slot = { state = "inString", type = "bool", options = [], span = "17..18" }
+
+[[test]]
+expression = "in|"
+slot = { state = "start", type = "bool", span = "0..2", auto_open = false }
+
+[[test]]
+expression = "age > 1 and or |"
+slot = { state = "start", type = "bool", span = "15..15" }
+
+# Const and nullable fields
+
+[[test]]
+expression = "something == |"
+scope = '{"Object":{"something":{"Const":"hello"}}}'
+slot = { state = "value", type = "\"hello\"", options = ["hello"], span = "13..13" }
+
+[[test]]
+expression = "something in [\"hello\", |"
+scope = '{"Object":{"something":{"Const":"hello"}}}'
+slot = { state = "listElement", type = "\"hello\"", options = [], span = "23..23" }
+
+[[test]]
+expression = "something == |"
+scope = '{"Object":{"something":{"Nullable":{"Const":"hello"}}}}'
+slot = { state = "value", type = "\"hello\"?", options = ["hello", "null"], span = "13..13" }
+
+[[test]]
+expression = "status == |"
+scope = '{"Object":{"status":{"Nullable":{"Enum":["status",["open","closed"]]}}}}'
+slot = { state = "value", type = "status?", options = ["open=Open case", "closed=Closed", "null"], span = "10..10" }
+
+[[test]]
+expression = "status ?? |"
+scope = '{"Object":{"status":{"Nullable":{"Enum":["status",["open","closed"]]}}}}'
+slot = { state = "value", type = "status", options = ["open=Open case", "closed=Closed"], span = "10..10" }
+
+[[test]]
+expression = "status ?|"
+scope = '{"Object":{"status":{"Nullable":{"Enum":["status",["open","closed"]]}}}}'
+slot = { state = "operator", operators = ["??"], span = "7..8" }
+
+[[test]]
+expression = "aircraft.apuFault |"
+scope = '{"Object":{"aircraft":{"Object":{"apuFault":{"Nullable":"Bool"}}}}}'
+slot = { state = "logical", type = "bool", operators = ["and", "or", "==", "!=", "??"], span = "18..18" }
+
+[[test]]
+expression = "aircraft.apuFault == |"
+scope = '{"Object":{"aircraft":{"Object":{"apuFault":{"Nullable":"Bool"}}}}}'
+slot = { state = "value", type = "bool?", options = ["null"], span = "21..21" }
+
+[[test]]
+expression = "amount == |"
+slot = { state = "value", type = "number?", options = ["null"], span = "10..10" }
+# Literal facts
+
+[[test]]
+expression = "grade in ['a', 'b', 'c']"
+literals = ["'a' enum a,b,c,d", "'b' enum a,b,c,d", "'c' enum a,b,c,d"]
+
+[[test]]
+expression = "grade in ['a', 'b', 'c', |"
+slot = { state = "listElement", type = "grade", options = ["d"], span = "25..25" }
+literals = ["'a' enum a,b,c,d", "'b' enum a,b,c,d", "'c' enum a,b,c,d"]
+
+[[test]]
+expression = "grade in ['a', 'x']"
+literals = ["'a' enum a,b,c,d", "'x' enum a,b,c,d invalid"]
+
+[[test]]
+expression = "status == \"open\" and customer.status != 'closed'"
+literals = ["\"open\" enum open=Open case,closed=Closed", "'closed' enum open=Open case,closed=Closed"]
+
+[[test]]
+expression = "status == \"open\" and"
+literals = ["\"open\" enum open=Open case,closed=Closed"]
+
+[[test]]
+expression = "status == \"op"
+literals = []
+
+[[test]]
+expression = "\"open\", \"closed\""
+subject = "status"
+literals = ["\"open\" enum open=Open case,closed=Closed", "\"closed\" enum open=Open case,closed=Closed"]
+
+[[test]]
+expression = "age > 18 ? \"open\" : \"closed\""
+role = "value"
+expected = "status"
+literals = ["\"open\" enum open=Open case,closed=Closed", "\"closed\" enum open=Open case,closed=Closed"]
+
+[[test]]
+expression = "some([\"open\"], # in statuses)"
+literals = ["\"open\" enum open=Open case,closed=Closed"]
+
+[[test]]
+expression = "active == true"
+literals = ["true bool true"]
+
+[[test]]
+expression = "since > d() and since < d().startOf(\"day\")"
+literals = ["d() date now", "d().startOf(\"day\") date today"]
+
+[[test]]
+expression = "since > d(\"2024-01-01\") and since < d(\"nope\")"
+literals = ["d(\"2024-01-01\") date 2024-01-01", "d(\"nope\") date nope invalid"]
+
+[[test]]
+expression = "since > d(\"2024-01-01\", \"Europe/Berlin\")"
+literals = ["d(\"2024-01-01\", \"Europe/Berlin\") date 2024-01-01 tz=Europe/Berlin"]
+
+[[test]]
+expression = "since > d(customer.since) and"
+literals = ["d(customer.since) date field customer.since"]

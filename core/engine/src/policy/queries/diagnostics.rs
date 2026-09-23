@@ -24,8 +24,6 @@ impl Db {
             }
         }
 
-        // Independently valid imports can conflict when composed. Surface those
-        // conflicts on the importing entry, even if neither writer is local.
         let mut scope_diagnostics = self.graph_diagnostics(path);
         scope_diagnostics.extend(self.data_model_diagnostics(path));
         scope_diagnostics.extend(self.dictionary_diagnostics(path));

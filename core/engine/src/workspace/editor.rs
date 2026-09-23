@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
-use crate::workspace::slot::utf16;
 use ahash::{HashMap, HashMapExt};
 use serde_json::Value;
 use zen_expression::intellisense::completion::Completions;
 use zen_expression::intellisense::Reference;
 use zen_expression::variable::VariableType;
 
-use crate::policy::blocks::IntelliSenseSource;
+use crate::policy::blocks::{IntelliSenseSource, ROW_ID_KEY};
 use crate::policy::ir::{DataModelIr, PropertyTypeIr};
 use crate::policy::queries::scope::EntityGraph;
 use crate::policy::raw::BlockDoc;
@@ -22,11 +21,11 @@ impl Db {
         let (source, _, scope) = self.resolve_cursor(cursor)?;
         let r = self.cursor_intellisense(cursor).borrow_mut().inspect(
             &source,
-            utf16::utf16_to_byte(&source, cursor.pos) as u32,
+            SpanOps::byte_offset(&source, cursor.pos) as u32,
             &scope,
         )?;
         Some(InspectResult {
-            span: utf16::utf16_span(&source, r.span),
+            span: SpanOps::char_span(&source, r.span),
             kind: r.kind,
             label: r.label,
         })
@@ -39,7 +38,7 @@ impl Db {
         let Some(scope) = self.cursor_scope(cursor) else {
             return Vec::new();
         };
-        let len = source.encode_utf16().count() as u32;
+        let len = SpanOps::char_len(&source);
         let padded;
         let source: &str = if cursor.pos > len {
             padded = format!("{source}{}", " ".repeat((cursor.pos - len) as usize));
@@ -47,7 +46,7 @@ impl Db {
         } else {
             &source
         };
-        let pos = utf16::utf16_to_byte(source, cursor.pos) as u32;
+        let pos = SpanOps::byte_offset(source, cursor.pos) as u32;
         let result = self.cursor_intellisense(cursor).borrow_mut().slot(
             source,
             pos,
@@ -249,7 +248,7 @@ impl Db {
             ) => data
                 .rules
                 .iter()
-                .find(|r| r.get("_id") == Some(row))?
+                .find(|r| r.get(ROW_ID_KEY) == Some(row))?
                 .get(col)
                 .cloned()
                 .unwrap_or_else(|| Arc::from("")),

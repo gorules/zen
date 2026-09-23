@@ -1,11 +1,12 @@
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use zen_engine::model::DecisionContent;
 use zen_engine::policy::{
     Cursor, CursorTarget, EvaluateRequest, PolicyWorkspace, ReferenceKind, RenameTarget,
     ScopeRequest,
 };
-use zen_expression::variable::Variable;
+use zen_expression::variable::{Variable, VariableType};
 
 const FIXTURES_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/policy/fixtures/");
 
@@ -381,6 +382,128 @@ fn run_completions(file_name: &str, toml_data: &str) {
 }
 
 #[derive(Debug, Deserialize)]
+struct SlotsFile {
+    policies: Vec<String>,
+    #[serde(default)]
+    graphs: Vec<String>,
+    test: Vec<SlotsCase>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SlotsCase {
+    name: String,
+    policy: String,
+    block_id: String,
+    target: String,
+    id: Option<String>,
+    row: Option<String>,
+    kind: Option<String>,
+    role: Option<String>,
+    expected: Option<String>,
+    subject: Option<String>,
+    text: Option<String>,
+    state: Option<String>,
+    options: Option<Vec<String>>,
+}
+
+impl SlotsCase {
+    fn cursor(&self) -> Cursor {
+        let id = || Arc::from(self.id.as_deref().expect("target id"));
+        let target = match self.target.as_str() {
+            "expression" => CursorTarget::Expression { id: id() },
+            "cell" => CursorTarget::DecisionTableCell {
+                row: Arc::from(self.row.as_deref().expect("row")),
+                col: id(),
+            },
+            "head" => CursorTarget::DecisionTableHead { col: id() },
+            "expression_key" => CursorTarget::ExpressionKey,
+            "assertion_output" => CursorTarget::AssertionOutput,
+            "match_target" => CursorTarget::MatchTarget,
+            "match_value" => CursorTarget::MatchValue { id: id() },
+            "transform_input" => CursorTarget::TransformInput,
+            "data_model_name" => CursorTarget::DataModelName,
+            other => panic!("unknown target {other}"),
+        };
+        Cursor {
+            policy_path: Arc::from(self.policy.as_str()),
+            block_id: Arc::from(self.block_id.as_str()),
+            pos: 0,
+            target,
+        }
+    }
+
+    fn check(&self, ws: &PolicyWorkspace) {
+        let ctx = format!("[slots.toml:{}]", self.name);
+        let mut cursor = self.cursor();
+        let Some(scope) = ws.cursor_scope(&cursor) else {
+            assert!(self.kind.is_none(), "{ctx} expected a scope, got none");
+            return;
+        };
+        let render = |t: Option<VariableType>| t.map(|t| t.to_string()).unwrap_or_default();
+        let actual = [
+            ("kind", format!("{:?}", scope.kind).to_lowercase()),
+            (
+                "role",
+                serde_json::to_value(scope.role)
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .to_string(),
+            ),
+            ("expected", render(scope.expected.clone())),
+            ("subject", render(scope.subject_type())),
+        ];
+        let wanted = [&self.kind, &self.role, &self.expected, &self.subject];
+        for ((field, actual), wanted) in actual.iter().zip(wanted) {
+            if let Some(wanted) = wanted {
+                assert_eq!(actual, wanted, "{ctx} {field}");
+            }
+        }
+        let Some(text) = &self.text else {
+            return;
+        };
+        let caret = text.find('|').expect("caret");
+        let source = text.replacen('|', "", 1);
+        cursor.pos = source[..caret].encode_utf16().count() as u32;
+        let slot = ws.slot(&cursor, &source).expect("slot").slot;
+        if let Some(state) = &self.state {
+            assert_eq!(
+                &serde_json::to_value(slot.state).unwrap(),
+                state,
+                "{ctx} state"
+            );
+        }
+        if let Some(options) = &self.options {
+            let actual: Vec<String> = slot
+                .options
+                .iter()
+                .map(|o| match o.label == o.value {
+                    true => o.value.clone(),
+                    false => format!("{}={}", o.value, o.label),
+                })
+                .collect();
+            assert_eq!(&actual, options, "{ctx} options");
+        }
+    }
+}
+
+fn run_slots(file_name: &str, toml_data: &str) {
+    let file: SlotsFile =
+        toml::from_str(toml_data).unwrap_or_else(|e| panic!("cannot parse {file_name}: {e}"));
+    let mut ws = build_workspace(&file.policies);
+    for path in &file.graphs {
+        let raw = std::fs::read_to_string(format!("{FIXTURES_DIR}{path}"))
+            .unwrap_or_else(|e| panic!("cannot read fixture {path}: {e}"));
+        let doc: DecisionContent = serde_json::from_str(&raw)
+            .unwrap_or_else(|e| panic!("cannot deserialize fixture {path}: {e}"));
+        ws.set_document(path.as_str(), doc);
+    }
+    for test in &file.test {
+        test.check(&ws);
+    }
+}
+
+#[derive(Debug, Deserialize)]
 struct EntitiesFile {
     policies: Vec<String>,
     test: Vec<EntitiesCase>,
@@ -607,4 +730,9 @@ fn entities_merge_multi_policy_toml_cases() {
         "entities_merge_multi_policy.toml",
         include_str!("data/policy/entities_merge_multi_policy.toml"),
     );
+}
+
+#[test]
+fn slots_toml_cases() {
+    run_slots("slots.toml", include_str!("data/policy/slots.toml"));
 }

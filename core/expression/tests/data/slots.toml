@@ -507,3 +507,53 @@ literals = ["d(\"2024-01-01\", \"Europe/Berlin\") date 2024-01-01 tz=Europe/Berl
 [[test]]
 expression = "since > d(customer.since) and"
 literals = ["d(customer.since) date field customer.since"]
+
+# Completions filtered by expected type
+
+[[test]]
+expression = "s|"
+role = "value"
+expected = "bool"
+includes = ["status", "since"]
+
+[[test]]
+expression = "customer.|"
+role = "value"
+expected = "bool"
+includes = ["name", "age", "address"]
+
+[[test]]
+expression = "customer.|"
+role = "value"
+expected = "number"
+includes = ["name", "age", "address"]
+
+[[test]]
+expression = "|"
+role = "value"
+expected = "number"
+includes = ["age", "customer"]
+excludes = ["name", "since"]
+
+# Decimal literals and write paths
+
+[[test]]
+expression = "0.|"
+role = "value"
+expected = "number"
+slot = { state = "value" }
+excludes = ["age", "customer", "len"]
+
+[[test]]
+expression = "age > 12.|5"
+excludes = ["age", "customer"]
+
+[[test]]
+expression = "customer.|"
+includes = ["age", "name"]
+
+[[test]]
+expression = "data.|"
+role = "path"
+scope = '{"Object":{"data":"Any"}}'
+excludes = ["add", "format", "year"]

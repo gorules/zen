@@ -4,6 +4,7 @@ use ahash::{HashMap, HashMapExt};
 use serde_json::Value;
 use zen_expression::intellisense::completion::Completions;
 use zen_expression::intellisense::Reference;
+use zen_expression::slot::SlotRole;
 use zen_expression::variable::VariableType;
 
 use crate::policy::blocks::{IntelliSenseSource, ROW_ID_KEY};
@@ -215,7 +216,10 @@ impl Db {
             policy_path: cursor.policy_path.clone(),
             block_id: cursor.block_id.clone(),
         };
-        let scope = self.cursor_scope(cursor)?;
+        let mut scope = self.cursor_scope(cursor)?;
+        if matches!(scope.role, SlotRole::Path) {
+            scope.scope = self.enriched(&cursor.policy_path).scope.shallow_clone();
+        }
         let policy = self.raw_policy(&cursor.policy_path)?;
         let block = policy
             .blocks

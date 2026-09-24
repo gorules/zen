@@ -53,14 +53,10 @@ impl Db {
                     return None;
                 };
                 let row = content.expressions.iter().find(|row| row.id == *id)?;
-                let dollar = node_analysis
-                    .dollar
-                    .clone()
-                    .unwrap_or_else(VariableType::empty_object);
                 let scope = GraphAnalyzer::scope_with(
                     &node_analysis.handler_input,
                     &[
-                        ("$", dollar),
+                        ("$", node_analysis.dollar_before(&content.expressions, id)),
                         ("$nodes", node_analysis.nodes_scope.shallow_clone()),
                     ],
                 );

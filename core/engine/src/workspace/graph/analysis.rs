@@ -6,8 +6,9 @@ use ahash::{HashMap, HashMapExt, HashSet};
 use zen_expression::variable::VariableType;
 use zen_types::decision::{
     DecisionNode, DecisionNodeContent, DecisionNodeKind, DecisionTableContent,
-    DecisionTableHitPolicy, DecisionTableOutputField, ExpressionNodeContent, FunctionNodeContent,
-    SwitchNodeContent, SwitchStatementHitPolicy, TransformAttributes, TransformExecutionMode,
+    DecisionTableHitPolicy, DecisionTableOutputField, Expression, ExpressionNodeContent,
+    FunctionNodeContent, SwitchNodeContent, SwitchStatementHitPolicy, TransformAttributes,
+    TransformExecutionMode,
 };
 
 use zen_expression::intellisense::ArmTest;
@@ -38,12 +39,24 @@ pub struct GraphNodeAnalysis {
     pub input: VariableType,
     pub handler_input: VariableType,
     pub output: VariableType,
-    pub dollar: Option<VariableType>,
+    pub row_types: HashMap<Arc<str>, VariableType>,
     pub nodes_scope: VariableType,
     pub branch_outputs: HashMap<Arc<str>, VariableType>,
     pub opaque: bool,
     pub unchecked: bool,
     pub open: bool,
+}
+
+impl GraphNodeAnalysis {
+    pub(crate) fn dollar_before(&self, rows: &[Expression], row_id: &str) -> VariableType {
+        let dollar = VariableType::empty_object();
+        for row in rows.iter().take_while(|row| row.id.as_ref() != row_id) {
+            if let Some(resolved) = self.row_types.get(&row.id) {
+                dollar.insert_at_path(&row.key, resolved, true);
+            }
+        }
+        dollar
+    }
 }
 
 #[derive(Debug)]
@@ -449,7 +462,7 @@ impl<'a> GraphAnalyzer<'a> {
             input: scope_input.shallow_clone(),
             handler_input: scope_input.shallow_clone(),
             output: VariableType::Any,
-            dollar: None,
+            row_types: HashMap::default(),
             nodes_scope: self.nodes_scope.shallow_clone(),
             branch_outputs: HashMap::default(),
             opaque: false,
@@ -523,8 +536,9 @@ impl<'a> GraphAnalyzer<'a> {
                     &content.transform_attributes,
                     &scope_input,
                     |analyzer, scope| {
-                        let (output, dollar) = analyzer.check_expression_rows(node, content, scope);
-                        analysis.dollar = Some(dollar);
+                        let (output, row_types) =
+                            analyzer.check_expression_rows(node, content, scope);
+                        analysis.row_types = row_types;
                         output
                     },
                 );
@@ -757,9 +771,10 @@ impl<'a> GraphAnalyzer<'a> {
         node: &DecisionNode,
         content: &ExpressionNodeContent,
         scope: &VariableType,
-    ) -> (VariableType, VariableType) {
+    ) -> (VariableType, HashMap<Arc<str>, VariableType>) {
         let output = VariableType::empty_object();
         let dollar = VariableType::empty_object();
+        let mut row_types = HashMap::with_capacity(content.expressions.len());
         for row in content.expressions.iter() {
             if row.key.is_empty() || row.value.is_empty() {
                 continue;
@@ -781,8 +796,9 @@ impl<'a> GraphAnalyzer<'a> {
             );
             output.insert_at_path(&row.key, &resolved, true);
             dollar.insert_at_path(&row.key, &resolved, true);
+            row_types.insert(row.id.clone(), resolved);
         }
-        (output, dollar)
+        (output, row_types)
     }
 
     fn check_decision_table(

@@ -29,7 +29,7 @@ impl Db {
         let block = self.block_ir(&block_ref)?;
         let unit = self.unit(&cursor.policy_path);
         let enriched = self.enriched_of_unit(&unit);
-        let scope = enriched.scope_before(&block_ref);
+        let scope = enriched.scope_excluding(&block_ref);
         match (&block.kind, &cursor.target) {
             (BlockKind::DecisionTable(table), _) => {
                 self.policy_table_scope(&unit, table, cursor, scope, &enriched.scope, cache)
@@ -173,14 +173,10 @@ impl Db {
                 DecisionNodeKind::ExpressionNode { content: rows },
                 CursorTarget::Expression { id },
             ) => {
-                let dollar = node_analysis
-                    .dollar
-                    .clone()
-                    .unwrap_or_else(VariableType::empty_object);
                 let scope = GraphAnalyzer::scope_with(
                     &node_analysis.handler_input,
                     &[
-                        ("$", dollar),
+                        ("$", node_analysis.dollar_before(&rows.expressions, id)),
                         ("$nodes", node_analysis.nodes_scope.shallow_clone()),
                     ],
                 );

@@ -22,6 +22,16 @@ fn build_workspace(policies: &[String]) -> PolicyWorkspace {
     ws
 }
 
+fn load_graphs(ws: &mut PolicyWorkspace, graphs: &[String]) {
+    for path in graphs {
+        let raw = std::fs::read_to_string(format!("{FIXTURES_DIR}{path}"))
+            .unwrap_or_else(|e| panic!("cannot read fixture {path}: {e}"));
+        let doc: DecisionContent = serde_json::from_str(&raw)
+            .unwrap_or_else(|e| panic!("cannot deserialize fixture {path}: {e}"));
+        ws.set_document(path.as_str(), doc);
+    }
+}
+
 fn toml_to_json(value: &toml::Value) -> serde_json::Value {
     serde_json::to_value(value).expect("toml converts to json")
 }
@@ -318,6 +328,8 @@ fn run_prepare_rename(file_name: &str, toml_data: &str) {
 #[derive(Debug, Deserialize)]
 struct CompletionsFile {
     policies: Vec<String>,
+    #[serde(default)]
+    graphs: Vec<String>,
     test: Vec<CompletionsCase>,
 }
 
@@ -330,6 +342,8 @@ struct CompletionsCase {
     pos: u32,
     #[serde(default)]
     head: bool,
+    #[serde(default)]
+    key: bool,
     row: Option<String>,
     #[serde(default)]
     includes: Vec<String>,
@@ -340,11 +354,14 @@ struct CompletionsCase {
 fn run_completions(file_name: &str, toml_data: &str) {
     let file: CompletionsFile =
         toml::from_str(toml_data).unwrap_or_else(|e| panic!("cannot parse {file_name}: {e}"));
-    let ws = build_workspace(&file.policies);
+    let mut ws = build_workspace(&file.policies);
+    load_graphs(&mut ws, &file.graphs);
 
     for test in &file.test {
         let ctx = format!("[{file_name}:{}]", test.name);
-        let target = if test.head {
+        let target = if test.key {
+            CursorTarget::ExpressionKey
+        } else if test.head {
             CursorTarget::DecisionTableHead {
                 col: Arc::from(test.expression_id.as_str()),
             }
@@ -491,13 +508,7 @@ fn run_slots(file_name: &str, toml_data: &str) {
     let file: SlotsFile =
         toml::from_str(toml_data).unwrap_or_else(|e| panic!("cannot parse {file_name}: {e}"));
     let mut ws = build_workspace(&file.policies);
-    for path in &file.graphs {
-        let raw = std::fs::read_to_string(format!("{FIXTURES_DIR}{path}"))
-            .unwrap_or_else(|e| panic!("cannot read fixture {path}: {e}"));
-        let doc: DecisionContent = serde_json::from_str(&raw)
-            .unwrap_or_else(|e| panic!("cannot deserialize fixture {path}: {e}"));
-        ws.set_document(path.as_str(), doc);
-    }
+    load_graphs(&mut ws, &file.graphs);
     for test in &file.test {
         test.check(&ws);
     }

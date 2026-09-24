@@ -355,3 +355,13 @@ diagnostics = [
     { source = "parser", severity = "error", code = "expr.expected-property" },
 ]
 
+
+[[test]]
+name = "code: missing value after operator"
+expression = "a *"
+input = '{"a": 1}'
+
+[test.loose]
+diagnostics = [
+    { source = "parser", severity = "error", code = "expr.missing-value", message = "Unexpected end of expression", args = { operator = "*" } },
+]

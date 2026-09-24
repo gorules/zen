@@ -92,12 +92,13 @@ impl Slot {
                 | SlotState::ListElement
                 | SlotState::Range
                 | SlotState::Argument
-                | SlotState::Member
         ) {
             return None;
         }
         let (t, _) = self.expected.as_ref()?.unwrap_nullable();
-        ScalarClass::of(t).map(|_| t)
+        ScalarClass::of(t)
+            .filter(|class| *class != ScalarClass::Bool)
+            .map(|_| t)
     }
 
     pub(crate) fn new(state: SlotState, replace_span: Span) -> Self {

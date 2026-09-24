@@ -418,6 +418,11 @@ impl<'p, 'a> Classifier<'p, 'a> {
         if self.role == SlotRole::Path {
             return self.path_slot(pos);
         }
+        if self.in_decimal(pos) {
+            let mut slot = Slot::new(SlotState::Value, (pos, pos));
+            slot.suppress_completions = true;
+            return slot;
+        }
 
         let limit = self.operand_limit(pos);
         if let Some(frame) = self.frames(limit).last() {
@@ -522,6 +527,18 @@ impl<'p, 'a> Classifier<'p, 'a> {
             Kind::Op(Operator::Comparison(_)) => Some(next + 1),
             _ => None,
         }
+    }
+
+    fn in_decimal(&self, pos: u32) -> bool {
+        let before = self.text((0, pos));
+        let fraction = before.trim_end_matches(|c: char| c.is_ascii_digit());
+        let Some(integer) = fraction.strip_suffix('.') else {
+            return false;
+        };
+        let head = integer.trim_end_matches(|c: char| c.is_ascii_digit() || c == '_');
+        head.len() < integer.len()
+            && !head.ends_with(|c: char| c.is_alphanumeric() || matches!(c, '_' | '$' | '#' | '.'))
+            && self.string_at(pos).is_none()
     }
 
     fn text(&self, span: Span) -> &str {
@@ -1191,7 +1208,7 @@ impl<'p, 'a> Classifier<'p, 'a> {
             let start = self.run_start(end, false);
             slot.operand = self.type_of_run(start, end, true);
             let head = self.at(self.items[start].span.0, start);
-            if head.wanted_scalar().is_some() && head.state != SlotState::Member {
+            if head.wanted_scalar().is_some() {
                 slot.expected = head.expected;
             }
         }

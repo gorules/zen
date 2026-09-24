@@ -1,6 +1,7 @@
 use std::rc::Rc;
 
 use serde::Deserialize;
+use zen_expression::intellisense::completion::Completions;
 use zen_expression::intellisense::IntelliSense;
 use zen_expression::slot::{DateArg, LabelResolver, LiteralFact, Literals, Slot, SlotRole};
 use zen_expression::variable::VariableType;
@@ -35,6 +36,10 @@ struct TestCase {
     expected: Option<String>,
     slot: Option<ExpectedSlot>,
     literals: Option<Vec<String>>,
+    #[serde(default)]
+    includes: Vec<String>,
+    #[serde(default)]
+    excludes: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -80,12 +85,13 @@ impl TestCase {
             Some(caret) => (self.expression.replacen('|', "", 1), caret),
             None => (self.expression.clone(), self.expression.len()),
         };
+        let scope = self.scope();
         let result = is.slot(
             &source,
             pos as u32,
             self.subject.is_some(),
             self.role(),
-            &self.scope(),
+            &scope,
             self.expected().as_ref(),
         );
         let mut failures = Vec::new();
@@ -96,6 +102,19 @@ impl TestCase {
             let actual = render_literals(&source, &result.literals);
             if &actual != expected {
                 failures.push(format!("literals: wanted {expected:?}, got {actual:?}"));
+            }
+        }
+        if !self.includes.is_empty() || !self.excludes.is_empty() {
+            let labels: Vec<String> =
+                Completions::from_slot(&source, pos as u32, &scope, &result.slot)
+                    .into_iter()
+                    .map(|c| c.label)
+                    .collect();
+            for label in self.includes.iter().filter(|l| !labels.contains(l)) {
+                failures.push(format!("completion {label} missing from {labels:?}"));
+            }
+            for label in self.excludes.iter().filter(|l| labels.contains(l)) {
+                failures.push(format!("completion {label} unexpected in {labels:?}"));
             }
         }
         failures

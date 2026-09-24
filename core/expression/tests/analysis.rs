@@ -61,6 +61,7 @@ struct ExpectedDiagnostic {
     source: String,
     severity: String,
     code: Option<String>,
+    message: Option<String>,
     #[serde(default)]
     args: std::collections::BTreeMap<String, String>,
 }
@@ -321,6 +322,10 @@ fn check_diagnostics(
                     .as_deref()
                     .is_none_or(|code| d.code == Some(code))
                 && expected
+                    .message
+                    .as_deref()
+                    .is_none_or(|message| d.message.starts_with(message))
+                && expected
                     .args
                     .iter()
                     .all(|(k, v)| d.args.get(k.as_str()) == Some(v))
@@ -328,8 +333,8 @@ fn check_diagnostics(
 
         assert!(
             matching,
-            "[{file_name}:{}:{mode}] Diagnostic #{i} not found: expected source={}, severity={}, code={:?}, args={:?}.\n  Expression: {}\n  Got diagnostics: {:?}",
-            test.name, expected.source, expected.severity, expected.code, expected.args, test.expression, result.diagnostics
+            "[{file_name}:{}:{mode}] Diagnostic #{i} not found: expected source={}, severity={}, code={:?}, message={:?}, args={:?}.\n  Expression: {}\n  Got diagnostics: {:?}",
+            test.name, expected.source, expected.severity, expected.code, expected.message, expected.args, test.expression, result.diagnostics
         );
     }
 }

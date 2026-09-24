@@ -64,7 +64,7 @@ pub struct EnrichedState {
     base_fields: HashMap<Rc<str>, VariableType>,
     owned: RefCell<Vec<VariableType>>,
     write_log: Vec<(PropertyPath, VariableType)>,
-    log_start: HashMap<BlockRef, usize>,
+    own_writes: HashMap<BlockRef, std::ops::Range<usize>>,
     block_scopes: RefCell<HashMap<BlockRef, VariableType>>,
 }
 
@@ -77,8 +77,8 @@ impl Drop for EnrichedState {
 }
 
 impl EnrichedState {
-    pub(crate) fn scope_before(&self, block: &BlockRef) -> VariableType {
-        let Some(&end) = self.log_start.get(block) else {
+    pub(crate) fn scope_excluding(&self, block: &BlockRef) -> VariableType {
+        let Some(own) = self.own_writes.get(block) else {
             return self.scope.shallow_clone();
         };
         if let Some(cached) = self.block_scopes.borrow().get(block) {
@@ -87,7 +87,10 @@ impl EnrichedState {
         let scope =
             VariableType::Object(Rc::new(RefCell::new(self.base_fields.clone()))).isolated_clone();
         self.owned.borrow_mut().push(scope.shallow_clone());
-        for (path, resolved_type) in &self.write_log[..end] {
+        let others = self.write_log[..own.start]
+            .iter()
+            .chain(&self.write_log[own.end..]);
+        for (path, resolved_type) in others {
             scope.insert_at_path(path, &resolved_type.isolated_clone(), true);
         }
         self.block_scopes
@@ -441,6 +444,13 @@ impl Snapshot {
 
         let entity_form_map = EntityForm::new(entity_sources);
         let entity_form = |path: &str| -> Option<String> { entity_form_map.rewrite(path) };
+        let iterated_entity = |path: &str| {
+            path.split_once('.').is_some_and(|(root, _)| {
+                entity_sources
+                    .get(root)
+                    .is_some_and(|src| src.path.as_ref() != root)
+            })
+        };
 
         for (rank, &rule) in per_rule.iter().enumerate() {
             for read in &rule.reads {
@@ -482,7 +492,11 @@ impl Snapshot {
                         block_id: rule.block_id.clone(),
                     });
                     node.instance_source = write.instance_source.clone();
-                    node.rank = rank + 1;
+                    node.rank = if iterated_entity(&write.path) {
+                        0
+                    } else {
+                        rank + 1
+                    };
                 }
 
                 let path = write.path.as_ref();
@@ -673,7 +687,7 @@ impl Snapshot {
         };
         let mut write_log: Vec<(PropertyPath, VariableType)> = Vec::new();
         let mut owned: Vec<VariableType> = Vec::new();
-        let mut log_start: HashMap<BlockRef, usize> = HashMap::new();
+        let mut own_writes: HashMap<BlockRef, std::ops::Range<usize>> = HashMap::new();
         let mut per_rule: Vec<RuleEnrichedAnalysis> = Vec::new();
         let mut diagnostics: Vec<Diagnostic> = Vec::new();
 
@@ -720,7 +734,7 @@ impl Snapshot {
                 continue;
             };
             let policy_path = &key.policy_path;
-            log_start.insert(key.clone(), write_log.len());
+            let start = write_log.len();
             let summary = Self::analyze_block(
                 rule,
                 policy_path,
@@ -738,6 +752,7 @@ impl Snapshot {
                     write_log.push((tw.path.clone(), frozen));
                 }
             }
+            own_writes.insert(key.clone(), start..write_log.len());
 
             if splice {
                 for tw in &summary.writes {
@@ -771,7 +786,7 @@ impl Snapshot {
             base_fields,
             owned: RefCell::new(owned),
             write_log,
-            log_start,
+            own_writes,
             block_scopes: RefCell::new(HashMap::new()),
         }
     }

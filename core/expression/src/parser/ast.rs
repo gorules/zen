@@ -261,7 +261,7 @@ pub enum AstNodeError<'a> {
     #[error("Expected a literal at ({}, {})", span.0, span.1)]
     ExpectedLiteral { span: (u32, u32) },
 
-    #[error("Unexpected end of unary expression at ({}, {})", span.0, span.1)]
+    #[error("Unexpected end of expression at ({}, {})", span.0, span.1)]
     UnexpectedEnd { span: (u32, u32) },
 
     #[error("{message} at ({}, {})", span.0, span.1)]

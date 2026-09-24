@@ -64,7 +64,9 @@ impl Completions {
                 Self::build_property(slot.operand.as_ref().unwrap_or(&VariableType::Any))
             }
             SlotState::Path if slot.operand.is_some() => {
-                Self::build_property(slot.operand.as_ref().unwrap())
+                let mut items = Self::build_property(slot.operand.as_ref().unwrap());
+                items.retain(|item| item.kind != CompletionKind::Method);
+                items
             }
             _ => Self::build_scope(data, &locals),
         };

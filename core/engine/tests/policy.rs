@@ -3092,6 +3092,60 @@ fn unrelated_policies_do_not_cross_flag_writes() {
 }
 
 #[test]
+fn duplicate_writer_is_reported_on_the_importing_policy() {
+    let writer = |block: &str, imports: &[&str]| {
+        json!({
+            "imports": imports,
+            "blocks": [
+                { "id": block, "type": "expression", "props": { "data": json!({
+                    "key": "decision", "value": "\"x\""
+                })}}
+            ]
+        })
+    };
+    let duplicates = |ws: &PolicyWorkspace, path: &str| -> Vec<Option<String>> {
+        ws.diagnostics(path)
+            .into_iter()
+            .filter(|d| d.code == zen_engine::policy::DiagnosticCode::DuplicateWriter)
+            .map(|d| d.location.block_id.map(|b| b.to_string()))
+            .collect()
+    };
+
+    for (importer, imported, entry) in [
+        ("airline/rules/apu", "airline/test", "airline/entry"),
+        ("zz/importer", "aa/imported", "mm/entry"),
+    ] {
+        let mut ws = PolicyWorkspace::new();
+        ws.set_policy(
+            imported,
+            serde_json::from_value(writer("imported-block", &[])).unwrap(),
+        );
+        ws.set_policy(
+            importer,
+            serde_json::from_value(writer("importer-block", &[imported])).unwrap(),
+        );
+        ws.set_policy(
+            entry,
+            serde_json::from_value(json!({ "imports": [importer], "blocks": [] })).unwrap(),
+        );
+
+        assert_eq!(
+            duplicates(&ws, importer),
+            vec![Some("importer-block".to_string())],
+            "[{importer}] the importing policy owns the conflict on its own block",
+        );
+        assert!(
+            duplicates(&ws, imported).is_empty(),
+            "[{imported}] the imported policy cannot see its importer's write",
+        );
+        assert!(
+            duplicates(&ws, entry).is_empty(),
+            "[{entry}] a policy importing the offender must not repeat its error",
+        );
+    }
+}
+
+#[test]
 fn disjoint_nested_writes_across_blocks_merge_at_runtime() {
     let doc = json!({
         "blocks": [

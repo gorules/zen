@@ -81,6 +81,28 @@ impl Db {
             .collect()
     }
 
+    fn imports_transitively(&self, from: &Arc<str>, to: &Arc<str>) -> bool {
+        if from == to {
+            return false;
+        }
+        let mut seen: HashSet<Arc<str>> = HashSet::default();
+        let mut stack: Vec<Arc<str>> = vec![from.clone()];
+        while let Some(path) = stack.pop() {
+            let Some(parsed) = self.parsed(&path) else {
+                continue;
+            };
+            for import in parsed.policy.imports() {
+                if import == to {
+                    return true;
+                }
+                if seen.insert(import.clone()) {
+                    stack.push(import.clone());
+                }
+            }
+        }
+        false
+    }
+
     fn scope_diagnostics(&self, path: &Arc<str>) -> Vec<Diagnostic> {
         let mut out = self.graph_diagnostics(path);
         out.extend(self.data_model_diagnostics(path));
@@ -227,13 +249,20 @@ impl Db {
 
                 match first_writer.get(&write.path) {
                     Some(existing) => {
+                        let (blamed, blamed_target) = if self
+                            .imports_transitively(&existing.policy_path, &rule.policy_path)
+                        {
+                            let target = self
+                                .block_ir(existing)
+                                .and_then(|b| b.kind.write_target(&write.path));
+                            (existing.clone(), target)
+                        } else {
+                            (block_ref.clone(), wtarget.clone())
+                        };
                         out.push(Diagnostic::error(
                             DiagnosticCode::DuplicateWriter,
-                            DiagnosticLocation::block(
-                                rule.policy_path.clone(),
-                                rule.block_id.clone(),
-                            )
-                            .maybe_target(wtarget.clone()),
+                            DiagnosticLocation::block(blamed.policy_path, blamed.block_id)
+                                .maybe_target(blamed_target),
                             format!(
                                 "property '{}' is written by both block '{}' (in '{}') and block '{}' (in '{}')",
                                 write.path,

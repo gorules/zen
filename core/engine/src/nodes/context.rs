@@ -113,8 +113,15 @@ where
         self.validate_schema(schema, value, false)
     }
 
+    /// Validates as written first; only when that fails does null count as an absent optional.
+    /// Rewriting can also tighten `if`/`not`/`oneOf`, so the rewrite alone would reject valid input.
     pub fn validate_input(&self, schema: &Value, value: &Variable) -> Result<(), NodeError> {
-        self.validate_schema(schema, value, true)
+        let strict = self.validate_schema(schema, value, false);
+        if strict.is_err() && self.validate_schema(schema, value, true).is_ok() {
+            return Ok(());
+        }
+
+        strict
     }
 
     fn validate_schema(
@@ -123,8 +130,13 @@ where
         value: &Variable,
         nullable_optionals: bool,
     ) -> Result<(), NodeError> {
+        const NULLABLE_OPTIONALS_SALT: u64 = 0x9e37_79b9_7f4a_7c15;
+
         let validator_cache = self.extensions.validator_cache();
-        let hash = self.hash_node();
+        let hash = match nullable_optionals {
+            true => self.hash_node() ^ NULLABLE_OPTIONALS_SALT,
+            false => self.hash_node(),
+        };
 
         let validator = validator_cache
             .get_or_insert(hash, schema, nullable_optionals)

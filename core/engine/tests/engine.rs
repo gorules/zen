@@ -1,6 +1,6 @@
 use crate::support::{create_fs_loader, load_raw_test_data, load_test_data, test_data_root};
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{json, Value};
 use std::fs;
 use std::io::Read;
 use std::ops::Deref;
@@ -571,6 +571,58 @@ async fn input_schema_accepts_null_for_optional_properties() {
         .evaluate(json!({ "age": 1, "note": null, "name": null }).into())
         .await;
     assert!(strict.is_err());
+}
+
+#[tokio::test]
+#[cfg_attr(miri, ignore)]
+async fn input_schema_null_tolerance_never_rejects_what_the_schema_accepts() {
+    let graph = |schema: &Value| -> GraphContent {
+        serde_json::from_value(json!({
+            "nodes": [
+                { "id": "in", "name": "in", "type": "inputNode", "content": { "schema": schema.to_string() } },
+                { "id": "out", "name": "out", "type": "outputNode", "content": {} }
+            ],
+            "edges": [{ "id": "e", "sourceId": "in", "targetId": "out" }]
+        }))
+        .unwrap()
+    };
+    let engine = DecisionEngine::default();
+
+    for (schema, context) in [
+        (
+            json!({
+                "properties": { "country": { "type": ["string", "null"] }, "zip": { "type": "string" } },
+                "if": { "properties": { "country": { "const": "US" } } },
+                "then": { "required": ["zip"] }
+            }),
+            json!({ "country": null }),
+        ),
+        (
+            json!({
+                "properties": { "tier": { "enum": ["gold", "silver", null] } },
+                "if": { "properties": { "tier": { "enum": ["gold"] } } },
+                "then": { "required": ["goldSince"] }
+            }),
+            json!({ "tier": null }),
+        ),
+        (
+            json!({ "not": { "properties": { "status": { "const": "closed" } }, "required": ["id"] } }),
+            json!({ "id": 1, "status": null }),
+        ),
+        (
+            json!({ "oneOf": [
+                { "properties": { "discount": { "type": "number" } }, "required": ["a"] },
+                { "properties": { "discount": { "type": "null" } }, "required": ["a"] }
+            ] }),
+            json!({ "a": 1, "discount": null }),
+        ),
+    ] {
+        let decision = engine
+            .create_decision(Arc::new(graph(&schema).into()))
+            .unwrap();
+        let result = decision.evaluate(context.clone().into()).await;
+        assert!(result.is_ok(), "schema {schema} must accept {context}");
+    }
 }
 
 #[tokio::test]

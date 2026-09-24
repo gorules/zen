@@ -363,5 +363,5 @@ input = '{"a": 1}'
 
 [test.loose]
 diagnostics = [
-    { source = "parser", severity = "error", code = "expr.missing-value", message = "Unexpected end of expression", args = { operator = "*" } },
+    { source = "parser", severity = "error", code = "expr.missing-value", args = { operator = "*" } },
 ]

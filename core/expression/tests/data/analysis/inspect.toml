@@ -52,3 +52,51 @@ pos = 4
 input = '{"a": 1, "b": 2}'
 label = "b"
 kind = '"Number"'
+
+[[test]]
+name = "member - property resolves to its type"
+expression = "customer.firstName"
+pos = 12
+input = '{"customer": {"firstName": "John"}}'
+label = "firstName"
+kind = '"String"'
+
+[[test]]
+name = "member - incomplete expression"
+expression = "customer.age >"
+pos = 10
+input = '{"customer": {"age": 30}}'
+label = "age"
+kind = '"Number"'
+
+[[test]]
+name = "function - signature and return type"
+expression = "upper(name)"
+pos = 1
+input = '{"name": "x"}'
+label = "upper"
+kind = '"String"'
+detail = "(str: string) -> string"
+
+[[test]]
+name = "method - signature"
+expression = "d('2024-01-01').year()"
+pos = 17
+label = "year"
+detail = "() -> number"
+
+[[test]]
+name = "string body is not a name"
+expression = "customer == 'customer'"
+pos = 15
+input = '{"customer": "x"}'
+label = "'customer'"
+
+[[test]]
+name = "unary - context reference"
+expression = "$ > 10"
+pos = 0
+input = '{"$": 5}'
+unary = true
+label = "$"
+kind = '"Number"'

@@ -557,3 +557,17 @@ expression = "data.|"
 role = "path"
 scope = '{"Object":{"data":"Any"}}'
 excludes = ["add", "format", "year"]
+
+# Word boundaries follow the lexer
+
+[[test]]
+expression = "age ≤ a|"
+includes = ["age", "amount"]
+
+[[test]]
+expression = "é|"
+excludes = ["é"]
+
+[[test]]
+expression = "customer.address.c|"
+includes = ["city"]

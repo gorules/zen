@@ -4,6 +4,7 @@ use crate::functions::{
     ClosureFunction, DeprecatedFunction, FunctionKind, InternalFunction, MethodKind, MethodRegistry,
 };
 use crate::intellisense::IntelliSenseToken;
+use crate::lexer::codes::is_token_type;
 use crate::variable::VariableType;
 use ahash::HashMap;
 use serde::Serialize;
@@ -230,6 +231,16 @@ impl Completions {
         out
     }
 
+    pub(crate) fn function_named(name: &str) -> Option<Completion> {
+        FunctionKind::try_from(name)
+            .ok()
+            .map(|fk| Self::function(fk, None))
+    }
+
+    pub(crate) fn method_named(name: &str) -> Option<Completion> {
+        MethodKind::try_from(name).ok().map(Self::method)
+    }
+
     fn function(fk: FunctionKind, boost_override: Option<i32>) -> Completion {
         let label = fk.to_string();
         let info = function_info(&fk);
@@ -271,8 +282,10 @@ impl Completions {
 
     fn extract_prefix(before_cursor: &str) -> &str {
         let boundary = before_cursor
-            .rfind(|c: char| !c.is_alphanumeric() && c != '_' && c != '$' && c != '#')
-            .map(|i| i + 1)
+            .char_indices()
+            .rev()
+            .find(|(_, c)| !is_token_type!(*c, "alphanumeric"))
+            .map(|(i, c)| i + c.len_utf8())
             .unwrap_or(0);
 
         &before_cursor[boundary..]
@@ -296,7 +309,7 @@ impl Completions {
             return Some(trimmed.len() - 1);
         }
 
-        let word_start = trimmed.rfind(|c: char| !c.is_alphanumeric() && c != '_' && c != '#');
+        let word_start = trimmed.rfind(|c: char| !is_token_type!(c, "alphanumeric"));
         match word_start {
             Some(i) if trimmed.as_bytes().get(i) == Some(&b'.') => Some(i),
             _ => None,

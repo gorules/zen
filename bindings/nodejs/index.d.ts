@@ -582,6 +582,8 @@ export interface PolicyInspectResult {
   span: PolicySpan
   kind: PolicyVariableType
   label: string
+  detail?: string
+  info?: string
 }
 
 export interface PolicyInstanceOf {

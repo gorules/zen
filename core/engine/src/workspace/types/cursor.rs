@@ -44,6 +44,10 @@ pub struct InspectResult {
     pub span: Span,
     pub kind: VariableType,
     pub label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub info: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

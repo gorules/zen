@@ -4,7 +4,7 @@
 mod error;
 mod token;
 
-mod codes;
+pub(crate) mod codes;
 mod cursor;
 mod lexer;
 

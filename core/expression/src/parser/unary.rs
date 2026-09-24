@@ -44,7 +44,7 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
                             format!("Invalid join operator `{}`", current_token.kind).as_str(),
                         ),
                         span: current_token.span,
-                    });
+                    })
                 }
             };
 
@@ -165,8 +165,10 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
 
             self.next();
             let node_right = match op.associativity {
-                Associativity::Left => self.binary_expression(op.precedence + 1, ctx),
-                _ => self.binary_expression(op.precedence, ctx),
+                Associativity::Left => {
+                    self.binary_expression(op.precedence + 1, ParserContext::Global)
+                }
+                _ => self.binary_expression(op.precedence, ParserContext::Global),
             };
 
             node_left = self.node(
@@ -245,7 +247,7 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Unary> {
             let p_start = self.current().map(|s| s.span.0);
 
             self.next();
-            let binary_node = self.binary_expression(0, ParserContext::Nested);
+            let binary_node = self.binary_expression(0, ParserContext::Global);
             if let Some(error_node) = self.expect(TokenKind::Bracket(Bracket::RightParenthesis)) {
                 return error_node;
             };

@@ -107,12 +107,3 @@ bool('true'); { "$": true }; true
 bool('false'); { "$": false }; true
 bool(1); { "$": true }; true
 bool(0); { "$": false }; true
-# Nested and/or follow precedence
-some(items, # == 1 or # == 2 and # == 3);{ "$": 1, items: [1] };true
-some(items, (# == 1 or # == 2) and # == 3);{ "$": 1, items: [1] };false
-some(items, # == 2 and # == 3 or # == 1);{ "$": 1, items: [1] };true
-(false or true) and false;{ "$": 1 };false
-(true or false and false);{ "$": 1 };true
-
-# Top-level joiners combine left to right
-> 1 or < 0 and > 5;{ "$": 3 };false

@@ -19,16 +19,21 @@ use crate::workspace::types::{
 
 impl Db {
     pub fn inspect(&self, cursor: &Cursor) -> Option<InspectResult> {
-        let (source, _, scope) = self.resolve_cursor(cursor)?;
+        let (source, kind, scope) = self.resolve_cursor(cursor)?;
+        let role = self.cursor_scope(cursor)?.role;
         let r = self.cursor_intellisense(cursor).borrow_mut().inspect(
             &source,
             SpanOps::byte_offset(&source, cursor.pos) as u32,
+            matches!(kind, ExpressionKind::Unary),
+            role,
             &scope,
         )?;
         Some(InspectResult {
             span: SpanOps::char_span(&source, r.span),
             kind: r.kind,
             label: r.label,
+            detail: r.detail,
+            info: r.info,
         })
     }
 

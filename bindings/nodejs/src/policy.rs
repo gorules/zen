@@ -290,6 +290,8 @@ pub struct PolicyInspectResult {
     #[napi(ts_type = "PolicyVariableType")]
     pub kind: Value,
     pub label: String,
+    pub detail: Option<String>,
+    pub info: Option<String>,
 }
 
 #[napi(object)]
@@ -810,6 +812,8 @@ impl Workspace {
                 span: vec![result.span.0, result.span.1],
                 kind: variable_type_to_json(&result.kind),
                 label: result.label,
+                detail: result.detail,
+                info: result.info,
             }))
     }
 

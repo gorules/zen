@@ -4,6 +4,7 @@ use crate::functions::{
     FunctionKind, FunctionRegistry, InternalFunction, MethodKind, MethodRegistry,
 };
 use crate::intellisense::type_provider::TypesProvider;
+use crate::lexer::codes::is_token_type;
 use crate::lexer::{
     ArithmeticOperator, Bracket, ComparisonOperator, Identifier, LogicalOperator, Operator,
     QuotationMark, TemplateString, Token, TokenKind,
@@ -348,7 +349,7 @@ impl<'p, 'a> Classifier<'p, 'a> {
     }
 
     fn is_ident_byte(b: u8) -> bool {
-        b.is_ascii_alphanumeric() || b == b'_' || b == b'$' || b == b'#'
+        is_token_type!(b as char, "alphanumeric")
     }
 
     pub(crate) fn new(

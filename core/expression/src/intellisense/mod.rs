@@ -5,11 +5,12 @@ use crate::intellisense::diagnostic::{
     collect_parser_diagnostics, collect_type_diagnostics, compiler_error_to_diagnostic,
     lexer_error_to_diagnostic, Diagnostic,
 };
-use crate::intellisense::inspection::{inspect_at, InspectionResult};
+use crate::intellisense::inspection::{Hover, HoverWord, InspectionResult};
 use crate::intellisense::scope::IntelliSenseScope;
 use crate::intellisense::type_provider::TypesProvider;
 use crate::lexer::Lexer;
 use crate::parser::{Node, NodeMetadata, Parser};
+use crate::slot::{SlotRole, SlotState};
 use crate::variable::VariableType;
 use bumpalo::Bump;
 use nohash_hasher::BuildNoHashHasher;
@@ -98,10 +99,57 @@ impl IntelliSense {
         &mut self,
         source: &str,
         pos: u32,
+        unary: bool,
+        role: SlotRole,
+        data: &VariableType,
+    ) -> Option<InspectionResult> {
+        self.arena.reset();
+        let word = self
+            .lexer
+            .tokenize_lenient(&self.arena, source)
+            .ok()
+            .and_then(|lenient| Hover::word_at(source, pos, &lenient));
+        match word {
+            Some((span, HoverWord::Call { member })) => {
+                let name = source.get(span.0 as usize..span.1 as usize)?;
+                let completion = if member {
+                    Completions::method_named(name)
+                } else {
+                    Completions::function_named(name)
+                }?;
+                let kind = self
+                    .inspect_typed(source, pos, data)
+                    .map_or(VariableType::Any, |call| call.kind);
+                Some(InspectionResult {
+                    detail: Some(completion.detail),
+                    info: Some(completion.info).filter(|info| !info.is_empty()),
+                    ..InspectionResult::typed(source, span, kind)
+                })
+            }
+            Some((span, HoverWord::Name)) => {
+                let probe = format!("{}.", source.get(..span.1 as usize)?);
+                let slot = self
+                    .slot(&probe, probe.len() as u32, unary, role, data, None)
+                    .slot;
+                match (slot.state, slot.operand) {
+                    (SlotState::Member | SlotState::Path, Some(kind)) => {
+                        Some(InspectionResult::typed(source, span, kind))
+                    }
+                    _ => self.inspect_typed(source, pos, data),
+                }
+            }
+            None => self.inspect_typed(source, pos, data),
+        }
+    }
+
+    fn inspect_typed(
+        &mut self,
+        source: &str,
+        pos: u32,
         data: &VariableType,
     ) -> Option<InspectionResult> {
         let tokens = self.type_check(source, data)?;
-        inspect_at(source, pos, &tokens)
+        Hover::smallest_token(source, pos, &tokens)
     }
 
     pub fn analyze(&mut self, source: &str, data: &VariableType) -> Rc<ExpressionAnalysis> {

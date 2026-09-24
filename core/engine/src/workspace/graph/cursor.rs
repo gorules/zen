@@ -42,12 +42,24 @@ impl Db {
 
         match &node.kind {
             DecisionNodeKind::ExpressionNode { content } => {
-                if matches!(cursor.target, CursorTarget::ExpressionKey) {
+                if let CursorTarget::ExpressionKey { id } = &cursor.target {
+                    let key = id
+                        .as_ref()
+                        .and_then(|id| content.expressions.iter().find(|row| row.id == *id))
+                        .map(|row| row.key.clone());
                     let scope = GraphAnalyzer::scope_with_nodes(
-                        &node_analysis.input,
+                        if key.is_some() {
+                            &node_analysis.output
+                        } else {
+                            &node_analysis.input
+                        },
                         &node_analysis.nodes_scope,
                     );
-                    return Some((Arc::from(""), ExpressionKind::Standard, scope));
+                    return Some((
+                        key.unwrap_or_else(|| Arc::from("")),
+                        ExpressionKind::Standard,
+                        scope,
+                    ));
                 }
                 let CursorTarget::Expression { id } = &cursor.target else {
                     return None;

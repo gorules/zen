@@ -360,7 +360,7 @@ fn run_completions(file_name: &str, toml_data: &str) {
     for test in &file.test {
         let ctx = format!("[{file_name}:{}]", test.name);
         let target = if test.key {
-            CursorTarget::ExpressionKey
+            CursorTarget::ExpressionKey { id: None }
         } else if test.head {
             CursorTarget::DecisionTableHead {
                 col: Arc::from(test.expression_id.as_str()),
@@ -433,7 +433,7 @@ impl SlotsCase {
                 col: id(),
             },
             "head" => CursorTarget::DecisionTableHead { col: id() },
-            "expression_key" => CursorTarget::ExpressionKey,
+            "expression_key" => CursorTarget::ExpressionKey { id: None },
             "assertion_output" => CursorTarget::AssertionOutput,
             "match_target" => CursorTarget::MatchTarget,
             "match_value" => CursorTarget::MatchValue { id: id() },

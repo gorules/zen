@@ -55,7 +55,7 @@ impl ExpressionIr {
         } else if let Err(reason) = WriteTarget::validate_path(&key) {
             cx.target_error(
                 id,
-                CursorTarget::ExpressionKey,
+                CursorTarget::ExpressionKey { id: None },
                 Some((0, key.chars().count() as u32)),
                 DiagnosticCode::InvalidWritePath,
                 format!("invalid write path '{key}': {reason}"),
@@ -117,7 +117,8 @@ impl ExpressionIr {
     }
 
     pub(super) fn write_target(&self, path: &str) -> Option<CursorTarget> {
-        (!self.key.is_empty() && self.key.as_ref() == path).then_some(CursorTarget::ExpressionKey)
+        (!self.key.is_empty() && self.key.as_ref() == path)
+            .then_some(CursorTarget::ExpressionKey { id: None })
     }
 
     pub(super) fn analyze(&self, cx: &mut AnalysisContext) {
@@ -133,7 +134,7 @@ impl ExpressionIr {
             self.key.clone(),
             analysis.return_type.clone(),
             None,
-            Some(CursorTarget::ExpressionKey),
+            Some(CursorTarget::ExpressionKey { id: None }),
             instance_source,
         );
     }
@@ -165,7 +166,7 @@ impl ExpressionIr {
         scope: VariableType,
     ) -> Option<(Arc<str>, ExpressionKind, VariableType)> {
         match &cursor.target {
-            CursorTarget::ExpressionKey => {
+            CursorTarget::ExpressionKey { .. } => {
                 Some((self.key.clone(), ExpressionKind::Standard, scope))
             }
             CursorTarget::Expression { .. } => {

@@ -19,15 +19,29 @@ pub struct Cursor {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum CursorTarget {
-    Expression { id: Arc<str> },
+    Expression {
+        id: Arc<str>,
+    },
     AssertionOutput,
-    ExpressionKey,
+    ExpressionKey {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<Arc<str>>,
+    },
     MatchTarget,
-    MatchValue { id: Arc<str> },
-    DecisionTableHead { col: Arc<str> },
-    DecisionTableCell { row: Arc<str>, col: Arc<str> },
+    MatchValue {
+        id: Arc<str>,
+    },
+    DecisionTableHead {
+        col: Arc<str>,
+    },
+    DecisionTableCell {
+        row: Arc<str>,
+        col: Arc<str>,
+    },
     DataModelName,
-    DataModelProperty { id: Arc<str> },
+    DataModelProperty {
+        id: Arc<str>,
+    },
     TransformInput,
 }
 

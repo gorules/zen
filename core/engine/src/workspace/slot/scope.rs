@@ -34,7 +34,7 @@ impl Db {
             (BlockKind::DecisionTable(table), _) => {
                 self.policy_table_scope(&unit, table, cursor, scope, &enriched.scope, cache)
             }
-            (BlockKind::Expression(_), CursorTarget::ExpressionKey)
+            (BlockKind::Expression(_), CursorTarget::ExpressionKey { .. })
             | (BlockKind::Assertion(_), CursorTarget::AssertionOutput)
             | (BlockKind::Match(_), CursorTarget::MatchTarget) => Some(CursorScope::path(scope)),
             (BlockKind::Expression(expression), CursorTarget::Expression { .. }) => Some(
@@ -166,7 +166,7 @@ impl Db {
                 | DecisionNodeKind::DecisionNode { .. },
                 CursorTarget::TransformInput,
             )
-            | (DecisionNodeKind::ExpressionNode { .. }, CursorTarget::ExpressionKey) => {
+            | (DecisionNodeKind::ExpressionNode { .. }, CursorTarget::ExpressionKey { .. }) => {
                 Some(CursorScope::path(input_scope()))
             }
             (

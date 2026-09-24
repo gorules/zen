@@ -127,6 +127,12 @@ impl PathMatch {
             && segments.iter().zip(local_target).all(|(seg, t)| seg == t)
     }
 
+    pub(crate) fn key_writes_whole(key: &str, local_target: &[&str]) -> bool {
+        let segments: Vec<&str> = key.split('.').collect();
+        segments.len() <= local_target.len()
+            && segments.iter().zip(local_target).all(|(seg, t)| seg == t)
+    }
+
     pub(crate) fn key_overlaps(key: &str, local_target: &[&str]) -> bool {
         Self::key_matches(key, local_target).is_some() || Self::key_covers(key, local_target)
     }
@@ -185,8 +191,9 @@ impl Db {
                 }
                 let path: Arc<str> = Arc::from(global.join("."));
                 let mut visited: HashSet<Arc<str>> = HashSet::new();
-                let target =
-                    self.graph_resolve_property_target(&cursor.policy_path, &path, &mut visited)?;
+                let target = self
+                    .graph_resolve_property_target(&cursor.policy_path, &path, &mut visited)
+                    .or_else(|| self.graph_input_property_target(&cursor.policy_path, &path))?;
                 return Some(PrepareRename { target, span });
             }
         }
@@ -229,7 +236,7 @@ impl Db {
         edits
     }
 
-    fn graph_schema_declaration(
+    pub(crate) fn graph_schema_declaration(
         &self,
         document: &Arc<str>,
         path: &str,
@@ -713,6 +720,19 @@ impl Db {
             }
         }
         None
+    }
+
+    fn graph_input_property_target(
+        &self,
+        document: &Arc<str>,
+        path: &Arc<str>,
+    ) -> Option<RenameTarget> {
+        let declared = self.graph_schema_declaration(document, path).is_some();
+        let read = !self.graph_collect_sites(document, path).is_empty();
+        (declared || read).then(|| RenameTarget::GraphProperty {
+            document: document.clone(),
+            path: path.clone(),
+        })
     }
 
     fn policy_property_target(&self, policy: &Arc<str>, local: &[&str]) -> Option<RenameTarget> {

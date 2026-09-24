@@ -234,7 +234,9 @@ impl Db {
             (BlockDoc::Expression { data, .. }, CursorTarget::Expression { .. }) => {
                 data.value.clone()
             }
-            (BlockDoc::Expression { data, .. }, CursorTarget::ExpressionKey) => data.key.clone(),
+            (BlockDoc::Expression { data, .. }, CursorTarget::ExpressionKey { .. }) => {
+                data.key.clone()
+            }
             (BlockDoc::Assertion { data, .. }, CursorTarget::Expression { id }) => data
                 .conditions
                 .iter()

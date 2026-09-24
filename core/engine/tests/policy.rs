@@ -2878,7 +2878,10 @@ fn expression_diagnostics_distinguish_key_from_value() {
         .expect("expected an InvalidWritePath diagnostic on the statement key");
     assert_eq!(key_diag.location.expression_id.as_deref(), Some("s1"));
     assert!(
-        matches!(&key_diag.location.target, Some(CursorTarget::ExpressionKey)),
+        matches!(
+            &key_diag.location.target,
+            Some(CursorTarget::ExpressionKey { .. })
+        ),
         "key diagnostic must target the expression key, got {:?}",
         key_diag.location.target
     );
@@ -3014,7 +3017,7 @@ fn input_override_on_expression_key_carries_key_target() {
         .find(|d| format!("{:?}", d.code) == "InputOverride")
         .expect("expected InputOverride");
     assert!(
-        matches!(&d.location.target, Some(CursorTarget::ExpressionKey)),
+        matches!(&d.location.target, Some(CursorTarget::ExpressionKey { .. })),
         "InputOverride must target the expression key, got {:?}",
         d.location.target
     );

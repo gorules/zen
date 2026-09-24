@@ -21,7 +21,7 @@ export type PolicyRenameTarget =
 export type PolicyCursorTarget =
   | { kind: 'expression'; id: string }
   | { kind: 'assertionOutput' }
-  | { kind: 'expressionKey' }
+  | { kind: 'expressionKey'; id?: string }
   | { kind: 'matchTarget' }
   | { kind: 'matchValue'; id: string }
   | { kind: 'decisionTableHead'; col: string }

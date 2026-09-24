@@ -975,13 +975,18 @@ fn graph_property_rename_rewrites_writers_and_readers() {
 }
 
 #[test]
-fn rename_of_unwritten_property_is_refused() {
+fn input_property_rename_rewrites_readers_and_schema() {
+    use zen_engine::policy::{EngineEdit, ReferenceKind, RenameTarget};
+
     let mut ws = Workspace::new();
     ws.set_document(
         "g",
         document(linear_graph(
             Some(person_schema()),
-            vec![expression_node("calc", &[("total", "age * 2")])],
+            vec![expression_node(
+                "calc",
+                &[("total", "age * 2"), ("adult", "age >= 18")],
+            )],
         )),
     );
     let cursor = Cursor {
@@ -992,7 +997,85 @@ fn rename_of_unwritten_property_is_refused() {
             id: "calc-e0".into(),
         },
     };
-    assert!(ws.prepare_rename(&cursor).is_none());
+    let prepared = ws.prepare_rename(&cursor).expect("prepare rename");
+    let RenameTarget::GraphProperty { document, path } = &prepared.target else {
+        panic!("unexpected target {:?}", prepared.target);
+    };
+    assert_eq!(document.as_ref(), "g");
+    assert_eq!(path.as_ref(), "age");
+    assert_eq!(prepared.span, (0, 3));
+
+    let sites = ws.references(&prepared.target);
+    let declared = sites
+        .iter()
+        .filter(|s| s.kind == ReferenceKind::DataModel)
+        .count();
+    let reads = sites
+        .iter()
+        .filter(|s| s.kind == ReferenceKind::ExpressionRead)
+        .count();
+    assert_eq!((declared, reads), (1, 2), "{sites:?}");
+
+    let edits = ws.rename(&prepared.target, "years");
+    let rendered: Vec<String> = edits
+        .iter()
+        .map(|e| serde_json::to_string(e).unwrap())
+        .collect();
+    let calc = rendered
+        .iter()
+        .find(|r| r.contains("\"calc\""))
+        .expect("calc edit");
+    assert!(
+        calc.contains("years * 2") && calc.contains("years >= 18"),
+        "{calc}"
+    );
+    let input = rendered
+        .iter()
+        .find(|r| r.contains("\"in\""))
+        .expect("schema edit");
+    assert!(
+        input.contains("years") && !input.contains("\\\"age\\\""),
+        "{input}"
+    );
+    for edit in &edits {
+        assert!(matches!(edit, EngineEdit::ReplaceNode { .. }));
+    }
+}
+
+#[test]
+fn undeclared_input_rename_rewrites_every_reader() {
+    use zen_engine::policy::RenameTarget;
+
+    let mut ws = Workspace::new();
+    ws.set_document(
+        "g",
+        document(linear_graph(
+            None,
+            vec![expression_node(
+                "calc",
+                &[("total", "age * 2"), ("adult", "age >= 18")],
+            )],
+        )),
+    );
+    let cursor = Cursor {
+        policy_path: "g".into(),
+        block_id: "calc".into(),
+        pos: 1,
+        target: CursorTarget::Expression {
+            id: "calc-e1".into(),
+        },
+    };
+    let prepared = ws.prepare_rename(&cursor).expect("prepare rename");
+    assert!(
+        matches!(&prepared.target, RenameTarget::GraphProperty { path, .. } if path.as_ref() == "age")
+    );
+    assert_eq!(ws.references(&prepared.target).len(), 2);
+    let edits = ws.rename(&prepared.target, "years");
+    let rendered = serde_json::to_string(&edits).unwrap();
+    assert!(
+        rendered.contains("years * 2") && rendered.contains("years >= 18"),
+        "{rendered}"
+    );
 }
 
 #[test]
@@ -3231,4 +3314,83 @@ fn missing_member_through_local_names_the_member_not_the_alias() {
         errors[0].contains("doesNotExist") && !errors[0].contains("'e'"),
         "the specific member must be blamed, not the alias: {errors:?}"
     );
+}
+
+#[test]
+fn member_writes_do_not_define_declared_input_objects() {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "applicant": {
+                "type": "object",
+                "properties": { "age": { "type": "number" } },
+                "required": ["age"]
+            }
+        },
+        "required": ["applicant"]
+    });
+    let mut ws = Workspace::new();
+    ws.set_document(
+        "g",
+        document(linear_graph(
+            Some(schema),
+            vec![expression_node(
+                "calc",
+                &[
+                    ("applicant.adult", "applicant.age >= 18"),
+                    ("result.band", "'A'"),
+                ],
+            )],
+        )),
+    );
+
+    let writer = |path: &str| {
+        ws.dependencies_scoped(path, Some("g"))
+            .written_by
+            .map(|block| block.block_id.to_string())
+    };
+    assert_eq!(writer("applicant"), None);
+    assert_eq!(writer("applicant.age"), None);
+    assert_eq!(writer("applicant.adult").as_deref(), Some("calc"));
+    assert_eq!(writer("result").as_deref(), Some("calc"));
+}
+
+#[test]
+fn expression_key_segments_resolve_in_graph_rows() {
+    use zen_engine::policy::RenameTarget;
+
+    let mut ws = Workspace::new();
+    ws.set_document(
+        "g",
+        document(linear_graph(
+            Some(person_schema()),
+            vec![
+                expression_node("calc", &[("result.adult", "age >= 18")]),
+                expression_node("use", &[("flag", "result.adult")]),
+            ],
+        )),
+    );
+    let key_cursor = |pos: u32| Cursor {
+        policy_path: "g".into(),
+        block_id: "calc".into(),
+        pos,
+        target: CursorTarget::ExpressionKey {
+            id: Some("calc-e0".into()),
+        },
+    };
+
+    let prepared = ws.prepare_rename(&key_cursor(8)).expect("member segment");
+    let RenameTarget::GraphProperty { path, .. } = &prepared.target else {
+        panic!("unexpected target {:?}", prepared.target);
+    };
+    assert_eq!(path.as_ref(), "result.adult");
+    assert_eq!(prepared.span, (7, 12));
+
+    let root = ws.prepare_rename(&key_cursor(2)).expect("root segment");
+    let RenameTarget::GraphProperty { path, .. } = &root.target else {
+        panic!("unexpected target {:?}", root.target);
+    };
+    assert_eq!(path.as_ref(), "result");
+
+    assert!(ws.inspect(&key_cursor(8)).is_some());
 }

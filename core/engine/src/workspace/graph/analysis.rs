@@ -86,6 +86,7 @@ pub(crate) struct GraphAnalyzer<'a> {
     content: &'a GraphContent,
     diagnostics: Vec<Diagnostic>,
     validate: bool,
+    unchecked: bool,
     nodes_scope: VariableType,
     dictionary_types: HashMap<Arc<str>, VariableType>,
 }
@@ -108,6 +109,7 @@ impl<'a> GraphAnalyzer<'a> {
             content,
             diagnostics: Vec::new(),
             validate: false,
+            unchecked: false,
             nodes_scope: VariableType::Any,
             dictionary_types,
         }
@@ -451,12 +453,13 @@ impl<'a> GraphAnalyzer<'a> {
         open: bool,
         graph_input: &VariableType,
     ) -> GraphNodeAnalysis {
-        let scope_input = if unchecked || matches!(input, VariableType::Any) {
+        let scope_input = if matches!(input, VariableType::Any) {
             VariableType::empty_object()
         } else {
             input.shallow_clone()
         };
         self.validate = !unchecked && !open && !matches!(input, VariableType::Any);
+        self.unchecked = unchecked;
 
         let mut analysis = GraphNodeAnalysis {
             input: scope_input.shallow_clone(),
@@ -703,7 +706,7 @@ impl<'a> GraphAnalyzer<'a> {
                 let element = match base.iterator() {
                     Some(inner) => inner.as_ref().shallow_clone(),
                     None => {
-                        if !matches!(base, VariableType::Any) {
+                        if !self.unchecked && !matches!(base, VariableType::Any) {
                             self.diagnostics.push(Diagnostic::error(
                                 DiagnosticCode::TypeMismatch,
                                 DiagnosticLocation::block(self.path.clone(), node.id.clone())
@@ -859,7 +862,9 @@ impl<'a> GraphAnalyzer<'a> {
                             ExpressionKind::Standard,
                             &base_scope,
                         );
-                        if !matches!(resolved, VariableType::Bool | VariableType::Any) {
+                        if !self.unchecked
+                            && !matches!(resolved, VariableType::Bool | VariableType::Any)
+                        {
                             self.diagnostics.push(
                                 Diagnostic::error(
                                     DiagnosticCode::TypeMismatch,
@@ -1042,7 +1047,8 @@ impl<'a> GraphAnalyzer<'a> {
             if !collect && (has_empty_cell || (has_null_cell && declared.is_some())) {
                 merged = super::wrap_optional(merged);
             }
-            if declared.is_none()
+            if !self.unchecked
+                && declared.is_none()
                 && matches!(merged, VariableType::Any)
                 && cell_types.len() > 1
                 && !cell_types.iter().any(|t| matches!(t, VariableType::Any))
@@ -1416,7 +1422,7 @@ impl<'a> GraphAnalyzer<'a> {
                     ExpressionKind::Standard,
                     &condition_scope,
                 );
-                if !matches!(resolved, VariableType::Bool | VariableType::Any) {
+                if !self.unchecked && !matches!(resolved, VariableType::Bool | VariableType::Any) {
                     self.diagnostics.push(
                         Diagnostic::error(
                             DiagnosticCode::TypeMismatch,

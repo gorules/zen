@@ -145,6 +145,15 @@ impl Db {
         let doc = snap.graphs.get(&cursor.policy_path)?.clone();
         let content = doc.as_graph()?;
         let node = content.nodes.iter().find(|n| n.id == cursor.block_id)?;
+        if let (
+            CursorTarget::DecisionTableHead { col },
+            DecisionNodeKind::DecisionTableNode { content },
+        ) = (&cursor.target, &node.kind)
+        {
+            if let Some(column) = content.outputs.iter().find(|c| c.id == *col) {
+                return self.graph_prepare_output_rename(cursor, node, &column.field);
+            }
+        }
         let paths = NodePaths::new(node);
         let dollar_local = matches!(node.kind, DecisionNodeKind::ExpressionNode { .. })
             && matches!(cursor.target, CursorTarget::Expression { .. });
@@ -200,6 +209,34 @@ impl Db {
         None
     }
 
+    fn graph_prepare_output_rename(
+        &self,
+        cursor: &Cursor,
+        node: &DecisionNode,
+        field: &str,
+    ) -> Option<PrepareRename> {
+        let field = field.strip_suffix("[]").map(str::trim_end).unwrap_or(field);
+        let segments: Vec<&str> = field.split('.').collect();
+        let index = (0..segments.len()).find(|&i| {
+            let span = PathMatch::segment_span(field, i);
+            span.0 <= cursor.pos && cursor.pos <= span.1
+        })?;
+        if segments[..=index].iter().any(|segment| segment.is_empty()) {
+            return None;
+        }
+        let paths = NodePaths::new(node);
+        let mut global: Vec<&str> = paths.output_prefix.iter().map(String::as_str).collect();
+        global.extend(&segments[..=index]);
+        let path: Arc<str> = Arc::from(global.join("."));
+        let mut visited: HashSet<Arc<str>> = HashSet::new();
+        let target =
+            self.graph_resolve_property_target(&cursor.policy_path, &path, &mut visited)?;
+        Some(PrepareRename {
+            target,
+            span: PathMatch::segment_span(field, index),
+        })
+    }
+
     pub(crate) fn graph_references(
         &self,
         document: &Arc<str>,
@@ -211,15 +248,19 @@ impl Db {
             .map(RenameSite::into_reference)
             .map(Self::clip_reference_line)
             .collect();
-        if let Some((node_id, key)) = self.graph_schema_declaration(document, path) {
-            sites.push(ReferenceSite {
-                policy_path: document.clone(),
-                block_id: node_id,
-                expression_id: None,
-                source: key.clone(),
-                span: (0, SpanOps::char_len(&key)),
-                kind: ReferenceKind::DataModel,
-            });
+        let declarations = std::iter::once((document.clone(), path.clone()))
+            .chain(self.graph_input_callees(document, path));
+        for (doc, doc_path) in declarations {
+            if let Some((node_id, key)) = self.graph_schema_declaration(&doc, &doc_path) {
+                sites.push(ReferenceSite {
+                    policy_path: doc,
+                    block_id: node_id,
+                    expression_id: None,
+                    source: key.clone(),
+                    span: (0, SpanOps::char_len(&key)),
+                    kind: ReferenceKind::DataModel,
+                });
+            }
         }
         sites.sort_by(ReferenceSite::display_cmp);
         sites
@@ -233,6 +274,9 @@ impl Db {
     ) -> Vec<EngineEdit> {
         let mut edits = self.replace_node_edits(self.graph_rename_sites(document, path), new_name);
         edits.extend(self.graph_schema_rename_edit(document, path, new_name));
+        for (callee, callee_path) in self.graph_input_callees(document, path) {
+            edits.extend(self.graph_schema_rename_edit(&callee, &callee_path, new_name));
+        }
         edits
     }
 
@@ -520,10 +564,9 @@ impl Db {
                     {
                         if let Some(&span) = reference.spans.get(1) {
                             let span = SpanOps::char_span(&site.source, span);
-                            let quoted = site
-                                .source
+                            let quoted = site.source[SpanOps::byte_offset(&site.source, span.0)..]
                                 .chars()
-                                .nth(span.0 as usize)
+                                .next()
                                 .is_some_and(|c| c == '\'' || c == '"');
                             if !quoted {
                                 push(span);
@@ -541,6 +584,7 @@ impl Db {
 
     fn bracket_name_spans(source: &str, name: &str) -> Vec<Span> {
         let chars: Vec<char> = source.chars().collect();
+        let units = utf16_prefix(&chars);
         let name_chars: Vec<char> = name.chars().collect();
         let needle: Vec<char> = "$nodes[".chars().collect();
         let mut out: Vec<Span> = Vec::new();
@@ -567,7 +611,7 @@ impl Db {
                 && chars[start..end] == name_chars[..]
                 && chars.get(end) == Some(&quote)
             {
-                out.push((start as u32, end as u32));
+                out.push((units[start], units[end]));
             }
             i = j + 1;
         }
@@ -579,7 +623,8 @@ impl Db {
             return site;
         }
         let chars: Vec<char> = site.source.chars().collect();
-        let span_start = site.span.0 as usize;
+        let units = utf16_prefix(&chars);
+        let span_start = units.partition_point(|&u| u < site.span.0);
         let line_start = chars[..span_start.min(chars.len())]
             .iter()
             .rposition(|&c| c == '\n')
@@ -590,7 +635,7 @@ impl Db {
             .map_or(chars.len(), |at| span_start + at);
         let line: String = chars[line_start..line_end].iter().collect();
         let lead = line.chars().take_while(|c| c.is_whitespace()).count() as u32;
-        let shift = (line_start as u32 + lead).min(site.span.0);
+        let shift = (units[line_start.min(chars.len())] + lead).min(site.span.0);
         ReferenceSite {
             source: Arc::from(line.trim_start()),
             span: (site.span.0 - shift, site.span.1 - shift),
@@ -601,7 +646,51 @@ impl Db {
     fn graph_rename_sites(&self, document: &Arc<str>, path: &Arc<str>) -> Vec<RenameSite> {
         let mut sites = self.graph_collect_sites(document, path);
         self.extend_with_caller_reads(vec![(document.clone(), path.clone())], &mut sites);
+        for (callee, callee_path) in self.graph_input_callees(document, path) {
+            sites.extend(self.graph_collect_sites(&callee, &callee_path));
+        }
         sites
+    }
+
+    fn graph_input_callees(
+        &self,
+        document: &Arc<str>,
+        path: &Arc<str>,
+    ) -> Vec<(Arc<str>, Arc<str>)> {
+        let snap = self.snapshot();
+        let mut out: Vec<(Arc<str>, Arc<str>)> = Vec::new();
+        let mut visited: HashSet<(Arc<str>, Arc<str>)> = HashSet::new();
+        visited.insert((document.clone(), path.clone()));
+        let mut queue: VecDeque<(Arc<str>, Arc<str>)> =
+            VecDeque::from([(document.clone(), path.clone())]);
+        while let Some((doc_path, doc_prop)) = queue.pop_front() {
+            let Some(content) = snap.graphs.get(&doc_path).and_then(|d| d.as_graph()) else {
+                continue;
+            };
+            let target: Vec<&str> = doc_prop.split('.').collect();
+            for node in &content.nodes {
+                let DecisionNodeKind::DecisionNode { content: reference } = &node.kind else {
+                    continue;
+                };
+                let callee: Arc<str> = reference.key.clone();
+                if !snap.graphs.contains_key(&callee) {
+                    continue;
+                }
+                let Some(local) = NodePaths::new(node).local_read_target(&target) else {
+                    continue;
+                };
+                let callee_path: Arc<str> = Arc::from(local.join("."));
+                let relevant = self
+                    .graph_schema_declaration(&callee, &callee_path)
+                    .is_some()
+                    || !self.graph_collect_sites(&callee, &callee_path).is_empty();
+                if relevant && visited.insert((callee.clone(), callee_path.clone())) {
+                    out.push((callee.clone(), callee_path.clone()));
+                    queue.push_back((callee, callee_path));
+                }
+            }
+        }
+        out
     }
 
     fn extend_with_caller_reads(
@@ -914,6 +1003,16 @@ impl Db {
             return Vec::new();
         }
 
+        let exposing: HashSet<&str> = content
+            .nodes
+            .iter()
+            .filter(|node| {
+                matches!(node.kind, DecisionNodeKind::InputNode { .. })
+                    || NodePaths::attributes(node).is_some_and(|a| a.pass_through)
+            })
+            .map(|node| node.name.as_ref())
+            .collect();
+
         let mut sites: Vec<RenameSite> = Vec::new();
         let mut emit = |node_id: &Arc<str>,
                         expression_id: Option<Arc<str>>,
@@ -988,6 +1087,23 @@ impl Db {
                         continue;
                     }
                     let segments: Vec<&str> = reference.path.iter().map(|s| s.as_ref()).collect();
+                    if segments.first() == Some(&"$nodes") {
+                        let via_exposing = segments.len() >= target.len() + 2
+                            && exposing.contains(segments[1])
+                            && target.iter().zip(&segments[2..]).all(|(t, seg)| t == seg);
+                        if via_exposing {
+                            if let Some(&span) = reference.spans.get(target.len() + 1) {
+                                emit(
+                                    &node.id,
+                                    site.expression_id.clone(),
+                                    &site.source,
+                                    SpanOps::char_span(&site.source, span),
+                                    ReferenceKind::ExpressionRead,
+                                );
+                            }
+                        }
+                        continue;
+                    }
                     if segments.first() == Some(&"$") {
                         let dollar_applies = is_expression_node
                             && !matches!(site.target, CursorTarget::TransformInput);
@@ -1052,6 +1168,7 @@ impl Db {
 
     fn function_read_spans(source: &str, needle: &str, last_len: u32) -> Vec<Span> {
         let chars: Vec<char> = source.chars().collect();
+        let units = utf16_prefix(&chars);
         let mask = js_code_mask(&chars);
         let needle_chars: Vec<char> = needle.chars().collect();
         let mut out: Vec<Span> = Vec::new();
@@ -1071,12 +1188,23 @@ impl Db {
                 !(next.is_alphanumeric() || next == '_' || next == '$')
             };
             if before_ok && after_ok {
-                out.push(((end as u32) - last_len, end as u32));
+                out.push((units[end] - last_len, units[end]));
             }
             i = end;
         }
         out
     }
+}
+
+fn utf16_prefix(chars: &[char]) -> Vec<u32> {
+    let mut units = Vec::with_capacity(chars.len() + 1);
+    let mut total = 0u32;
+    units.push(0);
+    for c in chars {
+        total += c.len_utf16() as u32;
+        units.push(total);
+    }
+    units
 }
 
 pub(crate) fn js_code_mask(chars: &[char]) -> Vec<bool> {

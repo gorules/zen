@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use ahash::{HashMap, HashMapExt};
+use ahash::{HashMap, HashMapExt, HashSet};
 use serde_json::Value;
 use zen_expression::intellisense::completion::Completions;
 use zen_expression::intellisense::Reference;
@@ -44,15 +44,20 @@ impl Db {
         let Some(scope) = self.cursor_scope(cursor) else {
             return Vec::new();
         };
+        const MAX_PADDING: u32 = 1024;
         let len = SpanOps::char_len(&source);
+        let cursor_pos = match cursor.pos > len.saturating_add(MAX_PADDING) {
+            true => len,
+            false => cursor.pos,
+        };
         let padded;
-        let source: &str = if cursor.pos > len {
-            padded = format!("{source}{}", " ".repeat((cursor.pos - len) as usize));
+        let source: &str = if cursor_pos > len {
+            padded = format!("{source}{}", " ".repeat((cursor_pos - len) as usize));
             &padded
         } else {
             &source
         };
-        let pos = SpanOps::byte_offset(source, cursor.pos) as u32;
+        let pos = SpanOps::byte_offset(source, cursor_pos) as u32;
         let result = self.cursor_intellisense(cursor).borrow_mut().slot(
             source,
             pos,
@@ -346,29 +351,45 @@ impl Db {
             .collect();
 
         let mut is = intellisense.borrow_mut();
-        for (policy_path, unit, enriched) in &units {
+        for (policy_path, _, _) in &units {
             let parsed = &snap.all_parsed[policy_path];
-            let entities = &unit.entity_graph;
-            let scope = &enriched.scope;
+            let contexts: Vec<_> = units
+                .iter()
+                .filter(|(owner, unit, _)| {
+                    owner == policy_path || unit.members.contains(policy_path)
+                })
+                .collect();
+            let mut seen: HashSet<(Arc<str>, Arc<str>, Span)> = HashSet::default();
             for rule in parsed.policy.rules() {
                 for loc in rule.kind.expressions(&rule.id) {
-                    let analysis =
-                        IntelliSenseSource::analyze(&mut is, &loc.source, loc.kind, scope);
-                    for reference in &analysis.references {
-                        entities.walk_segment_targets(reference, |i, t| {
-                            let Some(&span) = reference.spans.get(i).filter(|_| &t == target)
-                            else {
-                                return;
-                            };
-                            callback(RenameSite {
-                                policy_path: policy_path.clone(),
-                                block_id: loc.block_id.clone(),
-                                expression_id: Some(loc.expression_id.clone()),
-                                source: loc.source.clone(),
-                                span: SpanOps::char_span(&loc.source, span),
-                                kind: ReferenceKind::ExpressionRead,
+                    for (_, unit, enriched) in &contexts {
+                        let analysis = IntelliSenseSource::analyze(
+                            &mut is,
+                            &loc.source,
+                            loc.kind,
+                            &enriched.scope,
+                        );
+                        for reference in &analysis.references {
+                            unit.entity_graph.walk_segment_targets(reference, |i, t| {
+                                let Some(&span) = reference.spans.get(i).filter(|_| &t == target)
+                                else {
+                                    return;
+                                };
+                                let span = SpanOps::char_span(&loc.source, span);
+                                let key = (loc.block_id.clone(), loc.expression_id.clone(), span);
+                                if !seen.insert(key) {
+                                    return;
+                                }
+                                callback(RenameSite {
+                                    policy_path: policy_path.clone(),
+                                    block_id: loc.block_id.clone(),
+                                    expression_id: Some(loc.expression_id.clone()),
+                                    source: loc.source.clone(),
+                                    span,
+                                    kind: ReferenceKind::ExpressionRead,
+                                });
                             });
-                        });
+                        }
                     }
                 }
                 for (expression_id, source) in rule.kind.write_keys() {

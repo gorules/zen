@@ -16,6 +16,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use thiserror::Error;
 use zen_expression::Isolate;
+use zen_types::symbol::Symbol;
 use zen_types::variable::{ToVariable, Variable};
 
 #[derive(Clone)]
@@ -109,37 +110,105 @@ where
         self.extensions.function_runtime().await.node_context(self)
     }
 
-    pub fn validate(&self, schema: &Value, value: &Variable) -> Result<(), NodeError> {
-        self.validate_schema(schema, value, false)
-    }
-
-    /// Validates as written first; only when that fails does null count as an absent optional.
-    /// Rewriting can also tighten `if`/`not`/`oneOf`, so the rewrite alone would reject valid input.
     pub fn validate_input(&self, schema: &Value, value: &Variable) -> Result<(), NodeError> {
-        let strict = self.validate_schema(schema, value, false);
-        if strict.is_err() && self.validate_schema(schema, value, true).is_ok() {
+        let Err(strict) = self.validate_errors(schema, value)? else {
             return Ok(());
-        }
+        };
 
-        strict
+        let current = value.deep_clone();
+        loop {
+            let paths = self.error_paths(schema, &current)?;
+            if paths.is_empty() {
+                return Ok(());
+            }
+            let removed = paths
+                .iter()
+                .filter(|path| Self::remove_null_at(&current, path))
+                .count();
+            if removed == 0 {
+                return Err(strict).node_context(self);
+            }
+        }
     }
 
-    fn validate_schema(
+    fn remove_null_at(value: &Variable, pointer: &str) -> bool {
+        let segments: Vec<String> = pointer
+            .split('/')
+            .skip(1)
+            .map(|s| s.replace("~1", "/").replace("~0", "~"))
+            .collect();
+        let Some((key, parents)) = segments.split_last() else {
+            return false;
+        };
+        let mut current = value.shallow_clone();
+        for segment in parents {
+            let next = match &current {
+                Variable::Object(o) => o
+                    .borrow()
+                    .get(&Symbol::from(segment.as_str()))
+                    .map(Variable::shallow_clone),
+                Variable::Array(a) => segment
+                    .parse::<usize>()
+                    .ok()
+                    .and_then(|i| a.borrow().get(i).map(Variable::shallow_clone)),
+                _ => None,
+            };
+            let Some(next) = next else {
+                return false;
+            };
+            current = next;
+        }
+        let Variable::Object(o) = &current else {
+            return false;
+        };
+        if !matches!(
+            o.borrow().get(&Symbol::from(key.as_str())),
+            Some(Variable::Null)
+        ) {
+            return false;
+        }
+        o.borrow_mut().remove(&Symbol::from(key.as_str()));
+        true
+    }
+
+    fn validate_errors(
         &self,
         schema: &Value,
         value: &Variable,
-        nullable_optionals: bool,
-    ) -> Result<(), NodeError> {
-        const NULLABLE_OPTIONALS_SALT: u64 = 0x9e37_79b9_7f4a_7c15;
+    ) -> Result<Result<(), ValidationErrorJson>, NodeError> {
+        let validator = self
+            .extensions
+            .validator_cache()
+            .get_or_insert(self.hash_node(), schema)
+            .node_context(self)?;
 
+        let guards = Guards::default();
+        Ok(validator
+            .validate(VariableNode::new(value, &guards))
+            .map_err(ValidationErrorJson::from))
+    }
+
+    fn error_paths(&self, schema: &Value, value: &Variable) -> Result<Vec<String>, NodeError> {
+        let validator = self
+            .extensions
+            .validator_cache()
+            .get_or_insert(self.hash_node(), schema)
+            .node_context(self)?;
+
+        let guards = Guards::default();
+        let paths = validator
+            .iter_errors(VariableNode::new(value, &guards))
+            .map(|error| error.instance_path().to_string())
+            .collect();
+        Ok(paths)
+    }
+
+    pub fn validate(&self, schema: &Value, value: &Variable) -> Result<(), NodeError> {
         let validator_cache = self.extensions.validator_cache();
-        let hash = match nullable_optionals {
-            true => self.hash_node() ^ NULLABLE_OPTIONALS_SALT,
-            false => self.hash_node(),
-        };
+        let hash = self.hash_node();
 
         let validator = validator_cache
-            .get_or_insert(hash, schema, nullable_optionals)
+            .get_or_insert(hash, schema)
             .node_context(self)?;
 
         let guards = Guards::default();

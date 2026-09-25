@@ -259,3 +259,65 @@ fn slots() {
         .collect();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+#[test]
+fn deeply_nested_lists_do_not_overflow_the_stack() {
+    let scope = parse_type(BASE_SCOPE);
+    for unary in [false, true] {
+        let source = format!("{}a", "[".repeat(20_000));
+        let handle = std::thread::Builder::new()
+            .stack_size(1024 * 1024)
+            .spawn(move || {
+                let scope = parse_type(BASE_SCOPE);
+                let mut is = IntelliSense::new();
+                is.slot(
+                    &source,
+                    source.len() as u32,
+                    unary,
+                    SlotRole::Value,
+                    &scope,
+                    None,
+                );
+                is.inspect(&source, source.len() as u32, unary, SlotRole::Value, &scope);
+            })
+            .unwrap();
+        handle.join().expect("no stack overflow");
+    }
+    drop(scope);
+}
+
+#[test]
+fn date_slots_offer_date_strings_except_in_comparisons() {
+    let scope: VariableType =
+        serde_json::from_str(r#"{"Object":{"since":"Date","appDate":"String","age":"Number"}}"#)
+            .unwrap();
+    let date = VariableType::Date;
+    let labels = |source: &str, expected: Option<&VariableType>| -> Vec<String> {
+        let mut is = IntelliSense::new();
+        let pos = source.len() as u32;
+        let result = is.slot(source, pos, false, SlotRole::Value, &scope, expected);
+        Completions::from_slot(source, pos, &scope, &result.slot)
+            .into_iter()
+            .map(|c| c.label)
+            .collect()
+    };
+
+    for (source, expected) in [
+        ("d().isAfter(", None),
+        ("", Some(&date)),
+        ("app", Some(&date)),
+    ] {
+        let got = labels(source, expected);
+        assert!(got.contains(&"appDate".to_string()), "{source:?}: {got:?}");
+        assert!(!got.contains(&"age".to_string()), "{source:?}: {got:?}");
+    }
+    for source in [
+        "since > ",
+        "since == ",
+        "since in [",
+        "d().isAfter(appDate) and since < ",
+    ] {
+        let got = labels(source, None);
+        assert!(!got.contains(&"appDate".to_string()), "{source:?}: {got:?}");
+    }
+}

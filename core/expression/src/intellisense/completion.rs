@@ -72,10 +72,13 @@ impl Completions {
             _ => Self::build_scope(data, &locals),
         };
         if let Some(wanted) = slot.wanted_scalar() {
+            let comparison = slot.operand.is_some() && slot.state != SlotState::Argument;
+            let strings_fit = matches!(wanted, VariableType::Date) && !comparison;
             items.retain(|item| {
-                item.var_type
-                    .as_ref()
-                    .is_none_or(|t| ScalarClass::fits(t, wanted))
+                item.var_type.as_ref().is_none_or(|t| {
+                    ScalarClass::fits(t, wanted)
+                        || (strings_fit && matches!(t.unwrap_nullable().0, VariableType::String))
+                })
             });
         }
         for item in &mut items {

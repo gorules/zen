@@ -77,6 +77,7 @@ pub(crate) struct Classifier<'p, 'a> {
     scope: &'p VariableType,
     expected: Option<&'p VariableType>,
     labels: Option<&'p LabelResolver>,
+    list_depth: std::cell::Cell<u32>,
 }
 
 impl Item {
@@ -270,6 +271,7 @@ impl<'p, 'a> Classifier<'p, 'a> {
             scope,
             expected,
             labels,
+            list_depth: std::cell::Cell::new(0),
         };
         classifier.classify_at(pos)
     }
@@ -370,6 +372,7 @@ impl<'p, 'a> Classifier<'p, 'a> {
             scope: &parsed.scope,
             expected,
             labels,
+            list_depth: std::cell::Cell::new(0),
         }
     }
 
@@ -1238,7 +1241,14 @@ impl<'p, 'a> Classifier<'p, 'a> {
     }
 
     fn list_expected(&self, frame: &Frame) -> Option<VariableType> {
+        const MAX_LIST_DEPTH: u32 = 64;
+        let depth = self.list_depth.get();
+        if depth >= MAX_LIST_DEPTH {
+            return None;
+        }
+        self.list_depth.set(depth + 1);
         let head = self.at(self.items[frame.open].span.0, frame.open);
+        self.list_depth.set(depth);
         head.expected
             .map(|t| t.innermost().shallow_clone())
             .filter(|t| !matches!(t, VariableType::Any))

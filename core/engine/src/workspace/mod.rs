@@ -146,6 +146,14 @@ impl Workspace {
         self.db.all_diagnostics()
     }
 
+    pub(crate) fn import_closure(&self, policy: &str) -> ahash::HashSet<Arc<str>> {
+        self.db.unit(policy).members.clone()
+    }
+
+    pub(crate) fn evaluation_diagnostics(&self, entry: &str) -> Vec<Diagnostic> {
+        self.db.evaluation_diagnostics(&Arc::from(entry))
+    }
+
     pub fn set_function_resolver(
         &mut self,
         resolver: impl Fn(&str, &VariableType) -> Option<String> + 'static,

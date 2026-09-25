@@ -6,7 +6,7 @@ use crate::policy::ir::PropertyTypeIr;
 use crate::policy::linter::Linter;
 use crate::policy::queries::dependency::WriteScope;
 use crate::policy::queries::path::PathRoot;
-use crate::workspace::db::Db;
+use crate::workspace::db::{Db, Unit};
 use crate::workspace::types::{BlockRef, Diagnostic, DiagnosticCode, DiagnosticLocation};
 
 impl Db {
@@ -23,6 +23,7 @@ impl Db {
                 rule.check_single_entity_scope(path, &unit.classifier, &mut out);
             }
         }
+        out.extend(self.imported_context_diagnostics(path));
 
         let mut imported: Option<Vec<Diagnostic>> = None;
         for mut diagnostic in self.scope_diagnostics(path) {
@@ -65,6 +66,87 @@ impl Db {
 
         out.extend(Linter::standard().run(self, path));
 
+        out
+    }
+
+    pub fn evaluation_diagnostics(&self, entry: &Arc<str>) -> Vec<Diagnostic> {
+        let mut out = (*self.policy_diagnostics(entry)).clone();
+        let unit = self.unit(entry);
+        let entry_enriched = self.enriched(entry);
+
+        let mut members: Vec<&Arc<str>> = unit.members.iter().filter(|m| *m != entry).collect();
+        members.sort();
+        for member in members {
+            let standalone = self.enriched(member);
+            let standalone_enriched: Vec<&Diagnostic> = standalone
+                .diagnostics
+                .iter()
+                .filter(|d| d.is_in(member))
+                .chain(
+                    standalone
+                        .per_rule
+                        .iter()
+                        .filter(|rule| rule.policy_path == *member)
+                        .flat_map(|rule| rule.diagnostics.iter()),
+                )
+                .collect();
+            out.extend(
+                self.policy_diagnostics(member)
+                    .iter()
+                    .filter(|d| !standalone_enriched.iter().any(|s| s.same_as(d)))
+                    .cloned(),
+            );
+            out.extend(
+                entry_enriched
+                    .diagnostics
+                    .iter()
+                    .filter(|d| d.is_in(member))
+                    .cloned(),
+            );
+            out.extend(
+                entry_enriched
+                    .per_rule
+                    .iter()
+                    .filter(|rule| rule.policy_path == *member)
+                    .flat_map(|rule| rule.diagnostics.iter().cloned()),
+            );
+        }
+        out
+    }
+
+    fn imported_context_diagnostics(&self, path: &Arc<str>) -> Vec<Diagnostic> {
+        let unit = self.unit(path);
+        let mut members: Vec<&Arc<str>> = unit.members.iter().filter(|m| *m != path).collect();
+        members.sort();
+
+        let mut out = Vec::new();
+        for member in members {
+            let member_unit = self.unit(member);
+            let own = self.unit_scoped_diagnostics(&member_unit, member);
+            for mut diagnostic in self.unit_scoped_diagnostics(&unit, member) {
+                if own.iter().any(|d| d.same_as(&diagnostic)) {
+                    continue;
+                }
+                diagnostic.message = format!(
+                    "in imported policy '{}': {}",
+                    diagnostic.location.policy_path, diagnostic.message
+                );
+                diagnostic.location = DiagnosticLocation::policy(path.clone());
+                out.push(diagnostic);
+            }
+        }
+        out
+    }
+
+    fn unit_scoped_diagnostics(&self, unit: &Unit, target: &Arc<str>) -> Vec<Diagnostic> {
+        let mut out = Vec::new();
+        if let Some(parsed) = self.parsed(target) {
+            for rule in parsed.policy.rules() {
+                rule.check_single_entity_scope(target, &unit.classifier, &mut out);
+            }
+        }
+        out.extend(self.nested_iteration_in(unit, target));
+        out.extend(self.unreachable_reads_in(unit, target));
         out
     }
 
@@ -111,9 +193,12 @@ impl Db {
     }
 
     fn nested_iteration_diagnostics(&self, target: &Arc<str>) -> Vec<Diagnostic> {
+        self.nested_iteration_in(&self.unit(target), target)
+    }
+
+    fn nested_iteration_in(&self, unit: &Unit, target: &Arc<str>) -> Vec<Diagnostic> {
         let mut out = Vec::new();
         let shallow = self.shallow();
-        let unit = self.unit(target);
         let entity_sources = &unit.entity_sources;
         let classifier = &unit.classifier;
 
@@ -150,9 +235,12 @@ impl Db {
     }
 
     fn unreachable_reads_diagnostics(&self, target: &Arc<str>) -> Vec<Diagnostic> {
+        self.unreachable_reads_in(&self.unit(target), target)
+    }
+
+    fn unreachable_reads_in(&self, unit: &Unit, target: &Arc<str>) -> Vec<Diagnostic> {
         let mut out = Vec::new();
         let shallow = self.shallow();
-        let unit = self.unit(target);
         let entity_sources = &unit.entity_sources;
         let classifier = &unit.classifier;
         let rule_index = self.rule_by_ref();

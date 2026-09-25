@@ -155,12 +155,10 @@ impl<'a> GraphAnalyzer<'a> {
         self.lint_expressions();
         self.sort_diagnostics(&topology);
 
+        let input = self.graph_input_signature();
         GraphAnalysis {
             diagnostics: self.diagnostics,
-            signature: GraphSignature {
-                input: graph_input,
-                output,
-            },
+            signature: GraphSignature { input, output },
             nodes,
             inferred_inputs,
         }
@@ -410,6 +408,18 @@ impl<'a> GraphAnalyzer<'a> {
                 _ => None,
             })
             .map(|schema| super::SchemaType::variable_type_with(schema, &self.dictionary_types))
+            .unwrap_or(VariableType::Any)
+    }
+
+    fn graph_input_signature(&self) -> VariableType {
+        self.content
+            .nodes
+            .iter()
+            .find_map(|node| match &node.kind {
+                DecisionNodeKind::InputNode { content } => content.schema.as_ref(),
+                _ => None,
+            })
+            .map(|schema| super::SchemaType::hint_type_with(schema, &self.dictionary_types))
             .unwrap_or(VariableType::Any)
     }
 

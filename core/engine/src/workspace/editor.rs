@@ -272,7 +272,11 @@ impl Db {
                 if let Some(input) = data.inputs.iter().find(|c| c.id == *col) {
                     input.field.clone().unwrap_or_else(|| Arc::from(""))
                 } else {
-                    data.outputs.iter().find(|c| c.id == *col)?.field.clone()
+                    let field = &data.outputs.iter().find(|c| c.id == *col)?.field;
+                    match field.strip_suffix("[]") {
+                        Some(base) => Arc::from(base.trim_end()),
+                        None => field.clone(),
+                    }
                 }
             }
             _ => {

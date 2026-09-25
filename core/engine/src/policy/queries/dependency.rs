@@ -77,6 +77,15 @@ impl Drop for EnrichedState {
 }
 
 impl EnrichedState {
+    pub(crate) fn declared_at(&self, path: &str) -> VariableType {
+        let (root, rest) = path.split_once('.').unwrap_or((path, ""));
+        match self.base_fields.get(root) {
+            Some(kind) if rest.is_empty() => kind.shallow_clone(),
+            Some(kind) => kind.resolve_at(rest),
+            None => VariableType::Null,
+        }
+    }
+
     pub(crate) fn scope_excluding(&self, block: &BlockRef) -> VariableType {
         let Some(own) = self.own_writes.get(block) else {
             return self.scope.shallow_clone();

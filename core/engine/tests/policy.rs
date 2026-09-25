@@ -4976,3 +4976,87 @@ fn completions_offered_for_empty_and_trailing_space_sources() {
         "cursor past trimmed source should offer scope completions: {partial:?}"
     );
 }
+
+#[test]
+fn completions_ignore_declarations_in_unrelated_policies() {
+    let global_model = |props: serde_json::Value| {
+        json!({ "id": "dm", "type": "dataModel", "props": { "data": {
+            "name": "inputs", "scope": "global", "properties": props
+        } } })
+    };
+    let b = json!({
+        "blocks": [
+            global_model(json!([
+                { "id": "p1", "name": "score", "type": "number", "array": false, "optional": false }
+            ])),
+            { "id": "e", "type": "expression", "props": { "data": { "key": "status", "value": "" } } }
+        ]
+    });
+    let a = json!({
+        "blocks": [
+            global_model(json!([
+                { "id": "p1", "name": "status", "type": "string", "array": false, "optional": false }
+            ]))
+        ]
+    });
+
+    let labels = |ws: &PolicyWorkspace| -> Vec<String> {
+        ws.completions(&Cursor {
+            policy_path: Arc::from("b.json"),
+            block_id: Arc::from("e"),
+            pos: 0,
+            target: CursorTarget::Expression { id: Arc::from("e") },
+        })
+        .into_iter()
+        .map(|c| c.label)
+        .collect()
+    };
+
+    let mut ws = PolicyWorkspace::new();
+    ws.set_policy("b.json", serde_json::from_value(b).unwrap());
+    let alone = labels(&ws);
+    assert!(alone.iter().any(|l| l == "score"), "{alone:?}");
+
+    ws.set_policy("a.json", serde_json::from_value(a).unwrap());
+    let with_unrelated = labels(&ws);
+    assert!(
+        with_unrelated.iter().any(|l| l == "score"),
+        "{with_unrelated:?}"
+    );
+}
+
+#[test]
+fn prepare_rename_on_collect_output_head() {
+    let doc = json!({ "blocks": [
+        { "id": "dm", "type": "dataModel", "props": { "data": { "name": "customer", "properties": [
+            { "id": "p1", "name": "age", "type": "number", "array": false, "optional": false }
+        ] } } },
+        { "id": "dt", "type": "decisionTable", "props": { "data": {
+            "hitPolicy": "first",
+            "inputs": [{ "id": "i1", "name": "", "field": "customer.age" }],
+            "outputs": [{ "id": "o1", "name": "", "field": "customer.tags[]" }],
+            "rules": [{ "_id": "r1", "i1": "> 1", "o1": "\"a\"" }]
+        } } }
+    ] });
+    let mut ws = PolicyWorkspace::new();
+    ws.set_policy("p", serde_json::from_value(doc).unwrap());
+
+    let prepared = ws
+        .prepare_rename(&Cursor {
+            policy_path: Arc::from("p"),
+            block_id: Arc::from("dt"),
+            pos: 11,
+            target: CursorTarget::DecisionTableHead {
+                col: Arc::from("o1"),
+            },
+        })
+        .expect("collect head is renamable");
+    assert_eq!(
+        prepared.target,
+        zen_engine::policy::RenameTarget::Field {
+            entity: Arc::from("customer"),
+            field: Arc::from("tags"),
+        }
+    );
+    assert_eq!(prepared.span, (9, 13));
+}

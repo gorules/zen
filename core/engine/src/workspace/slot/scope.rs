@@ -119,7 +119,7 @@ impl Db {
         if path.is_empty() {
             return None;
         }
-        let kind = CursorScope::known_type(self.snapshot().base_scope.resolve_at(path))?;
+        let kind = CursorScope::known_type(self.enriched_of_unit(unit).declared_at(path))?;
         let segments: Vec<Rc<str>> = path.split('.').map(Rc::from).collect();
         let (field, parent) = segments.split_last()?;
         let property = if parent.is_empty() {

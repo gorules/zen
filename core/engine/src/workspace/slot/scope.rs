@@ -82,6 +82,13 @@ impl Db {
                     .as_ref()
                     .and_then(|declared| declared.resolve(&unit.dictionary_types()))
                     .or_else(|| {
+                        self.declared_type(unit, column.field.as_ref())
+                            .map(|t| CursorScope::collected_type(t, column.collect))
+                    });
+                // The table is the field's only writer, so its written type is its own cells' union.
+                let inferred = expected.is_none();
+                let expected = expected
+                    .or_else(|| {
                         self.written_type(unit, written, column.field.as_ref())
                             .map(|t| CursorScope::collected_type(t, column.collect))
                     })
@@ -102,7 +109,7 @@ impl Db {
                                 .collect()
                         })
                     });
-                Some(CursorScope::value(scope, expected))
+                Some(CursorScope::value(scope, expected).with_inferred(inferred))
             }
             _ => None,
         }
@@ -235,8 +242,8 @@ impl Db {
                 }
                 let column = table.outputs.iter().find(|c| c.id == *col)?;
                 let dictionaries = self.graph_dictionary_types(&content.imports);
-                let expected = GraphAnalyzer::output_expected(table, col, &dictionaries)
-                    .or_else(|| {
+                let expected =
+                    GraphAnalyzer::output_expected(table, col, &dictionaries).or_else(|| {
                         (!column.field.is_empty())
                             .then(|| {
                                 self.output_schema_type(
@@ -249,25 +256,26 @@ impl Db {
                                 })
                             })
                             .flatten()
-                    })
-                    .or_else(|| {
-                        cache.infer(cursor, || {
-                            table
-                                .rules
-                                .iter()
-                                .enumerate()
-                                .map(|(index, rule)| {
-                                    let id = GraphAnalyzer::row_key(rule, index);
-                                    let t = rule
-                                        .get(col)
-                                        .filter(|cell| !cell.is_empty())
-                                        .map(|cell| Self::return_type(&is, cell, &scope));
-                                    (id, t)
-                                })
-                                .collect()
-                        })
                     });
-                Some(CursorScope::value(scope, expected))
+                let inferred = expected.is_none();
+                let expected = expected.or_else(|| {
+                    cache.infer(cursor, || {
+                        table
+                            .rules
+                            .iter()
+                            .enumerate()
+                            .map(|(index, rule)| {
+                                let id = GraphAnalyzer::row_key(rule, index);
+                                let t = rule
+                                    .get(col)
+                                    .filter(|cell| !cell.is_empty())
+                                    .map(|cell| Self::return_type(&is, cell, &scope));
+                                (id, t)
+                            })
+                            .collect()
+                    })
+                });
+                Some(CursorScope::value(scope, expected).with_inferred(inferred))
             }
             _ => None,
         }

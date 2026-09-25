@@ -77,6 +77,7 @@ pub fn slot_batch(requests: Vec<SlotRequest>, strict: Option<bool>) -> napi::Res
             role,
             scope: json_to_variable_type(&request.scope),
             expected: request.expected.as_ref().map(json_to_variable_type),
+            inferred: false,
         };
         is.set_labels(label_resolver(request.labels.as_ref()));
         let response = SlotResponse::compute(&mut is, &scope, &request.text, request.pos);

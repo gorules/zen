@@ -73,7 +73,7 @@ impl Db {
                     &site.source,
                     scope.is_unary(),
                     &scope.scope,
-                    scope.expected.as_ref(),
+                    scope.literal_expected(),
                 )
                 .map_spans(|span| SpanOps::char_span(&site.source, span));
             out.push(ExpressionFacts {

@@ -43,6 +43,11 @@ impl SlotResponse {
             &scope.scope,
             scope.expected.as_ref(),
         );
+        let literals = if scope.inferred {
+            is.literals(text, scope.is_unary(), &scope.scope, None)
+        } else {
+            literals
+        };
         slot.replace_span = SpanOps::char_span(text, slot.replace_span);
         Self {
             kind: scope.kind,
@@ -159,6 +164,8 @@ pub struct CursorScope {
     pub role: SlotRole,
     pub scope: VariableType,
     pub expected: Option<VariableType>,
+    /// `expected` was guessed from sibling cells: good for suggestions, not a declared type.
+    pub inferred: bool,
 }
 
 impl CursorScope {
@@ -168,6 +175,7 @@ impl CursorScope {
             role: SlotRole::Unary,
             scope,
             expected: None,
+            inferred: false,
         }
     }
 
@@ -177,6 +185,7 @@ impl CursorScope {
             role: SlotRole::Condition,
             scope,
             expected: Some(VariableType::Bool),
+            inferred: false,
         }
     }
 
@@ -186,6 +195,7 @@ impl CursorScope {
             role: SlotRole::Value,
             scope,
             expected,
+            inferred: false,
         }
     }
 
@@ -195,6 +205,21 @@ impl CursorScope {
             role: SlotRole::Path,
             scope,
             expected: None,
+            inferred: false,
+        }
+    }
+
+    fn with_inferred(mut self, inferred: bool) -> Self {
+        self.inferred = inferred && self.expected.is_some();
+        self
+    }
+
+    /// Type that literals are classified against; a sibling guess never turns plain strings into enum values.
+    pub fn literal_expected(&self) -> Option<&VariableType> {
+        if self.inferred {
+            None
+        } else {
+            self.expected.as_ref()
         }
     }
 

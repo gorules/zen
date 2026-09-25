@@ -108,3 +108,18 @@ content = '''
   ]
 }
 '''
+
+[[test]]
+name = "dependencies follow the open policy when siblings write the same field (A)"
+policies = ["merge_policy_a.json", "merge_policy_b.json", "merge_policy_c.json"]
+policy = "merge_policy_a.json"
+target = "customer.greeting"
+inputs = ["customer.name"]
+
+[[test]]
+name = "dependencies follow the open policy when siblings write the same field (C)"
+policies = ["merge_policy_a.json", "merge_policy_b.json", "merge_policy_c.json"]
+policy = "merge_policy_c.json"
+target = "customer.greeting"
+inputs = ["customer.country"]
+

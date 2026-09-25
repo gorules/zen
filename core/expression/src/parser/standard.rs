@@ -75,8 +75,7 @@ impl<'arena, 'token_ref> Parser<'arena, 'token_ref, Standard> {
 
     fn unary_expression(&self) -> &'arena Node<'arena> {
         let Some(token) = self.current() else {
-            return self.error(AstNodeError::Custom {
-                message: self.bump.alloc_str("Unexpected end of unary expression"),
+            return self.error(AstNodeError::UnexpectedEnd {
                 span: (self.prev_token_end(), self.prev_token_end()),
             });
         };

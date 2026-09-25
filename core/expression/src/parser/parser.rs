@@ -451,8 +451,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
 
         let property = match property_token {
             None => self.error_with_node(
-                AstNodeError::Custom {
-                    message: afmt!(self, "Expected a property"),
+                AstNodeError::ExpectedProperty {
                     span: (self.prev_token_end(), self.prev_token_end()),
                 },
                 node,
@@ -497,8 +496,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
 
         let Some(mut c) = self.current() else {
             return self.error_with_node(
-                AstNodeError::Custom {
-                    message: afmt!(self, "Expected a property"),
+                AstNodeError::ExpectedProperty {
                     span: (self.prev_token_end(), self.prev_token_end()),
                 },
                 node,
@@ -836,6 +834,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         };
 
         let initial_position = self.position();
+        let start = self.token_start();
         let TokenKind::Bracket(left_bracket) = &self.current()?.kind else {
             self.set_position(initial_position);
             return None;
@@ -874,7 +873,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                 right_bracket: *right_bracket,
             },
             |_| NodeMetadata {
-                span: (initial_position as u32, self.position() as u32),
+                span: (start, self.prev_token_end()),
             },
         );
 
@@ -1220,8 +1219,7 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         F: Fn(ParserContext) -> &'arena Node<'arena>,
     {
         let Some(current_token) = self.current() else {
-            return self.error(AstNodeError::Custom {
-                message: afmt!(self, "Expected a literal"),
+            return self.error(AstNodeError::ExpectedLiteral {
                 span: (self.prev_token_end(), self.prev_token_end()),
             });
         };

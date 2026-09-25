@@ -1,0 +1,26 @@
+{
+  "imports": [],
+  "blocks": [
+    {
+      "id": "dict1",
+      "type": "dictionary",
+      "props": {
+        "data": {
+          "name": "customerTier",
+          "entries": [
+            {
+              "id": "e0",
+              "value": "VIP",
+              "label": "Very important"
+            },
+            {
+              "id": "e1",
+              "value": "STD",
+              "label": "Standard"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

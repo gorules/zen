@@ -15,6 +15,20 @@ impl SchemaType {
         schema: &Value,
         dictionaries: &SchemaDictionaries,
     ) -> VariableType {
+        Self::resolve::<false>(schema, dictionaries)
+    }
+
+    pub(crate) fn hint_type_with(
+        schema: &Value,
+        dictionaries: &SchemaDictionaries,
+    ) -> VariableType {
+        Self::resolve::<true>(schema, dictionaries)
+    }
+
+    fn resolve<const DATE_HINTS: bool>(
+        schema: &Value,
+        dictionaries: &SchemaDictionaries,
+    ) -> VariableType {
         let Some(object) = schema.as_object() else {
             return VariableType::Any;
         };
@@ -33,7 +47,7 @@ impl SchemaType {
         {
             return cases
                 .iter()
-                .map(|case| Self::variable_type_with(case, dictionaries))
+                .map(|case| Self::resolve::<DATE_HINTS>(case, dictionaries))
                 .reduce(|acc, t| acc.merge(&t))
                 .unwrap_or(VariableType::Any);
         }
@@ -50,82 +64,14 @@ impl SchemaType {
         }
 
         match object.get("type") {
-            Some(Value::String(kind)) => Self::typed(object, kind, dictionaries),
+            Some(Value::String(kind)) => Self::typed::<DATE_HINTS>(object, kind, dictionaries),
             Some(Value::Array(kinds)) => kinds
                 .iter()
                 .filter_map(Value::as_str)
-                .map(|kind| Self::typed(object, kind, dictionaries))
+                .map(|kind| Self::typed::<DATE_HINTS>(object, kind, dictionaries))
                 .reduce(|acc, t| acc.merge(&t))
                 .unwrap_or(VariableType::Any),
             _ => VariableType::Any,
-        }
-    }
-
-    /// Optional properties resolve statically to `T?`, yet the runtime validator
-    /// rejects an explicit `null` unless the type admits it.
-    pub(crate) fn nullability_divergences(schema: &Value) -> Vec<String> {
-        let mut out = Vec::new();
-        Self::collect_divergences(schema, String::new(), &mut out);
-        out
-    }
-
-    fn collect_divergences(schema: &Value, path: String, out: &mut Vec<String>) {
-        let Some(object) = schema.as_object() else {
-            return;
-        };
-        if let Some(items) = object.get("items") {
-            let item_path = if path.is_empty() {
-                "[]".to_string()
-            } else {
-                format!("{path}[]")
-            };
-            Self::collect_divergences(items, item_path, out);
-        }
-        let Some(properties) = object.get("properties").and_then(Value::as_object) else {
-            return;
-        };
-        let required: Vec<&str> = object
-            .get("required")
-            .and_then(Value::as_array)
-            .map(|list| list.iter().filter_map(Value::as_str).collect())
-            .unwrap_or_default();
-        for (name, prop_schema) in properties {
-            let child_path = if path.is_empty() {
-                name.clone()
-            } else {
-                format!("{path}.{name}")
-            };
-            if !required.contains(&name.as_str()) && !Self::admits_null(prop_schema) {
-                out.push(child_path.clone());
-            }
-            Self::collect_divergences(prop_schema, child_path, out);
-        }
-    }
-
-    fn admits_null(schema: &Value) -> bool {
-        let Some(object) = schema.as_object() else {
-            return true;
-        };
-        if object.get("$dictionary").is_some() {
-            return false;
-        }
-        if let Some(cases) = object
-            .get("anyOf")
-            .or_else(|| object.get("oneOf"))
-            .and_then(Value::as_array)
-        {
-            return cases.iter().any(Self::admits_null);
-        }
-        if let Some(values) = object.get("enum").and_then(Value::as_array) {
-            return values.iter().any(Value::is_null);
-        }
-        match object.get("type") {
-            Some(Value::String(kind)) => kind == "null",
-            Some(Value::Array(kinds)) => kinds
-                .iter()
-                .filter_map(Value::as_str)
-                .any(|kind| kind == "null"),
-            _ => true,
         }
     }
 
@@ -186,21 +132,21 @@ impl SchemaType {
         }
     }
 
-    fn typed(
+    fn typed<const DATE_HINTS: bool>(
         object: &Map<String, Value>,
         kind: &str,
         dictionaries: &SchemaDictionaries,
     ) -> VariableType {
         match kind {
-            "object" => Self::object_type(object, dictionaries),
+            "object" => Self::object_type::<DATE_HINTS>(object, dictionaries),
             "array" => VariableType::Array(Rc::new(
                 object
                     .get("items")
-                    .map(|items| Self::variable_type_with(items, dictionaries))
+                    .map(|items| Self::resolve::<DATE_HINTS>(items, dictionaries))
                     .unwrap_or(VariableType::Any),
             )),
             "string" => match object.get("format").and_then(Value::as_str) {
-                Some("date" | "date-time") => VariableType::Date,
+                Some("date" | "date-time") if DATE_HINTS => VariableType::Date,
                 _ => VariableType::String,
             },
             "number" | "integer" => VariableType::Number,
@@ -210,7 +156,10 @@ impl SchemaType {
         }
     }
 
-    fn object_type(object: &Map<String, Value>, dictionaries: &SchemaDictionaries) -> VariableType {
+    fn object_type<const DATE_HINTS: bool>(
+        object: &Map<String, Value>,
+        dictionaries: &SchemaDictionaries,
+    ) -> VariableType {
         let Some(properties) = object.get("properties").and_then(Value::as_object) else {
             return VariableType::Any;
         };
@@ -222,7 +171,7 @@ impl SchemaType {
 
         let mut fields: HashMap<Rc<str>, VariableType> = HashMap::with_capacity(properties.len());
         for (name, prop_schema) in properties {
-            let mut resolved = Self::variable_type_with(prop_schema, dictionaries);
+            let mut resolved = Self::resolve::<DATE_HINTS>(prop_schema, dictionaries);
             if !required.contains(&name.as_str()) {
                 resolved = super::wrap_optional(resolved);
             }

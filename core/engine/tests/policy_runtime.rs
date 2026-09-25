@@ -352,3 +352,202 @@ async fn trace_serializes_for_policies() {
         "policy trace should serialize with `executions` field"
     );
 }
+
+fn parent_declares_child_reads(child_condition: &str) -> Arc<MemoryLoader> {
+    let loader = Arc::new(MemoryLoader::default());
+    loader.add(
+        "main",
+        make_policy_content(json!({
+            "imports": ["shared"],
+            "blocks": [
+                { "id": "dm", "type": "dataModel", "props": { "data": {
+                    "name": "customer",
+                    "properties": [
+                        { "id": "p1", "name": "name", "type": "string", "array": false, "optional": false },
+                        { "id": "p2", "name": "age", "type": "number", "array": false, "optional": false }
+                    ]
+                } }, "children": [] },
+                { "id": "s1", "type": "expression", "props": { "data": {
+                    "key": "customer.discount", "value": "customer.tier"
+                } } }
+            ]
+        })),
+    );
+    loader.add(
+        "shared",
+        make_policy_content(json!({
+            "blocks": [
+                { "id": "m", "type": "match", "props": { "data": {
+                    "key": "customer.tier",
+                    "arms": [
+                        { "id": "a1", "condition": child_condition, "value": "\"gold\"" },
+                        { "id": "a2", "condition": "", "value": "\"silver\"" }
+                    ]
+                } } }
+            ]
+        })),
+    );
+    loader
+}
+
+#[tokio::test]
+async fn evaluate_child_reading_parent_declared_fields() {
+    let engine = engine_with(parent_declares_child_reads("customer.age > 50"));
+
+    let result = engine
+        .evaluate(
+            "main",
+            json!({ "customer": { "name": "Ann", "age": 60 } }).into(),
+        )
+        .await
+        .expect("evaluate ok");
+
+    let result_json: serde_json::Value = result.result.into();
+    assert_eq!(result_json.pointer("/customer/tier"), Some(&json!("gold")));
+    assert_eq!(
+        result_json.pointer("/customer/discount"),
+        Some(&json!("gold"))
+    );
+}
+
+#[tokio::test]
+async fn evaluate_child_with_real_error_is_refused() {
+    let engine = engine_with(parent_declares_child_reads("customer.missing > 50"));
+
+    let result = engine
+        .evaluate(
+            "main",
+            json!({ "customer": { "name": "Ann", "age": 60 } }).into(),
+        )
+        .await;
+
+    assert!(
+        format!("{result:?}").contains("CompilationErrors"),
+        "expected compilation error, got {result:?}"
+    );
+}
+
+#[tokio::test]
+async fn evaluate_refuses_child_block_mixed_under_parent_data_model() {
+    let loader = Arc::new(MemoryLoader::default());
+    let data_model = |id: &str, name: &str| {
+        json!({ "id": id, "type": "dataModel", "props": { "data": {
+            "name": name,
+            "properties": [
+                { "id": format!("{id}-p"), "name": "name", "type": "string", "array": false, "optional": false }
+            ]
+        } }, "children": [] })
+    };
+    loader.add(
+        "main",
+        make_policy_content(json!({
+            "imports": ["child"],
+            "blocks": [data_model("dm-customer", "customer"), data_model("dm-company", "company")]
+        })),
+    );
+    loader.add(
+        "child",
+        make_policy_content(json!({
+            "blocks": [
+                { "id": "bad-block", "type": "decisionTable", "props": { "data": {
+                    "hitPolicy": "first",
+                    "inputs": [],
+                    "outputs": [
+                        { "id": "s1", "name": "", "field": "customer.label" },
+                        { "id": "s2", "name": "", "field": "company.label" }
+                    ],
+                    "rules": [{ "_id": "r1", "s1": "\"x\"", "s2": "\"y\"" }]
+                } } }
+            ]
+        })),
+    );
+    let engine = engine_with(loader);
+
+    let result = engine
+        .evaluate(
+            "main",
+            json!({ "customer": { "name": "a" }, "company": { "name": "b" } }).into(),
+        )
+        .await;
+
+    assert!(
+        format!("{result:?}").contains("CompilationErrors"),
+        "expected compilation error, got {result:?}"
+    );
+}
+
+#[tokio::test]
+async fn evaluate_refuses_child_unreachable_read_under_parent_data_model() {
+    let loader = Arc::new(MemoryLoader::default());
+    loader.add(
+        "main",
+        make_policy_content(json!({
+            "imports": ["child"],
+            "blocks": [
+                { "id": "dm-customer", "type": "dataModel", "props": { "data": {
+                    "name": "customer",
+                    "properties": [
+                        { "id": "p1", "name": "companies", "type": "relationship", "target": "company", "array": true, "optional": false }
+                    ]
+                } } },
+                { "id": "dm-company", "type": "dataModel", "props": { "data": {
+                    "name": "company",
+                    "properties": [
+                        { "id": "p2", "name": "revenue", "type": "number", "array": false, "optional": false }
+                    ]
+                } } }
+            ]
+        })),
+    );
+    loader.add(
+        "child",
+        make_policy_content(json!({
+            "blocks": [
+                { "id": "assert", "type": "assertion", "props": { "data": {
+                    "output": "globalFlag",
+                    "conditions": [
+                        { "id": "c1", "expression": "company.revenue > 0", "operator": "and", "depth": 0 }
+                    ]
+                } } }
+            ]
+        })),
+    );
+    let engine = engine_with(loader);
+
+    let result = engine
+        .evaluate(
+            "main",
+            json!({ "customer": { "companies": [{ "revenue": 5 }] } }).into(),
+        )
+        .await;
+
+    assert!(
+        format!("{result:?}").contains("CompilationErrors"),
+        "expected compilation error, got {result:?}"
+    );
+}
+
+#[tokio::test]
+async fn compile_accepts_child_reading_parent_declared_fields() {
+    let engine = engine_with(parent_declares_child_reads("customer.age > 50"));
+    let failures = engine.compile();
+    assert!(failures.is_empty(), "{failures:#?}");
+
+    let result = engine
+        .evaluate(
+            "main",
+            json!({ "customer": { "name": "Ann", "age": 60 } }).into(),
+        )
+        .await
+        .expect("evaluate ok");
+    let result_json: serde_json::Value = result.result.into();
+    assert_eq!(result_json.pointer("/customer/tier"), Some(&json!("gold")));
+}
+
+#[tokio::test]
+async fn compile_reports_child_with_real_error() {
+    let engine = engine_with(parent_declares_child_reads("customer.missing > 50"));
+    let failures = engine.compile();
+    let keys: Vec<&str> = failures.iter().map(|f| f.key.as_ref()).collect();
+    assert!(keys.contains(&"main"), "{failures:#?}");
+}

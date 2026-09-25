@@ -9,7 +9,8 @@
 # so top-level cases assert all entities are offered; the meaningful scoping
 # checks live at the property level (after a dot).
 
-policies = ["analysis.json"]
+policies = ["analysis.json", "completion_scope.json"]
+graphs = ["completion_scope_graph.json"]
 
 [[test]]
 name = "expression top-level: all entities offered"
@@ -59,3 +60,31 @@ expression_id = "o1"
 row = "r1"
 pos = 0
 includes = ["customer"]
+
+[[test]]
+name = "field written by an independent later block is offered, own write is not"
+policy = "completion_scope.json"
+block_id = "b1"
+expression_id = "b1"
+pos = 2
+includes = ["z"]
+excludes = ["x"]
+
+[[test]]
+name = "half-typed write target is not offered as its own completion"
+policy = "completion_scope.json"
+block_id = "b3"
+expression_id = "b3"
+pos = 4
+key = true
+includes = ["part"]
+excludes = ["pa"]
+
+[[test]]
+name = "graph expression row sees only earlier rows through $"
+policy = "completion_scope_graph.json"
+block_id = "calc"
+expression_id = "e2"
+pos = 2
+includes = ["total"]
+excludes = ["vip", "extra"]

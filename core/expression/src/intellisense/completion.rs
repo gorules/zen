@@ -4,8 +4,11 @@ use crate::functions::{
     ClosureFunction, DeprecatedFunction, FunctionKind, InternalFunction, MethodKind, MethodRegistry,
 };
 use crate::intellisense::IntelliSenseToken;
+use crate::lexer::codes::is_token_type;
 use crate::variable::VariableType;
+use ahash::HashMap;
 use serde::Serialize;
+use std::rc::Rc;
 use strum::IntoEnumIterator;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -28,16 +31,75 @@ pub struct Completion {
     pub boost: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub method_for: Option<VariableType>,
+    #[serde(skip)]
+    pub var_type: Option<VariableType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub follow: Option<&'static str>,
 }
 
 pub struct Completions;
 
 impl Completions {
+    pub fn from_slot(
+        source: &str,
+        pos: u32,
+        data: &VariableType,
+        slot: &crate::slot::Slot,
+    ) -> Vec<Completion> {
+        use crate::slot::{ScalarClass, SlotState};
+        if slot.suppress_completions
+            || matches!(
+                slot.state,
+                SlotState::Operator | SlotState::Logical | SlotState::InString
+            )
+        {
+            return Vec::new();
+        }
+        let locals = slot
+            .locals
+            .iter()
+            .map(|local| (Rc::from(local.name.as_str()), local.kind.shallow_clone()))
+            .collect::<Vec<_>>();
+        let mut items = match slot.state {
+            SlotState::Member => {
+                Self::build_property(slot.operand.as_ref().unwrap_or(&VariableType::Any))
+            }
+            SlotState::Path if slot.operand.is_some() => {
+                let mut items = Self::build_property(slot.operand.as_ref().unwrap());
+                items.retain(|item| item.kind != CompletionKind::Method);
+                items
+            }
+            _ => Self::build_scope(data, &locals),
+        };
+        if let Some(wanted) = slot.wanted_scalar() {
+            let comparison = slot.operand.is_some() && slot.state != SlotState::Argument;
+            let strings_fit = matches!(wanted, VariableType::Date) && !comparison;
+            items.retain(|item| {
+                item.var_type.as_ref().is_none_or(|t| {
+                    ScalarClass::fits(t, wanted)
+                        || (strings_fit && matches!(t.unwrap_nullable().0, VariableType::String))
+                })
+            });
+        }
+        for item in &mut items {
+            if let Some(t) = &item.var_type {
+                item.follow = match t.unwrap_nullable().0 {
+                    VariableType::Object(_) => Some("."),
+                    _ if slot.can_chain => Some(" "),
+                    _ => None,
+                };
+            }
+        }
+        let before = source.get(..pos as usize).unwrap_or(source);
+        Self::filter(items, Self::extract_prefix(before))
+    }
+
     pub fn build(
         source: &str,
         pos: u32,
         data: &VariableType,
         tokens: &[IntelliSenseToken],
+        locals: &[(Rc<str>, VariableType)],
     ) -> Vec<Completion> {
         let before = source.get(..pos as usize).unwrap_or(source);
         let prefix = Self::extract_prefix(before);
@@ -58,7 +120,7 @@ impl Completions {
 
                 Self::build_property(&target_type)
             }
-            None => Self::build_scope(data),
+            None => Self::build_scope(data, locals),
         };
 
         Self::filter(completions, prefix)
@@ -72,8 +134,7 @@ impl Completions {
         };
 
         if let VariableType::Object(obj) = resolved {
-            let obj = obj.borrow();
-            for (key, val) in obj.iter() {
+            for (key, val) in Self::sorted_fields(&obj.borrow()) {
                 completions.push(Completion {
                     label: key.to_string(),
                     kind: CompletionKind::Property,
@@ -81,6 +142,8 @@ impl Completions {
                     info: String::new(),
                     boost: Some(10),
                     method_for: None,
+                    var_type: Some(val.shallow_clone()),
+                    follow: None,
                 });
             }
         }
@@ -90,7 +153,12 @@ impl Completions {
             let applies = def
                 .as_ref()
                 .and_then(|d| d.param_type(0))
-                .map(|pt| vt.satisfies(&pt))
+                .map(|pt| match pt {
+                    VariableType::Date => {
+                        matches!(resolved, VariableType::Date | VariableType::Any)
+                    }
+                    _ => vt.satisfies(&pt),
+                })
                 .unwrap_or(false);
 
             if applies || matches!(vt, VariableType::Any) {
@@ -101,8 +169,21 @@ impl Completions {
         completions
     }
 
-    pub fn build_scope(data: &VariableType) -> Vec<Completion> {
+    pub fn build_scope(data: &VariableType, locals: &[(Rc<str>, VariableType)]) -> Vec<Completion> {
         let mut completions = Vec::new();
+
+        for (name, kind) in locals {
+            completions.push(Completion {
+                label: name.to_string(),
+                kind: CompletionKind::Variable,
+                detail: kind.to_string(),
+                info: String::new(),
+                boost: Some(30),
+                method_for: None,
+                var_type: Some(kind.shallow_clone()),
+                follow: None,
+            });
+        }
 
         let resolved_data = match data {
             VariableType::Nullable(inner) => inner.as_ref(),
@@ -110,8 +191,7 @@ impl Completions {
         };
 
         if let VariableType::Object(obj) = resolved_data {
-            let obj = obj.borrow();
-            for (key, val) in obj.iter() {
+            for (key, val) in Self::sorted_fields(&obj.borrow()) {
                 completions.push(Completion {
                     label: key.to_string(),
                     kind: CompletionKind::Variable,
@@ -119,6 +199,8 @@ impl Completions {
                     info: String::new(),
                     boost: Some(20),
                     method_for: None,
+                    var_type: Some(val.shallow_clone()),
+                    follow: None,
                 });
             }
         }
@@ -130,6 +212,8 @@ impl Completions {
             info: String::new(),
             boost: Some(-10),
             method_for: None,
+            var_type: None,
+            follow: None,
         });
 
         completions.extend(
@@ -140,6 +224,24 @@ impl Completions {
         );
 
         completions
+    }
+
+    fn sorted_fields(fields: &HashMap<Rc<str>, VariableType>) -> Vec<(&Rc<str>, &VariableType)> {
+        let mut out: Vec<_> = fields.iter().collect();
+        out.sort_by_cached_key(|(key, _)| {
+            (key.starts_with('$'), key.to_lowercase(), key.to_string())
+        });
+        out
+    }
+
+    pub(crate) fn function_named(name: &str) -> Option<Completion> {
+        FunctionKind::try_from(name)
+            .ok()
+            .map(|fk| Self::function(fk, None))
+    }
+
+    pub(crate) fn method_named(name: &str) -> Option<Completion> {
+        MethodKind::try_from(name).ok().map(Self::method)
     }
 
     fn function(fk: FunctionKind, boost_override: Option<i32>) -> Completion {
@@ -159,6 +261,8 @@ impl Completions {
             info,
             boost,
             method_for: None,
+            var_type: None,
+            follow: None,
         }
     }
 
@@ -174,13 +278,17 @@ impl Completions {
             info,
             boost: None,
             method_for,
+            var_type: None,
+            follow: None,
         }
     }
 
     fn extract_prefix(before_cursor: &str) -> &str {
         let boundary = before_cursor
-            .rfind(|c: char| !c.is_alphanumeric() && c != '_' && c != '$' && c != '#')
-            .map(|i| i + 1)
+            .char_indices()
+            .rev()
+            .find(|(_, c)| !is_token_type!(*c, "alphanumeric"))
+            .map(|(i, c)| i + c.len_utf8())
             .unwrap_or(0);
 
         &before_cursor[boundary..]
@@ -204,7 +312,7 @@ impl Completions {
             return Some(trimmed.len() - 1);
         }
 
-        let word_start = trimmed.rfind(|c: char| !c.is_alphanumeric() && c != '_' && c != '#');
+        let word_start = trimmed.rfind(|c: char| !is_token_type!(c, "alphanumeric"));
         match word_start {
             Some(i) if trimmed.as_bytes().get(i) == Some(&b'.') => Some(i),
             _ => None,

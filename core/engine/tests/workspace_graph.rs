@@ -878,30 +878,6 @@ fn catch_all_row_covers_table_and_empty_cell_makes_column_nullable() {
 }
 
 #[test]
-fn nl_projects_graph_expressions() {
-    let mut ws = Workspace::new();
-    let switch = node(
-        "sw",
-        "switchNode",
-        json!({
-            "hitPolicy": "first",
-            "statements": [{ "id": "s1", "condition": "age > 18" }]
-        }),
-    );
-    ws.set_document(
-        "g",
-        document(linear_graph(
-            Some(person_schema()),
-            vec![switch, expression_node("calc", &[("total", "age * 2")])],
-        )),
-    );
-    let projected = ws.nl("g");
-    let block_ids: Vec<&str> = projected.iter().map(|e| e.block_id.as_ref()).collect();
-    assert!(block_ids.contains(&"sw"), "{block_ids:?}");
-    assert!(block_ids.contains(&"calc"), "{block_ids:?}");
-}
-
-#[test]
 fn unreachable_node_is_hinted() {
     let mut ws = Workspace::new();
     let content = json!({
@@ -999,13 +975,18 @@ fn graph_property_rename_rewrites_writers_and_readers() {
 }
 
 #[test]
-fn rename_of_unwritten_property_is_refused() {
+fn input_property_rename_rewrites_readers_and_schema() {
+    use zen_engine::policy::{EngineEdit, ReferenceKind, RenameTarget};
+
     let mut ws = Workspace::new();
     ws.set_document(
         "g",
         document(linear_graph(
             Some(person_schema()),
-            vec![expression_node("calc", &[("total", "age * 2")])],
+            vec![expression_node(
+                "calc",
+                &[("total", "age * 2"), ("adult", "age >= 18")],
+            )],
         )),
     );
     let cursor = Cursor {
@@ -1016,7 +997,85 @@ fn rename_of_unwritten_property_is_refused() {
             id: "calc-e0".into(),
         },
     };
-    assert!(ws.prepare_rename(&cursor).is_none());
+    let prepared = ws.prepare_rename(&cursor).expect("prepare rename");
+    let RenameTarget::GraphProperty { document, path } = &prepared.target else {
+        panic!("unexpected target {:?}", prepared.target);
+    };
+    assert_eq!(document.as_ref(), "g");
+    assert_eq!(path.as_ref(), "age");
+    assert_eq!(prepared.span, (0, 3));
+
+    let sites = ws.references(&prepared.target);
+    let declared = sites
+        .iter()
+        .filter(|s| s.kind == ReferenceKind::DataModel)
+        .count();
+    let reads = sites
+        .iter()
+        .filter(|s| s.kind == ReferenceKind::ExpressionRead)
+        .count();
+    assert_eq!((declared, reads), (1, 2), "{sites:?}");
+
+    let edits = ws.rename(&prepared.target, "years");
+    let rendered: Vec<String> = edits
+        .iter()
+        .map(|e| serde_json::to_string(e).unwrap())
+        .collect();
+    let calc = rendered
+        .iter()
+        .find(|r| r.contains("\"calc\""))
+        .expect("calc edit");
+    assert!(
+        calc.contains("years * 2") && calc.contains("years >= 18"),
+        "{calc}"
+    );
+    let input = rendered
+        .iter()
+        .find(|r| r.contains("\"in\""))
+        .expect("schema edit");
+    assert!(
+        input.contains("years") && !input.contains("\\\"age\\\""),
+        "{input}"
+    );
+    for edit in &edits {
+        assert!(matches!(edit, EngineEdit::ReplaceNode { .. }));
+    }
+}
+
+#[test]
+fn undeclared_input_rename_rewrites_every_reader() {
+    use zen_engine::policy::RenameTarget;
+
+    let mut ws = Workspace::new();
+    ws.set_document(
+        "g",
+        document(linear_graph(
+            None,
+            vec![expression_node(
+                "calc",
+                &[("total", "age * 2"), ("adult", "age >= 18")],
+            )],
+        )),
+    );
+    let cursor = Cursor {
+        policy_path: "g".into(),
+        block_id: "calc".into(),
+        pos: 1,
+        target: CursorTarget::Expression {
+            id: "calc-e1".into(),
+        },
+    };
+    let prepared = ws.prepare_rename(&cursor).expect("prepare rename");
+    assert!(
+        matches!(&prepared.target, RenameTarget::GraphProperty { path, .. } if path.as_ref() == "age")
+    );
+    assert_eq!(ws.references(&prepared.target).len(), 2);
+    let edits = ws.rename(&prepared.target, "years");
+    let rendered = serde_json::to_string(&edits).unwrap();
+    assert!(
+        rendered.contains("years * 2") && rendered.contains("years >= 18"),
+        "{rendered}"
+    );
 }
 
 #[test]
@@ -1957,37 +2016,6 @@ fn graph_malformed_output_type_diagnosed() {
 }
 
 #[test]
-fn graph_nl_tokenize_output_cell_uses_declared_type() {
-    let mut ws = Workspace::new();
-    ws.set_document(
-        "g",
-        document(linear_graph(
-            Some(person_schema()),
-            vec![typed_table("number", &["10"])],
-        )),
-    );
-    let result = ws
-        .nl_tokenize(
-            &Cursor {
-                policy_path: "g".into(),
-                block_id: "dt".into(),
-                pos: 0,
-                target: CursorTarget::DecisionTableCell {
-                    row: "r0".into(),
-                    col: "o1".into(),
-                },
-            },
-            "10",
-        )
-        .expect("tokenized");
-    assert!(
-        matches!(result.subject_type, Some(VariableType::Number)),
-        "{:?}",
-        result.subject_type
-    );
-}
-
-#[test]
 fn graph_untyped_output_column_keeps_inferred_behavior() {
     let mut ws = Workspace::new();
     ws.set_document(
@@ -1998,18 +2026,6 @@ fn graph_untyped_output_column_keeps_inferred_behavior() {
         )),
     );
     assert!(ws.diagnostics("g").is_empty(), "{:?}", ws.diagnostics("g"));
-    let results = ws.nl("g");
-    let cell = results
-        .iter()
-        .find(|e| {
-            matches!(
-                &e.target,
-                CursorTarget::DecisionTableCell { row, col }
-                    if row.as_ref() == "r0" && col.as_ref() == "o1"
-            )
-        })
-        .expect("cell projection");
-    assert!(cell.result.subject_options.is_none());
 }
 
 #[test]
@@ -2977,54 +2993,6 @@ fn decision_boundary_allows_missing_optional_item_field() {
 }
 
 #[test]
-fn optional_property_without_null_type_warns_of_divergence() {
-    let mut ws = Workspace::new();
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "age": { "type": "number" },
-            "name": { "type": "string" },
-            "alias": { "type": ["string", "null"] },
-            "tags": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": { "label": { "type": "string" }, "weight": { "type": "number" } },
-                    "required": ["label"]
-                }
-            }
-        },
-        "required": ["age", "tags"]
-    });
-    ws.set_document(
-        "g",
-        document(linear_graph(
-            Some(schema),
-            vec![expression_node("calc", &[("x", "age * 2")])],
-        )),
-    );
-    let diagnostics = ws.diagnostics("g");
-    let divergent: Vec<&str> = diagnostics
-        .iter()
-        .filter(|d| d.code == DiagnosticCode::NullabilityDivergence)
-        .map(|d| d.message.as_str())
-        .collect();
-    assert_eq!(divergent.len(), 2, "{divergent:?}");
-    assert!(
-        divergent.iter().any(|m| m.contains("`name`")),
-        "{divergent:?}"
-    );
-    assert!(
-        divergent.iter().any(|m| m.contains("`tags[].weight`")),
-        "{divergent:?}"
-    );
-    assert!(
-        !divergent.iter().any(|m| m.contains("`alias`")),
-        "a type that allows null must not warn: {divergent:?}"
-    );
-}
-
-#[test]
 fn decision_boundary_names_nullability_delta() {
     let mut ws = Workspace::new();
     ws.set_document(
@@ -3346,4 +3314,408 @@ fn missing_member_through_local_names_the_member_not_the_alias() {
         errors[0].contains("doesNotExist") && !errors[0].contains("'e'"),
         "the specific member must be blamed, not the alias: {errors:?}"
     );
+}
+
+#[test]
+fn member_writes_do_not_define_declared_input_objects() {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "applicant": {
+                "type": "object",
+                "properties": { "age": { "type": "number" } },
+                "required": ["age"]
+            }
+        },
+        "required": ["applicant"]
+    });
+    let mut ws = Workspace::new();
+    ws.set_document(
+        "g",
+        document(linear_graph(
+            Some(schema),
+            vec![expression_node(
+                "calc",
+                &[
+                    ("applicant.adult", "applicant.age >= 18"),
+                    ("result.band", "'A'"),
+                ],
+            )],
+        )),
+    );
+
+    let writer = |path: &str| {
+        ws.dependencies_scoped(path, Some("g"))
+            .written_by
+            .map(|block| block.block_id.to_string())
+    };
+    assert_eq!(writer("applicant"), None);
+    assert_eq!(writer("applicant.age"), None);
+    assert_eq!(writer("applicant.adult").as_deref(), Some("calc"));
+    assert_eq!(writer("result").as_deref(), Some("calc"));
+}
+
+#[test]
+fn expression_key_segments_resolve_in_graph_rows() {
+    use zen_engine::policy::RenameTarget;
+
+    let mut ws = Workspace::new();
+    ws.set_document(
+        "g",
+        document(linear_graph(
+            Some(person_schema()),
+            vec![
+                expression_node("calc", &[("result.adult", "age >= 18")]),
+                expression_node("use", &[("flag", "result.adult")]),
+            ],
+        )),
+    );
+    let key_cursor = |pos: u32| Cursor {
+        policy_path: "g".into(),
+        block_id: "calc".into(),
+        pos,
+        target: CursorTarget::ExpressionKey {
+            id: Some("calc-e0".into()),
+        },
+    };
+
+    let prepared = ws.prepare_rename(&key_cursor(8)).expect("member segment");
+    let RenameTarget::GraphProperty { path, .. } = &prepared.target else {
+        panic!("unexpected target {:?}", prepared.target);
+    };
+    assert_eq!(path.as_ref(), "result.adult");
+    assert_eq!(prepared.span, (7, 12));
+
+    let root = ws.prepare_rename(&key_cursor(2)).expect("root segment");
+    let RenameTarget::GraphProperty { path, .. } = &root.target else {
+        panic!("unexpected target {:?}", root.target);
+    };
+    assert_eq!(path.as_ref(), "result");
+
+    assert!(ws.inspect(&key_cursor(8)).is_some());
+}
+
+#[test]
+fn date_input_of_child_decision_accepts_date_values_and_date_strings() {
+    let mut ws = Workspace::new();
+    let date_schema = |key: &str, format: &str| {
+        json!({
+            "type": "object",
+            "properties": { key: { "type": "string", "format": format } },
+            "required": [key]
+        })
+    };
+    ws.set_document(
+        "child",
+        document(linear_graph(
+            Some(date_schema("when", "date-time")),
+            vec![expression_node("calc", &[("year", "d(when).year()")])],
+        )),
+    );
+    let call = || node("call", "decisionNode", json!({ "key": "child" }));
+    ws.set_document(
+        "from_date_value",
+        document(linear_graph(
+            Some(date_schema("start", "date")),
+            vec![expression_node("prep", &[("when", "d(start)")]), call()],
+        )),
+    );
+    ws.set_document(
+        "from_date_string",
+        document(linear_graph(
+            Some(date_schema("when", "date-time")),
+            vec![call()],
+        )),
+    );
+
+    for parent in ["from_date_value", "from_date_string"] {
+        let errors: Vec<_> = ws
+            .diagnostics(parent)
+            .into_iter()
+            .filter(|d| d.severity == Severity::Error)
+            .collect();
+        assert!(errors.is_empty(), "{parent}: {errors:#?}");
+    }
+
+    let when = ws
+        .inputs(&ScopeRequest::for_policy("child"))
+        .into_iter()
+        .find(|p| p.path.as_ref() == "when")
+        .expect("child input 'when'");
+    let (inner, _) = when.resolved_type.unwrap_nullable();
+    assert!(
+        matches!(inner, VariableType::Date),
+        "got {}",
+        when.resolved_type
+    );
+}
+
+#[test]
+fn graph_renames_handle_astral_characters() {
+    use zen_engine::policy::{EngineEdit, RenameTarget};
+
+    let replaced = |edits: &[EngineEdit], id: &str| -> Value {
+        edits
+            .iter()
+            .find_map(|edit| match edit {
+                EngineEdit::ReplaceNode {
+                    node_id, new_node, ..
+                } if node_id.as_ref() == id => Some(new_node.clone()),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("node {id} rewritten: {edits:?}"))
+    };
+
+    let mut ws = Workspace::new();
+    let function = node(
+        "fn",
+        "functionNode",
+        json!({ "source": "export const handler = async (input) => {\n  const tag = '🚀 fast';\n  return { score: input.age * 2 };\n};\n" }),
+    );
+    ws.set_document(
+        "doc",
+        document(linear_graph(Some(person_schema()), vec![function])),
+    );
+    let edits = ws.rename(
+        &RenameTarget::GraphProperty {
+            document: Arc::from("doc"),
+            path: Arc::from("age"),
+        },
+        "years",
+    );
+    let source = replaced(&edits, "fn")["content"]["source"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(source.contains("input.years * 2"), "{source}");
+    assert!(source.contains("'🚀 fast'"), "{source}");
+
+    let mut ws = Workspace::new();
+    let mut calc = expression_node("calc", &[("total", "age * 2")]);
+    calc["content"]["passThrough"] = json!(true);
+    let mut label = expression_node(
+        "label",
+        &[(
+            "text",
+            "'🚀' + string($nodes['calc'].total) + '🚀' + string($nodes.calc.total)",
+        )],
+    );
+    label["content"]["passThrough"] = json!(true);
+    ws.set_document(
+        "doc",
+        document(linear_graph(Some(person_schema()), vec![calc, label])),
+    );
+    let edits = ws.rename(
+        &RenameTarget::GraphNode {
+            document: Arc::from("doc"),
+            node_id: Arc::from("calc"),
+        },
+        "Calc2",
+    );
+    let rows = replaced(&edits, "label")["content"]["expressions"].clone();
+    assert_eq!(
+        rows[0]["value"],
+        json!("'🚀' + string($nodes['Calc2'].total) + '🚀' + string($nodes.Calc2.total)")
+    );
+}
+
+#[test]
+fn field_rename_reaches_imported_policies_reading_it() {
+    use zen_engine::policy::{ReferenceKind, RenameTarget};
+
+    let mut ws = Workspace::new();
+    ws.set_document(
+        "main",
+        document(json!({
+            "imports": ["shared"],
+            "blocks": [
+                { "id": "dm", "type": "dataModel", "props": { "data": {
+                    "name": "customer",
+                    "properties": [
+                        { "id": "p1", "name": "age", "type": "number", "array": false, "optional": false }
+                    ]
+                } }, "children": [] }
+            ]
+        })),
+    );
+    ws.set_document(
+        "shared",
+        document(json!({
+            "blocks": [
+                { "id": "m", "type": "match", "props": { "data": {
+                    "key": "customer.tier",
+                    "arms": [
+                        { "id": "a1", "condition": "customer.age > 50", "value": "\"gold\"" },
+                        { "id": "a2", "condition": "", "value": "\"silver\"" }
+                    ]
+                } } }
+            ]
+        })),
+    );
+
+    let target = RenameTarget::Field {
+        entity: Arc::from("customer"),
+        field: Arc::from("age"),
+    };
+    let sites = ws.references(&target);
+    assert!(
+        sites
+            .iter()
+            .any(|s| s.policy_path.as_ref() == "shared" && s.kind == ReferenceKind::ExpressionRead),
+        "{sites:#?}"
+    );
+    assert!(
+        sites
+            .iter()
+            .any(|s| s.policy_path.as_ref() == "main" && s.kind == ReferenceKind::DataModel),
+        "{sites:#?}"
+    );
+}
+
+#[test]
+fn input_rename_reaches_nodes_reads_and_child_decisions() {
+    use zen_engine::policy::{EngineEdit, RenameTarget};
+
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "customer": {
+                "type": "object",
+                "properties": { "age": { "type": "number" }, "name": { "type": "string" } },
+                "required": ["age", "name"]
+            }
+        },
+        "required": ["customer"]
+    });
+    let mut ws = Workspace::new();
+    ws.set_document(
+        "child",
+        document(linear_graph(
+            Some(schema.clone()),
+            vec![expression_node(
+                "verdict",
+                &[("adult", "customer.age >= 18")],
+            )],
+        )),
+    );
+    let mut graph = linear_graph(
+        Some(schema),
+        vec![
+            expression_node("calc", &[("isAdult", "customer.age >= 18")]),
+            expression_node("calc2", &[("next", "$nodes.in.customer.age + 1")]),
+            node("call", "decisionNode", json!({ "key": "child" })),
+        ],
+    );
+    graph["nodes"][1]["content"]["passThrough"] = json!(true);
+    graph["nodes"][2]["content"]["passThrough"] = json!(true);
+    ws.set_document("parent", document(graph));
+
+    let edits = ws.rename(
+        &RenameTarget::GraphProperty {
+            document: Arc::from("parent"),
+            path: Arc::from("customer.age"),
+        },
+        "years",
+    );
+    let rendered: Vec<String> = edits
+        .iter()
+        .map(|edit| match edit {
+            EngineEdit::ReplaceNode {
+                document,
+                node_id,
+                new_node,
+            } => format!("{document}/{node_id}: {new_node}"),
+            other => format!("{other:?}"),
+        })
+        .collect();
+    let find = |doc: &str, id: &str| {
+        rendered
+            .iter()
+            .find(|r| r.starts_with(&format!("{doc}/{id}:")))
+            .unwrap_or_else(|| panic!("no edit for {doc}/{id}: {rendered:#?}"))
+    };
+    assert!(find("parent", "calc").contains("customer.years >= 18"));
+    assert!(find("parent", "calc2").contains("$nodes.in.customer.years + 1"));
+    assert!(find("parent", "in").contains("years"));
+    assert!(find("child", "verdict").contains("customer.years >= 18"));
+    assert!(find("child", "in").contains("years"));
+}
+
+#[test]
+fn output_column_head_rename_renames_written_property() {
+    use zen_engine::policy::{EngineEdit, RenameTarget};
+
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "applicant": {
+                "type": "object",
+                "properties": { "score": { "type": "number" } },
+                "required": ["score"]
+            }
+        },
+        "required": ["applicant"]
+    });
+    let mut ws = Workspace::new();
+    let mut table = node(
+        "dt",
+        "decisionTableNode",
+        json!({
+            "hitPolicy": "first",
+            "inputField": "applicant",
+            "inputs": [{ "id": "c1", "name": "Score", "field": "score" }],
+            "outputs": [{ "id": "o1", "name": "Points", "field": "points" }],
+            "rules": [{ "_id": "r1", "c1": "> 10", "o1": "1" }, { "_id": "r2", "c1": "", "o1": "0" }]
+        }),
+    );
+    table["content"]["passThrough"] = json!(true);
+    let after = expression_node(
+        "after",
+        &[("double", "points * 2"), ("raw", "applicant.score")],
+    );
+    ws.set_document(
+        "g",
+        document(linear_graph(Some(schema), vec![table, after])),
+    );
+
+    let prepared = ws
+        .prepare_rename(&Cursor {
+            policy_path: Arc::from("g"),
+            block_id: Arc::from("dt"),
+            target: CursorTarget::DecisionTableHead {
+                col: Arc::from("o1"),
+            },
+            pos: 2,
+        })
+        .expect("output head is renamable");
+    assert_eq!(
+        prepared.target,
+        RenameTarget::GraphProperty {
+            document: Arc::from("g"),
+            path: Arc::from("points"),
+        }
+    );
+
+    let edits = ws.rename(&prepared.target, "rating");
+    let node_json = |id: &str| {
+        edits
+            .iter()
+            .find_map(|edit| match edit {
+                EngineEdit::ReplaceNode {
+                    node_id, new_node, ..
+                } if node_id.as_ref() == id => Some(new_node.to_string()),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("no edit for {id}: {edits:?}"))
+    };
+    let dt = node_json("dt");
+    assert!(dt.contains(r#""field":"rating""#), "{dt}");
+    assert!(
+        dt.contains(r#""field":"score""#),
+        "input column untouched: {dt}"
+    );
+    assert!(!dt.contains("points"), "{dt}");
+    let after = node_json("after");
+    assert!(after.contains("rating * 2"), "{after}");
+    assert!(after.contains("applicant.score"), "{after}");
 }

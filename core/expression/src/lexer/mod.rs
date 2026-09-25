@@ -4,10 +4,10 @@
 mod error;
 mod token;
 
-mod codes;
+pub(crate) mod codes;
 mod cursor;
 mod lexer;
 
 pub use error::LexerError;
-pub use lexer::Lexer;
+pub use lexer::{LenientTokens, Lexer};
 pub use token::*;

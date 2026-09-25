@@ -26,12 +26,14 @@ impl Serialize for Variable {
             }
             #[cfg(not(feature = "arbitrary_precision"))]
             Variable::Number(v) => {
-                if let Some(u) = v.to_u64() {
-                    return serializer.serialize_u64(u);
-                }
+                if v.is_integer() {
+                    if let Some(u) = v.to_u64() {
+                        return serializer.serialize_u64(u);
+                    }
 
-                if let Some(i) = v.to_i64() {
-                    return serializer.serialize_i64(i);
+                    if let Some(i) = v.to_i64() {
+                        return serializer.serialize_i64(i);
+                    }
                 }
 
                 if let Some(f) = v.to_f64() {

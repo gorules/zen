@@ -9,9 +9,12 @@ use crate::workspace::types::{BlockRef, DependencyNode};
 use zen_expression::variable::VariableType;
 
 impl Db {
-    pub fn dependencies(&self, target: &str) -> DependencyNode {
+    pub fn dependencies(&self, target: &str, policy: Option<&str>) -> DependencyNode {
         let snapshot = self.snapshot();
-        let unit = self.unit_for_property(target);
+        let unit = match policy {
+            Some(policy) => self.unit(policy),
+            None => self.unit_for_property(target),
+        };
         let entity_form = EntityForm::new(&unit.entity_sources);
         let enriched = self.enriched_of_unit(&unit);
         let scope = &enriched.scope;

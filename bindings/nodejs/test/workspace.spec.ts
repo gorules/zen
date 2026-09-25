@@ -289,15 +289,4 @@ describe('Workspace graph decision tables', () => {
     const outputs = ws.outputs({ policyPath: 'g' });
     expect(outputs.find((o: any) => o.path === 'score')?.resolvedType).toEqual({ type: 'number' });
   });
-
-  it('projects nl for typed output cells with the declared subject type', () => {
-    const ws = new Workspace();
-    ws.setDocument('g', typedTableGraph('number', ['10']));
-
-    const result = ws.nlTokenize(
-      { policyPath: 'g', blockId: 'dt', pos: 0, target: { kind: 'decisionTableCell', row: 'r0', col: 'o1' } },
-      '10',
-    );
-    expect(result?.subjectType).toEqual({ type: 'number' });
-  });
 });

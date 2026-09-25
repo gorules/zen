@@ -21,7 +21,7 @@ export type PolicyRenameTarget =
 export type PolicyCursorTarget =
   | { kind: 'expression'; id: string }
   | { kind: 'assertionOutput' }
-  | { kind: 'expressionKey' }
+  | { kind: 'expressionKey'; id?: string }
   | { kind: 'matchTarget' }
   | { kind: 'matchValue'; id: string }
   | { kind: 'decisionTableHead'; col: string }
@@ -69,7 +69,6 @@ export type PolicyDiagnosticCode =
   | 'UNRESOLVED_FUNCTION_TYPE'
   | 'IMPLICIT_ANY'
   | 'UNCHECKED_NODE'
-  | 'NULLABILITY_DIVERGENCE'
   | 'REDUNDANT_NULLISH'
   | 'REPEATED_DERIVATION'
   | 'PREFER_MATCH'
@@ -92,153 +91,100 @@ export type PolicyVariableType =
   | { type: 'object'; fields: Record<string, PolicyVariableType> }
   | { type: 'nullable'; inner: PolicyVariableType };
 
-/** Language-agnostic symbol key for an infix operator. The client maps the key to a localized phrase. */
-export type NlOpSym =
-  | 'gt' | 'gte' | 'lt' | 'lte' | 'eq' | 'ne' | 'in' | 'notIn'
-  | 'contains' | 'notContains'
-  | 'containsAny' | 'containsAll' | 'containsNone' | 'containsOnly'
-  | 'add' | 'sub' | 'mul' | 'div' | 'mod' | 'pow'
-  | 'and' | 'or' | 'not' | 'coalesce';
-
 /**
- * Structural separator word inside a multi-operand construct (conditional, closure, interval).
- * `has` replaces `where` when an alias-elided closure body leads with a member on the binding
- * ("any drivers has age less than 5"); clients should shorten the op label that follows it.
+ * Slot-aware autocomplete. `PolicyExpressionCursor.pos` passed to `slot()`, every `span` and
+ * `replaceSpan` below are UTF-16 code units (JavaScript string offsets), not bytes.
  */
-export type NlWordSym = 'if' | 'then' | 'otherwise' | 'in' | 'where' | 'has' | 'rangeAnd';
-
-/**
- * Resolved type of a value/field token. `enum` / `array<enum>` carry an `index`
- * into the per-result `enums` table; dedupe the domain once, reference by index.
- */
-export type NlTypeTag =
-  | { t: 'number' }
-  | { t: 'string' }
-  | { t: 'bool' }
-  | { t: 'date' }
-  | { t: 'interval' }
-  | { t: 'object' }
-  | { t: 'null' }
-  | { t: 'unknown' }
-  | { t: 'enum'; index: number }
-  | { t: 'array'; items: NlTypeTag };
-
-/** One operator the user may switch to: the symbol for labelling plus its ZEN source form for splicing. */
-export interface NlOpChoice {
-  sym: NlOpSym;
-  source: string;
-}
-
-/**
- * One enum domain value: `label` for display, `source` as the ready-to-splice ZEN literal.
- * `source` is absent when the value contains both quote kinds and has no literal form.
- */
-export interface NlEnumOption {
+export type PolicySlotState =
+  | 'start'
+  | 'unaryStart'
+  | 'value'
+  | 'listElement'
+  | 'range'
+  | 'operator'
+  | 'logical'
+  | 'argument'
+  | 'member'
+  | 'closure'
+  | 'inString'
+  | 'path';
+export type PolicySlotRole = 'unary' | 'condition' | 'value' | 'path';
+/** One enum value: `label` for display, `source` the ready-to-splice ZEN literal (null when unquotable). */
+export interface PolicyValueOption {
+  value: string;
   label: string;
-  source?: string;
+  source: string | null;
 }
-
-/**
- * Widget hint present only when it adds information beyond the token's own type: enum domains
- * (`options` indexes the `enums` table), expected dates, or the operator choices valid for the
- * operand types — ordered comparisons only for number/date/unknown operands, eq/ne otherwise.
- */
-/**
- * `quantSelect` marks a quantified-membership phrase (contains any/all/none/only). `subject` and
- * `list` are ready-to-splice ZEN source slices; the client rebuilds the whole spanned expression
- * from its canonical template for the picked symbol. `funcSelect` swaps a closure-function name
- * in place (all/some/none); the token span covers exactly the name.
- */
-export type NlEditHint =
-  | { kind: 'datePicker' }
-  | { kind: 'select'; options: number }
-  | { kind: 'multiSelect'; options: number }
-  | { kind: 'opSelect'; options: NlOpChoice[] }
-  | { kind: 'quantSelect'; options: NlOpSym[]; subject: string; list: string }
-  | { kind: 'funcSelect'; options: string[] };
-
-/**
- * One token in the symbolic NL stream. Structure is explicit via the
- * group/list/interval markers and the infix placement of `op` / `word` tokens.
- * `func.sym` / `method.sym` are stable camelCase keys (`'sum'`, `'format'`, `'d'`
- * for the date constructor); `closure: true` marks a closure call whose operands
- * follow as `element`, `word:'in'`, collection, `word:'where'`, body.
- */
-export type NlTokenKind =
-  | { t: 'groupOpen' }
-  | { t: 'groupClose' }
-  | { t: 'listOpen' }
-  | { t: 'listClose' }
-  | { t: 'comma' }
-  | { t: 'enumList'; selected: string[] }
-  | { t: 'context' }
-  | { t: 'root' }
-  | { t: 'null' }
-  | { t: 'field'; path: string[]; ty: NlTypeTag }
-  | { t: 'element'; alias?: string }
-  | { t: 'number'; value: string }
-  | { t: 'str'; value: string }
-  | { t: 'bool'; value: boolean }
-  | { t: 'op'; sym: NlOpSym; implied: boolean; between: boolean }
-  | { t: 'word'; sym: NlWordSym }
-  | { t: 'assign' }
-  | { t: 'stmtEnd' }
-  | { t: 'func'; sym: string; closure: boolean }
-  | { t: 'method'; sym: string }
-  | { t: 'templateOpen' }
-  | { t: 'templateText'; value: string }
-  | { t: 'templateClose' }
-  | { t: 'intervalOpen'; inclusive: boolean }
-  | { t: 'intervalClose'; inclusive: boolean }
-  | { t: 'code'; source: string };
-
-/** A projected token plus its source span (`[start, end)` bytes) and optional widget hint. */
-export interface NlToken {
-  token: NlTokenKind;
-  span: PolicySpan;
-  hint?: NlEditHint;
+export interface PolicyEnumTable {
+  name: string | null;
+  options: PolicyValueOption[];
 }
-
-export type NlDiagnosticSource = 'lexer' | 'parser' | 'typeCheck' | 'compiler';
-
-export interface NlDiagnostic {
-  span: PolicySpan;
-  message: string;
-  severity: PolicySeverity;
-  source: NlDiagnosticSource;
+export interface PolicySlot {
+  state: PolicySlotState;
+  expected: PolicyVariableType | null;
+  operand: PolicyVariableType | null;
+  options: PolicyValueOption[];
+  operators: string[];
+  function: string | null;
+  argument: number | null;
+  /** `[start, end)` UTF-16 range the accepted suggestion replaces. */
+  replaceSpan: PolicySpan;
+  inString: string | null;
+  listed: string[];
+  autoOpen: boolean;
+  /** Names bound by enclosing closures at the caret, innermost first (`x` for `as x`, `#` otherwise). */
+  locals: Array<{ name: string; type: PolicyVariableType }>;
 }
-
-/** Result of projecting one expression; `enums` is the dedup table referenced by `NlTypeTag` / `NlEditHint` indices. */
-export interface NlResult {
-  id: string;
-  tokens: NlToken[];
-  enums: NlEnumOption[][];
-  diagnostics: NlDiagnostic[];
-  /** Resolved `$` type for unary requests (decision-table input cells); present even for empty text. */
-  subjectType?: PolicyVariableType;
-  /** Labeled options when the unary subject is an enum (dictionary labels applied); present even for empty text. */
-  subjectOptions?: NlEnumOption[];
+export type PolicyLiteralFact =
+  | {
+      kind: 'enum';
+      span: PolicySpan;
+      value: string;
+      name: string | null;
+      label: string;
+      valid: boolean;
+      enumIndex: number;
+    }
+  | {
+      kind: 'date';
+      span: PolicySpan;
+      arg:
+        | { kind: 'now' }
+        | { kind: 'today' }
+        | { kind: 'literal'; value: string; valid: boolean; tz?: string }
+        | { kind: 'field'; path: string };
+    }
+  | { kind: 'bool'; span: PolicySpan; value: boolean };
+/** Result of `slot(cursor, text)` and of each `slotBatch` request. */
+export interface PolicySlotResponse {
+  /** Whether the source is a complete, syntactically valid expression. */
+  complete?: boolean;
+  kind: 'standard' | 'unary';
+  role: PolicySlotRole;
+  /** `$` type for unary cells, otherwise the expected value type. */
+  subjectType: PolicyVariableType | null;
+  expectedType: PolicyVariableType | null;
+  slot: PolicySlot;
+  literals: PolicyLiteralFact[];
+  enums: PolicyEnumTable[];
 }
-
 /**
- * One projected expression/cell of a policy, returned by `PolicyWorkspace.nl(policyPath)`.
- * The engine resolves scope + (for unary decision-table input cells) the subject type
- * internally, so no `rootType` is supplied. `target` routes the result to the editor it
- * came from (assertion condition, match arm, decision-table cell `{row, col}`, …).
+ * One expression location of a policy or graph, returned by `facts(policyPath)`. `source` is the
+ * stored text the facts were computed from; `subjectOptions` lists labeled enum values for an
+ * empty unary or value cell.
  */
-export interface PolicyNlExpression {
+export interface PolicyExpressionFacts {
+  complete?: boolean;
   blockId: string;
   target: PolicyCursorTarget;
-  kind: 'standard' | 'unary';
-  /** Expression text this projection was computed from — compare against the editor value to detect staleness. */
   source: string;
-  tokens: NlToken[];
-  enums: NlEnumOption[][];
-  diagnostics: NlDiagnostic[];
-  /** Resolved `$` type for unary cells. */
-  subjectType?: PolicyVariableType;
-  /** Labeled options when the unary subject is an enum (dictionary labels applied). */
-  subjectOptions?: NlEnumOption[];
+  kind: 'standard' | 'unary';
+  role: PolicySlotRole;
+  subjectType: PolicyVariableType | null;
+  expectedType: PolicyVariableType | null;
+  literals: PolicyLiteralFact[];
+  enums: PolicyEnumTable[];
+  subjectOptions: PolicyValueOption[];
 }
 
 /**
@@ -457,8 +403,6 @@ export declare class Workspace {
   outputs(req: PolicyScopeRequest): Array<PolicyOutputProperty>
   conditionalSchema(req: PolicyScopeRequest): PolicyConditionalSchema
   inspect(cursor: PolicyExpressionCursor): PolicyInspectResult | null
-  nl(policyPath: string): PolicyNlExpression[]
-  nlTokenize(cursor: PolicyExpressionCursor, text: string): NlResult | null
   completions(cursor: PolicyExpressionCursor): Array<PolicyCompletion>
   prepareRename(cursor: PolicyExpressionCursor): PolicyPrepareRenameResult | null
   rename(req: PolicyRenameRequest): PolicyEngineEdit[]
@@ -471,6 +415,8 @@ export declare class Workspace {
   enhanceGraphTrace(path: string, trace: any): PolicyTrace
   componentMembers(policy: string): Array<string>
   crossComponentWriteConflicts(): Array<PolicyWriteConflict>
+  slot(cursor: PolicyExpressionCursor, text: string): PolicySlotResponse | null
+  facts(policyPath: string): PolicyExpressionFacts[]
 }
 
 export declare class ZenDecision {
@@ -526,17 +472,6 @@ export declare function evaluateUnaryExpression(expression: string, context: any
 
 export declare function evaluateUnaryExpressionSync(expression: string, context: any): boolean
 
-export declare function nlEncodeString(value: string): string | null
-
-export declare function nlTokenizeBatch(requests: NlTokenizeRequest[], rootType: PolicyVariableType, strict?: boolean): NlResult[]
-
-export interface NlTokenizeRequest {
-  id: string
-  expression: string
-  unary: boolean
-  subjectType?: PolicyVariableType
-}
-
 export declare function overrideConfig(config: ZenConfig): void
 
 export interface PolicyCompletion {
@@ -544,6 +479,7 @@ export interface PolicyCompletion {
   kind: string
   detail: string
   info: string
+  follow?: string
 }
 
 export interface PolicyConditionalSchema {
@@ -562,6 +498,8 @@ export interface PolicyDiagnostic {
   span?: PolicySpan
   expressionId?: string
   target?: PolicyCursorTarget
+  exprCode?: string
+  args?: Record<string, string>
 }
 
 export interface PolicyDictionaryEntryInfo {
@@ -644,6 +582,8 @@ export interface PolicyInspectResult {
   span: PolicySpan
   kind: PolicyVariableType
   label: string
+  detail?: string
+  info?: string
 }
 
 export interface PolicyInstanceOf {
@@ -702,6 +642,19 @@ export interface PolicyWriteConflict {
 export declare function renderTemplate(template: string, context: any): Promise<any>
 
 export declare function renderTemplateSync(template: string, context: any): any
+
+export declare function slotBatch(requests: Array<SlotRequest>, strict?: boolean | undefined | null): Array<{ id: string; result: PolicySlotResponse }>
+
+export interface SlotRequest {
+  id: string
+  text: string
+  pos: number
+  unary: boolean
+  role: PolicySlotRole
+  scope: PolicyVariableType
+  expected?: PolicyVariableType | null
+  labels?: Record<string, Record<string, string>> | null
+}
 
 export interface ZenConfig {
   nodesInContext?: boolean

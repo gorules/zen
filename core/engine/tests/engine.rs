@@ -1,6 +1,6 @@
 use crate::support::{create_fs_loader, load_raw_test_data, load_test_data, test_data_root};
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{json, Value};
 use std::fs;
 use std::io::Read;
 use std::ops::Deref;
@@ -300,14 +300,18 @@ async fn engine_graph_tests() {
                 .unwrap()
                 .result;
 
-            assert_eq!(
-                test_case.output, result,
-                "Decision file: {file_name}.\nInput:\n {input:#?}"
+            let expected = serde_json::to_value(&test_case.output).expect("serializable output");
+            let actual = serde_json::to_value(&result).expect("serializable result");
+            assert!(
+                json_approx_eq(&expected, &actual),
+                "Decision file: {file_name}.\nInput:\n {input:#?}\nExpected: {expected}\nActual: {actual}"
             );
 
-            assert_eq!(
-                test_case.output, result_compiled,
-                "Compiled decision file: {file_name}.\nInput:\n {input:#?}"
+            let actual_compiled =
+                serde_json::to_value(&result_compiled).expect("serializable result");
+            assert!(
+                json_approx_eq(&expected, &actual_compiled),
+                "Compiled decision file: {file_name}.\nInput:\n {input:#?}\nExpected: {expected}\nActual: {actual_compiled}"
             );
         }
     }
@@ -317,6 +321,38 @@ fn mock_datetime() {
     std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-08-19T16:55:02.078Z");
 }
 
+fn json_approx_eq(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+    use serde_json::Value;
+    match (a, b) {
+        (Value::Number(x), Value::Number(y)) => {
+            if x == y {
+                return true;
+            }
+            #[cfg(feature = "arbitrary_precision")]
+            {
+                false
+            }
+            #[cfg(not(feature = "arbitrary_precision"))]
+            {
+                let (Some(x), Some(y)) = (x.as_f64(), y.as_f64()) else {
+                    return false;
+                };
+                x == y || (x - y).abs() <= f64::EPSILON * x.abs().max(y.abs()) * 4.0
+            }
+        }
+        (Value::Array(x), Value::Array(y)) => {
+            x.len() == y.len() && x.iter().zip(y.iter()).all(|(a, b)| json_approx_eq(a, b))
+        }
+        (Value::Object(x), Value::Object(y)) => {
+            x.len() == y.len()
+                && x.iter()
+                    .all(|(k, v)| y.get(k).is_some_and(|w| json_approx_eq(v, w)))
+        }
+        _ => a == b,
+    }
+}
+
+#[cfg(feature = "arbitrary_precision")]
 #[tokio::test]
 #[cfg_attr(miri, ignore)]
 async fn engine_snapshot_tests() {
@@ -474,6 +510,213 @@ async fn test_validation() {
         )
         .await
         .is_err());
+}
+
+#[tokio::test]
+#[cfg_attr(miri, ignore)]
+async fn input_schema_accepts_null_for_optional_properties() {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "name": { "type": "string" },
+            "age": { "type": "number" },
+            "kind": { "enum": ["a", "b"] },
+            "note": { "type": ["string", "null"] },
+            "items": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": { "label": { "type": "string" } }
+                }
+            }
+        },
+        "required": ["age", "note"]
+    })
+    .to_string();
+    let graph = |schemas: (Option<&str>, Option<&str>)| -> GraphContent {
+        serde_json::from_value(json!({
+            "nodes": [
+                { "id": "in", "name": "in", "type": "inputNode", "content": { "schema": schemas.0 } },
+                { "id": "out", "name": "out", "type": "outputNode", "content": { "schema": schemas.1 } }
+            ],
+            "edges": [{ "id": "e", "sourceId": "in", "targetId": "out" }]
+        }))
+        .unwrap()
+    };
+    let engine = DecisionEngine::default();
+    let input = engine
+        .create_decision(Arc::new(graph((Some(&schema), None)).into()))
+        .unwrap();
+    let output = engine
+        .create_decision(Arc::new(graph((None, Some(&schema))).into()))
+        .unwrap();
+
+    for (context, valid) in [
+        (json!({ "age": 1, "note": null, "name": null }), true),
+        (json!({ "age": 1, "note": null, "kind": null }), true),
+        (
+            json!({ "age": 1, "note": null, "items": [{ "label": null }] }),
+            true,
+        ),
+        (json!({ "age": 1, "note": "x", "name": "n" }), true),
+        (json!({ "age": null, "note": null }), false),
+        (json!({ "age": 1, "note": null, "name": 5 }), false),
+        (json!({ "age": 1, "note": null, "kind": "c" }), false),
+    ] {
+        let result = input.evaluate(context.clone().into()).await;
+        assert_eq!(result.is_ok(), valid, "input {context}");
+    }
+
+    let strict = output
+        .evaluate(json!({ "age": 1, "note": null, "name": null }).into())
+        .await;
+    assert!(strict.is_err());
+}
+
+#[tokio::test]
+#[cfg_attr(miri, ignore)]
+async fn input_schema_null_tolerance_scales_with_many_nulls() {
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "items": {
+                "type": "array",
+                "items": { "type": "object", "properties": { "x": { "type": "string" } } }
+            }
+        }
+    });
+    let graph: GraphContent = serde_json::from_value(json!({
+        "nodes": [
+            { "id": "in", "name": "in", "type": "inputNode", "content": { "schema": schema.to_string() } },
+            { "id": "out", "name": "out", "type": "outputNode", "content": {} }
+        ],
+        "edges": [{ "id": "e", "sourceId": "in", "targetId": "out" }]
+    }))
+    .unwrap();
+    let engine = DecisionEngine::default();
+    let decision = engine.create_decision(Arc::new(graph.into())).unwrap();
+    let items: Vec<_> = (0..5000).map(|_| json!({ "x": null })).collect();
+
+    let started = std::time::Instant::now();
+    let result = decision.evaluate(json!({ "items": items }).into()).await;
+    assert!(result.is_ok(), "{result:?}");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(2),
+        "{:?}",
+        started.elapsed()
+    );
+}
+
+#[tokio::test]
+#[cfg_attr(miri, ignore)]
+async fn input_schema_rejects_null_where_property_is_required_indirectly() {
+    let engine = DecisionEngine::default();
+    let decision = |schema: serde_json::Value| {
+        let graph: GraphContent = serde_json::from_value(json!({
+            "nodes": [
+                { "id": "in", "name": "in", "type": "inputNode", "content": { "schema": schema.to_string() } },
+                { "id": "out", "name": "out", "type": "outputNode", "content": {} }
+            ],
+            "edges": [{ "id": "e", "sourceId": "in", "targetId": "out" }]
+        }))
+        .unwrap();
+        engine.create_decision(Arc::new(graph.into())).unwrap()
+    };
+
+    let conditional = decision(json!({
+        "type": "object",
+        "properties": { "country": { "type": "string" }, "zip": { "type": "string" } },
+        "required": ["country"],
+        "if": { "properties": { "country": { "const": "US" } } },
+        "then": { "required": ["zip"] }
+    }));
+    let all_of = decision(json!({
+        "type": "object",
+        "required": ["name"],
+        "allOf": [{ "properties": { "name": { "type": "string" } } }]
+    }));
+    let dependencies = decision(json!({
+        "type": "object",
+        "properties": { "card": { "type": "string" }, "billing": { "type": "string" } },
+        "dependencies": { "card": ["billing"] }
+    }));
+
+    for (decision, context, valid) in [
+        (&conditional, json!({ "country": "US", "zip": null }), false),
+        (&conditional, json!({ "country": "DE", "zip": null }), true),
+        (
+            &conditional,
+            json!({ "country": "US", "zip": "10001" }),
+            true,
+        ),
+        (&all_of, json!({ "name": null }), false),
+        (&all_of, json!({ "name": "Ann" }), true),
+        (
+            &dependencies,
+            json!({ "card": "x", "billing": null }),
+            false,
+        ),
+        (
+            &dependencies,
+            json!({ "card": null, "billing": null }),
+            true,
+        ),
+    ] {
+        let result = decision.evaluate(context.clone().into()).await;
+        assert_eq!(result.is_ok(), valid, "input {context}");
+    }
+}
+
+#[tokio::test]
+#[cfg_attr(miri, ignore)]
+async fn input_schema_null_tolerance_never_rejects_what_the_schema_accepts() {
+    let graph = |schema: &Value| -> GraphContent {
+        serde_json::from_value(json!({
+            "nodes": [
+                { "id": "in", "name": "in", "type": "inputNode", "content": { "schema": schema.to_string() } },
+                { "id": "out", "name": "out", "type": "outputNode", "content": {} }
+            ],
+            "edges": [{ "id": "e", "sourceId": "in", "targetId": "out" }]
+        }))
+        .unwrap()
+    };
+    let engine = DecisionEngine::default();
+
+    for (schema, context) in [
+        (
+            json!({
+                "properties": { "country": { "type": ["string", "null"] }, "zip": { "type": "string" } },
+                "if": { "properties": { "country": { "const": "US" } } },
+                "then": { "required": ["zip"] }
+            }),
+            json!({ "country": null }),
+        ),
+        (
+            json!({
+                "properties": { "tier": { "enum": ["gold", "silver", null] } },
+                "if": { "properties": { "tier": { "enum": ["gold"] } } },
+                "then": { "required": ["goldSince"] }
+            }),
+            json!({ "tier": null }),
+        ),
+        (
+            json!({ "not": { "properties": { "status": { "const": "closed" } }, "required": ["id"] } }),
+            json!({ "id": 1, "status": null }),
+        ),
+        (
+            json!({ "oneOf": [
+                { "properties": { "discount": { "type": "number" } }, "required": ["a"] },
+                { "properties": { "discount": { "type": "null" } }, "required": ["a"] }
+            ] }),
+            json!({ "a": 1, "discount": null }),
+        ),
+    ] {
+        let decision = engine
+            .create_decision(Arc::new(graph(&schema).into()))
+            .unwrap();
+        let result = decision.evaluate(context.clone().into()).await;
+        assert!(result.is_ok(), "schema {schema} must accept {context}");
+    }
 }
 
 #[tokio::test]

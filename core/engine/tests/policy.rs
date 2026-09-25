@@ -249,7 +249,10 @@ impl DependencyCase {
         }
 
         let mut nodes: Vec<(String, bool, bool)> = Vec::new();
-        Self::collect(&ws.dependencies(&self.target), &mut nodes);
+        Self::collect(
+            &ws.dependencies_scoped(&self.target, self.policy.as_deref()),
+            &mut nodes,
+        );
         let paths: Vec<&str> = nodes.iter().map(|(p, _, _)| p.as_str()).collect();
         let find = |path: &str| nodes.iter().find(|(p, _, _)| p == path);
 
@@ -2875,7 +2878,10 @@ fn expression_diagnostics_distinguish_key_from_value() {
         .expect("expected an InvalidWritePath diagnostic on the statement key");
     assert_eq!(key_diag.location.expression_id.as_deref(), Some("s1"));
     assert!(
-        matches!(&key_diag.location.target, Some(CursorTarget::ExpressionKey)),
+        matches!(
+            &key_diag.location.target,
+            Some(CursorTarget::ExpressionKey { .. })
+        ),
         "key diagnostic must target the expression key, got {:?}",
         key_diag.location.target
     );
@@ -3011,7 +3017,7 @@ fn input_override_on_expression_key_carries_key_target() {
         .find(|d| format!("{:?}", d.code) == "InputOverride")
         .expect("expected InputOverride");
     assert!(
-        matches!(&d.location.target, Some(CursorTarget::ExpressionKey)),
+        matches!(&d.location.target, Some(CursorTarget::ExpressionKey { .. })),
         "InputOverride must target the expression key, got {:?}",
         d.location.target
     );
@@ -3084,6 +3090,60 @@ fn unrelated_policies_do_not_cross_flag_writes() {
         assert!(
             errors.is_empty(),
             "[{path}] unrelated policy writing the same path must not be flagged; got {errors:#?}",
+        );
+    }
+}
+
+#[test]
+fn duplicate_writer_is_reported_on_the_importing_policy() {
+    let writer = |block: &str, imports: &[&str]| {
+        json!({
+            "imports": imports,
+            "blocks": [
+                { "id": block, "type": "expression", "props": { "data": json!({
+                    "key": "decision", "value": "\"x\""
+                })}}
+            ]
+        })
+    };
+    let duplicates = |ws: &PolicyWorkspace, path: &str| -> Vec<Option<String>> {
+        ws.diagnostics(path)
+            .into_iter()
+            .filter(|d| d.code == zen_engine::policy::DiagnosticCode::DuplicateWriter)
+            .map(|d| d.location.block_id.map(|b| b.to_string()))
+            .collect()
+    };
+
+    for (importer, imported, entry) in [
+        ("airline/rules/apu", "airline/test", "airline/entry"),
+        ("zz/importer", "aa/imported", "mm/entry"),
+    ] {
+        let mut ws = PolicyWorkspace::new();
+        ws.set_policy(
+            imported,
+            serde_json::from_value(writer("imported-block", &[])).unwrap(),
+        );
+        ws.set_policy(
+            importer,
+            serde_json::from_value(writer("importer-block", &[imported])).unwrap(),
+        );
+        ws.set_policy(
+            entry,
+            serde_json::from_value(json!({ "imports": [importer], "blocks": [] })).unwrap(),
+        );
+
+        assert_eq!(
+            duplicates(&ws, importer),
+            vec![Some("importer-block".to_string())],
+            "[{importer}] the importing policy owns the conflict on its own block",
+        );
+        assert!(
+            duplicates(&ws, imported).is_empty(),
+            "[{imported}] the imported policy cannot see its importer's write",
+        );
+        assert!(
+            duplicates(&ws, entry).is_empty(),
+            "[{entry}] a policy importing the offender must not repeat its error",
         );
     }
 }
@@ -4915,4 +4975,88 @@ fn completions_offered_for_empty_and_trailing_space_sources() {
         partial.iter().any(|l| l == "customer"),
         "cursor past trimmed source should offer scope completions: {partial:?}"
     );
+}
+
+#[test]
+fn completions_ignore_declarations_in_unrelated_policies() {
+    let global_model = |props: serde_json::Value| {
+        json!({ "id": "dm", "type": "dataModel", "props": { "data": {
+            "name": "inputs", "scope": "global", "properties": props
+        } } })
+    };
+    let b = json!({
+        "blocks": [
+            global_model(json!([
+                { "id": "p1", "name": "score", "type": "number", "array": false, "optional": false }
+            ])),
+            { "id": "e", "type": "expression", "props": { "data": { "key": "status", "value": "" } } }
+        ]
+    });
+    let a = json!({
+        "blocks": [
+            global_model(json!([
+                { "id": "p1", "name": "status", "type": "string", "array": false, "optional": false }
+            ]))
+        ]
+    });
+
+    let labels = |ws: &PolicyWorkspace| -> Vec<String> {
+        ws.completions(&Cursor {
+            policy_path: Arc::from("b.json"),
+            block_id: Arc::from("e"),
+            pos: 0,
+            target: CursorTarget::Expression { id: Arc::from("e") },
+        })
+        .into_iter()
+        .map(|c| c.label)
+        .collect()
+    };
+
+    let mut ws = PolicyWorkspace::new();
+    ws.set_policy("b.json", serde_json::from_value(b).unwrap());
+    let alone = labels(&ws);
+    assert!(alone.iter().any(|l| l == "score"), "{alone:?}");
+
+    ws.set_policy("a.json", serde_json::from_value(a).unwrap());
+    let with_unrelated = labels(&ws);
+    assert!(
+        with_unrelated.iter().any(|l| l == "score"),
+        "{with_unrelated:?}"
+    );
+}
+
+#[test]
+fn prepare_rename_on_collect_output_head() {
+    let doc = json!({ "blocks": [
+        { "id": "dm", "type": "dataModel", "props": { "data": { "name": "customer", "properties": [
+            { "id": "p1", "name": "age", "type": "number", "array": false, "optional": false }
+        ] } } },
+        { "id": "dt", "type": "decisionTable", "props": { "data": {
+            "hitPolicy": "first",
+            "inputs": [{ "id": "i1", "name": "", "field": "customer.age" }],
+            "outputs": [{ "id": "o1", "name": "", "field": "customer.tags[]" }],
+            "rules": [{ "_id": "r1", "i1": "> 1", "o1": "\"a\"" }]
+        } } }
+    ] });
+    let mut ws = PolicyWorkspace::new();
+    ws.set_policy("p", serde_json::from_value(doc).unwrap());
+
+    let prepared = ws
+        .prepare_rename(&Cursor {
+            policy_path: Arc::from("p"),
+            block_id: Arc::from("dt"),
+            pos: 11,
+            target: CursorTarget::DecisionTableHead {
+                col: Arc::from("o1"),
+            },
+        })
+        .expect("collect head is renamable");
+    assert_eq!(
+        prepared.target,
+        zen_engine::policy::RenameTarget::Field {
+            entity: Arc::from("customer"),
+            field: Arc::from("tags"),
+        }
+    );
+    assert_eq!(prepared.span, (9, 13));
 }

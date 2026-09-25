@@ -3,9 +3,9 @@ use std::sync::{Arc, OnceLock};
 use ahash::{HashMap, HashSet};
 use fixedbitset::FixedBitSet;
 use serde::{Deserialize, Serialize};
-use zen_expression::intellisense::{ArmTest, IntelliSense, NumberCover};
+use zen_expression::intellisense::{ArmTest, NumberCover};
 use zen_expression::variable::{Variable, VariableType};
-use zen_expression::Isolate;
+use zen_expression::{Isolate, IsolateError};
 use zen_types::decision::{
     DecisionTableHitPolicy, DecisionTableInputField, DecisionTableOutputField,
 };
@@ -14,8 +14,8 @@ use base64::Engine as _;
 
 use crate::policy::queries::scope::VariableTypeScope;
 use crate::workspace::types::{
-    BlockTrace, Cursor, CursorTarget, DecisionTableExtras, Diagnostic, DiagnosticCode,
-    ExpressionKind, NlExpression,
+    BlockTrace, Cursor, CursorTarget, DecisionTableExtras, Diagnostic, DiagnosticArgs,
+    DiagnosticCode, ExpressionKind,
 };
 
 use crate::policy::ArcStrTrim;
@@ -33,7 +33,7 @@ pub(crate) struct TableSelection {
     input_bits: Option<Vec<u8>>,
 }
 
-const ROW_ID_KEY: &str = "_id";
+pub(crate) const ROW_ID_KEY: &str = "_id";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -355,7 +355,11 @@ impl DecisionTableIr {
             let Some(field) = col.field.as_ref().filter(|f| !f.is_empty()) else {
                 continue;
             };
-            let field_analysis = cx.analyze_standard(field, Some(col.id.clone()));
+            let head = Some(CursorTarget::DecisionTableHead {
+                col: col.id.clone(),
+            });
+            let field_analysis =
+                cx.with_target(head, |cx| cx.analyze_standard(field, Some(col.id.clone())));
             input_field_types.insert(col.id.clone(), field_analysis.return_type.clone());
             input_cell_scopes.insert(
                 col.id.clone(),
@@ -364,28 +368,37 @@ impl DecisionTableIr {
         }
 
         for rule in &self.rules {
+            let row_id = rule.get(ROW_ID_KEY).cloned();
             for col in &self.inputs {
                 let Some(cell) = rule.get(&col.id).filter(|c| !c.is_empty()) else {
                     continue;
                 };
+                let target = row_id.clone().map(|row| CursorTarget::DecisionTableCell {
+                    row,
+                    col: col.id.clone(),
+                });
 
-                if let Some(cell_scope) = input_cell_scopes.get(&col.id) {
-                    cx.analyze_unary_in_scope(cell, cell_scope, Some(col.id.clone()));
-                    continue;
-                }
+                cx.with_target(target, |cx| {
+                    if let Some(cell_scope) = input_cell_scopes.get(&col.id) {
+                        cx.analyze_unary_in_scope(cell, cell_scope, Some(col.id.clone()));
+                        return;
+                    }
 
-                let analysis = cx.analyze_standard(cell, Some(col.id.clone()));
-                if !matches!(analysis.return_type, VariableType::Bool | VariableType::Any) {
-                    cx.error(
-                        DiagnosticCode::TypeMismatch,
-                        Some(col.id.clone()),
-                        None,
-                        format!(
-                            "input condition must return a boolean, got {:?}",
-                            analysis.return_type
-                        ),
-                    );
-                }
+                    let analysis = cx.analyze_standard(cell, Some(col.id.clone()));
+                    if !matches!(analysis.return_type, VariableType::Bool | VariableType::Any) {
+                        cx.error_with_expr_code(
+                            DiagnosticCode::TypeMismatch,
+                            "type.condition-not-bool",
+                            DiagnosticArgs::from([("got", analysis.return_type.to_string())]),
+                            Some(col.id.clone()),
+                            None,
+                            format!(
+                                "input condition must return a boolean, got {:?}",
+                                analysis.return_type
+                            ),
+                        );
+                    }
+                });
             }
         }
 
@@ -442,7 +455,15 @@ impl DecisionTableIr {
                 let Some(cell) = rule.get(&col.id).filter(|c| !c.is_empty()) else {
                     continue;
                 };
-                let analysis = cx.analyze_standard(cell, Some(col.id.clone()));
+                let cell_target = rule
+                    .get(ROW_ID_KEY)
+                    .map(|row| CursorTarget::DecisionTableCell {
+                        row: row.clone(),
+                        col: col.id.clone(),
+                    });
+                let analysis = cx.with_target(cell_target, |cx| {
+                    cx.analyze_standard(cell, Some(col.id.clone()))
+                });
                 match &declared {
                     Some(expected) => {
                         let actual = &analysis.return_type;
@@ -860,122 +881,6 @@ impl DecisionTableIr {
         self.commit(cx, &selection)
     }
 
-    pub(super) fn nl(
-        &self,
-        policy_path: &Arc<str>,
-        block_id: &Arc<str>,
-        scope: &VariableType,
-        is: &mut IntelliSense,
-        dictionaries: &HashMap<Arc<str>, VariableType>,
-    ) -> Vec<NlExpression> {
-        let mut out = Vec::new();
-        let mut input_scopes: HashMap<Arc<str>, (ExpressionKind, VariableType)> =
-            HashMap::default();
-
-        for col in &self.inputs {
-            match col.field.as_ref().filter(|f| !f.is_empty()) {
-                Some(field) => {
-                    out.push(NlExpression::project(
-                        is,
-                        policy_path,
-                        block_id,
-                        CursorTarget::DecisionTableHead {
-                            col: col.id.clone(),
-                        },
-                        ExpressionKind::Standard,
-                        field.as_ref(),
-                        scope,
-                    ));
-                    let field_type = is.analyze(field.as_ref(), scope).return_type.clone();
-                    input_scopes.insert(
-                        col.id.clone(),
-                        (ExpressionKind::Unary, scope.with_dollar(&field_type)),
-                    );
-                }
-                None => {
-                    input_scopes.insert(
-                        col.id.clone(),
-                        (ExpressionKind::Standard, scope.shallow_clone()),
-                    );
-                }
-            }
-        }
-
-        for rule in &self.rules {
-            let Some(row) = rule.get(ROW_ID_KEY) else {
-                continue;
-            };
-            for col in &self.inputs {
-                let cell: &str = rule.get(&col.id).map(|c| c.as_ref()).unwrap_or("");
-                let Some((kind, cell_scope)) = input_scopes.get(&col.id) else {
-                    continue;
-                };
-                out.push(NlExpression::project(
-                    is,
-                    policy_path,
-                    block_id,
-                    CursorTarget::DecisionTableCell {
-                        row: row.clone(),
-                        col: col.id.clone(),
-                    },
-                    *kind,
-                    cell,
-                    cell_scope,
-                ));
-            }
-            for col in &self.outputs {
-                let cell: &str = rule.get(&col.id).map(|c| c.as_ref()).unwrap_or("");
-                let expected = col.declared.as_ref().and_then(|d| d.resolve(dictionaries));
-                out.push(NlExpression::project_expected(
-                    is,
-                    policy_path,
-                    block_id,
-                    CursorTarget::DecisionTableCell {
-                        row: row.clone(),
-                        col: col.id.clone(),
-                    },
-                    ExpressionKind::Standard,
-                    cell,
-                    scope,
-                    expected.as_ref(),
-                ));
-            }
-        }
-
-        out
-    }
-
-    pub(super) fn nl_scope(
-        &self,
-        cursor: &Cursor,
-        scope: VariableType,
-        is: &mut IntelliSense,
-        dictionaries: &HashMap<Arc<str>, VariableType>,
-    ) -> (ExpressionKind, VariableType, Option<VariableType>) {
-        let CursorTarget::DecisionTableCell { col, .. } = &cursor.target else {
-            return (ExpressionKind::Standard, scope, None);
-        };
-        match self.column_by_id(col) {
-            Some(ColumnRef::Input(column)) => {
-                match column.field.as_ref().filter(|f| !f.is_empty()) {
-                    Some(field) => {
-                        let field_type = is.analyze(field.as_ref(), &scope).return_type.clone();
-                        (ExpressionKind::Unary, scope.with_dollar(&field_type), None)
-                    }
-                    None => (ExpressionKind::Standard, scope, None),
-                }
-            }
-            Some(ColumnRef::Output(column)) => {
-                let expected = column
-                    .declared
-                    .as_ref()
-                    .and_then(|d| d.resolve(dictionaries));
-                (ExpressionKind::Standard, scope, expected)
-            }
-            None => (ExpressionKind::Standard, scope, None),
-        }
-    }
-
     pub(super) fn resolve_cursor(
         &self,
         cursor: &Cursor,
@@ -1191,7 +1096,26 @@ impl DecisionTableIr {
                     .map_err(|e| cx.expression_error(field, e))?;
                 isolate
                     .run_unary(cell)
-                    .map_err(|e| cx.expression_error(cell, e))
+                    .map_err(|source| {
+                        let value_type = col_refs[col_idx]
+                            .as_ref()
+                            .map(Variable::type_name)
+                            .unwrap_or("unknown");
+                        let value_description = if value_type == "null" {
+                            "missing or null"
+                        } else {
+                            value_type
+                        };
+                        cx.expression_error(
+                            cell,
+                            IsolateError::ContextError {
+                                context: format!(
+                                    "Cannot evaluate condition {cell:?} for input {field:?} ({value_description})"
+                                ),
+                                source: Box::new(source),
+                            },
+                        )
+                    })
             }
             _ => {
                 let result = isolate

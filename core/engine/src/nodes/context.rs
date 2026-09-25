@@ -16,6 +16,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use thiserror::Error;
 use zen_expression::Isolate;
+use zen_types::symbol::Symbol;
 use zen_types::variable::{ToVariable, Variable};
 
 #[derive(Clone)]
@@ -107,6 +108,99 @@ where
 
     pub(crate) async fn function_runtime(&self) -> Result<&Function, NodeError> {
         self.extensions.function_runtime().await.node_context(self)
+    }
+
+    pub fn validate_input(&self, schema: &Value, value: &Variable) -> Result<(), NodeError> {
+        let Err(strict) = self.validate_errors(schema, value)? else {
+            return Ok(());
+        };
+
+        let current = value.deep_clone();
+        loop {
+            let paths = self.error_paths(schema, &current)?;
+            if paths.is_empty() {
+                return Ok(());
+            }
+            let removed = paths
+                .iter()
+                .filter(|path| Self::remove_null_at(&current, path))
+                .count();
+            if removed == 0 {
+                return Err(strict).node_context(self);
+            }
+        }
+    }
+
+    fn remove_null_at(value: &Variable, pointer: &str) -> bool {
+        let segments: Vec<String> = pointer
+            .split('/')
+            .skip(1)
+            .map(|s| s.replace("~1", "/").replace("~0", "~"))
+            .collect();
+        let Some((key, parents)) = segments.split_last() else {
+            return false;
+        };
+        let mut current = value.shallow_clone();
+        for segment in parents {
+            let next = match &current {
+                Variable::Object(o) => o
+                    .borrow()
+                    .get(&Symbol::from(segment.as_str()))
+                    .map(Variable::shallow_clone),
+                Variable::Array(a) => segment
+                    .parse::<usize>()
+                    .ok()
+                    .and_then(|i| a.borrow().get(i).map(Variable::shallow_clone)),
+                _ => None,
+            };
+            let Some(next) = next else {
+                return false;
+            };
+            current = next;
+        }
+        let Variable::Object(o) = &current else {
+            return false;
+        };
+        if !matches!(
+            o.borrow().get(&Symbol::from(key.as_str())),
+            Some(Variable::Null)
+        ) {
+            return false;
+        }
+        o.borrow_mut().remove(&Symbol::from(key.as_str()));
+        true
+    }
+
+    fn validate_errors(
+        &self,
+        schema: &Value,
+        value: &Variable,
+    ) -> Result<Result<(), ValidationErrorJson>, NodeError> {
+        let validator = self
+            .extensions
+            .validator_cache()
+            .get_or_insert(self.hash_node(), schema)
+            .node_context(self)?;
+
+        let guards = Guards::default();
+        Ok(validator
+            .validate(VariableNode::new(value, &guards))
+            .map_err(ValidationErrorJson::from))
+    }
+
+    fn error_paths(&self, schema: &Value, value: &Variable) -> Result<Vec<String>, NodeError> {
+        let validator = self
+            .extensions
+            .validator_cache()
+            .get_or_insert(self.hash_node(), schema)
+            .node_context(self)?;
+
+        let guards = Guards::default();
+        let paths = validator
+            .iter_errors(VariableNode::new(value, &guards))
+            .map(|error| error.instance_path().to_string())
+            .collect();
+        Ok(paths)
     }
 
     pub fn validate(&self, schema: &Value, value: &Variable) -> Result<(), NodeError> {

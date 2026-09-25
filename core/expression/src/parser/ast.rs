@@ -185,7 +185,10 @@ impl<'a> Node<'a> {
                 AstNodeError::MissingToken { position, .. } => {
                     Some((*position as u32, *position as u32))
                 }
-                AstNodeError::Custom { span, .. } => Some(span.clone()),
+                AstNodeError::ExpectedProperty { span }
+                | AstNodeError::ExpectedLiteral { span }
+                | AstNodeError::UnexpectedEnd { span }
+                | AstNodeError::Custom { span, .. } => Some(span.clone()),
             },
             _ => None,
         }
@@ -251,6 +254,15 @@ pub enum AstNodeError<'a> {
 
     #[error("Missing expected token: {expected} at {position}")]
     MissingToken { expected: &'a str, position: usize },
+
+    #[error("Expected a property at ({}, {})", span.0, span.1)]
+    ExpectedProperty { span: (u32, u32) },
+
+    #[error("Expected a literal at ({}, {})", span.0, span.1)]
+    ExpectedLiteral { span: (u32, u32) },
+
+    #[error("Unexpected end of expression at ({}, {})", span.0, span.1)]
+    UnexpectedEnd { span: (u32, u32) },
 
     #[error("{message} at ({}, {})", span.0, span.1)]
     Custom { message: &'a str, span: (u32, u32) },

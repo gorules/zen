@@ -10,20 +10,34 @@ pub(crate) struct SpanOps;
 
 impl SpanOps {
     pub(crate) fn char_len(s: &str) -> u32 {
-        s.chars().count() as u32
+        s.encode_utf16().count() as u32
     }
 
     pub(crate) fn char_span(source: &str, span: Span) -> Span {
-        if source.is_ascii() {
-            return span;
+        (
+            Self::char_offset(source, span.0 as usize),
+            Self::char_offset(source, span.1 as usize),
+        )
+    }
+
+    pub(crate) fn byte_offset(source: &str, pos: u32) -> usize {
+        let mut units = 0u32;
+        for (byte, ch) in source.char_indices() {
+            let len = ch.len_utf16() as u32;
+            if pos < units + len {
+                return byte;
+            }
+            units += len;
         }
-        let to_char = |byte: u32| {
-            source
-                .char_indices()
-                .take_while(|(at, _)| (*at as u32) < byte)
-                .count() as u32
-        };
-        (to_char(span.0), to_char(span.1))
+        source.len()
+    }
+
+    fn char_offset(source: &str, byte: usize) -> u32 {
+        let mut end = byte.min(source.len());
+        while !source.is_char_boundary(end) {
+            end -= 1;
+        }
+        Self::char_len(&source[..end])
     }
 
     pub(crate) fn replace_at_char_spans(source: &str, spans: &[Span], new_text: &str) -> String {
@@ -41,14 +55,8 @@ impl SpanOps {
 
         let mut out = source.to_string();
         for (char_start, char_end) in sorted.into_iter().rev() {
-            let byte_start = out
-                .char_indices()
-                .nth(char_start as usize)
-                .map_or(out.len(), |(b, _)| b);
-            let byte_end = out
-                .char_indices()
-                .nth(char_end as usize)
-                .map_or(out.len(), |(b, _)| b);
+            let byte_start = Self::byte_offset(&out, char_start);
+            let byte_end = Self::byte_offset(&out, char_end);
             out.replace_range(byte_start..byte_end, new_text);
         }
         out
@@ -62,7 +70,13 @@ pub struct Diagnostic {
     pub message: String,
     pub severity: Severity,
     pub location: DiagnosticLocation,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expr_code: Option<&'static str>,
+    #[serde(skip_serializing_if = "DiagnosticArgs::is_empty")]
+    pub args: DiagnosticArgs,
 }
+
+pub use zen_expression::intellisense::diagnostic::DiagnosticArgs;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -173,7 +187,6 @@ pub enum DiagnosticCode {
     UnresolvedFunctionType,
     ImplicitAny,
     UncheckedNode,
-    NullabilityDivergence,
 
     RedundantNullish,
     RepeatedDerivation,
@@ -222,6 +235,8 @@ impl Diagnostic {
             message: message.into(),
             severity: Severity::Error,
             location,
+            expr_code: None,
+            args: DiagnosticArgs::new(),
         }
     }
 
@@ -235,6 +250,8 @@ impl Diagnostic {
             message: message.into(),
             severity: Severity::Warning,
             location,
+            expr_code: None,
+            args: DiagnosticArgs::new(),
         }
     }
 
@@ -248,7 +265,15 @@ impl Diagnostic {
             message: message.into(),
             severity: Severity::Hint,
             location,
+            expr_code: None,
+            args: DiagnosticArgs::new(),
         }
+    }
+
+    pub fn with_expr_code(mut self, code: &'static str, args: DiagnosticArgs) -> Self {
+        self.expr_code = Some(code);
+        self.args = args;
+        self
     }
 
     pub(crate) fn from_expression(
@@ -268,10 +293,20 @@ impl Diagnostic {
                 span: location.span.or(Some(diag.span)),
                 ..location
             },
+            expr_code: diag.code,
+            args: diag.args.clone(),
         }
     }
 
     pub fn is_in(&self, policy_path: &Arc<str>) -> bool {
         self.location.policy_path == *policy_path
+    }
+
+    pub(crate) fn same_as(&self, other: &Diagnostic) -> bool {
+        self.code == other.code
+            && self.message == other.message
+            && self.location.policy_path == other.location.policy_path
+            && self.location.block_id == other.location.block_id
+            && self.location.expression_id == other.location.expression_id
     }
 }

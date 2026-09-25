@@ -139,7 +139,7 @@ pub struct Snapshot {
     pub(crate) shallow: Arc<ShallowAnalyses>,
     pub(crate) components: Vec<Vec<Arc<str>>>,
     pub(crate) policy_to_component: HashMap<Arc<str>, usize>,
-    pub(crate) units: RefCell<HashMap<usize, Arc<Unit>>>,
+    pub(crate) units: RefCell<HashMap<Arc<str>, Arc<Unit>>>,
     pub(crate) policy_diagnostics: RefCell<HashMap<Arc<str>, Arc<Vec<Diagnostic>>>>,
     pub(crate) eval_artifacts: RefCell<HashMap<Arc<str>, Arc<EvalArtifact>>>,
     pub(crate) path_set: OnceCell<Arc<HashSet<Arc<str>>>>,
@@ -192,7 +192,8 @@ pub struct Db {
     function_requests: RefCell<Vec<FunctionResolutionRequest>>,
     function_requested: RefCell<HashSet<FunctionKey>>,
     function_resolver: RefCell<Option<Box<FunctionTypeResolver>>>,
-    scope_roots: RefCell<Vec<VariableType>>,
+    scope_roots: Rc<RefCell<Vec<VariableType>>>,
+    pub(crate) labels: crate::workspace::slot::LabelCache,
 }
 
 impl Drop for Db {
@@ -220,7 +221,8 @@ impl Db {
             function_requests: RefCell::new(Vec::new()),
             function_requested: RefCell::new(HashSet::default()),
             function_resolver: RefCell::new(None),
-            scope_roots: RefCell::new(Vec::new()),
+            scope_roots: Rc::new(RefCell::new(Vec::new())),
+            labels: Default::default(),
         }
     }
 
@@ -448,23 +450,31 @@ impl Db {
 
     pub fn unit(&self, policy: &str) -> Arc<Unit> {
         let snap = self.snapshot();
-        let Some(&idx) = snap.policy_to_component.get(policy) else {
-            return self.cache.unit_or_compute(&[], &[], || {
-                Snapshot::compute_unit(&[], &snap.all_parsed, &snap.shallow)
-            });
-        };
-        if let Some(u) = snap.units.borrow().get(&idx).cloned() {
+        if let Some(u) = snap.units.borrow().get(policy).cloned() {
             return u;
         }
-        let members = &snap.components[idx];
+        let mut seen = HashSet::default();
+        let mut stack = vec![Arc::<str>::from(policy)];
+        while let Some(path) = stack.pop() {
+            let Some(parsed) = snap.all_parsed.get(&path) else {
+                continue;
+            };
+            if seen.insert(path) {
+                stack.extend(parsed.policy.imports().iter().cloned());
+            }
+        }
+        let mut members: Vec<_> = seen.into_iter().collect();
+        members.sort();
         let parsed: Vec<Arc<ParsedPolicy>> = members
             .iter()
             .filter_map(|m| snap.all_parsed.get(m).cloned())
             .collect();
-        let unit = self.cache.unit_or_compute(members, &parsed, || {
-            Snapshot::compute_unit(members, &snap.all_parsed, &snap.shallow)
+        let unit = self.cache.unit_or_compute(&members, &parsed, || {
+            Snapshot::compute_unit(&members, &snap.all_parsed, &snap.shallow)
         });
-        snap.units.borrow_mut().insert(idx, unit.clone());
+        snap.units
+            .borrow_mut()
+            .insert(Arc::from(policy), unit.clone());
         unit
     }
 
@@ -529,6 +539,7 @@ impl Db {
                     .push(base_scope.shallow_clone());
                 Arc::new(Snapshot::compute_enriched(
                     &base_scope,
+                    self.scope_roots.clone(),
                     &unit.dep_graph,
                     &unit.execution_order,
                     &snap.rule_by_ref,
@@ -536,6 +547,7 @@ impl Db {
                     &unit.members,
                     &self.intellisense,
                     Rc::new(unit.dictionary_types()),
+                    Rc::new(unit.data_model_paths.clone()),
                 ))
             })
             .clone()
@@ -767,11 +779,9 @@ impl Snapshot {
 
         let entity_sources = Self::compute_entity_sources(&all_parsed);
         let base_scope = Self::compute_base_scope(&all_parsed, &entity_sources);
-        let classifier = Self::compute_path_classifier(&all_parsed);
         let shallow = Arc::new(Self::compute_shallow(
             &base_scope,
             &all_parsed,
-            &classifier,
             intellisense,
             cache,
         ));

@@ -160,6 +160,7 @@ impl Db {
             return Vec::new();
         }
         let analysis = self.graph_analysis(document);
+        let declared = self.graph_schema_declaration(document, target).is_some();
 
         let mut hits: Vec<WriterHit> = Vec::new();
         for node in &content.nodes {
@@ -173,6 +174,7 @@ impl Db {
             match &node.kind {
                 DecisionNodeKind::ExpressionNode { content } => {
                     let mut row_ids: Vec<Arc<str>> = Vec::new();
+                    let mut whole = prefix_covers;
                     if let Some(local) = paths.local_write_target(&target_segments) {
                         for row in content.expressions.iter() {
                             if row.key.is_empty() {
@@ -180,10 +182,11 @@ impl Db {
                             }
                             if PathMatch::key_overlaps(&row.key, local) {
                                 row_ids.push(row.id.clone());
+                                whole |= PathMatch::key_writes_whole(&row.key, local);
                             }
                         }
                     }
-                    if !row_ids.is_empty() || prefix_covers {
+                    if (!row_ids.is_empty() || prefix_covers) && (whole || !declared) {
                         let filter = (!prefix_covers).then_some(row_ids);
                         let reads = if deep {
                             self.node_global_reads(node, &paths, filter.as_deref())
@@ -199,16 +202,18 @@ impl Db {
                     }
                 }
                 DecisionNodeKind::DecisionTableNode { content } => {
-                    let writes = prefix_covers
-                        || paths
-                            .local_write_target(&target_segments)
-                            .is_some_and(|local| {
-                                content.outputs.iter().any(|col| {
-                                    let (path, _) = col.write_path();
-                                    !path.is_empty() && PathMatch::key_overlaps(path, local)
-                                })
-                            });
-                    if writes {
+                    let local = paths.local_write_target(&target_segments);
+                    let written_by = |matches: fn(&str, &[&str]) -> bool| {
+                        local.is_some_and(|local| {
+                            content.outputs.iter().any(|col| {
+                                let (path, _) = col.write_path();
+                                !path.is_empty() && matches(path, local)
+                            })
+                        })
+                    };
+                    let writes = prefix_covers || written_by(PathMatch::key_overlaps);
+                    let whole = prefix_covers || written_by(PathMatch::key_writes_whole);
+                    if writes && (whole || !declared) {
                         let reads = if deep {
                             self.node_global_reads(node, &paths, None)
                         } else {
@@ -336,7 +341,7 @@ impl Db {
                 return None;
             }
             let nested = if deep && !local.is_empty() {
-                let child = self.dependencies(&local_joined);
+                let child = self.dependencies(&local_joined, Some(&callee));
                 if child.written_by.is_some() {
                     child.deps
                 } else {

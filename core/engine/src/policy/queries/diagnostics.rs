@@ -6,7 +6,7 @@ use crate::policy::ir::PropertyTypeIr;
 use crate::policy::linter::Linter;
 use crate::policy::queries::dependency::WriteScope;
 use crate::policy::queries::path::PathRoot;
-use crate::workspace::db::Db;
+use crate::workspace::db::{Db, Unit};
 use crate::workspace::types::{BlockRef, Diagnostic, DiagnosticCode, DiagnosticLocation};
 
 impl Db {
@@ -17,10 +17,30 @@ impl Db {
             out.extend(parsed.diagnostics.iter().cloned());
         }
 
-        let shallow = self.shallow();
-        out.extend(shallow.diags_for(path).iter().cloned());
+        let unit = self.unit(path);
+        if let Some(parsed) = self.parsed(path) {
+            for rule in parsed.policy.rules() {
+                rule.check_single_entity_scope(path, &unit.classifier, &mut out);
+            }
+        }
+        out.extend(self.imported_context_diagnostics(path));
 
-        out.extend(self.graph_diagnostics(path));
+        let mut imported: Option<Vec<Diagnostic>> = None;
+        for mut diagnostic in self.scope_diagnostics(path) {
+            if !diagnostic.is_in(path) {
+                let imported =
+                    imported.get_or_insert_with(|| self.imported_scope_diagnostics(path));
+                if imported.iter().any(|d| d.same_as(&diagnostic)) {
+                    continue;
+                }
+                diagnostic.message = format!(
+                    "in imported policy '{}': {}",
+                    diagnostic.location.policy_path, diagnostic.message
+                );
+                diagnostic.location = DiagnosticLocation::policy(path.clone());
+            }
+            out.push(diagnostic);
+        }
 
         let enriched = self.enriched(path);
         out.extend(
@@ -40,10 +60,6 @@ impl Db {
 
         out.extend(self.import_diagnostics(path));
 
-        out.extend(self.data_model_diagnostics(path));
-
-        out.extend(self.dictionary_diagnostics(path));
-
         out.extend(self.unreachable_reads_diagnostics(path));
 
         out.extend(self.nested_iteration_diagnostics(path));
@@ -53,10 +69,136 @@ impl Db {
         out
     }
 
+    pub fn evaluation_diagnostics(&self, entry: &Arc<str>) -> Vec<Diagnostic> {
+        let mut out = (*self.policy_diagnostics(entry)).clone();
+        let unit = self.unit(entry);
+        let entry_enriched = self.enriched(entry);
+
+        let mut members: Vec<&Arc<str>> = unit.members.iter().filter(|m| *m != entry).collect();
+        members.sort();
+        for member in members {
+            let standalone = self.enriched(member);
+            let standalone_enriched: Vec<&Diagnostic> = standalone
+                .diagnostics
+                .iter()
+                .filter(|d| d.is_in(member))
+                .chain(
+                    standalone
+                        .per_rule
+                        .iter()
+                        .filter(|rule| rule.policy_path == *member)
+                        .flat_map(|rule| rule.diagnostics.iter()),
+                )
+                .collect();
+            out.extend(
+                self.policy_diagnostics(member)
+                    .iter()
+                    .filter(|d| !standalone_enriched.iter().any(|s| s.same_as(d)))
+                    .cloned(),
+            );
+            out.extend(
+                entry_enriched
+                    .diagnostics
+                    .iter()
+                    .filter(|d| d.is_in(member))
+                    .cloned(),
+            );
+            out.extend(
+                entry_enriched
+                    .per_rule
+                    .iter()
+                    .filter(|rule| rule.policy_path == *member)
+                    .flat_map(|rule| rule.diagnostics.iter().cloned()),
+            );
+        }
+        out
+    }
+
+    fn imported_context_diagnostics(&self, path: &Arc<str>) -> Vec<Diagnostic> {
+        let unit = self.unit(path);
+        let mut members: Vec<&Arc<str>> = unit.members.iter().filter(|m| *m != path).collect();
+        members.sort();
+
+        let mut out = Vec::new();
+        for member in members {
+            let member_unit = self.unit(member);
+            let own = self.unit_scoped_diagnostics(&member_unit, member);
+            for mut diagnostic in self.unit_scoped_diagnostics(&unit, member) {
+                if own.iter().any(|d| d.same_as(&diagnostic)) {
+                    continue;
+                }
+                diagnostic.message = format!(
+                    "in imported policy '{}': {}",
+                    diagnostic.location.policy_path, diagnostic.message
+                );
+                diagnostic.location = DiagnosticLocation::policy(path.clone());
+                out.push(diagnostic);
+            }
+        }
+        out
+    }
+
+    fn unit_scoped_diagnostics(&self, unit: &Unit, target: &Arc<str>) -> Vec<Diagnostic> {
+        let mut out = Vec::new();
+        if let Some(parsed) = self.parsed(target) {
+            for rule in parsed.policy.rules() {
+                rule.check_single_entity_scope(target, &unit.classifier, &mut out);
+            }
+        }
+        out.extend(self.nested_iteration_in(unit, target));
+        out.extend(self.unreachable_reads_in(unit, target));
+        out
+    }
+
+    fn imported_scope_diagnostics(&self, path: &Arc<str>) -> Vec<Diagnostic> {
+        let Some(parsed) = self.parsed(path) else {
+            return Vec::new();
+        };
+        parsed
+            .policy
+            .imports()
+            .iter()
+            .filter(|import| import.as_ref() != path.as_ref())
+            .flat_map(|import| self.scope_diagnostics(import))
+            .collect()
+    }
+
+    fn imports_transitively(&self, from: &Arc<str>, to: &Arc<str>) -> bool {
+        if from == to {
+            return false;
+        }
+        let mut seen: HashSet<Arc<str>> = HashSet::default();
+        let mut stack: Vec<Arc<str>> = vec![from.clone()];
+        while let Some(path) = stack.pop() {
+            let Some(parsed) = self.parsed(&path) else {
+                continue;
+            };
+            for import in parsed.policy.imports() {
+                if import == to {
+                    return true;
+                }
+                if seen.insert(import.clone()) {
+                    stack.push(import.clone());
+                }
+            }
+        }
+        false
+    }
+
+    fn scope_diagnostics(&self, path: &Arc<str>) -> Vec<Diagnostic> {
+        let mut out = self.graph_diagnostics(path);
+        out.extend(self.data_model_diagnostics(path));
+        out.extend(self.dictionary_diagnostics(path));
+        out
+    }
+
     fn nested_iteration_diagnostics(&self, target: &Arc<str>) -> Vec<Diagnostic> {
+        self.nested_iteration_in(&self.unit(target), target)
+    }
+
+    fn nested_iteration_in(&self, unit: &Unit, target: &Arc<str>) -> Vec<Diagnostic> {
         let mut out = Vec::new();
         let shallow = self.shallow();
-        let unit = self.unit(target);
         let entity_sources = &unit.entity_sources;
         let classifier = &unit.classifier;
 
@@ -93,9 +235,12 @@ impl Db {
     }
 
     fn unreachable_reads_diagnostics(&self, target: &Arc<str>) -> Vec<Diagnostic> {
+        self.unreachable_reads_in(&self.unit(target), target)
+    }
+
+    fn unreachable_reads_in(&self, unit: &Unit, target: &Arc<str>) -> Vec<Diagnostic> {
         let mut out = Vec::new();
         let shallow = self.shallow();
-        let unit = self.unit(target);
         let entity_sources = &unit.entity_sources;
         let classifier = &unit.classifier;
         let rule_index = self.rule_by_ref();
@@ -178,32 +323,34 @@ impl Db {
                     .and_then(|b| b.kind.write_target(&write.path));
 
                 if let Some(matched) = data_model_paths.matches_prefix(&write.path) {
-                    if in_target {
-                        out.push(Diagnostic::error(
-                            DiagnosticCode::InputOverride,
-                            DiagnosticLocation::block(
-                                rule.policy_path.clone(),
-                                rule.block_id.clone(),
-                            )
+                    out.push(Diagnostic::error(
+                        DiagnosticCode::InputOverride,
+                        DiagnosticLocation::block(rule.policy_path.clone(), rule.block_id.clone())
                             .maybe_target(wtarget.clone()),
-                            format!(
-                                "cannot write to '{}': '{}' is defined as a DataModel input",
-                                write.path, matched
-                            ),
-                        ));
-                    }
+                        format!(
+                            "cannot write to '{}': '{}' is defined as a DataModel input",
+                            write.path, matched
+                        ),
+                    ));
                     continue;
                 }
 
                 match first_writer.get(&write.path) {
-                    Some(existing) if in_target => {
+                    Some(existing) => {
+                        let (blamed, blamed_target) = if self
+                            .imports_transitively(&existing.policy_path, &rule.policy_path)
+                        {
+                            let target = self
+                                .block_ir(existing)
+                                .and_then(|b| b.kind.write_target(&write.path));
+                            (existing.clone(), target)
+                        } else {
+                            (block_ref.clone(), wtarget.clone())
+                        };
                         out.push(Diagnostic::error(
                             DiagnosticCode::DuplicateWriter,
-                            DiagnosticLocation::block(
-                                rule.policy_path.clone(),
-                                rule.block_id.clone(),
-                            )
-                            .maybe_target(wtarget.clone()),
+                            DiagnosticLocation::block(blamed.policy_path, blamed.block_id)
+                                .maybe_target(blamed_target),
                             format!(
                                 "property '{}' is written by both block '{}' (in '{}') and block '{}' (in '{}')",
                                 write.path,
@@ -214,7 +361,6 @@ impl Db {
                             ),
                         ));
                     }
-                    Some(_) => {}
                     None => {
                         first_writer.insert(write.path.clone(), block_ref.clone());
                     }
@@ -276,7 +422,11 @@ impl Db {
                     blocks.push((block_ref, *in_t));
                 }
             }
-            let Some((owner, _)) = blocks.iter().find(|(_, in_t)| *in_t) else {
+            let Some((owner, _)) = blocks
+                .iter()
+                .find(|(_, in_t)| *in_t)
+                .or_else(|| blocks.first())
+            else {
                 continue;
             };
             let cross_policy = blocks
@@ -305,12 +455,17 @@ impl Db {
 
         let graph = &unit.dep_graph;
         let cyclic = graph.cyclic_paths();
-        let target_in_cycle = cyclic.iter().any(|path| {
-            graph
-                .writer_for(path)
-                .is_some_and(|owner| owner.policy_path == *target)
+        let owners: HashSet<Arc<str>> = cyclic
+            .iter()
+            .filter_map(|path| graph.writer_for(path))
+            .map(|owner| owner.policy_path.clone())
+            .collect();
+        let owned_here = owners.contains(target);
+        let seen_by_import = owners.iter().any(|owner| {
+            let own = self.unit(owner).dep_graph.cyclic_paths();
+            cyclic.iter().any(|path| own.contains(path))
         });
-        if target_in_cycle {
+        if !cyclic.is_empty() && (owned_here || !seen_by_import) {
             out.push(Diagnostic::error(
                 DiagnosticCode::CyclicDependency,
                 DiagnosticLocation::policy(target.clone()),
@@ -369,7 +524,7 @@ impl Db {
             let dm = &entry.ir;
             let is_global = dm.scope.is_global();
 
-            if !is_global && global_property_names.contains(&dm.name) && policy_path == target {
+            if !is_global && global_property_names.contains(&dm.name) {
                 out.push(Diagnostic::error(
                     DiagnosticCode::DataModelCollision,
                     DiagnosticLocation::block(policy_path.clone(), block_id.clone()),
@@ -381,7 +536,7 @@ impl Db {
             }
 
             for prop in &dm.properties {
-                if is_global && known_entities.contains(&prop.name) && policy_path == target {
+                if is_global && known_entities.contains(&prop.name) {
                     out.push(Diagnostic::error(
                         DiagnosticCode::DataModelCollision,
                         DiagnosticLocation::expression(
@@ -408,7 +563,7 @@ impl Db {
                     let conflicts = !prop.kind.same_shape_as(&prev_kind)
                         || prev_array != prop.array
                         || prev_optional != prop.optional;
-                    if conflicts && policy_path == target {
+                    if conflicts {
                         let location = if is_global {
                             format!("global property '{}'", prop.name)
                         } else {
@@ -490,8 +645,7 @@ impl Db {
         for entry in &unit.dictionary_blocks {
             let name = &entry.ir.name;
             if let Some((prev_policy, prev_block)) = first_by_name.get(name) {
-                if entry.policy_path == *target {
-                    out.push(Diagnostic::error(
+                out.push(Diagnostic::error(
                         DiagnosticCode::DataModelCollision,
                         DiagnosticLocation::block(
                             entry.policy_path.clone(),
@@ -501,7 +655,6 @@ impl Db {
                             "dictionary '{name}' is already defined in '{prev_policy}' (block '{prev_block}')"
                         ),
                     ));
-                }
                 continue;
             }
             first_by_name.insert(
@@ -509,9 +662,6 @@ impl Db {
                 (entry.policy_path.clone(), entry.block_id.clone()),
             );
 
-            if entry.policy_path != *target {
-                continue;
-            }
             if known_entities.contains(name) {
                 out.push(Diagnostic::error(
                     DiagnosticCode::DataModelCollision,

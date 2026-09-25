@@ -313,3 +313,55 @@ return_type = '{"Array":"Number"}'
 
 [test.strict]
 return_type = '{"Array":"Number"}'
+
+# Diagnostic codes
+
+[[test]]
+name = "code: unknown member"
+expression = "customer.nme"
+input = '{"customer": {"name": "x"}}'
+
+[test.strict]
+diagnostics = [
+    { source = "type_check", severity = "error", code = "type.unknown-member", args = { name = "nme" } },
+]
+
+[[test]]
+name = "code: invalid enum member"
+expression = "status == 'pending'"
+input = '{"Object":{"status":{"Enum":["status",["open","closed"]]}}}'
+
+[test.loose]
+diagnostics = [
+    { source = "type_check", severity = "error", code = "type.invalid-enum-member", args = { value = "pending", enum = "status" } },
+]
+
+[[test]]
+name = "code: function argument mismatch"
+expression = "upper(5)"
+
+[test.loose]
+diagnostics = [
+    { source = "type_check", severity = "error", code = "type.mismatch", args = { got = "number" } },
+]
+
+[[test]]
+name = "code: expected property"
+expression = "customer."
+input = '{"customer": {"name": "x"}}'
+
+[test.loose]
+diagnostics = [
+    { source = "parser", severity = "error", code = "expr.expected-property" },
+]
+
+
+[[test]]
+name = "code: missing value after operator"
+expression = "a *"
+input = '{"a": 1}'
+
+[test.loose]
+diagnostics = [
+    { source = "parser", severity = "error", code = "expr.missing-value", args = { operator = "*" } },
+]

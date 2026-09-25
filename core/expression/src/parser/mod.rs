@@ -13,7 +13,7 @@ mod result;
 mod standard;
 mod unary;
 
-pub use ast::Node;
+pub use ast::{AstNodeError, Node};
 pub use constants::{Associativity, ParserOperator};
 pub use error::ParserError;
 pub use parser::Parser;

@@ -6,8 +6,9 @@ use ahash::{HashMap, HashMapExt, HashSet};
 use zen_expression::variable::VariableType;
 use zen_types::decision::{
     DecisionNode, DecisionNodeContent, DecisionNodeKind, DecisionTableContent,
-    DecisionTableHitPolicy, DecisionTableOutputField, ExpressionNodeContent, FunctionNodeContent,
-    SwitchNodeContent, SwitchStatementHitPolicy, TransformAttributes, TransformExecutionMode,
+    DecisionTableHitPolicy, DecisionTableOutputField, Expression, ExpressionNodeContent,
+    FunctionNodeContent, SwitchNodeContent, SwitchStatementHitPolicy, TransformAttributes,
+    TransformExecutionMode,
 };
 
 use zen_expression::intellisense::ArmTest;
@@ -21,7 +22,8 @@ use crate::policy::queries::scope::VariableTypeScope;
 use crate::workspace::db::Db;
 use crate::workspace::graph::function::FunctionTypeOutcome;
 use crate::workspace::types::{
-    CursorTarget, Diagnostic, DiagnosticCode, DiagnosticLocation, ExpressionKind, Severity,
+    CursorTarget, Diagnostic, DiagnosticArgs, DiagnosticCode, DiagnosticLocation, ExpressionKind,
+    Severity,
 };
 
 const NODES_KEY: &str = "$nodes";
@@ -37,12 +39,24 @@ pub struct GraphNodeAnalysis {
     pub input: VariableType,
     pub handler_input: VariableType,
     pub output: VariableType,
-    pub dollar: Option<VariableType>,
+    pub row_types: HashMap<Arc<str>, VariableType>,
     pub nodes_scope: VariableType,
     pub branch_outputs: HashMap<Arc<str>, VariableType>,
     pub opaque: bool,
     pub unchecked: bool,
     pub open: bool,
+}
+
+impl GraphNodeAnalysis {
+    pub(crate) fn dollar_before(&self, rows: &[Expression], row_id: &str) -> VariableType {
+        let dollar = VariableType::empty_object();
+        for row in rows.iter().take_while(|row| row.id.as_ref() != row_id) {
+            if let Some(resolved) = self.row_types.get(&row.id) {
+                dollar.insert_at_path(&row.key, resolved, true);
+            }
+        }
+        dollar
+    }
 }
 
 #[derive(Debug)]
@@ -72,6 +86,7 @@ pub(crate) struct GraphAnalyzer<'a> {
     content: &'a GraphContent,
     diagnostics: Vec<Diagnostic>,
     validate: bool,
+    unchecked: bool,
     nodes_scope: VariableType,
     dictionary_types: HashMap<Arc<str>, VariableType>,
 }
@@ -94,6 +109,7 @@ impl<'a> GraphAnalyzer<'a> {
             content,
             diagnostics: Vec::new(),
             validate: false,
+            unchecked: false,
             nodes_scope: VariableType::Any,
             dictionary_types,
         }
@@ -139,12 +155,10 @@ impl<'a> GraphAnalyzer<'a> {
         self.lint_expressions();
         self.sort_diagnostics(&topology);
 
+        let input = self.graph_input_signature();
         GraphAnalysis {
             diagnostics: self.diagnostics,
-            signature: GraphSignature {
-                input: graph_input,
-                output,
-            },
+            signature: GraphSignature { input, output },
             nodes,
             inferred_inputs,
         }
@@ -397,6 +411,18 @@ impl<'a> GraphAnalyzer<'a> {
             .unwrap_or(VariableType::Any)
     }
 
+    fn graph_input_signature(&self) -> VariableType {
+        self.content
+            .nodes
+            .iter()
+            .find_map(|node| match &node.kind {
+                DecisionNodeKind::InputNode { content } => content.schema.as_ref(),
+                _ => None,
+            })
+            .map(|schema| super::SchemaType::hint_type_with(schema, &self.dictionary_types))
+            .unwrap_or(VariableType::Any)
+    }
+
     fn check_schema_dictionaries(&mut self, node: &DecisionNode, schema: &serde_json::Value) {
         let mut names: Vec<Arc<str>> = Vec::new();
         super::SchemaType::dictionary_names(schema, &mut names);
@@ -437,18 +463,19 @@ impl<'a> GraphAnalyzer<'a> {
         open: bool,
         graph_input: &VariableType,
     ) -> GraphNodeAnalysis {
-        let scope_input = if unchecked || matches!(input, VariableType::Any) {
+        let scope_input = if matches!(input, VariableType::Any) {
             VariableType::empty_object()
         } else {
             input.shallow_clone()
         };
         self.validate = !unchecked && !open && !matches!(input, VariableType::Any);
+        self.unchecked = unchecked;
 
         let mut analysis = GraphNodeAnalysis {
             input: scope_input.shallow_clone(),
             handler_input: scope_input.shallow_clone(),
             output: VariableType::Any,
-            dollar: None,
+            row_types: HashMap::default(),
             nodes_scope: self.nodes_scope.shallow_clone(),
             branch_outputs: HashMap::default(),
             opaque: false,
@@ -483,18 +510,6 @@ impl<'a> GraphAnalyzer<'a> {
                             ),
                         ));
                     }
-                    if let Some(schema) = content.schema.as_ref() {
-                        let divergent = super::SchemaType::nullability_divergences(schema);
-                        for path in divergent.iter().take(8) {
-                            self.diagnostics.push(Diagnostic::warning(
-                                DiagnosticCode::NullabilityDivergence,
-                                DiagnosticLocation::block(self.path.clone(), node.id.clone()),
-                                format!(
-                                    "optional property `{path}` reads as nullable, but its schema does not allow null — a payload carrying `{path}: null` fails validation at runtime; add \"null\" to its type if null is a real value, or ignore this if the field is strictly absent-or-present"
-                                ),
-                            ));
-                        }
-                    }
                 }
             }
             DecisionNodeKind::OutputNode { content } => {
@@ -504,7 +519,7 @@ impl<'a> GraphAnalyzer<'a> {
                 }
                 if let Some(schema) = content.schema.as_ref().filter(|_| self.validate) {
                     let expected =
-                        super::SchemaType::variable_type_with(schema, &self.dictionary_types);
+                        super::SchemaType::hint_type_with(schema, &self.dictionary_types);
                     self.check_output_schema(node, &scope_input, &expected);
                 }
                 analysis.output = scope_input;
@@ -534,8 +549,9 @@ impl<'a> GraphAnalyzer<'a> {
                     &content.transform_attributes,
                     &scope_input,
                     |analyzer, scope| {
-                        let (output, dollar) = analyzer.check_expression_rows(node, content, scope);
-                        analysis.dollar = Some(dollar);
+                        let (output, row_types) =
+                            analyzer.check_expression_rows(node, content, scope);
+                        analysis.row_types = row_types;
                         output
                     },
                 );
@@ -700,7 +716,7 @@ impl<'a> GraphAnalyzer<'a> {
                 let element = match base.iterator() {
                     Some(inner) => inner.as_ref().shallow_clone(),
                     None => {
-                        if !matches!(base, VariableType::Any) {
+                        if !self.unchecked && !matches!(base, VariableType::Any) {
                             self.diagnostics.push(Diagnostic::error(
                                 DiagnosticCode::TypeMismatch,
                                 DiagnosticLocation::block(self.path.clone(), node.id.clone())
@@ -768,9 +784,10 @@ impl<'a> GraphAnalyzer<'a> {
         node: &DecisionNode,
         content: &ExpressionNodeContent,
         scope: &VariableType,
-    ) -> (VariableType, VariableType) {
+    ) -> (VariableType, HashMap<Arc<str>, VariableType>) {
         let output = VariableType::empty_object();
         let dollar = VariableType::empty_object();
+        let mut row_types = HashMap::with_capacity(content.expressions.len());
         for row in content.expressions.iter() {
             if row.key.is_empty() || row.value.is_empty() {
                 continue;
@@ -792,8 +809,9 @@ impl<'a> GraphAnalyzer<'a> {
             );
             output.insert_at_path(&row.key, &resolved, true);
             dollar.insert_at_path(&row.key, &resolved, true);
+            row_types.insert(row.id.clone(), resolved);
         }
-        (output, dollar)
+        (output, row_types)
     }
 
     fn check_decision_table(
@@ -854,18 +872,28 @@ impl<'a> GraphAnalyzer<'a> {
                             ExpressionKind::Standard,
                             &base_scope,
                         );
-                        if !matches!(resolved, VariableType::Bool | VariableType::Any) {
-                            self.diagnostics.push(Diagnostic::error(
-                                DiagnosticCode::TypeMismatch,
-                                DiagnosticLocation::expression(
-                                    self.path.clone(),
-                                    node.id.clone(),
-                                    col.id.clone(),
-                                    None,
+                        if !self.unchecked
+                            && !matches!(resolved, VariableType::Bool | VariableType::Any)
+                        {
+                            self.diagnostics.push(
+                                Diagnostic::error(
+                                    DiagnosticCode::TypeMismatch,
+                                    DiagnosticLocation::expression(
+                                        self.path.clone(),
+                                        node.id.clone(),
+                                        col.id.clone(),
+                                        None,
+                                    )
+                                    .with_target(target),
+                                    format!(
+                                        "input condition must return a boolean, got `{resolved}`"
+                                    ),
                                 )
-                                .with_target(target),
-                                format!("input condition must return a boolean, got `{resolved}`"),
-                            ));
+                                .with_expr_code(
+                                    "type.condition-not-bool",
+                                    DiagnosticArgs::from([("got", resolved.to_string())]),
+                                ),
+                            );
                         }
                     }
                 }
@@ -1029,7 +1057,8 @@ impl<'a> GraphAnalyzer<'a> {
             if !collect && (has_empty_cell || (has_null_cell && declared.is_some())) {
                 merged = super::wrap_optional(merged);
             }
-            if declared.is_none()
+            if !self.unchecked
+                && declared.is_none()
                 && matches!(merged, VariableType::Any)
                 && cell_types.len() > 1
                 && !cell_types.iter().any(|t| matches!(t, VariableType::Any))
@@ -1403,17 +1432,23 @@ impl<'a> GraphAnalyzer<'a> {
                     ExpressionKind::Standard,
                     &condition_scope,
                 );
-                if !matches!(resolved, VariableType::Bool | VariableType::Any) {
-                    self.diagnostics.push(Diagnostic::error(
-                        DiagnosticCode::TypeMismatch,
-                        DiagnosticLocation::expression(
-                            self.path.clone(),
-                            node.id.clone(),
-                            statement.id.clone(),
-                            None,
+                if !self.unchecked && !matches!(resolved, VariableType::Bool | VariableType::Any) {
+                    self.diagnostics.push(
+                        Diagnostic::error(
+                            DiagnosticCode::TypeMismatch,
+                            DiagnosticLocation::expression(
+                                self.path.clone(),
+                                node.id.clone(),
+                                statement.id.clone(),
+                                None,
+                            ),
+                            format!("switch condition must return a boolean, got `{resolved}`"),
+                        )
+                        .with_expr_code(
+                            "type.condition-not-bool",
+                            DiagnosticArgs::from([("got", resolved.to_string())]),
                         ),
-                        format!("switch condition must return a boolean, got `{resolved}`"),
-                    ));
+                    );
                 }
                 let intellisense = self.db.graph_intellisense();
                 let mut is = intellisense.borrow_mut();

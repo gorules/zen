@@ -225,10 +225,10 @@ impl FunctionDefinition for CompositeFunction {
         }
 
         let is_optional = possible_types.len() != self.signatures.len();
+        let mut seen = HashSet::new();
         let possible_types: Vec<String> = possible_types
             .into_iter()
-            .collect::<HashSet<_>>()
-            .into_iter()
+            .filter(|t| seen.insert(t.clone()))
             .collect();
 
         let type_union = possible_types.join(" | ");

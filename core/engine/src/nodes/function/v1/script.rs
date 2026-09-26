@@ -38,9 +38,9 @@ impl Script {
                 "main",
                 "import 'internals'; globalThis.now = Date.now();",
             )
-            .unwrap()
+            .map_err(|e| map_js_error(&ctx, e))?
             .finish::<()>()
-            .unwrap();
+            .map_err(|e| map_js_error(&ctx, e))?;
 
             let _ = ctx
                 .globals()

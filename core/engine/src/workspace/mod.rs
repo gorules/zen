@@ -210,6 +210,23 @@ impl Workspace {
         self.db.references(target)
     }
 
+    pub fn rename_from(
+        &self,
+        target: &RenameTarget,
+        new_name: &str,
+        origin: Option<&str>,
+    ) -> Vec<EngineEdit> {
+        self.db.rename_from(target, new_name, origin)
+    }
+
+    pub fn references_from(
+        &self,
+        target: &RenameTarget,
+        origin: Option<&str>,
+    ) -> Vec<ReferenceSite> {
+        self.db.references_from(target, origin)
+    }
+
     pub fn search(&self, query: &str, limit: Option<u32>) -> Vec<SearchHit> {
         self.db.search(query, limit)
     }

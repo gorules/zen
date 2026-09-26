@@ -1178,7 +1178,7 @@ impl<'p, 'a> Classifier<'p, 'a> {
                 .into_iter()
                 .filter(|op| op.starts_with(typed))
                 .collect();
-        if operators.len() < 2 && operators.first().is_none_or(|op| *op == typed) {
+        if operators.is_empty() {
             return None;
         }
         let mut slot = Slot::new(SlotState::Operator, self.items[p].span);

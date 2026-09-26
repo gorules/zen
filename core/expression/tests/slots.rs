@@ -287,7 +287,7 @@ fn deeply_nested_lists_do_not_overflow_the_stack() {
 }
 
 #[test]
-fn date_slots_offer_date_strings_except_in_comparisons() {
+fn date_slots_offer_every_field() {
     let scope: VariableType =
         serde_json::from_str(r#"{"Object":{"since":"Date","appDate":"String","age":"Number"}}"#)
             .unwrap();
@@ -309,7 +309,11 @@ fn date_slots_offer_date_strings_except_in_comparisons() {
     ] {
         let got = labels(source, expected);
         assert!(got.contains(&"appDate".to_string()), "{source:?}: {got:?}");
-        assert!(!got.contains(&"age".to_string()), "{source:?}: {got:?}");
+        assert_eq!(
+            got.contains(&"age".to_string()),
+            source != "app",
+            "{source:?}: {got:?}"
+        );
     }
     for source in [
         "since > ",
@@ -318,6 +322,7 @@ fn date_slots_offer_date_strings_except_in_comparisons() {
         "d().isAfter(appDate) and since < ",
     ] {
         let got = labels(source, None);
-        assert!(!got.contains(&"appDate".to_string()), "{source:?}: {got:?}");
+        assert!(got.contains(&"appDate".to_string()), "{source:?}: {got:?}");
+        assert!(got.contains(&"age".to_string()), "{source:?}: {got:?}");
     }
 }

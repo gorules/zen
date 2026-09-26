@@ -248,9 +248,7 @@ impl Db {
             .map(RenameSite::into_reference)
             .map(Self::clip_reference_line)
             .collect();
-        let declarations = std::iter::once((document.clone(), path.clone()))
-            .chain(self.graph_input_callees(document, path));
-        for (doc, doc_path) in declarations {
+        for (doc, doc_path) in self.graph_property_chain(document, path) {
             if let Some((node_id, key)) = self.graph_schema_declaration(&doc, &doc_path) {
                 sites.push(ReferenceSite {
                     policy_path: doc,
@@ -272,10 +270,14 @@ impl Db {
         path: &Arc<str>,
         new_name: &str,
     ) -> Vec<EngineEdit> {
-        let mut edits = self.replace_node_edits(self.graph_rename_sites(document, path), new_name);
-        edits.extend(self.graph_schema_rename_edit(document, path, new_name));
-        for (callee, callee_path) in self.graph_input_callees(document, path) {
-            edits.extend(self.graph_schema_rename_edit(&callee, &callee_path, new_name));
+        let chain = self.graph_property_chain(document, path);
+        let sites = chain
+            .iter()
+            .flat_map(|(doc, doc_path)| self.graph_collect_sites(doc, doc_path))
+            .collect();
+        let mut edits = self.replace_node_edits(sites, new_name);
+        for (doc, doc_path) in &chain {
+            edits.extend(self.graph_schema_rename_edit(doc, doc_path, new_name));
         }
         edits
     }
@@ -644,52 +646,104 @@ impl Db {
     }
 
     fn graph_rename_sites(&self, document: &Arc<str>, path: &Arc<str>) -> Vec<RenameSite> {
-        let mut sites = self.graph_collect_sites(document, path);
-        self.extend_with_caller_reads(vec![(document.clone(), path.clone())], &mut sites);
-        for (callee, callee_path) in self.graph_input_callees(document, path) {
-            sites.extend(self.graph_collect_sites(&callee, &callee_path));
-        }
-        sites
+        self.graph_property_chain(document, path)
+            .iter()
+            .flat_map(|(doc, doc_path)| self.graph_collect_sites(doc, doc_path))
+            .collect()
     }
 
-    fn graph_input_callees(
+    fn graph_property_chain(
         &self,
         document: &Arc<str>,
         path: &Arc<str>,
     ) -> Vec<(Arc<str>, Arc<str>)> {
         let snap = self.snapshot();
-        let mut out: Vec<(Arc<str>, Arc<str>)> = Vec::new();
-        let mut visited: HashSet<(Arc<str>, Arc<str>)> = HashSet::new();
-        visited.insert((document.clone(), path.clone()));
+        let mut out: Vec<(Arc<str>, Arc<str>)> = vec![(document.clone(), path.clone())];
+        let mut visited: HashSet<(Arc<str>, Arc<str>)> = out.iter().cloned().collect();
         let mut queue: VecDeque<(Arc<str>, Arc<str>)> =
             VecDeque::from([(document.clone(), path.clone())]);
         while let Some((doc_path, doc_prop)) = queue.pop_front() {
-            let Some(content) = snap.graphs.get(&doc_path).and_then(|d| d.as_graph()) else {
+            let mut next: Vec<(Arc<str>, Arc<str>)> = Vec::new();
+            if let Some(content) = snap.graphs.get(&doc_path).and_then(|d| d.as_graph()) {
+                let target: Vec<&str> = doc_prop.split('.').collect();
+                for node in &content.nodes {
+                    let DecisionNodeKind::DecisionNode { content: reference } = &node.kind else {
+                        continue;
+                    };
+                    if !snap.graphs.contains_key(&reference.key) {
+                        continue;
+                    }
+                    let Some(local) = NodePaths::new(node).local_read_target(&target) else {
+                        continue;
+                    };
+                    if local.is_empty() {
+                        continue;
+                    }
+                    let callee_path: Arc<str> = Arc::from(local.join("."));
+                    if self.graph_takes_input(&reference.key, &callee_path) {
+                        next.push((reference.key.clone(), callee_path));
+                    }
+                }
+            }
+            if self.graph_takes_input(&doc_path, &doc_prop) {
+                next.extend(self.graph_input_callers(&doc_path, &doc_prop));
+            }
+            for (caller, caller_path) in self.graph_caller_paths(&doc_path, &doc_prop) {
+                let overwritten = self
+                    .graph_collect_sites(&caller, &caller_path)
+                    .iter()
+                    .any(|s| s.kind == ReferenceKind::WriteKey);
+                if !overwritten {
+                    next.push((caller, caller_path));
+                }
+            }
+            for item in next {
+                if visited.insert(item.clone()) {
+                    out.push(item.clone());
+                    queue.push_back(item);
+                }
+            }
+        }
+        out
+    }
+
+    fn graph_takes_input(&self, document: &Arc<str>, path: &str) -> bool {
+        if self.graph_schema_declaration(document, path).is_some() {
+            return true;
+        }
+        let sites = self.graph_collect_sites(document, path);
+        !sites.is_empty() && !sites.iter().any(|s| s.kind == ReferenceKind::WriteKey)
+    }
+
+    fn graph_input_callers(&self, callee: &str, callee_path: &str) -> Vec<(Arc<str>, Arc<str>)> {
+        let snap = self.snapshot();
+        let mut out: Vec<(Arc<str>, Arc<str>)> = Vec::new();
+        for (doc_path, doc) in snap.graphs.iter() {
+            if doc_path.as_ref() == callee {
+                continue;
+            }
+            let Some(content) = doc.as_graph() else {
                 continue;
             };
-            let target: Vec<&str> = doc_prop.split('.').collect();
             for node in &content.nodes {
                 let DecisionNodeKind::DecisionNode { content: reference } = &node.kind else {
                     continue;
                 };
-                let callee: Arc<str> = reference.key.clone();
-                if !snap.graphs.contains_key(&callee) {
+                if reference.key.as_ref() != callee {
                     continue;
                 }
-                let Some(local) = NodePaths::new(node).local_read_target(&target) else {
-                    continue;
+                let caller_path: Arc<str> = match NodePaths::new(node).read_base {
+                    ReadBase::NodeInput => Arc::from(callee_path),
+                    ReadBase::Prefixed(prefix) => {
+                        Arc::from(format!("{}.{}", prefix.join("."), callee_path))
+                    }
+                    ReadBase::Opaque => continue,
                 };
-                let callee_path: Arc<str> = Arc::from(local.join("."));
-                let relevant = self
-                    .graph_schema_declaration(&callee, &callee_path)
-                    .is_some()
-                    || !self.graph_collect_sites(&callee, &callee_path).is_empty();
-                if relevant && visited.insert((callee.clone(), callee_path.clone())) {
-                    out.push((callee.clone(), callee_path.clone()));
-                    queue.push_back((callee, callee_path));
-                }
+                out.push((doc_path.clone(), caller_path));
             }
         }
+        out.sort();
+        out.dedup();
         out
     }
 
@@ -855,7 +909,11 @@ impl Db {
         }
     }
 
-    pub(crate) fn policy_caller_sites(&self, target: &RenameTarget) -> Vec<RenameSite> {
+    pub(crate) fn policy_caller_sites(
+        &self,
+        target: &RenameTarget,
+        scope: Option<&HashSet<Arc<str>>>,
+    ) -> Vec<RenameSite> {
         let segments: Vec<Arc<str>> = match target {
             RenameTarget::Entity { name } => vec![name.clone()],
             RenameTarget::Field { entity, field } => vec![entity.clone(), field.clone()],
@@ -887,6 +945,9 @@ impl Db {
                     continue;
                 }
                 let callee: Arc<str> = Arc::from(reference.key.as_ref());
+                if scope.is_some_and(|scope| !scope.contains(&callee)) {
+                    continue;
+                }
                 if !self.policy_exposes(&callee, target) {
                     continue;
                 }

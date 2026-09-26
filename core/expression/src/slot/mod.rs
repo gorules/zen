@@ -497,12 +497,4 @@ impl ScalarClass {
             _ => None,
         }
     }
-
-    pub(crate) fn fits(field: &VariableType, wanted: &VariableType) -> bool {
-        let (field, _) = field.unwrap_nullable();
-        match Self::of(field) {
-            Some(class) => Self::of(wanted) == Some(class),
-            None => !matches!(field, VariableType::Null | VariableType::Interval),
-        }
-    }
 }

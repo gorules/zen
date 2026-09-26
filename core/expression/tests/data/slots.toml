@@ -136,7 +136,15 @@ slot = { state = "operator", operators = [">", ">="], span = "4..5" }
 
 [[test]]
 expression = "age <=|"
-slot = { state = "value", type = "number", options = [], span = "6..6" }
+slot = { state = "operator", operators = ["<="], span = "4..6" }
+
+[[test]]
+expression = "age <= |"
+slot = { state = "value", type = "number", options = [], span = "7..7" }
+
+[[test]]
+expression = "status ==|"
+slot = { state = "operator", operators = ["=="], span = "7..9" }
 
 [[test]]
 expression = "claim.amount =|"
@@ -532,8 +540,15 @@ includes = ["name", "age", "address"]
 expression = "|"
 role = "value"
 expected = "number"
-includes = ["age", "customer"]
-excludes = ["name", "since"]
+includes = ["age", "customer", "name", "since"]
+
+[[test]]
+expression = "age >= |"
+includes = ["age", "name", "len", "upper", "customer"]
+
+[[test]]
+expression = "len(customer.|)"
+includes = ["name", "age", "address"]
 
 # Decimal literals and write paths
 

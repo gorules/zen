@@ -331,6 +331,7 @@ pub struct PolicyRenameRequest {
     #[napi(ts_type = "PolicyRenameTarget")]
     pub target: Value,
     pub new_name: String,
+    pub origin: Option<String>,
 }
 
 #[napi(object)]
@@ -866,20 +867,25 @@ impl Workspace {
             .map_err(|e| napi::Error::from_reason(e.to_string()))?;
         Ok(self
             .inner
-            .rename(&target, &req.new_name)
+            .rename_from(&target, &req.new_name, req.origin.as_deref())
             .into_iter()
             .map(|e| serde_json::to_value(e).expect("EngineEdit serializes"))
             .collect())
     }
 
     #[napi(ts_return_type = "PolicyReferenceSite[]")]
-    pub fn references(&self, env: Env, target: Value) -> napi::Result<Vec<Value>> {
+    pub fn references(
+        &self,
+        env: Env,
+        target: Value,
+        origin: Option<String>,
+    ) -> napi::Result<Vec<Value>> {
         self.ensure_function_types(&env)?;
         let target: workspace::RenameTarget =
             serde_json::from_value(target).map_err(|e| napi::Error::from_reason(e.to_string()))?;
         Ok(self
             .inner
-            .references(&target)
+            .references_from(&target, origin.as_deref())
             .into_iter()
             .map(|s| serde_json::to_value(s).expect("ReferenceSite serializes"))
             .collect())

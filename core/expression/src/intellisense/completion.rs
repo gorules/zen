@@ -46,7 +46,7 @@ impl Completions {
         data: &VariableType,
         slot: &crate::slot::Slot,
     ) -> Vec<Completion> {
-        use crate::slot::{ScalarClass, SlotState};
+        use crate::slot::SlotState;
         if slot.suppress_completions
             || matches!(
                 slot.state,
@@ -71,16 +71,6 @@ impl Completions {
             }
             _ => Self::build_scope(data, &locals),
         };
-        if let Some(wanted) = slot.wanted_scalar() {
-            let comparison = slot.operand.is_some() && slot.state != SlotState::Argument;
-            let strings_fit = matches!(wanted, VariableType::Date) && !comparison;
-            items.retain(|item| {
-                item.var_type.as_ref().is_none_or(|t| {
-                    ScalarClass::fits(t, wanted)
-                        || (strings_fit && matches!(t.unwrap_nullable().0, VariableType::String))
-                })
-            });
-        }
         for item in &mut items {
             if let Some(t) = &item.var_type {
                 item.follow = match t.unwrap_nullable().0 {
@@ -563,7 +553,7 @@ fn method_param_names(mk: &MethodKind) -> Vec<&'static str> {
     match mk {
         MethodKind::DateMethod(dm) => match dm {
             DateMethod::Add | DateMethod::Sub => vec!["amount", "unit"],
-            DateMethod::Set => vec!["value", "unit"],
+            DateMethod::Set => vec!["unit", "value"],
             DateMethod::Format => vec!["format"],
             DateMethod::StartOf | DateMethod::EndOf => vec!["unit"],
             DateMethod::Diff => vec!["otherDate", "unit"],

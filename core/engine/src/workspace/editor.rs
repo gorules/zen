@@ -114,25 +114,37 @@ impl Db {
     }
 
     pub fn rename(&self, target: &RenameTarget, new_name: &str) -> Vec<EngineEdit> {
+        self.rename_from(target, new_name, None)
+    }
+
+    pub fn rename_from(
+        &self,
+        target: &RenameTarget,
+        new_name: &str,
+        origin: Option<&str>,
+    ) -> Vec<EngineEdit> {
         if let RenameTarget::GraphProperty { document, path } = target {
             return self.graph_rename(document, path, new_name);
         }
         if let RenameTarget::GraphNode { document, node_id } = target {
             return self.graph_node_rename(document, node_id, new_name);
         }
+        let (sites, scope) = self.scoped_policy_sites(target, origin);
         let mut per_block: HashMap<BlockRef, Vec<RenameSite>> = HashMap::new();
-        self.walk_renamable(target, |site| {
+        for site in sites {
             let key = BlockRef {
                 policy_path: site.policy_path.clone(),
                 block_id: site.block_id.clone(),
             };
             per_block.entry(key).or_default().push(site);
-        });
+        }
         let mut edits: Vec<EngineEdit> = per_block
             .into_iter()
             .filter_map(|(block_ref, sites)| self.build_replace_block(block_ref, sites, new_name))
             .collect();
-        edits.extend(self.replace_node_edits(self.policy_caller_sites(target), new_name));
+        edits.extend(
+            self.replace_node_edits(self.policy_caller_sites(target, scope.as_ref()), new_name),
+        );
         edits
     }
 
@@ -156,23 +168,78 @@ impl Db {
     }
 
     pub fn references(&self, target: &RenameTarget) -> Vec<ReferenceSite> {
+        self.references_from(target, None)
+    }
+
+    pub fn references_from(
+        &self,
+        target: &RenameTarget,
+        origin: Option<&str>,
+    ) -> Vec<ReferenceSite> {
         if let RenameTarget::GraphProperty { document, path } = target {
             return self.graph_references(document, path);
         }
         if let RenameTarget::GraphNode { document, node_id } = target {
             return self.graph_node_references(document, node_id);
         }
-        let mut sites = Vec::new();
-        self.walk_renamable(target, |site| {
-            sites.push(site.into_reference());
-        });
+        let (policy_sites, scope) = self.scoped_policy_sites(target, origin);
+        let mut sites: Vec<ReferenceSite> = policy_sites
+            .into_iter()
+            .map(RenameSite::into_reference)
+            .collect();
         sites.extend(
-            self.policy_caller_sites(target)
+            self.policy_caller_sites(target, scope.as_ref())
                 .into_iter()
                 .map(RenameSite::into_reference),
         );
         sites.sort_by(ReferenceSite::display_cmp);
         sites
+    }
+
+    fn scoped_policy_sites(
+        &self,
+        target: &RenameTarget,
+        origin: Option<&str>,
+    ) -> (Vec<RenameSite>, Option<HashSet<Arc<str>>>) {
+        let mut sites = Vec::new();
+        self.walk_renamable(target, |site| sites.push(site));
+        let Some(origin) = origin.filter(|o| self.parsed(&Arc::from(*o)).is_some()) else {
+            return (sites, None);
+        };
+        let mentioning: HashSet<Arc<str>> = sites.iter().map(|s| s.policy_path.clone()).collect();
+        let scope = self.policy_rename_scope(&Arc::from(origin), &mentioning);
+        sites.retain(|s| scope.contains(&s.policy_path));
+        (sites, Some(scope))
+    }
+
+    fn policy_rename_scope(
+        &self,
+        origin: &Arc<str>,
+        mentioning: &HashSet<Arc<str>>,
+    ) -> HashSet<Arc<str>> {
+        let closure = |policy: &Arc<str>| self.unit(policy).members.clone();
+        let closures: HashMap<Arc<str>, HashSet<Arc<str>>> = mentioning
+            .iter()
+            .chain(std::iter::once(origin))
+            .map(|p| (p.clone(), closure(p)))
+            .collect();
+        let mut scope: HashSet<Arc<str>> = HashSet::default();
+        scope.insert(origin.clone());
+        let mut queue = vec![origin.clone()];
+        while let Some(current) = queue.pop() {
+            for other in mentioning {
+                if scope.contains(other) {
+                    continue;
+                }
+                let linked =
+                    closures[&current].contains(other) || closures[other].contains(&current);
+                if linked {
+                    scope.insert(other.clone());
+                    queue.push(other.clone());
+                }
+            }
+        }
+        scope
     }
 
     fn prepare_rename_data_model(&self, cursor: &Cursor) -> Option<PrepareRename> {

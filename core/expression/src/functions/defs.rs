@@ -197,6 +197,7 @@ impl FunctionDefinition for CompositeFunction {
             .collect::<Vec<_>>()
             .join("\n");
         typecheck.general = Some(format!("No function overload matches provided arguments. Available overloads:\n{available_signatures}"));
+        typecheck.return_type = self.return_type();
 
         typecheck
     }

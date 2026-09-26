@@ -406,7 +406,7 @@ export declare class Workspace {
   completions(cursor: PolicyExpressionCursor): Array<PolicyCompletion>
   prepareRename(cursor: PolicyExpressionCursor): PolicyPrepareRenameResult | null
   rename(req: PolicyRenameRequest): PolicyEngineEdit[]
-  references(target: any): PolicyReferenceSite[]
+  references(target: any, origin?: string | undefined | null): PolicyReferenceSite[]
   search(query: string, limit?: number | undefined | null): PolicySearchHit[]
   inputSkeleton(req: PolicyScopeRequest): unknown
   dependencies(target: string, document?: string | undefined | null): PolicyDependencyNode
@@ -617,6 +617,7 @@ export interface PolicyRemoveBlockRequest {
 export interface PolicyRenameRequest {
   target: PolicyRenameTarget
   newName: string
+  origin?: string
 }
 
 export interface PolicySchemaGroup {

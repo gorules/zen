@@ -531,7 +531,12 @@ async fn evaluate_refuses_child_unreachable_read_under_parent_data_model() {
 async fn compile_accepts_child_reading_parent_declared_fields() {
     let engine = engine_with(parent_declares_child_reads("customer.age > 50"));
     let failures = engine.compile();
-    assert!(failures.is_empty(), "{failures:#?}");
+    let reported: Vec<(&str, &str)> = failures.iter().map(|f| (f.key.as_ref(), f.kind)).collect();
+    assert_eq!(
+        reported,
+        vec![("shared", "policyImportOnly")],
+        "{failures:#?}"
+    );
 
     let result = engine
         .evaluate(

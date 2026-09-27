@@ -160,21 +160,33 @@ impl CompiledSet {
             }
         }
 
+        let errors: HashMap<Arc<str>, Vec<Diagnostic>> = policy_keys
+            .iter()
+            .map(|key| (key.clone(), Self::error_diagnostics(&workspace, key)))
+            .collect();
+
         for key in &policy_keys {
-            let diagnostics = Self::error_diagnostics(&workspace, key);
+            let diagnostics = &errors[key];
             if diagnostics.is_empty() {
                 entries.insert(
                     key.clone(),
                     CompiledEntry::Policy(workspace.eval_artifact(key)),
                 );
-            } else if !Self::valid_through_importer(&workspace, &policy_keys, key) {
-                failures.push(CompileFailure {
-                    key: key.clone(),
-                    kind: "policy",
-                    diagnostics,
-                    error: None,
-                });
+                continue;
             }
+            let valid_through_importer = policy_keys.iter().any(|other| {
+                other != key && errors[other].is_empty() && workspace.imports(other, key)
+            });
+            failures.push(CompileFailure {
+                key: key.clone(),
+                kind: if valid_through_importer {
+                    "policyImportOnly"
+                } else {
+                    "policy"
+                },
+                diagnostics: diagnostics.clone(),
+                error: None,
+            });
         }
 
         CompiledSet { entries, failures }
@@ -186,14 +198,6 @@ impl CompiledSet {
             .into_iter()
             .filter(|d| d.severity == Severity::Error)
             .collect()
-    }
-
-    fn valid_through_importer(workspace: &Workspace, keys: &[Arc<str>], key: &Arc<str>) -> bool {
-        keys.iter().any(|other| {
-            other != key
-                && workspace.import_closure(other).contains(key)
-                && Self::error_diagnostics(workspace, other).is_empty()
-        })
     }
 
     pub(crate) fn get(&self, key: &str) -> Option<CompiledEntry> {

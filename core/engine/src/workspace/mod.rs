@@ -146,8 +146,8 @@ impl Workspace {
         self.db.all_diagnostics()
     }
 
-    pub(crate) fn import_closure(&self, policy: &str) -> ahash::HashSet<Arc<str>> {
-        self.db.unit(policy).members.clone()
+    pub(crate) fn imports(&self, importer: &str, policy: &str) -> bool {
+        self.db.unit(importer).members.contains(policy)
     }
 
     pub(crate) fn evaluation_diagnostics(&self, entry: &str) -> Vec<Diagnostic> {

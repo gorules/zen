@@ -70,46 +70,41 @@ impl Db {
     }
 
     pub fn evaluation_diagnostics(&self, entry: &Arc<str>) -> Vec<Diagnostic> {
-        let mut out = (*self.policy_diagnostics(entry)).clone();
         let unit = self.unit(entry);
-        let entry_enriched = self.enriched(entry);
+        let enriched = self.enriched(entry);
 
-        let mut members: Vec<&Arc<str>> = unit.members.iter().filter(|m| *m != entry).collect();
+        let mut members: Vec<&Arc<str>> = unit.members.iter().collect();
         members.sort();
+
+        let mut candidates: Vec<Diagnostic> = Vec::new();
         for member in members {
-            let standalone = self.enriched(member);
-            let standalone_enriched: Vec<&Diagnostic> = standalone
-                .diagnostics
+            if let Some(parsed) = self.parsed(member) {
+                candidates.extend(parsed.diagnostics.iter().cloned());
+            }
+            candidates.extend(self.unit_scoped_diagnostics(&unit, member));
+            candidates.extend(self.import_diagnostics(member));
+        }
+        candidates.extend(self.scope_diagnostics(entry));
+        candidates.extend(enriched.diagnostics.iter().cloned());
+        candidates.extend(
+            enriched
+                .per_rule
                 .iter()
-                .filter(|d| d.is_in(member))
-                .chain(
-                    standalone
-                        .per_rule
-                        .iter()
-                        .filter(|rule| rule.policy_path == *member)
-                        .flat_map(|rule| rule.diagnostics.iter()),
-                )
-                .collect();
-            out.extend(
-                self.policy_diagnostics(member)
-                    .iter()
-                    .filter(|d| !standalone_enriched.iter().any(|s| s.same_as(d)))
-                    .cloned(),
-            );
-            out.extend(
-                entry_enriched
-                    .diagnostics
-                    .iter()
-                    .filter(|d| d.is_in(member))
-                    .cloned(),
-            );
-            out.extend(
-                entry_enriched
-                    .per_rule
-                    .iter()
-                    .filter(|rule| rule.policy_path == *member)
-                    .flat_map(|rule| rule.diagnostics.iter().cloned()),
-            );
+                .flat_map(|rule| rule.diagnostics.iter().cloned()),
+        );
+        if !unit.dep_graph.cyclic_paths().is_empty() {
+            candidates.push(Diagnostic::error(
+                DiagnosticCode::CyclicDependency,
+                DiagnosticLocation::policy(entry.clone()),
+                "cyclic dependency detected among computed properties",
+            ));
+        }
+
+        let mut out: Vec<Diagnostic> = Vec::new();
+        for diagnostic in candidates {
+            if !out.iter().any(|d| d.same_as(&diagnostic)) {
+                out.push(diagnostic);
+            }
         }
         out
     }
@@ -147,6 +142,47 @@ impl Db {
         }
         out.extend(self.nested_iteration_in(unit, target));
         out.extend(self.unreachable_reads_in(unit, target));
+        out.extend(self.self_referencing_writes_in(unit, target));
+        out
+    }
+
+    fn self_referencing_writes_in(&self, unit: &Unit, target: &Arc<str>) -> Vec<Diagnostic> {
+        use crate::policy::queries::dependency::PathPrefix;
+
+        let mut out = Vec::new();
+        let data_model_paths = &unit.data_model_paths;
+        for rule in self.shallow().rules_for(target) {
+            let block = self.block_ir(&BlockRef {
+                policy_path: rule.policy_path.clone(),
+                block_id: rule.block_id.clone(),
+            });
+            for write in &rule.writes {
+                let conflict = rule.reads.iter().find(|r| {
+                    data_model_paths.matches_prefix(&r.path).is_none()
+                        && PathPrefix::extends(&r.path, &write.path)
+                });
+                let Some(read) = conflict else {
+                    continue;
+                };
+                let wtarget = block
+                    .as_ref()
+                    .and_then(|b| b.kind.write_target(&write.path));
+                let message = if read.path == write.path {
+                    format!("block reads and writes the same property '{}'", write.path)
+                } else {
+                    format!(
+                        "block writes '{}' while reading the overlapping path '{}' — it would read a partially-built object",
+                        write.path, read.path
+                    )
+                };
+                out.push(Diagnostic::error(
+                    DiagnosticCode::SelfReferencingWrite,
+                    DiagnosticLocation::block(rule.policy_path.clone(), rule.block_id.clone())
+                        .maybe_target(wtarget),
+                    message,
+                ));
+            }
+        }
         out
     }
 
@@ -368,36 +404,8 @@ impl Db {
 
                 all_writes.push((block_ref.clone(), in_target, write.path.clone()));
             }
-
-            for write in &rule.writes {
-                if !in_target {
-                    continue;
-                }
-                let conflict = rule.reads.iter().find(|r| {
-                    data_model_paths.matches_prefix(&r.path).is_none()
-                        && PathPrefix::extends(&r.path, &write.path)
-                });
-                if let Some(read) = conflict {
-                    let wtarget = block
-                        .as_ref()
-                        .and_then(|b| b.kind.write_target(&write.path));
-                    let message = if read.path == write.path {
-                        format!("block reads and writes the same property '{}'", write.path)
-                    } else {
-                        format!(
-                            "block writes '{}' while reading the overlapping path '{}' — it would read a partially-built object",
-                            write.path, read.path
-                        )
-                    };
-                    out.push(Diagnostic::error(
-                        DiagnosticCode::SelfReferencingWrite,
-                        DiagnosticLocation::block(rule.policy_path.clone(), rule.block_id.clone())
-                            .maybe_target(wtarget),
-                        message,
-                    ));
-                }
-            }
         }
+        out.extend(self.self_referencing_writes_in(&unit, target));
 
         let mut containers: Vec<Arc<str>> = Vec::new();
         let mut seen: HashSet<Arc<str>> = HashSet::default();

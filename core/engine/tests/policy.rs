@@ -4975,6 +4975,10 @@ fn completions_offered_for_empty_and_trailing_space_sources() {
         partial.iter().any(|l| l == "customer"),
         "cursor past trimmed source should offer scope completions: {partial:?}"
     );
+    assert!(
+        !empty.iter().chain(&partial).any(|l| l == "$root"),
+        "policies have no $root: {empty:?}"
+    );
 }
 
 #[test]

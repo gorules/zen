@@ -66,7 +66,11 @@ impl Db {
             &scope.scope,
             scope.expected.as_ref(),
         );
-        Completions::from_slot(source, pos, &scope.scope, &result.slot)
+        let mut completions = Completions::from_slot(source, pos, &scope.scope, &result.slot);
+        if !self.is_graph(&cursor.policy_path) {
+            completions.retain(|c| c.label != "$root");
+        }
+        completions
     }
 
     pub(crate) fn cursor_intellisense(

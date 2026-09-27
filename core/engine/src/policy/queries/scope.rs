@@ -659,7 +659,7 @@ impl PropertyTypeIr {
             )),
             PropertyTypeIr::Number => Some(VariableType::Number),
             PropertyTypeIr::Boolean => Some(VariableType::Bool),
-            PropertyTypeIr::Date => Some(VariableType::String),
+            PropertyTypeIr::Date => Some(VariableType::Date),
             PropertyTypeIr::Relationship { .. } | PropertyTypeIr::Reference { .. } => None,
         }
     }
@@ -672,7 +672,8 @@ impl Property {
         dictionaries: &HashMap<Arc<str>, Arc<DictionaryIr>>,
     ) -> VariableType {
         let inner = match &self.kind {
-            PropertyTypeIr::String | PropertyTypeIr::Date => VariableType::String,
+            PropertyTypeIr::String => VariableType::String,
+            PropertyTypeIr::Date => VariableType::Date,
             PropertyTypeIr::Enum(values) => {
                 VariableType::Enum(None, crate::policy::ir::enum_values_to_rc(values))
             }

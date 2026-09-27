@@ -39,6 +39,8 @@ impl ValidatorCache {
         let validator = Arc::new(
             jsonschema::options_for::<VariableJson>()
                 .with_draft(jsonschema::Draft::Draft7)
+                .with_format("date", zen_expression::is_date_text)
+                .with_format("date-time", zen_expression::is_date_text)
                 .build(schema)?,
         );
         w_shared.insert(key, validator.clone());

@@ -120,7 +120,11 @@ impl EvalArtifact {
 
         let order_to_run = self.compute_order_to_run(req)?;
 
-        let store = req.input.depth_clone(1);
+        let store = self
+            .input_schema
+            .convert_dates(&req.input)
+            .unwrap_or_else(|| req.input.clone())
+            .depth_clone(1);
         let ref_targets: HashSet<Arc<str>> = self
             .reference_fields
             .iter()
@@ -185,14 +189,13 @@ impl EvalArtifact {
             .cloned()
             .collect();
 
-        if req.goals.is_empty() {
-            return Ok(visible_order);
-        }
-
-        let reachable = self.eval_graph.reachable_from(&req.goals);
+        let goals = match req.goals.is_empty() {
+            true => self.eval_graph.terminal_sinks(visible),
+            false => req.goals.clone(),
+        };
         let mut missing: Vec<PropertyPath> = self
             .eval_graph
-            .reachable_input_paths(&req.goals, visible)
+            .reachable_input_paths(&goals, visible)
             .into_iter()
             .filter(|p| {
                 !self.data_model_paths.is_optional(p) && !self.input_satisfied(&req.input, p)
@@ -200,11 +203,14 @@ impl EvalArtifact {
             .collect();
         if !missing.is_empty() {
             missing.sort();
-            return Err(EvaluationError::MissingRequiredInputs {
-                goals: req.goals.clone(),
-                missing,
-            });
+            return Err(EvaluationError::MissingRequiredInputs { goals, missing });
         }
+
+        if req.goals.is_empty() {
+            return Ok(visible_order);
+        }
+
+        let reachable = self.eval_graph.reachable_from(&req.goals);
 
         Ok(visible_order
             .iter()
@@ -236,8 +242,8 @@ impl EvalArtifact {
                 return true;
             }
             match current.dot(segment) {
+                Some(Variable::Null) | None => return false,
                 Some(v) => current = v,
-                None => return false,
             }
         }
         true

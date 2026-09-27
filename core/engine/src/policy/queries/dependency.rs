@@ -318,12 +318,14 @@ impl EvalGraph {
         goals: &[Arc<str>],
         visible: &HashSet<Arc<str>>,
     ) -> HashSet<Arc<str>> {
+        let written = |path: &str| {
+            self.writers
+                .get(path)
+                .is_some_and(|owner| visible.contains(&owner.policy_path))
+        };
         self.reachable_from(goals)
             .into_iter()
-            .filter(|p| match self.writers.get(p.as_ref()) {
-                None => true,
-                Some(owner) => !visible.contains(&owner.policy_path),
-            })
+            .filter(|p| !written(p) && !p.match_indices('.').any(|(index, _)| written(&p[..index])))
             .collect()
     }
 

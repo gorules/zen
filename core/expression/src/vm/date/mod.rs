@@ -62,6 +62,10 @@ impl VmDate {
         Self::now().add(Duration::day())
     }
 
+    pub fn from_text(text: &str) -> Option<Self> {
+        helper::parse_text(text).map(|date_time| Self(Some(date_time)))
+    }
+
     /// Create a new VmDate from the current time
     pub fn new(var: Variable, tz_opt: Option<Tz>) -> Self {
         Self(helper::parse_date(var, tz_opt))
@@ -207,6 +211,71 @@ mod helper {
         utc_now().with_timezone(&tz)
     }
 
+    fn parse_iso(value: &str) -> Option<NaiveDateTime> {
+        const WITH_OFFSET: [&str; 4] = [
+            "%Y-%m-%dT%H:%M:%S%.f%#z",
+            "%Y-%m-%dT%H:%M%#z",
+            "%Y%m%dT%H%M%S%.f%#z",
+            "%Y%m%dT%H%M%#z",
+        ];
+        const LOCAL: [&str; 8] = [
+            "%Y-%m-%dT%H:%M:%S%.f",
+            "%Y-%m-%dT%H:%M",
+            "%Y-%m-%d %H:%M:%S%.f",
+            "%Y%m%dT%H%M%S%.f",
+            "%Y%m%dT%H%M",
+            "%Y/%m/%d %H:%M:%S%.f",
+            "%Y/%m/%d %H:%M:%S",
+            "%Y/%m/%d %H:%M",
+        ];
+        const DATES: [&str; 2] = ["%Y%m%d", "%Y/%m/%d"];
+
+        WITH_OFFSET
+            .iter()
+            .find_map(|format| DateTime::parse_from_str(value, format).ok())
+            .map(|date_time| date_time.naive_local())
+            .or_else(|| {
+                LOCAL
+                    .iter()
+                    .find_map(|format| NaiveDateTime::parse_from_str(value, format).ok())
+            })
+            .or_else(|| {
+                DATES
+                    .iter()
+                    .find_map(|format| NaiveDate::parse_from_str(value, format).ok())
+                    .or_else(|| match value.len() {
+                        7 => NaiveDate::parse_from_str(&format!("{value}-01"), "%Y-%m-%d").ok(),
+                        4 if value.bytes().all(|b| b.is_ascii_digit()) => {
+                            NaiveDate::from_ymd_opt(value.parse().ok()?, 1, 1)
+                        }
+                        _ => None,
+                    })?
+                    .and_hms_opt(0, 0, 0)
+            })
+    }
+
+    fn parse_text_in(value: &str, tz: Tz) -> Option<Option<DateTime<Tz>>> {
+        DateTime::parse_from_rfc3339(value)
+            .ok()
+            .map(|date_time| tz.from_local_datetime(&date_time.naive_local()).earliest())
+            .or_else(|| {
+                NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S")
+                    .ok()
+                    .or_else(|| NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M").ok())
+                    .or_else(|| {
+                        NaiveDate::parse_from_str(value, "%Y-%m-%d")
+                            .ok()?
+                            .and_hms_opt(0, 0, 0)
+                    })
+                    .or_else(|| parse_iso(value))
+                    .map(|dt| tz.from_local_datetime(&dt).earliest())
+            })
+    }
+
+    pub fn parse_text(value: &str) -> Option<DateTime<Tz>> {
+        parse_text_in(value, tz()).flatten()
+    }
+
     pub fn parse_date(var: Variable, tz_opt: Option<Tz>) -> Option<DateTime<Tz>> {
         let tz = tz_opt.unwrap_or_else(|| tz());
 
@@ -221,22 +290,7 @@ mod helper {
 
                 Some(date_time)
             }
-            Variable::String(str) => DateTime::parse_from_rfc3339(str.deref())
-                .ok()
-                .map(|date_time| tz.from_local_datetime(&date_time.naive_local()).earliest())
-                .or_else(|| {
-                    NaiveDateTime::parse_from_str(str.deref(), "%Y-%m-%d %H:%M:%S")
-                        .ok()
-                        .or_else(|| {
-                            NaiveDateTime::parse_from_str(str.deref(), "%Y-%m-%d %H:%M").ok()
-                        })
-                        .or_else(|| {
-                            NaiveDate::parse_from_str(str.deref(), "%Y-%m-%d")
-                                .ok()?
-                                .and_hms_opt(0, 0, 0)
-                        })
-                        .map(|dt| tz.from_local_datetime(&dt).earliest())
-                })
+            Variable::String(str) => parse_text_in(str.deref(), tz)
                 .or_else(|| Some(Tz::from_str(&str.deref()).ok().map(now_tz)))
                 .flatten(),
             Variable::Dynamic(d) => match d.as_date() {

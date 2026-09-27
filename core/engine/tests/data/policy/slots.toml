@@ -31,15 +31,14 @@ state = "unaryStart"
 options = ["open=Open case", "closed=Closed"]
 
 [[test]]
-name = "input cell on a declared date field is a string, so no calendar"
+name = "input cell on a declared date field is a real date"
 policy = "slots.json"
 block_id = "dt"
 target = "cell"
 id = "in_since"
 row = "r1"
 kind = "unary"
-expected = ""
-subject = "string"
+subject = "date"
 
 [[test]]
 name = "input cell on d(field) is a real date"

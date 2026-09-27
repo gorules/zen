@@ -60,6 +60,7 @@
 mod isolate;
 
 pub mod compiler;
+mod dates;
 mod exports;
 pub mod expression;
 pub mod functions;
@@ -72,6 +73,7 @@ pub mod validate;
 pub mod variable;
 pub mod vm;
 
+pub use dates::{date_from_text, is_date, is_date_text};
 pub use exports::{
     compile_expression, compile_unary_expression, evaluate_expression, evaluate_unary_expression,
 };

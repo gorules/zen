@@ -6,6 +6,8 @@ use ahash::{HashMap, HashMapExt};
 use serde_json::{Map, Value};
 use zen_expression::variable::VariableType;
 
+use crate::nodes::input::dates::declared_date_map;
+
 pub(crate) type SchemaDictionaries = HashMap<Arc<str>, VariableType>;
 
 pub(crate) struct SchemaType;
@@ -15,20 +17,17 @@ impl SchemaType {
         schema: &Value,
         dictionaries: &SchemaDictionaries,
     ) -> VariableType {
-        Self::resolve::<false>(schema, dictionaries)
+        Self::resolve(schema, dictionaries)
     }
 
     pub(crate) fn hint_type_with(
         schema: &Value,
         dictionaries: &SchemaDictionaries,
     ) -> VariableType {
-        Self::resolve::<true>(schema, dictionaries)
+        Self::resolve(schema, dictionaries)
     }
 
-    fn resolve<const DATE_HINTS: bool>(
-        schema: &Value,
-        dictionaries: &SchemaDictionaries,
-    ) -> VariableType {
+    fn resolve(schema: &Value, dictionaries: &SchemaDictionaries) -> VariableType {
         let Some(object) = schema.as_object() else {
             return VariableType::Any;
         };
@@ -47,7 +46,7 @@ impl SchemaType {
         {
             return cases
                 .iter()
-                .map(|case| Self::resolve::<DATE_HINTS>(case, dictionaries))
+                .map(|case| Self::resolve(case, dictionaries))
                 .reduce(|acc, t| acc.merge(&t))
                 .unwrap_or(VariableType::Any);
         }
@@ -64,11 +63,11 @@ impl SchemaType {
         }
 
         match object.get("type") {
-            Some(Value::String(kind)) => Self::typed::<DATE_HINTS>(object, kind, dictionaries),
+            Some(Value::String(kind)) => Self::typed(object, kind, dictionaries),
             Some(Value::Array(kinds)) => kinds
                 .iter()
                 .filter_map(Value::as_str)
-                .map(|kind| Self::typed::<DATE_HINTS>(object, kind, dictionaries))
+                .map(|kind| Self::typed(object, kind, dictionaries))
                 .reduce(|acc, t| acc.merge(&t))
                 .unwrap_or(VariableType::Any),
             _ => VariableType::Any,
@@ -132,22 +131,22 @@ impl SchemaType {
         }
     }
 
-    fn typed<const DATE_HINTS: bool>(
+    fn typed(
         object: &Map<String, Value>,
         kind: &str,
         dictionaries: &SchemaDictionaries,
     ) -> VariableType {
         match kind {
-            "object" => Self::object_type::<DATE_HINTS>(object, dictionaries),
+            "object" => Self::object_type(object, dictionaries),
             "array" => VariableType::Array(Rc::new(
                 object
                     .get("items")
-                    .map(|items| Self::resolve::<DATE_HINTS>(items, dictionaries))
+                    .map(|items| Self::resolve(items, dictionaries))
                     .unwrap_or(VariableType::Any),
             )),
-            "string" => match object.get("format").and_then(Value::as_str) {
-                Some("date" | "date-time") if DATE_HINTS => VariableType::Date,
-                _ => VariableType::String,
+            "string" => match declared_date_map(object) {
+                Some(_) => VariableType::Date,
+                None => VariableType::String,
             },
             "number" | "integer" => VariableType::Number,
             "boolean" => VariableType::Bool,
@@ -156,10 +155,7 @@ impl SchemaType {
         }
     }
 
-    fn object_type<const DATE_HINTS: bool>(
-        object: &Map<String, Value>,
-        dictionaries: &SchemaDictionaries,
-    ) -> VariableType {
+    fn object_type(object: &Map<String, Value>, dictionaries: &SchemaDictionaries) -> VariableType {
         let Some(properties) = object.get("properties").and_then(Value::as_object) else {
             return VariableType::Any;
         };
@@ -171,7 +167,7 @@ impl SchemaType {
 
         let mut fields: HashMap<Rc<str>, VariableType> = HashMap::with_capacity(properties.len());
         for (name, prop_schema) in properties {
-            let mut resolved = Self::resolve::<DATE_HINTS>(prop_schema, dictionaries);
+            let mut resolved = Self::resolve(prop_schema, dictionaries);
             if !required.contains(&name.as_str()) {
                 resolved = super::wrap_optional(resolved);
             }

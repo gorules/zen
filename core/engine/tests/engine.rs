@@ -514,7 +514,7 @@ async fn test_validation() {
 
 #[tokio::test]
 #[cfg_attr(miri, ignore)]
-async fn input_schema_accepts_null_for_optional_properties() {
+async fn schemas_accept_null_for_optional_properties() {
     let schema = json!({
         "type": "object",
         "properties": {
@@ -565,12 +565,9 @@ async fn input_schema_accepts_null_for_optional_properties() {
     ] {
         let result = input.evaluate(context.clone().into()).await;
         assert_eq!(result.is_ok(), valid, "input {context}");
+        let result = output.evaluate(context.clone().into()).await;
+        assert_eq!(result.is_ok(), valid, "output {context}");
     }
-
-    let strict = output
-        .evaluate(json!({ "age": 1, "note": null, "name": null }).into())
-        .await;
-    assert!(strict.is_err());
 }
 
 #[tokio::test]

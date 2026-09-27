@@ -84,6 +84,14 @@ async fn declared_graph_dates_are_dates_downstream() {
         ("$nodes.in.since.year()", json!(2021)),
         ("since == '2021-05-01'", json!(false)),
         ("text", json!("2021-05-01")),
+        (
+            "startsWith(string(since), '2021-05-01T00:00:00')",
+            json!(true),
+        ),
+        (
+            "startsWith(`joined ${since}`, 'joined 2021-05-01T00:00:00')",
+            json!(true),
+        ),
         ("plain", json!("2021-05-01")),
     ] {
         let out = run_graph(graph(&schema(), &[("result", expression)]), input())
@@ -253,6 +261,9 @@ fn policy() -> Value {
             }}},
             { "id": "e5", "type": "expression", "props": { "data": {
                 "key": "applicant.seen", "value": "applicant.lastSeen == null"
+            }}},
+            { "id": "e6", "type": "expression", "props": { "data": {
+                "key": "applicant.birthText", "value": "string(applicant.birthDate)"
             }}}
         ]
     })
@@ -289,6 +300,10 @@ async fn declared_policy_dates_are_dates_downstream() {
     assert_eq!(applicant["oldEmployer"], json!(true));
     assert_eq!(applicant["seen"], json!(true));
     assert_eq!(applicant["name"], json!("Ann"));
+    assert!(applicant["birthText"]
+        .as_str()
+        .unwrap()
+        .starts_with("1990-05-01T00:00:00"));
 
     let invalid =
         json!({ "asOf": "2026-01-01", "applicant": { "birthDate": "hello", "name": "Ann" } });

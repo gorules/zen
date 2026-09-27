@@ -101,7 +101,89 @@ fn optional_inputs_may_be_null_or_missing() {
 }
 
 #[test]
+fn present_optional_relationship_requires_its_fields() {
+    assert_eq!(
+        missing(evaluate(
+            json!({ "createdAt": "2021-05-01", "total": 5, "buyer": {} }),
+            &[]
+        )),
+        vec!["order.buyer.age"]
+    );
+    assert_eq!(
+        missing(evaluate(
+            json!({ "createdAt": "2021-05-01", "total": 5, "buyer": { "age": null } }),
+            &[]
+        )),
+        vec!["order.buyer.age"]
+    );
+    let out = evaluate(
+        json!({ "createdAt": "2021-05-01", "total": 5, "buyer": { "age": 30 } }),
+        &[],
+    )
+    .unwrap();
+    assert_eq!(out["order"]["adultBuyer"], json!(true));
+}
+
+#[test]
 fn goals_only_require_their_own_inputs() {
     let out = evaluate(json!({ "total": 500 }), &["order.big"]).unwrap();
     assert_eq!(out["order"]["big"], json!(true));
+}
+
+fn relationship_workspace(companies_optional: bool) -> Workspace {
+    let doc = json!({
+        "blocks": [
+            { "id": "dm", "type": "dataModel", "props": { "data": {
+                "name": "customer",
+                "properties": [
+                    { "id": "p1", "name": "companies", "type": "relationship", "target": "company", "array": true, "optional": companies_optional }
+                ]
+            }}},
+            { "id": "dm2", "type": "dataModel", "props": { "data": {
+                "name": "company",
+                "properties": [
+                    { "id": "c1", "name": "revenue", "type": "number", "array": false, "optional": false }
+                ]
+            }}},
+            { "id": "e1", "type": "expression", "props": { "data": {
+                "key": "company.big", "value": "company.revenue > 100"
+            }}}
+        ]
+    });
+    let mut ws = Workspace::new();
+    ws.set_document("p", serde_json::from_value(doc).unwrap());
+    ws
+}
+
+fn evaluate_customer(ws: &Workspace, customer: Value) -> Result<Value, EvaluationError> {
+    ws.evaluate(&EvaluateRequest {
+        policy_path: Arc::from("p"),
+        input: Variable::from(json!({ "customer": customer })),
+        goals: vec![],
+        trace: false,
+    })
+    .map(|result| serde_json::to_value(&result.output).unwrap())
+}
+
+#[test]
+fn optional_relationship_array_does_not_require_child_fields() {
+    let ws = relationship_workspace(true);
+    for customer in [
+        json!({}),
+        json!({ "companies": null }),
+        json!({ "companies": [] }),
+    ] {
+        assert!(
+            evaluate_customer(&ws, customer.clone()).is_ok(),
+            "{customer}"
+        );
+    }
+    let out = evaluate_customer(&ws, json!({ "companies": [{ "revenue": 500 }] })).unwrap();
+    assert_eq!(out["customer"]["companies"][0]["big"], json!(true));
+
+    let required = relationship_workspace(false);
+    assert!(matches!(
+        evaluate_customer(&required, json!({})),
+        Err(EvaluationError::MissingRequiredInputs { .. })
+    ));
 }

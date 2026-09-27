@@ -747,6 +747,7 @@ pub(crate) mod imp {
             V::Bool(v) => v.to_string().into(),
             V::Number(n) => n.to_string().into(),
             V::String(s) => s.clone(),
+            V::Dynamic(d) if d.type_name() == "date" => d.to_string().into(),
             _ => return Err(anyhow!("Cannot convert type {} to string", a.type_name())),
         };
 

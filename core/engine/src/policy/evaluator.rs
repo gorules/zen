@@ -197,9 +197,7 @@ impl EvalArtifact {
             .eval_graph
             .reachable_input_paths(&goals, visible)
             .into_iter()
-            .filter(|p| {
-                !self.data_model_paths.is_optional(p) && !self.input_satisfied(&req.input, p)
-            })
+            .filter(|p| self.input_missing(&req.input, p))
             .collect();
         if !missing.is_empty() {
             missing.sort();
@@ -219,34 +217,32 @@ impl EvalArtifact {
             .collect())
     }
 
-    fn input_satisfied(&self, input: &Variable, path: &str) -> bool {
-        if Self::input_path_satisfied(input, path) {
-            return true;
+    fn input_missing(&self, input: &Variable, path: &str) -> bool {
+        if !self.path_missing(input, path) {
+            return false;
         }
         let Some((entity, rest)) = path.split_once('.') else {
-            return false;
+            return true;
         };
         match self.entity_sources.get(entity) {
-            Some(src) => {
-                let resolved = format!("{}.{}", src.path, rest);
-                Self::input_path_satisfied(input, &resolved)
-            }
-            None => false,
+            Some(src) => self.path_missing(input, &format!("{}.{}", src.path, rest)),
+            None => true,
         }
     }
 
-    fn input_path_satisfied(input: &Variable, path: &str) -> bool {
+    fn path_missing(&self, input: &Variable, path: &str) -> bool {
+        let optional = self.data_model_paths.optional_steps(path);
         let mut current = input.shallow_clone();
-        for segment in path.split('.') {
+        for (i, segment) in path.split('.').enumerate() {
             if current.as_array().is_some() {
-                return true;
+                return false;
             }
             match current.dot(segment) {
-                Some(Variable::Null) | None => return false,
+                Some(Variable::Null) | None => return !optional[i..].iter().any(|o| *o),
                 Some(v) => current = v,
             }
         }
-        true
+        false
     }
 }
 

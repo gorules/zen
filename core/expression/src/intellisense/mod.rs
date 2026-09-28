@@ -3,15 +3,14 @@ use crate::intellisense::completion::Completions;
 use crate::intellisense::dependency::DependencyResolutionWalker;
 use crate::intellisense::diagnostic::{
     collect_parser_diagnostics, collect_type_diagnostics, compiler_error_to_diagnostic,
-    lexer_error_to_diagnostic, Diagnostic, DiagnosticSource, Severity,
+    lexer_error_to_diagnostic, Diagnostic,
 };
-use crate::intellisense::inspection::{inspect_at, InspectionResult};
+use crate::intellisense::inspection::{Hover, HoverWord, InspectionResult};
 use crate::intellisense::scope::IntelliSenseScope;
 use crate::intellisense::type_provider::TypesProvider;
 use crate::lexer::Lexer;
-use crate::nl::project::Projector;
-use crate::nl::{NlRequest, NlResult};
 use crate::parser::{Node, NodeMetadata, Parser};
+use crate::slot::{SlotRole, SlotState};
 use crate::variable::VariableType;
 use bumpalo::Bump;
 use nohash_hasher::BuildNoHashHasher;
@@ -26,7 +25,7 @@ pub mod diagnostic;
 mod discriminant;
 mod entity_flow;
 mod inspection;
-mod scope;
+pub(crate) mod scope;
 pub(crate) mod type_provider;
 
 pub use dependency::{DependencyResult, ReadDependency, Reference};
@@ -53,13 +52,13 @@ pub struct ExpressionAnalysis {
     pub diagnostics: Vec<Diagnostic>,
 }
 
-pub type NlLabelResolver = Rc<dyn Fn(&str, &str) -> Option<String>>;
+pub use crate::slot::LabelResolver;
 
 pub struct IntelliSense {
-    arena: Bump,
-    lexer: Lexer,
-    strict: bool,
-    nl_labels: Option<NlLabelResolver>,
+    pub(crate) arena: Bump,
+    pub(crate) lexer: Lexer,
+    pub(crate) strict: bool,
+    pub(crate) labels: Option<LabelResolver>,
 }
 
 impl IntelliSense {
@@ -68,7 +67,7 @@ impl IntelliSense {
             arena: Bump::new(),
             lexer: Lexer::new(),
             strict: false,
-            nl_labels: None,
+            labels: None,
         }
     }
 
@@ -77,8 +76,8 @@ impl IntelliSense {
         self
     }
 
-    pub fn set_nl_labels(&mut self, labels: Option<NlLabelResolver>) {
-        self.nl_labels = labels;
+    pub fn set_labels(&mut self, labels: Option<LabelResolver>) {
+        self.labels = labels;
     }
 
     pub fn completions(
@@ -87,22 +86,70 @@ impl IntelliSense {
         pos: u32,
         data: &VariableType,
     ) -> Vec<completion::Completion> {
+        let locals = self.closure_locals(source, pos, data);
         let tokens = match self.type_check(source, data) {
             Some(t) => t,
-            None => return Completions::build_scope(data),
+            None => return Completions::build_scope(data, &locals),
         };
 
-        Completions::build(source, pos, data, &tokens)
+        Completions::build(source, pos, data, &tokens, &locals)
     }
 
     pub fn inspect(
         &mut self,
         source: &str,
         pos: u32,
+        unary: bool,
+        role: SlotRole,
+        data: &VariableType,
+    ) -> Option<InspectionResult> {
+        self.arena.reset();
+        let word = self
+            .lexer
+            .tokenize_lenient(&self.arena, source)
+            .ok()
+            .and_then(|lenient| Hover::word_at(source, pos, &lenient));
+        match word {
+            Some((span, HoverWord::Call { member })) => {
+                let name = source.get(span.0 as usize..span.1 as usize)?;
+                let completion = if member {
+                    Completions::method_named(name)
+                } else {
+                    Completions::function_named(name)
+                }?;
+                let kind = self
+                    .inspect_typed(source, pos, data)
+                    .map_or(VariableType::Any, |call| call.kind);
+                Some(InspectionResult {
+                    detail: Some(completion.detail),
+                    info: Some(completion.info).filter(|info| !info.is_empty()),
+                    ..InspectionResult::typed(source, span, kind)
+                })
+            }
+            Some((span, HoverWord::Name)) => {
+                let probe = format!("{}.", source.get(..span.1 as usize)?);
+                let slot = self
+                    .slot(&probe, probe.len() as u32, unary, role, data, None)
+                    .slot;
+                match (slot.state, slot.operand) {
+                    (SlotState::Member | SlotState::Path, Some(kind)) => {
+                        Some(InspectionResult::typed(source, span, kind))
+                    }
+                    _ => self.inspect_typed(source, pos, data),
+                }
+            }
+            None => self.inspect_typed(source, pos, data),
+        }
+    }
+
+    fn inspect_typed(
+        &mut self,
+        source: &str,
+        pos: u32,
         data: &VariableType,
     ) -> Option<InspectionResult> {
         let tokens = self.type_check(source, data)?;
-        inspect_at(source, pos, &tokens)
+        Hover::smallest_token(source, pos, &tokens)
     }
 
     pub fn analyze(&mut self, source: &str, data: &VariableType) -> Rc<ExpressionAnalysis> {
@@ -142,12 +189,7 @@ impl IntelliSense {
 
         if !parser_result.is_complete || ast.has_error() {
             if !parser_result.is_complete {
-                diagnostics.push(Diagnostic {
-                    span: (0, 0),
-                    message: "Incomplete expression".to_string(),
-                    severity: Severity::Error,
-                    source: DiagnosticSource::Parser,
-                });
+                diagnostics.push(Diagnostic::incomplete());
             }
             collect_parser_diagnostics(ast, &mut diagnostics);
             return ExpressionAnalysis {
@@ -189,139 +231,6 @@ impl IntelliSense {
             references: dep_result.references,
             diagnostics,
         }
-    }
-
-    pub fn nl_tokenize_batch(
-        &mut self,
-        requests: &[NlRequest],
-        root_type: &VariableType,
-    ) -> Vec<NlResult> {
-        requests
-            .iter()
-            .map(|request| self.nl_tokenize(request, root_type))
-            .collect()
-    }
-
-    pub fn nl_tokenize(&mut self, request: &NlRequest, root_type: &VariableType) -> NlResult {
-        let scope = if request.unary {
-            Self::unary_scope(root_type, request.subject_type.as_ref())
-        } else {
-            root_type.shallow_clone()
-        };
-        let expected = (!request.unary)
-            .then_some(request.subject_type.as_ref())
-            .flatten();
-        let mut result = self.nl_tokenize_scoped(
-            &request.id,
-            &request.expression,
-            request.unary,
-            &scope,
-            expected,
-        );
-        if request.unary {
-            let subject = scope.get("$");
-            result.subject_options = self.nl_subject_options(&subject);
-            result.subject_type = Some(subject);
-        } else if let Some(expected) = expected {
-            result.subject_options = self.nl_subject_options(expected);
-            result.subject_type = Some(expected.shallow_clone());
-        }
-        result
-    }
-
-    pub fn nl_subject_options(&self, subject: &VariableType) -> Option<Vec<crate::nl::EnumOption>> {
-        crate::nl::subject_enum_options(subject, self.nl_labels.as_ref())
-    }
-
-    pub fn nl_tokenize_scoped(
-        &mut self,
-        id: &str,
-        source: &str,
-        unary: bool,
-        scope_type: &VariableType,
-        expected: Option<&VariableType>,
-    ) -> NlResult {
-        let mut result = NlResult {
-            id: id.to_string(),
-            tokens: Vec::new(),
-            enums: Vec::new(),
-            diagnostics: Vec::new(),
-            subject_type: None,
-            subject_options: None,
-        };
-
-        self.arena.reset();
-        let arena = &self.arena;
-
-        let tokens = match self.lexer.tokenize(arena, source) {
-            Ok(tokens) => tokens,
-            Err(err) => {
-                result.diagnostics.push(lexer_error_to_diagnostic(&err));
-                return result;
-            }
-        };
-
-        let Ok(parser) = Parser::try_new(&tokens, arena) else {
-            return result;
-        };
-
-        let parser_result = if unary {
-            parser.unary().with_metadata().parse()
-        } else {
-            parser.standard().with_metadata().parse()
-        };
-        let ast = parser_result.root;
-
-        if !parser_result.is_complete || ast.has_error() {
-            if !parser_result.is_complete {
-                result.diagnostics.push(Diagnostic {
-                    span: (0, 0),
-                    message: "Incomplete expression".to_string(),
-                    severity: Severity::Error,
-                    source: DiagnosticSource::Parser,
-                });
-            }
-            collect_parser_diagnostics(ast, &mut result.diagnostics);
-            return result;
-        }
-
-        let metadata = parser_result.metadata.unwrap_or_default();
-
-        let scope = IntelliSenseScope {
-            pointer_data: scope_type.shallow_clone(),
-            root_data: scope_type.shallow_clone(),
-            current_data: scope_type.shallow_clone(),
-            ..Default::default()
-        };
-
-        let type_data = TypesProvider::generate(ast, scope, self.strict);
-        collect_type_diagnostics(ast, &type_data, &metadata, &mut result.diagnostics);
-
-        let (tokens, enums) =
-            Projector::new(source, &type_data, &metadata, unary, self.nl_labels.clone())
-                .run(ast, expected.map(|e| e.shallow_clone()));
-        result.tokens = tokens;
-        result.enums = enums;
-        result
-    }
-
-    fn unary_scope(root_type: &VariableType, subject_type: Option<&VariableType>) -> VariableType {
-        let subject = subject_type
-            .map(|s| s.shallow_clone())
-            .unwrap_or(VariableType::Any);
-
-        let object = VariableType::empty_object();
-        if let VariableType::Object(target) = &object {
-            if let VariableType::Object(source) = root_type {
-                for (key, value) in source.borrow().iter() {
-                    target
-                        .borrow_mut()
-                        .insert(key.clone(), value.shallow_clone());
-                }
-            }
-            target.borrow_mut().insert(Rc::from("$"), subject);
-        }
-        object
     }
 
     pub fn with_ast<T>(
@@ -506,12 +415,7 @@ impl IntelliSense {
 
         if !parser_result.is_complete || ast.has_error() {
             if !parser_result.is_complete {
-                diagnostics.push(Diagnostic {
-                    span: (0, 0),
-                    message: "Incomplete expression".to_string(),
-                    severity: Severity::Error,
-                    source: DiagnosticSource::Parser,
-                });
+                diagnostics.push(Diagnostic::incomplete());
             }
             collect_parser_diagnostics(ast, &mut diagnostics);
             return ExpressionAnalysis {

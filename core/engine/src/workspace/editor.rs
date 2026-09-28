@@ -2,148 +2,86 @@ use std::sync::Arc;
 
 use ahash::{HashMap, HashMapExt, HashSet};
 use serde_json::Value;
+use zen_expression::intellisense::completion::Completions;
 use zen_expression::intellisense::Reference;
-use zen_expression::nl::NlResult;
+use zen_expression::slot::SlotRole;
 use zen_expression::variable::VariableType;
 
-use crate::policy::blocks::IntelliSenseSource;
-use crate::policy::ir::{DataModelIr, DictionaryIr, PropertyTypeIr};
+use crate::policy::blocks::{IntelliSenseSource, ROW_ID_KEY};
+use crate::policy::ir::{DataModelIr, PropertyTypeIr};
 use crate::policy::queries::scope::EntityGraph;
+use crate::policy::raw::BlockDoc;
 use crate::workspace::db::{Db, Snapshot};
 use crate::workspace::types::{
     BlockRef, Completion, Cursor, CursorTarget, EngineEdit, ExpressionKind, InspectResult,
-    NlExpression, PrepareRename, ReferenceKind, ReferenceSite, RenameTarget, Span, SpanOps,
+    PrepareRename, ReferenceKind, ReferenceSite, RenameTarget, Span, SpanOps,
 };
 
 impl Db {
     pub fn inspect(&self, cursor: &Cursor) -> Option<InspectResult> {
-        let (source, _, scope) = self.resolve_cursor(cursor)?;
-        let r = self
-            .cursor_intellisense(cursor)
-            .borrow_mut()
-            .inspect(&source, cursor.pos, &scope)?;
+        let (source, kind, scope) = self.resolve_cursor(cursor)?;
+        let role = self.cursor_scope(cursor)?.role;
+        let r = self.cursor_intellisense(cursor).borrow_mut().inspect(
+            &source,
+            SpanOps::byte_offset(&source, cursor.pos) as u32,
+            matches!(kind, ExpressionKind::Unary),
+            role,
+            &scope,
+        )?;
         Some(InspectResult {
-            span: r.span,
+            span: SpanOps::char_span(&source, r.span),
             kind: r.kind,
             label: r.label,
+            detail: r.detail,
+            info: r.info,
         })
     }
 
     pub fn completions(&self, cursor: &Cursor) -> Vec<Completion> {
-        let Some((source, _, scope)) = self.resolve_cursor(cursor) else {
+        let Some((source, _, _)) = self.resolve_cursor(cursor) else {
             return Vec::new();
         };
-        let pos = cursor.pos.min(SpanOps::char_len(&source));
-        self.cursor_intellisense(cursor)
-            .borrow_mut()
-            .completions(&source, pos, &scope)
+        let Some(scope) = self.cursor_scope(cursor) else {
+            return Vec::new();
+        };
+        const MAX_PADDING: u32 = 1024;
+        let len = SpanOps::char_len(&source);
+        let cursor_pos = match cursor.pos > len.saturating_add(MAX_PADDING) {
+            true => len,
+            false => cursor.pos,
+        };
+        let padded;
+        let source: &str = if cursor_pos > len {
+            padded = format!("{source}{}", " ".repeat((cursor_pos - len) as usize));
+            &padded
+        } else {
+            &source
+        };
+        let pos = SpanOps::byte_offset(source, cursor_pos) as u32;
+        let result = self.cursor_intellisense(cursor).borrow_mut().slot(
+            source,
+            pos,
+            matches!(scope.kind, ExpressionKind::Unary),
+            scope.role,
+            &scope.scope,
+            scope.expected.as_ref(),
+        );
+        let mut completions = Completions::from_slot(source, pos, &scope.scope, &result.slot);
+        if !self.is_graph(&cursor.policy_path) {
+            completions.retain(|c| c.label != "$root");
+        }
+        completions
     }
 
-    fn cursor_intellisense(&self, cursor: &Cursor) -> crate::policy::blocks::SharedIntelliSense {
+    pub(crate) fn cursor_intellisense(
+        &self,
+        cursor: &Cursor,
+    ) -> crate::policy::blocks::SharedIntelliSense {
         if self.is_graph(&cursor.policy_path) {
             self.graph_intellisense()
         } else {
             self.intellisense()
         }
-    }
-
-    pub fn nl(&self, policy: &str) -> Vec<NlExpression> {
-        if self.is_graph(policy) {
-            return self.graph_nl(policy);
-        }
-        let policy_arc: Arc<str> = Arc::from(policy);
-        let Some(parsed) = self.parsed(&policy_arc) else {
-            return Vec::new();
-        };
-        let scope = self.enriched(policy).scope.shallow_clone();
-        let dictionaries = self.unit(policy).dictionary_types();
-        let labels = self.nl_label_resolver(policy);
-        let intellisense = self.intellisense();
-        let mut is = intellisense.borrow_mut();
-        is.set_nl_labels(labels);
-        let mut out = Vec::new();
-        for rule in parsed.policy.rules() {
-            out.extend(rule.nl(&policy_arc, &scope, &mut is, &dictionaries));
-        }
-        is.set_nl_labels(None);
-        out
-    }
-
-    pub fn nl_tokenize(&self, cursor: &Cursor, text: &str) -> Option<NlResult> {
-        let (kind, scope, expected) = self.nl_scope(cursor)?;
-        let unary = matches!(kind, ExpressionKind::Unary);
-        let labels = self.nl_label_resolver(&cursor.policy_path);
-        let intellisense = self.cursor_intellisense(cursor);
-        let mut is = intellisense.borrow_mut();
-        is.set_nl_labels(labels);
-        let mut result =
-            is.nl_tokenize_scoped(&cursor.block_id, text, unary, &scope, expected.as_ref());
-        if unary {
-            let subject = scope.get("$");
-            result.subject_options = is.nl_subject_options(&subject);
-            result.subject_type = Some(subject);
-        } else if let Some(expected) = &expected {
-            result.subject_options = is.nl_subject_options(expected);
-            result.subject_type = Some(expected.shallow_clone());
-        }
-        is.set_nl_labels(None);
-        Some(result)
-    }
-
-    pub(crate) fn nl_label_resolver(
-        &self,
-        policy: &str,
-    ) -> Option<zen_expression::intellisense::NlLabelResolver> {
-        let mut labels: HashMap<Arc<str>, HashMap<Arc<str>, Arc<str>>> = HashMap::new();
-        let mut add = |name: Arc<str>, dict: &DictionaryIr| {
-            let entries: HashMap<Arc<str>, Arc<str>> = dict
-                .entries
-                .iter()
-                .filter(|e| !e.label.is_empty())
-                .map(|e| (e.value.clone(), e.label.clone()))
-                .collect();
-            if !entries.is_empty() {
-                labels.insert(name, entries);
-            }
-        };
-        if self.is_graph(policy) {
-            for entry in self.graph_dictionary_blocks(&self.graph_imports(policy)) {
-                add(entry.ir.name.clone(), entry.ir.as_ref());
-            }
-        } else {
-            let unit = self.unit(policy);
-            for (name, dict) in &unit.dictionaries {
-                add(name.clone(), dict.as_ref());
-            }
-        }
-        if labels.is_empty() {
-            return None;
-        }
-        Some(std::rc::Rc::new(move |name: &str, value: &str| {
-            labels.get(name)?.get(value).map(|l| l.to_string())
-        }))
-    }
-
-    fn nl_scope(
-        &self,
-        cursor: &Cursor,
-    ) -> Option<(ExpressionKind, VariableType, Option<VariableType>)> {
-        if self.is_graph(&cursor.policy_path) {
-            let (_, kind, scope) = self.graph_resolve_cursor(cursor)?;
-            let expected = (!matches!(kind, ExpressionKind::Unary))
-                .then(|| self.graph_cell_expected(cursor))
-                .flatten();
-            return Some((kind, scope, expected));
-        }
-        let block = self.block_ir(&BlockRef {
-            policy_path: cursor.policy_path.clone(),
-            block_id: cursor.block_id.clone(),
-        })?;
-        let scope = self.enriched(&cursor.policy_path).scope.shallow_clone();
-        let dictionaries = self.unit(&cursor.policy_path).dictionary_types();
-        let intellisense = self.intellisense();
-        let mut is = intellisense.borrow_mut();
-        Some(block.nl_scope(cursor, scope, &mut is, &dictionaries))
     }
 
     pub fn prepare_rename(&self, cursor: &Cursor) -> Option<PrepareRename> {
@@ -180,25 +118,37 @@ impl Db {
     }
 
     pub fn rename(&self, target: &RenameTarget, new_name: &str) -> Vec<EngineEdit> {
+        self.rename_from(target, new_name, None)
+    }
+
+    pub fn rename_from(
+        &self,
+        target: &RenameTarget,
+        new_name: &str,
+        origin: Option<&str>,
+    ) -> Vec<EngineEdit> {
         if let RenameTarget::GraphProperty { document, path } = target {
             return self.graph_rename(document, path, new_name);
         }
         if let RenameTarget::GraphNode { document, node_id } = target {
             return self.graph_node_rename(document, node_id, new_name);
         }
+        let (sites, scope) = self.scoped_policy_sites(target, origin);
         let mut per_block: HashMap<BlockRef, Vec<RenameSite>> = HashMap::new();
-        self.walk_renamable(target, |site| {
+        for site in sites {
             let key = BlockRef {
                 policy_path: site.policy_path.clone(),
                 block_id: site.block_id.clone(),
             };
             per_block.entry(key).or_default().push(site);
-        });
+        }
         let mut edits: Vec<EngineEdit> = per_block
             .into_iter()
             .filter_map(|(block_ref, sites)| self.build_replace_block(block_ref, sites, new_name))
             .collect();
-        edits.extend(self.replace_node_edits(self.policy_caller_sites(target), new_name));
+        edits.extend(
+            self.replace_node_edits(self.policy_caller_sites(target, scope.as_ref()), new_name),
+        );
         edits
     }
 
@@ -222,23 +172,78 @@ impl Db {
     }
 
     pub fn references(&self, target: &RenameTarget) -> Vec<ReferenceSite> {
+        self.references_from(target, None)
+    }
+
+    pub fn references_from(
+        &self,
+        target: &RenameTarget,
+        origin: Option<&str>,
+    ) -> Vec<ReferenceSite> {
         if let RenameTarget::GraphProperty { document, path } = target {
             return self.graph_references(document, path);
         }
         if let RenameTarget::GraphNode { document, node_id } = target {
             return self.graph_node_references(document, node_id);
         }
-        let mut sites = Vec::new();
-        self.walk_renamable(target, |site| {
-            sites.push(site.into_reference());
-        });
+        let (policy_sites, scope) = self.scoped_policy_sites(target, origin);
+        let mut sites: Vec<ReferenceSite> = policy_sites
+            .into_iter()
+            .map(RenameSite::into_reference)
+            .collect();
         sites.extend(
-            self.policy_caller_sites(target)
+            self.policy_caller_sites(target, scope.as_ref())
                 .into_iter()
                 .map(RenameSite::into_reference),
         );
         sites.sort_by(ReferenceSite::display_cmp);
         sites
+    }
+
+    fn scoped_policy_sites(
+        &self,
+        target: &RenameTarget,
+        origin: Option<&str>,
+    ) -> (Vec<RenameSite>, Option<HashSet<Arc<str>>>) {
+        let mut sites = Vec::new();
+        self.walk_renamable(target, |site| sites.push(site));
+        let Some(origin) = origin.filter(|o| self.parsed(&Arc::from(*o)).is_some()) else {
+            return (sites, None);
+        };
+        let mentioning: HashSet<Arc<str>> = sites.iter().map(|s| s.policy_path.clone()).collect();
+        let scope = self.policy_rename_scope(&Arc::from(origin), &mentioning);
+        sites.retain(|s| scope.contains(&s.policy_path));
+        (sites, Some(scope))
+    }
+
+    fn policy_rename_scope(
+        &self,
+        origin: &Arc<str>,
+        mentioning: &HashSet<Arc<str>>,
+    ) -> HashSet<Arc<str>> {
+        let closure = |policy: &Arc<str>| self.unit(policy).members.clone();
+        let closures: HashMap<Arc<str>, HashSet<Arc<str>>> = mentioning
+            .iter()
+            .chain(std::iter::once(origin))
+            .map(|p| (p.clone(), closure(p)))
+            .collect();
+        let mut scope: HashSet<Arc<str>> = HashSet::default();
+        scope.insert(origin.clone());
+        let mut queue = vec![origin.clone()];
+        while let Some(current) = queue.pop() {
+            for other in mentioning {
+                if scope.contains(other) {
+                    continue;
+                }
+                let linked =
+                    closures[&current].contains(other) || closures[other].contains(&current);
+                if linked {
+                    scope.insert(other.clone());
+                    queue.push(other.clone());
+                }
+            }
+        }
+        scope
     }
 
     fn prepare_rename_data_model(&self, cursor: &Cursor) -> Option<PrepareRename> {
@@ -288,14 +293,70 @@ impl Db {
         if self.is_graph(&cursor.policy_path) {
             return self.graph_resolve_cursor(cursor);
         }
-        let rule = self.block_ir(&BlockRef {
+        let block_ref = BlockRef {
             policy_path: cursor.policy_path.clone(),
             block_id: cursor.block_id.clone(),
-        })?;
-        rule.resolve_cursor(
-            cursor,
-            self.enriched(&cursor.policy_path).scope.shallow_clone(),
-        )
+        };
+        let mut scope = self.cursor_scope(cursor)?;
+        if matches!(scope.role, SlotRole::Path) {
+            scope.scope = self.enriched(&cursor.policy_path).scope.shallow_clone();
+        }
+        let policy = self.raw_policy(&cursor.policy_path)?;
+        let block = policy
+            .blocks
+            .iter()
+            .find(|b| b.id().is_some_and(|id| id == cursor.block_id.as_ref()))?;
+        let source = match (block, &cursor.target) {
+            (BlockDoc::Expression { data, .. }, CursorTarget::Expression { .. }) => {
+                data.value.clone()
+            }
+            (BlockDoc::Expression { data, .. }, CursorTarget::ExpressionKey { .. }) => {
+                data.key.clone()
+            }
+            (BlockDoc::Assertion { data, .. }, CursorTarget::Expression { id }) => data
+                .conditions
+                .iter()
+                .find(|c| c.id == *id)?
+                .expression
+                .clone(),
+            (BlockDoc::Assertion { data, .. }, CursorTarget::AssertionOutput) => {
+                data.output.clone()
+            }
+            (BlockDoc::Match { data, .. }, CursorTarget::MatchTarget) => data.key.clone(),
+            (BlockDoc::Match { data, .. }, CursorTarget::MatchValue { id }) => {
+                data.arms.iter().find(|a| a.id == *id)?.value.clone()
+            }
+            (BlockDoc::Match { data, .. }, CursorTarget::Expression { id }) => {
+                data.arms.iter().find(|a| a.id == *id)?.condition.clone()
+            }
+            (
+                BlockDoc::DecisionTable { data, .. },
+                CursorTarget::DecisionTableCell { row, col },
+            ) => data
+                .rules
+                .iter()
+                .find(|r| r.get(ROW_ID_KEY) == Some(row))?
+                .get(col)
+                .cloned()
+                .unwrap_or_else(|| Arc::from("")),
+            (BlockDoc::DecisionTable { data, .. }, CursorTarget::DecisionTableHead { col }) => {
+                if let Some(input) = data.inputs.iter().find(|c| c.id == *col) {
+                    input.field.clone().unwrap_or_else(|| Arc::from(""))
+                } else {
+                    let field = &data.outputs.iter().find(|c| c.id == *col)?.field;
+                    match field.strip_suffix("[]") {
+                        Some(base) => Arc::from(base.trim_end()),
+                        None => field.clone(),
+                    }
+                }
+            }
+            _ => {
+                return self
+                    .block_ir(&block_ref)?
+                    .resolve_cursor(cursor, scope.scope);
+            }
+        };
+        Some((source, scope.kind, scope.scope))
     }
 }
 
@@ -515,10 +576,8 @@ impl EntityGraph {
                             name: first.clone(),
                         },
                     );
-                    match self.next_entity_for_global(&first) {
-                        Some(target) => Some((target, 1)),
-                        None => None,
-                    }
+                    self.next_entity_for_global(&first)
+                        .map(|target| (target, 1))
                 } else {
                     None
                 }

@@ -289,3 +289,22 @@ return_type = '"Bool"'
 
 [test.strict]
 return_type = '"Bool"'
+
+[[test]]
+name = "failed overload keeps its return type"
+expression = "len(tags)"
+input = '{"Object": {"tags": {"Nullable": {"Array": "String"}}}}'
+
+[test.loose]
+return_type = '"Number"'
+diagnostics = [
+    { source = "type_check", severity = "error" },
+    { source = "type_check", severity = "error" },
+]
+
+[test.strict]
+return_type = '"Number"'
+diagnostics = [
+    { source = "type_check", severity = "error" },
+    { source = "type_check", severity = "error" },
+]

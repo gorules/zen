@@ -1,0 +1,63 @@
+{
+  "blocks": [
+    {
+      "id": "dm",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "c",
+          "properties": [
+            {
+              "id": "p1",
+              "name": "a",
+              "type": "number",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      },
+      "children": []
+    },
+    {
+      "id": "b1",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "r.x",
+          "value": "r."
+        }
+      }
+    },
+    {
+      "id": "b2",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "r.z",
+          "value": "c.a * 3"
+        }
+      }
+    },
+    {
+      "id": "b3",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "r.pa",
+          "value": "1"
+        }
+      }
+    },
+    {
+      "id": "b4",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "r.part",
+          "value": "2"
+        }
+      }
+    }
+  ]
+}

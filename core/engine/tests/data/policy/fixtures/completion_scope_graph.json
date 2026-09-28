@@ -1,0 +1,72 @@
+{
+  "nodes": [
+    {
+      "id": "in",
+      "type": "inputNode",
+      "name": "in",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "content": {
+        "schema": "{\"type\": \"object\", \"properties\": {\"age\": {\"type\": \"number\"}}, \"required\": [\"age\"]}"
+      }
+    },
+    {
+      "id": "calc",
+      "type": "expressionNode",
+      "name": "calc",
+      "position": {
+        "x": 0,
+        "y": 100
+      },
+      "content": {
+        "expressions": [
+          {
+            "id": "e1",
+            "key": "total",
+            "value": "age * 2"
+          },
+          {
+            "id": "e2",
+            "key": "vip",
+            "value": "$."
+          },
+          {
+            "id": "e3",
+            "key": "extra",
+            "value": "1"
+          }
+        ],
+        "passThrough": true,
+        "inputField": null,
+        "outputPath": null,
+        "executionMode": "single"
+      }
+    },
+    {
+      "id": "out",
+      "type": "outputNode",
+      "name": "out",
+      "position": {
+        "x": 0,
+        "y": 200
+      },
+      "content": {}
+    }
+  ],
+  "edges": [
+    {
+      "id": "x1",
+      "sourceId": "in",
+      "targetId": "calc",
+      "type": "edge"
+    },
+    {
+      "id": "x2",
+      "sourceId": "calc",
+      "targetId": "out",
+      "type": "edge"
+    }
+  ]
+}

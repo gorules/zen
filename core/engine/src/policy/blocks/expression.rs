@@ -2,11 +2,10 @@ use std::sync::Arc;
 
 use ahash::HashSet;
 use serde::{Deserialize, Serialize};
-use zen_expression::intellisense::IntelliSense;
 use zen_expression::variable::{Variable, VariableType};
 
 use crate::workspace::types::{
-    BlockTrace, Cursor, CursorTarget, Diagnostic, DiagnosticCode, ExpressionKind, NlExpression,
+    BlockTrace, Cursor, CursorTarget, Diagnostic, DiagnosticCode, ExpressionKind,
 };
 
 use crate::policy::ArcStrTrim;
@@ -56,7 +55,7 @@ impl ExpressionIr {
         } else if let Err(reason) = WriteTarget::validate_path(&key) {
             cx.target_error(
                 id,
-                CursorTarget::ExpressionKey,
+                CursorTarget::ExpressionKey { id: None },
                 Some((0, key.chars().count() as u32)),
                 DiagnosticCode::InvalidWritePath,
                 format!("invalid write path '{key}': {reason}"),
@@ -118,7 +117,8 @@ impl ExpressionIr {
     }
 
     pub(super) fn write_target(&self, path: &str) -> Option<CursorTarget> {
-        (!self.key.is_empty() && self.key.as_ref() == path).then_some(CursorTarget::ExpressionKey)
+        (!self.key.is_empty() && self.key.as_ref() == path)
+            .then_some(CursorTarget::ExpressionKey { id: None })
     }
 
     pub(super) fn analyze(&self, cx: &mut AnalysisContext) {
@@ -134,7 +134,7 @@ impl ExpressionIr {
             self.key.clone(),
             analysis.return_type.clone(),
             None,
-            Some(CursorTarget::ExpressionKey),
+            Some(CursorTarget::ExpressionKey { id: None }),
             instance_source,
         );
     }
@@ -160,36 +160,13 @@ impl ExpressionIr {
         })
     }
 
-    pub(super) fn nl(
-        &self,
-        policy_path: &Arc<str>,
-        block_id: &Arc<str>,
-        scope: &VariableType,
-        is: &mut IntelliSense,
-    ) -> Vec<NlExpression> {
-        if self.value.is_empty() {
-            return Vec::new();
-        }
-        vec![NlExpression::project(
-            is,
-            policy_path,
-            block_id,
-            CursorTarget::Expression {
-                id: self.id.clone(),
-            },
-            ExpressionKind::Standard,
-            self.value.as_ref(),
-            scope,
-        )]
-    }
-
     pub(super) fn resolve_cursor(
         &self,
         cursor: &Cursor,
         scope: VariableType,
     ) -> Option<(Arc<str>, ExpressionKind, VariableType)> {
         match &cursor.target {
-            CursorTarget::ExpressionKey => {
+            CursorTarget::ExpressionKey { .. } => {
                 Some((self.key.clone(), ExpressionKind::Standard, scope))
             }
             CursorTarget::Expression { .. } => {

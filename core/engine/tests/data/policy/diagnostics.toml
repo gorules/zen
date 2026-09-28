@@ -1380,3 +1380,96 @@ content = '''
 no_errors = true
 hint_codes = ["PreferDictionary"]
 hint_count = 1
+
+[[test]]
+name = "computed entity field read through a filtered list declared later is not flagged"
+content = '''
+{
+  "blocks": [
+    {
+      "id": "dmc",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "customer",
+          "properties": [
+            {
+              "id": "p1",
+              "name": "name",
+              "type": "string",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "p2",
+              "name": "companies",
+              "type": "relationship",
+              "target": "company",
+              "array": true,
+              "optional": false
+            }
+          ]
+        }
+      },
+      "children": []
+    },
+    {
+      "id": "dmco",
+      "type": "dataModel",
+      "props": {
+        "data": {
+          "name": "company",
+          "properties": [
+            {
+              "id": "q1",
+              "name": "id",
+              "type": "string",
+              "array": false,
+              "optional": false
+            },
+            {
+              "id": "q2",
+              "name": "revenue",
+              "type": "number",
+              "array": false,
+              "optional": false
+            }
+          ]
+        }
+      },
+      "children": []
+    },
+    {
+      "id": "b1",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "customer.big",
+          "value": "filter(customer.companies, #.revenue > 0)"
+        }
+      }
+    },
+    {
+      "id": "b2",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "customer.margins",
+          "value": "map(customer.big as c, c.margin)"
+        }
+      }
+    },
+    {
+      "id": "b3",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "company.margin",
+          "value": "company.revenue * 0.1"
+        }
+      }
+    }
+  ]
+}
+'''
+no_errors = true

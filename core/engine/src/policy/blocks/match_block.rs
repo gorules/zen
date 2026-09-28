@@ -2,14 +2,14 @@ use std::sync::Arc;
 
 use ahash::HashSet;
 use serde::{Deserialize, Serialize};
-use zen_expression::intellisense::{ArmTest, IntelliSense, NumberCover};
+use zen_expression::intellisense::{ArmTest, NumberCover};
 use zen_expression::variable::{Variable, VariableType};
 
 use crate::policy::queries::scope::VariableTypeScope;
 
 use crate::workspace::types::{
-    BlockTrace, ConditionTrace, Cursor, CursorTarget, Diagnostic, DiagnosticCode, ExpressionKind,
-    NlExpression,
+    BlockTrace, ConditionTrace, Cursor, CursorTarget, Diagnostic, DiagnosticArgs, DiagnosticCode,
+    ExpressionKind,
 };
 
 use crate::policy::ArcStrTrim;
@@ -199,8 +199,10 @@ impl MatchIr {
             } else {
                 let analysis = cx.analyze_standard(&arm.condition, Some(arm.id.clone()));
                 if !matches!(analysis.return_type, VariableType::Bool | VariableType::Any) {
-                    cx.error(
+                    cx.error_with_expr_code(
                         DiagnosticCode::TypeMismatch,
+                        "type.condition-not-bool",
+                        DiagnosticArgs::from([("got", analysis.return_type.to_string())]),
                         Some(arm.id.clone()),
                         None,
                         format!(
@@ -412,52 +414,6 @@ impl MatchIr {
     pub(super) fn execute(&self, cx: &ExecutionContext) -> Result<BlockTrace, ExecutionError> {
         let selection = self.select(cx)?;
         self.commit(cx, &selection)
-    }
-
-    pub(super) fn nl(
-        &self,
-        policy_path: &Arc<str>,
-        block_id: &Arc<str>,
-        scope: &VariableType,
-        is: &mut IntelliSense,
-    ) -> Vec<NlExpression> {
-        let mut out = Vec::new();
-        if !self.key.is_empty() {
-            out.push(NlExpression::project(
-                is,
-                policy_path,
-                block_id,
-                CursorTarget::MatchTarget,
-                ExpressionKind::Standard,
-                self.key.as_ref(),
-                scope,
-            ));
-        }
-        for arm in &self.arms {
-            if !arm.condition.is_empty() {
-                out.push(NlExpression::project(
-                    is,
-                    policy_path,
-                    block_id,
-                    CursorTarget::Expression { id: arm.id.clone() },
-                    ExpressionKind::Standard,
-                    arm.condition.as_ref(),
-                    scope,
-                ));
-            }
-            if !arm.value.is_empty() {
-                out.push(NlExpression::project(
-                    is,
-                    policy_path,
-                    block_id,
-                    CursorTarget::MatchValue { id: arm.id.clone() },
-                    ExpressionKind::Standard,
-                    arm.value.as_ref(),
-                    scope,
-                ));
-            }
-        }
-        out
     }
 
     pub(super) fn resolve_cursor(

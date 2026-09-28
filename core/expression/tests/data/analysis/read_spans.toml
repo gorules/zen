@@ -82,6 +82,7 @@ expression = "filter(order.items, $.active)"
 input = '{"order": {"items": [{"active": true}]}}'
 reads_with_spans = [
     { type = "iteration", collection = ["order", "items"], span = [7, 18], reads = [
+        { type = "direct", path = ["order", "items", "active"], span = [22, 28], via_index = true },
     ] },
 ]
 

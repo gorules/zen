@@ -96,6 +96,20 @@ pub struct EntityGraph {
 }
 
 impl EntityGraph {
+    pub(crate) fn instance_form<'p>(
+        &self,
+        path: &'p str,
+        entity_form: &EntityForm,
+    ) -> Option<(&'p str, String)> {
+        let (prefix, rest) = path
+            .match_indices('.')
+            .map(|(dot, _)| (&path[..dot], &path[dot + 1..]))
+            .rev()
+            .find(|(prefix, _)| self.computed.contains_key(*prefix))?;
+        let entity = format!("{}.{rest}", self.computed[prefix].target);
+        Some((prefix, entity_form.rewrite(&entity).unwrap_or(entity)))
+    }
+
     pub fn contains(&self, name: &str) -> bool {
         self.models.contains_key(name)
     }
@@ -777,7 +791,7 @@ impl VariableTypeScope for VariableType {
         }
         while let Some((VariableType::Object(obj), key)) = chain.pop() {
             obj.borrow_mut().remove(key);
-            if !obj.borrow().is_empty() {
+            if chain.len() < 2 || !obj.borrow().is_empty() {
                 break;
             }
         }

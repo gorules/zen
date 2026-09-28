@@ -658,16 +658,20 @@ impl Db {
                     let mut out = Vec::new();
                     ReadFlattener::extend_from_deps(&analysis.reads, &None, &mut out);
                     out.into_iter()
-                        .filter_map(|rd| {
-                            if rd.unresolved {
-                                None
-                            } else if rd.via_alias {
-                                entity_form
-                                    .rewrite(rd.path.as_ref())
-                                    .map(Arc::from)
-                                    .or(Some(rd.path))
-                            } else {
-                                Some(rd.path)
+                        .filter(|rd| !rd.unresolved)
+                        .flat_map(|rd| {
+                            let entity = entity_form
+                                .rewrite(rd.path.as_ref())
+                                .or_else(|| {
+                                    unit.entity_graph
+                                        .instance_form(rd.path.as_ref(), &entity_form)
+                                        .map(|(_, entity)| entity)
+                                })
+                                .map(Arc::from);
+                            match (rd.via_alias, entity) {
+                                (true, Some(entity)) => vec![entity],
+                                (false, Some(entity)) => vec![rd.path, entity],
+                                (_, None) => vec![rd.path],
                             }
                         })
                         .collect()
@@ -867,8 +871,7 @@ impl Snapshot {
             .iter()
             .flat_map(|m| shallow.rules_for(m))
             .collect();
-        let dep_graph = Self::compute_graph(&per_rule, &data_model_paths, &entity_sources);
-        let execution_order = Self::compute_execution_order(&dep_graph);
+        let mut dep_graph = Self::compute_graph(&per_rule, &data_model_paths, &entity_sources);
 
         let (_, pool_roots) = DataModelIr::classify_roots(
             subset
@@ -877,6 +880,8 @@ impl Snapshot {
         );
         let computed_instances = entity_graph.resolve_instance_targets(&dep_graph, &pool_roots);
         entity_graph.register_computed(&computed_instances);
+        dep_graph.link_instance_reads(&per_rule, &entity_graph, &entity_sources);
+        let execution_order = Self::compute_execution_order(&dep_graph);
 
         let mut data_models: Vec<DataModelEntry> = subset
             .iter()

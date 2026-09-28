@@ -537,28 +537,44 @@ impl<'a> DependencyResolutionWalker<'a> {
                     cumulative.push(name.clone());
                 }
                 ChainSegment::Dynamic { prop } => {
-                    if !group_path.is_empty() {
-                        self.references.push(Reference {
-                            path: std::mem::take(&mut group_path),
-                            spans: std::mem::take(&mut group_spans),
-                            via_alias: None,
-                            via_index: Some(via_index_for_group.clone()),
-                        });
-                    }
+                    self.emit_pointer_group(
+                        std::mem::take(&mut group_path),
+                        std::mem::take(&mut group_spans),
+                        via_index_for_group.clone(),
+                    );
                     self.resolve(prop, scope);
                     via_index_for_group = cumulative.clone();
                 }
             }
         }
 
-        if !group_path.is_empty() {
-            self.references.push(Reference {
-                path: group_path,
-                spans: group_spans,
-                via_alias: None,
-                via_index: Some(via_index_for_group),
-            });
+        self.emit_pointer_group(group_path, group_spans, via_index_for_group);
+    }
+
+    fn emit_pointer_group(
+        &mut self,
+        path: Vec<Rc<str>>,
+        spans: Vec<(u32, u32)>,
+        collection: Vec<Rc<str>>,
+    ) {
+        if path.is_empty() {
+            return;
         }
+        let span = match (spans.first(), spans.last()) {
+            (Some(first), Some(last)) => (first.0, last.1),
+            _ => Default::default(),
+        };
+        self.reads.push(ReadDependency::Direct {
+            path: collection.iter().chain(path.iter()).cloned().collect(),
+            span,
+            via_index: true,
+        });
+        self.references.push(Reference {
+            path,
+            spans,
+            via_alias: None,
+            via_index: Some(collection),
+        });
     }
 
     fn emit_group(

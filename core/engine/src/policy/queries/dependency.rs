@@ -13,7 +13,7 @@ use crate::policy::blocks::{
 };
 use crate::policy::ir::{DataModelIr, ParsedPolicy, PropertyPath};
 use crate::policy::queries::path::{PathClassifier, PathRoot};
-use crate::policy::queries::scope::{EntityForm, VariableTypeScope};
+use crate::policy::queries::scope::{EntityForm, EntityGraph, EntitySources, VariableTypeScope};
 use crate::workspace::db::{AnalysisPass, PolicyDerivedCache, Snapshot};
 use crate::workspace::types::{BlockRef, Diagnostic, DiagnosticCode, DiagnosticLocation};
 
@@ -152,6 +152,42 @@ pub struct DependencyGraph {
 }
 
 impl DependencyGraph {
+    pub(crate) fn link_instance_reads(
+        &mut self,
+        per_rule: &[&RuleShallowAnalysis],
+        entity_graph: &EntityGraph,
+        entity_sources: &EntitySources,
+    ) {
+        let entity_form = EntityForm::new(entity_sources);
+        for rule in per_rule {
+            let writes: Vec<NodeIndex> = rule
+                .writes
+                .iter()
+                .filter_map(|w| self.node_map.get(&w.path).copied())
+                .collect();
+            for read in &rule.reads {
+                let Some((prefix, entity)) = entity_graph.instance_form(&read.path, &entity_form)
+                else {
+                    continue;
+                };
+                let Some(entity_idx) = self
+                    .node_map
+                    .get(entity.as_str())
+                    .copied()
+                    .filter(|&idx| self.graph[idx].written_by.is_some())
+                else {
+                    continue;
+                };
+                let list = self.node_map.get(prefix).copied();
+                for &target in writes.iter().chain(list.as_ref()) {
+                    if entity_idx != target && !self.graph.contains_edge(entity_idx, target) {
+                        self.graph.add_edge(entity_idx, target, ());
+                    }
+                }
+            }
+        }
+    }
+
     fn block_dependents(&self) -> HashMap<BlockRef, HashSet<BlockRef>> {
         let mut out: HashMap<BlockRef, HashSet<BlockRef>> = HashMap::new();
         for edge in self.graph.edge_indices() {

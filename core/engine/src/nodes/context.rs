@@ -5,7 +5,7 @@ use crate::nodes::result::{NodeResponse, NodeResult};
 use crate::nodes::variable_json::{Guards, VariableNode};
 use crate::nodes::NodeError;
 use crate::ZEN_CONFIG;
-use ahash::AHasher;
+use ahash::{AHasher, HashSet};
 use jsonschema::ValidationError;
 use serde::Serialize;
 use serde_json::Value;
@@ -16,6 +16,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use thiserror::Error;
 use zen_expression::Isolate;
+use zen_types::symbol::Symbol;
 use zen_types::variable::{ToVariable, Variable};
 
 #[derive(Clone)]
@@ -110,20 +111,127 @@ where
     }
 
     pub fn validate(&self, schema: &Value, value: &Variable) -> Result<(), NodeError> {
-        let validator_cache = self.extensions.validator_cache();
-        let hash = self.hash_node();
-
-        let validator = validator_cache
-            .get_or_insert(hash, schema)
+        let validator = self
+            .extensions
+            .validator_cache()
+            .get_or_insert(self.hash_node(), schema)
             .node_context(self)?;
+        if validator.is_valid(VariableNode::new(value, &Guards::default())) {
+            return Ok(());
+        }
+
+        let current = value.deep_clone();
+        let mut removed: HashSet<String> = HashSet::default();
+        loop {
+            let guards = Guards::default();
+            let paths: Vec<String> = validator
+                .iter_errors(VariableNode::new(&current, &guards))
+                .map(|error| error.instance_path().to_string())
+                .collect();
+            drop(guards);
+            if paths.is_empty() {
+                return Ok(());
+            }
+            let before = removed.len();
+            for path in &paths {
+                Self::remove_nulls_at(&current, path, &mut removed);
+            }
+            if removed.len() == before {
+                break;
+            }
+        }
 
         let guards = Guards::default();
-        validator
-            .validate(VariableNode::new(value, &guards))
-            .map_err(|err| ValidationErrorJson::from(err))
-            .node_context(self)?;
+        let mut errors: Vec<ValidationErrorJson> = validator
+            .iter_errors(VariableNode::new(value, &guards))
+            .map(ValidationErrorJson::from)
+            .collect();
+        let chosen = errors
+            .iter()
+            .position(|error| !removed.contains(&error.path))
+            .unwrap_or(0);
+        match chosen < errors.len() {
+            true => Err(errors.swap_remove(chosen)).node_context(self),
+            false => Ok(()),
+        }
+    }
 
-        Ok(())
+    fn remove_nulls_at(value: &Variable, pointer: &str, removed: &mut HashSet<String>) {
+        let segments: Vec<String> = pointer
+            .split('/')
+            .skip(1)
+            .map(|s| s.replace("~1", "/").replace("~0", "~"))
+            .collect();
+        let Some(target) = Self::node_at(value, &segments) else {
+            return;
+        };
+        match (&target, segments.split_last()) {
+            (Variable::Null, Some((key, parents))) => {
+                if let Some(Variable::Object(object)) = Self::node_at(value, parents) {
+                    if object
+                        .borrow_mut()
+                        .remove(&Symbol::from(key.as_str()))
+                        .is_some()
+                    {
+                        removed.insert(pointer.to_string());
+                    }
+                }
+            }
+            _ => Self::strip_nulls(&target, pointer, removed),
+        }
+    }
+
+    fn node_at(value: &Variable, segments: &[String]) -> Option<Variable> {
+        segments
+            .iter()
+            .try_fold(value.shallow_clone(), |current, segment| match &current {
+                Variable::Object(o) => o
+                    .borrow()
+                    .get(&Symbol::from(segment.as_str()))
+                    .map(Variable::shallow_clone),
+                Variable::Array(a) => segment
+                    .parse::<usize>()
+                    .ok()
+                    .and_then(|i| a.borrow().get(i).map(Variable::shallow_clone)),
+                _ => None,
+            })
+    }
+
+    fn strip_nulls(value: &Variable, pointer: &str, removed: &mut HashSet<String>) {
+        let children: Vec<(String, Variable)> = match value {
+            Variable::Object(object) => {
+                let entries: Vec<(Symbol, Variable)> = object
+                    .borrow()
+                    .iter()
+                    .map(|(key, field)| (key.clone(), field.shallow_clone()))
+                    .collect();
+                let mut children = Vec::with_capacity(entries.len());
+                for (key, field) in entries {
+                    let child = format!(
+                        "{pointer}/{}",
+                        key.as_str().replace('~', "~0").replace('/', "~1")
+                    );
+                    match field {
+                        Variable::Null => {
+                            object.borrow_mut().remove(&key);
+                            removed.insert(child);
+                        }
+                        field => children.push((child, field)),
+                    }
+                }
+                children
+            }
+            Variable::Array(array) => array
+                .borrow()
+                .iter()
+                .enumerate()
+                .map(|(index, item)| (format!("{pointer}/{index}"), item.shallow_clone()))
+                .collect(),
+            _ => return,
+        };
+        for (child, field) in children {
+            Self::strip_nulls(&field, &child, removed);
+        }
     }
 
     fn hash_node(&self) -> u64 {

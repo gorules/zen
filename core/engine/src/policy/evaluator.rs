@@ -17,7 +17,7 @@ use crate::policy::blocks::{
 use crate::policy::ir::PropertyPath;
 use crate::policy::queries::dependency::{DataModelPaths, EvalGraph, WriteScope};
 use crate::policy::queries::path::PathClassifier;
-use crate::policy::queries::scope::{EntitySources, ReferenceField};
+use crate::policy::queries::scope::{EntityForm, EntitySources, ReferenceField};
 use crate::policy::refs::RefPoolIndex;
 use crate::policy::validator::InputSchema;
 use crate::workspace::db::Db;
@@ -118,8 +118,6 @@ impl EvalArtifact {
 
         self.validate_request(req)?;
 
-        let order_to_run = self.compute_order_to_run(req)?;
-
         let store = req.input.depth_clone(1);
         let ref_targets: HashSet<Arc<str>> = self
             .reference_fields
@@ -128,6 +126,8 @@ impl EvalArtifact {
             .collect();
         let pool_index = RefPoolIndex::from_input(&store, ref_targets);
         store.hydrate_references(&self.reference_fields, &pool_index);
+
+        let order_to_run = self.compute_order_to_run(req, &store)?;
 
         let roots: Vec<Arc<str>> = if req.goals.is_empty() {
             self.eval_graph.terminal_sinks(&self.members)
@@ -172,6 +172,7 @@ impl EvalArtifact {
     fn compute_order_to_run(
         &self,
         req: &EvaluateRequest,
+        input: &Variable,
     ) -> Result<Vec<PropertyPath>, EvaluationError> {
         let visible = &self.members;
         let visible_order: Vec<PropertyPath> = self
@@ -185,26 +186,32 @@ impl EvalArtifact {
             .cloned()
             .collect();
 
+        let goals = match req.goals.is_empty() {
+            true => self.eval_graph.terminal_sinks(visible),
+            false => req.goals.clone(),
+        };
+        let entity_form = EntityForm::new(&self.entity_sources);
+        let mut missing: Vec<PropertyPath> = self
+            .eval_graph
+            .reachable_input_paths(&goals, visible)
+            .into_iter()
+            .filter(|p| {
+                !entity_form
+                    .rewrite(p)
+                    .is_some_and(|entity| self.eval_graph.written_at(&entity, visible))
+            })
+            .filter(|p| self.input_missing(input, p))
+            .collect();
+        if !missing.is_empty() {
+            missing.sort();
+            return Err(EvaluationError::MissingRequiredInputs { goals, missing });
+        }
+
         if req.goals.is_empty() {
             return Ok(visible_order);
         }
 
         let reachable = self.eval_graph.reachable_from(&req.goals);
-        let mut missing: Vec<PropertyPath> = self
-            .eval_graph
-            .reachable_input_paths(&req.goals, visible)
-            .into_iter()
-            .filter(|p| {
-                !self.data_model_paths.is_optional(p) && !self.input_satisfied(&req.input, p)
-            })
-            .collect();
-        if !missing.is_empty() {
-            missing.sort();
-            return Err(EvaluationError::MissingRequiredInputs {
-                goals: req.goals.clone(),
-                missing,
-            });
-        }
 
         Ok(visible_order
             .iter()
@@ -213,34 +220,32 @@ impl EvalArtifact {
             .collect())
     }
 
-    fn input_satisfied(&self, input: &Variable, path: &str) -> bool {
-        if Self::input_path_satisfied(input, path) {
-            return true;
+    fn input_missing(&self, input: &Variable, path: &str) -> bool {
+        if !self.path_missing(input, path) {
+            return false;
         }
         let Some((entity, rest)) = path.split_once('.') else {
-            return false;
+            return true;
         };
         match self.entity_sources.get(entity) {
-            Some(src) => {
-                let resolved = format!("{}.{}", src.path, rest);
-                Self::input_path_satisfied(input, &resolved)
-            }
-            None => false,
+            Some(src) => self.path_missing(input, &format!("{}.{}", src.path, rest)),
+            None => true,
         }
     }
 
-    fn input_path_satisfied(input: &Variable, path: &str) -> bool {
+    fn path_missing(&self, input: &Variable, path: &str) -> bool {
+        let optional = self.data_model_paths.optional_steps(path);
         let mut current = input.shallow_clone();
-        for segment in path.split('.') {
-            if current.as_array().is_some() {
-                return true;
+        for (i, segment) in path.split('.').enumerate() {
+            if current.as_object().is_none() {
+                return false;
             }
             match current.dot(segment) {
+                Some(Variable::Null) | None => return !optional[i..].iter().any(|o| *o),
                 Some(v) => current = v,
-                None => return false,
             }
         }
-        true
+        false
     }
 }
 

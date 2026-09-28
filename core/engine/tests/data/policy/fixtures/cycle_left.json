@@ -1,0 +1,14 @@
+{
+  "blocks": [
+    {
+      "id": "l1",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "customer.x",
+          "value": "customer.y"
+        }
+      }
+    }
+  ]
+}

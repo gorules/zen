@@ -34,7 +34,7 @@ pub(crate) async fn evaluate_policy(
     }
 
     let blocking_errors = workspace
-        .all_diagnostics()
+        .evaluation_diagnostics(&entry_path)
         .into_iter()
         .filter(|d| d.severity == Severity::Error)
         .count();
@@ -160,51 +160,44 @@ impl CompiledSet {
             }
         }
 
+        let errors: HashMap<Arc<str>, Vec<Diagnostic>> = policy_keys
+            .iter()
+            .map(|key| (key.clone(), Self::error_diagnostics(&workspace, key)))
+            .collect();
+
         for key in &policy_keys {
-            let diagnostics = Self::closure_error_diagnostics(&workspace, key);
+            let diagnostics = &errors[key];
             if diagnostics.is_empty() {
                 entries.insert(
                     key.clone(),
                     CompiledEntry::Policy(workspace.eval_artifact(key)),
                 );
-            } else {
-                failures.push(CompileFailure {
-                    key: key.clone(),
-                    kind: "policy",
-                    diagnostics,
-                    error: None,
-                });
+                continue;
             }
+            let valid_through_importer = policy_keys.iter().any(|other| {
+                other != key && errors[other].is_empty() && workspace.imports(other, key)
+            });
+            failures.push(CompileFailure {
+                key: key.clone(),
+                kind: if valid_through_importer {
+                    "policyImportOnly"
+                } else {
+                    "policy"
+                },
+                diagnostics: diagnostics.clone(),
+                error: None,
+            });
         }
 
         CompiledSet { entries, failures }
     }
 
-    fn closure_error_diagnostics(workspace: &Workspace, key: &Arc<str>) -> Vec<Diagnostic> {
-        let mut diagnostics: Vec<Diagnostic> = Vec::new();
-        let mut enqueued: HashSet<Arc<str>> = HashSet::new();
-        let mut queue: VecDeque<Arc<str>> = VecDeque::new();
-
-        enqueued.insert(key.clone());
-        queue.push_back(key.clone());
-
-        while let Some(path) = queue.pop_front() {
-            diagnostics.extend(
-                workspace
-                    .diagnostics(path.as_ref())
-                    .into_iter()
-                    .filter(|d| d.severity == Severity::Error),
-            );
-            if let Some(doc) = workspace.get_policy(path.as_ref()) {
-                for import_path in &doc.imports {
-                    if enqueued.insert(import_path.clone()) {
-                        queue.push_back(import_path.clone());
-                    }
-                }
-            }
-        }
-
-        diagnostics
+    fn error_diagnostics(workspace: &Workspace, key: &Arc<str>) -> Vec<Diagnostic> {
+        workspace
+            .evaluation_diagnostics(key)
+            .into_iter()
+            .filter(|d| d.severity == Severity::Error)
+            .collect()
     }
 
     pub(crate) fn get(&self, key: &str) -> Option<CompiledEntry> {

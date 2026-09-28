@@ -50,9 +50,8 @@ impl SkeletonBuilder {
 
     fn default_for(ty: &VariableType) -> Value {
         match ty {
-            VariableType::String | VariableType::Date | VariableType::Interval => {
-                Value::String(String::new())
-            }
+            VariableType::String | VariableType::Interval => Value::String(String::new()),
+            VariableType::Date => Value::String("2000-01-01".to_string()),
             VariableType::Number => Value::Number(0u64.into()),
             VariableType::Bool => Value::Bool(false),
             VariableType::Null | VariableType::Any => Value::Null,

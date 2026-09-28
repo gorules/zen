@@ -9,6 +9,7 @@ use crate::vm::date::DynamicVariableExt;
 use crate::vm::error::VMError::*;
 use crate::vm::error::VMResult;
 use crate::vm::interval::{VmInterval, VmIntervalData};
+use crate::vm::VmDate;
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::{Decimal, MathematicalOps};
 use std::rc::Rc;
@@ -250,6 +251,10 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
 
                             self.push(Bool(a.is_some() && b.is_some() && a == b));
                         }
+                        (Dynamic(a), String(b)) | (String(b), Dynamic(a)) => {
+                            let equal = a.as_date().is_some_and(|a| a.matches(&String(b)));
+                            self.push(Bool(equal));
+                        }
                         _ => {
                             self.push(Bool(false));
                         }
@@ -381,10 +386,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                             };
 
                             let arr = arr.borrow();
-                            let is_in = arr.iter().any(|b| match b {
-                                Dynamic(b) => Some(a) == b.as_date(),
-                                _ => false,
-                            });
+                            let is_in = arr.iter().any(|b| a.matches(b));
 
                             self.push(Bool(is_in));
                         }
@@ -392,6 +394,9 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                             let arr = b.borrow();
                             let is_in = arr.iter().any(|b| match b {
                                 String(b) => &a == b,
+                                Dynamic(d) => {
+                                    d.as_date().is_some_and(|d| d.matches(&String(a.clone())))
+                                }
                                 _ => false,
                             });
 
@@ -455,6 +460,23 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
 
                             self.push(Bool(compare(a, b, comparison)));
                         }
+                        (a @ Dynamic(_), b @ String(_)) | (a @ String(_), b @ Dynamic(_)) => {
+                            let (Some(a), Some(b)) = (VmDate::coerce(&a), VmDate::coerce(&b))
+                            else {
+                                return Err(OpcodeErr {
+                                    opcode: "Compare".into(),
+                                    message: "Unsupported type".into(),
+                                });
+                            };
+                            if a.0.is_none() || b.0.is_none() {
+                                return Err(OpcodeErr {
+                                    opcode: "Compare".into(),
+                                    message: "Unsupported type".into(),
+                                });
+                            }
+
+                            self.push(Bool(compare(&a, &b, comparison)));
+                        }
                         _ => {
                             return Err(OpcodeErr {
                                 opcode: "Compare".into(),
@@ -482,6 +504,12 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                             c.push_str(b.as_ref());
 
                             self.push(String((c.as_str()).into()));
+                        }
+                        (String(a), Dynamic(b)) if b.as_date().is_some() => {
+                            self.push(String(format!("{a}{b}").into()));
+                        }
+                        (Dynamic(a), String(b)) if a.as_date().is_some() => {
+                            self.push(String(format!("{a}{b}").into()));
                         }
                         _ => {
                             return Err(OpcodeErr {

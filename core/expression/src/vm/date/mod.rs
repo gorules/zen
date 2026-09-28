@@ -6,7 +6,9 @@ use chrono::{DateTime, SecondsFormat, Utc};
 use chrono_tz::Tz;
 use serde_json::Value;
 use std::any::Any;
+use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
+use std::rc::Rc;
 use std::sync::OnceLock;
 
 // Duration is a modified copy of `humantime`
@@ -14,8 +16,28 @@ mod duration;
 mod duration_parser;
 mod duration_unit;
 
-#[derive(Debug, Clone, PartialOrd, PartialEq, Ord, Eq)]
-pub(crate) struct VmDate(pub Option<DateTime<Tz>>);
+#[derive(Debug, Clone)]
+pub(crate) struct VmDate(pub Option<DateTime<Tz>>, Option<Rc<str>>);
+
+impl PartialEq for VmDate {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl Eq for VmDate {}
+
+impl PartialOrd for VmDate {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for VmDate {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.cmp(&other.0)
+    }
+}
 
 impl DynamicVariable for VmDate {
     fn type_name(&self) -> &'static str {
@@ -27,31 +49,33 @@ impl DynamicVariable for VmDate {
     }
 
     fn to_value(&self) -> Value {
-        match self.0 {
-            None => Value::String(String::from("Invalid date")),
-            Some(d) => Value::String(d.to_rfc3339_opts(SecondsFormat::Secs, true)),
-        }
+        Value::String(self.to_string())
+    }
+
+    fn as_text(&self) -> Option<&str> {
+        self.1.as_deref()
     }
 }
 
 impl Display for VmDate {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match &self.0 {
-            None => write!(f, "Invalid date"),
-            Some(d) => write!(f, "{}", d.to_rfc3339_opts(SecondsFormat::Secs, true)),
+        match (&self.0, &self.1) {
+            (None, _) => write!(f, "Invalid date"),
+            (Some(_), Some(text)) => write!(f, "{text}"),
+            (Some(d), None) => write!(f, "{}", d.to_rfc3339_opts(SecondsFormat::Secs, true)),
         }
     }
 }
 
 impl From<Option<DateTime<Tz>>> for VmDate {
     fn from(value: Option<DateTime<Tz>>) -> Self {
-        Self(value)
+        Self(value, None)
     }
 }
 
 impl VmDate {
     pub fn now() -> Self {
-        Self(Some(helper::now()))
+        Self::from(Some(helper::now()))
     }
 
     pub fn yesterday() -> Self {
@@ -63,8 +87,24 @@ impl VmDate {
     }
 
     /// Create a new VmDate from the current time
+    pub fn from_text(text: &str) -> Option<Self> {
+        helper::parse_text(text).map(|date_time| Self(Some(date_time), Some(Rc::from(text))))
+    }
+
+    pub fn coerce(value: &Variable) -> Option<Self> {
+        match value {
+            Variable::Dynamic(d) => d.as_date().cloned(),
+            Variable::String(text) => Self::from_text(text),
+            _ => None,
+        }
+    }
+
+    pub fn matches(&self, other: &Variable) -> bool {
+        self.0.is_some() && Self::coerce(other).is_some_and(|other| other == *self)
+    }
+
     pub fn new(var: Variable, tz_opt: Option<Tz>) -> Self {
-        Self(helper::parse_date(var, tz_opt))
+        Self::from(helper::parse_date(var, tz_opt))
     }
 
     pub fn is_valid(&self) -> bool {
@@ -76,7 +116,7 @@ impl VmDate {
             return self.clone();
         };
 
-        Self(Some(date_time.with_timezone(&timezone)))
+        Self::from(Some(date_time.with_timezone(&timezone)))
     }
 
     pub fn format(&self, format: Option<&str>) -> String {
@@ -92,34 +132,34 @@ impl VmDate {
 
     pub fn add(&self, duration: Duration) -> Self {
         let Some(date_time) = &self.0 else {
-            return Self(None);
+            return Self::from(None);
         };
 
-        Self(helper::add_duration(date_time.clone(), duration))
+        Self::from(helper::add_duration(date_time.clone(), duration))
     }
 
     pub fn sub(&self, duration: Duration) -> Self {
         let Some(date_time) = &self.0 else {
-            return Self(None);
+            return Self::from(None);
         };
 
-        Self(helper::add_duration(date_time.clone(), duration.negate()))
+        Self::from(helper::add_duration(date_time.clone(), duration.negate()))
     }
 
     pub fn start_of(&self, unit: DurationUnit) -> Self {
         let Some(date_time) = &self.0 else {
-            return Self(None);
+            return Self::from(None);
         };
 
-        Self(helper::start_of(date_time.clone(), unit))
+        Self::from(helper::start_of(date_time.clone(), unit))
     }
 
     pub fn end_of(&self, unit: DurationUnit) -> Self {
         let Some(date_time) = &self.0 else {
-            return Self(None);
+            return Self::from(None);
         };
 
-        Self(helper::end_of(date_time.clone(), unit))
+        Self::from(helper::end_of(date_time.clone(), unit))
     }
 
     pub fn diff(&self, date_time: &Self, unit: Option<DurationUnit>) -> Option<i64> {
@@ -133,10 +173,10 @@ impl VmDate {
 
     pub fn set(&self, value: u32, unit: DurationUnit) -> Self {
         let Some(date_time) = self.0.clone() else {
-            return Self(None);
+            return Self::from(None);
         };
 
-        Self(helper::set(date_time, value, unit))
+        Self::from(helper::set(date_time, value, unit))
     }
 
     pub fn is_same(&self, other: &Self, unit: Option<DurationUnit>) -> bool {
@@ -179,8 +219,8 @@ mod helper {
     use crate::vm::date::{utc_now, Duration, DurationUnit, DynamicVariableExt};
     use crate::Variable;
     use chrono::{
-        DateTime, Datelike, Days, LocalResult, Month, Months, NaiveDate, NaiveDateTime, Offset,
-        TimeDelta, TimeZone, Timelike,
+        DateTime, Datelike, Days, FixedOffset, LocalResult, Month, Months, NaiveDate,
+        NaiveDateTime, Offset, TimeDelta, TimeZone, Timelike,
     };
     use chrono_tz::Tz;
     use rust_decimal::prelude::ToPrimitive;
@@ -207,6 +247,72 @@ mod helper {
         utc_now().with_timezone(&tz)
     }
 
+    fn parse_offset(value: &str) -> Option<DateTime<FixedOffset>> {
+        const WITH_OFFSET: [&str; 4] = [
+            "%Y-%m-%dT%H:%M:%S%.f%#z",
+            "%Y-%m-%dT%H:%M%#z",
+            "%Y%m%dT%H%M%S%.f%#z",
+            "%Y%m%dT%H%M%#z",
+        ];
+        DateTime::parse_from_rfc3339(value).ok().or_else(|| {
+            WITH_OFFSET
+                .iter()
+                .find_map(|format| DateTime::parse_from_str(value, format).ok())
+        })
+    }
+
+    fn parse_naive(value: &str) -> Option<NaiveDateTime> {
+        const LOCAL: [&str; 10] = [
+            "%Y-%m-%d %H:%M:%S%.f",
+            "%Y-%m-%d %H:%M",
+            "%Y-%m-%dT%H:%M:%S%.f",
+            "%Y-%m-%dT%H:%M",
+            "%Y%m%dT%H%M%S%.f",
+            "%Y%m%dT%H%M",
+            "%Y/%m/%d %H:%M:%S%.f",
+            "%Y/%m/%d %H:%M:%S",
+            "%Y/%m/%d %H:%M",
+            "%Y-%m-%d %H:%M:%S",
+        ];
+        const DATES: [&str; 3] = ["%Y-%m-%d", "%Y%m%d", "%Y/%m/%d"];
+
+        LOCAL
+            .iter()
+            .find_map(|format| NaiveDateTime::parse_from_str(value, format).ok())
+            .or_else(|| {
+                DATES
+                    .iter()
+                    .find_map(|format| NaiveDate::parse_from_str(value, format).ok())
+                    .or_else(|| match value.len() {
+                        7 => NaiveDate::parse_from_str(&format!("{value}-01"), "%Y-%m-%d").ok(),
+                        4 if value.bytes().all(|b| b.is_ascii_digit()) => {
+                            NaiveDate::from_ymd_opt(value.parse().ok()?, 1, 1)
+                        }
+                        _ => None,
+                    })?
+                    .and_hms_opt(0, 0, 0)
+            })
+    }
+
+    fn resolve_local(naive: NaiveDateTime, tz: Tz) -> Option<DateTime<Tz>> {
+        tz.from_local_datetime(&naive).earliest().or_else(|| {
+            let before = tz
+                .from_local_datetime(&(naive - TimeDelta::hours(3)))
+                .earliest()?;
+            Some(tz.from_utc_datetime(&(naive - before.offset().fix())))
+        })
+    }
+
+    fn parse_text_in(value: &str, tz: Tz) -> Option<DateTime<Tz>> {
+        parse_offset(value)
+            .map(|date_time| date_time.with_timezone(&tz))
+            .or_else(|| resolve_local(parse_naive(value)?, tz))
+    }
+
+    pub fn parse_text(value: &str) -> Option<DateTime<Tz>> {
+        parse_text_in(value, tz())
+    }
+
     pub fn parse_date(var: Variable, tz_opt: Option<Tz>) -> Option<DateTime<Tz>> {
         let tz = tz_opt.unwrap_or_else(|| tz());
 
@@ -221,28 +327,16 @@ mod helper {
 
                 Some(date_time)
             }
-            Variable::String(str) => DateTime::parse_from_rfc3339(str.deref())
-                .ok()
-                .map(|date_time| tz.from_local_datetime(&date_time.naive_local()).earliest())
-                .or_else(|| {
-                    NaiveDateTime::parse_from_str(str.deref(), "%Y-%m-%d %H:%M:%S")
-                        .ok()
-                        .or_else(|| {
-                            NaiveDateTime::parse_from_str(str.deref(), "%Y-%m-%d %H:%M").ok()
-                        })
-                        .or_else(|| {
-                            NaiveDate::parse_from_str(str.deref(), "%Y-%m-%d")
-                                .ok()?
-                                .and_hms_opt(0, 0, 0)
-                        })
-                        .map(|dt| tz.from_local_datetime(&dt).earliest())
-                })
-                .or_else(|| Some(Tz::from_str(&str.deref()).ok().map(now_tz)))
-                .flatten(),
-            Variable::Dynamic(d) => match d.as_date() {
-                Some(d) => d.0.clone(),
-                None => None,
-            },
+            Variable::String(str) => parse_text_in(str.deref(), tz)
+                .or_else(|| Tz::from_str(str.deref()).ok().map(now_tz)),
+            Variable::Dynamic(d) => {
+                let date = d.as_date()?;
+                match (tz_opt, &date.1) {
+                    (Some(tz), Some(text)) => parse_text_in(text, tz),
+                    (Some(tz), None) => date.0.map(|date_time| date_time.with_timezone(&tz)),
+                    (None, _) => date.0,
+                }
+            }
             _ => None,
         }
     }

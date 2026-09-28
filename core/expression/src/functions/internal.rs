@@ -747,6 +747,7 @@ pub(crate) mod imp {
             V::Bool(v) => v.to_string().into(),
             V::Number(n) => n.to_string().into(),
             V::String(s) => s.clone(),
+            V::Dynamic(d) if d.as_date().is_some() => d.to_string().into(),
             _ => return Err(anyhow!("Cannot convert type {} to string", a.type_name())),
         };
 
@@ -791,12 +792,9 @@ pub(crate) mod imp {
 
     pub fn len(args: Arguments) -> anyhow::Result<V> {
         let a = args.var(0)?;
-        let len = match a {
-            V::String(s) => s.len(),
-            V::Array(s) => {
-                let arr = s.borrow();
-                arr.len()
-            }
+        let len = match (a, a.as_str()) {
+            (V::Array(s), _) => s.borrow().len(),
+            (_, Some(text)) => text.len(),
             _ => {
                 return Err(anyhow!("Cannot determine len of type {}", a.type_name()));
             }
@@ -809,9 +807,8 @@ pub(crate) mod imp {
         let a = args.var(0)?;
         let b = args.var(1)?;
 
-        let val = match (a, b) {
-            (V::String(a), V::String(b)) => a.contains(b.as_str()),
-            (V::Array(a), _) => {
+        let val = match (a, b, a.as_str().zip(b.as_str())) {
+            (V::Array(a), _, _) => {
                 let arr = a.borrow();
 
                 arr.iter().any(|a| match (a, b) {
@@ -819,9 +816,13 @@ pub(crate) mod imp {
                     (V::String(a), V::String(b)) => a == b,
                     (V::Bool(a), V::Bool(b)) => a == b,
                     (V::Null, V::Null) => true,
+                    (V::Dynamic(d), other) | (other, V::Dynamic(d)) => {
+                        d.as_date().is_some_and(|d| d.matches(other))
+                    }
                     _ => false,
                 })
             }
+            (_, _, Some((a, b))) => a.contains(b),
             _ => {
                 return Err(anyhow!(
                     "Cannot determine contains for type {} and {}",
@@ -838,13 +839,13 @@ pub(crate) mod imp {
         let a = args.var(0)?;
         let b = args.str(1)?;
 
-        let val = match a {
-            V::String(a) => {
-                let sim = strsim::normalized_damerau_levenshtein(a.as_ref(), b.as_ref());
+        let val = match (a, a.as_str()) {
+            (_, Some(a)) => {
+                let sim = strsim::normalized_damerau_levenshtein(a, b.as_ref());
                 // This is okay, as NDL will return [0, 1]
                 V::Number(Decimal::from_f64(sim).unwrap_or(dec!(0)))
             }
-            V::Array(_a) => {
+            (V::Array(_a), _) => {
                 let a = _a.borrow();
                 let mut sims = Vec::with_capacity(a.len());
                 for v in a.iter() {

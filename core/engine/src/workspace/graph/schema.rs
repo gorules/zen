@@ -6,6 +6,8 @@ use ahash::{HashMap, HashMapExt};
 use serde_json::{Map, Value};
 use zen_expression::variable::VariableType;
 
+use crate::nodes::input::dates::DeclaredDates;
+
 pub(crate) type SchemaDictionaries = HashMap<Arc<str>, VariableType>;
 
 pub(crate) struct SchemaType;
@@ -131,9 +133,9 @@ impl SchemaType {
                     .map(|items| Self::variable_type_with(items, dictionaries))
                     .unwrap_or(VariableType::Any),
             )),
-            "string" => match object.get("format").and_then(Value::as_str) {
-                Some("date" | "date-time") => VariableType::Date,
-                _ => VariableType::String,
+            "string" => match DeclaredDates::declared_map(object) {
+                Some(_) => VariableType::Date,
+                None => VariableType::String,
             },
             "number" | "integer" => VariableType::Number,
             "boolean" => VariableType::Bool,

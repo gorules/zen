@@ -118,7 +118,11 @@ impl EvalArtifact {
 
         self.validate_request(req)?;
 
-        let store = req.input.depth_clone(1);
+        let store = self
+            .input_schema
+            .convert_dates(&req.input)
+            .unwrap_or_else(|| req.input.clone())
+            .depth_clone(1);
         let ref_targets: HashSet<Arc<str>> = self
             .reference_fields
             .iter()

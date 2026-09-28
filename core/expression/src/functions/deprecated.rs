@@ -116,13 +116,24 @@ impl From<&DeprecatedFunction> for Rc<dyn FunctionDefinition> {
 
 mod imp {
     use super::*;
+    use crate::vm::date::DynamicVariableExt;
     use crate::vm::helpers::DateUnit;
     use crate::vm::VMError;
     use zen_types::variable::Variable;
 
     fn __internal_convert_datetime(timestamp: &V) -> anyhow::Result<NaiveDateTime> {
+        if let Some(text) = timestamp.as_str() {
+            return date_time(text).context("Failed to convert value to date time");
+        }
         match timestamp {
-            Variable::String(a) => date_time(a),
+            Variable::Dynamic(d) => d
+                .as_date()
+                .and_then(|date| date.0)
+                .map(|date| date.naive_local())
+                .ok_or_else(|| VMError::OpcodeErr {
+                    opcode: "DateManipulation".into(),
+                    message: "Invalid date".into(),
+                }),
             #[allow(deprecated)]
             Variable::Number(a) => NaiveDateTime::from_timestamp_opt(
                 a.to_i64().ok_or_else(|| VMError::OpcodeErr {
@@ -152,7 +163,13 @@ mod imp {
                 dt.timestamp()
             }
             V::Number(a) => a.to_i64().context("Number overflow")?,
-            _ => return Err(anyhow!("Unsupported type for date function")),
+            _ =>
+            {
+                #[allow(deprecated)]
+                __internal_convert_datetime(a)
+                    .map_err(|_| anyhow!("Unsupported type for date function"))?
+                    .timestamp()
+            }
         };
 
         Ok(V::Number(ts.into()))

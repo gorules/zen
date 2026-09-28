@@ -114,6 +114,100 @@ impl InputSchema {
     }
 }
 
+impl InputSchema {
+    pub(crate) fn convert_dates(&self, input: &Variable) -> Option<Variable> {
+        let object = input.as_object()?;
+        let changed: Vec<(Arc<str>, Variable)> = object
+            .borrow()
+            .iter()
+            .filter_map(|(key, value)| {
+                let key: Arc<str> = Arc::from(key.as_ref());
+                let converted = if self.ref_targets.contains(&key) {
+                    self.convert_items(value, |item| self.convert_entity(item, &key, 0))
+                } else if self.roots.contains(&key) {
+                    self.convert_entity(value, &key, 0)
+                } else {
+                    let property = self.globals.get(&key)?;
+                    self.convert_property(value, property, 0)
+                };
+                converted.map(|converted| (key, converted))
+            })
+            .collect();
+        Self::replace_fields(input, changed)
+    }
+
+    fn convert_entity(&self, value: &Variable, entity: &str, depth: usize) -> Option<Variable> {
+        if depth >= MAX_RECURSION_DEPTH {
+            return None;
+        }
+        let model = self.entities.get(entity)?;
+        let object = value.as_object()?;
+        let changed: Vec<(Arc<str>, Variable)> = object
+            .borrow()
+            .iter()
+            .filter_map(|(key, value)| {
+                let property = model.properties.iter().find(|p| *p.name == *key.as_str())?;
+                self.convert_property(value, property, depth + 1)
+                    .map(|converted| (property.name.clone(), converted))
+            })
+            .collect();
+        Self::replace_fields(value, changed)
+    }
+
+    fn convert_property(
+        &self,
+        value: &Variable,
+        property: &Property,
+        depth: usize,
+    ) -> Option<Variable> {
+        let convert_one = |item: &Variable| match &property.kind {
+            PropertyTypeIr::Date => match item {
+                Variable::String(text) => zen_expression::DateValue::from_text(text),
+                _ => None,
+            },
+            PropertyTypeIr::Relationship { target } if self.entities.contains_key(target) => {
+                self.convert_entity(item, target, depth)
+            }
+            _ => None,
+        };
+        match property.array {
+            true => self.convert_items(value, convert_one),
+            false => convert_one(value),
+        }
+    }
+
+    fn convert_items(
+        &self,
+        value: &Variable,
+        convert: impl Fn(&Variable) -> Option<Variable>,
+    ) -> Option<Variable> {
+        let array = value.as_array()?;
+        let array = array.borrow();
+        let converted: Vec<Option<Variable>> = array.iter().map(&convert).collect();
+        if converted.iter().all(Option::is_none) {
+            return None;
+        }
+        Some(Variable::from_array(
+            array
+                .iter()
+                .zip(converted)
+                .map(|(item, converted)| converted.unwrap_or_else(|| item.clone()))
+                .collect(),
+        ))
+    }
+
+    fn replace_fields(value: &Variable, changed: Vec<(Arc<str>, Variable)>) -> Option<Variable> {
+        if changed.is_empty() {
+            return None;
+        }
+        let mut next = value.as_object()?.borrow().clone();
+        for (key, converted) in changed {
+            next.insert_str(&key, converted);
+        }
+        Some(Variable::from_object(next))
+    }
+}
+
 struct InputValidator<'a> {
     entities: &'a HashMap<Arc<str>, Arc<DataModelIr>>,
     dictionaries: &'a HashMap<Arc<str>, Arc<DictionaryIr>>,
@@ -218,7 +312,12 @@ impl InputValidator<'_> {
             }
             PropertyTypeIr::Number => matches!(value, Variable::Number(_)),
             PropertyTypeIr::Boolean => matches!(value, Variable::Bool(_)),
-            PropertyTypeIr::Date => matches!(value, Variable::String(_)),
+            PropertyTypeIr::Date => match value {
+                Variable::String(text) => {
+                    text.is_empty() || zen_expression::DateValue::is_text(text)
+                }
+                other => zen_expression::DateValue::is(other),
+            },
             PropertyTypeIr::Reference { target } => {
                 self.validate_reference(value, target, path);
                 return;

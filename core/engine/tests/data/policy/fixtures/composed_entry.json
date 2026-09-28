@@ -1,0 +1,18 @@
+{
+  "imports": [
+    "composed_left.json",
+    "composed_right.json"
+  ],
+  "blocks": [
+    {
+      "id": "s1",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "customer.label",
+          "value": "customer.name"
+        }
+      }
+    }
+  ]
+}

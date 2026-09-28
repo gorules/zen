@@ -14,7 +14,7 @@ edits = [
 ]
 
 # customer.age IS referenced in shared policy arm condition "customer.age > 50"
-# and defined in multi_main's dm-customer data model.
+# and declared in shared's dm-customer data model, with a read in main.
 [[test]]
 name = "rename customer.age finds reference in shared policy condition"
 entity = "customer"
@@ -22,7 +22,8 @@ field = "age"
 new_name = "years"
 edits = [
     { policy = "multi_shared.json", block_id = "tree1", expression_id = "b1" },
-    { policy = "multi_main.json", block_id = "dm-customer", target_kind = "fieldName" },
+    { policy = "multi_shared.json", block_id = "dm-customer", target_kind = "fieldName" },
+    { policy = "multi_main.json", block_id = "age-read", expression_id = "age-read" },
 ]
 
 [[test]]

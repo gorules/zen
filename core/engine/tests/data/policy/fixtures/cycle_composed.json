@@ -1,0 +1,18 @@
+{
+  "imports": [
+    "cycle_left.json",
+    "cycle_right.json"
+  ],
+  "blocks": [
+    {
+      "id": "c1",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "customer.q",
+          "value": "3"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "imports": [
+    "cycle_base.json"
+  ],
+  "blocks": [
+    {
+      "id": "m1",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "customer.x",
+          "value": "customer.y"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "imports": [
+    "duplicate_writer.json"
+  ],
+  "blocks": [
+    {
+      "id": "s1",
+      "type": "expression",
+      "props": {
+        "data": {
+          "key": "customer.flag",
+          "value": "true"
+        }
+      }
+    }
+  ]
+}

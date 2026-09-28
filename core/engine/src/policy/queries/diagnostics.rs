@@ -609,7 +609,7 @@ impl Db {
                     let dictionary_target =
                         matches!(prop.kind, PropertyTypeIr::Relationship { .. })
                             && unit.dictionaries.contains_key(t);
-                    if !known_entities.contains(t) && !dictionary_target && policy_path == target {
+                    if !known_entities.contains(t) && !dictionary_target {
                         let owner = if is_global {
                             format!("global property '{}'", prop.name)
                         } else {

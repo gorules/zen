@@ -556,3 +556,44 @@ async fn compile_reports_child_with_real_error() {
     let keys: Vec<&str> = failures.iter().map(|f| f.key.as_ref()).collect();
     assert!(keys.contains(&"main"), "{failures:#?}");
 }
+
+#[tokio::test]
+async fn unknown_relationship_target_in_import_refuses_importer() {
+    let loader = Arc::new(MemoryLoader::default());
+    loader.add(
+        "main",
+        make_policy_content(json!({
+            "imports": ["child"],
+            "blocks": [
+                { "id": "s1", "type": "expression", "props": { "data": {
+                    "key": "flag", "value": "true"
+                } } }
+            ]
+        })),
+    );
+    loader.add(
+        "child",
+        make_policy_content(json!({
+            "blocks": [
+                { "id": "dm", "type": "dataModel", "props": { "data": {
+                    "name": "customer",
+                    "properties": [
+                        { "id": "p1", "name": "companies", "type": "relationship", "target": "company", "array": true, "optional": false }
+                    ]
+                } }, "children": [] }
+            ]
+        })),
+    );
+    let engine = engine_with(loader);
+
+    let result = engine.evaluate("main", json!({}).into()).await;
+    assert!(
+        format!("{result:?}").contains("CompilationErrors"),
+        "expected compilation error, got {result:?}"
+    );
+
+    let failures = engine.compile();
+    let reported: Vec<(&str, &str)> = failures.iter().map(|f| (f.key.as_ref(), f.kind)).collect();
+    assert!(reported.contains(&("main", "policy")), "{failures:#?}");
+    assert!(reported.contains(&("child", "policy")), "{failures:#?}");
+}

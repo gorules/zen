@@ -3347,3 +3347,56 @@ fn missing_member_through_local_names_the_member_not_the_alias() {
         "the specific member must be blamed, not the alias: {errors:?}"
     );
 }
+
+#[test]
+fn field_rename_reaches_imported_policies_reading_it() {
+    use zen_engine::policy::{ReferenceKind, RenameTarget};
+
+    let mut ws = Workspace::new();
+    ws.set_document(
+        "main",
+        document(json!({
+            "imports": ["shared"],
+            "blocks": [
+                { "id": "dm", "type": "dataModel", "props": { "data": {
+                    "name": "customer",
+                    "properties": [
+                        { "id": "p1", "name": "age", "type": "number", "array": false, "optional": false }
+                    ]
+                } }, "children": [] }
+            ]
+        })),
+    );
+    ws.set_document(
+        "shared",
+        document(json!({
+            "blocks": [
+                { "id": "m", "type": "match", "props": { "data": {
+                    "key": "customer.tier",
+                    "arms": [
+                        { "id": "a1", "condition": "customer.age > 50", "value": "\"gold\"" },
+                        { "id": "a2", "condition": "", "value": "\"silver\"" }
+                    ]
+                } } }
+            ]
+        })),
+    );
+
+    let target = RenameTarget::Field {
+        entity: Arc::from("customer"),
+        field: Arc::from("age"),
+    };
+    let sites = ws.references(&target);
+    assert!(
+        sites
+            .iter()
+            .any(|s| s.policy_path.as_ref() == "shared" && s.kind == ReferenceKind::ExpressionRead),
+        "{sites:#?}"
+    );
+    assert!(
+        sites
+            .iter()
+            .any(|s| s.policy_path.as_ref() == "main" && s.kind == ReferenceKind::DataModel),
+        "{sites:#?}"
+    );
+}

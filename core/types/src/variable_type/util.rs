@@ -68,6 +68,7 @@ impl VariableType {
             (VariableType::Number, VariableType::Number) => true,
             (VariableType::Date, VariableType::Date) => true,
             (VariableType::Number, VariableType::Date) => true,
+            (VariableType::Date, VariableType::String) => true,
             (_, VariableType::Date) if self.widen().is_string() => true,
             (VariableType::Interval, VariableType::Interval) => true,
             (VariableType::Array(a1), VariableType::Array(a2)) => {

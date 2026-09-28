@@ -724,8 +724,8 @@ pub(crate) mod imp {
     }
 
     pub fn to_bool(args: Arguments) -> anyhow::Result<V> {
-        let a = args.var(0)?;
-        let val = match a {
+        let a = VmDate::textual(args.var(0)?.clone());
+        let val = match &a {
             V::Null => false,
             V::Bool(v) => *v,
             V::Number(n) => !n.is_zero(),

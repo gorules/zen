@@ -3,6 +3,7 @@ use std::sync::Arc;
 use ahash::{HashMap, HashMapExt, HashSet};
 use zen_expression::variable::Variable;
 
+use crate::nodes::input::dates::DeclaredDates;
 use crate::policy::ir::{DataModelIr, DictionaryIr, Property, PropertyTypeIr};
 use crate::policy::refs::RefPoolIndex;
 use crate::policy::MAX_RECURSION_DEPTH;
@@ -116,24 +117,15 @@ impl InputSchema {
 
 impl InputSchema {
     pub(crate) fn convert_dates(&self, input: &Variable) -> Option<Variable> {
-        let object = input.as_object()?;
-        let changed: Vec<(Arc<str>, Variable)> = object
-            .borrow()
-            .iter()
-            .filter_map(|(key, value)| {
-                let key: Arc<str> = Arc::from(key.as_ref());
-                let converted = if self.ref_targets.contains(&key) {
-                    self.convert_items(value, |item| self.convert_entity(item, &key, 0))
-                } else if self.roots.contains(&key) {
-                    self.convert_entity(value, &key, 0)
-                } else {
-                    let property = self.globals.get(&key)?;
-                    self.convert_property(value, property, 0)
-                };
-                converted.map(|converted| (key, converted))
-            })
-            .collect();
-        Self::replace_fields(input, changed)
+        DeclaredDates::rewrite_fields(input, |key, value| {
+            if self.ref_targets.contains(key) {
+                DeclaredDates::rewrite_items(value, |item| self.convert_entity(item, key, 0))
+            } else if self.roots.contains(key) {
+                self.convert_entity(value, key, 0)
+            } else {
+                self.convert_property(value, self.globals.get(key)?, 0)
+            }
+        })
     }
 
     fn convert_entity(&self, value: &Variable, entity: &str, depth: usize) -> Option<Variable> {
@@ -141,17 +133,10 @@ impl InputSchema {
             return None;
         }
         let model = self.entities.get(entity)?;
-        let object = value.as_object()?;
-        let changed: Vec<(Arc<str>, Variable)> = object
-            .borrow()
-            .iter()
-            .filter_map(|(key, value)| {
-                let property = model.properties.iter().find(|p| *p.name == *key.as_str())?;
-                self.convert_property(value, property, depth + 1)
-                    .map(|converted| (property.name.clone(), converted))
-            })
-            .collect();
-        Self::replace_fields(value, changed)
+        DeclaredDates::rewrite_fields(value, |key, child| {
+            let property = model.properties.iter().find(|p| *p.name == *key)?;
+            self.convert_property(child, property, depth + 1)
+        })
     }
 
     fn convert_property(
@@ -171,40 +156,9 @@ impl InputSchema {
             _ => None,
         };
         match property.array {
-            true => self.convert_items(value, convert_one),
+            true => DeclaredDates::rewrite_items(value, convert_one),
             false => convert_one(value),
         }
-    }
-
-    fn convert_items(
-        &self,
-        value: &Variable,
-        convert: impl Fn(&Variable) -> Option<Variable>,
-    ) -> Option<Variable> {
-        let array = value.as_array()?;
-        let array = array.borrow();
-        let converted: Vec<Option<Variable>> = array.iter().map(&convert).collect();
-        if converted.iter().all(Option::is_none) {
-            return None;
-        }
-        Some(Variable::from_array(
-            array
-                .iter()
-                .zip(converted)
-                .map(|(item, converted)| converted.unwrap_or_else(|| item.clone()))
-                .collect(),
-        ))
-    }
-
-    fn replace_fields(value: &Variable, changed: Vec<(Arc<str>, Variable)>) -> Option<Variable> {
-        if changed.is_empty() {
-            return None;
-        }
-        let mut next = value.as_object()?.borrow().clone();
-        for (key, converted) in changed {
-            next.insert_str(&key, converted);
-        }
-        Some(Variable::from_object(next))
     }
 }
 

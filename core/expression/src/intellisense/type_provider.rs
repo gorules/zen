@@ -203,7 +203,7 @@ impl TypesProvider {
                 match node_type.kind.widen() {
                     VariableType::Any => V(VariableType::Any),
                     VariableType::Array(inner) => V(VariableType::Array(inner.clone())),
-                    VariableType::String => V(VariableType::String),
+                    VariableType::String | VariableType::Date => V(VariableType::String),
                     _ => Error("Slice operation is only allowed on `string | any[]`".to_string()),
                 }
             }

@@ -86,7 +86,6 @@ impl VmDate {
         Self::now().add(Duration::day())
     }
 
-    /// Create a new VmDate from the current time
     pub fn from_text(text: &str) -> Option<Self> {
         helper::parse_text(text).map(|date_time| Self(Some(date_time), Some(Rc::from(text))))
     }
@@ -99,10 +98,20 @@ impl VmDate {
         }
     }
 
+    pub fn textual(value: Variable) -> Variable {
+        if let Variable::Dynamic(d) = &value {
+            if let Some(text) = d.as_text() {
+                return Variable::String(text.into());
+            }
+        }
+        value
+    }
+
     pub fn matches(&self, other: &Variable) -> bool {
         self.0.is_some() && Self::coerce(other).is_some_and(|other| other == *self)
     }
 
+    /// Create a new VmDate from the current time
     pub fn new(var: Variable, tz_opt: Option<Tz>) -> Self {
         Self::from(helper::parse_date(var, tz_opt))
     }
@@ -247,66 +256,112 @@ mod helper {
         utc_now().with_timezone(&tz)
     }
 
-    fn parse_offset(value: &str) -> Option<DateTime<FixedOffset>> {
-        const WITH_OFFSET: [&str; 4] = [
-            "%Y-%m-%dT%H:%M:%S%.f%#z",
-            "%Y-%m-%dT%H:%M%#z",
-            "%Y%m%dT%H%M%S%.f%#z",
-            "%Y%m%dT%H%M%#z",
-        ];
-        DateTime::parse_from_rfc3339(value).ok().or_else(|| {
-            WITH_OFFSET
-                .iter()
-                .find_map(|format| DateTime::parse_from_str(value, format).ok())
-        })
+    const LENIENT: [&str; 2] = ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"];
+
+    const SHAPED: [(&str, &str); 11] = [
+        ("9999-99-99T99:99:99", "%Y-%m-%dT%H:%M:%S%.f"),
+        ("9999-99-99T99:99", "%Y-%m-%dT%H:%M"),
+        ("9999-99-99 99:99:99", "%Y-%m-%d %H:%M:%S%.f"),
+        ("99999999T999999", "%Y%m%dT%H%M%S%.f"),
+        ("99999999T9999", "%Y%m%dT%H%M"),
+        ("9999/99/99 99:99:99", "%Y/%m/%d %H:%M:%S%.f"),
+        ("9999/99/99 99:99", "%Y/%m/%d %H:%M"),
+        ("99999999", "%Y%m%d"),
+        ("9999/99/99", "%Y/%m/%d"),
+        ("9999-99", "%Y-%m"),
+        ("9999", "%Y"),
+    ];
+
+    fn shape(value: &str) -> String {
+        let seconds = value
+            .rfind('.')
+            .filter(|&dot| {
+                dot + 1 < value.len() && value[dot + 1..].bytes().all(|b| b.is_ascii_digit())
+            })
+            .map_or(value, |dot| &value[..dot]);
+        seconds
+            .chars()
+            .map(|c| if c.is_ascii_digit() { '9' } else { c })
+            .collect()
     }
 
-    fn parse_naive(value: &str) -> Option<NaiveDateTime> {
-        const LOCAL: [&str; 10] = [
-            "%Y-%m-%d %H:%M:%S%.f",
-            "%Y-%m-%d %H:%M",
-            "%Y-%m-%dT%H:%M:%S%.f",
-            "%Y-%m-%dT%H:%M",
-            "%Y%m%dT%H%M%S%.f",
-            "%Y%m%dT%H%M",
-            "%Y/%m/%d %H:%M:%S%.f",
-            "%Y/%m/%d %H:%M:%S",
-            "%Y/%m/%d %H:%M",
-            "%Y-%m-%d %H:%M:%S",
-        ];
-        const DATES: [&str; 3] = ["%Y-%m-%d", "%Y%m%d", "%Y/%m/%d"];
+    fn parse_shaped(value: &str) -> Option<NaiveDateTime> {
+        let shape = shape(value);
+        let (_, format) = SHAPED.iter().find(|(pattern, _)| *pattern == shape)?;
+        match *format {
+            "%Y" => NaiveDate::from_ymd_opt(value.parse().ok()?, 1, 1)?.and_hms_opt(0, 0, 0),
+            "%Y-%m" => NaiveDate::parse_from_str(&format!("{value}-01"), "%Y-%m-%d")
+                .ok()?
+                .and_hms_opt(0, 0, 0),
+            format if !format.contains("%H") => NaiveDate::parse_from_str(value, format)
+                .ok()?
+                .and_hms_opt(0, 0, 0),
+            format => NaiveDateTime::parse_from_str(value, format).ok(),
+        }
+    }
 
-        LOCAL
-            .iter()
-            .find_map(|format| NaiveDateTime::parse_from_str(value, format).ok())
-            .or_else(|| {
-                DATES
-                    .iter()
-                    .find_map(|format| NaiveDate::parse_from_str(value, format).ok())
-                    .or_else(|| match value.len() {
-                        7 => NaiveDate::parse_from_str(&format!("{value}-01"), "%Y-%m-%d").ok(),
-                        4 if value.bytes().all(|b| b.is_ascii_digit()) => {
-                            NaiveDate::from_ymd_opt(value.parse().ok()?, 1, 1)
-                        }
-                        _ => None,
-                    })?
-                    .and_hms_opt(0, 0, 0)
-            })
+    fn split_offset(value: &str) -> Option<(&str, FixedOffset)> {
+        if let Some(local) = value.strip_suffix('Z') {
+            return Some((local, FixedOffset::east_opt(0)?));
+        }
+        let time = value.find('T')?;
+        let sign_at = value[time..].rfind(['+', '-'])? + time;
+        let digits: String = value[sign_at + 1..].chars().filter(|c| *c != ':').collect();
+        let valid = matches!(value.len() - sign_at - 1, 2 | 4 | 5)
+            && matches!(digits.len(), 2 | 4)
+            && digits.bytes().all(|b| b.is_ascii_digit());
+        if !valid {
+            return None;
+        }
+        let hours: i32 = digits[..2].parse().ok()?;
+        let minutes: i32 = match &digits[2..] {
+            "" => 0,
+            minutes => minutes.parse().ok()?,
+        };
+        let sign = if value.as_bytes()[sign_at] == b'-' {
+            -1
+        } else {
+            1
+        };
+        let seconds = sign * (hours * 3600 + minutes * 60);
+        Some((&value[..sign_at], FixedOffset::east_opt(seconds)?))
     }
 
     fn resolve_local(naive: NaiveDateTime, tz: Tz) -> Option<DateTime<Tz>> {
         tz.from_local_datetime(&naive).earliest().or_else(|| {
             let before = tz
-                .from_local_datetime(&(naive - TimeDelta::hours(3)))
+                .from_local_datetime(&naive.checked_sub_signed(TimeDelta::hours(3))?)
                 .earliest()?;
-            Some(tz.from_utc_datetime(&(naive - before.offset().fix())))
+            Some(tz.from_utc_datetime(&naive.checked_sub_offset(before.offset().fix())?))
         })
     }
 
     fn parse_text_in(value: &str, tz: Tz) -> Option<DateTime<Tz>> {
-        parse_offset(value)
-            .map(|date_time| date_time.with_timezone(&tz))
-            .or_else(|| resolve_local(parse_naive(value)?, tz))
+        if let Ok(date_time) = DateTime::parse_from_rfc3339(value) {
+            return Some(date_time.with_timezone(&tz));
+        }
+        if let Some(naive) = LENIENT
+            .iter()
+            .find_map(|format| NaiveDateTime::parse_from_str(value, format).ok())
+            .or_else(|| {
+                NaiveDate::parse_from_str(value, "%Y-%m-%d")
+                    .ok()?
+                    .and_hms_opt(0, 0, 0)
+            })
+        {
+            return resolve_local(naive, tz);
+        }
+        match split_offset(value) {
+            Some((local, offset)) if local.contains('T') => {
+                let naive = parse_shaped(local)?;
+                let utc = naive.checked_sub_offset(offset)?;
+                (utc.year().abs() <= 9999).then(|| tz.from_utc_datetime(&utc))
+            }
+            _ => {
+                let naive = parse_shaped(value)?;
+                (naive.year().abs() <= 9999).then(|| resolve_local(naive, tz))?
+            }
+        }
     }
 
     pub fn parse_text(value: &str) -> Option<DateTime<Tz>> {

@@ -134,8 +134,8 @@ impl SchemaType {
                     .unwrap_or(VariableType::Any),
             )),
             "string" => match DeclaredDates::declared_map(object) {
-                Some(_) => VariableType::Date,
-                None => VariableType::String,
+                true => VariableType::Date,
+                false => VariableType::String,
             },
             "number" | "integer" => VariableType::Number,
             "boolean" => VariableType::Bool,

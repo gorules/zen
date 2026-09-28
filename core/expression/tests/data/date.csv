@@ -28,6 +28,15 @@ d('2023-02-30').isValid();;false
 d('12345').isValid();;false
 d('202310').isValid();;false
 d('hello').isValid();;false
+d('2023105').isValid();;false
+d('2023011').isValid();;false
+d('2023101T1430').isValid();;false
+d('2023 1015').isValid();;false
+d('+2023-1').isValid();;false
+d('2023/1/5 1:2').isValid();;false
+d('2023-10-15T14:30:45  Z').isValid();;false
+d('-262143-01-01T00:00:00Z').isValid();;false
+d('-262143-01-01', 'Asia/Tokyo').isValid();;false
 
 # Offsets keep the instant
 d('2023-10-15T14:30+0200');;'2023-10-15T12:30:00Z'

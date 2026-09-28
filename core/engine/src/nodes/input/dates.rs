@@ -43,39 +43,40 @@ impl DeclaredDates {
             && variants.iter().any(|v| !is_null(v) && Self::declared(v))
     }
 
-    pub(crate) fn convert(value: &Variable, schema: &Value) -> Option<Variable> {
-        if Self::declared(schema) {
+    pub(crate) fn prepare(value: &Variable, schema: Option<&Value>) -> Option<Variable> {
+        if schema.is_some_and(Self::declared) {
             return match value {
                 Variable::String(text) => DateValue::from_text(text),
                 _ => None,
             };
         }
-        let object = schema.as_object()?;
-        if DateValue::is(value) && Self::string_type(object.get("type")) {
-            return Some(Variable::String(value.to_string().into()));
-        }
-        if let Some(properties) = object.get("properties").and_then(Value::as_object) {
-            return Self::rewrite_fields(value, |key, child| {
-                Self::convert(child, properties.get(key)?)
-            });
-        }
-        if let Some(items) = object.get("items") {
-            return Self::rewrite_items(value, |item| Self::convert(item, items));
-        }
-        ["anyOf", "oneOf", "allOf"]
-            .iter()
-            .filter_map(|keyword| object.get(*keyword)?.as_array())
-            .flatten()
-            .find_map(|variant| Self::convert(value, variant))
-    }
-
-    pub(crate) fn stringify(value: &Variable) -> Option<Variable> {
+        let object = schema.and_then(Value::as_object);
         match value {
-            Variable::Dynamic(d) => d.as_text().map(|text| Variable::String(text.into())),
-            Variable::Object(_) => Self::rewrite_fields(value, |_, child| Self::stringify(child)),
-            Variable::Array(_) => Self::rewrite_items(value, Self::stringify),
+            Variable::Dynamic(_) => DateValue::source_text(value),
+            Variable::Object(_) => {
+                let properties = object
+                    .and_then(|o| Self::structure(o, "properties"))
+                    .and_then(Value::as_object);
+                Self::rewrite_fields(value, |key, child| {
+                    Self::prepare(child, properties.and_then(|p| p.get(key)))
+                })
+            }
+            Variable::Array(_) => {
+                let items = object.and_then(|o| Self::structure(o, "items"));
+                Self::rewrite_items(value, |item| Self::prepare(item, items))
+            }
             _ => None,
         }
+    }
+
+    fn structure<'s>(schema: &'s Map<String, Value>, key: &str) -> Option<&'s Value> {
+        schema.get(key).or_else(|| {
+            ["anyOf", "oneOf", "allOf"]
+                .iter()
+                .filter_map(|keyword| schema.get(*keyword)?.as_array())
+                .flatten()
+                .find_map(|variant| variant.get(key))
+        })
     }
 
     pub(crate) fn rewrite_fields(

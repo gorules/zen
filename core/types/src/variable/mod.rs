@@ -116,6 +116,7 @@ impl Variable {
     pub fn as_rc_str(&self) -> Option<Rc<str>> {
         match self {
             Variable::String(s) => Some(Rc::from(s.as_str())),
+            Variable::Dynamic(d) => d.as_text().map(Rc::from),
             _ => None,
         }
     }

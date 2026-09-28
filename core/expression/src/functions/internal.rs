@@ -724,7 +724,11 @@ pub(crate) mod imp {
     }
 
     pub fn to_bool(args: Arguments) -> anyhow::Result<V> {
-        let a = VmDate::textual(args.var(0)?.clone());
+        let a = args.var(0)?;
+        let a = match a.dynamic::<VmDate>().and_then(VmDate::source) {
+            Some(text) => V::String(text.into()),
+            None => a.clone(),
+        };
         let val = match &a {
             V::Null => false,
             V::Bool(v) => *v,

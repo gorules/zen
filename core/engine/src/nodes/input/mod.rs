@@ -17,13 +17,11 @@ impl NodeHandler for InputNodeHandler {
     type TraceData = InputNodeTrace;
 
     async fn handle(&self, ctx: NodeContext<Self::NodeData, Self::TraceData>) -> NodeResult {
-        let Some(json_schema) = &ctx.node.schema else {
-            let output = dates::DeclaredDates::stringify(&ctx.input);
-            return ctx.success(output.unwrap_or_else(|| ctx.input.clone()));
-        };
-        ctx.validate(json_schema, &ctx.input)?;
+        if let Some(json_schema) = &ctx.node.schema {
+            ctx.validate(json_schema, &ctx.input)?;
+        }
 
-        let output = dates::DeclaredDates::convert(&ctx.input, json_schema);
+        let output = dates::DeclaredDates::prepare(&ctx.input, ctx.node.schema.as_deref());
         ctx.success(output.unwrap_or_else(|| ctx.input.clone()))
     }
 }

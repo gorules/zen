@@ -277,6 +277,14 @@ impl VariableType {
             }
             (VariableType::Enum(_, _), VariableType::String)
             | (VariableType::String, VariableType::Enum(_, _)) => VariableType::String,
+            (
+                VariableType::Date,
+                VariableType::String | VariableType::Const(_) | VariableType::Enum(_, _),
+            )
+            | (
+                VariableType::String | VariableType::Const(_) | VariableType::Enum(_, _),
+                VariableType::Date,
+            ) => VariableType::String,
             (_, _) => VariableType::Any,
         };
 

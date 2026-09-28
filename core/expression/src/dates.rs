@@ -10,7 +10,12 @@ impl DateValue {
     }
 
     pub fn is_text(text: &str) -> bool {
-        VmDate::from_text(text).is_some()
+        VmDate::parses(text)
+    }
+
+    pub fn source_text(value: &Variable) -> Option<Variable> {
+        let text = value.dynamic::<VmDate>()?.source()?;
+        Some(Variable::String(text.into()))
     }
 
     pub fn is(value: &Variable) -> bool {

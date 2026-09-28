@@ -6,6 +6,7 @@ use chrono::{DateTime, SecondsFormat, Utc};
 use chrono_tz::Tz;
 use serde_json::Value;
 use std::any::Any;
+use std::cell::OnceCell;
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
@@ -17,7 +18,7 @@ mod duration_parser;
 mod duration_unit;
 
 #[derive(Debug, Clone)]
-pub(crate) struct VmDate(pub Option<DateTime<Tz>>, Option<Rc<str>>);
+pub(crate) struct VmDate(pub Option<DateTime<Tz>>, Option<Rc<str>>, OnceCell<Rc<str>>);
 
 impl PartialEq for VmDate {
     fn eq(&self, other: &Self) -> bool {
@@ -53,7 +54,11 @@ impl DynamicVariable for VmDate {
     }
 
     fn as_text(&self) -> Option<&str> {
-        self.1.as_deref()
+        let date_time = self.0?;
+        Some(self.1.as_deref().unwrap_or_else(|| {
+            self.2
+                .get_or_init(|| date_time.to_rfc3339_opts(SecondsFormat::Secs, true).into())
+        }))
     }
 }
 
@@ -69,7 +74,7 @@ impl Display for VmDate {
 
 impl From<Option<DateTime<Tz>>> for VmDate {
     fn from(value: Option<DateTime<Tz>>) -> Self {
-        Self(value, None)
+        Self(value, None, OnceCell::new())
     }
 }
 
@@ -87,7 +92,8 @@ impl VmDate {
     }
 
     pub fn from_text(text: &str) -> Option<Self> {
-        helper::parse_text(text).map(|date_time| Self(Some(date_time), Some(Rc::from(text))))
+        helper::parse_text(text)
+            .map(|date_time| Self(Some(date_time), Some(Rc::from(text)), OnceCell::new()))
     }
 
     pub fn coerce(value: &Variable) -> Option<Self> {
@@ -96,6 +102,14 @@ impl VmDate {
             Variable::String(text) => Self::from_text(text),
             _ => None,
         }
+    }
+
+    pub fn parses(text: &str) -> bool {
+        helper::parse_text(text).is_some()
+    }
+
+    pub fn source(&self) -> Option<&str> {
+        self.1.as_deref()
     }
 
     pub fn textual(value: Variable) -> Variable {

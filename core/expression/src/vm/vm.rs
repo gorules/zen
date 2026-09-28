@@ -505,12 +505,6 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
 
                             self.push(String((c.as_str()).into()));
                         }
-                        (String(a), Dynamic(b)) if b.as_date().is_some() => {
-                            self.push(String(format!("{a}{b}").into()));
-                        }
-                        (Dynamic(a), String(b)) if a.as_date().is_some() => {
-                            self.push(String(format!("{a}{b}").into()));
-                        }
                         _ => {
                             return Err(OpcodeErr {
                                 opcode: "Add".into(),

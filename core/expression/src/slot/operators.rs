@@ -7,7 +7,6 @@ impl Operators {
     const ORDERED_UNARY: &[&str] = &[">", ">=", "<", "<=", "==", "!=", "in", "not in"];
     const TEXT: &[&str] = &["==", "!=", "in", "not in"];
     const TEXT_UNARY: &[&str] = &["!=", "in", "not in"];
-    const MEMBERSHIP: &[&str] = &["in", "not in"];
     pub(crate) const EQUALITY: &[&str] = &["==", "!="];
     pub(crate) const LOGICAL: &[&str] = &["and", "or"];
 
@@ -47,7 +46,7 @@ impl Operators {
             (VariableType::Enum(..) | VariableType::Const(_) | VariableType::String, false) => {
                 Self::TEXT
             }
-            (VariableType::Array(_), _) => Self::MEMBERSHIP,
+            (VariableType::Array(_), _) => &[],
             (
                 VariableType::Bool
                 | VariableType::Null

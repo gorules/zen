@@ -77,10 +77,38 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
 
     pub fn scan(&mut self) -> LexerResult<()> {
         while let Some(cursor_item) = self.cursor.peek() {
-            self.scan_cursor_item(cursor_item)?;
+            let pushed = self.tokens.len();
+            match self.scan_cursor_item(cursor_item) {
+                Ok(()) => {}
+                Err(_) if self.lenient => {
+                    self.tokens.truncate(pushed);
+                    self.recover(cursor_item.0);
+                }
+                Err(error) => return Err(error),
+            }
         }
 
         Ok(())
+    }
+
+    fn recover(&mut self, start: usize) {
+        let consumed = self
+            .cursor
+            .peek()
+            .map(|(next, _)| next)
+            .unwrap_or(self.source.len());
+        let mut end = consumed.max(start + 1).min(self.source.len());
+        while !self.source.is_char_boundary(end) {
+            end += 1;
+        }
+        while self.cursor.peek().is_some_and(|(next, _)| next < end) {
+            self.cursor.next();
+        }
+        self.push(Token {
+            kind: TokenKind::Operator(Operator::Semi),
+            span: (start as u32, end as u32),
+            value: &self.source[start..end],
+        });
     }
 
     pub(crate) fn scan_cursor_item(&mut self, cursor_item: CursorItem) -> LexerResult<()> {
@@ -210,7 +238,14 @@ impl<'arena, 'self_ref> Scanner<'arena, 'self_ref> {
                 }
                 (_, true) => {
                     self.cursor.back();
-                    self.scan_cursor_item((e, c))?;
+                    let pushed = self.tokens.len();
+                    if let Err(error) = self.scan_cursor_item((e, c)) {
+                        if !self.lenient {
+                            return Err(error);
+                        }
+                        self.tokens.truncate(pushed);
+                        self.recover(e);
+                    }
                 }
             }
         }

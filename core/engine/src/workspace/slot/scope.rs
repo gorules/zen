@@ -2,7 +2,10 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use zen_expression::variable::VariableType;
-use zen_types::decision::{DecisionNodeKind, DecisionTableContent};
+use zen_types::decision::{
+    DecisionNodeKind, DecisionTableContent, DecisionTableHitPolicy, OutputNodeContent,
+    TransformAttributes, TransformExecutionMode,
+};
 
 use super::siblings::SiblingCache;
 use super::CursorScope;
@@ -62,9 +65,14 @@ impl Db {
     ) -> Option<CursorScope> {
         match &cursor.target {
             CursorTarget::DecisionTableHead { col } => {
-                let known = table.inputs.iter().any(|c| c.id == *col)
-                    || table.outputs.iter().any(|c| c.id == *col);
-                known.then(|| CursorScope::path(scope))
+                if table.inputs.iter().any(|c| c.id == *col) {
+                    return Some(CursorScope::value(scope, None));
+                }
+                table
+                    .outputs
+                    .iter()
+                    .any(|c| c.id == *col)
+                    .then(|| CursorScope::path(scope))
             }
             CursorTarget::DecisionTableCell { col, .. } => {
                 if let Some(column) = table.inputs.iter().find(|c| c.id == *col) {
@@ -93,20 +101,16 @@ impl Db {
                             .map(|t| CursorScope::collected_type(t, column.collect))
                     })
                     .or_else(|| {
+                        let is = self.intellisense();
                         cache.infer(cursor, || {
-                            let is = self.intellisense();
-                            table
-                                .rules
-                                .iter()
-                                .filter_map(|rule| {
-                                    let id = rule.get(ROW_ID_KEY)?.clone();
-                                    let t = rule
-                                        .get(col)
-                                        .filter(|cell| !cell.is_empty())
-                                        .map(|cell| Self::return_type(&is, cell, &scope));
-                                    Some((id, t))
-                                })
-                                .collect()
+                            table.rules.iter().filter_map(|rule| {
+                                let id = rule.get(ROW_ID_KEY)?.clone();
+                                let t = rule
+                                    .get(col)
+                                    .filter(|cell| !cell.is_empty())
+                                    .map(|cell| Self::return_type(&is, cell, &scope));
+                                Some((id, t))
+                            })
                         })
                     });
                 Some(CursorScope::value(scope, expected).with_inferred(inferred))
@@ -172,8 +176,8 @@ impl Db {
                 | DecisionNodeKind::DecisionTableNode { .. }
                 | DecisionNodeKind::DecisionNode { .. },
                 CursorTarget::TransformInput,
-            )
-            | (DecisionNodeKind::ExpressionNode { .. }, CursorTarget::ExpressionKey { .. }) => {
+            ) => Some(CursorScope::value(input_scope(), None)),
+            (DecisionNodeKind::ExpressionNode { .. }, CursorTarget::ExpressionKey { .. }) => {
                 Some(CursorScope::path(input_scope()))
             }
             (
@@ -195,6 +199,7 @@ impl Db {
                     .and_then(|row| {
                         self.output_schema_type(
                             content,
+                            &cursor.block_id,
                             &row.key,
                             rows.transform_attributes.output_path.as_deref(),
                         )
@@ -225,9 +230,14 @@ impl Db {
         );
         match &cursor.target {
             CursorTarget::DecisionTableHead { col } => {
-                let known = table.inputs.iter().any(|c| c.id == *col)
-                    || table.outputs.iter().any(|c| c.id == *col);
-                known.then(|| CursorScope::path(scope))
+                if table.inputs.iter().any(|c| c.id == *col) {
+                    return Some(CursorScope::value(scope, None));
+                }
+                table
+                    .outputs
+                    .iter()
+                    .any(|c| c.id == *col)
+                    .then(|| CursorScope::path(scope))
             }
             CursorTarget::DecisionTableCell { col, .. } => {
                 let is = self.graph_intellisense();
@@ -248,6 +258,7 @@ impl Db {
                             .then(|| {
                                 self.output_schema_type(
                                     content,
+                                    &cursor.block_id,
                                     column.field.strip_suffix("[]").unwrap_or(&column.field),
                                     table.transform_attributes.output_path.as_deref(),
                                 )
@@ -260,19 +271,14 @@ impl Db {
                 let inferred = expected.is_none();
                 let expected = expected.or_else(|| {
                     cache.infer(cursor, || {
-                        table
-                            .rules
-                            .iter()
-                            .enumerate()
-                            .map(|(index, rule)| {
-                                let id = GraphAnalyzer::row_key(rule, index);
-                                let t = rule
-                                    .get(col)
-                                    .filter(|cell| !cell.is_empty())
-                                    .map(|cell| Self::return_type(&is, cell, &scope));
-                                (id, t)
-                            })
-                            .collect()
+                        table.rules.iter().enumerate().map(|(index, rule)| {
+                            let id = GraphAnalyzer::row_key(rule, index);
+                            let t = rule
+                                .get(col)
+                                .filter(|cell| !cell.is_empty())
+                                .map(|cell| Self::return_type(&is, cell, &scope));
+                            (id, t)
+                        })
                     })
                 });
                 Some(CursorScope::value(scope, expected).with_inferred(inferred))
@@ -284,20 +290,87 @@ impl Db {
     fn output_schema_type(
         &self,
         content: &GraphContent,
+        node_id: &str,
         key: &str,
         output_path: Option<&str>,
     ) -> Option<VariableType> {
-        let schema = content.nodes.iter().find_map(|node| match &node.kind {
-            DecisionNodeKind::OutputNode { content } => content.schema.as_ref(),
-            _ => None,
-        })?;
         let dictionaries = self.graph_dictionary_types(&content.imports);
-        let output = SchemaType::variable_type_with(schema, &dictionaries);
         let key = match output_path.filter(|p| !p.is_empty()) {
             Some(path) => format!("{path}.{key}"),
             None => key.to_string(),
         };
-        CursorScope::known_type(output.resolve_at(&key))
+        let mut resolved: Option<VariableType> = None;
+        for output in Self::reachable_outputs(content, node_id) {
+            let schema = output.schema.as_ref()?;
+            let found = CursorScope::known_type(
+                SchemaType::variable_type_with(schema, &dictionaries).resolve_at(&key),
+            )?;
+            resolved = match resolved {
+                None => Some(found),
+                Some(existing) => {
+                    let (left, _) = existing.unwrap_nullable();
+                    let (right, _) = found.unwrap_nullable();
+                    if !(left.satisfies(right) && right.satisfies(left)) {
+                        return None;
+                    }
+                    let merged = existing.merge(&found);
+                    match existing.is_nullable() && found.is_nullable() {
+                        true => Some(merged),
+                        false => Some(merged.unwrap_nullable().0.shallow_clone()),
+                    }
+                }
+            };
+        }
+        resolved
+    }
+
+    fn reachable_outputs<'c>(
+        content: &'c GraphContent,
+        node_id: &'c str,
+    ) -> Vec<&'c OutputNodeContent> {
+        let mut visited: Vec<&str> = vec![node_id];
+        let mut queue: Vec<&str> = vec![node_id];
+        let mut outputs = Vec::new();
+        while let Some(current) = queue.pop() {
+            for edge in content
+                .edges
+                .iter()
+                .filter(|e| e.source_id.as_ref() == current)
+            {
+                let Some(target) = content.nodes.iter().find(|n| n.id == edge.target_id) else {
+                    continue;
+                };
+                let passes = match &target.kind {
+                    DecisionNodeKind::OutputNode { content: output } => {
+                        outputs.push(output);
+                        false
+                    }
+                    DecisionNodeKind::SwitchNode { .. } => true,
+                    DecisionNodeKind::ExpressionNode { content: node } => {
+                        Self::passes_through(&node.transform_attributes, false)
+                    }
+                    DecisionNodeKind::DecisionNode { content: node } => {
+                        Self::passes_through(&node.transform_attributes, false)
+                    }
+                    DecisionNodeKind::DecisionTableNode { content: node } => Self::passes_through(
+                        &node.transform_attributes,
+                        node.hit_policy == DecisionTableHitPolicy::Collect,
+                    ),
+                    _ => false,
+                };
+                if passes && !visited.contains(&target.id.as_ref()) {
+                    visited.push(target.id.as_ref());
+                    queue.push(target.id.as_ref());
+                }
+            }
+        }
+        outputs
+    }
+
+    fn passes_through(attributes: &TransformAttributes, collects: bool) -> bool {
+        attributes.pass_through
+            && (attributes.output_path.is_some()
+                || (!collects && attributes.execution_mode == TransformExecutionMode::Single))
     }
 
     fn return_type(

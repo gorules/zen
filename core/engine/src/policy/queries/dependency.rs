@@ -1,13 +1,10 @@
 use std::cell::RefCell;
-use std::cmp::Reverse;
-use std::collections::BinaryHeap;
 use std::rc::Rc;
 use std::sync::Arc;
 
 use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
-use petgraph::algo::tarjan_scc;
+use petgraph::algo::{tarjan_scc, toposort};
 use petgraph::prelude::{NodeIndex, StableDiGraph};
-use petgraph::Direction;
 use zen_expression::variable::VariableType;
 
 use crate::policy::blocks::{
@@ -65,6 +62,7 @@ pub struct EnrichedState {
     owned: RefCell<Vec<VariableType>>,
     write_log: Vec<(PropertyPath, VariableType)>,
     own_writes: HashMap<BlockRef, std::ops::Range<usize>>,
+    dependents: HashMap<BlockRef, HashSet<BlockRef>>,
     block_scopes: RefCell<HashMap<BlockRef, VariableType>>,
 }
 
@@ -87,25 +85,57 @@ impl EnrichedState {
     }
 
     pub(crate) fn scope_excluding(&self, block: &BlockRef) -> VariableType {
-        let Some(own) = self.own_writes.get(block) else {
+        if !self.own_writes.contains_key(block) {
             return self.scope.shallow_clone();
-        };
+        }
         if let Some(cached) = self.block_scopes.borrow().get(block) {
             return cached.shallow_clone();
         }
-        let scope =
-            VariableType::Object(Rc::new(RefCell::new(self.base_fields.clone()))).isolated_clone();
+        let hidden = self.dependents_closure(block);
+        let scope = self.scope.isolated_clone();
         self.owned.borrow_mut().push(scope.shallow_clone());
-        let others = self.write_log[..own.start]
+        let hidden_ranges: Vec<&std::ops::Range<usize>> = hidden
             .iter()
-            .chain(&self.write_log[own.end..]);
-        for (path, resolved_type) in others {
-            scope.insert_at_path(path, &resolved_type.isolated_clone(), true);
+            .filter_map(|b| self.own_writes.get(b))
+            .collect();
+        let mut visible: HashMap<&str, &VariableType> = HashMap::new();
+        let mut hidden_paths: Vec<&str> = Vec::new();
+        for (i, (path, resolved_type)) in self.write_log.iter().enumerate() {
+            if hidden_ranges.iter().any(|r| r.contains(&i)) {
+                hidden_paths.push(path);
+            } else {
+                visible.insert(path, resolved_type);
+            }
+        }
+        for path in hidden_paths {
+            match visible.get(path) {
+                Some(resolved_type) => {
+                    scope.insert_at_path(path, &resolved_type.isolated_clone(), true);
+                }
+                None => match self.declared_at(path) {
+                    VariableType::Null | VariableType::Any => scope.remove_at_path(path),
+                    declared => {
+                        scope.insert_at_path(path, &declared.isolated_clone(), true);
+                    }
+                },
+            }
         }
         self.block_scopes
             .borrow_mut()
             .insert(block.clone(), scope.shallow_clone());
         scope
+    }
+
+    fn dependents_closure(&self, block: &BlockRef) -> HashSet<BlockRef> {
+        let mut seen: HashSet<BlockRef> = HashSet::new();
+        let mut stack = vec![block.clone()];
+        while let Some(current) = stack.pop() {
+            if let Some(next) = self.dependents.get(&current) {
+                stack.extend(next.iter().filter(|b| !seen.contains(*b)).cloned());
+            }
+            seen.insert(current);
+        }
+        seen
     }
 }
 
@@ -121,13 +151,37 @@ pub struct DependencyGraph {
     pub node_map: HashMap<PropertyPath, NodeIndex>,
 }
 
+impl DependencyGraph {
+    fn block_dependents(&self) -> HashMap<BlockRef, HashSet<BlockRef>> {
+        let mut out: HashMap<BlockRef, HashSet<BlockRef>> = HashMap::new();
+        for edge in self.graph.edge_indices() {
+            let Some((from, to)) = self.graph.edge_endpoints(edge) else {
+                continue;
+            };
+            let (Some(writer), Some(reader)) = (
+                self.graph[from].written_by.as_ref(),
+                self.graph[to].written_by.as_ref(),
+            ) else {
+                continue;
+            };
+            if writer != reader
+                && !PathPrefix::extends(&self.graph[to].path, &self.graph[from].path)
+            {
+                out.entry(writer.clone())
+                    .or_default()
+                    .insert(reader.clone());
+            }
+        }
+        out
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct PropertyNode {
     pub path: PropertyPath,
     pub resolved_type: VariableType,
     pub written_by: Option<BlockRef>,
     pub instance_source: Option<InstanceSource>,
-    pub rank: usize,
 }
 
 impl PropertyNode {
@@ -453,15 +507,8 @@ impl Snapshot {
 
         let entity_form_map = EntityForm::new(entity_sources);
         let entity_form = |path: &str| -> Option<String> { entity_form_map.rewrite(path) };
-        let iterated_entity = |path: &str| {
-            path.split_once('.').is_some_and(|(root, _)| {
-                entity_sources
-                    .get(root)
-                    .is_some_and(|src| src.path.as_ref() != root)
-            })
-        };
 
-        for (rank, &rule) in per_rule.iter().enumerate() {
+        for &rule in per_rule {
             for read in &rule.reads {
                 node_map.entry(read.path.clone()).or_insert_with(|| {
                     graph.add_node(PropertyNode {
@@ -469,7 +516,6 @@ impl Snapshot {
                         resolved_type: VariableType::Any,
                         written_by: None,
                         instance_source: None,
-                        rank: 0,
                     })
                 });
             }
@@ -485,7 +531,6 @@ impl Snapshot {
                         resolved_type: write.resolved_type.shallow_clone(),
                         written_by: None,
                         instance_source: None,
-                        rank: 0,
                     })
                 });
 
@@ -501,11 +546,6 @@ impl Snapshot {
                         block_id: rule.block_id.clone(),
                     });
                     node.instance_source = write.instance_source.clone();
-                    node.rank = if iterated_entity(&write.path) {
-                        0
-                    } else {
-                        rank + 1
-                    };
                 }
 
                 let path = write.path.as_ref();
@@ -523,7 +563,6 @@ impl Snapshot {
                             resolved_type: VariableType::Any,
                             written_by: None,
                             instance_source: None,
-                            rank: 0,
                         })
                     });
                     if !writers.contains_key(&prefix_path) {
@@ -535,7 +574,6 @@ impl Snapshot {
                             policy_path: rule.policy_path.clone(),
                             block_id: rule.block_id.clone(),
                         });
-                        graph[anc_idx].rank = rank + 1;
                     }
                     if idx != anc_idx {
                         graph.add_edge(idx, anc_idx, ());
@@ -589,7 +627,7 @@ impl Snapshot {
     }
 
     pub(crate) fn compute_execution_order(graph: &DependencyGraph) -> Vec<PropertyPath> {
-        if let Some(order) = Self::stable_toposort(&graph.graph) {
+        if let Ok(order) = toposort(&graph.graph, None) {
             return order
                 .into_iter()
                 .filter(|idx| graph.graph[*idx].written_by.is_some())
@@ -607,72 +645,6 @@ impl Snapshot {
             out.extend(paths);
         }
         out
-    }
-
-    fn stable_toposort(graph: &StableDiGraph<PropertyNode, ()>) -> Option<Vec<NodeIndex>> {
-        type Ready = BinaryHeap<Reverse<(usize, usize)>>;
-        let policy_of = |idx: NodeIndex| {
-            graph[idx]
-                .written_by
-                .as_ref()
-                .map(|b| b.policy_path.clone())
-        };
-        let mut pending: HashMap<NodeIndex, usize> = HashMap::new();
-        let mut ready: HashMap<Option<Arc<str>>, Ready> = HashMap::new();
-        let enqueue = |ready: &mut HashMap<Option<Arc<str>>, Ready>, idx: NodeIndex| {
-            ready
-                .entry(policy_of(idx))
-                .or_default()
-                .push(Reverse((graph[idx].rank, idx.index())));
-        };
-        for idx in graph.node_indices() {
-            let incoming = graph.edges_directed(idx, Direction::Incoming).count();
-            if incoming == 0 {
-                enqueue(&mut ready, idx);
-            } else {
-                pending.insert(idx, incoming);
-            }
-        }
-        let has_ready = |ready: &HashMap<Option<Arc<str>>, Ready>, key: &Option<Arc<str>>| {
-            ready.get(key).is_some_and(|heap| !heap.is_empty())
-        };
-        let mut current: Option<Arc<str>> = None;
-        let mut order = Vec::with_capacity(graph.node_count());
-        loop {
-            let key = if has_ready(&ready, &None) {
-                None
-            } else if has_ready(&ready, &current) {
-                current.clone()
-            } else {
-                let Some((key, _)) = ready
-                    .iter()
-                    .filter_map(|(key, heap)| heap.peek().map(|head| (key, head.0)))
-                    .min_by_key(|(_, head)| *head)
-                else {
-                    break;
-                };
-                key.clone()
-            };
-            let Some(Reverse((_, index))) = ready.get_mut(&key).and_then(|heap| heap.pop()) else {
-                break;
-            };
-            if key.is_some() {
-                current = key;
-            }
-            let idx = NodeIndex::new(index);
-            order.push(idx);
-            for next in graph.neighbors_directed(idx, Direction::Outgoing) {
-                let Some(count) = pending.get_mut(&next) else {
-                    continue;
-                };
-                *count -= 1;
-                if *count == 0 {
-                    pending.remove(&next);
-                    enqueue(&mut ready, next);
-                }
-            }
-        }
-        (order.len() == graph.node_count()).then_some(order)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -796,6 +768,7 @@ impl Snapshot {
             owned: RefCell::new(owned),
             write_log,
             own_writes,
+            dependents: graph.block_dependents(),
             block_scopes: RefCell::new(HashMap::new()),
         }
     }

@@ -116,7 +116,7 @@ slot = { state = "operator", operators = ["==", "!=", "in", "not in"], span = "5
 
 [[test]]
 expression = "tags |"
-slot = { state = "operator", operators = ["in", "not in"], span = "5..5" }
+slot = { state = "operator", operators = [], span = "5..5" }
 
 [[test]]
 expression = "amount |"

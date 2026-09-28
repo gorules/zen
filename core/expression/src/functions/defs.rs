@@ -260,10 +260,10 @@ impl FunctionDefinition for CompositeFunction {
             return String::from("never");
         }
 
+        let mut seen = HashSet::new();
         possible_types
             .into_iter()
-            .collect::<HashSet<_>>()
-            .into_iter()
+            .filter(|t| seen.insert(t.clone()))
             .collect::<Vec<_>>()
             .join(" | ")
     }

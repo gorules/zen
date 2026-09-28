@@ -703,6 +703,8 @@ pub trait VariableTypeScope {
 
     fn insert_at_path(&self, path: &str, value_type: &VariableType, allow_fill: bool) -> bool;
 
+    fn remove_at_path(&self, path: &str);
+
     fn with_dollar(&self, field_type: &VariableType) -> VariableType;
 
     fn to_acyclic(&self) -> VariableType;
@@ -760,6 +762,25 @@ impl VariableTypeScope for VariableType {
         obj.borrow_mut()
             .insert(Rc::from(final_key), value_type.shallow_clone());
         true
+    }
+
+    fn remove_at_path(&self, path: &str) {
+        let mut chain: Vec<(VariableType, &str)> = Vec::new();
+        let mut current = self.shallow_clone();
+        for segment in path.split('.') {
+            let object = current.unwrap_nullable().0.shallow_clone();
+            if !matches!(object, VariableType::Object(_)) {
+                return;
+            }
+            current = object.get(segment);
+            chain.push((object, segment));
+        }
+        while let Some((VariableType::Object(obj), key)) = chain.pop() {
+            obj.borrow_mut().remove(key);
+            if !obj.borrow().is_empty() {
+                break;
+            }
+        }
     }
 
     fn with_dollar(&self, field_type: &VariableType) -> VariableType {

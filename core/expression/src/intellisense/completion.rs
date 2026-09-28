@@ -69,6 +69,13 @@ impl Completions {
                 items.retain(|item| item.kind != CompletionKind::Method);
                 items
             }
+            SlotState::Path => {
+                let mut items = Self::build_scope(data, &locals);
+                items.retain(|item| {
+                    item.kind != CompletionKind::Function && !item.label.starts_with('$')
+                });
+                items
+            }
             _ => Self::build_scope(data, &locals),
         };
         for item in &mut items {

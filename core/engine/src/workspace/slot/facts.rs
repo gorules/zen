@@ -3,6 +3,7 @@ use std::sync::Arc;
 use serde::Serialize;
 use zen_expression::slot::{Literals, SlotRole, ValueOption};
 use zen_expression::variable::VariableType;
+use zen_types::decision::DecisionNodeKind;
 
 use crate::policy::blocks::ROW_ID_KEY;
 use crate::policy::raw::BlockDoc;
@@ -65,6 +66,7 @@ impl Db {
             let subject_type = scope.subject_type();
             let subject_options = subject_type
                 .as_ref()
+                .filter(|_| site.source.trim().is_empty())
                 .and_then(|t| ValueOption::for_type(t, labels.as_ref()))
                 .unwrap_or_default();
             let literals = intellisense
@@ -187,17 +189,43 @@ impl Db {
         let Some(content) = snap.graphs.get(path).and_then(|doc| doc.as_graph()) else {
             return Vec::new();
         };
+        let empty: Arc<str> = Arc::from("");
         content
             .nodes
             .iter()
             .flat_map(|node| {
-                GraphAnalyzer::node_sites(node)
+                let mut sites: Vec<Site> = GraphAnalyzer::node_sites(node)
                     .into_iter()
-                    .map(move |site| Site {
+                    .map(|site| Site {
                         block_id: node.id.clone(),
                         target: site.target,
                         source: site.source,
                     })
+                    .collect();
+                if let DecisionNodeKind::DecisionTableNode { content: table } = &node.kind {
+                    for (index, rule) in table.rules.iter().enumerate() {
+                        let row = GraphAnalyzer::row_key(rule, index);
+                        let columns = table
+                            .inputs
+                            .iter()
+                            .map(|c| &c.id)
+                            .chain(table.outputs.iter().map(|c| &c.id));
+                        for col in columns {
+                            if rule.get(col).is_some_and(|cell| !cell.is_empty()) {
+                                continue;
+                            }
+                            sites.push(Site {
+                                block_id: node.id.clone(),
+                                target: CursorTarget::DecisionTableCell {
+                                    row: row.clone(),
+                                    col: col.clone(),
+                                },
+                                source: empty.clone(),
+                            });
+                        }
+                    }
+                }
+                sites
             })
             .collect()
     }

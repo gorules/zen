@@ -134,13 +134,13 @@ role = "value"
 expected = ""
 
 [[test]]
-name = "column head is a path"
+name = "input column head is an expression"
 policy = "slots.json"
 block_id = "dt"
 target = "head"
 id = "in_computed"
 kind = "standard"
-role = "path"
+role = "value"
 
 # Policy expression, assertion and match blocks
 
@@ -238,13 +238,13 @@ id = "x"
 # Graph
 
 [[test]]
-name = "graph expression row expects the output schema type"
+name = "graph expression row not wired to an output has no expectation"
 policy = "slots_graph.json"
 block_id = "calc"
 target = "expression"
 id = "row_total"
 role = "value"
-expected = "number"
+expected = ""
 
 [[test]]
 name = "graph expression row outside the schema has no expectation"
@@ -263,11 +263,11 @@ target = "expression_key"
 role = "path"
 
 [[test]]
-name = "graph transform input is a path"
+name = "graph transform input is an expression"
 policy = "slots_graph.json"
 block_id = "calc"
 target = "transform_input"
-role = "path"
+role = "value"
 
 [[test]]
 name = "switch node has no transform input"

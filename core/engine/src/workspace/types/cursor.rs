@@ -5,6 +5,8 @@ use zen_expression::variable::VariableType;
 
 use super::Span;
 
+pub use crate::workspace::slot::SlotRole;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Cursor {
@@ -17,15 +19,29 @@ pub struct Cursor {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum CursorTarget {
-    Expression { id: Arc<str> },
+    Expression {
+        id: Arc<str>,
+    },
     AssertionOutput,
-    ExpressionKey,
+    ExpressionKey {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<Arc<str>>,
+    },
     MatchTarget,
-    MatchValue { id: Arc<str> },
-    DecisionTableHead { col: Arc<str> },
-    DecisionTableCell { row: Arc<str>, col: Arc<str> },
+    MatchValue {
+        id: Arc<str>,
+    },
+    DecisionTableHead {
+        col: Arc<str>,
+    },
+    DecisionTableCell {
+        row: Arc<str>,
+        col: Arc<str>,
+    },
     DataModelName,
-    DataModelProperty { id: Arc<str> },
+    DataModelProperty {
+        id: Arc<str>,
+    },
     TransformInput,
 }
 
@@ -42,6 +58,10 @@ pub struct InspectResult {
     pub span: Span,
     pub kind: VariableType,
     pub label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub info: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

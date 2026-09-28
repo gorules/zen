@@ -175,7 +175,9 @@ name = "callback ref member access in closure"
 expression = "map(items, #.price)"
 input = '{"items": [{"price": 10}]}'
 reads = [
-    { type = "iteration", collection = ["items"], reads = [] },
+    { type = "iteration", collection = ["items"], reads = [
+        { type = "direct", path = ["items", "price"], via_index = true },
+    ] },
 ]
 
 [test.loose]

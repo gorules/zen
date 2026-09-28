@@ -2,6 +2,7 @@ pub(crate) mod db;
 pub(crate) mod editor;
 pub(crate) mod graph;
 pub(crate) mod search;
+pub(crate) mod slot;
 pub(crate) mod types;
 
 use std::sync::Arc;
@@ -10,22 +11,22 @@ use crate::model::DecisionContent;
 use crate::policy::evaluator::EvalArtifact;
 use crate::policy::raw::PolicyDocument;
 use db::Db;
-use zen_expression::nl::NlResult;
 use zen_expression::variable::VariableType;
 
 pub use graph::{
     FunctionResolutionRequest, FunctionTypeResolver, GraphAnalysis, GraphNodeAnalysis,
     GraphSignature, GraphTraceMap,
 };
+pub use slot::{CursorScope, ExpressionFacts, SlotResponse};
 pub use types::{
     BlockExecution, BlockRef, BlockTrace, Completion, ConditionTrace, ConditionalSchema, Cursor,
     CursorTarget, DecisionTableExtras, DependencyNode, Diagnostic, DiagnosticCode,
     DiagnosticLocation, Dictionary, DictionaryEntryInfo, DiscriminantVariant, DiscriminatedUnion,
     EngineEdit, Entity, EntityField, EvaluateRequest, EvaluationError, EvaluationResult,
     ExpressionKind, FieldOrigin, GuardedProperty, InputProperty, InputValidationError,
-    InspectResult, NlExpression, OutputProperty, PrepareRename, PropertyKind, ReferenceKind,
-    ReferenceSite, RenameTarget, SchemaFieldKind, SchemaGroup, ScopeRequest, SearchHit,
-    SearchHitKind, Severity, Span, Trace, WriteConflict, WriteTrace,
+    InspectResult, OutputProperty, PrepareRename, PropertyKind, ReferenceKind, ReferenceSite,
+    RenameTarget, SchemaFieldKind, SchemaGroup, ScopeRequest, SearchHit, SearchHitKind, Severity,
+    SlotRole, Span, Trace, WriteConflict, WriteTrace,
 };
 
 use types::Global;
@@ -185,12 +186,16 @@ impl Workspace {
         self.db.completions(cursor)
     }
 
-    pub fn nl(&self, policy_path: &str) -> Vec<NlExpression> {
-        self.db.nl(policy_path)
+    pub fn cursor_scope(&self, cursor: &Cursor) -> Option<CursorScope> {
+        self.db.cursor_scope(cursor)
     }
 
-    pub fn nl_tokenize(&self, cursor: &Cursor, text: &str) -> Option<NlResult> {
-        self.db.nl_tokenize(cursor, text)
+    pub fn slot(&self, cursor: &Cursor, text: &str) -> Option<SlotResponse> {
+        self.db.slot(cursor, text)
+    }
+
+    pub fn facts(&self, policy_path: &str) -> Vec<ExpressionFacts> {
+        self.db.facts(policy_path)
     }
 
     pub fn prepare_rename(&self, cursor: &Cursor) -> Option<PrepareRename> {
@@ -205,6 +210,23 @@ impl Workspace {
         self.db.references(target)
     }
 
+    pub fn rename_from(
+        &self,
+        target: &RenameTarget,
+        new_name: &str,
+        origin: Option<&str>,
+    ) -> Vec<EngineEdit> {
+        self.db.rename_from(target, new_name, origin)
+    }
+
+    pub fn references_from(
+        &self,
+        target: &RenameTarget,
+        origin: Option<&str>,
+    ) -> Vec<ReferenceSite> {
+        self.db.references_from(target, origin)
+    }
+
     pub fn search(&self, query: &str, limit: Option<u32>) -> Vec<SearchHit> {
         self.db.search(query, limit)
     }
@@ -214,7 +236,7 @@ impl Workspace {
     }
 
     pub fn dependencies(&self, target: &str) -> DependencyNode {
-        self.db.dependencies(target)
+        self.db.dependencies(target, None)
     }
 
     pub fn dependencies_scoped(&self, target: &str, document: Option<&str>) -> DependencyNode {
@@ -224,7 +246,7 @@ impl Workspace {
                 return self.db.graph_dependencies(&doc_arc, target);
             }
         }
-        self.db.dependencies(target)
+        self.db.dependencies(target, document)
     }
 }
 

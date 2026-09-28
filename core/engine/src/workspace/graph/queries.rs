@@ -8,12 +8,9 @@ use crate::workspace::db::{Db, DictionaryUnitEntry};
 use crate::workspace::graph::analysis::{
     GraphAnalysis, GraphAnalyzer, GraphSignature, SignatureResolution,
 };
-use zen_types::decision::DecisionNodeKind;
 
 use crate::policy::queries::scope::VariableTypeScope;
-use crate::workspace::types::{
-    Cursor, CursorTarget, InputProperty, OutputProperty, PropertyKind, ScopeRequest,
-};
+use crate::workspace::types::{InputProperty, OutputProperty, PropertyKind, ScopeRequest};
 
 impl Db {
     pub(crate) fn graph_analysis(&self, path: &Arc<str>) -> Option<Arc<GraphAnalysis>> {
@@ -186,21 +183,6 @@ impl Db {
             .collect();
         properties.sort_by(|a, b| a.path.cmp(&b.path));
         properties
-    }
-
-    pub(crate) fn graph_cell_expected(&self, cursor: &Cursor) -> Option<VariableType> {
-        let snap = self.snapshot();
-        let doc = snap.graphs.get(&cursor.policy_path)?.clone();
-        let content = doc.as_graph()?;
-        let node = content.nodes.iter().find(|n| n.id == cursor.block_id)?;
-        let DecisionNodeKind::DecisionTableNode { content } = &node.kind else {
-            return None;
-        };
-        let CursorTarget::DecisionTableCell { col, .. } = &cursor.target else {
-            return None;
-        };
-        let dictionaries = self.graph_dictionary_types(&doc.as_graph()?.imports);
-        GraphAnalyzer::output_expected(content, col, &dictionaries)
     }
 
     pub(crate) fn graph_unchecked_nodes(&self, path: &str) -> Vec<Arc<str>> {

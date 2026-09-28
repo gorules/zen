@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -7,12 +8,12 @@ use petgraph::prelude::{NodeIndex, StableDiGraph};
 use zen_expression::variable::VariableType;
 
 use crate::policy::blocks::{
-    AnalysisContext, AnalysisSummary, Block, InstanceSource, PropertyRead, SharedDictionaryTypes,
-    SharedIntelliSense, SharedPoisonedPaths, WriteTarget,
+    AnalysisContext, AnalysisSummary, Block, InstanceSource, PropertyRead, SharedDeclaredPaths,
+    SharedDictionaryTypes, SharedIntelliSense, SharedPoisonedPaths, WriteTarget,
 };
 use crate::policy::ir::{DataModelIr, ParsedPolicy, PropertyPath};
 use crate::policy::queries::path::{PathClassifier, PathRoot};
-use crate::policy::queries::scope::{EntityForm, VariableTypeScope};
+use crate::policy::queries::scope::{EntityForm, EntityGraph, EntitySources, VariableTypeScope};
 use crate::workspace::db::{AnalysisPass, PolicyDerivedCache, Snapshot};
 use crate::workspace::types::{BlockRef, Diagnostic, DiagnosticCode, DiagnosticLocation};
 
@@ -57,6 +58,85 @@ pub struct EnrichedState {
     pub scope: VariableType,
     pub per_rule: Vec<RuleEnrichedAnalysis>,
     pub diagnostics: Vec<Diagnostic>,
+    base_fields: HashMap<Rc<str>, VariableType>,
+    owned: RefCell<Vec<VariableType>>,
+    write_log: Vec<(PropertyPath, VariableType)>,
+    own_writes: HashMap<BlockRef, std::ops::Range<usize>>,
+    dependents: HashMap<BlockRef, HashSet<BlockRef>>,
+    block_scopes: RefCell<HashMap<BlockRef, VariableType>>,
+}
+
+impl Drop for EnrichedState {
+    fn drop(&mut self) {
+        for root in self.owned.borrow().iter() {
+            root.break_cycles();
+        }
+    }
+}
+
+impl EnrichedState {
+    pub(crate) fn declared_at(&self, path: &str) -> VariableType {
+        let (root, rest) = path.split_once('.').unwrap_or((path, ""));
+        match self.base_fields.get(root) {
+            Some(kind) if rest.is_empty() => kind.shallow_clone(),
+            Some(kind) => kind.resolve_at(rest),
+            None => VariableType::Null,
+        }
+    }
+
+    pub(crate) fn scope_excluding(&self, block: &BlockRef) -> VariableType {
+        if !self.own_writes.contains_key(block) {
+            return self.scope.shallow_clone();
+        }
+        if let Some(cached) = self.block_scopes.borrow().get(block) {
+            return cached.shallow_clone();
+        }
+        let hidden = self.dependents_closure(block);
+        let scope = self.scope.isolated_clone();
+        self.owned.borrow_mut().push(scope.shallow_clone());
+        let hidden_ranges: Vec<&std::ops::Range<usize>> = hidden
+            .iter()
+            .filter_map(|b| self.own_writes.get(b))
+            .collect();
+        let mut visible: HashMap<&str, &VariableType> = HashMap::new();
+        let mut hidden_paths: Vec<&str> = Vec::new();
+        for (i, (path, resolved_type)) in self.write_log.iter().enumerate() {
+            if hidden_ranges.iter().any(|r| r.contains(&i)) {
+                hidden_paths.push(path);
+            } else {
+                visible.insert(path, resolved_type);
+            }
+        }
+        for path in hidden_paths {
+            match visible.get(path) {
+                Some(resolved_type) => {
+                    scope.insert_at_path(path, &resolved_type.isolated_clone(), true);
+                }
+                None => match self.declared_at(path) {
+                    VariableType::Null | VariableType::Any => scope.remove_at_path(path),
+                    declared => {
+                        scope.insert_at_path(path, &declared.isolated_clone(), true);
+                    }
+                },
+            }
+        }
+        self.block_scopes
+            .borrow_mut()
+            .insert(block.clone(), scope.shallow_clone());
+        scope
+    }
+
+    fn dependents_closure(&self, block: &BlockRef) -> HashSet<BlockRef> {
+        let mut seen: HashSet<BlockRef> = HashSet::new();
+        let mut stack = vec![block.clone()];
+        while let Some(current) = stack.pop() {
+            if let Some(next) = self.dependents.get(&current) {
+                stack.extend(next.iter().filter(|b| !seen.contains(*b)).cloned());
+            }
+            seen.insert(current);
+        }
+        seen
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -69,6 +149,67 @@ pub struct RuleEnrichedAnalysis {
 pub struct DependencyGraph {
     pub graph: StableDiGraph<PropertyNode, ()>,
     pub node_map: HashMap<PropertyPath, NodeIndex>,
+}
+
+impl DependencyGraph {
+    pub(crate) fn link_instance_reads(
+        &mut self,
+        per_rule: &[&RuleShallowAnalysis],
+        entity_graph: &EntityGraph,
+        entity_sources: &EntitySources,
+    ) {
+        let entity_form = EntityForm::new(entity_sources);
+        for rule in per_rule {
+            let writes: Vec<NodeIndex> = rule
+                .writes
+                .iter()
+                .filter_map(|w| self.node_map.get(&w.path).copied())
+                .collect();
+            for read in &rule.reads {
+                let Some((prefix, entity)) = entity_graph.instance_form(&read.path, &entity_form)
+                else {
+                    continue;
+                };
+                let Some(entity_idx) = self
+                    .node_map
+                    .get(entity.as_str())
+                    .copied()
+                    .filter(|&idx| self.graph[idx].written_by.is_some())
+                else {
+                    continue;
+                };
+                let list = self.node_map.get(prefix).copied();
+                for &target in writes.iter().chain(list.as_ref()) {
+                    if entity_idx != target && !self.graph.contains_edge(entity_idx, target) {
+                        self.graph.add_edge(entity_idx, target, ());
+                    }
+                }
+            }
+        }
+    }
+
+    fn block_dependents(&self) -> HashMap<BlockRef, HashSet<BlockRef>> {
+        let mut out: HashMap<BlockRef, HashSet<BlockRef>> = HashMap::new();
+        for edge in self.graph.edge_indices() {
+            let Some((from, to)) = self.graph.edge_endpoints(edge) else {
+                continue;
+            };
+            let (Some(writer), Some(reader)) = (
+                self.graph[from].written_by.as_ref(),
+                self.graph[to].written_by.as_ref(),
+            ) else {
+                continue;
+            };
+            if writer != reader
+                && !PathPrefix::extends(&self.graph[to].path, &self.graph[from].path)
+            {
+                out.entry(writer.clone())
+                    .or_default()
+                    .insert(reader.clone());
+            }
+        }
+        out
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -300,6 +441,7 @@ impl EvalGraph {
 }
 
 impl Snapshot {
+    #[allow(clippy::too_many_arguments)]
     fn analyze_block(
         rule: &Block,
         policy_path: &Arc<str>,
@@ -308,6 +450,7 @@ impl Snapshot {
         intellisense: &SharedIntelliSense,
         dictionary_types: &SharedDictionaryTypes,
         poisoned_paths: &SharedPoisonedPaths,
+        declared_paths: &SharedDeclaredPaths,
     ) -> AnalysisSummary {
         let mut ctx = AnalysisContext::new(
             rule_scope,
@@ -317,6 +460,7 @@ impl Snapshot {
             pass,
             dictionary_types.clone(),
             poisoned_paths.clone(),
+            declared_paths.clone(),
         );
         rule.kind.analyze(&mut ctx);
         ctx.finish()
@@ -339,6 +483,7 @@ impl Snapshot {
 
             let no_dictionaries: SharedDictionaryTypes = Rc::new(ahash::HashMap::default());
             let no_poison: SharedPoisonedPaths = Default::default();
+            let no_declared: SharedDeclaredPaths = Default::default();
             let policy_shallow = cache.shallow_or_compute(path, p, || {
                 p.policy
                     .rules()
@@ -351,6 +496,7 @@ impl Snapshot {
                             intellisense,
                             &no_dictionaries,
                             &no_poison,
+                            &no_declared,
                         );
                         RuleShallowAnalysis {
                             policy_path: path.clone(),
@@ -537,8 +683,10 @@ impl Snapshot {
         out
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn compute_enriched(
         base_scope: &VariableType,
+        scope_roots: Rc<RefCell<Vec<VariableType>>>,
         graph: &DependencyGraph,
         order: &[PropertyPath],
         rule_by_ref: &HashMap<BlockRef, Arc<Block>>,
@@ -546,8 +694,17 @@ impl Snapshot {
         members: &HashSet<Arc<str>>,
         intellisense: &SharedIntelliSense,
         dictionary_types: SharedDictionaryTypes,
+        declared_paths: SharedDeclaredPaths,
     ) -> EnrichedState {
-        let scope = base_scope.shallow_clone();
+        let scope = base_scope.isolated_clone();
+        scope_roots.borrow_mut().push(scope.shallow_clone());
+        let base_fields = match base_scope {
+            VariableType::Object(obj) => obj.borrow().clone(),
+            _ => HashMap::new(),
+        };
+        let mut write_log: Vec<(PropertyPath, VariableType)> = Vec::new();
+        let mut owned: Vec<VariableType> = Vec::new();
+        let mut own_writes: HashMap<BlockRef, std::ops::Range<usize>> = HashMap::new();
         let mut per_rule: Vec<RuleEnrichedAnalysis> = Vec::new();
         let mut diagnostics: Vec<Diagnostic> = Vec::new();
 
@@ -594,6 +751,7 @@ impl Snapshot {
                 continue;
             };
             let policy_path = &key.policy_path;
+            let start = write_log.len();
             let summary = Self::analyze_block(
                 rule,
                 policy_path,
@@ -602,10 +760,22 @@ impl Snapshot {
                 intellisense,
                 &dictionary_types,
                 &poisoned_paths,
+                &declared_paths,
             );
+            for tw in &summary.writes {
+                if declared_paths.matches_prefix(&tw.path).is_none() {
+                    let frozen = tw.resolved_type.isolated_clone();
+                    owned.push(frozen.shallow_clone());
+                    write_log.push((tw.path.clone(), frozen));
+                }
+            }
+            own_writes.insert(key.clone(), start..write_log.len());
 
             if splice {
                 for tw in &summary.writes {
+                    if declared_paths.matches_prefix(&tw.path).is_some() {
+                        continue;
+                    }
                     if !scope.insert_at_path(&tw.path, &tw.resolved_type, true) {
                         diagnostics.push(Diagnostic::error(
                             DiagnosticCode::InvalidWritePath,
@@ -630,6 +800,12 @@ impl Snapshot {
             scope,
             per_rule,
             diagnostics,
+            base_fields,
+            owned: RefCell::new(owned),
+            write_log,
+            own_writes,
+            dependents: graph.block_dependents(),
+            block_scopes: RefCell::new(HashMap::new()),
         }
     }
 }
@@ -645,7 +821,7 @@ impl PathPrefix {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct DataModelPaths {
     all: HashSet<PropertyPath>,
     optional: HashSet<PropertyPath>,

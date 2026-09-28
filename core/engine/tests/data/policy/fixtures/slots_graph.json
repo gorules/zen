@@ -1,0 +1,216 @@
+{
+  "imports": [
+    "slots_graph_dicts.json"
+  ],
+  "nodes": [
+    {
+      "id": "in",
+      "name": "in",
+      "type": "inputNode",
+      "content": {
+        "schema": "{\"type\": \"object\", \"properties\": {\"age\": {\"type\": \"number\"}, \"name\": {\"type\": \"string\"}}, \"required\": [\"age\", \"name\"]}"
+      }
+    },
+    {
+      "id": "calc",
+      "name": "calc",
+      "type": "expressionNode",
+      "content": {
+        "passThrough": true,
+        "expressions": [
+          {
+            "id": "row_total",
+            "key": "total",
+            "value": "age * 2"
+          },
+          {
+            "id": "row_vip",
+            "key": "vip",
+            "value": "age > 60"
+          },
+          {
+            "id": "row_extra",
+            "key": "extra",
+            "value": "name"
+          }
+        ]
+      }
+    },
+    {
+      "id": "sw",
+      "name": "sw",
+      "type": "switchNode",
+      "content": {
+        "statements": [
+          {
+            "id": "s1",
+            "condition": "age > 18"
+          }
+        ]
+      }
+    },
+    {
+      "id": "dt",
+      "name": "dt",
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "inputs": [
+          {
+            "id": "c_field",
+            "name": "Age",
+            "field": "age"
+          },
+          {
+            "id": "c_condition",
+            "name": "Condition"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o_dict",
+            "name": "Tier",
+            "field": "tier",
+            "type": "customerTier"
+          },
+          {
+            "id": "o_plain",
+            "name": "Score",
+            "field": "score"
+          },
+          {
+            "id": "o_schema",
+            "name": "Total",
+            "field": "total"
+          },
+          {
+            "id": "o_schema_dict",
+            "name": "Level",
+            "field": "level"
+          }
+        ],
+        "rules": [
+          {
+            "_id": "r1",
+            "c_field": "> 18",
+            "c_condition": "age > 1",
+            "o_dict": "'VIP'",
+            "o_plain": "1",
+            "o_schema": "",
+            "o_schema_dict": ""
+          },
+          {
+            "_id": "r2",
+            "c_field": "",
+            "c_condition": "",
+            "o_dict": "'STD'",
+            "o_plain": "2",
+            "o_schema": "",
+            "o_schema_dict": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": "dt_untyped",
+      "name": "dt_untyped",
+      "type": "decisionTableNode",
+      "content": {
+        "hitPolicy": "first",
+        "inputs": [
+          {
+            "id": "u_age",
+            "name": "Age",
+            "field": "age"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "o_bool",
+            "name": "Triggered",
+            "field": "triggered"
+          },
+          {
+            "id": "o_str",
+            "name": "Bucket",
+            "field": "bucket"
+          },
+          {
+            "id": "o_mixed",
+            "name": "Mixed",
+            "field": "mixed"
+          }
+        ],
+        "rules": [
+          {
+            "_id": "u1",
+            "u_age": "> 18",
+            "o_bool": "false",
+            "o_str": "'a'",
+            "o_mixed": "true"
+          },
+          {
+            "_id": "u2",
+            "u_age": "> 60",
+            "o_bool": "true",
+            "o_str": "'b'",
+            "o_mixed": "'x'"
+          },
+          {
+            "_id": "u3",
+            "u_age": "",
+            "o_bool": "",
+            "o_str": "",
+            "o_mixed": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": "out",
+      "name": "out",
+      "type": "outputNode",
+      "content": {
+        "schema": "{\"type\": \"object\", \"properties\": {\"total\": {\"type\": \"number\"}, \"vip\": {\"type\": \"boolean\"}, \"level\": {\"$dictionary\": \"customerTier\"}}, \"required\": [\"total\", \"vip\", \"level\"]}"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "sourceId": "in",
+      "targetId": "calc",
+      "sourceHandle": null
+    },
+    {
+      "id": "e2",
+      "sourceId": "calc",
+      "targetId": "sw",
+      "sourceHandle": null
+    },
+    {
+      "id": "e3",
+      "sourceId": "sw",
+      "targetId": "dt",
+      "sourceHandle": null
+    },
+    {
+      "id": "e4",
+      "sourceId": "dt",
+      "targetId": "out",
+      "sourceHandle": null
+    },
+    {
+      "id": "e5",
+      "sourceId": "sw",
+      "targetId": "dt_untyped",
+      "sourceHandle": null
+    },
+    {
+      "id": "e6",
+      "sourceId": "dt_untyped",
+      "targetId": "out",
+      "sourceHandle": null
+    }
+  ]
+}

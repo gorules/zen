@@ -4,6 +4,7 @@ use zen_expression::intellisense::dependency::{ReadDependency, Reference};
 
 use zen_expression::intellisense::diagnostic::{DiagnosticSource, Severity};
 use zen_expression::intellisense::{ExpressionAnalysis, IntelliSense};
+use zen_expression::slot::SlotRole;
 use zen_expression::variable::VariableType;
 
 #[derive(Debug, Deserialize)]
@@ -60,6 +61,9 @@ struct ModeExpectations {
 struct ExpectedDiagnostic {
     source: String,
     severity: String,
+    code: Option<String>,
+    #[serde(default)]
+    args: std::collections::BTreeMap<String, String>,
 }
 
 fn parse_data_type(test: &TestCase) -> VariableType {
@@ -310,15 +314,23 @@ fn check_diagnostics(
         let expected_source = parse_diagnostic_source(&expected.source);
         let expected_severity = parse_severity(&expected.severity);
 
-        let matching = result
-            .diagnostics
-            .iter()
-            .any(|d| d.source == expected_source && d.severity == expected_severity);
+        let matching = result.diagnostics.iter().any(|d| {
+            d.source == expected_source
+                && d.severity == expected_severity
+                && expected
+                    .code
+                    .as_deref()
+                    .is_none_or(|code| d.code == Some(code))
+                && expected
+                    .args
+                    .iter()
+                    .all(|(k, v)| d.args.get(k.as_str()) == Some(v))
+        });
 
         assert!(
             matching,
-            "[{file_name}:{}:{mode}] Diagnostic #{i} not found: expected source={}, severity={}.\n  Expression: {}\n  Got diagnostics: {:?}",
-            test.name, expected.source, expected.severity, test.expression, result.diagnostics
+            "[{file_name}:{}:{mode}] Diagnostic #{i} not found: expected source={}, severity={}, code={:?}, args={:?}.\n  Expression: {}\n  Got diagnostics: {:?}",
+            test.name, expected.source, expected.severity, expected.code, expected.args, test.expression, result.diagnostics
         );
     }
 }
@@ -440,6 +452,9 @@ struct InspectTestCase {
     input: Option<String>,
     label: Option<String>,
     kind: Option<String>,
+    detail: Option<String>,
+    #[serde(default)]
+    unary: bool,
 }
 
 fn run_inspect_test_file(file_name: &str, toml_data: &str) {
@@ -459,9 +474,14 @@ fn run_inspect_test_file(file_name: &str, toml_data: &str) {
             None => VariableType::Any,
         };
 
-        let result = is.inspect(&test.expression, test.pos, &data_type);
+        let role = if test.unary {
+            SlotRole::Unary
+        } else {
+            SlotRole::Value
+        };
+        let result = is.inspect(&test.expression, test.pos, test.unary, role, &data_type);
 
-        if test.label.is_some() || test.kind.is_some() {
+        if test.label.is_some() || test.kind.is_some() || test.detail.is_some() {
             let result = result.unwrap_or_else(|| {
                 panic!(
                     "[{file_name}:{}] Expected inspect result, got None.\n  Expression: {:?} @ pos {}",
@@ -489,6 +509,20 @@ fn run_inspect_test_file(file_name: &str, toml_data: &str) {
                     result.kind, expected,
                     "[{file_name}:{}] kind mismatch.\n  Expression: {:?} @ pos {}",
                     test.name, test.expression, test.pos
+                );
+            }
+
+            if let Some(expected_detail) = &test.detail {
+                assert!(
+                    result
+                        .detail
+                        .as_deref()
+                        .is_some_and(|detail| detail.starts_with(expected_detail.as_str())),
+                    "[{file_name}:{}] detail mismatch: {:?}.\n  Expression: {:?} @ pos {}",
+                    test.name,
+                    result.detail,
+                    test.expression,
+                    test.pos
                 );
             }
         }

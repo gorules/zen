@@ -197,6 +197,7 @@ impl FunctionDefinition for CompositeFunction {
             .collect::<Vec<_>>()
             .join("\n");
         typecheck.general = Some(format!("No function overload matches provided arguments. Available overloads:\n{available_signatures}"));
+        typecheck.return_type = self.return_type();
 
         typecheck
     }
@@ -225,10 +226,10 @@ impl FunctionDefinition for CompositeFunction {
         }
 
         let is_optional = possible_types.len() != self.signatures.len();
+        let mut seen = HashSet::new();
         let possible_types: Vec<String> = possible_types
             .into_iter()
-            .collect::<HashSet<_>>()
-            .into_iter()
+            .filter(|t| seen.insert(t.clone()))
             .collect();
 
         let type_union = possible_types.join(" | ");
@@ -259,10 +260,10 @@ impl FunctionDefinition for CompositeFunction {
             return String::from("never");
         }
 
+        let mut seen = HashSet::new();
         possible_types
             .into_iter()
-            .collect::<HashSet<_>>()
-            .into_iter()
+            .filter(|t| seen.insert(t.clone()))
             .collect::<Vec<_>>()
             .join(" | ")
     }

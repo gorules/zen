@@ -96,6 +96,20 @@ pub struct EntityGraph {
 }
 
 impl EntityGraph {
+    pub(crate) fn instance_form<'p>(
+        &self,
+        path: &'p str,
+        entity_form: &EntityForm,
+    ) -> Option<(&'p str, String)> {
+        let (prefix, rest) = path
+            .match_indices('.')
+            .map(|(dot, _)| (&path[..dot], &path[dot + 1..]))
+            .rev()
+            .find(|(prefix, _)| self.computed.contains_key(*prefix))?;
+        let entity = format!("{}.{rest}", self.computed[prefix].target);
+        Some((prefix, entity_form.rewrite(&entity).unwrap_or(entity)))
+    }
+
     pub fn contains(&self, name: &str) -> bool {
         self.models.contains_key(name)
     }
@@ -703,9 +717,13 @@ pub trait VariableTypeScope {
 
     fn insert_at_path(&self, path: &str, value_type: &VariableType, allow_fill: bool) -> bool;
 
+    fn remove_at_path(&self, path: &str);
+
     fn with_dollar(&self, field_type: &VariableType) -> VariableType;
 
     fn to_acyclic(&self) -> VariableType;
+
+    fn isolated_clone(&self) -> VariableType;
 
     fn break_cycles(&self);
 }
@@ -760,6 +778,25 @@ impl VariableTypeScope for VariableType {
         true
     }
 
+    fn remove_at_path(&self, path: &str) {
+        let mut chain: Vec<(VariableType, &str)> = Vec::new();
+        let mut current = self.shallow_clone();
+        for segment in path.split('.') {
+            let object = current.unwrap_nullable().0.shallow_clone();
+            if !matches!(object, VariableType::Object(_)) {
+                return;
+            }
+            current = object.get(segment);
+            chain.push((object, segment));
+        }
+        while let Some((VariableType::Object(obj), key)) = chain.pop() {
+            obj.borrow_mut().remove(key);
+            if chain.len() < 2 || !obj.borrow().is_empty() {
+                break;
+            }
+        }
+    }
+
     fn with_dollar(&self, field_type: &VariableType) -> VariableType {
         let VariableType::Object(ref obj) = self else {
             return self.shallow_clone();
@@ -767,6 +804,32 @@ impl VariableTypeScope for VariableType {
         let mut fields: HashMap<Rc<str>, VariableType> = obj.borrow().clone();
         fields.insert(Variable::dollar_key_rc(), field_type.shallow_clone());
         VariableType::Object(Rc::new(RefCell::new(fields)))
+    }
+
+    fn isolated_clone(&self) -> VariableType {
+        fn copy(t: &VariableType, memo: &mut HashMap<*const (), VariableType>) -> VariableType {
+            match t {
+                VariableType::Object(obj) => {
+                    let key = Rc::as_ptr(obj) as *const ();
+                    if let Some(cached) = memo.get(&key) {
+                        return cached.shallow_clone();
+                    }
+                    let result = VariableType::empty_object();
+                    memo.insert(key, result.shallow_clone());
+                    let VariableType::Object(fields) = &result else {
+                        unreachable!()
+                    };
+                    for (key, value) in obj.borrow().iter() {
+                        fields.borrow_mut().insert(key.clone(), copy(value, memo));
+                    }
+                    result
+                }
+                VariableType::Array(inner) => copy(inner, memo).array(),
+                VariableType::Nullable(inner) => VariableType::Nullable(Rc::new(copy(inner, memo))),
+                other => other.shallow_clone(),
+            }
+        }
+        copy(self, &mut HashMap::default())
     }
 
     fn to_acyclic(&self) -> VariableType {

@@ -570,14 +570,15 @@ impl<'a> Driver<'a> {
         iter_path: &Arc<str>,
         owner_name: Option<&str>,
     ) -> Result<(), EvaluationError> {
-        let Some(arr) = self
-            .store
-            .dot(iter_path.as_ref())
-            .and_then(|v| v.as_array())
-        else {
+        let Some(target) = self.store.dot(iter_path.as_ref()) else {
             return Ok(());
         };
-        let instances: Vec<Variable> = arr.borrow().iter().map(|v| v.shallow_clone()).collect();
+        let single = target.as_object().is_some();
+        let instances: Vec<Variable> = match target.as_array() {
+            Some(arr) => arr.borrow().iter().map(|v| v.shallow_clone()).collect(),
+            None if single => vec![target.shallow_clone()],
+            None => return Ok(()),
+        };
         let owner_binding = owner_name.and_then(|name| {
             let owner_path = iter_path.rsplit_once('.').map(|(o, _)| o)?;
             self.store
@@ -664,7 +665,10 @@ impl<'a> Driver<'a> {
                 self.executions.push(BlockExecution {
                     block_id: rule.id.clone(),
                     policy_path: trace_policy_path.clone(),
-                    instance_path: Some(format!("{iter_path}.{idx}").into()),
+                    instance_path: Some(match single {
+                        true => iter_path.clone(),
+                        false => format!("{iter_path}.{idx}").into(),
+                    }),
                     trace: bt,
                     operand_values,
                     writes: write_log.map(RefCell::into_inner).unwrap_or_default(),

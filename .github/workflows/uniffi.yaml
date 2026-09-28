@@ -744,8 +744,10 @@ jobs:
           java-version: '17'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v2
+        uses: android-actions/setup-android@v3
         id: setup-android
+        with:
+          packages: 'platform-tools'
 
       - name: Download Kotlin bindings
         uses: actions/download-artifact@v4

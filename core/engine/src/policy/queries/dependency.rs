@@ -11,7 +11,7 @@ use crate::policy::blocks::{
     AnalysisContext, AnalysisSummary, Block, InstanceSource, PropertyRead, SharedDeclaredPaths,
     SharedDictionaryTypes, SharedIntelliSense, SharedPoisonedPaths, WriteTarget,
 };
-use crate::policy::ir::{DataModelIr, ParsedPolicy, PropertyPath};
+use crate::policy::ir::{DataModelIr, ParsedPolicy, PropertyPath, PropertyTypeIr};
 use crate::policy::queries::path::{PathClassifier, PathRoot};
 use crate::policy::queries::scope::{EntityForm, EntityGraph, EntitySources, VariableTypeScope};
 use crate::workspace::db::{AnalysisPass, PolicyDerivedCache, Snapshot};
@@ -410,11 +410,20 @@ impl EvalGraph {
     ) -> HashSet<Arc<str>> {
         self.reachable_from(goals)
             .into_iter()
-            .filter(|p| match self.writers.get(p.as_ref()) {
-                None => true,
-                Some(owner) => !visible.contains(&owner.policy_path),
-            })
+            .filter(|p| !self.written_at(p, visible))
             .collect()
+    }
+
+    pub(crate) fn written_at(&self, path: &str, visible: &HashSet<Arc<str>>) -> bool {
+        let written = |path: &str| {
+            self.writers
+                .get(path)
+                .is_some_and(|owner| visible.contains(&owner.policy_path))
+        };
+        written(path)
+            || path
+                .match_indices('.')
+                .any(|(index, _)| written(&path[..index]))
     }
 
     pub fn terminal_sinks(&self, visible: &HashSet<Arc<str>>) -> Vec<Arc<str>> {
@@ -825,12 +834,14 @@ impl PathPrefix {
 pub struct DataModelPaths {
     all: HashSet<PropertyPath>,
     optional: HashSet<PropertyPath>,
+    targets: HashMap<PropertyPath, Arc<str>>,
 }
 
 impl DataModelPaths {
     pub(crate) fn from_models<'a>(models: impl IntoIterator<Item = &'a DataModelIr>) -> Self {
         let mut all = HashSet::default();
         let mut optional = HashSet::default();
+        let mut targets = HashMap::default();
         for dm in models {
             let is_global = dm.scope.is_global();
             for prop in &dm.properties {
@@ -842,10 +853,19 @@ impl DataModelPaths {
                 if prop.optional {
                     optional.insert(path.clone());
                 }
+                if let PropertyTypeIr::Relationship { target }
+                | PropertyTypeIr::Reference { target } = &prop.kind
+                {
+                    targets.insert(path.clone(), target.clone());
+                }
                 all.insert(path);
             }
         }
-        Self { all, optional }
+        Self {
+            all,
+            optional,
+            targets,
+        }
     }
 
     pub fn matches_prefix(&self, write_path: &str) -> Option<&PropertyPath> {
@@ -857,8 +877,24 @@ impl DataModelPaths {
             .find(|p| PathPrefix::extends(p, write_path) || PathPrefix::extends(write_path, p))
     }
 
-    pub fn is_optional(&self, path: &str) -> bool {
-        self.optional.contains(path) || self.optional.iter().any(|p| PathPrefix::extends(p, path))
+    pub(crate) fn optional_steps(&self, path: &str) -> Vec<bool> {
+        let mut owner: Option<Arc<str>> = None;
+        path.split('.')
+            .enumerate()
+            .map(|(i, segment)| {
+                let key = match &owner {
+                    Some(owner) => self.all.get(format!("{owner}.{segment}").as_str()),
+                    None if i == 0 && !self.all.contains(segment) => {
+                        owner = Some(Arc::from(segment));
+                        return false;
+                    }
+                    None if i == 0 => self.all.get(segment),
+                    None => None,
+                };
+                owner = key.and_then(|k| self.targets.get(k).cloned());
+                key.is_some_and(|k| self.optional.contains(k))
+            })
+            .collect()
     }
 }
 

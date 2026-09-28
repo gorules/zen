@@ -187,7 +187,6 @@ pub enum DiagnosticCode {
     UnresolvedFunctionType,
     ImplicitAny,
     UncheckedNode,
-    NullabilityDivergence,
 
     RedundantNullish,
     RepeatedDerivation,

@@ -37,24 +37,45 @@ jobs:
     name: Release Please
     runs-on: ubuntu-latest
     steps:
-      - uses: googleapis/release-please-action@v5
-        id: release
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
         with:
-          token: ${{ secrets.PAT }}
-          config-file: release-please-config.json
-          manifest-file: .release-please-manifest.json
+          node-version: 24
+
+      - name: Install release-please
+        run: npm ci --prefix .github/release-please
+
+      - name: Run release-please
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          args=(
+            --token="$GH_TOKEN"
+            --repo-url="$GITHUB_REPOSITORY"
+            --target-branch=master
+            --config-file=release-please-config.json
+            --manifest-file=.release-please-manifest.json
+            --plugin="$PWD/.github/release-please/follow-leader.js"
+          )
+          bin=.github/release-please/node_modules/.bin/release-please
+          "$bin" github-release "${args[@]}"
+          "$bin" release-pr "${args[@]}"
+          branch=$(gh pr list --repo "$GITHUB_REPOSITORY" --base master --head release-please--branches--master --state open --json headRefName --jq '.[0].headRefName // ""')
+          echo "pr-branch=$branch" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v4
-        if: steps.release.outputs.pr
+        if: steps.release.outputs.pr-branch
         with:
-          ref: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
+          ref: ${{ steps.release.outputs.pr-branch }}
           token: ${{ secrets.PAT }}
 
       - uses: dtolnay/rust-toolchain@stable
-        if: steps.release.outputs.pr
+        if: steps.release.outputs.pr-branch
 
       - name: Update Cargo.lock on release PR
-        if: steps.release.outputs.pr
+        if: steps.release.outputs.pr-branch
         run: |
           cargo update --workspace
           git diff --quiet Cargo.lock && exit 0

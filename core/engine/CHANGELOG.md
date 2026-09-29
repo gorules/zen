@@ -1,5 +1,29 @@
 # Changelog
 
+## [2.1.0](https://github.com/gorules/zen/compare/zen-engine-v2.0.1...zen-engine-v2.1.0) (2026-09-29)
+
+
+### Features
+
+* date input ([#529](https://github.com/gorules/zen/issues/529)) ([39916c9](https://github.com/gorules/zen/commit/39916c9d18bce435fb40660e2bdf5ff768b6028e))
+* implement slots instead of natural language ([#527](https://github.com/gorules/zen/issues/527)) ([ffdfd80](https://github.com/gorules/zen/commit/ffdfd807d1ad6e6be42854fbaaf429c2871fe90a))
+
+
+### Bug Fixes
+
+* return errors instead of panicking in memory loader and v1 functions ([#524](https://github.com/gorules/zen/issues/524)) ([e095189](https://github.com/gorules/zen/commit/e095189dd6bca2c2afdb959a3d99f9549d1d296c))
+* scope policy evaluation to the import closure ([#525](https://github.com/gorules/zen/issues/525)) ([a7157f3](https://github.com/gorules/zen/commit/a7157f344802c489e3b5ee9b1deda331d6d790e1))
+* tolerate null inputs and enforce required policy inputs ([#528](https://github.com/gorules/zen/issues/528)) ([4aba11e](https://github.com/gorules/zen/commit/4aba11edd3516e8a65a240ea4d43a8b3bd377ae5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * zen-types bumped from 2.0.1 to 2.1.0
+    * zen-expression bumped from 2.0.1 to 2.1.0
+    * zen-tmpl bumped from 2.0.1 to 2.1.0
+
 ## [2.0.1](https://github.com/gorules/zen/compare/zen-engine-v2.0.0...zen-engine-v2.0.1) (2026-08-22)
 
 

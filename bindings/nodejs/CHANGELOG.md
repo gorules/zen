@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.1.0](https://github.com/gorules/zen/compare/nodejs-v2.0.2...nodejs-v2.1.0) (2026-09-29)
+
+
+### Features
+
+* implement slots instead of natural language ([#527](https://github.com/gorules/zen/issues/527)) ([ffdfd80](https://github.com/gorules/zen/commit/ffdfd807d1ad6e6be42854fbaaf429c2871fe90a))
+
+
+### Bug Fixes
+
+* tolerate null inputs and enforce required policy inputs ([#528](https://github.com/gorules/zen/issues/528)) ([4aba11e](https://github.com/gorules/zen/commit/4aba11edd3516e8a65a240ea4d43a8b3bd377ae5))
+
+
+### Miscellaneous
+
+* **nodejs:** align with zen-engine 2.1.0
+
 ## [2.0.2](https://github.com/gorules/zen/compare/nodejs-v2.0.1...nodejs-v2.0.2) (2026-08-24)
 
 

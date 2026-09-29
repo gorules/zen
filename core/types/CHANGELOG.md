@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.1.0](https://github.com/gorules/zen/compare/zen-types-v2.0.1...zen-types-v2.1.0) (2026-09-29)
+
+
+### Features
+
+* date input ([#529](https://github.com/gorules/zen/issues/529)) ([39916c9](https://github.com/gorules/zen/commit/39916c9d18bce435fb40660e2bdf5ff768b6028e))
+* implement slots instead of natural language ([#527](https://github.com/gorules/zen/issues/527)) ([ffdfd80](https://github.com/gorules/zen/commit/ffdfd807d1ad6e6be42854fbaaf429c2871fe90a))
+
+
+### Bug Fixes
+
+* keep decimal fractions when serializing numbers without arbitrary precision ([#530](https://github.com/gorules/zen/issues/530)) ([41e3f8c](https://github.com/gorules/zen/commit/41e3f8ce6094e3bd6b59a8ee315f91a521ded8ac))
+
 ## [2.0.1](https://github.com/gorules/zen/compare/zen-types-v2.0.0...zen-types-v2.0.1) (2026-08-22)
 
 

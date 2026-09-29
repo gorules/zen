@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.0](https://github.com/gorules/zen/compare/python-v2.0.2...python-v2.1.0) (2026-09-29)
+
+
+### Miscellaneous
+
+* **python:** align with zen-engine 2.1.0
+
 ## [2.0.2](https://github.com/gorules/zen/compare/python-v2.0.1...python-v2.0.2) (2026-08-24)
 
 

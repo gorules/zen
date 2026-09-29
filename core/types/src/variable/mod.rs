@@ -50,6 +50,10 @@ pub trait DynamicVariable: Display {
     fn as_any(&self) -> &dyn Any;
 
     fn to_value(&self) -> Value;
+
+    fn as_text(&self) -> Option<&str> {
+        None
+    }
 }
 
 impl Variable {
@@ -104,6 +108,7 @@ impl Variable {
     pub fn as_str(&self) -> Option<&str> {
         match self {
             Variable::String(s) => Some(s.as_ref()),
+            Variable::Dynamic(d) => d.as_text(),
             _ => None,
         }
     }
@@ -111,6 +116,7 @@ impl Variable {
     pub fn as_rc_str(&self) -> Option<Rc<str>> {
         match self {
             Variable::String(s) => Some(Rc::from(s.as_str())),
+            Variable::Dynamic(d) => d.as_text().map(Rc::from),
             _ => None,
         }
     }

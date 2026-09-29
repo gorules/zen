@@ -1,3 +1,5 @@
+pub(crate) mod dates;
+
 use crate::nodes::definition::NodeHandler;
 use crate::nodes::result::NodeResult;
 use crate::nodes::NodeContext;
@@ -17,8 +19,9 @@ impl NodeHandler for InputNodeHandler {
     async fn handle(&self, ctx: NodeContext<Self::NodeData, Self::TraceData>) -> NodeResult {
         if let Some(json_schema) = &ctx.node.schema {
             ctx.validate(json_schema, &ctx.input)?;
-        };
+        }
 
-        ctx.success(ctx.input.clone())
+        let output = dates::DeclaredDates::prepare(&ctx.input, ctx.node.schema.as_deref());
+        ctx.success(output.unwrap_or_else(|| ctx.input.clone()))
     }
 }

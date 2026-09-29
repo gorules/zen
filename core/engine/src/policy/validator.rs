@@ -3,6 +3,7 @@ use std::sync::Arc;
 use ahash::{HashMap, HashMapExt, HashSet};
 use zen_expression::variable::Variable;
 
+use crate::nodes::input::dates::DeclaredDates;
 use crate::policy::ir::{DataModelIr, DictionaryIr, Property, PropertyTypeIr};
 use crate::policy::refs::RefPoolIndex;
 use crate::policy::MAX_RECURSION_DEPTH;
@@ -114,6 +115,53 @@ impl InputSchema {
     }
 }
 
+impl InputSchema {
+    pub(crate) fn convert_dates(&self, input: &Variable) -> Option<Variable> {
+        DeclaredDates::rewrite_fields(input, |key, value| {
+            if self.ref_targets.contains(key) {
+                DeclaredDates::rewrite_items(value, |item| self.convert_entity(item, key, 0))
+            } else if self.roots.contains(key) {
+                self.convert_entity(value, key, 0)
+            } else {
+                self.convert_property(value, self.globals.get(key)?, 0)
+            }
+        })
+    }
+
+    fn convert_entity(&self, value: &Variable, entity: &str, depth: usize) -> Option<Variable> {
+        if depth >= MAX_RECURSION_DEPTH {
+            return None;
+        }
+        let model = self.entities.get(entity)?;
+        DeclaredDates::rewrite_fields(value, |key, child| {
+            let property = model.properties.iter().find(|p| *p.name == *key)?;
+            self.convert_property(child, property, depth + 1)
+        })
+    }
+
+    fn convert_property(
+        &self,
+        value: &Variable,
+        property: &Property,
+        depth: usize,
+    ) -> Option<Variable> {
+        let convert_one = |item: &Variable| match &property.kind {
+            PropertyTypeIr::Date => match item {
+                Variable::String(text) => zen_expression::DateValue::from_text(text),
+                _ => None,
+            },
+            PropertyTypeIr::Relationship { target } if self.entities.contains_key(target) => {
+                self.convert_entity(item, target, depth)
+            }
+            _ => None,
+        };
+        match property.array {
+            true => DeclaredDates::rewrite_items(value, convert_one),
+            false => convert_one(value),
+        }
+    }
+}
+
 struct InputValidator<'a> {
     entities: &'a HashMap<Arc<str>, Arc<DataModelIr>>,
     dictionaries: &'a HashMap<Arc<str>, Arc<DictionaryIr>>,
@@ -218,7 +266,12 @@ impl InputValidator<'_> {
             }
             PropertyTypeIr::Number => matches!(value, Variable::Number(_)),
             PropertyTypeIr::Boolean => matches!(value, Variable::Bool(_)),
-            PropertyTypeIr::Date => matches!(value, Variable::String(_)),
+            PropertyTypeIr::Date => match value {
+                Variable::String(text) => {
+                    text.is_empty() || zen_expression::DateValue::is_text(text)
+                }
+                other => zen_expression::DateValue::is(other),
+            },
             PropertyTypeIr::Reference { target } => {
                 self.validate_reference(value, target, path);
                 return;

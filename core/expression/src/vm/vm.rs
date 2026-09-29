@@ -9,6 +9,7 @@ use crate::vm::date::DynamicVariableExt;
 use crate::vm::error::VMError::*;
 use crate::vm::error::VMResult;
 use crate::vm::interval::{VmInterval, VmIntervalData};
+use crate::vm::VmDate;
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::{Decimal, MathematicalOps};
 use std::rc::Rc;
@@ -104,8 +105,8 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                     self.pop()?;
                 }
                 Opcode::Fetch => {
-                    let b = self.pop()?;
-                    let a = self.pop()?;
+                    let b = VmDate::textual(self.pop()?);
+                    let a = VmDate::textual(self.pop()?);
 
                     match (a, b) {
                         (Object(o), String(s)) => {
@@ -163,7 +164,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                             }
                             _ => Null,
                         },
-                        FetchFastTarget::Number(num) => match v {
+                        FetchFastTarget::Number(num) => match VmDate::textual(v) {
                             Array(arr) => {
                                 let arr_ref = arr.borrow();
                                 arr_ref.get(*num as usize).cloned().unwrap_or(Null)
@@ -250,6 +251,10 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
 
                             self.push(Bool(a.is_some() && b.is_some() && a == b));
                         }
+                        (Dynamic(a), String(b)) | (String(b), Dynamic(a)) => {
+                            let equal = a.as_date().is_some_and(|a| a.matches(&String(b)));
+                            self.push(Bool(equal));
+                        }
                         _ => {
                             self.push(Bool(false));
                         }
@@ -323,7 +328,10 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                 },
                 Opcode::In => {
                     let b = self.pop()?;
-                    let a = self.pop()?;
+                    let a = match &b {
+                        Object(_) => VmDate::textual(self.pop()?),
+                        _ => self.pop()?,
+                    };
 
                     match (a, &b) {
                         (Number(a), Array(b)) => {
@@ -381,10 +389,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                             };
 
                             let arr = arr.borrow();
-                            let is_in = arr.iter().any(|b| match b {
-                                Dynamic(b) => Some(a) == b.as_date(),
-                                _ => false,
-                            });
+                            let is_in = arr.iter().any(|b| a.matches(b));
 
                             self.push(Bool(is_in));
                         }
@@ -392,6 +397,9 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                             let arr = b.borrow();
                             let is_in = arr.iter().any(|b| match b {
                                 String(b) => &a == b,
+                                Dynamic(d) => {
+                                    d.as_date().is_some_and(|d| d.matches(&String(a.clone())))
+                                }
                                 _ => false,
                             });
 
@@ -455,6 +463,20 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
 
                             self.push(Bool(compare(a, b, comparison)));
                         }
+                        (a @ Dynamic(_), b @ String(_)) | (a @ String(_), b @ Dynamic(_)) => {
+                            let valid = |date: &VmDate| date.is_valid();
+                            let (Some(a), Some(b)) = (
+                                VmDate::coerce(&a).filter(valid),
+                                VmDate::coerce(&b).filter(valid),
+                            ) else {
+                                return Err(OpcodeErr {
+                                    opcode: "Compare".into(),
+                                    message: "Unsupported type".into(),
+                                });
+                            };
+
+                            self.push(Bool(compare(&a, &b, comparison)));
+                        }
                         _ => {
                             return Err(OpcodeErr {
                                 opcode: "Compare".into(),
@@ -464,8 +486,8 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                     }
                 }
                 Opcode::Add => {
-                    let b = self.pop()?;
-                    let a = self.pop()?;
+                    let b = VmDate::textual(self.pop()?);
+                    let a = VmDate::textual(self.pop()?);
 
                     match (a, b) {
                         (Number(a), Number(b)) => {
@@ -681,7 +703,7 @@ impl<'arena, 'parent_ref, 'bytecode_ref> VMInner<'parent_ref, 'bytecode_ref> {
                 Opcode::Slice => {
                     let from_var = self.pop()?;
                     let to_var = self.pop()?;
-                    let current = self.pop()?;
+                    let current = VmDate::textual(self.pop()?);
 
                     match (from_var, to_var) {
                         (Number(f), Number(t)) => {

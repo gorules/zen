@@ -116,15 +116,27 @@ impl From<&DeprecatedFunction> for Rc<dyn FunctionDefinition> {
 
 mod imp {
     use super::*;
+    use crate::vm::date::DynamicVariableExt;
     use crate::vm::helpers::DateUnit;
     use crate::vm::VMError;
     use zen_types::variable::Variable;
 
     fn __internal_convert_datetime(timestamp: &V) -> anyhow::Result<NaiveDateTime> {
-        match timestamp {
-            Variable::String(a) => date_time(a),
+        let instant = match timestamp {
+            Variable::Dynamic(d) => d
+                .as_date()
+                .and_then(|date| date.0)
+                .map(|date| date.naive_local()),
+            _ => None,
+        };
+        match (timestamp.as_str(), timestamp) {
+            (Some(text), _) => date_time(text).or_else(|error| instant.ok_or(error)),
+            (None, Variable::Dynamic(_)) => instant.ok_or_else(|| VMError::OpcodeErr {
+                opcode: "DateManipulation".into(),
+                message: "Invalid date".into(),
+            }),
             #[allow(deprecated)]
-            Variable::Number(a) => NaiveDateTime::from_timestamp_opt(
+            (None, Variable::Number(a)) => NaiveDateTime::from_timestamp_opt(
                 a.to_i64().ok_or_else(|| VMError::OpcodeErr {
                     opcode: "DateManipulation".into(),
                     message: "Failed to extract date".into(),
@@ -152,7 +164,13 @@ mod imp {
                 dt.timestamp()
             }
             V::Number(a) => a.to_i64().context("Number overflow")?,
-            _ => return Err(anyhow!("Unsupported type for date function")),
+            _ =>
+            {
+                #[allow(deprecated)]
+                __internal_convert_datetime(a)
+                    .map_err(|_| anyhow!("Unsupported type for date function"))?
+                    .timestamp()
+            }
         };
 
         Ok(V::Number(ts.into()))
@@ -161,9 +179,15 @@ mod imp {
     pub fn parse_time(args: Arguments) -> anyhow::Result<V> {
         let a = args.var(0)?;
 
-        let ts = match a {
-            V::String(a) => time(a.as_ref())?.num_seconds_from_midnight(),
-            V::Number(a) => a.to_u32().context("Number overflow")?,
+        let ts = match (a, a.as_str()) {
+            (V::Number(a), _) => a.to_u32().context("Number overflow")?,
+            (V::String(_), Some(text)) => time(text)?.num_seconds_from_midnight(),
+            (V::Dynamic(_), text) => match text.map(time) {
+                Some(Ok(time)) => time.num_seconds_from_midnight(),
+                _ => __internal_convert_datetime(a)?
+                    .time()
+                    .num_seconds_from_midnight(),
+            },
             _ => return Err(anyhow!("Unsupported type for time function")),
         };
 

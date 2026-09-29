@@ -116,9 +116,13 @@ impl EvalArtifact {
     ) -> Result<EvaluationResult, EvaluationError> {
         let start = Instant::now();
 
-        self.validate_request(req)?;
+        let input = self
+            .input_schema
+            .convert_dates(&req.input)
+            .unwrap_or_else(|| req.input.clone());
+        self.validate_request(req, &input)?;
 
-        let store = req.input.depth_clone(1);
+        let store = input.depth_clone(1);
         let ref_targets: HashSet<Arc<str>> = self
             .reference_fields
             .iter()
@@ -154,13 +158,17 @@ impl EvalArtifact {
         })
     }
 
-    fn validate_request(&self, req: &EvaluateRequest) -> Result<(), EvaluationError> {
+    fn validate_request(
+        &self,
+        req: &EvaluateRequest,
+        input: &Variable,
+    ) -> Result<(), EvaluationError> {
         for goal in &req.goals {
             if !self.eval_graph.contains(goal) {
                 return Err(EvaluationError::GoalNotFound(goal.clone()));
             }
         }
-        let validation_errors = self.input_schema.validate(&req.input);
+        let validation_errors = self.input_schema.validate(input);
         if !validation_errors.is_empty() {
             return Err(EvaluationError::InputValidationFailed {
                 errors: validation_errors,

@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.1](https://github.com/gorules/zen/compare/zen-types-v2.1.0...zen-types-v2.1.1) (2026-09-29)
+
+
+### Miscellaneous
+
+* **zen-types:** Synchronize core versions
+
 ## [2.1.0](https://github.com/gorules/zen/compare/zen-types-v2.0.1...zen-types-v2.1.0) (2026-09-29)
 
 

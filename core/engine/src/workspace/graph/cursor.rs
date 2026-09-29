@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use zen_expression::variable::VariableType;
-use zen_types::decision::{DecisionNode, DecisionNodeKind, DecisionTableContent};
+use zen_types::decision::{
+    DecisionNode, DecisionNodeKind, DecisionTableContent, DecisionTableHitPolicy,
+    TransformAttributes, TransformExecutionMode,
+};
 
 use crate::policy::blocks::IntelliSenseSource;
 use crate::policy::queries::scope::VariableTypeScope;
@@ -48,10 +51,10 @@ impl Db {
                         .and_then(|id| content.expressions.iter().find(|row| row.id == *id))
                         .map(|row| row.key.clone());
                     let scope = GraphAnalyzer::scope_with_nodes(
-                        if key.is_some() {
-                            &node_analysis.output
+                        &if key.is_some() {
+                            Self::own_output(node_analysis, &content.transform_attributes, false)
                         } else {
-                            &node_analysis.input
+                            node_analysis.input.shallow_clone()
                         },
                         &node_analysis.nodes_scope,
                     );
@@ -92,6 +95,30 @@ impl Db {
         }
     }
 
+    fn own_output(
+        node_analysis: &GraphNodeAnalysis,
+        attributes: &TransformAttributes,
+        collect: bool,
+    ) -> VariableType {
+        let element = |output: VariableType| {
+            output
+                .iterator()
+                .map(|item| item.as_ref().shallow_clone())
+                .unwrap_or(VariableType::Any)
+        };
+        let mut output = node_analysis.output.shallow_clone();
+        if let Some(path) = &attributes.output_path {
+            output = output.dot(path).unwrap_or(VariableType::Any);
+        }
+        if matches!(attributes.execution_mode, TransformExecutionMode::Loop) {
+            output = element(output);
+        }
+        if collect {
+            output = element(output);
+        }
+        output
+    }
+
     fn resolve_in_table(
         &self,
         content: &DecisionTableContent,
@@ -104,12 +131,20 @@ impl Db {
         );
         match &cursor.target {
             CursorTarget::DecisionTableHead { col } => {
-                let field = if let Some(column) = content.inputs.iter().find(|c| c.id == *col) {
-                    column.field.clone().unwrap_or_else(|| Arc::from(""))
-                } else {
-                    content.outputs.iter().find(|c| c.id == *col)?.field.clone()
-                };
-                Some((field, ExpressionKind::Standard, base_scope))
+                if let Some(column) = content.inputs.iter().find(|c| c.id == *col) {
+                    let field = column.field.clone().unwrap_or_else(|| Arc::from(""));
+                    return Some((field, ExpressionKind::Standard, base_scope));
+                }
+                let field = content.outputs.iter().find(|c| c.id == *col)?.field.clone();
+                let scope = GraphAnalyzer::scope_with_nodes(
+                    &Self::own_output(
+                        node_analysis,
+                        &content.transform_attributes,
+                        matches!(content.hit_policy, DecisionTableHitPolicy::Collect),
+                    ),
+                    &node_analysis.nodes_scope,
+                );
+                Some((field, ExpressionKind::Standard, scope))
             }
             CursorTarget::DecisionTableCell { row, col } => {
                 let rule = content

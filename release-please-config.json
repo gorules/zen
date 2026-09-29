@@ -24,6 +24,11 @@
         "zen-tmpl",
         "zen-macros"
       ]
+    },
+    {
+      "type": "follow-leader",
+      "leader": "zen-engine",
+      "followers": ["nodejs", "python", "uniffi", "go"]
     }
   ],
   "packages": {

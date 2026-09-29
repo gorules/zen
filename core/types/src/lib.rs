@@ -2,6 +2,7 @@
 
 mod constant;
 pub mod decision;
+mod number;
 pub mod rccell;
 pub mod rcvalue;
 pub mod symbol;

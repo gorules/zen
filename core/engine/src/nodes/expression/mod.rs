@@ -39,6 +39,10 @@ impl NodeHandler for ExpressionNodeHandler {
                 .with_node_context(&ctx, |_| {
                     format!(r#"Failed to evaluate expression: "{}""#, &expression.value)
                 })?;
+            let value = match expression.value.contains('$') {
+                true => value.deep_clone(),
+                false => value,
+            };
             ctx.trace(|trace| {
                 trace.insert(
                     Rc::from(&*expression.key),

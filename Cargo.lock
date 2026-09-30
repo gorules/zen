@@ -6010,6 +6010,7 @@ dependencies = [
  "arc-swap",
  "async-trait",
  "base64",
+ "bumpalo",
  "criterion",
  "downcast-rs",
  "fixedbitset",

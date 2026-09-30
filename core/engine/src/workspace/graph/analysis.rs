@@ -795,7 +795,7 @@ impl<'a> GraphAnalyzer<'a> {
             let row_scope = Self::scope_with(
                 scope,
                 &[
-                    ("$", dollar.depth_clone(usize::MAX)),
+                    ("$", dollar.shallow_clone()),
                     (NODES_KEY, self.nodes_scope.shallow_clone()),
                 ],
             );

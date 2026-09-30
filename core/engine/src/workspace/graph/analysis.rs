@@ -795,7 +795,7 @@ impl<'a> GraphAnalyzer<'a> {
             let row_scope = Self::scope_with(
                 scope,
                 &[
-                    ("$", dollar.shallow_clone()),
+                    ("$", dollar.depth_clone(usize::MAX)),
                     (NODES_KEY, self.nodes_scope.shallow_clone()),
                 ],
             );
@@ -807,6 +807,7 @@ impl<'a> GraphAnalyzer<'a> {
                 ExpressionKind::Standard,
                 &row_scope,
             );
+            let resolved = resolved.depth_clone(usize::MAX);
             output.insert_at_path(&row.key, &resolved, true);
             dollar.insert_at_path(&row.key, &resolved, true);
             row_types.insert(row.id.clone(), resolved);

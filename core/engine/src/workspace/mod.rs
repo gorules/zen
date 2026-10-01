@@ -2,6 +2,7 @@ pub(crate) mod affected;
 pub(crate) mod db;
 pub(crate) mod editor;
 pub(crate) mod graph;
+pub(crate) mod reads;
 pub(crate) mod search;
 pub(crate) mod slot;
 pub(crate) mod types;

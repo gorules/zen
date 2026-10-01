@@ -5,15 +5,21 @@ use ahash::{HashMap, HashSet};
 use zen_types::decision::DecisionNodeKind;
 
 use crate::workspace::db::{Db, Snapshot};
+use crate::workspace::reads::ReadView;
+
+type Edge = (Arc<str>, Option<ReadView>);
 
 impl Db {
     pub fn affected_by(&self, paths: &[&str]) -> Vec<Arc<str>> {
         let snap = self.snapshot();
-        let mut dependents: HashMap<Arc<str>, Vec<Arc<str>>> = HashMap::default();
+        let mut dependents: HashMap<Arc<str>, Vec<Edge>> = HashMap::default();
         for path in self.document_paths() {
-            for dependency in self.direct_dependencies(&snap, &path) {
+            for (dependency, view) in self.direct_dependencies(&snap, &path) {
                 if dependency != path {
-                    dependents.entry(dependency).or_default().push(path.clone());
+                    dependents
+                        .entry(dependency)
+                        .or_default()
+                        .push((path.clone(), view));
                 }
             }
         }
@@ -23,8 +29,17 @@ impl Db {
             if !seen.insert(path.clone()) {
                 continue;
             }
-            if let Some(next) = dependents.get(&path) {
-                queue.extend(next.iter().cloned());
+            for (dependent, view) in dependents.get(&path).into_iter().flatten() {
+                if seen.contains(dependent) {
+                    continue;
+                }
+                let reaches = match view {
+                    Some(view) => !self.view_holds(&path, view),
+                    None => true,
+                };
+                if reaches {
+                    queue.push_back(dependent.clone());
+                }
             }
         }
         let mut out: Vec<Arc<str>> = seen.into_iter().collect();
@@ -32,14 +47,22 @@ impl Db {
         out
     }
 
-    fn direct_dependencies(&self, snap: &Snapshot, path: &Arc<str>) -> HashSet<Arc<str>> {
-        let mut out: HashSet<Arc<str>> = HashSet::default();
+    fn direct_dependencies(&self, snap: &Snapshot, path: &Arc<str>) -> Vec<Edge> {
         if let Some(parsed) = snap.all_parsed.get(path) {
-            out.extend(parsed.policy.imports().iter().cloned());
+            return parsed
+                .policy
+                .imports()
+                .iter()
+                .map(|import| (import.clone(), None))
+                .collect();
+        }
+        if let Some(edges) = self.recorded_edges(path) {
+            return edges;
         }
         let Some(content) = snap.graphs.get(path).and_then(|doc| doc.as_graph()) else {
-            return out;
+            return Vec::new();
         };
+        let mut out: HashSet<Arc<str>> = HashSet::default();
         out.extend(content.imports.iter().cloned());
         for node in &content.nodes {
             let DecisionNodeKind::DecisionNode { content } = &node.kind else {
@@ -51,6 +74,8 @@ impl Db {
             }
         }
         out.extend(self.recorded_reads(path));
-        out
+        out.into_iter()
+            .map(|dependency| (dependency, None))
+            .collect()
     }
 }

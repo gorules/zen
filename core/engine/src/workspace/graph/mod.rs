@@ -8,8 +8,8 @@ mod queries;
 mod schema;
 mod ts_type;
 
-pub(crate) use analysis::GraphAnalyzer;
 pub use analysis::{GraphAnalysis, GraphNodeAnalysis, GraphSignature};
+pub(crate) use analysis::{GraphAnalyzer, SignatureResolution};
 pub use enhance::GraphTraceMap;
 pub use function::{FunctionResolutionRequest, FunctionTypeResolver};
 pub(crate) use schema::SchemaType;

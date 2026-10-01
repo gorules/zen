@@ -8,6 +8,7 @@ use crate::workspace::db::{Db, DictionaryUnitEntry};
 use crate::workspace::graph::analysis::{
     GraphAnalysis, GraphAnalyzer, GraphSignature, SignatureResolution,
 };
+use crate::workspace::reads::ReadView;
 
 use crate::policy::queries::scope::VariableTypeScope;
 use crate::workspace::types::{InputProperty, OutputProperty, PropertyKind, ScopeRequest};
@@ -24,12 +25,11 @@ impl Db {
         self.graph_dep_frame_push(path);
         let analysis = Arc::new(GraphAnalyzer::new(self, path.clone(), content).analyze());
         self.graph_stack.borrow_mut().pop();
-        let (docs, functions) = self.graph_dep_frame_pop();
-        self.graph_dep_record_many(docs.iter().cloned());
+        let (frame, functions) = self.graph_dep_frame_pop();
         for (&key, &state) in &functions {
             self.graph_fn_record(key, state);
         }
-        self.store_graph_analysis(path, docs, functions, analysis.clone());
+        self.store_graph_analysis(path, frame, functions, analysis.clone());
         Some(analysis)
     }
 
@@ -56,7 +56,7 @@ impl Db {
             if !visited.insert(path.clone()) {
                 continue;
             }
-            self.graph_dep_record(&path);
+            self.graph_dep_record_view(&path, ReadView::Dictionaries(self.dictionary_view(&path)));
             let Some(parsed) = snap.all_parsed.get(&path) else {
                 continue;
             };
@@ -88,21 +88,24 @@ impl Db {
 
     pub(crate) fn decision_signature(&self, key: &str) -> SignatureResolution {
         let key_arc: Arc<str> = Arc::from(key);
-        self.graph_dep_record(&key_arc);
+        let resolution = self.resolve_signature(&key_arc);
+        self.graph_dep_record_view(&key_arc, ReadView::Signature(resolution.detached()));
+        resolution
+    }
+
+    fn resolve_signature(&self, key_arc: &Arc<str>) -> SignatureResolution {
+        let key: &str = key_arc;
         let snap = self.snapshot();
-        if snap.graphs.contains_key(&key_arc) {
+        if snap.graphs.contains_key(key_arc) {
             if self.graph_stack.borrow().iter().any(|p| p.as_ref() == key) {
                 return SignatureResolution::Recursive;
             }
-            return match self.graph_analysis(&key_arc) {
+            return match self.graph_analysis(key_arc) {
                 Some(analysis) => SignatureResolution::Found(analysis.signature.clone()),
                 None => SignatureResolution::Missing,
             };
         }
-        if snap.all_parsed.contains_key(&key_arc) {
-            if let Some(&component) = snap.policy_to_component.get(&key_arc) {
-                self.graph_dep_record_many(snap.components[component].iter().cloned());
-            }
+        if snap.all_parsed.contains_key(key_arc) {
             let req = ScopeRequest::for_policy(key);
             let input = VariableType::empty_object();
             let output = VariableType::empty_object();

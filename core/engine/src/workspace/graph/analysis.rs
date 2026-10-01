@@ -32,7 +32,7 @@ use crate::workspace::types::{
 
 const NODES_KEY: &str = "$nodes";
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct GraphSignature {
     pub input: VariableType,
     pub output: VariableType,
@@ -71,10 +71,24 @@ pub struct GraphAnalysis {
     pub inferred_inputs: Vec<Arc<str>>,
 }
 
+#[derive(Clone, PartialEq)]
 pub(crate) enum SignatureResolution {
     Found(GraphSignature),
     Recursive,
     Missing,
+}
+
+impl SignatureResolution {
+    pub(crate) fn detached(&self) -> Self {
+        match self {
+            SignatureResolution::Found(signature) => SignatureResolution::Found(GraphSignature {
+                input: signature.input.depth_clone(usize::MAX),
+                output: signature.output.depth_clone(usize::MAX),
+            }),
+            SignatureResolution::Recursive => SignatureResolution::Recursive,
+            SignatureResolution::Missing => SignatureResolution::Missing,
+        }
+    }
 }
 
 pub(crate) struct GraphExpressionSite {

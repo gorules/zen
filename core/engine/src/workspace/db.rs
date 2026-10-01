@@ -29,6 +29,7 @@ use crate::workspace::graph::function::{
     FunctionKey, FunctionResolutionRequest, FunctionTypeResolver, ResolvedFunction,
 };
 use crate::workspace::graph::GraphAnalysis;
+use crate::workspace::reads::ReadView;
 use crate::workspace::types::{BlockRef, Diagnostic, ExpressionKind, InstanceTarget};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -39,7 +40,14 @@ pub enum AnalysisPass {
 
 pub(crate) struct GraphDeps {
     docs: Vec<(Arc<str>, Option<Arc<DecisionContent>>)>,
+    views: Vec<(Arc<str>, ReadView)>,
     functions: Vec<(FunctionKey, u64)>,
+}
+
+#[derive(Default)]
+pub(crate) struct DepFrame {
+    docs: HashSet<Arc<str>>,
+    views: Vec<(Arc<str>, ReadView)>,
 }
 
 #[derive(Default)]
@@ -186,7 +194,7 @@ pub struct Db {
     intellisense: SharedIntelliSense,
     graph_intellisense: SharedIntelliSense,
     pub(crate) graph_stack: RefCell<Vec<Arc<str>>>,
-    graph_dep_frames: RefCell<Vec<HashSet<Arc<str>>>>,
+    graph_dep_frames: RefCell<Vec<DepFrame>>,
     graph_fn_frames: RefCell<Vec<HashMap<FunctionKey, u64>>>,
     function_types: RefCell<HashMap<FunctionKey, ResolvedFunction>>,
     function_requests: RefCell<Vec<FunctionResolutionRequest>>,
@@ -243,12 +251,49 @@ impl Db {
         existed
     }
 
+    pub(crate) fn recorded_edges(
+        &self,
+        path: &Arc<str>,
+    ) -> Option<Vec<(Arc<str>, Option<ReadView>)>> {
+        let cache = self.cache.graphs.borrow();
+        let (deps, _) = cache.get(path)?;
+        let inputs = self.inputs.borrow();
+        let current = deps.docs.iter().any(|(doc, stamp)| {
+            doc == path
+                && match (stamp, inputs.documents.get(path)) {
+                    (Some(stamp), Some(now)) => Arc::ptr_eq(stamp, now),
+                    _ => false,
+                }
+        });
+        if !current {
+            return None;
+        }
+        Some(
+            deps.docs
+                .iter()
+                .filter(|(doc, _)| doc != path)
+                .map(|(doc, _)| (doc.clone(), None))
+                .chain(
+                    deps.views
+                        .iter()
+                        .map(|(doc, view)| (doc.clone(), Some(view.clone()))),
+                )
+                .collect(),
+        )
+    }
+
     pub(crate) fn recorded_reads(&self, path: &Arc<str>) -> Vec<Arc<str>> {
         self.cache
             .graphs
             .borrow()
             .get(path)
-            .map(|(deps, _)| deps.docs.iter().map(|(doc, _)| doc.clone()).collect())
+            .map(|(deps, _)| {
+                deps.docs
+                    .iter()
+                    .map(|(doc, _)| doc.clone())
+                    .chain(deps.views.iter().map(|(doc, _)| doc.clone()))
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
@@ -352,33 +397,29 @@ impl Db {
         }
     }
 
-    pub(crate) fn graph_dep_record(&self, path: &Arc<str>) {
+    pub(crate) fn graph_dep_record_view(&self, path: &Arc<str>, view: ReadView) {
         if let Some(frame) = self.graph_dep_frames.borrow_mut().last_mut() {
-            frame.insert(path.clone());
-        }
-    }
-
-    pub(crate) fn graph_dep_record_many(&self, paths: impl IntoIterator<Item = Arc<str>>) {
-        if let Some(frame) = self.graph_dep_frames.borrow_mut().last_mut() {
-            frame.extend(paths);
+            if !frame.views.iter().any(|(p, v)| p == path && *v == view) {
+                frame.views.push((path.clone(), view));
+            }
         }
     }
 
     pub(crate) fn graph_dep_frame_push(&self, path: &Arc<str>) {
-        let mut frame = HashSet::default();
-        frame.insert(path.clone());
+        let mut frame = DepFrame::default();
+        frame.docs.insert(path.clone());
         self.graph_dep_frames.borrow_mut().push(frame);
         self.graph_fn_frames.borrow_mut().push(HashMap::default());
     }
 
-    pub(crate) fn graph_dep_frame_pop(&self) -> (HashSet<Arc<str>>, HashMap<FunctionKey, u64>) {
-        let docs = self.graph_dep_frames.borrow_mut().pop().unwrap_or_default();
+    pub(crate) fn graph_dep_frame_pop(&self) -> (DepFrame, HashMap<FunctionKey, u64>) {
+        let frame = self.graph_dep_frames.borrow_mut().pop().unwrap_or_default();
         let functions = self.graph_fn_frames.borrow_mut().pop().unwrap_or_default();
-        (docs, functions)
+        (frame, functions)
     }
 
     pub(crate) fn cached_graph_analysis(&self, path: &Arc<str>) -> Option<Arc<GraphAnalysis>> {
-        let (dep_paths, fn_stamps, analysis) = {
+        let (views, fn_stamps, analysis) = {
             let cache = self.cache.graphs.borrow();
             let (deps, analysis) = cache.get(path)?;
             let inputs = self.inputs.borrow();
@@ -399,10 +440,14 @@ impl Db {
             if !functions_valid {
                 return None;
             }
-            let dep_paths: Vec<Arc<str>> = deps.docs.iter().map(|(p, _)| p.clone()).collect();
-            (dep_paths, deps.functions.clone(), analysis.clone())
+            (deps.views.clone(), deps.functions.clone(), analysis.clone())
         };
-        self.graph_dep_record_many(dep_paths);
+        self.graph_stack.borrow_mut().push(path.clone());
+        let valid = views.iter().all(|(dep, view)| self.view_holds(dep, view));
+        self.graph_stack.borrow_mut().pop();
+        if !valid {
+            return None;
+        }
         for (key, state) in fn_stamps {
             self.graph_fn_record(key, state);
         }
@@ -412,13 +457,13 @@ impl Db {
     pub(crate) fn store_graph_analysis(
         &self,
         path: &Arc<str>,
-        docs: HashSet<Arc<str>>,
+        frame: DepFrame,
         functions: HashMap<FunctionKey, u64>,
         analysis: Arc<GraphAnalysis>,
     ) {
         let deps = {
             let inputs = self.inputs.borrow();
-            let mut sorted: Vec<Arc<str>> = docs.into_iter().collect();
+            let mut sorted: Vec<Arc<str>> = frame.docs.into_iter().collect();
             sorted.sort();
             let docs = sorted
                 .into_iter()
@@ -429,7 +474,11 @@ impl Db {
                 .collect();
             let mut functions: Vec<(FunctionKey, u64)> = functions.into_iter().collect();
             functions.sort_unstable();
-            GraphDeps { docs, functions }
+            GraphDeps {
+                docs,
+                views: frame.views,
+                functions,
+            }
         };
         self.cache
             .graphs

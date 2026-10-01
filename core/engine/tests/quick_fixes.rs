@@ -157,6 +157,32 @@ fn empty_columns_name_the_column() {
     );
 }
 
+#[test]
+fn single_input_column_is_never_flagged_for_removal() {
+    let doc: Value = json!({ "blocks": [
+        { "id": "dm", "type": "dataModel", "props": { "data": {
+            "name": "applicant",
+            "properties": [ { "id": "p1", "name": "age", "type": "number", "array": false, "optional": false } ]
+        } } },
+        { "id": "dt", "type": "decisionTable", "props": { "data": {
+            "hitPolicy": "first",
+            "inputs": [ { "id": "i0", "name": "Age", "field": "applicant.age" } ],
+            "outputs": [ { "id": "o0", "name": "Band", "field": "applicant.band" } ],
+            "rules": [
+                { "_id": "r1", "i0": "", "o0": "'minor'" },
+                { "_id": "r2", "i0": "", "o0": "'adult'" }
+            ]
+        } } }
+    ] });
+    let mut ws = PolicyWorkspace::new();
+    ws.set_policy("p", serde_json::from_value(doc).expect("policy"));
+    let found = with_code(
+        &ws.diagnostics("p"),
+        DiagnosticCode::NonDiscriminatingColumn,
+    );
+    assert!(found.is_empty(), "{found:?}");
+}
+
 fn stress_graph(total: &str, condition: &str) -> Value {
     let schema = json!({
         "type": "object",

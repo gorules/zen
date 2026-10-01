@@ -70,7 +70,7 @@ impl LintRule for NonDiscriminatingColumn {
             let Some(view) = TableView::first_hit(table) else {
                 continue;
             };
-            if view.rows.len() < 2 {
+            if view.rows.len() < 2 || view.inputs.len() < 2 {
                 continue;
             }
 

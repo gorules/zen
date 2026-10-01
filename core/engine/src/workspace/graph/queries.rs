@@ -56,7 +56,6 @@ impl Db {
             if !visited.insert(path.clone()) {
                 continue;
             }
-            self.graph_dep_record_view(&path, ReadView::Dictionaries(self.dictionary_view(&path)));
             let Some(parsed) = snap.all_parsed.get(&path) else {
                 continue;
             };
@@ -80,6 +79,12 @@ impl Db {
         imports: &[Arc<str>],
     ) -> HashMap<Arc<str>, VariableType> {
         let mut out = HashMap::new();
+        for import in imports {
+            self.graph_dep_record_view(
+                import,
+                ReadView::Dictionaries(self.dictionary_view(import)),
+            );
+        }
         for entry in self.graph_dictionary_blocks(imports) {
             out.insert(entry.ir.name.clone(), entry.ir.enum_type());
         }

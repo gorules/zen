@@ -1,5 +1,6 @@
 pub(crate) mod affected;
 pub(crate) mod db;
+pub mod document_dependencies;
 pub(crate) mod editor;
 pub(crate) mod graph;
 pub(crate) mod reads;
@@ -150,6 +151,14 @@ impl Workspace {
 
     pub fn affected_by(&self, paths: &[&str]) -> Vec<Arc<str>> {
         self.db.affected_by(paths)
+    }
+
+    pub fn document_uses(&self, path: &str) -> Vec<document_dependencies::Dependency> {
+        self.db.document_dependencies().uses(path).to_vec()
+    }
+
+    pub fn document_used_by(&self, path: &str) -> Vec<document_dependencies::Dependency> {
+        self.db.document_dependencies().used_by(path)
     }
 
     pub(crate) fn imports(&self, importer: &str, policy: &str) -> bool {

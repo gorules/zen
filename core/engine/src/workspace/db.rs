@@ -25,6 +25,7 @@ use crate::policy::queries::scope::{
     VariableTypeScope,
 };
 use crate::policy::raw::PolicyDocument;
+use crate::workspace::document_dependencies::{DependencyIndex, DependencyKind};
 use crate::workspace::graph::function::{
     FunctionKey, FunctionResolutionRequest, FunctionTypeResolver, ResolvedFunction,
 };
@@ -195,6 +196,7 @@ pub struct Db {
     graph_intellisense: SharedIntelliSense,
     pub(crate) graph_stack: RefCell<Vec<Arc<str>>>,
     graph_dep_frames: RefCell<Vec<DepFrame>>,
+    dependencies: DependencyIndex,
     graph_fn_frames: RefCell<Vec<HashMap<FunctionKey, u64>>>,
     function_types: RefCell<HashMap<FunctionKey, ResolvedFunction>>,
     function_requests: RefCell<Vec<FunctionResolutionRequest>>,
@@ -224,6 +226,7 @@ impl Db {
             graph_intellisense: Rc::new(RefCell::new(IntelliSense::new().with_strict(true))),
             graph_stack: RefCell::new(Vec::new()),
             graph_dep_frames: RefCell::new(Vec::new()),
+            dependencies: DependencyIndex::default(),
             graph_fn_frames: RefCell::new(Vec::new()),
             function_types: RefCell::new(HashMap::default()),
             function_requests: RefCell::new(Vec::new()),
@@ -235,6 +238,7 @@ impl Db {
     }
 
     pub fn set_document(&mut self, path: Arc<str>, doc: Arc<DecisionContent>) {
+        self.dependencies.set(path.clone(), &doc);
         self.inputs.borrow_mut().documents.insert(path, doc);
         self.invalidate_snapshot();
     }
@@ -244,6 +248,7 @@ impl Db {
     }
 
     pub fn remove_document(&mut self, path: &str) -> bool {
+        self.dependencies.remove(path);
         let existed = self.inputs.borrow_mut().documents.remove(path).is_some();
         if existed {
             self.invalidate_snapshot();
@@ -251,50 +256,40 @@ impl Db {
         existed
     }
 
-    pub(crate) fn recorded_edges(
+    pub(crate) fn recorded_view(
         &self,
-        path: &Arc<str>,
-    ) -> Option<Vec<(Arc<str>, Option<ReadView>)>> {
+        user: &Arc<str>,
+        dependency: &Arc<str>,
+        kind: DependencyKind,
+    ) -> Option<ReadView> {
         let cache = self.cache.graphs.borrow();
-        let (deps, _) = cache.get(path)?;
+        let (deps, _) = cache.get(user)?;
         let inputs = self.inputs.borrow();
         let current = deps.docs.iter().any(|(doc, stamp)| {
-            doc == path
-                && match (stamp, inputs.documents.get(path)) {
-                    (Some(stamp), Some(now)) => Arc::ptr_eq(stamp, now),
-                    _ => false,
-                }
+            doc == user
+                && matches!(
+                    (stamp, inputs.documents.get(user)),
+                    (Some(stamp), Some(now)) if Arc::ptr_eq(stamp, now)
+                )
         });
         if !current {
             return None;
         }
-        Some(
-            deps.docs
-                .iter()
-                .filter(|(doc, _)| doc != path)
-                .map(|(doc, _)| (doc.clone(), None))
-                .chain(
-                    deps.views
-                        .iter()
-                        .map(|(doc, view)| (doc.clone(), Some(view.clone()))),
-                )
-                .collect(),
-        )
+        deps.views
+            .iter()
+            .find(|(doc, view)| {
+                doc == dependency
+                    && matches!(
+                        (kind, view),
+                        (DependencyKind::Dictionaries, ReadView::Dictionaries(_))
+                            | (DependencyKind::Signature, ReadView::Signature(_))
+                    )
+            })
+            .map(|(_, view)| view.clone())
     }
 
-    pub(crate) fn recorded_reads(&self, path: &Arc<str>) -> Vec<Arc<str>> {
-        self.cache
-            .graphs
-            .borrow()
-            .get(path)
-            .map(|(deps, _)| {
-                deps.docs
-                    .iter()
-                    .map(|(doc, _)| doc.clone())
-                    .chain(deps.views.iter().map(|(doc, _)| doc.clone()))
-                    .collect()
-            })
-            .unwrap_or_default()
+    pub(crate) fn document_dependencies(&self) -> &DependencyIndex {
+        &self.dependencies
     }
 
     pub fn document_paths(&self) -> Vec<Arc<str>> {

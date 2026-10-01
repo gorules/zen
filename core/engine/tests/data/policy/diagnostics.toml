@@ -403,8 +403,8 @@ content = '''
 }
 '''
 no_errors = true
-hint_codes = ["RedundantTableRow", "NonDiscriminatingColumn", "PreferDictionary"]
-hint_count = 3
+hint_codes = ["NonDiscriminatingColumn", "PreferDictionary", "CompressibleTable", "DuplicateRule"]
+hint_count = 4
 
 # Multi-policy
 
@@ -500,8 +500,8 @@ content = '''
 }
 '''
 no_errors = true
-hint_codes = ["PreferDictionary"]
-hint_count = 1
+hint_codes = ["PreferDictionary", "CompressibleTable"]
+hint_count = 2
 
 [[test]]
 name = "values yields union of field types"
@@ -722,7 +722,8 @@ content = '''
 }
 '''
 no_errors = true
-hint_codes = ["RedundantTableRow"]
+warning_codes = ["UnreachableRule"]
+hint_codes = ["MissingCases"]
 hint_count = 1
 
 [[test]]
@@ -1158,8 +1159,8 @@ content = '''
 }
 '''
 no_errors = true
-hint_codes = ["NonDiscriminatingColumn"]
-hint_count = 1
+hint_codes = ["NonDiscriminatingColumn", "CompressibleTable"]
+hint_count = 2
 
 [[test]]
 name = "block writing to multiple entities is mixed scope"

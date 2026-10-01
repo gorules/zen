@@ -8,6 +8,8 @@ use zen_expression::{Isolate, IsolateError};
 
 use super::property_read::ReadFlattener;
 use super::type_check::TypeCheck;
+use crate::analysis::nullable::NullableOperand;
+use crate::analysis::table::VerifyTable;
 use crate::policy::ir::PropertyPath;
 use crate::policy::queries::dependency::{DataModelPaths, PathPrefix};
 use crate::policy::queries::scope::VariableTypeScope;
@@ -149,7 +151,7 @@ impl AnalysisContext {
             ),
         };
         self.record_reads(&analysis, &expression_id);
-        self.absorb_diagnostics(&analysis, &expression_id);
+        self.absorb_diagnostics(&analysis, &expression_id, source, kind);
         analysis
     }
 
@@ -185,7 +187,7 @@ impl AnalysisContext {
             ),
         };
         self.record_reads(&analysis, &expression_id);
-        self.absorb_diagnostics(&analysis, &expression_id);
+        self.absorb_diagnostics(&analysis, &expression_id, source, ExpressionKind::Unary);
         analysis
     }
 
@@ -300,6 +302,30 @@ impl AnalysisContext {
         let location = self.location_with(expression_id, span);
         self.diagnostics
             .push(Diagnostic::error(code, location, message).with_expr_code(expr_code, args));
+    }
+
+    pub(super) fn declares(&self, path: &str) -> bool {
+        self.declared_paths.declares(path)
+    }
+
+    pub(super) fn push_table_diagnostics(
+        &mut self,
+        table: &VerifyTable,
+        row_key: impl Fn(usize) -> Arc<str>,
+    ) {
+        let policy_path = self.policy_path.clone();
+        let block_id = self.block_id.clone();
+        let diagnostics = table.diagnostics(
+            &mut self.intellisense.borrow_mut(),
+            row_key,
+            |expression_id| match expression_id {
+                Some(id) => {
+                    DiagnosticLocation::expression(policy_path.clone(), block_id.clone(), id, None)
+                }
+                None => DiagnosticLocation::block(policy_path.clone(), block_id.clone()),
+            },
+        );
+        self.diagnostics.extend(diagnostics);
     }
 
     pub fn hint_with_target(
@@ -456,7 +482,10 @@ impl AnalysisContext {
         &mut self,
         analysis: &ExpressionAnalysis,
         expression_id: &Option<Arc<str>>,
+        source: &str,
+        kind: ExpressionKind,
     ) {
+        let first = self.diagnostics.len();
         for diag in &analysis.diagnostics {
             let location = DiagnosticLocation {
                 policy_path: self.policy_path.clone(),
@@ -465,9 +494,21 @@ impl AnalysisContext {
                 span: Some(diag.span),
                 target: self.default_target.clone(),
             };
-            self.diagnostics
-                .push(Diagnostic::from_expression(diag, location));
+            let mut diagnostic = Diagnostic::from_expression(diag, location);
+            NullableOperand::annotate(
+                &mut diagnostic,
+                &mut self.intellisense.borrow_mut(),
+                source,
+                matches!(kind, ExpressionKind::Unary),
+            );
+            self.diagnostics.push(diagnostic);
         }
+        NullableOperand::fallback_all(
+            &mut self.diagnostics[first..],
+            &mut self.intellisense.borrow_mut(),
+            source,
+            matches!(kind, ExpressionKind::Unary),
+        );
     }
 }
 

@@ -174,6 +174,10 @@ impl Workspace {
         self.db.graph_analysis(&path_arc)
     }
 
+    pub fn full_table_check(&self, path: &str, block: &str) -> Vec<Diagnostic> {
+        self.db.full_table_check(path, block)
+    }
+
     pub fn unchecked_nodes(&self, path: &str) -> Vec<Arc<str>> {
         self.db.graph_unchecked_nodes(path)
     }

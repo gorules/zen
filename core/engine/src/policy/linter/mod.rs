@@ -16,7 +16,7 @@ use crate::workspace::types::{Diagnostic, ExpressionKind, Span};
 pub(crate) use prefer_match::PreferMatch;
 pub(crate) use redundant_parentheses::RedundantParentheses;
 pub(crate) use repeated_derivation::RepeatedDerivation;
-pub(crate) use table_hygiene::{NonDiscriminatingColumn, RedundantTableRow};
+pub(crate) use table_hygiene::NonDiscriminatingColumn;
 
 pub(crate) trait LintRule {
     fn check(&self, cx: &LintContext, out: &mut Vec<Diagnostic>);
@@ -134,7 +134,6 @@ impl Linter {
             rules: vec![
                 Box::new(RepeatedDerivation),
                 Box::new(PreferMatch),
-                Box::new(RedundantTableRow),
                 Box::new(NonDiscriminatingColumn),
                 Box::new(RedundantParentheses),
             ],

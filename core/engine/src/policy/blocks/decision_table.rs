@@ -12,6 +12,7 @@ use zen_types::decision::{
 
 use base64::Engine as _;
 
+use crate::analysis::table::{HitMode, TableColumn, VerifyTable};
 use crate::policy::queries::scope::VariableTypeScope;
 use crate::workspace::types::{
     BlockTrace, Cursor, CursorTarget, DecisionTableExtras, Diagnostic, DiagnosticArgs,
@@ -439,6 +440,45 @@ impl DecisionTableIr {
                     );
                 }
             }
+
+            let table = VerifyTable {
+                mode: HitMode::PerColumnFirst,
+                inputs: self
+                    .inputs
+                    .iter()
+                    .map(|col| {
+                        let mut input = TableColumn::input(
+                            &col.id,
+                            &col.name,
+                            col.field.as_ref(),
+                            input_field_types.get(&col.id),
+                        );
+                        input.input = col
+                            .field
+                            .as_deref()
+                            .is_some_and(|field| cx.declares(field.trim()));
+                        input
+                    })
+                    .collect(),
+                outputs: self
+                    .outputs
+                    .iter()
+                    .filter(|col| !col.field.is_empty())
+                    .map(|col| {
+                        TableColumn::output(
+                            &col.id,
+                            &col.field,
+                            col.collect,
+                            col.declared
+                                .as_ref()
+                                .filter(|declared| !declared.array)
+                                .and_then(|declared| declared.resolve(cx.dictionary_types())),
+                        )
+                    })
+                    .collect(),
+                rules: &self.rules,
+            };
+            cx.push_table_diagnostics(&table, |row| Self::row_key(&self.rules[row], row));
         }
 
         for col in &self.outputs {
@@ -661,6 +701,12 @@ impl DecisionTableIr {
             }
             _ => false,
         }
+    }
+
+    fn row_key(rule: &HashMap<Arc<str>, Arc<str>>, row: usize) -> Arc<str> {
+        rule.get(ROW_ID_KEY)
+            .cloned()
+            .unwrap_or_else(|| Arc::from(row.to_string()))
     }
 
     pub(super) fn write_target(&self, path: &str) -> Option<CursorTarget> {

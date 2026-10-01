@@ -1,5 +1,5 @@
 use serde_json::json;
-use zen_engine::policy::{PolicyWorkspace, ScopeRequest};
+use zen_engine::policy::{CursorTarget, PolicyWorkspace, ScopeRequest};
 
 fn tier_dictionary() -> serde_json::Value {
     json!({
@@ -45,6 +45,12 @@ fn workspace_with(blocks: Vec<serde_json::Value>) -> PolicyWorkspace {
 fn cell_diagnostics(ws: &PolicyWorkspace) -> Vec<String> {
     ws.diagnostics("main")
         .iter()
+        .filter(|d| {
+            !matches!(
+                d.location.target,
+                Some(CursorTarget::DecisionTableRow { .. })
+            )
+        })
         .map(|d| format!("{d:?}"))
         .collect()
 }

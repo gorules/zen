@@ -868,6 +868,10 @@ impl DataModelPaths {
         }
     }
 
+    pub(crate) fn declares(&self, path: &str) -> bool {
+        self.all.contains(path)
+    }
+
     pub fn matches_prefix(&self, write_path: &str) -> Option<&PropertyPath> {
         if let Some(p) = self.all.get(write_path) {
             return Some(p);

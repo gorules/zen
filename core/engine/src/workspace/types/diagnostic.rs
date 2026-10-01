@@ -192,9 +192,17 @@ pub enum DiagnosticCode {
     RepeatedDerivation,
     PreferMatch,
     PreferDictionary,
-    RedundantTableRow,
     NonDiscriminatingColumn,
     RedundantParentheses,
+
+    UnsatisfiableCell,
+    UnreachableRule,
+    DuplicateRule,
+    MissingCases,
+    CompressibleTable,
+    TableChecksIncomplete,
+    CellCoversDomain,
+    OutputNeverProduced,
 }
 
 impl DiagnosticCode {

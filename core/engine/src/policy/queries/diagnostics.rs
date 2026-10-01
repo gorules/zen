@@ -2,11 +2,13 @@ use std::sync::Arc;
 
 use ahash::{HashMap, HashMapExt, HashSet};
 
+use crate::analysis::table::FullCheck;
 use crate::policy::ir::PropertyTypeIr;
 use crate::policy::linter::Linter;
 use crate::policy::queries::dependency::WriteScope;
 use crate::policy::queries::path::PathRoot;
 use crate::workspace::db::{Db, Unit};
+use crate::workspace::graph::GraphAnalyzer;
 use crate::workspace::types::{BlockRef, Diagnostic, DiagnosticCode, DiagnosticLocation};
 
 impl Db {
@@ -66,7 +68,116 @@ impl Db {
 
         out.extend(Linter::standard().run(self, path));
 
+        self.locate_nullable_sources(path, &mut out);
+
         out
+    }
+
+    pub(crate) fn full_table_check(&self, path: &str, block: &str) -> Vec<Diagnostic> {
+        let path: Arc<str> = Arc::from(path);
+        let _full = FullCheck::start();
+        let snap = self.snapshot();
+        let mut out: Vec<Diagnostic> = match snap.graphs.get(&path).cloned() {
+            Some(doc) => {
+                let Some(content) = doc.as_graph() else {
+                    return Vec::new();
+                };
+                self.graph_stack.borrow_mut().push(path.clone());
+                self.graph_dep_frame_push(&path);
+                let analysis = GraphAnalyzer::new(self, path.clone(), content).analyze();
+                self.graph_stack.borrow_mut().pop();
+                let _ = self.graph_dep_frame_pop();
+                analysis.diagnostics
+            }
+            None => {
+                let unit = self.unit(&path);
+                let enriched = self.compute_unit_enriched(&unit);
+                enriched
+                    .diagnostics
+                    .iter()
+                    .chain(
+                        enriched
+                            .per_rule
+                            .iter()
+                            .flat_map(|rule| rule.diagnostics.iter()),
+                    )
+                    .filter(|d| d.is_in(&path))
+                    .cloned()
+                    .collect()
+            }
+        };
+        out.retain(|d| d.location.block_id.as_deref() == Some(block) && Self::table_code(d.code));
+        out
+    }
+
+    fn table_code(code: DiagnosticCode) -> bool {
+        matches!(
+            code,
+            DiagnosticCode::UnsatisfiableCell
+                | DiagnosticCode::UnreachableRule
+                | DiagnosticCode::DuplicateRule
+                | DiagnosticCode::MissingCases
+                | DiagnosticCode::CompressibleTable
+                | DiagnosticCode::CellCoversDomain
+                | DiagnosticCode::OutputNeverProduced
+                | DiagnosticCode::TableChecksIncomplete
+        )
+    }
+
+    fn locate_nullable_sources(&self, path: &Arc<str>, out: &mut [Diagnostic]) {
+        if !out.iter().any(|d| d.args.contains_key("nullablePath")) {
+            return;
+        }
+        let shallow = self.shallow();
+        let unit = self.unit(path);
+        let mut members: Vec<&Arc<str>> = unit.members.iter().collect();
+        members.sort_by_key(|member| (*member != path, member.to_string()));
+        let covers = |written: &str, field: &str| {
+            field == written
+                || field
+                    .strip_prefix(written)
+                    .is_some_and(|rest| rest.starts_with('.'))
+        };
+        for diagnostic in out.iter_mut() {
+            if !diagnostic.is_in(path) {
+                continue;
+            }
+            let Some(field) = diagnostic.args.get("nullablePath").cloned() else {
+                continue;
+            };
+            let writer = shallow
+                .per_rule
+                .iter()
+                .filter(|rule| unit.members.contains(&rule.policy_path))
+                .find(|rule| rule.writes.iter().any(|w| covers(&w.path, &field)))
+                .map(|rule| (rule.policy_path.clone(), rule.block_id.clone()));
+            let declared = || {
+                members.iter().find_map(|member| {
+                    let parsed = self.parsed(member)?;
+                    let found = parsed.policy.data_models().find_map(|(id, dm)| {
+                        dm.properties
+                            .iter()
+                            .any(|prop| {
+                                let declared = if dm.scope.is_global() {
+                                    prop.name.to_string()
+                                } else {
+                                    format!("{}.{}", dm.name, prop.name)
+                                };
+                                declared == field
+                            })
+                            .then(|| ((*member).clone(), id.clone()))
+                    });
+                    found
+                })
+            };
+            let Some((policy, block)) = writer.or_else(declared) else {
+                continue;
+            };
+            diagnostic.args.insert("sourceId", block.to_string());
+            if policy != *path {
+                diagnostic.args.insert("sourcePolicy", policy.to_string());
+            }
+        }
     }
 
     pub fn evaluation_diagnostics(&self, entry: &Arc<str>) -> Vec<Diagnostic> {

@@ -13,6 +13,10 @@ use zen_types::decision::{
 
 use zen_expression::intellisense::ArmTest;
 
+use crate::analysis::nullable::NullableOperand;
+use crate::analysis::table::{
+    Bound, HitMode, Interval, NumberSet, PathConstraints, TableColumn, VerifyTable,
+};
 use crate::model::GraphContent;
 use crate::policy::blocks::{
     DecisionTableIr, DeclaredType, DictionaryCandidate, IntelliSenseSource, ReadFlattener,
@@ -89,6 +93,8 @@ pub(crate) struct GraphAnalyzer<'a> {
     unchecked: bool,
     nodes_scope: VariableType,
     dictionary_types: HashMap<Arc<str>, VariableType>,
+    constraints: PathConstraints,
+    rewritten: Option<Vec<Arc<str>>>,
 }
 
 type IncomingEdges = Vec<Vec<(usize, Option<Arc<str>>)>>;
@@ -112,6 +118,8 @@ impl<'a> GraphAnalyzer<'a> {
             unchecked: false,
             nodes_scope: VariableType::Any,
             dictionary_types,
+            constraints: PathConstraints::default(),
+            rewritten: None,
         }
     }
 
@@ -124,7 +132,23 @@ impl<'a> GraphAnalyzer<'a> {
         if let Some(order) = &topology.order {
             let descendants = Self::descendant_sets(&topology);
             let mut ancestors: HashMap<usize, HashSet<usize>> = HashMap::new();
+            let mut after: HashMap<usize, PathConstraints> = HashMap::new();
+            let mut branches: HashMap<(usize, Arc<str>), PathConstraints> = HashMap::new();
+            let mut rewritten: HashMap<usize, Option<Vec<Arc<str>>>> = HashMap::new();
             for &idx in order {
+                self.rewritten = Self::rewritten_before(&topology.incoming[idx], &rewritten);
+                let parts: Vec<PathConstraints> = topology.incoming[idx]
+                    .iter()
+                    .map(|(pred, handle)| {
+                        handle
+                            .as_ref()
+                            .and_then(|h| branches.get(&(*pred, h.clone())))
+                            .or_else(|| after.get(pred))
+                            .cloned()
+                            .unwrap_or_default()
+                    })
+                    .collect();
+                self.constraints = PathConstraints::join(&parts);
                 let mut ancestor_set: HashSet<usize> = HashSet::default();
                 for (pred, _) in &topology.incoming[idx] {
                     ancestor_set.insert(*pred);
@@ -145,6 +169,12 @@ impl<'a> GraphAnalyzer<'a> {
                 let analysis = self.analyze_node(node, input, unchecked, open, &graph_input);
                 nodes.insert(node.id.clone(), analysis);
                 ancestors.insert(idx, ancestor_set);
+                let outgoing = Self::constraints_after(node, self.constraints.clone());
+                if let DecisionNodeKind::SwitchNode { content } = &node.kind {
+                    branches.extend(self.branch_constraints(idx, content, &outgoing));
+                }
+                after.insert(idx, outgoing);
+                rewritten.insert(idx, Self::rewritten_after(node, self.rewritten.clone()));
             }
         }
 
@@ -153,6 +183,7 @@ impl<'a> GraphAnalyzer<'a> {
         self.lint_output_any(&topology, &nodes, &graph_input);
         self.lint_unreachable(&topology);
         self.lint_expressions();
+        self.locate_nullable_sources(&topology);
         self.sort_diagnostics(&topology);
 
         let input = self.graph_input_signature();
@@ -901,6 +932,8 @@ impl<'a> GraphAnalyzer<'a> {
             }
         }
 
+        self.verify_decision_table(node, content, &input_field_types);
+
         for col in content.inputs.iter() {
             let Some(field) = &col.field else {
                 continue;
@@ -1115,6 +1148,230 @@ impl<'a> GraphAnalyzer<'a> {
         }
     }
 
+    fn rewritten_before(
+        incoming: &[(usize, Option<Arc<str>>)],
+        after: &HashMap<usize, Option<Vec<Arc<str>>>>,
+    ) -> Option<Vec<Arc<str>>> {
+        if incoming.is_empty() {
+            return None;
+        }
+        let mut written: Vec<Arc<str>> = Vec::new();
+        for (pred, _) in incoming {
+            written.extend(after.get(pred).cloned().flatten()?);
+        }
+        Some(written)
+    }
+
+    fn rewritten_after(
+        node: &DecisionNode,
+        incoming: Option<Vec<Arc<str>>>,
+    ) -> Option<Vec<Arc<str>>> {
+        let keeps = |attrs: &TransformAttributes| {
+            attrs.pass_through
+                && attrs.input_field.is_none()
+                && attrs.output_path.is_none()
+                && matches!(attrs.execution_mode, TransformExecutionMode::Single)
+        };
+        match &node.kind {
+            DecisionNodeKind::InputNode { .. } => Some(Vec::new()),
+            DecisionNodeKind::SwitchNode { .. } => incoming,
+            DecisionNodeKind::ExpressionNode { content }
+                if keeps(&content.transform_attributes) =>
+            {
+                incoming.map(|mut written| {
+                    written.extend(content.expressions.iter().map(|e| e.key.clone()));
+                    written
+                })
+            }
+            DecisionNodeKind::DecisionTableNode { content }
+                if keeps(&content.transform_attributes) =>
+            {
+                incoming.map(|mut written| {
+                    written.extend(content.outputs.iter().map(|o| Arc::from(o.write_path().0)));
+                    written
+                })
+            }
+            _ => None,
+        }
+    }
+
+    fn preserved_input(&self, content: &DecisionTableContent, field: Option<&str>) -> bool {
+        let (Some(written), Some(field)) = (&self.rewritten, field) else {
+            return false;
+        };
+        if content.transform_attributes.input_field.is_some() {
+            return false;
+        }
+        let field = field.trim();
+        !written.iter().any(|w| {
+            let w = w.as_ref();
+            field == w
+                || field
+                    .strip_prefix(w)
+                    .is_some_and(|rest| rest.starts_with('.'))
+                || w.strip_prefix(field)
+                    .is_some_and(|rest| rest.starts_with('.'))
+        })
+    }
+
+    fn constraints_after(node: &DecisionNode, incoming: PathConstraints) -> PathConstraints {
+        let keeps = |attrs: &TransformAttributes| {
+            attrs.pass_through
+                && attrs.input_field.is_none()
+                && attrs.output_path.is_none()
+                && matches!(attrs.execution_mode, TransformExecutionMode::Single)
+        };
+        match &node.kind {
+            DecisionNodeKind::SwitchNode { .. } => incoming,
+            DecisionNodeKind::ExpressionNode { content }
+                if keeps(&content.transform_attributes) =>
+            {
+                incoming.without(content.expressions.iter().map(|e| e.key.as_ref()))
+            }
+            DecisionNodeKind::DecisionTableNode { content }
+                if keeps(&content.transform_attributes) =>
+            {
+                incoming.without(content.outputs.iter().map(|o| o.write_path().0))
+            }
+            _ => PathConstraints::default(),
+        }
+    }
+
+    fn branch_constraints(
+        &self,
+        idx: usize,
+        content: &SwitchNodeContent,
+        incoming: &PathConstraints,
+    ) -> Vec<((usize, Arc<str>), PathConstraints)> {
+        let intellisense = self.db.graph_intellisense();
+        let mut is = intellisense.borrow_mut();
+        let first_hit = matches!(content.hit_policy, SwitchStatementHitPolicy::First);
+        let mut prior = incoming.clone();
+        let mut out = Vec::new();
+        for statement in content.statements.iter() {
+            let branch = if statement.condition.trim().is_empty() {
+                prior.clone()
+            } else {
+                prior.clone().when_holds(&mut is, &statement.condition)
+            };
+            out.push(((idx, statement.id.clone()), branch));
+            if first_hit && !statement.condition.trim().is_empty() {
+                prior = prior.when_fails(&mut is, &statement.condition);
+            }
+        }
+        out
+    }
+
+    fn schema_number_range(
+        &self,
+        content: &DecisionTableContent,
+        field: Option<&str>,
+    ) -> Option<NumberSet> {
+        if content.transform_attributes.input_field.is_some() {
+            return None;
+        }
+        let field = field?.trim();
+        let mut schema: &serde_json::Value =
+            self.content
+                .nodes
+                .iter()
+                .find_map(|node| match &node.kind {
+                    DecisionNodeKind::InputNode { content } => content.schema.as_deref(),
+                    _ => None,
+                })?;
+        for segment in field.split('.') {
+            schema = schema.get("properties")?.get(segment)?;
+        }
+        let bound = |key: &str| {
+            schema
+                .get(key)
+                .and_then(|v| v.as_number())
+                .and_then(|n| n.to_string().parse::<rust_decimal::Decimal>().ok())
+        };
+        let lo = match (bound("exclusiveMinimum"), bound("minimum")) {
+            (Some(x), _) => Bound::Exclusive(x),
+            (None, Some(x)) => Bound::Inclusive(x),
+            (None, None) => Bound::Unbounded,
+        };
+        let hi = match (bound("exclusiveMaximum"), bound("maximum")) {
+            (Some(x), _) => Bound::Exclusive(x),
+            (None, Some(x)) => Bound::Inclusive(x),
+            (None, None) => Bound::Unbounded,
+        };
+        if lo == Bound::Unbounded && hi == Bound::Unbounded {
+            return None;
+        }
+        Some(NumberSet::from_intervals(vec![Interval::new(lo, hi)]))
+    }
+
+    fn verify_decision_table(
+        &mut self,
+        node: &DecisionNode,
+        content: &DecisionTableContent,
+        input_field_types: &HashMap<Arc<str>, VariableType>,
+    ) {
+        let table = VerifyTable {
+            mode: match content.hit_policy {
+                DecisionTableHitPolicy::First => HitMode::RowFirst,
+                DecisionTableHitPolicy::Collect => HitMode::Collect,
+            },
+            inputs: content
+                .inputs
+                .iter()
+                .map(|col| {
+                    let mut input = TableColumn::input(
+                        &col.id,
+                        &col.name,
+                        col.field.as_ref(),
+                        input_field_types.get(&col.id),
+                    );
+                    input.input = self.preserved_input(content, col.field.as_deref());
+                    let input = match self.schema_number_range(content, col.field.as_deref()) {
+                        Some(range) => TableColumn::narrow_numbers(input, range),
+                        None => input,
+                    };
+                    match col
+                        .field
+                        .as_deref()
+                        .filter(|_| content.transform_attributes.input_field.is_none())
+                        .and_then(|field| self.constraints.get(field.trim()))
+                    {
+                        Some(allowed) => TableColumn::narrow(input, allowed),
+                        None => input,
+                    }
+                })
+                .collect(),
+            outputs: content
+                .outputs
+                .iter()
+                .filter_map(|col| {
+                    let (path, collect) = col.write_path();
+                    (!path.is_empty() && !path.contains("[]")).then(|| {
+                        let declared = Self::parse_declared_column(col.column_type.as_deref())
+                            .ok()
+                            .flatten()
+                            .filter(|declared| !declared.array)
+                            .and_then(|declared| declared.resolve(&self.dictionary_types));
+                        TableColumn::output(&col.id, path, collect, declared)
+                    })
+                })
+                .collect(),
+            rules: &content.rules,
+        };
+        let intellisense = self.db.graph_intellisense();
+        let diagnostics = table.diagnostics(
+            &mut intellisense.borrow_mut(),
+            |row| Self::row_key(&content.rules[row], row),
+            |expression_id| match expression_id {
+                Some(id) => {
+                    DiagnosticLocation::expression(self.path.clone(), node.id.clone(), id, None)
+                }
+                None => DiagnosticLocation::block(self.path.clone(), node.id.clone()),
+            },
+        );
+        self.diagnostics.extend(diagnostics);
+    }
+
     fn declared_output_type(
         &mut self,
         node: &DecisionNode,
@@ -1181,16 +1438,11 @@ impl<'a> GraphAnalyzer<'a> {
         if content.rules.is_empty() {
             return false;
         }
-        let row_is_live = |rule: &ahash::HashMap<Arc<str>, Arc<str>>| {
-            content.inputs.iter().all(|ic| rule.contains_key(&ic.id))
-                && content.outputs.iter().all(|oc| rule.contains_key(&oc.id))
-        };
         let row_is_catch_all = |rule: &ahash::HashMap<Arc<str>, Arc<str>>| {
-            row_is_live(rule)
-                && content
-                    .inputs
-                    .iter()
-                    .all(|ic| rule.get(&ic.id).is_some_and(|c| c.is_empty()))
+            content
+                .inputs
+                .iter()
+                .all(|ic| rule.get(&ic.id).is_none_or(|c| c.is_empty()))
         };
         if content.rules.iter().any(row_is_catch_all) {
             return true;
@@ -1199,9 +1451,6 @@ impl<'a> GraphAnalyzer<'a> {
         let intellisense = self.db.graph_intellisense();
         let mut groups: HashMap<Arc<str>, Vec<ArmTest>> = HashMap::new();
         for rule in content.rules.iter() {
-            if !row_is_live(rule) {
-                continue;
-            }
             let mut constrained = content
                 .inputs
                 .iter()
@@ -1385,7 +1634,14 @@ impl<'a> GraphAnalyzer<'a> {
                         RedundantParentheses::scan(root, metadata)
                     })
                     .unwrap_or_default();
-                for (span, inner_span) in findings {
+                let fixes = RedundantParentheses::fix_args(&site.source, &findings, |source| {
+                    intellisense
+                        .borrow_mut()
+                        .with_ast(source, false, |root, _| {
+                            RedundantParentheses::tree_shape(&format!("{root:?}"))
+                        })
+                });
+                for ((span, inner_span), args) in findings.into_iter().zip(fixes) {
                     let message = match inner_span {
                         Some(inner) => format!(
                             "unnecessary parentheses around '{}'",
@@ -1400,11 +1656,10 @@ impl<'a> GraphAnalyzer<'a> {
                         span,
                         target: Some(site.target.clone()),
                     };
-                    self.diagnostics.push(Diagnostic::hint(
-                        DiagnosticCode::RedundantParentheses,
-                        location,
-                        message,
-                    ));
+                    let mut diagnostic =
+                        Diagnostic::hint(DiagnosticCode::RedundantParentheses, location, message);
+                    diagnostic.args = args;
+                    self.diagnostics.push(diagnostic);
                 }
             }
         }
@@ -1791,6 +2046,7 @@ impl<'a> GraphAnalyzer<'a> {
         let intellisense = self.db.graph_intellisense();
         let analysis =
             IntelliSenseSource::analyze(&mut intellisense.borrow_mut(), source, kind, scope);
+        let first = self.diagnostics.len();
         for diagnostic in &analysis.diagnostics {
             if !self.validate
                 && matches!(
@@ -1807,9 +2063,21 @@ impl<'a> GraphAnalyzer<'a> {
                 span: Some(diagnostic.span),
                 target: target.clone(),
             };
-            self.diagnostics
-                .push(Diagnostic::from_expression(diagnostic, location));
+            let mut diagnostic = Diagnostic::from_expression(diagnostic, location);
+            NullableOperand::annotate(
+                &mut diagnostic,
+                &mut intellisense.borrow_mut(),
+                source,
+                matches!(kind, ExpressionKind::Unary),
+            );
+            self.diagnostics.push(diagnostic);
         }
+        NullableOperand::fallback_all(
+            &mut self.diagnostics[first..],
+            &mut intellisense.borrow_mut(),
+            source,
+            matches!(kind, ExpressionKind::Unary),
+        );
         if self.validate {
             self.validate_read_paths(node_id, &expression_id, &target, &analysis.reads, scope);
         }
@@ -2072,6 +2340,75 @@ impl<'a> GraphAnalyzer<'a> {
 
     pub(crate) fn scope_with_nodes(base: &VariableType, nodes: &VariableType) -> VariableType {
         Self::scope_with(base, &[(NODES_KEY, nodes.shallow_clone())])
+    }
+
+    fn locate_nullable_sources(&mut self, topology: &GraphTopology) {
+        let covers = |written: &str, field: &str| {
+            field == written
+                || field
+                    .strip_prefix(written)
+                    .is_some_and(|rest| rest.starts_with('.'))
+        };
+        let writes = |node: &DecisionNode, field: &str| -> bool {
+            let prefixed = |attrs: &TransformAttributes, key: &str| match &attrs.output_path {
+                Some(prefix) => format!("{prefix}.{key}"),
+                None => key.to_string(),
+            };
+            match &node.kind {
+                DecisionNodeKind::ExpressionNode { content } => {
+                    content.expressions.iter().any(|e| {
+                        !e.key.is_empty()
+                            && covers(&prefixed(&content.transform_attributes, &e.key), field)
+                    })
+                }
+                DecisionNodeKind::DecisionTableNode { content } => {
+                    content.outputs.iter().any(|o| {
+                        let (written, _) = o.write_path();
+                        !written.is_empty()
+                            && covers(&prefixed(&content.transform_attributes, written), field)
+                    })
+                }
+                DecisionNodeKind::InputNode { content } => {
+                    let mut schema = content.schema.as_deref();
+                    for segment in field.split('.') {
+                        schema = schema
+                            .and_then(|s| s.get("properties"))
+                            .and_then(|p| p.get(segment));
+                    }
+                    schema.is_some()
+                }
+                _ => false,
+            }
+        };
+        for diagnostic in self.diagnostics.iter_mut() {
+            let Some(field) = diagnostic.args.get("nullablePath").cloned() else {
+                continue;
+            };
+            let Some(&start) = diagnostic
+                .location
+                .block_id
+                .as_ref()
+                .and_then(|id| topology.node_index.get(id))
+            else {
+                continue;
+            };
+            let mut seen: HashSet<usize> = HashSet::default();
+            let mut queue: VecDeque<usize> = topology.incoming[start]
+                .iter()
+                .map(|(pred, _)| *pred)
+                .collect();
+            while let Some(idx) = queue.pop_front() {
+                if !seen.insert(idx) {
+                    continue;
+                }
+                let node = &self.content.nodes[idx];
+                if writes(node, &field) {
+                    diagnostic.args.insert("sourceId", node.id.to_string());
+                    break;
+                }
+                queue.extend(topology.incoming[idx].iter().map(|(pred, _)| *pred));
+            }
+        }
     }
 
     fn sort_diagnostics(&mut self, topology: &GraphTopology) {

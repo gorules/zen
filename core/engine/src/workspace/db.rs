@@ -525,32 +525,34 @@ impl Db {
 
     pub(crate) fn enriched_of_unit(&self, unit: &Unit) -> Arc<EnrichedState> {
         unit.enriched_once
-            .get_or_init(|| {
-                let snap = self.snapshot();
-                let subset: HashMap<Arc<str>, Arc<ParsedPolicy>> = unit
-                    .members
-                    .iter()
-                    .filter_map(|m| snap.all_parsed.get_key_value(m))
-                    .map(|(p, v)| (p.clone(), v.clone()))
-                    .collect();
-                let base_scope = Snapshot::compute_base_scope(&subset, &unit.entity_sources);
-                self.scope_roots
-                    .borrow_mut()
-                    .push(base_scope.shallow_clone());
-                Arc::new(Snapshot::compute_enriched(
-                    &base_scope,
-                    self.scope_roots.clone(),
-                    &unit.dep_graph,
-                    &unit.execution_order,
-                    &snap.rule_by_ref,
-                    &snap.shallow,
-                    &unit.members,
-                    &self.intellisense,
-                    Rc::new(unit.dictionary_types()),
-                    Rc::new(unit.data_model_paths.clone()),
-                ))
-            })
+            .get_or_init(|| Arc::new(self.compute_unit_enriched(unit)))
             .clone()
+    }
+
+    pub(crate) fn compute_unit_enriched(&self, unit: &Unit) -> EnrichedState {
+        let snap = self.snapshot();
+        let subset: HashMap<Arc<str>, Arc<ParsedPolicy>> = unit
+            .members
+            .iter()
+            .filter_map(|m| snap.all_parsed.get_key_value(m))
+            .map(|(p, v)| (p.clone(), v.clone()))
+            .collect();
+        let base_scope = Snapshot::compute_base_scope(&subset, &unit.entity_sources);
+        self.scope_roots
+            .borrow_mut()
+            .push(base_scope.shallow_clone());
+        Snapshot::compute_enriched(
+            &base_scope,
+            self.scope_roots.clone(),
+            &unit.dep_graph,
+            &unit.execution_order,
+            &snap.rule_by_ref,
+            &snap.shallow,
+            &unit.members,
+            &self.intellisense,
+            Rc::new(unit.dictionary_types()),
+            Rc::new(unit.data_model_paths.clone()),
+        )
     }
 
     pub(crate) fn opcode_cache_of_unit(&self, unit: &Unit) -> Arc<OpcodeCache> {

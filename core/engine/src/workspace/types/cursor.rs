@@ -38,6 +38,9 @@ pub enum CursorTarget {
         row: Arc<str>,
         col: Arc<str>,
     },
+    DecisionTableRow {
+        row: Arc<str>,
+    },
     DataModelName,
     DataModelProperty {
         id: Arc<str>,

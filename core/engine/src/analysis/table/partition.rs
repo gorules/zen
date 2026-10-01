@@ -46,14 +46,14 @@ impl Points {
         }
     }
 
-    pub(super) fn representative(&self, piece: usize) -> Decimal {
+    pub(super) fn representative(&self, piece: usize) -> Option<Decimal> {
         let points = &self.0;
         match (piece % 2, points.len()) {
-            (1, _) => points[piece / 2],
-            (_, 0) => Decimal::ZERO,
-            _ if piece == 0 => points[0] - Decimal::ONE,
-            _ if piece / 2 == points.len() => points[points.len() - 1] + Decimal::ONE,
-            _ => (points[piece / 2 - 1] + points[piece / 2]) / Decimal::TWO,
+            (1, _) => Some(points[piece / 2]),
+            (_, 0) => Some(Decimal::ZERO),
+            _ if piece == 0 => points[0].checked_sub(Decimal::ONE),
+            _ if piece / 2 == points.len() => points[points.len() - 1].checked_add(Decimal::ONE),
+            _ => Interval::midpoint(points[piece / 2 - 1], points[piece / 2]),
         }
     }
 

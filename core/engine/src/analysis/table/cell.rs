@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::Arc;
@@ -45,24 +46,41 @@ impl CellConstraint {
             } else {
                 None
             };
-            (truth, format!("{node:?}"))
+            match truth {
+                Some(truth) => Ok(truth.t),
+                None => Err((Self::is_random(node), format!("{node:?}"))),
+            }
         });
         match parsed {
-            Some((Some(truth), _)) => CellConstraint::Known(truth.t),
-            Some((None, key)) => CellConstraint::Opaque(Self::atom_key(trimmed, Some(key))),
-            None => CellConstraint::Opaque(Self::atom_key(trimmed, None)),
+            Some(Ok(set)) => CellConstraint::Known(set),
+            Some(Err((random, key))) => CellConstraint::Opaque(Self::atom_key(random, key)),
+            None => CellConstraint::Opaque(Self::atom_key(false, format!("src:{trimmed}"))),
         }
     }
 
-    fn atom_key(source: &str, ast: Option<String>) -> Rc<str> {
-        if source.contains("rand(") {
+    fn is_random(node: &Node) -> bool {
+        let random = Cell::new(false);
+        node.walk(|n| {
+            if let Node::FunctionCall {
+                kind: FunctionKind::Internal(InternalFunction::Rand),
+                ..
+            } = n
+            {
+                random.set(true);
+            }
+        });
+        random.get()
+    }
+
+    fn atom_key(random: bool, key: String) -> Rc<str> {
+        if random {
             static UNIQUE: AtomicUsize = AtomicUsize::new(0);
             return Rc::from(format!(
                 "unique:{}",
                 UNIQUE.fetch_add(1, AtomicOrdering::Relaxed)
             ));
         }
-        Rc::from(ast.unwrap_or_else(|| format!("src:{source}")))
+        Rc::from(key)
     }
 
     pub(crate) fn known_set(&self) -> Option<ValueSet> {
@@ -134,10 +152,79 @@ struct Truth {
 }
 
 impl Truth {
-    fn unwrap<'a, 'n>(node: &'a Node<'n>) -> &'a Node<'n> {
-        match node {
-            Node::Parenthesized(inner) => Self::unwrap(inner),
-            other => other,
+    fn unwrap<'a, 'n>(mut node: &'a Node<'n>) -> &'a Node<'n> {
+        while let Node::Parenthesized(inner) = node {
+            node = inner;
+        }
+        node
+    }
+
+    fn chain<'a, 'n>(node: &'a Node<'n>, op: LogicalOperator) -> Vec<&'a Node<'n>> {
+        let mut operands = Vec::new();
+        let mut pending = vec![node];
+        while let Some(next) = pending.pop() {
+            match Self::unwrap(next) {
+                Node::Binary {
+                    left,
+                    operator: Operator::Logical(found),
+                    right,
+                } if *found == op => {
+                    pending.push(right);
+                    pending.push(left);
+                }
+                other => operands.push(other),
+            }
+        }
+        operands
+    }
+
+    fn all(node: &Node, cx: &Scope) -> Option<Truth> {
+        let mut operands = Self::chain(node, LogicalOperator::And).into_iter();
+        let mut acc = Self::of(operands.next()?, cx)?;
+        for operand in operands {
+            let b = Self::of(operand, cx)?;
+            acc = Truth {
+                f: acc.f.union(&acc.t.intersect(&b.f)),
+                t: acc.t.intersect(&b.t),
+            };
+        }
+        Some(acc)
+    }
+
+    fn any(node: &Node, cx: &Scope) -> Option<Truth> {
+        let mut acc: Option<Truth> = None;
+        let mut total: Vec<ValueSet> = Vec::new();
+        for operand in Self::chain(node, LogicalOperator::Or) {
+            let b = Self::of(operand, cx)?;
+            if !b.t.intersects(&b.f) && b.t.union(&b.f).is_all() {
+                total.push(b.t);
+                continue;
+            }
+            if !total.is_empty() {
+                acc = Some(Self::either(acc, Self::total(&total)));
+                total.clear();
+            }
+            acc = Some(Self::either(acc, b));
+        }
+        if !total.is_empty() {
+            acc = Some(Self::either(acc, Self::total(&total)));
+        }
+        acc
+    }
+
+    fn total(sets: &[ValueSet]) -> Truth {
+        let t = ValueSet::union_all(sets);
+        let f = t.complement();
+        Truth { t, f }
+    }
+
+    fn either(acc: Option<Truth>, b: Truth) -> Truth {
+        match acc {
+            None => b,
+            Some(a) => Truth {
+                t: a.t.union(&a.f.intersect(&b.t)),
+                f: a.f.intersect(&b.f),
+            },
         }
     }
 
@@ -155,29 +242,13 @@ impl Truth {
                 f: inner.t,
             }),
             Node::Binary {
-                left,
                 operator: Operator::Logical(LogicalOperator::And),
-                right,
-            } => {
-                let a = Self::of(left, cx)?;
-                let b = Self::of(right, cx)?;
-                Some(Truth {
-                    t: a.t.intersect(&b.t),
-                    f: a.f.union(&a.t.intersect(&b.f)),
-                })
-            }
+                ..
+            } => Self::all(node, cx),
             Node::Binary {
-                left,
                 operator: Operator::Logical(LogicalOperator::Or),
-                right,
-            } => {
-                let a = Self::of(left, cx)?;
-                let b = Self::of(right, cx)?;
-                Some(Truth {
-                    t: a.t.union(&a.f.intersect(&b.t)),
-                    f: a.f.intersect(&b.f),
-                })
-            }
+                ..
+            } => Self::any(node, cx),
             Node::Binary {
                 left,
                 operator: Operator::Comparison(op),
@@ -222,42 +293,34 @@ impl Truth {
         }
     }
 
-    fn subject<'a>(node: &Node<'a>) -> Option<Vec<&'a str>> {
-        match Self::unwrap(node) {
-            Node::FunctionCall {
-                kind: FunctionKind::Internal(InternalFunction::Bool),
-                arguments: [argument],
-            } => Self::subject(argument),
-            Node::Unary {
-                operator: Operator::Logical(LogicalOperator::Not),
-                node,
-            } => Self::subject(node),
-            Node::Binary {
-                left,
-                operator: Operator::Logical(LogicalOperator::And | LogicalOperator::Or),
-                ..
-            } => Self::subject(left),
-            Node::Binary {
-                left,
-                operator: Operator::Comparison(_),
-                right,
-            } => Self::path(left).or_else(|| Self::path(right)),
-            _ => None,
+    fn subject<'a>(mut node: &Node<'a>) -> Option<Vec<&'a str>> {
+        loop {
+            node = match Self::unwrap(node) {
+                Node::FunctionCall {
+                    kind: FunctionKind::Internal(InternalFunction::Bool),
+                    arguments: [argument],
+                } => argument,
+                Node::Unary {
+                    operator: Operator::Logical(LogicalOperator::Not),
+                    node,
+                } => node,
+                Node::Binary {
+                    left,
+                    operator: Operator::Logical(LogicalOperator::And | LogicalOperator::Or),
+                    ..
+                } => left,
+                Node::Binary {
+                    left,
+                    operator: Operator::Comparison(_),
+                    right,
+                } => return Self::path(left).or_else(|| Self::path(right)),
+                _ => return None,
+            };
         }
     }
 
     fn conjuncts<'n, 'a>(node: &'n Node<'a>, out: &mut Vec<&'n Node<'a>>) {
-        match Self::unwrap(node) {
-            Node::Binary {
-                left,
-                operator: Operator::Logical(LogicalOperator::And),
-                right,
-            } => {
-                Self::conjuncts(left, out);
-                Self::conjuncts(right, out);
-            }
-            other => out.push(other),
-        }
+        out.extend(Self::chain(node, LogicalOperator::And));
     }
 
     fn comparison(left: &Node, op: ComparisonOperator, right: &Node, cx: &Scope) -> Option<Truth> {
@@ -319,10 +382,11 @@ impl Truth {
     fn membership(right: &Node, cx: &Scope) -> Option<Truth> {
         match Self::unwrap(right) {
             Node::Array(items) => {
-                let mut t = ValueSet::empty();
-                for item in items.iter() {
-                    t = t.union(&Self::literal(item, cx)?);
-                }
+                let literals = items
+                    .iter()
+                    .map(|item| Self::literal(item, cx))
+                    .collect::<Option<Vec<_>>>()?;
+                let t = ValueSet::union_all(&literals);
                 let f = ValueSet::scalars().difference(&t);
                 Some(Truth { t, f })
             }

@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use ahash::{HashMap, HashMapExt, HashSet};
 
+use crate::policy::blocks::BlockKind;
 use crate::policy::ir::PropertyTypeIr;
 use crate::policy::linter::Linter;
-use crate::policy::queries::dependency::WriteScope;
+use crate::policy::queries::dependency::{RuleEnrichedAnalysis, WriteScope};
 use crate::policy::queries::path::PathRoot;
 use crate::workspace::db::{Db, Unit};
 use crate::workspace::types::{BlockRef, Diagnostic, DiagnosticCode, DiagnosticLocation};
@@ -50,13 +51,13 @@ impl Db {
                 .filter(|d| d.is_in(path))
                 .cloned(),
         );
-        out.extend(
-            enriched
-                .per_rule
-                .iter()
-                .filter(|rule| rule.policy_path == *path)
-                .flat_map(|rule| rule.diagnostics.iter().cloned()),
-        );
+        for rule in enriched
+            .per_rule
+            .iter()
+            .filter(|rule| rule.policy_path == *path)
+        {
+            out.extend(self.rule_diagnostics(rule));
+        }
 
         out.extend(self.import_diagnostics(path));
 
@@ -68,6 +69,34 @@ impl Db {
 
         self.locate_nullable_sources(path, &mut out);
 
+        out
+    }
+
+    fn rule_diagnostics(&self, rule: &RuleEnrichedAnalysis) -> Vec<Diagnostic> {
+        if rule.table_checks.is_empty() {
+            return rule.diagnostics.clone();
+        }
+        let block = self.block_ir(&BlockRef {
+            policy_path: rule.policy_path.clone(),
+            block_id: rule.block_id.clone(),
+        });
+        let Some(BlockKind::DecisionTable(table)) = block.as_ref().map(|block| &block.kind) else {
+            return rule.diagnostics.clone();
+        };
+        let intellisense = self.intellisense();
+        let mut out = Vec::with_capacity(rule.diagnostics.len());
+        let mut cursor = 0;
+        for check in &rule.table_checks {
+            out.extend(rule.diagnostics[cursor..check.at].iter().cloned());
+            out.extend(table.verify(
+                check,
+                &mut intellisense.borrow_mut(),
+                &rule.policy_path,
+                &rule.block_id,
+            ));
+            cursor = check.at;
+        }
+        out.extend(rule.diagnostics[cursor..].iter().cloned());
         out
     }
 
@@ -747,5 +776,67 @@ impl Db {
         }
 
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use crate::workspace::types::{DiagnosticCode, Severity};
+    use crate::workspace::Workspace;
+
+    #[test]
+    fn evaluation_diagnostics_skip_table_verification() {
+        let policy = |value: &str| {
+            json!({ "blocks": [
+                { "id": "dm", "type": "dataModel", "props": { "data": {
+                    "name": "applicant",
+                    "properties": [
+                        { "id": "p1", "name": "age", "type": "number", "array": false, "optional": false }
+                    ]
+                } } },
+                { "id": "dt", "type": "decisionTable", "props": { "data": {
+                    "hitPolicy": "first",
+                    "inputs": [ { "id": "i0", "name": "Age", "field": "applicant.age" } ],
+                    "outputs": [ { "id": "o0", "name": "Rate", "field": "applicant.rate" } ],
+                    "rules": [
+                        { "_id": "r1", "i0": "< 18", "o0": "1" },
+                        { "_id": "r2", "i0": "< 10", "o0": "2" }
+                    ]
+                } } },
+                { "id": "calc", "type": "expression", "props": { "data": { "key": "applicant.total", "value": value } } }
+            ] })
+        };
+        let table_codes = [
+            DiagnosticCode::MissingCases,
+            DiagnosticCode::UnreachableRule,
+        ];
+        for (value, errors) in [("applicant.age + 1", 0), ("applicant.missing > 50", 1)] {
+            let mut ws = Workspace::new();
+            ws.set_policy("p", serde_json::from_value(policy(value)).expect("policy"));
+            let editor = ws.diagnostics("p");
+            assert_eq!(
+                editor
+                    .iter()
+                    .filter(|d| table_codes.contains(&d.code))
+                    .count(),
+                2,
+                "{editor:?}"
+            );
+            let evaluation = ws.evaluation_diagnostics("p");
+            assert!(
+                evaluation.iter().all(|d| !table_codes.contains(&d.code)),
+                "{evaluation:?}"
+            );
+            assert_eq!(
+                evaluation
+                    .iter()
+                    .filter(|d| d.severity == Severity::Error)
+                    .count(),
+                errors,
+                "{evaluation:?}"
+            );
+        }
     }
 }

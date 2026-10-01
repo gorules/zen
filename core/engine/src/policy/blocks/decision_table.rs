@@ -3,7 +3,7 @@ use std::sync::{Arc, OnceLock};
 use ahash::{HashMap, HashSet};
 use fixedbitset::FixedBitSet;
 use serde::{Deserialize, Serialize};
-use zen_expression::intellisense::{ArmTest, NumberCover};
+use zen_expression::intellisense::{ArmTest, IntelliSense, NumberCover};
 use zen_expression::variable::{Variable, VariableType};
 use zen_expression::Isolate;
 use zen_types::decision::{
@@ -16,12 +16,12 @@ use crate::analysis::table::{HitMode, TableColumn, VerifyTable};
 use crate::policy::queries::scope::VariableTypeScope;
 use crate::workspace::types::{
     BlockTrace, Cursor, CursorTarget, DecisionTableExtras, Diagnostic, DiagnosticArgs,
-    DiagnosticCode, ExpressionKind,
+    DiagnosticCode, DiagnosticLocation, ExpressionKind,
 };
 
 use crate::policy::ArcStrTrim;
 
-use super::context::{AnalysisContext, ExecutionContext, ExecutionError};
+use super::context::{AnalysisContext, ExecutionContext, ExecutionError, TableCheck};
 use super::{
     Block, BlockKind, BlockReadPlan, CellReads, ConditionalReads, ExpressionLocation, ParseContext,
     ReadFlattenFn, WriteSite, WriteTarget,
@@ -478,7 +478,7 @@ impl DecisionTableIr {
                     .collect(),
                 rules: &self.rules,
             };
-            cx.push_table_diagnostics(&table, |row| Self::row_key(&self.rules[row], row));
+            cx.defer_table_check(table);
         }
 
         for col in &self.outputs {
@@ -701,6 +701,31 @@ impl DecisionTableIr {
             }
             _ => false,
         }
+    }
+
+    pub(crate) fn verify(
+        &self,
+        check: &TableCheck,
+        is: &mut IntelliSense,
+        policy_path: &Arc<str>,
+        block_id: &Arc<str>,
+    ) -> Vec<Diagnostic> {
+        let table = VerifyTable {
+            mode: check.mode,
+            inputs: check.inputs.clone(),
+            outputs: check.outputs.clone(),
+            rules: &self.rules,
+        };
+        table.diagnostics(
+            is,
+            |row| Self::row_key(&self.rules[row], row),
+            |expression_id| match expression_id {
+                Some(id) => {
+                    DiagnosticLocation::expression(policy_path.clone(), block_id.clone(), id, None)
+                }
+                None => DiagnosticLocation::block(policy_path.clone(), block_id.clone()),
+            },
+        )
     }
 
     fn row_key(rule: &HashMap<Arc<str>, Arc<str>>, row: usize) -> Arc<str> {

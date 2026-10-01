@@ -154,9 +154,10 @@ impl RowIndex {
     pub(super) fn inner_points(&self, col: usize, interval: &Interval) -> Vec<Decimal> {
         let points = &self.columns[col].points;
         match points.range(interval) {
-            Some((first, last)) => {
-                vec![points.representative(last), points.representative(first)]
-            }
+            Some((first, last)) => [points.representative(last), points.representative(first)]
+                .into_iter()
+                .flatten()
+                .collect(),
             None => Vec::new(),
         }
     }

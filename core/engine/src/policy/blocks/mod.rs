@@ -29,7 +29,7 @@ pub(crate) use context::IntelliSenseSource;
 pub use context::{
     AnalysisContext, AnalysisSummary, ExecutionContext, ExecutionError, ExpressionLocation,
     InstanceSource, PropertyRead, SharedDeclaredPaths, SharedDictionaryTypes, SharedIntelliSense,
-    SharedPoisonedPaths, WriteTarget,
+    SharedPoisonedPaths, TableCheck, WriteTarget,
 };
 pub use decision_table::{DecisionTableDoc, DecisionTableIr, DeclaredType};
 pub(crate) use decision_table::{DictionaryCandidate, TableSelection, ROW_ID_KEY};

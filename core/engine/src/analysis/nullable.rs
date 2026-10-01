@@ -1,21 +1,15 @@
 use std::cell::RefCell;
 
+use ahash::{HashMap, HashMapExt, HashSet};
 use zen_expression::intellisense::IntelliSense;
 use zen_expression::lexer::{ArithmeticOperator, ComparisonOperator, LogicalOperator, Operator};
 use zen_expression::parser::Node;
 
-use crate::policy::linter::{AstOps, RedundantParentheses};
+use crate::analysis::proof::{FixEdit, FixProof};
+use crate::policy::linter::AstOps;
 use crate::workspace::types::{Diagnostic, DiagnosticCode, Span};
 
 pub(crate) struct NullableOperand;
-
-struct FallbackEdit {
-    span: Span,
-    range: Span,
-    kept: String,
-    dropped: String,
-    keep_left: bool,
-}
 
 #[derive(Default)]
 struct Fallback {
@@ -29,252 +23,228 @@ struct Found {
     path: Option<String>,
 }
 
+struct Candidate {
+    idx: usize,
+    span: Span,
+    kept: Span,
+    dropped: Span,
+    keep_left: bool,
+    wrapper: Option<Span>,
+}
+
+impl Candidate {
+    fn edit(&self, outer: Span) -> FixEdit {
+        FixEdit::unwrap(outer, self.kept, Some((self.span, self.keep_left)))
+    }
+}
+
 impl NullableOperand {
     pub(crate) fn annotate(
-        diagnostic: &mut Diagnostic,
-        is: &mut IntelliSense,
-        source: &str,
-        unary: bool,
-    ) {
-        if diagnostic.code == DiagnosticCode::RedundantNullish {
-            Self::fallback_fix(diagnostic, is, source, unary);
-            return;
-        }
-        if diagnostic.code != DiagnosticCode::TypeMismatch {
-            return;
-        }
-        let Some(span) = diagnostic.location.span else {
-            return;
-        };
-        let Some((operator, left, right)) = Self::parse_message(&diagnostic.message) else {
-            return;
-        };
-        let (left_nullable, right_nullable) = (left.ends_with('?'), right.ends_with('?'));
-        if left_nullable == right_nullable
-            || left.trim_end_matches('?') != "number"
-            || right.trim_end_matches('?') != "number"
-        {
-            return;
-        }
-        let Some(found) = Self::locate(is, source, unary, span, left_nullable) else {
-            return;
-        };
-        if let Some(path) = found.path.filter(|p| !p.starts_with('$')) {
-            diagnostic.args.insert("nullablePath", path);
-        }
-        let defaultable = match operator.as_str() {
-            "+" | "-" | "*" | ">" | "<" | ">=" | "<=" => true,
-            "/" | "%" => found.left,
-            _ => false,
-        };
-        if !defaultable {
-            return;
-        }
-        let operand: String = source
-            .chars()
-            .skip(found.operand.0 as usize)
-            .take((found.operand.1 - found.operand.0) as usize)
-            .collect();
-        let replacement = format!("({operand} ?? 0)");
-        let prefix: String = source.chars().take(found.operand.0 as usize).collect();
-        let suffix: String = source.chars().skip(found.operand.1 as usize).collect();
-        diagnostic
-            .args
-            .insert("fixSource", format!("{prefix}{replacement}{suffix}"));
-        diagnostic.args.insert("fixOriginal", source.to_string());
-        diagnostic.args.insert("fixOperand", operand);
-    }
-
-    fn fallback_fix(diagnostic: &mut Diagnostic, is: &mut IntelliSense, source: &str, unary: bool) {
-        let Some(edit) = Self::fallback_edit(diagnostic, is, source, unary) else {
-            return;
-        };
-        diagnostic.args.insert("fixOriginal", source.to_string());
-        diagnostic.args.insert(
-            "fixSource",
-            Self::splice(source, &[(edit.range, edit.kept.clone())]),
-        );
-        diagnostic.args.insert(
-            "fixKeep",
-            if edit.keep_left { "left" } else { "right" }.to_string(),
-        );
-        diagnostic.args.insert(
-            "fixFallback",
-            if edit.keep_left {
-                edit.dropped
-            } else {
-                edit.kept
-            },
-        );
-    }
-
-    pub(crate) fn fallback_all(
         diagnostics: &mut [Diagnostic],
         is: &mut IntelliSense,
         source: &str,
         unary: bool,
     ) {
-        let mut edits: Vec<(usize, FallbackEdit)> = diagnostics
-            .iter()
-            .enumerate()
-            .filter(|(_, d)| {
-                d.code == DiagnosticCode::RedundantNullish && d.args.contains_key("fixSource")
-            })
-            .filter_map(|(idx, d)| Some((idx, Self::fallback_edit(d, is, source, unary)?)))
-            .collect();
-        if edits.len() < 2 {
-            return;
-        }
-        edits.sort_by_key(|(_, edit)| edit.range.0);
-        if edits
-            .windows(2)
-            .any(|pair| pair[0].1.range.1 > pair[1].1.range.0)
-        {
-            return;
-        }
-        let replacements: Vec<(Span, String)> = edits
-            .iter()
-            .map(|(_, edit)| (edit.range, edit.kept.clone()))
-            .collect();
-        let combined = Self::splice(source, &replacements);
-        let targets: Vec<(Span, bool)> = edits
-            .iter()
-            .map(|(_, edit)| (edit.span, edit.keep_left))
-            .collect();
-        let expected = is.with_ast(source, unary, |root, metadata| {
-            let swaps: RefCell<Vec<(String, String)>> = RefCell::new(Vec::new());
-            root.walk(|node| {
-                let Node::Binary {
-                    left,
-                    operator: Operator::Logical(LogicalOperator::NullishCoalescing),
-                    right,
-                } = node
-                else {
-                    return;
-                };
-                let Some(span) = AstOps::span(metadata, node) else {
-                    return;
-                };
-                if let Some((_, keep_left)) = targets.iter().find(|(target, _)| *target == span) {
-                    let kept = if *keep_left { *left } else { *right };
-                    swaps
-                        .borrow_mut()
-                        .push((format!("{node:?}"), format!("{kept:?}")));
-                }
-            });
-            let swaps = swaps.into_inner();
-            if swaps.len() != targets.len() {
-                return None;
-            }
-            let mut debug = format!("{root:?}");
-            for (from, to) in swaps {
-                debug = debug.replace(&from, &to);
-            }
-            Some(RedundantParentheses::tree_shape(&debug))
-        });
-        let actual = is.with_ast(&combined, unary, |root, _| {
-            RedundantParentheses::tree_shape(&format!("{root:?}"))
-        });
-        match (expected.flatten(), actual) {
-            (Some(expected), Some(actual)) if expected == actual => {}
-            _ => return,
-        }
-        for (idx, _) in edits {
-            diagnostics[idx].args.insert("fixAll", combined.clone());
-        }
+        Self::default_operands(diagnostics, is, source, unary);
+        Self::fallbacks(diagnostics, is, source, unary);
     }
 
-    fn splice(source: &str, replacements: &[(Span, String)]) -> String {
-        let chars: Vec<char> = source.chars().collect();
-        let mut out = String::with_capacity(source.len());
-        let mut cursor = 0usize;
-        let mut sorted: Vec<&(Span, String)> = replacements.iter().collect();
-        sorted.sort_by_key(|(range, _)| range.0);
-        for (range, with) in sorted {
-            let (start, end) = (range.0 as usize, range.1 as usize);
-            out.extend(&chars[cursor.min(chars.len())..start.min(chars.len())]);
-            out.push_str(with);
-            cursor = end;
-        }
-        out.extend(&chars[cursor.min(chars.len())..]);
-        out
-    }
-
-    fn fallback_edit(
-        diagnostic: &Diagnostic,
+    fn default_operands(
+        diagnostics: &mut [Diagnostic],
         is: &mut IntelliSense,
         source: &str,
         unary: bool,
-    ) -> Option<FallbackEdit> {
-        let span = diagnostic.location.span?;
-        let keep_left = if diagnostic.message.contains("is never null") {
-            true
-        } else if diagnostic.message.contains("is always null") {
-            false
-        } else {
-            return None;
-        };
-        let located = is.with_ast(source, unary, |root, metadata| {
-            let found: RefCell<Fallback> = RefCell::new(Fallback::default());
-            root.walk(|node| match node {
-                Node::Binary {
-                    left,
-                    operator: Operator::Logical(LogicalOperator::NullishCoalescing),
-                    right,
-                } if AstOps::span(metadata, node) == Some(span) => {
-                    let (kept, dropped) = if keep_left {
-                        (*left, *right)
-                    } else {
-                        (*right, *left)
-                    };
-                    if let (Some(kept), Some(dropped)) = (
-                        AstOps::span(metadata, kept),
-                        AstOps::span(metadata, dropped),
-                    ) {
-                        found.borrow_mut().operands = Some((kept, dropped));
+    ) {
+        let requests: Vec<(usize, Span, String, bool)> = diagnostics
+            .iter()
+            .enumerate()
+            .filter(|(_, d)| d.code == DiagnosticCode::TypeMismatch)
+            .filter_map(|(idx, d)| {
+                let span = d.location.span?;
+                let (operator, left, right) = Self::parse_message(&d.message)?;
+                let (left_nullable, right_nullable) = (left.ends_with('?'), right.ends_with('?'));
+                (left_nullable != right_nullable
+                    && left.trim_end_matches('?') == "number"
+                    && right.trim_end_matches('?') == "number")
+                    .then_some((idx, span, operator, left_nullable))
+            })
+            .collect();
+        if requests.is_empty() {
+            return;
+        }
+        let spans: HashSet<Span> = requests.iter().map(|(_, span, _, _)| *span).collect();
+        let operands = Self::locate(is, source, unary, &spans);
+        for (idx, span, operator, left_nullable) in requests {
+            let Some((left, right)) = operands.get(&span) else {
+                continue;
+            };
+            let found = if left_nullable { left } else { right };
+            let diagnostic = &mut diagnostics[idx];
+            if let Some(path) = found.path.as_ref().filter(|p| !p.starts_with('$')) {
+                diagnostic.args.insert("nullablePath", path.clone());
+            }
+            let defaultable = match operator.as_str() {
+                "+" | "-" | "*" | ">" | "<" | ">=" | "<=" => true,
+                "/" | "%" => found.left,
+                _ => false,
+            };
+            if !defaultable {
+                continue;
+            }
+            let Some(operand) = AstOps::text(source, found.operand) else {
+                continue;
+            };
+            let replacement = format!("({operand} ?? 0)");
+            let Some(fixed) = AstOps::splice(source, &[(found.operand, replacement.as_str())])
+            else {
+                continue;
+            };
+            diagnostic.args.insert("fixSource", fixed);
+            diagnostic.args.insert("fixOriginal", source.to_string());
+            diagnostic.args.insert("fixOperand", operand.to_string());
+        }
+    }
+
+    fn fallbacks(diagnostics: &mut [Diagnostic], is: &mut IntelliSense, source: &str, unary: bool) {
+        let candidates = Self::candidates(diagnostics, is, source, unary);
+        if candidates.is_empty() {
+            return;
+        }
+        let preferred: Vec<FixEdit> = candidates
+            .iter()
+            .map(|candidate| candidate.edit(candidate.wrapper.unwrap_or(candidate.span)))
+            .collect();
+        let mut edits: Vec<Option<FixEdit>> = FixProof::proven(is, source, unary, &preferred)
+            .into_iter()
+            .zip(preferred)
+            .map(|(proven, edit)| proven.then_some(edit))
+            .collect();
+        let retry: Vec<usize> = (0..candidates.len())
+            .filter(|&i| edits[i].is_none() && candidates[i].wrapper.is_some())
+            .collect();
+        let alternatives: Vec<FixEdit> = retry
+            .iter()
+            .map(|&i| candidates[i].edit(candidates[i].span))
+            .collect();
+        for ((i, proven), edit) in retry
+            .into_iter()
+            .zip(FixProof::proven(is, source, unary, &alternatives))
+            .zip(alternatives)
+        {
+            if proven {
+                edits[i] = Some(edit);
+            }
+        }
+        let accepted: Vec<&FixEdit> = edits.iter().flatten().collect();
+        let fix_all = (accepted.len() > 1)
+            .then(|| FixProof::holds(is, source, unary, &accepted))
+            .flatten();
+        for (candidate, edit) in candidates.iter().zip(&edits) {
+            let Some(fixed) = edit.as_ref().and_then(|edit| edit.apply(source)) else {
+                continue;
+            };
+            let (Some(kept), Some(dropped)) = (
+                AstOps::text(source, candidate.kept),
+                AstOps::text(source, candidate.dropped),
+            ) else {
+                continue;
+            };
+            let args = &mut diagnostics[candidate.idx].args;
+            args.insert("fixOriginal", source.to_string());
+            args.insert("fixSource", fixed);
+            args.insert(
+                "fixKeep",
+                if candidate.keep_left { "left" } else { "right" }.to_string(),
+            );
+            args.insert(
+                "fixFallback",
+                if candidate.keep_left { dropped } else { kept }.to_string(),
+            );
+            if let Some(all) = &fix_all {
+                args.insert("fixAll", all.clone());
+            }
+        }
+    }
+
+    fn candidates(
+        diagnostics: &[Diagnostic],
+        is: &mut IntelliSense,
+        source: &str,
+        unary: bool,
+    ) -> Vec<Candidate> {
+        let targets: Vec<(usize, Span, bool)> = diagnostics
+            .iter()
+            .enumerate()
+            .filter(|(_, d)| d.code == DiagnosticCode::RedundantNullish)
+            .filter_map(|(idx, d)| {
+                let keep_left = if d.message.contains("is never null") {
+                    true
+                } else if d.message.contains("is always null") {
+                    false
+                } else {
+                    return None;
+                };
+                Some((idx, d.location.span?, keep_left))
+            })
+            .collect();
+        if targets.is_empty() {
+            return Vec::new();
+        }
+        let spans: HashSet<Span> = targets.iter().map(|(_, span, _)| *span).collect();
+        let located = is
+            .with_ast(source, unary, |root, metadata| {
+                let found: RefCell<HashMap<Span, Fallback>> = RefCell::new(HashMap::new());
+                root.walk(|node| match node {
+                    Node::Binary {
+                        left,
+                        operator: Operator::Logical(LogicalOperator::NullishCoalescing),
+                        right,
+                    } => {
+                        let Some(span) =
+                            AstOps::span(metadata, node).filter(|span| spans.contains(span))
+                        else {
+                            return;
+                        };
+                        if let (Some(left), Some(right)) =
+                            (AstOps::span(metadata, left), AstOps::span(metadata, right))
+                        {
+                            found.borrow_mut().entry(span).or_default().operands =
+                                Some((left, right));
+                        }
                     }
-                }
-                Node::Parenthesized(inner) if AstOps::span(metadata, inner) == Some(span) => {
-                    found.borrow_mut().wrapper = AstOps::span(metadata, node);
-                }
-                _ => {}
-            });
-            found.into_inner()
-        })?;
-        let Fallback {
-            operands: Some((kept, dropped)),
-            wrapper,
-        } = located
-        else {
-            return None;
-        };
-        let text = |range: Span| -> String {
-            source
-                .chars()
-                .skip(range.0 as usize)
-                .take((range.1 - range.0) as usize)
-                .collect()
-        };
-        let kept_text = text(kept);
-        let mut shape = |candidate: &str| {
-            is.with_ast(candidate, unary, |root, _| {
-                RedundantParentheses::tree_shape(&format!("{root:?}"))
+                    Node::Parenthesized(inner) => {
+                        if let Some(span) =
+                            AstOps::span(metadata, inner).filter(|span| spans.contains(span))
+                        {
+                            found.borrow_mut().entry(span).or_default().wrapper =
+                                AstOps::span(metadata, node);
+                        }
+                    }
+                    _ => {}
+                });
+                found.into_inner()
             })
-        };
-        let plain_shape = shape(&Self::splice(source, &[(span, kept_text.clone())]))?;
-        let range = wrapper
-            .filter(|wrapper| {
-                shape(&Self::splice(source, &[(*wrapper, kept_text.clone())])).as_deref()
-                    == Some(plain_shape.as_str())
+            .unwrap_or_default();
+        targets
+            .into_iter()
+            .filter_map(|(idx, span, keep_left)| {
+                let fallback = located.get(&span)?;
+                let (left, right) = fallback.operands?;
+                let (kept, dropped) = if keep_left {
+                    (left, right)
+                } else {
+                    (right, left)
+                };
+                Some(Candidate {
+                    idx,
+                    span,
+                    kept,
+                    dropped,
+                    keep_left,
+                    wrapper: fallback.wrapper,
+                })
             })
-            .unwrap_or(span);
-        Some(FallbackEdit {
-            span,
-            range,
-            kept: kept_text,
-            dropped: text(dropped),
-            keep_left,
-        })
+            .collect()
     }
 
     fn parse_message(message: &str) -> Option<(String, String, String)> {
@@ -292,11 +262,10 @@ impl NullableOperand {
         is: &mut IntelliSense,
         source: &str,
         unary: bool,
-        span: Span,
-        left_nullable: bool,
-    ) -> Option<Found> {
+        spans: &HashSet<Span>,
+    ) -> HashMap<Span, (Found, Found)> {
         is.with_ast(source, unary, |root, metadata| {
-            let found: RefCell<Option<Found>> = RefCell::new(None);
+            let found: RefCell<HashMap<Span, (Found, Found)>> = RefCell::new(HashMap::new());
             root.walk(|node| {
                 let Node::Binary {
                     left,
@@ -321,22 +290,37 @@ impl NullableOperand {
                             | ComparisonOperator::GreaterThanOrEqual
                     )
                 );
-                if !numeric || AstOps::span(metadata, node) != Some(span) {
+                if !numeric {
                     return;
                 }
-                let operand = if left_nullable { *left } else { *right };
-                let Some(operand_span) = AstOps::span(metadata, operand) else {
+                let Some(span) = AstOps::span(metadata, node).filter(|span| spans.contains(span))
+                else {
                     return;
                 };
-                found.replace(Some(Found {
-                    operand: operand_span,
-                    left: left_nullable,
-                    path: Self::path(operand),
-                }));
+                let (Some(left_span), Some(right_span)) =
+                    (AstOps::span(metadata, left), AstOps::span(metadata, right))
+                else {
+                    return;
+                };
+                found.borrow_mut().insert(
+                    span,
+                    (
+                        Found {
+                            operand: left_span,
+                            left: true,
+                            path: Self::path(left),
+                        },
+                        Found {
+                            operand: right_span,
+                            left: false,
+                            path: Self::path(right),
+                        },
+                    ),
+                );
             });
             found.into_inner()
         })
-        .flatten()
+        .unwrap_or_default()
     }
 
     fn path(node: &Node) -> Option<String> {

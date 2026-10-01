@@ -9,7 +9,7 @@ use zen_expression::{Isolate, IsolateError};
 use super::property_read::ReadFlattener;
 use super::type_check::TypeCheck;
 use crate::analysis::nullable::NullableOperand;
-use crate::analysis::table::VerifyTable;
+use crate::analysis::table::{HitMode, VerifyInput, VerifyOutput, VerifyTable};
 use crate::policy::ir::PropertyPath;
 use crate::policy::queries::dependency::{DataModelPaths, PathPrefix};
 use crate::policy::queries::scope::VariableTypeScope;
@@ -63,6 +63,14 @@ pub type SharedDictionaryTypes = Rc<ahash::HashMap<Arc<str>, VariableType>>;
 pub type SharedPoisonedPaths = Rc<RefCell<ahash::HashSet<Arc<str>>>>;
 pub type SharedDeclaredPaths = Rc<DataModelPaths>;
 
+#[derive(Debug, Clone)]
+pub struct TableCheck {
+    pub(crate) at: usize,
+    pub(crate) mode: HitMode,
+    pub(crate) inputs: Vec<VerifyInput>,
+    pub(crate) outputs: Vec<VerifyOutput>,
+}
+
 pub struct AnalysisContext {
     scope: VariableType,
     policy_path: Arc<str>,
@@ -70,6 +78,7 @@ pub struct AnalysisContext {
     reads: Vec<PropertyRead>,
     writes: Vec<WriteTarget>,
     diagnostics: Vec<Diagnostic>,
+    table_checks: Vec<TableCheck>,
     pass: AnalysisPass,
     intellisense: SharedIntelliSense,
     dictionary_types: SharedDictionaryTypes,
@@ -97,6 +106,7 @@ impl AnalysisContext {
             reads: Vec::new(),
             writes: Vec::new(),
             diagnostics: Vec::new(),
+            table_checks: Vec::new(),
             pass,
             intellisense,
             dictionary_types,
@@ -308,24 +318,13 @@ impl AnalysisContext {
         self.declared_paths.declares(path)
     }
 
-    pub(super) fn push_table_diagnostics(
-        &mut self,
-        table: &VerifyTable,
-        row_key: impl Fn(usize) -> Arc<str>,
-    ) {
-        let policy_path = self.policy_path.clone();
-        let block_id = self.block_id.clone();
-        let diagnostics = table.diagnostics(
-            &mut self.intellisense.borrow_mut(),
-            row_key,
-            |expression_id| match expression_id {
-                Some(id) => {
-                    DiagnosticLocation::expression(policy_path.clone(), block_id.clone(), id, None)
-                }
-                None => DiagnosticLocation::block(policy_path.clone(), block_id.clone()),
-            },
-        );
-        self.diagnostics.extend(diagnostics);
+    pub(super) fn defer_table_check(&mut self, table: VerifyTable) {
+        self.table_checks.push(TableCheck {
+            at: self.diagnostics.len(),
+            mode: table.mode,
+            inputs: table.inputs,
+            outputs: table.outputs,
+        });
     }
 
     pub fn hint_with_target(
@@ -414,6 +413,7 @@ impl AnalysisContext {
             reads: self.reads,
             writes: self.writes,
             diagnostics: self.diagnostics,
+            table_checks: self.table_checks,
         }
     }
 
@@ -494,16 +494,10 @@ impl AnalysisContext {
                 span: Some(diag.span),
                 target: self.default_target.clone(),
             };
-            let mut diagnostic = Diagnostic::from_expression(diag, location);
-            NullableOperand::annotate(
-                &mut diagnostic,
-                &mut self.intellisense.borrow_mut(),
-                source,
-                matches!(kind, ExpressionKind::Unary),
-            );
-            self.diagnostics.push(diagnostic);
+            self.diagnostics
+                .push(Diagnostic::from_expression(diag, location));
         }
-        NullableOperand::fallback_all(
+        NullableOperand::annotate(
             &mut self.diagnostics[first..],
             &mut self.intellisense.borrow_mut(),
             source,
@@ -517,6 +511,7 @@ pub struct AnalysisSummary {
     pub reads: Vec<PropertyRead>,
     pub writes: Vec<WriteTarget>,
     pub diagnostics: Vec<Diagnostic>,
+    pub table_checks: Vec<TableCheck>,
 }
 
 pub struct ExecutionContext<'a> {

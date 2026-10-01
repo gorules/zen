@@ -1,7 +1,8 @@
-use zen_expression::intellisense::AstMetadata;
+use zen_expression::intellisense::{AstMetadata, IntelliSense};
 use zen_expression::lexer::Operator;
 use zen_expression::parser::{Associativity, Node, ParserOperator};
 
+use crate::analysis::proof::{FixEdit, FixProof};
 use crate::workspace::types::{
     Diagnostic, DiagnosticArgs, DiagnosticCode, DiagnosticLocation, ExpressionKind, Span,
 };
@@ -203,28 +204,34 @@ impl RedundantParentheses {
 
 impl RedundantParentheses {
     pub(crate) fn fix_args(
+        is: &mut IntelliSense,
         source: &str,
         findings: &[(Option<Span>, Option<Span>)],
-        mut shape: impl FnMut(&str) -> Option<String>,
     ) -> Vec<DiagnosticArgs> {
-        let pairs: Vec<Option<(Span, Span)>> = findings
+        let edits: Vec<Option<FixEdit>> = findings
             .iter()
-            .map(|(outer, inner)| Some(((*outer)?, (*inner)?)))
+            .map(|(outer, inner)| Some(FixEdit::unwrap((*outer)?, (*inner)?, None)))
             .collect();
-        let Some(expected) = shape(source) else {
-            return vec![DiagnosticArgs::new(); findings.len()];
-        };
-        let mut verified =
-            |fixed: String| (shape(&fixed).as_deref() == Some(expected.as_str())).then_some(fixed);
-        let all: Vec<(Span, Span)> = pairs.iter().flatten().copied().collect();
-        let fix_all = (all.len() > 1)
-            .then(|| Self::strip(source, &all))
-            .and_then(&mut verified);
-        pairs
+        let candidates: Vec<FixEdit> = edits.iter().flatten().cloned().collect();
+        let proven = FixProof::proven(is, source, false, &candidates);
+        let accepted: Vec<&FixEdit> = candidates
             .iter()
-            .map(|pair| {
+            .zip(&proven)
+            .filter_map(|(edit, proven)| proven.then_some(edit))
+            .collect();
+        let fix_all = (accepted.len() > 1)
+            .then(|| FixProof::holds(is, source, false, &accepted))
+            .flatten();
+        let mut proven = proven.into_iter();
+        edits
+            .iter()
+            .map(|edit| {
                 let mut args = DiagnosticArgs::new();
-                if let Some(fixed) = pair.and_then(|pair| verified(Self::strip(source, &[pair]))) {
+                let fixed = edit
+                    .as_ref()
+                    .filter(|_| proven.next() == Some(true))
+                    .and_then(|edit| edit.apply(source));
+                if let Some(fixed) = fixed {
                     args.insert("fixOriginal", source.to_string());
                     args.insert("fixSource", fixed);
                     if let Some(all) = &fix_all {
@@ -234,83 +241,6 @@ impl RedundantParentheses {
                 args
             })
             .collect()
-    }
-
-    pub(crate) fn tree_shape(debug: &str) -> String {
-        const WRAPPER: &str = "Parenthesized(";
-        let chars: Vec<char> = debug.chars().collect();
-        let wrapper: Vec<char> = WRAPPER.chars().collect();
-        let mut drop_close: Vec<usize> = Vec::new();
-        let mut depth = 0usize;
-        let mut quoted = false;
-        let mut out = String::with_capacity(debug.len());
-        let mut i = 0;
-        while i < chars.len() {
-            let c = chars[i];
-            if quoted {
-                out.push(c);
-                if c == '\\' && i + 1 < chars.len() {
-                    out.push(chars[i + 1]);
-                    i += 2;
-                    continue;
-                }
-                quoted = c != '"';
-                i += 1;
-                continue;
-            }
-            if c == '"' {
-                quoted = true;
-                out.push(c);
-            } else if chars[i..].starts_with(&wrapper) {
-                depth += 1;
-                drop_close.push(depth);
-                i += wrapper.len();
-                continue;
-            } else if c == '(' {
-                depth += 1;
-                out.push(c);
-            } else if c == ')' {
-                if drop_close.last() == Some(&depth) {
-                    drop_close.pop();
-                } else {
-                    out.push(c);
-                }
-                depth = depth.saturating_sub(1);
-            } else {
-                out.push(c);
-            }
-            i += 1;
-        }
-        out
-    }
-
-    fn strip(source: &str, pairs: &[(Span, Span)]) -> String {
-        let chars: Vec<char> = source.chars().collect();
-        let mut removed = vec![false; chars.len()];
-        for (outer, inner) in pairs {
-            for idx in
-                (outer.0 as usize..inner.0 as usize).chain(inner.1 as usize..outer.1 as usize)
-            {
-                if let Some(slot) = removed.get_mut(idx) {
-                    *slot = true;
-                }
-            }
-        }
-        let word = |c: char| c.is_alphanumeric() || matches!(c, '_' | '$' | '#');
-        let mut out = String::with_capacity(source.len());
-        let mut gap = false;
-        for (idx, c) in chars.iter().enumerate() {
-            if removed[idx] {
-                gap = true;
-                continue;
-            }
-            if gap && out.chars().last().is_some_and(word) && word(*c) {
-                out.push(' ');
-            }
-            gap = false;
-            out.push(*c);
-        }
-        out
     }
 }
 
@@ -326,11 +256,11 @@ impl LintRule for RedundantParentheses {
                         RedundantParentheses::scan(root, metadata)
                     })
                     .unwrap_or_default();
-                let fixes = Self::fix_args(&expression.source, &findings, |source| {
-                    cx.with_ast(source, expression.kind, |root, _| {
-                        Self::tree_shape(&format!("{root:?}"))
-                    })
-                });
+                let fixes = Self::fix_args(
+                    &mut cx.db.intellisense().borrow_mut(),
+                    &expression.source,
+                    &findings,
+                );
                 for ((span, inner_span), args) in findings.into_iter().zip(fixes) {
                     let message = match inner_span {
                         Some(inner) => format!(

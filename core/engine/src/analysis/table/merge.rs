@@ -321,14 +321,15 @@ impl VerifyTable<'_> {
             }
             let fresh: BTreeSet<Rc<str>> =
                 b.iter().filter(|key| !a.contains(*key)).cloned().collect();
+            if fresh.iter().any(|key| CellText::string(key).is_none()) {
+                return false;
+            }
             let mut moved = Self::region(next_row);
             moved[col] = ValueSet {
                 strings: StringSet::Finite(fresh.clone()),
                 ..ValueSet::empty()
             };
-            if self.mode != HitMode::Collect
-                && !Self::clear_between(rows, keep, next, &moved, work, index)
-            {
+            if !Self::clear_between(rows, keep, next, &moved, work, index) {
                 return false;
             }
             if let Some(row) = rows[keep].as_mut() {
@@ -361,9 +362,7 @@ impl VerifyTable<'_> {
             .enumerate()
             .map(|(idx, set)| if idx == col { set.difference(&a) } else { set })
             .collect();
-        if self.mode != HitMode::Collect
-            && !Self::clear_between(rows, keep, next, &moved, work, index)
-        {
+        if !Self::clear_between(rows, keep, next, &moved, work, index) {
             return false;
         }
         let union = a.union(&b);

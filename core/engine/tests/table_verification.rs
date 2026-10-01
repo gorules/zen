@@ -1595,3 +1595,270 @@ fn covered_rows_with_the_same_result_are_redundant_hints() {
         assert!(d.message.contains("redundant"), "{}", d.message);
     }
 }
+
+#[test]
+fn long_value_lists_and_or_chains_fit_a_small_stack() {
+    std::thread::Builder::new()
+        .stack_size(1 << 20)
+        .spawn(|| {
+            let list: Vec<String> = (0..1500).map(|i| i.to_string()).collect();
+            let chain: Vec<String> = (0..1500).map(|i| format!("$ == {i}")).collect();
+            for cell in [list.join(", "), chain.join(" or ")] {
+                let table = Table {
+                    hit: "first",
+                    inputs: &["applicant.age"],
+                    outputs: &["applicant.discount"],
+                    rows: leak_rows(vec![
+                        ("r1".to_string(), vec![cell.clone()], vec!["1".to_string()]),
+                        (
+                            "r2".to_string(),
+                            vec!["1499".to_string()],
+                            vec!["2".to_string()],
+                        ),
+                    ]),
+                };
+                table.assert_both(&[
+                    "UnreachableRule r2 coveredByIds=r1 example={\"applicant\":{\"age\":1499}}",
+                ]);
+            }
+        })
+        .expect("thread")
+        .join()
+        .expect("no stack overflow");
+}
+
+#[test]
+fn extreme_decimal_bounds_do_not_overflow() {
+    for (cells, gap) in [
+        (["<= 79228162514264337593543950335", "> 0"], None),
+        (
+            ["< -79228162514264337593543950335", "> 0"],
+            Some("[-79228162514264337593543950335..0]"),
+        ),
+        (
+            [
+                "(79228162514264337593543950333..79228162514264337593543950335]",
+                "< 0",
+            ],
+            Some("[0..79228162514264337593543950333], > 79228162514264337593543950335"),
+        ),
+        (
+            [
+                "> -79228162514264337593543950335 and < -79228162514264337593543950334",
+                "> 0",
+            ],
+            Some("<= -79228162514264337593543950335, [-79228162514264337593543950334..0]"),
+        ),
+    ] {
+        let table = Table {
+            hit: "first",
+            inputs: &["applicant.age"],
+            outputs: &["applicant.discount"],
+            rows: leak_rows(vec![
+                (
+                    "r1".to_string(),
+                    vec![cells[0].to_string()],
+                    vec!["1".to_string()],
+                ),
+                (
+                    "r2".to_string(),
+                    vec![cells[1].to_string()],
+                    vec!["2".to_string()],
+                ),
+            ]),
+        };
+        for gaps in [
+            Table::gaps(table.policy_diagnostics()),
+            Table::gaps(table.graph_diagnostics()),
+        ] {
+            let found = gaps.map(|gaps| gaps.cases[0]["cells"]["i0"].clone());
+            assert_eq!(found, gap.map(|g| json!(g)), "{cells:?}");
+        }
+    }
+}
+
+#[test]
+fn spaced_random_calls_are_never_equal() {
+    let table = Table {
+        hit: "first",
+        inputs: &["", "applicant.age"],
+        outputs: &["applicant.discount"],
+        rows: &[
+            ("r1", &["rand (10) > 5", ""], &["1"]),
+            ("r2", &["rand (10) > 5", ""], &["1"]),
+        ],
+    };
+    table.assert_both(&[]);
+    table.assert_compressed(None);
+}
+
+#[tokio::test]
+async fn compressed_strings_keep_their_quotes_and_backslashes() {
+    let table = Table {
+        hit: "first",
+        inputs: &["applicant.code", "applicant.age"],
+        outputs: &["applicant.discount"],
+        rows: &[
+            ("r1", &["'a\"b'", "< 18"], &["0.1"]),
+            ("r2", &["\"c\\d\"", "< 18"], &["0.1"]),
+            ("r3", &["\"e\"", "< 18"], &["0.1"]),
+            ("r4", &["\"e\"", ">= 18"], &["0.2"]),
+        ],
+    };
+    let original = table.content();
+    let inputs: Vec<Value> = ["a\"b", "c\\d", "e", "f"]
+        .iter()
+        .flat_map(|code| {
+            [10, 30].map(|age| {
+                json!({ "applicant": { "tier": "gold", "code": code, "age": age, "scores": [], "vip": false } })
+            })
+        })
+        .collect();
+    for diagnostics in [table.policy_diagnostics(), table.graph_diagnostics()] {
+        let (before, rules) = compressed(diagnostics).expect("compressible");
+        assert_eq!(before, 4);
+        let codes = row_summary(&rules);
+        assert!(
+            codes[0].starts_with("i0='a\"b', \"c\\d\", \"e\" "),
+            "{codes:?}"
+        );
+        let mut compact = original.clone();
+        compact["rules"] = rules;
+        let before = outputs_for(original.clone(), &inputs).await;
+        let after = outputs_for(compact.clone(), &inputs).await;
+        assert_eq!(before.0, after.0, "policy {compact}");
+        assert_eq!(before.1, after.1, "graph {compact}");
+    }
+}
+
+#[tokio::test]
+async fn compressed_exclusions_still_accept_lists_and_objects() {
+    let table = Table {
+        hit: "first",
+        inputs: &["applicant.code"],
+        outputs: &["applicant.discount"],
+        rows: &[
+            ("r1", &["!= \"a\" and != \"b\" and != 1"], &["1"]),
+            ("r2", &["1"], &["1"]),
+            ("r3", &[""], &["2"]),
+        ],
+    };
+    let original = table.content();
+    let (_, rules) = compressed(table.graph_diagnostics()).expect("compressible");
+    assert_eq!(
+        row_summary(&rules),
+        vec!["i0=!= \"a\" and != \"b\" o0=1", "i0= o0=2"]
+    );
+    let mut compact = original.clone();
+    compact["rules"] = rules;
+    let decision = |content: &Value| {
+        let mut graph = table.graph_json();
+        for node in graph["nodes"].as_array_mut().expect("nodes") {
+            if node["id"] == "dt" {
+                node["content"] = content.clone();
+            }
+        }
+        let DecisionContent::Graph(graph) = serde_json::from_value(graph).expect("graph") else {
+            panic!("graph");
+        };
+        Decision::from(graph)
+    };
+    let (before, after) = (decision(&original), decision(&compact));
+    for code in [
+        json!([1]),
+        json!({ "k": 1 }),
+        Value::Null,
+        json!(1),
+        json!(2),
+        json!("a"),
+        json!("b"),
+        json!("c"),
+        json!(true),
+    ] {
+        let input = json!({ "applicant": { "tier": "gold", "code": code, "age": 1, "scores": [], "vip": false } });
+        let outcome = |result: Result<zen_engine::DecisionGraphResponse, _>| -> Value {
+            match result {
+                Ok(response) => {
+                    let output: Value = response.result.into();
+                    output
+                        .pointer("/applicant/discount")
+                        .cloned()
+                        .unwrap_or(Value::Null)
+                }
+                Err(_) => json!("error"),
+            }
+        };
+        assert_eq!(
+            outcome(after.evaluate(input.clone().into()).await),
+            outcome(before.evaluate(input.clone().into()).await),
+            "{code}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn collect_compression_keeps_the_order_of_results() {
+    let crossing = Table {
+        hit: "collect",
+        inputs: &["applicant.age"],
+        outputs: &["applicant.discount"],
+        rows: &[
+            ("r1", &["< 18"], &["1"]),
+            ("r2", &["[20..40]"], &["2"]),
+            ("r3", &["[18..30]"], &["1"]),
+        ],
+    };
+    crossing.assert_compressed(None);
+
+    let apart = Table {
+        hit: "collect",
+        inputs: &["applicant.age"],
+        outputs: &["applicant.discount"],
+        rows: &[
+            ("r1", &["< 18"], &["1"]),
+            ("r2", &["> 50"], &["2"]),
+            ("r3", &["[18..30]"], &["1"]),
+        ],
+    };
+    apart.assert_compressed(Some((3, &["i0=<= 30 o0=1", "i0=> 50 o0=2"])));
+    let original = apart.content();
+    let (_, rules) = compressed(apart.policy_diagnostics()).expect("compressible");
+    let mut compact = original.clone();
+    compact["rules"] = rules;
+    let inputs: Vec<Value> = [10, 18, 25, 30, 35, 60]
+        .iter()
+        .map(|age| json!({ "applicant": { "tier": "gold", "age": age, "scores": [], "vip": false } }))
+        .collect();
+    assert_eq!(
+        outputs_for(original.clone(), &inputs).await.0,
+        outputs_for(compact.clone(), &inputs).await.0
+    );
+    let graph = |content: &Value| {
+        let mut graph = apart.graph_json();
+        for node in graph["nodes"].as_array_mut().expect("nodes") {
+            if node["id"] == "dt" {
+                node["content"] = content.clone();
+            }
+        }
+        let DecisionContent::Graph(graph) = serde_json::from_value(graph).expect("graph") else {
+            panic!("graph");
+        };
+        Decision::from(graph)
+    };
+    let (before, after) = (graph(&original), graph(&compact));
+    for input in inputs {
+        let before: Value = before
+            .evaluate(input.clone().into())
+            .await
+            .expect("graph")
+            .result
+            .into();
+        let after: Value = after
+            .evaluate(input.clone().into())
+            .await
+            .expect("graph")
+            .result
+            .into();
+        assert_eq!(before, after, "{input}");
+    }
+}

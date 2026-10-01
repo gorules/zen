@@ -124,22 +124,35 @@ impl Interval {
         above && below
     }
 
-    fn example(&self) -> Decimal {
+    pub(crate) fn midpoint(l: Decimal, h: Decimal) -> Option<Decimal> {
+        [
+            l.checked_add(h).map(|sum| sum / Decimal::TWO),
+            (l / Decimal::TWO).checked_add(h / Decimal::TWO),
+            h.checked_sub(l)
+                .and_then(|width| l.checked_add(width / Decimal::TWO)),
+        ]
+        .into_iter()
+        .flatten()
+        .find(|m| l < *m && *m < h)
+    }
+
+    fn example(&self) -> Option<Decimal> {
         let candidates = match (self.lo, self.hi) {
-            (Bound::Unbounded, Bound::Unbounded) => vec![Decimal::ZERO],
-            (Bound::Inclusive(l), _) => vec![l],
-            (Bound::Exclusive(l), Bound::Unbounded) => vec![l.floor() + Decimal::ONE],
-            (Bound::Unbounded, Bound::Inclusive(h)) => vec![h],
-            (Bound::Unbounded, Bound::Exclusive(h)) => vec![h.ceil() - Decimal::ONE],
+            (Bound::Unbounded, Bound::Unbounded) => vec![Some(Decimal::ZERO)],
+            (Bound::Inclusive(l), _) => vec![Some(l)],
+            (Bound::Exclusive(l), Bound::Unbounded) => vec![l.floor().checked_add(Decimal::ONE)],
+            (Bound::Unbounded, Bound::Inclusive(h)) => vec![Some(h)],
+            (Bound::Unbounded, Bound::Exclusive(h)) => vec![h.ceil().checked_sub(Decimal::ONE)],
             (Bound::Exclusive(l), hi) => {
                 let h = hi.value().unwrap_or(l);
-                vec![l.floor() + Decimal::ONE, (l + h) / Decimal::TWO]
+                vec![
+                    l.floor().checked_add(Decimal::ONE),
+                    Self::midpoint(l, h),
+                    Some(h),
+                ]
             }
         };
-        candidates
-            .into_iter()
-            .find(|c| self.contains(*c))
-            .unwrap_or(Decimal::ZERO)
+        candidates.into_iter().flatten().find(|c| self.contains(*c))
     }
 }
 
@@ -263,7 +276,7 @@ impl NumberSet {
     }
 
     fn example(&self) -> Option<Decimal> {
-        self.intervals.first().map(Interval::example)
+        self.intervals.iter().find_map(Interval::example)
     }
 }
 
@@ -469,6 +482,34 @@ impl ValueSet {
             null: self.null || other.null,
             other: self.other || other.other,
         }
+    }
+
+    pub(crate) fn union_all(sets: &[ValueSet]) -> Self {
+        let mut intervals = Vec::new();
+        let mut finite = BTreeSet::new();
+        let mut cofinite: Option<StringSet> = None;
+        let mut out = Self::empty();
+        for set in sets {
+            intervals.extend(set.numbers.intervals.iter().copied());
+            match &set.strings {
+                StringSet::Finite(values) => finite.extend(values.iter().cloned()),
+                strings => {
+                    cofinite = Some(match cofinite {
+                        Some(acc) => acc.union(strings),
+                        None => strings.clone(),
+                    })
+                }
+            }
+            out.bools |= set.bools;
+            out.null |= set.null;
+            out.other |= set.other;
+        }
+        out.numbers = NumberSet::from_intervals(intervals);
+        out.strings = match cofinite {
+            Some(acc) => acc.union(&StringSet::Finite(finite)),
+            None => StringSet::Finite(finite),
+        };
+        out
     }
 
     pub(crate) fn intersect(&self, other: &Self) -> Self {

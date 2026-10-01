@@ -1169,8 +1169,13 @@ impl<'a> GraphAnalyzer<'a> {
             return None;
         }
         let mut written: Vec<Arc<str>> = Vec::new();
+        let mut seen: HashSet<Arc<str>> = HashSet::default();
         for (pred, _) in incoming {
-            written.extend(after.get(pred).cloned().flatten()?);
+            for path in after.get(pred)?.as_ref()? {
+                if seen.insert(path.clone()) {
+                    written.push(path.clone());
+                }
+            }
         }
         Some(written)
     }
@@ -1280,7 +1285,7 @@ impl<'a> GraphAnalyzer<'a> {
         content: &DecisionTableContent,
         field: Option<&str>,
     ) -> Option<NumberSet> {
-        if content.transform_attributes.input_field.is_some() {
+        if !self.preserved_input(content, field) {
             return None;
         }
         let field = field?.trim();
@@ -1647,13 +1652,11 @@ impl<'a> GraphAnalyzer<'a> {
                         RedundantParentheses::scan(root, metadata)
                     })
                     .unwrap_or_default();
-                let fixes = RedundantParentheses::fix_args(&site.source, &findings, |source| {
-                    intellisense
-                        .borrow_mut()
-                        .with_ast(source, false, |root, _| {
-                            RedundantParentheses::tree_shape(&format!("{root:?}"))
-                        })
-                });
+                let fixes = RedundantParentheses::fix_args(
+                    &mut intellisense.borrow_mut(),
+                    &site.source,
+                    &findings,
+                );
                 for ((span, inner_span), args) in findings.into_iter().zip(fixes) {
                     let message = match inner_span {
                         Some(inner) => format!(
@@ -2076,16 +2079,10 @@ impl<'a> GraphAnalyzer<'a> {
                 span: Some(diagnostic.span),
                 target: target.clone(),
             };
-            let mut diagnostic = Diagnostic::from_expression(diagnostic, location);
-            NullableOperand::annotate(
-                &mut diagnostic,
-                &mut intellisense.borrow_mut(),
-                source,
-                matches!(kind, ExpressionKind::Unary),
-            );
-            self.diagnostics.push(diagnostic);
+            self.diagnostics
+                .push(Diagnostic::from_expression(diagnostic, location));
         }
-        NullableOperand::fallback_all(
+        NullableOperand::annotate(
             &mut self.diagnostics[first..],
             &mut intellisense.borrow_mut(),
             source,

@@ -2,7 +2,7 @@ use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde_json::Value;
 
-use super::value_set::{decimal_json, Bound, Interval, StringSet, ValueSet};
+use super::value_set::{Bound, Interval, StringSet, ValueSet};
 
 pub(crate) struct DateDay;
 
@@ -81,13 +81,13 @@ impl DateDay {
         let day = Decimal::from(Self::DAY);
         for interval in set.numbers.intervals() {
             let candidates = match (interval.lo, interval.hi) {
-                (Bound::Inclusive(a), _) => vec![a, a + day],
-                (Bound::Exclusive(a), _) => vec![a + day],
-                (Bound::Unbounded, Bound::Inclusive(b)) => vec![b, b - day],
-                (Bound::Unbounded, Bound::Exclusive(b)) => vec![b - day],
-                (Bound::Unbounded, Bound::Unbounded) => vec![Decimal::ZERO],
+                (Bound::Inclusive(a), _) => vec![Some(a), a.checked_add(day)],
+                (Bound::Exclusive(a), _) => vec![a.checked_add(day)],
+                (Bound::Unbounded, Bound::Inclusive(b)) => vec![Some(b), b.checked_sub(day)],
+                (Bound::Unbounded, Bound::Exclusive(b)) => vec![b.checked_sub(day)],
+                (Bound::Unbounded, Bound::Unbounded) => vec![Some(Decimal::ZERO)],
             };
-            let found = candidates.into_iter().find_map(|c| {
+            let found = candidates.into_iter().flatten().find_map(|c| {
                 ValueSet::number(c)
                     .is_subset(set)
                     .then(|| Self::format(c))
@@ -107,20 +107,19 @@ impl CellText {
     pub(crate) fn brief(text: &str) -> String {
         const KEEP: usize = 6;
         let chars: Vec<char> = text.chars().collect();
-        let mut quoted = false;
+        let mut quote: Option<char> = None;
         let mut depth = 0usize;
         let mut commas: Vec<(usize, usize)> = Vec::new();
-        let mut i = 0;
-        while i < chars.len() {
-            match chars[i] {
-                '\\' if quoted => i += 1,
-                '"' => quoted = !quoted,
-                '[' | '(' if !quoted => depth += 1,
-                ']' | ')' if !quoted => depth = depth.saturating_sub(1),
-                ',' if !quoted && depth <= 1 => commas.push((i, depth)),
+        for (i, &c) in chars.iter().enumerate() {
+            match (quote, c) {
+                (Some(open), _) if c == open => quote = None,
+                (Some(_), _) => {}
+                (None, '"' | '\'' | '`') => quote = Some(c),
+                (None, '[' | '(') => depth += 1,
+                (None, ']' | ')') => depth = depth.saturating_sub(1),
+                (None, ',') if depth <= 1 => commas.push((i, depth)),
                 _ => {}
             }
-            i += 1;
         }
         if commas.len() < KEEP + 2 {
             return text.to_string();
@@ -143,7 +142,7 @@ impl CellText {
             return None;
         }
         let positive = Self::positive(&wanted, dated);
-        let negative = Self::negative(&domain.difference(&wanted), dated);
+        let negative = Self::negative(&domain.difference(&wanted), wanted.other, dated);
         match (positive, negative) {
             (Some(p), Some(n)) if n.len() < p.len() => Some(n),
             (Some(p), _) => Some(p),
@@ -173,7 +172,11 @@ impl CellText {
             }
         }
         match &set.strings {
-            StringSet::Finite(values) => tokens.extend(values.iter().map(|v| Self::string(v))),
+            StringSet::Finite(values) => {
+                for value in values {
+                    tokens.push(Self::string(value)?);
+                }
+            }
             StringSet::CoFinite(_) => return None,
         }
         if set.bools & ValueSet::TRUE != 0 {
@@ -188,7 +191,7 @@ impl CellText {
         (!tokens.is_empty()).then(|| tokens.join(", "))
     }
 
-    fn negative(excluded: &ValueSet, dated: bool) -> Option<String> {
+    fn negative(excluded: &ValueSet, other: bool, dated: bool) -> Option<String> {
         if excluded.other || (dated && !excluded.strings.is_empty()) {
             return None;
         }
@@ -202,7 +205,11 @@ impl CellText {
             }
         }
         match &excluded.strings {
-            StringSet::Finite(values) => points.extend(values.iter().map(|v| Self::string(v))),
+            StringSet::Finite(values) => {
+                for value in values {
+                    points.push(Self::string(value)?);
+                }
+            }
             StringSet::CoFinite(_) => return None,
         }
         if excluded.bools & ValueSet::TRUE != 0 {
@@ -217,6 +224,13 @@ impl CellText {
         match points.as_slice() {
             [] => None,
             [single] => Some(format!("!= {single}")),
+            _ if other => Some(
+                points
+                    .iter()
+                    .map(|point| format!("!= {point}"))
+                    .collect::<Vec<_>>()
+                    .join(" and "),
+            ),
             _ => Some(format!("not in [{}]", points.join(", "))),
         }
     }
@@ -260,16 +274,17 @@ impl CellText {
 
     fn number(d: Decimal, dated: bool) -> Option<String> {
         if dated {
-            return DateDay::format(d).map(|text| Self::string(&text));
+            return DateDay::format(d).and_then(|text| Self::string(&text));
         }
-        Some(match decimal_json(d) {
-            Value::Number(n) => n.to_string(),
-            _ => d.normalize().to_string(),
-        })
+        Some(d.normalize().to_string())
     }
 
-    fn string(s: &str) -> String {
-        serde_json::to_string(s).unwrap_or_else(|_| format!("\"{s}\""))
+    pub(crate) fn string(s: &str) -> Option<String> {
+        match (s.contains('"'), s.contains('\'')) {
+            (false, _) => Some(format!("\"{s}\"")),
+            (true, false) => Some(format!("'{s}'")),
+            (true, true) => None,
+        }
     }
 }
 

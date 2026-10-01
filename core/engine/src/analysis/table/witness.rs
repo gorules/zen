@@ -4,7 +4,7 @@ use rust_decimal::Decimal;
 
 use super::cell::CellConstraint;
 use super::index::RowIndex;
-use super::value_set::{Bound, StringSet, ValueSet};
+use super::value_set::{Bound, Interval, StringSet, ValueSet};
 use super::verify::VerifyTable;
 
 #[derive(Clone)]
@@ -48,10 +48,10 @@ impl Point {
             let fallback = match (interval.lo, interval.hi) {
                 (_, Bound::Inclusive(h)) => Some(h),
                 (Bound::Inclusive(l), _) => Some(l),
-                (Bound::Unbounded, Bound::Exclusive(h)) => Some(h - Decimal::ONE),
-                (Bound::Exclusive(l), Bound::Unbounded) => Some(l + Decimal::ONE),
+                (Bound::Unbounded, Bound::Exclusive(h)) => h.checked_sub(Decimal::ONE),
+                (Bound::Exclusive(l), Bound::Unbounded) => l.checked_add(Decimal::ONE),
                 (Bound::Unbounded, Bound::Unbounded) => Some(Decimal::ZERO),
-                (Bound::Exclusive(l), Bound::Exclusive(h)) => Some((l + h) / Decimal::TWO),
+                (Bound::Exclusive(l), Bound::Exclusive(h)) => Interval::midpoint(l, h),
             };
             if let Some(x) = fallback.filter(|x| set.numbers.contains(*x)) {
                 out.push(Point::Number(x));

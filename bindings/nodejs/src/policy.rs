@@ -690,22 +690,6 @@ impl Workspace {
     }
 
     #[napi]
-    pub fn full_table_check(
-        &self,
-        env: Env,
-        path: String,
-        block_id: String,
-    ) -> napi::Result<Vec<PolicyDiagnostic>> {
-        self.ensure_function_types(&env)?;
-        Ok(self
-            .inner
-            .full_table_check(&path, &block_id)
-            .iter()
-            .map(PolicyDiagnostic::from)
-            .collect())
-    }
-
-    #[napi]
     pub fn all_diagnostics(
         &self,
         env: Env,

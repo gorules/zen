@@ -78,6 +78,20 @@ impl Interval {
         }
     }
 
+    fn overlaps(&self, other: &Interval) -> bool {
+        let lo = if self.lo.lo_key() >= other.lo.lo_key() {
+            self.lo
+        } else {
+            other.lo
+        };
+        let hi = if self.hi.hi_key() <= other.hi.hi_key() {
+            self.hi
+        } else {
+            other.hi
+        };
+        !Interval::new(lo, hi).is_empty()
+    }
+
     fn touches(&self, next: &Interval) -> bool {
         match (self.hi, next.lo) {
             (Bound::Unbounded, _) | (_, Bound::Unbounded) => true,
@@ -151,6 +165,10 @@ impl NumberSet {
         &self.intervals
     }
 
+    pub(crate) fn contains(&self, x: Decimal) -> bool {
+        self.intervals.iter().any(|i| i.contains(x))
+    }
+
     fn normalize(&mut self) {
         self.intervals.retain(|i| !i.is_empty());
         self.intervals.sort_by_key(|i| i.lo.lo_key());
@@ -206,6 +224,21 @@ impl NumberSet {
             }
         }
         Self::from_intervals(out)
+    }
+
+    fn is_subset(&self, other: &Self) -> bool {
+        self.intervals.iter().all(|a| {
+            other
+                .intervals
+                .iter()
+                .any(|b| b.lo.lo_key() <= a.lo.lo_key() && a.hi.hi_key() <= b.hi.hi_key())
+        })
+    }
+
+    fn intersects(&self, other: &Self) -> bool {
+        self.intervals
+            .iter()
+            .any(|a| other.intervals.iter().any(|b| a.overlaps(b)))
     }
 
     pub(crate) fn complement(&self) -> Self {
@@ -296,6 +329,27 @@ impl StringSet {
         }
     }
 
+    fn is_subset(&self, other: &Self) -> bool {
+        match (self, other) {
+            (StringSet::Finite(a), StringSet::Finite(b)) => a.iter().all(|s| b.contains(s)),
+            (StringSet::Finite(a), StringSet::CoFinite(b)) => a.iter().all(|s| !b.contains(s)),
+            (StringSet::CoFinite(_), StringSet::Finite(_)) => false,
+            (StringSet::CoFinite(a), StringSet::CoFinite(b)) => b.iter().all(|s| a.contains(s)),
+        }
+    }
+
+    fn intersects(&self, other: &Self) -> bool {
+        match (self, other) {
+            (StringSet::Finite(a), StringSet::Finite(b)) => {
+                let (small, large) = if a.len() <= b.len() { (a, b) } else { (b, a) };
+                small.iter().any(|s| large.contains(s))
+            }
+            (StringSet::CoFinite(_), StringSet::CoFinite(_)) => true,
+            (StringSet::Finite(f), StringSet::CoFinite(c))
+            | (StringSet::CoFinite(c), StringSet::Finite(f)) => f.iter().any(|s| !c.contains(s)),
+        }
+    }
+
     fn example(&self) -> Option<Rc<str>> {
         match self {
             StringSet::Finite(s) => s.iter().next().cloned(),
@@ -309,7 +363,7 @@ impl StringSet {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum ValueKind {
     Number,
     String,
@@ -442,11 +496,19 @@ impl ValueSet {
     }
 
     pub(crate) fn is_subset(&self, other: &Self) -> bool {
-        self.difference(other).is_empty()
+        self.bools & !other.bools == 0
+            && (!self.null || other.null)
+            && (!self.other || other.other)
+            && self.strings.is_subset(&other.strings)
+            && self.numbers.is_subset(&other.numbers)
     }
 
     pub(crate) fn intersects(&self, other: &Self) -> bool {
-        !self.intersect(other).is_empty()
+        self.bools & other.bools != 0
+            || (self.null && other.null)
+            || (self.other && other.other)
+            || self.strings.intersects(&other.strings)
+            || self.numbers.intersects(&other.numbers)
     }
 
     pub(crate) fn example(&self, prefer: Option<ValueKind>) -> Option<Value> {

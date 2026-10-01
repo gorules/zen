@@ -533,32 +533,6 @@ fn graph_rows_without_ids_use_the_index() {
 }
 
 #[test]
-fn tables_over_the_row_cap_skip_coverage_but_keep_cell_checks() {
-    let rows: Vec<(String, [&str; 1], [String; 1])> = (0..2001)
-        .map(|i| {
-            (
-                format!("r{i}"),
-                [if i == 0 { "> 5 and < 3" } else { "> 5" }],
-                [i.to_string()],
-            )
-        })
-        .collect();
-    let outs: Vec<[&str; 1]> = rows.iter().map(|(_, _, out)| [out[0].as_str()]).collect();
-    let rows: Vec<(&str, &[&str], &[&str])> = rows
-        .iter()
-        .zip(&outs)
-        .map(|((id, cells, _), outs)| (id.as_str(), &cells[..], &outs[..]))
-        .collect();
-    Table {
-        hit: "first",
-        inputs: &["applicant.age"],
-        outputs: &["applicant.discount"],
-        rows: &rows,
-    }
-    .assert_both(&["UnsatisfiableCell r0/i0"]);
-}
-
-#[test]
 fn bool_and_dictionary_cells() {
     Table {
         hit: "first",
@@ -1520,7 +1494,7 @@ async fn randomized_compression_preserves_results() {
 }
 
 #[test]
-fn large_tables_defer_coverage_to_the_full_check() {
+fn large_tables_are_checked_completely() {
     let rows: Vec<(String, Vec<String>, Vec<String>)> = (0..2_010)
         .map(|i| {
             (
@@ -1554,38 +1528,16 @@ fn large_tables_defer_coverage_to_the_full_check() {
             .into_iter()
             .filter(|d| d.location.block_id.as_deref() == Some("dt"))
             .collect();
-        let incomplete = live
-            .iter()
-            .find(|d| d.code == DiagnosticCode::TableChecksIncomplete)
-            .unwrap_or_else(|| panic!("{path}: {:?}", codes(&live)));
-        assert_eq!(
-            incomplete.args.get("rows").map(String::as_str),
-            Some("2010")
-        );
-        assert_eq!(
-            incomplete.args.get("full").map(String::as_str),
-            Some("false")
-        );
         assert!(
-            !codes(&live).contains(&DiagnosticCode::MissingCases),
-            "{path}"
-        );
-
-        let full = ws.full_table_check(path, "dt");
-        assert!(
-            codes(&full).contains(&DiagnosticCode::MissingCases),
+            !codes(&live).contains(&DiagnosticCode::TableChecksIncomplete),
             "{path}: {:?}",
-            codes(&full)
+            codes(&live)
         );
         assert!(
-            !codes(&full).contains(&DiagnosticCode::TableChecksIncomplete),
+            codes(&live).contains(&DiagnosticCode::MissingCases),
             "{path}: {:?}",
-            full.iter().map(|d| d.message.clone()).collect::<Vec<_>>()
+            codes(&live)
         );
-        assert!(ws
-            .diagnostics(path)
-            .iter()
-            .any(|d| d.code == DiagnosticCode::TableChecksIncomplete));
     }
 }
 

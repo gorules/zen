@@ -1,13 +1,16 @@
+use std::collections::BTreeSet;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use ahash::HashMap;
 
 use super::cell::CellConstraint;
+use super::index::RowIndex;
 use super::print::CellText;
-use super::value_set::ValueSet;
+use super::value_set::{StringSet, ValueSet};
 use super::verify::{Finding, HitMode, VerifyTable};
 
-const COMPRESS_BUDGET: usize = 4_000_000;
+const COMPRESS_BUDGET: usize = 50_000_000;
 const MAX_ROUNDS: usize = 8;
 
 #[derive(Clone)]
@@ -15,6 +18,7 @@ struct Row {
     rule: HashMap<Arc<str>, Arc<str>>,
     cells: Vec<CellConstraint>,
     fixed: bool,
+    stale: Vec<usize>,
 }
 
 struct Work {
@@ -55,26 +59,42 @@ impl VerifyTable<'_> {
                     rule: rule.clone(),
                     cells: cells.clone(),
                     fixed: !satisfiable,
+                    stale: Vec::new(),
                 })
             })
             .collect();
         let before = rows.len();
         let mut work = Work {
-            remaining: super::FullCheck::scale(COMPRESS_BUDGET),
+            remaining: COMPRESS_BUDGET,
         };
+        let mut index = RowIndex::blocking(cells, self.inputs.len());
         for _ in 0..MAX_ROUNDS {
             let mut changed = false;
             for col in 0..self.inputs.len() {
-                changed |= self.merge_column(&mut rows, col, &mut work);
+                changed |= self.merge_column(&mut rows, col, &mut work, &mut index);
             }
             if self.mode != HitMode::Collect {
-                changed |= self.absorb(&mut rows, &mut work);
+                changed |= self.absorb(&mut rows, &mut work, &mut index);
             }
             if !changed || work.remaining == 0 {
                 break;
             }
         }
-        let rules: Vec<_> = rows.into_iter().flatten().map(|row| row.rule).collect();
+        let rules: Vec<_> = rows
+            .into_iter()
+            .flatten()
+            .map(|mut row| {
+                for &col in &row.stale {
+                    if let CellConstraint::Known(set) = &row.cells[col] {
+                        if let Some(text) = CellText::of(set, &ValueSet::all(), false) {
+                            row.rule
+                                .insert(self.inputs[col].id.clone(), Arc::from(text.as_str()));
+                        }
+                    }
+                }
+                row.rule
+            })
+            .collect();
         (rules.len() < before).then_some(Finding::CompressibleTable { before, rules })
     }
 
@@ -111,10 +131,13 @@ impl VerifyTable<'_> {
     }
 
     fn catches(row: &Row, region: &[ValueSet]) -> bool {
-        Self::region(row)
+        row.cells
             .iter()
             .zip(region)
-            .all(|(cell, wanted)| cell.intersects(wanted))
+            .all(|(cell, wanted)| match cell {
+                CellConstraint::Known(set) => set.intersects(wanted),
+                _ => !wanted.is_empty(),
+            })
     }
 
     fn within(inner: &Row, outer: &Row) -> bool {
@@ -126,10 +149,8 @@ impl VerifyTable<'_> {
                 (_, CellConstraint::Any) => true,
                 (CellConstraint::Opaque(x), CellConstraint::Opaque(y)) => x == y,
                 (CellConstraint::Opaque(_), _) | (_, CellConstraint::Opaque(_)) => false,
-                (a, b) => match (a.known_set(), b.known_set()) {
-                    (Some(a), Some(b)) => a.is_subset(&b),
-                    _ => false,
-                },
+                (CellConstraint::Known(a), CellConstraint::Known(b)) => a.is_subset(b),
+                (CellConstraint::Any, CellConstraint::Known(b)) => b.is_all(),
             })
     }
 
@@ -139,7 +160,21 @@ impl VerifyTable<'_> {
         to: usize,
         region: &[ValueSet],
         work: &mut Work,
+        index: &mut RowIndex,
     ) -> bool {
+        let mut visited = 0usize;
+        let mut clear = true;
+        let indexed = index.overlapping(region, to.saturating_sub(from), |e| {
+            visited += 1;
+            if clear && from < e && e < to {
+                if let Some(between) = &rows[e] {
+                    clear = !Self::catches(between, region);
+                }
+            }
+        });
+        if indexed {
+            return work.spend(visited) && clear;
+        }
         if !work.spend(to.saturating_sub(from)) {
             return false;
         }
@@ -149,7 +184,7 @@ impl VerifyTable<'_> {
             .all(|between| !Self::catches(between, region))
     }
 
-    fn absorb(&self, rows: &mut [Option<Row>], work: &mut Work) -> bool {
+    fn absorb(&self, rows: &mut [Option<Row>], work: &mut Work, index: &mut RowIndex) -> bool {
         let mut buckets: HashMap<Vec<String>, Vec<usize>> = HashMap::default();
         for (idx, row) in rows.iter().enumerate() {
             if let Some(row) = row.as_ref().filter(|r| !r.fixed && !self.collects(r)) {
@@ -159,14 +194,31 @@ impl VerifyTable<'_> {
         let mut changed = false;
         let mut groups: Vec<Vec<usize>> = buckets.into_values().filter(|g| g.len() > 1).collect();
         groups.sort_unstable_by_key(|g| g[0]);
-        for group in groups {
-            for &inner in &group {
+        let mut group_of: Vec<usize> = vec![usize::MAX; rows.len()];
+        for (id, group) in groups.iter().enumerate() {
+            for &row in group {
+                group_of[row] = id;
+            }
+        }
+        for (id, group) in groups.iter().enumerate() {
+            for &inner in group {
                 let Some(inner_row) = rows[inner].as_ref() else {
                     continue;
                 };
                 let region = Self::region(inner_row);
+                let mut outers: Vec<usize> = Vec::new();
+                let indexed = index.overlapping(&region, group.len(), |e| {
+                    if group_of[e] == id {
+                        outers.push(e);
+                    }
+                });
+                if indexed {
+                    outers.sort_unstable();
+                } else {
+                    outers = group.clone();
+                }
                 let mut absorbed = false;
-                for &outer in &group {
+                for outer in outers {
                     if outer == inner {
                         continue;
                     }
@@ -179,7 +231,9 @@ impl VerifyTable<'_> {
                     if !Self::within(inner_row, outer_row) {
                         continue;
                     }
-                    if outer < inner || Self::clear_between(rows, inner, outer, &region, work) {
+                    if outer < inner
+                        || Self::clear_between(rows, inner, outer, &region, work, index)
+                    {
                         absorbed = true;
                         break;
                     }
@@ -193,7 +247,13 @@ impl VerifyTable<'_> {
         changed
     }
 
-    fn merge_column(&self, rows: &mut [Option<Row>], col: usize, work: &mut Work) -> bool {
+    fn merge_column(
+        &self,
+        rows: &mut [Option<Row>],
+        col: usize,
+        work: &mut Work,
+        index: &mut RowIndex,
+    ) -> bool {
         let mut buckets: HashMap<(Vec<String>, Vec<CellConstraint>), Vec<usize>> =
             HashMap::default();
         for (idx, row) in rows.iter().enumerate() {
@@ -224,7 +284,7 @@ impl VerifyTable<'_> {
         for group in groups {
             let mut keep = group[0];
             for &next in &group[1..] {
-                if self.merge_into(rows, keep, next, col, work) {
+                if self.merge_into(rows, keep, next, col, work, index) {
                     changed = true;
                 } else {
                     keep = next;
@@ -244,10 +304,49 @@ impl VerifyTable<'_> {
         next: usize,
         col: usize,
         work: &mut Work,
+        index: &mut RowIndex,
     ) -> bool {
         let (Some(keep_row), Some(next_row)) = (rows[keep].as_ref(), rows[next].as_ref()) else {
             return false;
         };
+        if let (false, Some(a), Some(b)) = (
+            self.inputs[col].dated,
+            Self::plain(&keep_row.cells[col]),
+            Self::plain(&next_row.cells[col]),
+        ) {
+            if (self.mode == HitMode::Collect || self.collects(keep_row))
+                && b.iter().any(|key| a.contains(key))
+            {
+                return false;
+            }
+            let fresh: BTreeSet<Rc<str>> =
+                b.iter().filter(|key| !a.contains(*key)).cloned().collect();
+            let mut moved = Self::region(next_row);
+            moved[col] = ValueSet {
+                strings: StringSet::Finite(fresh.clone()),
+                ..ValueSet::empty()
+            };
+            if self.mode != HitMode::Collect
+                && !Self::clear_between(rows, keep, next, &moved, work, index)
+            {
+                return false;
+            }
+            if let Some(row) = rows[keep].as_mut() {
+                if let CellConstraint::Known(ValueSet {
+                    strings: StringSet::Finite(keys),
+                    ..
+                }) = &mut row.cells[col]
+                {
+                    keys.extend(fresh.iter().cloned());
+                }
+                if !row.stale.contains(&col) {
+                    row.stale.push(col);
+                }
+                index.insert_strings(col, &fresh, keep);
+            }
+            rows[next] = None;
+            return true;
+        }
         let (Some(a), Some(b)) = (
             keep_row.cells[col].known_set(),
             next_row.cells[col].known_set(),
@@ -262,7 +361,9 @@ impl VerifyTable<'_> {
             .enumerate()
             .map(|(idx, set)| if idx == col { set.difference(&a) } else { set })
             .collect();
-        if self.mode != HitMode::Collect && !Self::clear_between(rows, keep, next, &moved, work) {
+        if self.mode != HitMode::Collect
+            && !Self::clear_between(rows, keep, next, &moved, work, index)
+        {
             return false;
         }
         let union = a.union(&b);
@@ -272,14 +373,30 @@ impl VerifyTable<'_> {
         let id = self.inputs[col].id.clone();
         if let Some(row) = rows[keep].as_mut() {
             row.rule.insert(id, Arc::from(text.as_str()));
+            row.stale.retain(|&stale| stale != col);
             row.cells[col] = if text.is_empty() {
                 CellConstraint::Any
             } else {
                 CellConstraint::Known(union)
             };
+            index.insert(&row.cells, keep);
         }
         rows[next] = None;
         true
+    }
+
+    fn plain(cell: &CellConstraint) -> Option<&BTreeSet<Rc<str>>> {
+        match cell {
+            CellConstraint::Known(set)
+                if set.numbers.is_empty() && set.bools == 0 && !set.null && !set.other =>
+            {
+                match &set.strings {
+                    StringSet::Finite(keys) if !keys.is_empty() => Some(keys),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
     }
 
     pub(super) fn covering_cells(

@@ -170,6 +170,34 @@ impl VariableType {
         self.merge_at(other, 0, &mut HashMap::default())
     }
 
+    pub fn merge_all<'a>(types: impl IntoIterator<Item = &'a VariableType>) -> Option<Self> {
+        let mut types = types.into_iter();
+        let first = types.next()?;
+        let mut merged = first.shallow_clone();
+        let VariableType::Const(head) = first else {
+            return Some(types.fold(merged, |acc, t| acc.merge(t)));
+        };
+        let mut values: Vec<Rc<str>> = vec![head.clone()];
+        let mut seen: HashSet<Rc<str>> = HashSet::default();
+        seen.insert(head.clone());
+        for t in types.by_ref() {
+            let VariableType::Const(value) = t else {
+                merged = match values.len() {
+                    1 => VariableType::Const(values[0].clone()),
+                    _ => VariableType::Enum(None, values),
+                };
+                return Some(types.fold(merged.merge(t), |acc, t| acc.merge(t)));
+            };
+            if seen.insert(value.clone()) {
+                values.push(value.clone());
+            }
+        }
+        Some(match values.len() {
+            1 => VariableType::Const(values[0].clone()),
+            _ => VariableType::Enum(None, values),
+        })
+    }
+
     fn merge_at(
         &self,
         other: &Self,

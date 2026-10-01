@@ -6,18 +6,16 @@ use serde_json::{Map, Value};
 use zen_expression::intellisense::IntelliSense;
 
 use super::cell::CellConstraint;
+use super::index::RowIndex;
 use super::print::DateDay;
 use super::value_set::{ValueKind, ValueSet};
-use super::FullCheck;
 
-pub(crate) const MAX_ROWS: usize = 2_000;
-const MAX_ROWS_FULL: usize = 50_000;
 pub(crate) const MAX_INPUTS: usize = 30;
-const MAX_FRAGMENTS: usize = 10_000;
-const TOTAL_BUDGET: usize = 2_000_000;
+pub(super) const MAX_FRAGMENTS: usize = 100_000;
+const TOTAL_BUDGET: usize = 20_000_000;
 const MAX_MINIMIZE: usize = 12;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum HitMode {
     PerColumnFirst,
     RowFirst,
@@ -91,7 +89,6 @@ pub(crate) enum Finding {
         rows: usize,
         coverage: bool,
         gaps: bool,
-        full: bool,
     },
 }
 
@@ -103,6 +100,8 @@ pub(crate) struct GapCase {
 }
 
 pub(super) type Region = Vec<ValueSet>;
+
+type Coverer<'c> = (usize, Vec<&'c ValueSet>);
 
 pub(super) struct Budget {
     pub(super) remaining: usize,
@@ -148,17 +147,22 @@ impl VerifyTable<'_> {
             }
         }
 
-        let full = FullCheck::active();
-        let row_limit = if full { MAX_ROWS_FULL } else { MAX_ROWS };
-        let coverage = self.rules.len() <= row_limit && self.inputs.len() <= MAX_INPUTS;
+        let coverage = self.inputs.len() <= MAX_INPUTS;
         let mut coverage_incomplete = !coverage;
 
         let mut budget = Budget {
-            remaining: FullCheck::scale(TOTAL_BUDGET),
+            remaining: TOTAL_BUDGET,
         };
+        let mut index =
+            (self.mode != HitMode::Collect).then(|| RowIndex::new(&cells, self.inputs.len()));
         let mut reported: Vec<bool> = satisfiable.iter().map(|s| !s).collect();
         let mut seen: HashMap<(Vec<CellConstraint>, Vec<String>), usize> = HashMap::default();
         for row in 0..self.rules.len() {
+            if let Some(index) = index.as_mut().filter(|_| row > 0) {
+                if satisfiable[row - 1] && !reported[row - 1] {
+                    index.insert(&cells[row - 1], row - 1);
+                }
+            }
             if !satisfiable[row] {
                 continue;
             }
@@ -177,10 +181,14 @@ impl VerifyTable<'_> {
             if coverage_incomplete {
                 continue;
             }
-            let Some(requirements) = self.requirements(row) else {
+            let Some(index) = index.as_mut() else {
                 continue;
             };
-            match self.dead(&cells, row, &requirements, &mut budget) {
+            let Some(requirements) = self.requirements(row, || index.candidates(&cells, row))
+            else {
+                continue;
+            };
+            match self.dead(&cells, row, &requirements, &mut budget, index) {
                 Some(Some(covered_by)) => {
                     reported[row] = true;
                     let redundant = covered_by
@@ -218,7 +226,6 @@ impl VerifyTable<'_> {
                 rows: self.rules.len(),
                 coverage: coverage_incomplete,
                 gaps: gaps_incomplete,
-                full,
             });
         }
         findings
@@ -308,15 +315,11 @@ impl VerifyTable<'_> {
         (cells, outputs)
     }
 
-    pub(super) fn max_fragments() -> usize {
-        if FullCheck::active() {
-            MAX_FRAGMENTS * 10
-        } else {
-            MAX_FRAGMENTS
-        }
-    }
-
-    fn requirements(&self, row: usize) -> Option<Vec<Vec<usize>>> {
+    fn requirements(
+        &self,
+        row: usize,
+        candidates: impl FnOnce() -> Vec<usize>,
+    ) -> Option<Vec<Vec<usize>>> {
         let has_collect = self
             .outputs
             .iter()
@@ -324,7 +327,7 @@ impl VerifyTable<'_> {
         match self.mode {
             HitMode::Collect => None,
             _ if has_collect => None,
-            HitMode::RowFirst => Some(vec![(0..row).collect()]),
+            HitMode::RowFirst => Some(vec![candidates()]),
             HitMode::PerColumnFirst => {
                 let scalars: Vec<&VerifyOutput> = self
                     .outputs
@@ -334,10 +337,17 @@ impl VerifyTable<'_> {
                 if scalars.is_empty() {
                     return None;
                 }
+                let candidates = candidates();
                 Some(
                     scalars
                         .into_iter()
-                        .map(|col| (0..row).filter(|&e| self.filled(e, &col.id)).collect())
+                        .map(|col| {
+                            candidates
+                                .iter()
+                                .copied()
+                                .filter(|&e| self.filled(e, &col.id))
+                                .collect()
+                        })
                         .collect(),
                 )
             }
@@ -350,48 +360,58 @@ impl VerifyTable<'_> {
         row: usize,
         requirements: &[Vec<usize>],
         budget: &mut Budget,
+        index: &RowIndex,
     ) -> Option<Option<Vec<usize>>> {
         let region: Region = cells[row]
             .iter()
             .map(|cell| cell.known_set().unwrap_or_else(ValueSet::all))
             .collect();
+        for earlier in requirements {
+            budget.spend(earlier.len())?;
+            if Self::escapes(cells, row, &region, earlier, index) {
+                return Some(None);
+            }
+        }
+        let all = ValueSet::all();
         let mut cited: Vec<usize> = Vec::new();
         for earlier in requirements {
-            let coverers: Vec<(usize, Region)> = earlier
+            let coverers = earlier
                 .iter()
-                .filter_map(|&e| Self::project(&cells[e], &cells[row]).map(|r| (e, r)))
-                .collect();
-            let Some(used) = Self::cover(&region, &coverers, budget)? else {
+                .filter_map(|&e| Self::project(&cells[e], &cells[row], &all).map(|r| (e, r)));
+            let Some(used) = Self::cover(&region, coverers, budget)? else {
                 return Some(None);
             };
-            let used = Self::minimize(&region, &coverers, used, budget)?;
-            cited.extend(used);
+            cited.extend(Self::minimize(&region, used, budget)?);
         }
         cited.sort_unstable();
         cited.dedup();
         Some(Some(cited))
     }
 
-    fn project(earlier: &[CellConstraint], row: &[CellConstraint]) -> Option<Region> {
+    fn project<'c>(
+        earlier: &'c [CellConstraint],
+        row: &[CellConstraint],
+        all: &'c ValueSet,
+    ) -> Option<Vec<&'c ValueSet>> {
         earlier
             .iter()
             .zip(row)
             .map(|(e, r)| match e {
-                CellConstraint::Any => Some(ValueSet::all()),
-                CellConstraint::Known(set) => (!set.is_empty()).then(|| set.clone()),
+                CellConstraint::Any => Some(all),
+                CellConstraint::Known(set) => (!set.is_empty()).then_some(set),
                 CellConstraint::Opaque(atom) => match r {
-                    CellConstraint::Opaque(own) if own == atom => Some(ValueSet::all()),
+                    CellConstraint::Opaque(own) if own == atom => Some(all),
                     _ => None,
                 },
             })
             .collect()
     }
 
-    fn cover(
+    fn cover<'c>(
         region: &Region,
-        coverers: &[(usize, Region)],
+        coverers: impl IntoIterator<Item = Coverer<'c>>,
         budget: &mut Budget,
-    ) -> Option<Option<Vec<usize>>> {
+    ) -> Option<Option<Vec<Coverer<'c>>>> {
         let mut remaining: Vec<Region> = vec![region.clone()];
         let mut used = Vec::new();
         for (idx, cut) in coverers {
@@ -399,7 +419,7 @@ impl VerifyTable<'_> {
             let mut touched = false;
             for fragment in remaining {
                 budget.spend(fragment.len())?;
-                match Self::subtract(&fragment, cut) {
+                match Self::subtract(&fragment, &cut) {
                     Some(pieces) => {
                         touched = true;
                         next.extend(pieces);
@@ -407,11 +427,11 @@ impl VerifyTable<'_> {
                     None => next.push(fragment),
                 }
             }
-            if next.len() > Self::max_fragments() {
+            if next.len() > MAX_FRAGMENTS {
                 return None;
             }
             if touched {
-                used.push(*idx);
+                used.push((idx, cut));
             }
             remaining = next;
             if remaining.is_empty() {
@@ -421,45 +441,40 @@ impl VerifyTable<'_> {
         Some(None)
     }
 
-    fn minimize(
-        region: &Region,
-        coverers: &[(usize, Region)],
-        used: Vec<usize>,
-        budget: &mut Budget,
-    ) -> Option<Vec<usize>> {
+    fn minimize(region: &Region, used: Vec<Coverer>, budget: &mut Budget) -> Option<Vec<usize>> {
         if used.len() > MAX_MINIMIZE {
-            return Some(used);
+            return Some(used.into_iter().map(|(idx, _)| idx).collect());
         }
         let mut kept = used;
         let mut i = kept.len();
         while i > 0 {
             i -= 1;
-            let candidate: Vec<(usize, Region)> = coverers
+            let candidate = kept
                 .iter()
-                .filter(|(idx, _)| *idx != kept[i] && kept.contains(idx))
-                .cloned()
-                .collect();
-            if Self::cover(region, &candidate, budget)?.is_some() {
+                .enumerate()
+                .filter(|(j, _)| *j != i)
+                .map(|(_, (idx, cut))| (*idx, cut.clone()));
+            if Self::cover(region, candidate, budget)?.is_some() {
                 kept.remove(i);
             }
         }
-        Some(kept)
+        Some(kept.into_iter().map(|(idx, _)| idx).collect())
     }
 
-    pub(super) fn subtract(fragment: &Region, cut: &Region) -> Option<Vec<Region>> {
+    pub(super) fn subtract(fragment: &Region, cut: &[&ValueSet]) -> Option<Vec<Region>> {
         if fragment.iter().zip(cut).any(|(f, c)| !f.intersects(c)) {
             return None;
         }
         let mut pieces = Vec::new();
         let mut prefix = fragment.clone();
         for dim in 0..fragment.len() {
-            let outside = prefix[dim].difference(&cut[dim]);
+            let outside = prefix[dim].difference(cut[dim]);
             if !outside.is_empty() {
                 let mut piece = prefix.clone();
                 piece[dim] = outside;
                 pieces.push(piece);
             }
-            prefix[dim] = prefix[dim].intersect(&cut[dim]);
+            prefix[dim] = prefix[dim].intersect(cut[dim]);
         }
         Some(pieces)
     }

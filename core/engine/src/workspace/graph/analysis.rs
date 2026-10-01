@@ -874,6 +874,7 @@ impl<'a> GraphAnalyzer<'a> {
             input_field_types.insert(col.id.clone(), field_type);
         }
 
+        let mut checked: HashMap<(Arc<str>, Arc<str>), std::ops::Range<usize>> = HashMap::new();
         for (row_idx, rule) in content.rules.iter().enumerate() {
             let row_key = Self::row_key(rule, row_idx);
             for col in content.inputs.iter() {
@@ -886,6 +887,20 @@ impl<'a> GraphAnalyzer<'a> {
                 };
                 match cell_scopes.get(&col.id) {
                     Some(cell_scope) => {
+                        let key = (col.id.clone(), cell.clone());
+                        if let Some(range) = checked.get(&key) {
+                            let replayed: Vec<Diagnostic> = self.diagnostics[range.clone()]
+                                .iter()
+                                .cloned()
+                                .map(|mut diagnostic| {
+                                    diagnostic.location.target = Some(target.clone());
+                                    diagnostic
+                                })
+                                .collect();
+                            self.diagnostics.extend(replayed);
+                            continue;
+                        }
+                        let first = self.diagnostics.len();
                         self.check_expression(
                             &node.id,
                             Some(col.id.clone()),
@@ -894,6 +909,7 @@ impl<'a> GraphAnalyzer<'a> {
                             ExpressionKind::Unary,
                             &cell_scope.shallow_clone(),
                         );
+                        checked.insert(key, first..self.diagnostics.len());
                     }
                     None => {
                         let resolved = self.check_expression(
@@ -1077,10 +1093,7 @@ impl<'a> GraphAnalyzer<'a> {
             let mut merged = match &declared {
                 Some(expected) => expected.shallow_clone(),
                 None => {
-                    let merged = cell_types
-                        .iter()
-                        .map(VariableType::shallow_clone)
-                        .reduce(|acc, t| acc.merge(&t));
+                    let merged = VariableType::merge_all(&cell_types);
                     match (merged, collect) {
                         (Some(merged), _) => merged,
                         (None, true) => VariableType::Any,

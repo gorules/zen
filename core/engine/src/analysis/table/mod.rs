@@ -1,10 +1,14 @@
+mod cache;
 mod cell;
 mod constraints;
+mod index;
 mod merge;
 mod missing;
+mod partition;
 mod print;
 mod value_set;
 mod verify;
+mod witness;
 
 use std::sync::Arc;
 
@@ -25,41 +29,6 @@ pub(crate) use value_set::ValueSet;
 use print::CellText;
 use value_set::StringSet;
 use verify::{Finding, GapCase};
-
-const FULL_SCALE: usize = 40;
-
-thread_local! {
-    static FULL_CHECK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
-pub(crate) struct FullCheck {
-    previous: bool,
-}
-
-impl FullCheck {
-    pub(crate) fn start() -> Self {
-        Self {
-            previous: FULL_CHECK.with(|flag| flag.replace(true)),
-        }
-    }
-
-    pub(crate) fn active() -> bool {
-        FULL_CHECK.with(|flag| flag.get())
-    }
-
-    pub(crate) fn scale(base: usize) -> usize {
-        match Self::active() {
-            true => base.saturating_mul(FULL_SCALE),
-            false => base,
-        }
-    }
-}
-
-impl Drop for FullCheck {
-    fn drop(&mut self) {
-        FULL_CHECK.with(|flag| flag.set(self.previous));
-    }
-}
 
 pub(crate) struct TableColumn;
 
@@ -176,8 +145,9 @@ impl VerifyTable<'_> {
         row_key: impl Fn(usize) -> Arc<str>,
         location: impl Fn(Option<Arc<str>>) -> DiagnosticLocation,
     ) -> Vec<Diagnostic> {
-        self.verify(is)
-            .into_iter()
+        self.cached_findings(is)
+            .iter()
+            .cloned()
             .map(|finding| self.diagnostic(finding, &row_key, &location))
             .collect()
     }
@@ -311,21 +281,14 @@ impl VerifyTable<'_> {
                 rows,
                 coverage,
                 gaps,
-                full,
             } => {
                 let checks = match (coverage, gaps) {
                     (true, true) => "rows that never fire and missing cases",
                     (true, false) => "rows that never fire",
                     _ => "missing cases",
                 };
-                let message = match full {
-                    true => format!(
-                        "this table ({rows} rows) is too complex to check {checks} completely"
-                    ),
-                    false => format!(
-                        "this table ({rows} rows) is too large to check {checks} while editing; run the full check"
-                    ),
-                };
+                let message =
+                    format!("this table ({rows} rows) is too complex to check {checks} completely");
                 let mut diagnostic = Diagnostic::hint(
                     DiagnosticCode::TableChecksIncomplete,
                     location(None),
@@ -335,7 +298,6 @@ impl VerifyTable<'_> {
                     ("rows", rows.to_string()),
                     ("coverage", coverage.to_string()),
                     ("gaps", gaps.to_string()),
-                    ("full", full.to_string()),
                 ]);
                 diagnostic
             }

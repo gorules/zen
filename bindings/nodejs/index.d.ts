@@ -403,7 +403,6 @@ export declare class Workspace {
   updateBlock(req: PolicyUpdateBlockRequest): void
   removeBlock(req: PolicyRemoveBlockRequest): boolean
   diagnostics(policyPath: string, maxDiagnostics?: number | undefined | null): Array<PolicyDiagnostic>
-  fullTableCheck(path: string, blockId: string): Array<PolicyDiagnostic>
   allDiagnostics(maxDiagnostics?: number | undefined | null): Array<PolicyDiagnostic>
   entities(req: PolicyScopeRequest): Array<PolicyEntityInfo>
   globals(req: PolicyScopeRequest): Array<PolicyGlobalInfo>

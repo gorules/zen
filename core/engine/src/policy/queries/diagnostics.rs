@@ -2,13 +2,11 @@ use std::sync::Arc;
 
 use ahash::{HashMap, HashMapExt, HashSet};
 
-use crate::analysis::table::FullCheck;
 use crate::policy::ir::PropertyTypeIr;
 use crate::policy::linter::Linter;
 use crate::policy::queries::dependency::WriteScope;
 use crate::policy::queries::path::PathRoot;
 use crate::workspace::db::{Db, Unit};
-use crate::workspace::graph::GraphAnalyzer;
 use crate::workspace::types::{BlockRef, Diagnostic, DiagnosticCode, DiagnosticLocation};
 
 impl Db {
@@ -71,57 +69,6 @@ impl Db {
         self.locate_nullable_sources(path, &mut out);
 
         out
-    }
-
-    pub(crate) fn full_table_check(&self, path: &str, block: &str) -> Vec<Diagnostic> {
-        let path: Arc<str> = Arc::from(path);
-        let _full = FullCheck::start();
-        let snap = self.snapshot();
-        let mut out: Vec<Diagnostic> = match snap.graphs.get(&path).cloned() {
-            Some(doc) => {
-                let Some(content) = doc.as_graph() else {
-                    return Vec::new();
-                };
-                self.graph_stack.borrow_mut().push(path.clone());
-                self.graph_dep_frame_push(&path);
-                let analysis = GraphAnalyzer::new(self, path.clone(), content).analyze();
-                self.graph_stack.borrow_mut().pop();
-                let _ = self.graph_dep_frame_pop();
-                analysis.diagnostics
-            }
-            None => {
-                let unit = self.unit(&path);
-                let enriched = self.compute_unit_enriched(&unit);
-                enriched
-                    .diagnostics
-                    .iter()
-                    .chain(
-                        enriched
-                            .per_rule
-                            .iter()
-                            .flat_map(|rule| rule.diagnostics.iter()),
-                    )
-                    .filter(|d| d.is_in(&path))
-                    .cloned()
-                    .collect()
-            }
-        };
-        out.retain(|d| d.location.block_id.as_deref() == Some(block) && Self::table_code(d.code));
-        out
-    }
-
-    fn table_code(code: DiagnosticCode) -> bool {
-        matches!(
-            code,
-            DiagnosticCode::UnsatisfiableCell
-                | DiagnosticCode::UnreachableRule
-                | DiagnosticCode::DuplicateRule
-                | DiagnosticCode::MissingCases
-                | DiagnosticCode::CompressibleTable
-                | DiagnosticCode::CellCoversDomain
-                | DiagnosticCode::OutputNeverProduced
-                | DiagnosticCode::TableChecksIncomplete
-        )
     }
 
     fn locate_nullable_sources(&self, path: &Arc<str>, out: &mut [Diagnostic]) {

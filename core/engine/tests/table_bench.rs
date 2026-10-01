@@ -126,21 +126,6 @@ fn measure(label: &str, table: Value) {
     let start = Instant::now();
     let diagnostics = ws.diagnostics("g");
     let elapsed = start.elapsed();
-    let start = Instant::now();
-    let full = ws.full_table_check("g", "dt");
-    let full_elapsed = start.elapsed();
-    let full_missing = full
-        .iter()
-        .filter(|d| d.code == DiagnosticCode::MissingCases)
-        .count();
-    let full_incomplete = full
-        .iter()
-        .filter(|d| d.code == DiagnosticCode::TableChecksIncomplete)
-        .count();
-    println!(
-        "{label:<28} full {:>9.1} ms  missing={full_missing} incomplete={full_incomplete}",
-        full_elapsed.as_secs_f64() * 1000.0
-    );
     let count = |code: DiagnosticCode| diagnostics.iter().filter(|d| d.code == code).count();
     println!(
         "{label:<28} live {:>9.1} ms  missing={} compress={} unreachable={} duplicate={} incomplete={} total={}",

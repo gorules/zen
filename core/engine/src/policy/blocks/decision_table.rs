@@ -1164,11 +1164,12 @@ impl DictionaryCandidate {
             return None;
         }
         let mut values: Vec<std::rc::Rc<str>> = Vec::new();
+        let mut seen: HashSet<std::rc::Rc<str>> = HashSet::default();
         for cell in cell_types {
             let VariableType::Const(value) = cell else {
                 return None;
             };
-            if !values.iter().any(|seen| seen == value) {
+            if seen.insert(value.clone()) {
                 values.push(value.clone());
             }
         }
@@ -1177,6 +1178,7 @@ impl DictionaryCandidate {
 
     pub(crate) fn from_literal_tests(tests: &[ArmTest]) -> Option<Vec<std::rc::Rc<str>>> {
         let mut values: Vec<std::rc::Rc<str>> = Vec::new();
+        let mut seen: HashSet<std::rc::Rc<str>> = HashSet::default();
         let mut literal_cells = 0usize;
         for test in tests {
             match test {
@@ -1186,7 +1188,7 @@ impl DictionaryCandidate {
                 } => {
                     literal_cells += 1;
                     for value in cell_values {
-                        if !values.iter().any(|seen| seen == value) {
+                        if seen.insert(value.clone()) {
                             values.push(value.clone());
                         }
                     }

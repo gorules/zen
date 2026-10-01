@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use ahash::HashSet;
+use ahash::{HashMap, HashSet};
 
 use crate::policy::blocks::{BlockKind, DecisionTableIr};
 use crate::workspace::types::{Diagnostic, DiagnosticArgs, DiagnosticCode, DiagnosticLocation};
@@ -107,6 +107,7 @@ impl LintRule for NonDiscriminatingColumn {
 impl NonDiscriminatingColumn {
     fn never_affects_outcome(view: &TableView, col_idx: usize) -> bool {
         let mut groups: Vec<(Vec<&str>, Vec<usize>)> = Vec::new();
+        let mut slots: HashMap<Vec<&str>, usize> = HashMap::default();
         for (row_idx, row) in view.rows.iter().enumerate() {
             let key: Vec<&str> = row
                 .inputs
@@ -115,9 +116,12 @@ impl NonDiscriminatingColumn {
                 .filter(|(i, _)| *i != col_idx)
                 .map(|(_, cell)| cell.as_str())
                 .collect();
-            match groups.iter_mut().find(|(k, _)| *k == key) {
-                Some((_, members)) => members.push(row_idx),
-                None => groups.push((key, vec![row_idx])),
+            match slots.get(&key) {
+                Some(&slot) => groups[slot].1.push(row_idx),
+                None => {
+                    slots.insert(key.clone(), groups.len());
+                    groups.push((key, vec![row_idx]));
+                }
             }
         }
 
@@ -176,7 +180,7 @@ impl NonDiscriminatingColumn {
             if row.inputs[col_idx].is_empty() {
                 return row.outputs == outputs;
             }
-            if !members.contains(&idx) {
+            if members.binary_search(&idx).is_err() {
                 return false;
             }
         }

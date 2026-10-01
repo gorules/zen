@@ -25,7 +25,7 @@ use crate::policy::queries::scope::{
     VariableTypeScope,
 };
 use crate::policy::raw::PolicyDocument;
-use crate::workspace::document_dependencies::{DependencyIndex, DependencyKind};
+use crate::workspace::document_dependencies::DependencyIndex;
 use crate::workspace::graph::function::{
     FunctionKey, FunctionResolutionRequest, FunctionTypeResolver, ResolvedFunction,
 };
@@ -43,6 +43,14 @@ pub(crate) struct GraphDeps {
     docs: Vec<(Arc<str>, Option<Arc<DecisionContent>>)>,
     views: Vec<(Arc<str>, ReadView)>,
     functions: Vec<(FunctionKey, u64)>,
+}
+
+#[derive(Default)]
+pub(crate) struct ChangeLog {
+    pending: Vec<Arc<str>>,
+    settling: bool,
+    sequence: u64,
+    marked: HashMap<Arc<str>, u64>,
 }
 
 #[derive(Default)]
@@ -197,6 +205,7 @@ pub struct Db {
     pub(crate) graph_stack: RefCell<Vec<Arc<str>>>,
     graph_dep_frames: RefCell<Vec<DepFrame>>,
     dependencies: DependencyIndex,
+    changes: RefCell<ChangeLog>,
     graph_fn_frames: RefCell<Vec<HashMap<FunctionKey, u64>>>,
     function_types: RefCell<HashMap<FunctionKey, ResolvedFunction>>,
     function_requests: RefCell<Vec<FunctionResolutionRequest>>,
@@ -227,6 +236,7 @@ impl Db {
             graph_stack: RefCell::new(Vec::new()),
             graph_dep_frames: RefCell::new(Vec::new()),
             dependencies: DependencyIndex::default(),
+            changes: RefCell::new(ChangeLog::default()),
             graph_fn_frames: RefCell::new(Vec::new()),
             function_types: RefCell::new(HashMap::default()),
             function_requests: RefCell::new(Vec::new()),
@@ -239,6 +249,7 @@ impl Db {
 
     pub fn set_document(&mut self, path: Arc<str>, doc: Arc<DecisionContent>) {
         self.dependencies.set(path.clone(), &doc);
+        self.changes.borrow_mut().pending.push(path.clone());
         self.inputs.borrow_mut().documents.insert(path, doc);
         self.invalidate_snapshot();
     }
@@ -249,6 +260,7 @@ impl Db {
 
     pub fn remove_document(&mut self, path: &str) -> bool {
         self.dependencies.remove(path);
+        self.changes.borrow_mut().pending.push(Arc::from(path));
         let existed = self.inputs.borrow_mut().documents.remove(path).is_some();
         if existed {
             self.invalidate_snapshot();
@@ -256,36 +268,61 @@ impl Db {
         existed
     }
 
-    pub(crate) fn recorded_view(
-        &self,
-        user: &Arc<str>,
-        dependency: &Arc<str>,
-        kind: DependencyKind,
-    ) -> Option<ReadView> {
+    pub(crate) fn frozen_views(&self) -> HashMap<(Arc<str>, Arc<str>), Vec<ReadView>> {
         let cache = self.cache.graphs.borrow();
-        let (deps, _) = cache.get(user)?;
         let inputs = self.inputs.borrow();
-        let current = deps.docs.iter().any(|(doc, stamp)| {
-            doc == user
-                && matches!(
-                    (stamp, inputs.documents.get(user)),
-                    (Some(stamp), Some(now)) if Arc::ptr_eq(stamp, now)
-                )
-        });
-        if !current {
-            return None;
-        }
-        deps.views
-            .iter()
-            .find(|(doc, view)| {
-                doc == dependency
+        let mut out: HashMap<(Arc<str>, Arc<str>), Vec<ReadView>> = HashMap::default();
+        for (user, (deps, _)) in cache.iter() {
+            let current = deps.docs.iter().any(|(doc, stamp)| {
+                doc == user
                     && matches!(
-                        (kind, view),
-                        (DependencyKind::Dictionaries, ReadView::Dictionaries(_))
-                            | (DependencyKind::Signature, ReadView::Signature(_))
+                        (stamp, inputs.documents.get(user)),
+                        (Some(stamp), Some(now)) if Arc::ptr_eq(stamp, now)
                     )
-            })
-            .map(|(_, view)| view.clone())
+            });
+            if !current {
+                continue;
+            }
+            for (dependency, view) in &deps.views {
+                out.entry((user.clone(), dependency.clone()))
+                    .or_default()
+                    .push(view.clone());
+            }
+        }
+        out
+    }
+
+    pub(crate) fn settle(&self) {
+        if self.changes.borrow().settling || self.changes.borrow().pending.is_empty() {
+            return;
+        }
+        let pending = {
+            let mut changes = self.changes.borrow_mut();
+            changes.settling = true;
+            std::mem::take(&mut changes.pending)
+        };
+        let affected = self.walk(&pending);
+        let mut changes = self.changes.borrow_mut();
+        changes.settling = false;
+        changes.sequence += 1;
+        let sequence = changes.sequence;
+        for path in affected {
+            changes.marked.insert(path, sequence);
+        }
+    }
+
+    pub(crate) fn changes_since(&self, cursor: u64) -> (u64, Vec<Arc<str>>) {
+        self.snapshot();
+        self.settle();
+        let changes = self.changes.borrow();
+        let mut paths: Vec<Arc<str>> = changes
+            .marked
+            .iter()
+            .filter(|(_, &sequence)| sequence > cursor)
+            .map(|(path, _)| path.clone())
+            .collect();
+        paths.sort();
+        (changes.sequence, paths)
     }
 
     pub(crate) fn document_dependencies(&self) -> &DependencyIndex {
@@ -482,6 +519,10 @@ impl Db {
     }
 
     pub fn snapshot(&self) -> Arc<Snapshot> {
+        if let Some(s) = self.snapshot.borrow().clone() {
+            return s;
+        }
+        self.settle();
         if let Some(s) = self.snapshot.borrow().clone() {
             return s;
         }

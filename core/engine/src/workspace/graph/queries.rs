@@ -79,11 +79,9 @@ impl Db {
         imports: &[Arc<str>],
     ) -> HashMap<Arc<str>, VariableType> {
         let mut out = HashMap::new();
+        let view = ReadView::Dictionaries(self.dictionary_view(imports));
         for import in imports {
-            self.graph_dep_record_view(
-                import,
-                ReadView::Dictionaries(self.dictionary_view(import)),
-            );
+            self.graph_dep_record_view(import, view.clone());
         }
         for entry in self.graph_dictionary_blocks(imports) {
             out.insert(entry.ir.name.clone(), entry.ir.enum_type());

@@ -118,6 +118,10 @@ export type PolicySlotState =
   | 'path';
 export type PolicySlotRole = 'unary' | 'condition' | 'value' | 'path';
 /** One enum value: `label` for display, `source` the ready-to-splice ZEN literal (null when unquotable). */
+export interface PolicyChanges {
+  cursor: number
+  paths: Array<string>
+}
 export interface PolicyValueOption {
   value: string;
   label: string;
@@ -400,7 +404,7 @@ export declare class Workspace {
   isGraph(path: string): boolean
   uncheckedNodes(path: string): Array<string>
   paths(): Array<string>
-  affectedBy(paths: Array<string>): Array<string>
+  changesSince(cursor: number): PolicyChanges
   updateBlock(req: PolicyUpdateBlockRequest): void
   removeBlock(req: PolicyRemoveBlockRequest): boolean
   diagnostics(policyPath: string, maxDiagnostics?: number | undefined | null): Array<PolicyDiagnostic>

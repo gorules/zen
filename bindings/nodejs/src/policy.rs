@@ -13,6 +13,12 @@ use zen_engine::workspace;
 type ResolverRef = FunctionRef<FnArgs<(String, Value)>, Option<String>>;
 
 #[napi(object)]
+pub struct PolicyChanges {
+    pub cursor: i64,
+    pub paths: Vec<String>,
+}
+
+#[napi(object)]
 pub struct PolicyExpressionCursor {
     pub policy_path: String,
     pub block_id: String,
@@ -627,13 +633,12 @@ impl Workspace {
     }
 
     #[napi]
-    pub fn affected_by(&self, paths: Vec<String>) -> Vec<String> {
-        let paths: Vec<&str> = paths.iter().map(String::as_str).collect();
-        self.inner
-            .affected_by(&paths)
-            .into_iter()
-            .map(|p| p.to_string())
-            .collect()
+    pub fn changes_since(&self, cursor: i64) -> PolicyChanges {
+        let (next, paths) = self.inner.changes_since(cursor.max(0) as u64);
+        PolicyChanges {
+            cursor: next as i64,
+            paths: paths.into_iter().map(|p| p.to_string()).collect(),
+        }
     }
 
     #[napi]

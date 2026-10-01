@@ -149,8 +149,8 @@ impl Workspace {
         self.db.all_diagnostics()
     }
 
-    pub fn affected_by(&self, paths: &[&str]) -> Vec<Arc<str>> {
-        self.db.affected_by(paths)
+    pub fn changes_since(&self, cursor: u64) -> (u64, Vec<Arc<str>>) {
+        self.db.changes_since(cursor)
     }
 
     pub fn document_uses(&self, path: &str) -> Vec<document_dependencies::Dependency> {

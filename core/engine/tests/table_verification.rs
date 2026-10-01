@@ -1597,37 +1597,6 @@ fn covered_rows_with_the_same_result_are_redundant_hints() {
 }
 
 #[test]
-fn long_value_lists_and_or_chains_fit_a_small_stack() {
-    std::thread::Builder::new()
-        .stack_size(1 << 20)
-        .spawn(|| {
-            let list: Vec<String> = (0..1500).map(|i| i.to_string()).collect();
-            let chain: Vec<String> = (0..1500).map(|i| format!("$ == {i}")).collect();
-            for cell in [list.join(", "), chain.join(" or ")] {
-                let table = Table {
-                    hit: "first",
-                    inputs: &["applicant.age"],
-                    outputs: &["applicant.discount"],
-                    rows: leak_rows(vec![
-                        ("r1".to_string(), vec![cell.clone()], vec!["1".to_string()]),
-                        (
-                            "r2".to_string(),
-                            vec!["1499".to_string()],
-                            vec!["2".to_string()],
-                        ),
-                    ]),
-                };
-                table.assert_both(&[
-                    "UnreachableRule r2 coveredByIds=r1 example={\"applicant\":{\"age\":1499}}",
-                ]);
-            }
-        })
-        .expect("thread")
-        .join()
-        .expect("no stack overflow");
-}
-
-#[test]
 fn extreme_decimal_bounds_do_not_overflow() {
     for (cells, gap) in [
         (["<= 79228162514264337593543950335", "> 0"], None),

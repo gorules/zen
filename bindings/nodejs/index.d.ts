@@ -400,6 +400,7 @@ export declare class Workspace {
   isGraph(path: string): boolean
   uncheckedNodes(path: string): Array<string>
   paths(): Array<string>
+  affectedBy(paths: Array<string>): Array<string>
   updateBlock(req: PolicyUpdateBlockRequest): void
   removeBlock(req: PolicyRemoveBlockRequest): boolean
   diagnostics(policyPath: string, maxDiagnostics?: number | undefined | null): Array<PolicyDiagnostic>

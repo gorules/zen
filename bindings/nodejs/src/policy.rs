@@ -627,6 +627,16 @@ impl Workspace {
     }
 
     #[napi]
+    pub fn affected_by(&self, paths: Vec<String>) -> Vec<String> {
+        let paths: Vec<&str> = paths.iter().map(String::as_str).collect();
+        self.inner
+            .affected_by(&paths)
+            .into_iter()
+            .map(|p| p.to_string())
+            .collect()
+    }
+
+    #[napi]
     pub fn update_block(&mut self, req: PolicyUpdateBlockRequest) -> napi::Result<()> {
         use zen_engine::policy::BlockDoc;
 

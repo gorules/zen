@@ -243,6 +243,15 @@ impl Db {
         existed
     }
 
+    pub(crate) fn recorded_reads(&self, path: &Arc<str>) -> Vec<Arc<str>> {
+        self.cache
+            .graphs
+            .borrow()
+            .get(path)
+            .map(|(deps, _)| deps.docs.iter().map(|(doc, _)| doc.clone()).collect())
+            .unwrap_or_default()
+    }
+
     pub fn document_paths(&self) -> Vec<Arc<str>> {
         self.inputs.borrow().documents.keys().cloned().collect()
     }

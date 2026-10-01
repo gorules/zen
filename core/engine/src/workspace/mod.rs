@@ -1,3 +1,4 @@
+pub(crate) mod affected;
 pub(crate) mod db;
 pub(crate) mod editor;
 pub(crate) mod graph;
@@ -144,6 +145,10 @@ impl Workspace {
 
     pub fn all_diagnostics(&self) -> Vec<Diagnostic> {
         self.db.all_diagnostics()
+    }
+
+    pub fn affected_by(&self, paths: &[&str]) -> Vec<Arc<str>> {
+        self.db.affected_by(paths)
     }
 
     pub(crate) fn imports(&self, importer: &str, policy: &str) -> bool {

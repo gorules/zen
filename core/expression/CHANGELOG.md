@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.1.2](https://github.com/gorules/zen/compare/zen-expression-v2.1.1...zen-expression-v2.1.2) (2026-10-02)
+
+
+### Bug Fixes
+
+* decision table verification and diagnostic ([#537](https://github.com/gorules/zen/issues/537)) ([20d88e3](https://github.com/gorules/zen/commit/20d88e398d872adb8ab450a3ee802910f8a02cf3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * zen-macros bumped from 2.1.1 to 2.1.2
+    * zen-types bumped from 2.1.1 to 2.1.2
+
 ## [2.1.1](https://github.com/gorules/zen/compare/zen-expression-v2.1.0...zen-expression-v2.1.1) (2026-09-29)
 
 

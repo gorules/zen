@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.1.2](https://github.com/gorules/zen/compare/zen-engine-v2.1.1...zen-engine-v2.1.2) (2026-10-02)
+
+
+### Bug Fixes
+
+* decision table verification and diagnostic ([#537](https://github.com/gorules/zen/issues/537)) ([20d88e3](https://github.com/gorules/zen/commit/20d88e398d872adb8ab450a3ee802910f8a02cf3))
+* prevent self-referencing $ in graph expression nodes from overflowing the stack ([#535](https://github.com/gorules/zen/issues/535)) ([d076cab](https://github.com/gorules/zen/commit/d076cab213fc9ada31e5e4c76b96cb85e90fd599))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * zen-types bumped from 2.1.1 to 2.1.2
+    * zen-expression bumped from 2.1.1 to 2.1.2
+    * zen-tmpl bumped from 2.1.1 to 2.1.2
+
 ## [2.1.1](https://github.com/gorules/zen/compare/zen-engine-v2.1.0...zen-engine-v2.1.1) (2026-09-29)
 
 

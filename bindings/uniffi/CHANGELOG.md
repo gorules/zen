@@ -1,5 +1,7 @@
 # Changelog
 
+## [2.1.2](https://github.com/gorules/zen/compare/uniffi-v2.1.1...uniffi-v2.1.2) (2026-10-02)
+
 ## [2.1.1](https://github.com/gorules/zen/compare/uniffi-v2.1.0...uniffi-v2.1.1) (2026-09-29)
 
 ## [2.1.0](https://github.com/gorules/zen/compare/uniffi-v2.0.2...uniffi-v2.1.0) (2026-09-29)

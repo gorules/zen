@@ -1,6 +1,9 @@
+pub(crate) mod affected;
 pub(crate) mod db;
+pub mod document_dependencies;
 pub(crate) mod editor;
 pub(crate) mod graph;
+pub(crate) mod reads;
 pub(crate) mod search;
 pub(crate) mod slot;
 pub(crate) mod types;
@@ -144,6 +147,18 @@ impl Workspace {
 
     pub fn all_diagnostics(&self) -> Vec<Diagnostic> {
         self.db.all_diagnostics()
+    }
+
+    pub fn changes_since(&self, cursor: u64) -> (u64, Vec<Arc<str>>) {
+        self.db.changes_since(cursor)
+    }
+
+    pub fn document_uses(&self, path: &str) -> Vec<document_dependencies::Dependency> {
+        self.db.document_dependencies().uses(path).to_vec()
+    }
+
+    pub fn document_used_by(&self, path: &str) -> Vec<document_dependencies::Dependency> {
+        self.db.document_dependencies().used_by(path)
     }
 
     pub(crate) fn imports(&self, importer: &str, policy: &str) -> bool {

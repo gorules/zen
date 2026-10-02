@@ -122,6 +122,7 @@
 #![deny(clippy::unwrap_used)]
 #![allow(clippy::module_inception)]
 
+mod analysis;
 mod config;
 mod decision;
 mod decision_graph;

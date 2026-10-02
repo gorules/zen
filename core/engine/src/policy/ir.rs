@@ -422,13 +422,13 @@ impl DataModelIr {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DictionaryIr {
     pub name: Arc<str>,
     pub entries: Vec<DictionaryEntry>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DictionaryEntry {
     pub value: Arc<str>,
     pub label: Arc<str>,

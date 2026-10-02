@@ -5,6 +5,7 @@ use crate::intellisense::diagnostic::{
     collect_parser_diagnostics, collect_type_diagnostics, compiler_error_to_diagnostic,
     lexer_error_to_diagnostic, Diagnostic,
 };
+use crate::intellisense::fallible::Fallible;
 use crate::intellisense::inspection::{Hover, HoverWord, InspectionResult};
 use crate::intellisense::scope::IntelliSenseScope;
 use crate::intellisense::type_provider::TypesProvider;
@@ -24,9 +25,11 @@ pub mod dependency;
 pub mod diagnostic;
 mod discriminant;
 mod entity_flow;
+mod fallible;
 mod inspection;
 pub(crate) mod scope;
 pub(crate) mod type_provider;
+pub mod values;
 
 pub use dependency::{DependencyResult, ReadDependency, Reference};
 pub use discriminant::{ArmTest, NumberCover};
@@ -231,6 +234,33 @@ impl IntelliSense {
             references: dep_result.references,
             diagnostics,
         }
+    }
+
+    pub fn can_fail(&mut self, source: &str, data: &VariableType) -> bool {
+        self.arena.reset();
+        let arena = &self.arena;
+        let Ok(tokens) = self.lexer.tokenize(arena, source) else {
+            return true;
+        };
+        let Ok(parser) = Parser::try_new(&tokens, arena) else {
+            return true;
+        };
+        let parser_result = parser.standard().parse();
+        let ast = parser_result.root;
+        if !parser_result.is_complete || ast.has_error() {
+            return true;
+        }
+        let types = TypesProvider::generate(
+            ast,
+            IntelliSenseScope {
+                pointer_data: data.shallow_clone(),
+                root_data: data.shallow_clone(),
+                current_data: data.shallow_clone(),
+                ..Default::default()
+            },
+            self.strict,
+        );
+        !Fallible::new(&types).safe(ast)
     }
 
     pub fn with_ast<T>(

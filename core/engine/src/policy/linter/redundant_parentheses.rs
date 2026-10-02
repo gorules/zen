@@ -1,9 +1,10 @@
-use zen_expression::intellisense::AstMetadata;
+use zen_expression::intellisense::{AstMetadata, IntelliSense};
 use zen_expression::lexer::Operator;
 use zen_expression::parser::{Associativity, Node, ParserOperator};
 
+use crate::analysis::proof::{FixEdit, FixProof};
 use crate::workspace::types::{
-    Diagnostic, DiagnosticCode, DiagnosticLocation, ExpressionKind, Span,
+    Diagnostic, DiagnosticArgs, DiagnosticCode, DiagnosticLocation, ExpressionKind, Span,
 };
 
 use super::{AstOps, LintContext, LintRule};
@@ -201,6 +202,48 @@ impl RedundantParentheses {
     }
 }
 
+impl RedundantParentheses {
+    pub(crate) fn fix_args(
+        is: &mut IntelliSense,
+        source: &str,
+        findings: &[(Option<Span>, Option<Span>)],
+    ) -> Vec<DiagnosticArgs> {
+        let edits: Vec<Option<FixEdit>> = findings
+            .iter()
+            .map(|(outer, inner)| Some(FixEdit::unwrap((*outer)?, (*inner)?, None)))
+            .collect();
+        let candidates: Vec<FixEdit> = edits.iter().flatten().cloned().collect();
+        let proven = FixProof::proven(is, source, false, &candidates);
+        let accepted: Vec<&FixEdit> = candidates
+            .iter()
+            .zip(&proven)
+            .filter_map(|(edit, proven)| proven.then_some(edit))
+            .collect();
+        let fix_all = (accepted.len() > 1)
+            .then(|| FixProof::holds(is, source, false, &accepted))
+            .flatten();
+        let mut proven = proven.into_iter();
+        edits
+            .iter()
+            .map(|edit| {
+                let mut args = DiagnosticArgs::new();
+                let fixed = edit
+                    .as_ref()
+                    .filter(|_| proven.next() == Some(true))
+                    .and_then(|edit| edit.apply(source));
+                if let Some(fixed) = fixed {
+                    args.insert("fixOriginal", source.to_string());
+                    args.insert("fixSource", fixed);
+                    if let Some(all) = &fix_all {
+                        args.insert("fixAll", all.clone());
+                    }
+                }
+                args
+            })
+            .collect()
+    }
+}
+
 impl LintRule for RedundantParentheses {
     fn check(&self, cx: &LintContext, out: &mut Vec<Diagnostic>) {
         for block in cx.rules() {
@@ -213,7 +256,12 @@ impl LintRule for RedundantParentheses {
                         RedundantParentheses::scan(root, metadata)
                     })
                     .unwrap_or_default();
-                for (span, inner_span) in findings {
+                let fixes = Self::fix_args(
+                    &mut cx.db.intellisense().borrow_mut(),
+                    &expression.source,
+                    &findings,
+                );
+                for ((span, inner_span), args) in findings.into_iter().zip(fixes) {
                     let message = match inner_span {
                         Some(inner) => format!(
                             "unnecessary parentheses around '{}'",
@@ -221,7 +269,7 @@ impl LintRule for RedundantParentheses {
                         ),
                         None => "unnecessary parentheses".to_string(),
                     };
-                    out.push(Diagnostic::hint(
+                    let mut diagnostic = Diagnostic::hint(
                         DiagnosticCode::RedundantParentheses,
                         DiagnosticLocation::expression(
                             cx.target().clone(),
@@ -230,7 +278,9 @@ impl LintRule for RedundantParentheses {
                             span,
                         ),
                         message,
-                    ));
+                    );
+                    diagnostic.args = args;
+                    out.push(diagnostic);
                 }
             }
         }

@@ -259,7 +259,7 @@ describe('Workspace graph decision tables', () => {
           hitPolicy: 'first',
           inputs: [{ id: 'c1', name: 'Age', field: 'age' }],
           outputs: [{ id: 'o1', name: 'Score', field: 'score', type: columnType }],
-          rules: cells.map((cell, i) => ({ _id: `r${i}`, c1: '', o1: cell })),
+          rules: cells.map((cell, i) => ({ _id: `r${i}`, c1: i === 0 ? '< 18' : '', o1: cell })),
         },
       },
       { id: 'out', name: 'out', type: 'outputNode', content: {} },

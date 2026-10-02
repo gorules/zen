@@ -13,6 +13,10 @@ use zen_types::decision::{
 
 use zen_expression::intellisense::ArmTest;
 
+use crate::analysis::nullable::{NullableOperand, OnError};
+use crate::analysis::table::{
+    Bound, HitMode, Interval, NumberSet, PathConstraints, TableColumn, VerifyTable,
+};
 use crate::model::GraphContent;
 use crate::policy::blocks::{
     DecisionTableIr, DeclaredType, DictionaryCandidate, IntelliSenseSource, ReadFlattener,
@@ -28,7 +32,7 @@ use crate::workspace::types::{
 
 const NODES_KEY: &str = "$nodes";
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct GraphSignature {
     pub input: VariableType,
     pub output: VariableType,
@@ -67,10 +71,24 @@ pub struct GraphAnalysis {
     pub inferred_inputs: Vec<Arc<str>>,
 }
 
+#[derive(Clone, PartialEq)]
 pub(crate) enum SignatureResolution {
     Found(GraphSignature),
     Recursive,
     Missing,
+}
+
+impl SignatureResolution {
+    pub(crate) fn detached(&self) -> Self {
+        match self {
+            SignatureResolution::Found(signature) => SignatureResolution::Found(GraphSignature {
+                input: signature.input.depth_clone(usize::MAX),
+                output: signature.output.depth_clone(usize::MAX),
+            }),
+            SignatureResolution::Recursive => SignatureResolution::Recursive,
+            SignatureResolution::Missing => SignatureResolution::Missing,
+        }
+    }
 }
 
 pub(crate) struct GraphExpressionSite {
@@ -89,15 +107,47 @@ pub(crate) struct GraphAnalyzer<'a> {
     unchecked: bool,
     nodes_scope: VariableType,
     dictionary_types: HashMap<Arc<str>, VariableType>,
+    constraints: PathConstraints,
+    rewritten: Option<Vec<Arc<str>>>,
 }
 
 type IncomingEdges = Vec<Vec<(usize, Option<Arc<str>>)>>;
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+enum RunFact {
+    Node(usize),
+    Arm(usize, Option<Arc<str>>),
+}
 
 struct GraphTopology {
     node_index: HashMap<Arc<str>, usize>,
     incoming: IncomingEdges,
     outgoing: Vec<Vec<usize>>,
     order: Option<Vec<usize>>,
+    may_skip: Vec<bool>,
+    guaranteed: Vec<HashSet<RunFact>>,
+}
+
+impl GraphTopology {
+    fn skips(&self, idx: usize) -> bool {
+        self.may_skip.get(idx).copied().unwrap_or(false)
+    }
+
+    fn runs_with(&self, idx: usize, current: usize) -> bool {
+        !self.skips(idx)
+            || self
+                .guaranteed
+                .get(current)
+                .is_some_and(|g| g.contains(&RunFact::Node(idx)))
+    }
+
+    fn certain_edge(&self, content: &GraphContent, current: usize, edge: usize) -> bool {
+        let incoming = &self.incoming[current];
+        let (pred, handle) = &incoming[edge];
+        incoming.len() == 1
+            || (self.runs_with(*pred, current)
+                && !GraphAnalyzer::skippable(content, *pred, handle.as_deref()))
+    }
 }
 
 impl<'a> GraphAnalyzer<'a> {
@@ -112,6 +162,8 @@ impl<'a> GraphAnalyzer<'a> {
             unchecked: false,
             nodes_scope: VariableType::Any,
             dictionary_types,
+            constraints: PathConstraints::default(),
+            rewritten: None,
         }
     }
 
@@ -124,7 +176,23 @@ impl<'a> GraphAnalyzer<'a> {
         if let Some(order) = &topology.order {
             let descendants = Self::descendant_sets(&topology);
             let mut ancestors: HashMap<usize, HashSet<usize>> = HashMap::new();
+            let mut after: HashMap<usize, PathConstraints> = HashMap::new();
+            let mut branches: HashMap<(usize, Arc<str>), PathConstraints> = HashMap::new();
+            let mut rewritten: HashMap<usize, Option<Vec<Arc<str>>>> = HashMap::new();
             for &idx in order {
+                self.rewritten = Self::rewritten_before(&topology.incoming[idx], &rewritten);
+                let parts: Vec<PathConstraints> = topology.incoming[idx]
+                    .iter()
+                    .map(|(pred, handle)| {
+                        handle
+                            .as_ref()
+                            .and_then(|h| branches.get(&(*pred, h.clone())))
+                            .or_else(|| after.get(pred))
+                            .cloned()
+                            .unwrap_or_default()
+                    })
+                    .collect();
+                self.constraints = PathConstraints::join(&parts);
                 let mut ancestor_set: HashSet<usize> = HashSet::default();
                 for (pred, _) in &topology.incoming[idx] {
                     ancestor_set.insert(*pred);
@@ -137,6 +205,7 @@ impl<'a> GraphAnalyzer<'a> {
                     Self::merged_input(self.content, &topology, &nodes, idx);
                 self.nodes_scope = Self::nodes_scope_of(
                     self.content,
+                    &topology,
                     idx,
                     &ancestor_set,
                     &descendants[idx],
@@ -145,6 +214,12 @@ impl<'a> GraphAnalyzer<'a> {
                 let analysis = self.analyze_node(node, input, unchecked, open, &graph_input);
                 nodes.insert(node.id.clone(), analysis);
                 ancestors.insert(idx, ancestor_set);
+                let outgoing = Self::constraints_after(node, self.constraints.clone());
+                if let DecisionNodeKind::SwitchNode { content } = &node.kind {
+                    branches.extend(self.branch_constraints(idx, content, &outgoing));
+                }
+                after.insert(idx, outgoing);
+                rewritten.insert(idx, Self::rewritten_after(node, self.rewritten.clone()));
             }
         }
 
@@ -153,6 +228,7 @@ impl<'a> GraphAnalyzer<'a> {
         self.lint_output_any(&topology, &nodes, &graph_input);
         self.lint_unreachable(&topology);
         self.lint_expressions();
+        self.locate_nullable_sources(&topology);
         self.sort_diagnostics(&topology);
 
         let input = self.graph_input_signature();
@@ -244,12 +320,85 @@ impl<'a> GraphAnalyzer<'a> {
             ));
         }
 
+        let (may_skip, guaranteed) = match &order {
+            Some(order) => Self::execution(content, &incoming, order),
+            None => (Vec::new(), Vec::new()),
+        };
         GraphTopology {
             node_index,
             incoming,
             outgoing,
             order,
+            may_skip,
+            guaranteed,
         }
+    }
+
+    fn execution(
+        content: &GraphContent,
+        incoming: &IncomingEdges,
+        order: &[usize],
+    ) -> (Vec<bool>, Vec<HashSet<RunFact>>) {
+        let mut may_skip = vec![false; incoming.len()];
+        let mut guaranteed: Vec<HashSet<RunFact>> = vec![HashSet::default(); incoming.len()];
+        for (position, &idx) in order.iter().enumerate() {
+            let edges = &incoming[idx];
+            may_skip[idx] = !edges.is_empty()
+                && edges.iter().all(|(pred, handle)| {
+                    may_skip[*pred] || Self::skippable(content, *pred, handle.as_deref())
+                });
+            let mut sets = edges.iter().map(|(pred, handle)| {
+                let mut set = guaranteed[*pred].clone();
+                if Self::skippable(content, *pred, handle.as_deref()) {
+                    set.insert(RunFact::Arm(*pred, handle.clone()));
+                }
+                set
+            });
+            let mut runs: HashSet<RunFact> = match sets.next() {
+                Some(first) => {
+                    sets.fold(first, |acc, set| acc.intersection(&set).cloned().collect())
+                }
+                None => HashSet::default(),
+            };
+            runs.insert(RunFact::Node(idx));
+            for &earlier in &order[..position] {
+                if runs.contains(&RunFact::Node(earlier)) {
+                    continue;
+                }
+                let fires = incoming[earlier].iter().any(|(pred, handle)| {
+                    runs.contains(&RunFact::Node(*pred))
+                        && (!Self::skippable(content, *pred, handle.as_deref())
+                            || runs.contains(&RunFact::Arm(*pred, handle.clone())))
+                });
+                if fires {
+                    runs.insert(RunFact::Node(earlier));
+                }
+            }
+            guaranteed[idx] = runs;
+        }
+        (may_skip, guaranteed)
+    }
+
+    fn skippable(content: &GraphContent, source: usize, handle: Option<&str>) -> bool {
+        let DecisionNodeKind::SwitchNode { content: switch } = &content.nodes[source].kind else {
+            return false;
+        };
+        let Some(handle) = handle else {
+            return true;
+        };
+        let Some(position) = switch
+            .statements
+            .iter()
+            .position(|statement| statement.id.as_ref() == handle)
+        else {
+            return true;
+        };
+        let always = switch.statements[position].condition.is_empty()
+            && match switch.hit_policy {
+                SwitchStatementHitPolicy::Collect => true,
+                SwitchStatementHitPolicy::First => position == 0,
+            };
+        !always
     }
 
     fn topological_order(incoming: &IncomingEdges, outgoing: &[Vec<usize>]) -> Option<Vec<usize>> {
@@ -289,6 +438,7 @@ impl<'a> GraphAnalyzer<'a> {
 
     fn nodes_scope_of(
         content: &GraphContent,
+        topology: &GraphTopology,
         current: usize,
         ancestor_set: &HashSet<usize>,
         descendant_set: &HashSet<usize>,
@@ -305,7 +455,10 @@ impl<'a> GraphAnalyzer<'a> {
             }
             let resolved = if ancestor_set.contains(&idx) {
                 match nodes.get(&node.id) {
-                    Some(analysis) => analysis.output.shallow_clone(),
+                    Some(analysis) if topology.runs_with(idx, current) => {
+                        analysis.output.shallow_clone()
+                    }
+                    Some(analysis) => super::wrap_optional(analysis.output.shallow_clone()),
                     None => VariableType::Any,
                 }
             } else {
@@ -330,7 +483,10 @@ impl<'a> GraphAnalyzer<'a> {
         let mut unchecked = false;
         let mut open = false;
         let mut merged: Option<VariableType> = None;
-        for (pred, handle) in &topology.incoming[idx] {
+        let mut certain: Vec<VariableType> = Vec::new();
+        let mut every: Vec<VariableType> = Vec::new();
+        let mut partial = false;
+        for (edge, (pred, handle)) in topology.incoming[idx].iter().enumerate() {
             let Some(analysis) = nodes.get(&content.nodes[*pred].id) else {
                 continue;
             };
@@ -340,16 +496,75 @@ impl<'a> GraphAnalyzer<'a> {
                 .as_ref()
                 .and_then(|h| analysis.branch_outputs.get(h.as_ref()))
                 .unwrap_or(&analysis.output);
+            match topology.certain_edge(content, idx, edge) {
+                true => certain.push(branch.shallow_clone()),
+                false => partial = true,
+            }
+            every.push(branch.shallow_clone());
             merged = Some(match merged {
                 None => branch.shallow_clone(),
                 Some(acc) => acc.merge(branch),
             });
         }
-        (
-            merged.unwrap_or_else(VariableType::empty_object),
-            unchecked,
-            open,
-        )
+        let merged = merged.unwrap_or_else(VariableType::empty_object);
+        let merged = match partial {
+            true => Self::present_in(
+                &merged,
+                &certain.iter().collect::<Vec<_>>(),
+                Some(&every.iter().collect::<Vec<_>>()),
+            ),
+            false => merged,
+        };
+        (merged, unchecked, open)
+    }
+
+    fn present_in(
+        merged: &VariableType,
+        certain: &[&VariableType],
+        every: Option<&[&VariableType]>,
+    ) -> VariableType {
+        let VariableType::Object(fields) = merged else {
+            return merged.shallow_clone();
+        };
+        let opaque = |t: &&VariableType| !matches!(t, VariableType::Object(_));
+        if certain.iter().any(opaque) || every.is_some_and(|every| every.iter().any(opaque)) {
+            return merged.shallow_clone();
+        }
+        let at = |types: &[&VariableType], key: &Rc<str>| -> Vec<VariableType> {
+            types
+                .iter()
+                .filter_map(|t| match t {
+                    VariableType::Object(object) => {
+                        object.borrow().get(key).map(VariableType::shallow_clone)
+                    }
+                    _ => None,
+                })
+                .collect()
+        };
+        let result = VariableType::empty_object();
+        if let VariableType::Object(out) = &result {
+            let mut out = out.borrow_mut();
+            for (key, value) in fields.borrow().iter() {
+                let present = at(certain, key);
+                let everywhere = every
+                    .map(|every| (at(every, key), every.len()))
+                    .filter(|(values, len)| values.len() == *len)
+                    .map(|(values, _)| values);
+                let value = match (present.is_empty(), &everywhere) {
+                    (true, None) => super::wrap_optional(value.shallow_clone()),
+                    _ => Self::present_in(
+                        value,
+                        &present.iter().collect::<Vec<_>>(),
+                        everywhere
+                            .as_ref()
+                            .map(|values| values.iter().collect::<Vec<_>>())
+                            .as_deref(),
+                    ),
+                };
+                out.insert(key.clone(), value);
+            }
+        }
+        result
     }
 
     fn reachable_from_inputs(
@@ -383,20 +598,32 @@ impl<'a> GraphAnalyzer<'a> {
         nodes: &HashMap<Arc<str>, GraphNodeAnalysis>,
     ) -> VariableType {
         let reachable = Self::reachable_from_inputs(content, topology);
-        let mut terminals: Vec<&GraphNodeAnalysis> = content
+        let terminals: Vec<(usize, &GraphNodeAnalysis)> = content
             .nodes
             .iter()
             .enumerate()
             .filter(|(idx, _)| topology.outgoing.get(*idx).is_some_and(Vec::is_empty))
             .filter(|(idx, _)| reachable.as_ref().is_none_or(|r| r[*idx]))
-            .filter_map(|(_, node)| nodes.get(&node.id))
+            .filter_map(|(idx, node)| Some((idx, nodes.get(&node.id)?)))
             .collect();
-        let Some(first) = terminals.pop() else {
+        let Some(((_, first), rest)) = terminals.split_first() else {
             return VariableType::empty_object();
         };
-        terminals
-            .into_iter()
-            .fold(first.output.shallow_clone(), |acc, t| acc.merge(&t.output))
+        let merged = rest
+            .iter()
+            .fold(first.output.shallow_clone(), |acc, (_, t)| {
+                acc.merge(&t.output)
+            });
+        let certain: Vec<&VariableType> = terminals
+            .iter()
+            .filter(|(idx, _)| !topology.skips(*idx))
+            .map(|(_, t)| &t.output)
+            .collect();
+        let every: Vec<&VariableType> = terminals.iter().map(|(_, t)| &t.output).collect();
+        match rest.is_empty() || certain.len() == terminals.len() {
+            true => merged,
+            false => Self::present_in(&merged, &certain, Some(&every)),
+        }
     }
 
     fn graph_input_type(&self) -> VariableType {
@@ -829,7 +1056,7 @@ impl<'a> GraphAnalyzer<'a> {
             let Some(field) = &col.field else {
                 continue;
             };
-            let field_type = self.check_expression(
+            let field_type = self.check_skipping(
                 &node.id,
                 Some(col.id.clone()),
                 Some(CursorTarget::DecisionTableHead {
@@ -843,6 +1070,7 @@ impl<'a> GraphAnalyzer<'a> {
             input_field_types.insert(col.id.clone(), field_type);
         }
 
+        let mut checked: HashMap<(Arc<str>, Arc<str>), std::ops::Range<usize>> = HashMap::new();
         for (row_idx, rule) in content.rules.iter().enumerate() {
             let row_key = Self::row_key(rule, row_idx);
             for col in content.inputs.iter() {
@@ -855,7 +1083,21 @@ impl<'a> GraphAnalyzer<'a> {
                 };
                 match cell_scopes.get(&col.id) {
                     Some(cell_scope) => {
-                        self.check_expression(
+                        let key = (col.id.clone(), cell.clone());
+                        if let Some(range) = checked.get(&key) {
+                            let replayed: Vec<Diagnostic> = self.diagnostics[range.clone()]
+                                .iter()
+                                .cloned()
+                                .map(|mut diagnostic| {
+                                    diagnostic.location.target = Some(target.clone());
+                                    diagnostic
+                                })
+                                .collect();
+                            self.diagnostics.extend(replayed);
+                            continue;
+                        }
+                        let first = self.diagnostics.len();
+                        self.check_skipping(
                             &node.id,
                             Some(col.id.clone()),
                             Some(target),
@@ -863,9 +1105,10 @@ impl<'a> GraphAnalyzer<'a> {
                             ExpressionKind::Unary,
                             &cell_scope.shallow_clone(),
                         );
+                        checked.insert(key, first..self.diagnostics.len());
                     }
                     None => {
-                        let resolved = self.check_expression(
+                        let resolved = self.check_skipping(
                             &node.id,
                             Some(col.id.clone()),
                             Some(target.clone()),
@@ -900,6 +1143,8 @@ impl<'a> GraphAnalyzer<'a> {
                 }
             }
         }
+
+        self.verify_decision_table(node, content, &input_field_types, &base_scope);
 
         for col in content.inputs.iter() {
             let Some(field) = &col.field else {
@@ -987,7 +1232,7 @@ impl<'a> GraphAnalyzer<'a> {
                     row: Self::row_key(rule, row_idx),
                     col: col.id.clone(),
                 };
-                let resolved = self.check_expression(
+                let resolved = self.check_skipping(
                     &node.id,
                     Some(col.id.clone()),
                     Some(target.clone()),
@@ -1044,10 +1289,7 @@ impl<'a> GraphAnalyzer<'a> {
             let mut merged = match &declared {
                 Some(expected) => expected.shallow_clone(),
                 None => {
-                    let merged = cell_types
-                        .iter()
-                        .map(VariableType::shallow_clone)
-                        .reduce(|acc, t| acc.merge(&t));
+                    let merged = VariableType::merge_all(&cell_types);
                     match (merged, collect) {
                         (Some(merged), _) => merged,
                         (None, true) => VariableType::Any,
@@ -1113,6 +1355,286 @@ impl<'a> GraphAnalyzer<'a> {
             }
             DecisionTableHitPolicy::Collect => output.array(),
         }
+    }
+
+    fn rewritten_before(
+        incoming: &[(usize, Option<Arc<str>>)],
+        after: &HashMap<usize, Option<Vec<Arc<str>>>>,
+    ) -> Option<Vec<Arc<str>>> {
+        if incoming.is_empty() {
+            return None;
+        }
+        let mut written: Vec<Arc<str>> = Vec::new();
+        let mut seen: HashSet<Arc<str>> = HashSet::default();
+        for (pred, _) in incoming {
+            for path in after.get(pred)?.as_ref()? {
+                if seen.insert(path.clone()) {
+                    written.push(path.clone());
+                }
+            }
+        }
+        Some(written)
+    }
+
+    fn rewritten_after(
+        node: &DecisionNode,
+        incoming: Option<Vec<Arc<str>>>,
+    ) -> Option<Vec<Arc<str>>> {
+        let keeps = |attrs: &TransformAttributes| {
+            attrs.pass_through
+                && attrs.input_field.is_none()
+                && attrs.output_path.is_none()
+                && matches!(attrs.execution_mode, TransformExecutionMode::Single)
+        };
+        match &node.kind {
+            DecisionNodeKind::InputNode { .. } => Some(Vec::new()),
+            DecisionNodeKind::SwitchNode { .. } => incoming,
+            DecisionNodeKind::ExpressionNode { content }
+                if keeps(&content.transform_attributes) =>
+            {
+                incoming.map(|mut written| {
+                    written.extend(content.expressions.iter().map(|e| e.key.clone()));
+                    written
+                })
+            }
+            DecisionNodeKind::DecisionTableNode { content }
+                if keeps(&content.transform_attributes) =>
+            {
+                incoming.map(|mut written| {
+                    written.extend(content.outputs.iter().map(|o| Arc::from(o.write_path().0)));
+                    written
+                })
+            }
+            _ => None,
+        }
+    }
+
+    fn preserved_input(&self, content: &DecisionTableContent, field: Option<&str>) -> bool {
+        let (Some(written), Some(field)) = (&self.rewritten, field) else {
+            return false;
+        };
+        if content.transform_attributes.input_field.is_some() {
+            return false;
+        }
+        let field = field.trim();
+        !written.iter().any(|w| {
+            let w = w.as_ref();
+            field == w
+                || field
+                    .strip_prefix(w)
+                    .is_some_and(|rest| rest.starts_with('.'))
+                || w.strip_prefix(field)
+                    .is_some_and(|rest| rest.starts_with('.'))
+        })
+    }
+
+    fn constraints_after(node: &DecisionNode, incoming: PathConstraints) -> PathConstraints {
+        let keeps = |attrs: &TransformAttributes| {
+            attrs.pass_through
+                && attrs.input_field.is_none()
+                && attrs.output_path.is_none()
+                && matches!(attrs.execution_mode, TransformExecutionMode::Single)
+        };
+        match &node.kind {
+            DecisionNodeKind::SwitchNode { .. } => incoming,
+            DecisionNodeKind::ExpressionNode { content }
+                if keeps(&content.transform_attributes) =>
+            {
+                incoming.without(content.expressions.iter().map(|e| e.key.as_ref()))
+            }
+            DecisionNodeKind::DecisionTableNode { content }
+                if keeps(&content.transform_attributes) =>
+            {
+                incoming.without(content.outputs.iter().map(|o| o.write_path().0))
+            }
+            _ => PathConstraints::default(),
+        }
+    }
+
+    fn branch_constraints(
+        &self,
+        idx: usize,
+        content: &SwitchNodeContent,
+        incoming: &PathConstraints,
+    ) -> Vec<((usize, Arc<str>), PathConstraints)> {
+        let intellisense = self.db.graph_intellisense();
+        let mut is = intellisense.borrow_mut();
+        let first_hit = matches!(content.hit_policy, SwitchStatementHitPolicy::First);
+        let mut prior = incoming.clone();
+        let mut out = Vec::new();
+        for statement in content.statements.iter() {
+            let branch = if statement.condition.trim().is_empty() {
+                prior.clone()
+            } else {
+                prior.clone().when_holds(&mut is, &statement.condition)
+            };
+            out.push(((idx, statement.id.clone()), branch));
+            if first_hit && !statement.condition.trim().is_empty() {
+                prior = prior.when_fails(&mut is, &statement.condition);
+            }
+        }
+        out
+    }
+
+    fn field_schema(
+        &self,
+        content: &DecisionTableContent,
+        field: Option<&str>,
+    ) -> Option<&serde_json::Value> {
+        if !self.preserved_input(content, field) {
+            return None;
+        }
+        let field = field?.trim();
+        let mut schema: &serde_json::Value =
+            self.content
+                .nodes
+                .iter()
+                .find_map(|node| match &node.kind {
+                    DecisionNodeKind::InputNode { content } => content.schema.as_deref(),
+                    _ => None,
+                })?;
+        for segment in field.split('.') {
+            schema = Self::non_null_schema(schema)
+                .get("properties")?
+                .get(segment)?;
+        }
+        Some(Self::non_null_schema(schema))
+    }
+
+    fn non_null_schema(schema: &serde_json::Value) -> &serde_json::Value {
+        let branches = ["anyOf", "oneOf"]
+            .iter()
+            .find_map(|key| schema.get(*key).and_then(|v| v.as_array()));
+        let Some(branches) = branches else {
+            return schema;
+        };
+        let mut present = branches
+            .iter()
+            .filter(|branch| branch.get("type").and_then(|t| t.as_str()) != Some("null"));
+        match (present.next(), present.next()) {
+            (Some(branch), None) => branch,
+            _ => schema,
+        }
+    }
+
+    fn schema_integer(schema: &serde_json::Value) -> bool {
+        match schema.get("type") {
+            Some(serde_json::Value::String(kind)) => kind == "integer",
+            Some(serde_json::Value::Array(kinds)) => {
+                kinds.iter().any(|k| k == "integer") && !kinds.iter().any(|k| k == "number")
+            }
+            _ => false,
+        }
+    }
+
+    fn schema_number_range(schema: &serde_json::Value) -> Option<NumberSet> {
+        let bound = |key: &str| {
+            schema
+                .get(key)
+                .and_then(|v| v.as_number())
+                .and_then(|n| n.to_string().parse::<rust_decimal::Decimal>().ok())
+        };
+        let lo = match (bound("exclusiveMinimum"), bound("minimum")) {
+            (Some(x), _) => Bound::Exclusive(x),
+            (None, Some(x)) => Bound::Inclusive(x),
+            (None, None) => Bound::Unbounded,
+        };
+        let hi = match (bound("exclusiveMaximum"), bound("maximum")) {
+            (Some(x), _) => Bound::Exclusive(x),
+            (None, Some(x)) => Bound::Inclusive(x),
+            (None, None) => Bound::Unbounded,
+        };
+        if lo == Bound::Unbounded && hi == Bound::Unbounded {
+            return None;
+        }
+        Some(NumberSet::from_intervals(vec![Interval::new(lo, hi)]))
+    }
+
+    fn verify_decision_table(
+        &mut self,
+        node: &DecisionNode,
+        content: &DecisionTableContent,
+        input_field_types: &HashMap<Arc<str>, VariableType>,
+        scope: &VariableType,
+    ) {
+        let intellisense = self.db.graph_intellisense();
+        let fallible = match content.hit_policy {
+            DecisionTableHitPolicy::First => content
+                .rules
+                .iter()
+                .map(|rule| {
+                    content.outputs.iter().any(|col| {
+                        !col.write_path().0.is_empty()
+                            && rule.get(&col.id).is_some_and(|cell| {
+                                !cell.is_empty() && intellisense.borrow_mut().can_fail(cell, scope)
+                            })
+                    })
+                })
+                .collect(),
+            DecisionTableHitPolicy::Collect => Vec::new(),
+        };
+        let table = VerifyTable {
+            mode: match content.hit_policy {
+                DecisionTableHitPolicy::First => HitMode::RowFirst,
+                DecisionTableHitPolicy::Collect => HitMode::Collect,
+            },
+            inputs: content
+                .inputs
+                .iter()
+                .map(|col| {
+                    let mut input = TableColumn::input(
+                        &col.id,
+                        &col.name,
+                        col.field.as_ref(),
+                        input_field_types.get(&col.id),
+                    );
+                    input.input = self.preserved_input(content, col.field.as_deref());
+                    let schema = self.field_schema(content, col.field.as_deref());
+                    input.integer = schema.is_some_and(Self::schema_integer);
+                    let input = match schema.and_then(Self::schema_number_range) {
+                        Some(range) => TableColumn::narrow_numbers(input, range),
+                        None => input,
+                    };
+                    match col
+                        .field
+                        .as_deref()
+                        .filter(|_| content.transform_attributes.input_field.is_none())
+                        .and_then(|field| self.constraints.get(field.trim()))
+                    {
+                        Some(allowed) => TableColumn::narrow(input, allowed),
+                        None => input,
+                    }
+                })
+                .collect(),
+            outputs: content
+                .outputs
+                .iter()
+                .filter_map(|col| {
+                    let (path, collect) = col.write_path();
+                    (!path.is_empty() && !path.contains("[]")).then(|| {
+                        let declared = Self::parse_declared_column(col.column_type.as_deref())
+                            .ok()
+                            .flatten()
+                            .filter(|declared| !declared.array)
+                            .and_then(|declared| declared.resolve(&self.dictionary_types));
+                        TableColumn::output(&col.id, path, collect, declared)
+                    })
+                })
+                .collect(),
+            rules: &content.rules,
+            fallible,
+        };
+        let diagnostics = table.diagnostics(
+            &mut intellisense.borrow_mut(),
+            |row| Self::row_key(&content.rules[row], row),
+            |expression_id| match expression_id {
+                Some(id) => {
+                    DiagnosticLocation::expression(self.path.clone(), node.id.clone(), id, None)
+                }
+                None => DiagnosticLocation::block(self.path.clone(), node.id.clone()),
+            },
+        );
+        self.diagnostics.extend(diagnostics);
     }
 
     fn declared_output_type(
@@ -1181,16 +1703,11 @@ impl<'a> GraphAnalyzer<'a> {
         if content.rules.is_empty() {
             return false;
         }
-        let row_is_live = |rule: &ahash::HashMap<Arc<str>, Arc<str>>| {
-            content.inputs.iter().all(|ic| rule.contains_key(&ic.id))
-                && content.outputs.iter().all(|oc| rule.contains_key(&oc.id))
-        };
         let row_is_catch_all = |rule: &ahash::HashMap<Arc<str>, Arc<str>>| {
-            row_is_live(rule)
-                && content
-                    .inputs
-                    .iter()
-                    .all(|ic| rule.get(&ic.id).is_some_and(|c| c.is_empty()))
+            content
+                .inputs
+                .iter()
+                .all(|ic| rule.get(&ic.id).is_none_or(|c| c.is_empty()))
         };
         if content.rules.iter().any(row_is_catch_all) {
             return true;
@@ -1199,9 +1716,6 @@ impl<'a> GraphAnalyzer<'a> {
         let intellisense = self.db.graph_intellisense();
         let mut groups: HashMap<Arc<str>, Vec<ArmTest>> = HashMap::new();
         for rule in content.rules.iter() {
-            if !row_is_live(rule) {
-                continue;
-            }
             let mut constrained = content
                 .inputs
                 .iter()
@@ -1385,7 +1899,12 @@ impl<'a> GraphAnalyzer<'a> {
                         RedundantParentheses::scan(root, metadata)
                     })
                     .unwrap_or_default();
-                for (span, inner_span) in findings {
+                let fixes = RedundantParentheses::fix_args(
+                    &mut intellisense.borrow_mut(),
+                    &site.source,
+                    &findings,
+                );
+                for ((span, inner_span), args) in findings.into_iter().zip(fixes) {
                     let message = match inner_span {
                         Some(inner) => format!(
                             "unnecessary parentheses around '{}'",
@@ -1400,11 +1919,10 @@ impl<'a> GraphAnalyzer<'a> {
                         span,
                         target: Some(site.target.clone()),
                     };
-                    self.diagnostics.push(Diagnostic::hint(
-                        DiagnosticCode::RedundantParentheses,
-                        location,
-                        message,
-                    ));
+                    let mut diagnostic =
+                        Diagnostic::hint(DiagnosticCode::RedundantParentheses, location, message);
+                    diagnostic.args = args;
+                    self.diagnostics.push(diagnostic);
                 }
             }
         }
@@ -1425,7 +1943,7 @@ impl<'a> GraphAnalyzer<'a> {
             let test = if statement.condition.is_empty() {
                 ArmTest::Default
             } else {
-                let resolved = self.check_expression(
+                let resolved = self.check_skipping(
                     &node.id,
                     Some(statement.id.clone()),
                     None,
@@ -1788,9 +2306,52 @@ impl<'a> GraphAnalyzer<'a> {
         kind: ExpressionKind,
         scope: &VariableType,
     ) -> VariableType {
+        self.check(
+            node_id,
+            expression_id,
+            target,
+            source,
+            kind,
+            scope,
+            OnError::Raise,
+        )
+    }
+
+    fn check_skipping(
+        &mut self,
+        node_id: &Arc<str>,
+        expression_id: Option<Arc<str>>,
+        target: Option<CursorTarget>,
+        source: &Arc<str>,
+        kind: ExpressionKind,
+        scope: &VariableType,
+    ) -> VariableType {
+        self.check(
+            node_id,
+            expression_id,
+            target,
+            source,
+            kind,
+            scope,
+            OnError::Skip,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn check(
+        &mut self,
+        node_id: &Arc<str>,
+        expression_id: Option<Arc<str>>,
+        target: Option<CursorTarget>,
+        source: &Arc<str>,
+        kind: ExpressionKind,
+        scope: &VariableType,
+        on_error: OnError,
+    ) -> VariableType {
         let intellisense = self.db.graph_intellisense();
         let analysis =
             IntelliSenseSource::analyze(&mut intellisense.borrow_mut(), source, kind, scope);
+        let first = self.diagnostics.len();
         for diagnostic in &analysis.diagnostics {
             if !self.validate
                 && matches!(
@@ -1810,6 +2371,13 @@ impl<'a> GraphAnalyzer<'a> {
             self.diagnostics
                 .push(Diagnostic::from_expression(diagnostic, location));
         }
+        NullableOperand::annotate(
+            &mut self.diagnostics[first..],
+            &mut intellisense.borrow_mut(),
+            source,
+            matches!(kind, ExpressionKind::Unary),
+            on_error,
+        );
         if self.validate {
             self.validate_read_paths(node_id, &expression_id, &target, &analysis.reads, scope);
         }
@@ -2072,6 +2640,75 @@ impl<'a> GraphAnalyzer<'a> {
 
     pub(crate) fn scope_with_nodes(base: &VariableType, nodes: &VariableType) -> VariableType {
         Self::scope_with(base, &[(NODES_KEY, nodes.shallow_clone())])
+    }
+
+    fn locate_nullable_sources(&mut self, topology: &GraphTopology) {
+        let covers = |written: &str, field: &str| {
+            field == written
+                || field
+                    .strip_prefix(written)
+                    .is_some_and(|rest| rest.starts_with('.'))
+        };
+        let writes = |node: &DecisionNode, field: &str| -> bool {
+            let prefixed = |attrs: &TransformAttributes, key: &str| match &attrs.output_path {
+                Some(prefix) => format!("{prefix}.{key}"),
+                None => key.to_string(),
+            };
+            match &node.kind {
+                DecisionNodeKind::ExpressionNode { content } => {
+                    content.expressions.iter().any(|e| {
+                        !e.key.is_empty()
+                            && covers(&prefixed(&content.transform_attributes, &e.key), field)
+                    })
+                }
+                DecisionNodeKind::DecisionTableNode { content } => {
+                    content.outputs.iter().any(|o| {
+                        let (written, _) = o.write_path();
+                        !written.is_empty()
+                            && covers(&prefixed(&content.transform_attributes, written), field)
+                    })
+                }
+                DecisionNodeKind::InputNode { content } => {
+                    let mut schema = content.schema.as_deref();
+                    for segment in field.split('.') {
+                        schema = schema
+                            .and_then(|s| s.get("properties"))
+                            .and_then(|p| p.get(segment));
+                    }
+                    schema.is_some()
+                }
+                _ => false,
+            }
+        };
+        for diagnostic in self.diagnostics.iter_mut() {
+            let Some(field) = diagnostic.args.get("nullablePath").cloned() else {
+                continue;
+            };
+            let Some(&start) = diagnostic
+                .location
+                .block_id
+                .as_ref()
+                .and_then(|id| topology.node_index.get(id))
+            else {
+                continue;
+            };
+            let mut seen: HashSet<usize> = HashSet::default();
+            let mut queue: VecDeque<usize> = topology.incoming[start]
+                .iter()
+                .map(|(pred, _)| *pred)
+                .collect();
+            while let Some(idx) = queue.pop_front() {
+                if !seen.insert(idx) {
+                    continue;
+                }
+                let node = &self.content.nodes[idx];
+                if writes(node, &field) {
+                    diagnostic.args.insert("sourceId", node.id.to_string());
+                    break;
+                }
+                queue.extend(topology.incoming[idx].iter().map(|(pred, _)| *pred));
+            }
+        }
     }
 
     fn sort_diagnostics(&mut self, topology: &GraphTopology) {

@@ -26,6 +26,7 @@ export type PolicyCursorTarget =
   | { kind: 'matchValue'; id: string }
   | { kind: 'decisionTableHead'; col: string }
   | { kind: 'decisionTableCell'; row: string; col: string }
+  | { kind: 'decisionTableRow'; row: string }
   | { kind: 'dataModelName' }
   | { kind: 'dataModelProperty'; id: string }
   | { kind: 'transformInput' };
@@ -73,9 +74,16 @@ export type PolicyDiagnosticCode =
   | 'REPEATED_DERIVATION'
   | 'PREFER_MATCH'
   | 'PREFER_DICTIONARY'
-  | 'REDUNDANT_TABLE_ROW'
   | 'NON_DISCRIMINATING_COLUMN'
-  | 'REDUNDANT_PARENTHESES';
+  | 'REDUNDANT_PARENTHESES'
+  | 'UNSATISFIABLE_CELL'
+  | 'UNREACHABLE_RULE'
+  | 'DUPLICATE_RULE'
+  | 'MISSING_CASES'
+  | 'COMPRESSIBLE_TABLE'
+  | 'TABLE_CHECKS_INCOMPLETE'
+  | 'CELL_COVERS_DOMAIN'
+  | 'OUTPUT_NEVER_PRODUCED';
 
 export type PolicyVariableType =
   | { type: 'any' }

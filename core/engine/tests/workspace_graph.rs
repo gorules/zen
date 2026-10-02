@@ -337,6 +337,44 @@ fn decision_table_cells_are_checked() {
 }
 
 #[test]
+fn sparse_catch_all_row_covers_the_table() {
+    let mut ws = Workspace::new();
+    let table = node(
+        "dt",
+        "decisionTableNode",
+        json!({
+            "hitPolicy": "first",
+            "inputs": [
+                { "id": "c1", "name": "Age", "field": "age" },
+                { "id": "c2", "name": "Name", "field": "name" }
+            ],
+            "outputs": [
+                { "id": "o1", "name": "Rate", "field": "rate" }
+            ],
+            "rules": [
+                { "_id": "r1", "c1": "> 18", "c2": "", "o1": "0.1" },
+                { "_id": "r2", "o1": "0.2" }
+            ],
+            "passThrough": true
+        }),
+    );
+    ws.set_document(
+        "g",
+        document(linear_graph(Some(person_schema()), vec![table])),
+    );
+    let outputs = ws.outputs(&ScopeRequest::for_policy("g"));
+    let rate = outputs
+        .iter()
+        .find(|o| o.path.as_ref() == "rate")
+        .unwrap_or_else(|| panic!("{outputs:?}"));
+    assert!(
+        matches!(rate.resolved_type, VariableType::Number),
+        "{:?}",
+        rate.resolved_type
+    );
+}
+
+#[test]
 fn decision_table_incompatible_output_cells_reported() {
     let mut ws = Workspace::new();
     let table = node(
@@ -1859,7 +1897,14 @@ fn typed_table(column_type: &str, cells: &[&str]) -> Value {
     let rules: Vec<Value> = cells
         .iter()
         .enumerate()
-        .map(|(i, cell)| json!({ "_id": format!("r{i}"), "c1": "", "o1": cell }))
+        .map(|(i, cell)| {
+            let condition = if i + 1 == cells.len() {
+                String::new()
+            } else {
+                i.to_string()
+            };
+            json!({ "_id": format!("r{i}"), "c1": condition, "o1": cell })
+        })
         .collect();
     node(
         "dt",

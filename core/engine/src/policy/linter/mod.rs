@@ -16,7 +16,7 @@ use crate::workspace::types::{Diagnostic, ExpressionKind, Span};
 pub(crate) use prefer_match::PreferMatch;
 pub(crate) use redundant_parentheses::RedundantParentheses;
 pub(crate) use repeated_derivation::RepeatedDerivation;
-pub(crate) use table_hygiene::{NonDiscriminatingColumn, RedundantTableRow};
+pub(crate) use table_hygiene::NonDiscriminatingColumn;
 
 pub(crate) trait LintRule {
     fn check(&self, cx: &LintContext, out: &mut Vec<Diagnostic>);
@@ -117,10 +117,35 @@ impl AstOps {
     }
 
     fn chars_at(source: &str, span: Span) -> impl Iterator<Item = char> + '_ {
-        source
-            .chars()
-            .skip(span.0 as usize)
-            .take((span.1 as usize).saturating_sub(span.0 as usize))
+        Self::text(source, span).unwrap_or_default().chars()
+    }
+
+    pub(crate) fn text(source: &str, span: Span) -> Option<&str> {
+        source.get(span.0 as usize..span.1 as usize)
+    }
+
+    pub(crate) fn splice(source: &str, edits: &[(Span, &str)]) -> Option<String> {
+        let word = |c: char| c.is_alphanumeric() || matches!(c, '_' | '$' | '#');
+        let mut sorted: Vec<&(Span, &str)> = edits.iter().collect();
+        sorted.sort_by_key(|(range, _)| *range);
+        let mut out = String::with_capacity(source.len());
+        let mut push = |piece: &str| {
+            if out.chars().next_back().is_some_and(word) && piece.chars().next().is_some_and(word) {
+                out.push(' ');
+            }
+            out.push_str(piece);
+        };
+        let mut cursor = 0u32;
+        for (range, with) in sorted {
+            if range.0 < cursor || range.1 < range.0 {
+                return None;
+            }
+            push(Self::text(source, (cursor, range.0))?);
+            push(with);
+            cursor = range.1;
+        }
+        push(source.get(cursor as usize..)?);
+        Some(out)
     }
 }
 
@@ -134,7 +159,6 @@ impl Linter {
             rules: vec![
                 Box::new(RepeatedDerivation),
                 Box::new(PreferMatch),
-                Box::new(RedundantTableRow),
                 Box::new(NonDiscriminatingColumn),
                 Box::new(RedundantParentheses),
             ],

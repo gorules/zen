@@ -3,7 +3,7 @@ use std::sync::{Arc, OnceLock};
 use ahash::{HashMap, HashSet};
 use fixedbitset::FixedBitSet;
 use serde::{Deserialize, Serialize};
-use zen_expression::intellisense::{ArmTest, NumberCover};
+use zen_expression::intellisense::{ArmTest, IntelliSense, NumberCover};
 use zen_expression::variable::{Variable, VariableType};
 use zen_expression::Isolate;
 use zen_types::decision::{
@@ -12,15 +12,16 @@ use zen_types::decision::{
 
 use base64::Engine as _;
 
+use crate::analysis::table::{HitMode, TableColumn, VerifyTable};
 use crate::policy::queries::scope::VariableTypeScope;
 use crate::workspace::types::{
     BlockTrace, Cursor, CursorTarget, DecisionTableExtras, Diagnostic, DiagnosticArgs,
-    DiagnosticCode, ExpressionKind,
+    DiagnosticCode, DiagnosticLocation, ExpressionKind,
 };
 
 use crate::policy::ArcStrTrim;
 
-use super::context::{AnalysisContext, ExecutionContext, ExecutionError};
+use super::context::{AnalysisContext, ExecutionContext, ExecutionError, TableCheck};
 use super::{
     Block, BlockKind, BlockReadPlan, CellReads, ConditionalReads, ExpressionLocation, ParseContext,
     ReadFlattenFn, WriteSite, WriteTarget,
@@ -439,6 +440,46 @@ impl DecisionTableIr {
                     );
                 }
             }
+
+            let table = VerifyTable {
+                mode: HitMode::PerColumnFirst,
+                inputs: self
+                    .inputs
+                    .iter()
+                    .map(|col| {
+                        let mut input = TableColumn::input(
+                            &col.id,
+                            &col.name,
+                            col.field.as_ref(),
+                            input_field_types.get(&col.id),
+                        );
+                        input.input = col
+                            .field
+                            .as_deref()
+                            .is_some_and(|field| cx.declares(field.trim()));
+                        input
+                    })
+                    .collect(),
+                outputs: self
+                    .outputs
+                    .iter()
+                    .filter(|col| !col.field.is_empty())
+                    .map(|col| {
+                        TableColumn::output(
+                            &col.id,
+                            &col.field,
+                            col.collect,
+                            col.declared
+                                .as_ref()
+                                .filter(|declared| !declared.array)
+                                .and_then(|declared| declared.resolve(cx.dictionary_types())),
+                        )
+                    })
+                    .collect(),
+                rules: &self.rules,
+                fallible: Vec::new(),
+            };
+            cx.defer_table_check(table);
         }
 
         for col in &self.outputs {
@@ -661,6 +702,38 @@ impl DecisionTableIr {
             }
             _ => false,
         }
+    }
+
+    pub(crate) fn verify(
+        &self,
+        check: &TableCheck,
+        is: &mut IntelliSense,
+        policy_path: &Arc<str>,
+        block_id: &Arc<str>,
+    ) -> Vec<Diagnostic> {
+        let table = VerifyTable {
+            mode: check.mode,
+            inputs: check.inputs.clone(),
+            outputs: check.outputs.clone(),
+            rules: &self.rules,
+            fallible: Vec::new(),
+        };
+        table.diagnostics(
+            is,
+            |row| Self::row_key(&self.rules[row], row),
+            |expression_id| match expression_id {
+                Some(id) => {
+                    DiagnosticLocation::expression(policy_path.clone(), block_id.clone(), id, None)
+                }
+                None => DiagnosticLocation::block(policy_path.clone(), block_id.clone()),
+            },
+        )
+    }
+
+    fn row_key(rule: &HashMap<Arc<str>, Arc<str>>, row: usize) -> Arc<str> {
+        rule.get(ROW_ID_KEY)
+            .cloned()
+            .unwrap_or_else(|| Arc::from(row.to_string()))
     }
 
     pub(super) fn write_target(&self, path: &str) -> Option<CursorTarget> {
@@ -1118,11 +1191,12 @@ impl DictionaryCandidate {
             return None;
         }
         let mut values: Vec<std::rc::Rc<str>> = Vec::new();
+        let mut seen: HashSet<std::rc::Rc<str>> = HashSet::default();
         for cell in cell_types {
             let VariableType::Const(value) = cell else {
                 return None;
             };
-            if !values.iter().any(|seen| seen == value) {
+            if seen.insert(value.clone()) {
                 values.push(value.clone());
             }
         }
@@ -1131,6 +1205,7 @@ impl DictionaryCandidate {
 
     pub(crate) fn from_literal_tests(tests: &[ArmTest]) -> Option<Vec<std::rc::Rc<str>>> {
         let mut values: Vec<std::rc::Rc<str>> = Vec::new();
+        let mut seen: HashSet<std::rc::Rc<str>> = HashSet::default();
         let mut literal_cells = 0usize;
         for test in tests {
             match test {
@@ -1140,7 +1215,7 @@ impl DictionaryCandidate {
                 } => {
                     literal_cells += 1;
                     for value in cell_values {
-                        if !values.iter().any(|seen| seen == value) {
+                        if seen.insert(value.clone()) {
                             values.push(value.clone());
                         }
                     }

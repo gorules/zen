@@ -9,7 +9,7 @@ use zen_expression::variable::VariableType;
 
 use crate::policy::blocks::{
     AnalysisContext, AnalysisSummary, Block, InstanceSource, PropertyRead, SharedDeclaredPaths,
-    SharedDictionaryTypes, SharedIntelliSense, SharedPoisonedPaths, WriteTarget,
+    SharedDictionaryTypes, SharedIntelliSense, SharedPoisonedPaths, TableCheck, WriteTarget,
 };
 use crate::policy::ir::{DataModelIr, ParsedPolicy, PropertyPath, PropertyTypeIr};
 use crate::policy::queries::path::{PathClassifier, PathRoot};
@@ -142,7 +142,9 @@ impl EnrichedState {
 #[derive(Debug, Clone)]
 pub struct RuleEnrichedAnalysis {
     pub policy_path: Arc<str>,
+    pub block_id: Arc<str>,
     pub diagnostics: Vec<Diagnostic>,
+    pub table_checks: Vec<TableCheck>,
 }
 
 #[derive(Debug)]
@@ -801,7 +803,9 @@ impl Snapshot {
 
             per_rule.push(RuleEnrichedAnalysis {
                 policy_path: policy_path.clone(),
+                block_id: key.block_id.clone(),
                 diagnostics: summary.diagnostics,
+                table_checks: summary.table_checks,
             });
         }
 
@@ -866,6 +870,10 @@ impl DataModelPaths {
             optional,
             targets,
         }
+    }
+
+    pub(crate) fn declares(&self, path: &str) -> bool {
+        self.all.contains(path)
     }
 
     pub fn matches_prefix(&self, write_path: &str) -> Option<&PropertyPath> {

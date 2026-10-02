@@ -26,6 +26,7 @@ export type PolicyCursorTarget =
   | { kind: 'matchValue'; id: string }
   | { kind: 'decisionTableHead'; col: string }
   | { kind: 'decisionTableCell'; row: string; col: string }
+  | { kind: 'decisionTableRow'; row: string }
   | { kind: 'dataModelName' }
   | { kind: 'dataModelProperty'; id: string }
   | { kind: 'transformInput' };
@@ -73,9 +74,16 @@ export type PolicyDiagnosticCode =
   | 'REPEATED_DERIVATION'
   | 'PREFER_MATCH'
   | 'PREFER_DICTIONARY'
-  | 'REDUNDANT_TABLE_ROW'
   | 'NON_DISCRIMINATING_COLUMN'
-  | 'REDUNDANT_PARENTHESES';
+  | 'REDUNDANT_PARENTHESES'
+  | 'UNSATISFIABLE_CELL'
+  | 'UNREACHABLE_RULE'
+  | 'DUPLICATE_RULE'
+  | 'MISSING_CASES'
+  | 'COMPRESSIBLE_TABLE'
+  | 'TABLE_CHECKS_INCOMPLETE'
+  | 'CELL_COVERS_DOMAIN'
+  | 'OUTPUT_NEVER_PRODUCED';
 
 export type PolicyVariableType =
   | { type: 'any' }
@@ -110,6 +118,10 @@ export type PolicySlotState =
   | 'path';
 export type PolicySlotRole = 'unary' | 'condition' | 'value' | 'path';
 /** One enum value: `label` for display, `source` the ready-to-splice ZEN literal (null when unquotable). */
+export interface PolicyChanges {
+  cursor: number
+  paths: Array<string>
+}
 export interface PolicyValueOption {
   value: string;
   label: string;
@@ -392,6 +404,7 @@ export declare class Workspace {
   isGraph(path: string): boolean
   uncheckedNodes(path: string): Array<string>
   paths(): Array<string>
+  changesSince(cursor: number): PolicyChanges
   updateBlock(req: PolicyUpdateBlockRequest): void
   removeBlock(req: PolicyRemoveBlockRequest): boolean
   diagnostics(policyPath: string, maxDiagnostics?: number | undefined | null): Array<PolicyDiagnostic>

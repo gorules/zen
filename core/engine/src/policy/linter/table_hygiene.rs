@@ -1,13 +1,11 @@
 use std::sync::Arc;
 
-use ahash::HashSet;
+use ahash::{HashMap, HashSet};
 
 use crate::policy::blocks::{BlockKind, DecisionTableIr};
-use crate::workspace::types::{Diagnostic, DiagnosticCode, DiagnosticLocation};
+use crate::workspace::types::{Diagnostic, DiagnosticArgs, DiagnosticCode, DiagnosticLocation};
 
 use super::{LintContext, LintRule};
-
-pub(crate) struct RedundantTableRow;
 
 pub(crate) struct NonDiscriminatingColumn;
 
@@ -61,56 +59,6 @@ impl TableView {
             .map(|c| c.trim().to_string())
             .unwrap_or_default()
     }
-
-    fn shadows(earlier: &RowView, later: &RowView) -> bool {
-        earlier
-            .inputs
-            .iter()
-            .zip(&later.inputs)
-            .all(|(e, l)| e.is_empty() || e == l)
-    }
-}
-
-impl LintRule for RedundantTableRow {
-    fn check(&self, cx: &LintContext, out: &mut Vec<Diagnostic>) {
-        for block in cx.rules() {
-            let BlockKind::DecisionTable(table) = &block.kind else {
-                continue;
-            };
-            let Some(view) = TableView::first_hit(table) else {
-                continue;
-            };
-
-            for later_idx in 1..view.rows.len() {
-                let later = &view.rows[later_idx];
-                let Some(earlier_idx) =
-                    (0..later_idx).find(|&i| TableView::shadows(&view.rows[i], later))
-                else {
-                    continue;
-                };
-                let earlier = &view.rows[earlier_idx];
-                let message = if earlier.inputs == later.inputs && earlier.outputs == later.outputs
-                {
-                    format!(
-                        "row {} duplicates row {} — remove it",
-                        later_idx + 1,
-                        earlier_idx + 1
-                    )
-                } else {
-                    format!(
-                        "row {} is unreachable — row {} already matches every case it matches",
-                        later_idx + 1,
-                        earlier_idx + 1
-                    )
-                };
-                out.push(Diagnostic::hint(
-                    DiagnosticCode::RedundantTableRow,
-                    DiagnosticLocation::block(cx.target().clone(), block.id.clone()),
-                    message,
-                ));
-            }
-        }
-    }
 }
 
 impl LintRule for NonDiscriminatingColumn {
@@ -122,22 +70,24 @@ impl LintRule for NonDiscriminatingColumn {
             let Some(view) = TableView::first_hit(table) else {
                 continue;
             };
-            if view.rows.len() < 2 {
+            if view.rows.len() < 2 || view.inputs.len() < 2 {
                 continue;
             }
 
-            for (col_idx, (_, name)) in view.inputs.iter().enumerate() {
+            for (col_idx, (column, name)) in view.inputs.iter().enumerate() {
                 let label = if name.is_empty() {
                     format!("#{}", col_idx + 1)
                 } else {
                     format!("'{name}'")
                 };
                 if view.rows.iter().all(|r| r.inputs[col_idx].is_empty()) {
-                    out.push(Diagnostic::hint(
+                    let mut diagnostic = Diagnostic::hint(
                         DiagnosticCode::NonDiscriminatingColumn,
                         DiagnosticLocation::block(cx.target().clone(), block.id.clone()),
                         format!("input column {label} has no conditions — remove it"),
-                    ));
+                    );
+                    diagnostic.args = DiagnosticArgs::from([("emptyColumn", column.to_string())]);
+                    out.push(diagnostic);
                     continue;
                 }
                 if Self::never_affects_outcome(&view, col_idx) {
@@ -157,6 +107,7 @@ impl LintRule for NonDiscriminatingColumn {
 impl NonDiscriminatingColumn {
     fn never_affects_outcome(view: &TableView, col_idx: usize) -> bool {
         let mut groups: Vec<(Vec<&str>, Vec<usize>)> = Vec::new();
+        let mut slots: HashMap<Vec<&str>, usize> = HashMap::default();
         for (row_idx, row) in view.rows.iter().enumerate() {
             let key: Vec<&str> = row
                 .inputs
@@ -165,9 +116,12 @@ impl NonDiscriminatingColumn {
                 .filter(|(i, _)| *i != col_idx)
                 .map(|(_, cell)| cell.as_str())
                 .collect();
-            match groups.iter_mut().find(|(k, _)| *k == key) {
-                Some((_, members)) => members.push(row_idx),
-                None => groups.push((key, vec![row_idx])),
+            match slots.get(&key) {
+                Some(&slot) => groups[slot].1.push(row_idx),
+                None => {
+                    slots.insert(key.clone(), groups.len());
+                    groups.push((key, vec![row_idx]));
+                }
             }
         }
 
@@ -226,7 +180,7 @@ impl NonDiscriminatingColumn {
             if row.inputs[col_idx].is_empty() {
                 return row.outputs == outputs;
             }
-            if !members.contains(&idx) {
+            if members.binary_search(&idx).is_err() {
                 return false;
             }
         }

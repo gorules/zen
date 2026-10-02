@@ -1081,10 +1081,10 @@ fn date_columns_compare_by_day() {
     }
     .assert_gaps(
         Severity::Hint,
-        "no row matches 1 input case: In 0 >= \"2024-01-01\", null",
+        "no row matches 1 input case: In 0 null, >= \"2024-01-01\"",
         json!([{
-            "cells": { "i0": ">= \"2024-01-01\", null" },
-            "description": "In 0 >= \"2024-01-01\", null",
+            "cells": { "i0": "null, >= \"2024-01-01\"" },
+            "description": "In 0 null, >= \"2024-01-01\"",
             "example": { "applicant": { "since": "2024-01-01" } }
         }]),
     );

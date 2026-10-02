@@ -81,10 +81,32 @@ impl TableColumn {
     }
 
     pub(crate) fn narrow(mut input: VerifyInput, allowed: &ValueSet) -> VerifyInput {
+        let allowed = match input.dated {
+            true => match Self::dated(allowed) {
+                Some(allowed) => allowed,
+                None => return input,
+            },
+            false => allowed.clone(),
+        };
         if let Some(domain) = input.domain.as_mut() {
-            *domain = domain.intersect(allowed);
+            *domain = domain.intersect(&allowed);
         }
         input
+    }
+
+    fn dated(allowed: &ValueSet) -> Option<ValueSet> {
+        let StringSet::Finite(strings) = &allowed.strings else {
+            return None;
+        };
+        let mut points = Vec::with_capacity(strings.len());
+        for text in strings {
+            points.push(Interval::point(print::DateDay::seconds(text)?));
+        }
+        Some(ValueSet {
+            numbers: allowed.numbers.union(&NumberSet::from_intervals(points)),
+            strings: StringSet::Finite(Default::default()),
+            ..allowed.clone()
+        })
     }
 
     pub(crate) fn narrow_numbers(mut input: VerifyInput, range: NumberSet) -> VerifyInput {

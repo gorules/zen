@@ -155,6 +155,7 @@ impl CellText {
             return None;
         }
         let mut tokens: Vec<String> = Vec::new();
+        let mut ranges: Vec<String> = Vec::new();
         let mut compound = false;
         if !set.numbers.is_empty() {
             if set.numbers.is_all() {
@@ -162,13 +163,23 @@ impl CellText {
             }
             for interval in set.numbers.intervals() {
                 let (token, joined) = Self::interval(interval, dated)?;
+                let point = matches!(
+                    (interval.lo, interval.hi),
+                    (Bound::Inclusive(lo), Bound::Inclusive(hi)) if lo == hi
+                );
+                if point {
+                    tokens.push(token);
+                    continue;
+                }
                 if joined {
-                    if compound || !tokens.is_empty() {
+                    if compound || !ranges.is_empty() {
                         return None;
                     }
                     compound = true;
+                } else if compound {
+                    return None;
                 }
-                tokens.push(token);
+                ranges.push(token);
             }
         }
         match &set.strings {
@@ -188,6 +199,7 @@ impl CellText {
         if set.null {
             tokens.push("null".to_string());
         }
+        tokens.extend(ranges);
         (!tokens.is_empty()).then(|| tokens.join(", "))
     }
 
@@ -332,7 +344,7 @@ mod tests {
         ]));
         assert_eq!(
             CellText::of(&band, &domain, false).as_deref(),
-            Some("(30..65.5], 100")
+            Some("100, (30..65.5]")
         );
         round_trip(&band, &domain);
         assert_eq!(CellText::of(&domain, &domain, false).as_deref(), Some(""));

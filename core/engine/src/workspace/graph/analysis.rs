@@ -113,13 +113,19 @@ pub(crate) struct GraphAnalyzer<'a> {
 
 type IncomingEdges = Vec<Vec<(usize, Option<Arc<str>>)>>;
 
+#[derive(Clone, PartialEq, Eq, Hash)]
+enum RunFact {
+    Node(usize),
+    Arm(usize, Option<Arc<str>>),
+}
+
 struct GraphTopology {
     node_index: HashMap<Arc<str>, usize>,
     incoming: IncomingEdges,
     outgoing: Vec<Vec<usize>>,
     order: Option<Vec<usize>>,
     may_skip: Vec<bool>,
-    guaranteed: Vec<HashSet<usize>>,
+    guaranteed: Vec<HashSet<RunFact>>,
 }
 
 impl GraphTopology {
@@ -132,7 +138,7 @@ impl GraphTopology {
             || self
                 .guaranteed
                 .get(current)
-                .is_some_and(|g| g.contains(&idx))
+                .is_some_and(|g| g.contains(&RunFact::Node(idx)))
     }
 
     fn certain_edge(&self, content: &GraphContent, current: usize, edge: usize) -> bool {
@@ -332,23 +338,42 @@ impl<'a> GraphAnalyzer<'a> {
         content: &GraphContent,
         incoming: &IncomingEdges,
         order: &[usize],
-    ) -> (Vec<bool>, Vec<HashSet<usize>>) {
+    ) -> (Vec<bool>, Vec<HashSet<RunFact>>) {
         let mut may_skip = vec![false; incoming.len()];
-        let mut guaranteed: Vec<HashSet<usize>> = vec![HashSet::default(); incoming.len()];
-        for &idx in order {
+        let mut guaranteed: Vec<HashSet<RunFact>> = vec![HashSet::default(); incoming.len()];
+        for (position, &idx) in order.iter().enumerate() {
             let edges = &incoming[idx];
             may_skip[idx] = !edges.is_empty()
                 && edges.iter().all(|(pred, handle)| {
                     may_skip[*pred] || Self::skippable(content, *pred, handle.as_deref())
                 });
-            let mut sets = edges.iter().map(|(pred, _)| &guaranteed[*pred]);
-            let mut runs: HashSet<usize> = match sets.next() {
-                Some(first) => sets.fold(first.clone(), |acc, set| {
-                    acc.intersection(set).copied().collect()
-                }),
+            let mut sets = edges.iter().map(|(pred, handle)| {
+                let mut set = guaranteed[*pred].clone();
+                if Self::skippable(content, *pred, handle.as_deref()) {
+                    set.insert(RunFact::Arm(*pred, handle.clone()));
+                }
+                set
+            });
+            let mut runs: HashSet<RunFact> = match sets.next() {
+                Some(first) => {
+                    sets.fold(first, |acc, set| acc.intersection(&set).cloned().collect())
+                }
                 None => HashSet::default(),
             };
-            runs.insert(idx);
+            runs.insert(RunFact::Node(idx));
+            for &earlier in &order[..position] {
+                if runs.contains(&RunFact::Node(earlier)) {
+                    continue;
+                }
+                let fires = incoming[earlier].iter().any(|(pred, handle)| {
+                    runs.contains(&RunFact::Node(*pred))
+                        && (!Self::skippable(content, *pred, handle.as_deref())
+                            || runs.contains(&RunFact::Arm(*pred, handle.clone())))
+                });
+                if fires {
+                    runs.insert(RunFact::Node(earlier));
+                }
+            }
             guaranteed[idx] = runs;
         }
         (may_skip, guaranteed)
@@ -368,7 +393,7 @@ impl<'a> GraphAnalyzer<'a> {
         else {
             return true;
         };
-        let always = switch.statements[position].condition.trim().is_empty()
+        let always = switch.statements[position].condition.is_empty()
             && match switch.hit_policy {
                 SwitchStatementHitPolicy::Collect => true,
                 SwitchStatementHitPolicy::First => position == 0,
@@ -1031,7 +1056,7 @@ impl<'a> GraphAnalyzer<'a> {
             let Some(field) = &col.field else {
                 continue;
             };
-            let field_type = self.check_expression(
+            let field_type = self.check_skipping(
                 &node.id,
                 Some(col.id.clone()),
                 Some(CursorTarget::DecisionTableHead {

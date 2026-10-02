@@ -421,3 +421,127 @@ async fn evaluate_skips_table_checks_but_keeps_errors() {
         "{result:?}"
     );
 }
+
+fn raw_graph(
+    schema: Value,
+    nodes: Vec<Value>,
+    edges: &[(&str, &str, Option<&str>)],
+) -> Vec<Diagnostic> {
+    let mut all = vec![
+        json!({ "id": "in", "name": "in", "type": "inputNode", "content": { "schema": schema.to_string() } }),
+    ];
+    all.extend(nodes);
+    all.push(json!({ "id": "out", "name": "out", "type": "outputNode", "content": {} }));
+    let edges: Vec<Value> = edges
+        .iter()
+        .enumerate()
+        .map(|(i, (a, b, handle))| json!({ "id": format!("e{i}"), "sourceId": a, "targetId": b, "sourceHandle": handle }))
+        .collect();
+    let mut ws = Workspace::new();
+    ws.set_document(
+        "g",
+        serde_json::from_value(json!({ "nodes": all, "edges": edges })).expect("graph"),
+    );
+    ws.diagnostics("g")
+}
+
+fn first_hit_switch() -> Value {
+    json!({ "id": "sw", "name": "sw", "type": "switchNode", "content": {
+        "hitPolicy": "first",
+        "statements": [ { "id": "arm1", "condition": "x > 0" }, { "id": "arm2", "condition": "" } ]
+    } })
+}
+
+#[test]
+fn keys_set_on_every_path_within_a_switch_arm_stay_required() {
+    let schema =
+        json!({ "type": "object", "properties": { "x": { "type": "number" } }, "required": ["x"] });
+    let nodes = || {
+        vec![
+            first_hit_switch(),
+            expression_node("a", "base", "x"),
+            expression_node("left", "l", "1"),
+            expression_node("right", "r", "2"),
+            expression_node("join", "sum", "l + r"),
+        ]
+    };
+    let fan_out = raw_graph(
+        schema.clone(),
+        nodes(),
+        &[
+            ("in", "sw", None),
+            ("sw", "a", Some("arm1")),
+            ("a", "left", None),
+            ("a", "right", None),
+            ("left", "join", None),
+            ("right", "join", None),
+            ("join", "out", None),
+        ],
+    );
+    assert!(
+        with_code(&fan_out, DiagnosticCode::TypeMismatch).is_empty(),
+        "{fan_out:?}"
+    );
+
+    let same_arm = raw_graph(
+        schema,
+        vec![
+            first_hit_switch(),
+            expression_node("a", "l", "1"),
+            expression_node("join", "sum", "l + 1"),
+        ],
+        &[
+            ("in", "sw", None),
+            ("sw", "a", Some("arm1")),
+            ("sw", "join", Some("arm1")),
+            ("a", "join", None),
+            ("join", "out", None),
+        ],
+    );
+    assert!(
+        with_code(&same_arm, DiagnosticCode::TypeMismatch).is_empty(),
+        "{same_arm:?}"
+    );
+}
+
+#[test]
+fn table_header_errors_get_no_default_fix() {
+    let schema = json!({ "type": "object", "properties": { "s": { "type": ["number", "null"] } } });
+    let table = json!({ "id": "dt", "name": "dt", "type": "decisionTableNode", "content": {
+        "hitPolicy": "first",
+        "inputs": [ { "id": "c", "name": "h", "field": "s + 1" } ],
+        "outputs": [ { "id": "o", "name": "r", "field": "r" } ],
+        "rules": [ { "_id": "r1", "c": "> 5", "o": "1" }, { "_id": "r2", "c": "", "o": "2" } ]
+    } });
+    let found = raw_graph(
+        schema,
+        vec![table],
+        &[("in", "dt", None), ("dt", "out", None)],
+    );
+    let mismatches = with_code(&found, DiagnosticCode::TypeMismatch);
+    assert_eq!(mismatches.len(), 1, "{found:?}");
+    assert!(arg(&mismatches[0], "fixSource").is_none(), "{mismatches:?}");
+}
+
+#[test]
+fn integer_gaps_are_reported_as_integers() {
+    let schema = json!({ "type": "object", "properties": { "n": { "type": "integer" } }, "required": ["n"] });
+    let table = json!({ "id": "dt", "name": "dt", "type": "decisionTableNode", "content": {
+        "hitPolicy": "first",
+        "inputs": [ { "id": "c", "name": "n", "field": "n" } ],
+        "outputs": [ { "id": "o", "name": "r", "field": "r" } ],
+        "rules": [ { "_id": "r1", "c": "< 2.5", "o": "1" }, { "_id": "r2", "c": "> 3.5", "o": "2" } ]
+    } });
+    let found = raw_graph(
+        schema,
+        vec![table],
+        &[("in", "dt", None), ("dt", "out", None)],
+    );
+    let missing = with_code(&found, DiagnosticCode::MissingCases);
+    assert_eq!(missing.len(), 1, "{found:?}");
+    assert!(
+        missing[0].message.ends_with("n 3"),
+        "{}",
+        missing[0].message
+    );
+}

@@ -78,13 +78,19 @@ impl Interval {
         }
     }
 
-    fn has_integer(&self) -> bool {
-        let first = match self.lo {
-            Bound::Unbounded => return !self.is_empty(),
-            Bound::Inclusive(l) => Some(l.ceil()),
-            Bound::Exclusive(l) => l.floor().checked_add(Decimal::ONE),
+    fn integers(&self) -> Option<Interval> {
+        let lo = match self.lo {
+            Bound::Unbounded => Bound::Unbounded,
+            Bound::Inclusive(l) => Bound::Inclusive(l.ceil()),
+            Bound::Exclusive(l) => Bound::Inclusive(l.floor().checked_add(Decimal::ONE)?),
         };
-        first.is_some_and(|x| self.contains(x))
+        let hi = match self.hi {
+            Bound::Unbounded => Bound::Unbounded,
+            Bound::Inclusive(h) => Bound::Inclusive(h.floor()),
+            Bound::Exclusive(h) => Bound::Inclusive(h.ceil().checked_sub(Decimal::ONE)?),
+        };
+        let tightened = Interval { lo, hi };
+        (!tightened.is_empty()).then_some(tightened)
     }
 
     fn overlaps(&self, other: &Interval) -> bool {
@@ -196,8 +202,7 @@ impl NumberSet {
             intervals: self
                 .intervals
                 .iter()
-                .filter(|i| i.has_integer())
-                .copied()
+                .filter_map(Interval::integers)
                 .collect(),
         }
     }

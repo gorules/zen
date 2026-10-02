@@ -78,6 +78,15 @@ impl Interval {
         }
     }
 
+    fn has_integer(&self) -> bool {
+        let first = match self.lo {
+            Bound::Unbounded => return !self.is_empty(),
+            Bound::Inclusive(l) => Some(l.ceil()),
+            Bound::Exclusive(l) => l.floor().checked_add(Decimal::ONE),
+        };
+        first.is_some_and(|x| self.contains(x))
+    }
+
     fn overlaps(&self, other: &Interval) -> bool {
         let lo = if self.lo.lo_key() >= other.lo.lo_key() {
             self.lo
@@ -180,6 +189,17 @@ impl NumberSet {
 
     pub fn contains(&self, x: Decimal) -> bool {
         self.intervals.iter().any(|i| i.contains(x))
+    }
+
+    pub fn integral(&self) -> Self {
+        Self {
+            intervals: self
+                .intervals
+                .iter()
+                .filter(|i| i.has_integer())
+                .copied()
+                .collect(),
+        }
     }
 
     fn normalize(&mut self) {

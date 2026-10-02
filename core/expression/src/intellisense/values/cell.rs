@@ -90,6 +90,17 @@ impl CellConstraint {
     }
 }
 
+pub struct FieldPath;
+
+impl FieldPath {
+    pub fn of(is: &mut IntelliSense, source: &str) -> Option<Vec<Rc<str>>> {
+        is.with_ast(source.trim(), false, |node, _| {
+            Truth::path(node).map(|path| path.into_iter().map(Rc::from).collect())
+        })
+        .flatten()
+    }
+}
+
 pub struct Condition;
 
 impl Condition {

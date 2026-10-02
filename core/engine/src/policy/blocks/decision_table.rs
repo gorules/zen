@@ -477,6 +477,7 @@ impl DecisionTableIr {
                     })
                     .collect(),
                 rules: &self.rules,
+                fallible: Vec::new(),
             };
             cx.defer_table_check(table);
         }
@@ -715,6 +716,7 @@ impl DecisionTableIr {
             inputs: check.inputs.clone(),
             outputs: check.outputs.clone(),
             rules: &self.rules,
+            fallible: Vec::new(),
         };
         table.diagnostics(
             is,

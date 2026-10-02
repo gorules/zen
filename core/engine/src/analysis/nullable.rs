@@ -11,6 +11,12 @@ use crate::workspace::types::{Diagnostic, DiagnosticCode, Span};
 
 pub(crate) struct NullableOperand;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OnError {
+    Raise,
+    Skip,
+}
+
 #[derive(Default)]
 struct Fallback {
     operands: Option<(Span, Span)>,
@@ -44,8 +50,9 @@ impl NullableOperand {
         is: &mut IntelliSense,
         source: &str,
         unary: bool,
+        on_error: OnError,
     ) {
-        Self::default_operands(diagnostics, is, source, unary);
+        Self::default_operands(diagnostics, is, source, unary, on_error);
         Self::fallbacks(diagnostics, is, source, unary);
     }
 
@@ -54,6 +61,7 @@ impl NullableOperand {
         is: &mut IntelliSense,
         source: &str,
         unary: bool,
+        on_error: OnError,
     ) {
         let requests: Vec<(usize, Span, String, bool)> = diagnostics
             .iter()
@@ -88,7 +96,7 @@ impl NullableOperand {
                 "/" | "%" => found.left,
                 _ => false,
             };
-            if !defaultable {
+            if !defaultable || on_error == OnError::Skip {
                 continue;
             }
             let Some(operand) = AstOps::text(source, found.operand) else {

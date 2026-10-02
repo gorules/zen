@@ -77,6 +77,7 @@ impl VerifyTable<'_> {
             col.unary.hash(&mut state);
             col.analyzable.hash(&mut state);
             col.dated.hash(&mut state);
+            col.integer.hash(&mut state);
             col.input.hash(&mut state);
             col.field.hash(&mut state);
             col.path.hash(&mut state);
@@ -91,6 +92,7 @@ impl VerifyTable<'_> {
             col.label.hash(&mut state);
             col.values.hash(&mut state);
         }
+        self.fallible.hash(&mut state);
         self.rules.len().hash(&mut state);
         for rule in self.rules {
             let (low, high) = rule.iter().fold((0u64, 0u64), |(low, high), entry| {

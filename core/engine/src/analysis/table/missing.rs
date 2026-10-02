@@ -1,7 +1,11 @@
 use std::sync::Arc;
 
+use std::rc::Rc;
+
 use ahash::HashMap;
 use serde_json::{Map, Value};
+use zen_expression::intellisense::values::cell::FieldPath;
+use zen_expression::intellisense::{IntelliSense, ReadDependency};
 
 use super::cell::CellConstraint;
 use super::partition::Partition;
@@ -19,19 +23,58 @@ struct Dimension {
     label: Arc<str>,
     prefer: Option<ValueKind>,
     dated: bool,
+    integer: bool,
     input: bool,
+}
+
+struct Field {
+    path: Option<Vec<Rc<str>>>,
+    reads: Vec<Vec<Rc<str>>>,
+}
+
+impl Field {
+    fn of(is: &mut IntelliSense, source: &str) -> Self {
+        match FieldPath::of(is, source) {
+            Some(path) => Self {
+                reads: vec![path.clone()],
+                path: Some(path),
+            },
+            None => Self {
+                path: None,
+                reads: is
+                    .reads(source)
+                    .into_iter()
+                    .filter_map(|read| match read {
+                        ReadDependency::Direct { path, .. } => Some(path),
+                        ReadDependency::Iteration { collection, .. } => Some(collection),
+                        _ => None,
+                    })
+                    .collect(),
+            },
+        }
+    }
+
+    fn overlaps(&self, other: &Field) -> bool {
+        self.reads.iter().any(|a| {
+            other
+                .reads
+                .iter()
+                .any(|b| a.iter().zip(b).all(|(x, y)| x == y))
+        })
+    }
 }
 
 impl VerifyTable<'_> {
     pub(super) fn missing(
         &self,
+        is: &mut IntelliSense,
         cells: &[Vec<CellConstraint>],
         satisfiable: &[bool],
     ) -> Option<Option<Finding>> {
         if self.rules.is_empty() {
             return Some(None);
         }
-        let dims = self.dimensions(cells);
+        let dims = self.dimensions(is, cells);
         if dims.is_empty() || dims.iter().any(|d| d.domain.is_empty()) {
             return Some(None);
         }
@@ -61,7 +104,21 @@ impl VerifyTable<'_> {
             dims.iter().map(|d| d.domain.clone()).collect(),
             (0..cuts.len()).collect(),
         )?;
-        let remaining = gaps.out;
+        let remaining: Vec<Region> = gaps
+            .out
+            .into_iter()
+            .filter_map(|mut fragment| {
+                for (dim, set) in dims.iter().zip(fragment.iter_mut()) {
+                    if dim.integer {
+                        set.numbers = set.numbers.integral();
+                    }
+                }
+                fragment
+                    .iter()
+                    .all(|set| !set.is_empty())
+                    .then_some(fragment)
+            })
+            .collect();
         if remaining.is_empty() {
             return Some(None);
         }
@@ -74,14 +131,31 @@ impl VerifyTable<'_> {
         Some(Some(Finding::MissingCases { cases, total }))
     }
 
-    fn dimensions(&self, cells: &[Vec<CellConstraint>]) -> Vec<Dimension> {
-        let mut dims: Vec<(Arc<str>, Dimension)> = Vec::new();
+    fn dimensions(&self, is: &mut IntelliSense, cells: &[Vec<CellConstraint>]) -> Vec<Dimension> {
+        let fields: Vec<Option<Field>> = self
+            .inputs
+            .iter()
+            .map(|col| {
+                col.field
+                    .as_ref()
+                    .filter(|_| col.analyzable)
+                    .map(|field| Field::of(is, field))
+            })
+            .collect();
+        let mut dims: Vec<(Vec<Rc<str>>, Dimension)> = Vec::new();
         for (idx, col) in self.inputs.iter().enumerate() {
-            if !col.analyzable {
+            let (Some(field), Some(source)) = (&fields[idx], &col.field) else {
                 continue;
-            }
-            let Some(field) = col.field.clone() else {
-                continue;
+            };
+            let key = match &field.path {
+                Some(path) => path.clone(),
+                None if fields.iter().enumerate().any(|(other, f)| {
+                    other != idx && f.as_ref().is_some_and(|f| f.overlaps(field))
+                }) =>
+                {
+                    continue
+                }
+                None => vec![Rc::from(source.as_ref())],
             };
             let Some(domain) = col
                 .domain
@@ -90,20 +164,29 @@ impl VerifyTable<'_> {
             else {
                 continue;
             };
-            match dims.iter_mut().find(|(key, _)| *key == field) {
+            match dims.iter_mut().find(|(existing, _)| *existing == key) {
                 Some((_, dim)) => {
                     dim.columns.push(idx);
                     dim.domain = dim.domain.intersect(&domain);
+                    dim.integer |= col.integer;
+                    dim.path = dim.path.clone().or_else(|| col.path.clone());
                 }
                 None => dims.push((
-                    field,
+                    key,
                     Dimension {
                         columns: vec![idx],
                         domain,
-                        path: col.path.clone(),
+                        path: col.path.clone().or_else(|| {
+                            field
+                                .path
+                                .as_ref()
+                                .filter(|path| path.iter().all(|segment| !segment.contains('.')))
+                                .map(|path| Arc::from(path.join(".")))
+                        }),
                         label: col.label.clone(),
                         prefer: col.prefer,
                         dated: col.dated,
+                        integer: col.integer,
                         input: col.input,
                     },
                 )),

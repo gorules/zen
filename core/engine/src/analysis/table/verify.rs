@@ -28,6 +28,7 @@ pub(crate) struct VerifyInput {
     pub(crate) unary: bool,
     pub(crate) analyzable: bool,
     pub(crate) dated: bool,
+    pub(crate) integer: bool,
     pub(crate) input: bool,
     pub(crate) field: Option<Arc<str>>,
     pub(crate) path: Option<Arc<str>>,
@@ -49,6 +50,7 @@ pub(crate) struct VerifyTable<'a> {
     pub(crate) inputs: Vec<VerifyInput>,
     pub(crate) outputs: Vec<VerifyOutput>,
     pub(crate) rules: &'a [HashMap<Arc<str>, Arc<str>>],
+    pub(crate) fallible: Vec<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -159,7 +161,7 @@ impl VerifyTable<'_> {
         let mut seen: HashMap<(Vec<CellConstraint>, Vec<String>), usize> = HashMap::default();
         for row in 0..self.rules.len() {
             if let Some(index) = index.as_mut().filter(|_| row > 0) {
-                if satisfiable[row - 1] && !reported[row - 1] {
+                if satisfiable[row - 1] && !reported[row - 1] && !self.can_fail(row - 1) {
                     index.insert(&cells[row - 1], row - 1);
                 }
             }
@@ -212,7 +214,7 @@ impl VerifyTable<'_> {
         }
         let mut gaps_incomplete = !coverage;
         if coverage {
-            match self.missing(&cells, &satisfiable) {
+            match self.missing(is, &cells, &satisfiable) {
                 Some(Some(missing)) => findings.push(missing),
                 Some(None) => {}
                 None => gaps_incomplete = true,
@@ -271,6 +273,10 @@ impl VerifyTable<'_> {
             }
         }
         findings
+    }
+
+    fn can_fail(&self, row: usize) -> bool {
+        self.fallible.get(row).copied().unwrap_or(false)
     }
 
     fn contributes_collect(&self, row: usize) -> bool {

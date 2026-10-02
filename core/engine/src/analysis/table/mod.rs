@@ -71,6 +71,7 @@ impl TableColumn {
             unary: field.is_some(),
             analyzable: field.is_some(),
             dated,
+            integer: false,
             input: true,
             field: field.map(|f| Arc::from(f.trim())),
             path: field.filter(|f| Self::is_plain_path(f)).cloned(),

@@ -8,7 +8,7 @@ use zen_expression::{Isolate, IsolateError};
 
 use super::property_read::ReadFlattener;
 use super::type_check::TypeCheck;
-use crate::analysis::nullable::NullableOperand;
+use crate::analysis::nullable::{NullableOperand, OnError};
 use crate::analysis::table::{HitMode, VerifyInput, VerifyOutput, VerifyTable};
 use crate::policy::ir::PropertyPath;
 use crate::policy::queries::dependency::{DataModelPaths, PathPrefix};
@@ -502,6 +502,7 @@ impl AnalysisContext {
             &mut self.intellisense.borrow_mut(),
             source,
             matches!(kind, ExpressionKind::Unary),
+            OnError::Raise,
         );
     }
 }

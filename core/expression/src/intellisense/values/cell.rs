@@ -3,26 +3,24 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::Arc;
 
+use crate::functions::{FunctionKind, InternalFunction};
+use crate::intellisense::IntelliSense;
+use crate::lexer::{ArithmeticOperator, Bracket, ComparisonOperator, LogicalOperator, Operator};
+use crate::parser::Node;
 use rust_decimal::Decimal;
-use zen_expression::functions::{FunctionKind, InternalFunction};
-use zen_expression::intellisense::IntelliSense;
-use zen_expression::lexer::{
-    ArithmeticOperator, Bracket, ComparisonOperator, LogicalOperator, Operator,
-};
-use zen_expression::parser::Node;
 
 use super::print::DateDay;
 use super::value_set::{Bound, Interval, NumberSet, ValueSet};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) enum CellConstraint {
+pub enum CellConstraint {
     Any,
     Known(ValueSet),
     Opaque(Rc<str>),
 }
 
 impl CellConstraint {
-    pub(crate) fn parse(
+    pub fn parse(
         is: &mut IntelliSense,
         source: &str,
         unary: bool,
@@ -83,7 +81,7 @@ impl CellConstraint {
         Rc::from(key)
     }
 
-    pub(crate) fn known_set(&self) -> Option<ValueSet> {
+    pub fn known_set(&self) -> Option<ValueSet> {
         match self {
             CellConstraint::Any => Some(ValueSet::all()),
             CellConstraint::Known(set) => Some(set.clone()),
@@ -92,10 +90,10 @@ impl CellConstraint {
     }
 }
 
-pub(crate) struct Condition;
+pub struct Condition;
 
 impl Condition {
-    pub(crate) fn holds(is: &mut IntelliSense, source: &str) -> Vec<(Arc<str>, ValueSet)> {
+    pub fn holds(is: &mut IntelliSense, source: &str) -> Vec<(Arc<str>, ValueSet)> {
         is.with_ast(source.trim(), false, |node, _| {
             let mut conjuncts = Vec::new();
             Truth::conjuncts(node, &mut conjuncts);
@@ -125,7 +123,7 @@ impl Condition {
         .unwrap_or_default()
     }
 
-    pub(crate) fn fails(is: &mut IntelliSense, source: &str) -> Option<(Arc<str>, ValueSet)> {
+    pub fn fails(is: &mut IntelliSense, source: &str) -> Option<(Arc<str>, ValueSet)> {
         let mut holds = Self::holds(is, source);
         let single = is
             .with_ast(source.trim(), false, |node, _| {
@@ -141,7 +139,7 @@ impl Condition {
     }
 }
 
-pub(crate) struct Scope<'s> {
+pub struct Scope<'s> {
     subject: &'s [&'s str],
     dated: bool,
 }

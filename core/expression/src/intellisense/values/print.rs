@@ -4,12 +4,12 @@ use serde_json::Value;
 
 use super::value_set::{Bound, Interval, StringSet, ValueSet};
 
-pub(crate) struct DateDay;
+pub struct DateDay;
 
 impl DateDay {
     const DAY: i64 = 86_400;
 
-    pub(crate) fn seconds(text: &str) -> Option<Decimal> {
+    pub fn seconds(text: &str) -> Option<Decimal> {
         let bytes = text.as_bytes();
         if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' {
             return None;
@@ -30,7 +30,7 @@ impl DateDay {
         ))
     }
 
-    pub(crate) fn format(seconds: Decimal) -> Option<String> {
+    pub fn format(seconds: Decimal) -> Option<String> {
         let total = seconds.to_i64().filter(|_| seconds.fract().is_zero())?;
         if total % Self::DAY != 0 {
             return None;
@@ -77,7 +77,7 @@ impl DateDay {
         (year, month, day)
     }
 
-    pub(crate) fn example(set: &ValueSet) -> Option<Value> {
+    pub fn example(set: &ValueSet) -> Option<Value> {
         let day = Decimal::from(Self::DAY);
         for interval in set.numbers.intervals() {
             let candidates = match (interval.lo, interval.hi) {
@@ -101,10 +101,10 @@ impl DateDay {
     }
 }
 
-pub(crate) struct CellText;
+pub struct CellText;
 
 impl CellText {
-    pub(crate) fn brief(text: &str) -> String {
+    pub fn brief(text: &str) -> String {
         const KEEP: usize = 6;
         let chars: Vec<char> = text.chars().collect();
         let mut quote: Option<char> = None;
@@ -133,7 +133,7 @@ impl CellText {
         }
     }
 
-    pub(crate) fn of(set: &ValueSet, domain: &ValueSet, dated: bool) -> Option<String> {
+    pub fn of(set: &ValueSet, domain: &ValueSet, dated: bool) -> Option<String> {
         let wanted = set.intersect(domain);
         if domain.difference(&wanted).is_empty() {
             return Some(String::new());
@@ -279,7 +279,7 @@ impl CellText {
         Some(d.normalize().to_string())
     }
 
-    pub(crate) fn string(s: &str) -> Option<String> {
+    pub fn string(s: &str) -> Option<String> {
         match (s.contains('"'), s.contains('\'')) {
             (false, _) => Some(format!("\"{s}\"")),
             (true, false) => Some(format!("'{s}'")),
@@ -291,10 +291,10 @@ impl CellText {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analysis::table::cell::CellConstraint;
+    use crate::intellisense::values::cell::CellConstraint;
+    use crate::intellisense::IntelliSense;
     use std::rc::Rc;
     use std::str::FromStr;
-    use zen_expression::intellisense::IntelliSense;
 
     fn dec(s: &str) -> Decimal {
         Decimal::from_str(s).expect("decimal")

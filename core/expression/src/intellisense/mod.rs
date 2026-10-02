@@ -27,6 +27,7 @@ mod entity_flow;
 mod inspection;
 pub(crate) mod scope;
 pub(crate) mod type_provider;
+pub mod values;
 
 pub use dependency::{DependencyResult, ReadDependency, Reference};
 pub use discriminant::{ArmTest, NumberCover};

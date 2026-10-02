@@ -6,7 +6,7 @@ use rust_decimal::Decimal;
 use serde_json::Value;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum Bound {
+pub enum Bound {
     Unbounded,
     Inclusive(Decimal),
     Exclusive(Decimal),
@@ -46,17 +46,17 @@ impl Bound {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) struct Interval {
-    pub(crate) lo: Bound,
-    pub(crate) hi: Bound,
+pub struct Interval {
+    pub lo: Bound,
+    pub hi: Bound,
 }
 
 impl Interval {
-    pub(crate) fn new(lo: Bound, hi: Bound) -> Self {
+    pub fn new(lo: Bound, hi: Bound) -> Self {
         Self { lo, hi }
     }
 
-    pub(crate) fn point(x: Decimal) -> Self {
+    pub fn point(x: Decimal) -> Self {
         Self::new(Bound::Inclusive(x), Bound::Inclusive(x))
     }
 
@@ -124,7 +124,7 @@ impl Interval {
         above && below
     }
 
-    pub(crate) fn midpoint(l: Decimal, h: Decimal) -> Option<Decimal> {
+    pub fn midpoint(l: Decimal, h: Decimal) -> Option<Decimal> {
         [
             l.checked_add(h).map(|sum| sum / Decimal::TWO),
             (l / Decimal::TWO).checked_add(h / Decimal::TWO),
@@ -157,28 +157,28 @@ impl Interval {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Hash)]
-pub(crate) struct NumberSet {
+pub struct NumberSet {
     intervals: Vec<Interval>,
 }
 
 impl NumberSet {
-    pub(crate) fn all() -> Self {
+    pub fn all() -> Self {
         Self {
             intervals: vec![Interval::new(Bound::Unbounded, Bound::Unbounded)],
         }
     }
 
-    pub(crate) fn from_intervals(intervals: Vec<Interval>) -> Self {
+    pub fn from_intervals(intervals: Vec<Interval>) -> Self {
         let mut set = Self { intervals };
         set.normalize();
         set
     }
 
-    pub(crate) fn intervals(&self) -> &[Interval] {
+    pub fn intervals(&self) -> &[Interval] {
         &self.intervals
     }
 
-    pub(crate) fn contains(&self, x: Decimal) -> bool {
+    pub fn contains(&self, x: Decimal) -> bool {
         self.intervals.iter().any(|i| i.contains(x))
     }
 
@@ -199,11 +199,11 @@ impl NumberSet {
         self.intervals = merged;
     }
 
-    pub(crate) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.intervals.is_empty()
     }
 
-    pub(crate) fn is_all(&self) -> bool {
+    pub fn is_all(&self) -> bool {
         matches!(
             self.intervals.as_slice(),
             [Interval {
@@ -213,13 +213,13 @@ impl NumberSet {
         )
     }
 
-    pub(crate) fn union(&self, other: &Self) -> Self {
+    pub fn union(&self, other: &Self) -> Self {
         let mut intervals = self.intervals.clone();
         intervals.extend(other.intervals.iter().copied());
         Self::from_intervals(intervals)
     }
 
-    pub(crate) fn intersect(&self, other: &Self) -> Self {
+    pub fn intersect(&self, other: &Self) -> Self {
         let mut out = Vec::new();
         for a in &self.intervals {
             for b in &other.intervals {
@@ -254,7 +254,7 @@ impl NumberSet {
             .any(|a| other.intervals.iter().any(|b| a.overlaps(b)))
     }
 
-    pub(crate) fn complement(&self) -> Self {
+    pub fn complement(&self) -> Self {
         let mut out = Vec::new();
         let mut cursor = Some(Bound::Unbounded);
         for interval in &self.intervals {
@@ -281,7 +281,7 @@ impl NumberSet {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) enum StringSet {
+pub enum StringSet {
     Finite(BTreeSet<Rc<str>>),
     CoFinite(BTreeSet<Rc<str>>),
 }
@@ -293,26 +293,26 @@ impl Default for StringSet {
 }
 
 impl StringSet {
-    pub(crate) fn all() -> Self {
+    pub fn all() -> Self {
         StringSet::CoFinite(BTreeSet::new())
     }
 
-    pub(crate) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         matches!(self, StringSet::Finite(s) if s.is_empty())
     }
 
-    pub(crate) fn is_all(&self) -> bool {
+    pub fn is_all(&self) -> bool {
         matches!(self, StringSet::CoFinite(s) if s.is_empty())
     }
 
-    pub(crate) fn complement(&self) -> Self {
+    pub fn complement(&self) -> Self {
         match self {
             StringSet::Finite(s) => StringSet::CoFinite(s.clone()),
             StringSet::CoFinite(s) => StringSet::Finite(s.clone()),
         }
     }
 
-    pub(crate) fn union(&self, other: &Self) -> Self {
+    pub fn union(&self, other: &Self) -> Self {
         match (self, other) {
             (StringSet::Finite(a), StringSet::Finite(b)) => {
                 StringSet::Finite(a.union(b).cloned().collect())
@@ -327,7 +327,7 @@ impl StringSet {
         }
     }
 
-    pub(crate) fn intersect(&self, other: &Self) -> Self {
+    pub fn intersect(&self, other: &Self) -> Self {
         match (self, other) {
             (StringSet::Finite(a), StringSet::Finite(b)) => {
                 StringSet::Finite(a.intersection(b).cloned().collect())
@@ -377,7 +377,7 @@ impl StringSet {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum ValueKind {
+pub enum ValueKind {
     Number,
     String,
     Bool,
@@ -385,23 +385,23 @@ pub(crate) enum ValueKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Hash)]
-pub(crate) struct ValueSet {
-    pub(crate) numbers: NumberSet,
-    pub(crate) strings: StringSet,
-    pub(crate) bools: u8,
-    pub(crate) null: bool,
-    pub(crate) other: bool,
+pub struct ValueSet {
+    pub numbers: NumberSet,
+    pub strings: StringSet,
+    pub bools: u8,
+    pub null: bool,
+    pub other: bool,
 }
 
 impl ValueSet {
-    pub(crate) const FALSE: u8 = 1;
-    pub(crate) const TRUE: u8 = 2;
+    pub const FALSE: u8 = 1;
+    pub const TRUE: u8 = 2;
 
-    pub(crate) fn empty() -> Self {
+    pub fn empty() -> Self {
         Self::default()
     }
 
-    pub(crate) fn all() -> Self {
+    pub fn all() -> Self {
         Self {
             numbers: NumberSet::all(),
             strings: StringSet::all(),
@@ -411,25 +411,25 @@ impl ValueSet {
         }
     }
 
-    pub(crate) fn scalars() -> Self {
+    pub fn scalars() -> Self {
         Self {
             other: false,
             ..Self::all()
         }
     }
 
-    pub(crate) fn numbers(numbers: NumberSet) -> Self {
+    pub fn numbers(numbers: NumberSet) -> Self {
         Self {
             numbers,
             ..Self::empty()
         }
     }
 
-    pub(crate) fn number(x: Decimal) -> Self {
+    pub fn number(x: Decimal) -> Self {
         Self::numbers(NumberSet::from_intervals(vec![Interval::point(x)]))
     }
 
-    pub(crate) fn string(s: &str) -> Self {
+    pub fn string(s: &str) -> Self {
         Self {
             strings: StringSet::Finite(BTreeSet::from([Rc::from(s)])),
             ..Self::empty()
@@ -437,28 +437,28 @@ impl ValueSet {
     }
 
     #[cfg(test)]
-    pub(crate) fn strings(values: impl IntoIterator<Item = Rc<str>>) -> Self {
+    pub fn strings(values: impl IntoIterator<Item = Rc<str>>) -> Self {
         Self {
             strings: StringSet::Finite(values.into_iter().collect()),
             ..Self::empty()
         }
     }
 
-    pub(crate) fn bool(b: bool) -> Self {
+    pub fn bool(b: bool) -> Self {
         Self {
             bools: if b { Self::TRUE } else { Self::FALSE },
             ..Self::empty()
         }
     }
 
-    pub(crate) fn null() -> Self {
+    pub fn null() -> Self {
         Self {
             null: true,
             ..Self::empty()
         }
     }
 
-    pub(crate) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.numbers.is_empty()
             && self.strings.is_empty()
             && self.bools == 0
@@ -466,7 +466,7 @@ impl ValueSet {
             && !self.other
     }
 
-    pub(crate) fn is_all(&self) -> bool {
+    pub fn is_all(&self) -> bool {
         self.numbers.is_all()
             && self.strings.is_all()
             && self.bools == Self::FALSE | Self::TRUE
@@ -474,7 +474,7 @@ impl ValueSet {
             && self.other
     }
 
-    pub(crate) fn union(&self, other: &Self) -> Self {
+    pub fn union(&self, other: &Self) -> Self {
         Self {
             numbers: self.numbers.union(&other.numbers),
             strings: self.strings.union(&other.strings),
@@ -484,7 +484,7 @@ impl ValueSet {
         }
     }
 
-    pub(crate) fn union_all(sets: &[ValueSet]) -> Self {
+    pub fn union_all(sets: &[ValueSet]) -> Self {
         let mut intervals = Vec::new();
         let mut finite = BTreeSet::new();
         let mut cofinite: Option<StringSet> = None;
@@ -512,7 +512,7 @@ impl ValueSet {
         out
     }
 
-    pub(crate) fn intersect(&self, other: &Self) -> Self {
+    pub fn intersect(&self, other: &Self) -> Self {
         Self {
             numbers: self.numbers.intersect(&other.numbers),
             strings: self.strings.intersect(&other.strings),
@@ -522,7 +522,7 @@ impl ValueSet {
         }
     }
 
-    pub(crate) fn complement(&self) -> Self {
+    pub fn complement(&self) -> Self {
         Self {
             numbers: self.numbers.complement(),
             strings: self.strings.complement(),
@@ -532,11 +532,11 @@ impl ValueSet {
         }
     }
 
-    pub(crate) fn difference(&self, other: &Self) -> Self {
+    pub fn difference(&self, other: &Self) -> Self {
         self.intersect(&other.complement())
     }
 
-    pub(crate) fn is_subset(&self, other: &Self) -> bool {
+    pub fn is_subset(&self, other: &Self) -> bool {
         self.bools & !other.bools == 0
             && (!self.null || other.null)
             && (!self.other || other.other)
@@ -544,7 +544,7 @@ impl ValueSet {
             && self.numbers.is_subset(&other.numbers)
     }
 
-    pub(crate) fn intersects(&self, other: &Self) -> bool {
+    pub fn intersects(&self, other: &Self) -> bool {
         self.bools & other.bools != 0
             || (self.null && other.null)
             || (self.other && other.other)
@@ -552,7 +552,7 @@ impl ValueSet {
             || self.numbers.intersects(&other.numbers)
     }
 
-    pub(crate) fn example(&self, prefer: Option<ValueKind>) -> Option<Value> {
+    pub fn example(&self, prefer: Option<ValueKind>) -> Option<Value> {
         let order: [ValueKind; 4] = match prefer {
             Some(ValueKind::String) => [
                 ValueKind::String,
@@ -598,7 +598,7 @@ impl ValueSet {
     }
 }
 
-pub(crate) fn decimal_json(d: Decimal) -> Value {
+pub fn decimal_json(d: Decimal) -> Value {
     serde_json::from_str(&d.normalize().to_string()).unwrap_or(Value::Null)
 }
 

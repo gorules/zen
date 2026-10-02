@@ -1,14 +1,13 @@
 mod cache;
-mod cell;
 mod constraints;
 mod index;
 mod merge;
 mod missing;
 mod partition;
-mod print;
-mod value_set;
 mod verify;
 mod witness;
+
+use zen_expression::intellisense::values::{cell, print, value_set};
 
 use std::sync::Arc;
 

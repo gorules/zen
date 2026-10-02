@@ -7,6 +7,7 @@ use crate::workspace::reads::ReadView;
 impl Db {
     pub(crate) fn walk(&self, changed: &[Arc<str>]) -> Vec<Arc<str>> {
         let frozen = self.frozen_views();
+        let cycles = self.document_dependencies().signature_cycles();
         self.document_dependencies()
             .affected(changed, |user, dependency, kind| {
                 let recorded = frozen
@@ -20,8 +21,13 @@ impl Db {
                                 | (DependencyKind::Signature, ReadView::Signature(_))
                         )
                     });
+                let cyclic = kind == DependencyKind::Signature
+                    && cycles
+                        .get(user)
+                        .is_some_and(|component| cycles.get(dependency) == Some(component));
                 match (kind, recorded) {
                     (DependencyKind::Import, _) | (_, None) => true,
+                    _ if cyclic => true,
                     (_, Some(view)) => {
                         self.graph_stack.borrow_mut().push(user.clone());
                         let holds = self.view_holds(dependency, view);

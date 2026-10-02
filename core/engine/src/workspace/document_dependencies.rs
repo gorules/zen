@@ -2,6 +2,8 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use ahash::{HashMap, HashSet};
+use petgraph::algo::tarjan_scc;
+use petgraph::graph::{DiGraph, NodeIndex};
 use zen_types::decision::DecisionNodeKind;
 
 use crate::model::DecisionContent;
@@ -91,6 +93,38 @@ impl DependencyIndex {
         }
         let mut out: Vec<Arc<str>> = seen.into_iter().collect();
         out.sort();
+        out
+    }
+
+    pub fn signature_cycles(&self) -> HashMap<Arc<str>, usize> {
+        let mut graph: DiGraph<Arc<str>, ()> = DiGraph::new();
+        let mut nodes: HashMap<Arc<str>, NodeIndex> = HashMap::default();
+        let mut node = |graph: &mut DiGraph<Arc<str>, ()>, path: &Arc<str>| {
+            *nodes
+                .entry(path.clone())
+                .or_insert_with(|| graph.add_node(path.clone()))
+        };
+        for (user, uses) in &self.uses {
+            for (dependency, kind) in uses {
+                if *kind == DependencyKind::Signature {
+                    let from = node(&mut graph, user);
+                    let to = node(&mut graph, dependency);
+                    graph.add_edge(from, to, ());
+                }
+            }
+        }
+        let mut out: HashMap<Arc<str>, usize> = HashMap::default();
+        for (id, component) in tarjan_scc(&graph).into_iter().enumerate() {
+            let cyclic = component.len() > 1
+                || component
+                    .first()
+                    .is_some_and(|&n| graph.contains_edge(n, n));
+            if cyclic {
+                for n in component {
+                    out.insert(graph[n].clone(), id);
+                }
+            }
+        }
         out
     }
 

@@ -1,6 +1,6 @@
 [package]
 name = "expression_repl"
-version = "2.0.3"
+version = "2.0.4"
 edition = "2021"
 publish = false
 
@@ -10,5 +10,5 @@ publish = false
 colored = "3"
 rustyline = "15"
 serde_json = { workspace = true }
-zen-expression = { path = "../expression", version = "2.1.1" }
+zen-expression = { path = "../expression", version = "2.1.2" }
 

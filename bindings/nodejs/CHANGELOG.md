@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.2](https://github.com/gorules/zen/compare/nodejs-v2.1.1...nodejs-v2.1.2) (2026-10-02)
+
+
+### Bug Fixes
+
+* decision table verification and diagnostic ([#537](https://github.com/gorules/zen/issues/537)) ([20d88e3](https://github.com/gorules/zen/commit/20d88e398d872adb8ab450a3ee802910f8a02cf3))
+
 ## [2.1.1](https://github.com/gorules/zen/compare/nodejs-v2.1.0...nodejs-v2.1.1) (2026-09-29)
 
 ## [2.1.0](https://github.com/gorules/zen/compare/nodejs-v2.0.2...nodejs-v2.1.0) (2026-09-29)

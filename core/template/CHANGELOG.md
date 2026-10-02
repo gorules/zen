@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.1.2](https://github.com/gorules/zen/compare/zen-tmpl-v2.1.1...zen-tmpl-v2.1.2) (2026-10-02)
+
+
+### Miscellaneous
+
+* **zen-tmpl:** Synchronize core versions
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * zen-expression bumped from 2.1.1 to 2.1.2
+
 ## [2.1.1](https://github.com/gorules/zen/compare/zen-tmpl-v2.1.0...zen-tmpl-v2.1.1) (2026-09-29)
 
 

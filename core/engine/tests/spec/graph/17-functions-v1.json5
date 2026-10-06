@@ -1,0 +1,470 @@
+// Function nodes, version 1: a script defining `const handler = (input, helpers) => ...`.
+// The input (with `$nodes`) is passed through JSON, the handler runs synchronously, and its
+// result comes back through JSON.stringify. Helpers are `dayjs`, `moment` (an alias of
+// dayjs), `Big` and `env`; `dayjs` and `Big` are also globals.
+
+// --- Return shapes ---------------------------------------------------------------------------
+
+{
+  name: "v1 returns an object computed from the input",
+  graph: {
+    nodes: [{functionV1: "f", source: """const handler = (input) => ({ total: input.a + input.b, label: 'sum' });"""}],
+  },
+  cases: [
+    [{a: 1, b: 2}, {total: 3, label: "sum"}],
+    [{a: -5, b: 5}, {total: 0, label: "sum"}],
+    [{a: "x", b: "y"}, {total: "xy", label: "sum"}],
+    [{a: 1, b: "2"}, {total: "12", label: "sum"}],
+    [{a: true, b: true}, {total: 2, label: "sum"}],
+  ],
+}
+
+{
+  name: "v1 a function declaration handler",
+  graph: {
+    nodes: [{functionV1: "f", source: """function handler(input) {
+  return { n: input.n * 3 };
+}"""}],
+  },
+  cases: [
+    [{n: 1}, {n: 3}],
+    [{n: 0.5}, {n: 1.5}],
+    [{n: -2}, {n: -6}],
+  ],
+}
+
+{
+  name: "v1 returning the input passes it through",
+  graph: {
+    nodes: [{functionV1: "f", source: """const handler = (input) => input;"""}],
+  },
+  cases: [
+    [{a: 1}, {a: 1}],
+    [{}, {}],
+    [{nested: {deep: [1, {x: "y"}]}}, {nested: {deep: [1, {x: "y"}]}}],
+    [{s: "text", b: false, n: null}, {s: "text", b: false}],
+  ],
+}
+
+{
+  name: "v1 the input carries $nodes as a plain key",
+  graph: {
+    nodes: [{functionV1: "f", source: """const handler = (input) => ({ keys: Object.keys(input).sort() });"""}],
+  },
+  cases: [
+    [{a: 1}, {keys: ["$nodes", "a"]}],
+    [{}, {keys: ["$nodes"]}],
+  ],
+}
+
+{
+  name: "v1 primitive and array results",
+  graph: {
+    nodes: [{functionV1: "f", source: """const handler = (input) => input.value;"""}],
+  },
+  cases: [
+    [{value: 5}, {}],
+    [{value: "text"}, {}],
+    [{value: true}, {}],
+    [{value: {x: 1}}, {x: 1}],
+    [{value: [1, 2]}, [1, 2], "question: an array result is merged into the response object; the response is not an object"],
+  ],
+}
+
+{
+  name: "v1 a handler returning undefined",
+  graph: {
+    nodes: [{functionV1: "f", source: """const handler = (input) => input.missing;"""}],
+  },
+  cases: [
+    [{}, "!error", "question: an undefined result drops the output key from the JSON envelope and fails, while v2 treats it as null"],
+    [{missing: {a: 1}}, {a: 1}],
+    [{missing: null}, {}],
+  ],
+}
+
+{
+  name: "v1 undefined properties are dropped by JSON",
+  graph: {
+    nodes: [{functionV1: "f", source: """const handler = (input) => ({ o: { missing: input.nope, explicit: undefined, kept: 1, list: [undefined, 1] } });"""}],
+  },
+  cases: [
+    [{}, {o: {kept: 1, list: [null, 1]}}],
+    [{nope: 3}, {o: {missing: 3, kept: 1, list: [null, 1]}}],
+  ],
+}
+
+{
+  name: "v1 non-data JS values follow JSON.stringify",
+  graph: {
+    nodes: [{functionV1: "f", source: """const handler = (input) => ({ o: {
+  fn: () => 1,
+  nan: NaN,
+  inf: Infinity,
+  date: new Date(input.ts),
+  map: new Map([['a', 1]]),
+  n: input.n,
+} });"""}],
+  },
+  cases: [
+    [{ts: "2024-01-01T00:00:00Z", n: 1}, {o: {nan: null, inf: null, date: "2024-01-01T00:00:00.000Z", map: {}, n: 1}}],
+    [{ts: 0, n: "s"}, {o: {nan: null, inf: null, date: "1970-01-01T00:00:00.000Z", map: {}, n: "s"}}],
+  ],
+}
+
+{
+  name: "v1 an async handler resolves to an empty object",
+  graph: {
+    nodes: [{functionV1: "f", source: """const handler = async (input) => ({ v: input.v });"""}],
+  },
+  cases: [
+    [{v: 1}, {}, "question: v1 does not await the handler, the Promise is serialized as an empty object"],
+    [{}, {}, "question: v1 does not await the handler, the Promise is serialized as an empty object"],
+  ],
+}
+
+// --- Numbers -------------------------------------------------------------------------------
+// v1 numbers go through JSON text both ways: exact decimals are parsed into doubles, but the
+// double's shortest representation comes back unchanged, binary artifacts included.
+
+{
+  name: "v1 decimals become doubles",
+  graph: {
+    nodes: [{functionV1: "f", source: """const handler = (input) => ({ v: input.v, t: typeof input.v });"""}],
+  },
+  cases: [
+    [{v: 0.1}, {v: 0.1, t: "number"}],
+    [{v: 1}, {v: 1, t: "number"}],
+    [{v: 0.1000000000000000000000000001}, {v: 0.1, t: "number"}],
+    [{v: 9007199254740993}, {v: 9007199254740992, t: "number"}],
+    [{v: 123456789.123456789}, {v: 123456789.12345679, t: "number"}],
+  ],
+}
+
+{
+  name: "v1 float arithmetic keeps binary artifacts",
+  graph: {
+    nodes: [{functionV1: "f", source: """const handler = (input) => ({ sum: input.a + input.b });"""}],
+  },
+  cases: [
+    [{a: 0.1, b: 0.2}, {sum: 0.30000000000000004}],
+    [{a: 1, b: 2}, {sum: 3}],
+    [{a: 0.7, b: 0.1}, {sum: 0.7999999999999999}],
+  ],
+}
+
+{
+  name: "v1 Big helper for exact decimals",
+  graph: {
+    nodes: [{functionV1: "f", source: """const handler = (input, { Big }) => {
+  const sum = Big(input.a).plus(input.b);
+  return { str: sum.toString(), num: sum.toNumber(), fixed: sum.toFixed(2) };
+};"""}],
+  },
+  cases: [
+    [{a: 0.1, b: 0.2}, {str: "0.3", num: 0.3, fixed: "0.30"}],
+    [{a: 1, b: 2}, {str: "3", num: 3, fixed: "3.00"}],
+    [{a: "1.005", b: 0}, {str: "1.005", num: 1.005, fixed: "1.01"}],
+  ],
+}
+
+{
+  name: "v1 Big and dayjs are globals as well",
+  graph: {
+    nodes: [{functionV1: "f", source: """const handler = (input) => ({
+  big: typeof Big,
+  dayjs: typeof dayjs,
+  value: Big(input.a).times(2).toNumber(),
+});"""}],
+  },
+  cases: [
+    [{a: 1.5}, {big: "function", dayjs: "function", value: 3}],
+    [{a: 0}, {big: "function", dayjs: "function", value: 0}],
+  ],
+}
+
+// --- Dates ---------------------------------------------------------------------------------
+
+{
+  name: "v1 dayjs and moment helpers",
+  graph: {
+    nodes: [{functionV1: "f", source: """const handler = (input, { dayjs, moment }) => ({
+  next: dayjs(input.date).add(1, 'day').format('YYYY-MM-DD'),
+  sameAsMoment: moment(input.date).valueOf() === dayjs(input.date).valueOf(),
+  days: dayjs(input.to).diff(dayjs(input.date), 'day'),
+});"""}],
+  },
+  cases: [
+    [{date: "2024-01-15", to: "2024-02-15"}, {next: "2024-01-16", sameAsMoment: true, days: 31}],
+    [{date: "2024-02-28", to: "2024-02-28"}, {next: "2024-02-29", sameAsMoment: true, days: 0}],
+    [{date: "2023-12-31", to: "2023-12-01"}, {next: "2024-01-01", sameAsMoment: true, days: -30}],
+  ],
+}
+
+{
+  name: "v1 schema date inputs arrive as strings",
+  graph: {
+    nodes: [{functionV1: "f", source: """const handler = (input) => ({ t: typeof input.d, d: input.d });"""}],
+  },
+  cases: [
+    [{d: date('2024-05-01')}, {t: "string", d: "2024-05-01"}],
+    [{d: "2024-05-01"}, {t: "string", d: "2024-05-01"}],
+  ],
+}
+
+{
+  name: "v1 the env helper is empty",
+  graph: {
+    nodes: [{functionV1: "f", source: """const handler = (input, { env }) => ({ keys: Object.keys(env) });"""}],
+  },
+  cases: [
+    [{}, {keys: []}],
+  ],
+}
+
+// --- Null and missing ------------------------------------------------------------------------
+
+{
+  name: "v1 null and missing fields",
+  graph: {
+    nodes: [{functionV1: "f", source: """const handler = (input) => ({
+  value: input.v ?? 'default',
+  isNull: input.v === null,
+  has: 'v' in input,
+});"""}],
+  },
+  cases: [
+    [{v: 1}, {value: 1, isNull: false, has: true}],
+    [{v: null}, {value: "default", isNull: true, has: true}],
+    [{}, {value: "default", isNull: false, has: false}],
+    [{v: 0}, {value: 0, isNull: false, has: true}],
+    [{v: false}, {value: false, isNull: false, has: true}],
+  ],
+}
+
+// --- Errors ----------------------------------------------------------------------------------
+
+{
+  name: "v1 a thrown Error fails the evaluation",
+  graph: {
+    nodes: [{functionV1: "f", source: """const handler = (input) => {
+  if (input.fail) throw new Error('v1 boom ' + input.fail);
+  return { ok: true };
+};"""}],
+  },
+  cases: [
+    [{fail: "now"}, "!error: v1 boom now"],
+    [{}, {ok: true}],
+    [{fail: 1}, "!error: v1 boom 1"],
+  ],
+}
+
+{
+  name: "v1 a thrown string",
+  graph: {
+    nodes: [{functionV1: "f", source: """const handler = (input) => { if (input.fail) throw 'plain v1'; return { ok: true }; };"""}],
+  },
+  cases: [
+    [{fail: true}, "!error: plain v1"],
+    [{fail: false}, {ok: true}],
+  ],
+}
+
+{
+  name: "v1 runtime type errors",
+  graph: {
+    nodes: [{functionV1: "f", source: """const handler = (input) => ({ v: input.a.b });"""}],
+  },
+  cases: [
+    [{a: {b: 1}}, {v: 1}],
+    [{a: null}, "!error"],
+    [{}, "!error"],
+  ],
+}
+
+{
+  name: "v1 a syntax error",
+  graph: {
+    nodes: [{functionV1: "f", source: """const handler = (input) => ({ a: 1 ;"""}],
+  },
+  cases: [
+    [{}, "!error"],
+    [{a: 1}, "!error"],
+  ],
+}
+
+{
+  name: "v1 a script without a handler",
+  graph: {
+    nodes: [{functionV1: "f", source: """const other = (input) => input;"""}],
+  },
+  cases: [
+    [{}, "!error"],
+  ],
+}
+
+{
+  name: "v1 a v2 module source in a v1 node",
+  graph: {
+    nodes: [{functionV1: "f", source: """export const handler = async (input) => ({ a: 1 });"""}],
+  },
+  cases: [
+    [{}, "!error"],
+  ],
+}
+
+{
+  name: "v1 circular results cannot be serialized",
+  graph: {
+    nodes: [{functionV1: "f", source: """const handler = (input) => { const o = { v: input.v }; if (input.loop) o.self = o; return o; };"""}],
+  },
+  cases: [
+    [{v: 1, loop: true}, "!error"],
+    [{v: 1}, {v: 1}],
+  ],
+}
+
+{
+  name: "v1 an error caught inside the handler",
+  graph: {
+    nodes: [{functionV1: "f", source: """const handler = (input) => {
+  try {
+    return { parsed: JSON.parse(input.text) };
+  } catch (e) {
+    return { error: e.name };
+  }
+};"""}],
+  },
+  cases: [
+    [{text: "{\"a\": 1}"}, {parsed: {a: 1}}],
+    [{text: "nope"}, {error: "SyntaxError"}],
+  ],
+}
+
+// --- Mutation, console, state ----------------------------------------------------------------
+
+{
+  name: "v1 mutating the input changes only the result",
+  graph: {
+    nodes: [
+      {functionV1: "f", source: """const handler = (input) => { input.a = 'changed'; return { a: input.a }; };"""},
+      {expression: "e", passThrough: true, fields: {original: "$nodes.input.a"}},
+    ],
+  },
+  cases: [
+    [{a: "orig"}, {a: "changed", original: "orig"}],
+    [{a: 1}, {a: "changed", original: 1}],
+  ],
+}
+
+{
+  name: "v1 console.log does not change the output",
+  graph: {
+    nodes: [{functionV1: "f", source: """const handler = (input) => { console.log('in', input.v); const c = {}; c.c = c; console.log(c); return { v: input.v ?? 'none' }; };"""}],
+  },
+  cases: [
+    [{v: 1}, {v: 1}],
+    [{}, {v: "none"}],
+  ],
+}
+
+{
+  name: "v1 script state starts fresh for every evaluation",
+  graph: {
+    nodes: [{functionV1: "f", source: """globalThis.calls = (globalThis.calls ?? 0) + 1;
+const handler = (input) => ({ calls: globalThis.calls });"""}],
+  },
+  cases: [
+    [{}, {calls: 1}],
+    [{a: 1}, {calls: 1}],
+  ],
+}
+
+// --- Large data ----------------------------------------------------------------------------
+
+{
+  name: "v1 building large arrays",
+  graph: {
+    nodes: [{functionV1: "f", source: """const handler = (input) => {
+  const xs = Array.from({ length: input.n }, (_, i) => i);
+  return { count: xs.length, sum: xs.reduce((a, b) => a + b, 0), rows: xs.slice(-2).map((i) => ({ id: i })) };
+};"""}],
+  },
+  cases: [
+    [{n: 10000}, {count: 10000, sum: 49995000, rows: [{id: 9998}, {id: 9999}]}],
+    [{n: 1}, {count: 1, sum: 0, rows: [{id: 0}]}],
+    [{n: 0}, {count: 0, sum: 0, rows: []}],
+  ],
+}
+
+// --- $nodes and graph position ---------------------------------------------------------------
+
+{
+  name: "v1 reads earlier node outputs through $nodes",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {doubled: "a * 2"}},
+      {functionV1: "f", source: """const handler = (input) => ({
+  fromInput: input.$nodes.input.a,
+  fromCalc: input.$nodes.calc.doubled,
+  direct: input.doubled,
+  names: Object.keys(input.$nodes).sort(),
+});"""},
+    ],
+  },
+  cases: [
+    [{a: 2}, {fromInput: 2, fromCalc: 4, direct: 4, names: ["calc", "input"]}],
+    [{a: 0.5}, {fromInput: 0.5, fromCalc: 1, direct: 1, names: ["calc", "input"]}],
+  ],
+}
+
+{
+  name: "v1 and v2 nodes in one graph",
+  graph: {
+    nodes: [
+      {functionV1: "one", source: """const handler = (input) => ({ v: input.v + 1, from: 'v1' });"""},
+      {function: "two", source: """export const handler = async (input) => ({ v: input.v * 10, prev: input.from, first: input.$nodes.one.v });"""},
+    ],
+  },
+  cases: [
+    [{v: 1}, {v: 20, prev: "v1", first: 2}],
+    [{v: 0}, {v: 10, prev: "v1", first: 1}],
+  ],
+}
+
+{
+  name: "v1 function on a switch branch",
+  graph: {
+    nodes: [
+      {switch: "route", when: ["v > 0", ""]},
+      {functionV1: "pos", source: """const handler = (input) => ({ sign: 'positive', v: input.v });"""},
+      {functionV1: "neg", source: """const handler = (input) => { if (input.v === undefined) throw new Error('no v'); return { sign: 'non-positive', v: input.v }; };"""},
+    ],
+    edges: ["input -> route", "route:0 -> pos -> output", "route:1 -> neg -> output"],
+  },
+  cases: [
+    [{v: 3}, {sign: "positive", v: 3}],
+    [{v: 0}, {sign: "non-positive", v: 0}],
+    [{v: -1}, {sign: "non-positive", v: -1}],
+    [{}, "!error: no v"],
+  ],
+}
+
+{
+  name: "v1 output feeding a decision table",
+  graph: {
+    nodes: [
+      {functionV1: "prep", source: """const handler = (input) => ({ score: input.answers.filter(Boolean).length * 25 });"""},
+      {table: "t", inputs: ["score"], outputs: ["grade"], rules: [
+        [">= 75", "'A'"],
+        [">= 50", "'B'"],
+        ["", "'C'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{answers: [true, true, true, false]}, {grade: "A"}],
+    [{answers: [true, false, true, false]}, {grade: "B"}],
+    [{answers: []}, {grade: "C"}],
+  ],
+}

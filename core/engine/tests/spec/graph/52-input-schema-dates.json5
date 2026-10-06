@@ -1,0 +1,872 @@
+// Input schema date fields.
+//
+// A string property declared `format: date` or `format: date-time` is validated with the engine's
+// own date parser and then becomes a date value on the input node (`nodes/input/dates.rs`,
+// `DeclaredDates`). Downstream nodes see a date (`type(x) == 'date'`), and the result renders an
+// untouched date as its source text. Chapter 19 covers the basics and chapter 28 the tables; this
+// chapter pins which schema shapes convert, which texts the formats accept, where in the request
+// conversion reaches (nested objects, arrays, combinators, references), and how the converted
+// values behave in expressions, switches, tables, functions and sub-decisions.
+//
+// A schema counts as a declared date when it has `format: date|date-time`, a `type` of `string`
+// or `[string, null]`, and otherwise only annotation keys; or when it is an `anyOf` of exactly a
+// declared date and `{type: null}`. Properties are followed through `properties` and `items`
+// (and the first `anyOf`/`oneOf`/`allOf` variant that has them).
+//
+// The compiled engine sends inputs whose schema mentions a date format through a row path rather
+// than the columnar pre-check, so most suites mix valid, invalid, null and missing values.
+// Evaluation time is fixed at 2025-03-20T10:15:30Z, UTC.
+
+// ---------------------------------------------------------------------------------------------
+// Which texts the formats accept. Both formats use the same lenient parser.
+{
+  name: "accepted text: format date",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {day: {type: "string", format: "date"}}}},
+      {expression: "calc", passThrough: true, fields: {kind: "type(day)", y: "year(day)", m: "monthOfYear(day)", dd: "dayOfMonth(day)"}},
+    ],
+  },
+  cases: [
+    [{day: "2024-01-31"}, {day: "2024-01-31", kind: "date", y: 2024, m: 1, dd: 31}],
+    [{day: "2024-02-29"}, {day: "2024-02-29", kind: "date", y: 2024, m: 2, dd: 29}],
+    [{day: "2024/01/31"}, {day: "2024/01/31", kind: "date", y: 2024, m: 1, dd: 31}],
+    [{day: "20240131"}, {day: "20240131", kind: "date", y: 2024, m: 1, dd: 31}],
+    [{day: "2024-05"}, {day: "2024-05", kind: "date", y: 2024, m: 5, dd: 1}],
+    [{day: "2024"}, {day: "2024", kind: "date", y: 2024, m: 1, dd: 1}],
+    [{day: "2024-01-31T10:00:00Z"}, {day: "2024-01-31T10:00:00Z", kind: "date", y: 2024, m: 1, dd: 31}, "question: format date accepts a full date-time text (both formats share one lenient parser)"],
+    [{day: "2024-01-31 10:00"}, {day: "2024-01-31 10:00", kind: "date", y: 2024, m: 1, dd: 31}],
+    [{day: "2025-3-8"}, {day: "2025-3-8", kind: "date", y: 2025, m: 3, dd: 8}],
+  ],
+}
+
+{
+  name: "rejected text: format date",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {day: {type: "string", format: "date"}}}},
+      {expression: "calc", fields: {kind: "type(day)"}},
+    ],
+  },
+  cases: [
+    [{day: "2024-01-31"}, {kind: "date"}],
+    [{day: "2023-02-29"}, "!error: /day"],
+    [{day: "2024-13-01"}, "!error: /day"],
+    [{day: "2024-00-10"}, "!error: /day"],
+    [{day: "31/01/2024"}, "!error: /day"],
+    [{day: "Jan 31 2024"}, "!error: /day"],
+    [{day: ""}, "!error: /day"],
+    [{day: " 2024-01-31"}, {kind: "date"}, "question: leading whitespace is accepted by format date"],
+    [{day: "tomorrow"}, "!error: /day"],
+    [{day: 1706659200}, "!error: /day"],
+    [{day: true}, "!error: /day"],
+    [{day: ["2024-01-31"]}, "!error: /day"],
+  ],
+}
+
+{
+  name: "accepted text: format date-time with offsets and fractions",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["at"], properties: {at: {type: "string", format: "date-time"}}}},
+      {expression: "calc", passThrough: true, fields: {epoch: "dateString(at)", h: "at.hour()"}},
+    ],
+  },
+  cases: [
+    [{at: "2024-01-31T10:00:00Z"}, {at: "2024-01-31T10:00:00Z", epoch: "2024-01-31 10:00:00", h: 10}],
+    [{at: "2024-01-31T10:00:00.250Z"}, {at: "2024-01-31T10:00:00.250Z", epoch: "2024-01-31 10:00:00.250", h: 10}],
+    [{at: "2024-01-31T10:00:00+02:00"}, {at: "2024-01-31T10:00:00+02:00", epoch: "2024-01-31 08:00:00", h: 8}],
+    [{at: "2024-01-31T23:30:00-05:00"}, {at: "2024-01-31T23:30:00-05:00", epoch: "2024-02-01 04:30:00", h: 4}],
+    [{at: "2024-01-31T10:00"}, {at: "2024-01-31T10:00", epoch: "2024-01-31 10:00:00", h: 10}],
+    [{at: "2024-01-31"}, {at: "2024-01-31", epoch: "2024-01-31 00:00:00", h: 0}],
+    [{at: "2024-01-31T25:00:00Z"}, "!error: /at"],
+    [{at: "2024-01-31T10:00:00+25:00"}, "!error: /at"],
+    [{}, "!error: at"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Which schema shapes convert.
+{
+  name: "shapes: annotations keep the conversion",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {
+        a: {type: "string", format: "date", title: "A", description: "a date", examples: ["2024-01-01"], $comment: "c"},
+        b: {type: "string", format: "date-time", default: "2024-01-01T00:00:00Z", deprecated: true, readOnly: false},
+      }}},
+      {expression: "calc", fields: {a: "type(a)", b: "type(b)"}},
+    ],
+  },
+  cases: [
+    [{a: "2024-01-01", b: "2024-01-01T00:00:00Z"}, {a: "date", b: "date"}],
+    [{a: "2024-01-01"}, {a: "date", b: "null"}],
+    [{b: "2025-03-20T10:15:30Z"}, {a: "null", b: "date"}],
+  ],
+}
+
+{
+  name: "shapes: nullable through the type list",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {
+        a: {type: ["string", "null"], format: "date"},
+        b: {type: ["null", "string"], format: "date-time"},
+      }}},
+      {expression: "calc", fields: {a: "type(a)", b: "type(b)"}},
+    ],
+  },
+  cases: [
+    [{a: "2024-01-01", b: "2024-01-01T00:00:00Z"}, {a: "date", b: "date"}],
+    [{a: null, b: null}, {a: "null", b: "null"}],
+    [{}, {a: "null", b: "null"}],
+    [{a: "nope"}, "!error: /a"],
+  ],
+}
+
+{
+  name: "shapes: anyOf of a date and null converts, in either order",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {
+        a: {anyOf: [{type: "string", format: "date"}, {type: "null"}]},
+        b: {anyOf: [{type: "null"}, {type: "string", format: "date-time"}], description: "nullable"},
+      }}},
+      {expression: "calc", fields: {a: "type(a)", b: "type(b)"}},
+    ],
+  },
+  cases: [
+    [{a: "2024-01-01", b: "2024-01-01T00:00:00Z"}, {a: "date", b: "date"}],
+    [{a: null, b: null}, {a: "null", b: "null"}],
+    [{a: "2024-01-01"}, {a: "date", b: "null"}],
+    [{b: "x"}, "!error: /b"],
+  ],
+}
+
+{
+  name: "shapes: oneOf of a date and null is validated but not converted",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {a: {oneOf: [{type: "string", format: "date"}, {type: "null"}]}}}},
+      {expression: "calc", fields: {a: "type(a)"}},
+    ],
+  },
+  cases: [
+    [{a: "2024-01-01"}, {a: "string"}, "question: oneOf [date, null] is the same nullable date as anyOf [date, null], yet it stays a string"],
+    [{a: null}, {a: "null"}],
+    [{a: "x"}, "!error: /a"],
+  ],
+}
+
+{
+  name: "shapes: a date with validation keywords is validated but not converted",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {
+        len: {type: "string", format: "date", minLength: 10},
+        pat: {type: "string", format: "date", pattern: "^2024"},
+        en: {type: "string", format: "date", enum: ["2024-01-01", "2024-12-31"]},
+      }}},
+      {expression: "calc", fields: {len: "type(len)", pat: "type(pat)", en: "type(en)"}},
+    ],
+  },
+  cases: [
+    [{len: "2024-01-01"}, {len: "string", pat: "null", en: "null"}, "question: adding a validation keyword (minLength) to a date field turns off the date conversion, while annotation keywords keep it"],
+    [{pat: "2024-06-01"}, {len: "null", pat: "string", en: "null"}, "question: adding a validation keyword (pattern) to a date field turns off the date conversion, while annotation keywords keep it"],
+    [{en: "2024-12-31"}, {len: "null", pat: "null", en: "string"}, "question: adding a validation keyword (enum) to a date field turns off the date conversion, while annotation keywords keep it"],
+    [{len: "2024"}, "!error: /len"],
+    [{pat: "2025-01-01"}, "!error: /pat"],
+    [{en: "2024-06-01"}, "!error: /en"],
+  ],
+}
+
+{
+  name: "shapes: format without a string type is validated but not converted",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {a: {format: "date"}}}},
+      {expression: "calc", fields: {a: "type(a)"}},
+    ],
+  },
+  cases: [
+    [{a: "2024-01-01"}, {a: "string"}, "question: `{format: date}` without `type: string` validates the text as a date but leaves it a string"],
+    [{a: "nope"}, "!error: /a"],
+    [{a: 5}, {a: "number"}],
+  ],
+}
+
+{
+  name: "shapes: other formats never convert",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {t: {type: "string", format: "time"}, s: {type: "string"}}}},
+      {expression: "calc", fields: {t: "type(t)", s: "type(s)"}},
+    ],
+  },
+  cases: [
+    [{t: "10:00:00Z", s: "2024-01-01"}, {t: "string", s: "string"}],
+    [{s: "2024-01-01T00:00:00Z"}, {t: "null", s: "string"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Where conversion reaches.
+{
+  name: "reach: nested objects at several depths",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {
+        policy: {type: "object", properties: {
+          start: {type: "string", format: "date"},
+          holder: {type: "object", properties: {dob: {type: "string", format: "date"}, name: {type: "string"}}},
+        }},
+      }}},
+      {expression: "calc", fields: {start: "type(policy.start)", dob: "type(policy.holder.dob)", ageAtStart: "policy.start.diff(policy.holder.dob, 'year')"}},
+    ],
+  },
+  cases: [
+    [{policy: {start: "2024-06-01", holder: {dob: "1990-06-02", name: "x"}}}, {start: "date", dob: "date", ageAtStart: 33}],
+    [{policy: {start: "2024-06-01", holder: {dob: "1990-06-01"}}}, {start: "date", dob: "date", ageAtStart: 34}],
+    [{policy: {start: "2024-06-01"}}, {start: "date", dob: "null"}],
+    [{policy: {start: "2024-06-01", holder: {dob: "1990-02-30"}}}, "!error: /policy/holder/dob"],
+  ],
+}
+
+{
+  name: "reach: arrays of date strings",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {days: {type: "array", items: {type: "string", format: "date"}}}}},
+      {expression: "calc", fields: {kinds: "map(days, type(#))", last: "max(days)", first: "min(days)"}},
+    ],
+  },
+  cases: [
+    [{days: ["2024-03-01", "2024-01-15", "2024-02-10"]}, {kinds: ["date", "date", "date"], last: "2024-03-01", first: "2024-01-15"}],
+    [{days: ["2025-01-01"]}, {kinds: ["date"], last: "2025-01-01", first: "2025-01-01"}],
+    [{days: ["2024-01-01", "2024/02/01"]}, {kinds: ["date", "date"], last: "2024/02/01", first: "2024-01-01"}],
+    [{days: ["2024-01-01", "x"]}, "!error: /days/1"],
+    [{days: ["2024-01-01", null]}, "!error: /days/1"],
+  ],
+}
+
+{
+  name: "reach: arrays of objects with dates, mapped and filtered",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["visits"], properties: {visits: {type: "array", items: {
+        type: "object", required: ["on"], properties: {on: {type: "string", format: "date"}, note: {type: "string"}},
+      }}}}},
+      {expression: "calc", fields: {
+        recent: "len(filter(visits, #.on >= d('2025-01-01')))",
+        months: "map(visits, monthOfYear(#.on))",
+        latest: "len(visits) > 0 ? max(map(visits, #.on)) : null",
+      }},
+    ],
+  },
+  cases: [
+    [{visits: [{on: "2024-12-31"}, {on: "2025-01-01"}, {on: "2025-03-01", note: "x"}]}, {recent: 2, months: [12, 1, 3], latest: "2025-03-01"}],
+    [{visits: [{on: "2023-05-05"}]}, {recent: 0, months: [5], latest: "2023-05-05"}],
+    [{visits: []}, {recent: 0, months: []}],
+    [{visits: [{note: "no date"}]}, "!error: /visits/0"],
+  ],
+}
+
+{
+  name: "reach: nullable dates inside array items",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {tasks: {type: "array", items: {type: "object", properties: {
+        due: {type: ["string", "null"], format: "date"},
+      }}}}}},
+      {expression: "calc", fields: {kinds: "map(tasks, type(#.due))", open: "len(filter(tasks, #.due == null))"}},
+    ],
+  },
+  cases: [
+    [{tasks: [{due: "2025-01-01"}, {due: null}, {}]}, {kinds: ["date", "null", "null"], open: 2}],
+    [{tasks: [{due: "2025-01-01"}]}, {kinds: ["date"], open: 0}],
+    [{tasks: []}, {kinds: [], open: 0}],
+  ],
+}
+
+{
+  name: "reach: tuple items are validated but not converted",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {range: {type: "array", items: [{type: "string", format: "date"}, {type: "string", format: "date"}]}}}},
+      {expression: "calc", fields: {kinds: "map(range, type(#))"}},
+    ],
+  },
+  cases: [
+    [{range: ["2024-01-01", "2024-12-31"]}, {kinds: ["string", "string"]}, "question: tuple-form items declare both members as dates but conversion only follows a single `items` schema"],
+    [{range: ["2024-01-01", "x"]}, "!error: /range/1"],
+  ],
+}
+
+{
+  name: "reach: additionalProperties dates are validated but not converted",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {holidays: {type: "object", additionalProperties: {type: "string", format: "date"}}}}},
+      {expression: "calc", fields: {xmas: "type(holidays.xmas)"}},
+    ],
+  },
+  cases: [
+    [{holidays: {xmas: "2024-12-25"}}, {xmas: "string"}, "question: a date declared through additionalProperties is validated as a date but stays a string"],
+    [{holidays: {xmas: "x"}}, "!error: /holidays/xmas"],
+    [{holidays: {}}, {xmas: "null"}],
+  ],
+}
+
+{
+  name: "reach: a date behind $ref is validated but not converted",
+  graph: {
+    nodes: [
+      {input: "request", schema: {
+        type: "object",
+        definitions: {day: {type: "string", format: "date"}},
+        properties: {from: {$ref: "#/definitions/day"}},
+      }},
+      {expression: "calc", fields: {from: "type(from)"}},
+    ],
+  },
+  cases: [
+    [{from: "2024-01-01"}, {from: "string"}, "question: a date declared through $ref is validated as a date but stays a string"],
+    [{from: "x"}, "!error: /from"],
+    [{}, {from: "null"}],
+  ],
+}
+
+{
+  name: "reach: properties under allOf convert",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", allOf: [{properties: {start: {type: "string", format: "date"}}}]}},
+      {expression: "calc", fields: {start: "type(start)"}},
+    ],
+  },
+  cases: [
+    [{start: "2024-01-01"}, {start: "date"}],
+    [{start: "x"}, "!error: /start"],
+    [{}, {start: "null"}],
+  ],
+}
+
+{
+  name: "reach: properties under oneOf only follow the first variant",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["pay"], properties: {pay: {oneOf: [
+        {type: "object", required: ["card"], properties: {card: {type: "string"}, expires: {type: "string", format: "date"}}},
+        {type: "object", required: ["iban"], properties: {iban: {type: "string"}, mandate: {type: "string", format: "date"}}},
+      ]}}}},
+      {expression: "calc", fields: {expires: "type(pay.expires)", mandate: "type(pay.mandate)"}},
+    ],
+  },
+  cases: [
+    [{pay: {card: "4111", expires: "2027-01-31"}}, {expires: "date", mandate: "null"}],
+    [{pay: {iban: "DE00", mandate: "2024-05-01"}}, {expires: "null", mandate: "date"}, "bug: conversion follows only the first oneOf variant with properties, so the second variant's date stays a string"],
+    [{pay: {iban: "DE00", mandate: "x"}}, "!error: /pay"],
+  ],
+}
+
+{
+  name: "reach: a root-level properties map converts, siblings stay strings",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {due: {type: "string", format: "date"}}}},
+      {expression: "calc", fields: {due: "type(due)", other: "type(other)", nested: "type(meta.due)"}},
+    ],
+  },
+  cases: [
+    [{due: "2024-01-01", other: "2024-01-01", meta: {due: "2024-01-01"}}, {due: "date", other: "string", nested: "string"}],
+    [{other: "2024-01-01"}, {due: "null", other: "string", nested: "null"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Converted dates in expressions.
+{
+  name: "expressions: arithmetic and component functions",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["start"], properties: {start: {type: "string", format: "date"}, days: {type: "integer"}}}},
+      {expression: "calc", fields: {
+        end: "start.add(days ?? 30, 'd')",
+        endMonth: "start.add(days ?? 30, 'd').month()",
+        startOfMonth: "start.startOf('month')",
+        weekday: "start.weekday()",
+        isPast: "start < d()",
+      }},
+    ],
+  },
+  cases: [
+    [{start: "2024-01-31"}, {end: "2024-03-01T00:00:00Z", endMonth: 3, startOfMonth: "2024-01-01T00:00:00Z", weekday: 3, isPast: true}],
+    [{start: "2024-01-31", days: 1}, {end: "2024-02-01T00:00:00Z", endMonth: 2, startOfMonth: "2024-01-01T00:00:00Z", weekday: 3, isPast: true}],
+    [{start: "2025-12-01", days: 0}, {end: "2025-12-01T00:00:00Z", endMonth: 12, startOfMonth: "2025-12-01T00:00:00Z", weekday: 1, isPast: false}],
+    [{start: "2025-03-20T10:15:30Z", days: -1}, {end: "2025-03-19T10:15:30Z", endMonth: 3, startOfMonth: "2025-03-01T00:00:00Z", weekday: 4, isPast: false}],
+  ],
+}
+
+{
+  name: "expressions: comparisons between two declared dates and with strings",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["a", "b"], properties: {a: {type: "string", format: "date"}, b: {type: "string", format: "date-time"}}}},
+      {expression: "calc", fields: {
+        lt: "a < b",
+        eq: "a == b",
+        sameDay: "a.isSame(b, 'day')",
+        eqText: "a == '2024-01-01'",
+        inText: "a in ['2024-01-01', '2024-06-01']",
+      }},
+    ],
+  },
+  cases: [
+    [{a: "2024-01-01", b: "2024-01-01T00:00:00Z"}, {lt: false, eq: true, sameDay: true, eqText: true, inText: true}],
+    [{a: "2024-01-01", b: "2024-01-01T12:00:00Z"}, {lt: true, eq: false, sameDay: true, eqText: true, inText: true}],
+    [{a: "2024-06-01", b: "2024-01-01T12:00:00Z"}, {lt: false, eq: false, sameDay: false, eqText: false, inText: true}],
+    [{a: "2024-12-31", b: "2025-01-01T00:00:00+01:00"}, {lt: true, eq: false, sameDay: true, eqText: false, inText: false}],
+  ],
+}
+
+{
+  name: "expressions: a declared date in a template and string functions",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["day"], properties: {day: {type: "string", format: "date"}}}},
+      {expression: "calc", fields: {text: "string(day)", tpl: "`due ${day}`", fmt: "day.format('%d.%m.%Y')"}},
+    ],
+  },
+  cases: [
+    [{day: "2024-01-31"}, {text: "2024-01-31", tpl: "due 2024-01-31", fmt: "31.01.2024"}],
+    [{day: "2024/02/01"}, {text: "2024/02/01", tpl: "due 2024/02/01", fmt: "01.02.2024"}],
+  ],
+}
+
+{
+  name: "expressions: a declared date reached through $nodes",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {day: {type: "string", format: "date"}}}},
+      {expression: "calc", fields: {kind: "type($nodes.request.day)", y: "year($nodes.request.day)"}},
+    ],
+  },
+  cases: [
+    [{day: "2024-01-31"}, {kind: "date", y: 2024}],
+    [{day: "1999-12-31"}, {kind: "date", y: 1999}],
+  ],
+}
+
+{
+  name: "expressions: a missing declared date fails a date function",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {day: {type: "string", format: "date"}}}},
+      {expression: "calc", fields: {y: "day != null ? year(day) : -1"}},
+    ],
+  },
+  cases: [
+    [{day: "2024-01-31"}, {y: 2024}],
+    [{day: null}, {y: -1}],
+    [{}, {y: -1}],
+    [{day: "bad"}, "!error: /day"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Converted dates in switches and tables.
+{
+  name: "switch: routes on a declared date",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["due"], properties: {due: {type: "string", format: "date"}}}},
+      {switch: "route", when: ["due < d()", "due <= d().add(7, 'd')", ""]},
+      {expression: "late", fields: {status: "'overdue'", days: "d().diff(due, 'day')"}},
+      {expression: "soon", fields: {status: "'due soon'", days: "due.diff(d().startOf('day'), 'day')"}},
+      {expression: "later", fields: {status: "'scheduled'"}},
+    ],
+    edges: ["request -> route", "route:0 -> late -> output", "route:1 -> soon -> output", "route:2 -> later -> output"],
+  },
+  cases: [
+    [{due: "2025-03-10"}, {status: "overdue", days: 10}],
+    [{due: "2025-03-20"}, {status: "overdue", days: 0}],
+    [{due: "2025-03-21"}, {status: "due soon", days: 1}],
+    [{due: "2025-03-27"}, {status: "due soon", days: 7}],
+    [{due: "2025-03-28"}, {status: "scheduled"}],
+    [{due: "2025-28-03"}, "!error: /due"],
+  ],
+}
+
+{
+  name: "switch: collect mode over date conditions",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["at"], properties: {at: {type: "string", format: "date-time"}}}},
+      {switch: "flags", hit: "collect", when: ["at.weekday() >= 6", "at.hour() < 6 or at.hour() >= 22", "monthOfYear(at) == 12"]},
+      {expression: "weekend", fields: {weekend: "true"}},
+      {expression: "night", fields: {night: "true"}},
+      {expression: "december", fields: {december: "true"}},
+    ],
+    edges: ["request -> flags", "flags:0 -> weekend -> output", "flags:1 -> night -> output", "flags:2 -> december -> output"],
+  },
+  cases: [
+    [{at: "2024-12-21T23:00:00Z"}, {weekend: true, night: true, december: true}],
+    [{at: "2024-12-18T12:00:00Z"}, {december: true}],
+    [{at: "2024-06-15T05:00:00Z"}, {weekend: true, night: true}],
+    [{at: "2024-06-12T12:00:00Z"}, {}],
+    [{at: "2024-06-12T23:30:00+02:00"}, {}],
+  ],
+}
+
+{
+  name: "tables: interval and equality cells on a declared date-time",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["at"], properties: {at: {type: "string", format: "date-time"}}}},
+      {table: "season", hit: "collect", inputs: ["at"], outputs: ["tag"], rules: [
+        ["[d('2024-12-01')..d('2025-03-01'))", "'winter'"],
+        ["'2024-12-25T00:00:00Z'", "'christmas'"],
+        ["d('2025-01-01T00:00:00Z')", "'new year'"],
+        ["> d('2025-03-20')", "'future'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{at: "2024-12-25T00:00:00Z"}, [{tag: "winter"}, {tag: "christmas"}]],
+    [{at: "2025-01-01T00:00:00Z"}, [{tag: "winter"}, {tag: "new year"}]],
+    [{at: "2025-01-01T01:00:00+01:00"}, [{tag: "winter"}, {tag: "new year"}]],
+    [{at: "2025-03-01T00:00:00Z"}, []],
+    [{at: "2025-06-01T00:00:00Z"}, [{tag: "future"}]],
+  ],
+}
+
+{
+  name: "tables: date input column next to a number column, first hit",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["since", "spend"], properties: {since: {type: "string", format: "date"}, spend: {type: "number"}}}},
+      {table: "tier", inputs: ["since", "spend"], outputs: ["tier"], rules: [
+        ["< d('2020-01-01')", ">= 1000", "'platinum'"],
+        ["< d('2020-01-01')", "", "'gold'"],
+        ["", ">= 1000", "'silver'"],
+        ["", "", "'basic'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{since: "2019-12-31", spend: 1000}, {tier: "platinum"}],
+    [{since: "2019-12-31", spend: 10}, {tier: "gold"}],
+    [{since: "2020-01-01", spend: 5000}, {tier: "silver"}],
+    [{since: "2024-06-01", spend: 0}, {tier: "basic"}],
+    [{since: "2024-06-01", spend: "0"}, "!error: /spend"],
+    [{since: "never", spend: 0}, "!error: /since"],
+  ],
+}
+
+{
+  name: "tables: loop over items with declared dates and outputs echoing them",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {invoices: {type: "array", items: {type: "object", required: ["due"], properties: {due: {type: "string", format: "date"}, amount: {type: "number"}}}}}}},
+      {table: "aging", executionMode: "loop", inputField: "invoices", outputPath: "aging", passThrough: true, inputs: ["d().diff(due, 'day')"], outputs: ["bucket"], rules: [
+        ["<= 0", "'current'"],
+        ["[1..30]", "'1-30'"],
+        ["", "'30+'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{invoices: [{due: "2025-03-25", amount: 1}, {due: "2025-03-01", amount: 2}, {due: "2024-12-01", amount: 3}]}, {
+      invoices: [{due: "2025-03-25", amount: 1}, {due: "2025-03-01", amount: 2}, {due: "2024-12-01", amount: 3}],
+      aging: [{due: "2025-03-25", amount: 1, bucket: "current"}, {due: "2025-03-01", amount: 2, bucket: "1-30"}, {due: "2024-12-01", amount: 3, bucket: "30+"}],
+    }],
+    [{invoices: []}, {invoices: [], aging: []}],
+    [{invoices: [{amount: 1}]}, "!error: /invoices/0"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Converted dates crossing node boundaries.
+{
+  name: "boundaries: a function node receives the source text",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {day: {type: "string", format: "date"}}}},
+      {function: "f", source: """
+export const handler = async (input) => {
+  return { kind: typeof input.day, day: input.day, len: input.day ? input.day.length : 0 };
+};
+"""},
+    ],
+  },
+  cases: [
+    [{day: "2024-01-31"}, {kind: "string", day: "2024-01-31", len: 10}],
+    [{day: "2024/01/31"}, {kind: "string", day: "2024/01/31", len: 10}],
+    [{}, {kind: "undefined", len: 0}],
+  ],
+}
+
+{
+  name: "boundaries: a function node output is plain text again downstream",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["day"], properties: {day: {type: "string", format: "date"}}}},
+      {function: "f", source: """
+export const handler = async (input) => ({ day: input.day });
+"""},
+      {expression: "calc", fields: {kind: "type(day)", year: "year(d(day))"}},
+    ],
+  },
+  cases: [
+    [{day: "2024-01-31"}, {kind: "string", year: 2024}],
+    [{day: "2023-07-04"}, {kind: "string", year: 2023}],
+  ],
+}
+
+{
+  name: "boundaries: a sub-decision without a schema receives the source text",
+  decisions: {
+    child: {nodes: [
+      {expression: "calc", fields: {kind: "type(day)", next: "d(day).add(1, 'd')"}},
+    ]},
+  },
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {day: {type: "string", format: "date"}}}},
+      {decision: "call", key: "child"},
+    ],
+  },
+  cases: [
+    [{day: "2024-01-31"}, {kind: "string", next: "2024-02-01T00:00:00Z"}],
+    [{day: "2024/02/28"}, {kind: "string", next: "2024-02-29T00:00:00Z"}],
+  ],
+}
+
+{
+  name: "boundaries: a sub-decision with its own date schema",
+  decisions: {
+    child: {nodes: [
+      {input: "in", schema: {type: "object", required: ["day"], properties: {day: {type: "string", format: "date"}}}},
+      {expression: "calc", fields: {kind: "type(day)", q: "ceil(monthOfYear(day) / 3)"}},
+    ]},
+  },
+  graph: {
+    nodes: [
+      {expression: "prep", fields: {day: "raw"}},
+      {decision: "call", key: "child"},
+    ],
+  },
+  cases: [
+    [{raw: "2024-01-31"}, {kind: "date", q: 1}],
+    [{raw: "2024-11-30"}, {kind: "date", q: 4}],
+    [{raw: "nope"}, "!error: NodeError"],
+    [{}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "boundaries: loop sub-decision over date items",
+  decisions: {
+    child: {nodes: [
+      {input: "in", schema: {type: "object", required: ["on"], properties: {on: {type: "string", format: "date"}}}},
+      {expression: "calc", fields: {weekend: "on.weekday() >= 6"}},
+    ]},
+  },
+  graph: {
+    nodes: [
+      {decision: "call", key: "child", inputField: "days", executionMode: "loop", outputPath: "flags"},
+    ],
+  },
+  cases: [
+    [{days: [{on: "2025-03-22"}, {on: "2025-03-24"}]}, {flags: [{weekend: true}, {weekend: false}]}],
+    [{days: []}, {flags: []}],
+    [{days: [{on: "2025-03-22"}, {on: "x"}]}, "!error: NodeError"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Rendering in the result.
+{
+  name: "rendering: untouched dates keep their source text, computed dates render as UTC",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["at"], properties: {at: {type: "string", format: "date-time"}}}},
+      {expression: "calc", fields: {same: "at", copy: "[at]", wrapped: "{when: at}", moved: "at.add(0, 'd')", utc: "at.tz('UTC')"}},
+    ],
+  },
+  cases: [
+    [{at: "2024-01-31T10:00:00+02:00"}, {same: "2024-01-31T10:00:00+02:00", copy: ["2024-01-31T10:00:00+02:00"], wrapped: {when: "2024-01-31T10:00:00+02:00"}, moved: "2024-01-31T08:00:00Z", utc: "2024-01-31T08:00:00Z"}],
+    [{at: "2024-01-31T10:00:00Z"}, {same: "2024-01-31T10:00:00Z", copy: ["2024-01-31T10:00:00Z"], wrapped: {when: "2024-01-31T10:00:00Z"}, moved: "2024-01-31T10:00:00Z", utc: "2024-01-31T10:00:00Z"}],
+    [{at: "2024-01-31"}, {same: "2024-01-31", copy: ["2024-01-31"], wrapped: {when: "2024-01-31"}, moved: "2024-01-31T00:00:00Z", utc: "2024-01-31T00:00:00Z"}],
+  ],
+}
+
+{
+  name: "rendering: dates in arrays and nested objects pass through unchanged",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {
+        days: {type: "array", items: {type: "string", format: "date"}},
+        meta: {type: "object", properties: {at: {type: "string", format: "date-time"}}},
+      }}},
+    ],
+  },
+  cases: [
+    [{days: ["2024/01/01", "20240102"], meta: {at: "2024-01-01T00:00:00.5Z"}}, {days: ["2024/01/01", "20240102"], meta: {at: "2024-01-01T00:00:00.5Z"}}],
+    [{days: []}, {days: []}],
+    [{meta: {at: "2024-01-01T00:00:00+00:00"}, other: 1}, {meta: {at: "2024-01-01T00:00:00+00:00"}, other: 1}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "rendering: passThrough keeps declared dates next to computed fields",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {start: {type: "string", format: "date"}, end: {type: "string", format: "date"}}}},
+      {expression: "calc", passThrough: true, fields: {nights: "end.diff(start, 'day')"}},
+    ],
+  },
+  cases: [
+    [{start: "2025-03-20", end: "2025-03-23"}, {start: "2025-03-20", end: "2025-03-23", nights: 3}],
+    [{start: "2025-12-30", end: "2026-01-02"}, {start: "2025-12-30", end: "2026-01-02", nights: 3}],
+    [{start: "2025-03-20", end: "2025-03-20"}, {start: "2025-03-20", end: "2025-03-20", nights: 0}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Rows that mix valid, invalid, null and missing dates, for the batch and columnar engines.
+{
+  name: "mixed rows: one date column with every presence",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {day: {type: ["string", "null"], format: "date"}, n: {type: "number"}}}},
+      {expression: "calc", fields: {kind: "type(day)", next: "day == null ? null : day.add(n ?? 1, 'd')"}},
+    ],
+  },
+  cases: [
+    [{day: "2024-01-31", n: 1}, {kind: "date", next: "2024-02-01T00:00:00Z"}],
+    [{day: null, n: 2}, {kind: "null"}],
+    [{n: 3}, {kind: "null"}],
+    [{day: "2024-13-01"}, "!error: /day"],
+    [{day: "2024-12-31"}, {kind: "date", next: "2025-01-01T00:00:00Z"}],
+    [{day: 20240101}, "!error: /day"],
+    [{day: "2024-01-31", n: "1"}, "!error: /n"],
+  ],
+}
+
+{
+  name: "mixed rows: nested date beside plain fields",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["account"], properties: {account: {type: "object", required: ["id"], properties: {
+        id: {type: "string"},
+        opened: {type: "string", format: "date"},
+        tier: {type: "string", enum: ["a", "b"]},
+      }}}}},
+      {expression: "calc", fields: {id: "account.id", years: "account.opened == null ? 0 : d().diff(account.opened, 'year')", tier: "account.tier ?? 'none'"}},
+    ],
+  },
+  cases: [
+    [{account: {id: "x", opened: "2020-03-20", tier: "a"}}, {id: "x", years: 5, tier: "a"}],
+    [{account: {id: "y", opened: "2020-03-21"}}, {id: "y", years: 4, tier: "none"}],
+    [{account: {id: "z"}}, {id: "z", years: 0, tier: "none"}],
+    [{account: {id: "w", tier: "c"}}, "!error: /account/tier"],
+    [{account: {id: "v", opened: "2020-02-30"}}, "!error: /account/opened"],
+    [{account: {opened: "2020-01-01"}}, "!error: /account"],
+  ],
+}
+
+{
+  name: "mixed rows: lists of dates of different lengths",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {days: {type: "array", items: {type: "string", format: "date"}}}}},
+      {expression: "calc", fields: {count: "len(days ?? [])", weekend: "len(filter(days ?? [], #.weekday() >= 6))"}},
+    ],
+  },
+  cases: [
+    [{days: ["2025-03-22", "2025-03-23", "2025-03-24"]}, {count: 3, weekend: 2}],
+    [{days: []}, {count: 0, weekend: 0}],
+    [{days: ["2025-03-20"]}, {count: 1, weekend: 0}],
+    [{}, {count: 0, weekend: 0}],
+    [{days: ["2025-03-20", "20.03.2025"]}, "!error: /days/1"],
+  ],
+}
+
+{
+  name: "mixed rows: date-looking strings in an undeclared field stay strings next to a declared one",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {due: {type: "string", format: "date"}, label: {type: "string"}}}},
+      {expression: "calc", fields: {due: "type(due)", label: "type(label)", same: "due == label"}},
+    ],
+  },
+  cases: [
+    [{due: "2024-01-01", label: "2024-01-01"}, {due: "date", label: "string", same: true}],
+    [{due: "2024-01-01", label: "x"}, {due: "date", label: "string", same: false}],
+    [{label: "2024-01-01"}, {due: "null", label: "string", same: false}],
+  ],
+}
+
+{
+  name: "mixed rows: date values in the request, declared and undeclared",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {due: {type: "string", format: "date-time"}, note: {type: "string"}}}},
+      {expression: "calc", fields: {due: "type(due)", other: "type(other)", note: "type(note)"}},
+    ],
+  },
+  cases: [
+    [{due: date("2024-01-31T00:00:00Z"), other: date("2024-01-31")}, {due: "date", other: "string", note: "null"}],
+    [{due: "2024-01-31T00:00:00Z", other: "2024-01-31"}, {due: "date", other: "string", note: "null"}],
+    [{note: date("2024-01-31")}, {due: "null", other: "null", note: "string"}],
+    [{other: date("2024-01-31")}, {due: "null", other: "string", note: "null"}],
+  ],
+}
+
+{
+  name: "mixed rows: a date format inside not/if subschemas only validates",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {code: {type: "string", not: {format: "date"}}}}},
+      {expression: "calc", fields: {kind: "type(code)", n: "len(code ?? '')"}},
+    ],
+  },
+  cases: [
+    [{code: "ABC"}, {kind: "string", n: 3}],
+    [{code: "2024-01-01"}, "!error: /code"],
+    [{code: "2024"}, "!error: /code"],
+    [{}, {kind: "null", n: 0}],
+    [{code: "X1"}, {kind: "string", n: 2}],
+  ],
+}
+
+{
+  name: "mixed rows: dates under a pre-check-shaped schema with nested arrays",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["id"], additionalProperties: false, properties: {
+        id: {type: "string"},
+        events: {type: "array", items: {type: "object", required: ["at"], additionalProperties: false, properties: {
+          at: {type: "string", format: "date-time"},
+          kind: {type: "string", enum: ["open", "close"]},
+        }}},
+      }}},
+      {expression: "calc", fields: {
+        id: "id",
+        opens: "len(filter(events ?? [], #.kind == 'open'))",
+        span: "len(events ?? []) < 2 ? 0 : max(map(events, #.at)).diff(min(map(events, #.at)), 'hour')",
+      }},
+    ],
+  },
+  cases: [
+    [{id: "a", events: [{at: "2025-03-20T08:00:00Z", kind: "open"}, {at: "2025-03-20T18:00:00Z", kind: "close"}]}, {id: "a", opens: 1, span: 10}],
+    [{id: "b", events: [{at: "2025-03-20T08:00:00Z"}]}, {id: "b", opens: 0, span: 0}],
+    [{id: "c"}, {id: "c", opens: 0, span: 0}],
+    [{id: "d", events: [{at: "2025-03-20T08:00:00Z", kind: "pause"}]}, "!error: /events/0/kind"],
+    [{id: "e", events: [{at: "2025-03-20T08:00:00Z", extra: 1}]}, "!error: /events/0"],
+    [{id: "f", events: [{at: "soon"}]}, "!error: /events/0/at"],
+    [{id: "g", extra: 1}, "!error: NodeError"],
+  ],
+}

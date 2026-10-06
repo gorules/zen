@@ -1,0 +1,642 @@
+// Decision tables, collect hit policy, and per-column `[]` collect outputs.
+//
+// A collect table evaluates every rule and returns an array with one object per matching rule,
+// in rule order. No match gives an empty array. A first-hit table whose output field ends in
+// `[]` keeps first-hit semantics for its plain columns and gathers that column's value from
+// every matching rule into an array.
+
+// --- Collect basics -------------------------------------------------------------------------
+
+{
+  name: "collect: every matching rule contributes one object, in rule order",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["amount"], outputs: ["flag"], rules: [
+        ["> 1000", "'large'"],
+        ["> 100", "'medium'"],
+        ["> 0", "'positive'"],
+        ["< 0", "'negative'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{amount: 5000}, [{flag: "large"}, {flag: "medium"}, {flag: "positive"}]],
+    [{amount: 500}, [{flag: "medium"}, {flag: "positive"}]],
+    [{amount: 1}, [{flag: "positive"}]],
+    [{amount: -1}, [{flag: "negative"}]],
+    [{amount: 0}, []],
+  ],
+}
+
+{
+  name: "collect: no matching rule yields an empty array",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["x"], outputs: ["y"], rules: [
+        ["1", "'one'"],
+        ["2", "'two'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 3}, []],
+    [{x: "1"}, []],
+    [{x: null}, []],
+    [{}, []],
+    [{x: 2}, [{y: "two"}]],
+  ],
+}
+
+{
+  name: "collect: a table with no rules yields an empty array",
+  graph: {
+    nodes: [{table: "t", hit: "collect", inputs: ["x"], outputs: ["y"], rules: []}],
+  },
+  cases: [
+    [{x: 1}, []],
+    [{}, []],
+  ],
+}
+
+{
+  name: "collect: a table with no input columns returns every rule",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: [], outputs: ["n"], rules: [["1"], ["2"], ["3"]]},
+    ],
+  },
+  cases: [
+    [{}, [{n: 1}, {n: 2}, {n: 3}]],
+    [{n: 9}, [{n: 1}, {n: 2}, {n: 3}]],
+  ],
+}
+
+{
+  name: "collect: wildcard rules match everything and keep their position",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["tier"], outputs: ["perk"], rules: [
+        ["", "'newsletter'"],
+        ["'gold'", "'lounge'"],
+        ["", "'support'"],
+        ["'gold', 'silver'", "'discount'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{tier: "gold"}, [{perk: "newsletter"}, {perk: "lounge"}, {perk: "support"}, {perk: "discount"}]],
+    [{tier: "silver"}, [{perk: "newsletter"}, {perk: "support"}, {perk: "discount"}]],
+    [{tier: "bronze"}, [{perk: "newsletter"}, {perk: "support"}]],
+    [{}, [{perk: "newsletter"}, {perk: "support"}]],
+    [{tier: null}, [{perk: "newsletter"}, {perk: "support"}]],
+  ],
+}
+
+{
+  name: "collect: identical matching rules produce duplicate entries",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["x"], outputs: ["y"], rules: [
+        ["> 0", "'p'"],
+        ["> 0", "'p'"],
+        ["> 5", "'big'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 1}, [{y: "p"}, {y: "p"}]],
+    [{x: 6}, [{y: "p"}, {y: "p"}, {y: "big"}]],
+    [{x: 0}, []],
+  ],
+}
+
+{
+  name: "collect: multiple input columns, each rule is a conjunction",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["country", "age"], outputs: ["rule"], rules: [
+        ["'US'", ">= 21", "'can-drink'"],
+        ["'DE'", ">= 16", "'can-drink'"],
+        ["", ">= 18", "'can-vote'"],
+        ["'US'", "", "'pays-us-tax'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{country: "US", age: 30}, [{rule: "can-drink"}, {rule: "can-vote"}, {rule: "pays-us-tax"}]],
+    [{country: "US", age: 19}, [{rule: "can-vote"}, {rule: "pays-us-tax"}]],
+    [{country: "DE", age: 17}, [{rule: "can-drink"}]],
+    [{country: "DE", age: 15}, []],
+    [{country: "FR", age: 18}, [{rule: "can-vote"}]],
+    [{country: "US"}, [{rule: "pays-us-tax"}]],
+  ],
+}
+
+// --- Output shape of each entry ------------------------------------------------------------
+
+{
+  name: "collect: several output columns, empty output cells are omitted per entry",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["x"], outputs: ["code", "message", "severity"], rules: [
+        ["> 10", "'E1'", "'too big'", "'error'"],
+        ["> 5", "'W1'", "", "'warn'"],
+        ["> 0", "", "", ""],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 11}, [{code: "E1", message: "too big", severity: "error"}, {code: "W1", severity: "warn"}, {}]],
+    [{x: 6}, [{code: "W1", severity: "warn"}, {}]],
+    [{x: 1}, [{}]],
+    [{x: 0}, []],
+  ],
+}
+
+{
+  name: "collect: nested dotted output fields build one nested object per entry",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["kind"], outputs: ["fee.name", "fee.amount", "meta.source"], rules: [
+        ["'card', 'wire'", "'processing'", "2.5", "'tbl'"],
+        ["'wire'", "'wire'", "15", "kind"],
+        ["", "'base'", "1", ""],
+      ]},
+    ],
+  },
+  cases: [
+    [{kind: "wire"}, [
+      {fee: {name: "processing", amount: 2.5}, meta: {source: "tbl"}},
+      {fee: {name: "wire", amount: 15}, meta: {source: "wire"}},
+      {fee: {name: "base", amount: 1}},
+    ]],
+    [{kind: "card"}, [
+      {fee: {name: "processing", amount: 2.5}, meta: {source: "tbl"}},
+      {fee: {name: "base", amount: 1}},
+    ]],
+    [{kind: "cash"}, [{fee: {name: "base", amount: 1}}]],
+  ],
+}
+
+{
+  name: "collect: output cells are expressions over the input",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["price"], outputs: ["label", "value"], rules: [
+        ["> 0", "'tax'", "price * 0.2"],
+        ["> 100", "'discount'", "-(price * 0.1)"],
+        ["", "'echo'", "price"],
+      ]},
+    ],
+  },
+  cases: [
+    [{price: 200}, [{label: "tax", value: 40}, {label: "discount", value: -20}, {label: "echo", value: 200}]],
+    [{price: 50}, [{label: "tax", value: 10}, {label: "echo", value: 50}]],
+    [{price: -1}, [{label: "echo", value: -1}]],
+    [{}, [{label: "echo", value: null}]],
+  ],
+}
+
+{
+  name: "collect: null output values stay inside the collected entries",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: [], outputs: ["a", "b"], rules: [
+        ["null", "1"],
+        ["2", "null"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, [{a: null, b: 1}, {a: 2, b: null}]],
+  ],
+}
+
+{
+  name: "collect: entries holding arrays and objects",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: [], outputs: ["v"], rules: [
+        ["[1, 2]"],
+        ["{k: 'v'}"],
+        ["[]"],
+        ["{}"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, [{v: [1, 2]}, {v: {k: "v"}}, {v: []}, {v: {}}]],
+  ],
+}
+
+// --- Collect with transform attributes and downstream nodes -----------------------------
+
+{
+  name: "collect: outputPath wraps the array under a key",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", outputPath: "hits", inputs: ["x"], outputs: ["y"], rules: [
+        ["> 0", "'a'"],
+        ["> 1", "'b'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 2}, {hits: [{y: "a"}, {y: "b"}]}],
+    [{x: 1}, {hits: [{y: "a"}]}],
+    [{x: 0}, {hits: []}],
+  ],
+}
+
+{
+  name: "collect: outputPath with passThrough keeps the input next to the array",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", passThrough: true, outputPath: "hits", inputs: ["x"], outputs: ["y"], rules: [
+        ["> 0", "'a'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 1}, {x: 1, hits: [{y: "a"}]}],
+    [{x: 0}, {x: 0, hits: []}],
+    [{x: 1, hits: "old"}, {x: 1, hits: [{y: "a"}]}],
+  ],
+}
+
+{
+  name: "collect: passThrough without outputPath replaces the input with the array",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", passThrough: true, inputs: ["x"], outputs: ["y"], rules: [
+        ["> 0", "'a'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 1}, [{y: "a"}], "question: merging an array result into the pass-through input object replaces the whole input; the input fields are lost"],
+    [{x: 0}, [], "question: merging an array result into the pass-through input object replaces the whole input; the input fields are lost"],
+  ],
+}
+
+{
+  name: "collect: a downstream expression reads the array through $",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", outputPath: "fees", inputs: ["kind"], outputs: ["amount"], rules: [
+        ["'a', 'b'", "10"],
+        ["'b'", "5"],
+        ["", "1"],
+      ]},
+      {expression: "sum", fields: {total: "sum(map(fees, #.amount))", count: "len(fees)"}},
+    ],
+  },
+  cases: [
+    [{kind: "a"}, {total: 11, count: 2}],
+    [{kind: "b"}, {total: 16, count: 3}],
+    [{kind: "c"}, {total: 1, count: 1}],
+  ],
+}
+
+{
+  name: "collect: a downstream expression on an unwrapped array result sees $root as the array",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["x"], outputs: ["v"], rules: [
+        ["> 0", "1"],
+        ["> 1", "2"],
+      ]},
+      {expression: "e", fields: {n: "len($root)", s: "sum(map($root, #.v))"}},
+    ],
+  },
+  cases: [
+    [{x: 2}, {n: 2, s: 3}],
+    [{x: 1}, {n: 1, s: 1}],
+    [{x: 0}, {n: 0, s: 0}],
+  ],
+}
+
+{
+  name: "collect: loop mode yields one array per element",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputField: "lines", executionMode: "loop", outputPath: "flags", inputs: ["qty", "price"], outputs: ["flag"], rules: [
+        ["> 10", "", "'bulk'"],
+        ["", "> 100", "'pricey'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{lines: [{qty: 20, price: 200}, {qty: 1, price: 1}, {qty: 1, price: 500}]}, {flags: [[{flag: "bulk"}, {flag: "pricey"}], [], [{flag: "pricey"}]]}],
+    [{lines: []}, {flags: []}],
+  ],
+}
+
+{
+  name: "collect: two collect tables meeting at the output node, one array wins",
+  graph: {
+    nodes: [
+      {table: "a", hit: "collect", inputs: [], outputs: ["from"], rules: [["'a'"]]},
+      {table: "b", hit: "collect", inputs: [], outputs: ["from"], rules: [["'b'"], ["'b2'"]]},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{}, [{from: "a"}], "question: arrays are not concatenated at a join; the merge keeps only the array of the first-declared edge (a), not the later one"],
+  ],
+}
+
+{
+  name: "collect: two collect tables under distinct outputPaths merge into one object",
+  graph: {
+    nodes: [
+      {table: "a", hit: "collect", outputPath: "left", inputs: ["x"], outputs: ["v"], rules: [["> 0", "1"], ["> 1", "2"]]},
+      {table: "b", hit: "collect", outputPath: "right", inputs: ["x"], outputs: ["v"], rules: [["< 5", "3"]]},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{x: 2}, {left: [{v: 1}, {v: 2}], right: [{v: 3}]}],
+    [{x: 9}, {left: [{v: 1}, {v: 2}], right: []}],
+    [{x: 0}, {left: [], right: [{v: 3}]}],
+  ],
+}
+
+// --- Large collect tables (eight or more rules use the equality index) -------------------
+
+{
+  name: "collect: large table returns every matching row in order across indexed and fallback rows",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["code"], outputs: ["r"], rules: [
+        ["'A'", "0"],
+        ["", "1"],
+        ["'B'", "2"],
+        ["'A', 'B'", "3"],
+        ["startsWith($, 'A')", "4"],
+        ["'C'", "5"],
+        ["'A'", "6"],
+        ["'D'", "7"],
+        ["'E'", "8"],
+      ]},
+    ],
+  },
+  cases: [
+    [{code: "A"}, [{r: 0}, {r: 1}, {r: 3}, {r: 4}, {r: 6}]],
+    [{code: "B"}, [{r: 1}, {r: 2}, {r: 3}]],
+    [{code: "AX"}, [{r: 1}, {r: 4}]],
+    [{code: "E"}, [{r: 1}, {r: 8}]],
+    [{code: "Z"}, [{r: 1}]],
+    [{}, [{r: 1}]],
+  ],
+}
+
+{
+  name: "collect: large numeric table with points and ranges",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["n"], outputs: ["r"], rules: [
+        ["1", "'eq1'"],
+        ["1, 2, 3", "'small'"],
+        ["[1..5]", "'range'"],
+        ["2", "'eq2'"],
+        ["> 2", "'gt2'"],
+        ["4", "'eq4'"],
+        ["5.0", "'eq5'"],
+        ["6", "'eq6'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 1}, [{r: "eq1"}, {r: "small"}, {r: "range"}]],
+    [{n: 2}, [{r: "small"}, {r: "range"}, {r: "eq2"}]],
+    [{n: 4}, [{r: "range"}, {r: "gt2"}, {r: "eq4"}]],
+    [{n: 5}, [{r: "range"}, {r: "gt2"}, {r: "eq5"}]],
+    [{n: 6}, [{r: "gt2"}, {r: "eq6"}]],
+    [{n: 0}, []],
+    [{n: "1"}, []],
+  ],
+}
+
+// --- Per-column collect `[]` in a first-hit table ----------------------------------------
+
+{
+  name: "column collect: a `[]` output gathers the column from every matching rule",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["score"], outputs: ["tags[]"], rules: [
+        ["> 90", "'excellent'"],
+        ["> 50", "'pass'"],
+        ["> 0", "'attempted'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{score: 95}, {tags: ["excellent", "pass", "attempted"]}],
+    [{score: 60}, {tags: ["pass", "attempted"]}],
+    [{score: 1}, {tags: ["attempted"]}],
+    [{score: 0}, {}],
+  ],
+}
+
+{
+  name: "column collect: plain columns take the first matching rule, `[]` columns take all",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["score"], outputs: ["grade", "tags[]"], rules: [
+        ["> 90", "'A'", "'excellent'"],
+        ["> 50", "'C'", "'pass'"],
+        ["> 0", "'F'", "'attempted'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{score: 95}, {grade: "A", tags: ["excellent", "pass", "attempted"]}],
+    [{score: 60}, {grade: "C", tags: ["pass", "attempted"]}],
+    [{score: 5}, {grade: "F", tags: ["attempted"]}],
+    [{score: -5}, {}],
+  ],
+}
+
+{
+  name: "column collect: an empty `[]` cell contributes nothing but the rule still matches",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["x"], outputs: ["first", "notes[]"], rules: [
+        ["> 10", "'big'", ""],
+        ["> 5", "'mid'", "'over five'"],
+        ["> 0", "", "'positive'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 11}, {first: "big", notes: ["over five", "positive"]}],
+    [{x: 6}, {first: "mid", notes: ["over five", "positive"]}],
+    [{x: 1}, {notes: ["positive"]}],
+    [{x: 0}, {}],
+  ],
+}
+
+{
+  name: "column collect: rules that match but contribute no values still produce an empty array",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["x"], outputs: ["notes[]"], rules: [
+        ["> 0", ""],
+        ["> 5", "'big'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 6}, {notes: ["big"]}],
+    [{x: 1}, {notes: []}],
+    [{x: 0}, {}],
+  ],
+}
+
+{
+  name: "column collect: the first matching rule's empty plain cell is not filled by later rules",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["x"], outputs: ["a", "b", "list[]"], rules: [
+        ["> 5", "'a-first'", "", "1"],
+        ["> 0", "'a-second'", "'b-second'", "2"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 6}, {a: "a-first", list: [1, 2]}],
+    [{x: 1}, {a: "a-second", b: "b-second", list: [2]}],
+  ],
+}
+
+{
+  name: "column collect: several `[]` columns collect independently",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["x"], outputs: ["codes[]", "levels[]"], rules: [
+        ["> 10", "'C1'", "3"],
+        ["> 5", "'C2'", ""],
+        ["> 0", "", "1"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 20}, {codes: ["C1", "C2"], levels: [3, 1]}],
+    [{x: 6}, {codes: ["C2"], levels: [1]}],
+    [{x: 1}, {codes: [], levels: [1]}],
+    [{x: -1}, {}],
+  ],
+}
+
+{
+  name: "column collect: dotted `[]` paths nest the collected array",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["x"], outputs: ["result.status", "result.reasons[]"], rules: [
+        ["> 100", "'rejected'", "'over limit'"],
+        ["> 50", "'review'", "'over half'"],
+        ["", "'ok'", ""],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 150}, {result: {status: "rejected", reasons: ["over limit", "over half"]}}],
+    [{x: 60}, {result: {status: "review", reasons: ["over half"]}}],
+    [{x: 1}, {result: {status: "ok", reasons: []}}],
+  ],
+}
+
+{
+  name: "column collect: whitespace before `[]` is trimmed from the path",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["x"], outputs: ["tags []"], rules: [
+        ["> 0", "'p'"],
+        ["", "'any'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 1}, {tags: ["p", "any"]}],
+    [{x: 0}, {tags: ["any"]}],
+  ],
+}
+
+{
+  name: "column collect: collected values of mixed types, including null and objects",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [], outputs: ["vals[]"], rules: [
+        ["1"],
+        ["'two'"],
+        ["null"],
+        ["{k: true}"],
+        ["[3]"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {vals: [1, "two", null, {k: true}, [3]]}],
+  ],
+}
+
+{
+  name: "column collect: passThrough merges the collected array into the input",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, inputs: ["x"], outputs: ["tags[]"], rules: [
+        ["> 0", "'p'"],
+        ["> 5", "'big'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 6}, {x: 6, tags: ["p", "big"]}],
+    [{x: 6, tags: ["old"]}, {x: 6, tags: ["p", "big"]}],
+    [{x: 0, tags: ["old"]}, {x: 0, tags: ["old"]}],
+  ],
+}
+
+{
+  name: "column collect: large first-hit table with a `[]` column",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["country"], outputs: ["zone", "docs[]"], rules: [
+        ["'US'", "'na'", "'passport'"],
+        ["'CA'", "'na'", "'passport'"],
+        ["'US', 'CA'", "", "'esta'"],
+        ["'DE'", "'eu'", "'id'"],
+        ["'FR'", "'eu'", "'id'"],
+        ["'DE', 'FR'", "", "'schengen'"],
+        ["'JP'", "'apac'", "'visa'"],
+        ["", "'other'", "'visa'"],
+        ["", "", "'photo'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{country: "US"}, {zone: "na", docs: ["passport", "esta", "visa", "photo"]}],
+    [{country: "FR"}, {zone: "eu", docs: ["id", "schengen", "visa", "photo"]}],
+    [{country: "JP"}, {zone: "apac", docs: ["visa", "visa", "photo"]}],
+    [{country: "BR"}, {zone: "other", docs: ["visa", "photo"]}],
+    [{}, {zone: "other", docs: ["visa", "photo"]}],
+  ],
+}
+
+{
+  name: "column collect: a `[]` column in a collect-policy table is written per entry, not gathered",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["x"], outputs: ["name", "tags[]"], rules: [
+        ["> 0", "'a'", "'t1'"],
+        ["> 5", "'b'", "'t2'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 6}, [{name: "a", tags: "t1"}, {name: "b", tags: "t2"}], "question: under the collect hit policy the `[]` suffix is stripped and each entry gets a scalar value; whether it should wrap each value in a one-element array (or be rejected) is unspecified"],
+    [{x: 1}, [{name: "a", tags: "t1"}], "question: under the collect hit policy the `[]` suffix is stripped and each entry gets a scalar value; whether it should wrap each value in a one-element array (or be rejected) is unspecified"],
+    [{x: 0}, []],
+  ],
+}

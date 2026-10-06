@@ -1,0 +1,1284 @@
+// Decision table outputs: how a matched row becomes an object. Output fields are dot paths,
+// cells are standard expressions, empty cells write nothing, `[]` suffixed columns collect
+// across matched rows, and transform attributes (passThrough, outputPath) merge the result
+// with the node input.
+
+// ---------------------------------------------------------------------------------------
+// Flat output fields: every non-empty cell of the matched row writes its field.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "flat outputs of the first matching row",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["kind", "score"], rules: [
+        ["> 10", "'big'", "3"],
+        ["> 0", "'small'", "2"],
+        ["", "'none'", "1"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 20}, {kind: "big", score: 3}],
+    [{n: 5}, {kind: "small", score: 2}],
+    [{n: 0}, {kind: "none", score: 1}],
+    [{n: -1.5}, {kind: "none", score: 1}],
+    [{}, {kind: "none", score: 1}],
+    [{n: null}, {kind: "none", score: 1}],
+    [{n: "20"}, {kind: "none", score: 1}],
+  ],
+}
+
+{
+  name: "a table with no input columns always matches its first row",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [], outputs: ["a", "b"], rules: [
+        ["1", "'x'"],
+        ["2", "'y'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {a: 1, b: "x"}],
+    [{a: 99}, {a: 1, b: "x"}],
+  ],
+}
+
+{
+  name: "a table with no rules produces nothing",
+  graph: {
+    nodes: [{table: "t", inputs: ["n"], outputs: ["a"], rules: []}],
+  },
+  cases: [
+    [{n: 1}, {}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "no matching row produces an empty result, not an error",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["a"], rules: [
+        ["> 100", "1"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 1}, {}],
+    [{n: 101}, {a: 1}],
+    [{}, {}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Nested output paths: `a.b` builds intermediate objects; sibling paths share them.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "a dotted output field builds nested objects",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["result.tier", "result.limits.max"], rules: [
+        ["> 10", "'gold'", "n * 10"],
+        ["", "'basic'", "100"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 11}, {result: {tier: "gold", limits: {max: 110}}}],
+    [{n: 1}, {result: {tier: "basic", limits: {max: 100}}}],
+    [{}, {result: {tier: "basic", limits: {max: 100}}}],
+  ],
+}
+
+{
+  name: "sibling dotted fields share their parent object",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [], outputs: ["a.x", "b", "a.y", "a.z.w"], rules: [
+        ["1", "2", "3", "4"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {a: {x: 1, y: 3, z: {w: 4}}, b: 2}],
+  ],
+}
+
+{
+  name: "deeply nested output path",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["k"], outputs: ["a.b.c.d.e"], rules: [
+        ["'x'", "k"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{k: "x"}, {a: {b: {c: {d: {e: "x"}}}}}],
+    [{k: "y"}, {a: {b: {c: {d: {e: "other"}}}}}],
+  ],
+}
+
+{
+  name: "a numeric path segment creates an object key, not an array",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [], outputs: ["items.0", "items.1.name"], rules: [
+        ["'first'", "'second'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {items: {"0": "first", "1": {name: "second"}}}],
+  ],
+}
+
+{
+  name: "a nested path whose parent was written as a scalar is dropped",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [], outputs: ["a", "a.b"], rules: [
+        ["1", "2"],
+        ["", ""],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {a: 1}, "question: `a.b` is silently dropped because `a` already holds a scalar; no error is raised"],
+  ],
+}
+
+{
+  name: "a scalar field written after a nested one replaces the parent object",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [], outputs: ["a.b", "a"], rules: [
+        ["2", "1"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {a: 1}],
+  ],
+}
+
+{
+  name: "an object cell and a nested field merge in column order",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [], outputs: ["a", "a.c"], rules: [
+        ["{b: 1}", "2"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {a: {b: 1, c: 2}}],
+  ],
+}
+
+{
+  name: "output field names keep spaces and special characters",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [], outputs: ["my field", "a-b", "$x", "  padded  "], rules: [
+        ["1", "2", "3", "4"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {"my field": 1, "a-b": 2, "$x": 3, padded: 4}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Output cell values: cells are standard expressions evaluated against the node input.
+// The column `type` is metadata for analysis and does not coerce runtime values.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "output cells produce every value type",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [], outputs: ["s", "n", "b", "arr", "obj", "neg", "dec"], rules: [
+        ["'text'", "42", "true", "[1, 'two', false]", "{k: 'v', nested: {x: 1}}", "-7", "0.1 + 0.2"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {s: "text", n: 42, b: true, arr: [1, "two", false], obj: {k: "v", nested: {x: 1}}, neg: -7, dec: 0.3}],
+  ],
+}
+
+{
+  name: "output cells read the node input",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["kind"], outputs: ["total", "label", "first", "count"], rules: [
+        ["'a'", "price * qty", "`${kind}-${qty}`", "items[0]", "len(items)"],
+        ["", "0", "'other'", "null", "0"],
+      ]},
+    ],
+  },
+  cases: [
+    [{kind: "a", price: 2.5, qty: 4, items: [9, 8]}, {total: 10, label: "a-4", first: 9, count: 2}],
+    [{kind: "a", price: 1, qty: 1, items: ["z"]}, {total: 1, label: "a-1", first: "z", count: 1}],
+    [{kind: "b", items: []}, {total: 0, label: "other", count: 0}],
+  ],
+}
+
+{
+  name: "output cells read nested input paths",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["customer.tier"], outputs: ["discount", "name"], rules: [
+        ["'gold'", "customer.base * 0.2", "customer.profile.name"],
+        ["", "0", "'anonymous'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{customer: {tier: "gold", base: 50, profile: {name: "Ann"}}}, {discount: 10, name: "Ann"}],
+    [{customer: {tier: "gold", base: 50}}, {discount: 10}],
+    [{customer: {tier: "silver"}}, {discount: 0, name: "anonymous"}],
+    [{}, {discount: 0, name: "anonymous"}],
+  ],
+}
+
+{
+  name: "the declared column type does not coerce output values",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["v"], outputs: [{field: "n", type: "number"}, {field: "s", type: "string"}, {field: "b", type: "boolean"}], rules: [
+        ["", "v", "v", "v"],
+      ]},
+    ],
+  },
+  cases: [
+    [{v: 1}, {n: 1, s: 1, b: 1}],
+    [{v: "1"}, {n: "1", s: "1", b: "1"}],
+    [{v: true}, {n: true, s: true, b: true}],
+    [{v: [1]}, {n: [1], s: [1], b: [1]}],
+  ],
+}
+
+{
+  name: "an output column with an empty type behaves as untyped",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [], outputs: [{field: "a", type: ""}, {field: "b", name: "Bee"}], rules: [
+        ["'x'", "2"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {a: "x", b: 2}],
+  ],
+}
+
+{
+  name: "output values are copies of the input, not shared references",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, inputs: [], outputs: ["copy"], rules: [
+        ["src"],
+      ]},
+    ],
+  },
+  cases: [
+    [{src: {a: 1}}, {src: {a: 1}, copy: {a: 1}}],
+    [{src: [1, 2]}, {src: [1, 2], copy: [1, 2]}],
+    [{src: "s"}, {src: "s", copy: "s"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Null and errors in output cells.
+// A top-level null output is dropped from the final graph result, a nested null is kept.
+// An output cell that fails to evaluate makes its row count as not matched.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "a top-level null output is absent from the graph result",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [], outputs: ["a", "b"], rules: [
+        ["null", "1"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {b: 1}],
+    [{a: 5}, {b: 1}],
+  ],
+}
+
+{
+  name: "a nested null output is kept",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [], outputs: ["r.a", "r.b"], rules: [
+        ["null", "1"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {r: {a: null, b: 1}}],
+  ],
+}
+
+{
+  name: "a missing reference in an output cell yields null",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [], outputs: ["a", "r.b"], rules: [
+        ["missing", "missing.deep"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {r: {b: null}}],
+    [{missing: 1}, {a: 1, r: {b: null}}],
+    [{missing: {deep: 2}}, {a: {deep: 2}, r: {b: 2}}],
+  ],
+}
+
+{
+  name: "a type error in an output cell skips the row and the next matching row wins",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["a", "b"], rules: [
+        ["> 0", "1", "n + 'x'"],
+        ["", "2", "'fallback'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 1}, {a: 2, b: "fallback"}, "question: a type error in an output cell (number + string) silently turns the row into a non-match"],
+    [{n: 0}, {a: 2, b: "fallback"}],
+  ],
+}
+
+{
+  name: "a failing output cell falls through to later rules",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["a", "b"], rules: [
+        ["> 0", "1", "date('nope')"],
+        ["", "2", "'fallback'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 1}, {a: 2, b: "fallback"}, "question: an output evaluation error silently turns the row into a non-match instead of failing the node"],
+    [{n: 0}, {a: 2, b: "fallback"}],
+  ],
+}
+
+{
+  name: "a failing output cell in the only matching row produces nothing",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [], outputs: ["a"], rules: [
+        ["date('nope')"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {}, "question: the error is swallowed; the table behaves as if no row matched"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Empty output cells write nothing: the key is absent, not null.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "empty output cells leave their field out",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["a", "b", "c.d"], rules: [
+        ["1", "'one'", "", ""],
+        ["2", "", "'two'", ""],
+        ["3", "", "", "3"],
+        ["", "", "", ""],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 1}, {a: "one"}],
+    [{n: 2}, {b: "two"}],
+    [{n: 3}, {c: {d: 3}}],
+    [{n: 4}, {}],
+  ],
+}
+
+{
+  name: "a row with all output cells empty still stops first hit",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["a"], rules: [
+        ["> 0", ""],
+        ["", "'later'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 1}, {}],
+    [{n: 0}, {a: "later"}],
+  ],
+}
+
+{
+  name: "an all-empty matching row and no match differ under outputPath",
+  graph: {
+    nodes: [
+      {table: "t", outputPath: "res", inputs: ["n"], outputs: ["a"], rules: [
+        ["> 0", ""],
+        ["0", "'zero'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 1}, {res: {}}],
+    [{n: 0}, {res: {a: "zero"}}],
+    [{n: -1}, {}],
+  ],
+}
+
+{
+  name: "empty output cells under passThrough keep the input value",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, inputs: ["n"], outputs: ["a", "b"], rules: [
+        ["> 0", "'new'", ""],
+        ["", "", "'new'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 1, a: "old", b: "old"}, {n: 1, a: "new", b: "old"}],
+    [{n: 0, a: "old", b: "old"}, {n: 0, a: "old", b: "new"}],
+    [{n: 0}, {n: 0, b: "new"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Duplicate output fields: columns write in order, so the last non-empty cell wins.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "duplicate output fields: the later column wins",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["x", "x"], rules: [
+        ["1", "'first'", "'second'"],
+        ["2", "'first'", ""],
+        ["3", "", "'second'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 1}, {x: "second"}],
+    [{n: 2}, {x: "first"}],
+    [{n: 3}, {x: "second"}],
+    [{n: 4}, {}],
+  ],
+}
+
+{
+  name: "a later null in a duplicate column overwrites an earlier value",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [], outputs: ["r.x", "r.x"], rules: [
+        ["1", "null"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {r: {x: null}}],
+  ],
+}
+
+{
+  name: "duplicate nested fields under a shared parent",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [], outputs: ["a.b", "a.c", "a.b"], rules: [
+        ["1", "2", "3"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {a: {b: 3, c: 2}}],
+  ],
+}
+
+{
+  name: "duplicate fields in a collect table, per row",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["n"], outputs: ["x", "x"], rules: [
+        ["> 0", "'a'", "'b'"],
+        ["> 1", "'c'", ""],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 2}, [{x: "b"}, {x: "c"}]],
+    [{n: 1}, [{x: "b"}]],
+    [{n: 0}, []],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Collect hit policy: an array of the matched rows' outputs, in rule order.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "collect returns every matching row in rule order",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["n"], outputs: ["v"], rules: [
+        ["> 0", "'pos'"],
+        ["> 10", "'big'"],
+        ["", "'any'"],
+        ["< 0", "'neg'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 20}, [{v: "pos"}, {v: "big"}, {v: "any"}]],
+    [{n: 5}, [{v: "pos"}, {v: "any"}]],
+    [{n: -1}, [{v: "any"}, {v: "neg"}]],
+    [{}, [{v: "any"}]],
+  ],
+}
+
+{
+  name: "collect with no match returns an empty array",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["n"], outputs: ["v"], rules: [
+        ["> 0", "1"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 0}, []],
+    [{n: 1}, [{v: 1}]],
+    [{}, []],
+  ],
+}
+
+{
+  name: "collect rows keep nested output paths",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["n"], outputs: ["r.code", "r.meta.n"], rules: [
+        ["> 0", "'A'", "n"],
+        ["> 1", "'B'", ""],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 2}, [{r: {code: "A", meta: {n: 2}}}, {r: {code: "B"}}]],
+    [{n: 1}, [{r: {code: "A", meta: {n: 1}}}]],
+  ],
+}
+
+{
+  name: "collect rows with all outputs empty become empty objects",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["n"], outputs: ["v"], rules: [
+        ["> 0", ""],
+        ["> 1", "2"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 2}, [{}, {v: 2}]],
+    [{n: 1}, [{}]],
+  ],
+}
+
+{
+  name: "collect skips a row whose output cell fails",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: [], outputs: ["v"], rules: [
+        ["1"],
+        ["date('nope')"],
+        ["3"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, [{v: 1}, {v: 3}], "question: a failing output cell drops the row silently instead of failing the node"],
+  ],
+}
+
+{
+  name: "collect skips a failing row when the table has an input column",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["n"], outputs: ["v"], rules: [
+        ["> 0", "1"],
+        ["> 0", "date('nope')"],
+        ["", "3"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 1}, [{v: 1}, {v: 3}], "question: a failing output cell drops the row silently instead of failing the node"],
+    [{n: 0}, [{v: 3}]],
+    [{}, [{v: 3}]],
+  ],
+}
+
+{
+  name: "collect rows keep null outputs when the table has an input column",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["n"], outputs: ["v", "w"], rules: [
+        ["> 0", "null", "n"],
+        ["", "n", "null"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 1}, [{v: null, w: 1}, {v: 1, w: null}]],
+    [{n: 0}, [{v: 0, w: null}]],
+    [{}, [{v: null, w: null}]],
+  ],
+}
+
+{
+  name: "collect rows keep null outputs inside each row",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: [], outputs: ["v", "w"], rules: [
+        ["null", "1"],
+        ["2", "null"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, [{v: null, w: 1}, {v: 2, w: null}]],
+  ],
+}
+
+{
+  name: "collect under outputPath nests the array",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", outputPath: "hits", inputs: ["n"], outputs: ["v"], rules: [
+        ["> 0", "1"],
+        ["> 1", "2"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 2}, {hits: [{v: 1}, {v: 2}]}],
+    [{n: 0}, {hits: []}],
+    [{}, {hits: []}],
+  ],
+}
+
+{
+  name: "collect under passThrough and outputPath keeps the input",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", passThrough: true, outputPath: "hits", inputs: ["n"], outputs: ["v"], rules: [
+        ["> 0", "1"],
+        ["> 1", "2"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 2}, {n: 2, hits: [{v: 1}, {v: 2}]}],
+    [{n: 0, hits: "old"}, {n: 0, hits: []}],
+    [{n: 1, hits: [{v: 9}, {v: 8}]}, {n: 1, hits: [{v: 1}]}],
+  ],
+}
+
+{
+  name: "collect under passThrough without outputPath",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", passThrough: true, inputs: ["n"], outputs: ["v"], rules: [
+        ["> 0", "1"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 1}, [{v: 1}], "question: the row array replaces the whole input, passThrough has no visible effect for collect tables without outputPath"],
+    [{n: 0}, [], "question: the empty row array replaces the whole input"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// `[]` suffix collect columns in a first-hit table: scalar columns come from the first
+// matched row, `[]` columns gather their cell from every matched row (empty cells skip).
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "first hit with a collect column gathers from all matching rows",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["tier", "tags[]"], rules: [
+        ["> 10", "'gold'", "'big'"],
+        ["> 0", "'silver'", "'positive'"],
+        ["", "'basic'", "'any'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 20}, {tier: "gold", tags: ["big", "positive", "any"]}],
+    [{n: 5}, {tier: "silver", tags: ["positive", "any"]}],
+    [{n: 0}, {tier: "basic", tags: ["any"]}],
+    [{}, {tier: "basic", tags: ["any"]}],
+  ],
+}
+
+{
+  name: "collect column with empty cells skips those rows",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["tier", "tags[]"], rules: [
+        ["> 10", "'gold'", ""],
+        ["> 0", "", "'positive'"],
+        ["", "", ""],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 20}, {tier: "gold", tags: ["positive"]}],
+    [{n: 5}, {tags: ["positive"]}],
+    [{n: 0}, {tags: []}],
+  ],
+}
+
+{
+  name: "collect column alone with no match produces nothing",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["tags[]"], rules: [
+        ["> 0", "'a'"],
+        ["> 1", "'b'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 2}, {tags: ["a", "b"]}],
+    [{n: 1}, {tags: ["a"]}],
+    [{n: 0}, {}],
+  ],
+}
+
+{
+  name: "a matched collect column with no non-empty cells is an empty array",
+  graph: {
+    nodes: [
+      {table: "t", outputPath: "r", inputs: ["n"], outputs: ["tags[]"], rules: [
+        ["> 0", ""],
+        ["> 1", "'b'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 2}, {r: {tags: ["b"]}}],
+    [{n: 1}, {r: {tags: []}}],
+    [{n: 0}, {}],
+  ],
+}
+
+{
+  name: "several collect columns gather independently",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["a[]", "b[]", "first"], rules: [
+        ["> 0", "1", "", "'r0'"],
+        ["> 1", "", "'x'", "'r1'"],
+        ["> 2", "3", "'y'", "'r2'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 3}, {a: [1, 3], b: ["x", "y"], first: "r0"}],
+    [{n: 2}, {a: [1], b: ["x"], first: "r0"}],
+    [{n: 1}, {a: [1], b: [], first: "r0"}],
+  ],
+}
+
+{
+  name: "collect columns on nested paths",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["r.tier", "r.flags[]", "audit.reasons[]"], rules: [
+        ["> 0", "'p'", "'positive'", "'n>0'"],
+        ["> 5", "'q'", "'large'", ""],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 6}, {r: {tier: "p", flags: ["positive", "large"]}, audit: {reasons: ["n>0"]}}],
+    [{n: 1}, {r: {tier: "p", flags: ["positive"]}, audit: {reasons: ["n>0"]}}],
+  ],
+}
+
+{
+  name: "collect column values keep every type, including null and objects",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [], outputs: ["v[]"], rules: [
+        ["1"],
+        ["'s'"],
+        ["null"],
+        ["{k: 1}"],
+        ["[1, 2]"],
+        ["missing"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {v: [1, "s", null, {k: 1}, [1, 2], null]}],
+    [{missing: true}, {v: [1, "s", null, {k: 1}, [1, 2], true]}],
+  ],
+}
+
+{
+  name: "collect column values keep every type when the table has an input column",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["k"], outputs: ["v[]"], rules: [
+        ["", "1"],
+        ["", "null"],
+        ["'x'", "{k: k}"],
+        ["", "missing"],
+      ]},
+    ],
+  },
+  cases: [
+    [{k: "x"}, {v: [1, null, {k: "x"}, null]}],
+    [{k: "y", missing: [1]}, {v: [1, null, [1]]}],
+    [{}, {v: [1, null, null]}],
+  ],
+}
+
+{
+  name: "collect column cells read the input of each row",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["score"], outputs: ["reasons[]"], rules: [
+        ["< 500", "`low score ${score}`"],
+        ["< 300", "'very low'"],
+        ["", "name"],
+      ]},
+    ],
+  },
+  cases: [
+    [{score: 200, name: "a"}, {reasons: ["low score 200", "very low", "a"]}],
+    [{score: 400, name: "b"}, {reasons: ["low score 400", "b"]}],
+    [{score: 900}, {reasons: [null]}],
+  ],
+}
+
+{
+  name: "a collect column with spaces before the suffix",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [], outputs: ["tags []", " other[] "], rules: [
+        ["1", "2"],
+        ["3", ""],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {tags: [1, 3], other: [2]}],
+  ],
+}
+
+{
+  name: "scalar columns come from the first matched row only",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["a", "b", "all[]"], rules: [
+        ["> 0", "'r0'", "", "0"],
+        ["> 1", "'r1'", "'r1'", "1"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 2}, {a: "r0", all: [0, 1]}],
+    [{n: 1}, {a: "r0", all: [0]}],
+  ],
+}
+
+{
+  name: "a failing collect cell drops that row from all collect columns",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["a[]", "b[]"], rules: [
+        ["> 0", "1", "'x'"],
+        ["> 1", "2", "date('nope')"],
+        ["> 2", "3", "'z'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 3}, {a: [1, 3], b: ["x", "z"]}, "question: an erroring collect cell silently drops the whole row, including its other collect cells"],
+    [{n: 1}, {a: [1], b: ["x"]}],
+  ],
+}
+
+{
+  name: "a failing scalar cell in a later row does not drop its collect cells",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["s", "c[]"], rules: [
+        ["> 0", "'ok'", "1"],
+        ["> 1", "date('nope')", "2"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 2}, {s: "ok", c: [1, 2]}],
+    [{n: 1}, {s: "ok", c: [1]}],
+  ],
+}
+
+{
+  name: "a failing scalar cell in the first matched row",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["s", "c[]"], rules: [
+        ["> 0", "date('nope')", "1"],
+        ["> 1", "'second'", "2"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 2}, {s: "second", c: [2]}, "question: the first matched row is dropped entirely and the second row provides the scalars"],
+    [{n: 1}, {}, "question: the only matched row is dropped, so the table produces nothing"],
+  ],
+}
+
+{
+  name: "a duplicate collect column: the later column replaces the earlier array",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [], outputs: ["x[]", "x[]"], rules: [
+        ["1", "'a'"],
+        ["2", ""],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {x: [1, 2, "a"]}, "bug: two collect columns writing one field should append into one array; the later column's array replaces the earlier one"],
+  ],
+}
+
+{
+  name: "a scalar column and a collect column on the same field",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [], outputs: ["x", "x[]"], rules: [
+        ["'scalar'", "1"],
+        ["'ignored'", "2"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {x: [1, 2]}, "question: the collected array overwrites the scalar column; no conflict is reported"],
+  ],
+}
+
+{
+  name: "a collect column in a collect table is written per row, not gathered",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["n"], outputs: ["v", "tags[]"], rules: [
+        ["> 0", "1", "'a'"],
+        ["> 1", "2", "'b'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 2}, [{v: 1, tags: "a"}, {v: 2, tags: "b"}], "question: under hit policy collect the `[]` suffix is stripped and each row holds the scalar; it is not wrapped in an array"],
+    [{n: 0}, []],
+  ],
+}
+
+{
+  name: "a collect column under passThrough replaces an input array",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, inputs: ["n"], outputs: ["tags[]"], rules: [
+        ["> 0", "'a'"],
+        ["> 1", "'b'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 2, tags: ["old"]}, {n: 2, tags: ["a", "b"]}],
+    [{n: 0, tags: ["old"]}, {n: 0, tags: ["old"]}],
+    [{n: 1}, {n: 1, tags: ["a"]}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// passThrough: the table output is merged over the node input. Objects merge deeply,
+// arrays and scalars replace, a top-level null output removes the input key.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "passThrough keeps input fields next to the outputs",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, inputs: ["n"], outputs: ["tier"], rules: [
+        ["> 10", "'gold'"],
+        ["", "'basic'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 11, other: "x"}, {n: 11, other: "x", tier: "gold"}],
+    [{n: 1}, {n: 1, tier: "basic"}],
+    [{}, {tier: "basic"}],
+  ],
+}
+
+{
+  name: "passThrough: an output overrides an input field of the same name",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, inputs: [], outputs: ["n", "s"], rules: [
+        ["n + 1", "'new'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 1, s: "old"}, {n: 2, s: "new"}],
+    [{n: 1, s: {deep: 1}}, {n: 2, s: "new"}],
+    [{n: 1, s: [1]}, {n: 2, s: "new"}],
+  ],
+}
+
+{
+  name: "passThrough merges nested outputs into nested input objects",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, inputs: [], outputs: ["customer.tier", "customer.flags.vip"], rules: [
+        ["'gold'", "true"],
+      ]},
+    ],
+  },
+  cases: [
+    [{customer: {name: "Ann", tier: "basic"}}, {customer: {name: "Ann", tier: "gold", flags: {vip: true}}}],
+    [{customer: {flags: {new: true}}}, {customer: {tier: "gold", flags: {new: true, vip: true}}}],
+    [{customer: "scalar"}, {customer: {tier: "gold", flags: {vip: true}}}],
+    [{}, {customer: {tier: "gold", flags: {vip: true}}}],
+  ],
+}
+
+{
+  name: "passThrough: an output object merges with, not replaces, the input object",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, inputs: [], outputs: ["cfg"], rules: [
+        ["{b: 2, c: {d: 4}}"],
+      ]},
+    ],
+  },
+  cases: [
+    [{cfg: {a: 1, c: {e: 5}}}, {cfg: {a: 1, b: 2, c: {d: 4, e: 5}}}],
+    [{cfg: [1]}, {cfg: {b: 2, c: {d: 4}}}],
+  ],
+}
+
+{
+  name: "passThrough: an output array replaces the input array",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, inputs: [], outputs: ["list"], rules: [
+        ["[3]"],
+      ]},
+    ],
+  },
+  cases: [
+    [{list: [1, 2]}, {list: [3]}],
+    [{list: {a: 1}}, {list: [3]}],
+  ],
+}
+
+{
+  name: "passThrough: a top-level null output removes the input field",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, inputs: [], outputs: ["a", "keep"], rules: [
+        ["null", "1"],
+      ]},
+    ],
+  },
+  cases: [
+    [{a: 1, b: 2}, {b: 2, keep: 1}],
+    [{b: 2}, {b: 2, keep: 1}],
+  ],
+}
+
+{
+  name: "passThrough: a nested null output removes the nested input field",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, inputs: [], outputs: ["r.a"], rules: [
+        ["null"],
+      ]},
+    ],
+  },
+  cases: [
+    [{r: {a: 1, b: 2}}, {r: {b: 2}}],
+    [{}, {r: {a: null}}, "question: with no input object to merge into, the nested null is kept"],
+  ],
+}
+
+{
+  name: "passThrough with no matching row returns the input unchanged",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, inputs: ["n"], outputs: ["a"], rules: [
+        ["> 0", "1"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 0, a: "kept"}, {n: 0, a: "kept"}],
+    [{n: 1, a: "kept"}, {n: 1, a: 1}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "passThrough with outputPath nests the outputs next to the input",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, outputPath: "result", inputs: ["n"], outputs: ["tier", "x.y"], rules: [
+        ["> 0", "'p'", "1"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 1}, {n: 1, result: {tier: "p", x: {y: 1}}}],
+    [{n: 1, result: {old: true}}, {n: 1, result: {old: true, tier: "p", x: {y: 1}}}],
+    [{n: 0, result: {old: true}}, {n: 0}, "question: no match writes result: null, which removes the input's result under passThrough"],
+  ],
+}
+
+{
+  name: "outputPath with a dotted path",
+  graph: {
+    nodes: [
+      {table: "t", outputPath: "a.b", inputs: [], outputs: ["c"], rules: [
+        ["1"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {a: {b: {c: 1}}}],
+    [{a: 1}, {a: {b: {c: 1}}}],
+  ],
+}
+
+{
+  name: "passThrough keeps the input when the table runs on a sub-object via inputField",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, inputField: "customer", inputs: ["age"], outputs: ["adult"], rules: [
+        [">= 18", "true"],
+        ["", "false"],
+      ]},
+    ],
+  },
+  cases: [
+    [{customer: {age: 20}, other: 1}, {customer: {age: 20}, other: 1, adult: true}],
+    [{customer: {age: 3}}, {customer: {age: 3}, adult: false}],
+    [{}, {adult: false}],
+  ],
+}
+
+{
+  name: "loop mode with passThrough merges each row's output into its item",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, executionMode: "loop", inputField: "items", outputPath: "items", inputs: ["price"], outputs: ["band", "tags[]"], rules: [
+        ["> 100", "'high'", "'expensive'"],
+        ["", "'normal'", "'item'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{items: [{price: 150}, {price: 10}]}, {items: [{price: 150, band: "high", tags: ["expensive", "item"]}, {price: 10, band: "normal", tags: ["item"]}]}],
+    [{items: []}, {items: []}],
+    [{items: [{}]}, {items: [{band: "normal", tags: ["item"]}]}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Table outputs flowing into later nodes.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "a downstream expression sees nested table outputs",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["r.v", "tags[]"], rules: [
+        ["> 0", "n * 2", "'a'"],
+        ["", "0", "'b'"],
+      ]},
+      {expression: "e", fields: {v: "r.v", count: "len(tags)"}},
+    ],
+  },
+  cases: [
+    [{n: 3}, {v: 6, count: 2}],
+    [{n: 0}, {v: 0, count: 1}],
+  ],
+}
+
+{
+  name: "a downstream node does not see the table input, and sees an empty object after no match",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["v"], rules: [
+        ["> 0", "1"],
+      ]},
+      {expression: "e", fields: {hasV: "v != null", n: "n"}},
+    ],
+  },
+  cases: [
+    [{n: 1}, {hasV: true}],
+    [{n: 0}, {hasV: false}],
+  ],
+}
+
+{
+  name: "a downstream expression iterates collect table rows via outputPath",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", outputPath: "rows", inputs: ["n"], outputs: ["w"], rules: [
+        ["> 0", "1"],
+        ["> 1", "2"],
+        ["> 2", "4"],
+      ]},
+      {expression: "e", fields: {total: "sum(map(rows, #.w))"}},
+    ],
+  },
+  cases: [
+    [{n: 3}, {total: 7}],
+    [{n: 1}, {total: 1}],
+    [{n: 0}, {total: 0}],
+  ],
+}

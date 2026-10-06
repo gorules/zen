@@ -1,0 +1,769 @@
+// Decision table blocks with the default `first` hit policy. Each input column names a
+// field; its cells are unary tests against that field (`$`). An empty cell is a wildcard. A
+// column without a field takes standard boolean expressions. Every output column without
+// a `[]` suffix is resolved on its own: it takes the value of the first matched row whose
+// cell in that column is non-empty (later rows fill columns an earlier match left empty).
+// A column no matched row resolves is written as null. Unlike graph tables, a cell or field
+// that fails to evaluate fails the whole policy evaluation.
+
+// ---------------------------------------------------------------------------
+// Basic first-hit selection.
+// ---------------------------------------------------------------------------
+{
+  name: "first matching row wins",
+  policy: {
+    models: {order: {amount: "number"}},
+    blocks: [{table: "discount", inputs: ["order.amount"], outputs: ["order.discount"], rules: [
+      [">= 1000", "0.15"],
+      [">= 500", "0.1"],
+      [">= 100", "0.05"],
+      ["", "0"],
+    ]}],
+  },
+  cases: [
+    [{order: {amount: 5000}}, {order: {amount: 5000, discount: 0.15}}],
+    [{order: {amount: 1000}}, {order: {amount: 1000, discount: 0.15}}],
+    [{order: {amount: 999.99}}, {order: {amount: 999.99, discount: 0.1}}],
+    [{order: {amount: 500}}, {order: {amount: 500, discount: 0.1}}],
+    [{order: {amount: 100}}, {order: {amount: 100, discount: 0.05}}],
+    [{order: {amount: 99}}, {order: {amount: 99, discount: 0}}],
+    [{order: {amount: -1}}, {order: {amount: -1, discount: 0}}],
+  ],
+}
+
+{
+  name: "an earlier broader row shadows later rows",
+  policy: {
+    models: {order: {amount: "number"}},
+    blocks: [{table: "t", inputs: ["order.amount"], outputs: ["order.band"], rules: [
+      ["> 0", "'positive'"],
+      ["> 100", "'large'"],
+      ["", "'other'"],
+    ]}],
+  },
+  cases: [
+    [{order: {amount: 500}}, {order: {amount: 500, band: "positive"}}],
+    [{order: {amount: 1}}, {order: {amount: 1, band: "positive"}}],
+    [{order: {amount: 0}}, {order: {amount: 0, band: "other"}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Wildcards and multiple input columns.
+// ---------------------------------------------------------------------------
+{
+  name: "two input columns, wildcards in either",
+  policy: {
+    models: {order: {amount: "number", region: "string"}},
+    blocks: [{table: "shipping", inputs: ["order.amount", "order.region"], outputs: ["order.shipping"], rules: [
+      [">= 100", "'US'", "0"],
+      [">= 100", "'EU'", "5"],
+      ["", "'US'", "10"],
+      ["", "'EU'", "15"],
+      ["< 0", "", "-1"],
+    ]}],
+  },
+  cases: [
+    [{order: {amount: 200, region: "US"}}, {order: {amount: 200, region: "US", shipping: 0}}],
+    [{order: {amount: 200, region: "EU"}}, {order: {amount: 200, region: "EU", shipping: 5}}],
+    [{order: {amount: 50, region: "US"}}, {order: {amount: 50, region: "US", shipping: 10}}],
+    [{order: {amount: 50, region: "EU"}}, {order: {amount: 50, region: "EU", shipping: 15}}],
+    [{order: {amount: -5, region: "JP"}}, {order: {amount: -5, region: "JP", shipping: -1}}],
+    [{order: {amount: -5, region: "US"}}, {order: {amount: -5, region: "US", shipping: 10}}],
+    [{order: {amount: 50, region: "JP"}}, {order: {amount: 50, region: "JP", shipping: null}}],
+  ],
+}
+
+{
+  name: "all-wildcard row matches everything",
+  policy: {
+    models: {order: {amount: "number", region: "string"}},
+    blocks: [{table: "t", inputs: ["order.amount", "order.region"], outputs: ["order.label"], rules: [
+      ["", "", "'catch-all'"],
+      ["> 0", "'US'", "'unreachable'"],
+    ]}],
+  },
+  cases: [
+    [{order: {amount: 1, region: "US"}}, {order: {amount: 1, region: "US", label: "catch-all"}}],
+    [{order: {amount: -1, region: ""}}, {order: {amount: -1, region: "", label: "catch-all"}}],
+  ],
+}
+
+{
+  name: "whitespace-only cells are not wildcards",
+  diagnostics: ["PARSE_ERROR"],
+  policy: {
+    models: {order: {amount: "number"}},
+    blocks: [{table: "t", inputs: ["order.amount"], outputs: ["order.label"], rules: [
+      ["> 10", "'big'"],
+      [" ", "'any'"],
+    ]}],
+  },
+  cases: [
+    [{order: {amount: 20}}, {order: {amount: 20, label: "big"}}],
+    [{order: {amount: 1}}, "!error: ExpressionFailed", "question: a whitespace-only input cell is not treated as empty (match conditions and assertion conditions are trimmed); it is parsed as a unary expression and fails with a parser error"],
+  ],
+}
+
+{
+  name: "`_` input cell is an identifier read, not a wildcard",
+  diagnostics: ["UNDEFINED_VARIABLE"],
+  policy: {
+    models: {order: {amount: "number"}},
+    blocks: [{table: "t", inputs: ["order.amount"], outputs: ["order.label"], rules: [
+      ["> 10", "'big'"],
+      ["_", "'any'"],
+    ]}],
+  },
+  cases: [
+    [{order: {amount: 20}}, "!error: MissingRequiredInputs", "question: the analyzer skips `_` cells as wildcards, but at runtime `_` is a plain identifier read and the policy fails with a missing input `_`"],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Unary cell forms: comparisons, ranges, lists, `$` expressions, booleans.
+// ---------------------------------------------------------------------------
+{
+  name: "unary cell forms on a number column",
+  policy: {
+    models: {x: {n: "number"}},
+    blocks: [{table: "t", inputs: ["x.n"], outputs: ["x.kind"], rules: [
+      ["0", "'zero'"],
+      ["[1..5]", "'closed range'"],
+      ["(5..10)", "'open range'"],
+      ["10, 20, 30", "'listed'"],
+      ["$ > 100 and $ % 2 == 0", "'big even'"],
+      ["< 0", "'negative'"],
+      ["", "'other'"],
+    ]}],
+  },
+  cases: [
+    [{x: {n: 0}}, {x: {n: 0, kind: "zero"}}],
+    [{x: {n: 1}}, {x: {n: 1, kind: "closed range"}}],
+    [{x: {n: 5}}, {x: {n: 5, kind: "closed range"}}],
+    [{x: {n: 5.5}}, {x: {n: 5.5, kind: "open range"}}],
+    [{x: {n: 10}}, {x: {n: 10, kind: "listed"}}],
+    [{x: {n: 20}}, {x: {n: 20, kind: "listed"}}],
+    [{x: {n: 102}}, {x: {n: 102, kind: "big even"}}],
+    [{x: {n: 101}}, {x: {n: 101, kind: "other"}}],
+    [{x: {n: -0.5}}, {x: {n: -0.5, kind: "negative"}}],
+  ],
+}
+
+{
+  name: "unary cell forms on a string column",
+  policy: {
+    models: {x: {s: "string"}},
+    blocks: [{table: "t", inputs: ["x.s"], outputs: ["x.kind"], rules: [
+      ["'gold'", "1"],
+      ["'silver', 'bronze'", "2"],
+      ["startsWith($, 'plat')", "3"],
+      ["len($) == 0", "4"],
+      ["", "5"],
+    ]}],
+  },
+  cases: [
+    [{x: {s: "gold"}}, {x: {s: "gold", kind: 1}}],
+    [{x: {s: "silver"}}, {x: {s: "silver", kind: 2}}],
+    [{x: {s: "bronze"}}, {x: {s: "bronze", kind: 2}}],
+    [{x: {s: "platinum"}}, {x: {s: "platinum", kind: 3}}],
+    [{x: {s: ""}}, {x: {s: "", kind: 4}}],
+    [{x: {s: "Gold"}}, {x: {s: "Gold", kind: 5}}],
+  ],
+}
+
+{
+  name: "boolean column with a range column",
+  policy: {
+    models: {x: {b: "boolean", n: "number"}},
+    blocks: [{table: "t", inputs: ["x.b", "x.n"], outputs: ["x.o"], rules: [
+      ["true", "[1..5]", "1"],
+      ["false", "(1..5)", "2"],
+      ["", "", "3"],
+    ]}],
+  },
+  cases: [
+    [{x: {b: true, n: 1}}, {x: {b: true, n: 1, o: 1}}],
+    [{x: {b: true, n: 5}}, {x: {b: true, n: 5, o: 1}}],
+    [{x: {b: false, n: 3}}, {x: {b: false, n: 3, o: 2}}],
+    [{x: {b: false, n: 1}}, {x: {b: false, n: 1, o: 3}}],
+    [{x: {b: false, n: 5}}, {x: {b: false, n: 5, o: 3}}],
+    [{x: {b: true, n: 6}}, {x: {b: true, n: 6, o: 3}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Input columns without a field and computed input fields.
+// ---------------------------------------------------------------------------
+{
+  name: "input column without a field takes boolean expressions",
+  policy: {
+    models: {order: {amount: "number", qty: "number"}},
+    blocks: [{table: "t", inputs: [null, "order.qty"], outputs: ["order.label"], rules: [
+      ["order.amount * order.qty > 1000", "", "'bulk value'"],
+      ["order.amount > 100", "> 1", "'premium multi'"],
+      ["", "> 10", "'many'"],
+      ["", "", "'plain'"],
+    ]}],
+  },
+  cases: [
+    [{order: {amount: 500, qty: 3}}, {order: {amount: 500, qty: 3, label: "bulk value"}}],
+    [{order: {amount: 200, qty: 2}}, {order: {amount: 200, qty: 2, label: "premium multi"}}],
+    [{order: {amount: 200, qty: 1}}, {order: {amount: 200, qty: 1, label: "plain"}}],
+    [{order: {amount: 1, qty: 20}}, {order: {amount: 1, qty: 20, label: "many"}}],
+  ],
+}
+
+{
+  name: "fieldless cell returning a non-boolean does not match",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {order: {amount: "number", note: "string"}},
+    blocks: [{table: "t", inputs: [null], outputs: ["order.label"], rules: [
+      ["order.amount", "'number'"],
+      ["order.note", "'string'"],
+      ["", "'fallback'"],
+    ]}],
+  },
+  cases: [
+    [{order: {amount: 1, note: "x"}}, {order: {amount: 1, note: "x", label: "fallback"}}],
+    [{order: {amount: 0, note: ""}}, {order: {amount: 0, note: "", label: "fallback"}}],
+  ],
+}
+
+{
+  name: "input field is an expression, not just a path",
+  policy: {
+    models: {order: {amount: "number", qty: "number"}},
+    blocks: [{table: "t", inputs: ["order.amount * order.qty"], outputs: ["order.tier"], rules: [
+      [">= 1000", "'gold'"],
+      [">= 100", "'silver'"],
+      ["", "'bronze'"],
+    ]}],
+  },
+  cases: [
+    [{order: {amount: 100, qty: 10}}, {order: {amount: 100, qty: 10, tier: "gold"}}],
+    [{order: {amount: 50, qty: 2}}, {order: {amount: 50, qty: 2, tier: "silver"}}],
+    [{order: {amount: 1, qty: 0}}, {order: {amount: 1, qty: 0, tier: "bronze"}}],
+  ],
+}
+
+{
+  name: "input field reads a property computed by another block",
+  policy: {
+    models: {order: {amount: "number", qty: "number"}},
+    blocks: [
+      {table: "t", inputs: ["order.total"], outputs: ["order.tier"], rules: [
+        [">= 1000", "'gold'"],
+        ["", "'standard'"],
+      ]},
+      {expression: "order.total", value: "order.amount * order.qty"},
+    ],
+  },
+  cases: [
+    [{order: {amount: 500, qty: 2}}, {order: {amount: 500, qty: 2, total: 1000, tier: "gold"}}],
+    [{order: {amount: 5, qty: 2}}, {order: {amount: 5, qty: 2, total: 10, tier: "standard"}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// No match: every scalar output is written as null.
+// ---------------------------------------------------------------------------
+{
+  name: "no matching row writes null to every output",
+  policy: {
+    models: {order: {amount: "number"}},
+    blocks: [{table: "t", inputs: ["order.amount"], outputs: ["order.rate", "order.label"], rules: [
+      ["> 100", "0.1", "'big'"],
+      ["[50..100]", "0.05", "'mid'"],
+    ]}],
+  },
+  cases: [
+    [{order: {amount: 150}}, {order: {amount: 150, rate: 0.1, label: "big"}}],
+    [{order: {amount: 50}}, {order: {amount: 50, rate: 0.05, label: "mid"}}],
+    [{order: {amount: 49}}, {order: {amount: 49, rate: null, label: null}}],
+    [{order: {amount: 0}}, {order: {amount: 0, rate: null, label: null}}],
+  ],
+}
+
+{
+  name: "table without rules writes null",
+  policy: {
+    models: {order: {amount: "number"}},
+    blocks: [{table: "t", inputs: ["order.amount"], outputs: ["order.rate"], rules: []}],
+  },
+  cases: [
+    [{order: {amount: 1}}, {order: {amount: 1, rate: null}}],
+    [{order: {amount: 1000}}, {order: {amount: 1000, rate: null}}],
+  ],
+}
+
+{
+  name: "table without input columns: the first row always matches",
+  policy: {
+    models: {order: {amount: "number"}},
+    blocks: [{table: "t", inputs: [], outputs: ["order.rate"], rules: [["0.2"], ["0.3"]]}],
+  },
+  cases: [
+    [{order: {amount: 1}}, {order: {amount: 1, rate: 0.2}}],
+    [{order: {amount: 2}}, {order: {amount: 2, rate: 0.2}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Multiple outputs: per-column first non-empty value.
+// ---------------------------------------------------------------------------
+{
+  name: "multiple outputs from the same row",
+  policy: {
+    models: {customer: {score: "number"}},
+    blocks: [{table: "t", inputs: ["customer.score"], outputs: ["customer.tier", "customer.limit", "customer.manual"], rules: [
+      [">= 750", "'prime'", "50000", "false"],
+      [">= 600", "'near'", "10000", "false"],
+      ["", "'sub'", "0", "true"],
+    ]}],
+  },
+  cases: [
+    [{customer: {score: 800}}, {customer: {score: 800, tier: "prime", limit: 50000, manual: false}}],
+    [{customer: {score: 650}}, {customer: {score: 650, tier: "near", limit: 10000, manual: false}}],
+    [{customer: {score: 100}}, {customer: {score: 100, tier: "sub", limit: 0, manual: true}}],
+  ],
+}
+
+{
+  name: "an empty output cell falls through to the next matching row for that column",
+  policy: {
+    models: {order: {amount: "number", region: "string"}},
+    blocks: [{table: "t", inputs: ["order.amount", "order.region"], outputs: ["order.a", "order.b"], rules: [
+      [">= 100", "'US'", "1", ""],
+      ["", "'US'", "2", "'x'"],
+      ["", "", "", "'y'"],
+    ]}],
+  },
+  cases: [
+    [{order: {amount: 200, region: "US"}}, {order: {amount: 200, region: "US", a: 1, b: "x"}}],
+    [{order: {amount: 20, region: "US"}}, {order: {amount: 20, region: "US", a: 2, b: "x"}}],
+    [{order: {amount: 20, region: "EU"}}, {order: {amount: 20, region: "EU", a: null, b: "y"}}],
+  ],
+}
+
+{
+  name: "an output column empty in every row is always null",
+  policy: {
+    models: {order: {amount: "number"}},
+    blocks: [{table: "t", inputs: ["order.amount"], outputs: ["order.a", "order.b"], rules: [
+      ["> 0", "1", ""],
+      ["", "2", ""],
+    ]}],
+  },
+  cases: [
+    [{order: {amount: 1}}, {order: {amount: 1, a: 1, b: null}}],
+    [{order: {amount: -1}}, {order: {amount: -1, a: 2, b: null}}],
+  ],
+}
+
+{
+  name: "outputs to nested paths and to two entities",
+  diagnostics: ["MIXED_SCOPE"],
+  policy: {
+    models: {customer: {age: "number"}, offer: {base: "number"}},
+    blocks: [{table: "t", inputs: ["customer.age"], outputs: ["customer.segment.name", "offer.price"], rules: [
+      ["< 26", "'youth'", "offer.base * 0.5"],
+      [">= 65", "'senior'", "offer.base * 0.7"],
+      ["", "'standard'", "offer.base"],
+    ]}],
+  },
+  cases: [
+    [{customer: {age: 20}, offer: {base: 10}}, {customer: {age: 20, segment: {name: "youth"}}, offer: {base: 10, price: 5}}],
+    [{customer: {age: 70}, offer: {base: 10}}, {customer: {age: 70, segment: {name: "senior"}}, offer: {base: 10, price: 7}}],
+    [{customer: {age: 40}, offer: {base: 9.99}}, {customer: {age: 40, segment: {name: "standard"}}, offer: {base: 9.99, price: 9.99}}],
+  ],
+}
+
+{
+  name: "output cells of different types",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {x: {k: "string"}},
+    blocks: [{table: "t", inputs: ["x.k"], outputs: ["x.v"], rules: [
+      ["'n'", "1.50"],
+      ["'s'", "'str'"],
+      ["'b'", "false"],
+      ["'o'", "{a: 1, b: [2]}"],
+      ["'a'", "[1, 'x']"],
+      ["'z'", "null"],
+    ]}],
+  },
+  cases: [
+    [{x: {k: "n"}}, {x: {k: "n", v: 1.5}}],
+    [{x: {k: "s"}}, {x: {k: "s", v: "str"}}],
+    [{x: {k: "b"}}, {x: {k: "b", v: false}}],
+    [{x: {k: "o"}}, {x: {k: "o", v: {a: 1, b: [2]}}}],
+    [{x: {k: "a"}}, {x: {k: "a", v: [1, "x"]}}],
+    [{x: {k: "z"}}, {x: {k: "z", v: null}}],
+    [{x: {k: "?"}}, {x: {k: "?", v: null}}],
+  ],
+}
+
+{
+  name: "a `null` output cell counts as a value: it is not a fall-through",
+  policy: {
+    models: {x: {n: "number"}},
+    blocks: [{table: "t", inputs: ["x.n"], outputs: ["x.v"], rules: [
+      ["> 0", "null"],
+      ["", "'fallback'"],
+    ]}],
+  },
+  cases: [
+    [{x: {n: 1}}, {x: {n: 1, v: null}}],
+    [{x: {n: 0}}, {x: {n: 0, v: "fallback"}}],
+  ],
+}
+
+{
+  name: "output cells computed from inputs",
+  policy: {
+    models: {loan: {amount: "number", years: "number"}},
+    blocks: [{table: "t", inputs: ["loan.years"], outputs: ["loan.rate", "loan.interest"], rules: [
+      ["<= 5", "0.03", "loan.amount * 0.03 * loan.years"],
+      ["", "0.05", "loan.amount * 0.05 * loan.years"],
+    ]}],
+  },
+  cases: [
+    [{loan: {amount: 1000, years: 2}}, {loan: {amount: 1000, years: 2, rate: 0.03, interest: 60}}],
+    [{loan: {amount: 1000, years: 10}}, {loan: {amount: 1000, years: 10, rate: 0.05, interest: 500}}],
+    [{loan: {amount: 0.1, years: 3}}, {loan: {amount: 0.1, years: 3, rate: 0.03, interest: 0.009}}],
+  ],
+}
+
+{
+  name: "declared output column types are not enforced at runtime",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {x: {n: "number"}},
+    blocks: [{table: "t", inputs: ["x.n"], outputs: [{field: "x.o", type: "number"}], rules: [
+      ["> 1", "'str'"],
+      ["", "1"],
+    ]}],
+  },
+  cases: [
+    [{x: {n: 3}}, {x: {n: 3, o: "str"}}, "question: the column declares `number`; the analyzer reports a TypeMismatch but evaluation writes the string anyway"],
+    [{x: {n: 1}}, {x: {n: 1, o: 1}}],
+  ],
+}
+
+{
+  name: "two output columns with the same field: later column overwrites",
+  diagnostics: ["DUPLICATE_WRITER"],
+  policy: {
+    models: {x: {n: "number"}},
+    blocks: [{table: "t", inputs: [], outputs: ["x.o", "x.o"], rules: [["1", ""], ["2", "3"]]}],
+  },
+  cases: [
+    [{x: {n: 6}}, {x: {n: 6, o: 3}}, "question: both columns target `x.o`; the first resolves to 1 from row 0, the second to 3 from row 1, and the write order decides; the analyzer may report a duplicate writer"],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Laziness: rows after the deciding row are not evaluated.
+// ---------------------------------------------------------------------------
+{
+  name: "a failing output cell in an unselected row is not evaluated",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {x: {n: "number", s: "string"}},
+    blocks: [{table: "t", inputs: ["x.n"], outputs: ["x.o"], rules: [
+      ["> 0", "'ok'"],
+      ["", "x.s * 2"],
+    ]}],
+  },
+  cases: [
+    [{x: {n: 1, s: "a"}}, {x: {n: 1, s: "a", o: "ok"}}],
+    [{x: {n: 0, s: "a"}}, "!error: ExpressionFailed"],
+  ],
+}
+
+{
+  name: "a failing input cell after all outputs are resolved is not evaluated",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {x: {n: "number", s: "string"}},
+    blocks: [{table: "t", inputs: [null], outputs: ["x.o"], rules: [
+      ["x.n > 0", "'ok'"],
+      ["x.s * 2 > 0", "'bad'"],
+      ["", "'rest'"],
+    ]}],
+  },
+  cases: [
+    [{x: {n: 1, s: "a"}}, {x: {n: 1, s: "a", o: "ok"}}],
+    [{x: {n: 0, s: "a"}}, "!error: ExpressionFailed"],
+  ],
+}
+
+{
+  name: "a failing input field fails the evaluation",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {x: {n: "number", s: "string"}},
+    blocks: [{table: "t", inputs: ["x.s * 2"], outputs: ["x.o"], rules: [["> 1", "1"], ["", "2"]]}],
+  },
+  cases: [
+    [{x: {n: 1, s: "a"}}, "!error: ExpressionFailed"],
+    [{x: {n: 1, s: ""}}, "!error: ExpressionFailed"],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Null, missing and invalid inputs.
+// ---------------------------------------------------------------------------
+{
+  name: "required input missing or of the wrong type",
+  policy: {
+    models: {order: {amount: "number"}},
+    blocks: [{table: "t", inputs: ["order.amount"], outputs: ["order.o"], rules: [["> 1", "1"], ["", "2"]]}],
+  },
+  cases: [
+    [{order: {amount: 2}}, {order: {amount: 2, o: 1}}],
+    [{order: {}}, "!error: MissingRequiredInputs"],
+    [{order: {amount: null}}, "!error: MissingRequiredInputs"],
+    [{order: {amount: "2"}}, "!error: InputValidationFailed"],
+    [{order: {amount: [2]}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "optional input: null against a comparison cell fails the evaluation",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {x: {n: "number?"}},
+    blocks: [{table: "t", inputs: ["x.n"], outputs: ["x.o"], rules: [
+      ["> 5", "'gt'"],
+      ["", "'any'"],
+    ]}],
+  },
+  cases: [
+    [{x: {n: 6}}, {x: {n: 6, o: "gt"}}],
+    [{x: {n: 5}}, {x: {n: 5, o: "any"}}],
+    [{x: {n: null}}, "!error: ExpressionFailed", "question: graph decision tables treat a cell that fails to evaluate as no match (would give 'any'); policy tables fail the whole evaluation"],
+    [{x: {}}, "!error: ExpressionFailed", "question: same as null; a missing optional input reaches the cell as null"],
+  ],
+}
+
+{
+  name: "optional input: null-tested rows first",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {x: {n: "number?"}},
+    blocks: [{table: "t", inputs: ["x.n"], outputs: ["x.o"], rules: [
+      ["null", "'none'"],
+      ["> 5", "'gt'"],
+      ["", "'any'"],
+    ]}],
+  },
+  cases: [
+    [{x: {n: 6}}, {x: {n: 6, o: "gt"}}],
+    [{x: {n: 1}}, {x: {n: 1, o: "any"}}],
+    [{x: {n: null}}, {x: {n: null, o: "none"}}],
+    [{x: {}}, {x: {o: "none"}}],
+  ],
+}
+
+{
+  name: "optional input: equality and list cells tolerate null",
+  policy: {
+    models: {x: {s: "string?"}},
+    blocks: [{table: "t", inputs: ["x.s"], outputs: ["x.o"], rules: [
+      ["'a'", "1"],
+      ["'b', 'c'", "2"],
+      ["", "3"],
+    ]}],
+  },
+  cases: [
+    [{x: {s: "a"}}, {x: {s: "a", o: 1}}],
+    [{x: {s: "c"}}, {x: {s: "c", o: 2}}],
+    [{x: {s: null}}, {x: {s: null, o: 3}}],
+    [{x: {}}, {x: {o: 3}}],
+  ],
+}
+
+{
+  name: "optional input: null-coalescing input field",
+  policy: {
+    models: {x: {n: "number?"}},
+    blocks: [{table: "t", inputs: ["x.n ?? 0"], outputs: ["x.o"], rules: [
+      ["> 5", "'gt'"],
+      ["", "'le'"],
+    ]}],
+  },
+  cases: [
+    [{x: {n: 6}}, {x: {n: 6, o: "gt"}}],
+    [{x: {n: null}}, {x: {n: null, o: "le"}}],
+    [{x: {}}, {x: {o: "le"}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Enum and date columns.
+// ---------------------------------------------------------------------------
+{
+  name: "enum input column covering every value",
+  policy: {
+    models: {order: {channel: "string(web|store|phone)"}},
+    blocks: [{table: "t", inputs: ["order.channel"], outputs: ["order.fee"], rules: [
+      ["'web'", "0"],
+      ["'store'", "2"],
+      ["'phone'", "4"],
+    ]}],
+  },
+  cases: [
+    [{order: {channel: "web"}}, {order: {channel: "web", fee: 0}}],
+    [{order: {channel: "store"}}, {order: {channel: "store", fee: 2}}],
+    [{order: {channel: "phone"}}, {order: {channel: "phone", fee: 4}}],
+    [{order: {channel: "mail"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "date input column",
+  policy: {
+    models: {contract: {start: "date"}},
+    blocks: [{table: "t", inputs: ["contract.start"], outputs: ["contract.era"], rules: [
+      ["< d('2020-01-01')", "'legacy'"],
+      ["< d('2025-01-01')", "'current'"],
+      ["", "'new'"],
+    ]}],
+  },
+  cases: [
+    [{contract: {start: date('2019-06-01')}}, {contract: {start: date('2019-06-01'), era: "legacy"}}],
+    [{contract: {start: date('2024-12-31')}}, {contract: {start: date('2024-12-31'), era: "current"}}],
+    [{contract: {start: date('2025-01-01')}}, {contract: {start: date('2025-01-01'), era: "new"}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Interactions: per-instance tables, goals, global scope, downstream blocks.
+// ---------------------------------------------------------------------------
+{
+  name: "table writing to a related entity runs per instance",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number", country: "string"}},
+    blocks: [{table: "t", inputs: ["company.revenue", "company.country"], outputs: ["company.risk"], rules: [
+      ["< 10000", "", "'high'"],
+      ["", "'XX'", "'high'"],
+      ["", "", "'low'"],
+    ]}],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 5, country: "DE"}, {revenue: 50000, country: "XX"}, {revenue: 50000, country: "DE"}]}},
+      {customer: {companies: [{revenue: 5, country: "DE", risk: "high"}, {revenue: 50000, country: "XX", risk: "high"}, {revenue: 50000, country: "DE", risk: "low"}]}},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: []}}],
+  ],
+}
+
+{
+  name: "parent table reads per-instance results",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {table: "risk", inputs: ["company.revenue"], outputs: ["company.risky"], rules: [["< 100", "true"], ["", "false"]]},
+      {table: "decision", inputs: ["count(customer.companies, #.risky)"], outputs: ["customer.decision"], rules: [
+        ["0", "'approve'"],
+        ["1", "'review'"],
+        ["", "'reject'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 500}, {revenue: 1000}]}},
+      {customer: {decision: "approve", companies: [{revenue: 500, risky: false}, {revenue: 1000, risky: false}]}},
+    ],
+    [
+      {customer: {companies: [{revenue: 50}, {revenue: 1000}]}},
+      {customer: {decision: "review", companies: [{revenue: 50, risky: true}, {revenue: 1000, risky: false}]}},
+    ],
+    [
+      {customer: {companies: [{revenue: 50}, {revenue: 1}]}},
+      {customer: {decision: "reject", companies: [{revenue: 50, risky: true}, {revenue: 1, risky: true}]}},
+    ],
+  ],
+}
+
+{
+  name: "table reads global scope",
+  diagnostics: ["UNDEFINED_VARIABLE"],
+  policy: {
+    globals: {config: {threshold: "number"}},
+    models: {order: {amount: "number"}},
+    blocks: [{table: "t", inputs: [null], outputs: ["order.review"], rules: [
+      ["order.amount > config.threshold", "true"],
+      ["", "false"],
+    ]}],
+  },
+  cases: [
+    [{order: {amount: 200}, config: {threshold: 100}}, {order: {amount: 200, review: true}, config: {threshold: 100}}],
+    [{order: {amount: 50}, config: {threshold: 100}}, {order: {amount: 50, review: false}, config: {threshold: 100}}],
+  ],
+}
+
+{
+  name: "goals select one output column of a table",
+  policy: {
+    models: {customer: {score: "number"}},
+    blocks: [{table: "t", inputs: ["customer.score"], outputs: ["customer.tier", "customer.limit"], rules: [
+      [">= 700", "'A'", "1000"],
+      ["", "'B'", "100"],
+    ]}],
+  },
+  cases: [
+    {input: {customer: {score: 800}}, goals: ["customer.tier"], output: {customer: {score: 800, tier: "A", limit: 1000}}},
+    {input: {customer: {score: 1}}, goals: ["customer.limit"], output: {customer: {score: 1, tier: "B", limit: 100}}},
+    {input: {customer: {score: 1}}, output: {customer: {score: 1, tier: "B", limit: 100}}},
+  ],
+}
+
+{
+  name: "match block consumes a table output",
+  policy: {
+    models: {customer: {score: "number"}},
+    blocks: [
+      {table: "t", inputs: ["customer.score"], outputs: ["customer.band"], rules: [[">= 700", "'A'"], [">= 500", "'B'"]]},
+      {match: "customer.message", arms: [["customer.band == 'A'", "'top'"], ["customer.band == null", "'unrated'"], ["", "'ok'"]]},
+    ],
+  },
+  cases: [
+    [{customer: {score: 800}}, {customer: {score: 800, band: "A", message: "top"}}],
+    [{customer: {score: 600}}, {customer: {score: 600, band: "B", message: "ok"}}],
+    [{customer: {score: 100}}, {customer: {score: 100, band: null, message: "unrated"}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// A realistic pricing table.
+// ---------------------------------------------------------------------------
+{
+  name: "insurance premium table",
+  policy: {
+    models: {driver: {age: "number", accidents: "number", vehicle: "string(car|van|bike)"}},
+    blocks: [{table: "premium", inputs: ["driver.vehicle", "driver.age", "driver.accidents"], outputs: ["driver.base", "driver.surcharge", "driver.decline"], rules: [
+      ["", "< 18", "", "", "", "true"],
+      ["", "", "> 3", "", "", "true"],
+      ["'bike'", "< 25", "", "900", "", ""],
+      ["'bike'", "", "", "500", "", ""],
+      ["", "< 25", "", "1200", "", ""],
+      ["", "", "[1..3]", "", "200 * driver.accidents", ""],
+      ["'van'", "", "", "800", "", ""],
+      ["", "", "", "600", "0", "false"],
+    ]}],
+  },
+  cases: [
+    [{driver: {age: 17, accidents: 0, vehicle: "car"}}, {driver: {age: 17, accidents: 0, vehicle: "car", base: 1200, surcharge: 0, decline: true}}],
+    [{driver: {age: 40, accidents: 5, vehicle: "car"}}, {driver: {age: 40, accidents: 5, vehicle: "car", base: 600, surcharge: 0, decline: true}}],
+    [{driver: {age: 20, accidents: 0, vehicle: "bike"}}, {driver: {age: 20, accidents: 0, vehicle: "bike", base: 900, surcharge: 0, decline: false}}],
+    [{driver: {age: 40, accidents: 2, vehicle: "bike"}}, {driver: {age: 40, accidents: 2, vehicle: "bike", base: 500, surcharge: 400, decline: false}}],
+    [{driver: {age: 40, accidents: 1, vehicle: "van"}}, {driver: {age: 40, accidents: 1, vehicle: "van", base: 800, surcharge: 200, decline: false}}],
+    [{driver: {age: 40, accidents: 0, vehicle: "car"}}, {driver: {age: 40, accidents: 0, vehicle: "car", base: 600, surcharge: 0, decline: false}}],
+  ],
+}

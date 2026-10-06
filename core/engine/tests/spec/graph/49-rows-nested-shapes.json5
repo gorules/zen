@@ -1,0 +1,628 @@
+// Rows of one suite whose nested shape changes from case to case.
+//
+// In columnar mode nested objects are flattened into dotted columns (`customer.address.city`)
+// and absent sub-objects become absent cells, while arrays (and arrays of objects) stay whole
+// values. These suites vary which sub-objects exist, at which depth a key sits, and which keys
+// the objects inside arrays carry, so the compiled engine has to rebuild each row's shape from
+// sparse columns. Expected results are single-row semantics: missing intermediate objects read
+// as null, nothing is invented in the output, and a row's shape never leaks into another row.
+
+// --- Optional sub-objects -------------------------------------------------------------------
+
+{
+  name: "a deep read with a default, the chain cut at every depth",
+  graph: {
+    nodes: [{expression: "e", fields: {r: "a.b.c.d ?? 'none'"}}],
+  },
+  cases: [
+    [{a: {b: {c: {d: 1}}}}, {r: 1}],
+    [{a: {b: {c: {d: "x"}}}}, {r: "x"}],
+    [{a: {b: {c: {e: 1}}}}, {r: "none"}],
+    [{a: {b: {c: {}}}}, {r: "none"}],
+    [{a: {b: {}}}, {r: "none"}],
+    [{a: {}}, {r: "none"}],
+    [{}, {r: "none"}],
+    [{a: {b: {c: {d: null}}}}, {r: "none"}],
+    [{a: {b: null}}, {r: "none"}],
+    [{a: {b: {c: {d: false}}}}, {r: false}],
+    [{a: {b: {c: {d: 0}}}}, {r: 0}],
+  ],
+}
+
+{
+  name: "an optional address read with fallbacks at two depths",
+  graph: {
+    nodes: [{expression: "e", fields: {city: "customer.address.city ?? customer.city ?? 'unknown'"}}],
+  },
+  cases: [
+    [{customer: {address: {city: "Berlin"}}}, {city: "Berlin"}],
+    [{customer: {city: "Paris"}}, {city: "Paris"}],
+    [{customer: {address: {city: "Rome"}, city: "Paris"}}, {city: "Rome"}],
+    [{customer: {address: {zip: "1000"}, city: "Oslo"}}, {city: "Oslo"}],
+    [{customer: {address: {}}}, {city: "unknown"}],
+    [{customer: {}}, {city: "unknown"}],
+    [{}, {city: "unknown"}],
+    [{customer: {address: {city: ""}}}, {city: ""}],
+  ],
+}
+
+{
+  name: "sub-object presence tested directly",
+  graph: {
+    nodes: [{expression: "e", fields: {
+      hasProfile: "customer.profile != null",
+      profileType: "type(customer.profile)",
+      age: "customer.profile.age ?? -1",
+    }}],
+  },
+  cases: [
+    [{customer: {profile: {age: 30}}}, {hasProfile: true, profileType: "object", age: 30}],
+    [{customer: {profile: {}}}, {hasProfile: true, profileType: "object", age: -1}],
+    [{customer: {profile: null}}, {hasProfile: false, profileType: "null", age: -1}],
+    [{customer: {}}, {hasProfile: false, profileType: "null", age: -1}],
+    [{customer: {profile: {age: 0, name: "x"}}}, {hasProfile: true, profileType: "object", age: 0}],
+    [{}, {hasProfile: false, profileType: "null", age: -1}],
+    [{customer: {profile: {age: 17.5}}}, {hasProfile: true, profileType: "object", age: 17.5}],
+  ],
+}
+
+{
+  name: "eight levels deep, present in some rows only",
+  graph: {
+    nodes: [{expression: "e", fields: {v: "l1.l2.l3.l4.l5.l6.l7.l8", n: "(l1.l2.l3.l4.l5.l6.l7.l8 ?? 0) + 1"}}],
+  },
+  cases: [
+    [{l1: {l2: {l3: {l4: {l5: {l6: {l7: {l8: 41}}}}}}}}, {v: 41, n: 42}],
+    [{l1: {l2: {l3: {l4: {l5: {l6: {l7: {}}}}}}}}, {n: 1}],
+    [{l1: {l2: {l3: {}}}}, {n: 1}],
+    [{l1: {l2: {l3: {l4: {l5: {l6: {l7: {l8: -1}}}}}}}}, {v: -1, n: 0}],
+    [{}, {n: 1}],
+    [{l1: {l2: {l3: {l4: {l5: {l6: {l7: {l8: 0.5}}}}}}}}, {v: 0.5, n: 1.5}],
+  ],
+}
+
+{
+  name: "siblings in a nested object appear in different rows",
+  graph: {
+    nodes: [{expression: "e", fields: {
+      sum: "(o.a ?? 0) + (o.b ?? 0) + (o.c ?? 0)",
+      present: "len(filter(['a', 'b', 'c'], o[#] != null))",
+    }}],
+  },
+  cases: [
+    [{o: {a: 1}}, {sum: 1, present: 1}],
+    [{o: {b: 2}}, {sum: 2, present: 1}],
+    [{o: {c: 3}}, {sum: 3, present: 1}],
+    [{o: {a: 1, b: 2}}, {sum: 3, present: 2}],
+    [{o: {a: 1, b: 2, c: 3}}, {sum: 6, present: 3}],
+    [{o: {}}, {sum: 0, present: 0}],
+    [{o: {d: 4}}, {sum: 0, present: 0}],
+    [{}, {sum: 0, present: 0}],
+  ],
+}
+
+// --- A path that is an object in some rows and a scalar in others --------------------------
+
+{
+  name: "a key that is a scalar first, then an object",
+  graph: {
+    nodes: [{expression: "e", fields: {t: "type(p)", x: "p.x ?? p"}}],
+  },
+  cases: [
+    [{p: 1}, {t: "number", x: 1}],
+    [{p: "s"}, {t: "string", x: "s"}],
+    [{p: {x: 2}}, {t: "object", x: 2}],
+    [{p: {y: 3}}, {t: "object", x: {y: 3}}],
+    [{p: true}, {t: "bool", x: true}],
+    [{}, {t: "null"}],
+  ],
+}
+
+{
+  name: "a key that is an object first, then a scalar",
+  graph: {
+    nodes: [{expression: "e", fields: {t: "type(p)", x: "p.x ?? p"}}],
+  },
+  cases: [
+    [{p: {x: 2}}, {t: "object", x: 2}],
+    [{p: {x: {y: 1}}}, {t: "object", x: {y: 1}}],
+    [{p: 1}, {t: "number", x: 1}],
+    [{p: "s"}, {t: "string", x: "s"}],
+    [{p: [1]}, {t: "array", x: [1]}],
+    [{p: {}}, {t: "object", x: {}}],
+  ],
+}
+
+{
+  name: "pass-through keeps every row's own nested shape",
+  graph: {
+    nodes: [{expression: "e", passThrough: true, fields: {seen: "true"}}],
+  },
+  cases: [
+    [{a: {b: {c: 1}}}, {a: {b: {c: 1}}, seen: true}],
+    [{a: {b: 2}}, {a: {b: 2}, seen: true}],
+    [{a: 3}, {a: 3, seen: true}],
+    [{a: {d: [1, {e: 2}]}}, {a: {d: [1, {e: 2}]}, seen: true}],
+    [{x: {y: {z: "deep"}}}, {x: {y: {z: "deep"}}, seen: true}],
+    [{}, {seen: true}],
+    [{a: {b: {c: 1, c2: 2}, b2: true}}, {a: {b: {c: 1, c2: 2}, b2: true}, seen: true}],
+  ],
+}
+
+{
+  name: "dotted writes merge into a nested object present in some rows only",
+  graph: {
+    nodes: [{expression: "e", passThrough: true, fields: {"order.total": "(order.price ?? 0) * (order.qty ?? 1)", "order.meta.checked": "true"}}],
+  },
+  cases: [
+    [{order: {price: 10, qty: 2}}, {order: {price: 10, qty: 2, total: 20, meta: {checked: true}}}],
+    [{order: {price: 5}}, {order: {price: 5, total: 5, meta: {checked: true}}}],
+    [{order: {qty: 3, meta: {source: "web"}}}, {order: {qty: 3, total: 0, meta: {source: "web", checked: true}}}],
+    [{}, {order: {total: 0, meta: {checked: true}}}],
+    [{order: {}}, {order: {total: 0, meta: {checked: true}}}],
+    [{order: {price: 1.5, qty: 4, meta: {checked: false}}}, {order: {price: 1.5, qty: 4, total: 6, meta: {checked: true}}}],
+  ],
+}
+
+{
+  name: "nested writes into new paths, values absent in some rows",
+  graph: {
+    nodes: [{expression: "e", fields: {"out.a.b": "x", "out.a.c": "y", "out.d": "x ?? y"}}],
+  },
+  cases: [
+    [{x: 1, y: 2}, {out: {a: {b: 1, c: 2}, d: 1}}],
+    [{x: 1}, {out: {a: {b: 1, c: null}, d: 1}}, "question: a nested key whose value is null is kept as null (only top-level nulls are dropped), as in 07-table-outputs and 11-pass-through"],
+    [{y: 2}, {out: {a: {b: null, c: 2}, d: 2}}, "question: a nested key whose value is null is kept as null (only top-level nulls are dropped), as in 07-table-outputs and 11-pass-through"],
+    [{x: "s", y: [1]}, {out: {a: {b: "s", c: [1]}, d: "s"}}],
+    [{x: {deep: 1}}, {out: {a: {b: {deep: 1}, c: null}, d: {deep: 1}}}, "question: a nested key whose value is null is kept as null (only top-level nulls are dropped), as in 07-table-outputs and 11-pass-through"],
+  ],
+}
+
+// --- Tables over dotted fields with partial shapes -----------------------------------------
+
+{
+  name: "table inputs on dotted fields where sub-objects come and go",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["customer.profile.age", "customer.country"], outputs: ["r"], rules: [
+        [">= 18", "'US'", "'us-adult'"],
+        [">= 18", "", "'adult'"],
+        ["< 18", "", "'minor'"],
+        ["", "'US'", "'us-unknown-age'"],
+        ["", "", "'unknown'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{customer: {profile: {age: 20}, country: "US"}}, {r: "us-adult"}],
+    [{customer: {profile: {age: 20}, country: "DE"}}, {r: "adult"}],
+    [{customer: {profile: {age: 20}}}, {r: "adult"}],
+    [{customer: {profile: {age: 5}, country: "US"}}, {r: "minor"}],
+    [{customer: {profile: {}, country: "US"}}, {r: "us-unknown-age"}],
+    [{customer: {country: "US"}}, {r: "us-unknown-age"}],
+    [{customer: {}}, {r: "unknown"}],
+    [{}, {r: "unknown"}],
+    [{customer: {profile: {age: "20"}, country: "US"}}, {r: "us-unknown-age"}],
+    [{customer: {profile: {age: 18, extra: {x: 1}}, country: "FR"}}, {r: "adult"}],
+  ],
+}
+
+{
+  name: "table outputs to nested paths, some cells null per rule",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["score"], outputs: ["result.grade", "result.detail.reason", "result.flags.review"], rules: [
+        [">= 90", "'A'", "null", "false"],
+        [">= 50", "'B'", "'average'", "null"],
+        ["", "'F'", "'failed'", "true"],
+      ]},
+    ],
+  },
+  cases: [
+    [{score: 95}, {result: {grade: "A", detail: {reason: null}, flags: {review: false}}}, "question: a nested key whose value is null is kept as null (only top-level nulls are dropped), as in 07-table-outputs and 11-pass-through"],
+    [{score: 60}, {result: {grade: "B", detail: {reason: "average"}, flags: {review: null}}}, "question: a nested key whose value is null is kept as null (only top-level nulls are dropped), as in 07-table-outputs and 11-pass-through"],
+    [{score: 10}, {result: {grade: "F", detail: {reason: "failed"}, flags: {review: true}}}],
+    [{}, {result: {grade: "F", detail: {reason: "failed"}, flags: {review: true}}}],
+    [{score: 90}, {result: {grade: "A", detail: {reason: null}, flags: {review: false}}}, "question: a nested key whose value is null is kept as null (only top-level nulls are dropped), as in 07-table-outputs and 11-pass-through"],
+  ],
+}
+
+{
+  name: "pass-through table writing beside nested input objects of varying shape",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, inputs: ["applicant.score"], outputs: ["applicant.risk"], rules: [
+        [">= 700", "'low'"],
+        ["", "'high'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{applicant: {score: 750, name: "a"}}, {applicant: {score: 750, name: "a", risk: "low"}}],
+    [{applicant: {score: 600}}, {applicant: {score: 600, risk: "high"}}],
+    [{applicant: {name: "b", address: {city: "x"}}}, {applicant: {name: "b", address: {city: "x"}, risk: "high"}}],
+    [{}, {applicant: {risk: "high"}}],
+    [{applicant: {score: 700, risk: "old"}}, {applicant: {score: 700, risk: "low"}}],
+    [{other: 1}, {other: 1, applicant: {risk: "high"}}],
+  ],
+}
+
+{
+  name: "collect table over nested arrays of objects, rules testing items",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["order.items"], outputs: ["flag"], rules: [
+        ["some($, #.price > 100)", "'expensive'"],
+        ["some($, #.fragile == true)", "'fragile'"],
+        ["len($) == 0", "'empty'"],
+        ["all($, #.sku != null)", "'all-sku'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{order: {items: [{price: 150, sku: "a"}]}}, [{flag: "expensive"}, {flag: "all-sku"}]],
+    [{order: {items: [{price: 5, fragile: true}]}}, [{flag: "fragile"}]],
+    [{order: {items: [{price: 5, sku: "a"}, {fragile: true, sku: "b"}, {price: 101}]}}, [{flag: "fragile"}], "question: `#.price > 100` errors on the item without a price before reaching the 101 item, so the whole `some` cell fails and the expensive rule is skipped"],
+    [{order: {items: []}}, [{flag: "empty"}, {flag: "all-sku"}]],
+    [{order: {items: [{sku: "z"}]}}, [{flag: "all-sku"}]],
+    [{order: {items: [{}]}}, []],
+    [{order: {}}, []],
+  ],
+}
+
+// --- Arrays of objects with differing keys --------------------------------------------------
+
+{
+  name: "aggregates over items whose keys differ per item and per row",
+  graph: {
+    nodes: [{expression: "e", fields: {
+      total: "sum(map(items, (#.price ?? 0) * (#.qty ?? 1)))",
+      priced: "count(items, #.price != null)",
+      skus: "map(filter(items, #.sku != null), #.sku)",
+    }}],
+  },
+  cases: [
+    [{items: [{price: 2, qty: 3, sku: "a"}, {price: 1}]}, {total: 7, priced: 2, skus: ["a"]}],
+    [{items: [{sku: "x"}, {sku: "y", price: 10}]}, {total: 10, priced: 1, skus: ["x", "y"]}],
+    [{items: [{qty: 5}]}, {total: 0, priced: 0, skus: []}],
+    [{items: []}, {total: 0, priced: 0, skus: []}],
+    [{items: [{price: 0.1, qty: 3}, {price: 0.2, qty: 1, extra: {nested: true}}]}, {total: 0.5, priced: 2, skus: []}],
+    [{items: [{price: 1, sku: null}, {price: 2, sku: "b"}]}, {total: 3, priced: 2, skus: ["b"]}],
+  ],
+}
+
+{
+  name: "items carrying a key at different depths",
+  graph: {
+    nodes: [{expression: "e", fields: {codes: "map(items, #.code ?? #.meta.code ?? #.meta.inner.code ?? 'none')"}}],
+  },
+  cases: [
+    [{items: [{code: "a"}, {meta: {code: "b"}}, {meta: {inner: {code: "c"}}}]}, {codes: ["a", "b", "c"]}],
+    [{items: [{meta: {}}, {meta: {inner: {}}}, {}]}, {codes: ["none", "none", "none"]}],
+    [{items: [{code: "top", meta: {code: "nested"}}]}, {codes: ["top"]}],
+    [{items: []}, {codes: []}],
+    [{items: [{meta: {inner: {code: 1}}}, {code: true}]}, {codes: [1, true]}],
+  ],
+}
+
+{
+  name: "an array field holding objects in some rows and scalars in others",
+  graph: {
+    nodes: [{expression: "e", fields: {types: "map(xs, type(#))", n: "len(xs)"}}],
+  },
+  cases: [
+    [{xs: [{a: 1}, {b: 2}]}, {types: ["object", "object"], n: 2}],
+    [{xs: [1, 2, 3]}, {types: ["number", "number", "number"], n: 3}],
+    [{xs: ["a"]}, {types: ["string"], n: 1}],
+    [{xs: [{a: 1}, 1, "s", null, [2]]}, {types: ["object", "number", "string", "null", "array"], n: 5}],
+    [{xs: []}, {types: [], n: 0}],
+    [{xs: [[], [[]]]}, {types: ["array", "array"], n: 2}],
+  ],
+}
+
+{
+  name: "arrays of arrays of varying length and depth",
+  graph: {
+    nodes: [{expression: "e", fields: {lens: "map(m, len(#))", flat: "flatten(m)"}}],
+  },
+  cases: [
+    [{m: [[1, 2], [3]]}, {lens: [2, 1], flat: [1, 2, 3]}],
+    [{m: [[], [1]]}, {lens: [0, 1], flat: [1]}],
+    [{m: []}, {lens: [], flat: []}],
+    [{m: [["a"], ["b", "c"]]}, {lens: [1, 2], flat: ["a", "b", "c"]}],
+    [{m: [[[1]], [2]]}, {lens: [1, 1], flat: [[1], 2]}],
+  ],
+}
+
+{
+  name: "loop over items whose keys differ, results per item",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", outputPath: "out", executionMode: "loop", fields: {
+      name: "name ?? 'anon'",
+      cost: "(price ?? 0) * (qty ?? 1)",
+      "tags.first": "tags[0]",
+    }}],
+  },
+  cases: [
+    [{items: [{name: "a", price: 2, qty: 2}, {price: 5}]}, {out: [{name: "a", cost: 4, tags: {first: null}}, {name: "anon", cost: 5, tags: {first: null}}]}, "question: a nested key whose value is null is kept as null (only top-level nulls are dropped), as in 07-table-outputs and 11-pass-through"],
+    [{items: [{tags: ["x", "y"]}, {name: "b", tags: []}]}, {out: [{name: "anon", cost: 0, tags: {first: "x"}}, {name: "b", cost: 0, tags: {first: null}}]}, "question: a nested key whose value is null is kept as null (only top-level nulls are dropped), as in 07-table-outputs and 11-pass-through"],
+    [{items: []}, {out: []}],
+    [{items: [{name: "c", price: 1.25, qty: 4, extra: {deep: 1}}]}, {out: [{name: "c", cost: 5, tags: {first: null}}]}, "question: a nested key whose value is null is kept as null (only top-level nulls are dropped), as in 07-table-outputs and 11-pass-through"],
+  ],
+}
+
+{
+  name: "loop over a nested array present in some rows only",
+  graph: {
+    nodes: [{expression: "each", inputField: "order.lines", outputPath: "lines", executionMode: "loop", fields: {sku: "upper(sku ?? 'none')"}}],
+  },
+  cases: [
+    [{order: {lines: [{sku: "a"}, {sku: "b"}]}}, {lines: [{sku: "A"}, {sku: "B"}]}],
+    [{order: {lines: [{}]}}, {lines: [{sku: "NONE"}]}],
+    [{order: {lines: []}}, {lines: []}],
+    [{order: {id: 1}}, "!error"],
+    [{}, "!error"],
+  ],
+}
+
+{
+  name: "table loop over items whose keys differ",
+  graph: {
+    nodes: [{table: "t", inputField: "items", outputPath: "out", executionMode: "loop", inputs: ["kind", "weight"], outputs: ["cls"], rules: [
+      ["'box'", "> 10", "'heavy-box'"],
+      ["'box'", "", "'box'"],
+      ["", "> 10", "'heavy'"],
+      ["", "", "'other'"],
+    ]}],
+  },
+  cases: [
+    [{items: [{kind: "box", weight: 20}, {kind: "box"}, {weight: 11}, {}]}, {out: [{cls: "heavy-box"}, {cls: "box"}, {cls: "heavy"}, {cls: "other"}]}],
+    [{items: [{kind: "bag", weight: 1, color: "red"}]}, {out: [{cls: "other"}]}],
+    [{items: []}, {out: []}],
+    [{items: [{kind: "box", weight: "20"}]}, {out: [{cls: "box"}]}],
+  ],
+}
+
+// --- Nested shapes across node boundaries -------------------------------------------------
+
+{
+  name: "$nodes reads nested output whose shape depends on the row",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {"res.kind": "kind", "res.detail.n": "n"}},
+      {expression: "b", fields: {
+        kind: "$nodes.a.res.kind ?? 'none'",
+        n: "$nodes.a.res.detail.n ?? -1",
+        hasDetail: "$nodes.a.res.detail != null",
+      }},
+    ],
+  },
+  cases: [
+    [{kind: "x", n: 1}, {kind: "x", n: 1, hasDetail: true}],
+    [{kind: "y"}, {kind: "y", n: -1, hasDetail: true}, "question: node a wrote `res.detail.n` as a nested null, so `res.detail` exists as {n: null}"],
+    [{n: 2}, {kind: "none", n: 2, hasDetail: true}],
+    [{}, {kind: "none", n: -1, hasDetail: true}, "question: node a wrote `res.detail.n` as a nested null, so `res.detail` exists as {n: null}"],
+    [{kind: {nested: true}, n: [1]}, {kind: {nested: true}, n: [1], hasDetail: true}],
+  ],
+}
+
+{
+  name: "a sub-decision receiving and returning nested optional objects",
+  decisions: {
+    child: {nodes: [{expression: "c", fields: {"out.name": "user.name ?? 'anon'", "out.city": "user.address.city"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{user: {name: "a", address: {city: "x"}}}, {out: {name: "a", city: "x"}}],
+    [{user: {name: "b"}}, {out: {name: "b", city: null}}, "question: a nested key whose value is null is kept as null (only top-level nulls are dropped), as in 07-table-outputs and 11-pass-through"],
+    [{user: {address: {}}}, {out: {name: "anon", city: null}}, "question: a nested key whose value is null is kept as null (only top-level nulls are dropped), as in 07-table-outputs and 11-pass-through"],
+    [{}, {out: {name: "anon", city: null}}, "question: a nested key whose value is null is kept as null (only top-level nulls are dropped), as in 07-table-outputs and 11-pass-through"],
+    [{user: {address: {city: "y", zip: 1}, other: [1]}}, {out: {name: "anon", city: "y"}}],
+  ],
+}
+
+{
+  name: "a switch on nested optional fields",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["account.flags.blocked == true", "account.limits.daily > 1000", ""]},
+      {expression: "blocked", fields: {r: "'blocked'"}},
+      {expression: "high", fields: {r: "'high:' + string(account.limits.daily)"}},
+      {expression: "std", fields: {r: "'standard'"}},
+    ],
+    edges: ["input -> s", "s:0 -> blocked -> output", "s:1 -> high -> output", "s:2 -> std -> output"],
+  },
+  cases: [
+    [{account: {flags: {blocked: true}, limits: {daily: 5000}}}, {r: "blocked"}],
+    [{account: {flags: {blocked: false}, limits: {daily: 5000}}}, {r: "high:5000"}],
+    [{account: {limits: {daily: 2000}}}, {r: "high:2000"}],
+    [{account: {flags: {}, limits: {daily: 10}}}, {r: "standard"}],
+    [{account: {flags: {blocked: true}}}, {r: "blocked"}],
+    [{account: {}}, {r: "standard"}],
+    [{}, {r: "standard"}],
+    [{account: {limits: {}}}, {r: "standard"}],
+  ],
+}
+
+{
+  name: "a function node reading nested optional fields",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ city: input.user?.address?.city ?? 'none', depth: input.user?.address ? 2 : input.user ? 1 : 0 });"""}],
+  },
+  cases: [
+    [{user: {address: {city: "x"}}}, {city: "x", depth: 2}],
+    [{user: {address: {}}}, {city: "none", depth: 2}],
+    [{user: {}}, {city: "none", depth: 1}],
+    [{}, {city: "none", depth: 0}],
+    [{user: {address: {city: "y", zip: 2}}}, {city: "y", depth: 2}],
+  ],
+}
+
+{
+  name: "input keys that contain a dot are not paths",
+  graph: {
+    nodes: [{expression: "e", fields: {nested: "a.b ?? 'none'"}}],
+  },
+  cases: [
+    [{a: {b: 1}}, {nested: 1}],
+    [{"a.b": 2}, {nested: "none"}],
+    [{"a.b": 2, a: {b: 3}}, {nested: 3}],
+    [{}, {nested: "none"}],
+  ],
+}
+
+{
+  name: "empty objects, nulls and missing keys at depth, copied out",
+  graph: {
+    nodes: [{expression: "e", fields: {copy: "a", inner: "a.b"}}],
+  },
+  cases: [
+    [{a: {b: {}}}, {copy: {b: {}}, inner: {}}],
+    [{a: {b: null}}, {copy: {b: null}}],
+    [{a: {}}, {copy: {}}],
+    [{a: {b: {c: {}}}}, {copy: {b: {c: {}}}, inner: {c: {}}}],
+    [{}, {}],
+    [{a: {b: [{}, {c: null}]}}, {copy: {b: [{}, {c: null}]}, inner: [{}, {c: null}]}],
+  ],
+}
+
+// --- Long suites: many rows with sparse nested columns --------------------------------------
+
+{
+  name: "long: sparse nested fields across many rows",
+  graph: {
+    nodes: [
+      {expression: "e", fields: {
+        name: "user.name ?? 'anon'",
+        city: "user.address.city ?? 'nowhere'",
+        score: "(user.stats.score ?? 0) + (user.stats.bonus ?? 0)",
+      }},
+    ],
+  },
+  cases: [
+    [{user: {name: "a"}}, {name: "a", city: "nowhere", score: 0}],
+    [{user: {address: {city: "b"}}}, {name: "anon", city: "b", score: 0}],
+    [{user: {stats: {score: 3}}}, {name: "anon", city: "nowhere", score: 3}],
+    [{user: {stats: {bonus: 2}}}, {name: "anon", city: "nowhere", score: 2}],
+    [{user: {name: "c", stats: {score: 1, bonus: 1}}}, {name: "c", city: "nowhere", score: 2}],
+    [{}, {name: "anon", city: "nowhere", score: 0}],
+    [{user: {}}, {name: "anon", city: "nowhere", score: 0}],
+    [{user: {address: {}}}, {name: "anon", city: "nowhere", score: 0}],
+    [{user: {name: "d", address: {city: "e"}, stats: {score: 10}}}, {name: "d", city: "e", score: 10}],
+    [{user: {name: "f"}}, {name: "f", city: "nowhere", score: 0}],
+    [{user: {stats: {}}}, {name: "anon", city: "nowhere", score: 0}],
+    [{user: {address: {city: "g", zip: "1"}}}, {name: "anon", city: "g", score: 0}],
+    [{user: {stats: {score: 0.5, bonus: 0.25}}}, {name: "anon", city: "nowhere", score: 0.75}],
+    [{user: {name: "h", stats: {score: -1}}}, {name: "h", city: "nowhere", score: -1}],
+    [{user: {name: ""}}, {name: "", city: "nowhere", score: 0}],
+    [{user: {address: {city: ""}}}, {name: "anon", city: "", score: 0}],
+    [{user: {name: "i", address: {city: "j"}}}, {name: "i", city: "j", score: 0}],
+    [{user: {stats: {bonus: 100}}}, {name: "anon", city: "nowhere", score: 100}],
+    [{other: {name: "x"}}, {name: "anon", city: "nowhere", score: 0}],
+    [{user: {name: "k", stats: {score: 5, bonus: 5}, address: {city: "l"}}}, {name: "k", city: "l", score: 10}],
+    [{user: {name: "m"}}, {name: "m", city: "nowhere", score: 0}],
+    [{user: {stats: {score: 7}}}, {name: "anon", city: "nowhere", score: 7}],
+  ],
+}
+
+{
+  name: "long: a table over sparse nested columns",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["loan.amount", "loan.applicant.income", "loan.applicant.employed"], outputs: ["decision"], rules: [
+        ["> 100000", "", "", "'manual'"],
+        ["", ">= 50000", "true", "'approve'"],
+        ["", "", "false", "'decline'"],
+        ["", "", "", "'review'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{loan: {amount: 200000}}, {decision: "manual"}],
+    [{loan: {amount: 1000, applicant: {income: 60000, employed: true}}}, {decision: "approve"}],
+    [{loan: {applicant: {income: 60000, employed: true}}}, {decision: "approve"}],
+    [{loan: {applicant: {employed: false}}}, {decision: "decline"}],
+    [{loan: {applicant: {income: 10000, employed: true}}}, {decision: "review"}],
+    [{loan: {}}, {decision: "review"}],
+    [{}, {decision: "review"}],
+    [{loan: {amount: 100000, applicant: {income: 50000, employed: true}}}, {decision: "approve"}],
+    [{loan: {amount: 100001, applicant: {employed: false}}}, {decision: "manual"}],
+    [{loan: {amount: 5, applicant: {income: 70000}}}, {decision: "review"}],
+    [{loan: {amount: 5, applicant: {}}}, {decision: "review"}],
+    [{loan: {applicant: {income: 99999, employed: false}}}, {decision: "decline"}],
+    [{loan: {amount: 0, applicant: {income: 0, employed: true}}}, {decision: "review"}],
+    [{loan: {amount: 999999.99}}, {decision: "manual"}],
+    [{loan: {applicant: {income: 50000.01, employed: true}}}, {decision: "approve"}],
+    [{loan: {amount: 1}}, {decision: "review"}],
+    [{loan: {applicant: {employed: true}}}, {decision: "review"}],
+    [{loan: {amount: 2, applicant: {income: 1, employed: false}}}, {decision: "decline"}],
+    [{loan: {amount: 3, applicant: {income: 50000, employed: true}}}, {decision: "approve"}],
+    [{loan: {amount: 150000, applicant: {}}}, {decision: "manual"}],
+    [{loan: {applicant: {income: 80000, employed: "yes"}}}, {decision: "review"}],
+    [{loan: {amount: 4}}, {decision: "review"}],
+  ],
+}
+
+// --- Loops and overlapping keys over shapes that differ per row ---------------------------
+
+{
+  name: "a pass-through loop keeps each item's own keys",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", outputPath: "items", passThrough: true, executionMode: "loop", fields: {seen: "true", cost: "(price ?? 0) * 2"}}],
+  },
+  cases: [
+    [{items: [{price: 1, a: 1}, {b: {c: 2}}]}, {items: [{price: 1, a: 1, seen: true, cost: 2}, {b: {c: 2}, seen: true, cost: 0}]}],
+    [{items: []}, {items: []}],
+    [{items: [{}], other: "kept"}, {items: [{seen: true, cost: 0}], other: "kept"}],
+    [{items: [{price: 0.5, tags: ["x"]}, {price: 2, deep: {deeper: {x: 1}}}]}, {items: [{price: 0.5, tags: ["x"], seen: true, cost: 1}, {price: 2, deep: {deeper: {x: 1}}, seen: true, cost: 4}]}],
+  ],
+}
+
+{
+  name: "a loop over an array whose elements are objects in some rows and scalars in others",
+  graph: {
+    nodes: [{expression: "each", inputField: "xs", outputPath: "out", executionMode: "loop", fields: {v: "v ?? 'none'"}}],
+  },
+  cases: [
+    [{xs: [{v: 1}, {v: "a"}]}, {out: [{v: 1}, {v: "a"}]}],
+    [{xs: [{}, {w: 1}]}, {out: [{v: "none"}, {v: "none"}]}],
+    [{xs: [1, 2]}, "!error"],
+    [{xs: []}, {out: []}],
+    [{xs: [{v: [1, 2]}]}, {out: [{v: [1, 2]}]}],
+  ],
+}
+
+{
+  name: "expression keys writing a parent and a child path, values varying per row",
+  graph: {
+    nodes: [{expression: "e", fields: [["a", "base"], ["a.b", "extra"]]}],
+  },
+  cases: [
+    [{base: {x: 1}, extra: 2}, {a: {x: 1, b: 2}}],
+    [{base: {}, extra: "s"}, {a: {b: "s"}}],
+    [{extra: 3}, {a: {b: 3}}, "bug: the earlier key `a` evaluated to null, and the later `a.b` write is then lost instead of creating the object, unlike dotted writes into a missing input key (11-pass-through)"],
+    [{base: {x: 1}}, {a: {x: 1, b: null}}],
+    [{base: 5, extra: 1}, {a: 5}, "question: `a.b` cannot be written into the scalar the earlier key `a` produced, so it is silently dropped; pass-through dotted writes replace a primitive instead (11-pass-through)"],
+    [{}, {}, "question: both writes are null; the nested null is not materialized here, unlike other nested null writes"],
+  ],
+}
+
+{
+  name: "a table in loop mode reading dotted fields of items with different depth",
+  graph: {
+    nodes: [{table: "t", inputField: "people", outputPath: "out", executionMode: "loop", inputs: ["address.country", "age"], outputs: ["r"], rules: [
+      ["'US'", ">= 21", "'us-adult'"],
+      ["", ">= 18", "'adult'"],
+      ["'US'", "", "'us'"],
+      ["", "", "'other'"],
+    ]}],
+  },
+  cases: [
+    [{people: [{address: {country: "US"}, age: 30}, {age: 19}, {address: {country: "US"}}, {}]}, {out: [{r: "us-adult"}, {r: "adult"}, {r: "us"}, {r: "other"}]}],
+    [{people: [{address: {}, age: 18}, {address: {country: "DE", city: "B"}, age: 10}]}, {out: [{r: "adult"}, {r: "other"}]}],
+    [{people: []}, {out: []}],
+    [{people: [{address: {country: "US"}, age: 20}]}, {out: [{r: "adult"}]}],
+  ],
+}

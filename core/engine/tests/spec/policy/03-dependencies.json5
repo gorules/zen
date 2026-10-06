@@ -1,0 +1,629 @@
+// Dependencies between blocks.
+//
+// Blocks are not executed in document order. A block runs after every block that writes a
+// property it reads, so the document order of blocks never changes the result. Chains of computed
+// properties resolve transitively, diamonds compute the shared property once, and a cycle between
+// computed properties is the CyclicDependency compile error.
+
+// ---------------------------------------------------------------------------------------------
+// Order independence: the same two blocks, in both document orders, give the same output.
+
+{
+  name: "a reader listed before its writer",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [
+      {expression: "customer.label", value: "customer.adult ? 'adult' : 'minor'"},
+      {expression: "customer.adult", value: "customer.age >= 18"},
+    ],
+  },
+  cases: [
+    [{customer: {age: 30}}, {customer: {age: 30, adult: true, label: "adult"}}],
+    [{customer: {age: 3}}, {customer: {age: 3, adult: false, label: "minor"}}],
+    [{customer: {age: 18}}, {customer: {age: 18, adult: true, label: "adult"}}],
+  ],
+}
+
+{
+  name: "a reader listed after its writer",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [
+      {expression: "customer.adult", value: "customer.age >= 18"},
+      {expression: "customer.label", value: "customer.adult ? 'adult' : 'minor'"},
+    ],
+  },
+  cases: [
+    [{customer: {age: 30}}, {customer: {age: 30, adult: true, label: "adult"}}],
+    [{customer: {age: 3}}, {customer: {age: 3, adult: false, label: "minor"}}],
+    [{customer: {age: 18}}, {customer: {age: 18, adult: true, label: "adult"}}],
+  ],
+}
+
+{
+  name: "a reversed chain of three",
+  policy: {
+    models: {order: {net: "number"}},
+    blocks: [
+      {expression: "order.total", value: "order.net + order.tax"},
+      {expression: "order.tax", value: "order.net * order.rate"},
+      {expression: "order.rate", value: "order.net > 100 ? 0.1 : 0.2"},
+    ],
+  },
+  cases: [
+    [{order: {net: 50}}, {order: {net: 50, rate: 0.2, tax: 10, total: 60}}],
+    [{order: {net: 200}}, {order: {net: 200, rate: 0.1, tax: 20, total: 220}}],
+    [{order: {net: 100}}, {order: {net: 100, rate: 0.2, tax: 20, total: 120}}],
+    [{order: {net: 0}}, {order: {net: 0, rate: 0.2, tax: 0, total: 0}}],
+  ],
+}
+
+{
+  name: "a shuffled chain of three",
+  policy: {
+    models: {order: {net: "number"}},
+    blocks: [
+      {expression: "order.tax", value: "order.net * order.rate"},
+      {expression: "order.total", value: "order.net + order.tax"},
+      {expression: "order.rate", value: "order.net > 100 ? 0.1 : 0.2"},
+    ],
+  },
+  cases: [
+    [{order: {net: 50}}, {order: {net: 50, rate: 0.2, tax: 10, total: 60}}],
+    [{order: {net: 200}}, {order: {net: 200, rate: 0.1, tax: 20, total: 220}}],
+    [{order: {net: 100.5}}, {order: {net: 100.5, rate: 0.1, tax: 10.05, total: 110.55}}],
+  ],
+}
+
+{
+  name: "a long chain listed in reverse",
+  policy: {
+    models: {s: {v: "number"}},
+    blocks: [
+      {expression: "s.k", value: "s.j + 1"},
+      {expression: "s.j", value: "s.i + 1"},
+      {expression: "s.i", value: "s.h + 1"},
+      {expression: "s.h", value: "s.g + 1"},
+      {expression: "s.g", value: "s.f + 1"},
+      {expression: "s.f", value: "s.e + 1"},
+      {expression: "s.e", value: "s.d + 1"},
+      {expression: "s.d", value: "s.c + 1"},
+      {expression: "s.c", value: "s.b + 1"},
+      {expression: "s.b", value: "s.a + 1"},
+      {expression: "s.a", value: "s.v + 1"},
+    ],
+  },
+  cases: [
+    [{s: {v: 0}}, {s: {v: 0, a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7, h: 8, i: 9, j: 10, k: 11}}],
+    [{s: {v: -11}}, {s: {v: -11, a: -10, b: -9, c: -8, d: -7, e: -6, f: -5, g: -4, h: -3, i: -2, j: -1, k: 0}}],
+    [{s: {v: 0.5}}, {s: {v: 0.5, a: 1.5, b: 2.5, c: 3.5, d: 4.5, e: 5.5, f: 6.5, g: 7.5, h: 8.5, i: 9.5, j: 10.5, k: 11.5}}],
+  ],
+}
+
+{
+  name: "a chain of string builders in reverse",
+  policy: {
+    models: {p: {name: "string"}},
+    blocks: [
+      {expression: "p.c", value: "p.b + '!'"},
+      {expression: "p.b", value: "p.a + ','"},
+      {expression: "p.a", value: "upper(p.name)"},
+    ],
+  },
+  cases: [
+    [{p: {name: "ann"}}, {p: {name: "ann", a: "ANN", b: "ANN,", c: "ANN,!"}}],
+    [{p: {name: ""}}, {p: {name: "", a: "", b: ",", c: ",!"}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Chains across entities and through top-level computed properties.
+
+{
+  name: "a chain across two entities",
+  policy: {
+    models: {customer: {age: "number"}, order: {total: "number"}},
+    blocks: [
+      {expression: "order.discount", value: "customer.senior ? order.total * 0.1 : 0"},
+      {expression: "customer.senior", value: "customer.age >= 65"},
+      {expression: "order.due", value: "order.total - order.discount"},
+    ],
+  },
+  cases: [
+    [{customer: {age: 70}, order: {total: 100}}, {customer: {age: 70, senior: true}, order: {total: 100, discount: 10, due: 90}}],
+    [{customer: {age: 30}, order: {total: 100}}, {customer: {age: 30, senior: false}, order: {total: 100, discount: 0, due: 100}}],
+    [{customer: {age: 65}, order: {total: 0}}, {customer: {age: 65, senior: true}, order: {total: 0, discount: 0, due: 0}}],
+  ],
+}
+
+{
+  name: "a chain through a top-level computed property",
+  policy: {
+    models: {order: {net: "number"}},
+    blocks: [
+      {expression: "order.tax", value: "order.net * taxRate"},
+      {expression: "taxRate", value: "order.net > 1000 ? 0.05 : 0.2"},
+    ],
+  },
+  cases: [
+    [{order: {net: 100}}, {order: {net: 100, tax: 20}, taxRate: 0.2}],
+    [{order: {net: 2000}}, {order: {net: 2000, tax: 100}, taxRate: 0.05}],
+  ],
+}
+
+{
+  name: "a chain through a computed object read field by field",
+  policy: {
+    models: {p: {a: "number", b: "number"}},
+    blocks: [
+      {expression: "p.result", value: "p.pair.sum * p.pair.product"},
+      {expression: "p.pair", value: "{sum: p.a + p.b, product: p.a * p.b}"},
+    ],
+  },
+  cases: [
+    [{p: {a: 2, b: 3}}, {p: {a: 2, b: 3, pair: {sum: 5, product: 6}, result: 30}}],
+    [{p: {a: 0, b: 3}}, {p: {a: 0, b: 3, pair: {sum: 3, product: 0}, result: 0}}],
+  ],
+}
+
+{
+  name: "a chain through a computed array",
+  policy: {
+    models: {cart: {prices: "number[]"}},
+    blocks: [
+      {expression: "cart.total", value: "sum(cart.discounted)"},
+      {expression: "cart.discounted", value: "map(cart.prices, # * 0.5)"},
+    ],
+  },
+  cases: [
+    [{cart: {prices: [10, 20]}}, {cart: {prices: [10, 20], discounted: [5, 10], total: 15}}],
+    [{cart: {prices: []}}, {cart: {prices: [], discounted: [], total: 0}}],
+  ],
+}
+
+{
+  name: "a chain through a match block",
+  policy: {
+    models: {customer: {score: "number"}},
+    blocks: [
+      {expression: "customer.limit", value: "customer.tier == 'gold' ? 10000 : customer.tier == 'silver' ? 5000 : 1000"},
+      {match: "customer.tier", arms: [["customer.score >= 800", "'gold'"], ["customer.score >= 600", "'silver'"], ["", "'bronze'"]]},
+    ],
+  },
+  cases: [
+    [{customer: {score: 850}}, {customer: {score: 850, tier: "gold", limit: 10000}}],
+    [{customer: {score: 700}}, {customer: {score: 700, tier: "silver", limit: 5000}}],
+    [{customer: {score: 100}}, {customer: {score: 100, tier: "bronze", limit: 1000}}],
+    [{customer: {score: 600}}, {customer: {score: 600, tier: "silver", limit: 5000}}],
+  ],
+}
+
+{
+  name: "a match whose conditions read a computed property",
+  policy: {
+    models: {customer: {income: "number", debt: "number"}},
+    blocks: [
+      {match: "customer.risk", arms: [["customer.ratio > 0.5", "'high'"], ["customer.ratio > 0.2", "'medium'"], ["", "'low'"]]},
+      {expression: "customer.ratio", value: "customer.debt / customer.income"},
+    ],
+  },
+  cases: [
+    [{customer: {income: 100, debt: 60}}, {customer: {income: 100, debt: 60, ratio: 0.6, risk: "high"}}],
+    [{customer: {income: 100, debt: 30}}, {customer: {income: 100, debt: 30, ratio: 0.3, risk: "medium"}}],
+    [{customer: {income: 100, debt: 0}}, {customer: {income: 100, debt: 0, ratio: 0, risk: "low"}}],
+  ],
+}
+
+{
+  name: "a chain through a decision table",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [
+      {expression: "customer.message", value: "'segment ' + customer.segment"},
+      {table: "segments", inputs: ["customer.band"], outputs: ["customer.segment"], rules: [
+        ["'young'", "'A'"],
+        ["", "'B'"],
+      ]},
+      {expression: "customer.band", value: "customer.age < 30 ? 'young' : 'old'"},
+    ],
+  },
+  cases: [
+    [{customer: {age: 20}}, {customer: {age: 20, band: "young", segment: "A", message: "segment A"}}],
+    [{customer: {age: 40}}, {customer: {age: 40, band: "old", segment: "B", message: "segment B"}}],
+  ],
+}
+
+{
+  name: "an assertion reads a computed property",
+  policy: {
+    models: {customer: {age: "number", income: "number"}},
+    blocks: [
+      {assertion: "customer.eligible", conditions: ["customer.adult", "customer.income > 1000"]},
+      {expression: "customer.adult", value: "customer.age >= 18"},
+    ],
+  },
+  cases: [
+    [{customer: {age: 30, income: 2000}}, {customer: {age: 30, income: 2000, adult: true, eligible: true}}],
+    [{customer: {age: 10, income: 2000}}, {customer: {age: 10, income: 2000, adult: false, eligible: false}}],
+    [{customer: {age: 30, income: 10}}, {customer: {age: 30, income: 10, adult: true, eligible: false}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Diamonds: two computed properties read one shared property; a fourth reads both.
+
+{
+  name: "a diamond",
+  policy: {
+    models: {n: {x: "number"}},
+    blocks: [
+      {expression: "n.bottom", value: "n.left + n.right"},
+      {expression: "n.left", value: "n.top * 2"},
+      {expression: "n.right", value: "n.top * 3"},
+      {expression: "n.top", value: "n.x + 1"},
+    ],
+  },
+  cases: [
+    [{n: {x: 0}}, {n: {x: 0, top: 1, left: 2, right: 3, bottom: 5}}],
+    [{n: {x: 1}}, {n: {x: 1, top: 2, left: 4, right: 6, bottom: 10}}],
+    [{n: {x: -1}}, {n: {x: -1, top: 0, left: 0, right: 0, bottom: 0}}],
+  ],
+}
+
+{
+  name: "a diamond with the shared node listed first",
+  policy: {
+    models: {n: {x: "number"}},
+    blocks: [
+      {expression: "n.top", value: "n.x + 1"},
+      {expression: "n.bottom", value: "n.left + n.right"},
+      {expression: "n.right", value: "n.top * 3"},
+      {expression: "n.left", value: "n.top * 2"},
+    ],
+  },
+  cases: [
+    [{n: {x: 0}}, {n: {x: 0, top: 1, left: 2, right: 3, bottom: 5}}],
+    [{n: {x: 9}}, {n: {x: 9, top: 10, left: 20, right: 30, bottom: 50}}],
+  ],
+}
+
+{
+  name: "a diamond whose shared node fails fails once",
+  policy: {
+    models: {n: {text: "string"}},
+    blocks: [
+      {expression: "n.bottom", value: "n.left + n.right"},
+      {expression: "n.left", value: "n.top * 2"},
+      {expression: "n.right", value: "n.top * 3"},
+      {expression: "n.top", value: "number(n.text)"},
+    ],
+  },
+  cases: [
+    [{n: {text: "1"}}, {n: {text: "1", top: 1, left: 2, right: 3, bottom: 5}}],
+    [{n: {text: "x"}}, "!error"],
+  ],
+}
+
+{
+  name: "a wide fan-in reads many computed properties",
+  policy: {
+    models: {s: {v: "number"}},
+    blocks: [
+      {expression: "s.total", value: "s.a + s.b + s.c + s.d"},
+      {expression: "s.a", value: "s.v"},
+      {expression: "s.b", value: "s.v * 10"},
+      {expression: "s.c", value: "s.v * 100"},
+      {expression: "s.d", value: "s.v * 1000"},
+    ],
+  },
+  cases: [
+    [{s: {v: 1}}, {s: {v: 1, a: 1, b: 10, c: 100, d: 1000, total: 1111}}],
+    [{s: {v: 0}}, {s: {v: 0, a: 0, b: 0, c: 0, d: 0, total: 0}}],
+    [{s: {v: 0.1}}, {s: {v: 0.1, a: 0.1, b: 1, c: 10, d: 100, total: 111.1}}],
+  ],
+}
+
+{
+  name: "a wide fan-out of one computed property",
+  policy: {
+    models: {s: {v: "number"}},
+    blocks: [
+      {expression: "s.a", value: "s.base + 1"},
+      {expression: "s.b", value: "s.base + 2"},
+      {expression: "s.c", value: "s.base + 3"},
+      {expression: "s.base", value: "s.v * 2"},
+    ],
+  },
+  cases: [
+    [{s: {v: 1}}, {s: {v: 1, base: 2, a: 3, b: 4, c: 5}}],
+    [{s: {v: -1}}, {s: {v: -1, base: -2, a: -1, b: 0, c: 1}}],
+  ],
+}
+
+{
+  name: "a double diamond",
+  policy: {
+    models: {n: {x: "number"}},
+    blocks: [
+      {expression: "n.out", value: "n.l2 + n.r2"},
+      {expression: "n.l2", value: "n.mid + 1"},
+      {expression: "n.r2", value: "n.mid + 2"},
+      {expression: "n.mid", value: "n.l1 + n.r1"},
+      {expression: "n.l1", value: "n.x + 1"},
+      {expression: "n.r1", value: "n.x + 2"},
+    ],
+  },
+  cases: [
+    [{n: {x: 0}}, {n: {x: 0, l1: 1, r1: 2, mid: 3, l2: 4, r2: 5, out: 9}}],
+    [{n: {x: 10}}, {n: {x: 10, l1: 11, r1: 12, mid: 23, l2: 24, r2: 25, out: 49}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Independent blocks: blocks with no dependency between them all run and their order does not
+// matter.
+
+{
+  name: "independent blocks in any order",
+  policy: {
+    models: {p: {a: "number", b: "number"}},
+    blocks: [
+      {expression: "p.y", value: "p.b * 2"},
+      {expression: "p.x", value: "p.a * 2"},
+    ],
+  },
+  cases: [
+    [{p: {a: 1, b: 2}}, {p: {a: 1, b: 2, x: 2, y: 4}}],
+    [{p: {a: 0, b: 0}}, {p: {a: 0, b: 0, x: 0, y: 0}}],
+  ],
+}
+
+{
+  name: "two separate chains interleaved",
+  policy: {
+    models: {p: {a: "number", b: "number"}},
+    blocks: [
+      {expression: "p.a3", value: "p.a2 + 1"},
+      {expression: "p.b3", value: "p.b2 + 1"},
+      {expression: "p.a2", value: "p.a1 + 1"},
+      {expression: "p.b2", value: "p.b1 + 1"},
+      {expression: "p.a1", value: "p.a + 1"},
+      {expression: "p.b1", value: "p.b + 1"},
+    ],
+  },
+  cases: [
+    [{p: {a: 0, b: 100}}, {p: {a: 0, b: 100, a1: 1, a2: 2, a3: 3, b1: 101, b2: 102, b3: 103}}],
+    [{p: {a: -3, b: -3}}, {p: {a: -3, b: -3, a1: -2, a2: -1, a3: 0, b1: -2, b2: -1, b3: 0}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Required inputs are those reachable from the computed properties: an input read only by a
+// block in a chain is still required.
+
+{
+  name: "an input read deep in a chain is required",
+  policy: {
+    models: {order: {net: "number", region: "string"}},
+    blocks: [
+      {expression: "order.total", value: "order.net + order.tax"},
+      {expression: "order.tax", value: "order.region == 'eu' ? order.net * 0.2 : 0"},
+    ],
+  },
+  cases: [
+    [{order: {net: 100, region: "eu"}}, {order: {net: 100, region: "eu", tax: 20, total: 120}}],
+    [{order: {net: 100, region: "us"}}, {order: {net: 100, region: "us", tax: 0, total: 100}}],
+    [{order: {net: 100}}, "!error: order.region"],
+    [{order: {region: "eu"}}, "!error: order.net"],
+  ],
+}
+
+{
+  name: "a computed property is never required from the input",
+  policy: {
+    models: {order: {net: "number"}},
+    blocks: [
+      {expression: "order.total", value: "order.net + order.tax"},
+      {expression: "order.tax", value: "order.net * 0.2"},
+    ],
+  },
+  cases: [
+    [{order: {net: 10}}, {order: {net: 10, tax: 2, total: 12}}],
+    [{order: {net: 10, tax: 999}}, {order: {net: 10, tax: 2, total: 12}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Goals: a request with goals computes the goal properties and what they depend on, and nothing
+// else.
+
+{
+  name: "a goal computes only its dependency chain",
+  policy: {
+    models: {order: {net: "number"}},
+    blocks: [
+      {expression: "order.total", value: "order.net + order.tax"},
+      {expression: "order.tax", value: "order.net * 0.2"},
+      {expression: "order.label", value: "'order of ' + string(order.net)"},
+    ],
+  },
+  cases: [
+    {input: {order: {net: 10}}, goals: ["order.total"], output: {order: {net: 10, tax: 2, total: 12}}},
+    {input: {order: {net: 10}}, goals: ["order.tax"], output: {order: {net: 10, tax: 2}}},
+    {input: {order: {net: 10}}, goals: ["order.label"], output: {order: {net: 10, label: "order of 10"}}},
+    {input: {order: {net: 10}}, output: {order: {net: 10, tax: 2, total: 12, label: "order of 10"}}},
+  ],
+}
+
+{
+  name: "a goal does not require inputs outside its chain",
+  policy: {
+    models: {order: {net: "number", code: "string"}},
+    blocks: [
+      {expression: "order.tax", value: "order.net * 0.2"},
+      {expression: "order.tag", value: "upper(order.code)"},
+    ],
+  },
+  cases: [
+    {input: {order: {net: 10}}, goals: ["order.tax"], output: {order: {net: 10, tax: 2}}},
+    {input: {order: {code: "x"}}, goals: ["order.tag"], output: {order: {code: "x", tag: "X"}}},
+    {input: {order: {code: "x"}}, goals: ["order.tax"], output: "!error: MissingRequiredInputs"},
+    {input: {order: {net: 10}}, output: "!error: MissingRequiredInputs"},
+  ],
+}
+
+{
+  name: "a goal skips a failing block outside its chain",
+  policy: {
+    models: {data: {text: "string", n: "number"}},
+    blocks: [
+      {expression: "data.parsed", value: "number(data.text)"},
+      {expression: "data.double", value: "data.n * 2"},
+    ],
+  },
+  cases: [
+    {input: {data: {text: "x", n: 2}}, goals: ["data.double"], output: {data: {text: "x", n: 2, double: 4}}},
+    {input: {data: {text: "x", n: 2}}, goals: ["data.parsed"], output: "!error"},
+    {input: {data: {text: "x", n: 2}}, output: "!error"},
+  ],
+}
+
+{
+  name: "an unknown goal is an error",
+  policy: {
+    models: {order: {net: "number"}},
+    blocks: [{expression: "order.tax", value: "order.net * 0.2"}],
+  },
+  cases: [
+    {input: {order: {net: 10}}, goals: ["order.nope"], output: "!error: GoalNotFound"},
+    {input: {order: {net: 10}}, goals: ["order.net"], output: {order: {net: 10}}, note: "question: a declared input read by a block is accepted as a goal and evaluates nothing; GoalNotFound only fires for paths absent from the dependency graph"},
+    {input: {order: {net: 10}}, goals: ["order"], output: "!error: GoalNotFound"},
+  ],
+}
+
+{
+  name: "two goals share a diamond",
+  policy: {
+    models: {n: {x: "number"}},
+    blocks: [
+      {expression: "n.left", value: "n.top * 2"},
+      {expression: "n.right", value: "n.top * 3"},
+      {expression: "n.top", value: "n.x + 1"},
+      {expression: "n.other", value: "n.x - 1"},
+    ],
+  },
+  cases: [
+    {input: {n: {x: 1}}, goals: ["n.left", "n.right"], output: {n: {x: 1, top: 2, left: 4, right: 6}}},
+    {input: {n: {x: 1}}, goals: ["n.left"], output: {n: {x: 1, top: 2, left: 4}}},
+    {input: {n: {x: 1}}, goals: ["n.top"], output: {n: {x: 1, top: 2}}},
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Cycles: two or more computed properties reading each other form a cycle, a compile error.
+
+{
+  name: "a two-property cycle",
+  policy: {
+    models: {p: {x: "number"}},
+    blocks: [
+      {expression: "p.a", value: "p.b + p.x"},
+      {expression: "p.b", value: "p.a + 1"},
+    ],
+  },
+  cases: [
+    {input: {p: {x: 1}}, goals: ["p.a"], output: "!error", note: "question: errors only incidentally: the re-entrant demand of p.a reads null and `null + 1` fails with ExpressionFailed, not a cycle error"},
+    {input: {p: {x: 1}}, goals: ["p.b"], output: "!error", note: "question: errors only incidentally (ExpressionFailed on null + number), not a cycle error"},
+    [{p: {x: 1}}, "!error"],
+    [{p: {x: 0}}, "!error"],
+  ],
+}
+
+{
+  name: "a three-property cycle",
+  policy: {
+    models: {p: {x: "number"}},
+    blocks: [
+      {expression: "p.a", value: "p.c + 1"},
+      {expression: "p.b", value: "p.a + 1"},
+      {expression: "p.c", value: "p.b + p.x"},
+    ],
+  },
+  cases: [
+    [{p: {x: 1}}, "!error"],
+  ],
+}
+
+{
+  name: "a cycle hidden behind a conditional",
+  policy: {
+    models: {p: {x: "number"}},
+    blocks: [
+      {expression: "p.a", value: "p.x > 0 ? 1 : p.b"},
+      {expression: "p.b", value: "p.a + 1"},
+    ],
+  },
+  cases: [
+    {input: {p: {x: 1}}, goals: ["p.b"], output: "!error"},
+    {input: {p: {x: 1}}, goals: ["p.a"], output: "!error", note: "question: errors only incidentally: p.a demands p.b, whose re-entrant read of p.a is null and `null + 1` fails with ExpressionFailed"},
+    [{p: {x: 1}}, "!error"],
+    [{p: {x: -1}}, "!error"],
+  ],
+}
+
+{
+  name: "a cycle with an unrelated property alongside",
+  policy: {
+    models: {p: {x: "number"}},
+    blocks: [
+      {expression: "p.ok", value: "p.x * 2"},
+      {expression: "p.a", value: "p.b + 1"},
+      {expression: "p.b", value: "p.a + 1"},
+    ],
+  },
+  cases: [
+    [{p: {x: 1}}, "!error"],
+  ],
+}
+
+{
+  name: "a cycle through a match block",
+  policy: {
+    models: {p: {x: "number"}},
+    blocks: [
+      {match: "p.a", arms: [["p.b > 1", "1"], ["", "2"]]},
+      {expression: "p.b", value: "p.a + p.x"},
+    ],
+  },
+  cases: [
+    [{p: {x: 1}}, "!error"],
+  ],
+}
+
+{
+  name: "a cycle through a top-level property",
+  policy: {
+    models: {p: {x: "number"}},
+    blocks: [
+      {expression: "total", value: "p.part + 1"},
+      {expression: "p.part", value: "total - p.x"},
+    ],
+  },
+  cases: [
+    [{p: {x: 1}}, "!error"],
+  ],
+}
+
+{
+  name: "a cycle through a computed object field",
+  policy: {
+    models: {p: {x: "number"}},
+    blocks: [
+      {expression: "p.obj", value: "{v: p.other + 1}"},
+      {expression: "p.other", value: "p.obj.v * 2"},
+    ],
+  },
+  cases: [
+    [{p: {x: 1}}, "!error"],
+  ],
+}

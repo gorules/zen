@@ -1,0 +1,521 @@
+// Null and missing values in policies. A required property that is read must be present and
+// non-null (MissingRequiredInputs otherwise); an optional property (`?`) may be missing or
+// null and reads as null. Null flows through expressions with the expression language's rules:
+// `??` and `== null` handle it, arithmetic and ordering on null fail the evaluation.
+
+// --- Optional strings ------------------------------------------------------------------------
+
+{
+  name: "an optional string defaults with ??",
+  policy: {
+    models: {customer: {age: "number", nickname: "string?"}},
+    blocks: [{expression: "customer.label", value: "customer.nickname ?? 'anon'"}],
+  },
+  cases: [
+    [{customer: {age: 1}}, {customer: {age: 1, label: "anon"}}],
+    [{customer: {age: 1, nickname: null}}, {customer: {age: 1, nickname: null, label: "anon"}}],
+    [{customer: {age: 1, nickname: "bob"}}, {customer: {age: 1, nickname: "bob", label: "bob"}}],
+    [{customer: {age: 1, nickname: ""}}, {customer: {age: 1, nickname: "", label: ""}}],
+    [{customer: {}}, {customer: {label: "anon"}}],
+    [{customer: {age: 1, nickname: 5}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "missing and null optionals compare equal to null",
+  policy: {
+    models: {customer: {nickname: "string?", score: "number?"}},
+    blocks: [
+      {expression: "customer.noNick", value: "customer.nickname == null"},
+      {expression: "customer.hasScore", value: "customer.score != null"},
+    ],
+  },
+  cases: [
+    [{customer: {}}, {customer: {noNick: true, hasScore: false}}],
+    [{customer: {nickname: null, score: null}}, {customer: {nickname: null, score: null, noNick: true, hasScore: false}}],
+    [{customer: {nickname: "a", score: 0}}, {customer: {nickname: "a", score: 0, noNick: false, hasScore: true}}],
+    [{customer: {nickname: "", score: -1}}, {customer: {nickname: "", score: -1, noNick: false, hasScore: true}}],
+  ],
+}
+
+{
+  name: "a missing entity reads its optional properties as null",
+  policy: {
+    models: {customer: {nickname: "string?"}},
+    blocks: [{expression: "label", value: "customer.nickname ?? 'none'"}],
+  },
+  cases: [
+    [{}, {label: "none"}],
+    [{customer: null}, {customer: null, label: "none"}],
+    {input: null, output: {label: "none"}, note: "bug: a null request passes validation like an empty object, but the store stays null and every write is lost (output null)"},
+    [{customer: {nickname: "x"}}, {customer: {nickname: "x"}, label: "x"}],
+  ],
+}
+
+// --- Optional numbers in arithmetic -----------------------------------------------------------
+
+{
+  name: "arithmetic on an optional number guarded with ??",
+  policy: {
+    models: {customer: {score: "number?"}},
+    blocks: [{expression: "customer.next", value: "(customer.score ?? 0) + 1"}],
+  },
+  cases: [
+    [{customer: {}}, {customer: {next: 1}}],
+    [{customer: {score: null}}, {customer: {score: null, next: 1}}],
+    [{customer: {score: 5}}, {customer: {score: 5, next: 6}}],
+    [{customer: {score: -1}}, {customer: {score: -1, next: 0}}],
+    [{customer: {score: 0.5}}, {customer: {score: 0.5, next: 1.5}}],
+  ],
+}
+
+{
+  name: "arithmetic on an unguarded optional number fails when it is null",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {customer: {score: "number?"}},
+    blocks: [{expression: "customer.next", value: "customer.score + 1"}],
+  },
+  cases: [
+    [{customer: {score: 5}}, {customer: {score: 5, next: 6}}],
+    [{customer: {score: 0}}, {customer: {score: 0, next: 1}}],
+    [{customer: {}}, "!error: ExpressionFailed"],
+    [{customer: {score: null}}, "!error: ExpressionFailed"],
+    [{}, "!error: ExpressionFailed"],
+  ],
+}
+
+{
+  name: "a ternary guard keeps the null branch from evaluating",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {customer: {score: "number?"}},
+    blocks: [{expression: "customer.doubled", value: "customer.score == null ? 'n/a' : customer.score * 2"}],
+  },
+  cases: [
+    [{customer: {}}, {customer: {doubled: "n/a"}}],
+    [{customer: {score: null}}, {customer: {score: null, doubled: "n/a"}}],
+    [{customer: {score: 21}}, {customer: {score: 21, doubled: 42}}],
+    [{customer: {score: 0}}, {customer: {score: 0, doubled: 0}}],
+  ],
+}
+
+{
+  name: "an optional number copied as is writes null",
+  policy: {
+    models: {customer: {score: "number?"}},
+    blocks: [{expression: "customer.copy", value: "customer.score"}],
+  },
+  cases: [
+    [{customer: {}}, {customer: {copy: null}}],
+    [{customer: {score: null}}, {customer: {score: null, copy: null}}],
+    [{customer: {score: 3}}, {customer: {score: 3, copy: 3}}],
+  ],
+}
+
+// --- Required properties: null counts as missing ------------------------------------------------
+
+{
+  name: "a required property that is null or missing is a missing input",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [
+      {expression: "customer.a", value: "customer.age + 1"},
+      {expression: "customer.b", value: "customer.age == null"},
+    ],
+  },
+  cases: [
+    [{customer: {age: 4}}, {customer: {age: 4, a: 5, b: false}}],
+    [{customer: {age: null}}, "!error: MissingRequiredInputs"],
+    [{customer: {}}, "!error: MissingRequiredInputs"],
+    [{customer: null}, "!error: MissingRequiredInputs"],
+    [{}, "!error: MissingRequiredInputs"],
+    {input: null, output: "!error: MissingRequiredInputs", note: "bug: a null request skips the required-input check that {} gets and fails later with ExpressionFailed"},
+  ],
+}
+
+{
+  name: "a required property that no block reads may be missing",
+  policy: {
+    models: {customer: {age: "number", name: "string"}},
+    blocks: [{expression: "customer.greeting", value: "'Hi ' + customer.name"}],
+  },
+  cases: [
+    [{customer: {name: "Ann"}}, {customer: {name: "Ann", greeting: "Hi Ann"}}],
+    [{customer: {name: "Ann", age: null}}, {customer: {name: "Ann", age: null, greeting: "Hi Ann"}}],
+    [{customer: {name: "Ann", age: 3}}, {customer: {name: "Ann", age: 3, greeting: "Hi Ann"}}],
+    [{customer: {name: null}}, "!error: MissingRequiredInputs"],
+    [{customer: {name: "Ann", age: "3"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "an undeclared property that is read is required input",
+  diagnostics: ["UNDEFINED_VARIABLE"],
+  policy: {
+    blocks: [{expression: "out", value: "foo.bar * 2"}],
+  },
+  cases: [
+    [{foo: {bar: 2}}, {foo: {bar: 2}, out: 4}],
+    [{foo: {bar: null}}, "!error: MissingRequiredInputs"],
+    [{foo: {}}, "!error: MissingRequiredInputs"],
+    [{}, "!error: MissingRequiredInputs"],
+    [{foo: {bar: "2"}}, "!error: ExpressionFailed"],
+  ],
+}
+
+// --- Optional globals ------------------------------------------------------------------------------
+
+{
+  name: "an optional global may be missing or null",
+  policy: {
+    globals: {platform: {rate: "number?"}},
+    blocks: [{expression: "out", value: "(rate ?? 1) * 10"}],
+  },
+  cases: [
+    [{rate: 2}, {rate: 2, out: 20}],
+    [{}, {out: 10}],
+    [{rate: null}, {rate: null, out: 10}],
+    [{rate: "2"}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "a required global that is null is a missing input",
+  policy: {
+    globals: {platform: {rate: "number"}},
+    blocks: [{expression: "out", value: "rate * 10"}],
+  },
+  cases: [
+    [{rate: 2}, {rate: 2, out: 20}],
+    [{rate: 0}, {rate: 0, out: 0}],
+    [{rate: null}, "!error: MissingRequiredInputs"],
+    [{}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// --- Optional relationships and arrays ----------------------------------------------------------
+
+{
+  name: "an optional relationship reads through ??",
+  policy: {
+    models: {customer: {report: "report?"}, report: {score: "number"}},
+    blocks: [{expression: "customer.s", value: "customer.report.score ?? 0"}],
+  },
+  cases: [
+    [{customer: {}}, {customer: {s: 0}}],
+    [{customer: {report: null}}, {customer: {report: null, s: 0}}],
+    [{customer: {report: {score: 4}}}, {customer: {report: {score: 4}, s: 4}}],
+    [{customer: {report: {}}}, "!error: MissingRequiredInputs"],
+    [{customer: {report: {score: "4"}}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "an optional array defaults to an empty list",
+  policy: {
+    models: {customer: {list: "number[]?"}},
+    blocks: [
+      {expression: "customer.n", value: "len(customer.list ?? [])"},
+      {expression: "customer.total", value: "sum(customer.list ?? [])"},
+    ],
+  },
+  cases: [
+    [{customer: {}}, {customer: {n: 0, total: 0}}],
+    [{customer: {list: null}}, {customer: {list: null, n: 0, total: 0}}],
+    [{customer: {list: []}}, {customer: {list: [], n: 0, total: 0}}],
+    [{customer: {list: [1, 2.5]}}, {customer: {list: [1, 2.5], n: 2, total: 3.5}}],
+    [{customer: {list: ["1"]}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "null elements inside a required array of strings",
+  policy: {
+    models: {customer: {tags: "string[]"}},
+    blocks: [
+      {expression: "customer.n", value: "len(customer.tags)"},
+      {expression: "customer.nonNull", value: "count(customer.tags, # != null)"},
+    ],
+  },
+  cases: [
+    [{customer: {tags: []}}, {customer: {tags: [], n: 0, nonNull: 0}}],
+    [{customer: {tags: ["a", "b"]}}, {customer: {tags: ["a", "b"], n: 2, nonNull: 2}}],
+    {input: {customer: {tags: [null, "a"]}}, output: {customer: {tags: [null, "a"], n: 2, nonNull: 1}}, note: "question: null elements pass validation of a non-optional string[]"},
+    [{customer: {tags: null}}, "!error: MissingRequiredInputs"],
+    [{customer: {tags: [1]}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// --- Strict nullable index access: arr[0].x is nullable ---------------------------------------
+
+{
+  name: "an index read on an empty list is null",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [{expression: "customer.firstRevenue", value: "customer.companies[0].revenue"}],
+  },
+  cases: [
+    [{customer: {companies: []}}, {customer: {companies: [], firstRevenue: null}}],
+    [{customer: {companies: [{revenue: 5}]}}, {customer: {companies: [{revenue: 5}], firstRevenue: 5}}],
+    [{customer: {companies: [{revenue: 5}, {revenue: 7}]}}, {customer: {companies: [{revenue: 5}, {revenue: 7}], firstRevenue: 5}}],
+  ],
+}
+
+{
+  name: "arithmetic on an index read guarded with ??",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "customer.safe", value: "(customer.companies[0].revenue ?? 0) + 1"},
+      {expression: "customer.last", value: "(customer.companies[1].revenue ?? 0) * 2"},
+    ],
+  },
+  cases: [
+    [{customer: {companies: []}}, {customer: {companies: [], safe: 1, last: 0}}],
+    [{customer: {companies: [{revenue: 5}]}}, {customer: {companies: [{revenue: 5}], safe: 6, last: 0}}],
+    [{customer: {companies: [{revenue: 5}, {revenue: 7}]}}, {customer: {companies: [{revenue: 5}, {revenue: 7}], safe: 6, last: 14}}],
+  ],
+}
+
+{
+  name: "unguarded arithmetic on an index read fails on an empty list",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [{expression: "customer.first", value: "customer.companies[0].revenue + 1"}],
+  },
+  cases: [
+    [{customer: {companies: [{revenue: 5}]}}, {customer: {companies: [{revenue: 5}], first: 6}}],
+    [{customer: {companies: []}}, "!error: ExpressionFailed"],
+    [{customer: {companies: null}}, "!error: MissingRequiredInputs"],
+    [{customer: {}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "a length guard protects an index read",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {customer: {scores: "number[]"}},
+    blocks: [{expression: "customer.top", value: "len(customer.scores) > 0 ? customer.scores[0] * 10 : -1"}],
+  },
+  cases: [
+    [{customer: {scores: []}}, {customer: {scores: [], top: -1}}],
+    [{customer: {scores: [3]}}, {customer: {scores: [3], top: 30}}],
+    [{customer: {scores: [0, 9]}}, {customer: {scores: [0, 9], top: 0}}],
+  ],
+}
+
+{
+  name: "an out-of-range index on a scalar list is null",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {customer: {scores: "number[]"}},
+    blocks: [
+      {expression: "customer.third", value: "customer.scores[2]"},
+      {expression: "customer.thirdOr", value: "customer.scores[2] ?? 'none'"},
+    ],
+  },
+  cases: [
+    [{customer: {scores: []}}, {customer: {scores: [], third: null, thirdOr: "none"}}],
+    [{customer: {scores: [1, 2]}}, {customer: {scores: [1, 2], third: null, thirdOr: "none"}}],
+    [{customer: {scores: [1, 2, 3]}}, {customer: {scores: [1, 2, 3], third: 3, thirdOr: 3}}],
+  ],
+}
+
+// --- Null through match --------------------------------------------------------------------------
+
+{
+  name: "match on an optional enum falls to the default when null",
+  policy: {
+    models: {customer: {tier: "string(gold|silver)?"}},
+    blocks: [
+      {match: "customer.disc", arms: [["customer.tier == 'gold'", "10"], ["customer.tier == 'silver'", "5"], ["", "0"]]},
+      {match: "customer.label", arms: [["customer.tier == null", "'none'"], ["", "customer.tier"]]},
+    ],
+  },
+  cases: [
+    [{customer: {tier: "gold"}}, {customer: {tier: "gold", disc: 10, label: "gold"}}],
+    [{customer: {tier: "silver"}}, {customer: {tier: "silver", disc: 5, label: "silver"}}],
+    [{customer: {tier: null}}, {customer: {tier: null, disc: 0, label: "none"}}],
+    [{customer: {}}, {customer: {disc: 0, label: "none"}}],
+    [{customer: {tier: "bronze"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "an ordering condition on a null optional fails the match",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {customer: {score: "number?"}},
+    blocks: [{match: "customer.band", arms: [["customer.score > 10", "'hi'"], ["", "'lo'"]]}],
+  },
+  cases: [
+    [{customer: {score: 50}}, {customer: {score: 50, band: "hi"}}],
+    [{customer: {score: 10}}, {customer: {score: 10, band: "lo"}}],
+    [{customer: {score: null}}, "!error: ExpressionFailed"],
+    [{customer: {}}, "!error: ExpressionFailed"],
+  ],
+}
+
+{
+  name: "a null guard before an ordering condition",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {customer: {score: "number?"}},
+    blocks: [{match: "customer.band", arms: [["customer.score == null", "'unknown'"], ["customer.score > 10", "'hi'"], ["", "'lo'"]]}],
+  },
+  cases: [
+    [{customer: {score: 50}}, {customer: {score: 50, band: "hi"}}],
+    [{customer: {score: 10}}, {customer: {score: 10, band: "lo"}}],
+    [{customer: {score: null}}, {customer: {score: null, band: "unknown"}}],
+    [{customer: {}}, {customer: {band: "unknown"}}],
+  ],
+}
+
+{
+  name: "a match without default writes null when nothing matches",
+  diagnostics: ["MISSING_DEFAULT_BRANCH"],
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [
+      {match: "customer.kind", arms: [["customer.age > 10", "'big'"]]},
+      {expression: "customer.label", value: "customer.kind ?? 'small'"},
+    ],
+  },
+  cases: [
+    [{customer: {age: 11}}, {customer: {age: 11, kind: "big", label: "big"}}],
+    [{customer: {age: 1}}, {customer: {age: 1, kind: null, label: "small"}}],
+    [{customer: {age: 10}}, {customer: {age: 10, kind: null, label: "small"}}],
+  ],
+}
+
+{
+  name: "a match arm value that is null",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{match: "customer.limit", arms: [["customer.age < 18", "null"], ["", "customer.age * 100"]]}],
+  },
+  cases: [
+    [{customer: {age: 5}}, {customer: {age: 5, limit: null}}],
+    [{customer: {age: 20}}, {customer: {age: 20, limit: 2000}}],
+  ],
+}
+
+// --- Null through decision tables --------------------------------------------------------------
+
+{
+  name: "a table over an optional column with an explicit null row",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {customer: {age: "number?"}},
+    blocks: [{table: "t", inputs: ["customer.age"], outputs: ["customer.band"], rules: [["null", "'unknown'"], ["< 18", "'minor'"], ["", "'adult'"]]}],
+  },
+  cases: [
+    [{customer: {age: 10}}, {customer: {age: 10, band: "minor"}}],
+    [{customer: {age: 30}}, {customer: {age: 30, band: "adult"}}],
+    [{customer: {age: null}}, {customer: {age: null, band: "unknown"}}],
+    [{customer: {}}, {customer: {band: "unknown"}}],
+  ],
+}
+
+{
+  name: "a table with ordering cells over a null optional",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {customer: {age: "number?"}},
+    blocks: [{table: "t", inputs: ["customer.age"], outputs: ["customer.band"], rules: [["< 18", "'minor'"], [">= 18", "'adult'"], ["", "'unknown'"]]}],
+  },
+  cases: [
+    [{customer: {age: 10}}, {customer: {age: 10, band: "minor"}}],
+    [{customer: {age: 30}}, {customer: {age: 30, band: "adult"}}],
+    {input: {customer: {age: null}}, output: {customer: {age: null, band: "unknown"}}, note: "bug: a failing cell (null < 18) aborts the policy; graph decision tables treat a failing cell as no match and fall through"},
+    {input: {customer: {}}, output: {customer: {band: "unknown"}}, note: "bug: a failing cell (null < 18) aborts the policy; graph decision tables treat a failing cell as no match and fall through"},
+  ],
+}
+
+{
+  name: "a table with no matching row over an optional writes null",
+  policy: {
+    models: {customer: {code: "string?"}},
+    blocks: [{table: "t", inputs: ["customer.code"], outputs: ["customer.region"], rules: [["'NO'", "'north'"], ["'IT'", "'south'"]]}],
+  },
+  cases: [
+    [{customer: {code: "NO"}}, {customer: {code: "NO", region: "north"}}],
+    [{customer: {code: "IT"}}, {customer: {code: "IT", region: "south"}}],
+    [{customer: {code: "DE"}}, {customer: {code: "DE", region: null}}],
+    [{customer: {code: null}}, {customer: {code: null, region: null}}],
+    [{customer: {}}, {customer: {region: null}}],
+  ],
+}
+
+{
+  name: "a table output cell that evaluates to null",
+  policy: {
+    models: {customer: {age: "number", nickname: "string?"}},
+    blocks: [{table: "t", inputs: ["customer.age"], outputs: ["customer.display"], rules: [["< 18", "customer.nickname"], ["", "'adult'"]]}],
+  },
+  cases: [
+    [{customer: {age: 5, nickname: "kid"}}, {customer: {age: 5, nickname: "kid", display: "kid"}}],
+    [{customer: {age: 5}}, {customer: {age: 5, display: null}}],
+    [{customer: {age: 50}}, {customer: {age: 50, display: "adult"}}],
+  ],
+}
+
+// --- Null through assertions ------------------------------------------------------------------
+
+{
+  name: "an assertion over optional values",
+  policy: {
+    models: {customer: {nickname: "string?", score: "number?"}},
+    blocks: [{assertion: "customer.complete", conditions: ["customer.nickname != null", "(customer.score ?? 0) > 0"]}],
+  },
+  cases: [
+    [{customer: {nickname: "a", score: 1}}, {customer: {nickname: "a", score: 1, complete: true}}],
+    [{customer: {nickname: "a"}}, {customer: {nickname: "a", complete: false}}],
+    [{customer: {score: 1}}, {customer: {score: 1, complete: false}}],
+    [{customer: {}}, {customer: {complete: false}}],
+    [{customer: {nickname: null, score: null}}, {customer: {nickname: null, score: null, complete: false}}],
+  ],
+}
+
+// --- Null through intermediates ---------------------------------------------------------------
+
+{
+  name: "a computed null flows into the next block",
+  diagnostics: ["INVALID_EXPRESSION"],
+  policy: {
+    models: {customer: {email: "string?"}},
+    blocks: [
+      {expression: "customer.domain", value: "customer.email == null ? null : split(customer.email, '@')[1]"},
+      {expression: "customer.corporate", value: "(customer.domain ?? '') == 'acme.com'"},
+      {expression: "customer.domainLabel", value: "customer.domain ?? 'none'"},
+    ],
+  },
+  cases: [
+    [{customer: {email: "a@acme.com"}}, {customer: {email: "a@acme.com", domain: "acme.com", corporate: true, domainLabel: "acme.com"}}],
+    [{customer: {email: "b@x.org"}}, {customer: {email: "b@x.org", domain: "x.org", corporate: false, domainLabel: "x.org"}}],
+    [{customer: {}}, {customer: {domain: null, corporate: false, domainLabel: "none"}}],
+    [{customer: {email: "nodomain"}}, {customer: {email: "nodomain", domain: null, corporate: false, domainLabel: "none"}}],
+  ],
+}
+
+// --- Null fields on per-instance writes ---------------------------------------------------------
+
+{
+  name: "per-instance writes over optional fields",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number?"}},
+    blocks: [
+      {expression: "company.known", value: "company.revenue != null"},
+      {expression: "company.rev", value: "company.revenue ?? 0"},
+      {expression: "customer.total", value: "sum(map(customer.companies, #.revenue ?? 0))"},
+    ],
+  },
+  cases: [
+    [{customer: {companies: []}}, {customer: {companies: [], total: 0}}],
+    [{customer: {companies: [{revenue: 5}, {}]}}, {customer: {companies: [{revenue: 5, known: true, rev: 5}, {known: false, rev: 0}], total: 5}}],
+    [{customer: {companies: [{revenue: null}]}}, {customer: {companies: [{revenue: null, known: false, rev: 0}], total: 0}}],
+  ],
+}

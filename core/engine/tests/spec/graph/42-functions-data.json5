@@ -1,0 +1,1078 @@
+// Function nodes, data crossing the JS boundary: numbers become doubles on the way in and
+// decimals of about 15-16 significant digits on the way out, big.js restores exact decimal
+// arithmetic when the values travel as strings, objects and arrays are copied in both
+// directions, strings are UTF-16 inside JS, and dates are strings that dayjs parses.
+// Chapter 16 has the basic shapes; this chapter goes deeper on each data kind.
+//
+// Not covered because the process aborts instead of failing the evaluation: a returned object
+// graph with a cycle (`a.self = a`), and returned objects nested about 2000 levels deep. Both
+// overflow the stack in the JS -> Variable conversion (`nodes/function/v2/serde.rs`).
+
+// --- Decimals into JS --------------------------------------------------------------------------
+// Inside the handler every number is a double: scale is lost, digits beyond double precision
+// are rounded, and String() gives the shortest round-trip form.
+
+{
+  name: "data: String() of decimal inputs inside JS",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ s: String(input.v) });"""}],
+  },
+  cases: [
+    [{v: 1.50}, {s: "1.5"}],
+    [{v: 100}, {s: "100"}],
+    [{v: 0.1}, {s: "0.1"}],
+    [{v: 0.12345678901234567890}, {s: "0.12345678901234568"}],
+    [{v: 1e21}, {s: "1e+21"}],
+    [{v: 0.0000001}, {s: "1e-7"}],
+    [{v: -0.000001}, {s: "-0.000001"}],
+    [{v: 123456789012345678}, {s: "123456789012345680"}],
+  ],
+}
+
+{
+  name: "data: toFixed of decimal inputs follows the double value",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ fixed: input.v.toFixed(input.digits ?? 2) });"""}],
+  },
+  cases: [
+    [{v: 1.005}, {fixed: "1.00"}],
+    [{v: 1.015}, {fixed: "1.01"}],
+    [{v: 2.5, digits: 0}, {fixed: "3"}],
+    [{v: 0.125}, {fixed: "0.13"}],
+    [{v: -1.5, digits: 0}, {fixed: "-2"}],
+    [{v: 10}, {fixed: "10.00"}],
+  ],
+}
+
+{
+  name: "data: Number.isInteger and integer checks on decimal inputs",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({
+  int: Number.isInteger(input.v),
+  safe: Number.isSafeInteger(input.v),
+});"""}],
+  },
+  cases: [
+    [{v: 1}, {int: true, safe: true}],
+    [{v: 1.0}, {int: true, safe: true}],
+    [{v: 1.5}, {int: false, safe: false}],
+    [{v: 9007199254740993}, {int: true, safe: false}],
+    [{v: -0}, {int: true, safe: true}],
+    [{v: 1.0000000000000000001}, {int: true, safe: true}],
+  ],
+}
+
+{
+  name: "data: equality of decimals that collapse to the same double",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ same: input.a === input.b });"""}],
+  },
+  cases: [
+    [{a: 0.1, b: 0.10}, {same: true}],
+    [{a: 0.1, b: 0.1000000000000000000001}, {same: true}],
+    [{a: 9007199254740992, b: 9007199254740993}, {same: true}],
+    [{a: 0.3, b: 0.30000000000000004}, {same: false}],
+    [{a: 1, b: 1.000000000000001}, {same: false}],
+  ],
+}
+
+{
+  name: "data: numbers in nested arrays and objects become doubles too",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({
+  sum: input.lines.reduce((s, l) => s + l.amount, 0),
+  types: input.lines.map((l) => typeof l.amount),
+});"""}],
+  },
+  cases: [
+    [{lines: [{amount: 0.1}, {amount: 0.2}]}, {sum: 0.3, types: ["number", "number"]}],
+    [{lines: [{amount: 0.1}, {amount: 0.2}, {amount: 0.3}]}, {sum: 0.6, types: ["number", "number", "number"]}],
+    [{lines: [{amount: 1.1}, {amount: 2.2}, {amount: 3.3}]}, {sum: 6.6, types: ["number", "number", "number"]}],
+    [{lines: []}, {sum: 0, types: []}],
+  ],
+}
+
+{
+  name: "data: float artifacts are visible inside JS before they are rounded away",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  const sum = input.a + input.b;
+  return { sum, exact: sum === input.expected, text: String(sum) };
+};"""}],
+  },
+  cases: [
+    [{a: 0.1, b: 0.2, expected: 0.3}, {sum: 0.3, exact: false, text: "0.30000000000000004"}],
+    [{a: 0.5, b: 0.25, expected: 0.75}, {sum: 0.75, exact: true, text: "0.75"}],
+    [{a: 1.1, b: 2.2, expected: 3.3}, {sum: 3.3, exact: false, text: "3.3000000000000003"}],
+    [{a: 1, b: 2, expected: 3}, {sum: 3, exact: true, text: "3"}],
+  ],
+}
+
+// --- Numbers out of JS --------------------------------------------------------------------------
+// Doubles are converted to decimals with 15-16 significant digits (large integral doubles
+// keep their exact binary value); values outside the
+// decimal range fail the conversion, values below its smallest step become zero.
+
+{
+  name: "data: repeating fractions are cut at the double's precision",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ v: input.a / input.b });"""}],
+  },
+  cases: [
+    [{a: 1, b: 3}, {v: 0.3333333333333333}],
+    [{a: 2, b: 3}, {v: 0.666666666666667}],
+    [{a: 10, b: 4}, {v: 2.5}],
+    [{a: 1, b: 7}, {v: 0.1428571428571429}],
+    [{a: -1, b: 8}, {v: -0.125}],
+  ],
+}
+
+{
+  name: "data: large and small results",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ v: input.base ** input.exp });"""}],
+  },
+  cases: [
+    [{base: 10, exp: 20}, {v: 100000000000000000000}],
+    [{base: 10, exp: 28}, {v: 9999999999999999583119736832}, "question: large integral doubles keep their exact binary value while fractions are rounded to about 15 digits, so 1e28 does not come back as 1e28"],
+    [{base: 2, exp: 64}, {v: 18446744073709551616}],
+    [{base: 10, exp: -10}, {v: 0.0000000001}],
+    [{base: 10, exp: -28}, {v: 0.0000000000000000000000000001}],
+    [{base: 10, exp: -29}, {v: 0}, "question: a non-zero double below the smallest decimal step silently becomes 0"],
+    [{base: 10, exp: 29}, "!error: failed to convert to number"],
+  ],
+}
+
+{
+  name: "data: special doubles in nested results",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ o: { v: input.pick === 'min' ? Number.MIN_VALUE : input.pick === 'max' ? Number.MAX_VALUE : input.pick === 'eps' ? Number.EPSILON : -0 } });"""}],
+  },
+  cases: [
+    [{pick: "min"}, {o: {v: 0}}, "question: Number.MIN_VALUE silently becomes 0"],
+    [{pick: "eps"}, {o: {v: 0.0000000000000002220446049250}}],
+    [{pick: "zero"}, {o: {v: 0}}],
+    [{pick: "max"}, "!error: failed to convert to number"],
+  ],
+}
+
+{
+  name: "data: integer results above the safe range",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ v: input.n * 1000, big: BigInt(input.n) * 1000n });"""}],
+  },
+  cases: [
+    [{n: 9007199254740991}, {v: 9007199254740990976, big: 9007199254740991000}],
+    [{n: 1}, {v: 1000, big: 1000}],
+    [{n: -5}, {v: -5000, big: -5000}],
+  ],
+}
+
+{
+  name: "data: a BigInt outside the 64-bit range",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ v: 2n ** BigInt(input.bits) });"""}],
+  },
+  cases: [
+    [{bits: 62}, {v: 4611686018427387904}],
+    [{bits: 63}, "!error: failed to convert to number", "bug: a BigInt above i64::MAX wraps to -9223372036854775808 instead of failing"],
+    [{bits: 100}, "!error: failed to convert to number", "bug: a BigInt far outside i64 silently becomes 0 instead of failing"],
+  ],
+}
+
+{
+  name: "data: a JS result feeding exact expression arithmetic",
+  graph: {
+    nodes: [
+      {function: "f", source: """export const handler = async (input) => ({ a: input.x / 3, b: input.x * 0.1 });"""},
+      {expression: "e", fields: {sum: "a + b", triple: "a * 3", bExact: "b == $nodes.input.x * 0.1"}},
+    ],
+    edges: ["input -> f -> e -> output"],
+  },
+  cases: [
+    [{x: 1}, {sum: 0.4333333333333333, triple: 0.9999999999999999, bExact: true}],
+    [{x: 3}, {sum: 1.3, triple: 3, bExact: true}],
+    [{x: 0}, {sum: 0, triple: 0, bExact: true}],
+  ],
+}
+
+// --- big.js -------------------------------------------------------------------------------------
+// Exact decimal arithmetic inside JS. Exactness depends on how the value enters: a number has
+// already been through a double, a string keeps every digit.
+
+{
+  name: "data: big.js from strings keeps every digit",
+  graph: {
+    nodes: [{function: "f", source: """import Big from 'big.js';
+export const handler = async (input) => ({ sum: new Big(input.a).plus(input.b).toString() });"""}],
+  },
+  cases: [
+    [{a: "0.1000000000000000000000000001", b: "0.2"}, {sum: "0.3000000000000000000000000001"}],
+    [{a: "12345678901234567890.5", b: "0.5"}, {sum: "12345678901234567891"}],
+    [{a: "-0.00000000000000000001", b: "0"}, {sum: "-1e-20"}],
+    [{a: "1e30", b: "1"}, {sum: "1.000000000000000000000000000001e+30"}],
+  ],
+}
+
+{
+  name: "data: big.js from number inputs sees the double",
+  graph: {
+    nodes: [{function: "f", source: """import Big from 'big.js';
+export const handler = async (input) => ({ v: new Big(input.v).toString() });"""}],
+  },
+  cases: [
+    [{v: 0.1}, {v: "0.1"}],
+    [{v: 1.50}, {v: "1.5"}],
+    [{v: 0.1000000000000000000000000001}, {v: "0.1"}],
+    [{v: 9007199254740993}, {v: "9007199254740992"}],
+    [{v: 1e21}, {v: "1e+21"}],
+  ],
+}
+
+{
+  name: "data: big.js sums a list exactly where floats drift",
+  graph: {
+    nodes: [{function: "f", source: """import Big from 'big.js';
+export const handler = async (input) => ({
+  exact: input.values.reduce((s, v) => s.plus(v), new Big(0)).toString(),
+  float: String(input.values.reduce((s, v) => s + v, 0)),
+});"""}],
+  },
+  cases: [
+    [{values: [0.1, 0.1, 0.1]}, {exact: "0.3", float: "0.30000000000000004"}],
+    [{values: [0.1, 0.2, 0.3, 0.4]}, {exact: "1", float: "1"}],
+    [{values: [1.1, 2.2]}, {exact: "3.3", float: "3.3000000000000003"}],
+    [{values: []}, {exact: "0", float: "0"}],
+    [{values: [100, -99.99]}, {exact: "0.01", float: "0.010000000000005116"}],
+  ],
+}
+
+{
+  name: "data: big.js division uses 20 decimal places by default",
+  graph: {
+    nodes: [{function: "f", source: """import Big from 'big.js';
+export const handler = async (input) => ({ q: new Big(input.a).div(input.b).toString() });"""}],
+  },
+  cases: [
+    [{a: 1, b: 3}, {q: "0.33333333333333333333"}],
+    [{a: 2, b: 3}, {q: "0.66666666666666666667"}],
+    [{a: 10, b: 4}, {q: "2.5"}],
+    [{a: 1, b: 0}, "!error: Division by zero"],
+  ],
+}
+
+{
+  name: "data: big.js rounding modes",
+  graph: {
+    nodes: [{function: "f", source: """import Big from 'big.js';
+export const handler = async (input) => {
+  const v = new Big(input.v);
+  return {
+    halfUp: v.round(1, Big.roundHalfUp).toString(),
+    halfEven: v.round(1, Big.roundHalfEven).toString(),
+    down: v.round(1, Big.roundDown).toString(),
+    up: v.round(1, Big.roundUp).toString(),
+  };
+};"""}],
+  },
+  cases: [
+    [{v: "1.25"}, {halfUp: "1.3", halfEven: "1.2", down: "1.2", up: "1.3"}],
+    [{v: "1.35"}, {halfUp: "1.4", halfEven: "1.4", down: "1.3", up: "1.4"}],
+    [{v: "-1.25"}, {halfUp: "-1.3", halfEven: "-1.2", down: "-1.2", up: "-1.3"}],
+    [{v: "2"}, {halfUp: "2", halfEven: "2", down: "2", up: "2"}],
+  ],
+}
+
+{
+  name: "data: big.js comparisons",
+  graph: {
+    nodes: [{function: "f", source: """import Big from 'big.js';
+export const handler = async (input) => {
+  const a = new Big(input.a);
+  return { cmp: a.cmp(input.b), eq: a.eq(input.b), lt: a.lt(input.b), gte: a.gte(input.b) };
+};"""}],
+  },
+  cases: [
+    [{a: "0.3", b: "0.30"}, {cmp: 0, eq: true, lt: false, gte: true}],
+    [{a: 1, b: 2}, {cmp: -1, eq: false, lt: true, gte: false}],
+    [{a: "-0", b: 0}, {cmp: 0, eq: true, lt: false, gte: true}],
+    [{a: "10", b: "9.99999999999999999999"}, {cmp: 1, eq: false, lt: false, gte: true}],
+  ],
+}
+
+{
+  name: "data: big.js rejects invalid numbers",
+  graph: {
+    nodes: [{function: "f", source: """import Big from 'big.js';
+export const handler = async (input) => {
+  try { return { v: new Big(input.v).toString() }; } catch (e) { return { invalid: true }; }
+};"""}],
+  },
+  cases: [
+    [{v: "abc"}, {invalid: true}],
+    [{v: ""}, {invalid: true}],
+    [{v: null}, {invalid: true}],
+    [{}, {invalid: true}],
+    [{v: " 1 "}, {invalid: true}],
+    [{v: "1e5"}, {v: "100000"}],
+  ],
+}
+
+{
+  name: "data: a Big instance returned as a value",
+  graph: {
+    nodes: [{function: "f", source: """import Big from 'big.js';
+export const handler = async (input) => ({ big: new Big(input.v), str: new Big(input.v).toString() });"""}],
+  },
+  cases: [
+    [{v: "1.5"}, {big: {s: 1, e: 0, c: [1, 5], constructor: "[Constructor]"}, str: "1.5"}, "question: a Big instance is converted field by field (sign, exponent, digits and an own constructor property) instead of to its value"],
+    [{v: "-120"}, {big: {s: -1, e: 2, c: [1, 2], constructor: "[Constructor]"}, str: "-120"}, "question: a Big instance is converted field by field (sign, exponent, digits and an own constructor property) instead of to its value"],
+  ],
+}
+
+{
+  name: "data: a Big instance through JSON becomes its string",
+  graph: {
+    nodes: [{function: "f", source: """import Big from 'big.js';
+export const handler = async (input) => JSON.parse(JSON.stringify({ total: new Big(input.a).times(input.b) }));"""}],
+  },
+  cases: [
+    [{a: "1.10", b: 3}, {total: "3.3"}],
+    [{a: "0.1", b: "0.1"}, {total: "0.01"}],
+    [{a: 0, b: 5}, {total: "0"}],
+  ],
+}
+
+{
+  name: "data: a big.js string result read by a decimal table",
+  graph: {
+    nodes: [
+      {function: "f", source: """import Big from 'big.js';
+export const handler = async (input) => ({ total: Number(new Big(input.price).times(input.qty).toFixed(2)) });"""},
+      {table: "t", inputs: ["total"], outputs: ["band"], rules: [
+        ["> 100", "'high'"],
+        ["[10..100]", "'mid'"],
+        ["", "'low'"],
+      ]},
+    ],
+    edges: ["input -> f -> t -> output"],
+  },
+  cases: [
+    [{price: "33.335", qty: 3}, {band: "high"}],
+    [{price: "33.33", qty: 3}, {band: "mid"}],
+    [{price: "3.33", qty: 3}, {band: "low"}],
+    [{price: "10", qty: 1}, {band: "mid"}],
+  ],
+}
+
+{
+  name: "data: an amortization schedule with big.js",
+  graph: {
+    nodes: [{function: "f", source: """import Big from 'big.js';
+export const handler = async (input) => {
+  let balance = new Big(input.principal);
+  const payment = balance.div(input.months).round(2);
+  const rows = [];
+  for (let m = 1; m <= input.months; m++) {
+    const pay = m === input.months ? balance : payment;
+    balance = balance.minus(pay);
+    rows.push({ m, pay: pay.toFixed(2), left: balance.toFixed(2) });
+  }
+  return { rows };
+};"""}],
+  },
+  cases: [
+    [{principal: "100", months: 3}, {rows: [{m: 1, pay: "33.33", left: "66.67"}, {m: 2, pay: "33.33", left: "33.34"}, {m: 3, pay: "33.34", left: "0.00"}]}],
+    [{principal: "10", months: 1}, {rows: [{m: 1, pay: "10.00", left: "0.00"}]}],
+    [{principal: "1", months: 4}, {rows: [{m: 1, pay: "0.25", left: "0.75"}, {m: 2, pay: "0.25", left: "0.50"}, {m: 3, pay: "0.25", left: "0.25"}, {m: 4, pay: "0.25", left: "0.00"}]}],
+  ],
+}
+
+// --- Large arrays and objects -------------------------------------------------------------------
+
+{
+  name: "data: a large generated array summed by a following expression",
+  graph: {
+    nodes: [
+      {function: "f", source: """export const handler = async (input) => ({ items: Array.from({ length: input.n }, (_, i) => ({ i, price: (i % 10) + 0.5 })) });"""},
+      {expression: "e", fields: {count: "len(items)", total: "sum(map(items, #.price))", last: "items[len(items) - 1].i"}},
+    ],
+  },
+  cases: [
+    [{n: 1000}, {count: 1000, total: 5000, last: 999}],
+    [{n: 10}, {count: 10, total: 50, last: 9}],
+    [{n: 1}, {count: 1, total: 0.5, last: 0}],
+    [{n: 5000}, {count: 5000, total: 25000, last: 4999}],
+  ],
+}
+
+{
+  name: "data: a large generated object with many keys",
+  graph: {
+    nodes: [
+      {function: "f", source: """export const handler = async (input) => {
+  const byKey = {};
+  for (let i = 0; i < input.n; i++) byKey['k' + i] = i * 2;
+  return { byKey };
+};"""},
+      {expression: "e", fields: {count: "len(keys(byKey))", first: "byKey.k0", last: "byKey['k' + string($nodes.input.n - 1)]"}},
+    ],
+    edges: ["input -> f -> e -> output"],
+  },
+  cases: [
+    [{n: 500}, {count: 500, first: 0, last: 998}],
+    [{n: 1}, {count: 1, first: 0, last: 0}],
+    [{n: 2000}, {count: 2000, first: 0, last: 3998}],
+  ],
+}
+
+{
+  name: "data: a large input array filtered, sorted and sliced",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  const top = input.rows.filter((r) => r.active).sort((a, b) => b.score - a.score || a.id - b.id).slice(0, 3);
+  return { top: top.map((r) => r.id), count: input.rows.length };
+};"""}],
+  },
+  cases: [
+    [{rows: [{id: 1, score: 5, active: true}, {id: 2, score: 9, active: false}, {id: 3, score: 7, active: true}, {id: 4, score: 7, active: true}, {id: 5, score: 1, active: true}]}, {top: [3, 4, 1], count: 5}],
+    [{rows: []}, {top: [], count: 0}],
+    [{rows: [{id: 1, score: 0, active: false}]}, {top: [], count: 1}],
+  ],
+}
+
+{
+  name: "data: default sort is lexicographic",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ plain: [...input.v].sort(), numeric: [...input.v].sort((a, b) => a - b) });"""}],
+  },
+  cases: [
+    [{v: [10, 9, 1, 100]}, {plain: [1, 10, 100, 9], numeric: [1, 9, 10, 100]}],
+    [{v: [-1, -10, 2]}, {plain: [-1, -10, 2], numeric: [-10, -1, 2]}],
+    [{v: [0.5, 0.25]}, {plain: [0.25, 0.5], numeric: [0.25, 0.5]}],
+    [{v: []}, {plain: [], numeric: []}],
+  ],
+}
+
+{
+  name: "data: a matrix transposed",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ t: input.m[0]?.map((_, c) => input.m.map((row) => row[c])) ?? [] });"""}],
+  },
+  cases: [
+    [{m: [[1, 2, 3], [4, 5, 6]]}, {t: [[1, 4], [2, 5], [3, 6]]}],
+    [{m: [[1]]}, {t: [[1]]}],
+    [{m: []}, {t: []}],
+    [{m: [["a", null], [true, 0.5]]}, {t: [["a", true], [null, 0.5]]}],
+  ],
+}
+
+{
+  name: "data: integer-like keys are ordered first by JS",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ keys: Object.keys(input.o) });"""}],
+  },
+  cases: [
+    [{o: {b: 1, "10": 2, a: 3, "2": 4}}, {keys: ["2", "10", "b", "a"]}],
+    [{o: {z: 1, y: 2}}, {keys: ["z", "y"]}],
+    [{o: {"-1": 1, "1": 2}}, {keys: ["1", "-1"]}],
+  ],
+}
+
+{
+  name: "data: group by into an object of arrays",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  const groups = {};
+  for (const item of input.items) (groups[item.kind] ??= []).push(item.v);
+  return { groups };
+};"""}],
+  },
+  cases: [
+    [{items: [{kind: "a", v: 1}, {kind: "b", v: 2}, {kind: "a", v: 3}]}, {groups: {a: [1, 3], b: [2]}}],
+    [{items: []}, {groups: {}}],
+    [{items: [{kind: "x y", v: null}]}, {groups: {"x y": [null]}}],
+  ],
+}
+
+// --- Deep nesting -------------------------------------------------------------------------------
+
+{
+  name: "data: a deeply nested input is read through optional chaining",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ v: input.a?.b?.c?.d?.e?.f?.g?.h ?? 'missing' });"""}],
+  },
+  cases: [
+    [{a: {b: {c: {d: {e: {f: {g: {h: 1}}}}}}}}, {v: 1}],
+    [{a: {b: {c: {d: {e: {f: {g: {}}}}}}}}, {v: "missing"}],
+    [{a: {b: {c: null}}}, {v: "missing"}],
+    [{}, {v: "missing"}],
+    [{a: {b: {c: {d: {e: {f: {g: {h: [1, {x: 2}]}}}}}}}}, {v: [1, {x: 2}]}],
+  ],
+}
+
+{
+  name: "data: a generated nested chain read by an expression",
+  graph: {
+    nodes: [
+      {function: "f", source: """export const handler = async (input) => {
+  let o = { leaf: input.leaf };
+  for (let i = 0; i < input.n; i++) o = { next: o };
+  return { o };
+};"""},
+      {expression: "e", fields: {depth3: "o.next.next.next.leaf"}},
+    ],
+    edges: ["input -> f -> e -> output"],
+  },
+  cases: [
+    [{n: 3, leaf: "x"}, {depth3: "x"}],
+    [{n: 2, leaf: "x"}, {}],
+    [{n: 200, leaf: 1}, {}],
+  ],
+}
+
+{
+  name: "data: a generated nested chain measured by a second function",
+  graph: {
+    nodes: [
+      {function: "build", source: """export const handler = async (input) => {
+  let o = { leaf: true };
+  for (let i = 0; i < input.n; i++) o = { next: o, arr: [i] };
+  return { o };
+};"""},
+      {function: "measure", source: """export const handler = async (input) => {
+  let depth = 0;
+  for (let o = input.o; o.next; o = o.next) depth++;
+  return { depth };
+};"""},
+    ],
+  },
+  cases: [
+    [{n: 0}, {depth: 0}],
+    [{n: 10}, {depth: 10}],
+    [{n: 500}, {depth: 500}],
+  ],
+}
+
+{
+  name: "data: a deep path rebuilt with a modified leaf",
+  graph: {
+    nodes: [{function: "f", source: """const setIn = (o, [k, ...rest], v) => rest.length === 0 ? { ...o, [k]: v } : { ...o, [k]: setIn(o?.[k] ?? {}, rest, v) };
+export const handler = async (input) => setIn(input, input.path.split('.'), input.value);"""}],
+  },
+  cases: [
+    [{path: "a.b.c", value: 1, a: {b: {c: 0, d: 2}}}, {path: "a.b.c", value: 1, a: {b: {c: 1, d: 2}}}],
+    [{path: "x.y", value: "new"}, {path: "x.y", value: "new", x: {y: "new"}}],
+    [{path: "top", value: [1]}, {path: "top", value: [1], top: [1]}],
+  ],
+}
+
+// --- Mutating the input ---------------------------------------------------------------------------
+// The handler receives a copy: whatever it does to `input` is visible only through what it
+// returns. Other nodes, `$nodes.input` and the final pass-through keep the original request.
+
+{
+  name: "data: arrays sorted and spliced in place are only changed in the result",
+  graph: {
+    nodes: [
+      {function: "f", source: """export const handler = async (input) => {
+  input.items.sort((a, b) => a - b);
+  input.items.splice(0, 1);
+  input.tags.reverse();
+  return { items: input.items, tags: input.tags };
+};"""},
+      {expression: "orig", fields: {origItems: "$nodes.input.items", origTags: "$nodes.input.tags"}},
+    ],
+    edges: ["input -> f -> output", "input -> orig -> output"],
+  },
+  cases: [
+    [{items: [3, 1, 2], tags: ["a", "b"]}, {items: [2, 3], tags: ["b", "a"], origItems: [3, 1, 2], origTags: ["a", "b"]}],
+    [{items: [1], tags: []}, {items: [], tags: [], origItems: [1], origTags: []}],
+    [{items: [5, 5], tags: ["x"]}, {items: [5], tags: ["x"], origItems: [5, 5], origTags: ["x"]}],
+  ],
+}
+
+{
+  name: "data: Object.assign onto the input then returning it",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => Object.assign(input, { status: 'checked' }, input.patch ?? {});"""}],
+  },
+  cases: [
+    [{a: 1}, {a: 1, status: "checked"}],
+    [{a: 1, patch: {a: 2}}, {a: 2, status: "checked", patch: {a: 2}}],
+    [{status: "old"}, {status: "checked"}],
+    [{patch: {status: "patched"}}, {status: "patched", patch: {status: "patched"}}],
+  ],
+}
+
+{
+  name: "data: deleting keys from the input",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  for (const key of input.drop ?? []) delete input[key];
+  delete input.drop;
+  return input;
+};"""}],
+  },
+  cases: [
+    [{a: 1, b: 2, drop: ["a"]}, {b: 2}],
+    [{a: 1, drop: []}, {a: 1}],
+    [{a: 1, drop: ["missing"]}, {a: 1}],
+    [{a: {deep: 1}, b: [1], drop: ["a", "b"]}, {}],
+  ],
+}
+
+{
+  name: "data: a shallow spread shares nested objects with the input",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  const copy = { ...input };
+  copy.nested.x = 'changed';
+  copy.top = 'changed';
+  return { copyX: copy.nested.x, inputX: input.nested.x, inputTop: input.top ?? null };
+};"""}],
+  },
+  cases: [
+    [{nested: {x: "orig"}, top: "orig"}, {copyX: "changed", inputX: "changed", inputTop: "orig"}],
+    [{nested: {}}, {copyX: "changed", inputX: "changed"}],
+  ],
+}
+
+{
+  name: "data: a mutated input does not change the request seen by a later node",
+  graph: {
+    nodes: [
+      {function: "f", source: """export const handler = async (input) => { input.v = 'mutated'; input.list.push('x'); return { done: true }; };"""},
+      {expression: "e", fields: {done: "done", v: "$nodes.input.v", list: "$nodes.input.list"}},
+    ],
+  },
+  cases: [
+    [{v: 1, list: []}, {done: true, v: 1, list: []}],
+    [{v: "s", list: [1]}, {done: true, v: "s", list: [1]}],
+  ],
+}
+
+{
+  name: "data: returning a partially modified copy of the input",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({
+  ...input,
+  customer: { ...input.customer, name: input.customer?.name?.trim() ?? null },
+  lines: (input.lines ?? []).map((l) => ({ ...l, total: l.qty * l.price })),
+});"""}],
+  },
+  cases: [
+    [
+      {id: 7, customer: {name: " Ann ", tier: "gold"}, lines: [{qty: 2, price: 1.5}]},
+      {id: 7, customer: {name: "Ann", tier: "gold"}, lines: [{qty: 2, price: 1.5, total: 3}]},
+    ],
+    [{id: 8}, {id: 8, customer: {name: null}, lines: []}],
+    [{customer: {}, lines: []}, {customer: {name: null}, lines: []}],
+  ],
+}
+
+{
+  name: "data: the same input object returned in two places",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => { const shared = input.o; shared.tag = 1; return { a: shared, b: shared, list: [shared, shared] }; };"""}],
+  },
+  cases: [
+    [{o: {v: 1}}, {a: {v: 1, tag: 1}, b: {v: 1, tag: 1}, list: [{v: 1, tag: 1}, {v: 1, tag: 1}]}],
+    [{o: {}}, {a: {tag: 1}, b: {tag: 1}, list: [{tag: 1}, {tag: 1}]}],
+  ],
+}
+
+{
+  name: "data: one input object reached through two keys is one JS object",
+  graph: {
+    nodes: [
+      {expression: "share", fields: {left: "o", right: "o"}},
+      {function: "f", source: """export const handler = async (input) => { input.left.tag = 'L'; return { sameObject: input.left === input.right, rightTag: input.right.tag ?? 'none' }; };"""},
+    ],
+  },
+  cases: [
+    [{o: {v: 1}}, {sameObject: true, rightTag: "L"}, "question: whether two keys holding the same value arrive as one JS object depends on the engine sharing the value internally; values are meant to be copies"],
+    [{o: {}}, {sameObject: true, rightTag: "L"}, "question: whether two keys holding the same value arrive as one JS object depends on the engine sharing the value internally; values are meant to be copies"],
+  ],
+}
+
+// --- $nodes in returned values -------------------------------------------------------------------
+
+{
+  name: "data: returning the $nodes proxy copies the node outputs",
+  graph: {
+    nodes: [
+      {expression: "e", fields: {a: "x + 1"}},
+      {function: "f", source: """export const handler = async (input) => ({ nodes: input.$nodes });"""},
+    ],
+  },
+  cases: [
+    [{x: 1}, {nodes: {input: {x: 1}, e: {a: 2}}}],
+    [{x: 0}, {nodes: {input: {x: 0}, e: {a: 1}}}],
+  ],
+}
+
+{
+  name: "data: a nested $nodes key is stripped from the result",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ inner: { $nodes: 1, k: input.k }, list: [{ $nodes: 2, k: input.k }] });"""}],
+  },
+  cases: [
+    [{k: 1}, {inner: {k: 1}, list: [{k: 1}]}, "question: $nodes is stripped at every depth of a function result, not only from the top level"],
+    [{k: "x"}, {inner: {k: "x"}, list: [{k: "x"}]}, "question: $nodes is stripped at every depth of a function result, not only from the top level"],
+  ],
+}
+
+{
+  name: "data: a nested $nodes key in the input reaches the handler",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ inner: input.o.$nodes ?? 'absent', top: typeof input.$nodes });"""}],
+  },
+  cases: [
+    [{o: {$nodes: 5}}, {inner: 5, top: "object"}],
+    [{o: {}}, {inner: "absent", top: "object"}],
+  ],
+}
+
+// --- Unicode --------------------------------------------------------------------------------------
+// Strings are UTF-16 inside JS: length counts code units, iteration counts code points.
+
+{
+  name: "data: string length in code units and code points",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ units: input.s.length, points: [...input.s].length });"""}],
+  },
+  cases: [
+    [{s: "abc"}, {units: 3, points: 3}],
+    [{s: "é"}, {units: 1, points: 1}],
+    [{s: "😀"}, {units: 2, points: 1}],
+    [{s: "👨‍👩‍👧"}, {units: 8, points: 5}],
+    [{s: "日本語"}, {units: 3, points: 3}],
+    [{s: ""}, {units: 0, points: 0}],
+  ],
+}
+
+{
+  name: "data: reversing strings with surrogate pairs",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ reversed: [...input.s].reverse().join('') });"""}],
+  },
+  cases: [
+    [{s: "abc"}, {reversed: "cba"}],
+    [{s: "a😀b"}, {reversed: "b😀a"}],
+    [{s: "日本"}, {reversed: "本日"}],
+  ],
+}
+
+{
+  name: "data: a lone surrogate cannot be returned",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ s: input.s.slice(0, input.n) });"""}],
+  },
+  cases: [
+    [{s: "😀x", n: 2}, {s: "😀"}],
+    [{s: "😀x", n: 1}, "!error: failed to convert to string"],
+    [{s: "ab", n: 1}, {s: "a"}],
+  ],
+}
+
+{
+  name: "data: case mapping beyond ASCII",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ upper: input.s.toUpperCase(), lower: input.s.toLowerCase() });"""}],
+  },
+  cases: [
+    [{s: "straße"}, {upper: "STRASSE", lower: "straße"}],
+    [{s: "ÉCOLE"}, {upper: "ÉCOLE", lower: "école"}],
+    [{s: "Ωmega"}, {upper: "ΩMEGA", lower: "ωmega"}],
+    [{s: "日本"}, {upper: "日本", lower: "日本"}],
+  ],
+}
+
+{
+  name: "data: normalization forms",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({
+  nfc: input.s.normalize('NFC').length,
+  nfd: input.s.normalize('NFD').length,
+  same: input.s.normalize('NFC') === input.t.normalize('NFC'),
+  raw: input.s === input.t,
+});"""}],
+  },
+  cases: [
+    [{s: "\u00e9", t: "e\u0301"}, {nfc: 1, nfd: 2, same: true, raw: false}],
+    [{s: "e", t: "e"}, {nfc: 1, nfd: 1, same: true, raw: true}],
+    [{s: "\u00c5", t: "A\u030a"}, {nfc: 1, nfd: 2, same: true, raw: false}],
+  ],
+}
+
+{
+  name: "data: unicode keys and values round trip",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  const out = {};
+  for (const [k, v] of Object.entries(input)) if (k !== '$nodes') out[k + '✓'] = v + '!';
+  return out;
+};"""}],
+  },
+  cases: [
+    [{"名前": "太郎"}, {"名前✓": "太郎!"}],
+    [{"ключ": "значение", "😀": "🎉"}, {"ключ✓": "значение!", "😀✓": "🎉!"}],
+    [{"": ""}, {"✓": "!"}],
+  ],
+}
+
+{
+  name: "data: control characters and escapes",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({
+  joined: input.parts.join('\n'),
+  tab: 'a\tb',
+  nul: 'a\u0000b'.length,
+  quote: `"${input.parts[0]}"`,
+});"""}],
+  },
+  cases: [
+    [{parts: ["x", "y"]}, {joined: "x\ny", tab: "a\tb", nul: 3, quote: "\"x\""}],
+    [{parts: ["é"]}, {joined: "é", tab: "a\tb", nul: 3, quote: "\"é\""}],
+  ],
+}
+
+{
+  name: "data: padding and slicing with multi-unit characters",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ padded: input.s.padStart(5, '*'), first: input.s.codePointAt(0), at: input.s.at(-1) });"""}],
+  },
+  cases: [
+    [{s: "ab"}, {padded: "***ab", first: 97, at: "b"}],
+    [{s: "€"}, {padded: "****€", first: 8364, at: "€"}],
+    [{s: "😀"}, "!error: failed to convert to string"],
+  ],
+}
+
+{
+  name: "data: sorting unicode strings",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({
+  plain: [...input.v].sort(),
+  locale: [...input.v].sort((a, b) => a.localeCompare(b)),
+});"""}],
+  },
+  cases: [
+    [{v: ["b", "a", "B", "A"]}, {plain: ["A", "B", "a", "b"], locale: ["A", "B", "a", "b"]}, "question: localeCompare in QuickJS compares code units rather than using locale collation"],
+    [{v: ["é", "e", "f"]}, {plain: ["e", "f", "é"], locale: ["e", "f", "é"]}, "question: localeCompare in QuickJS compares code units rather than using locale collation"],
+  ],
+}
+
+{
+  name: "data: encodeURIComponent and decodeURIComponent",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  const enc = encodeURIComponent(input.s);
+  return { enc, back: decodeURIComponent(enc) === input.s };
+};"""}],
+  },
+  cases: [
+    [{s: "a b&c"}, {enc: "a%20b%26c", back: true}],
+    [{s: "é"}, {enc: "%C3%A9", back: true}],
+    [{s: "😀"}, {enc: "%F0%9F%98%80", back: true}],
+    [{s: ""}, {enc: "", back: true}],
+  ],
+}
+
+{
+  name: "data: unicode strings from JS read by a table",
+  graph: {
+    nodes: [
+      {function: "f", source: """export const handler = async (input) => ({ city: input.city.normalize('NFC').trim() });"""},
+      {table: "t", inputs: ["city"], outputs: ["country"], rules: [
+        ["'Zürich'", "'CH'"],
+        ["'München'", "'DE'"],
+        ["", "'?'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{city: " Zürich "}, {country: "CH"}],
+    [{city: "Zürich"}, {country: "CH"}],
+    [{city: "München"}, {country: "DE"}],
+    [{city: "Zurich"}, {country: "?"}],
+  ],
+}
+
+// --- Dates through dayjs ------------------------------------------------------------------------
+// Dates enter as strings; dayjs parses them in UTC (the spec time zone) and formats back.
+
+{
+  name: "data: dayjs month arithmetic clamps to the end of the month",
+  graph: {
+    nodes: [{function: "f", source: """import dayjs from 'dayjs';
+export const handler = async (input) => ({ d: dayjs(input.d).add(input.months, 'month').format('YYYY-MM-DD') });"""}],
+  },
+  cases: [
+    [{d: "2024-01-31", months: 1}, {d: "2024-02-29"}],
+    [{d: "2023-01-31", months: 1}, {d: "2023-02-28"}],
+    [{d: "2024-03-31", months: -1}, {d: "2024-02-29"}],
+    [{d: "2024-02-29", months: 12}, {d: "2025-02-28"}],
+    [{d: "2024-05-15", months: 0}, {d: "2024-05-15"}],
+  ],
+}
+
+{
+  name: "data: dayjs start and end of periods",
+  graph: {
+    nodes: [{function: "f", source: """import dayjs from 'dayjs';
+export const handler = async (input) => {
+  const d = dayjs(input.d);
+  return {
+    monthStart: d.startOf('month').format('YYYY-MM-DD'),
+    monthEnd: d.endOf('month').format('YYYY-MM-DD'),
+    yearEnd: d.endOf('year').format('YYYY-MM-DDTHH:mm:ss'),
+    days: d.daysInMonth(),
+  };
+};"""}],
+  },
+  cases: [
+    [{d: "2024-02-10"}, {monthStart: "2024-02-01", monthEnd: "2024-02-29", yearEnd: "2024-12-31T23:59:59", days: 29}],
+    [{d: "2023-02-10"}, {monthStart: "2023-02-01", monthEnd: "2023-02-28", yearEnd: "2023-12-31T23:59:59", days: 28}],
+    [{d: "2024-12-31T23:00:00Z"}, {monthStart: "2024-12-01", monthEnd: "2024-12-31", yearEnd: "2024-12-31T23:59:59", days: 31}],
+  ],
+}
+
+{
+  name: "data: dayjs differences in months and years",
+  graph: {
+    nodes: [{function: "f", source: """import dayjs from 'dayjs';
+export const handler = async (input) => {
+  const a = dayjs(input.from);
+  const b = dayjs(input.to);
+  return { months: b.diff(a, 'month'), years: b.diff(a, 'year'), exactYears: b.diff(a, 'year', true) };
+};"""}],
+  },
+  cases: [
+    [{from: "2000-02-29", to: "2024-02-28"}, {months: 287, years: 23, exactYears: 23.99731182795699}],
+    [{from: "2020-01-15", to: "2021-01-15"}, {months: 12, years: 1, exactYears: 1}],
+    [{from: "2024-01-31", to: "2024-02-29"}, {months: 1, years: 0, exactYears: 0.0833333333333333}, "question: dayjs counts Jan 31 -> Feb 29 as a whole month because both are month ends"],
+    [{from: "2024-06-01", to: "2024-01-01"}, {months: -5, years: 0, exactYears: -0.4166666666666667}],
+  ],
+}
+
+{
+  name: "data: dayjs age from a birth date",
+  graph: {
+    nodes: [{function: "f", source: """import dayjs from 'dayjs';
+export const handler = async (input) => ({ age: dayjs(input.on).diff(dayjs(input.born), 'year') });"""}],
+  },
+  cases: [
+    [{born: "2000-03-20", on: "2025-03-20"}, {age: 25}],
+    [{born: "2000-03-21", on: "2025-03-20"}, {age: 24}],
+    [{born: "2004-02-29", on: "2025-02-28"}, {age: 21}, "question: dayjs treats Feb 28 of a common year as the anniversary of Feb 29"],
+    [{born: "2004-02-29", on: "2025-03-01"}, {age: 21}],
+  ],
+}
+
+{
+  name: "data: dayjs format tokens",
+  graph: {
+    nodes: [{function: "f", source: """import dayjs from 'dayjs';
+export const handler = async (input) => ({ s: dayjs(input.d).format(input.fmt) });"""}],
+  },
+  cases: [
+    [{d: "2024-07-04T09:05:03Z", fmt: "YYYY/MM/DD HH:mm:ss"}, {s: "2024/07/04 09:05:03"}],
+    [{d: "2024-07-04T09:05:03Z", fmt: "D MMM YY"}, {s: "4 Jul 24"}],
+    [{d: "2024-07-04T21:05:03Z", fmt: "h:mm A dddd"}, {s: "9:05 PM Thursday"}],
+    [{d: "2024-07-04", fmt: "[Q]Q"}, {s: "QQ"}, "question: the quarter token Q is not formatted; the advancedFormat plugin is not bundled"],
+  ],
+}
+
+{
+  name: "data: dayjs unix timestamps and ISO strings",
+  graph: {
+    nodes: [{function: "f", source: """import dayjs from 'dayjs';
+export const handler = async (input) => {
+  const d = typeof input.v === 'number' ? dayjs.unix(input.v) : dayjs(input.v);
+  return { unix: d.unix(), iso: d.toISOString(), ms: d.valueOf() };
+};"""}],
+  },
+  cases: [
+    [{v: 0}, {unix: 0, iso: "1970-01-01T00:00:00.000Z", ms: 0}],
+    [{v: 1700000000}, {unix: 1700000000, iso: "2023-11-14T22:13:20.000Z", ms: 1700000000000}],
+    [{v: "2024-01-01T00:00:00.500Z"}, {unix: 1704067200, iso: "2024-01-01T00:00:00.500Z", ms: 1704067200500}],
+    [{v: -86400}, {unix: -86400, iso: "1969-12-31T00:00:00.000Z", ms: -86400000}],
+  ],
+}
+
+{
+  name: "data: dayjs with an invalid date formats as Invalid Date",
+  graph: {
+    nodes: [{function: "f", source: """import dayjs from 'dayjs';
+export const handler = async (input) => {
+  const d = dayjs(input.d);
+  return { valid: d.isValid(), s: d.format('YYYY-MM-DD') };
+};"""}],
+  },
+  cases: [
+    [{d: "2024-13-01"}, {valid: true, s: "2025-01-01"}, "question: dayjs parses month 13 by rolling over into the next year instead of rejecting it"],
+    [{d: "garbage"}, {valid: false, s: "Invalid Date"}],
+    [{d: "2024-02-30"}, {valid: true, s: "2024-03-01"}],
+    [{d: "2024-02-28"}, {valid: true, s: "2024-02-28"}],
+  ],
+}
+
+{
+  name: "data: dayjs sorting and comparing dates",
+  graph: {
+    nodes: [{function: "f", source: """import dayjs from 'dayjs';
+export const handler = async (input) => {
+  const sorted = [...input.dates].sort((a, b) => dayjs(a).valueOf() - dayjs(b).valueOf());
+  return { first: sorted[0] ?? null, last: sorted.at(-1) ?? null, sameDay: dayjs(input.dates[0]).isSame(input.dates[1], 'day') };
+};"""}],
+  },
+  cases: [
+    [{dates: ["2024-03-01", "2024-01-15", "2024-02-01"]}, {first: "2024-01-15", last: "2024-03-01", sameDay: false}],
+    [{dates: ["2024-01-01T08:00:00Z", "2024-01-01T20:00:00Z"]}, {first: "2024-01-01T08:00:00Z", last: "2024-01-01T20:00:00Z", sameDay: true}],
+    [{dates: ["2023-12-31", "2023-12-31"]}, {first: "2023-12-31", last: "2023-12-31", sameDay: true}],
+  ],
+}
+
+{
+  name: "data: schema date inputs parsed by dayjs",
+  graph: {
+    nodes: [{function: "f", source: """import dayjs from 'dayjs';
+export const handler = async (input) => ({ next: dayjs(input.d).add(1, 'day').format('YYYY-MM-DD'), weekday: dayjs(input.d).day() });"""}],
+  },
+  cases: [
+    [{d: date('2024-05-01')}, {next: "2024-05-02", weekday: 3}],
+    [{d: date('2024-12-31')}, {next: "2025-01-01", weekday: 2}],
+    [{d: "2025-03-20"}, {next: "2025-03-21", weekday: 4}],
+  ],
+}
+
+{
+  name: "data: a dayjs object returned as a value",
+  graph: {
+    nodes: [{function: "f", source: """import dayjs from 'dayjs';
+export const handler = async (input) => ({ iso: dayjs(input.d).toISOString(), json: JSON.parse(JSON.stringify({ d: dayjs(input.d) })).d });"""}],
+  },
+  cases: [
+    [{d: "2024-01-01"}, {iso: "2024-01-01T00:00:00.000Z", json: "2024-01-01T00:00:00.000Z"}],
+    [{d: "2024-06-15T12:30:00Z"}, {iso: "2024-06-15T12:30:00.000Z", json: "2024-06-15T12:30:00.000Z"}],
+  ],
+}
+
+{
+  name: "data: a date string from JS compared by an expression node",
+  graph: {
+    nodes: [
+      {function: "f", source: """import dayjs from 'dayjs';
+export const handler = async (input) => ({ due: dayjs(input.start).add(input.days, 'day').format('YYYY-MM-DD') });"""},
+      {expression: "e", fields: {due: "due", late: "d(due) < d('2025-03-20')"}},
+    ],
+    edges: ["input -> f -> e -> output"],
+  },
+  cases: [
+    [{start: "2025-03-01", days: 10}, {due: "2025-03-11", late: true}],
+    [{start: "2025-03-15", days: 10}, {due: "2025-03-25", late: false}],
+    [{start: "2025-03-20", days: 0}, {due: "2025-03-20", late: false}],
+  ],
+}

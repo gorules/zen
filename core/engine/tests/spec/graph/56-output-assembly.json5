@@ -1,0 +1,739 @@
+// Output assembly: how the graph result is built from the nodes that end the walk.
+//
+// The walk stops as soon as the first output node runs. The result is then the merge of every
+// visited node without outgoing edges ("ending nodes"), folded into an empty object in node
+// declaration order (not edge order), so on a key conflict the later declared ending node wins.
+// The fold is a merge-patch: a top-level null from a later ending node deletes the key, an array
+// replaces everything merged so far, and a scalar is ignored. `$nodes` keys are stripped from the
+// result at every depth. Chapters 01 and 10 introduce output nodes, dead ends and leaves; this
+// chapter covers several outputs, leaf merge order, outputPath collisions, deep paths, arrays of
+// objects, reserved keys and very wide results.
+
+// --- Several output nodes --------------------------------------------------------------------------
+// Only the first output node reached contributes; which one is reached depends on the branch taken.
+{
+  name: "outputs: a switch routes to one of two output nodes",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["n > 0", ""]},
+      {expression: "pos", fields: {sign: "'pos'", n: "n"}},
+      {expression: "neg", fields: {sign: "'neg'", abs: "abs(n ?? 0)"}},
+      {output: "outPos"},
+      {output: "outNeg"},
+    ],
+    edges: ["input -> s", "s:0 -> pos -> outPos", "s:1 -> neg -> outNeg"],
+  },
+  cases: [
+    [{n: 2}, {n: 2, sign: "pos"}],
+    [{n: -3}, {abs: 3, sign: "neg"}],
+    [{n: 0}, {abs: 0, sign: "neg"}],
+    [{}, {abs: 0, sign: "neg"}],
+  ],
+}
+
+{
+  name: "outputs: a collect switch taking both branches stops at the first output reached",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["a", "b"]},
+      {expression: "A", fields: {fromA: "true"}},
+      {expression: "B", fields: {fromB: "true"}},
+      {output: "outA"},
+      {output: "outB"},
+    ],
+    edges: ["input -> s", "s:0 -> A -> outA", "s:1 -> B -> outB"],
+  },
+  cases: [
+    [{a: true, b: true}, {fromA: true}],
+    [{a: true, b: false}, {fromA: true}],
+    [{a: false, b: true}, {fromB: true}],
+  ],
+}
+
+{
+  name: "outputs: two output nodes behind the same join",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {k: "'a'", x: "1"}},
+      {expression: "b", fields: {k: "'b'", y: "2"}},
+      {output: "out1"},
+      {output: "out2"},
+    ],
+    edges: ["input -> a -> out1", "input -> b -> out1", "a -> out2", "b -> out2"],
+  },
+  cases: [
+    [{}, {k: "a", x: 1, y: 2}],
+    [{k: "req"}, {k: "a", x: 1, y: 2}],
+  ],
+}
+
+{
+  name: "outputs: an output node with an outgoing edge",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {k: "n + 1"}},
+      {output: "mid"},
+      {expression: "after", fields: {after: "k * 10"}},
+    ],
+    edges: ["input -> a -> mid -> after"],
+  },
+  cases: [
+    [{n: 1}, {}, "question: the walk stops at the output node, but an output node with an outgoing edge is not an ending node, so nothing is merged and the result is empty"],
+    [{n: 0}, {}, "question: the walk stops at the output node, but an output node with an outgoing edge is not an ending node, so nothing is merged and the result is empty"],
+  ],
+}
+
+{
+  name: "outputs: an output node directly after the input next to a longer branch",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {k: "'calc'"}},
+      {output: "out"},
+    ],
+    edges: ["input -> calc -> out", "input -> out"],
+  },
+  cases: [
+    [{k: "req", n: 1}, {k: "calc", n: 1}],
+    [{n: 1}, {k: "calc", n: 1}],
+    [{k: null, n: 1}, {k: "calc", n: 1}],
+  ],
+}
+
+{
+  name: "outputs: an output schema checks only the output reached",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["strict", ""]},
+      {expression: "A", fields: {v: "v"}},
+      {expression: "B", fields: {v: "v"}},
+      {output: "checked", schema: {type: "object", required: ["v"], properties: {v: {type: "number"}}}},
+      {output: "unchecked"},
+    ],
+    edges: ["input -> s", "s:0 -> A -> checked", "s:1 -> B -> unchecked"],
+  },
+  cases: [
+    [{strict: true, v: 1}, {v: 1}],
+    [{strict: true, v: "x"}, "!error"],
+    [{strict: false, v: "x"}, {v: "x"}],
+    [{strict: false}, {}],
+  ],
+}
+
+// --- Leaves without an output node -------------------------------------------------------------------
+// Every visited leaf is merged, in node declaration order: the later declared leaf wins conflicts,
+// whatever the edge order.
+{
+  name: "leaves: two leaves writing the same key, b declared last",
+  graph: {
+    nodes: [
+      {input: "request"},
+      {expression: "a", fields: {k: "'a'", onlyA: "1"}},
+      {expression: "b", fields: {k: "'b'", onlyB: "2"}},
+    ],
+    edges: ["request -> a", "request -> b"],
+  },
+  cases: [
+    [{}, {k: "b", onlyA: 1, onlyB: 2}],
+    [{k: "req"}, {k: "b", onlyA: 1, onlyB: 2}],
+  ],
+}
+
+{
+  name: "leaves: the same leaves with the node list reversed",
+  graph: {
+    nodes: [
+      {input: "request"},
+      {expression: "b", fields: {k: "'b'", onlyB: "2"}},
+      {expression: "a", fields: {k: "'a'", onlyA: "1"}},
+    ],
+    edges: ["request -> a", "request -> b"],
+  },
+  cases: [
+    [{}, {k: "a", onlyA: 1, onlyB: 2}],
+    [{k: "req"}, {k: "a", onlyA: 1, onlyB: 2}],
+  ],
+}
+
+{
+  name: "leaves: the same leaves with the edges reversed",
+  graph: {
+    nodes: [
+      {input: "request"},
+      {expression: "a", fields: {k: "'a'", onlyA: "1"}},
+      {expression: "b", fields: {k: "'b'", onlyB: "2"}},
+    ],
+    edges: ["request -> b", "request -> a"],
+  },
+  cases: [
+    [{}, {k: "b", onlyA: 1, onlyB: 2}],
+  ],
+}
+
+{
+  name: "leaves: a null in a later leaf deletes an earlier leaf's key",
+  graph: {
+    nodes: [
+      {input: "request"},
+      {expression: "a", fields: {k: "'a'", nested: "{x: 1, y: 1}"}},
+      {expression: "b", fields: {k: "v", nested: "{x: v}"}},
+    ],
+    edges: ["request -> a", "request -> b"],
+  },
+  cases: [
+    [{v: 2}, {k: 2, nested: {x: 2, y: 1}}],
+    [{v: null}, {nested: {y: 1}}],
+    [{}, {nested: {y: 1}}],
+  ],
+}
+
+{
+  name: "leaves: a null in an earlier leaf does not delete a later leaf's key",
+  graph: {
+    nodes: [
+      {input: "request"},
+      {expression: "b", fields: {k: "v", nested: "{x: v}"}},
+      {expression: "a", fields: {k: "'a'", nested: "{x: 1, y: 1}"}},
+    ],
+    edges: ["request -> a", "request -> b"],
+  },
+  cases: [
+    [{v: 2}, {k: "a", nested: {x: 1, y: 1}}],
+    [{v: null}, {k: "a", nested: {x: 1, y: 1}}],
+  ],
+}
+
+{
+  name: "leaves: tables, functions and loops as leaves of every result kind",
+  graph: {
+    nodes: [
+      {input: "request"},
+      {expression: "e", fields: {e: "true"}},
+      {table: "first", inputs: ["n"], outputs: ["first"], rules: [["> 0", "'hit'"]]},
+      {function: "f", source: """export const handler = async (input) => input.fn;"""},
+    ],
+    edges: ["request -> e", "request -> first", "request -> f"],
+  },
+  cases: [
+    [{n: 1}, {e: true, first: "hit"}],
+    [{n: 0}, {e: true}],
+    [{n: 1, fn: {f: 1}}, {e: true, f: 1, first: "hit"}],
+    [{n: 1, fn: {e: false}}, {e: false, first: "hit"}],
+    [{n: 1, fn: 5}, {e: true, first: "hit"}],
+    [{n: 1, fn: null}, {e: true, first: "hit"}],
+    [{n: 1, fn: [1, 2]}, [1, 2]],
+  ],
+}
+
+{
+  name: "leaves: an array leaf declared before an object leaf",
+  graph: {
+    nodes: [
+      {input: "request"},
+      {table: "rows", hit: "collect", inputs: ["n"], outputs: ["r"], rules: [["> 0", "'pos'"], ["", "'any'"]]},
+      {expression: "e", fields: {e: "true"}},
+    ],
+    edges: ["request -> rows", "request -> e"],
+  },
+  cases: [
+    [{n: 1}, {e: true}, "question: a collect table leaf is discarded when an object leaf is declared after it; the result depends on node declaration order"],
+    [{n: 0}, {e: true}, "question: a collect table leaf is discarded when an object leaf is declared after it; the result depends on node declaration order"],
+  ],
+}
+
+{
+  name: "leaves: an object leaf declared before an array leaf",
+  graph: {
+    nodes: [
+      {input: "request"},
+      {expression: "e", fields: {e: "true"}},
+      {table: "rows", hit: "collect", inputs: ["n"], outputs: ["r"], rules: [["> 0", "'pos'"], ["", "'any'"]]},
+    ],
+    edges: ["request -> rows", "request -> e"],
+  },
+  cases: [
+    [{n: 1}, [{r: "pos"}, {r: "any"}]],
+    [{n: 0}, [{r: "any"}]],
+  ],
+}
+
+{
+  name: "leaves: deep objects from three leaves merge key by key",
+  graph: {
+    nodes: [
+      {input: "request"},
+      {expression: "a", fields: {"r.x.a": "1", "r.shared": "'a'"}},
+      {expression: "b", fields: {"r.x.b": "2", "r.shared": "'b'"}},
+      {expression: "c", fields: {"r.y": "[3]", "r.shared": "v"}},
+    ],
+    edges: ["request -> a", "request -> b", "request -> c"],
+  },
+  cases: [
+    [{v: "c"}, {r: {shared: "c", x: {a: 1, b: 2}, y: [3]}}],
+    [{v: null}, {r: {x: {a: 1, b: 2}, y: [3]}}],
+    [{}, {r: {x: {a: 1, b: 2}, y: [3]}}],
+  ],
+}
+
+{
+  name: "leaves: a chain and a single node as two leaves",
+  graph: {
+    nodes: [
+      {input: "request"},
+      {expression: "a1", fields: {k: "n + 1"}},
+      {expression: "a2", fields: {k: "k * 10", chain: "true"}},
+      {expression: "b", fields: {single: "true", k: "0"}},
+    ],
+    edges: ["request -> a1 -> a2", "request -> b"],
+  },
+  cases: [
+    [{n: 1}, {chain: true, k: 0, single: true}],
+    [{n: 5}, {chain: true, k: 0, single: true}],
+  ],
+}
+
+{
+  name: "leaves: a leaf behind a switch branch not taken contributes nothing",
+  graph: {
+    nodes: [
+      {input: "request"},
+      {switch: "s", when: ["go", ""]},
+      {expression: "yes", fields: {k: "'yes'"}},
+      {expression: "no", fields: {k: "'no'"}},
+      {expression: "always", fields: {always: "true"}},
+    ],
+    edges: ["request -> s", "s:0 -> yes", "s:1 -> no", "request -> always"],
+  },
+  cases: [
+    [{go: true}, {always: true, k: "yes"}],
+    [{go: false}, {always: true, k: "no"}],
+  ],
+}
+
+// --- outputPath collisions -----------------------------------------------------------------------------
+// Several nodes writing to the same or overlapping output paths: the merge rules decide.
+{
+  name: "outputPath: two branches with the same path deep-merge",
+  graph: {
+    nodes: [
+      {expression: "a", outputPath: "res", fields: {k: "'a'", x: "1"}},
+      {expression: "b", outputPath: "res", fields: {k: "'b'", y: "2"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{}, {res: {k: "a", x: 1, y: 2}}],
+    [{res: {z: 0}}, {res: {k: "a", x: 1, y: 2}}],
+  ],
+}
+
+{
+  name: "outputPath: a parent path and a child path from two branches",
+  graph: {
+    nodes: [
+      {expression: "a", outputPath: "res", fields: {k: "'a'", "sub.x": "1"}},
+      {expression: "b", outputPath: "res.sub", fields: {y: "2", x: "'b'"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{}, {res: {k: "a", sub: {x: 1, y: 2}}}],
+  ],
+}
+
+{
+  name: "outputPath: the child path declared first wins inside the parent's object",
+  graph: {
+    nodes: [
+      {expression: "a", outputPath: "res", fields: {k: "'a'", "sub.x": "1"}},
+      {expression: "b", outputPath: "res.sub", fields: {y: "2", x: "'b'"}},
+    ],
+    edges: ["input -> b -> output", "input -> a -> output"],
+  },
+  cases: [
+    [{}, {res: {k: "a", sub: {x: "b", y: 2}}}],
+  ],
+}
+
+{
+  name: "outputPath: a scalar at the parent path against an object below it",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {res: "v"}},
+      {expression: "b", outputPath: "res.sub", fields: {y: "2"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{v: 5}, {res: 5}],
+    [{v: null}, {}],
+    [{v: [1]}, {res: [1]}],
+    [{v: {other: 1}}, {res: {other: 1, sub: {y: 2}}}],
+  ],
+}
+
+{
+  name: "outputPath: the object below declared first against a scalar at the parent path",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {res: "v"}},
+      {expression: "b", outputPath: "res.sub", fields: {y: "2"}},
+    ],
+    edges: ["input -> b -> output", "input -> a -> output"],
+  },
+  cases: [
+    [{v: 5}, {res: {sub: {y: 2}}}],
+    [{v: null}, {res: {sub: {y: 2}}}],
+    [{v: [1]}, {res: {sub: {y: 2}}}],
+  ],
+}
+
+{
+  name: "outputPath: a table and a collect table writing the same path",
+  graph: {
+    nodes: [
+      {table: "t", outputPath: "res", inputs: ["n"], outputs: ["k"], rules: [["> 0", "'first'"]]},
+      {table: "c", hit: "collect", outputPath: "res", inputs: ["n"], outputs: ["k"], rules: [["> 0", "'row'"], ["", "'any'"]]},
+    ],
+    edges: ["input -> t -> output", "input -> c -> output"],
+  },
+  cases: [
+    [{n: 1}, {res: {k: "first"}}],
+    [{n: 0}, {}, "question: an unmatched table under an outputPath writes null at the path, which erases the other branch value there; without outputPath an unmatched table is ignored at a join"],
+  ],
+}
+
+{
+  name: "outputPath: chained nodes writing the same path with and without passThrough",
+  graph: {
+    nodes: [
+      {expression: "a", outputPath: "res", fields: {k: "'a'", x: "1"}},
+      {expression: "b", outputPath: "res", passThrough: true, fields: {k: "'b'"}},
+      {expression: "c", outputPath: "res", passThrough: true, fields: {y: "res.x + 1"}},
+    ],
+  },
+  cases: [
+    [{}, {res: {k: "b", x: 1, y: 2}}],
+    [{res: 1}, {res: {k: "b", x: 1, y: 2}}],
+  ],
+}
+
+{
+  name: "outputPath: a path equal to a request key, without passThrough",
+  graph: {
+    nodes: [
+      {expression: "a", outputPath: "n", fields: {doubled: "n * 2"}},
+    ],
+    edges: ["input -> a -> output", "input -> output"],
+  },
+  cases: [
+    [{n: 2}, {n: {doubled: 4}}],
+    [{n: 0, other: true}, {n: {doubled: 0}, other: true}],
+  ],
+}
+
+// --- Deep paths ----------------------------------------------------------------------------------------
+{
+  name: "deep: an eight-segment outputPath",
+  graph: {
+    nodes: [{expression: "a", outputPath: "l1.l2.l3.l4.l5.l6.l7.l8", fields: {v: "n", "w.x": "[n]"}}],
+  },
+  cases: [
+    [{n: 1}, {l1: {l2: {l3: {l4: {l5: {l6: {l7: {l8: {v: 1, w: {x: [1]}}}}}}}}}}],
+    [{n: null}, {l1: {l2: {l3: {l4: {l5: {l6: {l7: {l8: {v: null, w: {x: [null]}}}}}}}}}}],
+  ],
+}
+
+{
+  name: "deep: two deep paths sharing a long prefix",
+  graph: {
+    nodes: [
+      {expression: "a", outputPath: "p.q.r.s.left", fields: {v: "1"}},
+      {expression: "b", outputPath: "p.q.r.s.right", fields: {v: "2"}},
+      {expression: "c", outputPath: "p.q.other", fields: {v: "3"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output", "input -> c -> output"],
+  },
+  cases: [
+    [{}, {p: {q: {other: {v: 3}, r: {s: {left: {v: 1}, right: {v: 2}}}}}}],
+    [{p: {q: {keep: true}}}, {p: {q: {other: {v: 3}, r: {s: {left: {v: 1}, right: {v: 2}}}}}}],
+  ],
+}
+
+{
+  name: "deep: a deep outputPath with passThrough over a request holding part of the spine",
+  graph: {
+    nodes: [{expression: "a", outputPath: "p.q.r", passThrough: true, fields: {v: "1"}}],
+  },
+  cases: [
+    [{}, {p: {q: {r: {v: 1}}}}],
+    [{p: {keep: 1}}, {p: {keep: 1, q: {r: {v: 1}}}}],
+    [{p: {q: {r: {old: 1}}}}, {p: {q: {r: {old: 1, v: 1}}}}],
+    [{p: {q: 5}}, {p: {q: {r: {v: 1}}}}],
+    [{p: null}, {p: {q: {r: {v: 1}}}}],
+  ],
+}
+
+{
+  name: "deep: a table writing deep output fields under a deep outputPath",
+  graph: {
+    nodes: [
+      {table: "t", outputPath: "a.b", inputs: ["n"], outputs: ["c.d.e", "c.d.f", "g"], rules: [
+        ["> 0", "n", "'pos'", "[n]"],
+        ["", "0", "null", "[]"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 1}, {a: {b: {c: {d: {e: 1, f: "pos"}}, g: [1]}}}],
+    [{n: -1}, {a: {b: {c: {d: {e: 0, f: null}}, g: []}}}],
+  ],
+}
+
+{
+  name: "deep: a loop under a deep outputPath",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", outputPath: "x.y.z", executionMode: "loop", fields: {"a.b": "v"}}],
+  },
+  cases: [
+    [{items: [{v: 1}, {v: 2}]}, {x: {y: {z: [{a: {b: 1}}, {a: {b: 2}}]}}}],
+    [{items: []}, {x: {y: {z: []}}}],
+  ],
+}
+
+{
+  name: "deep: sub-decision result placed under a deep path",
+  decisions: {
+    child: {nodes: [{expression: "c", fields: {"inner.k": "v", top: "1"}}]},
+  },
+  graph: {
+    nodes: [{decision: "d", key: "child", outputPath: "a.b.c"}],
+  },
+  cases: [
+    [{v: 1}, {a: {b: {c: {inner: {k: 1}, top: 1}}}}],
+    [{v: null}, {a: {b: {c: {inner: {k: null}, top: 1}}}}],
+  ],
+}
+
+// --- Arrays of objects -----------------------------------------------------------------------------------
+{
+  name: "arrays: collect table rows with dotted outputs are nested objects",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", outputPath: "rows", inputs: ["n"], outputs: ["id", "meta.kind", "meta.n"], rules: [
+        ["> 0", "1", "'pos'", "n"],
+        ["> 10", "2", "'big'", "n * 2"],
+        ["", "3", "'any'", "null"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 20}, {rows: [{id: 1, meta: {kind: "pos", n: 20}}, {id: 2, meta: {kind: "big", n: 40}}, {id: 3, meta: {kind: "any", n: null}}]}],
+    [{n: 5}, {rows: [{id: 1, meta: {kind: "pos", n: 5}}, {id: 3, meta: {kind: "any", n: null}}]}],
+    [{n: 0}, {rows: [{id: 3, meta: {kind: "any", n: null}}]}],
+  ],
+}
+
+{
+  name: "arrays: a loop result next to the source array",
+  graph: {
+    nodes: [{expression: "each", inputField: "orders", outputPath: "summary", executionMode: "loop", fields: {id: "id", "total.net": "qty * price", "total.items": "qty"}}],
+    edges: ["input -> each -> output", "input -> output"],
+  },
+  cases: [
+    [{orders: [{id: "a", qty: 2, price: 3}, {id: "b", qty: 1, price: 10}]}, {orders: [{id: "a", price: 3, qty: 2}, {id: "b", price: 10, qty: 1}], summary: [{id: "a", total: {items: 2, net: 6}}, {id: "b", total: {items: 1, net: 10}}]}],
+    [{orders: []}, {orders: [], summary: []}],
+  ],
+}
+
+{
+  name: "arrays: two branches writing an array of objects at the same key",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {list: "[{id: 1, a: true}, {id: 2, a: true}]"}},
+      {expression: "b", fields: {list: "[{id: 1, b: true}]"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{}, {list: [{a: true, id: 1}, {a: true, id: 2}]}],
+  ],
+}
+
+{
+  name: "arrays: a passThrough loop writing back into an array of nested objects",
+  graph: {
+    nodes: [{expression: "each", inputField: "people", outputPath: "people", executionMode: "loop", passThrough: true, fields: {"address.full": "address.city + ', ' + address.zip", adult: "age >= 18"}}],
+  },
+  cases: [
+    [{people: [{age: 20, address: {city: "x", zip: "1"}}, {age: 3, address: {city: "y", zip: "2"}}]}, {people: [{address: {city: "x", full: "x, 1", zip: "1"}, adult: true, age: 20}, {address: {city: "y", full: "y, 2", zip: "2"}, adult: false, age: 3}]}],
+    [{people: [], other: 1}, {other: 1, people: []}],
+  ],
+}
+
+{
+  name: "arrays: array of arrays and mixed items survive assembly",
+  graph: {
+    nodes: [{expression: "a", fields: {m: "[[1, 2], [], [{x: null}], null, 'x']"}}],
+  },
+  cases: [
+    [{}, {m: [[1, 2], [], [{x: null}], null, "x"]}],
+  ],
+}
+
+// --- Reserved keys -----------------------------------------------------------------------------------------
+// `$nodes` is stripped from the result at every depth; `$` is an ordinary key.
+{
+  name: "reserved: an outputPath named $nodes",
+  graph: {
+    nodes: [{expression: "a", outputPath: "$nodes", fields: {k: "1"}}],
+    edges: ["input -> a -> output", "input -> output"],
+  },
+  cases: [
+    [{x: 1}, {x: 1}],
+  ],
+}
+
+{
+  name: "reserved: a nested $nodes key written by an expression",
+  graph: {
+    nodes: [{expression: "a", fields: {"res.$nodes": "1", "res.k": "2"}}],
+  },
+  cases: [
+    [{}, {res: {k: 2}}],
+  ],
+}
+
+{
+  name: "reserved: a function returning $nodes and $ keys",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async () => ({ $nodes: 1, $: 2, deep: { $nodes: 3, $: 4 } });"""}],
+  },
+  cases: [
+    [{}, {$: 2, deep: {$: 4}}],
+  ],
+}
+
+{
+  name: "reserved: a request with $nodes and $ keys passed straight through",
+  graph: {},
+  cases: [
+    [{"$nodes": {a: 1}, "$": 1, deep: {"$nodes": 2}}, {$: 1, deep: {}}, "question: the result cleaner deletes user data under a `$nodes` key at any depth, not only the engine map"],
+  ],
+}
+
+{
+  name: "reserved: a table output column named $ and $nodes",
+  graph: {
+    nodes: [{table: "t", inputs: [""], outputs: ["$", "$nodes", "ok"], rules: [["", "1", "2", "3"]]}],
+  },
+  cases: [
+    [{}, {$: 1, ok: 3}],
+  ],
+}
+
+{
+  name: "reserved: an outputPath named $",
+  graph: {
+    nodes: [{expression: "a", outputPath: "$", fields: {k: "1"}}],
+  },
+  cases: [
+    [{}, {$: {k: 1}}],
+  ],
+}
+
+{
+  name: "reserved: a custom config with a $nodes key",
+  graph: {
+    nodes: [{custom: "c", kind: "config", config: {"$nodes": 1, keep: {"$nodes": 2, v: 3}}}],
+  },
+  cases: [
+    [{}, {keep: {v: 3}}],
+  ],
+}
+
+// --- Very wide results -----------------------------------------------------------------------------------
+{
+  name: "wide: one expression node with 60 fields",
+  graph: {
+    nodes: [{expression: "a", fields: {f00: "n + 0", f01: "n + 1", f02: "n + 2", f03: "n + 3", f04: "n + 4", f05: "n + 5", f06: "n + 6", f07: "n + 7", f08: "n + 8", f09: "n + 9", f10: "n + 10", f11: "n + 11", f12: "n + 12", f13: "n + 13", f14: "n + 14", f15: "n + 15", f16: "n + 16", f17: "n + 17", f18: "n + 18", f19: "n + 19", f20: "n + 20", f21: "n + 21", f22: "n + 22", f23: "n + 23", f24: "n + 24", f25: "n + 25", f26: "n + 26", f27: "n + 27", f28: "n + 28", f29: "n + 29", f30: "n + 30", f31: "n + 31", f32: "n + 32", f33: "n + 33", f34: "n + 34", f35: "n + 35", f36: "n + 36", f37: "n + 37", f38: "n + 38", f39: "n + 39", f40: "n + 40", f41: "n + 41", f42: "n + 42", f43: "n + 43", f44: "n + 44", f45: "n + 45", f46: "n + 46", f47: "n + 47", f48: "n + 48", f49: "n + 49", f50: "n + 50", f51: "n + 51", f52: "n + 52", f53: "n + 53", f54: "n + 54", f55: "n + 55", f56: "n + 56", f57: "n + 57", f58: "n + 58", f59: "n + 59"}}],
+  },
+  cases: [
+    [{n: 0}, {f00: 0, f01: 1, f02: 2, f03: 3, f04: 4, f05: 5, f06: 6, f07: 7, f08: 8, f09: 9, f10: 10, f11: 11, f12: 12, f13: 13, f14: 14, f15: 15, f16: 16, f17: 17, f18: 18, f19: 19, f20: 20, f21: 21, f22: 22, f23: 23, f24: 24, f25: 25, f26: 26, f27: 27, f28: 28, f29: 29, f30: 30, f31: 31, f32: 32, f33: 33, f34: 34, f35: 35, f36: 36, f37: 37, f38: 38, f39: 39, f40: 40, f41: 41, f42: 42, f43: 43, f44: 44, f45: 45, f46: 46, f47: 47, f48: 48, f49: 49, f50: 50, f51: 51, f52: 52, f53: 53, f54: 54, f55: 55, f56: 56, f57: 57, f58: 58, f59: 59}],
+    [{n: 100}, {f00: 100, f01: 101, f02: 102, f03: 103, f04: 104, f05: 105, f06: 106, f07: 107, f08: 108, f09: 109, f10: 110, f11: 111, f12: 112, f13: 113, f14: 114, f15: 115, f16: 116, f17: 117, f18: 118, f19: 119, f20: 120, f21: 121, f22: 122, f23: 123, f24: 124, f25: 125, f26: 126, f27: 127, f28: 128, f29: 129, f30: 130, f31: 131, f32: 132, f33: 133, f34: 134, f35: 135, f36: 136, f37: 137, f38: 138, f39: 139, f40: 140, f41: 141, f42: 142, f43: 143, f44: 144, f45: 145, f46: 146, f47: 147, f48: 148, f49: 149, f50: 150, f51: 151, f52: 152, f53: 153, f54: 154, f55: 155, f56: 156, f57: 157, f58: 158, f59: 159}],
+  ],
+}
+
+{
+  name: "wide: two branches of 30 disjoint keys each",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {a00: "n + 0", a01: "n + 1", a02: "n + 2", a03: "n + 3", a04: "n + 4", a05: "n + 5", a06: "n + 6", a07: "n + 7", a08: "n + 8", a09: "n + 9", a10: "n + 10", a11: "n + 11", a12: "n + 12", a13: "n + 13", a14: "n + 14", a15: "n + 15", a16: "n + 16", a17: "n + 17", a18: "n + 18", a19: "n + 19", a20: "n + 20", a21: "n + 21", a22: "n + 22", a23: "n + 23", a24: "n + 24", a25: "n + 25", a26: "n + 26", a27: "n + 27", a28: "n + 28", a29: "n + 29"}},
+      {expression: "b", fields: {b00: "n * 0", b01: "n * 1", b02: "n * 2", b03: "n * 3", b04: "n * 4", b05: "n * 5", b06: "n * 6", b07: "n * 7", b08: "n * 8", b09: "n * 9", b10: "n * 10", b11: "n * 11", b12: "n * 12", b13: "n * 13", b14: "n * 14", b15: "n * 15", b16: "n * 16", b17: "n * 17", b18: "n * 18", b19: "n * 19", b20: "n * 20", b21: "n * 21", b22: "n * 22", b23: "n * 23", b24: "n * 24", b25: "n * 25", b26: "n * 26", b27: "n * 27", b28: "n * 28", b29: "n * 29"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{n: 1}, {a00: 1, a01: 2, a02: 3, a03: 4, a04: 5, a05: 6, a06: 7, a07: 8, a08: 9, a09: 10, a10: 11, a11: 12, a12: 13, a13: 14, a14: 15, a15: 16, a16: 17, a17: 18, a18: 19, a19: 20, a20: 21, a21: 22, a22: 23, a23: 24, a24: 25, a25: 26, a26: 27, a27: 28, a28: 29, a29: 30, b00: 0, b01: 1, b02: 2, b03: 3, b04: 4, b05: 5, b06: 6, b07: 7, b08: 8, b09: 9, b10: 10, b11: 11, b12: 12, b13: 13, b14: 14, b15: 15, b16: 16, b17: 17, b18: 18, b19: 19, b20: 20, b21: 21, b22: 22, b23: 23, b24: 24, b25: 25, b26: 26, b27: 27, b28: 28, b29: 29}],
+    [{n: 2}, {a00: 2, a01: 3, a02: 4, a03: 5, a04: 6, a05: 7, a06: 8, a07: 9, a08: 10, a09: 11, a10: 12, a11: 13, a12: 14, a13: 15, a14: 16, a15: 17, a16: 18, a17: 19, a18: 20, a19: 21, a20: 22, a21: 23, a22: 24, a23: 25, a24: 26, a25: 27, a26: 28, a27: 29, a28: 30, a29: 31, b00: 0, b01: 2, b02: 4, b03: 6, b04: 8, b05: 10, b06: 12, b07: 14, b08: 16, b09: 18, b10: 20, b11: 22, b12: 24, b13: 26, b14: 28, b15: 30, b16: 32, b17: 34, b18: 36, b19: 38, b20: 40, b21: 42, b22: 44, b23: 46, b24: 48, b25: 50, b26: 52, b27: 54, b28: 56, b29: 58}],
+  ],
+}
+
+{
+  name: "wide: two branches of 40 keys overlapping on 20",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {k00: "'a'", k01: "'a'", k02: "'a'", k03: "'a'", k04: "'a'", k05: "'a'", k06: "'a'", k07: "'a'", k08: "'a'", k09: "'a'", k10: "'a'", k11: "'a'", k12: "'a'", k13: "'a'", k14: "'a'", k15: "'a'", k16: "'a'", k17: "'a'", k18: "'a'", k19: "'a'", k20: "'a'", k21: "'a'", k22: "'a'", k23: "'a'", k24: "'a'", k25: "'a'", k26: "'a'", k27: "'a'", k28: "'a'", k29: "'a'", k30: "'a'", k31: "'a'", k32: "'a'", k33: "'a'", k34: "'a'", k35: "'a'", k36: "'a'", k37: "'a'", k38: "'a'", k39: "'a'"}},
+      {expression: "b", fields: {k20: "'b'", k21: "'b'", k22: "'b'", k23: "'b'", k24: "'b'", k25: "'b'", k26: "'b'", k27: "'b'", k28: "'b'", k29: "'b'", k30: "'b'", k31: "'b'", k32: "'b'", k33: "'b'", k34: "'b'", k35: "'b'", k36: "'b'", k37: "'b'", k38: "'b'", k39: "'b'", k40: "'b'", k41: "'b'", k42: "'b'", k43: "'b'", k44: "'b'", k45: "'b'", k46: "'b'", k47: "'b'", k48: "'b'", k49: "'b'", k50: "'b'", k51: "'b'", k52: "'b'", k53: "'b'", k54: "'b'", k55: "'b'", k56: "'b'", k57: "'b'", k58: "'b'", k59: "'b'"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{}, {k00: "a", k01: "a", k02: "a", k03: "a", k04: "a", k05: "a", k06: "a", k07: "a", k08: "a", k09: "a", k10: "a", k11: "a", k12: "a", k13: "a", k14: "a", k15: "a", k16: "a", k17: "a", k18: "a", k19: "a", k20: "a", k21: "a", k22: "a", k23: "a", k24: "a", k25: "a", k26: "a", k27: "a", k28: "a", k29: "a", k30: "a", k31: "a", k32: "a", k33: "a", k34: "a", k35: "a", k36: "a", k37: "a", k38: "a", k39: "a", k40: "b", k41: "b", k42: "b", k43: "b", k44: "b", k45: "b", k46: "b", k47: "b", k48: "b", k49: "b", k50: "b", k51: "b", k52: "b", k53: "b", k54: "b", k55: "b", k56: "b", k57: "b", k58: "b", k59: "b"}],
+  ],
+}
+
+{
+  name: "wide: a table with 50 output columns, some null",
+  graph: {
+    nodes: [{table: "t", inputs: ["n"], outputs: ["o00", "o01", "o02", "o03", "o04", "o05", "o06", "o07", "o08", "o09", "o10", "o11", "o12", "o13", "o14", "o15", "o16", "o17", "o18", "o19", "o20", "o21", "o22", "o23", "o24", "o25", "o26", "o27", "o28", "o29", "o30", "o31", "o32", "o33", "o34", "o35", "o36", "o37", "o38", "o39", "o40", "o41", "o42", "o43", "o44", "o45", "o46", "o47", "o48", "o49"], rules: [
+      ["> 0", "n + 0", "n + 1", "n + 2", "n + 3", "n + 4", "n + 5", "n + 6", "n + 7", "n + 8", "n + 9", "n + 10", "n + 11", "n + 12", "n + 13", "n + 14", "n + 15", "n + 16", "n + 17", "n + 18", "n + 19", "n + 20", "n + 21", "n + 22", "n + 23", "n + 24", "n + 25", "n + 26", "n + 27", "n + 28", "n + 29", "n + 30", "n + 31", "n + 32", "n + 33", "n + 34", "n + 35", "n + 36", "n + 37", "n + 38", "n + 39", "n + 40", "n + 41", "n + 42", "n + 43", "n + 44", "n + 45", "n + 46", "n + 47", "n + 48", "n + 49"],
+      ["", "null", "'x1'", "'x2'", "'x3'", "'x4'", "'x5'", "'x6'", "'x7'", "'x8'", "'x9'", "null", "'x11'", "'x12'", "'x13'", "'x14'", "'x15'", "'x16'", "'x17'", "'x18'", "'x19'", "null", "'x21'", "'x22'", "'x23'", "'x24'", "'x25'", "'x26'", "'x27'", "'x28'", "'x29'", "null", "'x31'", "'x32'", "'x33'", "'x34'", "'x35'", "'x36'", "'x37'", "'x38'", "'x39'", "null", "'x41'", "'x42'", "'x43'", "'x44'", "'x45'", "'x46'", "'x47'", "'x48'", "'x49'"],
+    ]}],
+  },
+  cases: [
+    [{n: 1}, {o00: 1, o01: 2, o02: 3, o03: 4, o04: 5, o05: 6, o06: 7, o07: 8, o08: 9, o09: 10, o10: 11, o11: 12, o12: 13, o13: 14, o14: 15, o15: 16, o16: 17, o17: 18, o18: 19, o19: 20, o20: 21, o21: 22, o22: 23, o23: 24, o24: 25, o25: 26, o26: 27, o27: 28, o28: 29, o29: 30, o30: 31, o31: 32, o32: 33, o33: 34, o34: 35, o35: 36, o36: 37, o37: 38, o38: 39, o39: 40, o40: 41, o41: 42, o42: 43, o43: 44, o44: 45, o45: 46, o46: 47, o47: 48, o48: 49, o49: 50}],
+    [{n: 0}, {o01: "x1", o02: "x2", o03: "x3", o04: "x4", o05: "x5", o06: "x6", o07: "x7", o08: "x8", o09: "x9", o11: "x11", o12: "x12", o13: "x13", o14: "x14", o15: "x15", o16: "x16", o17: "x17", o18: "x18", o19: "x19", o21: "x21", o22: "x22", o23: "x23", o24: "x24", o25: "x25", o26: "x26", o27: "x27", o28: "x28", o29: "x29", o31: "x31", o32: "x32", o33: "x33", o34: "x34", o35: "x35", o36: "x36", o37: "x37", o38: "x38", o39: "x39", o41: "x41", o42: "x42", o43: "x43", o44: "x44", o45: "x45", o46: "x46", o47: "x47", o48: "x48", o49: "x49"}],
+  ],
+}
+
+{
+  name: "wide: 60 dotted keys spread over six nested objects",
+  graph: {
+    nodes: [{expression: "a", fields: {"g0.h0": "n", "g0.h1": "n", "g0.h2": "n", "g0.h3": "n", "g0.h4": "n", "g0.h5": "n", "g0.h6": "n", "g0.h7": "n", "g0.h8": "n", "g0.h9": "n", "g1.h10": "n", "g1.h11": "n", "g1.h12": "n", "g1.h13": "n", "g1.h14": "n", "g1.h15": "n", "g1.h16": "n", "g1.h17": "n", "g1.h18": "n", "g1.h19": "n", "g2.h20": "n", "g2.h21": "n", "g2.h22": "n", "g2.h23": "n", "g2.h24": "n", "g2.h25": "n", "g2.h26": "n", "g2.h27": "n", "g2.h28": "n", "g2.h29": "n", "g3.h30": "n", "g3.h31": "n", "g3.h32": "n", "g3.h33": "n", "g3.h34": "n", "g3.h35": "n", "g3.h36": "n", "g3.h37": "n", "g3.h38": "n", "g3.h39": "n", "g4.h40": "n", "g4.h41": "n", "g4.h42": "n", "g4.h43": "n", "g4.h44": "n", "g4.h45": "n", "g4.h46": "n", "g4.h47": "n", "g4.h48": "n", "g4.h49": "n", "g5.h50": "n", "g5.h51": "n", "g5.h52": "n", "g5.h53": "n", "g5.h54": "n", "g5.h55": "n", "g5.h56": "n", "g5.h57": "n", "g5.h58": "n", "g5.h59": "n"}}],
+  },
+  cases: [
+    [{n: 7}, {g0: {h0: 7, h1: 7, h2: 7, h3: 7, h4: 7, h5: 7, h6: 7, h7: 7, h8: 7, h9: 7}, g1: {h10: 7, h11: 7, h12: 7, h13: 7, h14: 7, h15: 7, h16: 7, h17: 7, h18: 7, h19: 7}, g2: {h20: 7, h21: 7, h22: 7, h23: 7, h24: 7, h25: 7, h26: 7, h27: 7, h28: 7, h29: 7}, g3: {h30: 7, h31: 7, h32: 7, h33: 7, h34: 7, h35: 7, h36: 7, h37: 7, h38: 7, h39: 7}, g4: {h40: 7, h41: 7, h42: 7, h43: 7, h44: 7, h45: 7, h46: 7, h47: 7, h48: 7, h49: 7}, g5: {h50: 7, h51: 7, h52: 7, h53: 7, h54: 7, h55: 7, h56: 7, h57: 7, h58: 7, h59: 7}}],
+    [{n: null}, {g0: {h0: null, h1: null, h2: null, h3: null, h4: null, h5: null, h6: null, h7: null, h8: null, h9: null}, g1: {h10: null, h11: null, h12: null, h13: null, h14: null, h15: null, h16: null, h17: null, h18: null, h19: null}, g2: {h20: null, h21: null, h22: null, h23: null, h24: null, h25: null, h26: null, h27: null, h28: null, h29: null}, g3: {h30: null, h31: null, h32: null, h33: null, h34: null, h35: null, h36: null, h37: null, h38: null, h39: null}, g4: {h40: null, h41: null, h42: null, h43: null, h44: null, h45: null, h46: null, h47: null, h48: null, h49: null}, g5: {h50: null, h51: null, h52: null, h53: null, h54: null, h55: null, h56: null, h57: null, h58: null, h59: null}}],
+  ],
+}
+
+{
+  name: "wide: passThrough over a 60-key request",
+  graph: {
+    nodes: [{expression: "a", passThrough: true, fields: {w00: "'changed'", w59: "null", extra: "true"}}],
+  },
+  cases: [
+    [{w00: 0, w01: 1, w02: 2, w03: 3, w04: 4, w05: 5, w06: 6, w07: 7, w08: 8, w09: 9, w10: 10, w11: 11, w12: 12, w13: 13, w14: 14, w15: 15, w16: 16, w17: 17, w18: 18, w19: 19, w20: 20, w21: 21, w22: 22, w23: 23, w24: 24, w25: 25, w26: 26, w27: 27, w28: 28, w29: 29, w30: 30, w31: 31, w32: 32, w33: 33, w34: 34, w35: 35, w36: 36, w37: 37, w38: 38, w39: 39, w40: 40, w41: 41, w42: 42, w43: 43, w44: 44, w45: 45, w46: 46, w47: 47, w48: 48, w49: 49, w50: 50, w51: 51, w52: 52, w53: 53, w54: 54, w55: 55, w56: 56, w57: 57, w58: 58, w59: 59}, {extra: true, w00: "changed", w01: 1, w02: 2, w03: 3, w04: 4, w05: 5, w06: 6, w07: 7, w08: 8, w09: 9, w10: 10, w11: 11, w12: 12, w13: 13, w14: 14, w15: 15, w16: 16, w17: 17, w18: 18, w19: 19, w20: 20, w21: 21, w22: 22, w23: 23, w24: 24, w25: 25, w26: 26, w27: 27, w28: 28, w29: 29, w30: 30, w31: 31, w32: 32, w33: 33, w34: 34, w35: 35, w36: 36, w37: 37, w38: 38, w39: 39, w40: 40, w41: 41, w42: 42, w43: 43, w44: 44, w45: 45, w46: 46, w47: 47, w48: 48, w49: 49, w50: 50, w51: 51, w52: 52, w53: 53, w54: 54, w55: 55, w56: 56, w57: 57, w58: 58}],
+    [{w00: null, w01: "s1", w02: "s2", w03: null, w04: "s4", w05: "s5", w06: null, w07: "s7", w08: "s8", w09: null, w10: "s10", w11: "s11", w12: null, w13: "s13", w14: "s14", w15: null, w16: "s16", w17: "s17", w18: null, w19: "s19", w20: "s20", w21: null, w22: "s22", w23: "s23", w24: null, w25: "s25", w26: "s26", w27: null, w28: "s28", w29: "s29", w30: null, w31: "s31", w32: "s32", w33: null, w34: "s34", w35: "s35", w36: null, w37: "s37", w38: "s38", w39: null, w40: "s40", w41: "s41", w42: null, w43: "s43", w44: "s44", w45: null, w46: "s46", w47: "s47", w48: null, w49: "s49", w50: "s50", w51: null, w52: "s52", w53: "s53", w54: null, w55: "s55", w56: "s56", w57: null, w58: "s58", w59: "s59"}, {extra: true, w00: "changed", w01: "s1", w02: "s2", w04: "s4", w05: "s5", w07: "s7", w08: "s8", w10: "s10", w11: "s11", w13: "s13", w14: "s14", w16: "s16", w17: "s17", w19: "s19", w20: "s20", w22: "s22", w23: "s23", w25: "s25", w26: "s26", w28: "s28", w29: "s29", w31: "s31", w32: "s32", w34: "s34", w35: "s35", w37: "s37", w38: "s38", w40: "s40", w41: "s41", w43: "s43", w44: "s44", w46: "s46", w47: "s47", w49: "s49", w50: "s50", w52: "s52", w53: "s53", w55: "s55", w56: "s56", w58: "s58"}],
+  ],
+}
+
+{
+  name: "wide: an object literal with 55 keys as one field",
+  graph: {
+    nodes: [{expression: "a", outputPath: "res", fields: {d: "{d00: n, d01: n, d02: n, d03: n, d04: n, d05: n, d06: n, d07: n, d08: n, d09: n, d10: n, d11: n, d12: n, d13: n, d14: n, d15: n, d16: n, d17: n, d18: n, d19: n, d20: n, d21: n, d22: n, d23: n, d24: n, d25: n, d26: n, d27: n, d28: n, d29: n, d30: n, d31: n, d32: n, d33: n, d34: n, d35: n, d36: n, d37: n, d38: n, d39: n, d40: n, d41: n, d42: n, d43: n, d44: n, d45: n, d46: n, d47: n, d48: n, d49: n, d50: n, d51: n, d52: n, d53: n, d54: n}"}}],
+  },
+  cases: [
+    [{n: 1}, {res: {d: {d00: 1, d01: 1, d02: 1, d03: 1, d04: 1, d05: 1, d06: 1, d07: 1, d08: 1, d09: 1, d10: 1, d11: 1, d12: 1, d13: 1, d14: 1, d15: 1, d16: 1, d17: 1, d18: 1, d19: 1, d20: 1, d21: 1, d22: 1, d23: 1, d24: 1, d25: 1, d26: 1, d27: 1, d28: 1, d29: 1, d30: 1, d31: 1, d32: 1, d33: 1, d34: 1, d35: 1, d36: 1, d37: 1, d38: 1, d39: 1, d40: 1, d41: 1, d42: 1, d43: 1, d44: 1, d45: 1, d46: 1, d47: 1, d48: 1, d49: 1, d50: 1, d51: 1, d52: 1, d53: 1, d54: 1}}}],
+  ],
+}

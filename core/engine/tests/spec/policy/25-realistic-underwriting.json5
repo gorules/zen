@@ -1,0 +1,534 @@
+// Realistic credit underwriting policies: affordability from income and debt members, risk-based
+// pricing over single relationships and a market global, approval decisions with collected
+// reasons, joint applications, asset reserves, product eligibility by reference, and goals.
+// Evaluation time is fixed at 2025-03-20T10:15:30Z.
+
+// --- Affordability -------------------------------------------------------------------------------
+// Per-income haircut table (unverified income counts for nothing), per-debt service with a card
+// minimum payment of 3% of the balance, applicant aggregates, a debt-to-income ratio and a band.
+
+{
+  name: "affordability from incomes and debts",
+  policy: {
+    models: {
+      applicant: {housingCost: "number", incomes: "income[]", debts: "debt[]"},
+      income: {kind: "string(salary|bonus|rental|benefits)", monthly: "number", verified: "boolean"},
+      debt: {kind: "string(card|auto|student|mortgage)", balance: "number", payment: "number?"},
+    },
+    blocks: [
+      {table: "haircut", inputs: ["income.kind", "income.verified"], outputs: ["income.factor"], rules: [
+        ["", "false", "0"],
+        ["'salary', 'benefits'", "", "1"],
+        ["'rental'", "", "0.75"],
+        ["'bonus'", "", "0.5"],
+      ]},
+      {expression: "income.qualifying", value: "round(income.monthly * income.factor, 2)"},
+      {expression: "debt.service", value: "debt.kind == 'card' ? max([debt.payment ?? 0, round(debt.balance * 0.03, 2)]) : (debt.payment ?? 0)"},
+      {expression: "applicant.income", value: "sum(map(applicant.incomes, #.qualifying))"},
+      {expression: "applicant.obligations", value: "sum(map(applicant.debts, #.service)) + applicant.housingCost"},
+      {expression: "applicant.dti", value: "applicant.income > 0 ? round(applicant.obligations / applicant.income, 4) : 99"},
+      {match: "applicant.band", arms: [
+        ["applicant.dti <= 0.36", "'comfortable'"],
+        ["applicant.dti <= 0.43", "'stretched'"],
+        ["", "'unaffordable'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {applicant: {housingCost: 1500, incomes: [{kind: "salary", monthly: 5000, verified: true}], debts: []}},
+      {applicant: {housingCost: 1500, incomes: [{kind: "salary", monthly: 5000, verified: true, factor: 1, qualifying: 5000}], debts: [], income: 5000, obligations: 1500, dti: 0.3, band: "comfortable"}},
+    ],
+    [
+      {applicant: {housingCost: 1200,
+        incomes: [{kind: "salary", monthly: 4000, verified: true}, {kind: "bonus", monthly: 1000, verified: true}, {kind: "rental", monthly: 800, verified: true}],
+        debts: [{kind: "card", balance: 2000, payment: 40}, {kind: "auto", balance: 15000, payment: 350}]}},
+      {applicant: {housingCost: 1200,
+        incomes: [{kind: "salary", monthly: 4000, verified: true, factor: 1, qualifying: 4000}, {kind: "bonus", monthly: 1000, verified: true, factor: 0.5, qualifying: 500}, {kind: "rental", monthly: 800, verified: true, factor: 0.75, qualifying: 600}],
+        debts: [{kind: "card", balance: 2000, payment: 40, service: 60}, {kind: "auto", balance: 15000, payment: 350, service: 350}],
+        income: 5100, obligations: 1610, dti: 0.3157, band: "comfortable"}},
+    ],
+    [
+      {applicant: {housingCost: 1000, incomes: [{kind: "salary", monthly: 6000, verified: false}], debts: []}},
+      {applicant: {housingCost: 1000, incomes: [{kind: "salary", monthly: 6000, verified: false, factor: 0, qualifying: 0}], debts: [], income: 0, obligations: 1000, dti: 99, band: "unaffordable"}},
+    ],
+    // A student loan without a payment services nothing; a card without one pays the minimum.
+    [
+      {applicant: {housingCost: 1100,
+        incomes: [{kind: "benefits", monthly: 1500, verified: true}, {kind: "salary", monthly: 2500, verified: true}],
+        debts: [{kind: "student", balance: 30000, payment: null}, {kind: "card", balance: 500}]}},
+      {applicant: {housingCost: 1100,
+        incomes: [{kind: "benefits", monthly: 1500, verified: true, factor: 1, qualifying: 1500}, {kind: "salary", monthly: 2500, verified: true, factor: 1, qualifying: 2500}],
+        debts: [{kind: "student", balance: 30000, payment: null, service: 0}, {kind: "card", balance: 500, service: 15}],
+        income: 4000, obligations: 1115, dti: 0.2788, band: "comfortable"}},
+    ],
+    [
+      {applicant: {housingCost: 1800, incomes: [{kind: "salary", monthly: 5000, verified: true}], debts: []}},
+      {applicant: {housingCost: 1800, incomes: [{kind: "salary", monthly: 5000, verified: true, factor: 1, qualifying: 5000}], debts: [], income: 5000, obligations: 1800, dti: 0.36, band: "comfortable"}},
+    ],
+    [
+      {applicant: {housingCost: 4300, incomes: [{kind: "salary", monthly: 10000, verified: true}], debts: []}},
+      {applicant: {housingCost: 4300, incomes: [{kind: "salary", monthly: 10000, verified: true, factor: 1, qualifying: 10000}], debts: [], income: 10000, obligations: 4300, dti: 0.43, band: "stretched"}},
+    ],
+    [
+      {applicant: {housingCost: 4301, incomes: [{kind: "salary", monthly: 10000, verified: true}], debts: []}},
+      {applicant: {housingCost: 4301, incomes: [{kind: "salary", monthly: 10000, verified: true, factor: 1, qualifying: 10000}], debts: [], income: 10000, obligations: 4301, dti: 0.4301, band: "unaffordable"}},
+    ],
+    [
+      {applicant: {housingCost: 0,
+        incomes: [{kind: "salary", monthly: 3000, verified: true}, {kind: "rental", monthly: 1000, verified: false}],
+        debts: [{kind: "mortgage", balance: 200000, payment: 1100}]}},
+      {applicant: {housingCost: 0,
+        incomes: [{kind: "salary", monthly: 3000, verified: true, factor: 1, qualifying: 3000}, {kind: "rental", monthly: 1000, verified: false, factor: 0, qualifying: 0}],
+        debts: [{kind: "mortgage", balance: 200000, payment: 1100, service: 1100}],
+        income: 3000, obligations: 1100, dti: 0.3667, band: "stretched"}},
+    ],
+    [
+      {applicant: {housingCost: 0, incomes: [], debts: []}},
+      {applicant: {housingCost: 0, incomes: [], debts: [], income: 0, obligations: 0, dti: 99, band: "unaffordable"}},
+    ],
+    [
+      {applicant: {housingCost: 500, incomes: [{kind: "salary", monthly: 2000, verified: true}], debts: [{kind: "card", balance: 1000, payment: 100}]}},
+      {applicant: {housingCost: 500, incomes: [{kind: "salary", monthly: 2000, verified: true, factor: 1, qualifying: 2000}], debts: [{kind: "card", balance: 1000, payment: 100, service: 100}], income: 2000, obligations: 600, dti: 0.3, band: "comfortable"}},
+    ],
+    [
+      {applicant: {housingCost: 0, incomes: [{kind: "bonus", monthly: 333.33, verified: true}], debts: [{kind: "card", balance: 333.33}]}},
+      {applicant: {housingCost: 0, incomes: [{kind: "bonus", monthly: 333.33, verified: true, factor: 0.5, qualifying: 166.67}], debts: [{kind: "card", balance: 333.33, service: 10}], income: 166.67, obligations: 10, dti: 0.06, band: "comfortable"}},
+    ],
+    [{applicant: {housingCost: 0, incomes: [{kind: "pension", monthly: 1, verified: true}], debts: []}}, "!error: InputValidationFailed"],
+    [{applicant: {housingCost: 0, incomes: [], debts: [{kind: "card", balance: "500"}]}}, "!error: InputValidationFailed"],
+    [{applicant: {housingCost: 0, incomes: [{kind: "salary", verified: true}], debts: []}}, "!error: ExpressionFailed"],
+    [{applicant: {incomes: [], debts: []}}, "!error: MissingRequiredInputs"],
+    [{applicant: {housingCost: 0, debts: []}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// --- Risk-based pricing --------------------------------------------------------------------------
+// Single relationships (applicant, property) under the application, a market base rate global,
+// a pricing table over three inputs where land always lands in tier D, a first-time-buyer
+// discount, an annuity payment using `^`, and two matches.
+
+{
+  name: "risk-based mortgage pricing",
+  policy: {
+    globals: {market: {baseRate: "number"}},
+    models: {
+      application: {amount: "number", termYears: "number", applicant: "applicant", property: "property"},
+      applicant: {score: "number", firstTime: "boolean"},
+      property: {value: "number", kind: "string(house|flat|land)"},
+    },
+    blocks: [
+      {expression: "application.ltv", value: "round(application.amount / application.property.value, 4)"},
+      {table: "pricing", inputs: ["application.applicant.score", "application.ltv", "application.property.kind"], outputs: ["application.tier", "application.margin"], rules: [
+        ["", "", "'land'", "'D'", "4"],
+        [">= 760", "<= 0.6", "", "'A'", "0.8"],
+        [">= 760", "<= 0.8", "", "'A'", "1"],
+        [">= 700", "<= 0.8", "", "'B'", "1.5"],
+        [">= 640", "<= 0.9", "", "'C'", "2.5"],
+        ["", "", "", "'D'", "4"],
+      ]},
+      {expression: "application.rate", value: "baseRate + application.margin - (application.applicant.firstTime and application.tier != 'D' ? 0.25 : 0)"},
+      {expression: "application.payment", value: "round(application.amount * (application.rate / 1200) / (1 - (1 + application.rate / 1200) ^ (-application.termYears * 12)), 2)"},
+      {match: "application.mortgageInsurance", arms: [["application.ltv > 0.8", "round(application.amount * 0.005 / 12, 2)"], ["", "0"]]},
+      {match: "application.offer", arms: [["application.ltv > 0.95", "'decline'"], ["application.tier == 'D'", "'refer'"], ["", "'offer'"]]},
+    ],
+  },
+  cases: [
+    [
+      {baseRate: 4, application: {amount: 300000, termYears: 25, applicant: {score: 780, firstTime: false}, property: {value: 500000, kind: "house"}}},
+      {baseRate: 4, application: {amount: 300000, termYears: 25, applicant: {score: 780, firstTime: false}, property: {value: 500000, kind: "house"}, ltv: 0.6, tier: "A", margin: 0.8, rate: 4.8, payment: 1718.99, mortgageInsurance: 0, offer: "offer"}},
+    ],
+    [
+      {baseRate: 4, application: {amount: 400000, termYears: 25, applicant: {score: 760, firstTime: true}, property: {value: 500000, kind: "house"}}},
+      {baseRate: 4, application: {amount: 400000, termYears: 25, applicant: {score: 760, firstTime: true}, property: {value: 500000, kind: "house"}, ltv: 0.8, tier: "A", margin: 1, rate: 4.75, payment: 2280.47, mortgageInsurance: 0, offer: "offer"}},
+    ],
+    [
+      {baseRate: 4, application: {amount: 425000, termYears: 30, applicant: {score: 720, firstTime: false}, property: {value: 500000, kind: "flat"}}},
+      {baseRate: 4, application: {amount: 425000, termYears: 30, applicant: {score: 720, firstTime: false}, property: {value: 500000, kind: "flat"}, ltv: 0.85, tier: "C", margin: 2.5, rate: 6.5, payment: 2686.29, mortgageInsurance: 177.08, offer: "offer"}},
+    ],
+    // Land is tier D whatever the score; the first-time discount does not apply to tier D.
+    [
+      {baseRate: 4, application: {amount: 250000, termYears: 20, applicant: {score: 800, firstTime: true}, property: {value: 500000, kind: "land"}}},
+      {baseRate: 4, application: {amount: 250000, termYears: 20, applicant: {score: 800, firstTime: true}, property: {value: 500000, kind: "land"}, ltv: 0.5, tier: "D", margin: 4, rate: 8, payment: 2091.10, mortgageInsurance: 0, offer: "refer"}},
+    ],
+    [
+      {baseRate: 4, application: {amount: 485000, termYears: 25, applicant: {score: 600, firstTime: false}, property: {value: 500000, kind: "house"}}},
+      {baseRate: 4, application: {amount: 485000, termYears: 25, applicant: {score: 600, firstTime: false}, property: {value: 500000, kind: "house"}, ltv: 0.97, tier: "D", margin: 4, rate: 8, payment: 3743.31, mortgageInsurance: 202.08, offer: "decline"}},
+    ],
+    [
+      {baseRate: 3.5, application: {amount: 400000, termYears: 30, applicant: {score: 700, firstTime: true}, property: {value: 500000, kind: "flat"}}},
+      {baseRate: 3.5, application: {amount: 400000, termYears: 30, applicant: {score: 700, firstTime: true}, property: {value: 500000, kind: "flat"}, ltv: 0.8, tier: "B", margin: 1.5, rate: 4.75, payment: 2086.59, mortgageInsurance: 0, offer: "offer"}},
+    ],
+    [
+      {baseRate: 4.75, application: {amount: 200000, termYears: 10, applicant: {score: 759.99, firstTime: false}, property: {value: 400000, kind: "house"}}},
+      {baseRate: 4.75, application: {amount: 200000, termYears: 10, applicant: {score: 759.99, firstTime: false}, property: {value: 400000, kind: "house"}, ltv: 0.5, tier: "B", margin: 1.5, rate: 6.25, payment: 2245.60, mortgageInsurance: 0, offer: "offer"}},
+    ],
+    [{baseRate: 4, application: {amount: 1, termYears: 1, applicant: {score: 700, firstTime: false}}}, "!error: MissingRequiredInputs"],
+    [{application: {amount: 1, termYears: 1, applicant: {score: 700, firstTime: false}, property: {value: 10, kind: "house"}}}, "!error: MissingRequiredInputs"],
+    [{baseRate: 4, application: {amount: 1, termYears: 1, applicant: {score: 700, firstTime: false}, property: {value: 10, kind: "boat"}}}, "!error: InputValidationFailed"],
+    [{baseRate: 4, application: {amount: 1, termYears: 1, applicant: {score: 700, firstTime: false}, property: {value: 0, kind: "house"}}}, "!error"],
+    [{baseRate: "4", application: {amount: 1, termYears: 1, applicant: {score: 700, firstTime: false}, property: {value: 10, kind: "house"}}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// --- Approval decision with reasons --------------------------------------------------------------
+// A grouped eligibility assertion: adult and at most 70 and (citizen or resident or (visa and two
+// years employed)); a bankruptcy look-back over an optional date; a `collect` table of decline
+// reasons; a decision match and a summary string.
+
+{
+  name: "approval decision with reasons",
+  policy: {
+    models: {
+      application: {
+        age: "number", score: "number", dti: "number", ltv: "number", bankruptcies: "number", employmentMonths: "number",
+        residency: "string(citizen|resident|visa)", lastBankruptcy: "date?",
+      },
+    },
+    blocks: [
+      {assertion: "application.eligible", conditions: [
+        ["and", "application.age >= 18"],
+        ["and", "application.age <= 70"],
+        ["or", "application.residency == 'citizen'", 1],
+        ["or", "application.residency == 'resident'", 1],
+        ["and", "application.residency == 'visa'", 2],
+        ["and", "application.employmentMonths >= 24", 2],
+      ]},
+      {expression: "application.recentBankruptcy", value: "application.bankruptcies > 0 and d().diff(application.lastBankruptcy ?? d('1900-01-01'), 'year') < 7"},
+      {table: "reasons", hit: "collect", inputs: ["application.score", "application.dti", "application.ltv", "application.employmentMonths"], outputs: ["application.reasons"], rules: [
+        ["< 620", "", "", "", "'low-score'"],
+        ["", "> 0.43", "", "", "'high-dti'"],
+        ["", "", "> 0.9", "", "'high-ltv'"],
+        ["", "", "", "< 6", "'short-employment'"],
+      ]},
+      {match: "application.decision", arms: [
+        ["not application.eligible or application.recentBankruptcy", "'decline'"],
+        ["len(application.reasons) == 0", "'approve'"],
+        ["len(application.reasons) == 1", "'refer'"],
+        ["", "'decline'"],
+      ]},
+      {expression: "application.summary", value: "application.decision + (len(application.reasons) > 0 ? ' (' + string(len(application.reasons)) + ' reasons)' : '')"},
+    ],
+  },
+  cases: [
+    [
+      {application: {age: 35, score: 720, dti: 0.3, ltv: 0.8, bankruptcies: 0, employmentMonths: 60, residency: "citizen"}},
+      {application: {age: 35, score: 720, dti: 0.3, ltv: 0.8, bankruptcies: 0, employmentMonths: 60, residency: "citizen", eligible: true, recentBankruptcy: false, reasons: [], decision: "approve", summary: "approve"}},
+    ],
+    [
+      {application: {age: 35, score: 600, dti: 0.3, ltv: 0.8, bankruptcies: 0, employmentMonths: 60, residency: "citizen"}},
+      {application: {age: 35, score: 600, dti: 0.3, ltv: 0.8, bankruptcies: 0, employmentMonths: 60, residency: "citizen", eligible: true, recentBankruptcy: false, reasons: ["low-score"], decision: "refer", summary: "refer (1 reasons)"}},
+    ],
+    [
+      {application: {age: 35, score: 600, dti: 0.5, ltv: 0.95, bankruptcies: 0, employmentMonths: 3, residency: "resident"}},
+      {application: {age: 35, score: 600, dti: 0.5, ltv: 0.95, bankruptcies: 0, employmentMonths: 3, residency: "resident", eligible: true, recentBankruptcy: false, reasons: ["low-score", "high-dti", "high-ltv", "short-employment"], decision: "decline", summary: "decline (4 reasons)"}},
+    ],
+    [
+      {application: {age: 29, score: 700, dti: 0.2, ltv: 0.5, bankruptcies: 0, employmentMonths: 24, residency: "visa"}},
+      {application: {age: 29, score: 700, dti: 0.2, ltv: 0.5, bankruptcies: 0, employmentMonths: 24, residency: "visa", eligible: true, recentBankruptcy: false, reasons: [], decision: "approve", summary: "approve"}},
+    ],
+    [
+      {application: {age: 29, score: 700, dti: 0.2, ltv: 0.5, bankruptcies: 0, employmentMonths: 23, residency: "visa"}},
+      {application: {age: 29, score: 700, dti: 0.2, ltv: 0.5, bankruptcies: 0, employmentMonths: 23, residency: "visa", eligible: false, recentBankruptcy: false, reasons: [], decision: "decline", summary: "decline"}},
+    ],
+    [
+      {application: {age: 71, score: 800, dti: 0.1, ltv: 0.4, bankruptcies: 0, employmentMonths: 400, residency: "citizen"}},
+      {application: {age: 71, score: 800, dti: 0.1, ltv: 0.4, bankruptcies: 0, employmentMonths: 400, residency: "citizen", eligible: false, recentBankruptcy: false, reasons: [], decision: "decline", summary: "decline"}},
+    ],
+    [
+      {application: {age: 18, score: 620, dti: 0.43, ltv: 0.9, bankruptcies: 0, employmentMonths: 6, residency: "resident"}},
+      {application: {age: 18, score: 620, dti: 0.43, ltv: 0.9, bankruptcies: 0, employmentMonths: 6, residency: "resident", eligible: true, recentBankruptcy: false, reasons: [], decision: "approve", summary: "approve"}},
+    ],
+    [
+      {application: {age: 50, score: 700, dti: 0.2, ltv: 0.5, bankruptcies: 1, lastBankruptcy: "2020-01-01", employmentMonths: 100, residency: "citizen"}},
+      {application: {age: 50, score: 700, dti: 0.2, ltv: 0.5, bankruptcies: 1, lastBankruptcy: "2020-01-01", employmentMonths: 100, residency: "citizen", eligible: true, recentBankruptcy: true, reasons: [], decision: "decline", summary: "decline"}},
+    ],
+    [
+      {application: {age: 50, score: 700, dti: 0.2, ltv: 0.5, bankruptcies: 1, lastBankruptcy: "2015-01-01", employmentMonths: 100, residency: "citizen"}},
+      {application: {age: 50, score: 700, dti: 0.2, ltv: 0.5, bankruptcies: 1, lastBankruptcy: "2015-01-01", employmentMonths: 100, residency: "citizen", eligible: true, recentBankruptcy: false, reasons: [], decision: "approve", summary: "approve"}},
+    ],
+    // Look-back boundary: exactly seven years ago is outside the window.
+    [
+      {application: {age: 50, score: 700, dti: 0.2, ltv: 0.5, bankruptcies: 2, lastBankruptcy: "2018-03-20", employmentMonths: 100, residency: "citizen"}},
+      {application: {age: 50, score: 700, dti: 0.2, ltv: 0.5, bankruptcies: 2, lastBankruptcy: "2018-03-20", employmentMonths: 100, residency: "citizen", eligible: true, recentBankruptcy: false, reasons: [], decision: "approve", summary: "approve"}},
+    ],
+    [
+      {application: {age: 50, score: 700, dti: 0.2, ltv: 0.5, bankruptcies: 1, employmentMonths: 100, residency: "citizen"}},
+      {application: {age: 50, score: 700, dti: 0.2, ltv: 0.5, bankruptcies: 1, employmentMonths: 100, residency: "citizen", eligible: true, recentBankruptcy: false, reasons: [], decision: "approve", summary: "approve"}},
+    ],
+    [
+      {application: {age: 50, score: 700, dti: 0.2, ltv: 0.5, bankruptcies: 0, lastBankruptcy: "2024-01-01", employmentMonths: 100, residency: "citizen"}},
+      {application: {age: 50, score: 700, dti: 0.2, ltv: 0.5, bankruptcies: 0, lastBankruptcy: "2024-01-01", employmentMonths: 100, residency: "citizen", eligible: true, recentBankruptcy: false, reasons: [], decision: "approve", summary: "approve"}},
+    ],
+    [
+      {application: {age: 40, score: 619.99, dti: 0.2, ltv: 0.5, bankruptcies: 0, employmentMonths: 5.9, residency: "citizen"}},
+      {application: {age: 40, score: 619.99, dti: 0.2, ltv: 0.5, bankruptcies: 0, employmentMonths: 5.9, residency: "citizen", eligible: true, recentBankruptcy: false, reasons: ["low-score", "short-employment"], decision: "decline", summary: "decline (2 reasons)"}},
+    ],
+    [{application: {age: 40, score: 700, dti: 0.2, ltv: 0.5, bankruptcies: 0, employmentMonths: 5, residency: "tourist"}}, "!error: InputValidationFailed"],
+    [{application: {age: 40, score: 700, dti: 0.2, ltv: 0.5, bankruptcies: 0, employmentMonths: 5, residency: "citizen", lastBankruptcy: "yesterday"}}, "!error: InputValidationFailed"],
+    [{application: {age: 40, dti: 0.2, ltv: 0.5, bankruptcies: 0, employmentMonths: 5, residency: "citizen"}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// --- Joint applications --------------------------------------------------------------------------
+// Several applicants as members: per-applicant ratio and eligibility, application aggregates over
+// eligible members only, the term capped by the oldest applicant's age at 75, the approved amount
+// capped by an income multiple, a status match and a band table over the lowest score.
+
+{
+  name: "joint application capacity",
+  policy: {
+    models: {
+      application: {requested: "number", termYears: "number", applicants: "applicant[]"},
+      applicant: {name: "string", income: "number", debts: "number", score: "number", age: "number"},
+    },
+    blocks: [
+      {expression: "applicant.dti", value: "applicant.income > 0 ? round(applicant.debts / applicant.income, 4) : 1"},
+      {expression: "applicant.eligible", value: "applicant.age >= 18 and applicant.score >= 600 and applicant.dti < 0.5"},
+      {expression: "application.combinedIncome", value: "sum(map(filter(application.applicants, #.eligible), #.income))"},
+      {expression: "application.lowestScore", value: "len(application.applicants) == 0 ? 0 : min(map(application.applicants, #.score))"},
+      {expression: "application.oldestAge", value: "len(application.applicants) == 0 ? 0 : max(map(application.applicants, #.age))"},
+      {expression: "application.maxTerm", value: "min([application.termYears, 75 - application.oldestAge])"},
+      {expression: "application.capacity", value: "application.combinedIncome * 4.5"},
+      {expression: "application.approved", value: "min([application.requested, application.capacity])"},
+      {match: "application.status", arms: [
+        ["len(application.applicants) == 0", "'invalid'"],
+        ["application.combinedIncome == 0", "'decline'"],
+        ["application.approved < application.requested", "'counter-offer'"],
+        ["", "'approve'"],
+      ]},
+      {table: "band", inputs: ["application.lowestScore"], outputs: ["application.band"], rules: [
+        [">= 750", "'prime'"],
+        [">= 650", "'near-prime'"],
+        ["", "'sub-prime'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {application: {requested: 400000, termYears: 30, applicants: [
+        {name: "A", income: 60000, debts: 12000, score: 780, age: 40},
+        {name: "B", income: 40000, debts: 30000, score: 640, age: 38},
+      ]}},
+      {application: {requested: 400000, termYears: 30, applicants: [
+        {name: "A", income: 60000, debts: 12000, score: 780, age: 40, dti: 0.2, eligible: true},
+        {name: "B", income: 40000, debts: 30000, score: 640, age: 38, dti: 0.75, eligible: false},
+      ], combinedIncome: 60000, lowestScore: 640, oldestAge: 40, maxTerm: 30, capacity: 270000, approved: 270000, status: "counter-offer", band: "sub-prime"}},
+    ],
+    [
+      {application: {requested: 300000, termYears: 25, applicants: [{name: "A", income: 100000, debts: 0, score: 800, age: 30}]}},
+      {application: {requested: 300000, termYears: 25, applicants: [{name: "A", income: 100000, debts: 0, score: 800, age: 30, dti: 0, eligible: true}], combinedIncome: 100000, lowestScore: 800, oldestAge: 30, maxTerm: 25, capacity: 450000, approved: 300000, status: "approve", band: "prime"}},
+    ],
+    [
+      {application: {requested: 100000, termYears: 20, applicants: []}},
+      {application: {requested: 100000, termYears: 20, applicants: [], combinedIncome: 0, lowestScore: 0, oldestAge: 0, maxTerm: 20, capacity: 0, approved: 0, status: "invalid", band: "sub-prime"}},
+    ],
+    [
+      {application: {requested: 100000, termYears: 25, applicants: [{name: "Kid", income: 50000, debts: 0, score: 700, age: 17}]}},
+      {application: {requested: 100000, termYears: 25, applicants: [{name: "Kid", income: 50000, debts: 0, score: 700, age: 17, dti: 0, eligible: false}], combinedIncome: 0, lowestScore: 700, oldestAge: 17, maxTerm: 25, capacity: 0, approved: 0, status: "decline", band: "near-prime"}},
+    ],
+    [
+      {application: {requested: 450000, termYears: 30, applicants: [
+        {name: "A", income: 50000, debts: 10000, score: 700, age: 60},
+        {name: "B", income: 50000, debts: 5000, score: 760, age: 30},
+      ]}},
+      {application: {requested: 450000, termYears: 30, applicants: [
+        {name: "A", income: 50000, debts: 10000, score: 700, age: 60, dti: 0.2, eligible: true},
+        {name: "B", income: 50000, debts: 5000, score: 760, age: 30, dti: 0.1, eligible: true},
+      ], combinedIncome: 100000, lowestScore: 700, oldestAge: 60, maxTerm: 15, capacity: 450000, approved: 450000, status: "approve", band: "near-prime"}},
+    ],
+    [
+      {application: {requested: 50000, termYears: 10, applicants: [{name: "A", income: 0, debts: 0, score: 790, age: 45}]}},
+      {application: {requested: 50000, termYears: 10, applicants: [{name: "A", income: 0, debts: 0, score: 790, age: 45, dti: 1, eligible: false}], combinedIncome: 0, lowestScore: 790, oldestAge: 45, maxTerm: 10, capacity: 0, approved: 0, status: "decline", band: "prime"}},
+    ],
+    // A ratio of exactly 0.5 is ineligible; an applicant aged 80 leaves a negative term.
+    [
+      {application: {requested: 10000, termYears: 5, applicants: [
+        {name: "A", income: 10000, debts: 5000, score: 650, age: 50},
+        {name: "B", income: 2000, debts: 0, score: 600, age: 80},
+      ]}},
+      {application: {requested: 10000, termYears: 5, applicants: [
+        {name: "A", income: 10000, debts: 5000, score: 650, age: 50, dti: 0.5, eligible: false},
+        {name: "B", income: 2000, debts: 0, score: 600, age: 80, dti: 0, eligible: true},
+      ], combinedIncome: 2000, lowestScore: 600, oldestAge: 80, maxTerm: -5, capacity: 9000, approved: 9000, status: "counter-offer", band: "sub-prime"}},
+    ],
+    [
+      {application: {requested: 1000.5, termYears: 1, applicants: [{name: "A", income: 222.34, debts: 1, score: 750, age: 18}]}},
+      {application: {requested: 1000.5, termYears: 1, applicants: [{name: "A", income: 222.34, debts: 1, score: 750, age: 18, dti: 0.0045, eligible: true}], combinedIncome: 222.34, lowestScore: 750, oldestAge: 18, maxTerm: 1, capacity: 1000.53, approved: 1000.5, status: "approve", band: "prime"}},
+    ],
+    [{application: {requested: 1, termYears: 1, applicants: [{name: "A", income: 1, debts: 0, age: 30}]}}, "!error: ExpressionFailed"],
+    [{application: {requested: 1, termYears: 1, applicants: [{name: "A", income: 1, debts: 0, score: 700, age: "30"}]}}, "!error: InputValidationFailed"],
+    [{application: {requested: 1, termYears: 1}}, "!error: MissingRequiredInputs"],
+    [{application: {termYears: 1, applicants: []}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// --- Asset reserves ------------------------------------------------------------------------------
+// Per-asset haircut table (pledged assets count for nothing, an optional flag that is null or
+// missing is not pledged), liquid value per asset, reserves in whole months of payment.
+
+{
+  name: "asset reserves",
+  policy: {
+    models: {
+      applicant: {monthlyPayment: "number", assets: "asset[]"},
+      asset: {kind: "string(cash|stocks|retirement|crypto|property)", value: "number", pledged: "boolean?"},
+    },
+    blocks: [
+      {table: "haircut", inputs: ["asset.pledged", "asset.kind"], outputs: ["asset.haircut"], rules: [
+        ["true", "", "1"],
+        ["", "'cash'", "0"],
+        ["", "'stocks'", "0.3"],
+        ["", "'retirement'", "0.4"],
+        ["", "'crypto'", "0.7"],
+        ["", "'property'", "1"],
+      ]},
+      {expression: "asset.liquid", value: "round(asset.value * (1 - asset.haircut), 2)"},
+      {expression: "applicant.liquidAssets", value: "sum(map(applicant.assets, #.liquid))"},
+      {expression: "applicant.reserveMonths", value: "applicant.monthlyPayment > 0 ? floor(applicant.liquidAssets / applicant.monthlyPayment) : 0"},
+      {expression: "applicant.liquidKinds", value: "map(filter(applicant.assets, #.liquid > 0), #.kind)"},
+      {match: "applicant.reserveGrade", arms: [
+        ["applicant.reserveMonths >= 12", "'strong'"],
+        ["applicant.reserveMonths >= 6", "'adequate'"],
+        ["applicant.reserveMonths >= 2", "'thin'"],
+        ["", "'none'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {applicant: {monthlyPayment: 2000, assets: [{kind: "cash", value: 30000}]}},
+      {applicant: {monthlyPayment: 2000, assets: [{kind: "cash", value: 30000, haircut: 0, liquid: 30000}], liquidAssets: 30000, reserveMonths: 15, liquidKinds: ["cash"], reserveGrade: "strong"}},
+    ],
+    [
+      {applicant: {monthlyPayment: 2000, assets: [{kind: "stocks", value: 10000}, {kind: "retirement", value: 10000}, {kind: "crypto", value: 10000}]}},
+      {applicant: {monthlyPayment: 2000, assets: [
+        {kind: "stocks", value: 10000, haircut: 0.3, liquid: 7000},
+        {kind: "retirement", value: 10000, haircut: 0.4, liquid: 6000},
+        {kind: "crypto", value: 10000, haircut: 0.7, liquid: 3000},
+      ], liquidAssets: 16000, reserveMonths: 8, liquidKinds: ["stocks", "retirement", "crypto"], reserveGrade: "adequate"}},
+    ],
+    [
+      {applicant: {monthlyPayment: 2000, assets: [{kind: "cash", value: 5000, pledged: true}, {kind: "property", value: 500000}]}},
+      {applicant: {monthlyPayment: 2000, assets: [{kind: "cash", value: 5000, pledged: true, haircut: 1, liquid: 0}, {kind: "property", value: 500000, haircut: 1, liquid: 0}], liquidAssets: 0, reserveMonths: 0, liquidKinds: [], reserveGrade: "none"}},
+    ],
+    [
+      {applicant: {monthlyPayment: 1500, assets: []}},
+      {applicant: {monthlyPayment: 1500, assets: [], liquidAssets: 0, reserveMonths: 0, liquidKinds: [], reserveGrade: "none"}},
+    ],
+    // No payment means no reserve requirement is computed: zero months by policy choice.
+    [
+      {applicant: {monthlyPayment: 0, assets: [{kind: "cash", value: 1000, pledged: false}]}},
+      {applicant: {monthlyPayment: 0, assets: [{kind: "cash", value: 1000, pledged: false, haircut: 0, liquid: 1000}], liquidAssets: 1000, reserveMonths: 0, liquidKinds: ["cash"], reserveGrade: "none"}},
+    ],
+    [
+      {applicant: {monthlyPayment: 1000, assets: [{kind: "cash", value: 12000, pledged: null}, {kind: "crypto", value: 100.01}]}},
+      {applicant: {monthlyPayment: 1000, assets: [{kind: "cash", value: 12000, pledged: null, haircut: 0, liquid: 12000}, {kind: "crypto", value: 100.01, haircut: 0.7, liquid: 30}], liquidAssets: 12030, reserveMonths: 12, liquidKinds: ["cash", "crypto"], reserveGrade: "strong"}},
+    ],
+    [
+      {applicant: {monthlyPayment: 1000, assets: [{kind: "stocks", value: 3333.33, pledged: false}]}},
+      {applicant: {monthlyPayment: 1000, assets: [{kind: "stocks", value: 3333.33, pledged: false, haircut: 0.3, liquid: 2333.33}], liquidAssets: 2333.33, reserveMonths: 2, liquidKinds: ["stocks"], reserveGrade: "thin"}},
+    ],
+    [
+      {applicant: {monthlyPayment: 1000, assets: [{kind: "retirement", value: 3000}, {kind: "cash", value: -500}]}},
+      {applicant: {monthlyPayment: 1000, assets: [{kind: "retirement", value: 3000, haircut: 0.4, liquid: 1800}, {kind: "cash", value: -500, haircut: 0, liquid: -500}], liquidAssets: 1300, reserveMonths: 1, liquidKinds: ["retirement"], reserveGrade: "none"}},
+    ],
+    [{applicant: {monthlyPayment: 1000, assets: [{kind: "bonds", value: 1}]}}, "!error: InputValidationFailed"],
+    [{applicant: {monthlyPayment: 1000, assets: [{kind: "cash", value: 1, pledged: "no"}]}}, "!error: InputValidationFailed"],
+    [{applicant: {monthlyPayment: 1000, assets: [{kind: "cash"}]}}, "!error: ExpressionFailed"],
+    [{applicant: {assets: []}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// --- Product eligibility by reference ------------------------------------------------------------
+// The application references a product from a pool; the product's limits drive an eligibility
+// assertion, an optional product fee defaults to zero, and the outcome is a match.
+
+{
+  name: "product eligibility by reference",
+  policy: {
+    models: {
+      application: {score: "number", amount: "number", value: "number", product: "&product"},
+      product: {id: "string", maxLtv: "number", minScore: "number", rate: "number", fee: "number?"},
+    },
+    blocks: [
+      {expression: "application.ltv", value: "round(application.amount / application.value, 4)"},
+      {assertion: "application.eligible", conditions: ["application.score >= application.product.minScore", "application.ltv <= application.product.maxLtv"]},
+      {expression: "application.fee", value: "application.product.fee ?? 0"},
+      {expression: "application.firstYearCost", value: "round(application.amount * application.product.rate / 100 + application.fee, 2)"},
+      {match: "application.outcome", arms: [
+        ["application.eligible", "'eligible for ' + application.product.id"],
+        ["application.score < application.product.minScore", "'score below ' + string(application.product.minScore)"],
+        ["", "'ltv above ' + string(application.product.maxLtv)"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {application: {score: 720, amount: 160000, value: 200000, product: "fix5"}, product: [{id: "fix5", maxLtv: 0.8, minScore: 700, rate: 4.5, fee: 999}, {id: "var", maxLtv: 0.9, minScore: 620, rate: 5.25}]},
+      {application: {score: 720, amount: 160000, value: 200000, product: {id: "fix5", maxLtv: 0.8, minScore: 700, rate: 4.5, fee: 999}, ltv: 0.8, eligible: true, fee: 999, firstYearCost: 8199, outcome: "eligible for fix5"}, product: [{id: "fix5", maxLtv: 0.8, minScore: 700, rate: 4.5, fee: 999}, {id: "var", maxLtv: 0.9, minScore: 620, rate: 5.25}]},
+    ],
+    [
+      {application: {score: 650, amount: 160000, value: 200000, product: "fix5"}, product: [{id: "fix5", maxLtv: 0.8, minScore: 700, rate: 4.5, fee: 999}]},
+      {application: {score: 650, amount: 160000, value: 200000, product: {id: "fix5", maxLtv: 0.8, minScore: 700, rate: 4.5, fee: 999}, ltv: 0.8, eligible: false, fee: 999, firstYearCost: 8199, outcome: "score below 700"}, product: [{id: "fix5", maxLtv: 0.8, minScore: 700, rate: 4.5, fee: 999}]},
+    ],
+    [
+      {application: {score: 650, amount: 170000, value: 200000, product: "var"}, product: [{id: "var", maxLtv: 0.9, minScore: 620, rate: 5.25}]},
+      {application: {score: 650, amount: 170000, value: 200000, product: {id: "var", maxLtv: 0.9, minScore: 620, rate: 5.25}, ltv: 0.85, eligible: true, fee: 0, firstYearCost: 8925, outcome: "eligible for var"}, product: [{id: "var", maxLtv: 0.9, minScore: 620, rate: 5.25}]},
+    ],
+    [
+      {application: {score: 800, amount: 190000, value: 200000, product: "var"}, product: [{id: "var", maxLtv: 0.9, minScore: 620, rate: 5.25, fee: null}]},
+      {application: {score: 800, amount: 190000, value: 200000, product: {id: "var", maxLtv: 0.9, minScore: 620, rate: 5.25, fee: null}, ltv: 0.95, eligible: false, fee: 0, firstYearCost: 9975, outcome: "ltv above 0.9"}, product: [{id: "var", maxLtv: 0.9, minScore: 620, rate: 5.25, fee: null}]},
+    ],
+    [{application: {score: 800, amount: 1, value: 2, product: "gone"}, product: [{id: "var", maxLtv: 0.9, minScore: 620, rate: 5.25}]}, "!error: InputValidationFailed"],
+    [{application: {score: 800, amount: 1, value: 2}, product: [{id: "var", maxLtv: 0.9, minScore: 620, rate: 5.25}]}, "!error: MissingRequiredInputs"],
+    [{application: {score: 800, amount: 1, value: 2, product: "var"}, product: [{id: "var", maxLtv: 0.9, rate: 5.25}]}, "!error"],
+  ],
+}
+
+// --- Goals over an underwriting decision ---------------------------------------------------------
+// Each goal pulls only its dependencies; inputs outside the cone may be missing.
+
+{
+  name: "underwriting goals",
+  policy: {
+    models: {application: {income: "number", debts: "number", score: "number", amount: "number", value: "number"}},
+    blocks: [
+      {expression: "application.dti", value: "round(application.debts / application.income, 4)"},
+      {expression: "application.ltv", value: "round(application.amount / application.value, 4)"},
+      {match: "application.tier", arms: [
+        ["application.score >= 740 and application.ltv <= 0.8", "'A'"],
+        ["application.score >= 680", "'B'"],
+        ["", "'C'"],
+      ]},
+      {table: "decision", inputs: ["application.tier", "application.dti"], outputs: ["application.decision"], rules: [
+        ["", "> 0.45", "'decline'"],
+        ["'A', 'B'", "", "'approve'"],
+        ["", "", "'refer'"],
+      ]},
+    ],
+  },
+  cases: [
+    {input: {application: {income: 5000, debts: 1000}}, goals: ["application.dti"], output: {application: {income: 5000, debts: 1000, dti: 0.2}}},
+    {input: {application: {score: 750, amount: 80, value: 100}}, goals: ["application.tier"], output: {application: {score: 750, amount: 80, value: 100, ltv: 0.8, tier: "A"}}},
+    {input: {application: {score: 750, amount: 81, value: 100}}, goals: ["application.tier"], output: {application: {score: 750, amount: 81, value: 100, ltv: 0.81, tier: "B"}}},
+    {input: {application: {score: 600, amount: 1, value: 100}}, goals: ["application.tier"], output: {application: {score: 600, amount: 1, value: 100, ltv: 0.01, tier: "C"}}},
+    {input: {application: {amount: 1, value: 3}}, goals: ["application.ltv"], output: {application: {amount: 1, value: 3, ltv: 0.3333}}},
+    {input: {application: {income: 5000, debts: 1000}}, goals: ["application.tier"], output: "!error: MissingRequiredInputs"},
+    {
+      input: {application: {income: 4000, debts: 2000, score: 800, amount: 50, value: 100}},
+      goals: ["application.decision"],
+      output: {application: {income: 4000, debts: 2000, score: 800, amount: 50, value: 100, dti: 0.5, ltv: 0.5, tier: "A", decision: "decline"}},
+    },
+    {
+      input: {application: {income: 4000, debts: 1800, score: 600, amount: 50, value: 100}},
+      goals: ["application.decision", "application.dti"],
+      output: {application: {income: 4000, debts: 1800, score: 600, amount: 50, value: 100, dti: 0.45, ltv: 0.5, tier: "C", decision: "refer"}},
+    },
+    {
+      input: {application: {income: 4000, debts: 400, score: 690, amount: 95, value: 100}},
+      output: {application: {income: 4000, debts: 400, score: 690, amount: 95, value: 100, dti: 0.1, ltv: 0.95, tier: "B", decision: "approve"}},
+    },
+    {input: {application: {income: 4000, debts: 400, score: 690, amount: 95}}, output: "!error: MissingRequiredInputs"},
+  ],
+}

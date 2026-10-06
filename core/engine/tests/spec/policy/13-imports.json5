@@ -1,0 +1,700 @@
+// Multi-policy workspaces. A policy names other workspace documents in `imports`; the
+// importer and everything it imports transitively form one evaluation unit. Blocks of every
+// member run (every terminal write of the unit is a root), models and globals merge across
+// members, and reads resolve against writers anywhere in the unit.
+
+// --- A single import: the imported writer feeds the importer -----------------------------
+
+{
+  name: "an imported block's write is visible to the importer",
+  policy: {
+    imports: ["base"],
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.score", value: "customer.base + 1"}],
+  },
+  policies: {
+    base: {
+      models: {customer: {age: "number"}},
+      blocks: [{expression: "customer.base", value: "customer.age * 2"}],
+    },
+  },
+  cases: [
+    [{customer: {age: 20}}, {customer: {age: 20, base: 40, score: 41}}],
+    [{customer: {age: 0}}, {customer: {age: 0, base: 0, score: 1}}],
+    [{customer: {age: -3}}, {customer: {age: -3, base: -6, score: -5}}],
+    [{customer: {age: 20.5}}, {customer: {age: 20.5, base: 41, score: 42}}],
+    [{customer: {age: 0.1}}, {customer: {age: 0.1, base: 0.2, score: 1.2}}],
+  ],
+}
+
+{
+  name: "missing input of the imported writer is reported for the importer's goal",
+  policy: {
+    imports: ["base"],
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.score", value: "customer.base + 1"}],
+  },
+  policies: {
+    base: {
+      models: {customer: {age: "number"}},
+      blocks: [{expression: "customer.base", value: "customer.age * 2"}],
+    },
+  },
+  cases: [
+    [{customer: {}}, "!error: MissingRequiredInputs"],
+    [{customer: {age: null}}, "!error: MissingRequiredInputs"],
+    [{}, "!error: MissingRequiredInputs"],
+    [{customer: {age: "x"}}, "!error: InputValidationFailed"],
+    [{customer: {age: 7}}, {customer: {age: 7, base: 14, score: 15}}],
+  ],
+}
+
+// --- Imported blocks run even when nothing in the importer reads them --------------------
+
+{
+  name: "blocks of an imported policy run without being read",
+  policy: {
+    imports: ["extras"],
+    models: {customer: {age: "number", income: "number"}},
+    blocks: [{expression: "customer.adult", value: "customer.age >= 18"}],
+  },
+  policies: {
+    extras: {
+      models: {customer: {income: "number"}},
+      blocks: [{expression: "customer.rich", value: "customer.income > 1000"}],
+    },
+  },
+  cases: [
+    [{customer: {age: 20, income: 5000}}, {customer: {age: 20, income: 5000, adult: true, rich: true}}],
+    [{customer: {age: 10, income: 0}}, {customer: {age: 10, income: 0, adult: false, rich: false}}],
+    [{customer: {age: 18, income: 1000}}, {customer: {age: 18, income: 1000, adult: true, rich: false}}],
+    [{customer: {age: 18}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "an imported policy with only a data model contributes validation, no writes",
+  policy: {
+    imports: ["schema"],
+    blocks: [{expression: "customer.next", value: "customer.age + 1"}],
+  },
+  policies: {
+    schema: {models: {customer: {age: "number", name: "string"}}, blocks: []},
+  },
+  cases: [
+    [{customer: {age: 20}}, {customer: {age: 20, next: 21}}],
+    [{customer: {age: 20, name: "Ann"}}, {customer: {age: 20, name: "Ann", next: 21}}],
+    [{customer: {age: "20"}}, "!error: InputValidationFailed"],
+    [{customer: {age: 1, name: 5}}, "!error: InputValidationFailed"],
+    [{customer: {}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// --- Chains: imports are transitive ------------------------------------------------------
+
+{
+  name: "a chain of imports: main reads values from every level",
+  policy: {
+    imports: ["mid"],
+    blocks: [{expression: "customer.score", value: "customer.base + customer.mid"}],
+  },
+  policies: {
+    mid: {imports: ["base"], blocks: [{expression: "customer.mid", value: "customer.base * 10"}]},
+    base: {models: {customer: {age: "number"}}, blocks: [{expression: "customer.base", value: "customer.age * 2"}]},
+  },
+  cases: [
+    [{customer: {age: 20}}, {customer: {age: 20, base: 40, mid: 400, score: 440}}],
+    [{customer: {age: 0}}, {customer: {age: 0, base: 0, mid: 0, score: 0}}],
+    [{customer: {age: 1.5}}, {customer: {age: 1.5, base: 3, mid: 30, score: 33}}],
+    [{customer: {age: "1"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "a four-level chain mixing a table, a match and an assertion",
+  policy: {
+    imports: ["approval"],
+    blocks: [{expression: "customer.summary", value: "customer.band + ':' + customer.tier + ':' + string(customer.approved)"}],
+  },
+  policies: {
+    approval: {
+      imports: ["tiering"],
+      blocks: [{assertion: "customer.approved", conditions: ["customer.tier != 'none'", "customer.age < 100"]}],
+    },
+    tiering: {
+      imports: ["banding"],
+      blocks: [{match: "customer.tier", arms: [["customer.band == 'senior'", "'gold'"], ["customer.band == 'adult'", "'silver'"], ["", "'none'"]]}],
+    },
+    banding: {
+      models: {customer: {age: "number"}},
+      blocks: [{table: "bands", inputs: ["customer.age"], outputs: ["customer.band"], rules: [[">= 65", "'senior'"], [">= 18", "'adult'"], ["", "'minor'"]]}],
+    },
+  },
+  cases: [
+    [{customer: {age: 70}}, {customer: {age: 70, band: "senior", tier: "gold", approved: true, summary: "senior:gold:true"}}],
+    [{customer: {age: 30}}, {customer: {age: 30, band: "adult", tier: "silver", approved: true, summary: "adult:silver:true"}}],
+    [{customer: {age: 10}}, {customer: {age: 10, band: "minor", tier: "none", approved: false, summary: "minor:none:false"}}],
+    [{customer: {age: 120}}, {customer: {age: 120, band: "senior", tier: "gold", approved: false, summary: "senior:gold:false"}}],
+    [{customer: {age: 18}}, {customer: {age: 18, band: "adult", tier: "silver", approved: true, summary: "adult:silver:true"}}],
+  ],
+}
+
+// --- Diamonds: two importers share one base ----------------------------------------------
+
+{
+  name: "diamond: both branches read the shared base and main joins them",
+  policy: {
+    imports: ["left", "right"],
+    blocks: [{expression: "customer.joined", value: "customer.l + customer.r"}],
+  },
+  policies: {
+    left: {imports: ["shared"], blocks: [{expression: "customer.l", value: "customer.norm * 2"}]},
+    right: {imports: ["shared"], blocks: [{expression: "customer.r", value: "customer.norm + 1"}]},
+    shared: {models: {customer: {age: "number"}}, blocks: [{expression: "customer.norm", value: "customer.age / 10"}]},
+  },
+  cases: [
+    [{customer: {age: 20}}, {customer: {age: 20, norm: 2, l: 4, r: 3, joined: 7}}],
+    [{customer: {age: 0}}, {customer: {age: 0, norm: 0, l: 0, r: 1, joined: 1}}],
+    [{customer: {age: 5}}, {customer: {age: 5, norm: 0.5, l: 1, r: 1.5, joined: 2.5}}],
+    [{customer: {age: -10}}, {customer: {age: -10, norm: -1, l: -2, r: 0, joined: -2}}],
+    [{customer: {}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "diamond: the branches only write, main reads nothing of them",
+  policy: {
+    imports: ["left", "right"],
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.own", value: "customer.age"}],
+  },
+  policies: {
+    left: {imports: ["shared"], blocks: [{expression: "customer.l", value: "customer.norm > 1"}]},
+    right: {imports: ["shared"], blocks: [{expression: "customer.r", value: "customer.norm < 1"}]},
+    shared: {models: {customer: {age: "number"}}, blocks: [{expression: "customer.norm", value: "customer.age / 10"}]},
+  },
+  cases: [
+    [{customer: {age: 20}}, {customer: {age: 20, own: 20, norm: 2, l: true, r: false}}],
+    [{customer: {age: 10}}, {customer: {age: 10, own: 10, norm: 1, l: false, r: false}}],
+    [{customer: {age: 3}}, {customer: {age: 3, own: 3, norm: 0.3, l: false, r: true}}],
+  ],
+}
+
+{
+  name: "importing the same policy twice and through two paths changes nothing",
+  policy: {
+    imports: ["base", "base", "mid"],
+    blocks: [{expression: "customer.total", value: "customer.base + customer.mid"}],
+  },
+  policies: {
+    mid: {imports: ["base"], blocks: [{expression: "customer.mid", value: "customer.base * 3"}]},
+    base: {models: {customer: {age: "number"}}, blocks: [{expression: "customer.base", value: "customer.age + 1"}]},
+  },
+  cases: [
+    [{customer: {age: 1}}, {customer: {age: 1, base: 2, mid: 6, total: 8}}],
+    [{customer: {age: 9}}, {customer: {age: 9, base: 10, mid: 30, total: 40}}],
+    [{customer: {age: -1}}, {customer: {age: -1, base: 0, mid: 0, total: 0}}],
+  ],
+}
+
+{
+  name: "import order does not change the result",
+  policy: {
+    imports: ["second", "first"],
+    blocks: [{expression: "customer.both", value: "customer.a + customer.b"}],
+  },
+  policies: {
+    first: {models: {customer: {x: "number"}}, blocks: [{expression: "customer.a", value: "customer.x * 2"}]},
+    second: {models: {customer: {x: "number"}}, blocks: [{expression: "customer.b", value: "customer.a + 1"}]},
+  },
+  cases: [
+    [{customer: {x: 1}}, {customer: {x: 1, a: 2, b: 3, both: 5}}],
+    [{customer: {x: 0}}, {customer: {x: 0, a: 0, b: 1, both: 1}}],
+    [{customer: {x: 2.25}}, {customer: {x: 2.25, a: 4.5, b: 5.5, both: 10}}],
+  ],
+}
+
+{
+  name: "siblings in one unit read each other's writes without importing each other",
+  policy: {
+    imports: ["first", "second"],
+    blocks: [],
+  },
+  policies: {
+    first: {models: {customer: {x: "number"}}, blocks: [{expression: "customer.a", value: "customer.b * 2"}]},
+    second: {models: {customer: {x: "number"}}, blocks: [{expression: "customer.b", value: "customer.x + 1"}]},
+  },
+  cases: [
+    [{customer: {x: 1}}, {customer: {x: 1, a: 4, b: 2}}],
+    [{customer: {x: 0}}, {customer: {x: 0, a: 2, b: 1}}],
+    [{customer: {x: -1}}, {customer: {x: -1, a: 0, b: 0}}],
+  ],
+}
+
+// --- Shared and merged models -------------------------------------------------------------
+
+{
+  name: "a model declared only in an imported policy types the importer's reads",
+  policy: {
+    imports: ["schema"],
+    blocks: [{expression: "customer.score", value: "customer.age + 1"}],
+  },
+  policies: {
+    schema: {models: {customer: {age: "number"}}, blocks: []},
+  },
+  cases: [
+    [{customer: {age: 20}}, {customer: {age: 20, score: 21}}],
+    [{customer: {age: 0}}, {customer: {age: 0, score: 1}}],
+    [{customer: {age: "x"}}, "!error: InputValidationFailed"],
+    [{customer: {age: true}}, "!error: InputValidationFailed"],
+    [{customer: {}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "the same entity declared in two policies merges its properties",
+  policy: {
+    imports: ["base"],
+    models: {customer: {age: "number", name: "string"}},
+    blocks: [{expression: "customer.label", value: "customer.name + '#' + string(customer.base)"}],
+  },
+  policies: {
+    base: {models: {customer: {age: "number", vip: "boolean"}}, blocks: [{expression: "customer.base", value: "customer.vip ? customer.age * 2 : customer.age"}]},
+  },
+  cases: [
+    [{customer: {age: 20, name: "a", vip: true}}, {customer: {age: 20, name: "a", vip: true, base: 40, label: "a#40"}}],
+    [{customer: {age: 20, name: "b", vip: false}}, {customer: {age: 20, name: "b", vip: false, base: 20, label: "b#20"}}],
+    [{customer: {age: 20, name: 1, vip: false}}, "!error: InputValidationFailed"],
+    [{customer: {age: 20, name: "c", vip: "yes"}}, "!error: InputValidationFailed"],
+    [{customer: {age: 20, name: "d"}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "an entity split across policies with relationships",
+  policy: {
+    imports: ["companies"],
+    models: {customer: {name: "string", companies: "company[]"}},
+    blocks: [{expression: "customer.total", value: "sum(map(customer.companies, #.revenue))"}],
+  },
+  policies: {
+    companies: {models: {company: {revenue: "number"}}, blocks: []},
+  },
+  cases: [
+    [{customer: {name: "a", companies: [{revenue: 1}, {revenue: 2}]}}, {customer: {name: "a", companies: [{revenue: 1}, {revenue: 2}], total: 3}}],
+    [{customer: {name: "b", companies: []}}, {customer: {name: "b", companies: [], total: 0}}],
+    [{customer: {name: "c", companies: [{revenue: "1"}]}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "globals declared in an imported policy are top-level inputs",
+  policy: {
+    imports: ["base"],
+    blocks: [{expression: "total", value: "rate * 100"}],
+  },
+  policies: {
+    base: {globals: {platform: {factor: "number"}}, blocks: [{expression: "rate", value: "factor / 2"}]},
+  },
+  cases: [
+    [{factor: 3}, {factor: 3, rate: 1.5, total: 150}],
+    [{factor: 0}, {factor: 0, rate: 0, total: 0}],
+    [{factor: -0.02}, {factor: -0.02, rate: -0.01, total: -1}],
+    [{factor: "3"}, "!error: InputValidationFailed"],
+    [{}, "!error: MissingRequiredInputs"],
+    [{platform: {factor: 3}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "the importer reads a global declared in an imported policy",
+  policy: {
+    imports: ["base"],
+    models: {order: {amount: "number"}},
+    blocks: [{expression: "order.taxed", value: "order.amount * (1 + taxRate)"}],
+  },
+  policies: {
+    base: {globals: {platform: {taxRate: "number"}}, blocks: []},
+  },
+  cases: [
+    [{taxRate: 0.2, order: {amount: 100}}, {taxRate: 0.2, order: {amount: 100, taxed: 120}}],
+    [{taxRate: 0, order: {amount: 100}}, {taxRate: 0, order: {amount: 100, taxed: 100}}],
+    [{taxRate: "0.2", order: {amount: 100}}, "!error: InputValidationFailed"],
+    [{order: {amount: 100}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// --- Computed properties defined in imported policies -------------------------------------
+
+{
+  name: "an undeclared computed property written in an imported policy",
+  policy: {
+    imports: ["base"],
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.score", value: "customer.adult ? 1 : 0"}],
+  },
+  policies: {
+    base: {models: {customer: {age: "number"}}, blocks: [{expression: "customer.adult", value: "customer.age >= 18"}]},
+  },
+  cases: [
+    [{customer: {age: 20}}, {customer: {age: 20, adult: true, score: 1}}],
+    [{customer: {age: 17}}, {customer: {age: 17, adult: false, score: 0}}],
+    [{customer: {age: 18}}, {customer: {age: 18, adult: true, score: 1}}],
+  ],
+}
+
+{
+  name: "an imported computed property supplied in the input is overwritten by its writer",
+  policy: {
+    imports: ["base"],
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.score", value: "customer.adult ? 1 : 0"}],
+  },
+  policies: {
+    base: {models: {customer: {age: "number"}}, blocks: [{expression: "customer.adult", value: "customer.age >= 18"}]},
+  },
+  cases: [
+    [{customer: {age: 20, adult: false}}, {customer: {age: 20, adult: true, score: 1}}],
+    [{customer: {age: 5, adult: true}}, {customer: {age: 5, adult: false, score: 0}}],
+    [{customer: {age: 5, adult: "junk"}}, {customer: {age: 5, adult: false, score: 0}}],
+  ],
+}
+
+{
+  name: "a computed property that is also declared in the imported model is treated as input",
+  diagnostics: ["INPUT_OVERRIDE"],
+  policy: {
+    imports: ["base"],
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.score", value: "customer.adult ? 1 : 0"}],
+  },
+  policies: {
+    base: {models: {customer: {age: "number", adult: "boolean"}}, blocks: [{expression: "customer.adult", value: "customer.age >= 18"}]},
+  },
+  cases: [
+    {input: {customer: {age: 20}}, output: "!error: MissingRequiredInputs", note: "question: writing a declared model property is an InputOverride error diagnostic; the driver still evaluates, requires the property as input and drops the block's write"},
+    {input: {customer: {age: 20, adult: false}}, output: {customer: {age: 20, adult: false, score: 0}}, note: "question: the input value wins over the imported block's write (customer.age >= 18 would give true)"},
+    {input: {customer: {age: 5, adult: true}}, output: {customer: {age: 5, adult: true, score: 1}}, note: "question: the input value wins over the imported block's write"},
+  ],
+}
+
+{
+  name: "an imported match result drives the importer's table",
+  policy: {
+    imports: ["tiers"],
+    blocks: [{table: "discounts", inputs: ["customer.tier", "customer.spend"], outputs: ["customer.discount"], rules: [
+      ["'gold'", ">= 1000", "0.2"],
+      ["'gold'", "", "0.1"],
+      ["'silver'", "", "0.05"],
+      ["", "", "0"],
+    ]}],
+  },
+  policies: {
+    tiers: {
+      models: {customer: {points: "number", spend: "number"}},
+      blocks: [{match: "customer.tier", arms: [["customer.points >= 100", "'gold'"], ["customer.points >= 50", "'silver'"], ["", "'bronze'"]]}],
+    },
+  },
+  cases: [
+    [{customer: {points: 150, spend: 2000}}, {customer: {points: 150, spend: 2000, tier: "gold", discount: 0.2}}],
+    [{customer: {points: 150, spend: 10}}, {customer: {points: 150, spend: 10, tier: "gold", discount: 0.1}}],
+    [{customer: {points: 50, spend: 5000}}, {customer: {points: 50, spend: 5000, tier: "silver", discount: 0.05}}],
+    [{customer: {points: 0, spend: 5000}}, {customer: {points: 0, spend: 5000, tier: "bronze", discount: 0}}],
+    [{customer: {points: 99.9, spend: 1}}, {customer: {points: 99.9, spend: 1, tier: "silver", discount: 0.05}}],
+  ],
+}
+
+{
+  name: "an imported table result feeds the importer's assertion",
+  policy: {
+    imports: ["pricing"],
+    blocks: [{assertion: "customer.approved", conditions: ["customer.basePrice > 0", "customer.basePrice <= customer.budget"]}],
+  },
+  policies: {
+    pricing: {
+      models: {customer: {age: "number", budget: "number"}},
+      blocks: [{table: "prices", inputs: ["customer.age"], outputs: ["customer.basePrice"], rules: [[">= 65", "80"], [">= 18", "100"], ["", "0"]]}],
+    },
+  },
+  cases: [
+    [{customer: {age: 35, budget: 100}}, {customer: {age: 35, budget: 100, basePrice: 100, approved: true}}],
+    [{customer: {age: 35, budget: 99}}, {customer: {age: 35, budget: 99, basePrice: 100, approved: false}}],
+    [{customer: {age: 70, budget: 90}}, {customer: {age: 70, budget: 90, basePrice: 80, approved: true}}],
+    [{customer: {age: 5, budget: 1000}}, {customer: {age: 5, budget: 1000, basePrice: 0, approved: false}}],
+  ],
+}
+
+{
+  name: "per-instance writes in an imported policy are aggregated by the importer",
+  policy: {
+    imports: ["base"],
+    blocks: [{expression: "customer.bigCount", value: "count(customer.companies, #.big)"}],
+  },
+  policies: {
+    base: {
+      models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+      blocks: [{expression: "company.big", value: "company.revenue > 100"}],
+    },
+  },
+  cases: [
+    [{customer: {companies: [{revenue: 5}, {revenue: 500}]}}, {customer: {bigCount: 1, companies: [{big: false, revenue: 5}, {big: true, revenue: 500}]}}],
+    [{customer: {companies: []}}, {customer: {bigCount: 0, companies: []}}],
+    [{customer: {companies: [{revenue: 101}, {revenue: 1000}, {revenue: 100}]}}, {customer: {bigCount: 2, companies: [{big: true, revenue: 101}, {big: true, revenue: 1000}, {big: false, revenue: 100}]}}],
+  ],
+}
+
+{
+  name: "an importer writes per instance from an imported per-instance value",
+  policy: {
+    imports: ["base"],
+    blocks: [{expression: "company.label", value: "company.big ? 'big' : 'small'"}],
+  },
+  policies: {
+    base: {
+      models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+      blocks: [{expression: "company.big", value: "company.revenue > 100"}],
+    },
+  },
+  cases: [
+    [{customer: {companies: [{revenue: 5}, {revenue: 500}]}}, {customer: {companies: [{revenue: 5, big: false, label: "small"}, {revenue: 500, big: true, label: "big"}]}}],
+    [{customer: {companies: []}}, {customer: {companies: []}}],
+  ],
+}
+
+// --- Policies that are not imported -------------------------------------------------------
+
+{
+  name: "a workspace sibling that is not imported does not run",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.score", value: "customer.age + 1"}],
+  },
+  policies: {
+    other: {models: {customer: {age: "number"}}, blocks: [{expression: "customer.other", value: "customer.age * 2"}]},
+  },
+  cases: [
+    [{customer: {age: 20}}, {customer: {age: 20, score: 21}}],
+    [{customer: {age: 0}}, {customer: {age: 0, score: 1}}],
+  ],
+}
+
+{
+  name: "a property written only by a non-imported sibling is required input",
+  diagnostics: ["UNDEFINED_VARIABLE"],
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.score", value: "customer.other + 1"}],
+  },
+  policies: {
+    other: {models: {customer: {age: "number"}}, blocks: [{expression: "customer.other", value: "customer.age * 2"}]},
+  },
+  cases: [
+    [{customer: {age: 20}}, "!error: MissingRequiredInputs"],
+    [{customer: {age: 20, other: 5}}, {customer: {age: 20, other: 5, score: 6}}],
+    [{customer: {age: 20, other: -1}}, {customer: {age: 20, other: -1, score: 0}}],
+  ],
+}
+
+{
+  name: "an importee does not see its importer's writes as its own unit",
+  policy: {
+    imports: ["base"],
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.top", value: "customer.age * 100"}],
+  },
+  policies: {
+    base: {models: {customer: {age: "number"}}, blocks: [{expression: "customer.low", value: "customer.age + 1"}]},
+  },
+  cases: [
+    [{customer: {age: 2}}, {customer: {age: 2, low: 3, top: 200}}],
+    [{customer: {age: 0}}, {customer: {age: 0, low: 1, top: 0}}],
+  ],
+}
+
+// --- Import errors ---------------------------------------------------------------------------
+
+{
+  name: "a missing import fails evaluation",
+  diagnostics: ["IMPORT_NOT_FOUND"],
+  policy: {
+    imports: ["does-not-exist"],
+    blocks: [{expression: "x", value: "1 + 1"}],
+  },
+  cases: [
+    [{}, "!error: ImportNotFound"],
+    [{x: 5}, "!error: ImportNotFound"],
+    [null, "!error: ImportNotFound"],
+  ],
+}
+
+{
+  name: "a missing transitive import fails evaluation",
+  diagnostics: ["IMPORT_NOT_FOUND"],
+  policy: {
+    imports: ["mid"],
+    blocks: [{expression: "x", value: "y + 1"}],
+  },
+  policies: {
+    mid: {imports: ["does-not-exist"], blocks: [{expression: "y", value: "2"}]},
+  },
+  cases: [
+    [{}, "!error: ImportNotFound"],
+    [{y: 1}, "!error: ImportNotFound"],
+  ],
+}
+
+{
+  name: "one missing import among several fails evaluation",
+  diagnostics: ["IMPORT_NOT_FOUND"],
+  policy: {
+    imports: ["base", "gone"],
+    blocks: [{expression: "x", value: "y + 1"}],
+  },
+  policies: {
+    base: {blocks: [{expression: "y", value: "2"}]},
+  },
+  cases: [
+    [{}, "!error: ImportNotFound"],
+  ],
+}
+
+{
+  name: "importing a graph document is not an import",
+  policy: {
+    imports: ["g"],
+    blocks: [{expression: "x", value: "1"}],
+  },
+  policies: {
+    g: {graph: {nodes: [{expression: "e", fields: {y: "1"}}]}},
+  },
+  cases: [
+    {input: {}, output: "!error: ImportNotFound", note: "question: the graph exists in the workspace but a policy import of it reports 'not in the workspace'", engines: "DecisionEngine loads imports itself and reports ContentKindMismatch instead"},
+    {input: {y: 2}, output: "!error: ImportNotFound", note: "question: the graph exists in the workspace but a policy import of it reports 'not in the workspace'", engines: "DecisionEngine loads imports itself and reports ContentKindMismatch instead"},
+  ],
+}
+
+// --- Circular imports ---------------------------------------------------------------------------
+// CircularImport is an error diagnostic, but evaluation does not check diagnostics: a cycle of
+// policies evaluates as one unit.
+
+{
+  name: "a policy importing itself evaluates normally",
+  diagnostics: ["CIRCULAR_IMPORT"],
+  policy: {
+    imports: ["main"],
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.x", value: "customer.age + 1"}],
+  },
+  cases: [
+    {input: {customer: {age: 1}}, output: {customer: {age: 1, x: 2}}, note: "question: a self import is a CircularImport error diagnostic, yet evaluation succeeds"},
+    {input: {customer: {age: 9}}, output: {customer: {age: 9, x: 10}}, note: "question: a self import is a CircularImport error diagnostic, yet evaluation succeeds"},
+  ],
+}
+
+{
+  name: "two policies importing each other evaluate as one unit",
+  diagnostics: ["CIRCULAR_IMPORT"],
+  policy: {
+    imports: ["a"],
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.x", value: "customer.a + 1"}],
+  },
+  policies: {a: {imports: ["main"], blocks: [{expression: "customer.a", value: "customer.age * 2"}]}},
+  cases: [
+    {input: {customer: {age: 1}}, output: {customer: {age: 1, a: 2, x: 3}}, note: "question: circular imports are an error diagnostic, yet evaluation succeeds"},
+    {input: {customer: {age: 0}}, output: {customer: {age: 0, a: 0, x: 1}}, note: "question: circular imports are an error diagnostic, yet evaluation succeeds"},
+    {input: {customer: {}}, output: "!error: MissingRequiredInputs"},
+  ],
+}
+
+{
+  name: "a three-policy import cycle evaluates as one unit",
+  diagnostics: ["CIRCULAR_IMPORT"],
+  policy: {
+    imports: ["a"],
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.m", value: "customer.b + 1"}],
+  },
+  policies: {
+    a: {imports: ["b"], blocks: [{expression: "customer.a", value: "customer.age * 2"}]},
+    b: {imports: ["main"], blocks: [{expression: "customer.b", value: "customer.a * 3"}]},
+  },
+  cases: [
+    {input: {customer: {age: 1}}, output: {customer: {age: 1, a: 2, b: 6, m: 7}}, note: "question: circular imports are an error diagnostic, yet evaluation succeeds"},
+    {input: {customer: {age: 2}}, output: {customer: {age: 2, a: 4, b: 12, m: 13}}, note: "question: circular imports are an error diagnostic, yet evaluation succeeds"},
+  ],
+}
+
+{
+  name: "a data cycle across circular imports",
+  policy: {
+    imports: ["a"],
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.x", value: "customer.a + 1"}],
+  },
+  policies: {a: {imports: ["main"], blocks: [{expression: "customer.a", value: "customer.x * 2"}]}},
+  cases: [
+    {input: {customer: {age: 1}}, output: "!error"},
+    {input: {customer: {age: 5}}, output: "!error"},
+  ],
+}
+
+// --- Writers across the unit ---------------------------------------------------------------------
+
+{
+  name: "the importer and the imported policy write different fields of one entity",
+  policy: {
+    imports: ["base"],
+    models: {order: {qty: "number", price: "number"}},
+    blocks: [{expression: "order.total", value: "order.subtotal - order.discount"}],
+  },
+  policies: {
+    base: {
+      models: {order: {qty: "number", price: "number"}},
+      blocks: [
+        {expression: "order.subtotal", value: "order.qty * order.price"},
+        {expression: "order.discount", value: "order.subtotal > 100 ? order.subtotal * 0.1 : 0"},
+      ],
+    },
+  },
+  cases: [
+    [{order: {qty: 2, price: 100}}, {order: {qty: 2, price: 100, subtotal: 200, discount: 20, total: 180}}],
+    [{order: {qty: 1, price: 50}}, {order: {qty: 1, price: 50, subtotal: 50, discount: 0, total: 50}}],
+    [{order: {qty: 0, price: 50}}, {order: {qty: 0, price: 50, subtotal: 0, discount: 0, total: 0}}],
+    [{order: {qty: 3, price: 33.34}}, {order: {qty: 3, price: 33.34, subtotal: 100.02, discount: 10.002, total: 90.018}}],
+  ],
+}
+
+{
+  name: "the same property written in the importer and the imported policy",
+  diagnostics: ["DUPLICATE_WRITER"],
+  policy: {
+    imports: ["base"],
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.base", value: "customer.age + 1"}],
+  },
+  policies: {
+    base: {models: {customer: {age: "number"}}, blocks: [{expression: "customer.base", value: "customer.age * 2"}]},
+  },
+  cases: [
+    {input: {customer: {age: 20}}, output: {customer: {age: 20, base: 40}}, note: "question: DuplicateWriter is an error diagnostic; evaluation keeps the imported writer and drops the importer's block"},
+    {input: {customer: {age: 3}}, output: {customer: {age: 3, base: 6}}, note: "question: DuplicateWriter is an error diagnostic; evaluation keeps the imported writer and drops the importer's block"},
+  ],
+}
+
+{
+  name: "nested write paths from two policies merge into one object",
+  policy: {
+    imports: ["base"],
+    models: {order: {amount: "number"}},
+    blocks: [{expression: "totals.gross", value: "order.amount + totals.tax"}],
+  },
+  policies: {
+    base: {models: {order: {amount: "number"}}, blocks: [{expression: "totals.tax", value: "order.amount * 0.2"}]},
+  },
+  cases: [
+    [{order: {amount: 100}}, {order: {amount: 100}, totals: {tax: 20, gross: 120}}],
+    [{order: {amount: 0}}, {order: {amount: 0}, totals: {tax: 0, gross: 0}}],
+    [{order: {amount: 12.5}}, {order: {amount: 12.5}, totals: {tax: 2.5, gross: 15}}],
+  ],
+}

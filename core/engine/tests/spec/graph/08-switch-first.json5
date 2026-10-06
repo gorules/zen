@@ -1,0 +1,950 @@
+// Switch node, hit policy first: conditions are evaluated in order and only the first one
+// that is true routes; `""` is the default branch and is always true. The switch passes its
+// input unchanged to the chosen branch. Edges of branches not taken are pruned, along with
+// the nodes that become unreachable through them.
+
+// ---------------------------------------------------------------------------------------
+// Condition order: the first true condition wins even when later ones also hold.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "the first true condition wins",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["n > 10", "n > 5", "n > 0"]},
+      {expression: "a", fields: {branch: "'gt10'"}},
+      {expression: "b", fields: {branch: "'gt5'"}},
+      {expression: "c", fields: {branch: "'gt0'"}},
+    ],
+    edges: ["input -> s", "s:0 -> a -> output", "s:1 -> b -> output", "s:2 -> c -> output"],
+  },
+  cases: [
+    [{n: 11}, {branch: "gt10"}],
+    [{n: 10}, {branch: "gt5"}],
+    [{n: 6}, {branch: "gt5"}],
+    [{n: 5}, {branch: "gt0"}],
+    [{n: 0.5}, {branch: "gt0"}],
+    [{n: 1000000000000000000000}, {branch: "gt10"}],
+  ],
+}
+
+{
+  name: "reordering conditions changes the winner",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["n > 0", "n > 5", "n > 10"]},
+      {expression: "a", fields: {branch: "'gt0'"}},
+      {expression: "b", fields: {branch: "'gt5'"}},
+      {expression: "c", fields: {branch: "'gt10'"}},
+    ],
+    edges: ["input -> s", "s:0 -> a -> output", "s:1 -> b -> output", "s:2 -> c -> output"],
+  },
+  cases: [
+    [{n: 11}, {branch: "gt0"}],
+    [{n: 6}, {branch: "gt0"}],
+    [{n: 1}, {branch: "gt0"}],
+  ],
+}
+
+{
+  name: "conditions over several fields",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["country == 'US' and age >= 21", "country != 'US' and age >= 18", ""]},
+      {expression: "us", fields: {allowed: "true", rule: "'us'"}},
+      {expression: "intl", fields: {allowed: "true", rule: "'intl'"}},
+      {expression: "deny", fields: {allowed: "false", rule: "'deny'"}},
+    ],
+    edges: ["input -> s", "s:0 -> us -> output", "s:1 -> intl -> output", "s:2 -> deny -> output"],
+  },
+  cases: [
+    [{country: "US", age: 21}, {allowed: true, rule: "us"}],
+    [{country: "US", age: 20}, {allowed: false, rule: "deny"}],
+    [{country: "DE", age: 18}, {allowed: true, rule: "intl"}],
+    [{country: "DE", age: 17}, {allowed: false, rule: "deny"}],
+    [{age: 30}, {allowed: true, rule: "intl"}],
+    [{}, {allowed: false, rule: "deny"}],
+  ],
+}
+
+{
+  name: "conditions over nested and array input",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["customer.tier == 'gold'", "len(orders) > 2", "some(orders, #.total > 100)", ""]},
+      {expression: "a", fields: {r: "'gold'"}},
+      {expression: "b", fields: {r: "'frequent'"}},
+      {expression: "c", fields: {r: "'big'"}},
+      {expression: "d", fields: {r: "'other'"}},
+    ],
+    edges: ["input -> s", "s:0 -> a -> output", "s:1 -> b -> output", "s:2 -> c -> output", "s:3 -> d -> output"],
+  },
+  cases: [
+    [{customer: {tier: "gold"}, orders: []}, {r: "gold"}],
+    [{customer: {tier: "basic"}, orders: [{total: 1}, {total: 2}, {total: 3}]}, {r: "frequent"}],
+    [{customer: {tier: "basic"}, orders: [{total: 101}]}, {r: "big"}],
+    [{customer: {tier: "basic"}, orders: [{total: 100}]}, {r: "other"}],
+    [{customer: {}, orders: []}, {r: "other"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// The default branch `""` is always true. Under first hit its position matters: placed
+// before other conditions it shadows them.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "the default branch catches everything not matched before it",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["n > 0", ""]},
+      {expression: "pos", fields: {r: "'pos'"}},
+      {expression: "def", fields: {r: "'default'"}},
+    ],
+    edges: ["input -> s", "s:0 -> pos -> output", "s:1 -> def -> output"],
+  },
+  cases: [
+    [{n: 1}, {r: "pos"}],
+    [{n: 0}, {r: "default"}],
+    [{n: -1}, {r: "default"}],
+    [{}, {r: "default"}],
+    [{n: "x"}, {r: "default"}],
+  ],
+}
+
+{
+  name: "a default branch first shadows every later condition",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["", "n > 0"]},
+      {expression: "def", fields: {r: "'default'"}},
+      {expression: "pos", fields: {r: "'pos'"}},
+    ],
+    edges: ["input -> s", "s:0 -> def -> output", "s:1 -> pos -> output"],
+  },
+  cases: [
+    [{n: 1}, {r: "default"}],
+    [{n: 0}, {r: "default"}],
+    [{}, {r: "default"}],
+  ],
+}
+
+{
+  name: "a default branch in the middle shadows the conditions after it",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["n > 10", "", "n > 0"]},
+      {expression: "big", fields: {r: "'big'"}},
+      {expression: "def", fields: {r: "'default'"}},
+      {expression: "pos", fields: {r: "'pos'"}},
+    ],
+    edges: ["input -> s", "s:0 -> big -> output", "s:1 -> def -> output", "s:2 -> pos -> output"],
+  },
+  cases: [
+    [{n: 11}, {r: "big"}],
+    [{n: 5}, {r: "default"}],
+    [{n: -5}, {r: "default"}],
+  ],
+}
+
+{
+  name: "a whitespace-only condition is not a default branch",
+  graph: {
+    nodes: [
+      {switch: "s", when: [" ", ""]},
+      {expression: "blank", fields: {r: "'blank'"}},
+      {expression: "def", fields: {r: "'default'"}},
+    ],
+    edges: ["input -> s", "s:0 -> blank -> output", "s:1 -> def -> output"],
+  },
+  cases: [
+    [{}, {r: "default"}, "question: a condition of only whitespace is evaluated (and fails) rather than treated as the default branch"],
+    [{n: 1}, {r: "default"}, "question: a condition of only whitespace is evaluated (and fails) rather than treated as the default branch"],
+  ],
+}
+
+{
+  name: "a switch with only a default branch always routes",
+  graph: {
+    nodes: [
+      {switch: "s", when: [""]},
+      {expression: "e", fields: {r: "'taken'", n: "n"}},
+    ],
+    edges: ["input -> s -> output", "s:0 -> e -> output"],
+  },
+  cases: [
+    [{n: 1}, {r: "taken", n: 1}],
+    [{}, {r: "taken"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// The switch output is its input: the chosen branch sees exactly what reached the switch.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "a branch straight to the output passes the input through",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["flag", ""]},
+      {expression: "other", fields: {r: "'other'"}},
+    ],
+    edges: ["input -> s", "s:0 -> output", "s:1 -> other -> output"],
+  },
+  cases: [
+    [{flag: true, x: 1}, {flag: true, x: 1}],
+    [{flag: true, nested: {a: [1, 2]}}, {flag: true, nested: {a: [1, 2]}}],
+    [{flag: false, x: 1}, {r: "other"}],
+    [{x: 1}, {r: "other"}],
+  ],
+}
+
+{
+  name: "the switch routes on the output of an upstream node",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {score: "a + b"}},
+      {switch: "s", when: ["score >= 10", ""]},
+      {expression: "high", fields: {band: "'high'", score: "score", a: "a"}},
+      {expression: "low", fields: {band: "'low'", score: "score"}},
+    ],
+    edges: ["input -> calc -> s", "s:0 -> high -> output", "s:1 -> low -> output"],
+  },
+  cases: [
+    [{a: 5, b: 5}, {band: "high", score: 10}],
+    [{a: 5, b: 4}, {band: "low", score: 9}],
+    [{a: 0, b: 0, score: 100}, {band: "low", score: 0}],
+  ],
+}
+
+{
+  name: "the switch routes on a passThrough upstream node",
+  graph: {
+    nodes: [
+      {expression: "calc", passThrough: true, fields: {score: "a + b"}},
+      {switch: "s", when: ["score >= 10", ""]},
+      {expression: "high", passThrough: true, fields: {band: "'high'"}},
+      {expression: "low", passThrough: true, fields: {band: "'low'"}},
+    ],
+    edges: ["input -> calc -> s", "s:0 -> high -> output", "s:1 -> low -> output"],
+  },
+  cases: [
+    [{a: 5, b: 5}, {a: 5, b: 5, score: 10, band: "high"}],
+    [{a: 1, b: 1}, {a: 1, b: 1, score: 2, band: "low"}],
+  ],
+}
+
+{
+  name: "conditions see $nodes of earlier nodes",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {score: "a * 2"}},
+      {switch: "s", when: ["$nodes.calc.score > 10", "$nodes.input.a > 0", ""]},
+      {expression: "x", fields: {r: "'score'"}},
+      {expression: "y", fields: {r: "'a'"}},
+      {expression: "z", fields: {r: "'none'"}},
+    ],
+    edges: ["input -> calc -> s", "s:0 -> x -> output", "s:1 -> y -> output", "s:2 -> z -> output"],
+  },
+  cases: [
+    [{a: 6}, {r: "score"}],
+    [{a: 5}, {r: "a"}],
+    [{a: 0}, {r: "none"}],
+    [{a: -1}, {r: "none"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// No branch matches: every outgoing edge is pruned and the output is never reached.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "no branch matching and no default",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["n > 10", "n < -10"]},
+      {expression: "a", fields: {r: "'big'"}},
+      {expression: "b", fields: {r: "'small'"}},
+    ],
+    edges: ["input -> s", "s:0 -> a -> output", "s:1 -> b -> output"],
+  },
+  cases: [
+    [{n: 11}, {r: "big"}],
+    [{n: -11}, {r: "small"}],
+    [{n: 0}, {}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "no branch matching with a branch straight to the output",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["ok"]},
+    ],
+    edges: ["input -> s", "s:0 -> output"],
+  },
+  cases: [
+    [{ok: true, v: 1}, {ok: true, v: 1}],
+    [{ok: false, v: 1}, {}],
+    [{v: 1}, {}],
+  ],
+}
+
+{
+  name: "no branch matching while a parallel path still reaches the output",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["n > 0"]},
+      {expression: "pos", fields: {pos: "true"}},
+      {expression: "side", fields: {side: "n"}},
+    ],
+    edges: ["input -> s", "s:0 -> pos -> output", "input -> side -> output"],
+  },
+  cases: [
+    [{n: 1}, {pos: true, side: 1}],
+    [{n: 0}, {side: 0}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "a switch with no conditions routes nowhere",
+  graph: {
+    nodes: [
+      {switch: "s", when: []},
+      {expression: "side", fields: {side: "true"}},
+    ],
+    edges: ["input -> s", "input -> side -> output"],
+  },
+  cases: [
+    [{}, {side: true}],
+    [{n: 1}, {n: 1, side: true}, "question: a switch with no outgoing edges is a leaf, so its pass-through input is merged into the graph result"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Unconnected branches: a matched branch without an edge ends the switch path there.
+// Edges leaving a switch without a branch handle are never followed.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "a matched branch with no edge stops the flow",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["n > 10", "n > 0", ""]},
+      {expression: "pos", fields: {r: "'pos'"}},
+      {expression: "def", fields: {r: "'default'"}},
+    ],
+    edges: ["input -> s", "s:1 -> pos -> output", "s:2 -> def -> output"],
+  },
+  cases: [
+    [{n: 11}, {}, "question: the first branch matched but has no edge; the graph returns an empty object rather than an error or the default branch"],
+    [{n: 5}, {r: "pos"}],
+    [{n: 0}, {r: "default"}],
+  ],
+}
+
+{
+  name: "an unconnected matched branch next to a parallel path",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["n > 0", ""]},
+      {expression: "def", fields: {r: "'default'"}},
+      {expression: "side", fields: {side: "n"}},
+    ],
+    edges: ["input -> s", "s:1 -> def -> output", "input -> side -> output"],
+  },
+  cases: [
+    [{n: 1}, {side: 1}],
+    [{n: 0}, {r: "default", side: 0}],
+  ],
+}
+
+{
+  name: "an edge from a switch without a branch handle is never followed",
+  graph: {
+    nodes: [
+      {switch: "s", when: [""]},
+      {expression: "e", fields: {r: "'via handle'"}},
+      {expression: "plain", fields: {plain: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> e -> output", "s -> plain -> output"],
+  },
+  cases: [
+    [{}, {r: "via handle"}],
+    [{n: 1}, {r: "via handle"}],
+  ],
+}
+
+{
+  name: "a switch connected only by a handle-less edge",
+  graph: {
+    nodes: [
+      {switch: "s", when: [""]},
+    ],
+    edges: ["input -> s -> output"],
+  },
+  cases: [
+    [{a: 1}, {}, "question: the plain edge is pruned like an unmatched branch, so the flow ends at the switch"],
+  ],
+}
+
+{
+  name: "an edge with an unknown branch handle is never followed",
+  graph: {
+    raw: {
+      nodes: [
+        {id: "in", name: "input", type: "inputNode", content: {}},
+        {id: "s", name: "s", type: "switchNode", content: {hitPolicy: "first", statements: [{id: "yes", condition: ""}]}},
+        {id: "a", name: "a", type: "expressionNode", content: {expressions: [{id: "x", key: "r", value: "'a'"}]}},
+        {id: "b", name: "b", type: "expressionNode", content: {expressions: [{id: "x", key: "r", value: "'b'"}]}},
+        {id: "out", name: "output", type: "outputNode", content: {}},
+      ],
+      edges: [
+        {id: "e0", sourceId: "in", targetId: "s"},
+        {id: "e1", sourceId: "s", targetId: "a", sourceHandle: "yes"},
+        {id: "e2", sourceId: "s", targetId: "b", sourceHandle: "nope"},
+        {id: "e3", sourceId: "a", targetId: "out"},
+        {id: "e4", sourceId: "b", targetId: "out"},
+      ],
+    },
+  },
+  cases: [
+    [{}, {r: "a"}],
+    [{r: "x"}, {r: "a"}],
+  ],
+}
+
+{
+  name: "statement ids are matched as handles, whatever their shape",
+  graph: {
+    raw: {
+      nodes: [
+        {id: "in", name: "input", type: "inputNode", content: {}},
+        {id: "s", name: "s", type: "switchNode", content: {statements: [
+          {id: "b-1", condition: "v == 1"},
+          {id: "b 2", condition: "v == 2"},
+          {id: "", condition: ""},
+        ]}},
+        {id: "a", name: "a", type: "expressionNode", content: {expressions: [{id: "x", key: "r", value: "'one'"}]}},
+        {id: "b", name: "b", type: "expressionNode", content: {expressions: [{id: "x", key: "r", value: "'two'"}]}},
+        {id: "c", name: "c", type: "expressionNode", content: {expressions: [{id: "x", key: "r", value: "'other'"}]}},
+        {id: "out", name: "output", type: "outputNode", content: {}},
+      ],
+      edges: [
+        {id: "e0", sourceId: "in", targetId: "s"},
+        {id: "e1", sourceId: "s", targetId: "a", sourceHandle: "b-1"},
+        {id: "e2", sourceId: "s", targetId: "b", sourceHandle: "b 2"},
+        {id: "e3", sourceId: "s", targetId: "c", sourceHandle: ""},
+        {id: "e4", sourceId: "a", targetId: "out"},
+        {id: "e5", sourceId: "b", targetId: "out"},
+        {id: "e6", sourceId: "c", targetId: "out"},
+      ],
+    },
+  },
+  cases: [
+    [{v: 1}, {r: "one"}],
+    [{v: 2}, {r: "two"}],
+    [{v: 3}, {r: "other"}],
+  ],
+}
+
+{
+  name: "a switch without hitPolicy defaults to first",
+  graph: {
+    raw: {
+      nodes: [
+        {id: "in", name: "input", type: "inputNode", content: {}},
+        {id: "s", name: "s", type: "switchNode", content: {statements: [
+          {id: "a", condition: "v > 0"},
+          {id: "b", condition: "v > 1"},
+        ]}},
+        {id: "na", name: "na", type: "expressionNode", content: {expressions: [{id: "x", key: "a", value: "true"}]}},
+        {id: "nb", name: "nb", type: "expressionNode", content: {expressions: [{id: "x", key: "b", value: "true"}]}},
+        {id: "out", name: "output", type: "outputNode", content: {}},
+      ],
+      edges: [
+        {id: "e0", sourceId: "in", targetId: "s"},
+        {id: "e1", sourceId: "s", targetId: "na", sourceHandle: "a"},
+        {id: "e2", sourceId: "s", targetId: "nb", sourceHandle: "b"},
+        {id: "e3", sourceId: "na", targetId: "out"},
+        {id: "e4", sourceId: "nb", targetId: "out"},
+      ],
+    },
+  },
+  cases: [
+    [{v: 2}, {a: true}],
+    [{v: 1}, {a: true}],
+    [{v: 0}, {}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Branches leading to different kinds of nodes, and one branch fanning out.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "branches into a table and an expression",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["kind == 'table'", ""]},
+      {table: "t", inputs: ["v"], outputs: ["r"], rules: [
+        ["> 0", "'positive'"],
+        ["", "'non-positive'"],
+      ]},
+      {expression: "e", fields: {r: "'expr'", v: "v"}},
+    ],
+    edges: ["input -> s", "s:0 -> t -> output", "s:1 -> e -> output"],
+  },
+  cases: [
+    [{kind: "table", v: 1}, {r: "positive"}],
+    [{kind: "table", v: 0}, {r: "non-positive"}],
+    [{kind: "expr", v: 2}, {r: "expr", v: 2}],
+    [{v: 2}, {r: "expr", v: 2}],
+  ],
+}
+
+{
+  name: "a branch into a sub-decision",
+  decisions: {
+    child: {nodes: [{expression: "inner", fields: {doubled: "v * 2"}}]},
+  },
+  graph: {
+    nodes: [
+      {switch: "s", when: ["v != null", ""]},
+      {decision: "call", key: "child"},
+      {expression: "none", fields: {doubled: "0"}},
+    ],
+    edges: ["input -> s", "s:0 -> call -> output", "s:1 -> none -> output"],
+  },
+  cases: [
+    [{v: 4}, {doubled: 8}],
+    [{v: 0}, {doubled: 0}],
+    [{}, {doubled: 0}],
+  ],
+}
+
+{
+  name: "a branch into a function node",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["useFn", ""]},
+      {function: "f", source: """export const handler = async (input) => ({ fn: true, v: input.v });"""},
+      {expression: "e", fields: {fn: "false"}},
+    ],
+    edges: ["input -> s", "s:0 -> f -> output", "s:1 -> e -> output"],
+  },
+  cases: [
+    [{useFn: true, v: 3}, {fn: true, v: 3}],
+    [{useFn: false, v: 3}, {fn: false}],
+  ],
+}
+
+{
+  name: "one branch fanning out to two nodes merges both",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["n > 0", ""]},
+      {expression: "a", fields: {a: "n"}},
+      {expression: "b", fields: {b: "n * 2"}},
+      {expression: "c", fields: {c: "'default'"}},
+    ],
+    edges: ["input -> s", "s:0 -> a -> output", "s:0 -> b -> output", "s:1 -> c -> output"],
+  },
+  cases: [
+    [{n: 2}, {a: 2, b: 4}],
+    [{n: 0}, {c: "default"}],
+  ],
+}
+
+{
+  name: "two branches leading to the same node",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["n > 10", "n > 0", ""]},
+      {expression: "shared", fields: {r: "'shared'", n: "n"}},
+      {expression: "def", fields: {r: "'default'"}},
+    ],
+    edges: ["input -> s", "s:0 -> shared -> output", "s:1 -> shared", "s:2 -> def -> output"],
+  },
+  cases: [
+    [{n: 11}, {r: "shared", n: 11}],
+    [{n: 5}, {r: "shared", n: 5}],
+    [{n: 0}, {r: "default"}],
+  ],
+}
+
+{
+  name: "branches that rejoin a common downstream node",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["vip", ""]},
+      {expression: "v", passThrough: true, fields: {discount: "0.2"}},
+      {expression: "r", passThrough: true, fields: {discount: "0.05"}},
+      {expression: "price", fields: {price: "base * (1 - discount)"}},
+    ],
+    edges: ["input -> s", "s:0 -> v -> price", "s:1 -> r -> price", "price -> output"],
+  },
+  cases: [
+    [{vip: true, base: 100}, {price: 80}],
+    [{vip: false, base: 100}, {price: 95}],
+    [{base: 10}, {price: 9.5}],
+  ],
+}
+
+{
+  name: "a node fed by both the switch input and a branch",
+  graph: {
+    nodes: [
+      {expression: "pre", fields: {pre: "n + 1"}},
+      {switch: "s", when: ["n > 0", ""]},
+      {expression: "pos", fields: {kind: "'pos'"}},
+      {expression: "neg", fields: {kind: "'neg'"}},
+      {expression: "join", fields: {both: "kind + ':' + string(pre)"}},
+    ],
+    edges: ["input -> pre -> join", "input -> s", "s:0 -> pos -> join", "s:1 -> neg -> join", "join -> output"],
+  },
+  cases: [
+    [{n: 1}, {both: "pos:2"}],
+    [{n: 0}, {both: "neg:1"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Nested switches: an inner switch only runs when its branch was taken.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "a switch inside a branch of another switch",
+  graph: {
+    nodes: [
+      {switch: "outer", when: ["age >= 18", ""]},
+      {switch: "inner", when: ["income > 50000", ""]},
+      {expression: "rich", fields: {r: "'adult-high'"}},
+      {expression: "poor", fields: {r: "'adult-low'"}},
+      {expression: "minor", fields: {r: "'minor'"}},
+    ],
+    edges: ["input -> outer", "outer:0 -> inner", "inner:0 -> rich -> output", "inner:1 -> poor -> output", "outer:1 -> minor -> output"],
+  },
+  cases: [
+    [{age: 30, income: 60000}, {r: "adult-high"}],
+    [{age: 30, income: 50000}, {r: "adult-low"}],
+    [{age: 30}, {r: "adult-low"}],
+    [{age: 10, income: 99999}, {r: "minor"}],
+    [{}, {r: "minor"}],
+  ],
+}
+
+{
+  name: "three levels of switches",
+  graph: {
+    nodes: [
+      {switch: "a", when: ["x > 0", ""]},
+      {switch: "b", when: ["y > 0", ""]},
+      {switch: "c", when: ["z > 0", ""]},
+      {expression: "ppp", fields: {r: "'+++'"}},
+      {expression: "ppn", fields: {r: "'++-'"}},
+      {expression: "pn", fields: {r: "'+-'"}},
+      {expression: "n", fields: {r: "'-'"}},
+    ],
+    edges: [
+      "input -> a",
+      "a:0 -> b", "a:1 -> n -> output",
+      "b:0 -> c", "b:1 -> pn -> output",
+      "c:0 -> ppp -> output", "c:1 -> ppn -> output",
+    ],
+  },
+  cases: [
+    [{x: 1, y: 1, z: 1}, {r: "+++"}],
+    [{x: 1, y: 1, z: 0}, {r: "++-"}],
+    [{x: 1, y: 0, z: 1}, {r: "+-"}],
+    [{x: 0, y: 1, z: 1}, {r: "-"}],
+    [{}, {r: "-"}],
+  ],
+}
+
+{
+  name: "an inner switch with no match inside a taken branch",
+  graph: {
+    nodes: [
+      {switch: "outer", when: ["go", ""]},
+      {switch: "inner", when: ["n > 0"]},
+      {expression: "pos", fields: {r: "'pos'"}},
+      {expression: "skip", fields: {r: "'skipped'"}},
+    ],
+    edges: ["input -> outer", "outer:0 -> inner", "inner:0 -> pos -> output", "outer:1 -> skip -> output"],
+  },
+  cases: [
+    [{go: true, n: 1}, {r: "pos"}],
+    [{go: true, n: 0}, {}],
+    [{go: false, n: 1}, {r: "skipped"}],
+  ],
+}
+
+{
+  name: "consecutive switches on a single path",
+  graph: {
+    nodes: [
+      {switch: "s1", when: ["a", ""]},
+      {expression: "x1", passThrough: true, fields: {first: "'a'"}},
+      {expression: "y1", passThrough: true, fields: {first: "'not a'"}},
+      {switch: "s2", when: ["b", ""]},
+      {expression: "x2", passThrough: true, fields: {second: "'b'"}},
+      {expression: "y2", passThrough: true, fields: {second: "'not b'"}},
+    ],
+    edges: [
+      "input -> s1", "s1:0 -> x1 -> s2", "s1:1 -> y1 -> s2",
+      "s2:0 -> x2 -> output", "s2:1 -> y2 -> output",
+    ],
+  },
+  cases: [
+    [{a: true, b: true}, {a: true, b: true, first: "a", second: "b"}],
+    [{a: true, b: false}, {a: true, b: false, first: "a", second: "not b"}],
+    [{a: false, b: true}, {a: false, b: true, first: "not a", second: "b"}],
+    [{}, {first: "not a", second: "not b"}],
+  ],
+}
+
+{
+  name: "the second switch routes on what the first branch wrote",
+  graph: {
+    nodes: [
+      {switch: "s1", when: ["n > 0", ""]},
+      {expression: "pos", fields: {sign: "'+'", n: "n"}},
+      {expression: "neg", fields: {sign: "'-'", n: "n"}},
+      {switch: "s2", when: ["sign == '+' and n > 100", "sign == '+'", ""]},
+      {expression: "huge", fields: {r: "'huge'"}},
+      {expression: "plus", fields: {r: "'plus'"}},
+      {expression: "rest", fields: {r: "sign"}},
+    ],
+    edges: [
+      "input -> s1", "s1:0 -> pos -> s2", "s1:1 -> neg -> s2",
+      "s2:0 -> huge -> output", "s2:1 -> plus -> output", "s2:2 -> rest -> output",
+    ],
+  },
+  cases: [
+    [{n: 101}, {r: "huge"}],
+    [{n: 1}, {r: "plus"}],
+    [{n: 0}, {r: "-"}],
+    [{n: -500}, {r: "-"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Null and missing input in conditions: a condition is taken only when it yields true.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "comparisons against missing or null fields are not taken",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["age >= 18", "age < 18", ""]},
+      {expression: "adult", fields: {r: "'adult'"}},
+      {expression: "minor", fields: {r: "'minor'"}},
+      {expression: "unknown", fields: {r: "'unknown'"}},
+    ],
+    edges: ["input -> s", "s:0 -> adult -> output", "s:1 -> minor -> output", "s:2 -> unknown -> output"],
+  },
+  cases: [
+    [{age: 18}, {r: "adult"}],
+    [{age: 17}, {r: "minor"}],
+    [{}, {r: "unknown"}],
+    [{age: null}, {r: "unknown"}],
+    [{age: "18"}, {r: "unknown"}],
+  ],
+}
+
+{
+  name: "null checks route missing values",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["v == null", "v != null"]},
+      {expression: "missing", fields: {r: "'missing'"}},
+      {expression: "present", fields: {r: "'present'"}},
+    ],
+    edges: ["input -> s", "s:0 -> missing -> output", "s:1 -> present -> output"],
+  },
+  cases: [
+    [{}, {r: "missing"}],
+    [{v: null}, {r: "missing"}],
+    [{v: 0}, {r: "present"}],
+    [{v: false}, {r: "present"}],
+    [{v: ""}, {r: "present"}],
+    [{v: []}, {r: "present"}],
+  ],
+}
+
+{
+  name: "conditions on missing nested paths",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["a.b.c == 1", "a.b == null", ""]},
+      {expression: "deep", fields: {r: "'deep'"}},
+      {expression: "nob", fields: {r: "'no b'"}},
+      {expression: "def", fields: {r: "'default'"}},
+    ],
+    edges: ["input -> s", "s:0 -> deep -> output", "s:1 -> nob -> output", "s:2 -> def -> output"],
+  },
+  cases: [
+    [{a: {b: {c: 1}}}, {r: "deep"}],
+    [{a: {b: {c: 2}}}, {r: "default"}],
+    [{a: {}}, {r: "no b"}],
+    [{}, {r: "no b"}],
+    [{a: 5}, {r: "no b"}],
+  ],
+}
+
+{
+  name: "a bare field as condition is taken only when it is true",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["flag", ""]},
+      {expression: "yes", fields: {r: "'yes'"}},
+      {expression: "no", fields: {r: "'no'"}},
+    ],
+    edges: ["input -> s", "s:0 -> yes -> output", "s:1 -> no -> output"],
+  },
+  cases: [
+    [{flag: true}, {r: "yes"}],
+    [{flag: false}, {r: "no"}],
+    [{}, {r: "no"}],
+    [{flag: null}, {r: "no"}],
+    [{flag: 1}, {r: "no"}],
+    [{flag: "true"}, {r: "no"}],
+    [{flag: [true]}, {r: "no"}],
+    [{flag: {}}, {r: "no"}],
+  ],
+}
+
+{
+  name: "a condition yielding a non-boolean is not taken",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["n", "'text'", "[1]", "n + 1", ""]},
+      {expression: "a", fields: {r: "0"}},
+      {expression: "b", fields: {r: "1"}},
+      {expression: "c", fields: {r: "2"}},
+      {expression: "d", fields: {r: "3"}},
+      {expression: "e", fields: {r: "'default'"}},
+    ],
+    edges: ["input -> s", "s:0 -> a -> output", "s:1 -> b -> output", "s:2 -> c -> output", "s:3 -> d -> output", "s:4 -> e -> output"],
+  },
+  cases: [
+    [{n: 1}, {r: "default"}],
+    [{n: 0}, {r: "default"}],
+    [{}, {r: "default"}],
+  ],
+}
+
+{
+  name: "conditions over empty or missing lists",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["items == null", "len(items) == 0", ""]},
+      {expression: "missing", fields: {r: "'missing'"}},
+      {expression: "empty", fields: {r: "'empty'"}},
+      {expression: "full", fields: {r: "'full'"}},
+    ],
+    edges: ["input -> s", "s:0 -> missing -> output", "s:1 -> empty -> output", "s:2 -> full -> output"],
+  },
+  cases: [
+    [{}, {r: "missing"}],
+    [{items: null}, {r: "missing"}],
+    [{items: []}, {r: "empty"}],
+    [{items: [1]}, {r: "full"}],
+    [{items: ""}, {r: "empty"}],
+    [{items: 5}, {r: "full"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Condition errors: an erroring condition counts as false and evaluation continues with
+// the next condition; it does not fail the graph.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "an erroring condition is skipped",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["date('nope') > 1", "n > 0", ""]},
+      {expression: "err", fields: {r: "'err'"}},
+      {expression: "pos", fields: {r: "'pos'"}},
+      {expression: "def", fields: {r: "'default'"}},
+    ],
+    edges: ["input -> s", "s:0 -> err -> output", "s:1 -> pos -> output", "s:2 -> def -> output"],
+  },
+  cases: [
+    [{n: 1}, {r: "pos"}],
+    [{n: 0}, {r: "default"}],
+  ],
+}
+
+{
+  name: "a syntax error in a condition is skipped",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["n >", "n > 0", ""]},
+      {expression: "err", fields: {r: "'err'"}},
+      {expression: "pos", fields: {r: "'pos'"}},
+      {expression: "def", fields: {r: "'default'"}},
+    ],
+    edges: ["input -> s", "s:0 -> err -> output", "s:1 -> pos -> output", "s:2 -> def -> output"],
+  },
+  cases: [
+    [{n: 1}, {r: "pos"}, "question: a condition that does not parse is silently false; no validation error is raised"],
+    [{n: 0}, {r: "default"}, "question: a condition that does not parse is silently false; no validation error is raised"],
+  ],
+}
+
+{
+  name: "a type error depending on the input is skipped",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["n + 1 > 5", ""]},
+      {expression: "big", fields: {r: "'big'"}},
+      {expression: "def", fields: {r: "'default'"}},
+    ],
+    edges: ["input -> s", "s:0 -> big -> output", "s:1 -> def -> output"],
+  },
+  cases: [
+    [{n: 5}, {r: "big"}],
+    [{n: 4}, {r: "default"}],
+    [{n: "x"}, {r: "default"}],
+    [{n: [1]}, {r: "default"}],
+    [{n: {}}, {r: "default"}],
+  ],
+}
+
+{
+  name: "an error in a chosen branch still fails the graph",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["fail", ""]},
+      {expression: "bad", fields: {r: "date('nope')"}},
+      {expression: "ok", fields: {r: "'ok'"}},
+    ],
+    edges: ["input -> s", "s:0 -> bad -> output", "s:1 -> ok -> output"],
+  },
+  cases: [
+    [{fail: true}, "!error"],
+    [{fail: false}, {r: "ok"}],
+  ],
+}
+
+{
+  name: "an error in a branch not taken does not fail the graph",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["n > 0", ""]},
+      {expression: "bad", fields: {r: "n + 'x' + date('nope')"}},
+      {custom: "boom", kind: "fail", config: {message: "should not run"}},
+      {expression: "ok", fields: {r: "'ok'"}},
+    ],
+    edges: ["input -> s", "s:0 -> ok -> output", "s:1 -> bad -> output", "s:1 -> boom -> output"],
+  },
+  cases: [
+    [{n: 1}, {r: "ok"}],
+    [{n: 0}, "!error"],
+  ],
+}

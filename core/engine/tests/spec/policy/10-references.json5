@@ -1,0 +1,556 @@
+// Reference properties (`&entity`): the input holds string ids, and the referenced entities live
+// in a top-level pool array named after the target entity (`product: [{id: "p1", ...}]`). Before
+// evaluation each id is replaced by the pool object with that `id`. Validation rejects ids that
+// are not strings or not present in the pool.
+
+// Single reference: the id resolves to the pool object, and the output shows the resolved object.
+{
+  name: "single reference resolves to the pool object",
+  policy: {
+    models: {customer: {product: "&product"}, product: {id: "string", price: "number"}},
+    blocks: [{expression: "customer.price", value: "customer.product.price"}],
+  },
+  cases: [
+    [
+      {customer: {product: "p1"}, product: [{id: "p1", price: 5}]},
+      {customer: {product: {id: "p1", price: 5}, price: 5}, product: [{id: "p1", price: 5}]},
+    ],
+    [
+      {customer: {product: "p2"}, product: [{id: "p1", price: 5}, {id: "p2", price: 7.5}]},
+      {customer: {product: {id: "p2", price: 7.5}, price: 7.5}, product: [{id: "p1", price: 5}, {id: "p2", price: 7.5}]},
+    ],
+    [
+      {customer: {product: "p1"}, product: [{id: "p1", price: 0, extra: "kept"}]},
+      {customer: {product: {id: "p1", price: 0, extra: "kept"}, price: 0}, product: [{id: "p1", price: 0, extra: "kept"}]},
+    ],
+  ],
+}
+
+// Ids that do not resolve, or are not strings, fail validation.
+{
+  name: "unresolvable single references",
+  policy: {
+    models: {customer: {product: "&product"}, product: {id: "string", price: "number"}},
+    blocks: [{expression: "customer.price", value: "customer.product.price"}],
+  },
+  cases: [
+    [{customer: {product: "p2"}, product: [{id: "p1", price: 5}]}, "!error: InputValidationFailed"],
+    [{customer: {product: "p1"}}, "!error: InputValidationFailed"],
+    [{customer: {product: "p1"}, product: []}, "!error: InputValidationFailed"],
+    [{customer: {product: 3}, product: [{id: "p1", price: 5}]}, "!error: InputValidationFailed"],
+    [{customer: {product: {id: "p1", price: 5}}, product: [{id: "p1", price: 5}]}, "!error: InputValidationFailed"],
+    [{customer: {product: ""}, product: [{id: "p1", price: 5}]}, "!error: InputValidationFailed"],
+    [{customer: {product: "P1"}, product: [{id: "p1", price: 5}]}, "!error: InputValidationFailed"],
+  ],
+}
+
+// A missing reference is a missing input when a block needs it.
+{
+  name: "missing single reference",
+  policy: {
+    models: {customer: {name: "string", product: "&product"}, product: {id: "string", price: "number"}},
+    blocks: [{expression: "customer.price", value: "customer.product.price"}],
+  },
+  cases: [
+    [{customer: {name: "a"}, product: [{id: "p1", price: 5}]}, "!error: MissingRequiredInputs"],
+    [{customer: {name: "a", product: null}, product: [{id: "p1", price: 5}]}, "!error: MissingRequiredInputs"],
+    [
+      {customer: {name: "a", product: "p1"}, product: [{id: "p1", price: 5}]},
+      {customer: {name: "a", product: {id: "p1", price: 5}, price: 5}, product: [{id: "p1", price: 5}]},
+    ],
+  ],
+}
+
+// Optional reference with a default.
+{
+  name: "optional reference with a default",
+  policy: {
+    models: {customer: {name: "string", product: "&product?"}, product: {id: "string", price: "number"}},
+    blocks: [{expression: "customer.price", value: "customer.product.price ?? 0"}],
+  },
+  cases: [
+    [{customer: {name: "a"}, product: [{id: "p1", price: 5}]}, {customer: {name: "a", price: 0}, product: [{id: "p1", price: 5}]}],
+    [{customer: {name: "a"}}, {customer: {name: "a", price: 0}}],
+    [{customer: {name: "a", product: null}}, {customer: {name: "a", product: null, price: 0}}],
+    [
+      {customer: {name: "a", product: "p1"}, product: [{id: "p1", price: 5}]},
+      {customer: {name: "a", product: {id: "p1", price: 5}, price: 5}, product: [{id: "p1", price: 5}]},
+    ],
+    [{customer: {name: "a", product: "zz"}, product: [{id: "p1", price: 5}]}, "!error: InputValidationFailed"],
+  ],
+}
+
+// The pool itself is validated as an array of the target entity.
+{
+  name: "pool validation",
+  policy: {
+    models: {customer: {product: "&product?"}, product: {id: "string", price: "number"}},
+    blocks: [{expression: "customer.has", value: "customer.product != null"}],
+  },
+  cases: [
+    [{customer: {}, product: [{id: "p1", price: 5}]}, {customer: {has: false}, product: [{id: "p1", price: 5}]}],
+    [{customer: {}, product: {id: "p1", price: 5}}, "!error: InputValidationFailed"],
+    [{customer: {}, product: [{id: "p1", price: "5"}]}, "!error: InputValidationFailed"],
+    [{customer: {}, product: [1]}, "!error: InputValidationFailed"],
+    [{customer: {}, product: [null, {id: "p1", price: 5}]}, {customer: {has: false}, product: [null, {id: "p1", price: 5}]}],
+    [{customer: {}, product: []}, {customer: {has: false}, product: []}],
+  ],
+}
+
+// Pool items without a string id cannot be referenced.
+{
+  name: "pool items need a string id",
+  policy: {
+    models: {customer: {product: "&product"}, product: {id: "string", price: "number"}},
+    blocks: [{expression: "customer.price", value: "customer.product.price"}],
+  },
+  cases: [
+    [{customer: {product: "p1"}, product: [{price: 5}]}, "!error: InputValidationFailed"],
+    [{customer: {product: "1"}, product: [{id: 1, price: 5}]}, "!error: InputValidationFailed"],
+  ],
+}
+
+// Duplicate ids in the pool: the reference resolves to one of them.
+{
+  name: "duplicate ids in the pool",
+  policy: {
+    models: {customer: {product: "&product"}, product: {id: "string", price: "number"}},
+    blocks: [{expression: "customer.price", value: "customer.product.price"}],
+  },
+  cases: [
+    [
+      {customer: {product: "p1"}, product: [{id: "p1", price: 5}, {id: "p1", price: 9}]},
+      {customer: {product: {id: "p1", price: 9}, price: 9}, product: [{id: "p1", price: 5}, {id: "p1", price: 9}]},
+      "question: duplicate pool ids are not rejected; the last pool entry wins",
+    ],
+  ],
+}
+
+// Array references resolve each id; order and repetition follow the id list, not the pool.
+{
+  name: "array reference resolves each id",
+  policy: {
+    models: {customer: {companies: "&company[]"}, company: {id: "string", revenue: "number"}},
+    blocks: [{expression: "customer.total", value: "sum(map(customer.companies, #.revenue))"}],
+  },
+  cases: [
+    [
+      {customer: {companies: ["c1", "c2"]}, company: [{id: "c1", revenue: 50}, {id: "c2", revenue: 200}, {id: "c3", revenue: 7}]},
+      {customer: {companies: [{id: "c1", revenue: 50}, {id: "c2", revenue: 200}], total: 250}, company: [{id: "c1", revenue: 50}, {id: "c2", revenue: 200}, {id: "c3", revenue: 7}]},
+    ],
+    [
+      {customer: {companies: ["c3", "c1", "c3"]}, company: [{id: "c1", revenue: 50}, {id: "c3", revenue: 7}]},
+      {customer: {companies: [{id: "c3", revenue: 7}, {id: "c1", revenue: 50}, {id: "c3", revenue: 7}], total: 64}, company: [{id: "c1", revenue: 50}, {id: "c3", revenue: 7}]},
+    ],
+    [{customer: {companies: []}, company: []}, {customer: {companies: [], total: 0}, company: []}],
+    [{customer: {companies: []}}, {customer: {companies: [], total: 0}}],
+  ],
+}
+
+// Array references with unresolvable or ill-typed ids.
+{
+  name: "array reference validation",
+  policy: {
+    models: {customer: {companies: "&company[]"}, company: {id: "string", revenue: "number"}},
+    blocks: [{expression: "customer.n", value: "len(customer.companies)"}],
+  },
+  cases: [
+    [{customer: {companies: ["c9"]}, company: [{id: "c1", revenue: 50}]}, "!error: InputValidationFailed"],
+    [{customer: {companies: ["c1"]}}, "!error: InputValidationFailed"],
+    [{customer: {companies: ["c1", 2]}, company: [{id: "c1", revenue: 50}]}, "!error: InputValidationFailed"],
+    [{customer: {companies: "c1"}, company: [{id: "c1", revenue: 50}]}, "!error: InputValidationFailed"],
+    [
+      {customer: {companies: ["c1", null]}, company: [{id: "c1", revenue: 50}]},
+      {customer: {companies: [{id: "c1", revenue: 50}, null], n: 2}, company: [{id: "c1", revenue: 50}]},
+    ],
+  ],
+}
+
+// Per-member computed on the referenced entity runs over the pool, and references see the result.
+{
+  name: "per-member computed on a referenced entity",
+  diagnostics: ["UNDEFINED_VARIABLE"],
+  policy: {
+    models: {customer: {companies: "&company[]"}, company: {id: "string", revenue: "number"}},
+    blocks: [
+      {expression: "company.big", value: "company.revenue > 100"},
+      {expression: "customer.bigCount", value: "count(customer.companies, #.big)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: ["c2"]}, company: [{id: "c1", revenue: 50}, {id: "c2", revenue: 200}]},
+      {
+        customer: {companies: [{id: "c2", revenue: 200, big: true}], bigCount: 1},
+        company: [{id: "c1", revenue: 50, big: false}, {id: "c2", revenue: 200, big: true}],
+      },
+    ],
+    [
+      {customer: {companies: []}, company: [{id: "c1", revenue: 500}]},
+      {customer: {companies: [], bigCount: 0}, company: [{id: "c1", revenue: 500, big: true}]},
+    ],
+    [
+      {customer: {companies: ["c1", "c1"]}, company: [{id: "c1", revenue: 500}]},
+      {customer: {companies: [{id: "c1", revenue: 500, big: true}, {id: "c1", revenue: 500, big: true}], bigCount: 2}, company: [{id: "c1", revenue: 500, big: true}]},
+    ],
+  ],
+}
+
+// A per-member match on the referenced entity.
+{
+  name: "per-member match on a referenced entity",
+  policy: {
+    models: {customer: {companies: "&company[]"}, company: {id: "string", revenue: "number"}},
+    blocks: [
+      {match: "company.riskLevel", arms: [["company.revenue >= 200000", "'low'"], ["", "'high'"]]},
+      {expression: "customer.totalRevenue", value: "sum(map(customer.companies as c, c.revenue))"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: ["a", "b"]}, company: [{id: "a", revenue: 300000}, {id: "b", revenue: 1}]},
+      {
+        customer: {companies: [{id: "a", revenue: 300000, riskLevel: "low"}, {id: "b", revenue: 1, riskLevel: "high"}], totalRevenue: 300001},
+        company: [{id: "a", revenue: 300000, riskLevel: "low"}, {id: "b", revenue: 1, riskLevel: "high"}],
+      },
+    ],
+    [
+      {customer: {companies: ["b"]}, company: [{id: "a", revenue: 300000}, {id: "b", revenue: 1}]},
+      {
+        customer: {companies: [{id: "b", revenue: 1, riskLevel: "high"}], totalRevenue: 1},
+        company: [{id: "a", revenue: 300000, riskLevel: "low"}, {id: "b", revenue: 1, riskLevel: "high"}],
+      },
+    ],
+  ],
+}
+
+// Reading a computed property through a single reference with a dotted path.
+{
+  name: "computed property through a single reference",
+  policy: {
+    models: {customer: {product: "&product"}, product: {id: "string", price: "number"}},
+    blocks: [
+      {expression: "product.gross", value: "product.price * 2"},
+      {expression: "customer.gross", value: "customer.product.gross"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {product: "p1"}, product: [{id: "p1", price: 5}, {id: "p2", price: 1}]},
+      {customer: {product: {id: "p1", price: 5, gross: 10}, gross: 10}, product: [{id: "p1", price: 5, gross: 10}, {id: "p2", price: 1, gross: 2}]},
+      "bug: the required-input check treats customer.product.gross as an input path and fails with MissingRequiredInputs although product.gross is computed for every pool entry",
+    ],
+    [
+      {customer: {product: "p2"}, product: [{id: "p1", price: 5}, {id: "p2", price: 1}]},
+      {customer: {product: {id: "p2", price: 1, gross: 2}, gross: 2}, product: [{id: "p1", price: 5, gross: 10}, {id: "p2", price: 1, gross: 2}]},
+      "bug: computed properties are not readable through a single reference (MissingRequiredInputs)",
+    ],
+  ],
+}
+
+// Reading computed properties of referenced members through a closure. The read is not tracked as
+// a dependency on the target's computed property, so the order falls back to something
+// name-dependent: `company` sorts before `customer` and happens to work, `product` does not.
+{
+  name: "computed property through a reference array closure",
+  diagnostics: ["UNDEFINED_VARIABLE"],
+  policy: {
+    models: {customer: {products: "&product[]"}, product: {id: "string", price: "number"}},
+    blocks: [
+      {expression: "product.gross", value: "product.price * 2"},
+      {expression: "customer.gross", value: "map(customer.products, #.gross)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {products: ["p1", "p2"]}, product: [{id: "p1", price: 5}, {id: "p2", price: 1}]},
+      {customer: {products: [{id: "p1", price: 5, gross: 10}, {id: "p2", price: 1, gross: 2}], gross: [10, 2]}, product: [{id: "p1", price: 5, gross: 10}, {id: "p2", price: 1, gross: 2}]},
+      "bug: customer.gross runs before product.gross (reads of referenced members' computed properties are not dependencies) and maps to [null, null]",
+    ],
+    [
+      {customer: {products: []}, product: [{id: "p1", price: 5}]},
+      {customer: {products: [], gross: []}, product: [{id: "p1", price: 5, gross: 10}]},
+    ],
+    {
+      input: {customer: {products: ["p1"]}, product: [{id: "p1", price: 5}]},
+      goals: ["customer.gross"],
+      output: {customer: {products: [{id: "p1", price: 5, gross: 10}], gross: [10]}, product: [{id: "p1", price: 5, gross: 10}]},
+      note: "bug: with a goal, product.gross is not demanded at all, so the referenced members never get it",
+    },
+  ],
+}
+
+// The same shape with an entity name that sorts before the reader.
+{
+  name: "computed property through a reference array closure, early-sorting target",
+  diagnostics: ["UNDEFINED_VARIABLE"],
+  policy: {
+    models: {customer: {companies: "&company[]"}, company: {id: "string", revenue: "number"}},
+    blocks: [
+      {expression: "company.gross", value: "company.revenue * 2"},
+      {expression: "customer.gross", value: "sum(map(customer.companies, #.gross))"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: ["p1", "p2"]}, company: [{id: "p1", revenue: 5}, {id: "p2", revenue: 1}]},
+      {customer: {companies: [{id: "p1", revenue: 5, gross: 10}, {id: "p2", revenue: 1, gross: 2}], gross: 12}, company: [{id: "p1", revenue: 5, gross: 10}, {id: "p2", revenue: 1, gross: 2}]},
+    ],
+    [
+      {customer: {companies: []}, company: [{id: "p1", revenue: 5}]},
+      {customer: {companies: [], gross: 0}, company: [{id: "p1", revenue: 5, gross: 10}]},
+    ],
+  ],
+}
+
+// Through a relationship (not a reference) the same read is ordered correctly.
+{
+  name: "computed property through a relationship closure for comparison",
+  policy: {
+    models: {customer: {products: "product[]"}, product: {price: "number"}},
+    blocks: [
+      {expression: "product.gross", value: "product.price * 2"},
+      {expression: "customer.gross", value: "map(customer.products, #.gross)"},
+    ],
+  },
+  cases: [
+    [{customer: {products: [{price: 5}, {price: 1}]}}, {customer: {products: [{price: 5, gross: 10}, {price: 1, gross: 2}], gross: [10, 2]}}],
+    [{customer: {products: []}}, {customer: {products: [], gross: []}}],
+  ],
+}
+
+// A computed on the referencing entity combines its own fields with the referenced object.
+{
+  name: "referencing entity combines own and referenced fields",
+  policy: {
+    models: {customer: {qty: "number", product: "&product"}, product: {id: "string", price: "number"}},
+    blocks: [
+      {expression: "customer.total", value: "customer.qty * customer.product.price"},
+      {match: "customer.band", arms: [["customer.total >= 100", "'high'"], ["", "'low'"]]},
+    ],
+  },
+  cases: [
+    [
+      {customer: {qty: 3, product: "p1"}, product: [{id: "p1", price: 50}]},
+      {customer: {qty: 3, product: {id: "p1", price: 50}, total: 150, band: "high"}, product: [{id: "p1", price: 50}]},
+    ],
+    [
+      {customer: {qty: 1, product: "p1"}, product: [{id: "p1", price: 50}]},
+      {customer: {qty: 1, product: {id: "p1", price: 50}, total: 50, band: "low"}, product: [{id: "p1", price: 50}]},
+    ],
+    [
+      {customer: {qty: 0, product: "p1"}, product: [{id: "p1", price: 50}]},
+      {customer: {qty: 0, product: {id: "p1", price: 50}, total: 0, band: "low"}, product: [{id: "p1", price: 50}]},
+    ],
+  ],
+}
+
+// A table input reads through a reference.
+{
+  name: "table input through a reference",
+  policy: {
+    models: {customer: {product: "&product"}, product: {id: "string", category: "string"}},
+    blocks: [
+      {table: "t", inputs: ["customer.product.category"], outputs: ["customer.discount"], rules: [
+        ["'food'", "0.1"],
+        ["'tech'", "0.2"],
+        ["", "0"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {customer: {product: "a"}, product: [{id: "a", category: "food"}, {id: "b", category: "tech"}]},
+      {customer: {product: {id: "a", category: "food"}, discount: 0.1}, product: [{id: "a", category: "food"}, {id: "b", category: "tech"}]},
+    ],
+    [
+      {customer: {product: "b"}, product: [{id: "a", category: "food"}, {id: "b", category: "tech"}]},
+      {customer: {product: {id: "b", category: "tech"}, discount: 0.2}, product: [{id: "a", category: "food"}, {id: "b", category: "tech"}]},
+    ],
+    [
+      {customer: {product: "c"}, product: [{id: "c", category: "toys"}]},
+      {customer: {product: {id: "c", category: "toys"}, discount: 0}, product: [{id: "c", category: "toys"}]},
+    ],
+  ],
+}
+
+// References from members of an array relationship: validation checks the ids against the pool,
+// but hydration only visits `<entity>.<property>` at the input root, so a member's reference stays
+// an id string.
+{
+  name: "reference inside relationship members",
+  policy: {
+    models: {
+      customer: {companies: "company[]"},
+      company: {name: "string", bank: "&bank"},
+      bank: {id: "string", rating: "number"},
+    },
+    blocks: [{expression: "company.bankRating", value: "company.bank.rating"}],
+  },
+  cases: [
+    [
+      {customer: {companies: [{name: "a", bank: "b1"}]}, bank: [{id: "b1", rating: 3}]},
+      {customer: {companies: [{name: "a", bank: {id: "b1", rating: 3}, bankRating: 3}]}, bank: [{id: "b1", rating: 3}]},
+      "bug: a reference inside a relationship member is validated against the pool but never resolved; company.bank stays \"b1\" and bankRating is null",
+    ],
+    [
+      {customer: {companies: [{name: "a", bank: "b2"}, {name: "b", bank: "b1"}]}, bank: [{id: "b1", rating: 3}, {id: "b2", rating: 9}]},
+      {customer: {companies: [{name: "a", bank: {id: "b2", rating: 9}, bankRating: 9}, {name: "b", bank: {id: "b1", rating: 3}, bankRating: 3}]}, bank: [{id: "b1", rating: 3}, {id: "b2", rating: 9}]},
+      "bug: member references are not hydrated (only root-entity reference fields are)",
+    ],
+    [{customer: {companies: [{name: "a", bank: "zz"}]}, bank: [{id: "b1", rating: 3}]}, "!error: InputValidationFailed"],
+  ],
+}
+
+// A referenced entity that is also reachable by a relationship: the relationship is the source.
+{
+  name: "entity both referenced and related",
+  policy: {
+    models: {
+      customer: {companies: "company[]", favorite: "&company?"},
+      company: {id: "string", revenue: "number"},
+    },
+    blocks: [
+      {expression: "company.big", value: "company.revenue > 100"},
+      {expression: "customer.bigCount", value: "count(customer.companies, #.big)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{id: "c1", revenue: 500}, {id: "c2", revenue: 1}]}},
+      {customer: {companies: [{id: "c1", revenue: 500, big: true}, {id: "c2", revenue: 1, big: false}], bigCount: 1}},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: [], bigCount: 0}}],
+    [
+      {customer: {companies: [{id: "c1", revenue: 500}], favorite: "c1"}, company: [{id: "c1", revenue: 500}]},
+      {customer: {companies: [{id: "c1", revenue: 500, big: true}], favorite: {id: "c1", revenue: 500}, bigCount: 1}, company: [{id: "c1", revenue: 500}]},
+      "question: per-member blocks follow the relationship source (customer.companies), so the resolved reference and the pool do not get the computed property",
+    ],
+  ],
+}
+
+// Two references to the same target from one entity.
+{
+  name: "two references to the same pool",
+  policy: {
+    models: {order: {from: "&city", to: "&city"}, city: {id: "string", x: "number"}},
+    blocks: [{expression: "order.distance", value: "abs(order.to.x - order.from.x)"}],
+  },
+  cases: [
+    [
+      {order: {from: "a", to: "b"}, city: [{id: "a", x: 1}, {id: "b", x: 4}]},
+      {order: {from: {id: "a", x: 1}, to: {id: "b", x: 4}, distance: 3}, city: [{id: "a", x: 1}, {id: "b", x: 4}]},
+    ],
+    [
+      {order: {from: "b", to: "a"}, city: [{id: "a", x: 1}, {id: "b", x: 4}]},
+      {order: {from: {id: "b", x: 4}, to: {id: "a", x: 1}, distance: 3}, city: [{id: "a", x: 1}, {id: "b", x: 4}]},
+    ],
+    [
+      {order: {from: "a", to: "a"}, city: [{id: "a", x: 1}]},
+      {order: {from: {id: "a", x: 1}, to: {id: "a", x: 1}, distance: 0}, city: [{id: "a", x: 1}]},
+    ],
+  ],
+}
+
+// A reference whose target is an entity with a date property: pool dates are converted.
+{
+  name: "referenced entity with a date property",
+  policy: {
+    models: {customer: {policy: "&insurance"}, insurance: {id: "string", start: "date"}},
+    blocks: [{expression: "customer.startYear", value: "year(customer.policy.start)"}],
+  },
+  cases: [
+    [
+      {customer: {policy: "i1"}, insurance: [{id: "i1", start: "2020-05-01"}]},
+      {customer: {policy: {id: "i1", start: date("2020-05-01")}, startYear: 2020}, insurance: [{id: "i1", start: date("2020-05-01")}]},
+    ],
+    [{customer: {policy: "i1"}, insurance: [{id: "i1", start: "not a date"}]}, "!error: InputValidationFailed"],
+  ],
+}
+
+// Optional array reference: absent lists default with `??`.
+{
+  name: "optional array reference",
+  policy: {
+    models: {customer: {name: "string", companies: "&company[]?"}, company: {id: "string", revenue: "number"}},
+    blocks: [{expression: "customer.total", value: "sum(map(customer.companies ?? [], #.revenue))"}],
+  },
+  cases: [
+    [{customer: {name: "a"}}, {customer: {name: "a", total: 0}}],
+    [{customer: {name: "a", companies: null}}, {customer: {name: "a", companies: null, total: 0}}],
+    [
+      {customer: {name: "a", companies: ["c1"]}, company: [{id: "c1", revenue: 4}]},
+      {customer: {name: "a", companies: [{id: "c1", revenue: 4}], total: 4}, company: [{id: "c1", revenue: 4}]},
+    ],
+    [{customer: {name: "a", companies: ["c1"]}, company: []}, "!error: InputValidationFailed"],
+  ],
+}
+
+// Index access and filters on resolved reference arrays.
+{
+  name: "index and filter over resolved references",
+  policy: {
+    models: {customer: {companies: "&company[]"}, company: {id: "string", revenue: "number"}},
+    blocks: [
+      {expression: "customer.firstRevenue", value: "customer.companies[0].revenue"},
+      {expression: "customer.bigIds", value: "map(filter(customer.companies, #.revenue > 10), #.id)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: ["b", "a"]}, company: [{id: "a", revenue: 50}, {id: "b", revenue: 5}]},
+      {customer: {companies: [{id: "b", revenue: 5}, {id: "a", revenue: 50}], firstRevenue: 5, bigIds: ["a"]}, company: [{id: "a", revenue: 50}, {id: "b", revenue: 5}]},
+    ],
+    [
+      {customer: {companies: []}, company: [{id: "a", revenue: 50}]},
+      {customer: {companies: [], firstRevenue: null, bigIds: []}, company: [{id: "a", revenue: 50}]},
+    ],
+    [
+      {customer: {companies: ["a", "a"]}, company: [{id: "a", revenue: 50}]},
+      {customer: {companies: [{id: "a", revenue: 50}, {id: "a", revenue: 50}], firstRevenue: 50, bigIds: ["a", "a"]}, company: [{id: "a", revenue: 50}]},
+    ],
+  ],
+}
+
+// Goals over a reference read.
+{
+  name: "goals with references",
+  policy: {
+    models: {customer: {qty: "number", product: "&product"}, product: {id: "string", price: "number"}},
+    blocks: [
+      {expression: "customer.total", value: "customer.qty * customer.product.price"},
+      {expression: "customer.big", value: "customer.qty > 10"},
+    ],
+  },
+  cases: [
+    {
+      input: {customer: {qty: 2, product: "p"}, product: [{id: "p", price: 3}]},
+      goals: ["customer.total"],
+      output: {customer: {qty: 2, product: {id: "p", price: 3}, total: 6}, product: [{id: "p", price: 3}]},
+    },
+    {
+      input: {customer: {qty: 20}},
+      goals: ["customer.big"],
+      output: {customer: {qty: 20, big: true}},
+    },
+    {
+      input: {customer: {qty: 20, product: "zz"}, product: [{id: "p", price: 3}]},
+      goals: ["customer.big"],
+      output: "!error: InputValidationFailed",
+    },
+  ],
+}
+
+// The pool is plain input: blocks may read it directly.
+{
+  name: "pool read directly",
+  diagnostics: ["INVALID_EXPRESSION", "UNREACHABLE_ENTITY_READ"],
+  policy: {
+    models: {customer: {product: "&product?"}, product: {id: "string", price: "number"}},
+    blocks: [{expression: "catalogSize", value: "len(product)"}],
+  },
+  cases: [
+    [{customer: {}, product: [{id: "a", price: 1}, {id: "b", price: 2}]}, {customer: {}, product: [{id: "a", price: 1}, {id: "b", price: 2}], catalogSize: 2}],
+    [{customer: {}, product: []}, {customer: {}, product: [], catalogSize: 0}],
+  ],
+}

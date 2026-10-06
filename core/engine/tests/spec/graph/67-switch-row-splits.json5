@@ -1,0 +1,1072 @@
+// Collect switches whose rows split across many branch combinations. Every true condition
+// routes, so one suite's cases take different subsets of branches; the compiled engine groups
+// rows by their condition outcome set and evaluates each group's child segment once, which is
+// what these suites stress: many outcome sets per suite, conditions over earlier node outputs,
+// joins reading `$nodes` of branches that ran or not, and row-specific errors.
+
+
+// ---------------------------------------------------------------------------------------
+// Independent conditions over separate fields: every outcome set is its own group.
+// ---------------------------------------------------------------------------------------
+
+
+{
+  name: "three conditions over three fields, all eight combinations",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["a > 0", "b == 'y'", "c"]},
+      {expression: "na", fields: {ka: "a * 10"}},
+      {expression: "nb", fields: {kb: "'B'"}},
+      {expression: "nc", fields: {kc: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> na -> output", "s:1 -> nb -> output", "s:2 -> nc -> output"],
+  },
+  cases: [
+    [{a: 5, b: "y", c: true}, {ka: 50, kb: "B", kc: true}],
+    [{a: 5, b: "y", c: false}, {ka: 50, kb: "B"}],
+    [{a: 5, b: "n", c: true}, {ka: 50, kc: true}],
+    [{a: 5, b: "n", c: false}, {ka: 50}],
+    [{a: -1, b: "y", c: true}, {kb: "B", kc: true}],
+    [{a: -1, b: "y", c: false}, {kb: "B"}],
+    [{a: -1, b: "n", c: true}, {kc: true}],
+    [{a: -1, b: "n", c: false}, {}],
+    [{}, {}],
+    [{a: 3}, {ka: 30}],
+    [{b: "y", c: true}, {kb: "B", kc: true}],
+    [{a: null, b: null, c: null}, {}],
+    [{a: 1, b: "Y", c: "true"}, {ka: 10}],
+    [{a: 0, b: "y", c: true}, {kb: "B", kc: true}],
+  ],
+}
+
+// Overlapping ranges: the outcome set is a function of one value; neighbouring values land in
+// different groups.
+{
+  name: "four overlapping conditions over one number",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["n > 0", "n > 10", "n % 2 == 0", "n < 100"]},
+      {expression: "p", fields: {pos: "n + 1"}},
+      {expression: "b", fields: {big: "n - 10"}},
+      {expression: "e", fields: {even: "n / 2"}},
+      {expression: "m", fields: {small: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> p -> output", "s:1 -> b -> output", "s:2 -> e -> output", "s:3 -> m -> output"],
+  },
+  cases: [
+    [{n: -6}, {even: -3, small: true}],
+    [{n: -5}, {small: true}],
+    [{n: 0}, {even: 0, small: true}],
+    [{n: 1}, {pos: 2, small: true}],
+    [{n: 2}, {pos: 3, even: 1, small: true}],
+    [{n: 7}, {pos: 8, small: true}],
+    [{n: 10}, {pos: 11, even: 5, small: true}],
+    [{n: 11}, {pos: 12, big: 1, small: true}],
+    [{n: 12}, {pos: 13, big: 2, even: 6, small: true}],
+    [{n: 99}, {pos: 100, big: 89, small: true}],
+    [{n: 100}, {pos: 101, big: 90, even: 50}],
+    [{n: 101}, {pos: 102, big: 91}],
+    [{n: 150}, {pos: 151, big: 140, even: 75}],
+    [{n: 3}, {pos: 4, small: true}],
+  ],
+}
+
+// Thirty outcome sets in one suite. Each branch adds one key under `hit`, merged deeply.
+{
+  name: "five flags, thirty of the thirty-two combinations, branches nest under one key",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["f0", "f1", "f2", "f3", "f4"]},
+      {expression: "n0", fields: {"hit.b0": "true", id0: "id"}},
+      {expression: "n1", fields: {"hit.b1": "true"}},
+      {expression: "n2", fields: {"hit.b2": "true"}},
+      {expression: "n3", fields: {"hit.b3": "true"}},
+      {expression: "n4", fields: {"hit.b4": "true", id4: "id * 2"}},
+    ],
+    edges: ["input -> s", "s:0 -> n0 -> output", "s:1 -> n1 -> output", "s:2 -> n2 -> output", "s:3 -> n3 -> output", "s:4 -> n4 -> output"],
+  },
+  cases: [
+    [{f0: false, f1: false, f2: false, f3: false, f4: false, id: 0}, {}],
+    [{f0: false, f1: false, f2: false, f3: false, f4: true, id: 1}, {hit: {b4: true}, id4: 2}],
+    [{f0: false, f1: false, f2: false, f3: true, f4: false, id: 2}, {hit: {b3: true}}],
+    [{f0: false, f1: false, f2: false, f3: true, f4: true, id: 3}, {hit: {b3: true, b4: true}, id4: 6}],
+    [{f0: false, f1: false, f2: true, f3: false, f4: false, id: 4}, {hit: {b2: true}}],
+    [{f0: false, f1: false, f2: true, f3: false, f4: true, id: 5}, {hit: {b2: true, b4: true}, id4: 10}],
+    [{f0: false, f1: false, f2: true, f3: true, f4: false, id: 6}, {hit: {b2: true, b3: true}}],
+    [{f0: false, f1: false, f2: true, f3: true, f4: true, id: 7}, {hit: {b2: true, b3: true, b4: true}, id4: 14}],
+    [{f0: false, f1: true, f2: false, f3: false, f4: false, id: 8}, {hit: {b1: true}}],
+    [{f0: false, f1: true, f2: false, f3: false, f4: true, id: 9}, {hit: {b1: true, b4: true}, id4: 18}],
+    [{f0: false, f1: true, f2: false, f3: true, f4: false, id: 10}, {hit: {b1: true, b3: true}}],
+    [{f0: false, f1: true, f2: true, f3: false, f4: false, id: 11}, {hit: {b1: true, b2: true}}],
+    [{f0: false, f1: true, f2: true, f3: false, f4: true, id: 12}, {hit: {b1: true, b2: true, b4: true}, id4: 24}],
+    [{f0: false, f1: true, f2: true, f3: true, f4: false, id: 13}, {hit: {b1: true, b2: true, b3: true}}],
+    [{f0: false, f1: true, f2: true, f3: true, f4: true, id: 14}, {hit: {b1: true, b2: true, b3: true, b4: true}, id4: 28}],
+    [{f0: true, f1: false, f2: false, f3: false, f4: false, id: 15}, {hit: {b0: true}, id0: 15}],
+    [{f0: true, f1: false, f2: false, f3: false, f4: true, id: 16}, {hit: {b0: true, b4: true}, id0: 16, id4: 32}],
+    [{f0: true, f1: false, f2: false, f3: true, f4: false, id: 17}, {hit: {b0: true, b3: true}, id0: 17}],
+    [{f0: true, f1: false, f2: false, f3: true, f4: true, id: 18}, {hit: {b0: true, b3: true, b4: true}, id0: 18, id4: 36}],
+    [{f0: true, f1: false, f2: true, f3: false, f4: false, id: 19}, {hit: {b0: true, b2: true}, id0: 19}],
+    [{f0: true, f1: false, f2: true, f3: false, f4: true, id: 20}, {hit: {b0: true, b2: true, b4: true}, id0: 20, id4: 40}],
+    [{f0: true, f1: false, f2: true, f3: true, f4: true, id: 21}, {hit: {b0: true, b2: true, b3: true, b4: true}, id0: 21, id4: 42}],
+    [{f0: true, f1: true, f2: false, f3: false, f4: false, id: 22}, {hit: {b0: true, b1: true}, id0: 22}],
+    [{f0: true, f1: true, f2: false, f3: false, f4: true, id: 23}, {hit: {b0: true, b1: true, b4: true}, id0: 23, id4: 46}],
+    [{f0: true, f1: true, f2: false, f3: true, f4: false, id: 24}, {hit: {b0: true, b1: true, b3: true}, id0: 24}],
+    [{f0: true, f1: true, f2: false, f3: true, f4: true, id: 25}, {hit: {b0: true, b1: true, b3: true, b4: true}, id0: 25, id4: 50}],
+    [{f0: true, f1: true, f2: true, f3: false, f4: false, id: 26}, {hit: {b0: true, b1: true, b2: true}, id0: 26}],
+    [{f0: true, f1: true, f2: true, f3: false, f4: true, id: 27}, {hit: {b0: true, b1: true, b2: true, b4: true}, id0: 27, id4: 54}],
+    [{f0: true, f1: true, f2: true, f3: true, f4: false, id: 28}, {hit: {b0: true, b1: true, b2: true, b3: true}, id0: 28}],
+    [{f0: true, f1: true, f2: true, f3: true, f4: true, id: 29}, {hit: {b0: true, b1: true, b2: true, b3: true, b4: true}, id0: 29, id4: 58}],
+  ],
+}
+
+// A default branch in the middle under collect: always taken, so it never creates a new
+// group but rides along with every one. A null `base` is dropped from the output.
+{
+  name: "three conditions and a default branch: the default joins every group",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["x > 1", "", "x > 2", "tag == 'z'"]},
+      {expression: "a", fields: {gt1: "true"}},
+      {expression: "d", fields: {base: "x"}},
+      {expression: "b", fields: {gt2: "true"}},
+      {expression: "z", fields: {zed: "tag"}},
+    ],
+    edges: ["input -> s", "s:0 -> a -> output", "s:1 -> d -> output", "s:2 -> b -> output", "s:3 -> z -> output"],
+  },
+  cases: [
+    [{x: 0}, {base: 0}],
+    [{x: 2}, {base: 2, gt1: true}],
+    [{x: 3}, {base: 3, gt1: true, gt2: true}],
+    [{x: 3, tag: "z"}, {base: 3, gt1: true, gt2: true, zed: "z"}],
+    [{tag: "z"}, {zed: "z"}],
+    [{}, {}],
+    [{x: null, tag: null}, {}],
+    [{x: "5", tag: "z"}, {base: "5", zed: "z"}],
+    [{x: 2, tag: "y"}, {base: 2, gt1: true}],
+    [{x: 100}, {base: 100, gt1: true, gt2: true}],
+  ],
+}
+
+
+// ---------------------------------------------------------------------------------------
+// Conflicting writes per combination. On a key written by several taken branches the
+// branch whose edge into the merge point was declared first wins (see 09).
+// ---------------------------------------------------------------------------------------
+
+
+{
+  name: "three branches writing one key: the earliest declared edge wins in every combination",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["a", "b", "c"]},
+      {expression: "A", fields: {who: "'A'", a: "true"}},
+      {expression: "B", fields: {who: "'B'", b: "true"}},
+      {expression: "C", fields: {who: "'C'", c: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> A -> output", "s:1 -> B -> output", "s:2 -> C -> output"],
+  },
+  cases: [
+    [{a: true, b: true, c: true}, {a: true, b: true, c: true, who: "A"}],
+    [{a: true, b: true, c: false}, {a: true, b: true, who: "A"}],
+    [{a: true, b: false, c: true}, {a: true, c: true, who: "A"}],
+    [{a: true, b: false, c: false}, {a: true, who: "A"}],
+    [{a: false, b: true, c: true}, {b: true, c: true, who: "B"}],
+    [{a: false, b: true, c: false}, {b: true, who: "B"}],
+    [{a: false, b: false, c: true}, {c: true, who: "C"}],
+    [{a: false, b: false, c: false}, {}],
+  ],
+}
+
+{
+  name: "the same switch with edges into the output declared in reverse",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["a", "b", "c"]},
+      {expression: "A", fields: {who: "'A'", a: "true"}},
+      {expression: "B", fields: {who: "'B'", b: "true"}},
+      {expression: "C", fields: {who: "'C'", c: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> A", "s:1 -> B", "s:2 -> C", "C -> output", "B -> output", "A -> output"],
+  },
+  cases: [
+    [{a: true, b: true, c: true}, {a: true, b: true, c: true, who: "C"}],
+    [{a: true, b: true, c: false}, {a: true, b: true, who: "B"}],
+    [{a: true, b: false, c: true}, {a: true, c: true, who: "C"}],
+    [{a: true, b: false, c: false}, {a: true, who: "A"}],
+    [{a: false, b: true, c: true}, {b: true, c: true, who: "C"}],
+    [{a: false, b: true, c: false}, {b: true, who: "B"}],
+    [{a: false, b: false, c: true}, {c: true, who: "C"}],
+    [{a: false, b: false, c: false}, {}],
+  ],
+}
+
+{
+  name: "a null written by the winning branch removes the other branch's value",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["q", "p"]},
+      {expression: "Q", fields: {v: "null", q: "true"}},
+      {expression: "P", fields: {v: "'p'"}},
+    ],
+    edges: ["input -> s", "s:0 -> Q -> output", "s:1 -> P -> output"],
+  },
+  cases: [
+    [{p: true, q: true}, {q: true}],
+    [{p: true, q: false}, {v: "p"}],
+    [{p: false, q: true}, {q: true}],
+    [{p: false, q: false}, {}],
+    [{}, {}],
+  ],
+}
+
+
+// ---------------------------------------------------------------------------------------
+// Conditions that read earlier node outputs: the switch input is a computed object, and
+// `$nodes` gives access to nodes further back, including the request.
+// ---------------------------------------------------------------------------------------
+
+
+// The switch input is `pre`'s output only; branches reach the request through `$nodes.input`.
+{
+  name: "conditions read flags an earlier expression node computed",
+  graph: {
+    nodes: [
+      {expression: "pre", fields: {risky: "(amount ?? 0) > 1000", foreign: "country != 'US'", vip: "vip == true"}},
+      {switch: "s", hit: "collect", when: ["risky", "foreign", "vip", "risky and vip"]},
+      {expression: "r", fields: {review: "$nodes.input.amount"}},
+      {expression: "f", fields: {fx: "$nodes.input.country"}},
+      {expression: "v", fields: {perk: "'lounge'"}},
+      {expression: "x", fields: {fast: "vip and risky"}},
+    ],
+    edges: ["input -> pre -> s", "s:0 -> r -> output", "s:1 -> f -> output", "s:2 -> v -> output", "s:3 -> x -> output"],
+  },
+  cases: [
+    [{amount: 50, country: "US", vip: false}, {}],
+    [{amount: 5000, country: "US", vip: false}, {review: 5000}],
+    [{amount: 50, country: "DE", vip: false}, {fx: "DE"}],
+    [{amount: 50, country: "US", vip: true}, {perk: "lounge"}],
+    [{amount: 5000, country: "DE", vip: false}, {review: 5000, fx: "DE"}],
+    [{amount: 5000, country: "US", vip: true}, {review: 5000, perk: "lounge", fast: true}],
+    [{amount: 50, country: "FR", vip: true}, {fx: "FR", perk: "lounge"}],
+    [{amount: 5000, country: "JP", vip: true}, {review: 5000, fx: "JP", perk: "lounge", fast: true}],
+    [{amount: 1000, country: "US", vip: true}, {perk: "lounge"}],
+    [{country: "US"}, {}],
+    [{amount: 1001}, {review: 1001}],
+    [{amount: null, country: null, vip: null}, {}],
+  ],
+}
+
+{
+  name: "conditions read an earlier table's band and the request through $nodes.input",
+  graph: {
+    nodes: [
+      {table: "band", inputs: ["score"], outputs: ["band"], rules: [[">= 80", "'A'"], [">= 50", "'B'"], ["", "'C'"]]},
+      {switch: "s", hit: "collect", when: ["band == 'A'", "band in ['A', 'B']", "$nodes.input.late == true", "band == 'C' and $nodes.input.late == true"]},
+      {expression: "g", fields: {gold: "true"}},
+      {expression: "e", fields: {eligible: "band"}},
+      {expression: "p", fields: {penalty: "5"}},
+      {expression: "x", fields: {reject: "true"}},
+    ],
+    edges: ["input -> band -> s", "s:0 -> g -> output", "s:1 -> e -> output", "s:2 -> p -> output", "s:3 -> x -> output"],
+  },
+  cases: [
+    [{score: 90, late: false}, {gold: true, eligible: "A"}],
+    [{score: 90, late: true}, {gold: true, eligible: "A", penalty: 5}],
+    [{score: 60, late: false}, {eligible: "B"}],
+    [{score: 60, late: true}, {eligible: "B", penalty: 5}],
+    [{score: 10, late: false}, {}],
+    [{score: 10, late: true}, {penalty: 5, reject: true}],
+    [{late: true}, {penalty: 5, reject: true}],
+    [{}, {}],
+    [{score: "high", late: true}, {penalty: 5, reject: true}],
+    [{score: 80}, {gold: true, eligible: "A"}],
+    [{score: 50, late: true}, {eligible: "B", penalty: 5}],
+    [{score: 49}, {}],
+  ],
+}
+
+{
+  name: "conditions over the merged outputs of two parallel nodes and $nodes of one of them",
+  graph: {
+    nodes: [
+      {expression: "p1", fields: {dbl: "x * 2"}},
+      {expression: "p2", fields: {neg: "-y"}},
+      {switch: "s", hit: "collect", when: ["dbl > 10", "$nodes.p2.neg < 0", "dbl + neg == 0", ""]},
+      {expression: "a", fields: {big: "$nodes.p1.dbl"}},
+      {expression: "b", fields: {ypos: "true"}},
+      {expression: "c", fields: {balanced: "true"}},
+      {expression: "d", fields: {seen: "dbl"}},
+    ],
+    edges: ["input -> p1 -> s", "input -> p2 -> s", "s:0 -> a -> output", "s:1 -> b -> output", "s:2 -> c -> output", "s:3 -> d -> output"],
+  },
+  cases: [
+    [{x: 1, y: 2}, {ypos: true, balanced: true, seen: 2}],
+    [{x: 6, y: 12}, {big: 12, ypos: true, balanced: true, seen: 12}],
+    [{x: 6, y: 0}, {big: 12, seen: 12}],
+    [{x: 0, y: 0}, {balanced: true, seen: 0}],
+    [{x: -3, y: -6}, {balanced: true, seen: -6}],
+    [{x: 10, y: 1}, {big: 20, ypos: true, seen: 20}],
+    [{x: 2, y: -1}, {seen: 4}],
+    [{x: 5, y: 10}, {ypos: true, balanced: true, seen: 10}],
+    [{x: 7, y: 14}, {big: 14, ypos: true, balanced: true, seen: 14}],
+    [{x: 3, y: 3}, {ypos: true, seen: 6}],
+  ],
+}
+
+{
+  name: "conditions read request fields a non-passThrough node dropped",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {total: "qty * price"}},
+      {switch: "s", hit: "collect", when: ["total > 100", "$nodes.input.coupon != null", "$nodes.input.qty > 10", ""]},
+      {expression: "a", fields: {bulk: "true"}},
+      {expression: "b", fields: {coupon: "$nodes.input.coupon"}},
+      {expression: "c", fields: {qtyNote: "$nodes.input.qty"}},
+      {expression: "d", fields: {total: "total"}},
+    ],
+    edges: ["input -> calc -> s", "s:0 -> a -> output", "s:1 -> b -> output", "s:2 -> c -> output", "s:3 -> d -> output"],
+  },
+  cases: [
+    [{qty: 1, price: 10}, {total: 10}],
+    [{qty: 20, price: 10}, {total: 200, bulk: true, qtyNote: 20}],
+    [{qty: 20, price: 1}, {total: 20, qtyNote: 20}],
+    [{qty: 2, price: 100, coupon: "C1"}, {total: 200, bulk: true, coupon: "C1"}],
+    [{qty: 11, price: 1, coupon: "X"}, {total: 11, coupon: "X", qtyNote: 11}],
+    [{qty: 50, price: 50, coupon: "Y"}, {total: 2500, bulk: true, coupon: "Y", qtyNote: 50}],
+    [{qty: 5, price: 20}, {total: 100}],
+    [{qty: 0, price: 5, coupon: null}, {total: 0}],
+  ],
+}
+
+
+// ---------------------------------------------------------------------------------------
+// A join after collect branches: it runs on the merged outputs of the branches that were
+// taken and reads `$nodes` of all of them, null for the ones that were not.
+// ---------------------------------------------------------------------------------------
+
+
+// `v` on the join input is the merged value: the earliest declared edge into the join wins.
+// With no branch taken the join is not reached and the result is empty.
+{
+  name: "a join reads $nodes of four branches in thirteen combinations",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["a", "b", "c", "d"]},
+      {expression: "A", fields: {v: "'a'", w: "1"}},
+      {expression: "B", fields: {v: "'b'", w: "2"}},
+      {expression: "C", fields: {v: "'c'", w: "4"}},
+      {expression: "D", fields: {v: "'d'", w: "8"}},
+      {expression: "join", fields: {mask: "($nodes.A.w ?? 0) + ($nodes.B.w ?? 0) + ($nodes.C.w ?? 0) + ($nodes.D.w ?? 0)", ran: "filter(['A', 'B', 'C', 'D'], $nodes[#] != null)", firstV: "v"}},
+    ],
+    edges: ["input -> s", "s:0 -> A -> join", "s:1 -> B -> join", "s:2 -> C -> join", "s:3 -> D -> join", "join -> output"],
+  },
+  cases: [
+    [{a: false, b: false, c: false, d: false}, {}],
+    [{a: false, b: false, c: false, d: true}, {mask: 8, ran: ["D"], firstV: "d"}],
+    [{a: false, b: false, c: true, d: false}, {mask: 4, ran: ["C"], firstV: "c"}],
+    [{a: false, b: false, c: true, d: true}, {mask: 12, ran: ["C", "D"], firstV: "c"}],
+    [{a: false, b: true, c: false, d: false}, {mask: 2, ran: ["B"], firstV: "b"}],
+    [{a: false, b: true, c: true, d: false}, {mask: 6, ran: ["B", "C"], firstV: "b"}],
+    [{a: false, b: true, c: true, d: true}, {mask: 14, ran: ["B", "C", "D"], firstV: "b"}],
+    [{a: true, b: false, c: false, d: false}, {mask: 1, ran: ["A"], firstV: "a"}],
+    [{a: true, b: false, c: false, d: true}, {mask: 9, ran: ["A", "D"], firstV: "a"}],
+    [{a: true, b: false, c: true, d: true}, {mask: 13, ran: ["A", "C", "D"], firstV: "a"}],
+    [{a: true, b: true, c: false, d: false}, {mask: 3, ran: ["A", "B"], firstV: "a"}],
+    [{a: true, b: true, c: true, d: false}, {mask: 7, ran: ["A", "B", "C"], firstV: "a"}],
+    [{a: true, b: true, c: true, d: true}, {mask: 15, ran: ["A", "B", "C", "D"], firstV: "a"}],
+    [{a: true, b: null}, {mask: 1, ran: ["A"], firstV: "a"}],
+  ],
+}
+
+{
+  name: "passThrough branches into a passThrough join: the input survives every combination",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["x", "y", "z"]},
+      {expression: "X", passThrough: true, fields: {fx: "1"}},
+      {expression: "Y", passThrough: true, fields: {fy: "2"}},
+      {expression: "Z", passThrough: true, fields: {fz: "3"}},
+      {expression: "join", passThrough: true, fields: {count: "len(filter([$nodes.X, $nodes.Y, $nodes.Z], # != null))", sum: "(fx ?? 0) + (fy ?? 0) + (fz ?? 0)"}},
+    ],
+    edges: ["input -> s", "s:0 -> X -> join", "s:1 -> Y -> join", "s:2 -> Z -> join", "join -> output"],
+  },
+  cases: [
+    [{x: true, y: true, z: true}, {x: true, y: true, z: true, fx: 1, fy: 2, fz: 3, count: 3, sum: 6}],
+    [{x: true, y: true, z: false}, {x: true, y: true, z: false, fx: 1, fy: 2, count: 2, sum: 3}],
+    [{x: true, y: false, z: true}, {x: true, y: false, z: true, fx: 1, fz: 3, count: 2, sum: 4}],
+    [{x: true, y: false, z: false}, {x: true, y: false, z: false, fx: 1, count: 1, sum: 1}],
+    [{x: false, y: true, z: true}, {x: false, y: true, z: true, fy: 2, fz: 3, count: 2, sum: 5}],
+    [{x: false, y: true, z: false}, {x: false, y: true, z: false, fy: 2, count: 1, sum: 2}],
+    [{x: false, y: false, z: true}, {x: false, y: false, z: true, fz: 3, count: 1, sum: 3}],
+    [{x: false, y: false, z: false}, {}],
+    [{x: true, extra: "e"}, {x: true, extra: "e", fx: 1, count: 1, sum: 1}],
+    [{y: true, z: true, extra: [1, 2]}, {y: true, z: true, extra: [1, 2], fy: 2, fz: 3, count: 2, sum: 5}],
+  ],
+}
+
+// Conditions test membership in an input array; rows cover most of the 32 outcome sets.
+{
+  name: "five branches feed a join that spells which ran",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["0 in flags", "1 in flags", "2 in flags", "3 in flags", "4 in flags"]},
+      {expression: "A", fields: {c: "'A'"}},
+      {expression: "B", fields: {c: "'B'"}},
+      {expression: "C", fields: {c: "'C'"}},
+      {expression: "D", fields: {c: "'D'"}},
+      {expression: "E", fields: {c: "'E'"}},
+      {expression: "join", fields: {ran: "map(filter(['A', 'B', 'C', 'D', 'E'], $nodes[#] != null), $nodes[#].c)", code: "($nodes.A.c ?? '') + ($nodes.B.c ?? '') + ($nodes.C.c ?? '') + ($nodes.D.c ?? '') + ($nodes.E.c ?? '')", n: "len($.ran)", last: "$.ran[len($.ran) - 1]"}},
+    ],
+    edges: ["input -> s", "s:0 -> A -> join", "s:1 -> B -> join", "s:2 -> C -> join", "s:3 -> D -> join", "s:4 -> E -> join", "join -> output"],
+  },
+  cases: [
+    [{v: 0, flags: []}, {}],
+    [{v: 1, flags: [4]}, {ran: ["E"], code: "E", n: 1, last: "E"}],
+    [{v: 2, flags: [3]}, {ran: ["D"], code: "D", n: 1, last: "D"}],
+    [{v: 3, flags: [3, 4]}, {ran: ["D", "E"], code: "DE", n: 2, last: "E"}],
+    [{v: 4, flags: [2]}, {ran: ["C"], code: "C", n: 1, last: "C"}],
+    [{v: 5, flags: [2, 3]}, {ran: ["C", "D"], code: "CD", n: 2, last: "D"}],
+    [{v: 6, flags: [2, 3, 4]}, {ran: ["C", "D", "E"], code: "CDE", n: 3, last: "E"}],
+    [{v: 7, flags: [1, 4]}, {ran: ["B", "E"], code: "BE", n: 2, last: "E"}],
+    [{v: 8, flags: [1, 3]}, {ran: ["B", "D"], code: "BD", n: 2, last: "D"}],
+    [{v: 9, flags: [1, 2]}, {ran: ["B", "C"], code: "BC", n: 2, last: "C"}],
+    [{v: 10, flags: [1, 2, 4]}, {ran: ["B", "C", "E"], code: "BCE", n: 3, last: "E"}],
+    [{v: 11, flags: [1, 2, 3, 4]}, {ran: ["B", "C", "D", "E"], code: "BCDE", n: 4, last: "E"}],
+    [{v: 12, flags: [0]}, {ran: ["A"], code: "A", n: 1, last: "A"}],
+    [{v: 13, flags: [0, 3]}, {ran: ["A", "D"], code: "AD", n: 2, last: "D"}],
+    [{v: 14, flags: [0, 3, 4]}, {ran: ["A", "D", "E"], code: "ADE", n: 3, last: "E"}],
+    [{v: 15, flags: [0, 2, 4]}, {ran: ["A", "C", "E"], code: "ACE", n: 3, last: "E"}],
+    [{v: 16, flags: [0, 2, 3]}, {ran: ["A", "C", "D"], code: "ACD", n: 3, last: "D"}],
+    [{v: 17, flags: [0, 2, 3, 4]}, {ran: ["A", "C", "D", "E"], code: "ACDE", n: 4, last: "E"}],
+    [{v: 18, flags: [0, 1]}, {ran: ["A", "B"], code: "AB", n: 2, last: "B"}],
+    [{v: 19, flags: [0, 1, 4]}, {ran: ["A", "B", "E"], code: "ABE", n: 3, last: "E"}],
+    [{v: 20, flags: [0, 1, 3, 4]}, {ran: ["A", "B", "D", "E"], code: "ABDE", n: 4, last: "E"}],
+    [{v: 21, flags: [0, 1, 2]}, {ran: ["A", "B", "C"], code: "ABC", n: 3, last: "C"}],
+    [{v: 22, flags: [0, 1, 2, 4]}, {ran: ["A", "B", "C", "E"], code: "ABCE", n: 4, last: "E"}],
+    [{v: 23, flags: [0, 1, 2, 3]}, {ran: ["A", "B", "C", "D"], code: "ABCD", n: 4, last: "D"}],
+    [{v: 24, flags: [0, 1, 2, 3, 4]}, {ran: ["A", "B", "C", "D", "E"], code: "ABCDE", n: 5, last: "E"}],
+  ],
+}
+
+
+// ---------------------------------------------------------------------------------------
+// Two switches in sequence: the outcome set of the second depends on what the first
+// switch's branches wrote, so groups split twice.
+// ---------------------------------------------------------------------------------------
+
+
+{
+  name: "a second collect switch routes on the keys the first switch's branches wrote",
+  graph: {
+    nodes: [
+      {switch: "s1", hit: "collect", when: ["n > 0", "n % 2 == 0", "n > 100"]},
+      {expression: "p", fields: {p: "1"}},
+      {expression: "e", fields: {e: "1"}},
+      {expression: "h", fields: {h: "1"}},
+      {expression: "mid", fields: {score: "(p ?? 0) + (e ?? 0) + (h ?? 0)", e: "e", h: "h"}},
+      {switch: "s2", hit: "collect", when: ["score >= 2", "e != null", "h == null"]},
+      {expression: "m", fields: {multi: "score"}},
+      {expression: "v", fields: {evenSeen: "true"}},
+      {expression: "x", fields: {notHuge: "true"}},
+    ],
+    edges: ["input -> s1", "s1:0 -> p -> mid", "s1:1 -> e -> mid", "s1:2 -> h -> mid", "mid -> s2", "s2:0 -> m -> output", "s2:1 -> v -> output", "s2:2 -> x -> output"],
+  },
+  cases: [
+    [{n: -3}, {}],
+    [{n: -2}, {evenSeen: true, notHuge: true}],
+    [{n: 0}, {evenSeen: true, notHuge: true}],
+    [{n: 1}, {notHuge: true}],
+    [{n: 2}, {multi: 2, evenSeen: true, notHuge: true}],
+    [{n: 3}, {notHuge: true}],
+    [{n: 4}, {multi: 2, evenSeen: true, notHuge: true}],
+    [{n: 101}, {multi: 2}],
+    [{n: 102}, {multi: 3, evenSeen: true}],
+    [{n: 1000}, {multi: 3, evenSeen: true}],
+    [{n: 7}, {notHuge: true}],
+    [{n: -100}, {evenSeen: true, notHuge: true}],
+  ],
+}
+
+// The collect switch has three possible predecessors, one taken per row.
+{
+  name: "a first switch picks a mode node, both mode nodes feed one collect switch",
+  graph: {
+    nodes: [
+      {switch: "kindSw", when: ["kind == 'a'", "kind == 'b'", ""]},
+      {expression: "ma", passThrough: true, fields: {mode: "'strict'", lim: "10"}},
+      {expression: "mb", passThrough: true, fields: {mode: "'loose'", lim: "100"}},
+      {expression: "mc", passThrough: true, fields: {mode: "'none'", lim: "0"}},
+      {switch: "s", hit: "collect", when: ["mode == 'strict'", "amt > lim", "mode != 'none' and amt > 0", ""]},
+      {expression: "st", fields: {strict: "true"}},
+      {expression: "ov", fields: {over: "amt - lim"}},
+      {expression: "ch", fields: {charged: "mode"}},
+      {expression: "md", fields: {mode: "$nodes.ma.mode ?? $nodes.mb.mode ?? $nodes.mc.mode"}},
+    ],
+    edges: ["input -> kindSw", "kindSw:0 -> ma -> s", "kindSw:1 -> mb -> s", "kindSw:2 -> mc -> s", "s:0 -> st -> output", "s:1 -> ov -> output", "s:2 -> ch -> output", "s:3 -> md -> output"],
+  },
+  cases: [
+    [{kind: "a", amt: 5}, {strict: true, charged: "strict", mode: "strict"}],
+    [{kind: "a", amt: 50}, {strict: true, over: 40, charged: "strict", mode: "strict"}],
+    [{kind: "b", amt: 50}, {charged: "loose", mode: "loose"}],
+    [{kind: "b", amt: 500}, {over: 400, charged: "loose", mode: "loose"}],
+    [{kind: "c", amt: 5}, {over: 5, mode: "none"}],
+    [{kind: "c", amt: 0}, {mode: "none"}],
+    [{amt: -1}, {mode: "none"}],
+    [{kind: "a", amt: 0}, {strict: true, mode: "strict"}],
+    [{kind: "b", amt: 0}, {mode: "loose"}],
+    [{kind: "a", amt: 11}, {strict: true, over: 1, charged: "strict", mode: "strict"}],
+  ],
+}
+
+// Fourteen rows over the 4x4 outcome sets of the two levels.
+{
+  name: "a collect switch nested in one branch of a collect switch",
+  graph: {
+    nodes: [
+      {switch: "outer", hit: "collect", when: ["a", "b"]},
+      {switch: "inner", hit: "collect", when: ["x > 0", "y > 0"]},
+      {expression: "ax", fields: {ax: "true"}},
+      {expression: "ay", fields: {ay: "true"}},
+      {expression: "bb", fields: {b: "true"}},
+    ],
+    edges: ["input -> outer", "outer:0 -> inner", "inner:0 -> ax -> output", "inner:1 -> ay -> output", "outer:1 -> bb -> output"],
+  },
+  cases: [
+    [{a: true, b: true, x: 1, y: 1}, {ax: true, ay: true, b: true}],
+    [{a: true, b: true, x: 1, y: 0}, {ax: true, b: true}],
+    [{a: true, b: true, x: 0, y: 1}, {ay: true, b: true}],
+    [{a: true, b: true, x: 0, y: 0}, {b: true}],
+    [{a: true, b: false, x: 1, y: 1}, {ax: true, ay: true}],
+    [{a: true, b: false, x: 1, y: 0}, {ax: true}],
+    [{a: true, b: false, x: 0, y: 1}, {ay: true}],
+    [{a: true, b: false, x: 0, y: 0}, {}],
+    [{a: false, b: true, x: 1, y: 1}, {b: true}],
+    [{a: false, b: true, x: 1, y: 0}, {b: true}],
+    [{a: false, b: true, x: 0, y: 1}, {b: true}],
+    [{a: false, b: true, x: 0, y: 0}, {b: true}],
+    [{a: false, b: false, x: 1, y: 1}, {}],
+    [{a: false, b: false, x: 1, y: 0}, {}],
+  ],
+}
+
+
+// ---------------------------------------------------------------------------------------
+// Branches of different node kinds under one collect switch: tables, loops, sub-decisions
+// and functions each run only for the rows that route to them.
+// ---------------------------------------------------------------------------------------
+
+
+{
+  name: "four branches of four node kinds in thirteen combinations",
+  decisions: {
+    child: {
+      nodes: [
+        {expression: "c", fields: {child: "score + 1"}},
+      ],
+    },
+  },
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["t", "l", "d", "f"]},
+      {table: "tab", inputs: ["score"], outputs: ["grade"], rules: [[">= 50", "'hi'"], ["", "'lo'"]]},
+      {expression: "loop", inputField: "items", outputPath: "doubled", executionMode: "loop", fields: {d: "$root * 2"}},
+      {decision: "sub", key: "child"},
+      {function: "fn", source: """export const handler = async (input) => ({fn: input.items.length});"""},
+    ],
+    edges: ["input -> s", "s:0 -> tab -> output", "s:1 -> loop -> output", "s:2 -> sub -> output", "s:3 -> fn -> output"],
+  },
+  cases: [
+    [{t: true, l: true, d: true, f: true, score: 10, items: [1, 2]}, {grade: "lo", doubled: [{d: 2}, {d: 4}], child: 11, fn: 2}],
+    [{t: true, l: true, d: true, f: false, score: 60, items: []}, {grade: "hi", doubled: [], child: 61}],
+    [{t: true, l: true, d: false, f: true, score: 50, items: [3]}, {grade: "hi", doubled: [{d: 6}], fn: 1}],
+    [{t: true, l: false, d: true, f: true, score: 10, items: [1, 2]}, {grade: "lo", child: 11, fn: 2}],
+    [{t: true, l: false, d: true, f: false, score: 60, items: []}, {grade: "hi", child: 61}],
+    [{t: true, l: false, d: false, f: true, score: 50, items: [3]}, {grade: "hi", fn: 1}],
+    [{t: true, l: false, d: false, f: false, score: 0, items: [4, 5, 6]}, {grade: "lo"}],
+    [{t: false, l: true, d: true, f: true, score: 10, items: [1, 2]}, {doubled: [{d: 2}, {d: 4}], child: 11, fn: 2}],
+    [{t: false, l: true, d: false, f: true, score: 50, items: [3]}, {doubled: [{d: 6}], fn: 1}],
+    [{t: false, l: true, d: false, f: false, score: 0, items: [4, 5, 6]}, {doubled: [{d: 8}, {d: 10}, {d: 12}]}],
+    [{t: false, l: false, d: true, f: false, score: 60, items: []}, {child: 61}],
+    [{t: false, l: false, d: false, f: true, score: 50, items: [3]}, {fn: 1}],
+    [{t: false, l: false, d: false, f: false, score: 0, items: [4, 5, 6]}, {}],
+  ],
+}
+
+{
+  name: "branches with nested outputPaths sharing a prefix merge deeply in every combination",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["a", "b", "c"]},
+      {expression: "A", outputPath: "res.x", fields: {a: "v"}},
+      {expression: "B", outputPath: "res.x", fields: {b: "v * 2"}},
+      {expression: "C", outputPath: "res", fields: {c: "[v]"}},
+    ],
+    edges: ["input -> s", "s:0 -> A -> output", "s:1 -> B -> output", "s:2 -> C -> output"],
+  },
+  cases: [
+    [{a: true, b: true, c: true, v: 1}, {res: {x: {a: 1, b: 2}, c: [1]}}],
+    [{a: true, b: true, c: false, v: 2}, {res: {x: {a: 2, b: 4}}}],
+    [{a: true, b: false, c: true, v: 3}, {res: {x: {a: 3}, c: [3]}}],
+    [{a: true, b: false, c: false, v: 4}, {res: {x: {a: 4}}}],
+    [{a: false, b: true, c: true, v: 5}, {res: {x: {b: 10}, c: [5]}}],
+    [{a: false, b: true, c: false, v: 6}, {res: {x: {b: 12}}}],
+    [{a: false, b: false, c: true, v: 7}, {res: {c: [7]}}],
+    [{a: false, b: false, c: false, v: 8}, {}],
+    [{a: true, c: true, v: 0}, {res: {x: {a: 0}, c: [0]}}],
+    [{b: true, v: -2}, {res: {x: {b: -4}}}],
+  ],
+}
+
+{
+  name: "a first-hit table and a per-column collect table on two branches",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["t1", "t2"]},
+      {table: "size", inputs: ["n"], outputs: ["size"], rules: [["> 100", "'L'"], ["> 10", "'M'"], ["", "'S'"]]},
+      {table: "tagger", inputs: ["n"], outputs: ["tags[]"], rules: [["> 0", "'pos'"], ["", "'any'"]]},
+    ],
+    edges: ["input -> s", "s:0 -> size -> output", "s:1 -> tagger -> output"],
+  },
+  cases: [
+    [{t1: true, t2: true, n: 5}, {size: "S", tags: ["pos", "any"]}],
+    [{t1: true, t2: false, n: 50}, {size: "M"}],
+    [{t1: false, t2: true, n: 500}, {tags: ["pos", "any"]}],
+    [{t1: false, t2: false, n: -4}, {}],
+    [{t1: true, t2: true, n: 12}, {size: "M", tags: ["pos", "any"]}],
+    [{t1: true, t2: true, n: -1}, {size: "S", tags: ["any"]}],
+    [{t1: false, t2: true, n: 7}, {tags: ["pos", "any"]}],
+    [{t1: true, t2: false, n: 101}, {size: "L"}],
+  ],
+}
+
+
+// ---------------------------------------------------------------------------------------
+// Row-specific failures. An error in a taken branch fails only the rows that take it; an
+// erroring condition is false for that row only.
+// ---------------------------------------------------------------------------------------
+
+
+{
+  name: "a branch that fails for some inputs fails only the rows routed to it",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["a", "b", "c"]},
+      {expression: "A", fields: {ok: "true"}},
+      {expression: "B", fields: {twice: "x * 2"}},
+      {expression: "C", fields: {c: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> A -> output", "s:1 -> B -> output", "s:2 -> C -> output"],
+  },
+  cases: [
+    [{a: true, b: false, c: true, x: "nope"}, {ok: true, c: true}],
+    [{a: true, b: true, c: false, x: "nope"}, "!error"],
+    [{a: true, b: true, c: true, x: 3}, {ok: true, twice: 6, c: true}],
+    [{a: false, b: true, c: false, x: 4}, {twice: 8}],
+    [{a: false, b: true, c: true, x: [1]}, "!error"],
+    [{a: false, b: false, c: true}, {c: true}],
+    [{a: true, b: true, x: null}, "!error"],
+    [{a: true, c: true, x: 1}, {ok: true, c: true}],
+    [{b: true, x: 0}, {twice: 0}],
+  ],
+}
+
+{
+  name: "a failing custom node on one branch beside two healthy branches",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["d", "fail", "a > 1"]},
+      {expression: "D", fields: {dated: "true"}},
+      {custom: "F", kind: "fail", config: {message: "custom stop"}},
+      {expression: "A", fields: {a: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> D -> output", "s:1 -> F -> output", "s:2 -> A -> output"],
+  },
+  cases: [
+    [{d: true, a: 2}, {dated: true, a: true}],
+    [{d: true, a: 2, fail: true}, "!error: custom stop"],
+    [{fail: true}, "!error: custom stop"],
+    [{a: 0}, {}],
+    [{a: 5, fail: false}, {a: true}],
+    [{d: false, a: 3}, {a: true}],
+  ],
+}
+
+{
+  name: "conditions that error for some rows' value types are false for those rows",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["n + 1 > 5", "startsWith(s, 'x')", "n > 0"]},
+      {expression: "A", fields: {big: "true"}},
+      {expression: "B", fields: {xs: "true"}},
+      {expression: "C", fields: {pos: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> A -> output", "s:1 -> B -> output", "s:2 -> C -> output"],
+  },
+  cases: [
+    [{n: 5, s: "xy"}, {big: true, xs: true, pos: true}],
+    [{n: "abc", s: "xa"}, {xs: true}],
+    [{n: [1], s: "y"}, {}],
+    [{n: 1, s: 5}, {pos: true}],
+    [{n: 10, s: null}, {big: true, pos: true}],
+    [{}, {}],
+    [{n: {a: 1}, s: "x"}, {xs: true}],
+    [{n: 0, s: ""}, {}],
+    [{n: true, s: "xx"}, {xs: true}],
+  ],
+}
+
+
+// ---------------------------------------------------------------------------------------
+// Shared nodes and sibling reads. A node fed by several branches runs once on their merged
+// outputs; a branch node reading a sibling branch through `$nodes` sees it only if it already ran.
+// ---------------------------------------------------------------------------------------
+
+
+{
+  name: "one node reached from two branches runs once in every combination",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["a", "b", "c"]},
+      {expression: "pa", fields: {fromA: "1"}},
+      {expression: "pb", fields: {fromB: "2"}},
+      {expression: "shared", fields: {sharedSaw: "(fromA ?? 0) + (fromB ?? 0)"}},
+      {expression: "onlyA", fields: {onlyA: "true"}},
+      {expression: "onlyC", fields: {onlyC: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> pa -> shared -> output", "s:1 -> pb -> shared", "s:0 -> onlyA -> output", "s:2 -> onlyC -> output"],
+  },
+  cases: [
+    [{a: true, b: true, c: true}, {onlyA: true, sharedSaw: 3, onlyC: true}],
+    [{a: true, b: true, c: false}, {onlyA: true, sharedSaw: 3}],
+    [{a: true, b: false, c: true}, {onlyA: true, sharedSaw: 1, onlyC: true}],
+    [{a: true, b: false, c: false}, {onlyA: true, sharedSaw: 1}],
+    [{a: false, b: true, c: true}, {sharedSaw: 2, onlyC: true}],
+    [{a: false, b: true, c: false}, {sharedSaw: 2}],
+    [{a: false, b: false, c: true}, {onlyC: true}],
+    [{a: false, b: false, c: false}, {}],
+    [{a: true, c: null}, {onlyA: true, sharedSaw: 1}],
+  ],
+}
+
+// `A -> B` makes A a parent of B: B runs when either parent ran, and reads A through `$nodes`
+// only when A was on a taken branch.
+{
+  name: "a branch node also fed by the sibling branch runs when either branch is taken",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["a", "b"]},
+      {expression: "A", fields: {a: "v"}},
+      {expression: "gate", passThrough: true, fields: {}},
+      {expression: "B", fields: {bSawA: "$nodes.A != null", fromA: "$nodes.A.a ?? -1"}},
+    ],
+    edges: ["input -> s", "s:0 -> A -> output", "s:1 -> gate -> B -> output", "A -> B"],
+  },
+  cases: [
+    [{a: true, b: true, v: 3}, {a: 3, bSawA: true, fromA: 3}],
+    [{a: false, b: true, v: 3}, {bSawA: false, fromA: -1}],
+    [{a: true, b: false, v: 4}, {a: 4, bSawA: true, fromA: 4}],
+    [{a: false, b: false, v: 1}, {}],
+    [{a: true, b: true, v: 0}, {a: 0, bSawA: true, fromA: 0}],
+    [{b: true, v: 9}, {bSawA: false, fromA: -1}],
+  ],
+}
+
+
+// ---------------------------------------------------------------------------------------
+// Heterogeneous rows: the same switch over inputs whose value types and key presence vary,
+// with passThrough branches carrying different shapes through.
+// ---------------------------------------------------------------------------------------
+
+
+{
+  name: "routing on the type of one field with passThrough branches",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["type(v) == 'number'", "type(v) == 'string'", "type(v) == 'array'", "v == null", ""]},
+      {expression: "N", passThrough: true, fields: {num: "v * 2"}},
+      {expression: "S", passThrough: true, fields: {str: "upper(v)"}},
+      {expression: "A", passThrough: true, fields: {count: "len(v)"}},
+      {expression: "Z", fields: {missing: "true"}},
+      {expression: "K", fields: {kind: "type(v)"}},
+    ],
+    edges: ["input -> s", "s:0 -> N -> output", "s:1 -> S -> output", "s:2 -> A -> output", "s:3 -> Z -> output", "s:4 -> K -> output"],
+  },
+  cases: [
+    [{v: 3}, {v: 3, num: 6, kind: "number"}],
+    [{v: "ab"}, {v: "ab", str: "AB", kind: "string"}],
+    [{v: [1, 2]}, {v: [1, 2], count: 2, kind: "array"}],
+    [{v: null}, {missing: true, kind: "null"}],
+    [{}, {missing: true, kind: "null"}],
+    [{v: true}, {kind: "bool"}],
+    [{v: {a: 1}}, {kind: "object"}],
+    [{v: 0, other: "o"}, {v: 0, other: "o", num: 0, kind: "number"}],
+    [{v: "", other: [1]}, {v: "", other: [1], str: "", kind: "string"}],
+    [{v: [], n: {x: 1}}, {v: [], n: {x: 1}, count: 0, kind: "array"}],
+  ],
+}
+
+{
+  name: "four conditions over one enum field, overlapping sets",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["tier in ['a', 'b']", "tier in ['b', 'c']", "tier != null and tier != 'a'", "tier == null"]},
+      {expression: "AB", fields: {ab: "true"}},
+      {expression: "BC", fields: {bc: "true"}},
+      {expression: "NA", fields: {notA: "tier"}},
+      {expression: "NN", fields: {none: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> AB -> output", "s:1 -> BC -> output", "s:2 -> NA -> output", "s:3 -> NN -> output"],
+  },
+  cases: [
+    [{tier: "a"}, {ab: true}],
+    [{tier: "b"}, {ab: true, bc: true, notA: "b"}],
+    [{tier: "c"}, {bc: true, notA: "c"}],
+    [{tier: "d"}, {notA: "d"}],
+    [{tier: null}, {none: true}],
+    [{}, {none: true}],
+    [{tier: 1}, {notA: 1}],
+    [{tier: "B"}, {notA: "B"}],
+    [{tier: ["a"]}, {notA: ["a"]}],
+  ],
+}
+
+{
+  name: "conditions over $nodes of a table that matched nothing for some rows",
+  graph: {
+    nodes: [
+      {table: "grade", inputs: ["score"], outputs: ["g"], rules: [[">= 90", "'A'"], [">= 70", "'B'"]]},
+      {switch: "s", hit: "collect", when: ["$nodes.grade != null", "$nodes.grade == null", "$nodes.input.score < 0"]},
+      {expression: "G", fields: {graded: "$nodes.grade.g"}},
+      {expression: "U", fields: {ungraded: "true"}},
+      {expression: "N", fields: {negative: "true"}},
+    ],
+    edges: ["input -> grade -> s", "s:0 -> G -> output", "s:1 -> U -> output", "s:2 -> N -> output"],
+  },
+  cases: [
+    [{score: 95}, {graded: "A"}],
+    [{score: 75}, {graded: "B"}],
+    [{score: 10}, {ungraded: true}],
+    [{score: -5}, {ungraded: true, negative: true}],
+    [{}, {ungraded: true}],
+    [{score: "x"}, {ungraded: true}],
+    [{score: 90}, {graded: "A"}],
+    [{score: 69}, {ungraded: true}],
+  ],
+}
+
+
+// ---------------------------------------------------------------------------------------
+// Collect switches inside loops: each item takes its own outcome set, so one row splits
+// into groups per item.
+// ---------------------------------------------------------------------------------------
+
+
+{
+  name: "a child collect switch per loop item",
+  decisions: {
+    line: {
+      nodes: [
+        {switch: "s", hit: "collect", when: ["q > 10", "p > 100", "gift == true", ""]},
+        {expression: "b", fields: {bulk: "true"}},
+        {expression: "pr", fields: {premium: "true"}},
+        {expression: "g", fields: {wrap: "'gift'"}},
+        {expression: "l", fields: {line: "q * p"}},
+      ],
+      edges: ["input -> s", "s:0 -> b -> output", "s:1 -> pr -> output", "s:2 -> g -> output", "s:3 -> l -> output"],
+    },
+  },
+  graph: {
+    nodes: [
+      {decision: "each", key: "line", inputField: "items", outputPath: "lines", executionMode: "loop"},
+    ],
+  },
+  cases: [
+    [{items: [{q: 1, p: 5}, {q: 20, p: 5}, {q: 1, p: 500}, {q: 20, p: 500, gift: true}]}, {lines: [{line: 5}, {bulk: true, line: 100}, {premium: true, line: 500}, {bulk: true, premium: true, wrap: "gift", line: 10000}]}],
+    [{items: [{q: 3, p: 3, gift: true}]}, {lines: [{wrap: "gift", line: 9}]}],
+    [{items: []}, {lines: []}],
+    [{items: [{q: 11, p: 101}, {q: 10, p: 100}, {q: 0, p: 0, gift: false}]}, {lines: [{bulk: true, premium: true, line: 1111}, {line: 1000}, {line: 0}]}],
+    [{items: [{q: 2, p: 200, gift: true}, {q: 12, p: 1, gift: true}, {q: 12, p: 120}, {q: 1, p: 1}, {q: 50, p: 50}]}, {lines: [{premium: true, wrap: "gift", line: 400}, {bulk: true, wrap: "gift", line: 12}, {bulk: true, premium: true, line: 1440}, {line: 1}, {bulk: true, line: 2500}]}],
+  ],
+}
+
+// The child reads the parent request via `$nodes.<child input>.$nodes.input`.
+// An item taking no branch yields `{}`.
+{
+  name: "per-item conditions compare against the parent request through the child input view",
+  decisions: {
+    check: {
+      nodes: [
+        {input: "item"},
+        {switch: "s", hit: "collect", when: ["n > ($nodes.item.$nodes.input.limit ?? 10)", "n % 2 == 0"]},
+        {expression: "o", fields: {over: "n - ($nodes.item.$nodes.input.limit ?? 10)"}},
+        {expression: "e", fields: {even: "true"}},
+      ],
+      edges: ["item -> s", "s:0 -> o -> output", "s:1 -> e -> output"],
+    },
+  },
+  graph: {
+    nodes: [
+      {decision: "each", key: "check", inputField: "items", outputPath: "out", executionMode: "loop"},
+    ],
+  },
+  cases: [
+    [{limit: 3, items: [{n: 1}, {n: 2}, {n: 4}, {n: 5}]}, {out: [{}, {even: true}, {over: 1, even: true}, {over: 2}]}],
+    [{items: [{n: 10}, {n: 11}, {n: 12}]}, {out: [{even: true}, {over: 1}, {over: 2, even: true}]}],
+    [{limit: 0, items: [{n: 0}, {n: 1}]}, {out: [{even: true}, {over: 1}]}],
+    [{limit: 100, items: [{n: 7}, {n: 8}]}, {out: [{}, {even: true}]}],
+    [{limit: 5, items: []}, {out: []}],
+  ],
+}
+
+
+// ---------------------------------------------------------------------------------------
+// Edge shapes per combination: branches straight to the output, two handles into one node,
+// dead ends without an output node, and a switch input whose shape varies between rows.
+// ---------------------------------------------------------------------------------------
+
+
+{
+  name: "a branch straight to the output next to computed branches",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["a", "b", "c"]},
+      {expression: "B", fields: {b2: "true"}},
+      {expression: "C", fields: {c2: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> output", "s:1 -> B -> output", "s:2 -> C -> output"],
+  },
+  cases: [
+    [{a: true, b: true, c: true}, {a: true, b: true, c: true, b2: true, c2: true}],
+    [{a: true, b: true, c: false}, {a: true, b: true, c: false, b2: true}],
+    [{a: true, b: false, c: true}, {a: true, b: false, c: true, c2: true}],
+    [{a: true, b: false, c: false}, {a: true, b: false, c: false}],
+    [{a: false, b: true, c: true}, {b2: true, c2: true}],
+    [{a: false, b: true, c: false}, {b2: true}],
+    [{a: false, b: false, c: true}, {c2: true}],
+    [{a: false, b: false, c: false}, {}],
+    [{a: true, x: [1], y: {z: null}}, {a: true, x: [1], y: {z: null}}],
+  ],
+}
+
+// X runs once when either handle routes to it.
+{
+  name: "two handles of one collect switch into the same node",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["a", "b"]},
+      {expression: "X", fields: {ran: "true", aFlag: "a == true", bFlag: "b == true"}},
+    ],
+    edges: ["input -> s", "s:0 -> X", "s:1 -> X", "X -> output"],
+  },
+  cases: [
+    [{a: true, b: true}, {ran: true, aFlag: true, bFlag: true}],
+    [{a: true, b: false}, {ran: true, aFlag: true, bFlag: false}],
+    [{a: false, b: true}, {ran: true, aFlag: false, bFlag: true}],
+    [{a: false, b: false}, {}],
+    [{a: true}, {ran: true, aFlag: true, bFlag: false}],
+    [{}, {}],
+  ],
+}
+
+// Without an output node the result merges the dead ends that ran (see 25).
+{
+  name: "collect branches ending in dead ends of a graph without an output node",
+  graph: {
+    nodes: [
+      {input: "input"},
+      {switch: "s", hit: "collect", when: ["a", "b", "c"]},
+      {expression: "A", fields: {a: "1"}},
+      {expression: "B", fields: {b: "2"}},
+      {expression: "C", fields: {c: "3"}},
+    ],
+    edges: ["input -> s", "s:0 -> A", "s:1 -> B", "s:2 -> C"],
+  },
+  cases: [
+    [{a: true, b: true, c: true}, {a: 1, b: 2, c: 3}],
+    [{a: true, b: true, c: false}, {a: 1, b: 2}],
+    [{a: true, b: false, c: true}, {a: 1, c: 3}],
+    [{a: true, b: false, c: false}, {a: 1}],
+    [{a: false, b: true, c: true}, {b: 2, c: 3}],
+    [{a: false, b: true, c: false}, {b: 2}],
+    [{a: false, b: false, c: true}, {c: 3}],
+    [{a: false, b: false, c: false}, {}],
+  ],
+}
+
+{
+  name: "the switch input is a bare array whose length varies per row",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "xs", executionMode: "loop", fields: {v: "$root * 2"}},
+      {switch: "s", hit: "collect", when: ["len($nodes.each) > 2", "$nodes.each[0].v > 5", "len($nodes.each) == 0", ""]},
+      {expression: "L", fields: {long: "len($nodes.each)"}},
+      {expression: "H", fields: {bigHead: "$nodes.each[0].v"}},
+      {expression: "E", fields: {empty: "true"}},
+      {expression: "D", fields: {echo: "map($nodes.each, #.v)"}},
+    ],
+    edges: ["input -> each -> s", "s:0 -> L -> output", "s:1 -> H -> output", "s:2 -> E -> output", "s:3 -> D -> output"],
+  },
+  cases: [
+    [{xs: []}, {empty: true, echo: []}],
+    [{xs: [1]}, {echo: [2]}],
+    [{xs: [3]}, {bigHead: 6, echo: [6]}],
+    [{xs: [1, 2, 3]}, {long: 3, echo: [2, 4, 6]}],
+    [{xs: [9, 9, 9, 9]}, {long: 4, bigHead: 18, echo: [18, 18, 18, 18]}],
+    [{xs: [0, 0]}, {echo: [0, 0]}],
+  ],
+}
+
+// `inner` hangs off P only, so it runs only when P ran; it still reads E through `$nodes`.
+// E is declared before inner, so when both ran E is visible.
+{
+  name: "an inner collect switch reads $nodes of outer branch nodes that may not have run",
+  graph: {
+    nodes: [
+      {switch: "outer", hit: "collect", when: ["n > 0", "n % 2 == 0"]},
+      {expression: "P", fields: {posV: "n"}},
+      {expression: "E", fields: {evenV: "n"}},
+      {switch: "inner", hit: "collect", when: ["$nodes.P.posV > 10", "$nodes.P != null and $nodes.E != null"]},
+      {expression: "IB", fields: {innerBig: "true"}},
+      {expression: "IO", fields: {innerBoth: "true"}},
+    ],
+    edges: ["input -> outer", "outer:0 -> P -> output", "outer:1 -> E -> output", "P -> inner", "inner:0 -> IB -> output", "inner:1 -> IO -> output"],
+  },
+  cases: [
+    [{n: -4}, {evenV: -4}],
+    [{n: -1}, {}],
+    [{n: 0}, {evenV: 0}],
+    [{n: 1}, {posV: 1}],
+    [{n: 2}, {posV: 2, evenV: 2, innerBoth: true}],
+    [{n: 11}, {posV: 11, innerBig: true}],
+    [{n: 12}, {posV: 12, evenV: 12, innerBig: true, innerBoth: true}],
+    [{n: 13}, {posV: 13, innerBig: true}],
+    [{n: 20}, {posV: 20, evenV: 20, innerBig: true, innerBoth: true}],
+  ],
+}
+
+{
+  name: "null, missing, false, zero and empty string each take their own outcome set",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["v == null", "v == false", "v == 0", "v == ''", "v != null and v != false"]},
+      {expression: "N", fields: {isNull: "true"}},
+      {expression: "F", fields: {isFalse: "true"}},
+      {expression: "Z", fields: {isZero: "true"}},
+      {expression: "S", fields: {isEmpty: "true"}},
+      {expression: "T", fields: {truthyish: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> N -> output", "s:1 -> F -> output", "s:2 -> Z -> output", "s:3 -> S -> output", "s:4 -> T -> output"],
+  },
+  cases: [
+    [{v: null}, {isNull: true}],
+    [{}, {isNull: true}],
+    [{v: false}, {isFalse: true}],
+    [{v: 0}, {isZero: true, truthyish: true}],
+    [{v: ""}, {isEmpty: true, truthyish: true}],
+    [{v: true}, {truthyish: true}],
+    [{v: 1}, {truthyish: true}],
+    [{v: "x"}, {truthyish: true}],
+    [{v: []}, {truthyish: true}],
+    [{v: {}}, {truthyish: true}],
+  ],
+}

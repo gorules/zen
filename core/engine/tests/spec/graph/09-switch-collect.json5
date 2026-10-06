@@ -1,0 +1,781 @@
+// Switch node, hit policy collect: every condition that is true routes, so several branches
+// run in parallel and their results meet at the output (or at a shared node), where they
+// are merged. `""` is always true and is therefore always taken under collect.
+
+// ---------------------------------------------------------------------------------------
+// Multiple branches taken: each true condition routes; results merge at the output.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "every true condition routes",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["n > 0", "n > 10", "n % 2 == 0"]},
+      {expression: "pos", fields: {pos: "true"}},
+      {expression: "big", fields: {big: "true"}},
+      {expression: "even", fields: {even: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> pos -> output", "s:1 -> big -> output", "s:2 -> even -> output"],
+  },
+  cases: [
+    [{n: 12}, {pos: true, big: true, even: true}],
+    [{n: 11}, {pos: true, big: true}],
+    [{n: 2}, {pos: true, even: true}],
+    [{n: 1}, {pos: true}],
+    [{n: 0}, {even: true}],
+    [{n: -3}, {}],
+  ],
+}
+
+{
+  name: "collect with one branch taken behaves like first",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["kind == 'a'", "kind == 'b'"]},
+      {expression: "a", fields: {r: "'a'", v: "v"}},
+      {expression: "b", fields: {r: "'b'", v: "v * 10"}},
+    ],
+    edges: ["input -> s", "s:0 -> a -> output", "s:1 -> b -> output"],
+  },
+  cases: [
+    [{kind: "a", v: 1}, {r: "a", v: 1}],
+    [{kind: "b", v: 1}, {r: "b", v: 10}],
+    [{kind: "c", v: 1}, {}],
+    [{v: 1}, {}],
+  ],
+}
+
+{
+  name: "each branch sees the same switch input",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["true", "true"]},
+      {expression: "a", fields: {fromA: "x"}},
+      {expression: "b", fields: {fromB: "x * 2"}},
+    ],
+    edges: ["input -> s", "s:0 -> a -> output", "s:1 -> b -> output"],
+  },
+  cases: [
+    [{x: 1}, {fromA: 1, fromB: 2}],
+    [{x: 0.5}, {fromA: 0.5, fromB: 1}],
+    [{}, "!error"],
+  ],
+}
+
+{
+  name: "branches into different node kinds",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["score > 0", "score > 50"]},
+      {table: "t", inputs: ["score"], outputs: ["band"], rules: [
+        ["> 80", "'A'"],
+        ["> 50", "'B'"],
+        ["", "'C'"],
+      ]},
+      {expression: "e", fields: {bonus: "score - 50"}},
+    ],
+    edges: ["input -> s", "s:0 -> t -> output", "s:1 -> e -> output"],
+  },
+  cases: [
+    [{score: 90}, {band: "A", bonus: 40}],
+    [{score: 60}, {band: "B", bonus: 10}],
+    [{score: 10}, {band: "C"}],
+    [{score: 0}, {}],
+  ],
+}
+
+{
+  name: "a branch with passThrough and one without",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["true", "flag"]},
+      {expression: "keep", passThrough: true, fields: {kept: "true"}},
+      {expression: "add", fields: {added: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> keep -> output", "s:1 -> add -> output"],
+  },
+  cases: [
+    [{flag: true, x: 1}, {flag: true, x: 1, kept: true, added: true}],
+    [{flag: false, x: 1}, {flag: false, x: 1, kept: true}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Merging parallel results at the output. Objects merge deeply. For a key written by more
+// than one branch the branch whose edge into the merge point was declared first wins.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "disjoint keys from parallel branches all reach the output",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["", ""]},
+      {expression: "a", fields: {"r.a": "1", "list": "[1]"}},
+      {expression: "b", fields: {"r.b": "2", "other": "'x'"}},
+    ],
+    edges: ["input -> s", "s:0 -> a -> output", "s:1 -> b -> output"],
+  },
+  cases: [
+    [{}, {r: {a: 1, b: 2}, list: [1], other: "x"}],
+    [{z: 1}, {r: {a: 1, b: 2}, list: [1], other: "x"}],
+  ],
+}
+
+{
+  name: "a key written by two branches",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["a", "b"]},
+      {expression: "x", fields: {who: "'x'", x: "true"}},
+      {expression: "y", fields: {who: "'y'", y: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> x -> output", "s:1 -> y -> output"],
+  },
+  cases: [
+    [{a: true, b: true}, {who: "x", x: true, y: true}, "question: on a key conflict the branch whose edge into the output was added first wins; the walker merges incoming nodes in reverse edge order, so the result depends on edge order, not branch order"],
+    [{a: true, b: false}, {who: "x", x: true}],
+    [{a: false, b: true}, {who: "y", y: true}],
+  ],
+}
+
+{
+  name: "the conflict winner follows the edge order into the output",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["a", "b"]},
+      {expression: "x", fields: {who: "'x'"}},
+      {expression: "y", fields: {who: "'y'"}},
+    ],
+    edges: ["input -> s", "s:0 -> x", "s:1 -> y", "y -> output", "x -> output"],
+  },
+  cases: [
+    [{a: true, b: true}, {who: "y"}, "question: with the edge from y declared first, y wins the conflict"],
+    [{a: true, b: false}, {who: "x"}],
+    [{a: false, b: true}, {who: "y"}],
+  ],
+}
+
+{
+  name: "nested objects from parallel branches merge deeply",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["", ""]},
+      {expression: "a", fields: {"res.price.base": "10", "res.tags": "['a']"}},
+      {expression: "b", fields: {"res.price.tax": "2", "res.tags": "['b']"}},
+    ],
+    edges: ["input -> s", "s:0 -> a -> output", "s:1 -> b -> output"],
+  },
+  cases: [
+    [{}, {res: {price: {base: 10, tax: 2}, tags: ["a"]}}, "question: arrays under the same key do not concatenate; one branch's array replaces the other"],
+  ],
+}
+
+{
+  name: "a scalar and an object for the same key from parallel branches",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["", ""]},
+      {expression: "a", fields: {v: "1"}},
+      {expression: "b", fields: {"v.k": "2"}},
+    ],
+    edges: ["input -> s", "s:0 -> a -> output", "s:1 -> b -> output"],
+  },
+  cases: [
+    [{}, {v: 1}],
+  ],
+}
+
+{
+  name: "a null from the winning branch removes the key written by another",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["", ""]},
+      {expression: "a", fields: {v: "null", keep: "1"}},
+      {expression: "b", fields: {v: "2"}},
+    ],
+    edges: ["input -> s", "s:0 -> a -> output", "s:1 -> b -> output"],
+  },
+  cases: [
+    [{}, {keep: 1}, "question: a null written by one branch deletes the value another branch computed, because merging treats null as removal"],
+  ],
+}
+
+{
+  name: "a null from the losing branch leaves the other branch's value",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["", ""]},
+      {expression: "a", fields: {v: "1"}},
+      {expression: "b", fields: {v: "null", keep: "1"}},
+    ],
+    edges: ["input -> s", "s:0 -> a -> output", "s:1 -> b -> output"],
+  },
+  cases: [
+    [{}, {v: 1, keep: 1}, "question: whether a branch's null deletes the other value or is ignored depends on edge order"],
+  ],
+}
+
+{
+  name: "a branch that produces nothing does not disturb the others",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["", ""]},
+      {table: "t", inputs: ["n"], outputs: ["fromTable"], rules: [
+        ["> 0", "true"],
+      ]},
+      {expression: "e", fields: {fromExpr: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> t -> output", "s:1 -> e -> output"],
+  },
+  cases: [
+    [{n: 1}, {fromTable: true, fromExpr: true}],
+    [{n: 0}, {fromExpr: true}],
+    [{}, {fromExpr: true}],
+  ],
+}
+
+{
+  name: "a branch producing an array meets an object branch",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["", ""]},
+      {table: "rows", hit: "collect", inputs: ["n"], outputs: ["v"], rules: [
+        ["> 0", "1"],
+        ["> 1", "2"],
+      ]},
+      {expression: "e", fields: {fromExpr: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> rows -> output", "s:1 -> e -> output"],
+  },
+  cases: [
+    [{n: 2}, [{v: 1}, {v: 2}], "question: a collect table's array output replaces the merged object of the other branch at the output"],
+    [{n: 0}, [], "question: even an empty array replaces the other branch's object"],
+  ],
+}
+
+{
+  name: "parallel branches each nesting under their own outputPath",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["", "n > 0"]},
+      {table: "rows", hit: "collect", outputPath: "rows", inputs: ["n"], outputs: ["v"], rules: [
+        ["> 0", "1"],
+        ["> 1", "2"],
+      ]},
+      {expression: "e", outputPath: "summary", fields: {pos: "true", n: "n"}},
+    ],
+    edges: ["input -> s", "s:0 -> rows -> output", "s:1 -> e -> output"],
+  },
+  cases: [
+    [{n: 2}, {rows: [{v: 1}, {v: 2}], summary: {pos: true, n: 2}}],
+    [{n: 1}, {rows: [{v: 1}], summary: {pos: true, n: 1}}],
+    [{n: 0}, {rows: []}],
+  ],
+}
+
+{
+  name: "three parallel branches, two of them passThrough",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["", "", ""]},
+      {expression: "a", passThrough: true, fields: {a: "x + 1"}},
+      {expression: "b", passThrough: true, fields: {b: "x + 2", x: "0"}},
+      {expression: "c", fields: {c: "x + 3"}},
+    ],
+    edges: ["input -> s", "s:0 -> a -> output", "s:1 -> b -> output", "s:2 -> c -> output"],
+  },
+  cases: [
+    [{x: 1}, {x: 1, a: 2, b: 3, c: 4}, "question: b overwrites x with 0 but a's pass-through copy of x wins, because a's edge into the output comes first"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Default branch under collect: `""` is always true, so it is taken together with every
+// other true condition, wherever it is placed.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "the default branch is always taken alongside matching branches",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["n > 0", ""]},
+      {expression: "pos", fields: {pos: "true"}},
+      {expression: "def", fields: {def: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> pos -> output", "s:1 -> def -> output"],
+  },
+  cases: [
+    [{n: 1}, {pos: true, def: true}],
+    [{n: 0}, {def: true}],
+    [{}, {def: true}],
+  ],
+}
+
+{
+  name: "a default branch placed first is still not exclusive under collect",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["", "n > 0", "n > 10"]},
+      {expression: "def", fields: {def: "true"}},
+      {expression: "pos", fields: {pos: "true"}},
+      {expression: "big", fields: {big: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> def -> output", "s:1 -> pos -> output", "s:2 -> big -> output"],
+  },
+  cases: [
+    [{n: 11}, {def: true, pos: true, big: true}],
+    [{n: 1}, {def: true, pos: true}],
+    [{n: -1}, {def: true}],
+  ],
+}
+
+{
+  name: "two default branches are both taken",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["", ""]},
+      {expression: "a", fields: {a: "1"}},
+      {expression: "b", fields: {b: "2"}},
+    ],
+    edges: ["input -> s", "s:0 -> a -> output", "s:1 -> b -> output"],
+  },
+  cases: [
+    [{}, {a: 1, b: 2}],
+    [{a: 5}, {a: 1, b: 2}],
+  ],
+}
+
+{
+  name: "a default branch straight to the output carries the input",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["n > 0", ""]},
+      {expression: "pos", fields: {pos: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> pos -> output", "s:1 -> output"],
+  },
+  cases: [
+    [{n: 1}, {n: 1, pos: true}],
+    [{n: 0}, {n: 0}],
+    [{n: 1, pos: false}, {n: 1, pos: true}, "question: the computed branch beats the raw input copy only because its edge into the output was declared first"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// No branch taken under collect.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "no condition true under collect",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["n > 0", "n < 0"]},
+      {expression: "pos", fields: {r: "'pos'"}},
+      {expression: "neg", fields: {r: "'neg'"}},
+    ],
+    edges: ["input -> s", "s:0 -> pos -> output", "s:1 -> neg -> output"],
+  },
+  cases: [
+    [{n: 0}, {}],
+    [{}, {}],
+    [{n: null}, {}],
+    [{n: 1}, {r: "pos"}],
+  ],
+}
+
+{
+  name: "no condition true while a parallel path reaches the output",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["n > 0", "n > 1"]},
+      {expression: "a", fields: {a: "true"}},
+      {expression: "b", fields: {b: "true"}},
+      {expression: "side", fields: {side: "n"}},
+    ],
+    edges: ["input -> s", "s:0 -> a -> output", "s:1 -> b -> output", "input -> side -> output"],
+  },
+  cases: [
+    [{n: 2}, {a: true, b: true, side: 2}],
+    [{n: 1}, {a: true, side: 1}],
+    [{n: 0}, {side: 0}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Null, missing and erroring conditions under collect: only `true` routes; an error makes
+// that condition false without affecting the others.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "conditions on missing fields are false, the rest still route",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["a > 0", "b > 0", "a == null", "b == null"]},
+      {expression: "ea", fields: {a: "true"}},
+      {expression: "eb", fields: {b: "true"}},
+      {expression: "na", fields: {noA: "true"}},
+      {expression: "nb", fields: {noB: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> ea -> output", "s:1 -> eb -> output", "s:2 -> na -> output", "s:3 -> nb -> output"],
+  },
+  cases: [
+    [{a: 1, b: 1}, {a: true, b: true}],
+    [{a: 1}, {a: true, noB: true}],
+    [{b: 1}, {b: true, noA: true}],
+    [{}, {noA: true, noB: true}],
+    [{a: null, b: 0}, {noA: true}],
+    [{a: "x", b: true}, {}],
+  ],
+}
+
+{
+  name: "an erroring condition does not stop the other branches",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["date('nope') > 1", "n > 0", "n + 'x' == 1", ""]},
+      {expression: "err", fields: {err: "true"}},
+      {expression: "pos", fields: {pos: "true"}},
+      {expression: "typ", fields: {typ: "true"}},
+      {expression: "def", fields: {def: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> err -> output", "s:1 -> pos -> output", "s:2 -> typ -> output", "s:3 -> def -> output"],
+  },
+  cases: [
+    [{n: 1}, {pos: true, def: true}],
+    [{n: 0}, {def: true}],
+    [{}, {def: true}],
+  ],
+}
+
+{
+  name: "an error inside one taken branch fails the whole graph",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["", "boom"]},
+      {expression: "ok", fields: {ok: "true"}},
+      {custom: "bad", kind: "fail", config: {message: "branch failed"}},
+    ],
+    edges: ["input -> s", "s:0 -> ok -> output", "s:1 -> bad -> output"],
+  },
+  cases: [
+    [{boom: false}, {ok: true}],
+    [{boom: true}, "!error: branch failed"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Branches converging on a shared node: the node runs once, after all of its taken
+// predecessors, on their merged outputs. Predecessors on branches not taken are pruned.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "two taken branches converge on a shared node",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["hasA", "hasB"]},
+      {expression: "a", fields: {a: "10"}},
+      {expression: "b", fields: {b: "5"}},
+      {expression: "join", fields: {sum: "(a ?? 0) + (b ?? 0)", seenA: "a != null", seenB: "b != null"}},
+    ],
+    edges: ["input -> s", "s:0 -> a -> join", "s:1 -> b -> join", "join -> output"],
+  },
+  cases: [
+    [{hasA: true, hasB: true}, {sum: 15, seenA: true, seenB: true}],
+    [{hasA: true, hasB: false}, {sum: 10, seenA: true, seenB: false}],
+    [{hasA: false, hasB: true}, {sum: 5, seenA: false, seenB: true}],
+    [{hasA: false, hasB: false}, {}],
+  ],
+}
+
+{
+  name: "the shared node runs once even when both branches feed it",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["", ""]},
+      {expression: "a", passThrough: true, fields: {count: "count + 1"}},
+      {expression: "b", passThrough: true, fields: {count: "count + 10"}},
+      {expression: "join", passThrough: true, fields: {joined: "count"}},
+    ],
+    edges: ["input -> s", "s:0 -> a -> join", "s:1 -> b -> join", "join -> output"],
+  },
+  cases: [
+    [{count: 0}, {count: 1, joined: 1}, "question: both branches wrote `count`; the shared node sees a's value because a's edge into it was declared first"],
+  ],
+}
+
+{
+  name: "the shared node also reached through the switch input directly",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["n > 0", ""]},
+      {expression: "pos", fields: {sign: "'+'"}},
+      {expression: "join", fields: {sign: "sign ?? 'none'", n: "n"}},
+    ],
+    edges: ["input -> s", "s:0 -> pos -> join", "s:1 -> join", "join -> output"],
+  },
+  cases: [
+    [{n: 1}, {sign: "+", n: 1}],
+    [{n: 0}, {sign: "none", n: 0}],
+  ],
+}
+
+{
+  name: "branches converging at different depths",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["", "deep"]},
+      {expression: "short", fields: {short: "true"}},
+      {expression: "d1", passThrough: true, fields: {d1: "true"}},
+      {expression: "d2", passThrough: true, fields: {d2: "d1"}},
+      {expression: "join", passThrough: true, fields: {all: "short == true and d2 == true"}},
+    ],
+    edges: ["input -> s", "s:0 -> short -> join", "s:1 -> d1 -> d2 -> join", "join -> output"],
+  },
+  cases: [
+    [{deep: true}, {deep: true, short: true, d1: true, d2: true, all: true}],
+    [{deep: false}, {short: true, all: false}],
+  ],
+}
+
+{
+  name: "a table on a shared node sees fields from both branches",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["risk != null", "income != null"]},
+      {expression: "r", fields: {riskScore: "risk * 10"}},
+      {expression: "i", fields: {incomeBand: "income > 1000 ? 'high' : 'low'"}},
+      {table: "decide", inputs: ["riskScore", "incomeBand"], outputs: ["approve"], rules: [
+        ["< 50", "'high'", "true"],
+        ["< 50", "", "'review'"],
+        ["", "", "false"],
+      ]},
+    ],
+    edges: ["input -> s", "s:0 -> r -> decide", "s:1 -> i -> decide", "decide -> output"],
+  },
+  cases: [
+    [{risk: 1, income: 2000}, {approve: true}],
+    [{risk: 1, income: 10}, {approve: "review"}],
+    [{risk: 9, income: 2000}, {approve: false}],
+    [{risk: 1}, {approve: "review"}],
+    [{income: 2000}, {approve: false}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "a converging node fed by a taken and a pruned branch",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["a", "b"]},
+      {expression: "x", fields: {x: "true"}},
+      {expression: "y", fields: {y: "true"}},
+      {expression: "join", passThrough: true, fields: {joined: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> x -> join", "s:1 -> y -> join", "join -> output"],
+  },
+  cases: [
+    [{a: true, b: false}, {x: true, joined: true}],
+    [{a: false, b: true}, {y: true, joined: true}],
+    [{a: true, b: true}, {x: true, y: true, joined: true}],
+  ],
+}
+
+{
+  name: "a node fed by the input and by a pruned branch still runs",
+  graph: {
+    nodes: [
+      {expression: "pre", fields: {pre: "true"}},
+      {switch: "s", hit: "collect", when: ["a"]},
+      {expression: "x", fields: {x: "true"}},
+      {expression: "join", passThrough: true, fields: {joined: "true"}},
+    ],
+    edges: ["input -> pre -> join", "input -> s", "s:0 -> x -> join", "join -> output"],
+  },
+  cases: [
+    [{a: true}, {pre: true, x: true, joined: true}],
+    [{a: false}, {pre: true, joined: true}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Collect switches in combination: nested, sequential, and fan-out.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "a collect switch inside a branch of a first switch",
+  graph: {
+    nodes: [
+      {switch: "outer", when: ["enabled", ""]},
+      {switch: "inner", hit: "collect", when: ["x > 0", "y > 0"]},
+      {expression: "fx", fields: {fx: "true"}},
+      {expression: "fy", fields: {fy: "true"}},
+      {expression: "off", fields: {off: "true"}},
+    ],
+    edges: ["input -> outer", "outer:0 -> inner", "inner:0 -> fx -> output", "inner:1 -> fy -> output", "outer:1 -> off -> output"],
+  },
+  cases: [
+    [{enabled: true, x: 1, y: 1}, {fx: true, fy: true}],
+    [{enabled: true, x: 1, y: 0}, {fx: true}],
+    [{enabled: true, x: 0, y: 0}, {}],
+    [{enabled: false, x: 1, y: 1}, {off: true}],
+  ],
+}
+
+{
+  name: "a first switch inside each branch of a collect switch",
+  graph: {
+    nodes: [
+      {switch: "c", hit: "collect", when: ["", ""]},
+      {switch: "f1", when: ["a > 0", ""]},
+      {switch: "f2", when: ["b > 0", ""]},
+      {expression: "a1", fields: {a: "'pos'"}},
+      {expression: "a2", fields: {a: "'non-pos'"}},
+      {expression: "b1", fields: {b: "'pos'"}},
+      {expression: "b2", fields: {b: "'non-pos'"}},
+    ],
+    edges: [
+      "input -> c", "c:0 -> f1", "c:1 -> f2",
+      "f1:0 -> a1 -> output", "f1:1 -> a2 -> output",
+      "f2:0 -> b1 -> output", "f2:1 -> b2 -> output",
+    ],
+  },
+  cases: [
+    [{a: 1, b: 1}, {a: "pos", b: "pos"}],
+    [{a: 1, b: 0}, {a: "pos", b: "non-pos"}],
+    [{a: 0, b: 1}, {a: "non-pos", b: "pos"}],
+    [{}, {a: "non-pos", b: "non-pos"}],
+  ],
+}
+
+{
+  name: "two collect switches in sequence",
+  graph: {
+    nodes: [
+      {switch: "c1", hit: "collect", when: ["", "x"]},
+      {expression: "base", passThrough: true, fields: {base: "true"}},
+      {expression: "extra", passThrough: true, fields: {extra: "true"}},
+      {switch: "c2", hit: "collect", when: ["base", "extra == true"]},
+      {expression: "rb", fields: {sawBase: "true"}},
+      {expression: "re", fields: {sawExtra: "true"}},
+    ],
+    edges: [
+      "input -> c1", "c1:0 -> base -> c2", "c1:1 -> extra -> c2",
+      "c2:0 -> rb -> output", "c2:1 -> re -> output",
+    ],
+  },
+  cases: [
+    [{x: true}, {sawBase: true, sawExtra: true}],
+    [{x: false}, {sawBase: true}],
+  ],
+}
+
+{
+  name: "one collect branch fanning out to several nodes",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["n > 0", "n > 5"]},
+      {expression: "a", fields: {a: "true"}},
+      {expression: "b", fields: {b: "true"}},
+      {expression: "c", fields: {c: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> a -> output", "s:0 -> b -> output", "s:1 -> c -> output"],
+  },
+  cases: [
+    [{n: 6}, {a: true, b: true, c: true}],
+    [{n: 1}, {a: true, b: true}],
+    [{n: 0}, {}],
+  ],
+}
+
+{
+  name: "two branches of one collect switch into the same node",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["n > 0", "n > 5"]},
+      {expression: "shared", fields: {ran: "true", n: "n"}},
+    ],
+    edges: ["input -> s", "s:0 -> shared -> output", "s:1 -> shared"],
+  },
+  cases: [
+    [{n: 6}, {ran: true, n: 6}],
+    [{n: 1}, {ran: true, n: 1}],
+    [{n: 0}, {}],
+  ],
+}
+
+{
+  name: "collect branches into sub-decisions",
+  decisions: {
+    left: {nodes: [{expression: "l", fields: {left: "v + 1"}}]},
+    right: {nodes: [{expression: "r", fields: {right: "v * 2"}}]},
+  },
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["v > 0", "v > 10"]},
+      {decision: "dl", key: "left"},
+      {decision: "dr", key: "right"},
+    ],
+    edges: ["input -> s", "s:0 -> dl -> output", "s:1 -> dr -> output"],
+  },
+  cases: [
+    [{v: 11}, {left: 12, right: 22}],
+    [{v: 1}, {left: 2}],
+    [{v: 0}, {}],
+  ],
+}
+
+{
+  name: "collect branches into function nodes",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["", "twice"]},
+      {function: "f1", source: """export const handler = async (input) => ({ one: input.v });"""},
+      {function: "f2", source: """export const handler = async (input) => ({ two: input.v * 2 });"""},
+    ],
+    edges: ["input -> s", "s:0 -> f1 -> output", "s:1 -> f2 -> output"],
+  },
+  cases: [
+    [{v: 3, twice: true}, {one: 3, two: 6}],
+    [{v: 3, twice: false}, {one: 3}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------
+// Several output nodes: the walk ends at the first output node reached.
+// ---------------------------------------------------------------------------------------
+
+{
+  name: "parallel branches into separate output nodes",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["", ""]},
+      {expression: "a", fields: {a: "true"}},
+      {expression: "b", fields: {b: "true"}},
+      {output: "out1"},
+      {output: "out2"},
+    ],
+    edges: ["input -> s", "s:0 -> a -> out1", "s:1 -> b -> out2"],
+  },
+  cases: [
+    [{}, {a: true, b: true}, "bug: both branches were taken but the walk stops at the first output node it reaches, dropping the other branch"],
+  ],
+}
+
+{
+  name: "branches into separate output nodes, only one taken",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["a", "b"]},
+      {expression: "ea", fields: {a: "true"}},
+      {expression: "eb", fields: {b: "true"}},
+      {output: "out1"},
+      {output: "out2"},
+    ],
+    edges: ["input -> s", "s:0 -> ea -> out1", "s:1 -> eb -> out2"],
+  },
+  cases: [
+    [{a: true, b: false}, {a: true}],
+    [{a: false, b: true}, {b: true}],
+    [{a: false, b: false}, {}],
+  ],
+}

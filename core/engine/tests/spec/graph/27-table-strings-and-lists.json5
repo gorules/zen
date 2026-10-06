@@ -1,0 +1,809 @@
+// Decision tables over strings and lists.
+//
+// String cells compare exactly: case, whitespace and unicode form all matter. Comma lists match
+// any entry, function cells (`startsWith($, ...)`, `contains`, `upper`, `len`) run as full
+// expressions over `$`, and list-typed inputs are matched with `in`, `contains`, `some` and
+// friends rather than with equality. Tables of 8 rules or more take the indexed path, where
+// string literal cells are looked up by value and everything else falls back to evaluation;
+// several suites repeat a small-table shape at that size. Chapter 06 covers the basic
+// shorthands; the string functions themselves are pinned in the expression spec.
+
+// --- String equality -----------------------------------------------------------------------
+
+{
+  name: "strings: equality is exact in case and whitespace",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["tier"], outputs: ["r"], rules: [
+        ["'gold'", "'gold'"],
+        ["'Gold'", "'Gold'"],
+        ["'gold '", "'gold with space'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{tier: "gold"}, {r: "gold"}],
+    [{tier: "Gold"}, {r: "Gold"}],
+    [{tier: "GOLD"}, {r: "other"}],
+    [{tier: "gold "}, {r: "gold with space"}],
+    [{tier: " gold"}, {r: "other"}],
+    [{tier: ""}, {r: "other"}],
+    [{tier: null}, {r: "other"}],
+  ],
+}
+
+{
+  name: "strings: single, double and backtick quoted cells are the same literal",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["s"], outputs: ["r"], rules: [
+        ["'abc'", "'single'"],
+        ["\"abc\"", "'double'"],
+        ["`abc`", "'backtick'"],
+        ["== 'abc'", "'explicit'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{s: "abc"}, [{r: "single"}, {r: "double"}, {r: "backtick"}, {r: "explicit"}]],
+    [{s: "ABC"}, []],
+    [{s: "ab"}, []],
+  ],
+}
+
+{
+  name: "strings: the empty string is a value, distinct from null and the wildcard",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["s"], outputs: ["r"], rules: [
+        ["''", "'empty'"],
+        ["null", "'null'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{s: ""}, {r: "empty"}],
+    [{s: null}, {r: "null"}],
+    [{}, {r: "null"}],
+    [{s: " "}, {r: "other"}],
+    [{s: 0}, {r: "other"}],
+    [{s: false}, {r: "other"}],
+  ],
+}
+
+{
+  name: "strings: a literal containing a comma is one value, not a list",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["s"], outputs: ["r"], rules: [
+        ["'a, b'", "'one literal'"],
+        ["'a', 'b'", "'list'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{s: "a, b"}, {r: "one literal"}],
+    [{s: "a"}, {r: "list"}],
+    [{s: "b"}, {r: "list"}],
+    [{s: "a,b"}, {r: "other"}],
+  ],
+}
+
+{
+  name: "strings: quotes and escapes inside literals",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["s"], outputs: ["r"], rules: [
+        ["\"it's\"", "'apostrophe'"],
+        ["'say \"hi\"'", "'quoted'"],
+        ["'a\\b'", "'backslash'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{s: "it's"}, {r: "apostrophe"}],
+    [{s: "say \"hi\""}, {r: "quoted"}],
+    [{s: "a\\b"}, {r: "backslash"}],
+    [{s: "its"}, {r: "other"}],
+  ],
+}
+
+{
+  name: "strings: string cells do not coerce numbers or booleans",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["v"], outputs: ["r"], rules: [
+        ["'1'", "'string one'"],
+        ["'true'", "'string true'"],
+        ["'null'", "'string null'"],
+        ["!= '1'", "'not string one'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{v: "1"}, [{r: "string one"}]],
+    [{v: 1}, [{r: "not string one"}]],
+    [{v: "true"}, [{r: "string true"}, {r: "not string one"}]],
+    [{v: true}, [{r: "not string one"}]],
+    [{v: "null"}, [{r: "string null"}, {r: "not string one"}]],
+    [{v: null}, [{r: "not string one"}]],
+  ],
+}
+
+// --- Comma lists and negation ----------------------------------------------------------------
+
+{
+  name: "lists: comma lists in several rules, first hit",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["country"], outputs: ["region"], rules: [
+        ["'US', 'CA', 'MX'", "'NA'"],
+        ["'DE', 'FR', 'IT', 'ES'", "'EU'"],
+        ["'GB', 'IE'", "'UKI'"],
+        ["'JP'", "'APAC'"],
+        ["", "'ROW'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{country: "US"}, {region: "NA"}],
+    [{country: "MX"}, {region: "NA"}],
+    [{country: "ES"}, {region: "EU"}],
+    [{country: "IE"}, {region: "UKI"}],
+    [{country: "JP"}, {region: "APAC"}],
+    [{country: "us"}, {region: "ROW"}],
+    [{country: "BR"}, {region: "ROW"}],
+    [{}, {region: "ROW"}],
+  ],
+}
+
+{
+  name: "lists: a value appearing in two lists is collected twice",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["code"], outputs: ["group"], rules: [
+        ["'a', 'b', 'c'", "'abc'"],
+        ["'c', 'd'", "'cd'"],
+        ["'c'", "'c'"],
+        ["'e'", "'e'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{code: "c"}, [{group: "abc"}, {group: "cd"}, {group: "c"}]],
+    [{code: "a"}, [{group: "abc"}]],
+    [{code: "d"}, [{group: "cd"}]],
+    [{code: "z"}, []],
+  ],
+}
+
+{
+  name: "lists: a comma list mixing a literal and a function test",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["sku"], outputs: ["r"], rules: [
+        ["'GIFT', startsWith($, 'PROMO-')", "'free'"],
+        ["", "'paid'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{sku: "GIFT"}, {r: "free"}],
+    [{sku: "PROMO-10"}, {r: "free"}],
+    [{sku: "promo-10"}, {r: "paid"}],
+    [{sku: "BOOK"}, {r: "paid"}],
+    [{sku: null}, {r: "paid"}],
+  ],
+}
+
+{
+  name: "lists: `not in [...]` excludes listed strings and keeps null and other types",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["status"], outputs: ["r"], rules: [
+        ["not in ['closed', 'cancelled']", "'open-ish'"],
+        ["", "'final'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{status: "open"}, {r: "open-ish"}],
+    [{status: "closed"}, {r: "final"}],
+    [{status: "cancelled"}, {r: "final"}],
+    [{status: "Closed"}, {r: "open-ish"}],
+    [{status: null}, {r: "open-ish"}],
+    [{}, {r: "open-ish"}],
+    [{status: 1}, {r: "open-ish"}],
+  ],
+}
+
+{
+  name: "lists: `not (...)` around a membership test",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["role"], outputs: ["access"], rules: [
+        ["not ($ in ['guest', 'banned'])", "'granted'"],
+        ["", "'denied'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{role: "admin"}, {access: "granted"}],
+    [{role: "guest"}, {access: "denied"}],
+    [{role: "banned"}, {access: "denied"}],
+    [{role: ""}, {access: "granted"}],
+    [{role: null}, {access: "granted"}],
+  ],
+}
+
+{
+  name: "lists: `!=` against a string and against a list entry",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["s"], outputs: ["r"], rules: [
+        ["!= 'x'", "'not x'"],
+        ["!= 'x', 'x'", "'not x or x'"],
+        ["!= 'x' and != 'y'", "'neither'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{s: "x"}, [{r: "not x or x"}]],
+    [{s: "y"}, [{r: "not x"}, {r: "not x or x"}]],
+    [{s: "z"}, [{r: "not x"}, {r: "not x or x"}, {r: "neither"}]],
+    [{s: null}, [{r: "not x"}, {r: "not x or x"}, {r: "neither"}]],
+  ],
+}
+
+// --- String functions in cells ------------------------------------------------------------
+
+{
+  name: "functions: prefix, suffix and substring tests",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["email"], outputs: ["r"], rules: [
+        ["endsWith($, '@gorules.io')", "'internal'"],
+        ["startsWith($, 'admin')", "'admin'"],
+        ["contains($, '+')", "'alias'"],
+        ["matches($, '^[a-z]+@')", "'simple local part'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{email: "ann@gorules.io"}, [{r: "internal"}, {r: "simple local part"}]],
+    [{email: "admin+ops@example.com"}, [{r: "admin"}, {r: "alias"}]],
+    [{email: "Admin@example.com"}, []],
+    [{email: "bob@example.com"}, [{r: "simple local part"}]],
+    [{email: ""}, []],
+    [{email: null}, []],
+  ],
+}
+
+{
+  name: "functions: case-insensitive matching through upper and lower",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["status"], outputs: ["r"], rules: [
+        ["lower($) == 'active'", "'active'"],
+        ["upper($) in ['PENDING', 'NEW']", "'waiting'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{status: "ACTIVE"}, {r: "active"}],
+    [{status: "Active"}, {r: "active"}],
+    [{status: "pending"}, {r: "waiting"}],
+    [{status: "New"}, {r: "waiting"}],
+    [{status: "closed"}, {r: "other"}],
+    [{status: 1}, {r: "other"}],
+    [{status: null}, {r: "other"}],
+  ],
+}
+
+{
+  name: "functions: normalising the input field instead of every cell",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["lower(trim(code ?? ''))"], outputs: ["r"], rules: [
+        ["'abc'", "'abc'"],
+        ["''", "'blank'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{code: "ABC"}, {r: "abc"}],
+    [{code: "  aBc  "}, {r: "abc"}],
+    [{code: "   "}, {r: "blank"}],
+    [{}, {r: "blank"}],
+    [{code: "abcd"}, {r: "other"}],
+  ],
+}
+
+{
+  name: "functions: length bands over strings",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["len(name)"], outputs: ["r"], rules: [
+        ["0", "'empty'"],
+        ["[1..3]", "'short'"],
+        ["[4..10]", "'medium'"],
+        ["> 10", "'long'"],
+        ["", "'not a string'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{name: ""}, {r: "empty"}],
+    [{name: "Al"}, {r: "short"}],
+    [{name: "Ann"}, {r: "short"}],
+    [{name: "Anna"}, {r: "medium"}],
+    [{name: "Bartholomew"}, {r: "long"}],
+    [{name: null}, {r: "not a string"}],
+    [{name: 12345}, {r: "not a string"}],
+    [{name: ["a", "b"]}, {r: "short"}],
+  ],
+}
+
+{
+  name: "functions: regular expressions in cells",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["postcode"], outputs: ["country"], rules: [
+        ["matches($, '^[0-9]{5}$')", "'US or DE'"],
+        ["matches($, '^[A-Z]{1,2}[0-9][A-Z0-9]? ?[0-9][A-Z]{2}$')", "'GB'"],
+        ["matches($, '^[0-9]{4}$')", "'four digits'"],
+        ["", "'unknown'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{postcode: "10115"}, {country: "US or DE"}],
+    [{postcode: "SW1A 1AA"}, {country: "GB"}],
+    [{postcode: "M1 1AE"}, {country: "GB"}],
+    [{postcode: "1010"}, {country: "four digits"}],
+    [{postcode: "101155"}, {country: "unknown"}],
+    [{postcode: 10115}, {country: "unknown"}],
+  ],
+}
+
+{
+  name: "functions: splitting a string input and testing its parts",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["split(path, '/')"], outputs: ["r"], rules: [
+        ["$[0] == 'api' and $[1] == 'v2'", "'api v2'"],
+        ["$[0] == 'api'", "'api'"],
+        ["len($) == 1", "'root segment'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{path: "api/v2/users"}, {r: "api v2"}],
+    [{path: "api/v1/users"}, {r: "api"}],
+    [{path: "home"}, {r: "root segment"}],
+    [{path: "static/app.js"}, {r: "other"}],
+    [{path: ""}, {r: "root segment"}],
+  ],
+}
+
+// --- Unicode -------------------------------------------------------------------------------
+
+{
+  name: "unicode: literal cells match non-ASCII strings exactly",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["city"], outputs: ["r"], rules: [
+        ["'München'", "'munich'"],
+        ["'東京'", "'tokyo'"],
+        ["'São Paulo', 'Zürich'", "'accented'"],
+        ["'🚀'", "'rocket'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{city: "München"}, {r: "munich"}],
+    [{city: "Munchen"}, {r: "other"}],
+    [{city: "MÜNCHEN"}, {r: "other"}],
+    [{city: "東京"}, {r: "tokyo"}],
+    [{city: "Zürich"}, {r: "accented"}],
+    [{city: "🚀"}, {r: "rocket"}],
+  ],
+}
+
+{
+  name: "unicode: composed and decomposed forms are different strings",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["s"], outputs: ["r"], rules: [
+        ["'é'", "'composed'"],
+        ["'é'", "'decomposed'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{s: "é"}, {r: "composed"}],
+    [{s: "é"}, {r: "decomposed"}],
+    [{s: "e"}, {r: "other"}],
+  ],
+}
+
+{
+  name: "unicode: upper and lower fold non-ASCII letters",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["upper(word)"], outputs: ["r"], rules: [
+        ["'STRASSE'", "'street'"],
+        ["'ÉCOLE'", "'school'"],
+        ["'ΑΘΗΝΑ'", "'athens'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{word: "straße"}, {r: "street"}],
+    [{word: "Strasse"}, {r: "street"}],
+    [{word: "école"}, {r: "school"}],
+    [{word: "Αθηνα"}, {r: "athens"}],
+    [{word: "school"}, {r: "other"}],
+  ],
+}
+
+{
+  name: "unicode: len counts characters",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["code"], outputs: ["r"], rules: [
+        ["len($) == 3", "'three'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{code: "abc"}, {r: "three"}],
+    [{code: "äöü"}, {r: "three"}, "bug: len counts UTF-8 bytes (6), so a three-character non-ASCII code is not three long"],
+    [{code: "日本語"}, {r: "three"}, "bug: len counts UTF-8 bytes (9), so a three-character non-ASCII code is not three long"],
+    [{code: "ab"}, {r: "other"}],
+    [{code: "é"}, {r: "other"}],
+  ],
+}
+
+{
+  name: "unicode: prefix tests on multi-byte strings",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["s"], outputs: ["r"], rules: [
+        ["startsWith($, 'Ö')", "'umlaut O'"],
+        ["contains($, '€')", "'euro'"],
+        ["endsWith($, '✓')", "'checked'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{s: "Österreich"}, {r: "umlaut O"}],
+    [{s: "price 5€"}, {r: "euro"}],
+    [{s: "done ✓"}, {r: "checked"}],
+    [{s: "Oesterreich"}, {r: "other"}],
+  ],
+}
+
+// --- Indexed string tables (8+ rules) ------------------------------------------------------
+
+{
+  name: "indexed: string point cells, lists and function cells keep first-hit order",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["code"], outputs: ["r"], rules: [
+        ["'A'", "'a'"],
+        ["'B', 'C'", "'b or c'"],
+        ["startsWith($, 'D')", "'d-prefix'"],
+        ["'D1'", "'d1 literal'"],
+        ["'E'", "'e'"],
+        ["'F', 'G', 'H'", "'fgh'"],
+        ["!= 'Z'", "'anything but z'"],
+        ["'Z'", "'z'"],
+        ["", "'fallback'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{code: "A"}, {r: "a"}],
+    [{code: "C"}, {r: "b or c"}],
+    [{code: "D1"}, {r: "d-prefix"}],
+    [{code: "E"}, {r: "e"}],
+    [{code: "H"}, {r: "fgh"}],
+    [{code: "Q"}, {r: "anything but z"}],
+    [{code: "Z"}, {r: "z"}],
+    [{code: "a"}, {r: "anything but z"}],
+    [{code: null}, {r: "anything but z"}],
+    [{code: 1}, {r: "anything but z"}],
+  ],
+}
+
+{
+  name: "indexed: string enum collect with duplicates across rules",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["plan"], outputs: ["feature"], rules: [
+        ["'free', 'pro', 'team', 'enterprise'", "'basic'"],
+        ["'pro', 'team', 'enterprise'", "'export'"],
+        ["'team', 'enterprise'", "'sharing'"],
+        ["'enterprise'", "'sso'"],
+        ["'enterprise'", "'audit'"],
+        ["'pro'", "'priority email'"],
+        ["'team'", "'admin console'"],
+        ["'legacy'", "'basic'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{plan: "free"}, [{feature: "basic"}]],
+    [{plan: "pro"}, [{feature: "basic"}, {feature: "export"}, {feature: "priority email"}]],
+    [{plan: "team"}, [{feature: "basic"}, {feature: "export"}, {feature: "sharing"}, {feature: "admin console"}]],
+    [{plan: "enterprise"}, [{feature: "basic"}, {feature: "export"}, {feature: "sharing"}, {feature: "sso"}, {feature: "audit"}]],
+    [{plan: "legacy"}, [{feature: "basic"}]],
+    [{plan: "Pro"}, []],
+    [{plan: null}, []],
+  ],
+}
+
+{
+  name: "indexed: two string columns intersect",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["country", "channel"], outputs: ["fee"], rules: [
+        ["'US'", "'web'", "1"],
+        ["'US'", "'store'", "0"],
+        ["'US'", "", "2"],
+        ["'DE', 'FR'", "'web'", "1.5"],
+        ["'DE', 'FR'", "'store'", "0.5"],
+        ["'GB'", "'web', 'app'", "1.2"],
+        ["", "'app'", "3"],
+        ["", "", "5"],
+      ]},
+    ],
+  },
+  cases: [
+    [{country: "US", channel: "web"}, {fee: 1}],
+    [{country: "US", channel: "app"}, {fee: 2}],
+    [{country: "FR", channel: "store"}, {fee: 0.5}],
+    [{country: "DE", channel: "app"}, {fee: 3}],
+    [{country: "GB", channel: "app"}, {fee: 1.2}],
+    [{country: "GB", channel: "store"}, {fee: 5}],
+    [{country: "JP", channel: "app"}, {fee: 3}],
+    [{country: "JP"}, {fee: 5}],
+    [{}, {fee: 5}],
+  ],
+}
+
+{
+  name: "indexed: unicode and case in indexed string cells",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["s"], outputs: ["r"], rules: [
+        ["'ä'", "'a umlaut'"],
+        ["'Ä'", "'A umlaut'"],
+        ["'é'", "'decomposed'"],
+        ["'é'", "'composed'"],
+        ["'ß'", "'eszett'"],
+        ["'日'", "'sun'"],
+        ["'😀'", "'smile'"],
+        ["'a'", "'plain a'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{s: "ä"}, {r: "a umlaut"}],
+    [{s: "Ä"}, {r: "A umlaut"}],
+    [{s: "é"}, {r: "composed"}],
+    [{s: "é"}, {r: "decomposed"}],
+    [{s: "ß"}, {r: "eszett"}],
+    [{s: "SS"}, {r: "other"}],
+    [{s: "😀"}, {r: "smile"}],
+    [{s: "A"}, {r: "other"}],
+  ],
+}
+
+{
+  name: "indexed: a list-typed input never matches string point cells",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["v"], outputs: ["r"], rules: [
+        ["'a'", "'a'"],
+        ["'b'", "'b'"],
+        ["'c'", "'c'"],
+        ["'d'", "'d'"],
+        ["'e'", "'e'"],
+        ["'f'", "'f'"],
+        ["'g'", "'g'"],
+        ["contains($, 'a')", "'contains a'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{v: "a"}, {r: "a"}],
+    [{v: ["a"]}, {r: "contains a"}],
+    [{v: ["b"]}, {r: "other"}],
+    [{v: "banana"}, {r: "contains a"}],
+    [{v: []}, {r: "other"}],
+  ],
+}
+
+// --- List-typed inputs -----------------------------------------------------------------------
+
+{
+  name: "list inputs: membership of a literal in the input array",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["tags"], outputs: ["r"], rules: [
+        ["'vip' in $", "'vip'"],
+        ["contains($, 'beta')", "'beta'"],
+        ["not ('blocked' in $)", "'not blocked'"],
+        ["'vip'", "'equals vip'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{tags: ["vip", "beta"]}, [{r: "vip"}, {r: "beta"}, {r: "not blocked"}]],
+    [{tags: ["blocked", "vip"]}, [{r: "vip"}]],
+    [{tags: []}, [{r: "not blocked"}]],
+    [{tags: ["VIP"]}, [{r: "not blocked"}]],
+    [{tags: "vip"}, [{r: "equals vip"}], "question: a string where a list is expected is not rejected: `contains($, 'beta')` becomes a substring test and the `in` cells error into non-matches, so only the equality cell decides"],
+    [{tags: null}, []],
+  ],
+}
+
+{
+  name: "list inputs: any, all and none over input arrays",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["roles"], outputs: ["r"], rules: [
+        ["some($, # in ['admin', 'owner'])", "'privileged'"],
+        ["len($) > 0 and all($, startsWith(#, 'read'))", "'read only'"],
+        ["none($, # == 'guest')", "'member'"],
+        ["", "'guest'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{roles: ["viewer", "owner"]}, {r: "privileged"}],
+    [{roles: ["read:docs", "read:wiki"]}, {r: "read only"}],
+    [{roles: ["writer"]}, {r: "member"}],
+    [{roles: ["guest"]}, {r: "guest"}],
+    [{roles: []}, {r: "member"}],
+    [{roles: null}, {r: "guest"}],
+  ],
+}
+
+{
+  name: "list inputs: overlap between the input array and a fixed list",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["skills"], outputs: ["r"], rules: [
+        ["len(filter($, # in ['rust', 'go', 'c++'])) >= 2", "'systems'"],
+        ["some($, # in ['rust', 'go', 'c++'])", "'some systems'"],
+        ["", "'none'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{skills: ["rust", "go", "js"]}, {r: "systems"}],
+    [{skills: ["js", "go"]}, {r: "some systems"}],
+    [{skills: ["js", "python"]}, {r: "none"}],
+    [{skills: []}, {r: "none"}],
+    [{skills: ["Rust"]}, {r: "none"}],
+  ],
+}
+
+{
+  name: "list inputs: a scalar input tested against a list from the input",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["country"], outputs: ["r"], rules: [
+        ["in blocked", "'blocked'"],
+        ["in allowed", "'allowed'"],
+        ["", "'review'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{country: "XX", blocked: ["XX", "YY"], allowed: ["US"]}, {r: "blocked"}],
+    [{country: "US", blocked: ["XX"], allowed: ["US", "CA"]}, {r: "allowed"}],
+    [{country: "BR", blocked: ["XX"], allowed: ["US"]}, {r: "review"}],
+    [{country: "US", allowed: ["US"]}, {r: "allowed"}],
+    [{country: "US", blocked: [], allowed: []}, {r: "review"}],
+    [{country: "US"}, {r: "review"}],
+  ],
+}
+
+{
+  name: "list inputs: arrays of objects with closures",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["cart.items"], outputs: ["r"], rules: [
+        ["some($, #.category == 'alcohol')", "'age check'"],
+        ["sum(map($, #.qty)) > 10", "'bulk'"],
+        ["", "'standard'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{cart: {items: [{category: "food", qty: 1}, {category: "alcohol", qty: 1}]}}, {r: "age check"}],
+    [{cart: {items: [{category: "food", qty: 6}, {category: "toys", qty: 5}]}}, {r: "bulk"}],
+    [{cart: {items: [{category: "food", qty: 2}]}}, {r: "standard"}],
+    [{cart: {items: []}}, {r: "standard"}],
+    [{cart: {}}, {r: "standard"}],
+  ],
+}
+
+{
+  name: "list inputs: string lists with a `[]` output column collecting reasons",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["flags"], outputs: ["reasons[]"], rules: [
+        ["contains($, 'chargeback')", "'prior chargeback'"],
+        ["contains($, 'new_device')", "'new device'"],
+        ["contains($, 'vpn')", "'vpn'"],
+        ["len($) == 0", "'clean'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{flags: ["vpn", "chargeback"]}, {reasons: ["prior chargeback", "vpn"]}],
+    [{flags: ["new_device"]}, {reasons: ["new device"]}],
+    [{flags: []}, {reasons: ["clean"]}],
+    [{flags: ["other"]}, {}],
+  ],
+}
+
+// --- Strings across nodes and loops --------------------------------------------------------
+
+{
+  name: "with nodes: a string built upstream feeds an equality table",
+  graph: {
+    nodes: [
+      {expression: "key", fields: {key: "upper(country) + '-' + lower(channel)"}},
+      {table: "t", inputs: ["key"], outputs: ["r"], rules: [
+        ["'US-web'", "'us web'"],
+        ["'US-store', 'CA-store'", "'na store'"],
+        ["endsWith($, '-app')", "'app'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{country: "us", channel: "WEB"}, {r: "us web"}],
+    [{country: "ca", channel: "Store"}, {r: "na store"}],
+    [{country: "de", channel: "app"}, {r: "app"}],
+    [{country: "de", channel: "web"}, {r: "other"}],
+  ],
+}
+
+{
+  name: "with nodes: string matching per element of an array in loop mode",
+  graph: {
+    nodes: [
+      {table: "t", executionMode: "loop", inputField: "files", outputPath: "kinds", inputs: ["name"], outputs: ["kind"], rules: [
+        ["endsWith($, '.png'), endsWith($, '.jpg')", "'image'"],
+        ["endsWith($, '.pdf')", "'document'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{files: [{name: "a.png"}, {name: "b.pdf"}, {name: "c.txt"}]}, {kinds: [{kind: "image"}, {kind: "document"}, {kind: "other"}]}],
+    [{files: [{name: "A.PNG"}, {}]}, {kinds: [{kind: "other"}, {kind: "other"}]}],
+    [{files: []}, {kinds: []}],
+  ],
+}

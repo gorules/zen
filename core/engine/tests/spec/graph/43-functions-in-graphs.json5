@@ -1,0 +1,823 @@
+// Function nodes in larger graphs: v2 functions between tables, switches and expressions,
+// several function nodes in one graph, functions after loops and inside sub-decisions,
+// functions reading `$nodes` of several upstream nodes, and how function errors propagate.
+// A function node's input is the merged output of its parents (like any other node); its
+// output replaces that input for the nodes downstream.
+
+// --- Between tables, switches and expressions ---------------------------------------------------
+
+{
+  name: "graphs: expression -> function -> table",
+  graph: {
+    nodes: [
+      {expression: "prep", fields: {total: "price * qty", country: "upper(country)"}},
+      {function: "fee", source: """export const handler = async (input) => ({ country: input.country, gross: input.total + (input.country === 'DE' ? 5 : 10) });"""},
+      {table: "band", inputs: ["gross", "country"], outputs: ["band"], rules: [
+        ["> 100", "'DE'", "'de-high'"],
+        ["> 100", "", "'high'"],
+        ["", "", "'low'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{price: 50, qty: 2, country: "de"}, {band: "de-high"}],
+    [{price: 50, qty: 2, country: "fr"}, {band: "high"}],
+    [{price: 1, qty: 1, country: "de"}, {band: "low"}],
+    [{price: 45, qty: 2, country: "de"}, {band: "low"}],
+    [{price: 45, qty: 2, country: "us"}, {band: "low"}],
+  ],
+}
+
+{
+  name: "graphs: table -> function -> expression",
+  graph: {
+    nodes: [
+      {table: "rate", inputs: ["tier"], outputs: ["rate"], rules: [
+        ["'gold'", "0.2"],
+        ["'silver'", "0.1"],
+        ["", "0"],
+      ]},
+      {function: "apply", source: """export const handler = async (input) => ({ rate: input.rate, discount: input.$nodes.input.amount * input.rate });"""},
+      {expression: "final", fields: {pay: "$nodes.input.amount - discount", rate: "rate"}},
+    ],
+  },
+  cases: [
+    [{tier: "gold", amount: 100}, {pay: 80, rate: 0.2}],
+    [{tier: "silver", amount: 50}, {pay: 45, rate: 0.1}],
+    [{tier: "none", amount: 10}, {pay: 10, rate: 0}],
+    [{amount: 0}, {pay: 0, rate: 0}],
+  ],
+}
+
+{
+  name: "graphs: a table without a match gives the function an empty input",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["v"], outputs: ["hit"], rules: [
+        ["> 10", "true"],
+      ]},
+      {function: "f", source: """export const handler = async (input) => ({ keys: Object.keys(input).filter((k) => k !== '$nodes'), hit: input.hit ?? false });"""},
+    ],
+  },
+  cases: [
+    [{v: 20}, {keys: ["hit"], hit: true}],
+    [{v: 1}, {keys: [], hit: false}],
+    [{}, {keys: [], hit: false}],
+  ],
+}
+
+{
+  name: "graphs: a collect table output arrives as an array",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["v"], outputs: ["tag"], rules: [
+        ["> 0", "'positive'"],
+        ["> 10", "'big'"],
+        ["", "'any'"],
+      ]},
+      {function: "f", source: """export const handler = async (input) => {
+  const rows = input.$nodes.t;
+  return { isArray: Array.isArray(rows), tags: rows.map((r) => r.tag) };
+};"""},
+    ],
+  },
+  cases: [
+    [{v: 20}, {isArray: true, tags: ["positive", "big", "any"]}],
+    [{v: 5}, {isArray: true, tags: ["positive", "any"]}],
+    [{v: -1}, {isArray: true, tags: ["any"]}],
+  ],
+}
+
+{
+  name: "graphs: a function result decides a switch",
+  graph: {
+    nodes: [
+      {function: "score", source: """export const handler = async (input) => ({ score: (input.signals ?? []).reduce((s, x) => s + x.weight, 0) });"""},
+      {switch: "route", when: ["score >= 10", "score >= 5", ""]},
+      {expression: "deny", fields: {decision: "'deny'", score: "score"}},
+      {expression: "review", fields: {decision: "'review'", score: "score"}},
+      {expression: "allow", fields: {decision: "'allow'", score: "score"}},
+    ],
+    edges: ["input -> score -> route", "route:0 -> deny -> output", "route:1 -> review -> output", "route:2 -> allow -> output"],
+  },
+  cases: [
+    [{signals: [{weight: 6}, {weight: 6}]}, {decision: "deny", score: 12}],
+    [{signals: [{weight: 5}]}, {decision: "review", score: 5}],
+    [{signals: [{weight: 1}, {weight: 0.5}]}, {decision: "allow", score: 1.5}],
+    [{}, {decision: "allow", score: 0}],
+  ],
+}
+
+{
+  name: "graphs: different functions on each switch branch",
+  graph: {
+    nodes: [
+      {switch: "route", when: ["kind == 'pct'", "kind == 'flat'", ""]},
+      {function: "pct", source: """export const handler = async (input) => ({ price: input.base * (1 - input.value / 100), via: 'pct' });"""},
+      {function: "flat", source: """export const handler = async (input) => ({ price: Math.max(0, input.base - input.value), via: 'flat' });"""},
+      {expression: "none", fields: {price: "base", via: "'none'"}},
+    ],
+    edges: ["input -> route", "route:0 -> pct -> output", "route:1 -> flat -> output", "route:2 -> none -> output"],
+  },
+  cases: [
+    [{kind: "pct", base: 200, value: 10}, {price: 180, via: "pct"}],
+    [{kind: "flat", base: 200, value: 30}, {price: 170, via: "flat"}],
+    [{kind: "flat", base: 20, value: 30}, {price: 0, via: "flat"}],
+    [{base: 99}, {price: 99, via: "none"}],
+  ],
+}
+
+{
+  name: "graphs: functions on several collect-switch branches merge at the output",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["age >= 18", "member", "country == 'NL'"]},
+      {function: "adult", source: """export const handler = async (input) => ({ flags: { adult: true }, notes: ['adult'] });"""},
+      {function: "member", source: """export const handler = async (input) => ({ flags: { member: true }, notes: ['member'] });"""},
+      {function: "local", source: """export const handler = async (input) => ({ flags: { local: true }, notes: ['local'] });"""},
+    ],
+    edges: ["input -> s", "s:0 -> adult -> output", "s:1 -> member -> output", "s:2 -> local -> output"],
+  },
+  cases: [
+    [{age: 30, member: true, country: "NL"}, {flags: {adult: true, member: true, local: true}, notes: ["adult"]}],
+    [{age: 30, member: false, country: "DE"}, {flags: {adult: true}, notes: ["adult"]}],
+    [{age: 10, member: true, country: "NL"}, {flags: {member: true, local: true}, notes: ["member"]}],
+    [{age: 10, member: false}, {}],
+  ],
+}
+
+{
+  name: "graphs: a function after a switch join sees the taken branch only",
+  graph: {
+    nodes: [
+      {switch: "route", when: ["vip", ""]},
+      {expression: "vip", fields: {level: "'vip'", limit: "1000"}},
+      {expression: "std", fields: {level: "'std'", limit: "100"}},
+      {function: "summary", source: """export const handler = async (input) => ({ text: `${input.level}:${input.limit}`, vipRan: 'vip' in input.$nodes, stdRan: 'std' in input.$nodes });"""},
+    ],
+    edges: ["input -> route", "route:0 -> vip -> summary", "route:1 -> std -> summary", "summary -> output"],
+  },
+  cases: [
+    [{vip: true}, {text: "vip:1000", vipRan: true, stdRan: false}],
+    [{vip: false}, {text: "std:100", vipRan: false, stdRan: true}],
+    [{}, {text: "std:100", vipRan: false, stdRan: true}],
+  ],
+}
+
+{
+  name: "graphs: a function output under a pass-through expression",
+  graph: {
+    nodes: [
+      {function: "f", source: """export const handler = async (input) => ({ norm: input.name?.trim().toLowerCase() ?? '', raw: input.name ?? null });"""},
+      {expression: "e", passThrough: true, fields: {short: "len(norm) <= 3"}},
+    ],
+  },
+  cases: [
+    [{name: " Ann "}, {norm: "ann", raw: " Ann ", short: true}],
+    [{name: "Robert"}, {norm: "robert", raw: "Robert", short: false}],
+    [{}, {norm: "", short: true}],
+  ],
+}
+
+{
+  name: "graphs: an expression output path feeding a function",
+  graph: {
+    nodes: [
+      {expression: "e", outputPath: "calc", fields: {double: "v * 2", half: "v / 2"}},
+      {function: "f", source: """export const handler = async (input) => ({ keys: Object.keys(input.calc), sum: input.calc.double + input.calc.half });"""},
+    ],
+  },
+  cases: [
+    [{v: 4}, {keys: ["double", "half"], sum: 10}],
+    [{v: 1}, {keys: ["double", "half"], sum: 2.5}],
+    [{v: 0}, {keys: ["double", "half"], sum: 0}],
+  ],
+}
+
+{
+  name: "graphs: a table with an input field after a function",
+  graph: {
+    nodes: [
+      {function: "f", source: """export const handler = async (input) => ({ applicant: { age: input.age, income: input.income * 12 } });"""},
+      {table: "t", inputField: "applicant", outputPath: "result", inputs: ["age", "income"], outputs: ["ok"], rules: [
+        [">= 18", ">= 30000", "true"],
+        ["", "", "false"],
+      ]},
+    ],
+  },
+  cases: [
+    [{age: 30, income: 3000}, {result: {ok: true}}],
+    [{age: 30, income: 2000}, {result: {ok: false}}],
+    [{age: 17, income: 9000}, {result: {ok: false}}],
+    [{age: 18, income: 2500}, {result: {ok: true}}],
+  ],
+}
+
+// --- Several function nodes ---------------------------------------------------------------------
+
+{
+  name: "graphs: three functions in a chain",
+  graph: {
+    nodes: [
+      {function: "parse", source: """export const handler = async (input) => ({ parts: input.csv.split(',').map((s) => s.trim()).filter(Boolean) });"""},
+      {function: "count", source: """export const handler = async (input) => ({ parts: input.parts, counts: input.parts.reduce((m, p) => ({ ...m, [p]: (m[p] ?? 0) + 1 }), {}) });"""},
+      {function: "top", source: """export const handler = async (input) => {
+  const entries = Object.entries(input.counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  return { top: entries[0]?.[0] ?? null, distinct: entries.length, total: input.parts.length };
+};"""},
+    ],
+  },
+  cases: [
+    [{csv: "a, b, a, c"}, {top: "a", distinct: 3, total: 4}],
+    [{csv: "x"}, {top: "x", distinct: 1, total: 1}],
+    [{csv: "b,a"}, {top: "a", distinct: 2, total: 2}],
+    [{csv: " , "}, {distinct: 0, total: 0}],
+  ],
+}
+
+{
+  name: "graphs: a diamond of functions joined by a third",
+  graph: {
+    nodes: [
+      {function: "left", source: """export const handler = async (input) => ({ left: input.v * 2 });"""},
+      {function: "right", source: """export const handler = async (input) => ({ right: input.v + 100 });"""},
+      {function: "join", source: """export const handler = async (input) => ({ sum: input.left + input.right, fromNodes: input.$nodes.left.left + input.$nodes.right.right });"""},
+    ],
+    edges: ["input -> left -> join", "input -> right -> join", "join -> output"],
+  },
+  cases: [
+    [{v: 1}, {sum: 103, fromNodes: 103}],
+    [{v: 0}, {sum: 100, fromNodes: 100}],
+    [{v: -50}, {sum: -50, fromNodes: -50}],
+  ],
+}
+
+{
+  name: "graphs: two functions writing the same key meet at a join",
+  graph: {
+    nodes: [
+      {function: "a", source: """export const handler = async (input) => ({ who: 'a', a: true, shared: { a: 1 } });"""},
+      {function: "b", source: """export const handler = async (input) => ({ who: 'b', b: true, shared: { b: 2 } });"""},
+      {function: "join", source: """export const handler = async (input) => ({ who: input.who, a: input.a ?? false, b: input.b ?? false, shared: input.shared });"""},
+    ],
+    edges: ["input -> a -> join", "input -> b -> join", "join -> output"],
+  },
+  cases: [
+    [{}, {who: "a", a: true, b: true, shared: {a: 1, b: 2}}],
+    [{x: 1}, {who: "a", a: true, b: true, shared: {a: 1, b: 2}}],
+  ],
+}
+
+{
+  name: "graphs: a function and an expression in parallel",
+  graph: {
+    nodes: [
+      {function: "js", source: """export const handler = async (input) => ({ jsSum: input.items.reduce((s, x) => s + x, 0) });"""},
+      {expression: "zen", fields: {zenSum: "sum(items)"}},
+    ],
+    edges: ["input -> js -> output", "input -> zen -> output"],
+  },
+  cases: [
+    [{items: [1, 2, 3]}, {jsSum: 6, zenSum: 6}],
+    [{items: [0.1, 0.2]}, {jsSum: 0.3, zenSum: 0.3}],
+    [{items: [0.1, 0.2, 0.3]}, {jsSum: 0.6, zenSum: 0.6}],
+    [{items: []}, {jsSum: 0, zenSum: 0}],
+  ],
+}
+
+{
+  name: "graphs: a later function reads every earlier function by name",
+  graph: {
+    nodes: [
+      {function: "one", source: """export const handler = async (input) => ({ step: 1 });"""},
+      {function: "two", source: """export const handler = async (input) => ({ step: input.step + 1 });"""},
+      {function: "three", source: """export const handler = async (input) => ({ step: input.step + 1 });"""},
+      {function: "report", source: """export const handler = async (input) => ({
+  steps: ['one', 'two', 'three'].map((n) => input.$nodes[n].step),
+  names: Object.keys(input.$nodes).sort(),
+});"""},
+    ],
+  },
+  cases: [
+    [{}, {steps: [1, 2, 3], names: ["input", "one", "three", "two"]}],
+    [{step: 99}, {steps: [1, 2, 3], names: ["input", "one", "three", "two"]}],
+  ],
+}
+
+{
+  name: "graphs: v1 and v2 functions in parallel feeding a table",
+  graph: {
+    nodes: [
+      {function: "v2", source: """export const handler = async (input) => ({ a: input.x > 0 });"""},
+      {functionV1: "v1", source: """const handler = (input) => ({ b: input.y > 0 });"""},
+      {table: "t", inputs: ["a", "b"], outputs: ["r"], rules: [
+        ["true", "true", "'both'"],
+        ["true", "", "'a'"],
+        ["", "true", "'b'"],
+        ["", "", "'none'"],
+      ]},
+    ],
+    edges: ["input -> v2 -> t", "input -> v1 -> t", "t -> output"],
+  },
+  cases: [
+    [{x: 1, y: 1}, {r: "both"}],
+    [{x: 1, y: 0}, {r: "a"}],
+    [{x: 0, y: 1}, {r: "b"}],
+    [{x: 0, y: 0}, {r: "none"}],
+  ],
+}
+
+// --- Functions reading $nodes of several upstream nodes -------------------------------------------
+
+{
+  name: "graphs: a function combines a table, an expression and the input",
+  graph: {
+    nodes: [
+      {table: "risk", inputs: ["score"], outputs: ["risk"], rules: [
+        ["< 500", "'high'"],
+        ["", "'low'"],
+      ]},
+      {expression: "ratio", fields: {dti: "debt / income"}},
+      {function: "decide", source: """export const handler = async (input) => {
+  const n = input.$nodes;
+  const ok = n.risk.risk === 'low' && n.ratio.dti < 0.4;
+  return { ok, reason: ok ? null : n.risk.risk === 'high' ? 'score' : 'dti', name: n.input.name };
+};"""},
+    ],
+    edges: ["input -> risk -> decide", "input -> ratio -> decide", "decide -> output"],
+  },
+  cases: [
+    [{score: 700, debt: 100, income: 1000, name: "a"}, {ok: true, name: "a"}],
+    [{score: 400, debt: 100, income: 1000, name: "b"}, {ok: false, reason: "score", name: "b"}],
+    [{score: 700, debt: 500, income: 1000, name: "c"}, {ok: false, reason: "dti", name: "c"}],
+    [{score: 500, debt: 0, income: 1, name: "d"}, {ok: true, name: "d"}],
+  ],
+}
+
+{
+  name: "graphs: a function reads a node that is not its parent",
+  graph: {
+    nodes: [
+      {expression: "first", fields: {a: "x + 1"}},
+      {expression: "second", fields: {b: "a * 10"}},
+      {function: "f", source: """export const handler = async (input) => ({ b: input.b, a: input.$nodes.first.a, ownInput: Object.keys(input).filter((k) => k !== '$nodes') });"""},
+    ],
+  },
+  cases: [
+    [{x: 1}, {b: 20, a: 2, ownInput: ["b"]}],
+    [{x: 0}, {b: 10, a: 1, ownInput: ["b"]}],
+    [{x: -1}, {b: 0, a: 0, ownInput: ["b"]}],
+  ],
+}
+
+{
+  name: "graphs: $nodes of a loop node is an array",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "items", executionMode: "loop", fields: {d: "v * 2"}},
+      {function: "f", source: """export const handler = async (input) => ({
+  isArray: Array.isArray(input.$nodes.each),
+  ds: input.$nodes.each.map((r) => r.d),
+});"""},
+    ],
+  },
+  cases: [
+    [{items: [{v: 1}, {v: 2}]}, {isArray: true, ds: [2, 4]}],
+    [{items: [{v: 0.5}]}, {isArray: true, ds: [1]}],
+    [{items: []}, {isArray: true, ds: []}],
+  ],
+}
+
+{
+  name: "graphs: $nodes of a sub-decision node",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {y: "x * 3", tag: "'child'"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "call", key: "child"},
+      {function: "f", source: """export const handler = async (input) => ({ y: input.$nodes.call.y, tag: input.$nodes.call.tag, direct: input.y });"""},
+    ],
+  },
+  cases: [
+    [{x: 1}, {y: 3, tag: "child", direct: 3}],
+    [{x: 0.1}, {y: 0.3, tag: "child", direct: 0.3}],
+  ],
+}
+
+{
+  name: "graphs: $nodes of a switch and a custom node",
+  graph: {
+    nodes: [
+      {custom: "c", kind: "config", config: {region: "eu"}},
+      {switch: "route", when: ["region == 'eu'", ""]},
+      {function: "eu", source: """export const handler = async (input) => ({
+  region: input.$nodes.c.region,
+  switchSeen: 'route' in input.$nodes,
+  switchKeys: Object.keys(input.$nodes.route ?? {}),
+});"""},
+      {expression: "other", fields: {region: "'other'"}},
+    ],
+    edges: ["input -> c -> route", "route:0 -> eu -> output", "route:1 -> other -> output"],
+  },
+  cases: [
+    [{}, {region: "eu", switchSeen: true, switchKeys: ["region"]}],
+    [{x: 1}, {region: "eu", switchSeen: true, switchKeys: ["region"]}],
+  ],
+}
+
+{
+  name: "graphs: two functions read each other's predecessor outputs",
+  graph: {
+    nodes: [
+      {expression: "base", fields: {n: "n"}},
+      {function: "sq", source: """export const handler = async (input) => ({ sq: input.$nodes.base.n ** 2 });"""},
+      {function: "cube", source: """export const handler = async (input) => ({ cube: input.$nodes.base.n ** 3, sqSeen: input.$nodes.sq?.sq ?? null });"""},
+    ],
+    edges: ["input -> base", "base -> sq -> output", "base -> cube -> output"],
+  },
+  cases: [
+    [{n: 2}, {sq: 4, cube: 8, sqSeen: 4}, "question: a parallel sibling's output is visible in $nodes when the sibling happens to run first"],
+    [{n: 3}, {sq: 9, cube: 27, sqSeen: 9}, "question: a parallel sibling's output is visible in $nodes when the sibling happens to run first"],
+  ],
+}
+
+// --- Functions after loops ----------------------------------------------------------------------
+
+{
+  name: "graphs: a function after an expression loop with an output path",
+  graph: {
+    nodes: [
+      {expression: "lines", inputField: "items", outputPath: "lines", executionMode: "loop", fields: {total: "price * qty"}},
+      {function: "sum", source: """export const handler = async (input) => ({ count: input.lines.length, total: input.lines.reduce((s, l) => s + l.total, 0) });"""},
+    ],
+  },
+  cases: [
+    [{items: [{price: 2, qty: 3}, {price: 1.5, qty: 2}]}, {count: 2, total: 9}],
+    [{items: [{price: 0.1, qty: 3}]}, {count: 1, total: 0.3}],
+    [{items: []}, {count: 0, total: 0}],
+  ],
+}
+
+{
+  name: "graphs: a function after a table loop",
+  graph: {
+    nodes: [
+      {table: "grade", inputField: "students", outputPath: "grades", executionMode: "loop", inputs: ["score"], outputs: ["grade"], rules: [
+        [">= 90", "'A'"],
+        [">= 70", "'B'"],
+        ["", "'C'"],
+      ]},
+      {function: "dist", source: """export const handler = async (input) => {
+  const dist = {};
+  for (const g of input.grades) dist[g.grade] = (dist[g.grade] ?? 0) + 1;
+  return { dist };
+};"""},
+    ],
+  },
+  cases: [
+    [{students: [{score: 95}, {score: 80}, {score: 10}, {score: 91}]}, {dist: {A: 2, B: 1, C: 1}}],
+    [{students: [{score: 70}]}, {dist: {B: 1}}],
+    [{students: []}, {dist: {}}],
+  ],
+}
+
+{
+  name: "graphs: a function builds the array that a loop node iterates",
+  graph: {
+    nodes: [
+      {function: "expand", source: """export const handler = async (input) => ({ items: Array.from({ length: input.n }, (_, i) => ({ i, sq: i * i })) });"""},
+      {expression: "each", inputField: "items", outputPath: "out", executionMode: "loop", fields: {label: "string(i) + ':' + string(sq)"}},
+    ],
+  },
+  cases: [
+    [{n: 3}, {out: [{label: "0:0"}, {label: "1:1"}, {label: "2:4"}]}],
+    [{n: 1}, {out: [{label: "0:0"}]}],
+    [{n: 0}, {out: []}],
+  ],
+}
+
+{
+  name: "graphs: a function between two loops",
+  graph: {
+    nodes: [
+      {expression: "first", inputField: "items", outputPath: "doubled", executionMode: "loop", fields: {v: "v * 2"}},
+      {function: "filter", source: """export const handler = async (input) => ({ kept: input.doubled.filter((x) => x.v > input.$nodes.input.min) });"""},
+      {expression: "second", inputField: "kept", outputPath: "out", executionMode: "loop", fields: {v: "v + 1"}},
+    ],
+  },
+  cases: [
+    [{items: [{v: 1}, {v: 5}, {v: 10}], min: 5}, {out: [{v: 11}, {v: 21}]}],
+    [{items: [{v: 1}], min: 5}, {out: []}],
+    [{items: [], min: 0}, {out: []}],
+  ],
+}
+
+// --- Functions inside sub-decisions -------------------------------------------------------------
+
+{
+  name: "graphs: a child graph with a function between expressions",
+  decisions: {
+    child: {nodes: [
+      {expression: "pre", fields: {n: "n + 1"}},
+      {function: "mid", source: """export const handler = async (input) => ({ n: input.n * 10 });"""},
+      {expression: "post", fields: {n: "n - 1"}},
+    ]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", outputPath: "child"}],
+  },
+  cases: [
+    [{n: 1}, {child: {n: 19}}],
+    [{n: 0}, {child: {n: 9}}],
+    [{n: -1}, {child: {n: -1}}],
+  ],
+}
+
+{
+  name: "graphs: a looped sub-decision with a function per item",
+  decisions: {
+    item: {nodes: [{function: "f", source: """export const handler = async (input) => ({ sku: input.sku.toUpperCase(), net: Math.round(input.price * (1 - (input.discount ?? 0)) * 100) / 100 });"""}]},
+  },
+  graph: {
+    nodes: [{decision: "each", key: "item", inputField: "lines", outputPath: "lines", executionMode: "loop"}],
+  },
+  cases: [
+    [{lines: [{sku: "a", price: 10}, {sku: "b", price: 20, discount: 0.25}]}, {lines: [{sku: "A", net: 10}, {sku: "B", net: 15}]}],
+    [{lines: [{sku: "x", price: 0.3, discount: 0.1}]}, {lines: [{sku: "X", net: 0.27}]}],
+    [{lines: []}, {lines: []}],
+  ],
+}
+
+{
+  name: "graphs: a looped sub-decision whose function reads the child's input node",
+  decisions: {
+    item: {nodes: [
+      {input: "request"},
+      {expression: "e", fields: {double: "v * 2"}},
+      {function: "f", source: """export const handler = async (input) => ({ v: input.$nodes.request.v, double: input.$nodes.e.double, iteration: config.iteration })"""},
+    ], edges: ["request -> e -> f -> output"]},
+  },
+  graph: {
+    nodes: [{decision: "each", key: "item", inputField: "items", outputPath: "out", executionMode: "loop"}],
+  },
+  cases: [
+    [{items: [{v: 1}, {v: 2}]}, {out: [{v: 1, double: 2, iteration: 1}, {v: 2, double: 4, iteration: 1}]}],
+    [{items: [{v: 0}]}, {out: [{v: 0, double: 0, iteration: 1}]}],
+  ],
+}
+
+{
+  name: "graphs: a function in a child behind a switch in the parent",
+  decisions: {
+    premium: {nodes: [{function: "f", source: """export const handler = async (input) => ({ price: input.base * 1.5, plan: 'premium' });"""}]},
+    basic: {nodes: [{expression: "e", fields: {price: "base", plan: "'basic'"}}]},
+  },
+  graph: {
+    nodes: [
+      {switch: "route", when: ["premium", ""]},
+      {decision: "p", key: "premium"},
+      {decision: "b", key: "basic"},
+    ],
+    edges: ["input -> route", "route:0 -> p -> output", "route:1 -> b -> output"],
+  },
+  cases: [
+    [{premium: true, base: 10}, {price: 15, plan: "premium"}],
+    [{premium: false, base: 10}, {price: 10, plan: "basic"}],
+    [{base: 3}, {price: 3, plan: "basic"}],
+  ],
+}
+
+{
+  name: "graphs: nested sub-decisions with functions at two levels",
+  decisions: {
+    outer: {nodes: [
+      {function: "pre", source: """export const handler = async (input) => ({ v: input.v + 1 });"""},
+      {decision: "inner", key: "inner"},
+    ]},
+    inner: {nodes: [{function: "f", source: """export const handler = async (input) => ({ v: input.v * 2, depth: config.iteration })"""}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "outer"}],
+  },
+  cases: [
+    [{v: 1}, {v: 4, depth: 2}],
+    [{v: 0}, {v: 2, depth: 2}],
+  ],
+}
+
+{
+  name: "graphs: a function calls zen.evaluate on a sibling decision",
+  decisions: {
+    tax: {nodes: [{table: "t", inputs: ["country"], outputs: ["rate"], rules: [
+      ["'NL'", "0.21"],
+      ["'DE'", "0.19"],
+      ["", "0"],
+    ]}]},
+  },
+  graph: {
+    nodes: [{function: "f", source: """import zen from 'zen';
+export const handler = async (input) => {
+  const out = [];
+  for (const line of input.lines) {
+    const r = await zen.evaluate('tax', { country: line.country });
+    out.push(Math.round(line.net * (1 + r.result.rate) * 100) / 100);
+  }
+  return { gross: out };
+};"""}],
+  },
+  cases: [
+    [{lines: [{net: 100, country: "NL"}, {net: 100, country: "DE"}, {net: 100, country: "US"}]}, {gross: [121, 119, 100]}],
+    [{lines: []}, {gross: []}],
+    [{lines: [{net: 9.99, country: "NL"}]}, {gross: [12.09]}],
+  ],
+}
+
+// --- Error propagation ----------------------------------------------------------------------------
+// A failing function fails the whole evaluation; nothing after it runs, and an error inside a
+// sub-decision or a loop item fails the parent too.
+
+{
+  name: "graphs: a function error after a table fails the evaluation",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["v"], outputs: ["kind"], rules: [
+        ["> 0", "'pos'"],
+        ["", "'other'"],
+      ]},
+      {function: "f", source: """export const handler = async (input) => {
+  if (input.kind !== 'pos') throw new Error('only positive values');
+  return { ok: true };
+};"""},
+    ],
+  },
+  cases: [
+    [{v: 1}, {ok: true}],
+    [{v: 0}, "!error: only positive values"],
+    [{}, "!error: only positive values"],
+  ],
+}
+
+{
+  name: "graphs: a function error names the failing node",
+  graph: {
+    nodes: [
+      {expression: "e", fields: {v: "v"}},
+      {function: "validate", source: """export const handler = async (input) => { if (input.v == null) throw new Error('v is required'); return { v: input.v }; };"""},
+    ],
+  },
+  cases: [
+    [{v: 1}, {v: 1}],
+    [{}, "!error: \"nodeId\":\"validate\""],
+    [{v: null}, "!error: v is required"],
+  ],
+}
+
+{
+  name: "graphs: a function error stops nodes after it",
+  graph: {
+    nodes: [
+      {function: "check", source: """export const handler = async (input) => { if (input.bad) throw new Error('stop'); return input; };"""},
+      {custom: "after", kind: "fail", config: {message: "after ran"}},
+    ],
+  },
+  cases: [
+    [{bad: true}, "!error: stop"],
+    [{bad: false}, "!error: after ran"],
+  ],
+}
+
+{
+  name: "graphs: a function error on one parallel branch fails the evaluation",
+  graph: {
+    nodes: [
+      {expression: "ok", fields: {ok: "true"}},
+      {function: "bad", source: """export const handler = async (input) => { if (input.fail) throw new Error('branch failed'); return { bad: false }; };"""},
+    ],
+    edges: ["input -> ok -> output", "input -> bad -> output"],
+  },
+  cases: [
+    [{fail: false}, {ok: true, bad: false}],
+    [{fail: true}, "!error: branch failed"],
+  ],
+}
+
+{
+  name: "graphs: a function error inside a sub-decision fails the parent",
+  decisions: {
+    child: {nodes: [{function: "f", source: """export const handler = async (input) => { if (input.v < 0) throw new Error('negative in child'); return { v: input.v }; };"""}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{v: 1}, {v: 1}],
+    [{v: -1}, "!error: negative in child"],
+    [{v: 0}, {v: 0}],
+  ],
+}
+
+{
+  name: "graphs: a function error in one loop item fails the whole loop",
+  decisions: {
+    item: {nodes: [{function: "f", source: """export const handler = async (input) => { if (typeof input.v !== 'number') throw new Error('item is not a number'); return { v: input.v }; };"""}]},
+  },
+  graph: {
+    nodes: [{decision: "each", key: "item", inputField: "items", outputPath: "out", executionMode: "loop"}],
+  },
+  cases: [
+    [{items: [{v: 1}, {v: 2}]}, {out: [{v: 1}, {v: 2}]}],
+    [{items: [{v: 1}, {v: "x"}]}, "!error: item is not a number"],
+    [{items: [{}]}, "!error: item is not a number"],
+    [{items: []}, {out: []}],
+  ],
+}
+
+{
+  name: "graphs: a function catching a failing zen.evaluate keeps going",
+  decisions: {
+    strict: {nodes: [{function: "g", source: """export const handler = async (input) => { if (!input.ok) throw new Error('strict failed'); return { fine: true }; };"""}]},
+  },
+  graph: {
+    nodes: [{function: "f", source: """import zen from 'zen';
+export const handler = async (input) => {
+  try {
+    const r = await zen.evaluate('strict', { ok: input.ok });
+    return { result: r.result.fine };
+  } catch (e) {
+    return { caught: String(e.message ?? e).includes('strict failed') };
+  }
+};"""}],
+  },
+  cases: [
+    [{ok: true}, {result: true}],
+    [{ok: false}, {caught: true}],
+  ],
+}
+
+{
+  name: "graphs: a failing zen.evaluate not caught fails the graph",
+  decisions: {
+    strict: {nodes: [{function: "g", source: """export const handler = async (input) => { throw new Error('inner always fails'); };"""}]},
+  },
+  graph: {
+    nodes: [{function: "f", source: """import zen from 'zen';
+export const handler = async (input) => {
+  const r = await zen.evaluate('strict', input);
+  return { r };
+};"""}],
+  },
+  cases: [
+    [{}, "!error: inner always fails"],
+    [{a: 1}, "!error: inner always fails"],
+  ],
+}
+
+{
+  name: "graphs: an expression error before a function means the function never runs",
+  graph: {
+    nodes: [
+      {expression: "e", fields: {n: "a + b"}},
+      {function: "f", source: """export const handler = async (input) => { throw new Error('function ran'); };"""},
+    ],
+  },
+  cases: [
+    [{a: 1, b: 2}, "!error: function ran"],
+    [{a: "x", b: 2}, "!error: \"nodeId\":\"e\""],
+  ],
+}
+
+{
+  name: "graphs: a function returning bad data for a typed table input",
+  graph: {
+    nodes: [
+      {function: "f", source: """export const handler = async (input) => ({ v: input.raw })"""},
+      {table: "t", inputs: ["v"], outputs: ["r"], rules: [
+        ["> 10", "'big'"],
+        ["", "'small'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{raw: 20}, {r: "big"}],
+    [{raw: 5}, {r: "small"}],
+    [{raw: "20"}, {r: "small"}],
+    [{raw: null}, {r: "small"}],
+    [{}, {r: "small"}],
+  ],
+}
+
+{
+  name: "graphs: an output schema rejects a function result",
+  graph: {
+    nodes: [
+      {function: "f", source: """export const handler = async (input) => input.ok ? { total: 5 } : { total: 'five' };"""},
+      {output: "response", schema: {type: "object", properties: {total: {type: "number"}}, required: ["total"]}},
+    ],
+    edges: ["input -> f -> response"],
+  },
+  cases: [
+    [{ok: true}, {total: 5}],
+    [{ok: false}, "!error"],
+  ],
+}

@@ -1,0 +1,447 @@
+// Minimal reproductions of the compiled-engine mismatches found by the generated chapters 70 and
+// 71 (and by extra seeds of the same generator, scratchpad gen/graphgen.py run with seeds 1-6).
+// Each suite was shrunk with gen/shrink.py and then rewritten by hand. Outputs recorded from the
+// walker; this chapter exists to differential-test the engines, so every case here pins the
+// walker's answer even where the walker's answer itself is questionable (see the notes).
+
+// --- A. A node environment that is not an object ------------------------------------------------
+// inputField can select a string, number, bool or array, and a loop can iterate over items that
+// are not objects. The walker then fails every field read of that environment: in an expression
+// the node errors, in a table the input cell fails to match and an output cell drops its output.
+// The compiled engine in batch and columnar mode reads such fields as null instead, so `null`,
+// `!=` and wildcard-with-`??` cells match and outputs appear.
+
+{
+  name: "A1: table input cell over an inputField that selects a non-object",
+  graph: {
+    nodes: [
+      {table: "t", inputField: "cust", inputs: ["age"], outputs: ["r"], rules: [
+        ["null", "'null'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{cust: {age: 3}}, {r: "other"}],
+    [{cust: {age: null}}, {r: "null"}],
+    [{cust: {}}, {r: "null"}],
+    [{}, {r: "null"}],
+    [{cust: null}, {r: "null"}],
+    [{cust: "cust"}, {r: "other"}],
+    [{cust: 5}, {r: "other"}],
+    [{cust: true}, {r: "other"}],
+    [{cust: []}, {r: "other"}],
+    [{cust: [{age: 3}]}, {r: "other"}],
+  ],
+}
+
+{
+  name: "A1: a not-equal cell matches null in batch over a non-object inputField",
+  graph: {
+    nodes: [
+      {table: "t", inputField: "cust", inputs: ["age"], outputs: ["r"], rules: [
+        ["!= -1", "'gold'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{cust: {age: 3}}, {r: "gold"}],
+    [{cust: {age: -1}}, {}],
+    [{cust: [{age: 3}]}, {}],
+    [{cust: "x"}, {}],
+    [{cust: {}}, {r: "gold"}],
+  ],
+}
+
+{
+  name: "A1: an output cell reading a non-object inputField",
+  graph: {
+    nodes: [
+      {table: "t", inputField: "cust", inputs: [], outputs: ["r"], rules: [
+        ["-((age ?? 1)) % 3"],
+      ]},
+    ],
+  },
+  cases: [
+    [{cust: {age: 4}}, {r: -1}],
+    [{cust: {}}, {r: -1}],
+    [{cust: [{age: 3}]}, {}],
+    [{cust: 5}, {}],
+    [{cust: null}, {r: -1}],
+  ],
+}
+
+{
+  name: "A1: a collect table with outputPath over a non-object inputField",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputField: "cust", inputs: [], outputs: ["v"], outputPath: "res", rules: [
+        ["-((age ?? 1) + 0.5)"],
+        ["2"],
+      ]},
+    ],
+  },
+  cases: [
+    [{cust: {age: 1}}, {res: [{v: -1.5}, {v: 2}]}],
+    [{cust: 5}, {res: [{v: 2}]}],
+    [{cust: "a"}, {res: [{v: 2}]}],
+    [{cust: {}}, {res: [{v: -1.5}, {v: 2}]}],
+  ],
+}
+
+{
+  name: "A1: a dotted output of a table over a non-object inputField reaches the output node",
+  graph: {
+    nodes: [
+      {table: "t1", inputField: "cust", inputs: ["age"], outputs: ["g.k"], rules: [
+        ["null", "true"],
+      ]},
+      {expression: "e", fields: {other: "1"}},
+    ],
+    edges: ["input -> t1", "input -> e", "t1 -> output", "e -> output"],
+  },
+  cases: [
+    [{cust: 5}, {other: 1}],
+    [{cust: {age: null}}, {g: {k: true}, other: 1}],
+    [{cust: {age: 2}}, {other: 1}],
+    [{cust: "c"}, {other: 1}],
+  ],
+}
+
+{
+  name: "A2: a loop table over items that are not objects",
+  graph: {
+    nodes: [
+      {table: "t", inputField: "items", executionMode: "loop", inputs: [], outputs: ["v"], rules: [
+        ["(qty ?? 2) * (price ?? -1)"],
+      ]},
+    ],
+  },
+  cases: [
+    [{items: [{qty: 1, price: 3}, {}]}, [{v: 3}, {v: -2}]],
+    [{items: [1, 2]}, [null, null]],
+    [{items: ["a"]}, [null]],
+    [{items: [{price: 2}, 7]}, [{v: 4}, null]],
+    [{items: []}, []],
+  ],
+}
+
+{
+  name: "A2: a loop table with an input column over items that are not objects",
+  graph: {
+    nodes: [
+      {table: "t", inputField: "items", executionMode: "loop", inputs: ["qty"], outputs: ["v"], rules: [
+        ["null", "'none'"],
+        ["", "'any'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{items: [{qty: 1}, {}]}, [{v: "any"}, {v: "none"}]],
+    [{items: [1, true]}, [{v: "any"}, {v: "any"}]],
+    [{items: [[1]]}, [{v: "any"}]],
+  ],
+}
+
+{
+  name: "A3: an expression over a non-object inputField that reads it only in an untaken branch",
+  graph: {
+    nodes: [
+      {expression: "e", inputField: "cust", fields: {k: "false ? -(age ?? 0) : $.missing", c: "1 + 1"}},
+    ],
+  },
+  cases: [
+    [{cust: {age: 1}}, {c: 2}],
+    [{cust: 5}, {c: 2}],
+    [{cust: "x"}, {c: 2}],
+    [{cust: []}, {c: 2}],
+    [{}, {c: 2}],
+  ],
+}
+
+{
+  name: "A4: columnar reports a later field's error for a non-object inputField",
+  graph: {
+    nodes: [{expression: "e", inputField: "cust", fields: {r: "(age ?? 0)", t: "len(tier)"}}],
+  },
+  cases: [
+    [{cust: []}, "!error"],
+    [{cust: {age: -25, tier: null}}, "!error"],
+    [{cust: {age: 5, tier: "Gold"}}, {r: 5, t: 4}],
+    [{cust: {age: 99, tier: ""}}, {r: 99, t: 0}],
+  ],
+}
+
+// --- B. A null written at a nested path, when the node's output fans out ----------------------
+// The walker keeps a null written under a dotted key or an outputPath (`{g: {a: null}}`), while a
+// top-level null key is dropped. When the writing node feeds both the output node and another
+// node whose result is merged at the same join, batch mode drops the nested null (`{g: {}}`).
+// Single and columnar mode agree with the walker.
+
+{
+  name: "B: passThrough dotted null, fanned out to the output and through a second passThrough node",
+  graph: {
+    nodes: [
+      {expression: "e1", passThrough: true, fields: {"g.a": "score"}},
+      {expression: "e2", passThrough: true, fields: {z: "1"}},
+    ],
+    edges: ["input -> e1", "e1 -> e2", "e1 -> output", "e2 -> output"],
+  },
+  cases: [
+    {input: {n: 2.5, score: null}, output: {g: {a: null}, n: 2.5, z: 1}, engines: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"},
+    {input: {n: 2.5, score: 1}, output: {g: {a: 1}, n: 2.5, score: 1, z: 1}, engines: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"},
+    {input: {n: 2}, output: {g: {a: null}, n: 2, z: 1}, engines: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"},
+    {input: {score: "s"}, output: {g: {a: "s"}, score: "s", z: 1}, engines: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"},
+  ],
+}
+
+{
+  name: "B: the same graph without the fan-out keeps the null in batch",
+  graph: {
+    nodes: [
+      {expression: "e1", passThrough: true, fields: {"g.a": "score"}},
+      {expression: "e2", passThrough: true, fields: {z: "1"}},
+    ],
+  },
+  cases: [
+    {input: {n: 2.5, score: null}, output: {g: {a: null}, n: 2.5, z: 1}, engines: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"},
+    {input: {n: 2.5, score: 1}, output: {g: {a: 1}, n: 2.5, score: 1, z: 1}, engines: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"},
+    {input: {n: 2}, output: {g: {a: null}, n: 2, z: 1}, engines: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"},
+  ],
+}
+
+{
+  name: "B: an outputPath null read by a passThrough sibling",
+  graph: {
+    nodes: [
+      {expression: "e1", outputPath: "lines", fields: {k: "n ?? n"}},
+      {expression: "e2", passThrough: true, fields: {j: "lines.other ?? 0"}},
+    ],
+    edges: ["input -> e1", "e1 -> e2", "e2 -> output", "e1 -> output"],
+  },
+  cases: [
+    {input: {}, output: {j: 0, lines: {k: null}}, engines: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"},
+    {input: {n: 1}, output: {j: 0, lines: {k: 1}}, engines: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"},
+    {input: {n: null}, output: {j: 0, lines: {k: null}}, engines: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"},
+    {input: {n: "x"}, output: {j: 0, lines: {k: "x"}}, engines: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"},
+  ],
+}
+
+{
+  name: "B: a dotted null joined with a passThrough table downstream",
+  graph: {
+    nodes: [
+      {expression: "e1", fields: {"res.k": "active ?? tier"}},
+      {table: "t", inputs: [], outputs: ["done"], passThrough: true, rules: [["true"]]},
+    ],
+    edges: ["input -> e1", "e1 -> output", "e1 -> t", "t -> output"],
+  },
+  cases: [
+    {input: {}, output: {done: true, res: {k: null}}, engines: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"},
+    {input: {active: true}, output: {done: true, res: {k: true}}, engines: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"},
+    {input: {tier: "gold"}, output: {done: true, res: {k: "gold"}}, engines: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"},
+    {input: {active: null, tier: null}, output: {done: true, res: {k: null}}, engines: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"},
+  ],
+}
+
+{
+  name: "B: a non-matching passThrough table with outputPath writes null under the path",
+  graph: {
+    nodes: [
+      {table: "t1", inputs: [], outputs: ["a"], rules: [["'mid'"]]},
+      {table: "t2", inputs: ["'x'"], outputs: ["v"], passThrough: true, outputPath: "o.p", rules: [
+        ["'gold'", "1"],
+      ]},
+      {expression: "e", fields: {s: "score ?? 0"}},
+    ],
+    edges: ["input -> t1", "t1 -> t2", "t2 -> output", "input -> e", "e -> output"],
+  },
+  cases: [
+    {input: {}, output: {a: "mid", o: {p: null}, s: 0}, engines: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"},
+    {input: {score: 3}, output: {a: "mid", o: {p: null}, s: 3}, engines: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"},
+    {input: {score: null}, output: {a: "mid", o: {p: null}, s: 0}, engines: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"},
+  ],
+}
+
+{
+  name: "B: a nested null and a collect array meet at the same output key",
+  graph: {
+    nodes: [
+      {table: "t1", inputs: [], outputs: ["ok"], rules: [["true"]]},
+      {expression: "e2", passThrough: true, fields: {"res.k": "missing"}},
+      {table: "t3", hit: "collect", inputs: [], outputs: ["v[]"], outputPath: "res", rules: [["10"]]},
+    ],
+    edges: ["input -> t1", "t1 -> e2", "e2 -> output", "t1 -> t3", "t3 -> output"],
+  },
+  cases: [
+    {input: {}, output: {ok: true, res: {k: null}}, engines: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"},
+    {input: {missing: 1}, output: {ok: true, res: {k: null}}, engines: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"},
+    {input: {missing: null}, output: {ok: true, res: {k: null}}, engines: "OPEN compiled bug: batch mode drops a null written at a nested path when the writing node fans out; single and columnar agree with the walker"},
+  ],
+}
+
+// --- C. passThrough over a node input that is an array -------------------------------------------
+// A collect table without outputPath outputs an array. A passThrough table downstream then has an
+// array as its input: the walker returns that array and drops the table's own outputs (a
+// passThrough expression instead drops the array), and at the output node an array parent also
+// discards the object output of a sibling merged after it. Batch and columnar produce `{}` for the
+// first and keep every sibling's object for the second.
+
+{
+  name: "C: a matching passThrough table after a collect table",
+  graph: {
+    nodes: [
+      {table: "t1", hit: "collect", inputs: [], outputs: ["a"], rules: [["'high'"]]},
+      {table: "t2", inputs: ["1"], outputs: ["res.v"], passThrough: true, rules: [["not(50)", "100"]]},
+    ],
+  },
+  cases: [
+    [{}, [{a: "high"}], "question: a passThrough expression over an array input keeps its own fields and drops the array (next suite), while a passThrough table returns the array and drops its matched output `res.v`"],
+    [{x: 1}, [{a: "high"}], "question: a passThrough expression over an array input keeps its own fields and drops the array (next suite), while a passThrough table returns the array and drops its matched output `res.v`"],
+    [{a: "in"}, [{a: "high"}], "question: a passThrough expression over an array input keeps its own fields and drops the array (next suite), while a passThrough table returns the array and drops its matched output `res.v`"],
+  ],
+}
+
+{
+  name: "C: a passThrough expression after a collect table",
+  graph: {
+    nodes: [
+      {table: "t1", hit: "collect", inputs: ["n"], outputs: ["a"], rules: [["> 0", "'pos'"], ["", "'any'"]]},
+      {expression: "e", passThrough: true, fields: {k: "1"}},
+    ],
+  },
+  cases: [
+    [{n: 1}, {k: 1}],
+    [{n: -1}, {k: 1}],
+    [{}, {k: 1}],
+  ],
+}
+
+{
+  name: "C: an array parent at the output node next to object siblings",
+  graph: {
+    nodes: [
+      {expression: "e1", fields: {a: "n ?? 0"}},
+      {expression: "e2", fields: {b: "n ?? 0"}},
+      {table: "t1", hit: "collect", inputs: [], outputs: ["c[]"], rules: [["2"]]},
+      {table: "t2", inputs: ["'false'"], outputs: ["d"], passThrough: true, rules: [["null", "20"]]},
+    ],
+    edges: ["input -> e1", "input -> e2", "input -> t1", "t1 -> t2", "e1 -> output", "t2 -> output", "e2 -> output"],
+  },
+  cases: [
+    [{n: 11}, {a: 11}, "question: the array from t2 at the output node discards e2's object output `b`, but not e1's `a`"],
+    [{}, {a: 0}, "question: the array from t2 at the output node discards e2's object output `b`, but not e1's `a`"],
+    [{n: 0}, {a: 0}, "question: the array from t2 at the output node discards e2's object output `b`, but not e1's `a`"],
+  ],
+}
+
+// --- D. A loop over an array node input reports a different error ------------------------------
+// A loop whose inputField reads a field of an array input: both engines fail, with different
+// messages (walker: the VM's `FetchEnv: Unsupported type`; batch and columnar: `Expected an array`).
+
+{
+  name: "D: a loop node whose input is an array",
+  graph: {
+    nodes: [
+      {table: "t1", hit: "collect", inputs: [], outputs: ["v"], rules: [["0.25"]]},
+      {expression: "e2", inputField: "items", executionMode: "loop", outputPath: "lines", fields: {k: "tag ?? 'none'"}},
+    ],
+  },
+  cases: [
+    [{}, "!error"],
+    [{items: [{tag: "a"}]}, "!error"],
+  ],
+}
+
+// --- E. An expression node whose input is an array ------------------------------------------------
+// After a collect table without outputPath, an expression node's environment is the array of
+// matched rows. The walker reads a member path such as `res.x` as null there, while a bare
+// identifier (`a`, or an inputField `cust`) fails the node. The compiled engine fails the member
+// path too, in single and DecisionEngine mode (batch agrees with the walker), and in batch and
+// columnar mode reads the inputField as null and evaluates the node.
+
+{
+  name: "E: a member path read from an array environment",
+  graph: {
+    nodes: [
+      {table: "t1", hit: "collect", inputs: [], outputs: ["a"], rules: [["'mid'"]]},
+      {expression: "e", fields: {k: "res.x"}},
+    ],
+  },
+  cases: [
+    [{}, {}, "question: the walker reads `res.x` from an array environment as null but fails on a bare identifier (next suite); one of the two is inconsistent"],
+    [{res: {x: 1}}, {}, "question: the walker reads `res.x` from an array environment as null but fails on a bare identifier (next suite); one of the two is inconsistent"],
+    [{a: 1}, {}, "question: the walker reads `res.x` from an array environment as null but fails on a bare identifier (next suite); one of the two is inconsistent"],
+  ],
+}
+
+{
+  name: "E: a bare identifier read from an array environment fails on both engines",
+  graph: {
+    nodes: [
+      {table: "t1", hit: "collect", inputs: [], outputs: ["a"], rules: [["'mid'"]]},
+      {expression: "e", fields: {k: "a ?? 'none'"}},
+    ],
+  },
+  cases: [
+    [{}, "!error"],
+    [{a: 1}, "!error"],
+  ],
+}
+
+{
+  name: "E: an inputField read from an array environment",
+  graph: {
+    nodes: [
+      {table: "t1", hit: "collect", inputs: [], outputs: ["res.v"], rules: [["1"]]},
+      {expression: "e", inputField: "cust", fields: {k: "(active ?? false) and true"}},
+    ],
+  },
+  cases: [
+    [{}, "!error"],
+    [{cust: {active: true}}, "!error"],
+    [{cust: 5}, "!error"],
+  ],
+}
+
+// --- F. Columnar: a null under an outputPath against an array under the same path ------------------
+// A non-matching passThrough table with outputPath writes null at that path; a loop or collect
+// node writes an array at the same path. The walker's merge at the output node lets the null
+// win (and drops the key); the columnar result keeps the array. Single and batch agree with the
+// walker. Probably the columnar side of B (a nested null treated as absent).
+
+{
+  name: "F: a non-matching passThrough table and a loop table share an outputPath",
+  graph: {
+    nodes: [
+      {table: "t1", inputs: ["s"], outputs: ["v"], passThrough: true, outputPath: "o.p", rules: [["'gold', 'b'", "true"]]},
+      {table: "t2", inputField: "items", executionMode: "loop", inputs: [], outputs: ["res.k"], outputPath: "o.p", rules: [["2"]]},
+    ],
+    edges: ["input -> t1", "input -> t2", "t1 -> output", "t2 -> output"],
+  },
+  cases: [
+    {input: {items: [{qty: 0.5, tag: true}, {price: 19.99, qty: 11, tag: "Gold"}, {price: true, tag: "zz"}]}, output: {items: [{qty: 0.5, tag: true}, {price: 19.99, qty: 11, tag: "Gold"}, {price: true, tag: "zz"}], o: {}}, engines: "OPEN compiled bug: columnar keeps the array where the walker lets a null under the same outputPath win"},
+    {input: {items: [{qty: 1}], s: "gold"}, output: {items: [{qty: 1}], o: {p: {v: true}}, s: "gold"}, engines: "OPEN compiled bug: columnar keeps the array where the walker lets a null under the same outputPath win"},
+    {input: {items: [], s: "x"}, output: {items: [], o: {}, s: "x"}, engines: "OPEN compiled bug: columnar keeps the array where the walker lets a null under the same outputPath win"},
+    {input: {items: [{qty: 2}, {qty: 3}]}, output: {items: [{qty: 2}, {qty: 3}], o: {}}, engines: "OPEN compiled bug: columnar keeps the array where the walker lets a null under the same outputPath win"},
+  ],
+}
+
+{
+  name: "F: a non-matching passThrough table, a passThrough expression and a collect table share an outputPath",
+  graph: {
+    nodes: [
+      {table: "t1", inputs: ["n"], outputs: ["g.v"], passThrough: true, outputPath: "o.p", rules: [["[5..6)", "'gold'"]]},
+      {expression: "e2", passThrough: true, fields: {k: "score"}},
+      {table: "t3", hit: "collect", inputs: ["a"], outputs: ["g.w"], outputPath: "o.p", rules: [["> 100", "1"]]},
+      {expression: "e5", fields: {c: "o.p.x ?? code"}},
+    ],
+    edges: ["input -> t1", "t1 -> e2", "e2 -> t3", "t1 -> e5", "e2 -> output", "t3 -> output", "e5 -> output"],
+  },
+  cases: [
+    {input: {}, output: {o: {}}, engines: "OPEN compiled bug: columnar keeps the array where the walker lets a null under the same outputPath win"},
+    {input: {n: 5}, output: {n: 5, o: {p: {g: {v: "gold"}}}}, engines: "OPEN compiled bug: columnar keeps the array where the walker lets a null under the same outputPath win"},
+    {input: {a: 101, code: "c"}, output: {a: 101, c: "c", code: "c", o: {}}, engines: "OPEN compiled bug: columnar keeps the array where the walker lets a null under the same outputPath win"},
+    {input: {score: 1, n: 7}, output: {k: 1, n: 7, o: {}, score: 1}, engines: "OPEN compiled bug: columnar keeps the array where the walker lets a null under the same outputPath win"},
+  ],
+}

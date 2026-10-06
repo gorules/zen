@@ -1,0 +1,1228 @@
+// Input schema keywords, one keyword family per suite.
+//
+// The input node validates the request with a Draft 7 JSON schema before any node runs. Chapter 19
+// pins the basics (required, primitive types, simple bounds, enum, nested required, items,
+// additionalProperties, oneOf, if/then); this chapter walks the rest of the keyword set and the
+// corners of the ones already covered: type unions, null handling through the null-retry rule,
+// exclusive bounds, decimal multipleOf, code-point string lengths, unanchored patterns, formats,
+// object/array enums and consts, tuple items, contains, object size keywords, propertyNames,
+// patternProperties, dependencies, $ref/definitions, allOf/not/else and boolean schemas.
+//
+// Null-retry rule (`NodeContext::validate`): when validation fails, null-valued object keys at the
+// failing paths are removed and validation is retried, so a null key counts as absent for every
+// keyword except a `required` that lists it (a null array item is never removed).
+//
+// The compiled engine pre-checks columnar rows against a reduced schema (`compiled/schema.rs`:
+// type, properties, required, additionalProperties, string enums, nested objects, arrays with
+// items) and only sends doubtful rows to the full validator, so the first suites use exactly that
+// subset and vary column types and presence across cases.
+
+// ---------------------------------------------------------------------------------------------
+// The columnar pre-check subset: flat properties, every row shape in one suite.
+{
+  name: "pre-check subset: flat typed properties with required",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["id", "amount"], properties: {
+        id: {type: "string"},
+        amount: {type: "number"},
+        count: {type: "integer"},
+        active: {type: "boolean"},
+      }}},
+      {expression: "calc", fields: {id: "id", doubled: "amount * 2", n: "count ?? 0", on: "active ?? false"}},
+    ],
+  },
+  cases: [
+    [{id: "a", amount: 1.5, count: 2, active: true}, {id: "a", doubled: 3, n: 2, on: true}],
+    [{id: "b", amount: 0}, {id: "b", doubled: 0, n: 0, on: false}],
+    [{id: "c", amount: -2, count: 0, active: false}, {id: "c", doubled: -4, n: 0, on: false}],
+    [{id: "d", amount: "1"}, "!error: /amount"],
+    [{id: 5, amount: 1}, "!error: /id"],
+    [{id: "e", amount: 1, count: 1.5}, "!error: /count"],
+    [{id: "f", amount: 1, count: 3.0}, {id: "f", doubled: 2, n: 3, on: false}],
+    [{id: "g", amount: 1, active: "yes"}, "!error: /active"],
+    [{amount: 1}, "!error: id"],
+    [{id: "h"}, "!error: amount"],
+    [{id: "i", amount: 1, extra: {deep: [1]}}, {id: "i", doubled: 2, n: 0, on: false}],
+  ],
+}
+
+{
+  name: "pre-check subset: additionalProperties false at the root",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", additionalProperties: false, properties: {
+        a: {type: "number"},
+        b: {type: "string"},
+      }}},
+      {expression: "calc", fields: {sum: "(a ?? 0) + len(b ?? '')"}},
+    ],
+  },
+  cases: [
+    [{a: 1, b: "xy"}, {sum: 3}],
+    [{a: 2}, {sum: 2}],
+    [{b: "xyz"}, {sum: 3}],
+    [{}, {sum: 0}],
+    [{a: 1, c: 1}, "!error: NodeError"],
+    [{c: "x"}, "!error: NodeError"],
+    [{a: 1, c: null}, {sum: 1}],
+    [{a: 1, b: {nested: true}}, "!error: /b"],
+  ],
+}
+
+{
+  name: "pre-check subset: string enum and const",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["tier"], properties: {
+        tier: {type: "string", enum: ["gold", "silver", "bronze"]},
+        region: {enum: ["eu", "us"]},
+        version: {const: "v2"},
+      }}},
+      {expression: "calc", fields: {key: "tier + '/' + (region ?? '-') + '/' + (version ?? '-')"}},
+    ],
+  },
+  cases: [
+    [{tier: "gold"}, {key: "gold/-/-"}],
+    [{tier: "silver", region: "eu"}, {key: "silver/eu/-"}],
+    [{tier: "bronze", region: "us", version: "v2"}, {key: "bronze/us/v2"}],
+    [{tier: "Gold"}, "!error: /tier"],
+    [{tier: "gold", region: "apac"}, "!error: /region"],
+    [{tier: "gold", region: 1}, "!error: /region"],
+    [{tier: "gold", version: "v3"}, "!error: /version"],
+    [{tier: ""}, "!error: /tier"],
+    [{tier: 1}, "!error: /tier"],
+  ],
+}
+
+{
+  name: "pre-check subset: nested objects with required members",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["customer"], properties: {
+        customer: {type: "object", required: ["name"], properties: {
+          name: {type: "string"},
+          age: {type: "integer"},
+          address: {type: "object", required: ["city"], properties: {city: {type: "string"}, zip: {type: "string"}}},
+        }},
+      }}},
+      {expression: "calc", fields: {name: "customer.name", city: "customer.address.city ?? 'unknown'"}},
+    ],
+  },
+  cases: [
+    [{customer: {name: "ann"}}, {name: "ann", city: "unknown"}],
+    [{customer: {name: "bob", age: 40, address: {city: "Berlin"}}}, {name: "bob", city: "Berlin"}],
+    [{customer: {name: "cy", address: {city: "Paris", zip: "75001"}}}, {name: "cy", city: "Paris"}],
+    [{customer: {name: "dee", address: {zip: "1000"}}}, "!error: /customer/address"],
+    [{customer: {age: 3}}, "!error: /customer"],
+    [{customer: {name: "eve", age: "3"}}, "!error: /customer/age"],
+    [{customer: {name: "fay", address: {city: 7}}}, "!error: /customer/address/city"],
+    [{customer: {name: "gus", address: "Rome"}}, "!error: /customer/address"],
+    [{}, "!error: customer"],
+  ],
+}
+
+{
+  name: "pre-check subset: nested additionalProperties false",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {
+        point: {type: "object", additionalProperties: false, properties: {x: {type: "number"}, y: {type: "number"}}},
+      }}},
+      {expression: "calc", fields: {sum: "(point.x ?? 0) + (point.y ?? 0)"}},
+    ],
+  },
+  cases: [
+    [{point: {x: 1, y: 2}}, {sum: 3}],
+    [{point: {x: 1}}, {sum: 1}],
+    [{}, {sum: 0}],
+    [{point: {x: 1, z: 3}}, "!error: /point"],
+    [{point: {x: 1, z: {deep: 1}}}, "!error: /point"],
+    [{point: {x: 1}, other: {z: 1}}, {sum: 1}],
+  ],
+}
+
+{
+  name: "pre-check subset: arrays with typed items",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {
+        nums: {type: "array", items: {type: "number"}},
+        tags: {type: "array", items: {type: "string", enum: ["a", "b", "c"]}},
+        flags: {type: "array", items: {type: "boolean"}},
+      }}},
+      {expression: "calc", fields: {total: "sum(nums ?? [])", tagCount: "len(tags ?? [])", anyFlag: "some(flags ?? [], #)"}},
+    ],
+  },
+  cases: [
+    [{nums: [1, 2], tags: ["a"], flags: [false, true]}, {total: 3, tagCount: 1, anyFlag: true}],
+    [{nums: [], tags: [], flags: []}, {total: 0, tagCount: 0, anyFlag: false}],
+    [{nums: [0.5]}, {total: 0.5, tagCount: 0, anyFlag: false}],
+    [{tags: ["c", "b", "a"]}, {total: 0, tagCount: 3, anyFlag: false}],
+    [{nums: [1, "2"]}, "!error: /nums/1"],
+    [{tags: ["a", "d"]}, "!error: /tags/1"],
+    [{flags: [true, 1]}, "!error: /flags/1"],
+    [{nums: "1,2"}, "!error: /nums"],
+    [{nums: [1, null]}, "!error: /nums/1"],
+  ],
+}
+
+{
+  name: "pre-check subset: arrays of objects",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["lines"], properties: {
+        lines: {type: "array", items: {type: "object", required: ["sku"], properties: {sku: {type: "string"}, qty: {type: "integer"}}}},
+      }}},
+      {expression: "calc", fields: {skus: "map(lines, #.sku)", qty: "sum(map(lines, #.qty ?? 1))"}},
+    ],
+  },
+  cases: [
+    [{lines: [{sku: "a", qty: 2}, {sku: "b"}]}, {skus: ["a", "b"], qty: 3}],
+    [{lines: []}, {skus: [], qty: 0}],
+    [{lines: [{sku: "a", qty: 2.5}]}, "!error: /lines/0/qty"],
+    [{lines: [{qty: 1}]}, "!error: /lines/0"],
+    [{lines: [{sku: "a"}, "b"]}, "!error: /lines/1"],
+    [{lines: [{sku: "a", qty: null}]}, {skus: ["a"], qty: 1}],
+  ],
+}
+
+{
+  name: "pre-check subset: annotations and $schema are ignored",
+  graph: {
+    nodes: [
+      {input: "request", schema: {
+        $schema: "http://json-schema.org/draft-07/schema#",
+        title: "Request",
+        description: "annotated",
+        type: "object",
+        required: ["n"],
+        properties: {n: {type: "number", title: "N", description: "a number", default: 5, examples: [1, 2], $comment: "c"}},
+      }},
+      {expression: "calc", fields: {n: "n"}},
+    ],
+  },
+  cases: [
+    [{n: 1}, {n: 1}],
+    [{n: 0}, {n: 0}],
+    [{}, "!error: n"],
+    [{n: "5"}, "!error: /n"],
+  ],
+}
+
+{
+  name: "pre-check subset: a required key not listed in properties accepts any value",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["token"], properties: {other: {type: "string"}}}},
+      {expression: "calc", fields: {kind: "type(token)"}},
+    ],
+  },
+  cases: [
+    [{token: "x"}, {kind: "string"}],
+    [{token: 1}, {kind: "number"}],
+    [{token: [1]}, {kind: "array"}],
+    [{token: {a: 1}}, {kind: "object"}],
+    [{token: false}, {kind: "bool"}],
+    [{other: "x"}, "!error: token"],
+    [{token: null}, {kind: "null"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Type unions and nullability.
+{
+  name: "type unions: a list of types accepts any member",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["v"], properties: {v: {type: ["string", "number"]}}}},
+      {expression: "calc", fields: {kind: "type(v)"}},
+    ],
+  },
+  cases: [
+    [{v: "1"}, {kind: "string"}],
+    [{v: 1}, {kind: "number"}],
+    [{v: 1.25}, {kind: "number"}],
+    [{v: true}, "!error: /v"],
+    [{v: []}, "!error: /v"],
+    [{v: {}}, "!error: /v"],
+    [{v: null}, "!error: /v"],
+  ],
+}
+
+{
+  name: "type unions: integer inside a union with string",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {v: {type: ["integer", "boolean"]}}}},
+      {expression: "calc", fields: {kind: "type(v)"}},
+    ],
+  },
+  cases: [
+    [{v: 3}, {kind: "number"}],
+    [{v: -3}, {kind: "number"}],
+    [{v: 3.0}, {kind: "number"}],
+    [{v: false}, {kind: "bool"}],
+    [{v: 3.1}, "!error: /v"],
+    [{v: "3"}, "!error: /v"],
+    [{}, {kind: "null"}],
+  ],
+}
+
+{
+  name: "nullability: null in the type list, required or not",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["a"], properties: {
+        a: {type: ["number", "null"]},
+        b: {type: ["null", "string"]},
+      }}},
+      {expression: "calc", fields: {a: "a ?? 'none'", b: "b ?? 'none'"}},
+    ],
+  },
+  cases: [
+    [{a: 1, b: "x"}, {a: 1, b: "x"}],
+    [{a: null, b: null}, {a: "none", b: "none"}],
+    [{a: null}, {a: "none", b: "none"}],
+    [{b: "x"}, "!error: a"],
+    [{a: "1"}, "!error: /a"],
+    [{a: 1, b: 2}, "!error: /b"],
+  ],
+}
+
+{
+  name: "nullability: OpenAPI `nullable` is not a Draft 7 keyword and is ignored",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["a"], properties: {a: {type: "number", nullable: true}}}},
+    ],
+  },
+  cases: [
+    [{a: 1}, {a: 1}],
+    [{a: "x"}, "!error: /a"],
+    [{a: null}, "!error: /a"],
+  ],
+}
+
+{
+  name: "nullability: type null alone",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["gone"], properties: {gone: {type: "null"}}}},
+      {expression: "calc", fields: {kind: "type(gone)"}},
+    ],
+  },
+  cases: [
+    [{gone: null}, {kind: "null"}],
+    [{gone: 0}, "!error: /gone"],
+    [{gone: ""}, "!error: /gone"],
+    [{}, "!error: gone"],
+  ],
+}
+
+{
+  name: "null-retry: a null key that fails a keyword counts as absent",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {
+        s: {type: "string", minLength: 3},
+        n: {type: "number", minimum: 10},
+        e: {enum: ["x", "y"]},
+        o: {type: "object", required: ["k"]},
+        a: {type: "array", minItems: 1},
+      }}},
+      {expression: "calc", fields: {nulls: "len(filter([s, n, e, o, a], # == null))"}},
+    ],
+  },
+  cases: [
+    [{s: null, n: null, e: null, o: null, a: null}, {nulls: 5}],
+    [{s: "abc", n: 10, e: "x", o: {k: 1}, a: [1]}, {nulls: 0}],
+    [{s: null, n: 9}, "!error: /n"],
+    [{o: {k: null}}, {nulls: 4}],
+    [{o: {j: 1}}, "!error: /o"],
+    [{a: [null]}, {nulls: 4}],
+  ],
+}
+
+{
+  name: "null-retry: object size keywords do not count null keys",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", maxProperties: 2}},
+    ],
+  },
+  cases: [
+    [{a: 1, b: 2}, {a: 1, b: 2}],
+    [{a: 1, b: 2, c: null}, {a: 1, b: 2}],
+    [{a: 1, b: 2, c: 3}, "!error: NodeError"],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "null-retry: not-required treats a null key as absent",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", not: {required: ["legacy"]}}},
+    ],
+  },
+  cases: [
+    [{}, {}],
+    [{a: 1}, {a: 1}],
+    [{legacy: null}, {}],
+    [{legacy: 1}, "!error: NodeError"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Numbers.
+{
+  name: "numbers: exclusive bounds exclude the edge",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {
+        rate: {type: "number", exclusiveMinimum: 0, exclusiveMaximum: 1},
+      }}},
+    ],
+  },
+  cases: [
+    [{rate: 0.5}, {rate: 0.5}],
+    [{rate: 0.000001}, {rate: 0.000001}],
+    [{rate: 0.999999}, {rate: 0.999999}],
+    [{rate: 0}, "!error: /rate"],
+    [{rate: 1}, "!error: /rate"],
+    [{rate: 1.0}, "!error: /rate"],
+    [{rate: -0.1}, "!error: /rate"],
+  ],
+}
+
+{
+  name: "numbers: negative and fractional bounds",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {
+        temp: {type: "number", minimum: -273.15, maximum: 1000.5},
+      }}},
+    ],
+  },
+  cases: [
+    [{temp: -273.15}, {temp: -273.15}],
+    [{temp: -273.16}, "!error: /temp"],
+    [{temp: 1000.5}, {temp: 1000.5}],
+    [{temp: 1000.51}, "!error: /temp"],
+    [{temp: 0}, {temp: 0}],
+  ],
+}
+
+{
+  name: "numbers: multipleOf with decimal steps",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {
+        cents: {type: "number", multipleOf: 0.01},
+        tenth: {type: "number", multipleOf: 0.1},
+        five: {type: "integer", multipleOf: 5},
+      }}},
+    ],
+  },
+  cases: [
+    [{cents: 19.99}, {cents: 19.99}],
+    [{cents: 0.07}, {cents: 0.07}],
+    [{cents: 1.005}, "!error: /cents"],
+    [{tenth: 0.3}, {tenth: 0.3}],
+    [{tenth: 2.2}, {tenth: 2.2}],
+    [{tenth: 0.35}, "!error: /tenth"],
+    [{five: 0}, {five: 0}],
+    [{five: -15}, {five: -15}],
+    [{five: 12}, "!error: /five"],
+  ],
+}
+
+{
+  name: "numbers: integer accepts integral decimals and large values",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {i: {type: "integer", minimum: 0}}}},
+      {expression: "calc", fields: {next: "i + 1"}},
+    ],
+  },
+  cases: [
+    [{i: 0}, {next: 1}],
+    [{i: 10.0}, {next: 11}],
+    [{i: 9007199254740993}, {next: 9007199254740994}],
+    [{i: 1e3}, {next: 1001}],
+    [{i: 0.5}, "!error: /i"],
+    [{i: -1}, "!error: /i"],
+  ],
+}
+
+{
+  name: "numbers: bounds alone do not imply a type",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {v: {minimum: 5}}}},
+    ],
+  },
+  cases: [
+    [{v: 5}, {v: 5}],
+    [{v: 4}, "!error: /v"],
+    [{v: "4"}, {v: "4"}],
+    [{v: [1]}, {v: [1]}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Strings.
+{
+  name: "strings: length counts code points",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {s: {type: "string", minLength: 2, maxLength: 2}}}},
+    ],
+  },
+  cases: [
+    [{s: "ab"}, {s: "ab"}],
+    [{s: "äö"}, {s: "äö"}],
+    [{s: "日本"}, {s: "日本"}],
+    [{s: "😀😀"}, {s: "😀😀"}],
+    [{s: "a"}, "!error: /s"],
+    [{s: "😀"}, "!error: /s"],
+    [{s: "abc"}, "!error: /s"],
+  ],
+}
+
+{
+  name: "strings: maxLength 0 only accepts the empty string",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {s: {type: "string", maxLength: 0}}}},
+    ],
+  },
+  cases: [
+    [{s: ""}, {s: ""}],
+    [{s: " "}, "!error: /s"],
+  ],
+}
+
+{
+  name: "strings: pattern is unanchored unless the regex anchors it",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {
+        loose: {type: "string", pattern: "[0-9]{3}"},
+        strict: {type: "string", pattern: "^[0-9]{3}$"},
+      }}},
+    ],
+  },
+  cases: [
+    [{loose: "123"}, {loose: "123"}],
+    [{loose: "ab1234cd"}, {loose: "ab1234cd"}],
+    [{loose: "12"}, "!error: /loose"],
+    [{strict: "123"}, {strict: "123"}],
+    [{strict: "1234"}, "!error: /strict"],
+    [{strict: " 123"}, "!error: /strict"],
+  ],
+}
+
+{
+  name: "strings: ECMA regex features in pattern",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {
+        word: {type: "string", pattern: "^\\w+$"},
+        alt: {type: "string", pattern: "^(red|green|blue)$"},
+        notAdmin: {type: "string", pattern: "^(?!admin$).+$"},
+        email: {type: "string", pattern: "^[^@\\s]+@[^@\\s]+\\.[a-z]{2,}$"},
+      }}},
+    ],
+  },
+  cases: [
+    [{word: "a_1"}, {word: "a_1"}],
+    [{word: "a-1"}, "!error: /word"],
+    [{alt: "green"}, {alt: "green"}],
+    [{alt: "greenish"}, "!error: /alt"],
+    [{notAdmin: "root"}, {notAdmin: "root"}],
+    [{notAdmin: "admin"}, "!error: /notAdmin"],
+    [{notAdmin: "administrator"}, {notAdmin: "administrator"}],
+    [{email: "a@b.io"}, {email: "a@b.io"}],
+    [{email: "a@b"}, "!error: /email"],
+  ],
+}
+
+{
+  name: "strings: pattern and length do not apply to non-strings",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {v: {pattern: "^x", minLength: 3}}}},
+    ],
+  },
+  cases: [
+    [{v: "xyz"}, {v: "xyz"}],
+    [{v: "xy"}, "!error: /v"],
+    [{v: "abc"}, "!error: /v"],
+    [{v: 1}, {v: 1}],
+    [{v: [1]}, {v: [1]}],
+  ],
+}
+
+// Draft 7 validates formats. date and date-time are replaced by the engine's own date parser
+// (chapter 52); the others use the validator's built-in checks. `uuid` is not a Draft 7 format, so it
+// is not checked.
+{
+  name: "strings: built-in formats",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {
+        email: {type: "string", format: "email"},
+        ip: {type: "string", format: "ipv4"},
+        id: {type: "string", format: "uuid"},
+        link: {type: "string", format: "uri"},
+        at: {type: "string", format: "time"},
+      }}},
+    ],
+  },
+  cases: [
+    [{email: "a@example.com"}, {email: "a@example.com"}],
+    [{email: "not-an-email"}, "!error: /email"],
+    [{ip: "192.168.0.1"}, {ip: "192.168.0.1"}],
+    [{ip: "256.1.1.1"}, "!error: /ip"],
+    [{id: "123e4567-e89b-12d3-a456-426614174000"}, {id: "123e4567-e89b-12d3-a456-426614174000"}],
+    [{id: "123e4567"}, {id: "123e4567"}],
+    [{link: "https://gorules.io/docs"}, {link: "https://gorules.io/docs"}],
+    [{link: "no scheme"}, "!error: /link"],
+    [{at: "10:15:30Z"}, {at: "10:15:30Z"}],
+    [{at: "25:00:00Z"}, "!error: /at"],
+  ],
+}
+
+{
+  name: "strings: an unknown format is ignored",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {v: {type: "string", format: "iban"}}}},
+    ],
+  },
+  cases: [
+    [{v: "anything"}, {v: "anything"}],
+    [{v: 1}, "!error: /v"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Enums and const over structured and numeric values.
+{
+  name: "enum: numbers compare by value",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {n: {enum: [1, 2.5, 10]}}}},
+    ],
+  },
+  cases: [
+    [{n: 1}, {n: 1}],
+    [{n: 1.0}, {n: 1}],
+    [{n: 2.50}, {n: 2.5}],
+    [{n: 10}, {n: 10}],
+    [{n: 3}, "!error: /n"],
+    [{n: "1"}, "!error: /n"],
+    [{n: true}, "!error: /n"],
+  ],
+}
+
+{
+  name: "enum: objects and arrays compare structurally",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {
+        shape: {enum: [{kind: "circle"}, {kind: "square", size: 2}]},
+        pair: {enum: [[1, 2], ["a"]]},
+      }}},
+    ],
+  },
+  cases: [
+    [{shape: {kind: "circle"}}, {shape: {kind: "circle"}}],
+    [{shape: {size: 2, kind: "square"}}, {shape: {kind: "square", size: 2}}],
+    [{shape: {kind: "square"}}, "!error: /shape"],
+    [{shape: {kind: "circle", r: 1}}, "!error: /shape"],
+    [{pair: [1, 2]}, {pair: [1, 2]}],
+    [{pair: [2, 1]}, "!error: /pair"],
+    [{pair: ["a"]}, {pair: ["a"]}],
+  ],
+}
+
+{
+  name: "const: object, number, boolean and null",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {
+        cfg: {const: {mode: "strict", level: 2}},
+        zero: {const: 0},
+        yes: {const: true},
+        none: {const: null},
+      }}},
+    ],
+  },
+  cases: [
+    [{cfg: {level: 2, mode: "strict"}}, {cfg: {mode: "strict", level: 2}}],
+    [{cfg: {mode: "strict", level: 2.0}}, {cfg: {mode: "strict", level: 2}}],
+    [{cfg: {mode: "strict"}}, "!error: /cfg"],
+    [{zero: 0}, {zero: 0}],
+    [{zero: 0.0}, {zero: 0}],
+    [{zero: false}, "!error: /zero"],
+    [{yes: true}, {yes: true}],
+    [{yes: 1}, "!error: /yes"],
+    [{none: null}, {}],
+    [{none: 0}, "!error: /none"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Arrays.
+{
+  name: "arrays: tuple items with additionalItems",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {
+        point: {type: "array", items: [{type: "number"}, {type: "number"}], additionalItems: false},
+        row: {type: "array", items: [{type: "string"}], additionalItems: {type: "number"}},
+      }}},
+    ],
+  },
+  cases: [
+    [{point: [1, 2]}, {point: [1, 2]}],
+    [{point: [1]}, {point: [1]}],
+    [{point: []}, {point: []}],
+    [{point: [1, 2, 3]}, "!error: /point"],
+    [{point: ["1", 2]}, "!error: /point/0"],
+    [{row: ["id", 1, 2.5]}, {row: ["id", 1, 2.5]}],
+    [{row: ["id"]}, {row: ["id"]}],
+    [{row: ["id", "x"]}, "!error: /row/1"],
+    [{row: [1]}, "!error: /row/0"],
+  ],
+}
+
+{
+  name: "arrays: minItems, maxItems and uniqueItems",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {
+        picks: {type: "array", minItems: 2, maxItems: 3, uniqueItems: true},
+      }}},
+      {expression: "calc", fields: {n: "len(picks ?? [])"}},
+    ],
+  },
+  cases: [
+    [{picks: [1, 2]}, {n: 2}],
+    [{picks: ["a", "b", "c"]}, {n: 3}],
+    [{picks: [1, "1"]}, {n: 2}],
+    [{picks: [{a: 1}, {a: 2}]}, {n: 2}],
+    [{picks: [1]}, "!error: /picks"],
+    [{picks: [1, 2, 3, 4]}, "!error: /picks"],
+    [{picks: [1, 1]}, "!error: /picks"],
+    [{picks: [1, 1.0]}, "!error: /picks"],
+    [{picks: [{a: 1}, {a: 1}]}, "!error: /picks"],
+    [{picks: [[1], [1]]}, "!error: /picks"],
+    [{}, {n: 0}],
+  ],
+}
+
+{
+  name: "arrays: contains requires at least one matching item",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {
+        roles: {type: "array", contains: {type: "string", pattern: "^admin"}},
+      }}},
+      {expression: "calc", fields: {n: "len(roles ?? [])"}},
+    ],
+  },
+  cases: [
+    [{roles: ["user", "admin-eu"]}, {n: 2}],
+    [{roles: ["admin"]}, {n: 1}],
+    [{roles: ["user"]}, "!error: /roles"],
+    [{roles: []}, "!error: /roles"],
+    [{roles: [1, "admin"]}, {n: 2}],
+    [{}, {n: 0}],
+  ],
+}
+
+{
+  name: "arrays: nested arrays of arrays",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["grid"], properties: {
+        grid: {type: "array", items: {type: "array", minItems: 2, items: {type: "integer"}}},
+      }}},
+      {expression: "calc", fields: {rows: "len(grid)", total: "sum(map(grid, sum(#)))"}},
+    ],
+  },
+  cases: [
+    [{grid: [[1, 2], [3, 4, 5]]}, {rows: 2, total: 15}],
+    [{grid: []}, {rows: 0, total: 0}],
+    [{grid: [[1, 2], [3]]}, "!error: /grid/1"],
+    [{grid: [[1, 2.5]]}, "!error: /grid/0/1"],
+    [{grid: [1, 2]}, "!error: /grid/0"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Object keywords beyond properties.
+{
+  name: "objects: minProperties on a nested object",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {meta: {type: "object", minProperties: 1}}}},
+    ],
+  },
+  cases: [
+    [{meta: {a: 1}}, {meta: {a: 1}}],
+    [{meta: {a: 1, b: 2}}, {meta: {a: 1, b: 2}}],
+    [{meta: {}}, "!error: /meta"],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "objects: propertyNames constrains every key",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {
+        scores: {type: "object", propertyNames: {pattern: "^[a-z]+$", maxLength: 5}},
+      }}},
+      {expression: "calc", fields: {keys: "keys(scores ?? {})"}},
+    ],
+  },
+  cases: [
+    [{scores: {math: 1, art: 2}}, {keys: ["math", "art"]}],
+    [{scores: {}}, {keys: []}],
+    [{scores: {Math: 1}}, "!error: /scores"],
+    [{scores: {science: 1}}, "!error: /scores"],
+  ],
+}
+
+{
+  name: "objects: patternProperties types keys by name",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", patternProperties: {
+        "^n_": {type: "number"},
+        "^s_": {type: "string"},
+      }}},
+    ],
+  },
+  cases: [
+    [{n_a: 1, s_b: "x"}, {n_a: 1, s_b: "x"}],
+    [{other: true}, {other: true}],
+    [{n_a: "1"}, "!error: /n_a"],
+    [{s_b: 2}, "!error: /s_b"],
+  ],
+}
+
+{
+  name: "objects: patternProperties with additionalProperties false",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {id: {type: "string"}}, patternProperties: {"^x-": {}}, additionalProperties: false}},
+    ],
+  },
+  cases: [
+    [{id: "a"}, {id: "a"}],
+    [{id: "a", "x-trace": 1}, {id: "a", "x-trace": 1}],
+    [{id: "a", trace: 1}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "objects: additionalProperties true is the default",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {a: {type: "number"}}, additionalProperties: true}},
+    ],
+  },
+  cases: [
+    [{a: 1, b: "x", c: [1]}, {a: 1, b: "x", c: [1]}],
+    [{a: "1"}, "!error: /a"],
+  ],
+}
+
+{
+  name: "objects: additionalProperties as an object schema",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {id: {type: "string"}}, additionalProperties: {
+        type: "object", required: ["qty"], properties: {qty: {type: "integer", minimum: 1}},
+      }}},
+    ],
+  },
+  cases: [
+    [{id: "o", apple: {qty: 2}, pear: {qty: 1}}, {id: "o", apple: {qty: 2}, pear: {qty: 1}}],
+    [{id: "o"}, {id: "o"}],
+    [{id: "o", apple: {qty: 0}}, "!error: /apple/qty"],
+    [{id: "o", apple: {}}, "!error: /apple"],
+    [{id: "o", apple: 3}, "!error: /apple"],
+  ],
+}
+
+{
+  name: "objects: dependencies require sibling keys",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", dependencies: {
+        card: ["cvv", "expiry"],
+        discount: {required: ["code"], properties: {code: {type: "string", minLength: 4}}},
+      }}},
+    ],
+  },
+  cases: [
+    [{}, {}],
+    [{card: "4111", cvv: "123", expiry: "12/29"}, {card: "4111", cvv: "123", expiry: "12/29"}],
+    [{card: "4111", cvv: "123"}, "!error: NodeError"],
+    [{cvv: "123"}, {cvv: "123"}],
+    [{discount: 5, code: "SAVE"}, {discount: 5, code: "SAVE"}],
+    [{discount: 5}, "!error: NodeError"],
+    [{discount: 5, code: "S"}, "!error: /code"],
+    [{code: "S"}, {code: "S"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// References.
+{
+  name: "refs: definitions reused through $ref",
+  graph: {
+    nodes: [
+      {input: "request", schema: {
+        type: "object",
+        definitions: {
+          money: {type: "object", required: ["amount", "currency"], properties: {amount: {type: "number", minimum: 0}, currency: {type: "string", pattern: "^[A-Z]{3}$"}}},
+        },
+        required: ["price"],
+        properties: {price: {$ref: "#/definitions/money"}, fee: {$ref: "#/definitions/money"}},
+      }},
+      {expression: "calc", fields: {total: "price.amount + (fee.amount ?? 0)"}},
+    ],
+  },
+  cases: [
+    [{price: {amount: 10, currency: "EUR"}}, {total: 10}],
+    [{price: {amount: 10, currency: "EUR"}, fee: {amount: 2.5, currency: "EUR"}}, {total: 12.5}],
+    [{price: {amount: -1, currency: "EUR"}}, "!error: /price/amount"],
+    [{price: {amount: 10, currency: "eur"}}, "!error: /price/currency"],
+    [{price: {amount: 10, currency: "EUR"}, fee: {amount: 1}}, "!error: /fee"],
+    [{}, "!error: price"],
+  ],
+}
+
+{
+  name: "refs: a recursive definition validates every level",
+  graph: {
+    nodes: [
+      {input: "request", schema: {
+        type: "object",
+        definitions: {
+          node: {type: "object", required: ["name"], properties: {name: {type: "string"}, children: {type: "array", items: {$ref: "#/definitions/node"}}}},
+        },
+        required: ["tree"],
+        properties: {tree: {$ref: "#/definitions/node"}},
+      }},
+      {expression: "calc", fields: {top: "tree.name", kids: "len(tree.children ?? [])"}},
+    ],
+  },
+  cases: [
+    [{tree: {name: "root"}}, {top: "root", kids: 0}],
+    [{tree: {name: "root", children: [{name: "a", children: [{name: "a1"}]}, {name: "b"}]}}, {top: "root", kids: 2}],
+    [{tree: {name: "root", children: [{name: "a", children: [{}]}]}}, "!error: /tree/children/0/children/0"],
+    [{tree: {name: "root", children: [{name: 1}]}}, "!error: /tree/children/0/name"],
+  ],
+}
+
+{
+  name: "refs: a $ref to an unknown definition fails every request",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {a: {$ref: "#/definitions/missing"}}}},
+    ],
+  },
+  cases: [
+    [{a: 1}, "!error"],
+    [{}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Combinators.
+{
+  name: "anyOf: at least one branch must match",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["contact"], properties: {contact: {anyOf: [
+        {type: "string", format: "email"},
+        {type: "string", pattern: "^\\+[0-9]{6,}$"},
+        {type: "object", required: ["street"]},
+      ]}}}},
+      {expression: "calc", fields: {kind: "type(contact)"}},
+    ],
+  },
+  cases: [
+    [{contact: "a@b.io"}, {kind: "string"}],
+    [{contact: "+4930123456"}, {kind: "string"}],
+    [{contact: {street: "Main"}}, {kind: "object"}],
+    [{contact: "12345"}, "!error: /contact"],
+    [{contact: {city: "Rome"}}, "!error: /contact"],
+    [{contact: 5}, "!error: /contact"],
+  ],
+}
+
+{
+  name: "oneOf: overlapping branches fail when more than one matches",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {n: {oneOf: [{type: "number", multipleOf: 3}, {type: "number", multipleOf: 5}]}}}},
+    ],
+  },
+  cases: [
+    [{n: 9}, {n: 9}],
+    [{n: 10}, {n: 10}],
+    [{n: 15}, "!error: /n"],
+    [{n: 7}, "!error: /n"],
+    [{n: 0}, "!error: /n"],
+  ],
+}
+
+{
+  name: "allOf: every branch applies",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", allOf: [
+        {required: ["id"]},
+        {properties: {id: {type: "string"}}},
+        {properties: {id: {minLength: 3}}},
+      ]}},
+    ],
+  },
+  cases: [
+    [{id: "abc"}, {id: "abc"}],
+    [{id: "ab"}, "!error: /id"],
+    [{id: 123}, "!error: /id"],
+    [{}, "!error: id"],
+  ],
+}
+
+{
+  name: "not: excludes a shape",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {
+        code: {type: "string", not: {enum: ["TEST", "DEMO"]}},
+        qty: {not: {type: "string"}},
+      }}},
+    ],
+  },
+  cases: [
+    [{code: "PROD"}, {code: "PROD"}],
+    [{code: "TEST"}, "!error: /code"],
+    [{qty: 1}, {qty: 1}],
+    [{qty: [1]}, {qty: [1]}],
+    [{qty: "1"}, "!error: /qty"],
+  ],
+}
+
+{
+  name: "if/then/else: branches on a discriminator",
+  graph: {
+    nodes: [
+      {input: "request", schema: {
+        type: "object",
+        required: ["country"],
+        properties: {country: {type: "string"}},
+        if: {properties: {country: {const: "US"}}},
+        then: {properties: {zip: {type: "string", pattern: "^[0-9]{5}$"}}, required: ["zip"]},
+        else: {properties: {zip: {type: "string", minLength: 3}}},
+      }},
+    ],
+  },
+  cases: [
+    [{country: "US", zip: "90210"}, {country: "US", zip: "90210"}],
+    [{country: "US", zip: "9021"}, "!error: /zip"],
+    [{country: "US"}, "!error: zip"],
+    [{country: "DE", zip: "10115"}, {country: "DE", zip: "10115"}],
+    [{country: "DE"}, {country: "DE"}],
+    [{country: "DE", zip: "1"}, "!error: /zip"],
+  ],
+}
+
+{
+  name: "combinators: discriminated union of object shapes",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["shape"], properties: {shape: {oneOf: [
+        {type: "object", required: ["kind", "r"], properties: {kind: {const: "circle"}, r: {type: "number", exclusiveMinimum: 0}}},
+        {type: "object", required: ["kind", "w", "h"], properties: {kind: {const: "rect"}, w: {type: "number"}, h: {type: "number"}}},
+      ]}}}},
+      {switch: "route", when: ["shape.kind == 'circle'", ""]},
+      {expression: "circle", fields: {area: "round(3.14159 * shape.r * shape.r, 2)"}},
+      {expression: "rect", fields: {area: "shape.w * shape.h"}},
+    ],
+    edges: ["request -> route", "route:0 -> circle -> output", "route:1 -> rect -> output"],
+  },
+  cases: [
+    [{shape: {kind: "circle", r: 1}}, {area: 3.14}],
+    [{shape: {kind: "rect", w: 2, h: 3}}, {area: 6}],
+    [{shape: {kind: "circle", r: 0}}, "!error: /shape"],
+    [{shape: {kind: "rect", w: 2}}, "!error: /shape"],
+    [{shape: {kind: "triangle"}}, "!error: /shape"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Boolean schemas.
+{
+  name: "boolean schemas: false forbids a property, true allows anything",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {internal: false, anything: true}}},
+    ],
+  },
+  cases: [
+    [{anything: [1, {a: "x"}]}, {anything: [1, {a: "x"}]}],
+    [{}, {}],
+    [{internal: 1}, "!error: /internal"],
+    [{internal: null}, {}],
+  ],
+}
+
+{
+  name: "boolean schemas: a root schema of true accepts every request",
+  graph: {
+    nodes: [
+      {input: "request", schema: true},
+    ],
+  },
+  cases: [
+    [{a: 1}, {a: 1}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "boolean schemas: a root schema of false rejects every request",
+  graph: {
+    nodes: [
+      {input: "request", schema: false},
+    ],
+  },
+  cases: [
+    [{a: 1}, "!error: NodeError"],
+    [{}, "!error: NodeError"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Invalid schemas.
+{
+  name: "invalid schema: an unknown type name fails every request",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {a: {type: "text"}}}},
+    ],
+  },
+  cases: [
+    [{a: "x"}, "!error"],
+    [{}, "!error"],
+  ],
+}
+
+{
+  name: "invalid schema: a malformed string schema",
+  graph: {
+    nodes: [
+      {input: "request", schema: '{"type": "object",'},
+    ],
+  },
+  cases: [
+    [{a: 1}, {a: 1}, "question: a schema string that is not JSON is silently dropped (no schema), while a JSON schema with an unknown type or a bad $ref fails every request"],
+    [{}, {}, "question: a schema string that is not JSON is silently dropped (no schema), while a JSON schema with an unknown type or a bad $ref fails every request"],
+  ],
+}
+
+{
+  name: "invalid schema: an invalid pattern fails every request",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {a: {type: "string", pattern: "(unclosed"}}}},
+    ],
+  },
+  cases: [
+    [{a: "x"}, "!error"],
+    [{}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Dictionaries: `$dictionary` in a schema becomes a string enum of an imported policy dictionary.
+{
+  name: "dictionaries: $dictionary resolves to the imported dictionary values",
+  decisions: {
+    dicts: {policy: {dictionaries: {tier: ["VIP", "STD", ["LOW", "Low priority"]]}}},
+  },
+  graph: {raw: {
+    imports: ["dicts"],
+    nodes: [
+      {id: "i", name: "request", type: "inputNode", content: {schema: '{"type":"object","required":["tier"],"properties":{"tier":{"$dictionary":"tier"}}}'}},
+      {id: "e", name: "calc", type: "expressionNode", content: {expressions: [{id: "x1", key: "vip", value: "tier == 'VIP'"}]}},
+      {id: "o", name: "response", type: "outputNode", content: {}},
+    ],
+    edges: [
+      {id: "e1", sourceId: "i", targetId: "e"},
+      {id: "e2", sourceId: "e", targetId: "o"},
+    ],
+  }},
+  cases: [
+    [{tier: "VIP"}, {vip: true}],
+    [{tier: "STD"}, {vip: false}],
+    [{tier: "LOW"}, {vip: false}],
+    [{tier: "Low priority"}, "!error: /tier"],
+    [{tier: "vip"}, "!error: /tier"],
+    [{tier: 1}, "!error: /tier"],
+    [{}, "!error: tier"],
+  ],
+}
+
+{
+  name: "dictionaries: $dictionary inside array items and an output schema",
+  decisions: {
+    dicts: {policy: {dictionaries: {color: ["red", "green", "blue"]}}},
+  },
+  graph: {raw: {
+    imports: ["dicts"],
+    nodes: [
+      {id: "i", name: "request", type: "inputNode", content: {schema: '{"type":"object","properties":{"colors":{"type":"array","items":{"$dictionary":"color"}}}}'}},
+      {id: "e", name: "calc", type: "expressionNode", content: {expressions: [{id: "x1", key: "first", value: "colors[0] ?? 'none'"}]}},
+      {id: "o", name: "response", type: "outputNode", content: {schema: '{"type":"object","properties":{"first":{"$dictionary":"color"}}}'}},
+    ],
+    edges: [
+      {id: "e1", sourceId: "i", targetId: "e"},
+      {id: "e2", sourceId: "e", targetId: "o"},
+    ],
+  }},
+  cases: [
+    [{colors: ["red", "blue"]}, {first: "red"}],
+    [{colors: ["green"]}, {first: "green"}],
+    [{colors: ["red", "pink"]}, "!error: /colors/1"],
+    [{colors: []}, "!error: /first"],
+    [{}, "!error: /first"],
+  ],
+}
+
+{
+  name: "dictionaries: an unknown dictionary fails every request",
+  graph: {raw: {
+    nodes: [
+      {id: "i", name: "request", type: "inputNode", content: {schema: '{"type":"object","properties":{"tier":{"$dictionary":"tier"}}}'}},
+      {id: "o", name: "response", type: "outputNode", content: {}},
+    ],
+    edges: [{id: "e1", sourceId: "i", targetId: "o"}],
+  }},
+  cases: [
+    [{tier: "VIP"}, "!error"],
+    [{}, "!error"],
+  ],
+}

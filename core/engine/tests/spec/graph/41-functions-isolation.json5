@@ -1,0 +1,1358 @@
+// Function node isolation: every evaluation of a v2 function node behaves as if it ran in a
+// fresh JS runtime. Nothing a handler does (module-level `let`/`var`, mutated `const` objects,
+// globals, prototypes, imported module settings, top-level side effects) is visible to another
+// evaluation. The compiled engine runs batch rows of shareable sources in one runtime and gives
+// sources with module state or global access a fresh runtime per row
+// (`nodes/function/v2/isolation.rs`); the batch runner cycles each suite's cases three times,
+// so state that survives a row shows up as a mismatch against the walker. Every case below is
+// written as an independent evaluation: rows that could observe a previous row expect the
+// first-run answer.
+
+// --- Stateless sources share a runtime safely ------------------------------------------------
+// No module state: plain handlers, scalar constants, helper functions, imports. The results
+// must not depend on which rows ran before.
+
+{
+  name: "isolation: a plain arrow handler",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => { let x = input.v ?? 0; x += 1; return { x }; };"""}],
+  },
+  cases: [
+    [{v: 1}, {x: 2}],
+    [{v: 10}, {x: 11}],
+    [{}, {x: 1}],
+    [{v: -1}, {x: 0}],
+  ],
+}
+
+{
+  name: "isolation: a scalar module constant",
+  graph: {
+    nodes: [{function: "f", source: """const RATE = 0.2;
+const LABEL = 'tax';
+export const handler = async (input) => ({ [LABEL]: input.amount * RATE });"""}],
+  },
+  cases: [
+    [{amount: 100}, {tax: 20}],
+    [{amount: 5}, {tax: 1}],
+    [{amount: 0}, {tax: 0}],
+    [{amount: -50}, {tax: -10}],
+  ],
+}
+
+{
+  name: "isolation: a constant computed from other constants",
+  graph: {
+    nodes: [{function: "f", source: """const BASE = 10
+const LIMIT = BASE * 2 + 1
+const NAME = `limit-${LIMIT}`
+export const handler = (input) => ({ over: input.v > LIMIT, name: NAME })"""}],
+  },
+  cases: [
+    [{v: 22}, {over: true, name: "limit-21"}],
+    [{v: 21}, {over: false, name: "limit-21"}],
+    [{v: 0}, {over: false, name: "limit-21"}],
+  ],
+}
+
+{
+  name: "isolation: helper function declarations",
+  graph: {
+    nodes: [{function: "f", source: """function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
+async function double(v) { return v * 2; }
+export const handler = async (input) => ({ v: clamp(await double(input.v), 0, 100) });"""}],
+  },
+  cases: [
+    [{v: 10}, {v: 20}],
+    [{v: 70}, {v: 100}],
+    [{v: -3}, {v: 0}],
+    [{v: 50}, {v: 100}],
+  ],
+}
+
+{
+  name: "isolation: a const arrow helper",
+  graph: {
+    nodes: [{function: "f", source: """const pct = (v, p) => Math.round(v * p) / 100;
+export const handler = async (input) => ({ fee: pct(input.amount, input.rate ?? 3) });"""}],
+  },
+  cases: [
+    [{amount: 200}, {fee: 6}],
+    [{amount: 200, rate: 10}, {fee: 20}],
+    [{amount: 0}, {fee: 0}],
+  ],
+}
+
+{
+  name: "isolation: an export function declaration handler with helpers",
+  graph: {
+    nodes: [{function: "f", source: """function grade(score) {
+  if (score >= 90) return 'A';
+  if (score >= 75) return 'B';
+  return 'C';
+}
+export async function handler(input) {
+  return { grades: input.scores.map(grade) };
+}"""}],
+  },
+  cases: [
+    [{scores: [95, 80, 10]}, {grades: ["A", "B", "C"]}],
+    [{scores: []}, {grades: []}],
+    [{scores: [75]}, {grades: ["B"]}],
+  ],
+}
+
+{
+  name: "isolation: a zod schema declared at module level",
+  graph: {
+    nodes: [{function: "f", source: """import { z } from 'zod';
+const Order = z.object({
+  id: z.string().min(1),
+  qty: z.number().int().positive(),
+  tags: z.array(z.string()).default([]),
+});
+export const handler = async (input) => {
+  const r = Order.safeParse(input.order);
+  return r.success ? { ok: true, order: r.data } : { ok: false, issues: r.error.issues.length };
+};"""}],
+  },
+  cases: [
+    [{order: {id: "a", qty: 2}}, {ok: true, order: {id: "a", qty: 2, tags: []}}],
+    [{order: {id: "", qty: 2}}, {ok: false, issues: 1}],
+    [{order: {id: "b", qty: 1, tags: ["x"]}}, {ok: true, order: {id: "b", qty: 1, tags: ["x"]}}],
+    [{order: {id: "", qty: -1}}, {ok: false, issues: 2}],
+    [{}, {ok: false, issues: 1}],
+  ],
+}
+
+{
+  name: "isolation: a zod schema with a transform declared at module level",
+  graph: {
+    nodes: [{function: "f", source: """import { z } from 'zod';
+const Name = z.string().trim().transform((s) => s.toUpperCase());
+export const handler = async (input) => ({ name: Name.parse(input.name) });"""}],
+  },
+  cases: [
+    [{name: " ann "}, {name: "ANN"}],
+    [{name: "bo"}, {name: "BO"}],
+    [{name: 1}, "!error"],
+    [{name: ""}, {name: ""}],
+  ],
+}
+
+{
+  name: "isolation: imports of big.js and dayjs without module state",
+  graph: {
+    nodes: [{function: "f", source: """import Big from 'big.js';
+import dayjs from 'dayjs';
+const START = '2024-01-01';
+export const handler = async (input) => ({
+  total: new Big(input.a).plus(input.b).toString(),
+  day: dayjs(START).add(input.days, 'day').format('YYYY-MM-DD'),
+});"""}],
+  },
+  cases: [
+    [{a: 0.1, b: 0.2, days: 1}, {total: "0.3", day: "2024-01-02"}],
+    [{a: 1, b: 1, days: 31}, {total: "2", day: "2024-02-01"}],
+    [{a: -1, b: 0.5, days: 0}, {total: "-0.5", day: "2024-01-01"}],
+  ],
+}
+
+{
+  name: "isolation: words like globalThis inside strings and comments",
+  graph: {
+    nodes: [{function: "f", source: """// let counter = 0; globalThis.x = 1;
+/* var hits = 0 */
+const WORD = 'globalThis';
+export const handler = async (input) => ({ word: WORD, msg: `no prototype ${input.v} here` });"""}],
+  },
+  cases: [
+    [{v: 1}, {word: "globalThis", msg: "no prototype 1 here"}],
+    [{v: "x"}, {word: "globalThis", msg: "no prototype x here"}],
+  ],
+}
+
+{
+  name: "isolation: an identifier that only contains a shared-state word",
+  graph: {
+    nodes: [{function: "f", source: """const selfTest = (v) => v === 1;
+const evaluation = 'ok';
+export const handler = async (input) => ({ selfTest: selfTest(input.v), evaluation });"""}],
+  },
+  cases: [
+    [{v: 1}, {selfTest: true, evaluation: "ok"}],
+    [{v: 2}, {selfTest: false, evaluation: "ok"}],
+  ],
+}
+
+{
+  name: "isolation: a top-level await on a constant",
+  graph: {
+    nodes: [{function: "f", source: """const SEED = await Promise.resolve(7);
+export const handler = async (input) => ({ v: input.v + SEED });"""}],
+  },
+  cases: [
+    [{v: 1}, {v: 8}],
+    [{v: -7}, {v: 0}],
+    [{v: 0.5}, {v: 7.5}],
+  ],
+}
+
+{
+  name: "isolation: TypeScript annotations on module constants",
+  graph: {
+    nodes: [{function: "f", source: """const FACTOR: number = 3;
+type Out = { v: number };
+export const handler = async (input: any): Promise<Out> => ({ v: input.v * FACTOR });"""}],
+  },
+  cases: [
+    [{v: 1}, {v: 3}],
+    [{v: 2}, {v: 6}],
+    [{v: 0}, {v: 0}],
+  ],
+}
+
+// --- Module-level let and var ----------------------------------------------------------------
+// Mutable bindings at module level would count rows if the module instance survived.
+
+{
+  name: "isolation: a module let counter",
+  graph: {
+    nodes: [{function: "f", source: """let count = 0;
+export const handler = async (input) => { count += 1; return { count, v: input.v }; };"""}],
+  },
+  cases: [
+    [{v: 1}, {count: 1, v: 1}],
+    [{v: 2}, {count: 1, v: 2}],
+    [{v: 3}, {count: 1, v: 3}],
+  ],
+}
+
+{
+  name: "isolation: a module var counter without semicolons",
+  graph: {
+    nodes: [{function: "f", source: """var hits = 0
+export const handler = (input) => ({ hits: ++hits, v: input.v })"""}],
+  },
+  cases: [
+    [{v: "a"}, {hits: 1, v: "a"}],
+    [{v: "b"}, {hits: 1, v: "b"}],
+    [{}, {hits: 1}],
+  ],
+}
+
+{
+  name: "isolation: a lazily initialised module let",
+  graph: {
+    nodes: [{function: "f", source: """let cached;
+export const handler = async (input) => {
+  const fresh = cached === undefined;
+  cached ??= input.v;
+  return { fresh, cached };
+};"""}],
+  },
+  cases: [
+    [{v: 1}, {fresh: true, cached: 1}],
+    [{v: 2}, {fresh: true, cached: 2}],
+    [{v: "x"}, {fresh: true, cached: "x"}],
+  ],
+}
+
+{
+  name: "isolation: an exported let",
+  graph: {
+    nodes: [{function: "f", source: """export let total = 0;
+export const handler = async (input) => { total += input.v; return { total }; };"""}],
+  },
+  cases: [
+    [{v: 5}, {total: 5}],
+    [{v: 10}, {total: 10}],
+    [{v: -1}, {total: -1}],
+  ],
+}
+
+{
+  name: "isolation: a let declared after the handler",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => { seen.push(input.v); return { seen: [...seen] }; };
+let seen = [];"""}],
+  },
+  cases: [
+    [{v: 1}, {seen: [1]}],
+    [{v: 2}, {seen: [2]}],
+    [{v: 3}, {seen: [3]}],
+  ],
+}
+
+{
+  name: "isolation: several let bindings in one declaration",
+  graph: {
+    nodes: [{function: "f", source: """let a = 0, b = 100;
+export const handler = async (input) => { a += input.v; b -= input.v; return { a, b }; };"""}],
+  },
+  cases: [
+    [{v: 1}, {a: 1, b: 99}],
+    [{v: 2}, {a: 2, b: 98}],
+    [{v: 0}, {a: 0, b: 100}],
+  ],
+}
+
+{
+  name: "isolation: a let holding the previous input",
+  graph: {
+    nodes: [{function: "f", source: """let previous = null;
+export const handler = async (input) => {
+  const out = { previous, changed: previous !== null && previous !== input.v };
+  previous = input.v;
+  return out;
+};"""}],
+  },
+  cases: [
+    [{v: 1}, {changed: false}],
+    [{v: 2}, {changed: false}],
+    [{v: 1}, {changed: false}],
+  ],
+}
+
+// --- Module-level const objects mutated by the handler ---------------------------------------
+// `const` only freezes the binding; the object behind it is per evaluation.
+
+{
+  name: "isolation: a const Map used as a cache",
+  graph: {
+    nodes: [{function: "f", source: """const cache = new Map();
+export const handler = async (input) => {
+  const hit = cache.has(input.key);
+  cache.set(input.key, (cache.get(input.key) ?? 0) + 1);
+  return { hit, size: cache.size };
+};"""}],
+  },
+  cases: [
+    [{key: "a"}, {hit: false, size: 1}],
+    [{key: "b"}, {hit: false, size: 1}],
+    [{key: "a"}, {hit: false, size: 1}],
+  ],
+}
+
+{
+  name: "isolation: a const Set of seen ids",
+  graph: {
+    nodes: [{function: "f", source: """const seen = new Set();
+export const handler = async (input) => {
+  const duplicate = input.ids.some((id) => seen.has(id) || !seen.add(id));
+  return { duplicate, seen: seen.size };
+};"""}],
+  },
+  cases: [
+    [{ids: [1, 2]}, {duplicate: false, seen: 2}],
+    [{ids: [2, 3]}, {duplicate: false, seen: 2}],
+    [{ids: [4, 4]}, {duplicate: true, seen: 1}],
+  ],
+}
+
+{
+  name: "isolation: a const object literal mutated by the handler",
+  graph: {
+    nodes: [{function: "f", source: """const state = { calls: 0, last: null };
+export const handler = async (input) => {
+  state.calls += 1;
+  const last = state.last;
+  state.last = input.v;
+  return { calls: state.calls, hadLast: last !== null };
+};"""}],
+  },
+  cases: [
+    [{v: 1}, {calls: 1, hadLast: false}],
+    [{v: 2}, {calls: 1, hadLast: false}],
+    [{v: 3}, {calls: 1, hadLast: false}],
+  ],
+}
+
+{
+  name: "isolation: a const array appended to by the handler",
+  graph: {
+    nodes: [{function: "f", source: """const log = [];
+export const handler = async (input) => { log.push(input.v); return { log: log.slice() }; };"""}],
+  },
+  cases: [
+    [{v: "a"}, {log: ["a"]}],
+    [{v: "b"}, {log: ["b"]}],
+    [{v: "c"}, {log: ["c"]}],
+  ],
+}
+
+{
+  name: "isolation: a const Map split across lines",
+  graph: {
+    nodes: [{function: "f", source: """const totals =
+  new Map();
+export const handler = async (input) => {
+  totals.set('sum', (totals.get('sum') ?? 0) + input.v);
+  return { sum: totals.get('sum') };
+};"""}],
+  },
+  cases: [
+    [{v: 1}, {sum: 1}],
+    [{v: 2}, {sum: 2}],
+    [{v: 3}, {sum: 3}],
+  ],
+}
+
+{
+  name: "isolation: a const array built by a top-level loop",
+  graph: {
+    nodes: [{function: "f", source: """const squares = [];
+for (let i = 1; i <= 3; i++) squares.push(i * i);
+export const handler = async (input) => { squares.push(input.v); return { squares: [...squares] }; };"""}],
+  },
+  cases: [
+    [{v: 0}, {squares: [1, 4, 9, 0]}],
+    [{v: 100}, {squares: [1, 4, 9, 100]}],
+    [{v: -1}, {squares: [1, 4, 9, -1]}],
+  ],
+}
+
+{
+  name: "isolation: a mutable array hidden behind a scalar const in one declaration",
+  graph: {
+    nodes: [{function: "f", source: """const LIMIT = 5, queue = [];
+export const handler = async (input) => { queue.push(input.v); return { queued: queue.length, full: queue.length >= LIMIT }; };"""}],
+  },
+  cases: [
+    [{v: 1}, {queued: 1, full: false}],
+    [{v: 2}, {queued: 1, full: false}],
+    [{v: 3}, {queued: 1, full: false}],
+  ],
+}
+
+{
+  name: "isolation: a const object made by Object.create",
+  graph: {
+    nodes: [{function: "f", source: """const registry = Object.create(null);
+export const handler = async (input) => {
+  const known = input.name in registry;
+  registry[input.name] = true;
+  return { known, count: Object.keys(registry).length };
+};"""}],
+  },
+  cases: [
+    [{name: "a"}, {known: false, count: 1}],
+    [{name: "b"}, {known: false, count: 1}],
+    [{name: "a"}, {known: false, count: 1}],
+  ],
+}
+
+{
+  name: "isolation: a const object parsed from JSON",
+  graph: {
+    nodes: [{function: "f", source: """const defaults = JSON.parse('{"count":0,"items":[]}');
+export const handler = async (input) => {
+  defaults.count += 1;
+  defaults.items.push(input.v);
+  return { count: defaults.count, items: defaults.items.slice() };
+};"""}],
+  },
+  cases: [
+    [{v: 1}, {count: 1, items: [1]}],
+    [{v: 2}, {count: 1, items: [2]}],
+    [{v: 3}, {count: 1, items: [3]}],
+  ],
+}
+
+{
+  name: "isolation: a const array made by Array.from",
+  graph: {
+    nodes: [{function: "f", source: """const slots = Array.from({ length: 3 }, () => 0);
+export const handler = async (input) => { slots[input.i] += 1; return { slots: [...slots] }; };"""}],
+  },
+  cases: [
+    [{i: 0}, {slots: [1, 0, 0]}],
+    [{i: 1}, {slots: [0, 1, 0]}],
+    [{i: 0}, {slots: [1, 0, 0]}],
+  ],
+}
+
+{
+  name: "isolation: a const Map wrapped in parentheses",
+  graph: {
+    nodes: [{function: "f", source: """const memo = (new Map());
+export const handler = async (input) => {
+  const cached = memo.has(input.n);
+  if (!cached) memo.set(input.n, input.n * input.n);
+  return { cached, sq: memo.get(input.n) };
+};"""}],
+  },
+  cases: [
+    [{n: 2}, {cached: false, sq: 4}],
+    [{n: 3}, {cached: false, sq: 9}],
+    [{n: 2}, {cached: false, sq: 4}],
+  ],
+}
+
+{
+  name: "isolation: a const object built by Object.assign",
+  graph: {
+    nodes: [{function: "f", source: """const settings = Object.assign({}, { mode: 'base' });
+export const handler = async (input) => {
+  const before = settings.mode;
+  if (input.mode) settings.mode = input.mode;
+  return { before, after: settings.mode };
+};"""}],
+  },
+  cases: [
+    [{mode: "fast"}, {before: "base", after: "fast"}],
+    [{}, {before: "base", after: "base"}],
+    [{mode: "slow"}, {before: "base", after: "slow"}],
+    [{}, {before: "base", after: "base"}],
+  ],
+}
+
+{
+  name: "isolation: a const object returned by a helper function",
+  graph: {
+    nodes: [{function: "f", source: """function makeStore() { return { items: [] }; }
+const store = makeStore();
+export const handler = async (input) => { store.items.push(input.v); return { items: store.items.length }; };"""}],
+  },
+  cases: [
+    [{v: 1}, {items: 1}],
+    [{v: 2}, {items: 1}],
+    [{v: 3}, {items: 1}],
+  ],
+}
+
+{
+  name: "isolation: a closure counter from an immediately invoked function",
+  graph: {
+    nodes: [{function: "f", source: """const next = (() => { let n = 0; return () => ++n; })();
+export const handler = async (input) => ({ id: next(), v: input.v });"""}],
+  },
+  cases: [
+    [{v: "a"}, {id: 1, v: "a"}],
+    [{v: "b"}, {id: 1, v: "b"}],
+    [{v: "c"}, {id: 1, v: "c"}],
+  ],
+}
+
+{
+  name: "isolation: a generator created at module level",
+  graph: {
+    nodes: [{function: "f", source: """const ids = (function* () { let i = 100; while (true) yield i++; })();
+export const handler = async (input) => ({ id: ids.next().value });"""}],
+  },
+  cases: [
+    [{}, {id: 100}],
+    [{x: 1}, {id: 100}],
+    [{x: 2}, {id: 100}],
+  ],
+}
+
+{
+  name: "isolation: a global regular expression keeps lastIndex",
+  graph: {
+    nodes: [{function: "f", source: """const DIGITS = /\d+/g;
+export const handler = async (input) => ({ match: DIGITS.test(input.s) });"""}],
+  },
+  cases: [
+    [{s: "a1"}, {match: true}],
+    [{s: "b2"}, {match: true}],
+    [{s: "c3"}, {match: true}],
+    [{s: "none"}, {match: false}],
+  ],
+}
+
+{
+  name: "isolation: a property stored on a helper function",
+  graph: {
+    nodes: [{function: "f", source: """function tick() { tick.count = (tick.count ?? 0) + 1; return tick.count; }
+export const handler = async (input) => ({ tick: tick(), v: input.v });"""}],
+  },
+  cases: [
+    [{v: 1}, {tick: 1, v: 1}],
+    [{v: 2}, {tick: 1, v: 2}],
+    [{v: 3}, {tick: 1, v: 3}],
+  ],
+}
+
+{
+  name: "isolation: a property stored on the handler itself",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  handler.calls = (handler.calls ?? 0) + 1;
+  return { calls: handler.calls };
+};"""}],
+  },
+  cases: [
+    [{}, {calls: 1}],
+    [{a: 1}, {calls: 1}],
+    [{a: 2}, {calls: 1}],
+  ],
+}
+
+{
+  name: "isolation: a class with a static counter",
+  graph: {
+    nodes: [{function: "f", source: """class Seq { static n = 0; static next() { return ++Seq.n; } }
+export const handler = async (input) => ({ n: Seq.next() });"""}],
+  },
+  cases: [
+    [{}, {n: 1}],
+    [{v: 1}, {n: 1}],
+    [{v: 2}, {n: 1}],
+  ],
+}
+
+{
+  name: "isolation: a frozen const object cannot carry state",
+  graph: {
+    nodes: [{function: "f", source: """const LIMITS = Object.freeze({ low: 10, high: 100 });
+export const handler = async (input) => {
+  try { LIMITS.low = input.v; } catch (e) { return { frozen: true, low: LIMITS.low }; }
+  return { frozen: false, low: LIMITS.low };
+};"""}],
+  },
+  cases: [
+    [{v: 1}, {frozen: true, low: 10}],
+    [{v: 2}, {frozen: true, low: 10}],
+  ],
+}
+
+// --- Globals -------------------------------------------------------------------------------
+// The global object, built-in namespaces and the injected `config`/`console` globals are
+// per evaluation as well.
+
+{
+  name: "isolation: globalThis written and read back",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  const before = globalThis.specCounter ?? 0;
+  globalThis.specCounter = before + 1;
+  return { before, v: input.v };
+};"""}],
+  },
+  cases: [
+    [{v: 1}, {before: 0, v: 1}],
+    [{v: 2}, {before: 0, v: 2}],
+    [{v: 3}, {before: 0, v: 3}],
+  ],
+}
+
+{
+  name: "isolation: globalThis written at module level",
+  graph: {
+    nodes: [{function: "f", source: """globalThis.specLoaded = (globalThis.specLoaded ?? 0) + 1;
+export const handler = async (input) => ({ loaded: globalThis.specLoaded });"""}],
+  },
+  cases: [
+    [{}, {loaded: 1}],
+    [{a: 1}, {loaded: 1}],
+    [{a: 2}, {loaded: 1}],
+  ],
+}
+
+{
+  name: "isolation: a global variable declared through Reflect",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  const had = Reflect.has(globalThis, 'specFlag');
+  Reflect.set(globalThis, 'specFlag', input.v);
+  return { had };
+};"""}],
+  },
+  cases: [
+    [{v: 1}, {had: false}],
+    [{v: 2}, {had: false}],
+  ],
+}
+
+{
+  name: "isolation: an undeclared assignment is an error in a module",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => { leaked = input.v; return { leaked }; };"""}],
+  },
+  cases: [
+    [{v: 1}, "!error"],
+    [{v: 2}, "!error"],
+  ],
+}
+
+{
+  name: "isolation: a property added to Math inside the handler",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  const before = Math.specCalls ?? 0;
+  Math.specCalls = before + 1;
+  return { before };
+};"""}],
+  },
+  cases: [
+    [{}, {before: 0}],
+    [{v: 1}, {before: 0}],
+    [{v: 2}, {before: 0}],
+  ],
+}
+
+{
+  name: "isolation: a built-in method replaced inside the handler",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  const rounded = Math.round(input.v);
+  Math.round = () => -1;
+  return { rounded };
+};"""}],
+  },
+  cases: [
+    [{v: 1.4}, {rounded: 1}],
+    [{v: 2.6}, {rounded: 3}],
+    [{v: -0.4}, {rounded: 0}],
+  ],
+}
+
+{
+  name: "isolation: JSON.stringify replaced inside the handler",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  const text = JSON.stringify(input.o);
+  JSON.stringify = () => 'patched';
+  return { text };
+};"""}],
+  },
+  cases: [
+    [{o: {a: 1}}, {text: "{\"a\":1}"}],
+    [{o: [1, 2]}, {text: "[1,2]"}],
+    [{o: "s"}, {text: "\"s\""}],
+  ],
+}
+
+{
+  name: "isolation: a property defined on Object with Object.defineProperty",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  const had = Object.hasOwn(Object, 'specMarker');
+  if (!had) Object.defineProperty(Object, 'specMarker', { value: input.v, configurable: true });
+  return { had, marker: Object.specMarker };
+};"""}],
+  },
+  cases: [
+    [{v: 1}, {had: false, marker: 1}],
+    [{v: 2}, {had: false, marker: 2}],
+    [{v: 3}, {had: false, marker: 3}],
+  ],
+}
+
+{
+  name: "isolation: the config global mutated by the handler",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  const seen = config.specSeen ?? 0;
+  config.specSeen = seen + 1;
+  return { seen, iteration: config.iteration };
+};"""}],
+  },
+  cases: [
+    [{}, {seen: 0, iteration: 0}],
+    [{v: 1}, {seen: 0, iteration: 0}],
+    [{v: 2}, {seen: 0, iteration: 0}],
+  ],
+}
+
+{
+  name: "isolation: the console global patched by the handler",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  const patched = console.specPatched === true;
+  console.specPatched = true;
+  return { patched };
+};"""}],
+  },
+  cases: [
+    [{}, {patched: false}],
+    [{v: 1}, {patched: false}],
+    [{v: 2}, {patched: false}],
+  ],
+}
+
+{
+  name: "isolation: a Symbol.for key is the same in every evaluation",
+  graph: {
+    nodes: [{function: "f", source: """const KEY = Symbol.for('spec.key');
+export const handler = async (input) => ({ same: KEY === Symbol.for('spec.key'), name: Symbol.keyFor(KEY) });"""}],
+  },
+  cases: [
+    [{}, {same: true, name: "spec.key"}],
+    [{v: 1}, {same: true, name: "spec.key"}],
+  ],
+}
+
+// --- Prototypes ------------------------------------------------------------------------------
+
+{
+  name: "isolation: Array.prototype extended at module level",
+  graph: {
+    nodes: [{function: "f", source: """Array.prototype.specLast = function () { return this[this.length - 1]; };
+export const handler = async (input) => ({ last: input.items.specLast() ?? null });"""}],
+  },
+  cases: [
+    [{items: [1, 2, 3]}, {last: 3}],
+    [{items: ["a"]}, {last: "a"}],
+    [{items: []}, {}],
+  ],
+}
+
+{
+  name: "isolation: a prototype method counted inside the handler",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  const before = String.prototype.specUses ?? 0;
+  String.prototype.specUses = before + 1;
+  return { before, upper: input.s.toUpperCase() };
+};"""}],
+  },
+  cases: [
+    [{s: "a"}, {before: 0, upper: "A"}],
+    [{s: "b"}, {before: 0, upper: "B"}],
+    [{s: "c"}, {before: 0, upper: "C"}],
+  ],
+}
+
+{
+  name: "isolation: a prototype reached through Object.getPrototypeOf",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  const proto = Object.getPrototypeOf([]);
+  const before = proto.specHits ?? 0;
+  proto.specHits = before + 1;
+  return { before, len: input.items.length };
+};"""}],
+  },
+  cases: [
+    [{items: [1]}, {before: 0, len: 1}],
+    [{items: [1, 2]}, {before: 0, len: 2}],
+    [{items: []}, {before: 0, len: 0}],
+  ],
+}
+
+{
+  name: "isolation: a prototype reached through __proto__",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  const before = ({}).__proto__.specHits ?? 0;
+  ({}).__proto__.specHits = before + 1;
+  return { before, keys: Object.keys(input.o) };
+};"""}],
+  },
+  cases: [
+    [{o: {a: 1}}, {before: 0, keys: ["a"]}],
+    [{o: {}}, {before: 0, keys: []}],
+    [{o: {b: 2, c: 3}}, {before: 0, keys: ["b", "c"]}],
+  ],
+}
+
+{
+  name: "isolation: an enumerable property on Object.prototype shows up in for-in",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  const keys = [];
+  for (const k in input.o) keys.push(k);
+  Object.getPrototypeOf({}).specInjected = 1;
+  return { keys };
+};"""}],
+  },
+  cases: [
+    [{o: {a: 1}}, {keys: ["a"]}],
+    [{o: {b: 1}}, {keys: ["b"]}],
+    [{o: {}}, {keys: []}],
+  ],
+}
+
+// --- Top-level side effects -------------------------------------------------------------------
+
+{
+  name: "isolation: console.log at module level",
+  graph: {
+    nodes: [{function: "f", source: """console.log('module loaded');
+export const handler = async (input) => ({ v: input.v });"""}],
+  },
+  cases: [
+    [{v: 1}, {v: 1}],
+    [{v: 2}, {v: 2}],
+  ],
+}
+
+{
+  name: "isolation: a top-level if statement",
+  graph: {
+    nodes: [{function: "f", source: """let mode = 'cold';
+if (typeof mode === 'string') { mode = 'warm'; }
+export const handler = async (input) => { const was = mode; mode = 'hot'; return { was, v: input.v }; };"""}],
+  },
+  cases: [
+    [{v: 1}, {was: "warm", v: 1}],
+    [{v: 2}, {was: "warm", v: 2}],
+    [{v: 3}, {was: "warm", v: 3}],
+  ],
+}
+
+{
+  name: "isolation: a top-level try block",
+  graph: {
+    nodes: [{function: "f", source: """const flags = {};
+try { flags.ready = true; } catch (e) { flags.ready = false; }
+export const handler = async (input) => { const ready = flags.ready; flags.ready = false; return { ready }; };"""}],
+  },
+  cases: [
+    [{}, {ready: true}],
+    [{v: 1}, {ready: true}],
+    [{v: 2}, {ready: true}],
+  ],
+}
+
+{
+  name: "isolation: a module that throws while loading",
+  graph: {
+    nodes: [{function: "f", source: """throw new Error('boot failed');
+export const handler = async (input) => ({ v: input.v });"""}],
+  },
+  cases: [
+    [{v: 1}, "!error: boot failed"],
+    [{v: 2}, "!error: boot failed"],
+  ],
+}
+
+{
+  name: "isolation: a module whose loading fails only on the first import",
+  graph: {
+    nodes: [{function: "f", source: """globalThis.specBoots = (globalThis.specBoots ?? 0) + 1;
+if (globalThis.specBoots === 1) throw new Error('first boot');
+export const handler = async (input) => ({ v: input.v });"""}],
+  },
+  cases: [
+    [{v: 1}, "!error: first boot"],
+    [{v: 2}, "!error: first boot"],
+  ],
+}
+
+// --- Imported modules mutated by the handler --------------------------------------------------
+// Imported modules (big.js, dayjs, zod, zen) are module instances of the runtime; settings
+// changed by one evaluation are not seen by the next.
+
+{
+  name: "isolation: Big.DP changed by the handler",
+  graph: {
+    nodes: [{function: "f", source: """import Big from 'big.js';
+export const handler = async (input) => {
+  const third = new Big(1).div(3).toString();
+  if (input.dp !== undefined) Big.DP = input.dp;
+  return { third };
+};"""}],
+  },
+  cases: [
+    [{dp: 2}, {third: "0.33333333333333333333"}],
+    [{}, {third: "0.33333333333333333333"}],
+    [{dp: 5}, {third: "0.33333333333333333333"}],
+    [{}, {third: "0.33333333333333333333"}],
+  ],
+}
+
+{
+  name: "isolation: Big.RM changed by the handler",
+  graph: {
+    nodes: [{function: "f", source: """import Big from 'big.js';
+export const handler = async (input) => {
+  const rounded = new Big(input.v).round(0).toNumber();
+  Big.RM = Big.roundDown;
+  return { rounded };
+};"""}],
+  },
+  cases: [
+    [{v: 2.5}, {rounded: 3}],
+    [{v: 3.5}, {rounded: 4}],
+    [{v: 1.7}, {rounded: 2}],
+  ],
+}
+
+{
+  name: "isolation: Big.DP set at module level is applied on every evaluation",
+  graph: {
+    nodes: [{function: "f", source: """import Big from 'big.js';
+Big.DP = 4;
+export const handler = async (input) => ({ v: new Big(input.a).div(input.b).toString() });"""}],
+  },
+  cases: [
+    [{a: 1, b: 3}, {v: "0.3333"}],
+    [{a: 2, b: 3}, {v: "0.6667"}],
+    [{a: 1, b: 8}, {v: "0.125"}],
+  ],
+}
+
+{
+  name: "isolation: a property added to the dayjs function",
+  graph: {
+    nodes: [{function: "f", source: """import dayjs from 'dayjs';
+export const handler = async (input) => {
+  const before = dayjs.specCalls ?? 0;
+  dayjs.specCalls = before + 1;
+  return { before, year: dayjs(input.d).year() };
+};"""}],
+  },
+  cases: [
+    [{d: "2024-01-01"}, {before: 0, year: 2024}],
+    [{d: "2020-06-30"}, {before: 0, year: 2020}],
+    [{d: "1999-12-31"}, {before: 0, year: 1999}],
+  ],
+}
+
+{
+  name: "isolation: a module-level zod schema object mutated by the handler",
+  graph: {
+    nodes: [{function: "f", source: """import { z } from 'zod';
+const Num = z.number();
+export const handler = async (input) => {
+  const before = Num.specCalls ?? 0;
+  Num.specCalls = before + 1;
+  return { before, ok: Num.safeParse(input.v).success };
+};"""}],
+  },
+  cases: [
+    [{v: 1}, {before: 0, ok: true}],
+    [{v: "1"}, {before: 0, ok: false}],
+    [{v: 2}, {before: 0, ok: true}],
+  ],
+}
+
+{
+  name: "isolation: the zod namespace is not extensible",
+  graph: {
+    nodes: [{function: "f", source: """import { z } from 'zod';
+export const handler = async (input) => { z.specCalls = 1; return { v: input.v }; };"""}],
+  },
+  cases: [
+    [{v: 1}, "!error: not extensible"],
+    [{v: 2}, "!error: not extensible"],
+  ],
+}
+
+{
+  name: "isolation: a property added to the zen module",
+  graph: {
+    nodes: [{function: "f", source: """import zen from 'zen';
+export const handler = async (input) => {
+  const before = zen.specCalls ?? 0;
+  zen.specCalls = before + 1;
+  return { before, sum: zen.evaluateExpression('a + 1', { a: input.a }) };
+};"""}],
+  },
+  cases: [
+    [{a: 1}, {before: 0, sum: 2}],
+    [{a: 2}, {before: 0, sum: 3}],
+    [{a: 3}, {before: 0, sum: 4}],
+  ],
+}
+
+// --- Failures do not affect other evaluations ------------------------------------------------
+
+{
+  name: "isolation: a throwing evaluation between successful ones",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  if (input.fail) throw new Error('row failed');
+  return { v: input.v };
+};"""}],
+  },
+  cases: [
+    [{v: 1}, {v: 1}],
+    [{fail: true, v: 2}, "!error: row failed"],
+    [{v: 3}, {v: 3}],
+    [{fail: false, v: 4}, {v: 4}],
+  ],
+}
+
+{
+  name: "isolation: a runtime type error between successful ones",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ n: input.o.n * 2 });"""}],
+  },
+  cases: [
+    [{o: {n: 1}}, {n: 2}],
+    [{}, "!error"],
+    [{o: {n: 5}}, {n: 10}],
+    [{o: null}, "!error"],
+  ],
+}
+
+{
+  name: "isolation: state mutated before a throw is not seen by the next evaluation",
+  graph: {
+    nodes: [{function: "f", source: """const box = { n: 0 };
+export const handler = async (input) => {
+  box.n += 1;
+  if (input.fail) throw new Error('after mutation');
+  return { n: box.n };
+};"""}],
+  },
+  cases: [
+    [{}, {n: 1}],
+    [{fail: true}, "!error: after mutation"],
+    [{}, {n: 1}],
+  ],
+}
+
+{
+  name: "isolation: a global set before a throw is not seen by the next evaluation",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  const before = globalThis.specBeforeThrow ?? 0;
+  globalThis.specBeforeThrow = before + 1;
+  if (input.fail) throw new Error('thrown');
+  return { before };
+};"""}],
+  },
+  cases: [
+    [{fail: true}, "!error: thrown"],
+    [{}, {before: 0}],
+    [{fail: true}, "!error: thrown"],
+    [{}, {before: 0}],
+  ],
+}
+
+{
+  name: "isolation: a rejected promise between successful ones",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => input.reject ? Promise.reject(new Error('rejected')) : { ok: input.v };"""}],
+  },
+  cases: [
+    [{v: 1}, {ok: 1}],
+    [{reject: true}, "!error: rejected"],
+    [{v: 2}, {ok: 2}],
+  ],
+}
+
+// --- $nodes and input per evaluation ----------------------------------------------------------
+
+{
+  name: "isolation: $nodes belongs to the current evaluation",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {double: "v * 2"}},
+      {function: "f", source: """export const handler = async (input) => ({
+  fromCalc: input.$nodes.calc.double,
+  fromInput: input.$nodes.input.v,
+});"""},
+    ],
+  },
+  cases: [
+    [{v: 1}, {fromCalc: 2, fromInput: 1}],
+    [{v: 2}, {fromCalc: 4, fromInput: 2}],
+    [{v: 3}, {fromCalc: 6, fromInput: 3}],
+    [{v: -1}, {fromCalc: -2, fromInput: -1}],
+  ],
+}
+
+{
+  name: "isolation: a $nodes snapshot kept in module state",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {v: "v"}},
+      {function: "f", source: """let firstNodes;
+export const handler = async (input) => {
+  firstNodes ??= input.$nodes;
+  return { v: firstNodes.calc.v };
+};"""},
+    ],
+  },
+  cases: [
+    [{v: 1}, {v: 1}],
+    [{v: 2}, {v: 2}],
+    [{v: 3}, {v: 3}],
+  ],
+}
+
+{
+  name: "isolation: the input object kept in a module Map",
+  graph: {
+    nodes: [{function: "f", source: """const inputs = new Map();
+export const handler = async (input) => {
+  inputs.set(inputs.size, input);
+  return { first: inputs.get(0).v };
+};"""}],
+  },
+  cases: [
+    [{v: "a"}, {first: "a"}],
+    [{v: "b"}, {first: "b"}],
+    [{v: "c"}, {first: "c"}],
+  ],
+}
+
+{
+  name: "isolation: config.iteration in every evaluation",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ iteration: config.iteration, maxDepth: config.maxDepth, v: input.v });"""}],
+  },
+  cases: [
+    [{v: 1}, {iteration: 0, maxDepth: 10, v: 1}],
+    [{v: 2}, {iteration: 0, maxDepth: 10, v: 2}],
+  ],
+}
+
+// --- Several function nodes in one evaluation ------------------------------------------------
+// Within one evaluation, nodes share the runtime but each node has its own module.
+
+{
+  name: "isolation: two nodes with the same stateful source count separately",
+  graph: {
+    nodes: [
+      {function: "a", source: """let n = 0;
+export const handler = async (input) => ({ ...input, a: ++n });"""},
+      {function: "b", source: """let n = 0;
+export const handler = async (input) => ({ ...input, b: ++n });"""},
+    ],
+  },
+  cases: [
+    [{}, {a: 1, b: 1}],
+    [{x: 1}, {x: 1, a: 1, b: 1}],
+    [{x: 2}, {x: 2, a: 1, b: 1}],
+  ],
+}
+
+{
+  name: "isolation: a global written by one node is visible to a later node in the same evaluation",
+  graph: {
+    nodes: [
+      {function: "writer", source: """export const handler = async (input) => { globalThis.specShared = input.v; return { wrote: true }; };"""},
+      {function: "reader", source: """export const handler = async (input) => ({ wrote: input.wrote, read: globalThis.specShared ?? 'none' });"""},
+    ],
+  },
+  cases: [
+    {input: {v: 1}, output: {wrote: true, read: 1}, note: "question: nodes of one evaluation share a JS global object, so one node can pass data to another outside the graph edges", engines: "batched rows run each stateful function node in its own runtime, so globals do not travel between nodes of a row; walker shares one runtime per evaluation"},
+    {input: {v: "x"}, output: {wrote: true, read: "x"}, note: "question: nodes of one evaluation share a JS global object, so one node can pass data to another outside the graph edges", engines: "batched rows run each stateful function node in its own runtime, so globals do not travel between nodes of a row; walker shares one runtime per evaluation"},
+    [{}, {wrote: true, read: "none"}, "question: nodes of one evaluation share a JS global object, so one node can pass data to another outside the graph edges"],
+  ],
+}
+
+{
+  name: "isolation: a reader of a global that a parallel branch did not write",
+  graph: {
+    nodes: [
+      {switch: "route", when: ["write", ""]},
+      {function: "writer", source: """export const handler = async (input) => { globalThis.specBranch = 'written'; return { branch: 'writer' }; };"""},
+      {expression: "skip", fields: {branch: "'skip'"}},
+      {function: "reader", source: """export const handler = async (input) => ({ branch: input.branch, seen: globalThis.specBranch ?? 'none' });"""},
+    ],
+    edges: ["input -> route", "route:0 -> writer -> reader", "route:1 -> skip -> reader", "reader -> output"],
+  },
+  cases: [
+    {input: {write: true}, output: {branch: "writer", seen: "written"}, engines: "batched rows run each stateful function node in its own runtime, so globals do not travel between nodes of a row; walker shares one runtime per evaluation"},
+    [{write: false}, {branch: "skip", seen: "none"}],
+    {input: {write: true}, output: {branch: "writer", seen: "written"}, engines: "batched rows run each stateful function node in its own runtime, so globals do not travel between nodes of a row; walker shares one runtime per evaluation"},
+    [{}, {branch: "skip", seen: "none"}],
+  ],
+}
+
+{
+  name: "isolation: a stateful function inside a looped sub-decision",
+  decisions: {
+    item: {nodes: [{function: "count", source: """let n = 0;
+export const handler = async (input) => ({ seq: ++n, v: input.v });"""}]},
+  },
+  graph: {
+    nodes: [{decision: "each", key: "item", inputField: "items", outputPath: "out", executionMode: "loop"}],
+  },
+  cases: [
+    [{items: [{v: "a"}, {v: "b"}, {v: "c"}]}, {out: [{seq: 1, v: "a"}, {seq: 1, v: "b"}, {seq: 2, v: "c"}]}, "question: a node called several times in one evaluation gets a fresh module on its first two calls (node:id, then node:id.hash) and reuses the second instance afterwards, so module state is fresh, fresh, then shared"],
+    [{items: [{v: "x"}]}, {out: [{seq: 1, v: "x"}]}],
+    [{items: []}, {out: []}],
+  ],
+}
+
+{
+  name: "isolation: a stateless function inside a looped sub-decision",
+  decisions: {
+    item: {nodes: [{function: "f", source: """const FACTOR = 10;
+export const handler = async (input) => ({ v: input.v * FACTOR });"""}]},
+  },
+  graph: {
+    nodes: [{decision: "each", key: "item", inputField: "items", outputPath: "out", executionMode: "loop"}],
+  },
+  cases: [
+    [{items: [{v: 1}, {v: 2}]}, {out: [{v: 10}, {v: 20}]}],
+    [{items: [{v: 0.5}]}, {out: [{v: 5}]}],
+    [{items: []}, {out: []}],
+  ],
+}
+
+{
+  name: "isolation: a looped sub-decision whose function writes a global",
+  decisions: {
+    item: {nodes: [{function: "g", source: """export const handler = async (input) => {
+  const before = globalThis.specItems ?? 0;
+  globalThis.specItems = before + 1;
+  return { before };
+};"""}]},
+  },
+  graph: {
+    nodes: [{decision: "each", key: "item", inputField: "items", outputPath: "out", executionMode: "loop"}],
+  },
+  cases: [
+    [{items: [{}, {}, {}]}, {out: [{before: 0}, {before: 1}, {before: 2}]}, "question: loop items of one evaluation share the JS global object"],
+    [{items: [{}]}, {out: [{before: 0}]}],
+    [{items: [{}, {}]}, {out: [{before: 0}, {before: 1}]}, "question: loop items of one evaluation share the JS global object"],
+  ],
+}
+
+{
+  name: "isolation: a parent and a child node with the same id and source",
+  decisions: {
+    child: {nodes: [{function: "f", source: """let n = 0;
+export const handler = async (input) => ({ ...input, n: ++n });"""}]},
+  },
+  graph: {
+    nodes: [
+      {function: "f", source: """let n = 0;
+export const handler = async (input) => ({ ...input, n: ++n });"""},
+      {decision: "call", key: "child"},
+    ],
+  },
+  cases: [
+    {input: {}, output: {n: 1}, note: "question: a child function node with the same id and source as the parent node is declared under a new module name, so its module state starts fresh"},
+    {input: {x: 1}, output: {x: 1, n: 1}, note: "question: a child function node with the same id and source as the parent node is declared under a new module name, so its module state starts fresh"},
+  ],
+}
+
+{
+  name: "isolation: a parent and a child node with the same id and different sources",
+  decisions: {
+    child: {nodes: [{function: "f", source: """let n = 100;
+export const handler = async (input) => ({ ...input, child: ++n });"""}]},
+  },
+  graph: {
+    nodes: [
+      {function: "f", source: """let n = 0;
+export const handler = async (input) => ({ ...input, parent: ++n });"""},
+      {decision: "call", key: "child"},
+    ],
+  },
+  cases: [
+    [{}, {parent: 1, child: 101}],
+    [{x: 1}, {x: 1, parent: 1, child: 101}],
+  ],
+}
+
+{
+  name: "isolation: zen.evaluate of a stateful sub-decision twice in one handler",
+  decisions: {
+    counter: {nodes: [{function: "c", source: """let n = 0;
+export const handler = async (input) => ({ n: ++n });"""}]},
+  },
+  graph: {
+    nodes: [{function: "f", source: """import zen from 'zen';
+export const handler = async (input) => {
+  const a = await zen.evaluate('counter', {});
+  const b = await zen.evaluate('counter', {});
+  return { a: a.result.n, b: b.result.n, v: input.v };
+};"""}],
+  },
+  cases: [
+    [{v: 1}, {a: 1, b: 1, v: 1}],
+    [{v: 2}, {a: 1, b: 1, v: 2}],
+  ],
+}

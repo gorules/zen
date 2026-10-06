@@ -1,0 +1,1155 @@
+// Expression nodes under batch-oriented optimizations. Every suite here runs many rows that repeat a
+// few distinct values, because the compiled engine folds literals, evaluates an expression once per
+// distinct key, aliases pure path reads, rewrites `path ?? literal`, builds static object shapes and
+// evaluates constant-argument builtins (and `d()`) once per batch. Each case states what the
+// row-at-a-time semantics require, so a shortcut that leaks a value between rows, merges values that
+// are equal but not identical, or shares a mutable result shows up as a mismatch.
+
+// ---------------------------------------------------------------------------------------------
+// Literal folding: constant subexpressions produce the same value as evaluated per row, next to
+// per-row parts of the same expression.
+{
+  name: "folded literals of every type beside a per-row value",
+  graph: {nodes: [{expression: "calc", fields: {
+    n: "1 + 2 * 3",
+    f: "0.1 + 0.2",
+    s: "'ab' + 'cd'",
+    b: "1 < 2 and 'a' != 'b'",
+    l: "[1, 2, 3][1]",
+    o: "({k: 1}).k",
+    len: "len('hello')",
+    mix: "x + (10 / 4)",
+  }}]},
+  cases: [
+    [{x: 1}, {n: 7, f: 0.3, s: "abcd", b: true, l: 2, o: 1, len: 5, mix: 3.5}],
+    [{x: 1}, {n: 7, f: 0.3, s: "abcd", b: true, l: 2, o: 1, len: 5, mix: 3.5}],
+    [{x: 2}, {n: 7, f: 0.3, s: "abcd", b: true, l: 2, o: 1, len: 5, mix: 4.5}],
+    [{x: 0.5}, {n: 7, f: 0.3, s: "abcd", b: true, l: 2, o: 1, len: 5, mix: 3}],
+    [{x: 1}, {n: 7, f: 0.3, s: "abcd", b: true, l: 2, o: 1, len: 5, mix: 3.5}],
+    [{}, "!error"],
+    [{x: -2.5}, {n: 7, f: 0.3, s: "abcd", b: true, l: 2, o: 1, len: 5, mix: 0}],
+    [{x: 2}, {n: 7, f: 0.3, s: "abcd", b: true, l: 2, o: 1, len: 5, mix: 4.5}],
+    [{x: "a"}, "!error"],
+    [{x: 1}, {n: 7, f: 0.3, s: "abcd", b: true, l: 2, o: 1, len: 5, mix: 3.5}],
+  ],
+}
+
+{
+  name: "folded literals keep their decimal scale",
+  graph: {nodes: [{expression: "calc", fields: {
+    a: "string(1.50)",
+    b: "string(1.50 + 0)",
+    c: "string(2.000 * 1)",
+    d: "string(x)",
+    e: "string(x + 0.00)",
+  }}]},
+  cases: [
+    [{x: 1}, {a: "1.50", b: "1.50", c: "2.000", d: "1", e: "1.00"}, "bug: adding a zero literal with scale drops its scale (expression spec: 0.00 + 1 prints '1')"],
+    [{x: 1.0}, {a: "1.50", b: "1.50", c: "2.000", d: "1.0", e: "1.00"}, "bug: adding a zero literal with scale drops its scale (expression spec: 0.00 + 1 prints '1')"],
+    [{x: 1.00}, {a: "1.50", b: "1.50", c: "2.000", d: "1.00", e: "1.00"}],
+    [{x: 1}, {a: "1.50", b: "1.50", c: "2.000", d: "1", e: "1.00"}, "bug: adding a zero literal with scale drops its scale (expression spec: 0.00 + 1 prints '1')"],
+    [{x: 1.000}, {a: "1.50", b: "1.50", c: "2.000", d: "1.000", e: "1.000"}],
+    [{x: 1.0}, {a: "1.50", b: "1.50", c: "2.000", d: "1.0", e: "1.00"}, "bug: adding a zero literal with scale drops its scale (expression spec: 0.00 + 1 prints '1')"],
+    [{x: 2.5}, {a: "1.50", b: "1.50", c: "2.000", d: "2.5", e: "2.50"}, "bug: adding a zero literal with scale drops its scale (expression spec: 0.00 + 1 prints '1')"],
+    [{x: 1}, {a: "1.50", b: "1.50", c: "2.000", d: "1", e: "1.00"}, "bug: adding a zero literal with scale drops its scale (expression spec: 0.00 + 1 prints '1')"],
+  ],
+}
+
+{
+  name: "a folded condition picks one ternary arm for every row",
+  graph: {nodes: [{expression: "calc", fields: {
+    always: "1 > 0 ? x : 'never'",
+    never: "1 > 2 ? x : 'fallback'",
+    guarded: "false and x > 0",
+    either: "true or x > 0",
+  }}]},
+  cases: [
+    [{x: 1}, {always: 1, never: "fallback", guarded: false, either: true}],
+    [{x: "s"}, {always: "s", never: "fallback", guarded: false, either: true}],
+    [{x: 1}, {always: 1, never: "fallback", guarded: false, either: true}],
+    [{}, {never: "fallback", guarded: false, either: true}],
+    [{x: null}, {never: "fallback", guarded: false, either: true}],
+    [{x: [1]}, {always: [1], never: "fallback", guarded: false, either: true}],
+    [{x: 1}, {always: 1, never: "fallback", guarded: false, either: true}],
+    [{x: true}, {always: true, never: "fallback", guarded: false, either: true}],
+  ],
+}
+
+{
+  name: "a constant error in an untaken arm does not fail any row",
+  graph: {nodes: [{expression: "calc", fields: {r: "x > 0 ? x : 'a' + 1"}}]},
+  cases: [
+    [{x: 1}, {r: 1}],
+    [{x: 2}, {r: 2}],
+    [{x: 1}, {r: 1}],
+    [{x: 0}, "!error"],
+    [{x: 1}, {r: 1}],
+    [{x: 5}, {r: 5}],
+    [{x: -1}, "!error"],
+    [{x: 1}, {r: 1}],
+  ],
+}
+
+{
+  name: "a fully constant node gives every row the same result",
+  graph: {nodes: [
+    {expression: "consts", fields: {rate: "0.19", label: "'VAT ' + string(19) + '%'", tiers: "['a', 'b']", cfg: "{max: 100, on: true}"}},
+    {expression: "use", fields: {rate: "rate", label: "label", first: "tiers[0]", max: "cfg.max", on: "cfg.on"}},
+  ]},
+  cases: [
+    [{}, {rate: 0.19, label: "VAT 19%", first: "a", max: 100, on: true}],
+    [{rate: 1}, {rate: 0.19, label: "VAT 19%", first: "a", max: 100, on: true}],
+    [{}, {rate: 0.19, label: "VAT 19%", first: "a", max: 100, on: true}],
+    [{x: "y"}, {rate: 0.19, label: "VAT 19%", first: "a", max: 100, on: true}],
+    [{}, {rate: 0.19, label: "VAT 19%", first: "a", max: 100, on: true}],
+    [{cfg: {max: 1}}, {rate: 0.19, label: "VAT 19%", first: "a", max: 100, on: true}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Keyed evaluation: rows repeat a few distinct values. A result reused for "the same" input must
+// be keyed on every value the expression reads, and on identity rather than loose equality.
+{
+  name: "keyed: a repeated category next to a varying amount",
+  graph: {nodes: [{expression: "calc", fields: {
+    price: "tier == 'gold' ? amount * 0.9 : tier == 'silver' ? amount * 0.95 : amount",
+    label: "upper(tier)",
+  }}]},
+  cases: [
+    [{tier: "gold", amount: 100}, {price: 90, label: "GOLD"}],
+    [{tier: "gold", amount: 200}, {price: 180, label: "GOLD"}],
+    [{tier: "silver", amount: 100}, {price: 95, label: "SILVER"}],
+    [{tier: "gold", amount: 100}, {price: 90, label: "GOLD"}],
+    [{tier: "basic", amount: 100}, {price: 100, label: "BASIC"}],
+    [{tier: "silver", amount: 20}, {price: 19, label: "SILVER"}],
+    [{tier: "gold", amount: 0.01}, {price: 0.009, label: "GOLD"}],
+    [{tier: "basic", amount: 7}, {price: 7, label: "BASIC"}],
+    [{tier: "gold", amount: 100}, {price: 90, label: "GOLD"}],
+    [{tier: "silver", amount: 100}, {price: 95, label: "SILVER"}],
+    [{tier: "gold", amount: 50}, {price: 45, label: "GOLD"}],
+    [{tier: "basic", amount: 100}, {price: 100, label: "BASIC"}],
+    [{tier: "gold", amount: 200}, {price: 180, label: "GOLD"}],
+    [{tier: "silver", amount: 1}, {price: 0.95, label: "SILVER"}],
+    [{tier: "gold", amount: 100}, {price: 90, label: "GOLD"}],
+    [{tier: "basic", amount: 0}, {price: 0, label: "BASIC"}],
+  ],
+}
+
+{
+  name: "keyed: numbers equal in value but not in scale render differently",
+  graph: {nodes: [{expression: "calc", fields: {s: "string(x)", t: "`v=${x}`", eq: "x == 1", sum: "x + 1"}}]},
+  cases: [
+    [{x: 1}, {s: "1", t: "v=1", eq: true, sum: 2}],
+    [{x: 1.0}, {s: "1.0", t: "v=1.0", eq: true, sum: 2}],
+    [{x: 1.00}, {s: "1.00", t: "v=1.00", eq: true, sum: 2}],
+    [{x: 1}, {s: "1", t: "v=1", eq: true, sum: 2}],
+    [{x: 1.0}, {s: "1.0", t: "v=1.0", eq: true, sum: 2}],
+    [{x: 1}, {s: "1", t: "v=1", eq: true, sum: 2}],
+    [{x: 1.00}, {s: "1.00", t: "v=1.00", eq: true, sum: 2}],
+    [{x: 2}, {s: "2", t: "v=2", eq: false, sum: 3}],
+    [{x: 1.0}, {s: "1.0", t: "v=1.0", eq: true, sum: 2}],
+    [{x: 1}, {s: "1", t: "v=1", eq: true, sum: 2}],
+  ],
+}
+
+{
+  name: "keyed: a number, its string, a boolean and null are distinct keys",
+  graph: {nodes: [{expression: "calc", fields: {t: "type(x)", isOne: "x == 1", str: "string(x)", isNull: "x == null"}}]},
+  cases: [
+    [{x: 1}, {t: "number", isOne: true, str: "1", isNull: false}],
+    [{x: "1"}, {t: "string", isOne: false, str: "1", isNull: false}],
+    [{x: true}, {t: "bool", isOne: false, str: "true", isNull: false}],
+    [{x: null}, {t: "null", isOne: false, str: "null", isNull: true}],
+    [{}, {t: "null", isOne: false, str: "null", isNull: true}],
+    [{x: 1}, {t: "number", isOne: true, str: "1", isNull: false}],
+    [{x: "1"}, {t: "string", isOne: false, str: "1", isNull: false}],
+    [{x: "true"}, {t: "string", isOne: false, str: "true", isNull: false}],
+    [{x: true}, {t: "bool", isOne: false, str: "true", isNull: false}],
+    [{x: "null"}, {t: "string", isOne: false, str: "null", isNull: false}],
+    [{x: 1}, {t: "number", isOne: true, str: "1", isNull: false}],
+    [{x: null}, {t: "null", isOne: false, str: "null", isNull: true}],
+  ],
+}
+
+{
+  name: "keyed: strings that differ only in case, whitespace or unicode form",
+  graph: {nodes: [{expression: "calc", fields: {u: "upper(s)", n: "len(s)", isA: "s == 'a'"}}]},
+  cases: [
+    [{s: "a"}, {u: "A", n: 1, isA: true}],
+    [{s: "A"}, {u: "A", n: 1, isA: false}],
+    [{s: "a "}, {u: "A ", n: 2, isA: false}],
+    [{s: "a"}, {u: "A", n: 1, isA: true}],
+    [{s: ""}, {u: "", n: 0, isA: false}],
+    [{s: "é"}, {u: "É", n: 1, isA: false}, "bug: len counts UTF-8 bytes instead of characters (as in the expression spec)"],
+    [{s: "a"}, {u: "A", n: 1, isA: true}],
+    [{s: "A"}, {u: "A", n: 1, isA: false}],
+    [{s: ""}, {u: "", n: 0, isA: false}],
+    [{s: " a"}, {u: " A", n: 2, isA: false}],
+    [{s: "a"}, {u: "A", n: 1, isA: true}],
+  ],
+}
+
+{
+  name: "keyed: an expression over two repeated fields keys on both",
+  graph: {nodes: [{expression: "calc", fields: {key: "region + ':' + plan", fee: "region == 'eu' ? (plan == 'pro' ? 20 : 10) : (plan == 'pro' ? 25 : 12)"}}]},
+  cases: [
+    [{region: "eu", plan: "pro"}, {key: "eu:pro", fee: 20}],
+    [{region: "eu", plan: "free"}, {key: "eu:free", fee: 10}],
+    [{region: "us", plan: "pro"}, {key: "us:pro", fee: 25}],
+    [{region: "us", plan: "free"}, {key: "us:free", fee: 12}],
+    [{region: "eu", plan: "pro"}, {key: "eu:pro", fee: 20}],
+    [{region: "us", plan: "pro"}, {key: "us:pro", fee: 25}],
+    [{region: "eu", plan: "free"}, {key: "eu:free", fee: 10}],
+    [{region: "eu", plan: "pro"}, {key: "eu:pro", fee: 20}],
+    [{region: "us", plan: "free"}, {key: "us:free", fee: 12}],
+    [{region: "us", plan: "pro"}, {key: "us:pro", fee: 25}],
+    [{region: "eu", plan: "pro"}, {key: "eu:pro", fee: 20}],
+    [{region: "us", plan: "free"}, {key: "us:free", fee: 12}],
+  ],
+}
+
+{
+  name: "keyed: an expression reading a repeated field and an earlier per-row field through $",
+  graph: {nodes: [{expression: "calc", fields: {
+    base: "qty * 10",
+    total: "kind == 'bulk' ? $.base * 0.5 : $.base",
+    tag: "kind + '-' + string($.total)",
+  }}]},
+  cases: [
+    [{kind: "bulk", qty: 1}, {base: 10, total: 5, tag: "bulk-5.0"}],
+    [{kind: "bulk", qty: 2}, {base: 20, total: 10, tag: "bulk-10.0"}],
+    [{kind: "single", qty: 1}, {base: 10, total: 10, tag: "single-10"}],
+    [{kind: "bulk", qty: 1}, {base: 10, total: 5, tag: "bulk-5.0"}],
+    [{kind: "single", qty: 3}, {base: 30, total: 30, tag: "single-30"}],
+    [{kind: "bulk", qty: 3}, {base: 30, total: 15, tag: "bulk-15.0"}],
+    [{kind: "single", qty: 1}, {base: 10, total: 10, tag: "single-10"}],
+    [{kind: "bulk", qty: 2}, {base: 20, total: 10, tag: "bulk-10.0"}],
+    [{kind: "single", qty: 0}, {base: 0, total: 0, tag: "single-0"}],
+    [{kind: "bulk", qty: 0}, {base: 0, total: 0, tag: "bulk-0.0"}, "bug: a zero product drops the scale that 10 * 0.5 keeps (5.0)"],
+  ],
+}
+
+{
+  name: "keyed: a repeated value that errors fails only its rows",
+  graph: {nodes: [{expression: "calc", fields: {next: "v + 1"}}]},
+  cases: [
+    [{v: 1}, {next: 2}],
+    [{v: "a"}, "!error"],
+    [{v: 1}, {next: 2}],
+    [{v: 2}, {next: 3}],
+    [{v: "a"}, "!error"],
+    [{v: 1}, {next: 2}],
+    [{v: true}, "!error"],
+    [{v: 2}, {next: 3}],
+    [{v: "a"}, "!error"],
+    [{v: 1}, {next: 2}],
+    [{}, "!error"],
+    [{v: 1}, {next: 2}],
+  ],
+}
+
+{
+  name: "keyed: a repeated array or object value",
+  graph: {nodes: [{expression: "calc", fields: {n: "len(xs)", first: "xs[0]", total: "sum(xs)", has: "2 in xs"}}]},
+  cases: [
+    [{xs: [1, 2]}, {n: 2, first: 1, total: 3, has: true}],
+    [{xs: [1, 2]}, {n: 2, first: 1, total: 3, has: true}],
+    [{xs: [2, 1]}, {n: 2, first: 2, total: 3, has: true}],
+    [{xs: []}, {n: 0, total: 0, has: false}],
+    [{xs: [1, 2]}, {n: 2, first: 1, total: 3, has: true}],
+    [{xs: [1, 2, 3]}, {n: 3, first: 1, total: 6, has: true}],
+    [{xs: [1.0, 2.0]}, {n: 2, first: 1, total: 3, has: true}],
+    [{xs: []}, {n: 0, total: 0, has: false}],
+    [{xs: [5]}, {n: 1, first: 5, total: 5, has: false}],
+    [{xs: [1, 2]}, {n: 2, first: 1, total: 3, has: true}],
+  ],
+}
+
+{
+  name: "keyed: a closure over a repeated array with a per-row multiplier",
+  graph: {nodes: [{expression: "calc", fields: {scaled: "map(xs, # * k)", big: "filter(xs, # > k)"}}]},
+  cases: [
+    [{xs: [1, 2, 3], k: 2}, {scaled: [2, 4, 6], big: [3]}],
+    [{xs: [1, 2, 3], k: 1}, {scaled: [1, 2, 3], big: [2, 3]}],
+    [{xs: [1, 2, 3], k: 2}, {scaled: [2, 4, 6], big: [3]}],
+    [{xs: [1, 2, 3], k: 0}, {scaled: [0, 0, 0], big: [1, 2, 3]}],
+    [{xs: [4], k: 2}, {scaled: [8], big: [4]}],
+    [{xs: [1, 2, 3], k: 3}, {scaled: [3, 6, 9], big: []}],
+    [{xs: [4], k: 1}, {scaled: [4], big: [4]}],
+    [{xs: [1, 2, 3], k: 2}, {scaled: [2, 4, 6], big: [3]}],
+    [{xs: [], k: 2}, {scaled: [], big: []}],
+    [{xs: [1, 2, 3], k: 1}, {scaled: [1, 2, 3], big: [2, 3]}],
+  ],
+}
+
+{
+  name: "keyed: a repeated date string and the fixed clock",
+  graph: {nodes: [{expression: "calc", fields: {
+    age: "d().diff(d(dob), 'year')",
+    adult: "d(dob).add(18, 'year') <= d()",
+    born: "d(dob).format('%Y')",
+  }}]},
+  cases: [
+    [{dob: "2000-01-01"}, {age: 25, adult: true, born: "2000"}],
+    [{dob: "2010-06-15"}, {age: 14, adult: false, born: "2010"}],
+    [{dob: "2000-01-01"}, {age: 25, adult: true, born: "2000"}],
+    [{dob: "2007-03-20"}, {age: 18, adult: true, born: "2007"}],
+    [{dob: "2007-03-21"}, {age: 17, adult: false, born: "2007"}],
+    [{dob: "2010-06-15"}, {age: 14, adult: false, born: "2010"}],
+    [{dob: "2000-01-01"}, {age: 25, adult: true, born: "2000"}],
+    [{dob: "2007-03-20"}, {age: 18, adult: true, born: "2007"}],
+    [{dob: "2000-01-01T00:00:00Z"}, {age: 25, adult: true, born: "2000"}],
+    [{dob: "2007-03-21"}, {age: 17, adult: false, born: "2007"}],
+  ],
+}
+
+{
+  name: "keyed: thirty rows over three statuses feeding a switch",
+  graph: {
+    nodes: [
+      {expression: "norm", fields: {s: "lower(trim(status))", amount: "amount"}},
+      {switch: "route", when: ["s == 'open'", "s == 'closed'", ""]},
+      {expression: "open", fields: {out: "'O:' + string(amount)"}},
+      {expression: "closed", fields: {out: "'C:' + string(amount * 2)"}},
+      {expression: "other", fields: {out: "'X:' + s"}},
+    ],
+    edges: ["input -> norm -> route", "route:0 -> open -> output", "route:1 -> closed -> output", "route:2 -> other -> output"],
+  },
+  cases: [
+    [{status: "open", amount: 1}, {out: "O:1"}],
+    [{status: "OPEN", amount: 2}, {out: "O:2"}],
+    [{status: "closed", amount: 1}, {out: "C:2"}],
+    [{status: " open ", amount: 3}, {out: "O:3"}],
+    [{status: "void", amount: 1}, {out: "X:void"}],
+    [{status: "open", amount: 1}, {out: "O:1"}],
+    [{status: "closed", amount: 5}, {out: "C:10"}],
+    [{status: "Closed", amount: 1}, {out: "C:2"}],
+    [{status: "open", amount: 4}, {out: "O:4"}],
+    [{status: "void", amount: 2}, {out: "X:void"}],
+    [{status: "open", amount: 1}, {out: "O:1"}],
+    [{status: "closed", amount: 1}, {out: "C:2"}],
+    [{status: "open", amount: 1.5}, {out: "O:1.5"}],
+    [{status: "", amount: 1}, {out: "X:"}],
+    [{status: "open", amount: 1}, {out: "O:1"}],
+    [{status: "closed", amount: 0.5}, {out: "C:1.0"}],
+    [{status: "open", amount: 2}, {out: "O:2"}],
+    [{status: "void", amount: 1}, {out: "X:void"}],
+    [{status: "closed", amount: 1}, {out: "C:2"}],
+    [{status: "open", amount: 1}, {out: "O:1"}],
+    [{status: "OPEN", amount: 1}, {out: "O:1"}],
+    [{status: "closed", amount: 3}, {out: "C:6"}],
+    [{status: "open", amount: 0}, {out: "O:0"}],
+    [{status: "void", amount: 0}, {out: "X:void"}],
+    [{status: "open", amount: 1}, {out: "O:1"}],
+    [{status: "closed", amount: 1}, {out: "C:2"}],
+    [{status: "open", amount: 10}, {out: "O:10"}],
+    [{status: "closed", amount: 10}, {out: "C:20"}],
+    [{status: "open", amount: 1}, {out: "O:1"}],
+    [{status: "void", amount: 1}, {out: "X:void"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Aliasing of pure path reads: a field that copies an input path is a value, not a view. Later
+// changes to the copy or to the original must not show through the other.
+{
+  name: "alias: a copied object extended by a later field leaves the original intact",
+  graph: {nodes: [{expression: "calc", passThrough: true, fields: [
+    ["copy", "customer"],
+    ["copy.tier", "score > 50 ? 'gold' : 'basic'"],
+  ]}]},
+  cases: [
+    [{customer: {name: "ann"}, score: 80}, {customer: {name: "ann"}, score: 80, copy: {name: "ann", tier: "gold"}}, "bug: the copy aliases the request object, so writing copy.tier also writes customer.tier (see 03)"],
+    [{customer: {name: "ann"}, score: 10}, {customer: {name: "ann"}, score: 10, copy: {name: "ann", tier: "basic"}}, "bug: the copy aliases the request object, so writing copy.tier also writes customer.tier (see 03)"],
+    [{customer: {name: "bob"}, score: 80}, {customer: {name: "bob"}, score: 80, copy: {name: "bob", tier: "gold"}}, "bug: the copy aliases the request object, so writing copy.tier also writes customer.tier (see 03)"],
+    [{customer: {name: "ann"}, score: 80}, {customer: {name: "ann"}, score: 80, copy: {name: "ann", tier: "gold"}}, "bug: the copy aliases the request object, so writing copy.tier also writes customer.tier (see 03)"],
+    [{customer: {name: "ann", tier: "x"}, score: 10}, {customer: {name: "ann", tier: "x"}, score: 10, copy: {name: "ann", tier: "basic"}}, "bug: the copy aliases the request object, so writing copy.tier also writes customer.tier (see 03)"],
+    [{customer: {}, score: 80}, {customer: {}, score: 80, copy: {tier: "gold"}}, "bug: the copy aliases the request object, so writing copy.tier also writes customer.tier (see 03)"],
+    [{customer: {name: "ann"}, score: 10}, {customer: {name: "ann"}, score: 10, copy: {name: "ann", tier: "basic"}}, "bug: the copy aliases the request object, so writing copy.tier also writes customer.tier (see 03)"],
+    [{customer: {name: "bob"}, score: 80}, {customer: {name: "bob"}, score: 80, copy: {name: "bob", tier: "gold"}}, "bug: the copy aliases the request object, so writing copy.tier also writes customer.tier (see 03)"],
+  ],
+}
+
+{
+  name: "alias: two copies of one path diverge when each is extended",
+  graph: {nodes: [{expression: "calc", fields: [
+    ["a", "item"],
+    ["b", "item"],
+    ["a.side", "'left'"],
+    ["b.side", "'right'"],
+    ["b.n", "item.n + 1"],
+  ]}]},
+  cases: [
+    [{item: {n: 1}}, {a: {n: 1, side: "left"}, b: {n: 2, side: "right"}}, "bug: both fields alias the same request object, so each sees the other's writes"],
+    [{item: {n: 1}}, {a: {n: 1, side: "left"}, b: {n: 2, side: "right"}}, "bug: both fields alias the same request object, so each sees the other's writes"],
+    [{item: {n: 2}}, {a: {n: 2, side: "left"}, b: {n: 3, side: "right"}}, "bug: both fields alias the same request object, so each sees the other's writes"],
+    [{item: {n: 1, side: "up"}}, {a: {n: 1, side: "left"}, b: {n: 2, side: "right"}}, "bug: both fields alias the same request object, so each sees the other's writes"],
+    [{item: {n: 1}}, {a: {n: 1, side: "left"}, b: {n: 2, side: "right"}}, "bug: both fields alias the same request object, so each sees the other's writes"],
+    [{item: {n: 0}}, {a: {n: 0, side: "left"}, b: {n: 1, side: "right"}}, "bug: both fields alias the same request object, so each sees the other's writes"],
+  ],
+}
+
+{
+  name: "alias: a copy taken before the original field is rewritten keeps the old value",
+  graph: {nodes: [{expression: "calc", fields: [
+    ["orig", "data"],
+    ["snapshot", "$.orig"],
+    ["orig.flag", "true"],
+    ["orig.v", "data.v * 2"],
+  ]}]},
+  cases: [
+    [{data: {v: 1}}, {orig: {v: 2, flag: true}, snapshot: {v: 1}}],
+    [{data: {v: 1}}, {orig: {v: 2, flag: true}, snapshot: {v: 1}}],
+    [{data: {v: 3}}, {orig: {v: 6, flag: true}, snapshot: {v: 3}}],
+    [{data: {v: 1, w: "x"}}, {orig: {v: 2, w: "x", flag: true}, snapshot: {v: 1, w: "x"}}],
+    [{data: {v: 1}}, {orig: {v: 2, flag: true}, snapshot: {v: 1}}],
+    [{data: {v: 0.5}}, {orig: {v: 1, flag: true}, snapshot: {v: 0.5}}],
+  ],
+}
+
+{
+  name: "alias: a copy passed downstream and modified there leaves the upstream original intact",
+  graph: {nodes: [
+    {expression: "copy", passThrough: true, fields: {profile: "customer"}},
+    {expression: "edit", passThrough: true, fields: {"profile.name": "upper(profile.name)", "profile.seen": "true"}},
+  ]},
+  cases: [
+    [{customer: {name: "ann"}}, {customer: {name: "ann"}, profile: {name: "ANN", seen: true}}],
+    [{customer: {name: "ann"}}, {customer: {name: "ann"}, profile: {name: "ANN", seen: true}}],
+    [{customer: {name: "bob", age: 3}}, {customer: {name: "bob", age: 3}, profile: {name: "BOB", age: 3, seen: true}}],
+    [{customer: {name: "ann"}}, {customer: {name: "ann"}, profile: {name: "ANN", seen: true}}],
+    [{customer: {name: ""}}, {customer: {name: ""}, profile: {name: "", seen: true}}],
+    [{customer: {name: "bob", age: 3}}, {customer: {name: "bob", age: 3}, profile: {name: "BOB", age: 3, seen: true}}],
+  ],
+}
+
+{
+  name: "alias: a copied array survives the original being remapped downstream",
+  graph: {nodes: [
+    {expression: "keep", passThrough: true, fields: {original: "items"}},
+    {expression: "change", passThrough: true, fields: {items: "map(items, # * 10)"}},
+  ]},
+  cases: [
+    [{items: [1, 2]}, {items: [10, 20], original: [1, 2]}],
+    [{items: [1, 2]}, {items: [10, 20], original: [1, 2]}],
+    [{items: [3]}, {items: [30], original: [3]}],
+    [{items: []}, {items: [], original: []}],
+    [{items: [1, 2]}, {items: [10, 20], original: [1, 2]}],
+    [{items: [0.5, -1]}, {items: [5, -10], original: [0.5, -1]}],
+  ],
+}
+
+{
+  name: "alias: a scalar copy and the original updated separately",
+  graph: {nodes: [
+    {expression: "copy", passThrough: true, fields: {before: "count"}},
+    {expression: "bump", passThrough: true, fields: {count: "count + 1"}},
+    {expression: "check", passThrough: true, fields: {delta: "count - before"}},
+  ]},
+  cases: [
+    [{count: 1}, {count: 2, before: 1, delta: 1}],
+    [{count: 1}, {count: 2, before: 1, delta: 1}],
+    [{count: 5}, {count: 6, before: 5, delta: 1}],
+    [{count: 1}, {count: 2, before: 1, delta: 1}],
+    [{count: 0.5}, {count: 1.5, before: 0.5, delta: 1}],
+    [{count: 5}, {count: 6, before: 5, delta: 1}],
+    [{count: -1}, {count: 0, before: -1, delta: 1}],
+  ],
+}
+
+{
+  name: "alias: a nested path copied to several outputs, one of them extended downstream",
+  graph: {nodes: [
+    {expression: "spread", fields: {left: "order.address", right: "order.address", city: "order.address.city"}},
+    {expression: "edit", passThrough: true, fields: {"left.city": "upper(city)"}},
+  ]},
+  cases: [
+    [{order: {address: {city: "rome", zip: "1"}}}, {left: {city: "ROME", zip: "1"}, right: {city: "rome", zip: "1"}, city: "rome"}],
+    [{order: {address: {city: "rome", zip: "1"}}}, {left: {city: "ROME", zip: "1"}, right: {city: "rome", zip: "1"}, city: "rome"}],
+    [{order: {address: {city: "oslo"}}}, {left: {city: "OSLO"}, right: {city: "oslo"}, city: "oslo"}],
+    [{order: {address: {city: "rome", zip: "1"}}}, {left: {city: "ROME", zip: "1"}, right: {city: "rome", zip: "1"}, city: "rome"}],
+    [{order: {address: {city: ""}}}, {left: {city: ""}, right: {city: ""}, city: ""}],
+  ],
+}
+
+{
+  name: "alias: a copied request object modified in two parallel branches",
+  graph: {
+    nodes: [
+      {expression: "copy", fields: {o: "obj"}},
+      {expression: "a", passThrough: true, fields: {"o.a": "true"}},
+      {expression: "b", passThrough: true, fields: {"o.b": "true"}},
+      {expression: "join", fields: {o: "o", n: "len(keys(o))"}},
+    ],
+    edges: ["input -> copy", "copy -> a -> join", "copy -> b -> join", "join -> output"],
+  },
+  cases: [
+    [{obj: {x: 1}}, {o: {x: 1, a: true, b: true}, n: 3}],
+    [{obj: {x: 1}}, {o: {x: 1, a: true, b: true}, n: 3}],
+    [{obj: {}}, {o: {a: true, b: true}, n: 2}],
+    [{obj: {x: 2}}, {o: {x: 2, a: true, b: true}, n: 3}],
+    [{obj: {x: 1}}, {o: {x: 1, a: true, b: true}, n: 3}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// `path ?? literal`: only null and missing take the default; every other value of every type is
+// kept, including the falsy ones.
+{
+  name: "coalesce: a number default against values of every type",
+  graph: {nodes: [{expression: "calc", fields: {v: "x ?? 0", t: "type(x ?? 0)"}}]},
+  cases: [
+    [{}, {v: 0, t: "number"}],
+    [{x: null}, {v: 0, t: "number"}],
+    [{x: 5}, {v: 5, t: "number"}],
+    [{x: 0}, {v: 0, t: "number"}],
+    [{x: ""}, {v: "", t: "string"}],
+    [{x: false}, {v: false, t: "bool"}],
+    [{x: []}, {v: [], t: "array"}],
+    [{x: {}}, {v: {}, t: "object"}],
+    [{}, {v: 0, t: "number"}],
+    [{x: "0"}, {v: "0", t: "string"}],
+    [{x: 5}, {v: 5, t: "number"}],
+    [{x: null}, {v: 0, t: "number"}],
+    [{x: -0.5}, {v: -0.5, t: "number"}],
+    [{}, {v: 0, t: "number"}],
+  ],
+}
+
+{
+  name: "coalesce: string, boolean, array, object and null defaults",
+  graph: {nodes: [{expression: "calc", fields: {
+    s: "x ?? 'none'",
+    t: "x ?? true",
+    f: "x ?? false",
+    a: "x ?? [1, 2]",
+    o: "x ?? {k: 'v'}",
+    n: "x ?? null",
+    e: "x ?? ''",
+  }}]},
+  cases: [
+    [{}, {s: "none", t: true, f: false, a: [1, 2], o: {k: "v"}, e: ""}],
+    [{x: null}, {s: "none", t: true, f: false, a: [1, 2], o: {k: "v"}, e: ""}],
+    [{x: "a"}, {s: "a", t: "a", f: "a", a: "a", o: "a", n: "a", e: "a"}],
+    [{x: false}, {s: false, t: false, f: false, a: false, o: false, n: false, e: false}],
+    [{x: 0}, {s: 0, t: 0, f: 0, a: 0, o: 0, n: 0, e: 0}],
+    [{}, {s: "none", t: true, f: false, a: [1, 2], o: {k: "v"}, e: ""}],
+    [{x: ""}, {s: "", t: "", f: "", a: "", o: "", n: "", e: ""}],
+    [{x: [3]}, {s: [3], t: [3], f: [3], a: [3], o: [3], n: [3], e: [3]}],
+    [{x: {k: 1}}, {s: {k: 1}, t: {k: 1}, f: {k: 1}, a: {k: 1}, o: {k: 1}, n: {k: 1}, e: {k: 1}}],
+    [{x: null}, {s: "none", t: true, f: false, a: [1, 2], o: {k: "v"}, e: ""}],
+    [{x: "a"}, {s: "a", t: "a", f: "a", a: "a", o: "a", n: "a", e: "a"}],
+  ],
+}
+
+{
+  name: "coalesce: a default array or object is fresh for every row",
+  graph: {nodes: [
+    {expression: "init", fields: {list: "xs ?? []", bag: "o ?? {}", tag: "tag"}},
+    {expression: "grow", passThrough: true, fields: {"bag.seen": "tag", size: "len(list)"}},
+  ]},
+  cases: [
+    [{tag: "a"}, {list: [], bag: {seen: "a"}, size: 0, tag: "a"}],
+    [{tag: "b"}, {list: [], bag: {seen: "b"}, size: 0, tag: "b"}],
+    [{tag: "a", o: {x: 1}}, {list: [], bag: {x: 1, seen: "a"}, size: 0, tag: "a"}],
+    [{tag: "c"}, {list: [], bag: {seen: "c"}, size: 0, tag: "c"}],
+    [{tag: "a", xs: [1]}, {list: [1], bag: {seen: "a"}, size: 1, tag: "a"}],
+    [{}, {list: [], bag: {}, size: 0}],
+    [{tag: "b"}, {list: [], bag: {seen: "b"}, size: 0, tag: "b"}],
+    [{tag: "a"}, {list: [], bag: {seen: "a"}, size: 0, tag: "a"}],
+  ],
+}
+
+{
+  name: "coalesce: a date default and a date-valued path",
+  graph: {nodes: [{expression: "calc", fields: {
+    at: "d(when ?? '2024-01-01')",
+    y: "d(when ?? '2024-01-01').year()",
+    late: "d(when ?? '2024-01-01') < d()",
+  }}]},
+  cases: [
+    [{}, {at: "2024-01-01T00:00:00Z", y: 2024, late: true}],
+    [{when: "2030-05-05"}, {at: "2030-05-05T00:00:00Z", y: 2030, late: false}],
+    [{when: null}, {at: "2024-01-01T00:00:00Z", y: 2024, late: true}],
+    [{}, {at: "2024-01-01T00:00:00Z", y: 2024, late: true}],
+    [{when: "2025-03-20"}, {at: "2025-03-20T00:00:00Z", y: 2025, late: true}],
+    [{when: "2030-05-05"}, {at: "2030-05-05T00:00:00Z", y: 2030, late: false}],
+    [{when: date("2026-01-01")}, {at: "2026-01-01T00:00:00Z", y: 2026, late: false}],
+    [{}, {at: "2024-01-01T00:00:00Z", y: 2024, late: true}],
+  ],
+}
+
+{
+  name: "coalesce: nested paths with a missing parent, a null parent and a scalar parent",
+  graph: {nodes: [{expression: "calc", fields: {v: "a.b.c ?? 'dflt'"}}]},
+  cases: [
+    [{}, {v: "dflt"}],
+    [{a: null}, {v: "dflt"}],
+    [{a: {}}, {v: "dflt"}],
+    [{a: {b: null}}, {v: "dflt"}],
+    [{a: {b: {c: 1}}}, {v: 1}],
+    [{a: {b: {c: null}}}, {v: "dflt"}],
+    [{a: {b: {c: false}}}, {v: false}],
+    [{}, {v: "dflt"}],
+    [{a: {b: {c: 1}}}, {v: 1}],
+    [{a: {b: {c: "x"}}}, {v: "x"}],
+    [{a: {b: {}}}, {v: "dflt"}],
+    [{a: {b: {c: 1}}}, {v: 1}],
+  ],
+}
+
+{
+  name: "coalesce: a chain of paths ending in a literal",
+  graph: {nodes: [{expression: "calc", fields: {v: "primary ?? secondary ?? fallback ?? -1"}}]},
+  cases: [
+    [{primary: 1, secondary: 2, fallback: 3}, {v: 1}],
+    [{secondary: 2, fallback: 3}, {v: 2}],
+    [{fallback: 3}, {v: 3}],
+    [{}, {v: -1}],
+    [{primary: null, secondary: null, fallback: null}, {v: -1}],
+    [{primary: 0, secondary: 2}, {v: 0}],
+    [{secondary: false}, {v: false}],
+    [{fallback: ""}, {v: ""}],
+    [{}, {v: -1}],
+    [{primary: 1}, {v: 1}],
+    [{secondary: 2}, {v: 2}],
+    [{}, {v: -1}],
+  ],
+}
+
+{
+  name: "coalesce: the default used in arithmetic and comparisons",
+  graph: {nodes: [{expression: "calc", fields: {
+    total: "(price ?? 0) * (qty ?? 1)",
+    big: "(price ?? 0) > 100",
+    label: "(name ?? 'anon') + '#' + string(qty ?? 1)",
+  }}]},
+  cases: [
+    [{price: 10, qty: 2, name: "a"}, {total: 20, big: false, label: "a#2"}],
+    [{price: 10}, {total: 10, big: false, label: "anon#1"}],
+    [{qty: 5}, {total: 0, big: false, label: "anon#5"}],
+    [{}, {total: 0, big: false, label: "anon#1"}],
+    [{price: 200, qty: 0}, {total: 0, big: true, label: "anon#0"}],
+    [{price: 10, qty: 2, name: "a"}, {total: 20, big: false, label: "a#2"}],
+    [{price: null, qty: null, name: null}, {total: 0, big: false, label: "anon#1"}],
+    [{price: 10}, {total: 10, big: false, label: "anon#1"}],
+    [{price: "10"}, "!error"],
+    [{}, {total: 0, big: false, label: "anon#1"}],
+  ],
+}
+
+{
+  name: "coalesce: over an earlier field through $ and over an upstream node",
+  graph: {nodes: [
+    {expression: "first", fields: {maybe: "flag == true ? 'set' : null"}},
+    {expression: "second", fields: {a: "maybe ?? 'unset'", b: "$.a ?? 'never'", c: "$nodes.first.maybe ?? 'unset'"}},
+  ]},
+  cases: [
+    [{flag: true}, {a: "set", b: "set", c: "set"}],
+    [{flag: false}, {a: "unset", b: "unset", c: "unset"}],
+    [{}, {a: "unset", b: "unset", c: "unset"}],
+    [{flag: true}, {a: "set", b: "set", c: "set"}],
+    [{flag: false}, {a: "unset", b: "unset", c: "unset"}],
+    [{flag: true}, {a: "set", b: "set", c: "set"}],
+  ],
+}
+
+{
+  name: "coalesce: a literal on the left never takes the default",
+  graph: {nodes: [{expression: "calc", fields: {a: "0 ?? x", b: "'' ?? x", c: "false ?? x", d: "null ?? x", e: "null ?? null ?? 'z'"}}]},
+  cases: [
+    [{x: 1}, {a: 0, b: "", c: false, d: 1, e: "z"}],
+    [{}, {a: 0, b: "", c: false, e: "z"}],
+    [{x: "s"}, {a: 0, b: "", c: false, d: "s", e: "z"}],
+    [{x: 1}, {a: 0, b: "", c: false, d: 1, e: "z"}],
+    [{x: null}, {a: 0, b: "", c: false, e: "z"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Static object shapes: an object literal with fixed keys holds per-row values; a member that is
+// null stays in the object, and the object built for one row is never shared with another.
+{
+  name: "shapes: static keys mixing literals and per-row paths",
+  graph: {nodes: [{expression: "calc", fields: {o: "{kind: 'person', name: name, score: score ?? 0, tags: ['a'], nested: {k: 1, v: v}}"}}]},
+  cases: [
+    [{name: "ann", score: 5, v: true}, {o: {kind: "person", name: "ann", score: 5, tags: ["a"], nested: {k: 1, v: true}}}],
+    [{name: "ann", score: 5, v: true}, {o: {kind: "person", name: "ann", score: 5, tags: ["a"], nested: {k: 1, v: true}}}],
+    [{name: "bob"}, {o: {kind: "person", name: "bob", score: 0, tags: ["a"], nested: {k: 1, v: null}}}],
+    [{}, {o: {kind: "person", name: null, score: 0, tags: ["a"], nested: {k: 1, v: null}}}],
+    [{name: 7, score: "x", v: [1]}, {o: {kind: "person", name: 7, score: "x", tags: ["a"], nested: {k: 1, v: [1]}}}],
+    [{name: "ann", score: 5, v: true}, {o: {kind: "person", name: "ann", score: 5, tags: ["a"], nested: {k: 1, v: true}}}],
+    [{name: null, score: null, v: null}, {o: {kind: "person", name: null, score: 0, tags: ["a"], nested: {k: 1, v: null}}}],
+    [{name: "cy", score: 1.50, v: {d: 1}}, {o: {kind: "person", name: "cy", score: 1.5, tags: ["a"], nested: {k: 1, v: {d: 1}}}}],
+    [{name: "bob"}, {o: {kind: "person", name: "bob", score: 0, tags: ["a"], nested: {k: 1, v: null}}}],
+    [{name: "ann", score: 5, v: false}, {o: {kind: "person", name: "ann", score: 5, tags: ["a"], nested: {k: 1, v: false}}}],
+  ],
+}
+
+{
+  name: "shapes: a literal object extended differently per branch is not shared between rows",
+  graph: {
+    nodes: [
+      {expression: "make", passThrough: true, fields: {o: "{base: 1}"}},
+      {switch: "route", when: ["kind == 'a'", ""]},
+      {expression: "a", passThrough: true, fields: {"o.a": "n"}},
+      {expression: "b", passThrough: true, fields: {"o.b": "n"}},
+      {expression: "out", fields: {o: "o", n: "len(keys(o))"}},
+    ],
+    edges: ["input -> make -> route", "route:0 -> a -> out", "route:1 -> b -> out", "out -> output"],
+  },
+  cases: [
+    [{kind: "a", n: 1}, {o: {base: 1, a: 1}, n: 2}],
+    [{kind: "b", n: 2}, {o: {base: 1, b: 2}, n: 2}],
+    [{kind: "a", n: 3}, {o: {base: 1, a: 3}, n: 2}],
+    [{kind: "a", n: 1}, {o: {base: 1, a: 1}, n: 2}],
+    [{kind: "b", n: 1}, {o: {base: 1, b: 1}, n: 2}],
+    [{kind: "b", n: 2}, {o: {base: 1, b: 2}, n: 2}],
+    [{kind: "a", n: 1}, {o: {base: 1, a: 1}, n: 2}],
+    [{kind: "c", n: 9}, {o: {base: 1, b: 9}, n: 2}],
+    [{kind: "a", n: 1}, {o: {base: 1, a: 1}, n: 2}],
+  ],
+}
+
+{
+  name: "shapes: a literal array read by a downstream closure with a per-row factor",
+  graph: {nodes: [
+    {expression: "make", passThrough: true, fields: {base: "[1, 2]"}},
+    {expression: "grow", fields: {all: "map(base, # * (k ?? 1))", n: "len(base)", base: "base"}},
+  ]},
+  cases: [
+    [{k: 3}, {all: [3, 6], n: 2, base: [1, 2]}],
+    [{k: 4}, {all: [4, 8], n: 2, base: [1, 2]}],
+    [{k: 3}, {all: [3, 6], n: 2, base: [1, 2]}],
+    [{k: "x"}, "!error"],
+    [{}, {all: [1, 2], n: 2, base: [1, 2]}],
+    [{k: 3}, {all: [3, 6], n: 2, base: [1, 2]}],
+    [{k: 0}, {all: [0, 0], n: 2, base: [1, 2]}],
+  ],
+}
+
+{
+  name: "shapes: the same keys holding different value types in different rows",
+  graph: {nodes: [
+    {expression: "build", fields: {o: "{a: a, b: b}"}},
+    {expression: "read", fields: {ta: "type(o.a)", tb: "type(o.b)", both: "o.a != null and o.b != null"}},
+  ]},
+  cases: [
+    [{a: 1, b: "x"}, {ta: "number", tb: "string", both: true}],
+    [{a: "1", b: 2}, {ta: "string", tb: "number", both: true}],
+    [{a: 1, b: "x"}, {ta: "number", tb: "string", both: true}],
+    [{a: true}, {ta: "bool", tb: "null", both: false}],
+    [{b: [1]}, {ta: "null", tb: "array", both: false}],
+    [{a: {z: 1}, b: {}}, {ta: "object", tb: "object", both: true}],
+    [{a: 1, b: "x"}, {ta: "number", tb: "string", both: true}],
+    [{}, {ta: "null", tb: "null", both: false}],
+    [{a: 1, b: "x"}, {ta: "number", tb: "string", both: true}],
+  ],
+}
+
+{
+  name: "shapes: a static object merged into the input under pass-through",
+  graph: {nodes: [{expression: "calc", passThrough: true, fields: {meta: "{source: 'calc', id: id, ok: id != null}"}}]},
+  cases: [
+    [{id: 1}, {id: 1, meta: {source: "calc", id: 1, ok: true}}],
+    [{id: 1, meta: {old: true}}, {id: 1, meta: {old: true, source: "calc", id: 1, ok: true}}],
+    [{id: 2}, {id: 2, meta: {source: "calc", id: 2, ok: true}}],
+    [{}, {meta: {source: "calc", id: null, ok: false}}],
+    [{id: 1}, {id: 1, meta: {source: "calc", id: 1, ok: true}}],
+    [{id: 1, meta: {source: "input"}}, {id: 1, meta: {source: "calc", id: 1, ok: true}}],
+    [{id: 1, meta: "scalar"}, {id: 1, meta: {source: "calc", id: 1, ok: true}}],
+    [{id: 2}, {id: 2, meta: {source: "calc", id: 2, ok: true}}],
+  ],
+}
+
+{
+  name: "shapes: objects from map with static keys over per-row arrays",
+  graph: {nodes: [{expression: "calc", fields: {rows: "map(items, {id: #.id, kind: 'line', double: (#.n ?? 0) * 2})"}}]},
+  cases: [
+    [{items: [{id: 1, n: 1}, {id: 2}]}, {rows: [{id: 1, kind: "line", double: 2}, {id: 2, kind: "line", double: 0}]}],
+    [{items: [{id: 1, n: 1}]}, {rows: [{id: 1, kind: "line", double: 2}]}],
+    [{items: []}, {rows: []}],
+    [{items: [{id: 1, n: 1}, {id: 2}]}, {rows: [{id: 1, kind: "line", double: 2}, {id: 2, kind: "line", double: 0}]}],
+    [{items: [{n: 5}]}, {rows: [{id: null, kind: "line", double: 10}]}],
+    [{items: [{id: 1, n: 1}]}, {rows: [{id: 1, kind: "line", double: 2}]}],
+  ],
+}
+
+{
+  name: "shapes: dotted keys build the same static shape in every row",
+  graph: {nodes: [{expression: "calc", fields: {"r.kind": "'fixed'", "r.value": "v", "r.inner.flag": "v > 0", "r.inner.text": "'x'"}}]},
+  cases: [
+    [{v: 1}, {r: {kind: "fixed", value: 1, inner: {flag: true, text: "x"}}}],
+    [{v: -1}, {r: {kind: "fixed", value: -1, inner: {flag: false, text: "x"}}}],
+    [{v: 1}, {r: {kind: "fixed", value: 1, inner: {flag: true, text: "x"}}}],
+    [{v: 0}, {r: {kind: "fixed", value: 0, inner: {flag: false, text: "x"}}}],
+    [{v: 1}, {r: {kind: "fixed", value: 1, inner: {flag: true, text: "x"}}}],
+    [{v: 2.5}, {r: {kind: "fixed", value: 2.5, inner: {flag: true, text: "x"}}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Constant-argument builtins evaluated once per batch, mixed with per-row arguments.
+{
+  name: "builtins: constant string functions beside per-row ones",
+  graph: {nodes: [{expression: "calc", fields: {
+    c: "upper('x')",
+    r: "upper(s)",
+    both: "upper('x') + lower(s)",
+    starts: "startsWith(s, 'ab')",
+    has: "contains('abc', s)",
+    n: "len('abc') + len(s)",
+  }}]},
+  cases: [
+    [{s: "ab"}, {c: "X", r: "AB", both: "Xab", starts: true, has: true, n: 5}],
+    [{s: "Ab"}, {c: "X", r: "AB", both: "Xab", starts: false, has: false, n: 5}],
+    [{s: "ab"}, {c: "X", r: "AB", both: "Xab", starts: true, has: true, n: 5}],
+    [{s: "c"}, {c: "X", r: "C", both: "Xc", starts: false, has: true, n: 4}],
+    [{s: ""}, {c: "X", r: "", both: "X", starts: false, has: true, n: 3}],
+    [{s: "abd"}, {c: "X", r: "ABD", both: "Xabd", starts: true, has: false, n: 6}],
+    [{s: "ab"}, {c: "X", r: "AB", both: "Xab", starts: true, has: true, n: 5}],
+    [{s: "c"}, {c: "X", r: "C", both: "Xc", starts: false, has: true, n: 4}],
+  ],
+}
+
+{
+  name: "builtins: a constant date beside per-row offsets and dates",
+  graph: {nodes: [{expression: "calc", fields: {
+    base: "d('2024-01-01')",
+    shifted: "d('2024-01-01').add(n, 'd')",
+    gap: "d(s).diff(d('2024-01-01'), 'd')",
+    after: "d(s) > d('2024-01-01')",
+    legacy: "date('2024-01-01')",
+  }}]},
+  cases: [
+    [{n: 1, s: "2024-01-02"}, {base: "2024-01-01T00:00:00Z", shifted: "2024-01-02T00:00:00Z", gap: 1, after: true, legacy: 1704067200}],
+    [{n: 1, s: "2024-01-02"}, {base: "2024-01-01T00:00:00Z", shifted: "2024-01-02T00:00:00Z", gap: 1, after: true, legacy: 1704067200}],
+    [{n: 31, s: "2023-12-31"}, {base: "2024-01-01T00:00:00Z", shifted: "2024-02-01T00:00:00Z", gap: -1, after: false, legacy: 1704067200}],
+    [{n: 0, s: "2024-01-01"}, {base: "2024-01-01T00:00:00Z", shifted: "2024-01-01T00:00:00Z", gap: 0, after: false, legacy: 1704067200}],
+    [{n: -1, s: "2025-01-01"}, {base: "2024-01-01T00:00:00Z", shifted: "2023-12-31T00:00:00Z", gap: 366, after: true, legacy: 1704067200}],
+    [{n: 1, s: "2024-01-02"}, {base: "2024-01-01T00:00:00Z", shifted: "2024-01-02T00:00:00Z", gap: 1, after: true, legacy: 1704067200}],
+    [{n: 366, s: "2024-03-01"}, {base: "2024-01-01T00:00:00Z", shifted: "2025-01-01T00:00:00Z", gap: 60, after: true, legacy: 1704067200}],
+    [{n: 0, s: "2024-01-01"}, {base: "2024-01-01T00:00:00Z", shifted: "2024-01-01T00:00:00Z", gap: 0, after: false, legacy: 1704067200}],
+  ],
+}
+
+{
+  name: "builtins: a constant date result chained by a per-row method is not mutated",
+  graph: {nodes: [{expression: "calc", fields: [
+    ["start", "d('2024-03-15')"],
+    ["moved", "$.start.add(n, 'month')"],
+    ["again", "$.start"],
+    ["som", "$.start.startOf(unit)"],
+  ]}]},
+  cases: [
+    [{n: 1, unit: "month"}, {start: "2024-03-15T00:00:00Z", moved: "2024-04-15T00:00:00Z", again: "2024-03-15T00:00:00Z", som: "2024-03-01T00:00:00Z"}],
+    [{n: 2, unit: "year"}, {start: "2024-03-15T00:00:00Z", moved: "2024-05-15T00:00:00Z", again: "2024-03-15T00:00:00Z", som: "2024-01-01T00:00:00Z"}],
+    [{n: 1, unit: "month"}, {start: "2024-03-15T00:00:00Z", moved: "2024-04-15T00:00:00Z", again: "2024-03-15T00:00:00Z", som: "2024-03-01T00:00:00Z"}],
+    [{n: -3, unit: "week"}, {start: "2024-03-15T00:00:00Z", moved: "2023-12-15T00:00:00Z", again: "2024-03-15T00:00:00Z", som: "2024-03-11T00:00:00Z"}],
+    [{n: 0, unit: "day"}, {start: "2024-03-15T00:00:00Z", moved: "2024-03-15T00:00:00Z", again: "2024-03-15T00:00:00Z", som: "2024-03-15T00:00:00Z"}],
+    [{n: 1, unit: "month"}, {start: "2024-03-15T00:00:00Z", moved: "2024-04-15T00:00:00Z", again: "2024-03-15T00:00:00Z", som: "2024-03-01T00:00:00Z"}],
+  ],
+}
+
+{
+  name: "builtins: constant math and list functions beside per-row arguments",
+  graph: {nodes: [{expression: "calc", fields: {
+    m: "max([1, 5, 3])",
+    mx: "max([1, x])",
+    r: "round(2.555, 2)",
+    rx: "round(x, 1)",
+    s: "sum([0.1, 0.2])",
+    inList: "x in [1, 2, 3]",
+    abs: "abs(-2) + abs(x)",
+  }}]},
+  cases: [
+    [{x: 2}, {m: 5, mx: 2, r: 2.56, rx: 2, s: 0.3, inList: true, abs: 4}],
+    [{x: 2}, {m: 5, mx: 2, r: 2.56, rx: 2, s: 0.3, inList: true, abs: 4}],
+    [{x: 0.25}, {m: 5, mx: 1, r: 2.56, rx: 0.3, s: 0.3, inList: false, abs: 2.25}],
+    [{x: -7}, {m: 5, mx: 1, r: 2.56, rx: -7, s: 0.3, inList: false, abs: 9}],
+    [{x: 3}, {m: 5, mx: 3, r: 2.56, rx: 3, s: 0.3, inList: true, abs: 5}],
+    [{x: 2}, {m: 5, mx: 2, r: 2.56, rx: 2, s: 0.3, inList: true, abs: 4}],
+    [{x: 1.05}, {m: 5, mx: 1.05, r: 2.56, rx: 1.1, s: 0.3, inList: false, abs: 3.05}],
+    [{x: 3}, {m: 5, mx: 3, r: 2.56, rx: 3, s: 0.3, inList: true, abs: 5}],
+  ],
+}
+
+{
+  name: "builtins: a constant-argument call whose result is an error fails every row",
+  graph: {nodes: [{expression: "calc", fields: {ok: "x", bad: "upper(1)"}}]},
+  cases: [
+    [{x: 1}, "!error"],
+    [{x: 2}, "!error"],
+    [{}, "!error"],
+  ],
+}
+
+{
+  name: "builtins: constant regular expressions over per-row strings",
+  graph: {nodes: [{expression: "calc", fields: {ok: "matches(code, '^[A-Z]{2}[0-9]+$')", digits: "extract(code, '[0-9]+')"}}]},
+  cases: [
+    [{code: "AB12"}, {ok: true, digits: ["12"]}],
+    [{code: "ab12"}, {ok: false, digits: ["12"]}],
+    [{code: "AB12"}, {ok: true, digits: ["12"]}],
+    [{code: "XY9"}, {ok: true, digits: ["9"]}],
+    [{code: "AB"}, {ok: false, digits: []}],
+    [{code: "AB12"}, {ok: true, digits: ["12"]}],
+    [{code: "XY9"}, {ok: true, digits: ["9"]}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// The clock: `d()`, `date('now')` and the now-relative helpers read one fixed instant
+// (2025-03-20T10:15:30Z), mixed with per-row dates.
+{
+  name: "now: d() and date('now') beside per-row dates",
+  graph: {nodes: [{expression: "calc", fields: {
+    now: "d()",
+    legacy: "date('now')",
+    days: "d(s).diff(d(), 'd')",
+    past: "d(s) < d()",
+    sod: "d().startOf('day')",
+    inAWeek: "d().add(n ?? 7, 'd')",
+  }}]},
+  cases: [
+    [{s: "2025-03-21"}, {now: "2025-03-20T10:15:30Z", legacy: 1742465730, days: 0, past: false, sod: "2025-03-20T00:00:00Z", inAWeek: "2025-03-27T10:15:30Z"}],
+    [{s: "2025-03-22", n: 1}, {now: "2025-03-20T10:15:30Z", legacy: 1742465730, days: 1, past: false, sod: "2025-03-20T00:00:00Z", inAWeek: "2025-03-21T10:15:30Z"}],
+    [{s: "2025-03-21"}, {now: "2025-03-20T10:15:30Z", legacy: 1742465730, days: 0, past: false, sod: "2025-03-20T00:00:00Z", inAWeek: "2025-03-27T10:15:30Z"}],
+    [{s: "2025-03-19", n: 0}, {now: "2025-03-20T10:15:30Z", legacy: 1742465730, days: -1, past: true, sod: "2025-03-20T00:00:00Z", inAWeek: "2025-03-20T10:15:30Z"}],
+    [{s: "2025-03-20T10:15:30Z"}, {now: "2025-03-20T10:15:30Z", legacy: 1742465730, days: 0, past: false, sod: "2025-03-20T00:00:00Z", inAWeek: "2025-03-27T10:15:30Z"}],
+    [{s: "2024-03-20", n: -1}, {now: "2025-03-20T10:15:30Z", legacy: 1742465730, days: -365, past: true, sod: "2025-03-20T00:00:00Z", inAWeek: "2025-03-19T10:15:30Z"}],
+    [{s: "2025-03-21"}, {now: "2025-03-20T10:15:30Z", legacy: 1742465730, days: 0, past: false, sod: "2025-03-20T00:00:00Z", inAWeek: "2025-03-27T10:15:30Z"}],
+  ],
+}
+
+{
+  name: "now: isToday, isYesterday and isTomorrow over repeated dates",
+  graph: {nodes: [{expression: "calc", fields: {today: "d(s).isToday()", yday: "d(s).isYesterday()", tmrw: "d(s).isTomorrow()"}}]},
+  cases: [
+    [{s: "2025-03-20"}, {today: true, yday: false, tmrw: false}],
+    [{s: "2025-03-19"}, {today: false, yday: true, tmrw: false}],
+    [{s: "2025-03-21"}, {today: false, yday: false, tmrw: true}],
+    [{s: "2025-03-20"}, {today: true, yday: false, tmrw: false}],
+    [{s: "2025-03-20T23:59:59Z"}, {today: true, yday: false, tmrw: false}],
+    [{s: "2025-03-19"}, {today: false, yday: true, tmrw: false}],
+    [{s: "2025-03-22"}, {today: false, yday: false, tmrw: false}],
+    [{s: "2025-03-20"}, {today: true, yday: false, tmrw: false}],
+  ],
+}
+
+{
+  name: "now: a now-relative threshold in a table next to a per-row date",
+  graph: {nodes: [
+    {expression: "parse", fields: {at: "d(at)"}},
+    {table: "t", inputs: ["at"], outputs: ["bucket"], rules: [
+      ["< d().sub(30, 'd')", "'stale'"],
+      ["< d()", "'recent'"],
+      ["", "'future'"],
+    ]},
+  ]},
+  cases: [
+    [{at: "2025-01-01"}, {bucket: "stale"}],
+    [{at: "2025-03-01"}, {bucket: "recent"}],
+    [{at: "2025-01-01"}, {bucket: "stale"}],
+    [{at: "2025-04-01"}, {bucket: "future"}],
+    [{at: "2025-03-01"}, {bucket: "recent"}],
+    [{at: "2025-02-18T10:15:30Z"}, {bucket: "recent"}],
+    [{at: "2025-02-18T10:15:29Z"}, {bucket: "stale"}],
+    [{at: "2025-03-20T10:15:30Z"}, {bucket: "future"}],
+    [{at: "2025-01-01"}, {bucket: "stale"}],
+    [{at: "2025-04-01"}, {bucket: "future"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Optimizations meeting each other across nodes: a folded constant, a keyed category, a copy and a
+// coalesced default flowing through a table and back into an expression.
+{
+  name: "combined: keyed categories, coalesced defaults and copies through a table",
+  graph: {nodes: [
+    {expression: "prep", passThrough: true, fields: {segment: "segment ?? 'retail'", original: "order", qty: "order.qty ?? 1"}},
+    {table: "rates", passThrough: true, inputs: ["segment"], outputs: ["rate"], rules: [
+      ["'retail'", "0.10"],
+      ["'wholesale'", "0.25"],
+      ["", "0"],
+    ]},
+    {expression: "final", fields: {
+      "order.total": "order.price * qty * (1 - rate)",
+      "order.qty": "qty",
+      original: "original",
+      tag: "upper(segment) + '/' + string(rate)",
+    }},
+  ]},
+  cases: [
+    [{order: {price: 10, qty: 2}}, {order: {total: 18, qty: 2}, original: {price: 10, qty: 2}, tag: "RETAIL/0.10"}],
+    [{order: {price: 10}, segment: "wholesale"}, {order: {total: 7.5, qty: 1}, original: {price: 10}, tag: "WHOLESALE/0.25"}],
+    [{order: {price: 10, qty: 2}}, {order: {total: 18, qty: 2}, original: {price: 10, qty: 2}, tag: "RETAIL/0.10"}],
+    [{order: {price: 4, qty: 1}, segment: "vip"}, {order: {total: 4, qty: 1}, original: {price: 4, qty: 1}, tag: "VIP/0"}],
+    [{order: {price: 10}, segment: "wholesale"}, {order: {total: 7.5, qty: 1}, original: {price: 10}, tag: "WHOLESALE/0.25"}],
+    [{order: {price: 10, qty: 2}, segment: null}, {order: {total: 18, qty: 2}, original: {price: 10, qty: 2}, tag: "RETAIL/0.10"}],
+    [{order: {price: 0.99, qty: 3}}, {order: {total: 2.673, qty: 3}, original: {price: 0.99, qty: 3}, tag: "RETAIL/0.10"}],
+    [{order: {price: 10, qty: 2}, segment: "wholesale"}, {order: {total: 15, qty: 2}, original: {price: 10, qty: 2}, tag: "WHOLESALE/0.25"}],
+    [{order: {price: 10, qty: 2}}, {order: {total: 18, qty: 2}, original: {price: 10, qty: 2}, tag: "RETAIL/0.10"}],
+    [{order: {price: 4, qty: 1}, segment: "vip"}, {order: {total: 4, qty: 1}, original: {price: 4, qty: 1}, tag: "VIP/0"}],
+    [{order: {qty: 1}}, "!error"],
+    [{order: {price: 10}, segment: "wholesale"}, {order: {total: 7.5, qty: 1}, original: {price: 10}, tag: "WHOLESALE/0.25"}],
+  ],
+}
+
+{
+  name: "combined: a loop over repeated items with folded constants and per-item coalescing",
+  graph: {nodes: [
+    {expression: "line", inputField: "items", outputPath: "lines", executionMode: "loop", fields: {
+      sku: "upper(sku ?? 'n/a')",
+      net: "(price ?? 0) * (qty ?? 1)",
+      vat: "(price ?? 0) * (qty ?? 1) * 0.2",
+      kind: "'line'",
+    }},
+  ]},
+  cases: [
+    [{items: [{sku: "a", price: 10}, {sku: "a", price: 10}, {sku: "b", price: 5, qty: 2}]}, {lines: [
+      {sku: "A", net: 10, vat: 2, kind: "line"},
+      {sku: "A", net: 10, vat: 2, kind: "line"},
+      {sku: "B", net: 10, vat: 2, kind: "line"},
+    ]}],
+    [{items: [{}, {sku: "a"}]}, {lines: [
+      {sku: "N/A", net: 0, vat: 0, kind: "line"},
+      {sku: "A", net: 0, vat: 0, kind: "line"},
+    ]}],
+    [{items: []}, {lines: []}],
+    [{items: [{sku: "a", price: 10}, {sku: "a", price: 10}, {sku: "b", price: 5, qty: 2}]}, {lines: [
+      {sku: "A", net: 10, vat: 2, kind: "line"},
+      {sku: "A", net: 10, vat: 2, kind: "line"},
+      {sku: "B", net: 10, vat: 2, kind: "line"},
+    ]}],
+    [{items: [{sku: "a", price: 1.5, qty: 3}]}, {lines: [{sku: "A", net: 4.5, vat: 0.9, kind: "line"}]}],
+  ],
+}
+
+{
+  name: "combined: a sub-decision called with repeated inputs returns per-row results",
+  decisions: {
+    child: {nodes: [{expression: "c", fields: {r: "k == 'x' ? v * 2 : v", tag: "upper(k)"}}]},
+  },
+  graph: {nodes: [{decision: "call", key: "child"}]},
+  cases: [
+    [{k: "x", v: 1}, {r: 2, tag: "X"}],
+    [{k: "x", v: 2}, {r: 4, tag: "X"}],
+    [{k: "y", v: 1}, {r: 1, tag: "Y"}],
+    [{k: "x", v: 1}, {r: 2, tag: "X"}],
+    [{k: "y", v: 1}, {r: 1, tag: "Y"}],
+    [{k: "x", v: 1}, {r: 2, tag: "X"}],
+    [{k: "y", v: 3}, {r: 3, tag: "Y"}],
+    [{k: "x", v: 2}, {r: 4, tag: "X"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// More keys that compare equal but are not the same value.
+{
+  name: "keyed: one instant written with different offsets and viewed in different zones",
+  graph: {nodes: [{expression: "calc", fields: {
+    utc: "d(s)",
+    local: "d(s).tz(zone)",
+    hour: "d(s).tz(zone).hour()",
+    textLen: "len(s)",
+  }}]},
+  cases: [
+    [{s: "2025-03-20T10:00:00Z", zone: "UTC"}, {utc: "2025-03-20T10:00:00Z", local: "2025-03-20T10:00:00Z", hour: 10, textLen: 20}],
+    [{s: "2025-03-20T12:00:00+02:00", zone: "UTC"}, {utc: "2025-03-20T10:00:00Z", local: "2025-03-20T10:00:00Z", hour: 10, textLen: 25}],
+    [{s: "2025-03-20T10:00:00Z", zone: "Asia/Tokyo"}, {utc: "2025-03-20T10:00:00Z", local: "2025-03-20T19:00:00+09:00", hour: 19, textLen: 20}],
+    [{s: "2025-03-20T10:00:00Z", zone: "UTC"}, {utc: "2025-03-20T10:00:00Z", local: "2025-03-20T10:00:00Z", hour: 10, textLen: 20}],
+    [{s: "2025-03-20T05:00:00-05:00", zone: "America/New_York"}, {utc: "2025-03-20T10:00:00Z", local: "2025-03-20T06:00:00-04:00", hour: 6, textLen: 25}],
+    [{s: "2025-03-20T12:00:00+02:00", zone: "Asia/Tokyo"}, {utc: "2025-03-20T10:00:00Z", local: "2025-03-20T19:00:00+09:00", hour: 19, textLen: 25}],
+    [{s: "2025-03-20T10:00:00Z", zone: "Asia/Tokyo"}, {utc: "2025-03-20T10:00:00Z", local: "2025-03-20T19:00:00+09:00", hour: 19, textLen: 20}],
+    [{s: "2025-03-20T10:00:00Z", zone: "UTC"}, {utc: "2025-03-20T10:00:00Z", local: "2025-03-20T10:00:00Z", hour: 10, textLen: 20}],
+  ],
+}
+
+{
+  name: "keyed: zero in its different spellings",
+  graph: {nodes: [{expression: "calc", fields: {s: "string(x)", z: "x == 0", neg: "x < 0", inv: "1 / x"}}]},
+  cases: [
+    [{x: 0}, {s: "0", z: true, neg: false}],
+    [{x: 0.0}, {s: "0.0", z: true, neg: false}],
+    [{x: -0}, {s: "0", z: true, neg: false}],
+    [{x: 0}, {s: "0", z: true, neg: false}],
+    [{x: 0.00}, {s: "0.00", z: true, neg: false}],
+    [{x: 1}, {s: "1", z: false, neg: false, inv: 1}],
+    [{x: 0.0}, {s: "0.0", z: true, neg: false}],
+    [{x: -1}, {s: "-1", z: false, neg: true, inv: -1}],
+    [{x: 0}, {s: "0", z: true, neg: false}],
+  ],
+}
+
+{
+  name: "coalesce: a defaulted column that is mostly the literal feeds a numeric table",
+  graph: {nodes: [
+    {expression: "prep", fields: {score: "score ?? 50"}},
+    {table: "t", passThrough: true, inputs: ["score"], outputs: ["band"], rules: [
+      ["< 40", "'low'"],
+      ["[40..60]", "'mid'"],
+      ["> 60", "'high'"],
+      ["", "'not a number'"],
+    ]},
+  ]},
+  cases: [
+    [{}, {score: 50, band: "mid"}],
+    [{}, {score: 50, band: "mid"}],
+    [{score: null}, {score: 50, band: "mid"}],
+    [{}, {score: 50, band: "mid"}],
+    [{score: 70}, {score: 70, band: "high"}],
+    [{}, {score: 50, band: "mid"}],
+    [{score: "70"}, {score: "70", band: "not a number"}],
+    [{}, {score: 50, band: "mid"}],
+    [{score: 10}, {score: 10, band: "low"}],
+    [{}, {score: 50, band: "mid"}],
+    [{score: true}, {score: true, band: "not a number"}],
+    [{}, {score: 50, band: "mid"}],
+  ],
+}
+
+{
+  name: "builtins: constant-argument calls and d() inside a loop and a sub-decision",
+  decisions: {
+    child: {nodes: [{expression: "c", fields: {now: "d()", base: "d('2024-01-01')", tag: "upper('k') + string(v)"}}]},
+  },
+  graph: {nodes: [
+    {expression: "line", inputField: "items", outputPath: "lines", executionMode: "loop", fields: {
+      now: "d()",
+      base: "d('2024-01-01').add(v, 'd')",
+      tag: "upper('k') + string(v)",
+    }},
+    {decision: "call", key: "child", outputPath: "child", inputField: "first"},
+  ], edges: ["input -> line -> output", "input -> call -> output"]},
+  cases: [
+    [{items: [{v: 1}, {v: 2}, {v: 1}], first: {v: 9}}, {
+      lines: [
+        {now: "2025-03-20T10:15:30Z", base: "2024-01-02T00:00:00Z", tag: "K1"},
+        {now: "2025-03-20T10:15:30Z", base: "2024-01-03T00:00:00Z", tag: "K2"},
+        {now: "2025-03-20T10:15:30Z", base: "2024-01-02T00:00:00Z", tag: "K1"},
+      ],
+      child: {now: "2025-03-20T10:15:30Z", base: "2024-01-01T00:00:00Z", tag: "K9"},
+    }],
+    [{items: [], first: {v: 0}}, {lines: [], child: {now: "2025-03-20T10:15:30Z", base: "2024-01-01T00:00:00Z", tag: "K0"}}],
+    [{items: [{v: 31}], first: {v: 1}}, {
+      lines: [{now: "2025-03-20T10:15:30Z", base: "2024-02-01T00:00:00Z", tag: "K31"}],
+      child: {now: "2025-03-20T10:15:30Z", base: "2024-01-01T00:00:00Z", tag: "K1"},
+    }],
+  ],
+}
+
+{
+  name: "alias: loop items copied out and modified per item",
+  graph: {nodes: [
+    {expression: "copy", passThrough: true, fields: {saved: "items"}},
+    {expression: "mark", inputField: "items", outputPath: "items", executionMode: "loop", passThrough: true, fields: {done: "true", n: "n * 2"}},
+  ]},
+  cases: [
+    [{items: [{n: 1}, {n: 2}]}, {items: [{n: 2, done: true}, {n: 4, done: true}], saved: [{n: 1}, {n: 2}]}],
+    [{items: [{n: 1}, {n: 2}]}, {items: [{n: 2, done: true}, {n: 4, done: true}], saved: [{n: 1}, {n: 2}]}],
+    [{items: [{n: 1}]}, {items: [{n: 2, done: true}], saved: [{n: 1}]}],
+    [{items: []}, {items: [], saved: []}],
+    [{items: [{n: 1}, {n: 2}]}, {items: [{n: 2, done: true}, {n: 4, done: true}], saved: [{n: 1}, {n: 2}]}],
+  ],
+}

@@ -1,0 +1,597 @@
+// Nested computed write paths.
+//
+// A block key may be a dotted path several levels deep (`totals.byTier.gold = v`). The missing
+// intermediate objects (the spine) are created, and several blocks writing disjoint leaves of the
+// same object assemble it together. A block reading the whole object runs after every block that
+// writes into it. Writing an object whole and also writing into it is PartialObjectWrite; writing
+// the same leaf twice is DuplicateWriter.
+
+// ---------------------------------------------------------------------------------------------
+// Single nested writes create the spine.
+
+{
+  name: "a two-level top-level path creates its parent",
+  policy: {
+    models: {loan: {amount: "number"}},
+    blocks: [{expression: "totals.due", value: "loan.amount * 1.1"}],
+  },
+  cases: [
+    [{loan: {amount: 100}}, {loan: {amount: 100}, totals: {due: 110}}],
+    [{loan: {amount: 0}}, {loan: {amount: 0}, totals: {due: 0}}],
+    [{loan: {amount: 0.5}}, {loan: {amount: 0.5}, totals: {due: 0.55}}],
+  ],
+}
+
+{
+  name: "a four-level top-level path creates every level",
+  policy: {
+    models: {loan: {amount: "number"}},
+    blocks: [{expression: "totals.byTier.gold.due", value: "loan.amount"}],
+  },
+  cases: [
+    [{loan: {amount: 100}}, {loan: {amount: 100}, totals: {byTier: {gold: {due: 100}}}}],
+    [{loan: {amount: -1}}, {loan: {amount: -1}, totals: {byTier: {gold: {due: -1}}}}],
+  ],
+}
+
+{
+  name: "a deep path under an entity creates the spine on the entity",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.profile.risk.level", value: "customer.age < 25 ? 'high' : 'normal'"}],
+  },
+  cases: [
+    [{customer: {age: 20}}, {customer: {age: 20, profile: {risk: {level: "high"}}}}],
+    [{customer: {age: 40}}, {customer: {age: 40, profile: {risk: {level: "normal"}}}}],
+  ],
+}
+
+{
+  name: "a six-level path",
+  policy: {
+    models: {s: {v: "number"}},
+    blocks: [{expression: "a.b.c.d.e.f", value: "s.v"}],
+  },
+  cases: [
+    [{s: {v: 1}}, {s: {v: 1}, a: {b: {c: {d: {e: {f: 1}}}}}}],
+    [{s: {v: 0}}, {s: {v: 0}, a: {b: {c: {d: {e: {f: 0}}}}}}],
+  ],
+}
+
+{
+  name: "a nested write of null still creates the spine",
+  policy: {
+    models: {s: {v: "number?"}},
+    blocks: [{expression: "out.inner.value", value: "s.v"}],
+  },
+  cases: [
+    [{s: {v: 1}}, {s: {v: 1}, out: {inner: {value: 1}}}],
+    [{s: {}}, {s: {}, out: {inner: {value: null}}}],
+    [{s: {v: null}}, {s: {v: null}, out: {inner: {value: null}}}],
+  ],
+}
+
+{
+  name: "a nested write of an object value",
+  policy: {
+    models: {s: {v: "number"}},
+    blocks: [{expression: "out.inner", value: "{x: s.v, y: s.v * 2}"}],
+  },
+  cases: [
+    [{s: {v: 1}}, {s: {v: 1}, out: {inner: {x: 1, y: 2}}}],
+    [{s: {v: 0}}, {s: {v: 0}, out: {inner: {x: 0, y: 0}}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Several blocks assemble one object from disjoint leaves.
+
+{
+  name: "two blocks write sibling leaves",
+  policy: {
+    models: {loan: {amount: "number", fee: "number"}},
+    blocks: [
+      {expression: "totals.principal", value: "loan.amount"},
+      {expression: "totals.fees", value: "loan.fee"},
+    ],
+  },
+  cases: [
+    [{loan: {amount: 100, fee: 5}}, {loan: {amount: 100, fee: 5}, totals: {principal: 100, fees: 5}}],
+    [{loan: {amount: 0, fee: 0}}, {loan: {amount: 0, fee: 0}, totals: {principal: 0, fees: 0}}],
+  ],
+}
+
+{
+  name: "blocks write leaves at different depths of one object",
+  policy: {
+    models: {loan: {amount: "number", rate: "number"}},
+    blocks: [
+      {expression: "totals.byTier.gold.due", value: "loan.amount * 2"},
+      {expression: "totals.byTier.silver.due", value: "loan.amount"},
+      {expression: "totals.grandTotal", value: "loan.amount * 3"},
+      {expression: "totals.meta.rate", value: "loan.rate"},
+    ],
+  },
+  cases: [
+    [{loan: {amount: 10, rate: 0.1}}, {loan: {amount: 10, rate: 0.1}, totals: {byTier: {gold: {due: 20}, silver: {due: 10}}, grandTotal: 30, meta: {rate: 0.1}}}],
+    [{loan: {amount: 1, rate: 0}}, {loan: {amount: 1, rate: 0}, totals: {byTier: {gold: {due: 2}, silver: {due: 1}}, grandTotal: 3, meta: {rate: 0}}}],
+  ],
+}
+
+{
+  name: "sibling leaves under an entity",
+  policy: {
+    models: {customer: {age: "number", income: "number"}},
+    blocks: [
+      {expression: "customer.flags.adult", value: "customer.age >= 18"},
+      {expression: "customer.flags.rich", value: "customer.income > 100000"},
+      {expression: "customer.flags.both", value: "customer.flags.adult and customer.flags.rich"},
+    ],
+  },
+  cases: [
+    [{customer: {age: 30, income: 200000}}, {customer: {age: 30, income: 200000, flags: {adult: true, rich: true, both: true}}}],
+    [{customer: {age: 10, income: 200000}}, {customer: {age: 10, income: 200000, flags: {adult: false, rich: true, both: false}}}],
+    [{customer: {age: 30, income: 0}}, {customer: {age: 30, income: 0, flags: {adult: true, rich: false, both: false}}}],
+  ],
+}
+
+{
+  name: "leaves from expression, match and table blocks assemble one object",
+  policy: {
+    models: {customer: {age: "number", score: "number"}},
+    blocks: [
+      {expression: "report.age", value: "customer.age"},
+      {match: "report.band", arms: [["customer.score >= 700", "'good'"], ["", "'poor'"]]},
+      {table: "segments", inputs: ["customer.age"], outputs: ["report.segment"], rules: [
+        ["< 30", "'young'"],
+        ["", "'mature'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{customer: {age: 20, score: 800}}, {customer: {age: 20, score: 800}, report: {age: 20, band: "good", segment: "young"}}],
+    [{customer: {age: 50, score: 100}}, {customer: {age: 50, score: 100}, report: {age: 50, band: "poor", segment: "mature"}}],
+  ],
+}
+
+{
+  name: "a table writes several nested outputs",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [
+      {table: "pricing", inputs: ["customer.age"], outputs: ["quote.price.base", "quote.price.currency", "quote.label"], rules: [
+        ["< 25", "100", "'EUR'", "'young'"],
+        ["", "80", "'EUR'", "'standard'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{customer: {age: 20}}, {customer: {age: 20}, quote: {price: {base: 100, currency: "EUR"}, label: "young"}}],
+    [{customer: {age: 40}}, {customer: {age: 40}, quote: {price: {base: 80, currency: "EUR"}, label: "standard"}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Reading assembled objects: a read of the whole object, an intermediate object or a leaf runs
+// after every contributing block, whatever the document order.
+
+{
+  name: "a reader of the whole object listed before the leaf writers",
+  policy: {
+    models: {loan: {amount: "number", fee: "number"}},
+    blocks: [
+      {expression: "summary", value: "totals.principal + totals.fees"},
+      {expression: "totals.principal", value: "loan.amount"},
+      {expression: "totals.fees", value: "loan.fee"},
+    ],
+  },
+  cases: [
+    [{loan: {amount: 100, fee: 5}}, {loan: {amount: 100, fee: 5}, totals: {principal: 100, fees: 5}, summary: 105}],
+    [{loan: {amount: 1, fee: 0.5}}, {loan: {amount: 1, fee: 0.5}, totals: {principal: 1, fees: 0.5}, summary: 1.5}],
+  ],
+}
+
+{
+  name: "a coarse read of an intermediate object waits for all leaves",
+  policy: {
+    models: {loan: {amount: "number"}},
+    blocks: [
+      {expression: "tierCount", value: "len(keys(totals.byTier))"},
+      {expression: "totals.byTier.gold", value: "loan.amount"},
+      {expression: "totals.byTier.silver", value: "loan.amount / 2"},
+      {expression: "totals.byTier.bronze", value: "loan.amount / 4"},
+    ],
+  },
+  cases: [
+    [{loan: {amount: 100}}, {loan: {amount: 100}, totals: {byTier: {gold: 100, silver: 50, bronze: 25}}, tierCount: 3}],
+    [{loan: {amount: 0}}, {loan: {amount: 0}, totals: {byTier: {gold: 0, silver: 0, bronze: 0}}, tierCount: 3}],
+  ],
+}
+
+{
+  name: "a coarse read of the root object waits for all leaves",
+  policy: {
+    models: {loan: {amount: "number"}},
+    blocks: [
+      {expression: "keyList", value: "keys(totals)"},
+      {expression: "totals.a", value: "loan.amount"},
+      {expression: "totals.b.c", value: "loan.amount"},
+    ],
+  },
+  cases: [
+    [{loan: {amount: 1}}, {loan: {amount: 1}, totals: {a: 1, b: {c: 1}}, keyList: ["a", "b"]}],
+  ],
+}
+
+{
+  name: "a leaf read of a nested computed value",
+  policy: {
+    models: {loan: {amount: "number"}},
+    blocks: [
+      {expression: "doubleGold", value: "totals.byTier.gold.due * 2"},
+      {expression: "totals.byTier.gold.due", value: "loan.amount + 1"},
+    ],
+  },
+  cases: [
+    [{loan: {amount: 1}}, {loan: {amount: 1}, totals: {byTier: {gold: {due: 2}}}, doubleGold: 4}],
+    [{loan: {amount: -1}}, {loan: {amount: -1}, totals: {byTier: {gold: {due: 0}}}, doubleGold: 0}],
+  ],
+}
+
+{
+  name: "a leaf read of a field inside an object written whole",
+  policy: {
+    models: {s: {v: "number"}},
+    blocks: [
+      {expression: "out.y", value: "calc.inner.y + 1"},
+      {expression: "calc.inner", value: "{x: s.v, y: s.v * 10}"},
+    ],
+  },
+  cases: [
+    [{s: {v: 1}}, {s: {v: 1}, calc: {inner: {x: 1, y: 10}}, out: {y: 11}}],
+    [{s: {v: 0}}, {s: {v: 0}, calc: {inner: {x: 0, y: 0}}, out: {y: 1}}],
+  ],
+}
+
+{
+  name: "a nested leaf depends on an upstream computed value",
+  policy: {
+    models: {loan: {amount: "number"}},
+    blocks: [
+      {expression: "totals.interest.due", value: "loan.amount * rate"},
+      {expression: "rate", value: "loan.amount > 1000 ? 0.05 : 0.1"},
+      {expression: "totals.count", value: "len(keys(totals.interest))"},
+    ],
+  },
+  cases: [
+    [{loan: {amount: 100}}, {loan: {amount: 100}, rate: 0.1, totals: {interest: {due: 10}, count: 1}}],
+    [{loan: {amount: 2000}}, {loan: {amount: 2000}, rate: 0.05, totals: {interest: {due: 100}, count: 1}}],
+  ],
+}
+
+{
+  name: "a chain between leaves of the same object",
+  policy: {
+    models: {loan: {amount: "number"}},
+    blocks: [
+      {expression: "totals.c", value: "totals.b * 2"},
+      {expression: "totals.b", value: "totals.a + 1"},
+      {expression: "totals.a", value: "loan.amount"},
+    ],
+  },
+  cases: [
+    [{loan: {amount: 1}}, {loan: {amount: 1}, totals: {a: 1, b: 2, c: 4}}],
+    [{loan: {amount: 10}}, {loan: {amount: 10}, totals: {a: 10, b: 11, c: 22}}],
+  ],
+}
+
+{
+  name: "a goal on a nested leaf",
+  policy: {
+    models: {loan: {amount: "number"}},
+    blocks: [
+      {expression: "totals.a", value: "loan.amount"},
+      {expression: "totals.b", value: "loan.amount * 2"},
+    ],
+  },
+  cases: [
+    {input: {loan: {amount: 1}}, goals: ["totals.a"], output: {loan: {amount: 1}, totals: {a: 1}}},
+    {input: {loan: {amount: 1}}, goals: ["totals.b"], output: {loan: {amount: 1}, totals: {b: 2}}},
+    {input: {loan: {amount: 1}}, goals: ["totals"], output: {loan: {amount: 1}, totals: {a: 1, b: 2}}},
+    {input: {loan: {amount: 1}}, output: {loan: {amount: 1}, totals: {a: 1, b: 2}}},
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Writing into nested objects of entities. A relationship (`customer.address` is an `address`
+// entity) is itself an entity: its computed properties are written through the entity name
+// (`address.inEu`) and land on the nested object in the input. Writing through the relationship
+// path (`customer.address.inEu`) writes below a declared property, which is InputOverride.
+
+{
+  name: "a computed property on a related entity",
+  policy: {
+    models: {customer: {age: "number", address: "address"}, address: {country: "string"}},
+    blocks: [{expression: "address.inEu", value: "address.country in ['DE', 'FR']"}],
+  },
+  cases: [
+    [{customer: {age: 1, address: {country: "DE"}}}, {customer: {age: 1, address: {country: "DE", inEu: true}}}],
+    [{customer: {age: 1, address: {country: "US"}}}, {customer: {age: 1, address: {country: "US", inEu: false}}}],
+    [{customer: {age: 1, address: {country: "FR", zip: "75"}}}, {customer: {age: 1, address: {country: "FR", zip: "75", inEu: true}}}],
+  ],
+}
+
+{
+  name: "a related entity's computed property reads through the relationship path",
+  policy: {
+    models: {customer: {age: "number", address: "address"}, address: {country: "string"}},
+    blocks: [{expression: "address.label", value: "customer.address.country + '/' + string(customer.age)"}],
+  },
+  cases: [
+    [{customer: {age: 1, address: {country: "DE"}}}, {customer: {age: 1, address: {country: "DE", label: "DE/1"}}}],
+  ],
+}
+
+{
+  name: "a root entity reads a related entity's computed property",
+  policy: {
+    models: {customer: {age: "number", address: "address"}, address: {country: "string"}},
+    blocks: [
+      {expression: "customer.discount", value: "customer.address.inEu ? 0.1 : 0"},
+      {expression: "address.inEu", value: "address.country in ['DE', 'FR']"},
+    ],
+  },
+  cases: [
+    [{customer: {age: 1, address: {country: "DE"}}}, {customer: {age: 1, discount: 0.1, address: {country: "DE", inEu: true}}}],
+    [{customer: {age: 1, address: {country: "US"}}}, {customer: {age: 1, discount: 0, address: {country: "US", inEu: false}}}],
+  ],
+}
+
+{
+  name: "writing through the relationship path is an InputOverride error",
+  policy: {
+    models: {customer: {age: "number", address: "address"}, address: {country: "string"}},
+    blocks: [{expression: "customer.address.inEu", value: "customer.address.country in ['DE', 'FR']"}],
+  },
+  cases: [
+    [{customer: {age: 1, address: {country: "DE"}}}, "!error"],
+    [{customer: {age: 1, address: {country: "US"}}}, "!error"],
+  ],
+}
+
+{
+  name: "a related entity is validated",
+  policy: {
+    models: {customer: {address: "address"}, address: {country: "string"}},
+    blocks: [{expression: "address.label", value: "address.country"}],
+  },
+  cases: [
+    [{customer: {address: {country: 5}}}, "!error: InputValidationFailed"],
+    [{customer: {address: "DE"}}, "!error: InputValidationFailed"],
+    [{customer: {address: {}}}, "!error: MissingRequiredInputs"],
+    [{customer: {}}, "!error: MissingRequiredInputs"],
+    [{customer: {address: {country: "DE", extra: 1}}}, {customer: {address: {country: "DE", extra: 1, label: "DE"}}}],
+  ],
+}
+
+{
+  name: "a nested spine under a related entity",
+  policy: {
+    models: {customer: {address: "address"}, address: {country: "string"}},
+    blocks: [{expression: "address.geo.region", value: "address.country == 'DE' ? 'EU' : 'OTHER'"}],
+  },
+  cases: [
+    [{customer: {address: {country: "DE"}}}, {customer: {address: {country: "DE", geo: {region: "EU"}}}}],
+    [{customer: {address: {country: "BR"}}}, {customer: {address: {country: "BR", geo: {region: "OTHER"}}}}],
+  ],
+}
+
+{
+  name: "a computed property on an optional related entity",
+  policy: {
+    models: {customer: {age: "number", address: "address?"}, address: {country: "string?"}},
+    blocks: [{expression: "address.known", value: "address.country != null"}],
+  },
+  cases: [
+    [{customer: {age: 1, address: {country: "DE"}}}, {customer: {age: 1, address: {country: "DE", known: true}}}],
+    [{customer: {age: 1, address: {}}}, {customer: {age: 1, address: {known: false}}}],
+    [{customer: {age: 1, address: {country: null}}}, {customer: {age: 1, address: {country: null, known: false}}}],
+    [{customer: {age: 1}}, {customer: {age: 1}}],
+  ],
+}
+
+{
+  name: "writing a declared property of a related entity is an InputOverride error",
+  policy: {
+    models: {customer: {address: "address"}, address: {country: "string"}},
+    blocks: [{expression: "address.country", value: "'XX'"}],
+  },
+  cases: [
+    [{customer: {address: {country: "DE"}}}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Conflicts with input values.
+
+{
+  name: "a nested write merges into an undeclared input object",
+  policy: {
+    models: {loan: {amount: "number"}},
+    blocks: [{expression: "totals.due", value: "loan.amount"}],
+  },
+  cases: [
+    [{loan: {amount: 5}, totals: {other: 1}}, {loan: {amount: 5}, totals: {other: 1, due: 5}}],
+    [{loan: {amount: 5}, totals: {due: 99}}, {loan: {amount: 5}, totals: {due: 5}}],
+    [{loan: {amount: 5}, totals: {}}, {loan: {amount: 5}, totals: {due: 5}}],
+  ],
+}
+
+{
+  name: "a nested write over an undeclared input scalar",
+  policy: {
+    models: {loan: {amount: "number"}},
+    blocks: [{expression: "totals.due", value: "loan.amount"}],
+  },
+  cases: [
+    [{loan: {amount: 5}, totals: 7}, {loan: {amount: 5}, totals: {due: 5}}, "bug: the computed write is silently dropped because the input holds a non-object at the spine; the write should replace it (or the policy should fail), never vanish"],
+    [{loan: {amount: 5}, totals: "x"}, {loan: {amount: 5}, totals: {due: 5}}, "bug: the computed write is silently dropped because the input holds a non-object at the spine; the write should replace it (or the policy should fail), never vanish"],
+    [{loan: {amount: 5}, totals: null}, {loan: {amount: 5}, totals: {due: 5}}, "bug: an input null at the spine swallows the computed write; null should behave like a missing key"],
+    [{loan: {amount: 5}, totals: [1, 2]}, {loan: {amount: 5}, totals: {due: 5}}, "bug: the computed write is silently dropped because the input holds a non-object at the spine; the write should replace it (or the policy should fail), never vanish"],
+    [{loan: {amount: 5}}, {loan: {amount: 5}, totals: {due: 5}}],
+  ],
+}
+
+{
+  name: "a deep write merges into a deep undeclared input object",
+  policy: {
+    models: {loan: {amount: "number"}},
+    blocks: [{expression: "totals.byTier.gold", value: "loan.amount"}],
+  },
+  cases: [
+    [{loan: {amount: 5}, totals: {byTier: {silver: 1}, keep: true}}, {loan: {amount: 5}, totals: {byTier: {silver: 1, gold: 5}, keep: true}}],
+    [{loan: {amount: 5}, totals: {byTier: 3}}, {loan: {amount: 5}, totals: {byTier: {gold: 5}}}, "bug: the computed write is silently dropped because the input holds a non-object at the spine; the write should replace it (or the policy should fail), never vanish"],
+  ],
+}
+
+{
+  name: "a nested write under an entity merges with undeclared input keys",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.flags.adult", value: "customer.age >= 18"}],
+  },
+  cases: [
+    [{customer: {age: 20, flags: {vip: true}}}, {customer: {age: 20, flags: {vip: true, adult: true}}}],
+    [{customer: {age: 20, flags: false}}, {customer: {age: 20, flags: {adult: true}}}, "bug: the computed write is silently dropped because the input holds a non-object at the spine; the write should replace it (or the policy should fail), never vanish"],
+    [{customer: {age: 20, flags: null}}, {customer: {age: 20, flags: {adult: true}}}, "bug: an input null at the spine swallows the computed write"],
+    [{customer: {age: 20}}, {customer: {age: 20, flags: {adult: true}}}],
+  ],
+}
+
+{
+  name: "a nested write under a declared scalar is an InputOverride error",
+  policy: {
+    models: {customer: {tier: "string"}},
+    blocks: [{expression: "customer.tier.code", value: "upper(customer.tier)"}],
+  },
+  cases: [
+    [{customer: {tier: "gold"}}, "!error"],
+  ],
+}
+
+{
+  name: "a nested write under a declared primitive array is an InputOverride error",
+  policy: {
+    models: {cart: {prices: "number[]"}},
+    blocks: [{expression: "cart.prices.total", value: "sum(cart.prices)"}],
+  },
+  cases: [
+    [{cart: {prices: [1, 2]}}, "!error"],
+  ],
+}
+
+{
+  name: "reads of the input object's other keys are unaffected by the write",
+  policy: {
+    models: {loan: {amount: "number"}},
+    blocks: [
+      {expression: "totals.due", value: "loan.amount"},
+      {expression: "totalsDue", value: "totals.due + 1"},
+    ],
+  },
+  cases: [
+    [{loan: {amount: 5}, totals: {due: 100}}, {loan: {amount: 5}, totals: {due: 5}, totalsDue: 6}],
+    [{loan: {amount: 5}}, {loan: {amount: 5}, totals: {due: 5}, totalsDue: 6}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Write conflicts. Writing an object whole and writing into it (PartialObjectWrite) would let one
+// write silently clobber the other; writing the same nested leaf twice is DuplicateWriter.
+
+{
+  name: "a whole-object write and a nested write into it",
+  policy: {
+    models: {s: {v: "number"}},
+    blocks: [
+      {expression: "summary", value: "{a: s.v}"},
+      {expression: "summary.b", value: "s.v * 2"},
+    ],
+  },
+  cases: [
+    [{s: {v: 1}}, "!error"],
+  ],
+}
+
+{
+  name: "a whole-object write and a deep nested write into it",
+  policy: {
+    models: {s: {v: "number"}},
+    blocks: [
+      {expression: "summary.inner.deep", value: "s.v"},
+      {expression: "summary.inner", value: "{other: s.v}"},
+    ],
+  },
+  cases: [
+    [{s: {v: 1}}, "!error"],
+  ],
+}
+
+{
+  name: "the same nested leaf written twice",
+  policy: {
+    models: {s: {v: "number"}},
+    blocks: [
+      {expression: "totals.byTier.gold", value: "s.v"},
+      {expression: "totals.byTier.gold", value: "s.v * 2"},
+    ],
+  },
+  cases: [
+    [{s: {v: 1}}, "!error"],
+  ],
+}
+
+{
+  name: "a leaf writer that reads its own enclosing object",
+  policy: {
+    models: {s: {v: "number"}},
+    blocks: [
+      {expression: "totals.a", value: "s.v"},
+      {expression: "totals.count", value: "len(keys(totals))"},
+    ],
+  },
+  cases: [
+    [{s: {v: 1}}, "!error"],
+  ],
+}
+
+{
+  name: "same leaf names under different parents are not duplicates",
+  policy: {
+    models: {s: {v: "number"}},
+    blocks: [
+      {expression: "a.x.value", value: "s.v"},
+      {expression: "b.x.value", value: "s.v + 1"},
+      {expression: "a.y.value", value: "s.v + 2"},
+    ],
+  },
+  cases: [
+    [{s: {v: 1}}, {s: {v: 1}, a: {x: {value: 1}, y: {value: 3}}, b: {x: {value: 2}}}],
+    [{s: {v: 0}}, {s: {v: 0}, a: {x: {value: 0}, y: {value: 2}}, b: {x: {value: 1}}}],
+  ],
+}
+
+{
+  name: "a nested path that shadows a top-level computed name",
+  policy: {
+    models: {s: {v: "number"}},
+    blocks: [
+      {expression: "total", value: "s.v"},
+      {expression: "report.total", value: "total * 2"},
+    ],
+  },
+  cases: [
+    [{s: {v: 3}}, {s: {v: 3}, total: 3, report: {total: 6}}],
+    [{s: {v: 0}}, {s: {v: 0}, total: 0, report: {total: 0}}],
+  ],
+}

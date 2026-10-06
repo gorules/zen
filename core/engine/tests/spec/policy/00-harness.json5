@@ -1,0 +1,12 @@
+// The harness itself: models, expression blocks, outputs.
+{
+  name: "one expression block writes a property",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.adult", value: "customer.age >= 18"}],
+  },
+  cases: [
+    [{customer: {age: 20}}, {customer: {age: 20, adult: true}}],
+    [{customer: {age: 3}}, {customer: {age: 3, adult: false}}],
+  ],
+}

@@ -1,0 +1,712 @@
+// Decision tables in loop mode: the table is evaluated once per item of the selected array. A
+// first-hit table yields the matched row's outputs per item (null when nothing matches), a
+// collect table yields an array of matched rows per item. Chapter 13 covers the basics; this
+// chapter covers outputPath/passThrough combinations, non-matching and incomplete items, large
+// arrays and tables reading `$root`/`$nodes` inside a loop.
+
+// --- First hit: outputPath and passThrough ------------------------------------------------------
+{
+  name: "first-hit loop without outputPath outputs the bare array",
+  graph: {
+    nodes: [{table: "t", inputField: "items", executionMode: "loop", inputs: ["v"], outputs: ["size"], rules: [
+      ["> 100", "'large'"],
+      ["> 10", "'medium'"],
+      ["", "'small'"],
+    ]}],
+  },
+  cases: [
+    [{items: [{v: 500}, {v: 50}, {v: 5}]}, [{size: "large"}, {size: "medium"}, {size: "small"}]],
+    [{items: [{v: 11}]}, [{size: "medium"}]],
+    [{items: []}, []],
+    [{items: [{v: 100}, {v: 10}]}, [{size: "medium"}, {size: "small"}]],
+  ],
+}
+
+{
+  name: "first-hit loop with dotted outputs builds nested objects per item",
+  graph: {
+    nodes: [{table: "t", inputField: "items", outputPath: "out", executionMode: "loop", inputs: ["v"], outputs: ["r.size", "r.code", "flag"], rules: [
+      ["> 10", "'big'", "2", "true"],
+      ["", "'small'", "1", "false"],
+    ]}],
+  },
+  cases: [
+    [{items: [{v: 20}, {v: 1}]}, {out: [{r: {size: "big", code: 2}, flag: true}, {r: {size: "small", code: 1}, flag: false}]}],
+    [{items: [{v: 10}]}, {out: [{r: {size: "small", code: 1}, flag: false}]}],
+  ],
+}
+
+{
+  name: "first-hit loop with passThrough and no outputPath",
+  graph: {
+    nodes: [{table: "t", inputField: "items", executionMode: "loop", passThrough: true, inputs: ["v"], outputs: ["size"], rules: [
+      ["> 10", "'big'"],
+      ["", "'small'"],
+    ]}],
+  },
+  cases: [
+    [{batch: 1, items: [{v: 20}, {v: 1}]}, [{v: 20, size: "big"}, {v: 1, size: "small"}], "question: the node input merged with the result array yields the array itself, the outer input is dropped (as for expression loops in chapter 13)"],
+    [{items: []}, [], "question: the node input merged with the result array yields the array itself, the outer input is dropped (as for expression loops in chapter 13)"],
+  ],
+}
+
+{
+  name: "first-hit loop with passThrough writes back over the source array",
+  graph: {
+    nodes: [{table: "t", inputField: "order.lines", outputPath: "order.lines", executionMode: "loop", passThrough: true, inputs: ["kind"], outputs: ["vat"], rules: [
+      ["'food'", "0.05"],
+      ["", "0.2"],
+    ]}],
+  },
+  cases: [
+    [
+      {order: {id: 9, lines: [{kind: "food", amt: 10}, {kind: "tv", amt: 100}]}},
+      {order: {id: 9, lines: [{kind: "food", amt: 10, vat: 0.05}, {kind: "tv", amt: 100, vat: 0.2}]}},
+    ],
+    [{order: {id: 1, lines: []}}, {order: {id: 1, lines: []}}],
+    [{order: {id: 2, lines: [{}]}, x: true}, {order: {id: 2, lines: [{vat: 0.2}]}, x: true}],
+  ],
+}
+
+{
+  name: "first-hit loop with passThrough to a sibling path keeps the source untouched",
+  graph: {
+    nodes: [{table: "t", inputField: "lines", outputPath: "rated", executionMode: "loop", passThrough: true, inputs: ["kind"], outputs: ["vat"], rules: [
+      ["'food'", "0.05"],
+      ["", "0.2"],
+    ]}],
+  },
+  cases: [
+    [{lines: [{kind: "food"}]}, {lines: [{kind: "food"}], rated: [{kind: "food", vat: 0.05}]}],
+    [{lines: [{kind: "x", vat: 1}]}, {lines: [{kind: "x", vat: 1}], rated: [{kind: "x", vat: 0.2}]}],
+    [{lines: [], rated: "old"}, {lines: [], rated: []}],
+  ],
+}
+
+{
+  name: "table result overrides item fields of the same name under passThrough",
+  graph: {
+    nodes: [{table: "t", inputField: "items", outputPath: "items", executionMode: "loop", passThrough: true, inputs: ["status"], outputs: ["status", "meta.mapped"], rules: [
+      ["'a'", "'active'", "true"],
+      ["", "status", "false"],
+    ]}],
+  },
+  cases: [
+    [{items: [{status: "a", meta: {id: 1}}, {status: "z"}]}, {items: [{status: "active", meta: {id: 1, mapped: true}}, {status: "z", meta: {mapped: false}}]}],
+    [{items: [{status: "a"}]}, {items: [{status: "active", meta: {mapped: true}}]}],
+  ],
+}
+
+// --- Items failing to match -----------------------------------------------------------------------
+// A first-hit table that matches nothing outputs null for that item.
+{
+  name: "first-hit loop: non-matching items yield null without outputPath",
+  graph: {
+    nodes: [{table: "t", inputField: "items", executionMode: "loop", inputs: ["v"], outputs: ["ok"], rules: [
+      ["> 0", "true"],
+    ]}],
+  },
+  cases: [
+    [{items: [{v: 1}, {v: -1}]}, [{ok: true}, null]],
+    [{items: [{v: -1}, {v: -2}]}, [null, null]],
+    [{items: [{v: 3}]}, [{ok: true}]],
+  ],
+}
+
+{
+  name: "first-hit loop with passThrough: a non-matching item stays as it was",
+  graph: {
+    nodes: [{table: "t", inputField: "items", outputPath: "items", executionMode: "loop", passThrough: true, inputs: ["v"], outputs: ["ok"], rules: [
+      ["> 0", "true"],
+    ]}],
+  },
+  cases: [
+    [{items: [{v: 1}, {v: -1}]}, {items: [{v: 1, ok: true}, {v: -1}]}],
+    [{items: [{v: -5, ok: false}]}, {items: [{v: -5, ok: false}]}],
+    [{items: [{}]}, {items: [{}]}],
+  ],
+}
+
+{
+  name: "first-hit loop: all items failing yields an array of nulls under outputPath",
+  graph: {
+    nodes: [{table: "t", inputField: "items", outputPath: "out", executionMode: "loop", inputs: ["kind"], outputs: ["r"], rules: [
+      ["'a'", "1"],
+      ["'b'", "2"],
+    ]}],
+  },
+  cases: [
+    [{items: [{kind: "c"}, {kind: "d"}]}, {out: [null, null]}, "question: a non-matching first-hit table outputs null; in a loop the null lands in the result array (chapter 13)"],
+    [{items: [{kind: "a"}, {kind: "c"}, {kind: "b"}]}, {out: [{r: 1}, null, {r: 2}]}, "question: a non-matching first-hit table outputs null; in a loop the null lands in the result array (chapter 13)"],
+    [{items: [{kind: "b"}]}, {out: [{r: 2}]}],
+  ],
+}
+
+{
+  name: "downstream nodes count non-matching loop items",
+  graph: {
+    nodes: [
+      {table: "t", inputField: "items", outputPath: "hits", executionMode: "loop", inputs: ["v"], outputs: ["v"], rules: [
+        [">= 10", "v"],
+      ]},
+      {expression: "agg", fields: {matched: "len(filter(hits, # != null))", missed: "len(filter(hits, # == null))", total: "sum(map(filter(hits, # != null), #.v))"}},
+    ],
+  },
+  cases: [
+    [{items: [{v: 10}, {v: 1}, {v: 20}]}, {matched: 2, missed: 1, total: 30}],
+    [{items: [{v: 1}]}, {matched: 0, missed: 1, total: 0}],
+    [{items: []}, {matched: 0, missed: 0, total: 0}],
+  ],
+}
+
+{
+  name: "an output cell error skips the row for that item only",
+  graph: {
+    nodes: [{table: "t", inputField: "items", outputPath: "out", executionMode: "loop", inputs: [""], outputs: ["r"], rules: [
+      ["", "a + 1"],
+      ["", "'fallback'"],
+    ]}],
+  },
+  cases: [
+    [{items: [{a: 1}, {a: "x"}, {a: 2}]}, {out: [{r: 2}, {r: "fallback"}, {r: 3}]}],
+    [{items: [{a: "y"}]}, {out: [{r: "fallback"}]}],
+  ],
+}
+
+// --- Collect hit policy in loops ----------------------------------------------------------------
+{
+  name: "collect loop without outputPath outputs an array of arrays",
+  graph: {
+    nodes: [{table: "t", hit: "collect", inputField: "items", executionMode: "loop", inputs: ["v"], outputs: ["tag"], rules: [
+      ["> 0", "'pos'"],
+      ["> 100", "'huge'"],
+      ["== 0", "'zero'"],
+    ]}],
+  },
+  cases: [
+    [{items: [{v: 500}, {v: 0}, {v: -1}]}, [[{tag: "pos"}, {tag: "huge"}], [{tag: "zero"}], []]],
+    [{items: [{v: -1}, {v: -2}]}, [[], []]],
+    [{items: []}, []],
+  ],
+}
+
+{
+  name: "collect loop with passThrough replaces each item by its rows",
+  graph: {
+    nodes: [{table: "t", hit: "collect", inputField: "items", outputPath: "items", executionMode: "loop", passThrough: true, inputs: ["v"], outputs: ["tag"], rules: [
+      ["> 0", "'pos'"],
+      ["> 10", "'big'"],
+    ]}],
+  },
+  cases: [
+    [{id: 1, items: [{v: 20}, {v: -1}]}, {id: 1, items: [[{tag: "pos"}, {tag: "big"}], []]}, "question: passThrough merges each item with an array, and a top-level array replaces the item, so the item fields are lost"],
+    [{id: 2, items: []}, {id: 2, items: []}],
+  ],
+}
+
+{
+  name: "collect loop rows read item fields in output cells",
+  graph: {
+    nodes: [{table: "t", hit: "collect", inputField: "orders", outputPath: "alerts", executionMode: "loop", inputs: ["amount", "country"], outputs: ["code", "msg"], rules: [
+      ["> 1000", "", "'AMT'", "'amount ' + string(amount)"],
+      ["", "'XX'", "'CTY'", "'country ' + country"],
+      ["> 1000", "'XX'", "'BOTH'", "id"],
+    ]}],
+  },
+  cases: [
+    [
+      {orders: [{id: "o1", amount: 5000, country: "XX"}, {id: "o2", amount: 10, country: "DE"}, {id: "o3", amount: 2000, country: "DE"}]},
+      {alerts: [
+        [{code: "AMT", msg: "amount 5000"}, {code: "CTY", msg: "country XX"}, {code: "BOTH", msg: "o1"}],
+        [],
+        [{code: "AMT", msg: "amount 2000"}],
+      ]},
+    ],
+    [{orders: [{id: "o4", amount: 1, country: "XX"}]}, {alerts: [[{code: "CTY", msg: "country XX"}]]}],
+  ],
+}
+
+{
+  name: "collect loop flattened downstream",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputField: "items", outputPath: "tags", executionMode: "loop", inputs: ["v"], outputs: ["tag"], rules: [
+        ["> 0", "'pos'"],
+        ["> 10", "'big'"],
+        ["", "'seen'"],
+      ]},
+      {expression: "agg", fields: {all: "map(flatten(tags), #.tag)", perItem: "map(tags, len(#))"}},
+    ],
+  },
+  cases: [
+    [{items: [{v: 20}, {v: 1}, {v: -1}]}, {all: ["pos", "big", "seen", "pos", "seen", "seen"], perItem: [3, 2, 1]}],
+    [{items: []}, {all: [], perItem: []}],
+  ],
+}
+
+{
+  name: "first-hit loop with per-column collect outputs",
+  graph: {
+    nodes: [{table: "t", inputField: "items", outputPath: "out", executionMode: "loop", inputs: ["v"], outputs: ["tier", "reasons[]"], rules: [
+      ["> 100", "'gold'", "'over 100'"],
+      ["> 10", "'silver'", "'over 10'"],
+      ["> 0", "'bronze'", "'positive'"],
+    ]}],
+  },
+  cases: [
+    [{items: [{v: 500}, {v: 50}, {v: 5}]}, {out: [
+      {tier: "gold", reasons: ["over 100", "over 10", "positive"]},
+      {tier: "silver", reasons: ["over 10", "positive"]},
+      {tier: "bronze", reasons: ["positive"]},
+    ]}],
+    [{items: [{v: 0}, {v: 1}]}, {out: [null, {tier: "bronze", reasons: ["positive"]}]}],
+    [{items: []}, {out: []}],
+  ],
+}
+
+{
+  name: "per-column collect loop with passThrough keeps item fields",
+  graph: {
+    nodes: [{table: "t", inputField: "items", outputPath: "items", executionMode: "loop", passThrough: true, inputs: ["v"], outputs: ["flags[]"], rules: [
+      ["> 0", "'pos'"],
+      ["> 10", "'big'"],
+    ]}],
+  },
+  cases: [
+    [{items: [{id: 1, v: 20}, {id: 2, v: -1}]}, {items: [{id: 1, v: 20, flags: ["pos", "big"]}, {id: 2, v: -1}]}],
+    [{items: [{id: 3, v: 5, flags: ["old"]}]}, {items: [{id: 3, v: 5, flags: ["pos"]}]}],
+  ],
+}
+
+// --- Items with missing fields --------------------------------------------------------------------
+// A missing input field reads as null; null fails comparisons and matches only empty cells,
+// `null` cells or null-aware tests.
+{
+  name: "missing input fields fall through to the catch-all row",
+  graph: {
+    nodes: [{table: "t", inputField: "items", outputPath: "out", executionMode: "loop", inputs: ["age", "country"], outputs: ["r"], rules: [
+      [">= 18", "'US'", "'us-adult'"],
+      [">= 18", "", "'adult'"],
+      ["", "'US'", "'us'"],
+      ["", "", "'other'"],
+    ]}],
+  },
+  cases: [
+    [{items: [{age: 20, country: "US"}, {age: 20}, {country: "US"}, {}]}, {out: [{r: "us-adult"}, {r: "adult"}, {r: "us"}, {r: "other"}]}],
+    [{items: [{age: null, country: null}]}, {out: [{r: "other"}]}],
+    [{items: [{age: "20", country: "US"}]}, {out: [{r: "us"}]}],
+  ],
+}
+
+{
+  name: "null-aware cells match missing fields per item",
+  graph: {
+    nodes: [{table: "t", inputField: "items", outputPath: "out", executionMode: "loop", inputs: ["email"], outputs: ["state"], rules: [
+      ["null", "'missing'"],
+      ["$ == ''", "'empty'"],
+      ["", "'present'"],
+    ]}],
+  },
+  cases: [
+    [{items: [{}, {email: null}, {email: ""}, {email: "a@b"}]}, {out: [{state: "missing"}, {state: "missing"}, {state: "empty"}, {state: "present"}]}],
+    [{items: [{email: "x"}]}, {out: [{state: "present"}]}],
+  ],
+}
+
+{
+  name: "nested input fields missing on some items",
+  graph: {
+    nodes: [{table: "t", inputField: "items", outputPath: "out", executionMode: "loop", inputs: ["customer.address.country"], outputs: ["zone"], rules: [
+      ["'NO', 'SE', 'DK'", "'nordic'"],
+      ["", "'world'"],
+    ]}],
+  },
+  cases: [
+    [{items: [{customer: {address: {country: "NO"}}}, {customer: {address: {}}}, {customer: {}}, {}, {customer: null}]}, {out: [{zone: "nordic"}, {zone: "world"}, {zone: "world"}, {zone: "world"}, {zone: "world"}]}],
+    [{items: [{customer: {address: {country: "SE"}}}]}, {out: [{zone: "nordic"}]}],
+  ],
+}
+
+{
+  name: "output cells reading missing fields produce null in the item result",
+  graph: {
+    nodes: [{table: "t", inputField: "items", outputPath: "out", executionMode: "loop", inputs: [""], outputs: ["name", "label"], rules: [
+      ["", "name", "name ?? 'anon'"],
+    ]}],
+  },
+  cases: [
+    [{items: [{name: "a"}, {}]}, {out: [{name: "a", label: "a"}, {name: null, label: "anon"}]}],
+    [{items: [{name: null}]}, {out: [{name: null, label: "anon"}]}],
+  ],
+}
+
+{
+  name: "items with wrong types fall through rather than erroring",
+  graph: {
+    nodes: [{table: "t", inputField: "items", outputPath: "out", executionMode: "loop", inputs: ["n"], outputs: ["r"], rules: [
+      ["> 5", "'big'"],
+      ["[1..5]", "'small'"],
+      ["", "'unknown'"],
+    ]}],
+  },
+  cases: [
+    [{items: [{n: 10}, {n: 3}, {n: "10"}, {n: true}, {n: [1]}, {n: {}}]}, {out: [{r: "big"}, {r: "small"}, {r: "unknown"}, {r: "unknown"}, {r: "unknown"}, {r: "unknown"}]}],
+    [{items: [{n: 5}, {n: 1}, {n: 0}]}, {out: [{r: "small"}, {r: "small"}, {r: "unknown"}]}],
+  ],
+}
+
+{
+  name: "scalar and null items against a field-reading table",
+  graph: {
+    nodes: [{table: "t", inputField: "items", outputPath: "out", executionMode: "loop", inputs: ["v"], outputs: ["r"], rules: [
+      ["> 0", "'pos'"],
+      ["", "'other'"],
+    ]}],
+  },
+  cases: [
+    [{items: [{v: 1}, null]}, {out: [{r: "pos"}, {r: "other"}]}],
+    [{items: [{v: 1}, 5, "s"]}, {out: [{r: "pos"}, {r: "other"}, {r: "other"}]}],
+  ],
+}
+
+// --- `$root` in table loops ----------------------------------------------------------------------
+// In a loop the item is the table's whole environment, so `$root` is the item.
+{
+  name: "input column $root over string items",
+  graph: {
+    nodes: [{table: "t", inputField: "codes", outputPath: "out", executionMode: "loop", inputs: ["$root"], outputs: ["kind", "code"], rules: [
+      ["startsWith($, 'A')", "'alpha'", "$root"],
+      ["'Z9'", "'zed'", "$root"],
+      ["", "'other'", "$root"],
+    ]}],
+  },
+  cases: [
+    [{codes: ["A1", "Z9", "B2"]}, {out: [{kind: "alpha", code: "A1"}, {kind: "zed", code: "Z9"}, {kind: "other", code: "B2"}]}],
+    [{codes: [""]}, {out: [{kind: "other", code: ""}]}],
+  ],
+}
+
+{
+  name: "expression-only input column reads $root of object items",
+  graph: {
+    nodes: [{table: "t", inputField: "items", outputPath: "out", executionMode: "loop", inputs: [null], outputs: ["r"], rules: [
+      ["$root.a > $root.b", "'a'"],
+      ["$root.a < $root.b", "'b'"],
+      ["", "'tie'"],
+    ]}],
+  },
+  cases: [
+    [{items: [{a: 2, b: 1}, {a: 1, b: 2}, {a: 1, b: 1}]}, {out: [{r: "a"}, {r: "b"}, {r: "tie"}]}],
+    [{items: [{a: 1}]}, {out: [{r: "tie"}]}],
+  ],
+}
+
+{
+  name: "output cells copy the whole item through $root",
+  graph: {
+    nodes: [{table: "t", inputField: "items", outputPath: "out", executionMode: "loop", inputs: ["keep"], outputs: ["item"], rules: [
+      ["true", "$root"],
+      ["", "null"],
+    ]}],
+  },
+  cases: [
+    {input: {items: [{keep: true, x: 1}, {keep: false, x: 2}]}, output: {out: [{item: {keep: true, x: 1}}, {item: null}]}, note: "bug: the input column's `$` reference is stored on the item environment, so $root read in an output cell carries a stray `$` key", engines: "the walker leaks the `$` reference into $root; the compiled engine gives the intended result"},
+    {input: {items: [{keep: true}]}, output: {out: [{item: {keep: true}}]}, note: "bug: the input column's `$` reference is stored on the item environment, so $root read in an output cell carries a stray `$` key", engines: "the walker leaks the `$` reference into $root; the compiled engine gives the intended result"},
+  ],
+}
+
+{
+  name: "single-mode sibling: output cells copy the node input through $root",
+  graph: {
+    nodes: [{table: "t", inputField: "item", outputPath: "out", inputs: ["keep"], outputs: ["item"], rules: [
+      ["true", "$root"],
+      ["", "null"],
+    ]}],
+  },
+  cases: [
+    {input: {item: {keep: true, x: 1}}, output: {out: {item: {keep: true, x: 1}}}, note: "bug: the input column's `$` reference is stored on the environment, so $root read in an output cell carries a stray `$` key (not loop-specific)", engines: "the walker leaks the `$` reference into $root; the compiled engine gives the intended result"},
+    [{item: {keep: false}}, {out: {item: null}}],
+  ],
+}
+
+{
+  name: "table loop over arrays of arrays reads rows via $root",
+  graph: {
+    nodes: [{table: "t", inputField: "rows", outputPath: "out", executionMode: "loop", inputs: ["len($root)"], outputs: ["shape", "head"], rules: [
+      ["0", "'empty'", "null"],
+      ["1", "'single'", "$root[0]"],
+      ["", "'many'", "$root[0]"],
+    ]}],
+  },
+  cases: [
+    [{rows: [[], [7], [1, 2, 3]]}, {out: [{shape: "empty", head: null}, {shape: "single", head: 7}, {shape: "many", head: 1}]}],
+    [{rows: [["a", "b"]]}, {out: [{shape: "many", head: "a"}]}],
+  ],
+}
+
+// --- `$nodes` in table loops ---------------------------------------------------------------------
+// The outer input and earlier nodes stay reachable through `$nodes` from every item.
+{
+  name: "input column compares item fields with an outer threshold",
+  graph: {
+    nodes: [{table: "t", inputField: "items", outputPath: "out", executionMode: "loop", inputs: ["v"], outputs: ["over"], rules: [
+      ["> $nodes.input.limit", "true"],
+      ["", "false"],
+    ]}],
+  },
+  cases: [
+    [{limit: 10, items: [{v: 5}, {v: 15}, {v: 10}]}, {out: [{over: false}, {over: true}, {over: false}]}],
+    [{limit: 0, items: [{v: 1}]}, {out: [{over: true}]}],
+    [{items: [{v: 1}]}, {out: [{over: false}]}],
+  ],
+}
+
+{
+  name: "input column field is a $nodes path",
+  graph: {
+    nodes: [{table: "t", inputField: "items", outputPath: "out", executionMode: "loop", inputs: ["$nodes.input.mode", "v"], outputs: ["r"], rules: [
+      ["'strict'", "> 0", "'ok'"],
+      ["'strict'", "", "'reject'"],
+      ["", "", "'lenient'"],
+    ]}],
+  },
+  cases: [
+    [{mode: "strict", items: [{v: 1}, {v: 0}]}, {out: [{r: "ok"}, {r: "reject"}]}],
+    [{mode: "loose", items: [{v: 1}, {v: 0}]}, {out: [{r: "lenient"}, {r: "lenient"}]}],
+    [{items: [{v: 1}]}, {out: [{r: "lenient"}]}],
+  ],
+}
+
+{
+  name: "output cells combine the item with an earlier node",
+  graph: {
+    nodes: [
+      {expression: "cfg", fields: {rate: "rate ?? 0.1", currency: "currency ?? 'EUR'"}},
+      {table: "t", inputField: "$nodes.input.items", outputPath: "out", executionMode: "loop", inputs: ["taxable"], outputs: ["tax", "currency"], rules: [
+        ["true", "amount * $nodes.cfg.rate", "$nodes.cfg.currency"],
+        ["", "0", "$nodes.cfg.currency"],
+      ]},
+    ],
+  },
+  cases: [
+    [{rate: 0.2, items: [{taxable: true, amount: 100}, {taxable: false, amount: 50}]}, {out: [{tax: 20, currency: "EUR"}, {tax: 0, currency: "EUR"}]}],
+    [{currency: "NOK", items: [{taxable: true, amount: 10}]}, {out: [{tax: 1, currency: "NOK"}]}],
+    [{items: []}, {out: []}],
+  ],
+}
+
+{
+  name: "collect loop with $nodes conditions",
+  graph: {
+    nodes: [{table: "t", hit: "collect", inputField: "items", outputPath: "out", executionMode: "loop", inputs: ["tags"], outputs: ["hit"], rules: [
+      ["contains($, $nodes.input.watch[0])", "$nodes.input.watch[0]"],
+      ["contains($, $nodes.input.watch[1])", "$nodes.input.watch[1]"],
+    ]}],
+  },
+  cases: [
+    [{watch: ["a", "b"], items: [{tags: ["a", "b"]}, {tags: ["b"]}, {tags: []}]}, {out: [[{hit: "a"}, {hit: "b"}], [{hit: "b"}], []]}],
+    [{watch: ["x", "y"], items: [{tags: ["a"]}]}, {out: [[]]}],
+  ],
+}
+
+{
+  name: "table loop reads the previous loop's results through $nodes",
+  graph: {
+    nodes: [
+      {expression: "scores", inputField: "items", outputPath: "scores", executionMode: "loop", fields: {s: "a + b"}},
+      {table: "t", inputField: "$nodes.scores.scores", outputPath: "grades", executionMode: "loop", inputs: ["s"], outputs: ["g"], rules: [
+        [">= 10", "'high'"],
+        ["", "'low'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{items: [{a: 5, b: 5}, {a: 1, b: 1}]}, {grades: [{g: "high"}, {g: "low"}]}],
+    [{items: []}, {grades: []}],
+  ],
+}
+
+// --- Tables in loops combined with other nodes ----------------------------------------------------
+{
+  name: "an expression loop enriches items before a table loop",
+  graph: {
+    nodes: [
+      {expression: "prep", inputField: "items", outputPath: "items", executionMode: "loop", passThrough: true, fields: {total: "price * qty"}},
+      {table: "t", inputField: "items", outputPath: "items", executionMode: "loop", passThrough: true, inputs: ["total"], outputs: ["discount"], rules: [
+        [">= 100", "0.1"],
+        ["", "0"],
+      ]},
+    ],
+  },
+  cases: [
+    [{items: [{price: 50, qty: 2}, {price: 5, qty: 1}]}, {items: [{price: 50, qty: 2, total: 100, discount: 0.1}, {price: 5, qty: 1, total: 5, discount: 0}]}],
+    [{items: []}, {items: []}],
+  ],
+}
+
+{
+  name: "a table loop feeding a sub-decision loop",
+  decisions: {
+    label: {nodes: [{expression: "l", fields: {label: "upper(tier) + '-' + string(v)"}}]},
+  },
+  graph: {
+    nodes: [
+      {table: "t", inputField: "items", outputPath: "items", executionMode: "loop", passThrough: true, inputs: ["v"], outputs: ["tier"], rules: [
+        ["> 10", "'hi'"],
+        ["", "'lo'"],
+      ]},
+      {decision: "labels", key: "label", inputField: "items", outputPath: "labels", executionMode: "loop"},
+    ],
+  },
+  cases: [
+    [{items: [{v: 20}, {v: 1}]}, {labels: [{label: "HI-20"}, {label: "LO-1"}]}],
+    [{items: []}, {labels: []}],
+  ],
+}
+
+{
+  name: "switch picks a single-mode or a loop-mode table",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["type(payload) == 'array'", ""]},
+      {table: "many", inputField: "payload", outputPath: "out", executionMode: "loop", inputs: ["v"], outputs: ["r"], rules: [["> 0", "'pos'"], ["", "'neg'"]]},
+      {table: "one", inputField: "payload", outputPath: "out", inputs: ["v"], outputs: ["r"], rules: [["> 0", "'pos'"], ["", "'neg'"]]},
+    ],
+    edges: ["input -> s", "s:0 -> many -> output", "s:1 -> one -> output"],
+  },
+  cases: [
+    [{payload: [{v: 1}, {v: -1}]}, {out: [{r: "pos"}, {r: "neg"}]}],
+    [{payload: {v: 1}}, {out: {r: "pos"}}],
+    [{payload: {v: -1}}, {out: {r: "neg"}}],
+    [{payload: []}, {out: []}],
+  ],
+}
+
+// --- Large arrays ---------------------------------------------------------------------------------
+{
+  name: "first-hit table over 60 generated items",
+  graph: {
+    nodes: [
+      {table: "t", inputField: "map([1..60], {n: #})", outputPath: "rows", executionMode: "loop", inputs: ["n % 15", "n % 5", "n % 3"], outputs: ["k"], rules: [
+        ["0", "", "", "'fizzbuzz'"],
+        ["", "0", "", "'buzz'"],
+        ["", "", "0", "'fizz'"],
+        ["", "", "", "'num'"],
+      ]},
+      {expression: "agg", fields: {
+        n: "len(rows)",
+        fizzbuzz: "len(filter(rows, #.k == 'fizzbuzz'))",
+        buzz: "len(filter(rows, #.k == 'buzz'))",
+        fizz: "len(filter(rows, #.k == 'fizz'))",
+        num: "len(filter(rows, #.k == 'num'))",
+        first: "map(rows[0:4], #.k)",
+      }},
+    ],
+  },
+  cases: [
+    [{}, {n: 60, fizzbuzz: 4, buzz: 8, fizz: 16, num: 32, first: ["num", "num", "fizz", "num", "buzz"]}],
+    [{noise: [1, 2]}, {n: 60, fizzbuzz: 4, buzz: 8, fizz: 16, num: 32, first: ["num", "num", "fizz", "num", "buzz"]}],
+  ],
+}
+
+{
+  name: "first-hit table with passThrough over 55 input items, some missing their score",
+  graph: {
+    nodes: [{table: "t", inputField: "items", outputPath: "items", executionMode: "loop", passThrough: true, inputs: ["score"], outputs: ["grade"], rules: [
+      [">= 90", "'A'"],
+      [">= 75", "'B'"],
+      [">= 50", "'C'"],
+    ]}],
+  },
+  cases: [
+    [{items: [{id: 0, score: 11}, {id: 1, score: 48}, {id: 2, score: 85}, {id: 3, score: 21}, {id: 4, score: 58}, {id: 5, score: 95}, {id: 6, score: 31}, {id: 7, score: 68}, {id: 8, score: 4}, {id: 9, score: 41}, {id: 10, score: 78}, {id: 11, score: 14}, {id: 12}, {id: 13, score: 88}, {id: 14, score: 24}, {id: 15, score: 61}, {id: 16, score: 98}, {id: 17, score: 34}, {id: 18, score: 71}, {id: 19, score: 7}, {id: 20, score: 44}, {id: 21, score: 81}, {id: 22, score: 17}, {id: 23, score: 54}, {id: 24, score: 91}, {id: 25}, {id: 26, score: 64}, {id: 27, score: 0}, {id: 28, score: 37}, {id: 29, score: 74}, {id: 30, score: 10}, {id: 31, score: 47}, {id: 32, score: 84}, {id: 33, score: 20}, {id: 34, score: 57}, {id: 35, score: 94}, {id: 36, score: 30}, {id: 37, score: 67}, {id: 38}, {id: 39, score: 40}, {id: 40, score: 77}, {id: 41, score: 13}, {id: 42, score: 50}, {id: 43, score: 87}, {id: 44, score: 23}, {id: 45, score: 60}, {id: 46, score: 97}, {id: 47, score: 33}, {id: 48, score: 70}, {id: 49, score: 6}, {id: 50, score: 43}, {id: 51}, {id: 52, score: 16}, {id: 53, score: 53}, {id: 54, score: 90}]}, {items: [{id: 0, score: 11}, {id: 1, score: 48}, {id: 2, score: 85, grade: "B"}, {id: 3, score: 21}, {id: 4, score: 58, grade: "C"}, {id: 5, score: 95, grade: "A"}, {id: 6, score: 31}, {id: 7, score: 68, grade: "C"}, {id: 8, score: 4}, {id: 9, score: 41}, {id: 10, score: 78, grade: "B"}, {id: 11, score: 14}, {id: 12}, {id: 13, score: 88, grade: "B"}, {id: 14, score: 24}, {id: 15, score: 61, grade: "C"}, {id: 16, score: 98, grade: "A"}, {id: 17, score: 34}, {id: 18, score: 71, grade: "C"}, {id: 19, score: 7}, {id: 20, score: 44}, {id: 21, score: 81, grade: "B"}, {id: 22, score: 17}, {id: 23, score: 54, grade: "C"}, {id: 24, score: 91, grade: "A"}, {id: 25}, {id: 26, score: 64, grade: "C"}, {id: 27, score: 0}, {id: 28, score: 37}, {id: 29, score: 74, grade: "C"}, {id: 30, score: 10}, {id: 31, score: 47}, {id: 32, score: 84, grade: "B"}, {id: 33, score: 20}, {id: 34, score: 57, grade: "C"}, {id: 35, score: 94, grade: "A"}, {id: 36, score: 30}, {id: 37, score: 67, grade: "C"}, {id: 38}, {id: 39, score: 40}, {id: 40, score: 77, grade: "B"}, {id: 41, score: 13}, {id: 42, score: 50, grade: "C"}, {id: 43, score: 87, grade: "B"}, {id: 44, score: 23}, {id: 45, score: 60, grade: "C"}, {id: 46, score: 97, grade: "A"}, {id: 47, score: 33}, {id: 48, score: 70, grade: "C"}, {id: 49, score: 6}, {id: 50, score: 43}, {id: 51}, {id: 52, score: 16}, {id: 53, score: 53, grade: "C"}, {id: 54, score: 90, grade: "A"}]}],
+    [{items: [{id: 0, score: 22}, {id: 1, score: 59}, {id: 2, score: 96}, {id: 3, score: 32}, {id: 4, score: 69}, {id: 5, score: 5}, {id: 6, score: 42}, {id: 7, score: 79}, {id: 8, score: 15}, {id: 9, score: 52}, {id: 10, score: 89}, {id: 11}, {id: 12, score: 62}, {id: 13, score: 99}, {id: 14, score: 35}, {id: 15, score: 72}, {id: 16, score: 8}, {id: 17, score: 45}, {id: 18, score: 82}, {id: 19, score: 18}, {id: 20, score: 55}, {id: 21, score: 92}, {id: 22, score: 28}, {id: 23, score: 65}, {id: 24}, {id: 25, score: 38}, {id: 26, score: 75}, {id: 27, score: 11}, {id: 28, score: 48}, {id: 29, score: 85}, {id: 30, score: 21}, {id: 31, score: 58}, {id: 32, score: 95}, {id: 33, score: 31}, {id: 34, score: 68}, {id: 35, score: 4}, {id: 36, score: 41}, {id: 37}, {id: 38, score: 14}, {id: 39, score: 51}, {id: 40, score: 88}, {id: 41, score: 24}, {id: 42, score: 61}, {id: 43, score: 98}, {id: 44, score: 34}, {id: 45, score: 71}, {id: 46, score: 7}, {id: 47, score: 44}, {id: 48, score: 81}, {id: 49, score: 17}, {id: 50}, {id: 51, score: 91}, {id: 52, score: 27}, {id: 53, score: 64}, {id: 54, score: 0}]}, {items: [{id: 0, score: 22}, {id: 1, score: 59, grade: "C"}, {id: 2, score: 96, grade: "A"}, {id: 3, score: 32}, {id: 4, score: 69, grade: "C"}, {id: 5, score: 5}, {id: 6, score: 42}, {id: 7, score: 79, grade: "B"}, {id: 8, score: 15}, {id: 9, score: 52, grade: "C"}, {id: 10, score: 89, grade: "B"}, {id: 11}, {id: 12, score: 62, grade: "C"}, {id: 13, score: 99, grade: "A"}, {id: 14, score: 35}, {id: 15, score: 72, grade: "C"}, {id: 16, score: 8}, {id: 17, score: 45}, {id: 18, score: 82, grade: "B"}, {id: 19, score: 18}, {id: 20, score: 55, grade: "C"}, {id: 21, score: 92, grade: "A"}, {id: 22, score: 28}, {id: 23, score: 65, grade: "C"}, {id: 24}, {id: 25, score: 38}, {id: 26, score: 75, grade: "B"}, {id: 27, score: 11}, {id: 28, score: 48}, {id: 29, score: 85, grade: "B"}, {id: 30, score: 21}, {id: 31, score: 58, grade: "C"}, {id: 32, score: 95, grade: "A"}, {id: 33, score: 31}, {id: 34, score: 68, grade: "C"}, {id: 35, score: 4}, {id: 36, score: 41}, {id: 37}, {id: 38, score: 14}, {id: 39, score: 51, grade: "C"}, {id: 40, score: 88, grade: "B"}, {id: 41, score: 24}, {id: 42, score: 61, grade: "C"}, {id: 43, score: 98, grade: "A"}, {id: 44, score: 34}, {id: 45, score: 71, grade: "C"}, {id: 46, score: 7}, {id: 47, score: 44}, {id: 48, score: 81, grade: "B"}, {id: 49, score: 17}, {id: 50}, {id: 51, score: 91, grade: "A"}, {id: 52, score: 27}, {id: 53, score: 64, grade: "C"}, {id: 54, score: 0}]}],
+    [{items: [{id: 0, score: 33}, {id: 1, score: 70}, {id: 2, score: 6}, {id: 3, score: 43}, {id: 4, score: 80}, {id: 5, score: 16}, {id: 6, score: 53}, {id: 7, score: 90}, {id: 8, score: 26}, {id: 9, score: 63}, {id: 10}, {id: 11, score: 36}, {id: 12, score: 73}, {id: 13, score: 9}, {id: 14, score: 46}, {id: 15, score: 83}, {id: 16, score: 19}, {id: 17, score: 56}, {id: 18, score: 93}, {id: 19, score: 29}, {id: 20, score: 66}, {id: 21, score: 2}, {id: 22, score: 39}, {id: 23}, {id: 24, score: 12}, {id: 25, score: 49}, {id: 26, score: 86}, {id: 27, score: 22}, {id: 28, score: 59}, {id: 29, score: 96}, {id: 30, score: 32}, {id: 31, score: 69}, {id: 32, score: 5}, {id: 33, score: 42}, {id: 34, score: 79}, {id: 35, score: 15}, {id: 36}, {id: 37, score: 89}, {id: 38, score: 25}, {id: 39, score: 62}, {id: 40, score: 99}, {id: 41, score: 35}, {id: 42, score: 72}, {id: 43, score: 8}, {id: 44, score: 45}, {id: 45, score: 82}, {id: 46, score: 18}, {id: 47, score: 55}, {id: 48, score: 92}, {id: 49}, {id: 50, score: 65}, {id: 51, score: 1}, {id: 52, score: 38}, {id: 53, score: 75}, {id: 54, score: 11}]}, {items: [{id: 0, score: 33}, {id: 1, score: 70, grade: "C"}, {id: 2, score: 6}, {id: 3, score: 43}, {id: 4, score: 80, grade: "B"}, {id: 5, score: 16}, {id: 6, score: 53, grade: "C"}, {id: 7, score: 90, grade: "A"}, {id: 8, score: 26}, {id: 9, score: 63, grade: "C"}, {id: 10}, {id: 11, score: 36}, {id: 12, score: 73, grade: "C"}, {id: 13, score: 9}, {id: 14, score: 46}, {id: 15, score: 83, grade: "B"}, {id: 16, score: 19}, {id: 17, score: 56, grade: "C"}, {id: 18, score: 93, grade: "A"}, {id: 19, score: 29}, {id: 20, score: 66, grade: "C"}, {id: 21, score: 2}, {id: 22, score: 39}, {id: 23}, {id: 24, score: 12}, {id: 25, score: 49}, {id: 26, score: 86, grade: "B"}, {id: 27, score: 22}, {id: 28, score: 59, grade: "C"}, {id: 29, score: 96, grade: "A"}, {id: 30, score: 32}, {id: 31, score: 69, grade: "C"}, {id: 32, score: 5}, {id: 33, score: 42}, {id: 34, score: 79, grade: "B"}, {id: 35, score: 15}, {id: 36}, {id: 37, score: 89, grade: "B"}, {id: 38, score: 25}, {id: 39, score: 62, grade: "C"}, {id: 40, score: 99, grade: "A"}, {id: 41, score: 35}, {id: 42, score: 72, grade: "C"}, {id: 43, score: 8}, {id: 44, score: 45}, {id: 45, score: 82, grade: "B"}, {id: 46, score: 18}, {id: 47, score: 55, grade: "C"}, {id: 48, score: 92, grade: "A"}, {id: 49}, {id: 50, score: 65, grade: "C"}, {id: 51, score: 1}, {id: 52, score: 38}, {id: 53, score: 75, grade: "B"}, {id: 54, score: 11}]}],
+  ],
+}
+
+{
+  name: "collect table over 52 items",
+  graph: {
+    nodes: [{table: "t", hit: "collect", inputField: "items", outputPath: "tags", executionMode: "loop", inputs: ["v"], outputs: ["tag"], rules: [
+      ["> 0", "'pos'"],
+      ["$ % 2 == 0", "'even'"],
+      ["> 20", "'big'"],
+    ]}],
+  },
+  cases: [
+    [{items: [{v: -10}, {v: -3}, {v: 4}, {v: 11}, {v: 18}, {v: 25}, {v: -8}, {v: -1}, {v: 6}, {v: 13}, {v: 20}, {v: 27}, {v: -6}, {v: 1}, {v: 8}, {v: 15}, {v: 22}, {v: 29}, {v: -4}, {v: 3}, {v: 10}, {v: 17}, {v: 24}, {v: -9}, {v: -2}, {v: 5}, {v: 12}, {v: 19}, {v: 26}, {v: -7}, {v: 0}, {v: 7}, {v: 14}, {v: 21}, {v: 28}, {v: -5}, {v: 2}, {v: 9}, {v: 16}, {v: 23}, {v: -10}, {v: -3}, {v: 4}, {v: 11}, {v: 18}, {v: 25}, {v: -8}, {v: -1}, {v: 6}, {v: 13}, {v: 20}, {v: 27}]}, {tags: [[{tag: "even"}], [], [{tag: "pos"}, {tag: "even"}], [{tag: "pos"}], [{tag: "pos"}, {tag: "even"}], [{tag: "pos"}, {tag: "big"}], [{tag: "even"}], [], [{tag: "pos"}, {tag: "even"}], [{tag: "pos"}], [{tag: "pos"}, {tag: "even"}], [{tag: "pos"}, {tag: "big"}], [{tag: "even"}], [{tag: "pos"}], [{tag: "pos"}, {tag: "even"}], [{tag: "pos"}], [{tag: "pos"}, {tag: "even"}, {tag: "big"}], [{tag: "pos"}, {tag: "big"}], [{tag: "even"}], [{tag: "pos"}], [{tag: "pos"}, {tag: "even"}], [{tag: "pos"}], [{tag: "pos"}, {tag: "even"}, {tag: "big"}], [], [{tag: "even"}], [{tag: "pos"}], [{tag: "pos"}, {tag: "even"}], [{tag: "pos"}], [{tag: "pos"}, {tag: "even"}, {tag: "big"}], [], [{tag: "even"}], [{tag: "pos"}], [{tag: "pos"}, {tag: "even"}], [{tag: "pos"}, {tag: "big"}], [{tag: "pos"}, {tag: "even"}, {tag: "big"}], [], [{tag: "pos"}, {tag: "even"}], [{tag: "pos"}], [{tag: "pos"}, {tag: "even"}], [{tag: "pos"}, {tag: "big"}], [{tag: "even"}], [], [{tag: "pos"}, {tag: "even"}], [{tag: "pos"}], [{tag: "pos"}, {tag: "even"}], [{tag: "pos"}, {tag: "big"}], [{tag: "even"}], [], [{tag: "pos"}, {tag: "even"}], [{tag: "pos"}], [{tag: "pos"}, {tag: "even"}], [{tag: "pos"}, {tag: "big"}]]}],
+    [{items: [{v: -5}, {v: 2}, {v: 9}, {v: 16}, {v: 23}, {v: -10}, {v: -3}, {v: 4}, {v: 11}, {v: 18}, {v: 25}, {v: -8}, {v: -1}, {v: 6}, {v: 13}, {v: 20}, {v: 27}, {v: -6}, {v: 1}, {v: 8}, {v: 15}, {v: 22}, {v: 29}, {v: -4}, {v: 3}, {v: 10}, {v: 17}, {v: 24}, {v: -9}, {v: -2}, {v: 5}, {v: 12}, {v: 19}, {v: 26}, {v: -7}, {v: 0}, {v: 7}, {v: 14}, {v: 21}, {v: 28}, {v: -5}, {v: 2}, {v: 9}, {v: 16}, {v: 23}, {v: -10}, {v: -3}, {v: 4}, {v: 11}, {v: 18}, {v: 25}, {v: -8}]}, {tags: [[], [{tag: "pos"}, {tag: "even"}], [{tag: "pos"}], [{tag: "pos"}, {tag: "even"}], [{tag: "pos"}, {tag: "big"}], [{tag: "even"}], [], [{tag: "pos"}, {tag: "even"}], [{tag: "pos"}], [{tag: "pos"}, {tag: "even"}], [{tag: "pos"}, {tag: "big"}], [{tag: "even"}], [], [{tag: "pos"}, {tag: "even"}], [{tag: "pos"}], [{tag: "pos"}, {tag: "even"}], [{tag: "pos"}, {tag: "big"}], [{tag: "even"}], [{tag: "pos"}], [{tag: "pos"}, {tag: "even"}], [{tag: "pos"}], [{tag: "pos"}, {tag: "even"}, {tag: "big"}], [{tag: "pos"}, {tag: "big"}], [{tag: "even"}], [{tag: "pos"}], [{tag: "pos"}, {tag: "even"}], [{tag: "pos"}], [{tag: "pos"}, {tag: "even"}, {tag: "big"}], [], [{tag: "even"}], [{tag: "pos"}], [{tag: "pos"}, {tag: "even"}], [{tag: "pos"}], [{tag: "pos"}, {tag: "even"}, {tag: "big"}], [], [{tag: "even"}], [{tag: "pos"}], [{tag: "pos"}, {tag: "even"}], [{tag: "pos"}, {tag: "big"}], [{tag: "pos"}, {tag: "even"}, {tag: "big"}], [], [{tag: "pos"}, {tag: "even"}], [{tag: "pos"}], [{tag: "pos"}, {tag: "even"}], [{tag: "pos"}, {tag: "big"}], [{tag: "even"}], [], [{tag: "pos"}, {tag: "even"}], [{tag: "pos"}], [{tag: "pos"}, {tag: "even"}], [{tag: "pos"}, {tag: "big"}], [{tag: "even"}]]}],
+  ],
+}
+
+{
+  name: "equality table with 30 rules over 64 items, unknown and missing codes hit the fallback",
+  graph: {
+    nodes: [{table: "t", inputField: "items", outputPath: "out", executionMode: "loop", inputs: ["code"], outputs: ["price", "group"], rules: [
+      ["'C00'", "0", "'g0'"],
+      ["'C01'", "10", "'g1'"],
+      ["'C02'", "20", "'g2'"],
+      ["'C03'", "30", "'g0'"],
+      ["'C04'", "40", "'g1'"],
+      ["'C05'", "50", "'g2'"],
+      ["'C06'", "60", "'g0'"],
+      ["'C07'", "70", "'g1'"],
+      ["'C08'", "80", "'g2'"],
+      ["'C09'", "90", "'g0'"],
+      ["'C10'", "100", "'g1'"],
+      ["'C11'", "110", "'g2'"],
+      ["'C12'", "120", "'g0'"],
+      ["'C13'", "130", "'g1'"],
+      ["'C14'", "140", "'g2'"],
+      ["'C15'", "150", "'g0'"],
+      ["'C16'", "160", "'g1'"],
+      ["'C17'", "170", "'g2'"],
+      ["'C18'", "180", "'g0'"],
+      ["'C19'", "190", "'g1'"],
+      ["'C20'", "200", "'g2'"],
+      ["'C21'", "210", "'g0'"],
+      ["'C22'", "220", "'g1'"],
+      ["'C23'", "230", "'g2'"],
+      ["'C24'", "240", "'g0'"],
+      ["'C25'", "250", "'g1'"],
+      ["'C26'", "260", "'g2'"],
+      ["'C27'", "270", "'g0'"],
+      ["'C28'", "280", "'g1'"],
+      ["'C29'", "290", "'g2'"],
+      ["", "-1", "'none'"],
+    ]}],
+  },
+  cases: [
+    [{items: [{code: null}, {code: "C11"}, {code: "C22"}, {code: "C33"}, {code: "C10"}, {}, {code: "C32"}, {code: "C09"}, {code: "C20"}, {code: "C31"}, {code: "C08"}, {code: "C19"}, {code: "C30"}, {code: "C07"}, {code: "C18"}, {code: "C29"}, {code: "C06"}, {code: null}, {code: "C28"}, {code: "C05"}, {code: "C16"}, {code: "C27"}, {code: "C04"}, {code: "C15"}, {code: "C26"}, {code: "C03"}, {code: "C14"}, {code: "C25"}, {}, {code: "C13"}, {code: "C24"}, {code: "C01"}, {code: "C12"}, {code: "C23"}, {code: null}, {code: "C11"}, {code: "C22"}, {code: "C33"}, {code: "C10"}, {code: "C21"}, {code: "C32"}, {code: "C09"}, {code: "C20"}, {code: "C31"}, {code: "C08"}, {code: "C19"}, {code: "C30"}, {code: "C07"}, {code: "C18"}, {code: "C29"}, {code: "C06"}, {}, {code: "C28"}, {code: "C05"}, {code: "C16"}, {code: "C27"}, {code: "C04"}, {code: "C15"}, {code: "C26"}, {code: "C03"}, {code: "C14"}, {code: "C25"}, {code: "C02"}, {code: "C13"}]}, {out: [{price: -1, group: "none"}, {price: 110, group: "g2"}, {price: 220, group: "g1"}, {price: -1, group: "none"}, {price: 100, group: "g1"}, {price: -1, group: "none"}, {price: -1, group: "none"}, {price: 90, group: "g0"}, {price: 200, group: "g2"}, {price: -1, group: "none"}, {price: 80, group: "g2"}, {price: 190, group: "g1"}, {price: -1, group: "none"}, {price: 70, group: "g1"}, {price: 180, group: "g0"}, {price: 290, group: "g2"}, {price: 60, group: "g0"}, {price: -1, group: "none"}, {price: 280, group: "g1"}, {price: 50, group: "g2"}, {price: 160, group: "g1"}, {price: 270, group: "g0"}, {price: 40, group: "g1"}, {price: 150, group: "g0"}, {price: 260, group: "g2"}, {price: 30, group: "g0"}, {price: 140, group: "g2"}, {price: 250, group: "g1"}, {price: -1, group: "none"}, {price: 130, group: "g1"}, {price: 240, group: "g0"}, {price: 10, group: "g1"}, {price: 120, group: "g0"}, {price: 230, group: "g2"}, {price: -1, group: "none"}, {price: 110, group: "g2"}, {price: 220, group: "g1"}, {price: -1, group: "none"}, {price: 100, group: "g1"}, {price: 210, group: "g0"}, {price: -1, group: "none"}, {price: 90, group: "g0"}, {price: 200, group: "g2"}, {price: -1, group: "none"}, {price: 80, group: "g2"}, {price: 190, group: "g1"}, {price: -1, group: "none"}, {price: 70, group: "g1"}, {price: 180, group: "g0"}, {price: 290, group: "g2"}, {price: 60, group: "g0"}, {price: -1, group: "none"}, {price: 280, group: "g1"}, {price: 50, group: "g2"}, {price: 160, group: "g1"}, {price: 270, group: "g0"}, {price: 40, group: "g1"}, {price: 150, group: "g0"}, {price: 260, group: "g2"}, {price: 30, group: "g0"}, {price: 140, group: "g2"}, {price: 250, group: "g1"}, {price: 20, group: "g2"}, {price: 130, group: "g1"}]}],
+    [{items: [{code: "C03"}, {code: "C14"}, {code: "C25"}, {code: null}, {code: "C13"}, {}, {code: "C01"}, {code: "C12"}, {code: "C23"}, {code: "C00"}, {code: "C11"}, {code: "C22"}, {code: "C33"}, {code: "C10"}, {code: "C21"}, {code: "C32"}, {code: "C09"}, {code: "C20"}, {code: "C31"}, {code: "C08"}, {code: null}, {code: "C30"}, {code: "C07"}, {code: "C18"}, {code: "C29"}, {code: "C06"}, {code: "C17"}, {code: "C28"}, {}, {code: "C16"}, {code: "C27"}, {code: "C04"}, {code: "C15"}, {code: "C26"}, {code: "C03"}, {code: "C14"}, {code: "C25"}, {code: null}, {code: "C13"}, {code: "C24"}, {code: "C01"}, {code: "C12"}, {code: "C23"}, {code: "C00"}, {code: "C11"}, {code: "C22"}, {code: "C33"}, {code: "C10"}, {code: "C21"}, {code: "C32"}, {code: "C09"}, {}, {code: "C31"}, {code: "C08"}, {code: null}, {code: "C30"}, {code: "C07"}, {code: "C18"}, {code: "C29"}, {code: "C06"}, {code: "C17"}, {code: "C28"}, {code: "C05"}, {code: "C16"}]}, {out: [{price: 30, group: "g0"}, {price: 140, group: "g2"}, {price: 250, group: "g1"}, {price: -1, group: "none"}, {price: 130, group: "g1"}, {price: -1, group: "none"}, {price: 10, group: "g1"}, {price: 120, group: "g0"}, {price: 230, group: "g2"}, {price: 0, group: "g0"}, {price: 110, group: "g2"}, {price: 220, group: "g1"}, {price: -1, group: "none"}, {price: 100, group: "g1"}, {price: 210, group: "g0"}, {price: -1, group: "none"}, {price: 90, group: "g0"}, {price: 200, group: "g2"}, {price: -1, group: "none"}, {price: 80, group: "g2"}, {price: -1, group: "none"}, {price: -1, group: "none"}, {price: 70, group: "g1"}, {price: 180, group: "g0"}, {price: 290, group: "g2"}, {price: 60, group: "g0"}, {price: 170, group: "g2"}, {price: 280, group: "g1"}, {price: -1, group: "none"}, {price: 160, group: "g1"}, {price: 270, group: "g0"}, {price: 40, group: "g1"}, {price: 150, group: "g0"}, {price: 260, group: "g2"}, {price: 30, group: "g0"}, {price: 140, group: "g2"}, {price: 250, group: "g1"}, {price: -1, group: "none"}, {price: 130, group: "g1"}, {price: 240, group: "g0"}, {price: 10, group: "g1"}, {price: 120, group: "g0"}, {price: 230, group: "g2"}, {price: 0, group: "g0"}, {price: 110, group: "g2"}, {price: 220, group: "g1"}, {price: -1, group: "none"}, {price: 100, group: "g1"}, {price: 210, group: "g0"}, {price: -1, group: "none"}, {price: 90, group: "g0"}, {price: -1, group: "none"}, {price: -1, group: "none"}, {price: 80, group: "g2"}, {price: -1, group: "none"}, {price: -1, group: "none"}, {price: 70, group: "g1"}, {price: 180, group: "g0"}, {price: 290, group: "g2"}, {price: 60, group: "g0"}, {price: 170, group: "g2"}, {price: 280, group: "g1"}, {price: 50, group: "g2"}, {price: 160, group: "g1"}]}],
+    [{items: [{code: "C07"}, {code: "C18"}, {code: "C29"}, {code: "C06"}, {code: "C17"}, {}, {code: "C05"}, {code: null}, {code: "C27"}, {code: "C04"}, {code: "C15"}, {code: "C26"}, {code: "C03"}, {code: "C14"}, {code: "C25"}, {code: "C02"}, {code: "C13"}, {code: "C24"}, {code: "C01"}, {code: "C12"}, {code: "C23"}, {code: "C00"}, {code: "C11"}, {code: "C22"}, {code: null}, {code: "C10"}, {code: "C21"}, {code: "C32"}, {}, {code: "C20"}, {code: "C31"}, {code: "C08"}, {code: "C19"}, {code: "C30"}, {code: "C07"}, {code: "C18"}, {code: "C29"}, {code: "C06"}, {code: "C17"}, {code: "C28"}, {code: "C05"}, {code: null}, {code: "C27"}, {code: "C04"}, {code: "C15"}, {code: "C26"}, {code: "C03"}, {code: "C14"}, {code: "C25"}, {code: "C02"}, {code: "C13"}, {}, {code: "C01"}, {code: "C12"}, {code: "C23"}, {code: "C00"}, {code: "C11"}, {code: "C22"}, {code: null}, {code: "C10"}, {code: "C21"}, {code: "C32"}, {code: "C09"}, {code: "C20"}]}, {out: [{price: 70, group: "g1"}, {price: 180, group: "g0"}, {price: 290, group: "g2"}, {price: 60, group: "g0"}, {price: 170, group: "g2"}, {price: -1, group: "none"}, {price: 50, group: "g2"}, {price: -1, group: "none"}, {price: 270, group: "g0"}, {price: 40, group: "g1"}, {price: 150, group: "g0"}, {price: 260, group: "g2"}, {price: 30, group: "g0"}, {price: 140, group: "g2"}, {price: 250, group: "g1"}, {price: 20, group: "g2"}, {price: 130, group: "g1"}, {price: 240, group: "g0"}, {price: 10, group: "g1"}, {price: 120, group: "g0"}, {price: 230, group: "g2"}, {price: 0, group: "g0"}, {price: 110, group: "g2"}, {price: 220, group: "g1"}, {price: -1, group: "none"}, {price: 100, group: "g1"}, {price: 210, group: "g0"}, {price: -1, group: "none"}, {price: -1, group: "none"}, {price: 200, group: "g2"}, {price: -1, group: "none"}, {price: 80, group: "g2"}, {price: 190, group: "g1"}, {price: -1, group: "none"}, {price: 70, group: "g1"}, {price: 180, group: "g0"}, {price: 290, group: "g2"}, {price: 60, group: "g0"}, {price: 170, group: "g2"}, {price: 280, group: "g1"}, {price: 50, group: "g2"}, {price: -1, group: "none"}, {price: 270, group: "g0"}, {price: 40, group: "g1"}, {price: 150, group: "g0"}, {price: 260, group: "g2"}, {price: 30, group: "g0"}, {price: 140, group: "g2"}, {price: 250, group: "g1"}, {price: 20, group: "g2"}, {price: 130, group: "g1"}, {price: -1, group: "none"}, {price: 10, group: "g1"}, {price: 120, group: "g0"}, {price: 230, group: "g2"}, {price: 0, group: "g0"}, {price: 110, group: "g2"}, {price: 220, group: "g1"}, {price: -1, group: "none"}, {price: 100, group: "g1"}, {price: 210, group: "g0"}, {price: -1, group: "none"}, {price: 90, group: "g0"}, {price: 200, group: "g2"}]}],
+  ],
+}
+
+{
+  name: "sub-decision with a table over 50 generated items, aggregated downstream",
+  decisions: {
+    band: {nodes: [{table: "t", inputs: ["n"], outputs: ["band"], rules: [
+      ["< 10", "'low'"],
+      ["[10..39]", "'mid'"],
+      ["", "'high'"],
+    ]}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "bands", key: "band", inputField: "map([0..49], {n: #})", outputPath: "bands", executionMode: "loop"},
+      {expression: "agg", fields: {
+        n: "len(bands)",
+        low: "len(filter(bands, #.band == 'low'))",
+        mid: "len(filter(bands, #.band == 'mid'))",
+        high: "len(filter(bands, #.band == 'high'))",
+        last: "bands[49].band",
+      }},
+    ],
+  },
+  cases: [
+    [{}, {n: 50, low: 10, mid: 30, high: 10, last: "high"}],
+    [{n: 1000}, {n: 50, low: 10, mid: 30, high: 10, last: "high"}],
+  ],
+}

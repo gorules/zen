@@ -1,0 +1,773 @@
+// Numbers in policies. Every number is an exact decimal (28 significant digits, max magnitude
+// 79228162514264337593543950335) from the input, through every block, to the output. The
+// arithmetic itself is specified by the expression suite (01/02-numbers, 06-rounding,
+// 08-arithmetic); this chapter pins what the policy engine adds: decimals carried between
+// blocks, through members and aggregates, into table cells and match conditions, division by
+// zero producing a null that later blocks must cope with, and overflow failing the evaluation.
+// Outputs compare by value, so `1.50` and `1.5` are the same expected number.
+
+// ---------------------------------------------------------------------------------------------
+// Exactness across blocks: no binary floating point anywhere along a chain of computed values.
+
+{
+  name: "decimal sums carried between blocks stay exact",
+  policy: {
+    models: {a: {x: "number", y: "number"}},
+    blocks: [
+      {expression: "a.sum", value: "a.x + a.y"},
+      {expression: "a.isPoint3", value: "a.sum == 0.3"},
+      {expression: "a.back", value: "a.sum - a.y"},
+      {expression: "a.same", value: "a.back == a.x"},
+    ],
+  },
+  cases: [
+    [{a: {x: 0.1, y: 0.2}}, {a: {x: 0.1, y: 0.2, sum: 0.3, isPoint3: true, back: 0.1, same: true}}],
+    [{a: {x: 0.7, y: -0.4}}, {a: {x: 0.7, y: -0.4, sum: 0.3, isPoint3: true, back: 0.7, same: true}}],
+    [{a: {x: 1.1, y: 2.2}}, {a: {x: 1.1, y: 2.2, sum: 3.3, isPoint3: false, back: 1.1, same: true}}],
+    [{a: {x: 0.0000000001, y: 0.2999999999}}, {a: {x: 0.0000000001, y: 0.2999999999, sum: 0.3, isPoint3: true, back: 0.0000000001, same: true}}],
+  ],
+}
+
+{
+  name: "trailing zeros do not change equality",
+  policy: {
+    models: {a: {x: "number"}},
+    blocks: [
+      {expression: "a.isOne", value: "a.x == 1"},
+      {expression: "a.inList", value: "a.x in [1, 2.5]"},
+      {expression: "a.twice", value: "a.x * 2"},
+    ],
+  },
+  cases: [
+    [{a: {x: 1}}, {a: {x: 1, isOne: true, inList: true, twice: 2}}],
+    [{a: {x: 1.0}}, {a: {x: 1.0, isOne: true, inList: true, twice: 2.0}}],
+    [{a: {x: 1.000}}, {a: {x: 1.000, isOne: true, inList: true, twice: 2}}],
+    [{a: {x: 2.50}}, {a: {x: 2.50, isOne: false, inList: true, twice: 5}}],
+    [{a: {x: 1.0000000001}}, {a: {x: 1.0000000001, isOne: false, inList: false, twice: 2.0000000002}}],
+  ],
+}
+
+{
+  name: "money multiplication keeps every digit",
+  policy: {
+    models: {line: {qty: "number", price: "number", rate: "number"}},
+    blocks: [
+      {expression: "line.net", value: "line.qty * line.price"},
+      {expression: "line.tax", value: "line.net * line.rate"},
+      {expression: "line.gross", value: "line.net + line.tax"},
+    ],
+  },
+  cases: [
+    [{line: {qty: 3, price: 19.99, rate: 0.19}}, {line: {qty: 3, price: 19.99, rate: 0.19, net: 59.97, tax: 11.3943, gross: 71.3643}}],
+    [{line: {qty: 0.5, price: 0.01, rate: 0.2}}, {line: {qty: 0.5, price: 0.01, rate: 0.2, net: 0.005, tax: 0.001, gross: 0.006}}],
+    [{line: {qty: 1000000, price: 1234.5678, rate: 0.075}}, {line: {qty: 1000000, price: 1234.5678, rate: 0.075, net: 1234567800, tax: 92592585, gross: 1327160385}}],
+    [{line: {qty: -2, price: 10.10, rate: 0.1}}, {line: {qty: -2, price: 10.10, rate: 0.1, net: -20.2, tax: -2.02, gross: -22.22}}],
+  ],
+}
+
+{
+  name: "large and tiny inputs pass through and compute exactly",
+  policy: {
+    models: {a: {x: "number"}},
+    blocks: [
+      {expression: "a.plusOne", value: "a.x + 1"},
+      {expression: "a.half", value: "a.x / 2"},
+    ],
+  },
+  cases: [
+    [{a: {x: 12345678901234567890123456}}, {a: {x: 12345678901234567890123456, plusOne: 12345678901234567890123457, half: 6172839450617283945061728}}],
+    [{a: {x: 0.0000000000000000000000000002}}, {a: {x: 0.0000000000000000000000000002, plusOne: 1.0000000000000000000000000002, half: 0.0000000000000000000000000001}}],
+    [{a: {x: -9999999999999999999999999999}}, {a: {x: -9999999999999999999999999999, plusOne: -9999999999999999999999999998, half: -4999999999999999999999999999.5}}],
+    [{a: {x: 1e3}}, {a: {x: 1000, plusOne: 1001, half: 500}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Division: 28 significant digits; a repeating fraction is cut, not rounded to binary.
+
+{
+  name: "division keeps 28 significant digits",
+  policy: {
+    models: {a: {x: "number", y: "number"}},
+    blocks: [
+      {expression: "a.q", value: "a.x / a.y"},
+      {expression: "a.back", value: "a.q * a.y"},
+    ],
+  },
+  cases: [
+    [{a: {x: 1, y: 3}}, {a: {x: 1, y: 3, q: 0.3333333333333333333333333333, back: 0.9999999999999999999999999999}}],
+    [{a: {x: 2, y: 3}}, {a: {x: 2, y: 3, q: 0.6666666666666666666666666667, back: 2.0000000000000000000000000001}}],
+    [{a: {x: 10, y: 4}}, {a: {x: 10, y: 4, q: 2.5, back: 10}}],
+    [{a: {x: -7, y: 2}}, {a: {x: -7, y: 2, q: -3.5, back: -7}}],
+    [{a: {x: 1, y: 8}}, {a: {x: 1, y: 8, q: 0.125, back: 1}}],
+  ],
+}
+
+{
+  name: "modulo follows the sign of the dividend",
+  policy: {
+    models: {a: {x: "number", y: "number"}},
+    blocks: [{expression: "a.r", value: "a.x % a.y"}],
+  },
+  cases: [
+    [{a: {x: 7, y: 2}}, {a: {x: 7, y: 2, r: 1}}],
+    [{a: {x: -7, y: 2}}, {a: {x: -7, y: 2, r: -1}}],
+    [{a: {x: 7, y: -2}}, {a: {x: 7, y: -2, r: 1}}],
+    [{a: {x: 5.5, y: 2}}, {a: {x: 5.5, y: 2, r: 1.5}}],
+    [{a: {x: 0.3, y: 0.1}}, {a: {x: 0.3, y: 0.1, r: 0}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Division and modulo by zero give null (chapter 02). The null is a computed value like any
+// other: it is written to the output and every later block that reads it sees null.
+
+{
+  name: "division and modulo by zero write null",
+  policy: {
+    models: {a: {x: "number", y: "number"}},
+    blocks: [
+      {expression: "a.q", value: "a.x / a.y"},
+      {expression: "a.r", value: "a.x % a.y"},
+    ],
+  },
+  cases: [
+    [{a: {x: 4, y: 0}}, {a: {x: 4, y: 0, q: null, r: null}}],
+    [{a: {x: 0, y: 0}}, {a: {x: 0, y: 0, q: null, r: null}}],
+    [{a: {x: -1, y: 0.0}}, {a: {x: -1, y: 0.0, q: null, r: null}}],
+    [{a: {x: 4, y: 0.5}}, {a: {x: 4, y: 0.5, q: 8, r: 0}}],
+  ],
+}
+
+{
+  name: "a null quotient defaulted with ??",
+  policy: {
+    models: {a: {x: "number", y: "number"}},
+    blocks: [
+      {expression: "a.q", value: "a.x / a.y"},
+      {expression: "a.safe", value: "a.q ?? 0"},
+      {expression: "a.pct", value: "(a.q ?? 0) * 100"},
+    ],
+  },
+  cases: [
+    [{a: {x: 1, y: 4}}, {a: {x: 1, y: 4, q: 0.25, safe: 0.25, pct: 25}}],
+    [{a: {x: 1, y: 0}}, {a: {x: 1, y: 0, q: null, safe: 0, pct: 0}}],
+    [{a: {x: 0, y: 5}}, {a: {x: 0, y: 5, q: 0, safe: 0, pct: 0}}],
+  ],
+}
+
+{
+  name: "arithmetic on a null quotient fails the evaluation",
+  policy: {
+    models: {a: {x: "number", y: "number"}},
+    blocks: [
+      {expression: "a.q", value: "a.x / a.y"},
+      {expression: "a.next", value: "a.q + 1"},
+    ],
+  },
+  cases: [
+    [{a: {x: 1, y: 2}}, {a: {x: 1, y: 2, q: 0.5, next: 1.5}}],
+    [{a: {x: 1, y: 0}}, "!error: ExpressionFailed"],
+  ],
+}
+
+{
+  name: "a null quotient in a match ordering condition fails the evaluation",
+  policy: {
+    models: {a: {x: "number", y: "number"}},
+    blocks: [
+      {expression: "a.q", value: "a.x / a.y"},
+      {match: "a.band", arms: [["a.q > 1", "'big'"], ["", "'small'"]]},
+    ],
+  },
+  cases: [
+    [{a: {x: 4, y: 2}}, {a: {x: 4, y: 2, q: 2, band: "big"}}],
+    [{a: {x: 1, y: 2}}, {a: {x: 1, y: 2, q: 0.5, band: "small"}}],
+    [{a: {x: 4, y: 0}}, "!error: ExpressionFailed"],
+  ],
+}
+
+{
+  name: "a null quotient guarded in the match",
+  policy: {
+    models: {a: {x: "number", y: "number"}},
+    blocks: [
+      {expression: "a.q", value: "a.x / a.y"},
+      {match: "a.band", arms: [["a.q == null", "'undefined'"], ["(a.q ?? 0) > 1", "'big'"], ["", "'small'"]]},
+    ],
+  },
+  cases: [
+    [{a: {x: 4, y: 2}}, {a: {x: 4, y: 2, q: 2, band: "big"}}],
+    [{a: {x: 4, y: 0}}, {a: {x: 4, y: 0, q: null, band: "undefined"}}],
+    [{a: {x: 1, y: 4}}, {a: {x: 1, y: 4, q: 0.25, band: "small"}}],
+  ],
+}
+
+{
+  name: "a null quotient in a table ordering cell fails the evaluation",
+  policy: {
+    models: {a: {x: "number", y: "number"}},
+    blocks: [
+      {expression: "a.q", value: "a.x / a.y"},
+      {table: "dt", inputs: ["a.q"], outputs: ["a.band"], rules: [["> 1", "'big'"], ["", "'small'"]]},
+    ],
+  },
+  cases: [
+    [{a: {x: 4, y: 2}}, {a: {x: 4, y: 2, q: 2, band: "big"}}],
+    [{a: {x: 4, y: 0}}, "!error: ExpressionFailed"],
+  ],
+}
+
+{
+  name: "a null quotient matches an explicit null row",
+  policy: {
+    models: {a: {x: "number", y: "number"}},
+    blocks: [
+      {expression: "a.q", value: "a.x / a.y"},
+      {table: "dt", inputs: ["a.q"], outputs: ["a.band"], rules: [["null", "'none'"], ["2", "'two'"], ["", "'other'"]]},
+    ],
+  },
+  cases: [
+    [{a: {x: 4, y: 0}}, {a: {x: 4, y: 0, q: null, band: "none"}}],
+    [{a: {x: 4, y: 2}}, {a: {x: 4, y: 2, q: 2, band: "two"}}],
+    [{a: {x: 4, y: 1}}, {a: {x: 4, y: 1, q: 4, band: "other"}}],
+  ],
+}
+
+{
+  name: "per-member division by zero nulls only that member",
+  policy: {
+    models: {o: {items: "item[]"}, item: {num: "number", den: "number"}},
+    blocks: [
+      {expression: "item.ratio", value: "item.num / item.den"},
+      {expression: "o.defined", value: "count(o.items, #.ratio != null)"},
+      {expression: "o.total", value: "sum(map(o.items, #.ratio ?? 0))"},
+    ],
+  },
+  cases: [
+    [
+      {o: {items: [{num: 1, den: 2}, {num: 1, den: 0}, {num: 3, den: 4}]}},
+      {o: {items: [{num: 1, den: 2, ratio: 0.5}, {num: 1, den: 0, ratio: null}, {num: 3, den: 4, ratio: 0.75}], defined: 2, total: 1.25}},
+    ],
+    [{o: {items: [{num: 0, den: 0}]}}, {o: {items: [{num: 0, den: 0, ratio: null}], defined: 0, total: 0}}],
+    [{o: {items: []}}, {o: {items: [], defined: 0, total: 0}}],
+  ],
+}
+
+{
+  name: "summing per-member quotients without a default fails on a zero divisor",
+  policy: {
+    models: {o: {items: "item[]"}, item: {num: "number", den: "number"}},
+    blocks: [
+      {expression: "item.ratio", value: "item.num / item.den"},
+      {expression: "o.total", value: "sum(map(o.items, #.ratio))"},
+    ],
+  },
+  cases: [
+    [{o: {items: [{num: 1, den: 2}, {num: 1, den: 4}]}}, {o: {items: [{num: 1, den: 2, ratio: 0.5}, {num: 1, den: 4, ratio: 0.25}], total: 0.75}}],
+    [{o: {items: [{num: 1, den: 2}, {num: 1, den: 0}]}}, "!error: ExpressionFailed"],
+  ],
+}
+
+{
+  name: "an average over an empty relationship divided by its count",
+  policy: {
+    models: {o: {items: "item[]"}, item: {v: "number"}},
+    blocks: [
+      {expression: "o.mean", value: "sum(map(o.items, #.v)) / len(o.items)"},
+    ],
+  },
+  cases: [
+    [{o: {items: [{v: 1}, {v: 2}]}}, {o: {items: [{v: 1}, {v: 2}], mean: 1.5}}],
+    [{o: {items: []}}, {o: {items: [], mean: null}}],
+    [{o: {items: [{v: 0.1}, {v: 0.2}, {v: 0.3}]}}, {o: {items: [{v: 0.1}, {v: 0.2}, {v: 0.3}], mean: 0.2}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Overflow fails the evaluation (ExpressionFailed); it never wraps or turns into a float.
+
+{
+  name: "addition and multiplication overflow fail the evaluation",
+  policy: {
+    models: {a: {x: "number", y: "number"}},
+    blocks: [{expression: "a.sum", value: "a.x + a.y"}],
+  },
+  cases: [
+    [{a: {x: 79228162514264337593543950335, y: 0}}, {a: {x: 79228162514264337593543950335, y: 0, sum: 79228162514264337593543950335}}],
+    [{a: {x: 79228162514264337593543950335, y: 1}}, "!error: ExpressionFailed"],
+    [{a: {x: -79228162514264337593543950335, y: -1}}, "!error: ExpressionFailed"],
+    [{a: {x: 79228162514264337593543950335, y: -1}}, {a: {x: 79228162514264337593543950335, y: -1, sum: 79228162514264337593543950334}}],
+  ],
+}
+
+{
+  name: "multiplication overflow",
+  policy: {
+    models: {a: {x: "number", y: "number"}},
+    blocks: [{expression: "a.p", value: "a.x * a.y"}],
+  },
+  cases: [
+    [{a: {x: 10000000000000000000000000000, y: 7}}, {a: {x: 10000000000000000000000000000, y: 7, p: 70000000000000000000000000000}}],
+    [{a: {x: 10000000000000000000000000000, y: 8}}, "!error: ExpressionFailed"],
+    [{a: {x: 0.0000000000000001, y: 0.0000000000000001}}, {a: {x: 0.0000000000000001, y: 0.0000000000000001, p: 0}}],
+  ],
+}
+
+{
+  name: "exponent overflow fails the evaluation",
+  policy: {
+    models: {a: {x: "number", y: "number"}},
+    blocks: [{expression: "a.p", value: "a.x ^ a.y"}],
+  },
+  cases: [
+    [{a: {x: 10, y: 28}}, {a: {x: 10, y: 28, p: 10000000000000000000000000000}}],
+    [{a: {x: 10, y: 30}}, "!error: ExpressionFailed"],
+    [{a: {x: 2, y: 10}}, {a: {x: 2, y: 10, p: 1024}}],
+    [{a: {x: 4, y: 0.5}}, {a: {x: 4, y: 0.5, p: 2.0000000000000000000000000003}}, "question: a fractional exponent is computed approximately, so 4 ^ 0.5 is off by 3e-28 instead of the exact 2"],
+    [{a: {x: 2, y: -1}}, {a: {x: 2, y: -1, p: 0.5}}],
+  ],
+}
+
+{
+  name: "an overflowing aggregate fails the evaluation",
+  policy: {
+    models: {a: {xs: "number[]"}},
+    blocks: [
+      {expression: "a.total", value: "sum(a.xs)"},
+    ],
+  },
+  cases: [
+    [{a: {xs: [79228162514264337593543950335, 0]}}, {a: {xs: [79228162514264337593543950335, 0], total: 79228162514264337593543950335}}],
+    [{a: {xs: [79228162514264337593543950335, 1]}}, "!error: ExpressionFailed"],
+    [{a: {xs: [50000000000000000000000000000, 50000000000000000000000000000]}}, "!error: ExpressionFailed"],
+  ],
+}
+
+{
+  name: "an overflow in one block fails the evaluation even when other blocks succeed",
+  policy: {
+    models: {a: {x: "number"}},
+    blocks: [
+      {expression: "a.ok", value: "a.x - 1"},
+      {expression: "a.big", value: "a.x * 2"},
+    ],
+  },
+  cases: [
+    [{a: {x: 5}}, {a: {x: 5, ok: 4, big: 10}}],
+    [{a: {x: 50000000000000000000000000000}}, "!error: ExpressionFailed"],
+    {input: {a: {x: 50000000000000000000000000000}}, goals: ["a.ok"], output: {a: {x: 50000000000000000000000000000, ok: 49999999999999999999999999999}}},
+  ],
+}
+
+{
+  name: "an overflowing member fails the evaluation",
+  policy: {
+    models: {o: {items: "item[]"}, item: {v: "number"}},
+    blocks: [{expression: "item.sq", value: "item.v * item.v"}],
+  },
+  cases: [
+    [{o: {items: [{v: 3}, {v: -4}]}}, {o: {items: [{v: 3, sq: 9}, {v: -4, sq: 16}]}}],
+    [{o: {items: [{v: 3}, {v: 100000000000000000}]}}, "!error: ExpressionFailed"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Rounding in blocks: round half away from zero, on exact decimals (1.005 is exactly 1.005, so
+// it rounds up to 1.01).
+
+{
+  name: "rounding functions on exact decimals",
+  policy: {
+    models: {a: {x: "number"}},
+    blocks: [
+      {expression: "a.r", value: "round(a.x)"},
+      {expression: "a.r2", value: "round(a.x, 2)"},
+      {expression: "a.f", value: "floor(a.x)"},
+      {expression: "a.c", value: "ceil(a.x)"},
+      {expression: "a.t", value: "trunc(a.x)"},
+    ],
+  },
+  cases: [
+    [{a: {x: 2.5}}, {a: {x: 2.5, r: 3, r2: 2.5, f: 2, c: 3, t: 2}}],
+    [{a: {x: -2.5}}, {a: {x: -2.5, r: -3, r2: -2.5, f: -3, c: -2, t: -2}}],
+    [{a: {x: 1.005}}, {a: {x: 1.005, r: 1, r2: 1.01, f: 1, c: 2, t: 1}}],
+    [{a: {x: 0.125}}, {a: {x: 0.125, r: 0, r2: 0.13, f: 0, c: 1, t: 0}}],
+    [{a: {x: -0.125}}, {a: {x: -0.125, r: 0, r2: -0.13, f: -1, c: 0, t: 0}}],
+    [{a: {x: 7}}, {a: {x: 7, r: 7, r2: 7, f: 7, c: 7, t: 7}}],
+  ],
+}
+
+{
+  name: "round per line vs round the total",
+  policy: {
+    models: {invoice: {lines: "invLine[]", rate: "number"}, invLine: {net: "number"}},
+    blocks: [
+      {expression: "invLine.tax", value: "round(invLine.net * invoice.rate, 2)"},
+      {expression: "invoice.taxOfLines", value: "sum(map(invoice.lines, #.tax))"},
+      {expression: "invoice.taxOfTotal", value: "round(sum(map(invoice.lines, #.net)) * invoice.rate, 2)"},
+      {expression: "invoice.diff", value: "invoice.taxOfLines - invoice.taxOfTotal"},
+    ],
+  },
+  cases: [
+    [
+      {invoice: {rate: 0.19, lines: [{net: 0.05}, {net: 0.05}, {net: 0.05}]}},
+      {invoice: {rate: 0.19, lines: [{net: 0.05, tax: 0.01}, {net: 0.05, tax: 0.01}, {net: 0.05, tax: 0.01}], taxOfLines: 0.03, taxOfTotal: 0.03, diff: 0}},
+    ],
+    [
+      {invoice: {rate: 0.2, lines: [{net: 0.025}, {net: 0.025}, {net: 0.025}, {net: 0.025}]}},
+      {invoice: {rate: 0.2, lines: [{net: 0.025, tax: 0.01}, {net: 0.025, tax: 0.01}, {net: 0.025, tax: 0.01}, {net: 0.025, tax: 0.01}], taxOfLines: 0.04, taxOfTotal: 0.02, diff: 0.02}},
+    ],
+    [
+      {invoice: {rate: 0.07, lines: [{net: 9.99}, {net: 0.01}]}},
+      {invoice: {rate: 0.07, lines: [{net: 9.99, tax: 0.70}, {net: 0.01, tax: 0}], taxOfLines: 0.7, taxOfTotal: 0.7, diff: 0}},
+    ],
+  ],
+}
+
+{
+  name: "a rounded value read by a table and a match",
+  policy: {
+    models: {a: {score: "number"}},
+    blocks: [
+      {expression: "a.rounded", value: "round(a.score)"},
+      {table: "dt", inputs: ["a.rounded"], outputs: ["a.grade"], rules: [[">= 90", "'A'"], [">= 80", "'B'"], ["", "'C'"]]},
+      {match: "a.passed", arms: [["a.rounded >= 50", "true"], ["", "false"]]},
+    ],
+  },
+  cases: [
+    [{a: {score: 89.5}}, {a: {score: 89.5, rounded: 90, grade: "A", passed: true}}],
+    [{a: {score: 89.49}}, {a: {score: 89.49, rounded: 89, grade: "B", passed: true}}],
+    [{a: {score: 49.5}}, {a: {score: 49.5, rounded: 50, grade: "C", passed: true}}],
+    [{a: {score: 49.4999}}, {a: {score: 49.4999, rounded: 49, grade: "C", passed: false}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Aggregates over decimals: members, primitive arrays, computed member values.
+
+{
+  name: "sum, avg, min, max and median over decimal members",
+  policy: {
+    models: {o: {items: "item[]"}, item: {v: "number"}},
+    blocks: [
+      {expression: "o.sum", value: "sum(map(o.items, #.v))"},
+      {expression: "o.avg", value: "avg(map(o.items, #.v))"},
+      {expression: "o.min", value: "min(map(o.items, #.v))"},
+      {expression: "o.max", value: "max(map(o.items, #.v))"},
+      {expression: "o.median", value: "median(map(o.items, #.v))"},
+    ],
+  },
+  cases: [
+    [{o: {items: [{v: 0.1}, {v: 0.2}, {v: 0.3}]}}, {o: {items: [{v: 0.1}, {v: 0.2}, {v: 0.3}], sum: 0.6, avg: 0.2, min: 0.1, max: 0.3, median: 0.2}}],
+    [{o: {items: [{v: -1.5}, {v: 1.5}]}}, {o: {items: [{v: -1.5}, {v: 1.5}], sum: 0, avg: 0, min: -1.5, max: 1.5, median: 0}}],
+    [{o: {items: [{v: 1}, {v: 2}]}}, {o: {items: [{v: 1}, {v: 2}], sum: 3, avg: 1.5, min: 1, max: 2, median: 1.5}}],
+    [{o: {items: [{v: 1}, {v: 1}, {v: 2}]}}, {o: {items: [{v: 1}, {v: 1}, {v: 2}], sum: 4, avg: 1.3333333333333333333333333333, min: 1, max: 2, median: 1}}],
+    [{o: {items: [{v: 0.01}]}}, {o: {items: [{v: 0.01}], sum: 0.01, avg: 0.01, min: 0.01, max: 0.01, median: 0.01}}],
+  ],
+}
+
+{
+  name: "ten tenths make exactly one",
+  policy: {
+    models: {a: {xs: "number[]"}},
+    blocks: [
+      {expression: "a.total", value: "sum(a.xs)"},
+      {expression: "a.isOne", value: "a.total == 1"},
+      {expression: "a.mean", value: "avg(a.xs)"},
+    ],
+  },
+  cases: [
+    [{a: {xs: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]}}, {a: {xs: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1], total: 1, isOne: true, mean: 0.1}}],
+    [{a: {xs: [0.3333333333333333333333333333, 0.3333333333333333333333333333, 0.3333333333333333333333333333]}}, {a: {xs: [0.3333333333333333333333333333, 0.3333333333333333333333333333, 0.3333333333333333333333333333], total: 0.9999999999999999999999999999, isOne: false, mean: 0.3333333333333333333333333333}}],
+  ],
+}
+
+{
+  name: "aggregates over computed decimal member values",
+  policy: {
+    models: {cart: {lines: "cartLine[]"}, cartLine: {qty: "number", unit: "number"}},
+    blocks: [
+      {expression: "cartLine.amount", value: "cartLine.qty * cartLine.unit"},
+      {expression: "cart.total", value: "sum(map(cart.lines, #.amount))"},
+      {expression: "cart.largest", value: "max(map(cart.lines, #.amount))"},
+      {expression: "cart.share", value: "map(cart.lines, round(#.amount / cart.total * 100, 1))"},
+    ],
+  },
+  cases: [
+    [
+      {cart: {lines: [{qty: 1, unit: 0.1}, {qty: 2, unit: 0.1}, {qty: 7, unit: 0.1}]}},
+      {cart: {lines: [{qty: 1, unit: 0.1, amount: 0.1}, {qty: 2, unit: 0.1, amount: 0.2}, {qty: 7, unit: 0.1, amount: 0.7}], total: 1, largest: 0.7, share: [10, 20, 70]}},
+    ],
+    [
+      {cart: {lines: [{qty: 1, unit: 1}, {qty: 1, unit: 2}]}},
+      {cart: {lines: [{qty: 1, unit: 1, amount: 1}, {qty: 1, unit: 2, amount: 2}], total: 3, largest: 2, share: [33.3, 66.7]}},
+    ],
+  ],
+}
+
+{
+  name: "a member's share of a computed total with a zero total",
+  policy: {
+    models: {pool: {parts: "part[]"}, part: {w: "number"}},
+    blocks: [
+      {expression: "pool.total", value: "sum(map(pool.parts, #.w))"},
+      {expression: "part.share", value: "part.w / pool.total"},
+    ],
+  },
+  cases: [
+    [{pool: {parts: [{w: 1}, {w: 3}]}}, {pool: {parts: [{w: 1, share: 0.25}, {w: 3, share: 0.75}], total: 4}}],
+    [{pool: {parts: [{w: 0}, {w: 0}]}}, {pool: {parts: [{w: 0, share: null}, {w: 0, share: null}], total: 0}}],
+    [{pool: {parts: [{w: 1}, {w: -1}]}}, {pool: {parts: [{w: 1, share: null}, {w: -1, share: null}], total: 0}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Numbers in tables: equality cells compare by value, ranges, comparison cells and comma lists
+// (the numeric "enum" of a table), with decimals and negatives.
+
+{
+  name: "numeric table cells: equality, ranges, lists and comparisons",
+  policy: {
+    models: {a: {x: "number"}},
+    blocks: [
+      {table: "dt", inputs: ["a.x"], outputs: ["a.band"], rules: [
+        ["1", "'one'"],
+        ["[2..5]", "'2-5'"],
+        ["(5..10)", "'5-10 open'"],
+        ["10, 20, 30", "'tens'"],
+        ["< 0", "'negative'"],
+        ["0.5", "'half'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{a: {x: 1.0}}, {a: {x: 1.0, band: "one"}}],
+    [{a: {x: 1.00}}, {a: {x: 1.00, band: "one"}}],
+    [{a: {x: 2}}, {a: {x: 2, band: "2-5"}}],
+    [{a: {x: 5}}, {a: {x: 5, band: "2-5"}}],
+    [{a: {x: 5.0001}}, {a: {x: 5.0001, band: "5-10 open"}}],
+    [{a: {x: 9.99999}}, {a: {x: 9.99999, band: "5-10 open"}}],
+    [{a: {x: 10}}, {a: {x: 10, band: "tens"}}],
+    [{a: {x: 20.0}}, {a: {x: 20.0, band: "tens"}}],
+    [{a: {x: -0.0001}}, {a: {x: -0.0001, band: "negative"}}],
+    [{a: {x: 0.50}}, {a: {x: 0.50, band: "half"}}],
+    [{a: {x: 0}}, {a: {x: 0, band: "other"}}],
+    [{a: {x: 1.5}}, {a: {x: 1.5, band: "other"}}],
+  ],
+}
+
+{
+  name: "decimal boundaries between table rows",
+  policy: {
+    models: {loan: {ltv: "number"}},
+    blocks: [
+      {table: "dt", inputs: ["loan.ltv"], outputs: ["loan.rate"], rules: [
+        ["<= 0.6", "0.031"],
+        ["(0.6..0.8]", "0.0345"],
+        ["(0.8..0.95]", "0.042"],
+        ["", "0.055"],
+      ]},
+      {expression: "loan.ratePct", value: "loan.rate * 100"},
+    ],
+  },
+  cases: [
+    [{loan: {ltv: 0.6}}, {loan: {ltv: 0.6, rate: 0.031, ratePct: 3.1}}],
+    [{loan: {ltv: 0.6000000001}}, {loan: {ltv: 0.6000000001, rate: 0.0345, ratePct: 3.45}}],
+    [{loan: {ltv: 0.8}}, {loan: {ltv: 0.8, rate: 0.0345, ratePct: 3.45}}],
+    [{loan: {ltv: 0.95}}, {loan: {ltv: 0.95, rate: 0.042, ratePct: 4.2}}],
+    [{loan: {ltv: 0.9500001}}, {loan: {ltv: 0.9500001, rate: 0.055, ratePct: 5.5}}],
+    [{loan: {ltv: 0}}, {loan: {ltv: 0, rate: 0.031, ratePct: 3.1}}],
+  ],
+}
+
+{
+  name: "numeric output cells are exact decimals",
+  policy: {
+    models: {a: {tier: "string(a|b|c)"}},
+    blocks: [
+      {table: "dt", inputs: ["a.tier"], outputs: ["a.factor", "a.fee"], rules: [
+        ["'a'", "1.10", "0.333"],
+        ["'b'", "0.9", "-0.01"],
+        ["", "1 / 3", "0.1 * 3"],
+      ]},
+      {expression: "a.check", value: "a.factor * 3"},
+    ],
+  },
+  cases: [
+    [{a: {tier: "a"}}, {a: {tier: "a", factor: 1.1, fee: 0.333, check: 3.3}}],
+    [{a: {tier: "b"}}, {a: {tier: "b", factor: 0.9, fee: -0.01, check: 2.7}}],
+    [{a: {tier: "c"}}, {a: {tier: "c", factor: 0.3333333333333333333333333333, fee: 0.3, check: 0.9999999999999999999999999999}}],
+  ],
+}
+
+{
+  name: "a table over a computed decimal column",
+  policy: {
+    models: {a: {income: "number", debt: "number"}},
+    blocks: [
+      {expression: "a.dti", value: "a.debt / a.income"},
+      {table: "dt", inputs: ["a.dti"], outputs: ["a.decision"], rules: [
+        ["null", "'no income'"],
+        ["<= 0.36", "'approve'"],
+        ["(0.36..0.43]", "'review'"],
+        ["", "'decline'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{a: {income: 1000, debt: 360}}, {a: {income: 1000, debt: 360, dti: 0.36, decision: "approve"}}],
+    [{a: {income: 3, debt: 1.08}}, {a: {income: 3, debt: 1.08, dti: 0.36, decision: "approve"}}],
+    [{a: {income: 1000, debt: 430}}, {a: {income: 1000, debt: 430, dti: 0.43, decision: "review"}}],
+    [{a: {income: 1000, debt: 430.01}}, {a: {income: 1000, debt: 430.01, dti: 0.43001, decision: "decline"}}],
+    [{a: {income: 0, debt: 10}}, {a: {income: 0, debt: 10, dti: null, decision: "no income"}}],
+  ],
+}
+
+{
+  name: "a collect table over numeric thresholds",
+  policy: {
+    models: {a: {amount: "number"}},
+    blocks: [
+      {table: "dt", hit: "collect", inputs: ["a.amount"], outputs: ["a.flags"], rules: [
+        [">= 1000", "'large'"],
+        [">= 9999.99", "'report'"],
+        ["< 0", "'refund'"],
+        ["0.01, 0.02", "'micro'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{a: {amount: 9999.99}}, {a: {amount: 9999.99, flags: ["large", "report"]}}],
+    [{a: {amount: 9999.98}}, {a: {amount: 9999.98, flags: ["large"]}}],
+    [{a: {amount: -5}}, {a: {amount: -5, flags: ["refund"]}}],
+    [{a: {amount: 0.020}}, {a: {amount: 0.020, flags: ["micro"]}}],
+    [{a: {amount: 0}}, {a: {amount: 0, flags: []}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Numeric codes in matches: equality, membership lists and intervals. Enum types are strings
+// only, so a numeric code set is written as a list or an interval in the condition.
+
+{
+  name: "numeric codes in match conditions",
+  policy: {
+    models: {a: {code: "number"}},
+    blocks: [
+      {match: "a.kind", arms: [
+        ["a.code in [1, 2, 3]", "'low'"],
+        ["a.code in [10..20]", "'mid'"],
+        ["a.code == 99.0", "'special'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{a: {code: 1}}, {a: {code: 1, kind: "low"}}],
+    [{a: {code: 3.0}}, {a: {code: 3.0, kind: "low"}}],
+    [{a: {code: 15.5}}, {a: {code: 15.5, kind: "mid"}}],
+    [{a: {code: 20}}, {a: {code: 20, kind: "mid"}}],
+    [{a: {code: 99}}, {a: {code: 99, kind: "special"}}],
+    [{a: {code: 4}}, {a: {code: 4, kind: "other"}}],
+    [{a: {code: 2.5}}, {a: {code: 2.5, kind: "other"}}],
+  ],
+}
+
+{
+  name: "a numeric-looking enum is matched as a string",
+  policy: {
+    models: {a: {level: "string(1|2|3)"}},
+    blocks: [
+      {match: "a.n", arms: [["a.level == '1'", "1"], ["a.level == '2'", "2"], ["", "3"]]},
+      {expression: "a.asNumber", value: "number(a.level) * 10"},
+    ],
+  },
+  cases: [
+    [{a: {level: "1"}}, {a: {level: "1", n: 1, asNumber: 10}}],
+    [{a: {level: "3"}}, {a: {level: "3", n: 3, asNumber: 30}}],
+    [{a: {level: 1}}, "!error: InputValidationFailed"],
+    [{a: {level: "1.0"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "per-member numeric codes in a table",
+  policy: {
+    models: {claim: {items: "claimItem[]"}, claimItem: {code: "number", amount: "number"}},
+    blocks: [
+      {table: "dt", inputs: ["claimItem.code"], outputs: ["claimItem.covered"], rules: [
+        ["100, 101, 102", "1"],
+        ["[200..299]", "0.8"],
+        ["", "0"],
+      ]},
+      {expression: "claimItem.paid", value: "claimItem.amount * claimItem.covered"},
+      {expression: "claim.paid", value: "sum(map(claim.items, #.paid))"},
+    ],
+  },
+  cases: [
+    [
+      {claim: {items: [{code: 100, amount: 50.5}, {code: 250, amount: 100.05}, {code: 300, amount: 10}]}},
+      {claim: {items: [{code: 100, amount: 50.5, covered: 1, paid: 50.5}, {code: 250, amount: 100.05, covered: 0.8, paid: 80.04}, {code: 300, amount: 10, covered: 0, paid: 0}], paid: 130.54}},
+    ],
+    [{claim: {items: []}}, {claim: {items: [], paid: 0}}],
+    [
+      {claim: {items: [{code: 299.5, amount: 1}, {code: 200.0, amount: 2}]}},
+      {claim: {items: [{code: 299.5, amount: 1, covered: 0, paid: 0}, {code: 200.0, amount: 2, covered: 0.8, paid: 1.6}], paid: 1.6}},
+    ],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Numbers and strings: conversion keeps the decimal scale; parsing failures fail the evaluation.
+
+{
+  name: "number to string keeps the scale, string to number parses exactly",
+  policy: {
+    models: {a: {x: "number", s: "string"}},
+    blocks: [
+      {expression: "a.text", value: "string(a.x)"},
+      {expression: "a.parsed", value: "number(a.s)"},
+      {expression: "a.sum", value: "a.x + a.parsed"},
+    ],
+  },
+  cases: [
+    [{a: {x: 1.50, s: "0.25"}}, {a: {x: 1.50, s: "0.25", text: "1.50", parsed: 0.25, sum: 1.75}}],
+    [{a: {x: 0.000, s: "-3"}}, {a: {x: 0.000, s: "-3", text: "0.000", parsed: -3, sum: -3}}],
+    [{a: {x: 10, s: "0.1000"}}, {a: {x: 10, s: "0.1000", text: "10", parsed: 0.1, sum: 10.1}}],
+    [{a: {x: 1, s: "1,5"}}, "!error: ExpressionFailed"],
+    [{a: {x: 1, s: ""}}, "!error: ExpressionFailed"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// A realistic chain: progressive tax brackets over a decimal income.
+
+{
+  name: "progressive tax with decimal brackets",
+  policy: {
+    globals: {env: {brackets: "taxBracket[]"}},
+    models: {person: {income: "number"}, taxBracket: {from: "number", to: "number?", rate: "number"}},
+    blocks: [
+      {expression: "taxBracket.taxable", value: "max([0, min([person.income, taxBracket.to ?? person.income]) - taxBracket.from])"},
+      {expression: "taxBracket.tax", value: "taxBracket.taxable * taxBracket.rate"},
+      {expression: "person.tax", value: "round(sum(map(brackets, #.tax)), 2)"},
+      {expression: "person.effective", value: "person.income > 0 ? round(person.tax / person.income, 4) : 0"},
+    ],
+  },
+  cases: [
+    [
+      {person: {income: 50000}, brackets: [{from: 0, to: 10000, rate: 0}, {from: 10000, to: 40000, rate: 0.2}, {from: 40000, rate: 0.4}]},
+      {person: {income: 50000, tax: 10000, effective: 0.2}, brackets: [{from: 0, to: 10000, rate: 0, taxable: 10000, tax: 0}, {from: 10000, to: 40000, rate: 0.2, taxable: 30000, tax: 6000}, {from: 40000, rate: 0.4, taxable: 10000, tax: 4000}]},
+    ],
+    [
+      {person: {income: 12345.67}, brackets: [{from: 0, to: 10000, rate: 0}, {from: 10000, to: 40000, rate: 0.2}, {from: 40000, rate: 0.4}]},
+      {person: {income: 12345.67, tax: 469.13, effective: 0.038}, brackets: [{from: 0, to: 10000, rate: 0, taxable: 10000, tax: 0}, {from: 10000, to: 40000, rate: 0.2, taxable: 2345.67, tax: 469.134}, {from: 40000, rate: 0.4, taxable: 0, tax: 0}]},
+    ],
+    [
+      {person: {income: 0}, brackets: [{from: 0, to: 10000, rate: 0.1}]},
+      {person: {income: 0, tax: 0, effective: 0}, brackets: [{from: 0, to: 10000, rate: 0.1, taxable: 0, tax: 0}]},
+    ],
+  ],
+}

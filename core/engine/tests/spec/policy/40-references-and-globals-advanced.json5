@@ -1,0 +1,674 @@
+// References and globals, advanced. Chapter 10 pins reference resolution and validation,
+// chapter 11 globals, chapter 23 member blocks reading globals. This chapter combines them:
+// computed properties on reference pools (every pool item is a member, referenced or not), pools
+// read by blocks that also read globals, references inside members and inside globals, global
+// relationships whose entities carry computed properties, and member blocks that read computed
+// globals and global relationships, in both directions.
+
+// ---------------------------------------------------------------------------------------------
+// Computed properties on a pool. A block keyed on a referenced entity runs once per pool item;
+// resolved references are copies of the pool items, so they carry the computed values too.
+
+{
+  name: "a pool computed reading a global runs for every pool item",
+  policy: {
+    globals: {env: {markup: "number"}},
+    models: {cart: {item: "&product"}, product: {id: "string", price: "number"}},
+    blocks: [
+      {expression: "product.gross", value: "product.price * markup"},
+      {expression: "cart.price", value: "cart.item.price * 2"},
+    ],
+  },
+  cases: [
+    [
+      {markup: 2, cart: {item: "p1"}, product: [{id: "p1", price: 5}, {id: "p2", price: 1}]},
+      {markup: 2, cart: {item: {id: "p1", price: 5, gross: 10}, price: 10}, product: [{id: "p1", price: 5, gross: 10}, {id: "p2", price: 1, gross: 2}]},
+    ],
+    [
+      {markup: 1.5, cart: {item: "p2"}, product: [{id: "p1", price: 5}, {id: "p2", price: 1}]},
+      {markup: 1.5, cart: {item: {id: "p2", price: 1, gross: 1.5}, price: 2}, product: [{id: "p1", price: 5, gross: 7.5}, {id: "p2", price: 1, gross: 1.5}]},
+    ],
+    [{cart: {item: "p1"}, product: [{id: "p1", price: 5}]}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "a pool table runs for every pool item, and resolved arrays carry its output",
+  policy: {
+    models: {cart: {items: "&product[]"}, product: {id: "string", price: "number"}},
+    blocks: [
+      {table: "dt", inputs: ["product.price"], outputs: ["product.band"], rules: [["> 3", "'hi'"], ["", "'lo'"]]},
+      {expression: "cart.ids", value: "map(cart.items, #.id)"},
+    ],
+  },
+  cases: [
+    [
+      {cart: {items: ["p2"]}, product: [{id: "p1", price: 5}, {id: "p2", price: 1}]},
+      {cart: {items: [{id: "p2", price: 1, band: "lo"}], ids: ["p2"]}, product: [{id: "p1", price: 5, band: "hi"}, {id: "p2", price: 1, band: "lo"}]},
+    ],
+    [
+      {cart: {items: ["p1", "p2", "p1"]}, product: [{id: "p1", price: 5}, {id: "p2", price: 1}]},
+      {cart: {items: [{id: "p1", price: 5, band: "hi"}, {id: "p2", price: 1, band: "lo"}, {id: "p1", price: 5, band: "hi"}], ids: ["p1", "p2", "p1"]}, product: [{id: "p1", price: 5, band: "hi"}, {id: "p2", price: 1, band: "lo"}]},
+    ],
+    [{cart: {items: []}, product: []}, {cart: {items: [], ids: []}, product: []}],
+  ],
+}
+
+{
+  name: "a pool match reading a global",
+  policy: {
+    globals: {env: {cap: "number"}},
+    models: {cart: {items: "&product[]"}, product: {id: "string", price: "number"}},
+    blocks: [
+      {match: "product.capped", arms: [["product.price > cap", "cap"], ["", "product.price"]]},
+      {expression: "cart.n", value: "len(cart.items)"},
+    ],
+  },
+  cases: [
+    [
+      {cap: 3, cart: {items: ["p1"]}, product: [{id: "p1", price: 5}, {id: "p2", price: 1}]},
+      {cap: 3, cart: {items: [{id: "p1", price: 5, capped: 3}], n: 1}, product: [{id: "p1", price: 5, capped: 3}, {id: "p2", price: 1, capped: 1}]},
+    ],
+    [{cap: 3, cart: {items: []}, product: [{id: "p1", price: 3}]}, {cap: 3, cart: {items: [], n: 0}, product: [{id: "p1", price: 3, capped: 3}]}],
+    [{cart: {items: []}, product: [{id: "p1", price: 5}]}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "nested computed paths on pool items",
+  policy: {
+    models: {cart: {items: "&product[]"}, product: {id: "string", price: "number"}},
+    blocks: [
+      {expression: "product.calc.gross", value: "product.price * 2"},
+      {expression: "product.calc.net", value: "product.price"},
+    ],
+  },
+  cases: [
+    [
+      {cart: {items: ["p1"]}, product: [{id: "p1", price: 5}]},
+      {cart: {items: [{id: "p1", price: 5, calc: {gross: 10, net: 5}}]}, product: [{id: "p1", price: 5, calc: {gross: 10, net: 5}}]},
+    ],
+    [
+      {cart: {items: []}, product: [{id: "p1", price: 0.5}, {id: "p2", price: 0}]},
+      {cart: {items: []}, product: [{id: "p1", price: 0.5, calc: {gross: 1, net: 0.5}}, {id: "p2", price: 0, calc: {gross: 0, net: 0}}]},
+    ],
+  ],
+}
+
+{
+  name: "a pool computed and a root computed read the same global computed",
+  policy: {
+    globals: {env: {base: "number"}},
+    models: {shop: {lines: "shopLine[]", fav: "&product?"}, shopLine: {q: "number"}, product: {id: "string", price: "number"}},
+    blocks: [
+      {expression: "unit", value: "base * 10"},
+      {expression: "shopLine.cost", value: "shopLine.q * unit"},
+      {expression: "product.units", value: "product.price / unit"},
+    ],
+  },
+  cases: [
+    [
+      {base: 1, shop: {lines: [{q: 2}], fav: "p1"}, product: [{id: "p1", price: 50}]},
+      {base: 1, unit: 10, shop: {lines: [{q: 2, cost: 20}], fav: {id: "p1", price: 50, units: 5}}, product: [{id: "p1", price: 50, units: 5}]},
+    ],
+    [
+      {base: 0.5, shop: {lines: [{q: 1}, {q: 3}]}, product: [{id: "p1", price: 50}]},
+      {base: 0.5, unit: 5, shop: {lines: [{q: 1, cost: 5}, {q: 3, cost: 15}]}, product: [{id: "p1", price: 50, units: 10}]},
+    ],
+    [
+      {base: 0, shop: {lines: []}, product: [{id: "p1", price: 50}]},
+      {base: 0, unit: 0, shop: {lines: []}, product: [{id: "p1", price: 50, units: null}]},
+    ],
+  ],
+}
+
+// An absent pool when blocks are keyed on its entity: the pool members' reads become required
+// inputs. An empty pool is fine; a null item in the pool is evaluated like a member (chapter 09).
+
+{
+  name: "an absent pool with per-item blocks",
+  policy: {
+    models: {cart: {items: "&product[]"}, product: {id: "string", price: "number"}},
+    blocks: [
+      {expression: "product.gross", value: "product.price * 2"},
+      {expression: "cart.n", value: "len(cart.items)"},
+    ],
+  },
+  cases: [
+    [{cart: {items: []}}, {cart: {items: [], n: 0}}, "bug: no pool means no pool items, yet product.price is required (MissingRequiredInputs); the pool is not a declared input, and an empty pool runs fine"],
+    [{cart: {items: []}, product: []}, {cart: {items: [], n: 0}, product: []}],
+    [{cart: {items: []}, product: null}, {cart: {items: [], n: 0}, product: null}, "bug: a null pool is treated as missing and product.price is required"],
+    [{cart: {items: []}, product: [null]}, "!error: ExpressionFailed", "question: the null pool item passes validation but the per-item block still runs on it and fails on null * 2, as with null relationship members (chapter 09)"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Reading pool computed values back through references.
+
+{
+  name: "a global reference reading a pool computed value",
+  diagnostics: ["UNDEFINED_VARIABLE"],
+  policy: {
+    globals: {env: {plan: "&product"}},
+    models: {product: {id: "string", price: "number"}},
+    blocks: [
+      {expression: "product.gross", value: "product.price * 2"},
+      {expression: "planGross", value: "plan.gross"},
+    ],
+  },
+  cases: [
+    [
+      {plan: "p1", product: [{id: "p1", price: 5}]},
+      {plan: {id: "p1", price: 5, gross: 10}, planGross: 10, product: [{id: "p1", price: 5, gross: 10}]},
+      "bug: plan.gross is a computed property of the referenced entity, but the type checker reports UNDEFINED_VARIABLE for the read through a global reference (through a root reference it type-checks, chapter 10)",
+    ],
+  ],
+}
+
+{
+  name: "a global reference's computed target without reading it back",
+  policy: {
+    globals: {env: {plan: "&product"}},
+    models: {product: {id: "string", price: "number"}},
+    blocks: [
+      {expression: "product.gross", value: "product.price * 2"},
+      {expression: "planPrice", value: "plan.price"},
+    ],
+  },
+  cases: [
+    [
+      {plan: "p1", product: [{id: "p1", price: 5}]},
+      {plan: {id: "p1", price: 5, gross: 10}, planPrice: 5, product: [{id: "p1", price: 5, gross: 10}]},
+    ],
+    [
+      {plan: "p2", product: [{id: "p1", price: 5}, {id: "p2", price: 0.1}]},
+      {plan: {id: "p2", price: 0.1, gross: 0.2}, planPrice: 0.1, product: [{id: "p1", price: 5, gross: 10}, {id: "p2", price: 0.1, gross: 0.2}]},
+    ],
+  ],
+}
+
+{
+  name: "a reference whose target has a relationship",
+  policy: {
+    models: {cart: {item: "&product"}, product: {id: "string", vendor: "vendor"}, vendor: {name: "string", rating: "number?"}},
+    blocks: [
+      {expression: "cart.vendor", value: "cart.item.vendor.name"},
+      {expression: "cart.rating", value: "cart.item.vendor.rating ?? 0"},
+    ],
+  },
+  cases: [
+    [
+      {cart: {item: "p1"}, product: [{id: "p1", vendor: {name: "V", rating: 4}}]},
+      {cart: {item: {id: "p1", vendor: {name: "V", rating: 4}}, vendor: "V", rating: 4}, product: [{id: "p1", vendor: {name: "V", rating: 4}}]},
+    ],
+    [
+      {cart: {item: "p2"}, product: [{id: "p1", vendor: {name: "V"}}, {id: "p2", vendor: {name: "W"}}]},
+      {cart: {item: {id: "p2", vendor: {name: "W"}}, vendor: "W", rating: 0}, product: [{id: "p1", vendor: {name: "V"}}, {id: "p2", vendor: {name: "W"}}]},
+    ],
+    [{cart: {item: "p1"}, product: [{id: "p1", vendor: {name: 5}}]}, "!error: product[0].vendor.name"],
+  ],
+}
+
+{
+  name: "two pools resolved side by side",
+  policy: {
+    models: {order: {product: "&product", shop: "&shop"}, product: {id: "string", price: "number"}, shop: {id: "string", fee: "number"}},
+    blocks: [{expression: "order.total", value: "order.product.price + order.shop.fee"}],
+  },
+  cases: [
+    [
+      {order: {product: "p", shop: "s"}, product: [{id: "p", price: 5}], shop: [{id: "s", fee: 1}]},
+      {order: {product: {id: "p", price: 5}, shop: {id: "s", fee: 1}, total: 6}, product: [{id: "p", price: 5}], shop: [{id: "s", fee: 1}]},
+    ],
+    [
+      {order: {product: "x", shop: "x"}, product: [{id: "x", price: 5}], shop: [{id: "x", fee: 0.5}]},
+      {order: {product: {id: "x", price: 5}, shop: {id: "x", fee: 0.5}, total: 5.5}, product: [{id: "x", price: 5}], shop: [{id: "x", fee: 0.5}]},
+    ],
+    [{order: {product: "s", shop: "p"}, product: [{id: "p", price: 5}], shop: [{id: "s", fee: 1}]}, "!error: order.product"],
+    [{order: {product: "s", shop: "p"}, product: [{id: "p", price: 5}], shop: [{id: "s", fee: 1}]}, "!error: order.shop"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// References inside members: validated against the root pool but not resolved (chapter 10), so a
+// member sees the id string.
+
+{
+  name: "an optional member reference checked for presence",
+  policy: {
+    models: {order: {lines: "orderLine[]"}, orderLine: {sku: "&product?"}, product: {id: "string", price: "number"}},
+    blocks: [
+      {expression: "orderLine.has", value: "orderLine.sku != null"},
+      {expression: "order.linked", value: "count(order.lines, #.has)"},
+    ],
+  },
+  cases: [
+    [
+      {order: {lines: [{sku: "p1"}, {}]}, product: [{id: "p1", price: 5}]},
+      {order: {lines: [{sku: {id: "p1", price: 5}, has: true}, {has: false}], linked: 1}, product: [{id: "p1", price: 5}]},
+      "bug: member references are not hydrated, so lines[0].sku stays \"p1\"",
+    ],
+    [{order: {lines: [{sku: null}]}}, {order: {lines: [{sku: null, has: false}], linked: 0}}],
+    [{order: {lines: [{sku: "p9"}]}, product: [{id: "p1", price: 5}]}, "!error: order.lines[0].sku"],
+  ],
+}
+
+{
+  name: "a member reference read for a price",
+  policy: {
+    models: {order: {lines: "orderLine[]"}, orderLine: {qty: "number", sku: "&product"}, product: {id: "string", price: "number"}},
+    blocks: [
+      {expression: "orderLine.amount", value: "orderLine.qty * (orderLine.sku.price ?? 0)"},
+      {expression: "order.total", value: "sum(map(order.lines, #.amount))"},
+    ],
+  },
+  cases: [
+    [
+      {order: {lines: [{qty: 2, sku: "p1"}]}, product: [{id: "p1", price: 5}]},
+      {order: {lines: [{qty: 2, sku: {id: "p1", price: 5}, amount: 10}], total: 10}, product: [{id: "p1", price: 5}]},
+      "bug: member references are not hydrated; sku.price reads null, so amount is 0",
+    ],
+    [{order: {lines: []}}, {order: {lines: [], total: 0}}],
+  ],
+}
+
+{
+  name: "a member reference array is validated item by item",
+  policy: {
+    models: {order: {lines: "orderLine[]"}, orderLine: {skus: "&product[]?"}, product: {id: "string"}},
+    blocks: [{expression: "orderLine.n", value: "len(orderLine.skus ?? [])"}],
+  },
+  cases: [
+    [{order: {lines: [{skus: ["a", "b"]}, {}]}, product: [{id: "a"}, {id: "b"}]}, {order: {lines: [{skus: [{id: "a"}, {id: "b"}], n: 2}, {n: 0}]}, product: [{id: "a"}, {id: "b"}]}, "bug: member reference arrays are not hydrated and stay id lists"],
+    [{order: {lines: [{skus: ["a", "z"]}]}, product: [{id: "a"}]}, "!error: order.lines[0].skus[1]"],
+    [{order: {lines: [{skus: []}]}}, {order: {lines: [{skus: [], n: 0}]}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// References in globals.
+
+{
+  name: "a global reference array",
+  policy: {
+    globals: {env: {picks: "&product[]"}},
+    models: {product: {id: "string", price: "number"}},
+    blocks: [
+      {expression: "total", value: "sum(map(picks, #.price))"},
+      {expression: "cheapest", value: "min(map(picks, #.price))"},
+    ],
+  },
+  cases: [
+    [
+      {picks: ["a", "b", "a"], product: [{id: "a", price: 1}, {id: "b", price: 2}]},
+      {picks: [{id: "a", price: 1}, {id: "b", price: 2}, {id: "a", price: 1}], total: 4, cheapest: 1, product: [{id: "a", price: 1}, {id: "b", price: 2}]},
+    ],
+    [{picks: ["b"], product: [{id: "a", price: 1}, {id: "b", price: 2}]}, {picks: [{id: "b", price: 2}], total: 2, cheapest: 2, product: [{id: "a", price: 1}, {id: "b", price: 2}]}],
+    [{picks: [], product: []}, "!error: ExpressionFailed"],
+    [{picks: ["c"], product: [{id: "a", price: 1}]}, "!error: picks[0]"],
+  ],
+}
+
+{
+  name: "an optional global reference with goals",
+  policy: {
+    globals: {env: {plan: "&product?"}},
+    models: {product: {id: "string", price: "number"}},
+    blocks: [
+      {expression: "price", value: "plan.price ?? 0"},
+      {expression: "version", value: "1"},
+    ],
+  },
+  cases: [
+    {input: {}, goals: ["price"], output: {price: 0}},
+    {input: {plan: "p1", product: [{id: "p1", price: 5}]}, goals: ["price"], output: {plan: {id: "p1", price: 5}, price: 5, product: [{id: "p1", price: 5}]}},
+    {input: {plan: "zz", product: [{id: "p1", price: 5}]}, goals: ["version"], output: "!error: InputValidationFailed"},
+    {input: {plan: null}, output: {plan: null, price: 0, version: 1}},
+  ],
+}
+
+{
+  name: "a global reference and a root reference to the same pool",
+  policy: {
+    globals: {env: {defaultPlan: "&plan"}},
+    models: {customer: {plan: "&plan?"}, plan: {id: "string", fee: "number"}},
+    blocks: [
+      {expression: "customer.fee", value: "customer.plan.fee ?? defaultPlan.fee"},
+    ],
+  },
+  cases: [
+    [
+      {defaultPlan: "basic", customer: {}, plan: [{id: "basic", fee: 5}, {id: "pro", fee: 20}]},
+      {defaultPlan: {id: "basic", fee: 5}, customer: {fee: 5}, plan: [{id: "basic", fee: 5}, {id: "pro", fee: 20}]},
+    ],
+    [
+      {defaultPlan: "basic", customer: {plan: "pro"}, plan: [{id: "basic", fee: 5}, {id: "pro", fee: 20}]},
+      {defaultPlan: {id: "basic", fee: 5}, customer: {plan: {id: "pro", fee: 20}, fee: 20}, plan: [{id: "basic", fee: 5}, {id: "pro", fee: 20}]},
+    ],
+    [{defaultPlan: "gold", customer: {}, plan: [{id: "basic", fee: 5}]}, "!error: defaultPlan"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Global relationships with computed properties.
+
+{
+  name: "a global single relationship with a computed property read at the top level",
+  policy: {
+    globals: {env: {cfg: "config"}},
+    models: {config: {base: "number", mode: "string(lin|sq)"}},
+    blocks: [
+      {match: "config.factor", arms: [["config.mode == 'sq'", "config.base * config.base"], ["", "config.base"]]},
+      {expression: "factor", value: "cfg.factor + 1"},
+    ],
+  },
+  cases: [
+    [{cfg: {base: 3, mode: "lin"}}, {cfg: {base: 3, mode: "lin", factor: 3}, factor: 4}],
+    [{cfg: {base: 3, mode: "sq"}}, {cfg: {base: 3, mode: "sq", factor: 9}, factor: 10}],
+    [{cfg: {base: 3}}, "!error: MissingRequiredInputs"],
+    [{}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "an optional global relationship absent or null",
+  policy: {
+    globals: {env: {cfg: "config?"}},
+    models: {config: {base: "number"}},
+    blocks: [
+      {expression: "config.double", value: "config.base * 2"},
+      {expression: "d", value: "cfg.double ?? 0"},
+    ],
+  },
+  cases: [
+    [{}, {d: 0}],
+    [{cfg: null}, {cfg: null, d: 0}],
+    [{cfg: {base: 3}}, {cfg: {base: 3, double: 6}, d: 6}],
+    [{cfg: {base: "3"}}, "!error: cfg.base"],
+  ],
+}
+
+{
+  name: "a global array relationship with per-member table and match",
+  policy: {
+    globals: {env: {bands: "band[]"}},
+    models: {band: {from: "number", rate: "number"}, person: {income: "number"}},
+    blocks: [
+      {table: "dt", inputs: ["band.rate"], outputs: ["band.kind"], rules: [["0", "'free'"], ["< 0.3", "'low'"], ["", "'high'"]]},
+      {match: "band.applies", arms: [["person.income >= band.from", "true"], ["", "false"]]},
+      {expression: "person.kinds", value: "map(filter(bands, #.applies), #.kind)"},
+    ],
+  },
+  cases: [
+    [
+      {bands: [{from: 0, rate: 0}, {from: 100, rate: 0.2}, {from: 1000, rate: 0.4}], person: {income: 500}},
+      {bands: [{from: 0, rate: 0, kind: "free", applies: true}, {from: 100, rate: 0.2, kind: "low", applies: true}, {from: 1000, rate: 0.4, kind: "high", applies: false}], person: {income: 500, kinds: ["free", "low"]}},
+    ],
+    [
+      {bands: [], person: {income: 500}},
+      {bands: [], person: {income: 500, kinds: []}},
+    ],
+    [
+      {bands: [{from: 0, rate: 0.5}], person: {income: 0}},
+      {bands: [{from: 0, rate: 0.5, kind: "high", applies: true}], person: {income: 0, kinds: ["high"]}},
+    ],
+  ],
+}
+
+{
+  name: "global array members read a root computed value",
+  policy: {
+    globals: {env: {checks: "check[]"}},
+    models: {check: {min: "number"}, app: {score: "number"}},
+    blocks: [
+      {expression: "app.adjusted", value: "app.score + 10"},
+      {expression: "check.passes", value: "app.adjusted >= check.min"},
+      {expression: "app.passed", value: "all(checks, #.passes)"},
+    ],
+  },
+  cases: [
+    [{checks: [{min: 5}, {min: 50}], app: {score: 45}}, {checks: [{min: 5, passes: true}, {min: 50, passes: true}], app: {score: 45, adjusted: 55, passed: true}}],
+    [{checks: [{min: 5}, {min: 60}], app: {score: 45}}, {checks: [{min: 5, passes: true}, {min: 60, passes: false}], app: {score: 45, adjusted: 55, passed: false}}],
+    [{checks: [], app: {score: 1}}, {checks: [], app: {score: 1, adjusted: 11, passed: true}}],
+  ],
+}
+
+{
+  name: "a global relationship read by a root block and vice versa",
+  policy: {
+    globals: {env: {caps: "limits"}},
+    models: {limits: {max: "number"}, order: {total: "number"}},
+    blocks: [
+      {expression: "limits.headroom", value: "limits.max - order.total"},
+      {expression: "order.allowed", value: "caps.headroom >= 0"},
+    ],
+  },
+  cases: [
+    [{caps: {max: 100}, order: {total: 40}}, {caps: {max: 100, headroom: 60}, order: {total: 40, allowed: true}}],
+    [{caps: {max: 100}, order: {total: 140}}, {caps: {max: 100, headroom: -40}, order: {total: 140, allowed: false}}],
+    [{caps: {max: 100}, order: {total: 100}}, {caps: {max: 100, headroom: 0}, order: {total: 100, allowed: true}}],
+  ],
+}
+
+{
+  name: "goals on a global relationship's computed property",
+  policy: {
+    globals: {env: {cfg: "config"}},
+    models: {config: {base: "number"}, order: {net: "number"}},
+    blocks: [
+      {expression: "config.rate", value: "config.base / 100"},
+      {expression: "order.gross", value: "order.net * (1 + cfg.rate)"},
+      {expression: "order.label", value: "'order'"},
+    ],
+  },
+  cases: [
+    {input: {cfg: {base: 20}, order: {net: 10}}, goals: ["config.rate"], output: {cfg: {base: 20, rate: 0.2}, order: {net: 10}}},
+    {input: {cfg: {base: 20}, order: {net: 10}}, goals: ["order.gross"], output: {cfg: {base: 20, rate: 0.2}, order: {net: 10, gross: 12}}},
+    {input: {order: {net: 10}}, goals: ["order.label"], output: {order: {net: 10, label: "order"}}},
+    {input: {order: {net: 10}}, goals: ["order.gross"], output: "!error: MissingRequiredInputs"},
+  ],
+}
+
+{
+  name: "a global relationship writing below a nested relationship is refused",
+  diagnostics: ["UNSUPPORTED_NESTED_ITERATION"],
+  policy: {
+    globals: {env: {firms: "firm[]"}},
+    models: {firm: {staff: "worker[]"}, worker: {salary: "number"}},
+    blocks: [{expression: "worker.annual", value: "worker.salary * 12"}],
+  },
+  cases: [
+    [
+      {firms: [{staff: [{salary: 1}]}]},
+      "!error: MissingRequiredInputs",
+      "question: per-member writes two relationships deep are refused (UNSUPPORTED_NESTED_ITERATION, chapter 21) for globals too; through the workspace the second level is not a source, so worker.salary is reported missing although every worker has it",
+    ],
+  ],
+}
+
+{
+  name: "aggregating a global relationship's nested members without writing them",
+  policy: {
+    globals: {env: {company: "firm"}},
+    models: {firm: {staff: "worker[]"}, worker: {salary: "number"}},
+    blocks: [
+      {expression: "firm.payroll", value: "sum(map(firm.staff, #.salary))"},
+      {expression: "payroll", value: "company.payroll * 12"},
+    ],
+  },
+  cases: [
+    [{company: {staff: [{salary: 1}, {salary: 2}]}}, {company: {staff: [{salary: 1}, {salary: 2}], payroll: 3}, payroll: 36}],
+    [{company: {staff: []}}, {company: {staff: [], payroll: 0}, payroll: 0}],
+    [{company: {staff: [{salary: "1"}]}}, "!error: company.staff[0].salary"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Globals read by member blocks.
+
+{
+  name: "member blocks read a computed global in an expression, a table input and a match",
+  policy: {
+    globals: {env: {rate: "number"}},
+    models: {o: {items: "item[]"}, item: {v: "number"}},
+    blocks: [
+      {expression: "factor", value: "rate * 2"},
+      {expression: "item.w", value: "item.v * factor"},
+      {table: "dt", inputs: ["item.v * factor"], outputs: ["item.big"], rules: [["> 10", "true"], ["", "false"]]},
+      {match: "item.tier", arms: [["item.v >= factor", "'up'"], ["", "'down'"]]},
+    ],
+  },
+  cases: [
+    [
+      {rate: 1, o: {items: [{v: 1}, {v: 6}]}},
+      {rate: 1, factor: 2, o: {items: [{v: 1, w: 2, big: false, tier: "down"}, {v: 6, w: 12, big: true, tier: "up"}]}},
+    ],
+    [{rate: 0.5, o: {items: [{v: 1}]}}, {rate: 0.5, factor: 1, o: {items: [{v: 1, w: 1, big: false, tier: "up"}]}}],
+    [{rate: 1, o: {items: []}}, {rate: 1, factor: 2, o: {items: []}}],
+  ],
+}
+
+{
+  name: "member blocks read a global relationship's computed property",
+  policy: {
+    globals: {env: {cfg: "config"}},
+    models: {config: {base: "number"}, o: {items: "item[]"}, item: {v: "number"}},
+    blocks: [
+      {expression: "config.double", value: "config.base * 2"},
+      {match: "item.tier", arms: [["item.v > cfg.double", "'hi'"], ["", "'lo'"]]},
+    ],
+  },
+  cases: [
+    [{cfg: {base: 2}, o: {items: [{v: 1}, {v: 6}]}}, {cfg: {base: 2, double: 4}, o: {items: [{v: 1, tier: "lo"}, {v: 6, tier: "hi"}]}}],
+    [{cfg: {base: 0}, o: {items: [{v: 0}]}}, {cfg: {base: 0, double: 0}, o: {items: [{v: 0, tier: "lo"}]}}],
+  ],
+}
+
+{
+  name: "member blocks read another global array",
+  policy: {
+    globals: {env: {blocked: "string[]"}},
+    models: {o: {items: "item[]"}, item: {country: "string"}},
+    blocks: [
+      {expression: "item.blocked", value: "item.country in blocked"},
+      {expression: "o.clean", value: "none(o.items, #.blocked)"},
+    ],
+  },
+  cases: [
+    [{blocked: ["RU", "KP"], o: {items: [{country: "US"}, {country: "KP"}]}}, {blocked: ["RU", "KP"], o: {items: [{country: "US", blocked: false}, {country: "KP", blocked: true}], clean: false}}],
+    [{blocked: [], o: {items: [{country: "US"}]}}, {blocked: [], o: {items: [{country: "US", blocked: false}], clean: true}}],
+    [{o: {items: [{country: "US"}]}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "member values aggregated into a global, read back by the members",
+  policy: {
+    models: {o: {items: "item[]"}, item: {v: "number"}},
+    blocks: [
+      {expression: "grandTotal", value: "sum(map(o.items, #.v))"},
+      {expression: "item.share", value: "grandTotal > 0 ? item.v / grandTotal : 0"},
+      {expression: "maxShare", value: "max(map(o.items, #.share))"},
+    ],
+  },
+  cases: [
+    [{o: {items: [{v: 1}, {v: 3}]}}, {o: {items: [{v: 1, share: 0.25}, {v: 3, share: 0.75}]}, grandTotal: 4, maxShare: 0.75}],
+    [{o: {items: [{v: 0}]}}, {o: {items: [{v: 0, share: 0}]}, grandTotal: 0, maxShare: 0}],
+    [{o: {items: []}}, "!error: ExpressionFailed"],
+  ],
+}
+
+{
+  name: "members of a global array and of a root relationship read each other's aggregates",
+  policy: {
+    globals: {env: {quotas: "quota[]"}},
+    models: {quota: {region: "string", limit: "number"}, team: {sales: "sale[]"}, sale: {region: "string", amount: "number"}},
+    blocks: [
+      {expression: "quota.used", value: "sum(map(filter(team.sales, #.region == quota.region), #.amount))"},
+      {expression: "quota.over", value: "quota.used > quota.limit"},
+      {expression: "sale.flagged", value: "some(quotas, #.region == sale.region and #.over)"},
+    ],
+  },
+  cases: [
+    [
+      {quotas: [{region: "eu", limit: 10}, {region: "us", limit: 100}], team: {sales: [{region: "eu", amount: 6}, {region: "eu", amount: 5}, {region: "us", amount: 50}]}},
+      {
+        quotas: [{region: "eu", limit: 10, used: 11, over: true}, {region: "us", limit: 100, used: 50, over: false}],
+        team: {sales: [{region: "eu", amount: 6, flagged: true}, {region: "eu", amount: 5, flagged: true}, {region: "us", amount: 50, flagged: false}]},
+      },
+    ],
+    [
+      {quotas: [{region: "eu", limit: 10}], team: {sales: [{region: "apac", amount: 99}]}},
+      {quotas: [{region: "eu", limit: 10, used: 0, over: false}], team: {sales: [{region: "apac", amount: 99, flagged: false}]}},
+    ],
+  ],
+}
+
+{
+  name: "a member block reading a global that a member-fed root block computes",
+  policy: {
+    globals: {env: {threshold: "number"}},
+    models: {o: {items: "item[]"}, item: {v: "number"}},
+    blocks: [
+      {expression: "item.doubled", value: "item.v * 2"},
+      {expression: "o.avg", value: "avg(map(o.items, #.doubled))"},
+      {expression: "cutoff", value: "max([threshold, o.avg])"},
+      {expression: "item.above", value: "item.doubled > cutoff"},
+    ],
+  },
+  cases: [
+    [
+      {threshold: 1, o: {items: [{v: 1}, {v: 2}, {v: 6}]}},
+      {threshold: 1, cutoff: 6, o: {items: [{v: 1, doubled: 2, above: false}, {v: 2, doubled: 4, above: false}, {v: 6, doubled: 12, above: true}], avg: 6}},
+    ],
+    [
+      {threshold: 100, o: {items: [{v: 1}]}},
+      {threshold: 100, cutoff: 100, o: {items: [{v: 1, doubled: 2, above: false}], avg: 2}},
+    ],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// A realistic combination: a marketplace order with a product pool, a shipping-zone pool, a
+// global fee schedule and per-line computations.
+
+{
+  name: "marketplace order with pools and global fees",
+  policy: {
+    globals: {env: {fees: "feeSchedule", vatRate: "number"}},
+    models: {
+      feeSchedule: {platformPct: "number", minFee: "number"},
+      mpOrder: {lines: "mpLine[]", zone: "&zone"},
+      mpLine: {qty: "number", unitPrice: "number"},
+      zone: {id: "string", shipping: "number"},
+    },
+    blocks: [
+      {expression: "mpLine.net", value: "mpLine.qty * mpLine.unitPrice"},
+      {expression: "feeSchedule.rate", value: "feeSchedule.platformPct / 100"},
+      {expression: "mpOrder.net", value: "sum(map(mpOrder.lines, #.net))"},
+      {expression: "mpOrder.platformFee", value: "max([fees.minFee, round(mpOrder.net * fees.rate, 2)])"},
+      {expression: "mpOrder.vat", value: "round((mpOrder.net + mpOrder.zone.shipping) * vatRate, 2)"},
+      {expression: "mpOrder.total", value: "mpOrder.net + mpOrder.zone.shipping + mpOrder.vat"},
+    ],
+  },
+  cases: [
+    [
+      {fees: {platformPct: 5, minFee: 1}, vatRate: 0.2, mpOrder: {zone: "eu", lines: [{qty: 2, unitPrice: 10}, {qty: 1, unitPrice: 5.5}]}, zone: [{id: "eu", shipping: 4.5}, {id: "us", shipping: 12}]},
+      {
+        fees: {platformPct: 5, minFee: 1, rate: 0.05}, vatRate: 0.2,
+        mpOrder: {zone: {id: "eu", shipping: 4.5}, lines: [{qty: 2, unitPrice: 10, net: 20}, {qty: 1, unitPrice: 5.5, net: 5.5}], net: 25.5, platformFee: 1.28, vat: 6, total: 36},
+        zone: [{id: "eu", shipping: 4.5}, {id: "us", shipping: 12}],
+      },
+    ],
+    [
+      {fees: {platformPct: 5, minFee: 1}, vatRate: 0, mpOrder: {zone: "us", lines: [{qty: 1, unitPrice: 3}]}, zone: [{id: "eu", shipping: 4.5}, {id: "us", shipping: 12}]},
+      {
+        fees: {platformPct: 5, minFee: 1, rate: 0.05}, vatRate: 0,
+        mpOrder: {zone: {id: "us", shipping: 12}, lines: [{qty: 1, unitPrice: 3, net: 3}], net: 3, platformFee: 1, vat: 0, total: 15},
+        zone: [{id: "eu", shipping: 4.5}, {id: "us", shipping: 12}],
+      },
+    ],
+    [{fees: {platformPct: 5, minFee: 1}, vatRate: 0.2, mpOrder: {zone: "apac", lines: []}, zone: [{id: "eu", shipping: 4.5}]}, "!error: mpOrder.zone"],
+    [{fees: {platformPct: "5", minFee: 1}, vatRate: 0.2, mpOrder: {zone: "eu", lines: []}, zone: [{id: "eu", shipping: 4.5}]}, "!error: fees.platformPct"],
+  ],
+}

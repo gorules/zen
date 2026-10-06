@@ -1,0 +1,594 @@
+// Errors at evaluate time. Evaluation fails with one of:
+//   ImportNotFound, GoalNotFound, InputValidationFailed (input shape vs data model),
+//   MissingRequiredInputs (a required read is missing or null), ExpressionFailed (a parse or
+//   runtime error in a block that runs).
+// Validation diagnostics (DuplicateWriter, InputOverride, CyclicDependency,
+// MissingDefaultBranch, ...) do not stop evaluation; their runtime outcome is pinned here.
+
+// --- Input validation: the request shape -------------------------------------------------------
+
+{
+  name: "the request must be an object",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.a", value: "customer.age"}],
+  },
+  cases: [
+    [5, "!error: InputValidationFailed"],
+    ["x", "!error: InputValidationFailed"],
+    [true, "!error: InputValidationFailed"],
+    [[1], "!error: InputValidationFailed"],
+    [[], "!error: InputValidationFailed"],
+    [{customer: {age: 1}}, {customer: {age: 1, a: 1}}],
+  ],
+}
+
+{
+  name: "an entity value must be an object",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.a", value: "customer.age"}],
+  },
+  cases: [
+    [{customer: 5}, "!error: InputValidationFailed"],
+    [{customer: "x"}, "!error: InputValidationFailed"],
+    [{customer: [1]}, "!error: InputValidationFailed"],
+    [{customer: [{age: 1}]}, "!error: InputValidationFailed"],
+    [{customer: true}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "property values must match their declared type",
+  policy: {
+    models: {customer: {age: "number", name: "string", vip: "boolean", dob: "date", tier: "string(a|b)"}},
+    blocks: [{expression: "customer.ok", value: "true"}],
+  },
+  cases: [
+    [{customer: {age: 1, name: "n", vip: true, dob: "2000-01-01", tier: "a"}}, {customer: {age: 1, name: "n", vip: true, dob: "2000-01-01", tier: "a", ok: true}}],
+    [{customer: {age: "1"}}, "!error: InputValidationFailed"],
+    [{customer: {age: true}}, "!error: InputValidationFailed"],
+    [{customer: {age: [1]}}, "!error: InputValidationFailed"],
+    [{customer: {age: {v: 1}}}, "!error: InputValidationFailed"],
+    [{customer: {name: 1}}, "!error: InputValidationFailed"],
+    [{customer: {name: ["n"]}}, "!error: InputValidationFailed"],
+    [{customer: {vip: "true"}}, "!error: InputValidationFailed"],
+    [{customer: {vip: 1}}, "!error: InputValidationFailed"],
+    [{customer: {dob: "yesterday"}}, "!error: InputValidationFailed"],
+    [{customer: {dob: 20000101}}, "!error: InputValidationFailed"],
+    [{customer: {tier: "c"}}, "!error: InputValidationFailed"],
+    [{customer: {tier: "A"}}, "!error: InputValidationFailed"],
+    [{customer: {}}, {customer: {ok: true}}],
+  ],
+}
+
+{
+  name: "array properties validate every element",
+  policy: {
+    models: {customer: {scores: "number[]", companies: "company[]"}, company: {name: "string"}},
+    blocks: [{expression: "customer.n", value: "len(customer.scores) + len(customer.companies)"}],
+  },
+  cases: [
+    [{customer: {scores: [1, 2], companies: [{name: "a"}]}}, {customer: {scores: [1, 2], companies: [{name: "a"}], n: 3}}],
+    [{customer: {scores: [1, "2"], companies: []}}, "!error: InputValidationFailed"],
+    [{customer: {scores: 1, companies: []}}, "!error: InputValidationFailed"],
+    [{customer: {scores: [], companies: [{name: 1}]}}, "!error: InputValidationFailed"],
+    [{customer: {scores: [], companies: {name: "a"}}}, "!error: InputValidationFailed"],
+    [{customer: {scores: [], companies: ["a"]}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "unknown input keys are kept and not validated",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.a", value: "customer.age"}],
+  },
+  cases: [
+    [{customer: {age: 1, extra: "x"}}, {customer: {age: 1, extra: "x", a: 1}}],
+    [{other: 1, customer: {age: 1}}, {other: 1, customer: {age: 1, a: 1}}],
+    [{other: {deep: [null]}, customer: {age: 1}}, {other: {deep: [null]}, customer: {age: 1, a: 1}}],
+  ],
+}
+
+{
+  name: "validation runs before the required-input check",
+  policy: {
+    models: {customer: {age: "number", name: "string"}},
+    blocks: [{expression: "customer.a", value: "customer.age + 1"}],
+  },
+  cases: [
+    [{customer: {name: 5}}, "!error: InputValidationFailed"],
+    [{customer: {name: "x"}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// --- Required inputs -----------------------------------------------------------------------------
+
+{
+  name: "every missing required input is reported at once",
+  policy: {
+    models: {customer: {a: "number", b: "number", c: "number"}},
+    blocks: [{expression: "customer.sum", value: "customer.a + customer.b + customer.c"}],
+  },
+  cases: [
+    [{customer: {a: 1, b: 2, c: 3}}, {customer: {a: 1, b: 2, c: 3, sum: 6}}],
+    [{customer: {a: 1}}, "!error: missing: [\"customer.b\", \"customer.c\"]"],
+    [{customer: {}}, "!error: missing: [\"customer.a\", \"customer.b\", \"customer.c\"]"],
+    [{customer: {a: 1, b: null, c: 3}}, "!error: missing: [\"customer.b\"]"],
+  ],
+}
+
+{
+  name: "an undeclared read is a required input",
+  diagnostics: ["UNDEFINED_VARIABLE"],
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.a", value: "customer.zzz + 1"}],
+  },
+  cases: [
+    [{customer: {age: 1}}, "!error: MissingRequiredInputs"],
+    [{customer: {age: 1, zzz: 4}}, {customer: {age: 1, zzz: 4, a: 5}}],
+    [{customer: {age: 1, zzz: "4"}}, "!error: ExpressionFailed"],
+  ],
+}
+
+// --- Expression failures ---------------------------------------------------------------------------
+
+{
+  name: "a parse error fails the evaluation when the block runs",
+  diagnostics: ["PARSE_ERROR"],
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [
+      {expression: "customer.a", value: "customer.age +"},
+      {expression: "customer.b", value: "customer.age * 2"},
+    ],
+  },
+  cases: [
+    [{customer: {age: 1}}, "!error: ExpressionFailed"],
+    {input: {customer: {age: 1}}, goals: ["customer.b"], output: {customer: {age: 1, b: 2}}},
+    {input: {customer: {age: 1}}, goals: ["customer.a"], output: "!error: ExpressionFailed"},
+  ],
+}
+
+{
+  name: "malformed expressions of several kinds",
+  diagnostics: ["PARSE_ERROR"],
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [
+      {expression: "customer.a", value: "(customer.age"},
+      {expression: "customer.b", value: "customer.age ==== 1"},
+      {expression: "customer.c", value: "foo(customer.age)"},
+      {expression: "customer.d", value: "'unterminated"},
+    ],
+  },
+  cases: [
+    {input: {customer: {age: 1}}, goals: ["customer.a"], output: "!error: ExpressionFailed"},
+    {input: {customer: {age: 1}}, goals: ["customer.b"], output: "!error: ExpressionFailed"},
+    {input: {customer: {age: 1}}, goals: ["customer.c"], output: "!error: ExpressionFailed"},
+    {input: {customer: {age: 1}}, goals: ["customer.d"], output: "!error: ExpressionFailed"},
+  ],
+}
+
+{
+  name: "operand type errors fail the evaluation",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {customer: {name: "string", age: "number", vip: "boolean"}},
+    blocks: [
+      {expression: "customer.a", value: "customer.name + customer.age"},
+      {expression: "customer.b", value: "customer.name * 2"},
+      {expression: "customer.c", value: "customer.vip + 1"},
+      {expression: "customer.d", value: "customer.name > 1"},
+      {expression: "customer.e", value: "customer.age + 1"},
+    ],
+  },
+  cases: [
+    {input: {customer: {name: "x", age: 1, vip: true}}, goals: ["customer.a"], output: "!error: ExpressionFailed"},
+    {input: {customer: {name: "x", age: 1, vip: true}}, goals: ["customer.b"], output: "!error: ExpressionFailed"},
+    {input: {customer: {name: "x", age: 1, vip: true}}, goals: ["customer.c"], output: "!error: ExpressionFailed"},
+    {input: {customer: {name: "x", age: 1, vip: true}}, goals: ["customer.d"], output: "!error: ExpressionFailed"},
+    {input: {customer: {name: "x", age: 1, vip: true}}, goals: ["customer.e"], output: {customer: {name: "x", age: 1, vip: true, e: 2}}},
+    {input: {customer: {name: "x", age: 1, vip: true}}, output: "!error: ExpressionFailed"},
+  ],
+}
+
+{
+  name: "division by zero yields null, not an error",
+  policy: {
+    models: {customer: {a: "number", b: "number"}},
+    blocks: [
+      {expression: "customer.q", value: "customer.a / customer.b"},
+      {expression: "customer.safe", value: "customer.q ?? 0"},
+    ],
+  },
+  cases: [
+    [{customer: {a: 6, b: 3}}, {customer: {a: 6, b: 3, q: 2, safe: 2}}],
+    [{customer: {a: 6, b: 0}}, {customer: {a: 6, b: 0, q: null, safe: 0}}],
+    [{customer: {a: 0, b: 0}}, {customer: {a: 0, b: 0, q: null, safe: 0}}],
+    [{customer: {a: -1, b: 0}}, {customer: {a: -1, b: 0, q: null, safe: 0}}],
+  ],
+}
+
+{
+  name: "a failure downstream of a successful block fails the whole evaluation",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {customer: {age: "number", name: "string"}},
+    blocks: [
+      {expression: "customer.label", value: "customer.name + '!'"},
+      {expression: "customer.broken", value: "customer.label - 1"},
+    ],
+  },
+  cases: [
+    [{customer: {age: 1, name: "x"}}, "!error: ExpressionFailed"],
+    {input: {customer: {age: 1, name: "x"}}, goals: ["customer.label"], output: {customer: {age: 1, name: "x", label: "x!"}}},
+  ],
+}
+
+{
+  name: "a failing function call",
+  policy: {
+    models: {customer: {code: "string"}},
+    blocks: [{expression: "customer.n", value: "number(customer.code)"}],
+  },
+  cases: [
+    [{customer: {code: "42"}}, {customer: {code: "42", n: 42}}],
+    [{customer: {code: "4.5"}}, {customer: {code: "4.5", n: 4.5}}],
+    [{customer: {code: "abc"}}, "!error: ExpressionFailed"],
+    [{customer: {code: ""}}, "!error: ExpressionFailed"],
+  ],
+}
+
+{
+  name: "an error in an imported policy's block fails the importer's evaluation",
+  diagnostics: ["TYPE_MISMATCH", "UNDEFINED_VARIABLE"],
+  policy: {
+    imports: ["base"],
+    models: {customer: {name: "string"}},
+    blocks: [{expression: "customer.ok", value: "customer.base != null"}],
+  },
+  policies: {
+    base: {models: {customer: {name: "string"}}, blocks: [{expression: "customer.base", value: "customer.name * 2"}]},
+  },
+  cases: [
+    [{customer: {name: "x"}}, "!error: policy_path: \"base\""],
+    [{customer: {name: ""}}, "!error: ExpressionFailed"],
+  ],
+}
+
+// --- Laziness: blocks that never run cannot fail ------------------------------------------------
+
+{
+  name: "an erroring dependency of an untaken match arm does not run",
+  diagnostics: ["TYPE_MISMATCH", "UNDEFINED_VARIABLE"],
+  policy: {
+    models: {customer: {age: "number", name: "string"}},
+    blocks: [
+      {expression: "customer.bad", value: "customer.name + 1"},
+      {match: "customer.a", arms: [["customer.age > 10", "customer.bad"], ["", "'ok'"]]},
+    ],
+  },
+  cases: [
+    [{customer: {age: 1, name: "x"}}, {customer: {age: 1, name: "x", a: "ok"}}],
+    [{customer: {age: 10, name: "x"}}, {customer: {age: 10, name: "x", a: "ok"}}],
+    [{customer: {age: 11, name: "x"}}, "!error: ExpressionFailed"],
+    {input: {customer: {age: 1, name: "x"}}, goals: ["customer.a"], output: {customer: {age: 1, name: "x", a: "ok"}}},
+    {input: {customer: {age: 1, name: "x"}}, goals: ["customer.bad"], output: "!error: ExpressionFailed"},
+  ],
+}
+
+{
+  name: "an erroring dependency of an unmatched table row does not run",
+  diagnostics: ["TYPE_MISMATCH", "UNDEFINED_VARIABLE"],
+  policy: {
+    models: {customer: {age: "number", name: "string"}},
+    blocks: [
+      {expression: "customer.bad", value: "customer.name * 3"},
+      {table: "t", inputs: ["customer.age"], outputs: ["customer.res"], rules: [["< 18", "customer.bad"], ["", "'fine'"]]},
+    ],
+  },
+  cases: [
+    [{customer: {age: 30, name: "x"}}, {customer: {age: 30, name: "x", res: "fine"}}],
+    [{customer: {age: 18, name: "x"}}, {customer: {age: 18, name: "x", res: "fine"}}],
+    [{customer: {age: 17, name: "x"}}, "!error: ExpressionFailed"],
+  ],
+}
+
+{
+  name: "an erroring arm value that is not selected does not run",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {customer: {age: "number", name: "string"}},
+    blocks: [{match: "customer.a", arms: [["customer.age > 10", "customer.name * 2"], ["", "customer.age"]]}],
+  },
+  cases: [
+    [{customer: {age: 1, name: "x"}}, {customer: {age: 1, name: "x", a: 1}}],
+    [{customer: {age: 11, name: "x"}}, "!error: ExpressionFailed"],
+  ],
+}
+
+{
+  name: "a ternary branch that is not taken does not fail",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {customer: {age: "number", name: "string"}},
+    blocks: [{expression: "customer.a", value: "customer.age > 10 ? customer.name * 2 : 0"}],
+  },
+  cases: [
+    [{customer: {age: 1, name: "x"}}, {customer: {age: 1, name: "x", a: 0}}],
+    [{customer: {age: 11, name: "x"}}, "!error: ExpressionFailed"],
+  ],
+}
+
+// --- Assertions --------------------------------------------------------------------------------
+
+{
+  name: "every assertion condition is evaluated, even after a false one",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {customer: {age: "number", name: "string"}},
+    blocks: [{assertion: "customer.ok", conditions: ["customer.age > 1", "customer.name > 1"]}],
+  },
+  cases: [
+    [{customer: {age: 5, name: "x"}}, "!error: ExpressionFailed"],
+    {input: {customer: {age: 0, name: "x"}}, output: "!error: ExpressionFailed", note: "question: the first `and` condition is false, yet the second condition still runs and fails the policy"},
+  ],
+}
+
+{
+  name: "an assertion over a missing required input",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{assertion: "customer.ok", conditions: ["customer.age >= 18"]}],
+  },
+  cases: [
+    [{customer: {age: 18}}, {customer: {age: 18, ok: true}}],
+    [{customer: {}}, "!error: MissingRequiredInputs"],
+    [{customer: {age: null}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// --- Decision table cells ----------------------------------------------------------------------
+
+{
+  name: "a malformed input cell fails when the row is tested",
+  diagnostics: ["PARSE_ERROR"],
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{table: "t", inputs: ["customer.age"], outputs: ["customer.b"], rules: [["> > 1", "1"], ["", "2"]]}],
+  },
+  cases: [
+    [{customer: {age: 5}}, "!error: ExpressionFailed"],
+    [{customer: {age: 0}}, "!error: ExpressionFailed"],
+  ],
+}
+
+{
+  name: "a malformed cell in a later row is not reached after a first hit",
+  diagnostics: ["PARSE_ERROR"],
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{table: "t", inputs: ["customer.age"], outputs: ["customer.b"], rules: [["> 1", "1"], ["> > 1", "2"]]}],
+  },
+  cases: [
+    [{customer: {age: 5}}, {customer: {age: 5, b: 1}}],
+    [{customer: {age: 0}}, "!error: ExpressionFailed"],
+  ],
+}
+
+{
+  name: "a failing output cell of the matched row",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {customer: {age: "number", name: "string"}},
+    blocks: [{table: "t", inputs: ["customer.age"], outputs: ["customer.b"], rules: [["< 18", "customer.name * 2"], ["", "'ok'"]]}],
+  },
+  cases: [
+    [{customer: {age: 30, name: "x"}}, {customer: {age: 30, name: "x", b: "ok"}}],
+    [{customer: {age: 3, name: "x"}}, "!error: ExpressionFailed"],
+  ],
+}
+
+{
+  name: "an input cell comparing the wrong type",
+  policy: {
+    models: {customer: {code: "string"}},
+    blocks: [{table: "t", inputs: ["customer.code"], outputs: ["customer.b"], rules: [["> 5", "'big'"], ["", "'other'"]]}],
+  },
+  cases: [
+    {input: {customer: {code: "x"}}, output: {customer: {code: "x", b: "other"}}, note: "bug: a failing cell ('x' > 5) aborts the policy; graph decision tables treat a failing cell as no match"},
+  ],
+}
+
+// --- Validation diagnostics that do not stop evaluation --------------------------------------------
+
+{
+  name: "two blocks writing the same property",
+  diagnostics: ["DUPLICATE_WRITER"],
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [
+      {expression: "customer.a", value: "1"},
+      {expression: "customer.a", value: "2"},
+    ],
+  },
+  cases: [
+    {input: {customer: {age: 1}}, output: {customer: {age: 1, a: 1}}, note: "question: DuplicateWriter is an error diagnostic; evaluation silently keeps the first writer"},
+    {input: {customer: {age: 9}}, output: {customer: {age: 9, a: 1}}, note: "question: DuplicateWriter is an error diagnostic; evaluation silently keeps the first writer"},
+  ],
+}
+
+{
+  name: "a match and a table writing the same property",
+  diagnostics: ["DUPLICATE_WRITER"],
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [
+      {match: "customer.band", arms: [["customer.age < 18", "'minor'"], ["", "'adult'"]]},
+      {table: "t", inputs: ["customer.age"], outputs: ["customer.band"], rules: [["", "'table'"]]},
+    ],
+  },
+  cases: [
+    {input: {customer: {age: 1}}, output: {customer: {age: 1, band: "minor"}}, note: "question: DuplicateWriter is an error diagnostic; evaluation silently keeps the first writer"},
+    {input: {customer: {age: 30}}, output: {customer: {age: 30, band: "adult"}}, note: "question: DuplicateWriter is an error diagnostic; evaluation silently keeps the first writer"},
+  ],
+}
+
+{
+  name: "a block writing a declared input property",
+  diagnostics: ["INPUT_OVERRIDE"],
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [
+      {expression: "customer.age", value: "99"},
+      {expression: "customer.b", value: "customer.age + 1"},
+    ],
+  },
+  cases: [
+    {input: {customer: {age: 1}}, output: {customer: {age: 1, b: 2}}, note: "question: InputOverride is an error diagnostic; evaluation drops the write and keeps the input"},
+    {input: {customer: {age: 50}}, output: {customer: {age: 50, b: 51}}, note: "question: InputOverride is an error diagnostic; evaluation drops the write and keeps the input"},
+    [{customer: {}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "a computed property declared in the model is required input and its write is dropped",
+  diagnostics: ["INPUT_OVERRIDE"],
+  policy: {
+    models: {customer: {age: "number", adult: "boolean"}},
+    blocks: [
+      {expression: "customer.adult", value: "customer.age >= 18"},
+      {expression: "customer.label", value: "customer.adult ? 'adult' : 'minor'"},
+    ],
+  },
+  cases: [
+    {input: {customer: {age: 20}}, output: "!error: MissingRequiredInputs", note: "question: InputOverride is an error diagnostic; evaluation treats the declared property as required input"},
+    {input: {customer: {age: 20, adult: false}}, output: {customer: {age: 20, adult: false, label: "minor"}}, note: "question: InputOverride is an error diagnostic; evaluation drops the write and keeps the input"},
+  ],
+}
+
+{
+  name: "an optional declared property written by a block keeps the input",
+  diagnostics: ["INPUT_OVERRIDE"],
+  policy: {
+    models: {customer: {age: "number", adult: "boolean?"}},
+    blocks: [{expression: "customer.adult", value: "customer.age >= 18"}],
+  },
+  cases: [
+    {input: {customer: {age: 20}}, output: {customer: {age: 20}}, note: "question: InputOverride is an error diagnostic; evaluation drops the write, so the property stays absent"},
+    {input: {customer: {age: 20, adult: false}}, output: {customer: {age: 20, adult: false}}, note: "question: InputOverride is an error diagnostic; evaluation drops the write and keeps the input"},
+  ],
+}
+
+{
+  name: "a block reading its own write sees the input value",
+  diagnostics: ["SELF_REFERENCING_WRITE", "UNDEFINED_VARIABLE"],
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.a", value: "(customer.a ?? 0) + 1"}],
+  },
+  cases: [
+    {input: {customer: {age: 1}}, output: {customer: {age: 1, a: 1}}},
+    {input: {customer: {age: 1, a: 5}}, output: {customer: {age: 1, a: 6}}, note: "question: SelfReferencingWrite is an error diagnostic; evaluation reads the input value of the property being written"},
+  ],
+}
+
+{
+  name: "two blocks depending on each other",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [
+      {expression: "customer.a", value: "customer.b + 1"},
+      {expression: "customer.b", value: "customer.a + 1"},
+      {expression: "customer.c", value: "customer.age"},
+    ],
+  },
+  cases: [
+    {input: {customer: {age: 1}}, output: "!error"},
+    {input: {customer: {age: 7}}, output: "!error"},
+  ],
+}
+
+{
+  name: "a match without a default arm writes null when nothing matches",
+  diagnostics: ["MISSING_DEFAULT_BRANCH"],
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{match: "customer.a", arms: [["customer.age > 10", "'big'"]]}],
+  },
+  cases: [
+    [{customer: {age: 11}}, {customer: {age: 11, a: "big"}}],
+    {input: {customer: {age: 1}}, output: {customer: {age: 1, a: null}}, note: "question: MissingDefaultBranch is an error diagnostic; at runtime the match falls through to null"},
+  ],
+}
+
+{
+  name: "a match with no arms writes null",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{match: "customer.a", arms: []}],
+  },
+  cases: [
+    {input: {customer: {age: 5}}, output: {customer: {age: 5, a: null}}, note: "question: EmptyBlock is a diagnostic; at runtime the match writes null"},
+  ],
+}
+
+{
+  name: "an expression block with an empty value writes nothing",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.b", value: ""}, {expression: "customer.c", value: "customer.age"}],
+  },
+  cases: [
+    {input: {customer: {age: 5}}, output: {customer: {age: 5, c: 5}}, note: "question: an empty expression block is skipped silently rather than writing null or failing"},
+  ],
+}
+
+{
+  name: "blocks with invalid write paths are skipped",
+  diagnostics: ["INVALID_WRITE_PATH"],
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [
+      {expression: "customer..a", value: "1"},
+      {expression: "", value: "2"},
+      {expression: "customer.b", value: "3"},
+    ],
+  },
+  cases: [
+    {input: {customer: {age: 5}}, output: {customer: {age: 5, b: 3}}, note: "question: InvalidWritePath blocks are dropped silently at evaluate time"},
+  ],
+}
+
+// --- Request errors --------------------------------------------------------------------------------
+
+{
+  name: "an unknown goal is rejected before input validation",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.a", value: "customer.age"}],
+  },
+  cases: [
+    {input: {customer: {age: "bad"}}, goals: ["customer.zzz"], output: "!error: GoalNotFound"},
+    {input: {customer: {age: "bad"}}, goals: ["customer.a"], output: "!error: InputValidationFailed"},
+    {input: {customer: {}}, goals: ["customer.a"], output: "!error: MissingRequiredInputs"},
+  ],
+}
+
+{
+  name: "a missing import is reported before anything else",
+  diagnostics: ["IMPORT_NOT_FOUND"],
+  policy: {
+    imports: ["gone"],
+    models: {customer: {age: "number"}},
+    blocks: [{expression: "customer.a", value: "customer.age"}],
+  },
+  cases: [
+    {input: {customer: {age: "bad"}}, output: "!error: ImportNotFound"},
+    {input: {customer: {age: 1}}, goals: ["customer.zzz"], output: "!error: ImportNotFound"},
+    {input: 5, output: "!error: ImportNotFound"},
+  ],
+}

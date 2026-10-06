@@ -1,0 +1,794 @@
+// Decision table blocks in larger policies: many rules and outputs, outputs spread over
+// several paths and entities, tables evaluated per relationship member, tables whose inputs
+// are computed by other blocks, and tables mixing collecting (`[]`) and first-hit columns.
+// Chapters 07 and 08 cover the single-table basics.
+
+// ---------------------------------------------------------------------------
+// Many rules and many outputs.
+// ---------------------------------------------------------------------------
+{
+  name: "income tax brackets: ten rules, three outputs, computed cells",
+  policy: {
+    models: {person: {income: "number"}},
+    blocks: [{table: "brackets", inputs: ["person.income"], outputs: ["person.bracket", "person.rate", "person.tax"], rules: [
+      ["< 0", "0", "0", "0"],
+      ["[0..10000]", "1", "0", "0"],
+      ["(10000..20000]", "2", "0.1", "(person.income - 10000) * 0.1"],
+      ["(20000..40000]", "3", "0.15", "1000 + (person.income - 20000) * 0.15"],
+      ["(40000..60000]", "4", "0.2", "4000 + (person.income - 40000) * 0.2"],
+      ["(60000..80000]", "5", "0.25", "8000 + (person.income - 60000) * 0.25"],
+      ["(80000..100000]", "6", "0.3", "13000 + (person.income - 80000) * 0.3"],
+      ["(100000..150000]", "7", "0.35", "19000 + (person.income - 100000) * 0.35"],
+      ["(150000..250000]", "8", "0.4", "36500 + (person.income - 150000) * 0.4"],
+      ["", "9", "0.45", "76500 + (person.income - 250000) * 0.45"],
+    ]}],
+  },
+  cases: [
+    [{person: {income: -1}}, {person: {income: -1, bracket: 0, rate: 0, tax: 0}}],
+    [{person: {income: 0}}, {person: {income: 0, bracket: 1, rate: 0, tax: 0}}],
+    [{person: {income: 10000}}, {person: {income: 10000, bracket: 1, rate: 0, tax: 0}}],
+    [{person: {income: 10000.01}}, {person: {income: 10000.01, bracket: 2, rate: 0.1, tax: 0.001}}],
+    [{person: {income: 20000}}, {person: {income: 20000, bracket: 2, rate: 0.1, tax: 1000}}],
+    [{person: {income: 30000}}, {person: {income: 30000, bracket: 3, rate: 0.15, tax: 2500}}],
+    [{person: {income: 60000}}, {person: {income: 60000, bracket: 4, rate: 0.2, tax: 8000}}],
+    [{person: {income: 70000}}, {person: {income: 70000, bracket: 5, rate: 0.25, tax: 10500}}],
+    [{person: {income: 100000}}, {person: {income: 100000, bracket: 6, rate: 0.3, tax: 19000}}],
+    [{person: {income: 120000}}, {person: {income: 120000, bracket: 7, rate: 0.35, tax: 26000}}],
+    [{person: {income: 250000}}, {person: {income: 250000, bracket: 8, rate: 0.4, tax: 76500}}],
+    [{person: {income: 1000000}}, {person: {income: 1000000, bracket: 9, rate: 0.45, tax: 414000}}],
+  ],
+}
+
+{
+  name: "shipping matrix: three inputs, twelve rules, four outputs",
+  policy: {
+    models: {parcel: {zone: "string(domestic|eu|world)", weight: "number", service: "string(standard|express)"}},
+    blocks: [{table: "shipping", inputs: ["parcel.zone", "parcel.service", "parcel.weight"], outputs: ["parcel.carrier", "parcel.price", "parcel.days", "parcel.tracked"], rules: [
+      ["'domestic'", "'standard'", "<= 2", "'post'", "4.5", "3", "false"],
+      ["'domestic'", "'standard'", "<= 20", "'post'", "7.9", "3", "true"],
+      ["'domestic'", "'express'", "<= 20", "'courier'", "14.9", "1", "true"],
+      ["'domestic'", "", "", "'freight'", "parcel.weight * 1.1", "5", "true"],
+      ["'eu'", "'standard'", "<= 2", "'post'", "9.5", "6", "false"],
+      ["'eu'", "'standard'", "<= 20", "'post'", "16", "6", "true"],
+      ["'eu'", "'express'", "<= 20", "'courier'", "34", "2", "true"],
+      ["'eu'", "", "", "'freight'", "parcel.weight * 2.5", "8", "true"],
+      ["'world'", "'standard'", "<= 2", "'post'", "15", "14", "false"],
+      ["'world'", "'standard'", "<= 20", "'post'", "45", "14", "true"],
+      ["'world'", "'express'", "<= 20", "'courier'", "89", "4", "true"],
+      ["'world'", "", "", "'freight'", "parcel.weight * 6", "21", "true"],
+    ]}],
+  },
+  cases: [
+    [{parcel: {zone: "domestic", service: "standard", weight: 2}}, {parcel: {zone: "domestic", service: "standard", weight: 2, carrier: "post", price: 4.5, days: 3, tracked: false}}],
+    [{parcel: {zone: "domestic", service: "standard", weight: 2.01}}, {parcel: {zone: "domestic", service: "standard", weight: 2.01, carrier: "post", price: 7.9, days: 3, tracked: true}}],
+    [{parcel: {zone: "domestic", service: "express", weight: 1}}, {parcel: {zone: "domestic", service: "express", weight: 1, carrier: "courier", price: 14.9, days: 1, tracked: true}}],
+    [{parcel: {zone: "domestic", service: "express", weight: 30}}, {parcel: {zone: "domestic", service: "express", weight: 30, carrier: "freight", price: 33, days: 5, tracked: true}}],
+    [{parcel: {zone: "eu", service: "standard", weight: 0.1}}, {parcel: {zone: "eu", service: "standard", weight: 0.1, carrier: "post", price: 9.5, days: 6, tracked: false}}],
+    [{parcel: {zone: "eu", service: "express", weight: 20}}, {parcel: {zone: "eu", service: "express", weight: 20, carrier: "courier", price: 34, days: 2, tracked: true}}],
+    [{parcel: {zone: "eu", service: "standard", weight: 100}}, {parcel: {zone: "eu", service: "standard", weight: 100, carrier: "freight", price: 250, days: 8, tracked: true}}],
+    [{parcel: {zone: "world", service: "standard", weight: 5}}, {parcel: {zone: "world", service: "standard", weight: 5, carrier: "post", price: 45, days: 14, tracked: true}}],
+    [{parcel: {zone: "world", service: "express", weight: 21}}, {parcel: {zone: "world", service: "express", weight: 21, carrier: "freight", price: 126, days: 21, tracked: true}}],
+    [{parcel: {zone: "mars", service: "express", weight: 1}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "sparse first-hit table: each of five outputs resolves from a different row",
+  policy: {
+    models: {app: {score: "number", country: "string", age: "number"}},
+    blocks: [{table: "t", inputs: ["app.score", "app.country", "app.age"], outputs: ["app.decision", "app.reason", "app.limit", "app.rate", "app.reviewer"], rules: [
+      ["< 300", "", "", "'decline'", "'score'", "", "", ""],
+      ["", "'XX'", "", "'decline'", "'country'", "", "", ""],
+      ["", "", "< 21", "", "'young'", "500", "", "'junior desk'"],
+      [">= 750", "", "", "'approve'", "", "20000", "0.05", ""],
+      [">= 600", "", "", "'approve'", "", "5000", "0.09", ""],
+      ["", "", "", "'refer'", "'default'", "1000", "0.15", "'credit desk'"],
+    ]}],
+  },
+  cases: [
+    [{app: {score: 800, country: "DE", age: 40}}, {app: {score: 800, country: "DE", age: 40, decision: "approve", reason: "default", limit: 20000, rate: 0.05, reviewer: "credit desk"}}],
+    [{app: {score: 800, country: "DE", age: 19}}, {app: {score: 800, country: "DE", age: 19, decision: "approve", reason: "young", limit: 500, rate: 0.05, reviewer: "junior desk"}}],
+    [{app: {score: 650, country: "XX", age: 19}}, {app: {score: 650, country: "XX", age: 19, decision: "decline", reason: "country", limit: 500, rate: 0.09, reviewer: "junior desk"}}],
+    [{app: {score: 100, country: "XX", age: 50}}, {app: {score: 100, country: "XX", age: 50, decision: "decline", reason: "score", limit: 1000, rate: 0.15, reviewer: "credit desk"}}],
+    [{app: {score: 500, country: "DE", age: 50}}, {app: {score: 500, country: "DE", age: 50, decision: "refer", reason: "default", limit: 1000, rate: 0.15, reviewer: "credit desk"}}],
+  ],
+}
+
+{
+  name: "collect table with ten rules builds an array of objects, aggregated downstream",
+  policy: {
+    models: {claim: {amount: "number", type: "string", daysToReport: "number", priorClaims: "number", witness: "boolean"}},
+    blocks: [
+      {table: "signals", hit: "collect", inputs: ["claim.amount", "claim.type", "claim.daysToReport", "claim.priorClaims", "claim.witness"], outputs: ["claim.signals"], rules: [
+        ["> 50000", "", "", "", "", "{code: 'HIGH_AMOUNT', w: 30}"],
+        ["> 10000", "", "", "", "", "{code: 'MID_AMOUNT', w: 10}"],
+        ["", "'theft'", "", "", "", "{code: 'THEFT', w: 15}"],
+        ["", "'theft'", "", "", "false", "{code: 'THEFT_NO_WITNESS', w: 20}"],
+        ["", "", "> 30", "", "", "{code: 'LATE', w: 25}"],
+        ["", "", "> 7", "", "", "{code: 'DELAYED', w: 5}"],
+        ["", "", "", ">= 3", "", "{code: 'FREQUENT', w: 30}"],
+        ["", "", "", "[1..2]", "", "{code: 'REPEAT', w: 10}"],
+        ["", "'fire'", "", "> 0", "", "{code: 'REPEAT_FIRE', w: 40}"],
+        ["< 100", "", "", "", "", "{code: 'SMALL', w: -5}"],
+      ]},
+      {expression: "claim.score", value: "sum(map(claim.signals, #.w))"},
+      {expression: "claim.codes", value: "map(claim.signals, #.code)"},
+    ],
+  },
+  cases: [
+    [
+      {claim: {amount: 60000, type: "theft", daysToReport: 40, priorClaims: 3, witness: false}},
+      {claim: {amount: 60000, type: "theft", daysToReport: 40, priorClaims: 3, witness: false,
+        signals: [{code: "HIGH_AMOUNT", w: 30}, {code: "MID_AMOUNT", w: 10}, {code: "THEFT", w: 15}, {code: "THEFT_NO_WITNESS", w: 20}, {code: "LATE", w: 25}, {code: "DELAYED", w: 5}, {code: "FREQUENT", w: 30}],
+        score: 135, codes: ["HIGH_AMOUNT", "MID_AMOUNT", "THEFT", "THEFT_NO_WITNESS", "LATE", "DELAYED", "FREQUENT"]}},
+    ],
+    [
+      {claim: {amount: 50, type: "fire", daysToReport: 1, priorClaims: 1, witness: true}},
+      {claim: {amount: 50, type: "fire", daysToReport: 1, priorClaims: 1, witness: true,
+        signals: [{code: "REPEAT", w: 10}, {code: "REPEAT_FIRE", w: 40}, {code: "SMALL", w: -5}],
+        score: 45, codes: ["REPEAT", "REPEAT_FIRE", "SMALL"]}},
+    ],
+    [
+      {claim: {amount: 500, type: "water", daysToReport: 0, priorClaims: 0, witness: true}},
+      {claim: {amount: 500, type: "water", daysToReport: 0, priorClaims: 0, witness: true, signals: [], score: 0, codes: []}},
+    ],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Outputs over several paths of one entity, and over several entities.
+// ---------------------------------------------------------------------------
+{
+  name: "outputs to several nested paths of one entity",
+  policy: {
+    models: {order: {amount: "number"}},
+    blocks: [{table: "t", inputs: ["order.amount"], outputs: ["order.pricing.discount", "order.pricing.fees.handling", "order.shipping.method", "order.flags.large"], rules: [
+      [">= 1000", "0.1", "0", "'freight'", "true"],
+      [">= 100", "0.05", "2.5", "'parcel'", "false"],
+      ["", "0", "5", "'letter'", "false"],
+    ]}],
+  },
+  cases: [
+    [{order: {amount: 1000}}, {order: {amount: 1000, pricing: {discount: 0.1, fees: {handling: 0}}, shipping: {method: "freight"}, flags: {large: true}}}],
+    [{order: {amount: 150}}, {order: {amount: 150, pricing: {discount: 0.05, fees: {handling: 2.5}}, shipping: {method: "parcel"}, flags: {large: false}}}],
+    [{order: {amount: 1}}, {order: {amount: 1, pricing: {discount: 0, fees: {handling: 5}}, shipping: {method: "letter"}, flags: {large: false}}}],
+  ],
+}
+
+{
+  name: "outputs into an input object of the entity merge with its fields",
+  policy: {
+    models: {order: {amount: "number", meta: "string?"}},
+    blocks: [{table: "t", inputs: ["order.amount"], outputs: ["order.extra.band", "order.extra.code"], rules: [
+      ["> 10", "'high'", "1"],
+      ["", "'low'", "2"],
+    ]}],
+  },
+  cases: [
+    [{order: {amount: 20, extra: {keep: true}}}, {order: {amount: 20, extra: {keep: true, band: "high", code: 1}}}],
+    [{order: {amount: 1, extra: {band: "old"}}}, {order: {amount: 1, extra: {band: "low", code: 2}}}],
+    [{order: {amount: 1}}, {order: {amount: 1, extra: {band: "low", code: 2}}}],
+  ],
+}
+
+{
+  name: "outputs to two root entities are a mixed-scope error but still evaluate in the workspace",
+  diagnostics: ["MIXED_SCOPE"],
+  policy: {
+    models: {customer: {age: "number"}, account: {balance: "number"}},
+    blocks: [{table: "t", inputs: ["customer.age", "account.balance"], outputs: ["customer.segment", "account.limit"], rules: [
+      ["< 25", "", "'youth'", "500"],
+      ["", "> 10000", "'wealthy'", "account.balance * 0.5"],
+      ["", "", "'standard'", "2000"],
+    ]}],
+  },
+  cases: [
+    [{customer: {age: 20}, account: {balance: 50000}}, {customer: {age: 20, segment: "youth"}, account: {balance: 50000, limit: 500}}],
+    [{customer: {age: 40}, account: {balance: 50000}}, {customer: {age: 40, segment: "wealthy"}, account: {balance: 50000, limit: 25000}}],
+    [{customer: {age: 40}, account: {balance: 100}}, {customer: {age: 40, segment: "standard"}, account: {balance: 100, limit: 2000}}],
+  ],
+}
+
+{
+  name: "outputs to an entity and to a global are a mixed-scope error",
+  diagnostics: ["MIXED_SCOPE"],
+  policy: {
+    globals: {run: {mode: "string?"}},
+    models: {order: {amount: "number"}},
+    blocks: [{table: "t", inputs: ["order.amount"], outputs: ["order.band", "auditLevel"], rules: [
+      ["> 100", "'high'", "2"],
+      ["", "'low'", "1"],
+    ]}],
+  },
+  cases: [
+    [{order: {amount: 101}}, {order: {amount: 101, band: "high"}, auditLevel: 2}],
+    [{order: {amount: 100}}, {order: {amount: 100, band: "low"}, auditLevel: 1}],
+  ],
+}
+
+{
+  name: "the single-entity alternative: one table per entity",
+  policy: {
+    models: {customer: {age: "number"}, account: {balance: "number"}},
+    blocks: [
+      {table: "segment", inputs: ["customer.age"], outputs: ["customer.segment"], rules: [["< 25", "'youth'"], ["", "'standard'"]]},
+      {table: "limit", inputs: ["customer.segment", "account.balance"], outputs: ["account.limit"], rules: [
+        ["'youth'", "", "500"],
+        ["", "> 10000", "account.balance * 0.5"],
+        ["", "", "2000"],
+      ]},
+    ],
+  },
+  cases: [
+    [{customer: {age: 20}, account: {balance: 50000}}, {customer: {age: 20, segment: "youth"}, account: {balance: 50000, limit: 500}}],
+    [{customer: {age: 40}, account: {balance: 50000}}, {customer: {age: 40, segment: "standard"}, account: {balance: 50000, limit: 25000}}],
+    [{customer: {age: 40}, account: {balance: 100}}, {customer: {age: 40, segment: "standard"}, account: {balance: 100, limit: 2000}}],
+  ],
+}
+
+{
+  name: "outputs to a parent property and into its single relationship",
+  diagnostics: ["INPUT_OVERRIDE"],
+  policy: {
+    models: {customer: {report: "creditReport"}, creditReport: {score: "number"}},
+    blocks: [{table: "t", inputs: ["customer.report.score"], outputs: ["customer.grade", "customer.report.band"], rules: [
+      [">= 700", "'A'", "'prime'"],
+      ["", "'B'", "'subprime'"],
+    ]}],
+  },
+  cases: [
+    [{customer: {report: {score: 750}}}, {customer: {grade: "A", report: {score: 750, band: "prime"}}}, "question: the table writes the new property `band` under the declared single relationship `customer.report`; the analyzer reports INPUT_OVERRIDE (so DecisionEngine refuses the policy), although `report.band` is not declared and the same write keyed as `creditReport.band` is accepted. The workspace path writes it"],
+    [{customer: {report: {score: 600}}}, {customer: {grade: "B", report: {score: 600, band: "subprime"}}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Tables evaluated per relationship member.
+// ---------------------------------------------------------------------------
+{
+  name: "per-member table reads member fields and a parent input, several outputs",
+  policy: {
+    models: {customer: {currency: "string", accounts: "account[]"}, account: {balance: "number", currency: "string"}},
+    blocks: [{table: "t", inputs: ["account.currency", "account.balance"], outputs: ["account.fx", "account.status"], rules: [
+      ["customer.currency", "< 0", "false", "'overdrawn'"],
+      ["customer.currency", "", "false", "'ok'"],
+      ["", "< 0", "true", "'overdrawn fx'"],
+      ["", "", "true", "'fx'"],
+    ]}],
+  },
+  cases: [
+    [
+      {customer: {currency: "EUR", accounts: [{balance: -5, currency: "EUR"}, {balance: 5, currency: "EUR"}, {balance: -1, currency: "USD"}, {balance: 0, currency: "GBP"}]}},
+      {customer: {currency: "EUR", accounts: [
+        {balance: -5, currency: "EUR", fx: false, status: "overdrawn"},
+        {balance: 5, currency: "EUR", fx: false, status: "ok"},
+        {balance: -1, currency: "USD", fx: true, status: "overdrawn fx"},
+        {balance: 0, currency: "GBP", fx: true, status: "fx"},
+      ]}},
+    ],
+    [
+      {customer: {currency: "USD", accounts: [{balance: 1, currency: "EUR"}]}},
+      {customer: {currency: "USD", accounts: [{balance: 1, currency: "EUR", fx: true, status: "fx"}]}},
+    ],
+    [{customer: {currency: "USD", accounts: []}}, {customer: {currency: "USD", accounts: []}}],
+  ],
+}
+
+{
+  name: "per-member table input reads a parent aggregate",
+  policy: {
+    models: {team: {players: "player[]"}, player: {points: "number"}},
+    blocks: [
+      {expression: "team.best", value: "max(map(team.players, #.points))"},
+      {table: "t", inputs: ["player.points / team.best"], outputs: ["player.tier"], rules: [
+        ["1", "'star'"],
+        [">= 0.5", "'core'"],
+        ["", "'bench'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {team: {players: [{points: 40}, {points: 20}, {points: 19}]}},
+      {team: {best: 40, players: [{points: 40, tier: "star"}, {points: 20, tier: "core"}, {points: 19, tier: "bench"}]}},
+    ],
+    [
+      {team: {players: [{points: 3}, {points: 3}]}},
+      {team: {best: 3, players: [{points: 3, tier: "star"}, {points: 3, tier: "star"}]}},
+    ],
+  ],
+}
+
+{
+  name: "per-member fieldless column reads the parent",
+  policy: {
+    models: {customer: {vip: "boolean", orders: "order[]"}, order: {amount: "number"}},
+    blocks: [{table: "t", inputs: [null, "order.amount"], outputs: ["order.shipping"], rules: [
+      ["customer.vip", "", "0"],
+      ["", ">= 50", "0"],
+      ["", "", "4.95"],
+    ]}],
+  },
+  cases: [
+    [
+      {customer: {vip: true, orders: [{amount: 1}, {amount: 100}]}},
+      {customer: {vip: true, orders: [{amount: 1, shipping: 0}, {amount: 100, shipping: 0}]}},
+    ],
+    [
+      {customer: {vip: false, orders: [{amount: 1}, {amount: 50}]}},
+      {customer: {vip: false, orders: [{amount: 1, shipping: 4.95}, {amount: 50, shipping: 0}]}},
+    ],
+  ],
+}
+
+{
+  name: "per-member table through the member's single relationship",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {address: "address"}, address: {country: "string"}},
+    blocks: [{table: "t", inputs: ["company.address.country"], outputs: ["company.vatRate", "company.region"], rules: [
+      ["'DE'", "0.19", "'EU'"],
+      ["'FR'", "0.2", "'EU'"],
+      ["'GB'", "0.2", "'UK'"],
+      ["", "0", "'ROW'"],
+    ]}],
+  },
+  cases: [
+    [
+      {customer: {companies: [{address: {country: "DE"}}, {address: {country: "GB"}}, {address: {country: "US"}}]}},
+      {customer: {companies: [
+        {address: {country: "DE"}, vatRate: 0.19, region: "EU"},
+        {address: {country: "GB"}, vatRate: 0.2, region: "UK"},
+        {address: {country: "US"}, vatRate: 0, region: "ROW"},
+      ]}},
+    ],
+  ],
+}
+
+{
+  name: "per-member table on an optional member field with a null rule",
+  policy: {
+    models: {team: {members: "member[]"}, member: {grade: "string?"}},
+    blocks: [{table: "t", inputs: ["member.grade"], outputs: ["member.bonus"], rules: [
+      ["null", "0"],
+      ["'A'", "1000"],
+      ["'B', 'C'", "500"],
+      ["", "100"],
+    ]}],
+  },
+  cases: [
+    [
+      {team: {members: [{grade: "A"}, {grade: null}, {}, {grade: "C"}, {grade: "Z"}]}},
+      {team: {members: [{grade: "A", bonus: 1000}, {grade: null, bonus: 0}, {bonus: 0}, {grade: "C", bonus: 500}, {grade: "Z", bonus: 100}]}},
+    ],
+  ],
+}
+
+{
+  name: "two per-member tables chained, then a parent table over their results",
+  policy: {
+    models: {portfolio: {holdings: "holding[]"}, holding: {asset: "string", value: "number"}},
+    blocks: [
+      {table: "class", inputs: ["holding.asset"], outputs: ["holding.class"], rules: [
+        ["'BTC', 'ETH'", "'crypto'"],
+        ["'BND'", "'bond'"],
+        ["", "'equity'"],
+      ]},
+      {table: "risk", inputs: ["holding.class", "holding.value"], outputs: ["holding.risk"], rules: [
+        ["'crypto'", "", "3"],
+        ["'equity'", "> 10000", "2"],
+        ["'equity'", "", "1.5"],
+        ["", "", "1"],
+      ]},
+      {table: "profile", inputs: ["sum(map(portfolio.holdings, #.risk * #.value)) / sum(map(portfolio.holdings, #.value))"], outputs: ["portfolio.profile"], rules: [
+        [">= 2.5", "'aggressive'"],
+        [">= 1.5", "'balanced'"],
+        ["", "'conservative'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {portfolio: {holdings: [{asset: "BTC", value: 100}, {asset: "AAPL", value: 100}]}},
+      {portfolio: {profile: "balanced", holdings: [{asset: "BTC", value: 100, class: "crypto", risk: 3}, {asset: "AAPL", value: 100, class: "equity", risk: 1.5}]}},
+    ],
+    [
+      {portfolio: {holdings: [{asset: "BND", value: 900}, {asset: "MSFT", value: 100}]}},
+      {portfolio: {profile: "conservative", holdings: [{asset: "BND", value: 900, class: "bond", risk: 1}, {asset: "MSFT", value: 100, class: "equity", risk: 1.5}]}},
+    ],
+    [
+      {portfolio: {holdings: [{asset: "ETH", value: 10}]}},
+      {portfolio: {profile: "aggressive", holdings: [{asset: "ETH", value: 10, class: "crypto", risk: 3}]}},
+    ],
+  ],
+}
+
+{
+  name: "per-member mixed collect table, flattened by the parent",
+  policy: {
+    models: {shipment: {packages: "package[]"}, package: {weight: "number", fragile: "boolean", hazmat: "boolean"}},
+    blocks: [
+      {table: "t", inputs: ["package.weight", "package.fragile", "package.hazmat"], outputs: ["package.labels[]", "package.handling"], rules: [
+        ["> 30", "", "", "'HEAVY'", "'forklift'"],
+        ["", "true", "", "'FRAGILE'", "'manual'"],
+        ["", "", "true", "'HAZMAT'", "'certified'"],
+        ["", "", "", "", "'standard'"],
+      ]},
+      {expression: "shipment.labels", value: "flatten(map(shipment.packages, #.labels))"},
+      {expression: "shipment.manualCount", value: "count(shipment.packages, #.handling != 'standard')"},
+    ],
+  },
+  cases: [
+    [
+      {shipment: {packages: [{weight: 40, fragile: true, hazmat: false}, {weight: 1, fragile: false, hazmat: true}, {weight: 1, fragile: false, hazmat: false}]}},
+      {shipment: {labels: ["HEAVY", "FRAGILE", "HAZMAT"], manualCount: 2, packages: [
+        {weight: 40, fragile: true, hazmat: false, labels: ["HEAVY", "FRAGILE"], handling: "forklift"},
+        {weight: 1, fragile: false, hazmat: true, labels: ["HAZMAT"], handling: "certified"},
+        {weight: 1, fragile: false, hazmat: false, labels: [], handling: "standard"},
+      ]}},
+    ],
+    [{shipment: {packages: []}}, {shipment: {labels: [], manualCount: 0, packages: []}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Tables reading computed inputs.
+// ---------------------------------------------------------------------------
+{
+  name: "every input column is computed by a different block kind",
+  policy: {
+    models: {order: {amount: "number", qty: "number", country: "string"}},
+    blocks: [
+      {table: "decision", inputs: ["order.total", "order.region", "order.trusted", "order.band"], outputs: ["order.action"], rules: [
+        ["", "", "false", "", "'hold'"],
+        ["> 1000", "'eu'", "", "'A'", "'fast track'"],
+        ["> 1000", "", "", "", "'review'"],
+        ["", "", "", "", "'auto'"],
+      ]},
+      {expression: "order.total", value: "order.amount * order.qty"},
+      {match: "order.region", arms: [["order.country in ['DE', 'FR']", "'eu'"], ["", "'other'"]]},
+      {assertion: "order.trusted", conditions: [["and", "order.country != 'XX'"], "order.qty < 1000"]},
+      {table: "band", inputs: ["order.amount"], outputs: ["order.band"], rules: [[">= 100", "'A'"], ["", "'B'"]]},
+    ],
+  },
+  cases: [
+    [{order: {amount: 100, qty: 20, country: "DE"}}, {order: {amount: 100, qty: 20, country: "DE", total: 2000, region: "eu", trusted: true, band: "A", action: "fast track"}}],
+    [{order: {amount: 50, qty: 30, country: "DE"}}, {order: {amount: 50, qty: 30, country: "DE", total: 1500, region: "eu", trusted: true, band: "B", action: "review"}}],
+    [{order: {amount: 100, qty: 20, country: "US"}}, {order: {amount: 100, qty: 20, country: "US", total: 2000, region: "other", trusted: true, band: "A", action: "review"}}],
+    [{order: {amount: 1, qty: 1, country: "XX"}}, {order: {amount: 1, qty: 1, country: "XX", total: 1, region: "other", trusted: false, band: "B", action: "hold"}}],
+    [{order: {amount: 1, qty: 1, country: "FR"}}, {order: {amount: 1, qty: 1, country: "FR", total: 1, region: "eu", trusted: true, band: "B", action: "auto"}}],
+  ],
+}
+
+{
+  name: "input field combines several computed values",
+  policy: {
+    models: {invoice: {net: "number", paid: "number"}},
+    blocks: [
+      {expression: "invoice.gross", value: "invoice.net * 1.2"},
+      {expression: "invoice.credit", value: "invoice.paid > invoice.net * 1.2 ? invoice.paid - invoice.net * 1.2 : 0"},
+      {table: "t", inputs: ["invoice.gross - invoice.paid + invoice.credit"], outputs: ["invoice.state"], rules: [
+        ["0", "'settled'"],
+        ["< 0", "'impossible'"],
+        ["<= 1", "'rounding'"],
+        ["", "'open'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{invoice: {net: 100, paid: 120}}, {invoice: {net: 100, paid: 120, gross: 120, credit: 0, state: "settled"}}],
+    [{invoice: {net: 100, paid: 150}}, {invoice: {net: 100, paid: 150, gross: 120, credit: 30, state: "settled"}}],
+    [{invoice: {net: 100, paid: 119.5}}, {invoice: {net: 100, paid: 119.5, gross: 120, credit: 0, state: "rounding"}}],
+    [{invoice: {net: 100, paid: 0}}, {invoice: {net: 100, paid: 0, gross: 120, credit: 0, state: "open"}}],
+  ],
+}
+
+{
+  name: "fieldless columns over a collected array",
+  policy: {
+    models: {user: {age: "number", country: "string"}},
+    blocks: [
+      {table: "flags", inputs: ["user.age", "user.country"], outputs: ["user.flags[]"], rules: [
+        ["< 18", "", "'minor'"],
+        ["", "'XX'", "'sanctioned'"],
+        ["> 100", "", "'age check'"],
+      ]},
+      {table: "route", inputs: [null, "len(user.flags)"], outputs: ["user.route"], rules: [
+        ["'sanctioned' in user.flags", "", "'block'"],
+        ["", ">= 2", "'manual'"],
+        ["", "1", "'light'"],
+        ["", "", "'auto'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{user: {age: 30, country: "DE"}}, {user: {age: 30, country: "DE", flags: [], route: "auto"}}],
+    [{user: {age: 10, country: "DE"}}, {user: {age: 10, country: "DE", flags: ["minor"], route: "light"}}],
+    [{user: {age: 10, country: "XX"}}, {user: {age: 10, country: "XX", flags: ["minor", "sanctioned"], route: "block"}}],
+    [{user: {age: 101, country: "DE"}}, {user: {age: 101, country: "DE", flags: ["age check"], route: "light"}}],
+  ],
+}
+
+{
+  name: "input column reads a field of a computed object",
+  policy: {
+    models: {order: {amount: "number", member: "boolean"}},
+    blocks: [
+      {expression: "order.pricing", value: "{net: order.amount, discount: order.member ? 0.1 : 0}"},
+      {table: "t", inputs: ["order.pricing.net", "order.pricing.discount"], outputs: ["order.message"], rules: [
+        ["> 100", "> 0", "'big member order'"],
+        ["", "> 0", "'member order'"],
+        ["> 100", "", "'big order'"],
+        ["", "", "'order'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{order: {amount: 200, member: true}}, {order: {amount: 200, member: true, pricing: {net: 200, discount: 0.1}, message: "big member order"}}],
+    [{order: {amount: 20, member: true}}, {order: {amount: 20, member: true, pricing: {net: 20, discount: 0.1}, message: "member order"}}],
+    [{order: {amount: 200, member: false}}, {order: {amount: 200, member: false, pricing: {net: 200, discount: 0}, message: "big order"}}],
+    [{order: {amount: 20, member: false}}, {order: {amount: 20, member: false, pricing: {net: 20, discount: 0}, message: "order"}}],
+  ],
+}
+
+{
+  name: "three tables chained, declared in reverse order",
+  policy: {
+    models: {x: {n: "number"}},
+    blocks: [
+      {table: "c", inputs: ["x.b"], outputs: ["x.c"], rules: [["'odd'", "x.a * 3"], ["", "x.a / 2"]]},
+      {table: "b", inputs: ["x.a % 2"], outputs: ["x.b"], rules: [["0", "'even'"], ["", "'odd'"]]},
+      {table: "a", inputs: ["x.n"], outputs: ["x.a"], rules: [["< 0", "-x.n"], ["", "x.n"]]},
+    ],
+  },
+  cases: [
+    [{x: {n: 4}}, {x: {n: 4, a: 4, b: "even", c: 2}}],
+    [{x: {n: -3}}, {x: {n: -3, a: 3, b: "odd", c: 9}}],
+    [{x: {n: 0}}, {x: {n: 0, a: 0, b: "even", c: 0}}],
+    [{x: {n: 1.5}}, {x: {n: 1.5, a: 1.5, b: "odd", c: 4.5}}],
+  ],
+}
+
+{
+  name: "a computed read only by an unselected row's output cell is not evaluated",
+  policy: {
+    models: {x: {n: "number"}},
+    blocks: [
+      {expression: "x.big", value: "x.n * 1000"},
+      {expression: "x.small", value: "x.n / 1000"},
+      {table: "t", inputs: ["x.n"], outputs: ["x.out"], rules: [["> 10", "x.big"], ["", "x.small"]]},
+    ],
+  },
+  cases: [
+    [{x: {n: 11}}, {x: {n: 11, big: 11000, out: 11000}}],
+    [{x: {n: 10}}, {x: {n: 10, small: 0.01, out: 0.01}}],
+    [{x: {n: -5}}, {x: {n: -5, small: -0.005, out: -0.005}}],
+  ],
+}
+
+{
+  name: "per-member lazy output cell: a member computed read by one member's selected row",
+  policy: {
+    models: {order: {lines: "line[]"}, line: {qty: "number", price: "number"}},
+    blocks: [
+      {expression: "line.bulkPrice", value: "line.qty * line.price * 0.8"},
+      {table: "t", inputs: ["line.qty"], outputs: ["line.total"], rules: [[">= 10", "line.bulkPrice"], ["", "line.qty * line.price"]]},
+    ],
+  },
+  cases: [
+    [
+      {order: {lines: [{qty: 10, price: 1}, {qty: 1, price: 5}]}},
+      {order: {lines: [{qty: 10, price: 1, bulkPrice: 8, total: 8}, {qty: 1, price: 5, bulkPrice: 4, total: 5}]}},
+      "question: as for match arms, once one member's selected row reads the computed, it is evaluated and written for every member",
+    ],
+    [
+      {order: {lines: [{qty: 1, price: 2}, {qty: 2, price: 2}]}},
+      {order: {lines: [{qty: 1, price: 2, total: 2}, {qty: 2, price: 2, total: 4}]}},
+    ],
+    [
+      {order: {lines: [{qty: 20, price: 1}]}},
+      {order: {lines: [{qty: 20, price: 1, bulkPrice: 16, total: 16}]}},
+    ],
+  ],
+}
+
+{
+  name: "a computed read by an input cell is evaluated even when an earlier row decides",
+  policy: {
+    models: {x: {n: "number"}},
+    blocks: [
+      {expression: "x.limit", value: "x.n * 2"},
+      {table: "t", inputs: ["x.n"], outputs: ["x.out"], rules: [["> 10", "'big'"], ["< x.limit", "'under limit'"], ["", "'other'"]]},
+    ],
+  },
+  cases: [
+    [{x: {n: 11}}, {x: {n: 11, limit: 22, out: "big"}}],
+    [{x: {n: 5}}, {x: {n: 5, limit: 10, out: "under limit"}}],
+    [{x: {n: -5}}, {x: {n: -5, limit: -10, out: "other"}}],
+  ],
+}
+
+{
+  name: "a collect column evaluates the computed reads of every matched row",
+  policy: {
+    models: {x: {n: "number"}},
+    blocks: [
+      {expression: "x.double", value: "x.n * 2"},
+      {expression: "x.square", value: "x.n * x.n"},
+      {table: "t", inputs: ["x.n"], outputs: ["x.all[]"], rules: [["> 0", "x.double"], ["> 5", "x.square"]]},
+    ],
+  },
+  cases: [
+    [{x: {n: 6}}, {x: {n: 6, double: 12, square: 36, all: [12, 36]}}],
+    [{x: {n: 2}}, {x: {n: 2, double: 4, all: [4]}}],
+    [{x: {n: 0}}, {x: {n: 0, all: []}}],
+  ],
+}
+
+{
+  name: "goal on one output column of a table with computed inputs",
+  policy: {
+    models: {x: {a: "number", b: "number"}},
+    blocks: [
+      {expression: "x.sum", value: "x.a + x.b"},
+      {expression: "x.unrelated", value: "x.a - x.b"},
+      {table: "t", inputs: ["x.sum"], outputs: ["x.sign", "x.size"], rules: [["> 0", "1", "'pos'"], ["< 0", "-1", "'neg'"], ["", "0", "'zero'"]]},
+    ],
+  },
+  cases: [
+    {input: {x: {a: 1, b: 2}}, goals: ["x.sign"], output: {x: {a: 1, b: 2, sum: 3, sign: 1, size: "pos"}}},
+    {input: {x: {a: -1, b: -2}}, goals: ["x.size"], output: {x: {a: -1, b: -2, sum: -3, sign: -1, size: "neg"}}},
+    {input: {x: {a: 1, b: -1}}, output: {x: {a: 1, b: -1, sum: 0, unrelated: 2, sign: 0, size: "zero"}}},
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Mixed collect and scalar columns.
+// ---------------------------------------------------------------------------
+{
+  name: "eight rules, two collect and two scalar columns with sparse cells",
+  policy: {
+    models: {patient: {age: "number", bmi: "number", smoker: "boolean", bp: "number"}},
+    blocks: [{table: "t", inputs: ["patient.age", "patient.bmi", "patient.smoker", "patient.bp"], outputs: ["patient.risks[]", "patient.tier", "patient.tests[]", "patient.followUp"], rules: [
+      [">= 65", "", "", "", "'age'", "", "'ecg'", "30"],
+      ["", ">= 30", "", "", "'obesity'", "'high'", "'lipids'", ""],
+      ["", "", "true", "", "'smoking'", "'high'", "'spirometry'", "60"],
+      ["", "", "", ">= 140", "'hypertension'", "'high'", "", "14"],
+      ["", "[25..30)", "", "", "'overweight'", "'medium'", "", ""],
+      ["", "", "", "[130..140)", "'elevated bp'", "'medium'", "'bp monitor'", ""],
+      ["< 18", "", "", "", "", "'pediatric'", "", "180"],
+      ["", "", "", "", "", "'low'", "'annual'", "365"],
+    ]}],
+  },
+  cases: [
+    [
+      {patient: {age: 70, bmi: 31, smoker: true, bp: 150}},
+      {patient: {age: 70, bmi: 31, smoker: true, bp: 150, risks: ["age", "obesity", "smoking", "hypertension"], tier: "high", tests: ["ecg", "lipids", "spirometry", "annual"], followUp: 30}},
+    ],
+    [
+      {patient: {age: 40, bmi: 27, smoker: false, bp: 135}},
+      {patient: {age: 40, bmi: 27, smoker: false, bp: 135, risks: ["overweight", "elevated bp"], tier: "medium", tests: ["bp monitor", "annual"], followUp: 365}},
+    ],
+    [
+      {patient: {age: 40, bmi: 22, smoker: true, bp: 120}},
+      {patient: {age: 40, bmi: 22, smoker: true, bp: 120, risks: ["smoking"], tier: "high", tests: ["spirometry", "annual"], followUp: 60}},
+    ],
+    [
+      {patient: {age: 10, bmi: 18, smoker: false, bp: 100}},
+      {patient: {age: 10, bmi: 18, smoker: false, bp: 100, risks: [], tier: "pediatric", tests: ["annual"], followUp: 180}},
+    ],
+    [
+      {patient: {age: 30, bmi: 20, smoker: false, bp: 110}},
+      {patient: {age: 30, bmi: 20, smoker: false, bp: 110, risks: [], tier: "low", tests: ["annual"], followUp: 365}},
+    ],
+  ],
+}
+
+{
+  name: "collect column of objects and a scalar computed from the same row",
+  policy: {
+    models: {cart: {total: "number", coupon: "string?"}},
+    blocks: [
+      {table: "promos", inputs: ["cart.total", "cart.coupon"], outputs: ["cart.promos[]", "cart.headline"], rules: [
+        ["", "'FREESHIP'", "{code: 'FREESHIP', off: 5}", "'free shipping'"],
+        [">= 100", "", "{code: 'TEN', off: cart.total * 0.1}", "'10% off'"],
+        [">= 50", "", "{code: 'FIVE', off: 5}", "'5 off'"],
+        ["", "", "", "'no promotion'"],
+      ]},
+      {expression: "cart.discount", value: "sum(map(cart.promos, #.off))"},
+      {expression: "cart.payable", value: "cart.total - cart.discount"},
+    ],
+  },
+  cases: [
+    [
+      {cart: {total: 200, coupon: "FREESHIP"}},
+      {cart: {total: 200, coupon: "FREESHIP", promos: [{code: "FREESHIP", off: 5}, {code: "TEN", off: 20}, {code: "FIVE", off: 5}], headline: "free shipping", discount: 30, payable: 170}},
+    ],
+    [
+      {cart: {total: 60}},
+      {cart: {total: 60, promos: [{code: "FIVE", off: 5}], headline: "5 off", discount: 5, payable: 55}},
+    ],
+    [
+      {cart: {total: 10, coupon: null}},
+      {cart: {total: 10, coupon: null, promos: [], headline: "no promotion", discount: 0, payable: 10}},
+    ],
+  ],
+}
+
+{
+  name: "mixed table without input columns: scalar takes the first non-empty cell, collect takes all",
+  policy: {
+    models: {x: {n: "number"}},
+    blocks: [{table: "t", inputs: [], outputs: ["x.first", "x.all[]"], rules: [
+      ["", "x.n"],
+      ["x.n + 1", "x.n + 1"],
+      ["x.n + 2", ""],
+    ]}],
+  },
+  cases: [
+    [{x: {n: 1}}, {x: {n: 1, first: 2, all: [1, 2]}}],
+    [{x: {n: -1}}, {x: {n: -1, first: 0, all: [-1, 0]}}],
+  ],
+}
+
+{
+  name: "a collect column on a hit-first table keeps scanning after every scalar is resolved",
+  policy: {
+    models: {x: {n: "number"}},
+    blocks: [{table: "t", inputs: ["x.n"], outputs: ["x.kind", "x.matches[]"], rules: [
+      ["> 0", "'positive'", "1"],
+      ["> 10", "'big'", "2"],
+      ["> 100", "'huge'", "3"],
+      ["", "'any'", "4"],
+    ]}],
+  },
+  cases: [
+    [{x: {n: 500}}, {x: {n: 500, kind: "positive", matches: [1, 2, 3, 4]}}],
+    [{x: {n: 50}}, {x: {n: 50, kind: "positive", matches: [1, 2, 4]}}],
+    [{x: {n: 0}}, {x: {n: 0, kind: "any", matches: [4]}}],
+  ],
+}
+
+{
+  name: "mixed table feeding a match and an assertion",
+  policy: {
+    models: {txn: {amount: "number", country: "string", hour: "number"}},
+    blocks: [
+      {table: "t", inputs: ["txn.amount", "txn.country", "txn.hour"], outputs: ["txn.alerts[]", "txn.score"], rules: [
+        ["> 5000", "", "", "'amount'", "50"],
+        ["", "'XX', 'YY'", "", "'geo'", "40"],
+        ["", "", "< 6", "'night'", "20"],
+        ["", "", "", "", "0"],
+      ]},
+      {match: "txn.action", arms: [
+        ["len(txn.alerts) >= 2", "'block'"],
+        ["txn.score >= 40", "'challenge'"],
+        ["", "'allow'"],
+      ]},
+      {assertion: "txn.notify", conditions: [["or", "'geo' in txn.alerts"], "txn.action == 'block'"]},
+    ],
+  },
+  cases: [
+    [{txn: {amount: 6000, country: "XX", hour: 12}}, {txn: {amount: 6000, country: "XX", hour: 12, alerts: ["amount", "geo"], score: 50, action: "block", notify: true}}],
+    [{txn: {amount: 10, country: "XX", hour: 12}}, {txn: {amount: 10, country: "XX", hour: 12, alerts: ["geo"], score: 40, action: "challenge", notify: true}}],
+    [{txn: {amount: 10, country: "DE", hour: 3}}, {txn: {amount: 10, country: "DE", hour: 3, alerts: ["night"], score: 20, action: "allow", notify: false}}],
+    [{txn: {amount: 6000, country: "DE", hour: 3}}, {txn: {amount: 6000, country: "DE", hour: 3, alerts: ["amount", "night"], score: 50, action: "block", notify: true}}],
+    [{txn: {amount: 1, country: "DE", hour: 12}}, {txn: {amount: 1, country: "DE", hour: 12, alerts: [], score: 0, action: "allow", notify: false}}],
+  ],
+}
+
+{
+  name: "goal on the scalar column of a mixed table still writes the collect column",
+  policy: {
+    models: {x: {n: "number"}},
+    blocks: [{table: "t", inputs: ["x.n"], outputs: ["x.tags[]", "x.tier"], rules: [
+      ["> 10", "'a'", "1"],
+      ["> 5", "'b'", ""],
+      ["", "'c'", "3"],
+    ]}],
+  },
+  cases: [
+    {input: {x: {n: 11}}, goals: ["x.tier"], output: {x: {n: 11, tags: ["a", "b", "c"], tier: 1}}},
+    {input: {x: {n: 6}}, goals: ["x.tier"], output: {x: {n: 6, tags: ["b", "c"], tier: 3}}},
+    {input: {x: {n: 1}}, goals: ["x.tags"], output: {x: {n: 1, tags: ["c"], tier: 3}}},
+  ],
+}

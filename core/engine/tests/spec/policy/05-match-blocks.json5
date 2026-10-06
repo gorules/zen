@@ -1,0 +1,773 @@
+// Match blocks: arms are tried in document order, the first arm whose condition is true
+// writes its value to the block's key. An arm with an empty condition is the default and
+// always matches. Without a matching arm the key is written as null (the analyzer reports
+// MissingDefaultBranch for a non-exhaustive match without default, but evaluation still
+// runs and falls through to null; diagnostics are not observable from this harness).
+
+// ---------------------------------------------------------------------------
+// Arm order: the first true arm wins, later arms are not consulted.
+// ---------------------------------------------------------------------------
+{
+  name: "first true arm wins in document order",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{match: "customer.tier", arms: [
+      ["customer.age >= 65", "'senior'"],
+      ["customer.age >= 18", "'adult'"],
+      ["", "'minor'"],
+    ]}],
+  },
+  cases: [
+    [{customer: {age: 70}}, {customer: {age: 70, tier: "senior"}}],
+    [{customer: {age: 65}}, {customer: {age: 65, tier: "senior"}}],
+    [{customer: {age: 64.99}}, {customer: {age: 64.99, tier: "adult"}}],
+    [{customer: {age: 18}}, {customer: {age: 18, tier: "adult"}}],
+    [{customer: {age: 17}}, {customer: {age: 17, tier: "minor"}}],
+    [{customer: {age: 0}}, {customer: {age: 0, tier: "minor"}}],
+    [{customer: {age: -5}}, {customer: {age: -5, tier: "minor"}}],
+  ],
+}
+
+{
+  name: "overlapping arms: the earlier, broader arm shadows the later one",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{match: "customer.tier", arms: [
+      ["customer.age >= 18", "'adult'"],
+      ["customer.age >= 65", "'senior'"],
+      ["", "'minor'"],
+    ]}],
+  },
+  cases: [
+    [{customer: {age: 70}}, {customer: {age: 70, tier: "adult"}}],
+    [{customer: {age: 20}}, {customer: {age: 20, tier: "adult"}}],
+    [{customer: {age: 10}}, {customer: {age: 10, tier: "minor"}}],
+  ],
+}
+
+{
+  name: "identical conditions: only the first arm is ever selected",
+  policy: {
+    models: {customer: {vip: "boolean"}},
+    blocks: [{match: "customer.label", arms: [
+      ["customer.vip", "'first'"],
+      ["customer.vip", "'second'"],
+      ["", "'none'"],
+    ]}],
+  },
+  cases: [
+    [{customer: {vip: true}}, {customer: {vip: true, label: "first"}}],
+    [{customer: {vip: false}}, {customer: {vip: false, label: "none"}}],
+  ],
+}
+
+{
+  name: "an arm after a matched arm is not evaluated, so its error is not raised",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {customer: {age: "number", name: "string"}},
+    blocks: [{match: "customer.tier", arms: [
+      ["customer.age > 10", "'old'"],
+      ["customer.name + 1 > 0", "'broken'"],
+      ["", "'young'"],
+    ]}],
+  },
+  cases: [
+    [{customer: {age: 20, name: "a"}}, {customer: {age: 20, name: "a", tier: "old"}}],
+    [{customer: {age: 11, name: ""}}, {customer: {age: 11, name: "", tier: "old"}}],
+    [{customer: {age: 5, name: "a"}}, "!error: ExpressionFailed"],
+  ],
+}
+
+{
+  name: "an arm value is only evaluated for the selected arm",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {customer: {age: "number", name: "string"}},
+    blocks: [{match: "customer.tier", arms: [
+      ["customer.age > 10", "'ok'"],
+      ["", "customer.name + 1"],
+    ]}],
+  },
+  cases: [
+    [{customer: {age: 20, name: "a"}}, {customer: {age: 20, name: "a", tier: "ok"}}],
+    [{customer: {age: 2, name: "a"}}, "!error: ExpressionFailed"],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// The default arm: an empty condition always matches.
+// ---------------------------------------------------------------------------
+{
+  name: "default arm only",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{match: "customer.tier", arms: [["", "'everyone'"]]}],
+  },
+  cases: [
+    [{customer: {age: 1}}, {customer: {age: 1, tier: "everyone"}}],
+    [{customer: {age: 100}}, {customer: {age: 100, tier: "everyone"}}],
+  ],
+}
+
+{
+  name: "default arm placed first shadows every later arm",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{match: "customer.tier", arms: [
+      ["", "'default'"],
+      ["customer.age > 10", "'old'"],
+    ]}],
+  },
+  cases: [
+    [{customer: {age: 20}}, {customer: {age: 20, tier: "default"}}],
+    [{customer: {age: 1}}, {customer: {age: 1, tier: "default"}}],
+  ],
+}
+
+{
+  name: "default arm in the middle: later arms are unreachable",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{match: "customer.tier", arms: [
+      ["customer.age > 50", "'old'"],
+      ["", "'middle'"],
+      ["customer.age < 10", "'child'"],
+    ]}],
+  },
+  cases: [
+    [{customer: {age: 60}}, {customer: {age: 60, tier: "old"}}],
+    [{customer: {age: 30}}, {customer: {age: 30, tier: "middle"}}],
+    [{customer: {age: 5}}, {customer: {age: 5, tier: "middle"}}],
+  ],
+}
+
+{
+  name: "whitespace-only condition is the default arm",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{match: "customer.tier", arms: [
+      ["customer.age > 50", "'old'"],
+      ["   ", "'other'"],
+    ]}],
+  },
+  cases: [
+    [{customer: {age: 60}}, {customer: {age: 60, tier: "old"}}],
+    [{customer: {age: 3}}, {customer: {age: 3, tier: "other"}}],
+  ],
+}
+
+{
+  name: "`_` as a condition is an identifier read, not the default arm",
+  diagnostics: ["MISSING_DEFAULT_BRANCH", "UNDEFINED_VARIABLE"],
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{match: "customer.tier", arms: [
+      ["customer.age > 50", "'old'"],
+      ["_", "'other'"],
+    ]}],
+  },
+  cases: [
+    [{customer: {age: 60}}, "!error: MissingRequiredInputs", "question: the analyzer message tells users to add a default `_` arm, but on the wire `_` is a plain identifier read and the policy fails with a missing input `_`; only an empty condition is the default"],
+    [{customer: {age: 3}}, "!error: MissingRequiredInputs", "question: `_` arm is not treated as the default on the wire"],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Missing default: no arm matches -> the key is written as null.
+// ---------------------------------------------------------------------------
+{
+  name: "non-exhaustive match without default writes null when nothing matches",
+  diagnostics: ["MISSING_DEFAULT_BRANCH"],
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{match: "customer.tier", arms: [
+      ["customer.age > 30", "'senior'"],
+      ["customer.age > 18", "'adult'"],
+    ]}],
+  },
+  cases: [
+    [{customer: {age: 40}}, {customer: {age: 40, tier: "senior"}}],
+    [{customer: {age: 20}}, {customer: {age: 20, tier: "adult"}}],
+    [{customer: {age: 18}}, {customer: {age: 18, tier: null}}, "question: the analyzer reports MissingDefaultBranch as an error, yet evaluation runs anyway and writes null; should an error-severity diagnostic block evaluation?"],
+    [{customer: {age: 1}}, {customer: {age: 1, tier: null}}],
+  ],
+}
+
+{
+  name: "single-arm match without default",
+  diagnostics: ["MISSING_DEFAULT_BRANCH"],
+  policy: {
+    models: {customer: {flagged: "boolean"}},
+    blocks: [{match: "customer.reason", arms: [["customer.flagged", "'manual review'"]]}],
+  },
+  cases: [
+    [{customer: {flagged: true}}, {customer: {flagged: true, reason: "manual review"}}],
+    [{customer: {flagged: false}}, {customer: {flagged: false, reason: null}}],
+  ],
+}
+
+{
+  name: "match with no arms writes null",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{match: "customer.tier", arms: []}],
+  },
+  cases: [
+    [{customer: {age: 1}}, {customer: {age: 1, tier: null}}],
+    [{customer: {age: 99}}, {customer: {age: 99, tier: null}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Exhaustive (discriminated) matches without default: enum, boolean, numeric range.
+// ---------------------------------------------------------------------------
+{
+  name: "every enum value covered, no default",
+  policy: {
+    models: {order: {channel: "string(web|store|phone)"}},
+    blocks: [{match: "order.fee", arms: [
+      ["order.channel == 'web'", "0"],
+      ["order.channel == 'store'", "2.5"],
+      ["order.channel == 'phone'", "5"],
+    ]}],
+  },
+  cases: [
+    [{order: {channel: "web"}}, {order: {channel: "web", fee: 0}}],
+    [{order: {channel: "store"}}, {order: {channel: "store", fee: 2.5}}],
+    [{order: {channel: "phone"}}, {order: {channel: "phone", fee: 5}}],
+    [{order: {channel: "fax"}}, "!error: InputValidationFailed"],
+    [{order: {channel: "WEB"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "enum covered with `in` lists",
+  policy: {
+    models: {order: {channel: "string(web|store|phone)"}},
+    blocks: [{match: "order.kind", arms: [
+      ["order.channel in ['web']", "'online'"],
+      ["order.channel in ['store', 'phone']", "'offline'"],
+    ]}],
+  },
+  cases: [
+    [{order: {channel: "web"}}, {order: {channel: "web", kind: "online"}}],
+    [{order: {channel: "store"}}, {order: {channel: "store", kind: "offline"}}],
+    [{order: {channel: "phone"}}, {order: {channel: "phone", kind: "offline"}}],
+  ],
+}
+
+{
+  name: "enum partially covered without default writes null for the rest",
+  diagnostics: ["MISSING_DEFAULT_BRANCH"],
+  policy: {
+    models: {order: {channel: "string(web|store|phone)"}},
+    blocks: [{match: "order.kind", arms: [["order.channel == 'web'", "'online'"]]}],
+  },
+  cases: [
+    [{order: {channel: "web"}}, {order: {channel: "web", kind: "online"}}],
+    [{order: {channel: "store"}}, {order: {channel: "store", kind: null}}],
+  ],
+}
+
+{
+  name: "both booleans covered, no default",
+  policy: {
+    models: {customer: {verified: "boolean"}},
+    blocks: [{match: "customer.limit", arms: [
+      ["customer.verified == true", "1000"],
+      ["customer.verified == false", "100"],
+    ]}],
+  },
+  cases: [
+    [{customer: {verified: true}}, {customer: {verified: true, limit: 1000}}],
+    [{customer: {verified: false}}, {customer: {verified: false, limit: 100}}],
+    [{customer: {verified: "yes"}}, "!error: InputValidationFailed"],
+    [{customer: {verified: 1}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "gap-free numeric range, no default",
+  policy: {
+    models: {customer: {score: "number"}},
+    blocks: [{match: "customer.band", arms: [
+      ["customer.score < 500", "'low'"],
+      ["customer.score >= 500 and customer.score < 700", "'mid'"],
+      ["customer.score >= 700", "'high'"],
+    ]}],
+  },
+  cases: [
+    [{customer: {score: 499.999}}, {customer: {score: 499.999, band: "low"}}],
+    [{customer: {score: 500}}, {customer: {score: 500, band: "mid"}}],
+    [{customer: {score: 699}}, {customer: {score: 699, band: "mid"}}],
+    [{customer: {score: 700}}, {customer: {score: 700, band: "high"}}],
+    [{customer: {score: -1e6}}, {customer: {score: -1e6, band: "low"}}],
+    [{customer: {score: 1e9}}, {customer: {score: 1e9, band: "high"}}],
+  ],
+}
+
+{
+  name: "numeric range with a gap writes null inside the gap",
+  diagnostics: ["MISSING_DEFAULT_BRANCH"],
+  policy: {
+    models: {customer: {score: "number"}},
+    blocks: [{match: "customer.band", arms: [
+      ["customer.score < 500", "'low'"],
+      ["customer.score > 500", "'high'"],
+    ]}],
+  },
+  cases: [
+    [{customer: {score: 400}}, {customer: {score: 400, band: "low"}}],
+    [{customer: {score: 500}}, {customer: {score: 500, band: null}}],
+    [{customer: {score: 501}}, {customer: {score: 501, band: "high"}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Arm values of different types.
+// ---------------------------------------------------------------------------
+{
+  name: "arms produce values of different types",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {item: {kind: "string(n|s|b|o|a|z)"}},
+    blocks: [{match: "item.value", arms: [
+      ["item.kind == 'n'", "42.50"],
+      ["item.kind == 's'", "'text'"],
+      ["item.kind == 'b'", "true"],
+      ["item.kind == 'o'", "{x: 1, y: 'two'}"],
+      ["item.kind == 'a'", "[1, 'a', false]"],
+      ["item.kind == 'z'", "null"],
+    ]}],
+  },
+  cases: [
+    [{item: {kind: "n"}}, {item: {kind: "n", value: 42.5}}],
+    [{item: {kind: "s"}}, {item: {kind: "s", value: "text"}}],
+    [{item: {kind: "b"}}, {item: {kind: "b", value: true}}],
+    [{item: {kind: "o"}}, {item: {kind: "o", value: {x: 1, y: "two"}}}],
+    [{item: {kind: "a"}}, {item: {kind: "a", value: [1, "a", false]}}],
+    [{item: {kind: "z"}}, {item: {kind: "z", value: null}}],
+  ],
+}
+
+{
+  name: "an empty arm value writes null when selected",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{match: "customer.note", arms: [
+      ["customer.age > 50", ""],
+      ["", "'young'"],
+    ]}],
+  },
+  cases: [
+    [{customer: {age: 60}}, {customer: {age: 60, note: null}}],
+    [{customer: {age: 6}}, {customer: {age: 6, note: "young"}}],
+  ],
+}
+
+{
+  name: "arm values computed from inputs",
+  policy: {
+    models: {order: {amount: "number", country: "string"}},
+    blocks: [{match: "order.tax", arms: [
+      ["order.country == 'DE'", "order.amount * 0.19"],
+      ["order.country == 'NL'", "round(order.amount * 0.21, 2)"],
+      ["", "0"],
+    ]}],
+  },
+  cases: [
+    [{order: {amount: 100, country: "DE"}}, {order: {amount: 100, country: "DE", tax: 19}}],
+    [{order: {amount: 10.10, country: "NL"}}, {order: {amount: 10.10, country: "NL", tax: 2.12}}],
+    [{order: {amount: 0.1, country: "DE"}}, {order: {amount: 0.1, country: "DE", tax: 0.019}}],
+    [{order: {amount: 100, country: "US"}}, {order: {amount: 100, country: "US", tax: 0}}],
+    [{order: {amount: 100, country: ""}}, {order: {amount: 100, country: "", tax: 0}}],
+  ],
+}
+
+{
+  name: "arm value erroring in the selected arm fails the evaluation",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {order: {amount: "number", code: "string"}},
+    blocks: [{match: "order.x", arms: [
+      ["order.amount > 0", "order.code * 2"],
+      ["", "0"],
+    ]}],
+  },
+  cases: [
+    [{order: {amount: 1, code: "a"}}, "!error: ExpressionFailed"],
+    [{order: {amount: 0, code: "a"}}, {order: {amount: 0, code: "a", x: 0}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Conditions that are not booleans.
+// ---------------------------------------------------------------------------
+{
+  name: "a non-boolean condition never matches",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {customer: {age: "number", name: "string"}},
+    blocks: [{match: "customer.code", arms: [
+      ["customer.age", "'number'"],
+      ["customer.name", "'string'"],
+      ["", "'default'"],
+    ]}],
+  },
+  cases: [
+    [{customer: {age: 1, name: "x"}}, {customer: {age: 1, name: "x", code: "default"}}],
+    [{customer: {age: 0, name: ""}}, {customer: {age: 0, name: "", code: "default"}}],
+  ],
+}
+
+{
+  name: "a condition that errors fails the evaluation",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {customer: {name: "string"}},
+    blocks: [{match: "customer.code", arms: [
+      ["customer.name + 1 > 2", "1"],
+      ["", "2"],
+    ]}],
+  },
+  cases: [
+    [{customer: {name: "x"}}, "!error: ExpressionFailed"],
+    [{customer: {name: ""}}, "!error: ExpressionFailed"],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Null and missing inputs.
+// ---------------------------------------------------------------------------
+{
+  name: "required input missing or null is reported before evaluation",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{match: "customer.tier", arms: [["customer.age > 30", "'senior'"], ["", "'other'"]]}],
+  },
+  cases: [
+    [{customer: {age: 40}}, {customer: {age: 40, tier: "senior"}}],
+    [{customer: {age: null}}, "!error: MissingRequiredInputs"],
+    [{customer: {}}, "!error: MissingRequiredInputs"],
+    [{}, "!error: MissingRequiredInputs"],
+    [{customer: {age: "40"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "optional input: null-guarded arms",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {customer: {age: "number?"}},
+    blocks: [{match: "customer.tier", arms: [
+      ["customer.age == null", "'unknown'"],
+      ["customer.age > 30", "'senior'"],
+      ["", "'other'"],
+    ]}],
+  },
+  cases: [
+    [{customer: {age: 40}}, {customer: {age: 40, tier: "senior"}}],
+    [{customer: {age: 3}}, {customer: {age: 3, tier: "other"}}],
+    [{customer: {age: null}}, {customer: {age: null, tier: "unknown"}}],
+    [{customer: {}}, {customer: {tier: "unknown"}}],
+  ],
+}
+
+{
+  name: "optional input: ordering comparison against null errors",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {customer: {age: "number?"}},
+    blocks: [{match: "customer.tier", arms: [
+      ["customer.age > 30", "'senior'"],
+      ["", "'other'"],
+    ]}],
+  },
+  cases: [
+    [{customer: {age: 40}}, {customer: {age: 40, tier: "senior"}}],
+    [{customer: {age: 30}}, {customer: {age: 30, tier: "other"}}],
+    [{customer: {age: null}}, "!error: ExpressionFailed"],
+    [{customer: {}}, "!error: ExpressionFailed"],
+  ],
+}
+
+{
+  name: "optional input: null-coalescing condition",
+  policy: {
+    models: {customer: {age: "number?"}},
+    blocks: [{match: "customer.tier", arms: [
+      ["(customer.age ?? 0) > 30", "'senior'"],
+      ["", "'other'"],
+    ]}],
+  },
+  cases: [
+    [{customer: {age: 40}}, {customer: {age: 40, tier: "senior"}}],
+    [{customer: {age: null}}, {customer: {age: null, tier: "other"}}],
+    [{customer: {}}, {customer: {tier: "other"}}],
+  ],
+}
+
+{
+  name: "optional string compared by equality",
+  policy: {
+    models: {customer: {country: "string?"}},
+    blocks: [{match: "customer.region", arms: [
+      ["customer.country == 'DE'", "'eu'"],
+      ["customer.country == null", "'unknown'"],
+      ["", "'world'"],
+    ]}],
+  },
+  cases: [
+    [{customer: {country: "DE"}}, {customer: {country: "DE", region: "eu"}}],
+    [{customer: {country: "US"}}, {customer: {country: "US", region: "world"}}],
+    [{customer: {country: ""}}, {customer: {country: "", region: "world"}}],
+    [{customer: {country: null}}, {customer: {country: null, region: "unknown"}}],
+    [{customer: {}}, {customer: {region: "unknown"}}],
+  ],
+}
+
+{
+  name: "optional boolean condition: null does not match",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {customer: {vip: "boolean?"}},
+    blocks: [{match: "customer.label", arms: [
+      ["customer.vip", "'vip'"],
+      ["", "'regular'"],
+    ]}],
+  },
+  cases: [
+    [{customer: {vip: true}}, {customer: {vip: true, label: "vip"}}],
+    [{customer: {vip: false}}, {customer: {vip: false, label: "regular"}}],
+    [{customer: {vip: null}}, {customer: {vip: null, label: "regular"}}],
+    [{customer: {}}, {customer: {label: "regular"}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Target paths and data flow between blocks.
+// ---------------------------------------------------------------------------
+{
+  name: "nested target path creates the intermediate object",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{match: "customer.risk.level", arms: [["customer.age > 60", "'high'"], ["", "'low'"]]}],
+  },
+  cases: [
+    [{customer: {age: 70}}, {customer: {age: 70, risk: {level: "high"}}}],
+    [{customer: {age: 20}}, {customer: {age: 20, risk: {level: "low"}}}],
+  ],
+}
+
+{
+  name: "a later block reads the match result",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [
+      {match: "customer.tier", arms: [["customer.age >= 18", "'adult'"], ["", "'minor'"]]},
+      {expression: "customer.canBuy", value: "customer.tier == 'adult'"},
+    ],
+  },
+  cases: [
+    [{customer: {age: 30}}, {customer: {age: 30, tier: "adult", canBuy: true}}],
+    [{customer: {age: 3}}, {customer: {age: 3, tier: "minor", canBuy: false}}],
+  ],
+}
+
+{
+  name: "match conditions read an earlier computed property",
+  policy: {
+    models: {order: {amount: "number", qty: "number"}},
+    blocks: [
+      {expression: "order.total", value: "order.amount * order.qty"},
+      {match: "order.size", arms: [["order.total >= 1000", "'large'"], ["order.total >= 100", "'medium'"], ["", "'small'"]]},
+    ],
+  },
+  cases: [
+    [{order: {amount: 500, qty: 2}}, {order: {amount: 500, qty: 2, total: 1000, size: "large"}}],
+    [{order: {amount: 50, qty: 2}}, {order: {amount: 50, qty: 2, total: 100, size: "medium"}}],
+    [{order: {amount: 5, qty: 0}}, {order: {amount: 5, qty: 0, total: 0, size: "small"}}],
+  ],
+}
+
+{
+  name: "computed dependency declared after the match block still flows in",
+  policy: {
+    models: {order: {amount: "number", qty: "number"}},
+    blocks: [
+      {match: "order.size", arms: [["order.total >= 100", "'big'"], ["", "'small'"]]},
+      {expression: "order.total", value: "order.amount * order.qty"},
+    ],
+  },
+  cases: [
+    [{order: {amount: 50, qty: 3}}, {order: {amount: 50, qty: 3, total: 150, size: "big"}}],
+    [{order: {amount: 5, qty: 3}}, {order: {amount: 5, qty: 3, total: 15, size: "small"}}],
+  ],
+}
+
+{
+  name: "chained matches: second match discriminates on the first one's result",
+  policy: {
+    models: {customer: {score: "number", income: "number"}},
+    blocks: [
+      {match: "customer.risk", arms: [["customer.score < 600", "'high'"], ["", "'low'"]]},
+      {match: "customer.limit", arms: [
+        ["customer.risk == 'high'", "0"],
+        ["customer.income > 50000", "10000"],
+        ["", "2000"],
+      ]},
+    ],
+  },
+  cases: [
+    [{customer: {score: 500, income: 90000}}, {customer: {score: 500, income: 90000, risk: "high", limit: 0}}],
+    [{customer: {score: 700, income: 90000}}, {customer: {score: 700, income: 90000, risk: "low", limit: 10000}}],
+    [{customer: {score: 700, income: 50000}}, {customer: {score: 700, income: 50000, risk: "low", limit: 2000}}],
+  ],
+}
+
+{
+  name: "match reads a global scope value",
+  diagnostics: ["UNDEFINED_VARIABLE"],
+  policy: {
+    globals: {config: {threshold: "number"}},
+    models: {customer: {age: "number"}},
+    blocks: [{match: "customer.status", arms: [["customer.age >= config.threshold", "'ok'"], ["", "'too young'"]]}],
+  },
+  cases: [
+    [{customer: {age: 18}, config: {threshold: 18}}, {customer: {age: 18, status: "ok"}, config: {threshold: 18}}],
+    [{customer: {age: 18}, config: {threshold: 21}}, {customer: {age: 18, status: "too young"}, config: {threshold: 21}}],
+  ],
+}
+
+{
+  name: "input properties not in the model pass through untouched",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [{match: "customer.tier", arms: [["customer.age > 1", "'a'"], ["", "'b'"]]}],
+  },
+  cases: [
+    [{customer: {age: 2, extra: {x: [1]}}, other: true}, {customer: {age: 2, extra: {x: [1]}, tier: "a"}, other: true}],
+    [{customer: {age: 0, extra: null}}, {customer: {age: 0, extra: null, tier: "b"}}],
+  ],
+}
+
+{
+  name: "goals restrict evaluation to the requested match",
+  policy: {
+    models: {customer: {age: "number"}},
+    blocks: [
+      {match: "customer.tier", arms: [["customer.age > 30", "'senior'"], ["", "'junior'"]]},
+      {match: "customer.discount", arms: [["customer.age > 60", "0.2"], ["", "0"]]},
+    ],
+  },
+  cases: [
+    {input: {customer: {age: 70}}, goals: ["customer.tier"], output: {customer: {age: 70, tier: "senior"}}},
+    {input: {customer: {age: 70}}, goals: ["customer.discount"], output: {customer: {age: 70, discount: 0.2}}},
+    {input: {customer: {age: 10}}, goals: ["customer.tier", "customer.discount"], output: {customer: {age: 10, tier: "junior", discount: 0}}},
+    {input: {customer: {age: 10}}, output: {customer: {age: 10, tier: "junior", discount: 0}}},
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Per-instance evaluation: a match writing to an iterated entity runs for each instance.
+// ---------------------------------------------------------------------------
+{
+  name: "match on a related entity runs once per instance",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [{match: "company.size", arms: [
+      ["company.revenue >= 1000000", "'large'"],
+      ["company.revenue >= 10000", "'medium'"],
+      ["", "'small'"],
+    ]}],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 2000000}, {revenue: 50000}, {revenue: 1}]}},
+      {customer: {companies: [{revenue: 2000000, size: "large"}, {revenue: 50000, size: "medium"}, {revenue: 1, size: "small"}]}},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: []}}],
+    [{customer: {companies: [{revenue: 10000}]}}, {customer: {companies: [{revenue: 10000, size: "medium"}]}}],
+  ],
+}
+
+{
+  name: "per-instance match without default writes null on unmatched instances only",
+  diagnostics: ["MISSING_DEFAULT_BRANCH"],
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [{match: "company.flag", arms: [["company.revenue < 0", "'loss'"]]}],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: -1}, {revenue: 5}]}},
+      {customer: {companies: [{revenue: -1, flag: "loss"}, {revenue: 5, flag: null}]}},
+    ],
+  ],
+}
+
+{
+  name: "parent match aggregates over a per-instance match result",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {match: "company.size", arms: [["company.revenue >= 100", "'big'"], ["", "'small'"]]},
+      {match: "customer.profile", arms: [
+        ["some(customer.companies, #.size == 'big')", "'has big'"],
+        ["len(customer.companies) == 0", "'none'"],
+        ["", "'all small'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 200}, {revenue: 1}]}},
+      {customer: {profile: "has big", companies: [{revenue: 200, size: "big"}, {revenue: 1, size: "small"}]}},
+    ],
+    [
+      {customer: {companies: [{revenue: 2}]}},
+      {customer: {profile: "all small", companies: [{revenue: 2, size: "small"}]}},
+    ],
+    [{customer: {companies: []}}, {customer: {profile: "none", companies: []}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Dates and strings in conditions.
+// ---------------------------------------------------------------------------
+{
+  name: "date input compared in arms",
+  policy: {
+    models: {contract: {start: "date"}},
+    blocks: [{match: "contract.era", arms: [
+      ["contract.start < d('2020-01-01')", "'legacy'"],
+      ["contract.start < d('2025-01-01')", "'current'"],
+      ["", "'new'"],
+    ]}],
+  },
+  cases: [
+    [{contract: {start: date('2019-12-31')}}, {contract: {start: date('2019-12-31'), era: "legacy"}}],
+    [{contract: {start: date('2020-01-01')}}, {contract: {start: date('2020-01-01'), era: "current"}}],
+    [{contract: {start: date('2025-03-01')}}, {contract: {start: date('2025-03-01'), era: "new"}}],
+  ],
+}
+
+{
+  name: "string functions in arms",
+  policy: {
+    models: {user: {email: "string"}},
+    blocks: [{match: "user.kind", arms: [
+      ["endsWith(user.email, '@gorules.io')", "'staff'"],
+      ["contains(user.email, '+')", "'alias'"],
+      ["len(user.email) == 0", "'empty'"],
+      ["", "'external'"],
+    ]}],
+  },
+  cases: [
+    [{user: {email: "a@gorules.io"}}, {user: {email: "a@gorules.io", kind: "staff"}}],
+    [{user: {email: "a+b@x.io"}}, {user: {email: "a+b@x.io", kind: "alias"}}],
+    [{user: {email: ""}}, {user: {email: "", kind: "empty"}}],
+    [{user: {email: "x@y.z"}}, {user: {email: "x@y.z", kind: "external"}}],
+  ],
+}

@@ -1,0 +1,1284 @@
+// Function nodes, version 2: `export const handler = async (input) => ...` modules run in
+// QuickJS. The node's output is whatever the handler resolves to, converted back to a
+// Variable. Helpers come from module imports (`dayjs`, `big.js`, `zod`, `zen`); the
+// previously executed nodes are reachable through `input.$nodes`.
+
+// --- Return shapes: objects --------------------------------------------------------------
+
+{
+  name: "v2 returns an object literal computed from the input",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ total: input.a + input.b, label: 'sum' });"""}],
+  },
+  cases: [
+    [{a: 1, b: 2}, {total: 3, label: "sum"}],
+    [{a: -5, b: 5}, {total: 0, label: "sum"}],
+    [{a: "x", b: "y"}, {total: "xy", label: "sum"}],
+    [{a: 1, b: "2"}, {total: "12", label: "sum"}],
+    [{a: true, b: true}, {total: 2, label: "sum"}],
+  ],
+}
+
+{
+  name: "v2 returning the input unchanged passes it through",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => input;"""}],
+  },
+  cases: [
+    [{a: 1}, {a: 1}],
+    [{}, {}],
+    [{nested: {deep: [1, {x: "y"}]}}, {nested: {deep: [1, {x: "y"}]}}],
+    [{s: "text", b: false, n: null}, {s: "text", b: false}],
+  ],
+}
+
+{
+  name: "v2 spreading the input does not leak the $nodes proxy",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ ...input, seen: true });"""}],
+  },
+  cases: [
+    [{a: 1}, {a: 1, seen: true}],
+    [{}, {seen: true}],
+    [{seen: false}, {seen: true}],
+  ],
+}
+
+{
+  name: "v2 a returned $nodes key is stripped",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ $nodes: { fake: 1 }, kept: input.k ?? 'none' });"""}],
+  },
+  cases: [
+    [{k: 1}, {kept: 1}],
+    [{}, {kept: "none"}],
+  ],
+}
+
+{
+  name: "v2 deeply nested objects and arrays survive the round trip",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({
+  a: { b: { c: { d: [input.v, [input.v, { e: input.v }]] } } },
+  empty: {},
+  list: [],
+});"""}],
+  },
+  cases: [
+    [{v: 1}, {a: {b: {c: {d: [1, [1, {e: 1}]]}}}, empty: {}, list: []}],
+    [{v: "s"}, {a: {b: {c: {d: ["s", ["s", {e: "s"}]]}}}, empty: {}, list: []}],
+    [{v: null}, {a: {b: {c: {d: [null, [null, {e: null}]]}}}, empty: {}, list: []}],
+  ],
+}
+
+{
+  name: "v2 a synchronous handler is accepted",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = (input) => ({ doubled: input.x * 2 });"""}],
+  },
+  cases: [
+    [{x: 2}, {doubled: 4}],
+    [{x: 0}, {doubled: 0}],
+    [{x: -1.5}, {doubled: -3}],
+  ],
+}
+
+{
+  name: "v2 a handler declared as a function declaration",
+  graph: {
+    nodes: [{function: "f", source: """export async function handler(input) {
+  const out = {};
+  for (const [k, v] of Object.entries(input)) {
+    if (k === '$nodes') continue;
+    out[k.toUpperCase()] = v;
+  }
+  return out;
+}"""}],
+  },
+  cases: [
+    [{a: 1, b: 2}, {A: 1, B: 2}],
+    [{}, {}],
+    [{mixed: "x"}, {MIXED: "x"}],
+  ],
+}
+
+{
+  name: "v2 Object.keys of the input lists $nodes as an own key",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ keys: Object.keys(input).sort() });"""}],
+  },
+  cases: [
+    [{a: 1}, {keys: ["$nodes", "a"]}],
+    [{}, {keys: ["$nodes"]}],
+    [{b: 1, a: 2}, {keys: ["$nodes", "a", "b"]}],
+  ],
+}
+
+// --- Return shapes: non-objects ------------------------------------------------------------
+// The node output is the raw value, but the output node merges its incoming data and only
+// objects and arrays become the head of that merge, so primitive results reach the response
+// as an empty object.
+
+{
+  name: "v2 primitive results are not objects",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => input.value;"""}],
+  },
+  cases: [
+    [{value: 5}, {}],
+    [{value: "text"}, {}],
+    [{value: true}, {}],
+    [{value: null}, {}],
+    [{}, {}],
+    [{value: {x: 1}}, {x: 1}],
+  ],
+}
+
+{
+  name: "v2 an array result reaches the response",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => input.items.map((i) => i * 10);"""}],
+  },
+  cases: [
+    [{items: [1, 2, 3]}, [10, 20, 30], "question: an array result is merged into the response object; the response is not an object"],
+    [{items: []}, [], "question: an array result is merged into the response object; the response is not an object"],
+  ],
+}
+
+{
+  name: "v2 a handler without a return value",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => { const x = input.a; };"""}],
+  },
+  cases: [
+    [{a: 1}, {}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "v2 a primitive result read by a following expression node",
+  graph: {
+    nodes: [
+      {function: "f", source: """export const handler = async (input) => input.n * 2;"""},
+      {expression: "e", fields: {n: "n ?? 'missing'", isNull: "n == null"}},
+    ],
+  },
+  cases: [
+    [{n: 2}, {n: "missing", isNull: true}],
+    [{n: 0}, {n: "missing", isNull: true}],
+    [{n: -1}, {n: "missing", isNull: true}],
+  ],
+}
+
+// --- Special JS values ---------------------------------------------------------------------
+// Top-level null properties are dropped when node outputs are merged into the response, so
+// nulls are observed nested one level down.
+
+{
+  name: "v2 undefined properties become null",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ o: { missing: input.nope, explicit: undefined, kept: 1 } });"""}],
+  },
+  cases: [
+    [{}, {o: {missing: null, explicit: null, kept: 1}}, "question: v2 keeps undefined properties as null while v1 (JSON) drops them"],
+    [{nope: 3}, {o: {missing: 3, explicit: null, kept: 1}}, "question: v2 keeps undefined properties as null while v1 (JSON) drops them"],
+  ],
+}
+
+{
+  name: "v2 array holes and undefined elements become null",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => { const a = [1, undefined, 3]; a[5] = 6; return { a }; };"""}],
+  },
+  cases: [
+    [{}, {a: [1, null, 3, null, null, 6]}],
+  ],
+}
+
+{
+  name: "v2 functions and symbols are rendered as placeholders",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ fn: () => 1, sym: Symbol('s'), n: input.n });"""}],
+  },
+  cases: [
+    [{n: 1}, {fn: "[Function]", sym: "[Symbol]", n: 1}, "question: non-data JS values become placeholder strings instead of being dropped or rejected"],
+  ],
+}
+
+{
+  name: "v2 NaN and Infinity cannot be represented",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ value: input.a / input.b });"""}],
+  },
+  cases: [
+    [{a: 1, b: 2}, {value: 0.5}],
+    [{a: 1, b: 0}, "!error", "question: Infinity is a conversion error rather than null"],
+    [{a: 0, b: 0}, "!error", "question: NaN is a conversion error rather than null"],
+    [{a: -1, b: 0}, "!error", "question: -Infinity is a conversion error rather than null"],
+  ],
+}
+
+{
+  name: "v2 BigInt results become numbers",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ big: BigInt(input.n) * 3n });"""}],
+  },
+  cases: [
+    [{n: 2}, {big: 6}],
+    [{n: 0}, {big: 0}],
+    [{n: 1000000000000}, {big: 3000000000000}],
+  ],
+}
+
+{
+  name: "v2 class instances keep their own enumerable fields",
+  graph: {
+    nodes: [{function: "f", source: """class Point {
+  constructor(x, y) { this.x = x; this.y = y; }
+  get len() { return Math.abs(this.x) + Math.abs(this.y); }
+}
+export const handler = async (input) => ({ p: new Point(input.x, input.y) });"""}],
+  },
+  cases: [
+    [{x: 1, y: 2}, {p: {x: 1, y: 2}}],
+    [{x: -1, y: 0}, {p: {x: -1, y: 0}}],
+  ],
+}
+
+{
+  name: "v2 Map and Set have no own properties",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({
+  map: new Map([['a', 1]]),
+  set: new Set([1, 2]),
+  fromMap: Object.fromEntries(new Map([['a', input.v]])),
+  fromSet: [...new Set([input.v, input.v])],
+});"""}],
+  },
+  cases: [
+    [{v: 1}, {map: {}, set: {}, fromMap: {a: 1}, fromSet: [1]}],
+    [{v: "x"}, {map: {}, set: {}, fromMap: {a: "x"}, fromSet: ["x"]}],
+  ],
+}
+
+// --- Numbers crossing the JS boundary -------------------------------------------------------
+// Numbers enter JS as doubles, so exact decimals beyond double precision are rounded. On the
+// way back the double is converted to a decimal with about 15 significant digits, which
+// hides binary artifacts such as 0.1 + 0.2.
+
+{
+  name: "v2 decimals become doubles in JS",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ v: input.v, t: typeof input.v });"""}],
+  },
+  cases: [
+    [{v: 0.1}, {v: 0.1, t: "number"}],
+    [{v: 1}, {v: 1, t: "number"}],
+    [{v: -0.5}, {v: -0.5, t: "number"}],
+    [{v: 0.1000000000000000000000000001}, {v: 0.1, t: "number"}],
+    [{v: 9007199254740993}, {v: 9007199254740992, t: "number"}],
+    [{v: 123456789.123456789}, {v: 123456789.1234568, t: "number"}],
+  ],
+}
+
+{
+  name: "v2 float results are rounded on the way back",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ sum: input.a + input.b });"""}],
+  },
+  cases: [
+    [{a: 0.1, b: 0.2}, {sum: 0.3}],
+    [{a: 1, b: 2}, {sum: 3}],
+    [{a: 1.5, b: 1.5}, {sum: 3}],
+    [{a: 0.7, b: 0.1}, {sum: 0.8}],
+  ],
+}
+
+{
+  name: "v2 integer and float results",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({
+  int: 42,
+  neg: -7,
+  frac: 2.5,
+  tiny: 1e-7,
+  huge: 1e21,
+  maxSafe: Number.MAX_SAFE_INTEGER,
+  negZero: -0,
+});"""}],
+  },
+  cases: [
+    [{}, {int: 42, neg: -7, frac: 2.5, tiny: 0.0000001, huge: 1000000000000000000000, maxSafe: 9007199254740991, negZero: 0}],
+  ],
+}
+
+{
+  name: "v2 big.js gives exact decimal arithmetic",
+  graph: {
+    nodes: [{function: "f", source: """import Big from 'big.js';
+export const handler = async (input) => {
+  const sum = new Big(input.a).plus(input.b);
+  return { str: sum.toString(), num: sum.toNumber(), fixed: sum.toFixed(2), gt: sum.gt(1) };
+};"""}],
+  },
+  cases: [
+    [{a: 0.1, b: 0.2}, {str: "0.3", num: 0.3, fixed: "0.30", gt: false}],
+    [{a: 1, b: 2}, {str: "3", num: 3, fixed: "3.00", gt: true}],
+    [{a: "1.005", b: 0}, {str: "1.005", num: 1.005, fixed: "1.01", gt: true}],
+    [{a: -2, b: 1}, {str: "-1", num: -1, fixed: "-1.00", gt: false}],
+  ],
+}
+
+{
+  name: "v2 numeric strings stay strings",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ t: typeof input.v, n: Number(input.v), v: input.v });"""}],
+  },
+  cases: [
+    [{v: "12.50"}, {t: "string", n: 12.5, v: "12.50"}],
+    [{v: "0"}, {t: "string", n: 0, v: "0"}],
+    [{v: " 7 "}, {t: "string", n: 7, v: " 7 "}],
+  ],
+}
+
+{
+  name: "v2 Math helpers",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({
+  round: Math.round(input.v),
+  floor: Math.floor(input.v),
+  ceil: Math.ceil(input.v),
+  max: Math.max(...input.list),
+  fixed: Number(input.v.toFixed(1)),
+});"""}],
+  },
+  cases: [
+    [{v: 2.45, list: [1, 9, 3]}, {round: 2, floor: 2, ceil: 3, max: 9, fixed: 2.5}],
+    [{v: -2.5, list: [-1]}, {round: -2, floor: -3, ceil: -2, max: -1, fixed: -2.5}],
+    [{v: 0, list: [0, 0]}, {round: 0, floor: 0, ceil: 0, max: 0, fixed: 0}],
+  ],
+}
+
+// --- Dates -----------------------------------------------------------------------------------
+
+{
+  name: "v2 dayjs parses, shifts and formats dates",
+  graph: {
+    nodes: [{function: "f", source: """import dayjs from 'dayjs';
+export const handler = async (input) => {
+  const d = dayjs(input.date);
+  return {
+    next: d.add(1, 'day').format('YYYY-MM-DD'),
+    month: d.month() + 1,
+    weekday: d.day(),
+    valid: d.isValid(),
+  };
+};"""}],
+  },
+  cases: [
+    [{date: "2024-01-15"}, {next: "2024-01-16", month: 1, weekday: 1, valid: true}],
+    [{date: "2024-02-28"}, {next: "2024-02-29", month: 2, weekday: 3, valid: true}],
+    [{date: "2023-12-31"}, {next: "2024-01-01", month: 12, weekday: 0, valid: true}],
+  ],
+}
+
+{
+  name: "v2 dayjs differences between two dates",
+  graph: {
+    nodes: [{function: "f", source: """import dayjs from 'dayjs';
+export const handler = async (input) => ({
+  days: dayjs(input.to).diff(dayjs(input.from), 'day'),
+  before: dayjs(input.from).isBefore(dayjs(input.to)),
+});"""}],
+  },
+  cases: [
+    [{from: "2024-01-01", to: "2024-03-01"}, {days: 60, before: true}],
+    [{from: "2024-03-01", to: "2024-01-01"}, {days: -60, before: false}],
+    [{from: "2024-01-01", to: "2024-01-01"}, {days: 0, before: false}],
+  ],
+}
+
+{
+  name: "v2 an invalid dayjs date",
+  graph: {
+    nodes: [{function: "f", source: """import dayjs from 'dayjs';
+export const handler = async (input) => ({ valid: dayjs(input.date).isValid() });"""}],
+  },
+  cases: [
+    [{date: "not a date"}, {valid: false}],
+    [{date: "2024-06-01"}, {valid: true}],
+    [{}, {valid: true}],
+    [{date: null}, {valid: false}],
+  ],
+}
+
+{
+  name: "v2 native Date in UTC",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  const d = new Date(input.ts);
+  return { iso: d.toISOString(), year: d.getUTCFullYear(), ms: d.getTime() };
+};"""}],
+  },
+  cases: [
+    [{ts: "2024-01-01T00:00:00Z"}, {iso: "2024-01-01T00:00:00.000Z", year: 2024, ms: 1704067200000}],
+    [{ts: "2000-02-29T12:30:00Z"}, {iso: "2000-02-29T12:30:00.000Z", year: 2000, ms: 951827400000}],
+    [{ts: 0}, {iso: "1970-01-01T00:00:00.000Z", year: 1970, ms: 0}],
+  ],
+}
+
+{
+  name: "v2 a returned Date object has no own properties",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ d: new Date(input.ts), s: new Date(input.ts).toISOString() });"""}],
+  },
+  cases: [
+    [{ts: "2024-01-01T00:00:00Z"}, {d: {}, s: "2024-01-01T00:00:00.000Z"}, "question: a Date becomes an empty object; JSON semantics would give its ISO string"],
+  ],
+}
+
+{
+  name: "v2 schema date inputs arrive as strings",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ t: typeof input.d, d: input.d });"""}],
+  },
+  cases: [
+    [{d: date('2024-05-01')}, {t: "string", d: "2024-05-01"}],
+    [{d: "2024-05-01"}, {t: "string", d: "2024-05-01"}],
+  ],
+}
+
+// --- Null and missing inputs -----------------------------------------------------------------
+
+{
+  name: "v2 null and missing fields with nullish defaults",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({
+  value: input.v ?? 'default',
+  isNull: input.v === null,
+  isUndefined: input.v === undefined,
+  has: 'v' in input,
+});"""}],
+  },
+  cases: [
+    [{v: 1}, {value: 1, isNull: false, isUndefined: false, has: true}],
+    [{v: null}, {value: "default", isNull: true, isUndefined: false, has: true}],
+    [{}, {value: "default", isNull: false, isUndefined: true, has: false}],
+    [{v: 0}, {value: 0, isNull: false, isUndefined: false, has: true}],
+    [{v: ""}, {value: "", isNull: false, isUndefined: false, has: true}],
+    [{v: false}, {value: false, isNull: false, isUndefined: false, has: true}],
+  ],
+}
+
+{
+  name: "v2 optional chaining over nested and missing paths",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ r: { city: input.customer?.address?.city ?? null, first: input.items?.[0] ?? null } });"""}],
+  },
+  cases: [
+    [{customer: {address: {city: "Berlin"}}, items: [5]}, {r: {city: "Berlin", first: 5}}],
+    [{customer: {}}, {r: {city: null, first: null}}],
+    [{customer: null, items: []}, {r: {city: null, first: null}}],
+    [{}, {r: {city: null, first: null}}],
+  ],
+}
+
+// --- Errors ----------------------------------------------------------------------------------
+
+{
+  name: "v2 a thrown Error fails the evaluation",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  if (input.fail) throw new Error('boom ' + input.fail);
+  return { ok: true };
+};"""}],
+  },
+  cases: [
+    [{fail: "now"}, "!error: boom now"],
+    [{}, {ok: true}],
+    [{fail: 0}, {ok: true}],
+    [{fail: 1}, "!error: boom 1"],
+  ],
+}
+
+{
+  name: "v2 throwing non-Error values",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  if (input.kind === 'string') throw 'plain message';
+  if (input.kind === 'object') throw { code: 42 };
+  if (input.kind === 'null') throw null;
+  return { ok: input.kind ?? null };
+};"""}],
+  },
+  cases: [
+    [{kind: "string"}, "!error: plain message"],
+    [{kind: "object"}, "!error"],
+    [{kind: "null"}, "!error"],
+    [{kind: "none"}, {ok: "none"}],
+  ],
+}
+
+{
+  name: "v2 runtime type errors",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ v: input.a.b.c });"""}],
+  },
+  cases: [
+    [{a: {b: {c: 1}}}, {v: 1}],
+    [{a: {b: null}}, "!error"],
+    [{a: {}}, "!error"],
+    [{}, "!error"],
+  ],
+}
+
+{
+  name: "v2 a reference to an undefined identifier",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ v: input.ok ? 1 : notDefinedAnywhere });"""}],
+  },
+  cases: [
+    [{ok: true}, {v: 1}],
+    [{ok: false}, "!error: notDefinedAnywhere"],
+  ],
+}
+
+{
+  name: "v2 a rejected promise fails the evaluation",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  if (input.reject) return Promise.reject(new Error('rejected'));
+  return Promise.resolve({ ok: true });
+};"""}],
+  },
+  cases: [
+    [{reject: true}, "!error: rejected"],
+    [{reject: false}, {ok: true}],
+  ],
+}
+
+{
+  name: "v2 a syntax error fails every evaluation",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ a: 1 ;"""}],
+  },
+  cases: [
+    [{}, "!error"],
+    [{a: 1}, "!error"],
+  ],
+}
+
+{
+  name: "v2 a module without a handler export",
+  graph: {
+    nodes: [{function: "f", source: """export const notHandler = async (input) => input;"""}],
+  },
+  cases: [
+    [{}, "!error"],
+    [{a: 1}, "!error"],
+  ],
+}
+
+{
+  name: "v2 a handler export that is not a function",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = 5;"""}],
+  },
+  cases: [
+    [{}, "!error"],
+  ],
+}
+
+{
+  name: "v2 a v1-style source in a v2 node",
+  graph: {
+    nodes: [{function: "f", source: """const handler = (input) => ({ a: 1 });"""}],
+  },
+  cases: [
+    [{}, "!error"],
+  ],
+}
+
+{
+  name: "v2 an error in one node stops the graph",
+  graph: {
+    nodes: [
+      {expression: "before", fields: {x: "a * 2"}},
+      {function: "f", source: """export const handler = async (input) => { if (input.x > 10) throw new Error('too big'); return { y: input.x + 1 }; };"""},
+      {expression: "after", fields: {z: "y * 10"}},
+    ],
+  },
+  cases: [
+    [{a: 1}, {z: 30}],
+    [{a: 6}, "!error: too big"],
+    [{a: 5}, {z: 110}],
+  ],
+}
+
+{
+  name: "v2 an error caught inside the handler is not an error",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  try {
+    return { parsed: JSON.parse(input.text) };
+  } catch (e) {
+    return { error: e.name };
+  }
+};"""}],
+  },
+  cases: [
+    [{text: "{\"a\": 1}"}, {parsed: {a: 1}}],
+    [{text: "[1, 2]"}, {parsed: [1, 2]}],
+    [{text: "nope"}, {error: "SyntaxError"}],
+    [{text: "3"}, {parsed: 3}],
+  ],
+}
+
+// --- Mutation of the input ---------------------------------------------------------------------
+// The handler receives a converted copy: mutating it changes only what the handler returns.
+
+{
+  name: "v2 mutating and returning the input",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  input.count = (input.count ?? 0) + 1;
+  delete input.secret;
+  input.list?.push('added');
+  return input;
+};"""}],
+  },
+  cases: [
+    [{count: 1, secret: "s", list: []}, {count: 2, list: ["added"]}],
+    [{}, {count: 1}],
+    [{secret: null, list: ["a"]}, {count: 1, list: ["a", "added"]}],
+  ],
+}
+
+{
+  name: "v2 mutation inside a function does not leak into other nodes",
+  graph: {
+    nodes: [
+      {function: "f", source: """export const handler = async (input) => { input.a = 'changed'; input.nested.b = 'changed'; return { done: true }; };"""},
+      {expression: "e", fields: {a: "$nodes.input.a", b: "$nodes.input.nested.b"}},
+    ],
+    edges: ["input -> f -> output", "input -> e -> output"],
+  },
+  cases: [
+    [{a: "orig", nested: {b: "orig"}}, {done: true, a: "orig", b: "orig"}],
+    [{a: 1, nested: {b: 2}}, {done: true, a: 1, b: 2}],
+  ],
+}
+
+{
+  name: "v2 mutation of $nodes data does not leak into later nodes",
+  graph: {
+    nodes: [
+      {expression: "first", fields: {v: "a"}},
+      {function: "f", source: """export const handler = async (input) => { input.$nodes.first.v = 'mutated'; input.$nodes.input.a = 'mutated'; return { done: true }; };"""},
+      {expression: "last", fields: {v: "$nodes.first.v", a: "$nodes.input.a", done: "done"}},
+    ],
+  },
+  cases: [
+    [{a: 1}, {v: 1, a: 1, done: true}],
+    [{a: "x"}, {v: "x", a: "x", done: true}],
+  ],
+}
+
+{
+  name: "v2 shared references in the input are converted once",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  input.left.tag = 'L';
+  return { left: input.left, right: input.right };
+};"""}],
+  },
+  cases: [
+    [{left: {v: 1}, right: {v: 1}}, {left: {v: 1, tag: "L"}, right: {v: 1}}],
+  ],
+}
+
+// --- Async -------------------------------------------------------------------------------------
+
+{
+  name: "v2 awaiting promises and helpers",
+  graph: {
+    nodes: [{function: "f", source: """const double = async (x) => x * 2;
+const later = (x) => new Promise((resolve) => resolve(x + 1));
+export const handler = async (input) => {
+  const a = await double(input.n);
+  const b = await later(a);
+  const all = await Promise.all(input.list.map(double));
+  return { a, b, all };
+};"""}],
+  },
+  cases: [
+    [{n: 2, list: [1, 2]}, {a: 4, b: 5, all: [2, 4]}],
+    [{n: 0, list: []}, {a: 0, b: 1, all: []}],
+  ],
+}
+
+{
+  name: "v2 Promise.allSettled and race",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  const settled = await Promise.allSettled([Promise.resolve(input.v), Promise.reject(new Error('no'))]);
+  const first = await Promise.race([Promise.resolve('a'), new Promise(() => {})]);
+  return { statuses: settled.map((s) => s.status), value: settled[0].value, first };
+};"""}],
+  },
+  cases: [
+    [{v: 1}, {statuses: ["fulfilled", "rejected"], value: 1, first: "a"}],
+    [{v: "x"}, {statuses: ["fulfilled", "rejected"], value: "x", first: "a"}],
+  ],
+}
+
+{
+  name: "v2 a handler returning a nested promise",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = (input) => Promise.resolve(Promise.resolve({ v: input.v }));"""}],
+  },
+  cases: [
+    [{v: 1}, {v: 1}],
+    [{v: "s"}, {v: "s"}],
+  ],
+}
+
+{
+  name: "v2 a promise as a property value is awaited",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ v: Promise.resolve(input.v) });"""}],
+  },
+  cases: [
+    [{v: 1}, {v: 1}, "question: promises nested inside the result are resolved during conversion"],
+  ],
+}
+
+// --- Console -----------------------------------------------------------------------------------
+
+{
+  name: "v2 console.log has no effect on the output",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  console.log('input', input, 1, null);
+  console.log();
+  const circular = {};
+  circular.self = circular;
+  console.log(circular);
+  return { logged: true, v: input.v };
+};"""}],
+  },
+  cases: [
+    [{v: 1}, {logged: true, v: 1}],
+    [{}, {logged: true}],
+  ],
+}
+
+// --- Large data ----------------------------------------------------------------------------------
+
+{
+  name: "v2 building and reducing large arrays",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  const xs = Array.from({ length: input.n }, (_, i) => i);
+  const objects = xs.map((i) => ({ id: i, even: i % 2 === 0 }));
+  return {
+    count: objects.length,
+    sum: xs.reduce((a, b) => a + b, 0),
+    evens: objects.filter((o) => o.even).length,
+    last: objects[objects.length - 1] ?? null,
+  };
+};"""}],
+  },
+  cases: [
+    [{n: 10000}, {count: 10000, sum: 49995000, evens: 5000, last: {id: 9999, even: false}}],
+    [{n: 1}, {count: 1, sum: 0, evens: 1, last: {id: 0, even: true}}],
+    [{n: 0}, {count: 0, sum: 0, evens: 0}],
+  ],
+}
+
+{
+  name: "v2 returning a large generated object",
+  graph: {
+    nodes: [
+      {function: "f", source: """export const handler = async (input) => {
+  const rows = [];
+  for (let i = 0; i < input.n; i++) rows.push({ id: i, name: 'row' + i, tags: ['a', 'b'] });
+  return { rows };
+};"""},
+      {expression: "e", fields: {count: "len(rows)", lastName: "rows[len(rows) - 1].name", tags: "sum(map(rows, len(#.tags)))"}},
+    ],
+  },
+  cases: [
+    [{n: 2000}, {count: 2000, lastName: "row1999", tags: 4000}],
+    [{n: 3}, {count: 3, lastName: "row2", tags: 6}],
+  ],
+}
+
+{
+  name: "v2 a large input array",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({
+  total: input.items.reduce((acc, item) => acc + item.price * item.qty, 0),
+  skus: input.items.map((i) => i.sku).join(','),
+});"""}],
+  },
+  cases: [
+    [{items: [{sku: "a", price: 2, qty: 3}, {sku: "b", price: 5, qty: 1}, {sku: "c", price: 0.5, qty: 4}, {sku: "d", price: 10, qty: 0}, {sku: "e", price: 1, qty: 1}]}, {total: 14, skus: "a,b,c,d,e"}],
+    [{items: []}, {total: 0, skus: ""}],
+  ],
+}
+
+// --- Strings -----------------------------------------------------------------------------------
+
+{
+  name: "v2 unicode strings and string helpers",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({
+  upper: input.s.toUpperCase(),
+  length: input.s.length,
+  codePoints: [...input.s].length,
+  padded: input.s.padStart(6, '*'),
+});"""}],
+  },
+  cases: [
+    [{s: "abc"}, {upper: "ABC", length: 3, codePoints: 3, padded: "***abc"}],
+    [{s: "über"}, {upper: "ÜBER", length: 4, codePoints: 4, padded: "**über"}],
+    [{s: "😀"}, {upper: "😀", length: 2, codePoints: 1, padded: "****😀"}],
+    [{s: ""}, {upper: "", length: 0, codePoints: 0, padded: "******"}],
+  ],
+}
+
+{
+  name: "v2 template literals and regular expressions",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({
+  greeting: `Hello, ${input.name}!`,
+  isEmail: /^[^@\s]+@[^@\s]+\.[a-z]+$/.test(input.email ?? ''),
+  digits: (input.email ?? '').replace(/\D/g, ''),
+});"""}],
+  },
+  cases: [
+    [{name: "Ann", email: "ann42@example.com"}, {greeting: "Hello, Ann!", isEmail: true, digits: "42"}],
+    [{name: "Bo", email: "not-an-email"}, {greeting: "Hello, Bo!", isEmail: false, digits: ""}],
+    [{}, {greeting: "Hello, undefined!", isEmail: false, digits: ""}],
+  ],
+}
+
+// --- TypeScript sources ------------------------------------------------------------------------
+
+{
+  name: "v2 TypeScript type annotations are stripped",
+  graph: {
+    nodes: [{function: "f", source: """type Input = { a: number; b?: number };
+interface Output { total: number }
+export const handler = async (input: Input): Promise<Output> => {
+  const b: number = input.b ?? 0;
+  return { total: input.a + b } as Output;
+};"""}],
+  },
+  cases: [
+    [{a: 1, b: 2}, {total: 3}],
+    [{a: 5}, {total: 5}],
+  ],
+}
+
+// --- Modules -----------------------------------------------------------------------------------
+
+{
+  name: "v2 zen.evaluateExpression and evaluateUnaryExpression",
+  graph: {
+    nodes: [{function: "f", source: """import zen from 'zen';
+export const handler = async (input) => ({
+  sum: zen.evaluateExpression('a + b', { a: input.a, b: input.b }),
+  matches: zen.evaluateUnaryExpression('> 10', { $: input.a }),
+});"""}],
+  },
+  cases: [
+    [{a: 20, b: 1}, {sum: 21, matches: true}],
+    [{a: 1, b: 2}, {sum: 3, matches: false}],
+    [{a: 0.1, b: 0.2}, {sum: 0.3, matches: false}],
+  ],
+}
+
+{
+  name: "v2 zen.evaluateExpression errors are throwable",
+  graph: {
+    nodes: [{function: "f", source: """import zen from 'zen';
+export const handler = async (input) => {
+  try {
+    return { v: zen.evaluateExpression(input.expr, {}) };
+  } catch (e) {
+    return { failed: true };
+  }
+};"""}],
+  },
+  cases: [
+    [{expr: "1 + 1"}, {v: 2}],
+    [{expr: "1 +"}, {failed: true}],
+    [{expr: "'a' + 1"}, {failed: true}],
+  ],
+}
+
+{
+  name: "v2 zen.evaluate runs a sub-decision",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {y: "x * 2"}}]},
+  },
+  graph: {
+    nodes: [{function: "f", source: """import zen from 'zen';
+export const handler = async (input) => {
+  const response = await zen.evaluate('child', { x: input.x });
+  return { y: response.result.y };
+};"""}],
+  },
+  cases: [
+    [{x: 2}, {y: 4}],
+    [{x: 0.5}, {y: 1}],
+  ],
+}
+
+{
+  name: "v2 zen.evaluate of an unknown key throws",
+  graph: {
+    nodes: [{function: "f", source: """import zen from 'zen';
+export const handler = async (input) => {
+  try {
+    await zen.evaluate('missing-key', input);
+    return { loaded: true };
+  } catch (e) {
+    return { loaded: false };
+  }
+};"""}],
+  },
+  cases: [
+    [{}, {loaded: false}],
+  ],
+}
+
+{
+  name: "v2 named imports from big.js and dayjs",
+  graph: {
+    nodes: [{function: "f", source: """import Big from 'big.js';
+import dayjs from 'dayjs';
+export const handler = async (input) => ({
+  times: Big(input.a).times(input.b).toNumber(),
+  year: dayjs('2024-07-04').year(),
+});"""}],
+  },
+  cases: [
+    [{a: 1.1, b: 3}, {times: 3.3, year: 2024}],
+    [{a: 0, b: 3}, {times: 0, year: 2024}],
+  ],
+}
+
+{
+  name: "v2 a named import of Big from big.js",
+  graph: {
+    nodes: [{function: "f", source: """import { Big } from 'big.js';
+export const handler = async (input) => ({ v: Big(input.a).toNumber() });"""}],
+  },
+  cases: [
+    [{a: 1}, "!error: Could not find export 'Big'", "question: the published big.js module also has a named Big export; the embedded bundle only exports the default"],
+    [{a: 2.5}, "!error: Could not find export 'Big'", "question: the published big.js module also has a named Big export; the embedded bundle only exports the default"],
+  ],
+}
+
+{
+  name: "v2 importing an unknown module",
+  graph: {
+    nodes: [{function: "f", source: """import fs from 'fs';
+export const handler = async (input) => ({ ok: true });"""}],
+  },
+  cases: [
+    [{}, "!error"],
+  ],
+}
+
+{
+  name: "v2 the config global",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => ({ iteration: config.iteration, depthPositive: config.maxDepth > 0, trace: config.trace });"""}],
+  },
+  cases: [
+    [{}, {iteration: 0, depthPositive: true, trace: false}],
+  ],
+}
+
+{
+  name: "v2 config.iteration inside a sub-decision",
+  decisions: {
+    child: {nodes: [{function: "inner", source: """export const handler = async (input) => ({ iteration: config.iteration });"""}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{}, {iteration: 1}],
+    [{a: 1}, {iteration: 1}],
+  ],
+}
+
+// --- $nodes: reading earlier node outputs ----------------------------------------------------
+
+{
+  name: "v2 reads the input node and an earlier expression node",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {doubled: "a * 2"}},
+      {function: "f", source: """export const handler = async (input) => ({
+  fromInput: input.$nodes.input.a,
+  fromCalc: input.$nodes.calc.doubled,
+  direct: input.doubled,
+});"""},
+    ],
+  },
+  cases: [
+    [{a: 2}, {fromInput: 2, fromCalc: 4, direct: 4}],
+    [{a: 0}, {fromInput: 0, fromCalc: 0, direct: 0}],
+    [{a: -1.5}, {fromInput: -1.5, fromCalc: -3, direct: -3}],
+  ],
+}
+
+{
+  name: "v2 $nodes lists only nodes that have run",
+  graph: {
+    nodes: [
+      {expression: "first", fields: {v: "1"}},
+      {function: "f", source: """export const handler = async (input) => ({
+  names: Object.keys(input.$nodes).sort(),
+  hasLast: 'last' in input.$nodes,
+  lastType: typeof input.$nodes.last,
+});"""},
+      {expression: "last", fields: {names: "names", hasLast: "hasLast", lastType: "lastType"}},
+    ],
+  },
+  cases: [
+    [{}, {names: ["first", "input"], hasLast: false, lastType: "undefined"}],
+    [{x: 1}, {names: ["first", "input"], hasLast: false, lastType: "undefined"}],
+  ],
+}
+
+{
+  name: "v2 $nodes of a branch that did not run",
+  graph: {
+    nodes: [
+      {switch: "route", when: ["kind == 'a'", ""]},
+      {expression: "a", fields: {picked: "'a'"}},
+      {expression: "b", fields: {picked: "'b'"}},
+      {function: "f", source: """export const handler = async (input) => ({
+  picked: input.picked,
+  ranA: input.$nodes.a !== undefined,
+  ranB: input.$nodes.b !== undefined,
+});"""},
+    ],
+    edges: ["input -> route", "route:0 -> a -> f", "route:1 -> b -> f", "f -> output"],
+  },
+  cases: [
+    [{kind: "a"}, {picked: "a", ranA: true, ranB: false}],
+    [{kind: "b"}, {picked: "b", ranA: false, ranB: true}],
+    [{}, {picked: "b", ranA: false, ranB: true}],
+  ],
+}
+
+{
+  name: "v2 reads the output of an earlier function node",
+  graph: {
+    nodes: [
+      {function: "one", source: """export const handler = async (input) => ({ step: 1, value: input.v * 10 });"""},
+      {function: "two", source: """export const handler = async (input) => ({ step: input.$nodes.one.step + 1, value: input.$nodes.one.value + input.$nodes.input.v });"""},
+    ],
+  },
+  cases: [
+    [{v: 1}, {step: 2, value: 11}],
+    [{v: 3}, {step: 2, value: 33}],
+  ],
+}
+
+{
+  name: "v2 reads a decision table output by node name",
+  graph: {
+    nodes: [
+      {table: "tier", inputs: ["score"], outputs: ["tier"], rules: [
+        [">= 80", "'gold'"],
+        [">= 50", "'silver'"],
+        ["", "'bronze'"],
+      ]},
+      {function: "f", source: """export const handler = async (input) => ({ tier: input.$nodes.tier.tier, score: input.$nodes.input.score ?? null });"""},
+    ],
+  },
+  cases: [
+    [{score: 90}, {tier: "gold", score: 90}],
+    [{score: 60}, {tier: "silver", score: 60}],
+    [{score: 1}, {tier: "bronze", score: 1}],
+    [{}, {tier: "bronze"}],
+  ],
+}
+
+{
+  name: "v2 $nodes inside a sub-decision reaches the parent through its input node",
+  decisions: {
+    child: {nodes: [
+      {input: "request"},
+      {function: "inner", source: """export const handler = async (input) => ({
+  parentCalc: input.$nodes.request.$nodes?.calc?.v ?? null,
+  own: Object.keys(input.$nodes).sort(),
+});"""},
+    ], edges: ["request -> inner -> output"]},
+  },
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {v: "a + 1"}},
+      {decision: "call", key: "child"},
+    ],
+  },
+  cases: [
+    [{a: 1}, {parentCalc: 2, own: ["request"]}],
+    [{a: 9}, {parentCalc: 10, own: ["request"]}],
+  ],
+}
+
+// --- Function nodes in larger graphs -------------------------------------------------------
+
+{
+  name: "v2 two functions merge at the output",
+  graph: {
+    nodes: [
+      {function: "left", source: """export const handler = async (input) => ({ left: input.v, shared: 'left' });"""},
+      {function: "right", source: """export const handler = async (input) => ({ right: input.v, shared: 'right' });"""},
+    ],
+    edges: ["input -> left -> output", "input -> right -> output"],
+  },
+  cases: [
+    [{v: 1}, {left: 1, right: 1, shared: "left"}, "question: incoming outputs merge in reverse edge order, so the first-listed edge wins a shared key"],
+    [{v: "x"}, {left: "x", right: "x", shared: "left"}, "question: incoming outputs merge in reverse edge order, so the first-listed edge wins a shared key"],
+    [{v: null}, {shared: "left"}, "question: incoming outputs merge in reverse edge order, so the first-listed edge wins a shared key"],
+  ],
+}
+
+{
+  name: "v2 function feeding a decision table",
+  graph: {
+    nodes: [
+      {function: "prep", source: """export const handler = async (input) => ({ age: new Date('2025-01-01').getUTCFullYear() - input.birthYear });"""},
+      {table: "t", inputs: ["age"], outputs: ["group"], rules: [
+        ["< 18", "'minor'"],
+        ["[18..64]", "'adult'"],
+        ["", "'senior'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{birthYear: 2010}, {group: "minor"}],
+    [{birthYear: 1990}, {group: "adult"}],
+    [{birthYear: 1950}, {group: "senior"}],
+    [{birthYear: 2007}, {group: "adult"}],
+  ],
+}
+
+{
+  name: "v2 function after a pass-through expression",
+  graph: {
+    nodes: [
+      {expression: "e", passThrough: true, fields: {total: "price * qty"}},
+      {function: "f", source: """export const handler = async (input) => ({ summary: `${input.qty} x ${input.price} = ${input.total}` });"""},
+    ],
+  },
+  cases: [
+    [{price: 2, qty: 3}, {summary: "3 x 2 = 6"}],
+    [{price: 1.5, qty: 2}, {summary: "2 x 1.5 = 3"}],
+  ],
+}
+
+{
+  name: "v2 function on one switch branch",
+  graph: {
+    nodes: [
+      {switch: "route", when: ["useJs", ""]},
+      {function: "js", source: """export const handler = async (input) => ({ via: 'js', v: input.v * 2 });"""},
+      {expression: "expr", fields: {via: "'expr'", v: "v * 3"}},
+    ],
+    edges: ["input -> route", "route:0 -> js -> output", "route:1 -> expr -> output"],
+  },
+  cases: [
+    [{useJs: true, v: 2}, {via: "js", v: 4}],
+    [{useJs: false, v: 2}, {via: "expr", v: 6}],
+    [{v: 1}, {via: "expr", v: 3}],
+  ],
+}
+
+{
+  name: "v2 a failing function on a branch that is not taken",
+  graph: {
+    nodes: [
+      {switch: "route", when: ["safe", ""]},
+      {expression: "ok", fields: {ok: "true"}},
+      {function: "bad", source: """export const handler = async (input) => { throw new Error('should not run'); };"""},
+    ],
+    edges: ["input -> route", "route:0 -> ok -> output", "route:1 -> bad -> output"],
+  },
+  cases: [
+    [{safe: true}, {ok: true}],
+    [{safe: false}, "!error: should not run"],
+  ],
+}
+
+{
+  name: "v2 the same source in two nodes",
+  graph: {
+    nodes: [
+      {function: "a", source: """export const handler = async (input) => ({ n: (input.n ?? 0) + 1 });"""},
+      {function: "b", source: """export const handler = async (input) => ({ n: (input.n ?? 0) + 1 });"""},
+    ],
+  },
+  cases: [
+    [{n: 1}, {n: 3}],
+    [{}, {n: 2}],
+  ],
+}
+
+{
+  name: "v2 module state starts fresh for every evaluation",
+  graph: {
+    nodes: [{function: "f", source: """let calls = 0;
+export const handler = async (input) => { calls += 1; return { first: calls === 1 || input.ignore === true }; };"""}],
+  },
+  cases: [
+    [{}, {first: true}],
+    [{ignore: true}, {first: true}],
+  ],
+}
+
+{
+  name: "v2 globals defined by one evaluation are not seen by the next",
+  graph: {
+    nodes: [{function: "f", source: """export const handler = async (input) => {
+  const before = typeof globalThis.__specLeak;
+  globalThis.__specLeak = input.v;
+  return { before };
+};"""}],
+  },
+  cases: [
+    [{v: 1}, {before: "undefined"}],
+    [{v: 2}, {before: "undefined"}],
+  ],
+}
+
+{
+  name: "v2 zod is importable",
+  graph: {
+    nodes: [{function: "f", source: """import { z } from 'zod';
+const Schema = z.object({ age: z.number().int().min(0) });
+export const handler = async (input) => {
+  const parsed = Schema.safeParse({ age: input.age });
+  return { valid: parsed.success };
+};"""}],
+  },
+  cases: [
+    [{age: 3}, {valid: true}],
+    [{age: -1}, {valid: false}],
+    [{age: 1.5}, {valid: false}],
+    [{age: "3"}, {valid: false}],
+    [{}, {valid: false}],
+  ],
+}

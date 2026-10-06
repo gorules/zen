@@ -1,0 +1,591 @@
+// Custom nodes, using the spec adapter kinds: `echo` returns its input (with `$nodes`),
+// `config` returns its config, `render` renders each top-level config key through
+// `CustomNodeRequest::get_field` (string values are templates over the node input), and
+// `fail` errors with `config.message`. The engine owns how the node is placed in the graph,
+// what input it receives and how its output and errors propagate.
+
+// --- echo ----------------------------------------------------------------------------------
+
+{
+  name: "custom echo returns its input",
+  graph: {
+    nodes: [{custom: "c", kind: "echo"}],
+  },
+  cases: [
+    [{a: 1}, {a: 1}],
+    [{}, {}],
+    [{nested: {list: [1, "x", true]}}, {nested: {list: [1, "x", true]}}],
+    [{a: 0.1000000000000000000000000001}, {a: 0.1000000000000000000000000001}],
+    [{n: null, s: ""}, {s: ""}],
+  ],
+}
+
+{
+  name: "custom echo receives $nodes, which a following node can see",
+  graph: {
+    nodes: [
+      {custom: "c", kind: "echo"},
+      {expression: "e", fields: {hasNodes: "$nodes != null", inputA: "$nodes.input.a", echoedA: "$nodes.c.a"}},
+    ],
+  },
+  cases: [
+    [{a: 1}, {hasNodes: true, inputA: 1, echoedA: 1}],
+    [{a: "x"}, {hasNodes: true, inputA: "x", echoedA: "x"}],
+  ],
+}
+
+{
+  name: "custom echo after an expression node",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {total: "price * qty"}},
+      {custom: "c", kind: "echo"},
+    ],
+  },
+  cases: [
+    [{price: 2, qty: 3}, {total: 6}],
+    [{price: 0.1, qty: 3}, {total: 0.3}],
+    [{price: 1, qty: 0}, {total: 0}],
+  ],
+}
+
+{
+  name: "custom echo of a pass-through expression",
+  graph: {
+    nodes: [
+      {expression: "calc", passThrough: true, fields: {total: "price * qty"}},
+      {custom: "c", kind: "echo"},
+    ],
+  },
+  cases: [
+    [{price: 2, qty: 3}, {price: 2, qty: 3, total: 6}],
+    [{price: 5, qty: 1, extra: "kept"}, {price: 5, qty: 1, extra: "kept", total: 5}],
+  ],
+}
+
+{
+  name: "custom echo nodes chained",
+  graph: {
+    nodes: [
+      {custom: "c1", kind: "echo"},
+      {custom: "c2", kind: "echo"},
+      {custom: "c3", kind: "echo"},
+    ],
+  },
+  cases: [
+    [{a: 1}, {a: 1}],
+    [{a: {b: [1]}}, {a: {b: [1]}}],
+  ],
+}
+
+// --- config ----------------------------------------------------------------------------------
+
+{
+  name: "custom config returns its config and ignores the input",
+  graph: {
+    nodes: [{custom: "c", kind: "config", config: {rate: 0.15, enabled: true, tiers: ["a", "b"], nested: {x: 1}}}],
+  },
+  cases: [
+    [{}, {rate: 0.15, enabled: true, tiers: ["a", "b"], nested: {x: 1}}],
+    [{rate: 99}, {rate: 0.15, enabled: true, tiers: ["a", "b"], nested: {x: 1}}],
+  ],
+}
+
+{
+  name: "custom config strings are not templates",
+  graph: {
+    nodes: [{custom: "c", kind: "config", config: {text: "{{ a }}"}}],
+  },
+  cases: [
+    [{a: 1}, {text: "{{ a }}"}],
+    [{}, {text: "{{ a }}"}],
+  ],
+}
+
+{
+  name: "custom config with an empty config",
+  graph: {
+    nodes: [{custom: "c", kind: "config", config: {}}],
+  },
+  cases: [
+    [{}, {}],
+    [{a: 1}, {}],
+  ],
+}
+
+{
+  name: "custom config output read by an expression",
+  graph: {
+    nodes: [
+      {custom: "settings", kind: "config", config: {rate: 0.2, base: 10}},
+      {expression: "e", fields: {fee: "base + $nodes.input.amount * rate", sawAmount: "amount != null"}},
+    ],
+    edges: ["input -> settings -> e -> output"],
+  },
+  cases: [
+    [{amount: 100}, {fee: 30, sawAmount: false}],
+    [{amount: 0}, {fee: 10, sawAmount: false}],
+    [{amount: 2.5}, {fee: 10.5, sawAmount: false}],
+  ],
+}
+
+// --- render ----------------------------------------------------------------------------------
+
+{
+  name: "custom render with a single interpolation keeps the value type",
+  graph: {
+    nodes: [{custom: "c", kind: "render", config: {value: "{{ a }}"}}],
+  },
+  cases: [
+    [{a: 1}, {value: 1}],
+    [{a: "x"}, {value: "x"}],
+    [{a: true}, {value: true}],
+    [{a: [1, 2]}, {value: [1, 2]}],
+    [{a: {b: 1}}, {value: {b: 1}}],
+    [{a: 1.50}, {value: 1.5}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "custom render with text around an interpolation produces a string",
+  graph: {
+    nodes: [{custom: "c", kind: "render", config: {greeting: "Hello, {{ name }}!"}}],
+  },
+  cases: [
+    [{name: "Ann"}, {greeting: "Hello, Ann!"}],
+    [{name: 42}, {greeting: "Hello, 42!"}],
+    [{name: true}, {greeting: "Hello, true!"}],
+    [{name: ""}, {greeting: "Hello, !"}],
+    [{}, {greeting: "Hello, null!"}, "question: a missing value renders as the text null inside a template"],
+  ],
+}
+
+{
+  name: "custom render with expressions in templates",
+  graph: {
+    nodes: [{custom: "c", kind: "render", config: {
+      total: "{{ price * qty }}",
+      label: "{{ qty }} x {{ price }}",
+      upper: "{{ upper(name) }}",
+      adult: "{{ age >= 18 }}",
+    }}],
+  },
+  cases: [
+    [{price: 2, qty: 3, name: "ann", age: 20}, {total: 6, label: "3 x 2", upper: "ANN", adult: true}],
+    [{price: 0.1, qty: 3, name: "bo", age: 3}, {total: 0.3, label: "3 x 0.1", upper: "BO", adult: false}],
+  ],
+}
+
+{
+  name: "custom render surrounding whitespace is trimmed",
+  graph: {
+    nodes: [{custom: "c", kind: "render", config: {padded: "   {{ a }}   ", inner: "  x {{ a }} y  "}}],
+  },
+  cases: [
+    [{a: 1}, {padded: 1, inner: "x 1 y"}],
+    [{a: "s"}, {padded: "s", inner: "x s y"}],
+  ],
+}
+
+{
+  name: "custom render of adjacent interpolations",
+  graph: {
+    nodes: [{custom: "c", kind: "render", config: {joined: "{{ a }}{{ b }}"}}],
+  },
+  cases: [
+    [{a: 1, b: 2}, {joined: "12"}],
+    [{a: "x", b: "y"}, {joined: "xy"}],
+    [{a: 1.50, b: 0}, {joined: "1.500"}],
+  ],
+}
+
+{
+  name: "custom render passes non-string config values through",
+  graph: {
+    nodes: [{custom: "c", kind: "render", config: {n: 2, b: false, list: ["{{ a }}"], obj: {t: "{{ a }}"}}}],
+  },
+  cases: [
+    [{a: 1}, {n: 2, b: false, list: ["{{ a }}"], obj: {t: "{{ a }}"}}],
+  ],
+}
+
+{
+  name: "custom render of plain text and empty strings",
+  graph: {
+    nodes: [{custom: "c", kind: "render", config: {plain: "just text", empty: ""}}],
+  },
+  cases: [
+    [{}, {plain: "just text"}],
+    [{a: 1}, {plain: "just text"}],
+  ],
+}
+
+{
+  name: "custom render with an invalid template expression",
+  graph: {
+    nodes: [{custom: "c", kind: "render", config: {broken: "{{ 1 + }}"}}],
+  },
+  cases: [
+    [{}, "!error"],
+    [{a: 1}, "!error"],
+  ],
+}
+
+{
+  name: "custom render with a template that fails at runtime",
+  graph: {
+    nodes: [{custom: "c", kind: "render", config: {v: "{{ a + 1 }}"}}],
+  },
+  cases: [
+    [{a: 1}, {v: 2}],
+    [{a: "x"}, "!error"],
+  ],
+}
+
+{
+  name: "custom render reading nested and dotted paths",
+  graph: {
+    nodes: [{custom: "c", kind: "render", config: {city: "{{ customer.address.city }}", first: "{{ items[0].sku }}"}}],
+  },
+  cases: [
+    [{customer: {address: {city: "Berlin"}}, items: [{sku: "a"}]}, {city: "Berlin", first: "a"}],
+    [{customer: {}, items: []}, {}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "custom render with a dotted config key",
+  graph: {
+    nodes: [{custom: "c", kind: "render", config: {"a.b": "{{ v }}"}}],
+  },
+  cases: [
+    [{v: 1}, {a: {b: null}}, "question: the key is looked up as a nested path in the config, so the literal dotted key is never found"],
+  ],
+}
+
+{
+  name: "custom render reading $nodes",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {doubled: "a * 2"}},
+      {custom: "c", kind: "render", config: {fromInput: "{{ $nodes.input.a }}", fromCalc: "{{ $nodes.calc.doubled }}", direct: "{{ doubled }}"}},
+    ],
+  },
+  cases: [
+    [{a: 2}, {fromInput: 2, fromCalc: 4, direct: 4}],
+    [{a: 0.5}, {fromInput: 0.5, fromCalc: 1, direct: 1}],
+  ],
+}
+
+{
+  name: "custom render of a schema date input",
+  graph: {
+    nodes: [{custom: "c", kind: "render", config: {raw: "{{ d }}", text: "on {{ d }}"}}],
+  },
+  cases: [
+    [{d: date('2024-05-01')}, {raw: "2024-05-01", text: "on 2024-05-01"}],
+    [{d: "2024-05-01"}, {raw: "2024-05-01", text: "on 2024-05-01"}],
+  ],
+}
+
+// --- fail and unknown kinds ------------------------------------------------------------------
+
+{
+  name: "custom fail errors with its message",
+  graph: {
+    nodes: [{custom: "c", kind: "fail", config: {message: "custom refused"}}],
+  },
+  cases: [
+    [{}, "!error: custom refused"],
+    [{a: 1}, "!error: custom refused"],
+  ],
+}
+
+{
+  name: "custom fail without a message",
+  graph: {
+    nodes: [{custom: "c", kind: "fail"}],
+  },
+  cases: [
+    [{}, "!error: custom node failed"],
+  ],
+}
+
+{
+  name: "custom error names the failing node",
+  graph: {
+    nodes: [
+      {expression: "e", fields: {x: "1"}},
+      {custom: "gate", id: "gate-id", kind: "fail", config: {message: "gate closed"}},
+    ],
+  },
+  cases: [
+    [{}, "!error: gate-id"],
+    [{a: 1}, "!error: gate closed"],
+  ],
+}
+
+{
+  name: "custom node with an unknown kind",
+  graph: {
+    nodes: [{custom: "c", kind: "nope"}],
+  },
+  cases: [
+    [{}, "!error: unknown spec custom node kind"],
+  ],
+}
+
+{
+  name: "custom node without a kind",
+  graph: {
+    nodes: [{custom: "c"}],
+  },
+  cases: [
+    [{}, "!error"],
+  ],
+}
+
+{
+  name: "custom fail stops the nodes after it",
+  graph: {
+    nodes: [
+      {custom: "check", kind: "fail", config: {message: "stop here"}},
+      {expression: "after", fields: {reached: "true"}},
+    ],
+  },
+  cases: [
+    [{}, "!error: stop here"],
+    [{reached: false}, "!error: stop here"],
+  ],
+}
+
+{
+  name: "custom fail on a parallel path fails the graph",
+  graph: {
+    nodes: [
+      {expression: "ok", fields: {ok: "true"}},
+      {custom: "bad", kind: "fail", config: {message: "parallel failure"}},
+    ],
+    edges: ["input -> ok -> output", "input -> bad -> output"],
+  },
+  cases: [
+    [{}, "!error: parallel failure"],
+    [{a: 1}, "!error: parallel failure"],
+  ],
+}
+
+// --- switches --------------------------------------------------------------------------------
+
+{
+  name: "custom nodes on switch branches",
+  graph: {
+    nodes: [
+      {switch: "route", when: ["tier == 'gold'", "tier == 'silver'", ""]},
+      {custom: "gold", kind: "config", config: {discount: 0.2}},
+      {custom: "silver", kind: "render", config: {discount: "{{ 0.1 }}", tier: "{{ tier }}"}},
+      {custom: "other", kind: "echo"},
+    ],
+    edges: ["input -> route", "route:0 -> gold -> output", "route:1 -> silver -> output", "route:2 -> other -> output"],
+  },
+  cases: [
+    [{tier: "gold"}, {discount: 0.2}],
+    [{tier: "silver"}, {discount: 0.1, tier: "silver"}],
+    [{tier: "bronze"}, {tier: "bronze"}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "custom fail on a branch that is not taken",
+  graph: {
+    nodes: [
+      {switch: "route", when: ["allowed", ""]},
+      {custom: "ok", kind: "render", config: {status: "'allowed'", who: "{{ user }}"}},
+      {custom: "deny", kind: "fail", config: {message: "denied"}},
+    ],
+    edges: ["input -> route", "route:0 -> ok -> output", "route:1 -> deny -> output"],
+  },
+  cases: [
+    [{allowed: true, user: "ann"}, {status: "'allowed'", who: "ann"}],
+    [{allowed: false, user: "ann"}, "!error: denied"],
+    [{user: "bo"}, "!error: denied"],
+  ],
+}
+
+{
+  name: "custom nodes on collect switch branches merge (the default branch always fires under collect)",
+  graph: {
+    nodes: [
+      {switch: "route", hit: "collect", when: ["a > 0", "b > 0", ""]},
+      {custom: "ca", kind: "render", config: {fromA: "{{ a }}"}},
+      {custom: "cb", kind: "render", config: {fromB: "{{ b }}"}},
+      {custom: "cd", kind: "config", config: {fallback: true}},
+    ],
+    edges: ["input -> route", "route:0 -> ca -> output", "route:1 -> cb -> output", "route:2 -> cd -> output"],
+  },
+  cases: [
+    [{a: 1, b: 1}, {fromA: 1, fromB: 1, fallback: true}],
+    [{a: 1, b: 0}, {fromA: 1, fallback: true}],
+    [{a: 0, b: 2}, {fromB: 2, fallback: true}],
+    [{a: 0, b: 0}, {fallback: true}],
+  ],
+}
+
+{
+  name: "custom echo before a switch",
+  graph: {
+    nodes: [
+      {custom: "prep", kind: "render", config: {score: "{{ points * 10 }}"}},
+      {switch: "route", when: ["score >= 50", ""]},
+      {expression: "pass", fields: {result: "'pass'", score: "score"}},
+      {expression: "fail", fields: {result: "'fail'", score: "score"}},
+    ],
+    edges: ["input -> prep -> route", "route:0 -> pass -> output", "route:1 -> fail -> output"],
+  },
+  cases: [
+    [{points: 5}, {result: "pass", score: 50}],
+    [{points: 4.9}, {result: "fail", score: 49}],
+    [{points: 0}, {result: "fail", score: 0}],
+  ],
+}
+
+// --- merges ----------------------------------------------------------------------------------
+
+{
+  name: "custom nodes merging with an expression at the output",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {total: "a + b"}},
+      {custom: "meta", kind: "config", config: {version: 2, source: "custom"}},
+      {custom: "echo", kind: "echo"},
+    ],
+    edges: ["input -> calc -> output", "input -> meta -> output", "input -> echo -> output"],
+  },
+  cases: [
+    [{a: 1, b: 2}, {a: 1, b: 2, total: 3, version: 2, source: "custom"}],
+    [{a: 0, b: 0}, {a: 0, b: 0, total: 0, version: 2, source: "custom"}],
+  ],
+}
+
+{
+  name: "custom nodes as join inputs for a downstream node",
+  graph: {
+    nodes: [
+      {custom: "left", kind: "render", config: {l: "{{ v * 2 }}"}},
+      {custom: "right", kind: "render", config: {r: "{{ v * 3 }}"}},
+      {expression: "join", fields: {sum: "l + r"}},
+    ],
+    edges: ["input -> left -> join", "input -> right -> join", "join -> output"],
+  },
+  cases: [
+    [{v: 1}, {sum: 5}],
+    [{v: 0.5}, {sum: 2.5}],
+    [{v: 0}, {sum: 0}],
+  ],
+}
+
+{
+  name: "custom render reads a join of two earlier nodes",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {x: "1", shared: "'a'"}},
+      {expression: "b", fields: {y: "2", shared: "'b'"}},
+      {custom: "c", kind: "render", config: {x: "{{ x }}", y: "{{ y }}", shared: "{{ shared }}"}},
+    ],
+    edges: ["input -> a -> c", "input -> b -> c", "c -> output"],
+  },
+  cases: [
+    [{}, {x: 1, y: 2, shared: "a"}],
+  ],
+}
+
+{
+  name: "custom echo of a join keeps keys from both sides",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {x: "v"}},
+      {expression: "b", fields: {y: "v * 2"}},
+      {custom: "c", kind: "echo"},
+    ],
+    edges: ["input -> a -> c", "input -> b -> c", "c -> output"],
+  },
+  cases: [
+    [{v: 1}, {x: 1, y: 2}],
+    [{v: 2.5}, {x: 2.5, y: 5}],
+  ],
+}
+
+// --- sub-decisions and loops -------------------------------------------------------------
+
+{
+  name: "custom node inside a sub-decision",
+  decisions: {
+    child: {nodes: [{custom: "inner", kind: "render", config: {msg: "child got {{ x }}", x: "{{ x }}"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{x: 1}, {msg: "child got 1", x: 1}],
+    [{x: "s"}, {msg: "child got s", x: "s"}],
+  ],
+}
+
+{
+  name: "custom fail inside a sub-decision",
+  decisions: {
+    child: {nodes: [{custom: "inner", kind: "fail", config: {message: "child failed"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{}, "!error: child failed"],
+  ],
+}
+
+{
+  name: "custom node inside a looped sub-decision",
+  decisions: {
+    child: {nodes: [{custom: "inner", kind: "render", config: {label: "#{{ id }}"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "items", outputPath: "labels", executionMode: "loop"}],
+  },
+  cases: [
+    [{items: [{id: 1}, {id: 2}]}, {labels: [{label: "#1"}, {label: "#2"}]}],
+    [{items: []}, {labels: []}],
+  ],
+}
+
+// --- interactions with functions ----------------------------------------------------------
+
+{
+  name: "custom node output read by a function",
+  graph: {
+    nodes: [
+      {custom: "settings", kind: "config", config: {multiplier: 3}},
+      {function: "f", source: """export const handler = async (input) => ({ v: input.$nodes.input.v * input.multiplier });"""},
+    ],
+  },
+  cases: [
+    [{v: 2}, {v: 6}],
+    [{v: 0}, {v: 0}],
+  ],
+}
+
+{
+  name: "custom render of a function result",
+  graph: {
+    nodes: [
+      {function: "f", source: """export const handler = async (input) => ({ items: input.names.map((n) => n.toUpperCase()) });"""},
+      {custom: "c", kind: "render", config: {first: "{{ items[0] }}", count: "{{ len(items) }}", line: "{{ len(items) }} items, first {{ items[0] }}"}},
+    ],
+  },
+  cases: [
+    [{names: ["a", "b"]}, {first: "A", count: 2, line: "2 items, first A"}],
+    [{names: ["x"]}, {first: "X", count: 1, line: "1 items, first X"}],
+  ],
+}

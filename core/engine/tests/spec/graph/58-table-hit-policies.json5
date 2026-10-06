@@ -1,0 +1,751 @@
+// Decision table hit policies compared: the same rules run as a first-hit table, a collect table
+// and a first-hit table with a per-column `[]` output, side by side in one graph under distinct
+// outputPaths so every case shows the three answers together. First hit returns the first
+// matching rule's object (null when nothing matches), collect returns every matching rule's
+// object in rule order (an empty array when nothing matches), and a `[]` column gathers that
+// column's values across matching rules while plain columns come from the first matching rule.
+// Chapters 04, 05 and 07 pin each policy alone; this chapter contrasts them, and covers empty
+// and wildcard-only tables, rule order and the transform attributes for each policy.
+
+// --- Side by side: identical rules under each policy ------------------------------------------------
+
+{
+  name: "side by side: overlapping thresholds",
+  graph: {
+    nodes: [
+      {table: "first", outputPath: "first", inputs: ["score"], outputs: ["grade"], rules: [
+        [">= 90", "'A'"],
+        [">= 80", "'B'"],
+        [">= 70", "'C'"],
+      ]},
+      {table: "all", hit: "collect", outputPath: "all", inputs: ["score"], outputs: ["grade"], rules: [
+        [">= 90", "'A'"],
+        [">= 80", "'B'"],
+        [">= 70", "'C'"],
+      ]},
+      {table: "cols", outputPath: "cols", inputs: ["score"], outputs: ["grade[]"], rules: [
+        [">= 90", "'A'"],
+        [">= 80", "'B'"],
+        [">= 70", "'C'"],
+      ]},
+    ],
+    edges: ["input -> first -> output", "input -> all -> output", "input -> cols -> output"],
+  },
+  cases: [
+    [{score: 95}, {first: {grade: "A"}, all: [{grade: "A"}, {grade: "B"}, {grade: "C"}], cols: {grade: ["A", "B", "C"]}}],
+    [{score: 85}, {first: {grade: "B"}, all: [{grade: "B"}, {grade: "C"}], cols: {grade: ["B", "C"]}}],
+    [{score: 70}, {first: {grade: "C"}, all: [{grade: "C"}], cols: {grade: ["C"]}}],
+    [{score: 10}, {all: []}],
+    [{}, {all: []}],
+    [{score: "95"}, {all: []}],
+  ],
+}
+
+{
+  name: "side by side: disjoint rules give the same single answer under every policy",
+  graph: {
+    nodes: [
+      {table: "first", outputPath: "first", inputs: ["kind"], outputs: ["code"], rules: [
+        ["'a'", "1"],
+        ["'b'", "2"],
+        ["'c'", "3"],
+      ]},
+      {table: "all", hit: "collect", outputPath: "all", inputs: ["kind"], outputs: ["code"], rules: [
+        ["'a'", "1"],
+        ["'b'", "2"],
+        ["'c'", "3"],
+      ]},
+      {table: "cols", outputPath: "cols", inputs: ["kind"], outputs: ["code[]"], rules: [
+        ["'a'", "1"],
+        ["'b'", "2"],
+        ["'c'", "3"],
+      ]},
+    ],
+    edges: ["input -> first -> output", "input -> all -> output", "input -> cols -> output"],
+  },
+  cases: [
+    [{kind: "a"}, {first: {code: 1}, all: [{code: 1}], cols: {code: [1]}}],
+    [{kind: "c"}, {first: {code: 3}, all: [{code: 3}], cols: {code: [3]}}],
+    [{kind: "d"}, {all: []}],
+    [{kind: null}, {all: []}],
+  ],
+}
+
+{
+  name: "side by side: several output columns, some empty per rule",
+  graph: {
+    nodes: [
+      {table: "first", outputPath: "first", inputs: ["n"], outputs: ["a", "b"], rules: [
+        ["> 0", "'pos'", ""],
+        ["> 10", "", "'big'"],
+        ["", "'any'", "'any'"],
+      ]},
+      {table: "all", hit: "collect", outputPath: "all", inputs: ["n"], outputs: ["a", "b"], rules: [
+        ["> 0", "'pos'", ""],
+        ["> 10", "", "'big'"],
+        ["", "'any'", "'any'"],
+      ]},
+      {table: "cols", outputPath: "cols", inputs: ["n"], outputs: ["a", "b[]"], rules: [
+        ["> 0", "'pos'", ""],
+        ["> 10", "", "'big'"],
+        ["", "'any'", "'any'"],
+      ]},
+    ],
+    edges: ["input -> first -> output", "input -> all -> output", "input -> cols -> output"],
+  },
+  cases: [
+    [{n: 50}, {first: {a: "pos"}, all: [{a: "pos"}, {b: "big"}, {a: "any", b: "any"}], cols: {a: "pos", b: ["big", "any"]}}],
+    [{n: 5}, {first: {a: "pos"}, all: [{a: "pos"}, {a: "any", b: "any"}], cols: {a: "pos", b: ["any"]}}],
+    [{n: -5}, {first: {a: "any", b: "any"}, all: [{a: "any", b: "any"}], cols: {a: "any", b: ["any"]}}],
+    [{}, {first: {a: "any", b: "any"}, all: [{a: "any", b: "any"}], cols: {a: "any", b: ["any"]}}],
+  ],
+}
+
+{
+  name: "side by side: an output cell that errors for some inputs",
+  graph: {
+    nodes: [
+      {table: "first", outputPath: "first", inputs: ["n"], outputs: ["v"], rules: [
+        ["> 0", "n + bonus"],
+        ["", "n"],
+      ]},
+      {table: "all", hit: "collect", outputPath: "all", inputs: ["n"], outputs: ["v"], rules: [
+        ["> 0", "n + bonus"],
+        ["", "n"],
+      ]},
+      {table: "cols", outputPath: "cols", inputs: ["n"], outputs: ["v[]"], rules: [
+        ["> 0", "n + bonus"],
+        ["", "n"],
+      ]},
+    ],
+    edges: ["input -> first -> output", "input -> all -> output", "input -> cols -> output"],
+  },
+  cases: [
+    [{n: 1, bonus: 10}, {first: {v: 11}, all: [{v: 11}, {v: 1}], cols: {v: [11, 1]}}],
+    [{n: 1, bonus: "x"}, {first: {v: 1}, all: [{v: 1}], cols: {v: [1]}}],
+    [{n: 1}, {first: {v: 1}, all: [{v: 1}], cols: {v: [1]}}],
+    [{n: 0, bonus: "x"}, {first: {v: 0}, all: [{v: 0}], cols: {v: [0]}}],
+  ],
+}
+
+{
+  name: "side by side: large indexed tables (eight rules) agree with the small forms",
+  graph: {
+    nodes: [
+      {table: "first", outputPath: "first", inputs: ["c"], outputs: ["v"], rules: [
+        ["'a'", "1"], ["'b'", "2"], ["'a', 'b'", "3"], ["'c'", "4"],
+        ["'d'", "5"], ["'a'", "6"], ["'e'", "7"], ["", "8"],
+      ]},
+      {table: "all", hit: "collect", outputPath: "all", inputs: ["c"], outputs: ["v"], rules: [
+        ["'a'", "1"], ["'b'", "2"], ["'a', 'b'", "3"], ["'c'", "4"],
+        ["'d'", "5"], ["'a'", "6"], ["'e'", "7"], ["", "8"],
+      ]},
+      {table: "cols", outputPath: "cols", inputs: ["c"], outputs: ["v[]"], rules: [
+        ["'a'", "1"], ["'b'", "2"], ["'a', 'b'", "3"], ["'c'", "4"],
+        ["'d'", "5"], ["'a'", "6"], ["'e'", "7"], ["", "8"],
+      ]},
+    ],
+    edges: ["input -> first -> output", "input -> all -> output", "input -> cols -> output"],
+  },
+  cases: [
+    [{c: "a"}, {first: {v: 1}, all: [{v: 1}, {v: 3}, {v: 6}, {v: 8}], cols: {v: [1, 3, 6, 8]}}],
+    [{c: "b"}, {first: {v: 2}, all: [{v: 2}, {v: 3}, {v: 8}], cols: {v: [2, 3, 8]}}],
+    [{c: "e"}, {first: {v: 7}, all: [{v: 7}, {v: 8}], cols: {v: [7, 8]}}],
+    [{c: "z"}, {first: {v: 8}, all: [{v: 8}], cols: {v: [8]}}],
+    [{c: 1}, {first: {v: 8}, all: [{v: 8}], cols: {v: [8]}}],
+    [{}, {first: {v: 8}, all: [{v: 8}], cols: {v: [8]}}],
+  ],
+}
+
+{
+  name: "side by side: a downstream expression reads all three results",
+  graph: {
+    nodes: [
+      {table: "first", outputPath: "first", inputs: ["n"], outputs: ["fee"], rules: [
+        ["> 100", "10"],
+        ["> 0", "1"],
+      ]},
+      {table: "all", hit: "collect", outputPath: "all", inputs: ["n"], outputs: ["fee"], rules: [
+        ["> 100", "10"],
+        ["> 0", "1"],
+      ]},
+      {table: "cols", outputPath: "cols", inputs: ["n"], outputs: ["fee[]"], rules: [
+        ["> 100", "10"],
+        ["> 0", "1"],
+      ]},
+      {expression: "sum", fields: {
+        first: "first.fee ?? 0",
+        all: "sum(map(all, #.fee))",
+        cols: "sum(cols.fee ?? [])",
+        sameCount: "len(all) == len(cols.fee ?? [])",
+      }},
+    ],
+    edges: ["input -> first -> sum", "input -> all -> sum", "input -> cols -> sum", "sum -> output"],
+  },
+  cases: [
+    [{n: 500}, {first: 10, all: 11, cols: 11, sameCount: true}],
+    [{n: 5}, {first: 1, all: 1, cols: 1, sameCount: true}],
+    [{n: 0}, {first: 0, all: 0, cols: 0, sameCount: true}],
+  ],
+}
+
+// --- Rule order under each policy --------------------------------------------------------------------
+
+{
+  name: "rule order: collect lists rules in declaration order, reversed rules give a reversed array",
+  graph: {
+    nodes: [
+      {table: "asc", hit: "collect", outputPath: "asc", inputs: ["n"], outputs: ["r"], rules: [
+        ["> 0", "1"],
+        ["> 1", "2"],
+        ["> 2", "3"],
+      ]},
+      {table: "desc", hit: "collect", outputPath: "desc", inputs: ["n"], outputs: ["r"], rules: [
+        ["> 2", "3"],
+        ["> 1", "2"],
+        ["> 0", "1"],
+      ]},
+    ],
+    edges: ["input -> asc -> output", "input -> desc -> output"],
+  },
+  cases: [
+    [{n: 3}, {asc: [{r: 1}, {r: 2}, {r: 3}], desc: [{r: 3}, {r: 2}, {r: 1}]}],
+    [{n: 2}, {asc: [{r: 1}, {r: 2}], desc: [{r: 2}, {r: 1}]}],
+    [{n: 1}, {asc: [{r: 1}], desc: [{r: 1}]}],
+    [{n: 0}, {asc: [], desc: []}],
+  ],
+}
+
+{
+  name: "rule order: first hit picks the earliest of the same rules, reversed order picks the other end",
+  graph: {
+    nodes: [
+      {table: "asc", outputPath: "asc", inputs: ["n"], outputs: ["r"], rules: [
+        ["> 0", "1"],
+        ["> 1", "2"],
+        ["> 2", "3"],
+      ]},
+      {table: "desc", outputPath: "desc", inputs: ["n"], outputs: ["r"], rules: [
+        ["> 2", "3"],
+        ["> 1", "2"],
+        ["> 0", "1"],
+      ]},
+    ],
+    edges: ["input -> asc -> output", "input -> desc -> output"],
+  },
+  cases: [
+    [{n: 3}, {asc: {r: 1}, desc: {r: 3}}],
+    [{n: 2}, {asc: {r: 1}, desc: {r: 2}}],
+    [{n: 1}, {asc: {r: 1}, desc: {r: 1}}],
+    [{n: 0}, {}],
+  ],
+}
+
+{
+  name: "rule order: a `[]` column follows rule order while the scalar comes from the earliest rule",
+  graph: {
+    nodes: [
+      {table: "asc", outputPath: "asc", inputs: ["n"], outputs: ["top", "all[]"], rules: [
+        ["> 0", "'gt0'", "1"],
+        ["> 1", "'gt1'", "2"],
+        ["> 2", "'gt2'", "3"],
+      ]},
+      {table: "desc", outputPath: "desc", inputs: ["n"], outputs: ["top", "all[]"], rules: [
+        ["> 2", "'gt2'", "3"],
+        ["> 1", "'gt1'", "2"],
+        ["> 0", "'gt0'", "1"],
+      ]},
+    ],
+    edges: ["input -> asc -> output", "input -> desc -> output"],
+  },
+  cases: [
+    [{n: 3}, {asc: {top: "gt0", all: [1, 2, 3]}, desc: {top: "gt2", all: [3, 2, 1]}}],
+    [{n: 2}, {asc: {top: "gt0", all: [1, 2]}, desc: {top: "gt1", all: [2, 1]}}],
+    [{n: 1}, {asc: {top: "gt0", all: [1]}, desc: {top: "gt0", all: [1]}}],
+  ],
+}
+
+{
+  name: "rule order: a wildcard rule in the middle of a collect table keeps its position",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["k"], outputs: ["r"], rules: [
+        ["'x'", "'first'"],
+        ["", "'middle'"],
+        ["'x', 'y'", "'last'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{k: "x"}, [{r: "first"}, {r: "middle"}, {r: "last"}]],
+    [{k: "y"}, [{r: "middle"}, {r: "last"}]],
+    [{k: "z"}, [{r: "middle"}]],
+    [{}, [{r: "middle"}]],
+  ],
+}
+
+{
+  name: "rule order: duplicated rules collect duplicates, first hit takes one",
+  graph: {
+    nodes: [
+      {table: "first", outputPath: "first", inputs: ["k"], outputs: ["r", "tags[]"], rules: [
+        ["'a'", "1", "'t'"],
+        ["'a'", "1", "'t'"],
+        ["'a'", "2", "'u'"],
+      ]},
+      {table: "all", hit: "collect", outputPath: "all", inputs: ["k"], outputs: ["r"], rules: [
+        ["'a'", "1"],
+        ["'a'", "1"],
+        ["'a'", "2"],
+      ]},
+    ],
+    edges: ["input -> first -> output", "input -> all -> output"],
+  },
+  cases: [
+    [{k: "a"}, {first: {r: 1, tags: ["t", "t", "u"]}, all: [{r: 1}, {r: 1}, {r: 2}]}],
+    [{k: "b"}, {all: []}],
+  ],
+}
+
+{
+  name: "rule order: collect over a large indexed table keeps declaration order across index and fallback rows",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["code", "amount"], outputs: ["r"], rules: [
+        ["", "> 1000", "'big'"],
+        ["'X'", "", "'x1'"],
+        ["'Y'", "> 10", "'y-mid'"],
+        ["'X'", "> 10", "'x-mid'"],
+        ["", "", "'any'"],
+        ["'Z'", "", "'z'"],
+        ["'X', 'Z'", "> 500", "'xz-high'"],
+        ["'X'", "", "'x2'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{code: "X", amount: 2000}, [{r: "big"}, {r: "x1"}, {r: "x-mid"}, {r: "any"}, {r: "xz-high"}, {r: "x2"}]],
+    [{code: "X", amount: 5}, [{r: "x1"}, {r: "any"}, {r: "x2"}]],
+    [{code: "Z", amount: 600}, [{r: "any"}, {r: "z"}, {r: "xz-high"}]],
+    [{code: "Y", amount: 50}, [{r: "y-mid"}, {r: "any"}]],
+    [{code: "Q", amount: 5000}, [{r: "big"}, {r: "any"}]],
+    [{}, [{r: "any"}]],
+  ],
+}
+
+// --- Empty tables (no rules) ---------------------------------------------------------------------------
+
+{
+  name: "empty: no rules under each policy",
+  graph: {
+    nodes: [
+      {table: "first", outputPath: "first", inputs: ["n"], outputs: ["v"], rules: []},
+      {table: "all", hit: "collect", outputPath: "all", inputs: ["n"], outputs: ["v"], rules: []},
+      {table: "cols", outputPath: "cols", inputs: ["n"], outputs: ["v[]"], rules: []},
+    ],
+    edges: ["input -> first -> output", "input -> all -> output", "input -> cols -> output"],
+  },
+  cases: [
+    [{n: 1}, {all: []}],
+    [{}, {all: []}],
+  ],
+}
+
+{
+  name: "empty: no rules and no columns at all",
+  graph: {
+    nodes: [
+      {table: "first", outputPath: "first", inputs: [], outputs: [], rules: []},
+      {table: "all", hit: "collect", outputPath: "all", inputs: [], outputs: [], rules: []},
+    ],
+    edges: ["input -> first -> output", "input -> all -> output"],
+  },
+  cases: [
+    [{n: 1}, {all: []}],
+    [{}, {all: []}],
+  ],
+}
+
+{
+  name: "empty: a first-hit table with no rules under passThrough keeps the input",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, inputs: ["n"], outputs: ["v"], rules: []},
+    ],
+  },
+  cases: [
+    [{n: 1, v: 2}, {n: 1, v: 2}],
+    [{}, {}],
+  ],
+}
+
+{
+  name: "empty: a collect table with no rules under passThrough and outputPath",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", passThrough: true, outputPath: "hits", inputs: ["n"], outputs: ["v"], rules: []},
+    ],
+  },
+  cases: [
+    [{n: 1}, {n: 1, hits: []}],
+    [{n: 1, hits: [{v: 1}]}, {n: 1, hits: []}],
+    [{}, {hits: []}],
+  ],
+}
+
+{
+  name: "empty: a `[]` table with no rules under passThrough keeps an existing array",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, inputs: ["n"], outputs: ["tags[]"], rules: []},
+    ],
+  },
+  cases: [
+    [{n: 1, tags: ["old"]}, {n: 1, tags: ["old"]}],
+    [{n: 1}, {n: 1}],
+  ],
+}
+
+{
+  name: "empty: no rules in loop mode under each policy",
+  graph: {
+    nodes: [
+      {table: "first", executionMode: "loop", inputField: "items", outputPath: "first", inputs: ["n"], outputs: ["v"], rules: []},
+      {table: "all", hit: "collect", executionMode: "loop", inputField: "items", outputPath: "all", inputs: ["n"], outputs: ["v"], rules: []},
+      {table: "cols", executionMode: "loop", inputField: "items", outputPath: "cols", inputs: ["n"], outputs: ["v[]"], rules: []},
+    ],
+    edges: ["input -> first -> output", "input -> all -> output", "input -> cols -> output"],
+  },
+  cases: [
+    [{items: [{n: 1}, {n: 2}]}, {first: [null, null], all: [[], []], cols: [null, null]}],
+    [{items: []}, {first: [], all: [], cols: []}],
+  ],
+}
+
+{
+  name: "empty: a downstream expression after empty tables",
+  graph: {
+    nodes: [
+      {table: "first", inputs: ["n"], outputs: ["v"], rules: []},
+      {table: "all", hit: "collect", inputs: ["n"], outputs: ["v"], rules: []},
+      {expression: "e", fields: {
+        firstNull: "$nodes.first == null",
+        allLen: "len($nodes.all)",
+        allType: "type($nodes.all)",
+      }},
+    ],
+    edges: ["input -> first -> e", "input -> all -> e", "e -> output"],
+  },
+  cases: [
+    [{n: 1}, {firstNull: true, allLen: 0, allType: "array"}],
+    [{}, {firstNull: true, allLen: 0, allType: "array"}],
+  ],
+}
+
+// --- Wildcard-only tables -------------------------------------------------------------------------------
+
+{
+  name: "wildcards only: first hit returns the first rule, collect every rule, `[]` every cell",
+  graph: {
+    nodes: [
+      {table: "first", outputPath: "first", inputs: ["a", "b"], outputs: ["v", "w"], rules: [
+        ["", "", "1", "'x'"],
+        ["", "", "2", ""],
+        ["", "", "", "'z'"],
+      ]},
+      {table: "all", hit: "collect", outputPath: "all", inputs: ["a", "b"], outputs: ["v", "w"], rules: [
+        ["", "", "1", "'x'"],
+        ["", "", "2", ""],
+        ["", "", "", "'z'"],
+      ]},
+      {table: "cols", outputPath: "cols", inputs: ["a", "b"], outputs: ["v", "w[]"], rules: [
+        ["", "", "1", "'x'"],
+        ["", "", "2", ""],
+        ["", "", "", "'z'"],
+      ]},
+    ],
+    edges: ["input -> first -> output", "input -> all -> output", "input -> cols -> output"],
+  },
+  cases: [
+    [{a: 1, b: 2}, {first: {v: 1, w: "x"}, all: [{v: 1, w: "x"}, {v: 2}, {w: "z"}], cols: {v: 1, w: ["x", "z"]}}],
+    [{}, {first: {v: 1, w: "x"}, all: [{v: 1, w: "x"}, {v: 2}, {w: "z"}], cols: {v: 1, w: ["x", "z"]}}],
+    [{a: null, b: [1]}, {first: {v: 1, w: "x"}, all: [{v: 1, w: "x"}, {v: 2}, {w: "z"}], cols: {v: 1, w: ["x", "z"]}}],
+  ],
+}
+
+{
+  name: "wildcards only: a field-less column of empty cells",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: [null, "x"], outputs: ["r"], rules: [
+        ["", "", "'one'"],
+        ["", "", "'two'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 1}, [{r: "one"}, {r: "two"}]],
+    [{}, [{r: "one"}, {r: "two"}]],
+  ],
+}
+
+{
+  name: "wildcards only: eight wildcard rules (index-sized) still return in order",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["k"], outputs: ["i"], rules: [
+        ["", "1"], ["", "2"], ["", "3"], ["", "4"], ["", "5"], ["", "6"], ["", "7"], ["", "8"],
+      ]},
+      {table: "f", outputPath: "first", inputs: ["k"], outputs: ["i", "all[]"], rules: [
+        ["", "1", "1"], ["", "2", "2"], ["", "3", "3"], ["", "4", "4"], ["", "5", "5"], ["", "6", "6"], ["", "7", "7"], ["", "8", "8"],
+      ]},
+    ],
+    edges: ["input -> t", "t -> output", "input -> f -> output"],
+  },
+  cases: [
+    [{k: "a"}, [{i: 1}, {i: 2}, {i: 3}, {i: 4}, {i: 5}, {i: 6}, {i: 7}, {i: 8}], "question: the collect array and the first-hit object meet at the output node; the array replaces the object rather than merging"],
+  ],
+}
+
+{
+  name: "wildcards only: an all-wildcard collect table with output cells over the input",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", outputPath: "checks", inputs: ["amount"], outputs: ["name", "ok"], rules: [
+        ["", "'positive'", "amount > 0"],
+        ["", "'small'", "amount < 100"],
+        ["", "'integer'", "amount == round(amount)"],
+      ]},
+    ],
+  },
+  cases: [
+    [{amount: 50}, {checks: [{name: "positive", ok: true}, {name: "small", ok: true}, {name: "integer", ok: true}]}],
+    [{amount: 150.5}, {checks: [{name: "positive", ok: true}, {name: "small", ok: false}, {name: "integer", ok: false}]}],
+    [{amount: -1}, {checks: [{name: "positive", ok: false}, {name: "small", ok: true}, {name: "integer", ok: true}]}],
+    [{}, {checks: []}, "question: every check errors on a missing amount (`null > 0`), so every row is dropped"],
+  ],
+}
+
+{
+  name: "wildcards only: loop mode returns every rule for every item",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", executionMode: "loop", inputField: "items", outputPath: "out", inputs: ["v"], outputs: ["tag"], rules: [
+        ["", "'a'"],
+        ["", "v"],
+      ]},
+    ],
+  },
+  cases: [
+    [{items: [{v: 1}, {v: "x"}]}, {out: [[{tag: "a"}, {tag: 1}], [{tag: "a"}, {tag: "x"}]]}],
+    [{items: [{}]}, {out: [[{tag: "a"}, {tag: null}]]}],
+    [{items: []}, {out: []}],
+  ],
+}
+
+// --- Collect with transform attributes ---------------------------------------------------------------
+
+{
+  name: "collect transforms: inputField scopes cells and outputs to the sub-object",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputField: "order", outputPath: "flags", inputs: ["total", "country"], outputs: ["flag", "of"], rules: [
+        ["> 100", "", "'big'", "total"],
+        ["", "'US'", "'domestic'", "country"],
+        ["", "", "'seen'", "len(lines ?? [])"],
+      ]},
+    ],
+  },
+  cases: [
+    [{order: {total: 200, country: "US", lines: [1]}}, {flags: [{flag: "big", of: 200}, {flag: "domestic", of: "US"}, {flag: "seen", of: 1}]}],
+    [{order: {total: 50, country: "DE"}}, {flags: [{flag: "seen", of: 0}]}],
+    [{order: {}}, {flags: [{flag: "seen", of: 0}]}],
+    [{total: 500}, {flags: [{flag: "seen", of: 0}]}],
+  ],
+}
+
+{
+  name: "collect transforms: dotted outputPath with passThrough keeps sibling objects",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", passThrough: true, outputPath: "result.hits", inputs: ["n"], outputs: ["v"], rules: [
+        ["> 0", "1"],
+        ["> 1", "2"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 2, result: {score: 9}}, {n: 2, result: {score: 9, hits: [{v: 1}, {v: 2}]}}],
+    [{n: 0, result: {hits: [{v: 9}]}}, {n: 0, result: {hits: []}}],
+    [{n: 1}, {n: 1, result: {hits: [{v: 1}]}}],
+  ],
+}
+
+{
+  name: "collect transforms: loop with passThrough and outputPath on each item",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", executionMode: "loop", passThrough: true, inputField: "lines", outputPath: "lines", inputs: ["qty"], outputs: ["flag"], rules: [
+        ["> 10", "'bulk'"],
+        ["> 0", "'some'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{id: 1, lines: [{qty: 20}, {qty: 0}]}, {id: 1, lines: [[{flag: "bulk"}, {flag: "some"}], []]}, "question: under loop+passThrough the collected array replaces each item rather than merging with it"],
+    [{id: 2, lines: []}, {id: 2, lines: []}],
+  ],
+}
+
+{
+  name: "collect transforms: loop, inputField and outputPath reading outer data via $nodes",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", executionMode: "loop", inputField: "users", outputPath: "access", inputs: ["role", null], outputs: ["grant"], rules: [
+        ["'admin'", "", "'all'"],
+        ["", "contains($nodes.input.open, name)", "'open'"],
+        ["", "", "'read'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{open: ["bo"], users: [{name: "ann", role: "admin"}, {name: "bo", role: "user"}]}, {access: [[{grant: "all"}, {grant: "read"}], [{grant: "open"}, {grant: "read"}]]}],
+    [{open: [], users: [{name: "bo"}]}, {access: [[{grant: "read"}]]}],
+  ],
+}
+
+// --- `[]` columns mixed with scalars under first hit --------------------------------------------------
+
+{
+  name: "mixed `[]`: the scalar comes from the first matching rule even when its cell is empty",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["label", "codes[]"], rules: [
+        ["> 10", "", "'big'"],
+        ["> 0", "'positive'", "'pos'"],
+        ["", "'any'", "'any'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 20}, {codes: ["big", "pos", "any"]}],
+    [{n: 5}, {label: "positive", codes: ["pos", "any"]}],
+    [{n: 0}, {label: "any", codes: ["any"]}],
+  ],
+}
+
+{
+  name: "mixed `[]`: scalars and arrays interleaved over shared nested paths",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["r.tier", "r.why[]", "r.limit", "audit[]"], rules: [
+        ["> 100", "'gold'", "'over 100'", "1000", "'r1'"],
+        ["> 10", "'silver'", "'over 10'", "100", ""],
+        ["", "'basic'", "", "10", "'r3'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 200}, {r: {tier: "gold", why: ["over 100", "over 10"], limit: 1000}, audit: ["r1", "r3"]}],
+    [{n: 20}, {r: {tier: "silver", why: ["over 10"], limit: 100}, audit: ["r3"]}],
+    [{n: 1}, {r: {tier: "basic", why: [], limit: 10}, audit: ["r3"]}],
+  ],
+}
+
+{
+  name: "mixed `[]`: collected objects and arrays as values",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["items[]", "count"], rules: [
+        ["> 1", "{id: 1, at: n}", "1"],
+        ["> 0", "[n]", "2"],
+        ["", "null", "3"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 2}, {items: [{id: 1, at: 2}, [2], null], count: 1}],
+    [{n: 1}, {items: [[1], null], count: 2}],
+    [{n: 0}, {items: [null], count: 3}],
+  ],
+}
+
+{
+  name: "mixed `[]`: loop mode collects per item",
+  graph: {
+    nodes: [
+      {table: "t", executionMode: "loop", inputField: "items", outputPath: "out", inputs: ["v"], outputs: ["main", "all[]"], rules: [
+        ["> 10", "'big'", "'b'"],
+        ["> 0", "'pos'", "'p'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{items: [{v: 20}, {v: 5}, {v: 0}]}, {out: [{main: "big", all: ["b", "p"]}, {main: "pos", all: ["p"]}, null]}],
+    [{items: []}, {out: []}],
+  ],
+}
+
+{
+  name: "mixed `[]`: outputPath and passThrough with an existing array at the target",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, outputPath: "res", inputs: ["n"], outputs: ["top", "tags[]"], rules: [
+        ["> 1", "'a'", "'x'"],
+        ["> 0", "'b'", "'y'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 2, res: {tags: ["old"], keep: 1}}, {n: 2, res: {top: "a", tags: ["x", "y"], keep: 1}}],
+    [{n: 1}, {n: 1, res: {top: "b", tags: ["y"]}}],
+    [{n: 0, res: {tags: ["old"]}}, {n: 0}, "question: no matching rule writes null at the output path, deleting the existing object (same as chapter 12)"],
+  ],
+}
+
+// --- Policies feeding control flow --------------------------------------------------------------------
+
+{
+  name: "control flow: a switch branches on the size of a collect result",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", outputPath: "flags", inputs: ["amount", "country"], outputs: ["f"], rules: [
+        ["> 1000", "", "'amount'"],
+        ["", "'XX', 'YY'", "'country'"],
+      ]},
+      {switch: "route", when: ["len(flags) >= 2", "len(flags) == 1", ""]},
+      {expression: "block", fields: {decision: "'block'"}},
+      {expression: "review", fields: {decision: "'review'", why: "flags[0].f"}},
+      {expression: "pass", fields: {decision: "'pass'"}},
+    ],
+    edges: ["input -> t -> route", "route:0 -> block -> output", "route:1 -> review -> output", "route:2 -> pass -> output"],
+  },
+  cases: [
+    [{amount: 5000, country: "XX"}, {decision: "block"}],
+    [{amount: 5000, country: "DE"}, {decision: "review", why: "amount"}],
+    [{amount: 5, country: "YY"}, {decision: "review", why: "country"}],
+    [{amount: 5, country: "DE"}, {decision: "pass"}],
+    [{}, {decision: "pass"}],
+  ],
+}
+
+{
+  name: "control flow: a first-hit miss versus an empty collect downstream",
+  graph: {
+    nodes: [
+      {table: "first", outputPath: "first", inputs: ["k"], outputs: ["v"], rules: [["'a'", "1"]]},
+      {table: "all", hit: "collect", outputPath: "all", inputs: ["k"], outputs: ["v"], rules: [["'a'", "1"]]},
+      {expression: "e", fields: {
+        firstMissing: "first == null",
+        allEmpty: "len(all) == 0",
+        firstV: "first.v ?? -1",
+        allV: "all[0].v ?? -1",
+      }},
+    ],
+    edges: ["input -> first -> e", "input -> all -> e", "e -> output"],
+  },
+  cases: [
+    [{k: "a"}, {firstMissing: false, allEmpty: false, firstV: 1, allV: 1}],
+    [{k: "b"}, {firstMissing: true, allEmpty: true, firstV: -1, allV: -1}],
+  ],
+}

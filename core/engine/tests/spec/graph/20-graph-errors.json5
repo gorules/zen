@@ -1,0 +1,872 @@
+// Structural and runtime errors. Structural problems (input node count, cycles, edges naming
+// unknown nodes) are reported as `InvalidGraph` before any node runs; runtime failures inside a
+// node are `NodeError` with the failing node's id. Only the stable kinds are matched in text.
+
+// ---------------------------------------------------------------------------------------------
+// Input node count.
+{
+  name: "structure: a graph without an input node is invalid",
+  graph: {
+    raw: {
+      nodes: [
+        {id: "c", name: "calc", type: "expressionNode", content: {expressions: [{id: "x", key: "y", value: "1"}]}},
+        {id: "o", name: "response", type: "outputNode", content: {}},
+      ],
+      edges: [{id: "e", sourceId: "c", targetId: "o"}],
+    },
+  },
+  cases: [
+    [{}, "!error: invalidInputCount"],
+    [{a: 1}, "!error: InvalidGraph"],
+  ],
+}
+
+{
+  name: "structure: two input nodes are invalid",
+  graph: {
+    raw: {
+      nodes: [
+        {id: "i1", name: "request", type: "inputNode", content: {}},
+        {id: "i2", name: "request2", type: "inputNode", content: {}},
+        {id: "o", name: "response", type: "outputNode", content: {}},
+      ],
+      edges: [{id: "e1", sourceId: "i1", targetId: "o"}, {id: "e2", sourceId: "i2", targetId: "o"}],
+    },
+  },
+  cases: [
+    [{}, "!error: invalidInputCount"],
+    [{a: 1}, "!error: \"nodeCount\":2"],
+  ],
+}
+
+{
+  name: "structure: an empty node list is invalid",
+  graph: {raw: {nodes: [], edges: []}},
+  cases: [
+    [{}, "!error: invalidInputCount"],
+    [{a: 1}, "!error: \"nodeCount\":0"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Output node count. The output node is optional: without one, the result is the merge of every
+// visited node that has no outgoing edges.
+{
+  name: "structure: without an output node the dead-end node's output is the result",
+  graph: {
+    raw: {
+      nodes: [
+        {id: "i", name: "request", type: "inputNode", content: {}},
+        {id: "c", name: "calc", type: "expressionNode", content: {expressions: [{id: "x", key: "y", value: "a * 2"}]}},
+      ],
+      edges: [{id: "e", sourceId: "i", targetId: "c"}],
+    },
+  },
+  cases: [
+    [{a: 1}, {y: 2}],
+    [{a: 2.5}, {y: 5}],
+    [{}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "structure: without an output node every dead end is merged",
+  graph: {
+    raw: {
+      nodes: [
+        {id: "i", name: "request", type: "inputNode", content: {}},
+        {id: "a", name: "a", type: "expressionNode", content: {expressions: [{id: "x", key: "fromA", value: "v + 1"}]}},
+        {id: "b", name: "b", type: "expressionNode", content: {expressions: [{id: "x", key: "fromB", value: "v + 2"}]}},
+      ],
+      edges: [{id: "e1", sourceId: "i", targetId: "a"}, {id: "e2", sourceId: "i", targetId: "b"}],
+    },
+  },
+  cases: [
+    [{v: 1}, {fromA: 2, fromB: 3}],
+    [{v: 0}, {fromA: 1, fromB: 2}],
+  ],
+}
+
+{
+  name: "structure: an input node alone returns the request",
+  graph: {
+    raw: {
+      nodes: [{id: "i", name: "request", type: "inputNode", content: {}}],
+      edges: [],
+    },
+  },
+  cases: [
+    [{a: 1}, {a: 1}],
+    [{}, {}],
+    [{a: {b: [1, 2]}}, {a: {b: [1, 2]}}],
+  ],
+}
+
+{
+  name: "structure: two output nodes are both reachable, the first reached ends the walk",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {y: "x + 1"}},
+      {output: "out1"},
+      {output: "out2", id: "out2"},
+    ],
+    edges: ["input -> calc -> out1", "calc -> out2"],
+  },
+  cases: [
+    [{x: 1}, {y: 2}],
+    [{x: 5}, {y: 6}],
+  ],
+}
+
+{
+  name: "structure: an output node that is not connected does not make the graph invalid",
+  graph: {
+    raw: {
+      nodes: [
+        {id: "i", name: "request", type: "inputNode", content: {}},
+        {id: "c", name: "calc", type: "expressionNode", content: {expressions: [{id: "x", key: "y", value: "1"}]}},
+        {id: "o", name: "response", type: "outputNode", content: {}},
+      ],
+      edges: [{id: "e", sourceId: "i", targetId: "c"}],
+    },
+  },
+  cases: [
+    [{}, {y: 1}],
+    [{a: 1}, {y: 1}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Cycles.
+{
+  name: "structure: a cycle between two nodes is invalid",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {x: "1"}},
+      {expression: "b", fields: {y: "2"}},
+    ],
+    edges: ["input -> a -> b -> output", "b -> a"],
+  },
+  cases: [
+    [{}, "!error: cyclicGraph"],
+    [{x: 1}, "!error: InvalidGraph"],
+  ],
+}
+
+{
+  name: "structure: a self loop is a cycle",
+  graph: {
+    nodes: [{expression: "a", fields: {x: "1"}}],
+    edges: ["input -> a -> output", "a -> a"],
+  },
+  cases: [
+    [{}, "!error: cyclicGraph"],
+  ],
+}
+
+{
+  name: "structure: a cycle in an unreachable part of the graph is still invalid",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {x: "1"}},
+      {expression: "b", fields: {y: "2"}},
+      {expression: "c", fields: {z: "3"}},
+    ],
+    edges: ["input -> a -> output", "b -> c -> b"],
+  },
+  cases: [
+    [{}, "!error: cyclicGraph"],
+  ],
+}
+
+{
+  name: "structure: a cycle through the output node back to the input is invalid",
+  graph: {
+    nodes: [{expression: "a", fields: {x: "1"}}],
+    edges: ["input -> a -> output -> input"],
+  },
+  cases: [
+    [{}, "!error: cyclicGraph"],
+  ],
+}
+
+{
+  name: "structure: a cycle behind a switch branch is invalid even when the branch is not taken",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["flag", ""]},
+      {expression: "a", fields: {x: "1"}},
+      {expression: "b", fields: {y: "2"}},
+      {expression: "c", fields: {z: "3"}},
+    ],
+    edges: ["input -> s", "s:0 -> a -> output", "s:1 -> b -> c -> b", "c -> output"],
+  },
+  cases: [
+    [{flag: true}, "!error: cyclicGraph"],
+    [{flag: false}, "!error: cyclicGraph"],
+  ],
+}
+
+{
+  name: "structure: a diamond is not a cycle",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {x: "v + 1"}},
+      {expression: "b", fields: {y: "v + 2"}},
+      {expression: "c", passThrough: true, fields: {z: "x + y"}},
+    ],
+    edges: ["input -> a -> c -> output", "input -> b -> c"],
+  },
+  cases: [
+    [{v: 1}, {x: 2, y: 3, z: 5}],
+    [{v: 10}, {x: 11, y: 12, z: 23}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Edges naming unknown nodes.
+{
+  name: "structure: an edge to an unknown target is a missing node",
+  graph: {
+    raw: {
+      nodes: [
+        {id: "i", name: "request", type: "inputNode", content: {}},
+        {id: "o", name: "response", type: "outputNode", content: {}},
+      ],
+      edges: [{id: "e1", sourceId: "i", targetId: "o"}, {id: "e2", sourceId: "i", targetId: "ghost"}],
+    },
+  },
+  cases: [
+    [{}, "!error: missingNode"],
+    [{a: 1}, "!error: ghost"],
+  ],
+}
+
+{
+  name: "structure: an edge from an unknown source is a missing node",
+  graph: {
+    raw: {
+      nodes: [
+        {id: "i", name: "request", type: "inputNode", content: {}},
+        {id: "o", name: "response", type: "outputNode", content: {}},
+      ],
+      edges: [{id: "e1", sourceId: "i", targetId: "o"}, {id: "e2", sourceId: "phantom", targetId: "o"}],
+    },
+  },
+  cases: [
+    [{}, "!error: missingNode"],
+    [{}, "!error: phantom"],
+  ],
+}
+
+{
+  name: "structure: edges match node ids, not node names",
+  graph: {
+    raw: {
+      nodes: [
+        {id: "n1", name: "request", type: "inputNode", content: {}},
+        {id: "n2", name: "response", type: "outputNode", content: {}},
+      ],
+      edges: [{id: "e1", sourceId: "request", targetId: "response"}],
+    },
+  },
+  cases: [
+    [{}, "!error: missingNode"],
+  ],
+}
+
+{
+  name: "structure: a switch handle naming an unknown statement just never fires",
+  graph: {
+    raw: {
+      nodes: [
+        {id: "i", name: "request", type: "inputNode", content: {}},
+        {id: "s", name: "s", type: "switchNode", content: {hitPolicy: "first", statements: [{id: "yes", condition: "flag"}, {id: "no", condition: ""}]}},
+        {id: "a", name: "a", type: "expressionNode", content: {expressions: [{id: "x", key: "path", value: "'a'"}]}},
+        {id: "b", name: "b", type: "expressionNode", content: {expressions: [{id: "x", key: "path", value: "'b'"}]}},
+        {id: "o", name: "response", type: "outputNode", content: {}},
+      ],
+      edges: [
+        {id: "e1", sourceId: "i", targetId: "s"},
+        {id: "e2", sourceId: "s", targetId: "a", sourceHandle: "yes"},
+        {id: "e3", sourceId: "s", targetId: "b", sourceHandle: "stale"},
+        {id: "e4", sourceId: "a", targetId: "o"},
+        {id: "e5", sourceId: "b", targetId: "o"},
+      ],
+    },
+  },
+  cases: [
+    [{flag: true}, {path: "a"}],
+    [{flag: false}, {}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Unreachable and disconnected nodes.
+{
+  name: "unreachable: a node with no incoming edge never runs",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {y: "1"}},
+      {custom: "boom", kind: "fail", config: {message: "unreachable ran"}},
+    ],
+    edges: ["input -> calc -> output"],
+  },
+  cases: [
+    [{}, {y: 1}],
+    [{a: 1}, {y: 1}],
+  ],
+}
+
+{
+  name: "unreachable: a node feeding a reachable node runs with an empty input",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {y: "v"}},
+      {expression: "orphan", fields: {o: "v ?? 'none'"}},
+      {expression: "join", passThrough: true, fields: {}},
+    ],
+    edges: ["input -> calc -> join -> output", "orphan -> join"],
+  },
+  cases: [
+    [{v: 1}, {y: 1, o: "none"}],
+    [{v: "x"}, {y: "x", o: "none"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Expression node errors.
+{
+  name: "expression errors: a syntax error fails the node",
+  graph: {
+    nodes: [{expression: "calc", fields: {ok: "1", bad: "1 +"}}],
+  },
+  cases: [
+    [{}, "!error: NodeError"],
+    [{a: 1}, "!error: \"nodeId\":\"calc\""],
+  ],
+}
+
+{
+  name: "expression errors: a runtime type error fails the node",
+  graph: {
+    nodes: [{expression: "calc", fields: {total: "price * qty"}}],
+  },
+  cases: [
+    [{price: 2, qty: 3}, {total: 6}],
+    [{price: "2", qty: 3}, "!error: NodeError"],
+    [{price: 2}, "!error: NodeError"],
+    [{}, "!error: Failed to evaluate expression"],
+  ],
+}
+
+{
+  name: "expression errors: the error names the failing expression",
+  graph: {
+    nodes: [{expression: "calc", fields: {a: "x + 1", b: "upper(x)"}}],
+  },
+  cases: [
+    [{x: 1}, "!error: upper(x)"],
+    [{x: "s"}, "!error: x + 1"],
+  ],
+}
+
+{
+  name: "expression errors: an unknown function fails the node",
+  graph: {
+    nodes: [{expression: "calc", fields: {a: "frobnicate(1)"}}],
+  },
+  cases: [
+    [{}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "expression errors: an empty key or empty value is skipped",
+  graph: {
+    nodes: [{expression: "calc", fields: [["", "1 +"], ["a", ""], ["b", "2"]]}],
+  },
+  cases: [
+    [{}, {b: 2}],
+    [{a: 1}, {b: 2}],
+  ],
+}
+
+{
+  name: "expression errors: a failure after earlier fields still fails the whole node",
+  graph: {
+    nodes: [
+      {expression: "first", passThrough: true, fields: {a: "1"}},
+      {expression: "second", fields: {b: "missing.deep + 1"}},
+    ],
+    edges: ["input -> first -> second -> output"],
+  },
+  cases: [
+    [{}, "!error: \"nodeId\":\"second\""],
+    [{missing: {deep: 1}}, {b: 2}],
+  ],
+}
+
+{
+  name: "expression errors: a failure in a parallel branch fails the graph",
+  graph: {
+    nodes: [
+      {expression: "good", fields: {a: "1"}},
+      {expression: "bad", fields: {b: "x.y.z * 2"}},
+    ],
+    edges: ["input -> good -> output", "input -> bad -> output"],
+  },
+  cases: [
+    [{}, "!error: \"nodeId\":\"bad\""],
+    [{x: {y: {z: 2}}}, {a: 1, b: 4}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Decision table errors. A cell that fails to evaluate makes its row not match; the table
+// itself never errors on a cell.
+{
+  name: "table errors: an input cell with a syntax error never matches",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["x"], outputs: ["r"], rules: [
+        ["> > 1", "'broken'"],
+        ["", "'fallback'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 5}, {r: "fallback"}],
+    [{x: 0}, {r: "fallback"}],
+    [{}, {r: "fallback"}],
+  ],
+}
+
+{
+  name: "table errors: an output cell that fails to evaluate skips the row",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["x"], outputs: ["r"], rules: [
+        ["> 1", "x.y.z + 1"],
+        ["", "'fallback'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 5}, {r: "fallback"}],
+    [{x: 0}, {r: "fallback"}],
+  ],
+}
+
+{
+  name: "table errors: a failing output cell in collect mode drops only that row",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["x"], outputs: ["r"], rules: [
+        ["> 0", "'positive'"],
+        ["> 1", "unknownFn(x)"],
+        ["> 2", "'big'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 5}, [{r: "positive"}, {r: "big"}]],
+    [{x: 1}, [{r: "positive"}]],
+    [{x: 0}, []],
+  ],
+}
+
+{
+  name: "table errors: an input expression that errors on the value makes the cell false",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["amount"], outputs: ["r"], rules: [
+        ["> 100", "'large'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{amount: 500}, {r: "large"}],
+    [{amount: "500"}, {r: "other"}],
+    [{amount: null}, {r: "other"}],
+    [{amount: [1]}, {r: "other"}],
+  ],
+}
+
+{
+  name: "table errors: an input field with a syntax error never matches a non-empty cell",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["a +"], outputs: ["r"], rules: [
+        ["1", "'one'"],
+        ["", "'any'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{a: 1}, {r: "any"}],
+    [{}, {r: "any"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Switch errors.
+{
+  name: "switch errors: a failing condition is false, not an error",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["x.y.z > 1", ""]},
+      {expression: "a", fields: {path: "'a'"}},
+      {expression: "b", fields: {path: "'b'"}},
+    ],
+    edges: ["input -> s", "s:0 -> a -> output", "s:1 -> b -> output"],
+  },
+  cases: [
+    [{x: {y: {z: 5}}}, {path: "a"}],
+    [{}, {path: "b"}],
+    [{x: "str"}, {path: "b"}],
+  ],
+}
+
+{
+  name: "switch errors: a condition with a syntax error is false",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["(((", ""]},
+      {expression: "a", fields: {path: "'a'"}},
+      {expression: "b", fields: {path: "'b'"}},
+    ],
+    edges: ["input -> s", "s:0 -> a -> output", "s:1 -> b -> output"],
+  },
+  cases: [
+    [{}, {path: "b"}],
+    [{x: 1}, {path: "b"}],
+  ],
+}
+
+{
+  name: "switch errors: a non-boolean condition is false",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["x", ""]},
+      {expression: "a", fields: {path: "'a'"}},
+      {expression: "b", fields: {path: "'b'"}},
+    ],
+    edges: ["input -> s", "s:0 -> a -> output", "s:1 -> b -> output"],
+  },
+  cases: [
+    [{x: true}, {path: "a"}],
+    [{x: 1}, {path: "b"}],
+    [{x: "true"}, {path: "b"}],
+    [{x: null}, {path: "b"}],
+    [{x: false}, {path: "b"}],
+  ],
+}
+
+{
+  name: "switch errors: an error inside the untaken branch never surfaces",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["safe", ""]},
+      {expression: "ok", fields: {path: "'ok'"}},
+      {expression: "bad", fields: {path: "1 + 'x' * 2"}},
+    ],
+    edges: ["input -> s", "s:0 -> ok -> output", "s:1 -> bad -> output"],
+  },
+  cases: [
+    [{safe: true}, {path: "ok"}],
+    [{safe: false}, "!error: \"nodeId\":\"bad\""],
+    [{}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "switch errors: a failing custom node in the untaken branch never runs",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["mode == 'safe'", "mode == 'fail'"]},
+      {expression: "ok", fields: {path: "'ok'"}},
+      {custom: "boom", kind: "fail", config: {message: "branch failed"}},
+    ],
+    edges: ["input -> s", "s:0 -> ok -> output", "s:1 -> boom -> output"],
+  },
+  cases: [
+    [{mode: "safe"}, {path: "ok"}],
+    [{mode: "fail"}, "!error: branch failed"],
+    [{mode: "other"}, {}],
+  ],
+}
+
+{
+  name: "switch errors: collect mode runs every matching branch, so any failure surfaces",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["x > 0", "x > 10", ""]},
+      {expression: "small", fields: {small: "true"}},
+      {expression: "big", fields: {big: "x / zero"}},
+      {expression: "always", fields: {always: "true"}},
+    ],
+    edges: ["input -> s", "s:0 -> small -> output", "s:1 -> big -> output", "s:2 -> always -> output"],
+  },
+  cases: [
+    [{x: 5}, {small: true, always: true}],
+    [{x: 50, zero: 1}, {small: true, big: 50, always: true}],
+    [{x: 50, zero: 0}, {small: true, always: true}],
+    [{x: 50, zero: "0"}, "!error: \"nodeId\":\"big\""],
+    [{x: 50}, "!error: NodeError"],
+    [{x: -1}, {always: true}],
+  ],
+}
+
+{
+  name: "switch errors: no matching statement and no default produces an empty result",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["x == 1", "x == 2"]},
+      {expression: "a", fields: {path: "'a'"}},
+      {expression: "b", fields: {path: "'b'"}},
+    ],
+    edges: ["input -> s", "s:0 -> a -> output", "s:1 -> b -> output"],
+  },
+  cases: [
+    [{x: 1}, {path: "a"}],
+    [{x: 2}, {path: "b"}],
+    [{x: 3}, {}],
+    [{}, {}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Transform attribute errors.
+{
+  name: "transform errors: loop mode on a non-array input field fails",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", executionMode: "loop", fields: {d: "v * 2"}}],
+  },
+  cases: [
+    [{items: [{v: 1}, {v: 2}]}, [{d: 2}, {d: 4}]],
+    [{items: []}, []],
+    [{items: {v: 1}}, "!error: Expected an array"],
+    [{items: "x"}, "!error: NodeError"],
+    [{}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "transform errors: an input field with a syntax error fails",
+  graph: {
+    nodes: [{expression: "each", inputField: "items[", fields: {d: "1"}}],
+  },
+  cases: [
+    [{items: []}, "!error: NodeError"],
+    [{}, "!error: Failed to evaluate expression"],
+  ],
+}
+
+{
+  name: "transform errors: one failing item fails the whole loop",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", executionMode: "loop", outputPath: "out", fields: {d: "v * 2"}}],
+  },
+  cases: [
+    [{items: [{v: 1}, {v: 2}]}, {out: [{d: 2}, {d: 4}]}],
+    [{items: [{v: 1}, {v: "x"}]}, "!error: NodeError"],
+    [{items: [{v: 1}, {}]}, "!error: NodeError"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Custom and function node errors.
+{
+  name: "custom errors: a failing custom node fails the graph with its message",
+  graph: {
+    nodes: [{custom: "c", kind: "fail", config: {message: "service unavailable"}}],
+  },
+  cases: [
+    [{}, "!error: service unavailable"],
+    [{a: 1}, "!error: \"nodeId\":\"c\""],
+  ],
+}
+
+{
+  name: "custom errors: an unknown custom kind fails",
+  graph: {
+    nodes: [{custom: "c", kind: "nope", config: {}}],
+  },
+  cases: [
+    [{}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "function errors: a thrown error fails the graph",
+  graph: {
+    nodes: [{function: "f", source: """
+export const handler = async (input) => {
+  if (input.fail) {
+    throw new Error('rejected by function');
+  }
+  return { ok: true };
+};
+"""}],
+  },
+  cases: [
+    [{fail: false}, {ok: true}],
+    [{fail: true}, "!error: rejected by function"],
+    [{}, {ok: true}],
+  ],
+}
+
+{
+  name: "function errors: a syntax error in the source fails the graph",
+  graph: {
+    nodes: [{function: "f", source: "export const handler = async (input) => { return {"}],
+  },
+  cases: [
+    [{}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "function errors: a source without a handler export fails",
+  graph: {
+    nodes: [{function: "f", source: "export const other = () => 1;"}],
+  },
+  cases: [
+    [{}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "function errors: a reference error at runtime fails",
+  graph: {
+    nodes: [{function: "f", source: """
+export const handler = async (input) => {
+  return { v: input.a.b.c };
+};
+"""}],
+  },
+  cases: [
+    [{a: {b: {c: 1}}}, {v: 1}],
+    [{a: {}}, "!error: NodeError"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Sub-decision errors.
+{
+  name: "decision errors: an unknown key is a loader error",
+  graph: {
+    nodes: [{decision: "call", key: "does-not-exist"}],
+  },
+  cases: [
+    [{}, "!error: NodeError"],
+    [{a: 1}, "!error: \"nodeId\":\"call\""],
+  ],
+}
+
+{
+  name: "decision errors: a failing node inside the child fails the parent",
+  decisions: {
+    child: {nodes: [{expression: "calc", fields: {y: "x * 2"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{x: 2}, {y: 4}],
+    [{x: "two"}, "!error: \"nodeId\":\"call\""],
+    [{}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "decision errors: an invalid child graph fails the parent",
+  decisions: {
+    child: {raw: {nodes: [], edges: []}},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "decision errors: a cyclic child graph fails the parent",
+  decisions: {
+    child: {
+      nodes: [{expression: "a", fields: {x: "1"}}],
+      edges: ["input -> a -> output", "a -> a"],
+    },
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "decision errors: a self-referencing decision hits the depth limit",
+  decisions: {
+    loop: {nodes: [{decision: "again", key: "loop"}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "loop"}],
+  },
+  cases: [
+    [{}, "!error: Depth limit exceeded"],
+    [{a: 1}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "decision errors: nesting within the depth limit is fine",
+  decisions: {
+    d1: {nodes: [{decision: "next", key: "d2"}]},
+    d2: {nodes: [{decision: "next", key: "d3"}]},
+    d3: {nodes: [{expression: "leaf", fields: {deep: "v + 3"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "d1"}],
+  },
+  cases: [
+    [{v: 0}, {deep: 3}],
+    [{v: 1}, {deep: 4}],
+  ],
+}
+
+{
+  name: "decision errors: a child failing only for some loop items fails the loop",
+  decisions: {
+    child: {nodes: [{expression: "calc", fields: {r: "10 / d"}}]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child", inputField: "rows", executionMode: "loop", outputPath: "out"}],
+  },
+  cases: [
+    [{rows: [{d: 2}, {d: 5}]}, {out: [{r: 5}, {r: 2}]}],
+    [{rows: [{d: 2}, {d: "x"}]}, "!error: NodeError"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Errors versus early termination: the walk ends at the output node.
+{
+  name: "termination: a node reached only after the output node never runs",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {y: "1"}},
+      {custom: "boom", kind: "fail", config: {message: "after output"}},
+    ],
+    edges: ["input -> calc -> output -> boom"],
+  },
+  cases: [
+    [{}, {}, "question: the walk stops at the output node, but the result merges only nodes without outgoing edges, so an output node with an outgoing edge yields an empty result"],
+    [{a: 1}, {}, "question: same as above, the output node's data is discarded"],
+  ],
+}

@@ -1,0 +1,679 @@
+// Merge matrix: every kind of value meeting at a join, for two and three parents, in both
+// edge orders, with and without passThrough. Kinds are object, array, scalar (number, string,
+// boolean), null and missing.
+//
+// The rules pinned here (chapter 10 introduces them with hand-written graphs):
+// - A join merges its parents' outputs in reverse edge order: the parent whose edge into the
+//   join was declared first is merged last and wins conflicts.
+// - The first parent merged (the last declared) becomes the head when it is an object or an
+//   array; any other value starts the merge from an empty object.
+// - A later object patch deep-merges into an object, and replaces an array or a scalar.
+// - A later array patch replaces whatever was merged so far, objects included.
+// - A later scalar or null patch at the top level is ignored: a node producing nothing
+//   object-like does not erase its siblings.
+// - Below the top level, values are merge-patched: objects deep-merge, everything else
+//   replaces, a null deletes the key.
+// - The graph result is the merge of the ending nodes into an empty object, which drops
+//   top-level nulls; a downstream node still sees a null that survived the join.
+//
+// Parents are mostly v2 function nodes returning `input.a`, so one graph produces every kind
+// from the request. A function returning a missing property returns undefined, which the
+// engine treats like null. Natural producers (tables, switches, loops) close the chapter.
+
+// --- Top-level kinds, two parents, observed in the graph result ---------------------------------
+// The edge from `a` is declared first, so `a` wins. Each suite fixes the kind `a` returns and runs
+// `b` through every kind.
+{
+  name: "top level: the winner is an object, the loser every kind",
+  graph: {
+    nodes: [
+      {function: "a", source: """export const handler = async (input) => input.a;"""},
+      {function: "b", source: """export const handler = async (input) => input.b;"""},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{a: {k: "a", z: 1}, b: {y: 2}, x: 0}, {k: "a", y: 2, z: 1}],
+    [{a: {k: "a", z: 1}, b: {k: "b"}, x: 0}, {k: "a", z: 1}],
+    [{a: {k: "a", z: 1}, b: {}, x: 0}, {k: "a", z: 1}],
+    [{a: {k: "a", z: 1}, b: [1, 2], x: 0}, {k: "a", z: 1}],
+    [{a: {k: "a", z: 1}, b: [], x: 0}, {k: "a", z: 1}],
+    [{a: {k: "a", z: 1}, b: 7, x: 0}, {k: "a", z: 1}],
+    [{a: {k: "a", z: 1}, b: "s", x: 0}, {k: "a", z: 1}],
+    [{a: {k: "a", z: 1}, b: true, x: 0}, {k: "a", z: 1}],
+    [{a: {k: "a", z: 1}, b: null, x: 0}, {k: "a", z: 1}],
+    [{a: {k: "a", z: 1}, x: 0}, {k: "a", z: 1}],
+  ],
+}
+
+{
+  name: "top level: the winner is an array, the loser every kind",
+  graph: {
+    nodes: [
+      {function: "a", source: """export const handler = async (input) => input.a;"""},
+      {function: "b", source: """export const handler = async (input) => input.b;"""},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{a: ["a"], b: {y: 2}, x: 0}, ["a"]],
+    [{a: [{k: "a"}], b: {k: "b"}, x: 0}, [{k: "a"}]],
+    [{a: ["a"], b: {}, x: 0}, ["a"]],
+    [{a: [{k: "a"}], b: [1, 2], x: 0}, [{k: "a"}]],
+    [{a: ["a"], b: [], x: 0}, ["a"]],
+    [{a: [{k: "a"}], b: 7, x: 0}, [{k: "a"}]],
+    [{a: ["a"], b: "s", x: 0}, ["a"]],
+    [{a: [{k: "a"}], b: true, x: 0}, [{k: "a"}]],
+    [{a: ["a"], b: null, x: 0}, ["a"]],
+    [{a: [{k: "a"}], x: 0}, [{k: "a"}]],
+  ],
+}
+
+{
+  name: "top level: the winner is a scalar, the loser every kind",
+  graph: {
+    nodes: [
+      {function: "a", source: """export const handler = async (input) => input.a;"""},
+      {function: "b", source: """export const handler = async (input) => input.b;"""},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{a: 5, b: {y: 2}, x: 0}, {y: 2}],
+    [{a: "a", b: {k: "b"}, x: 0}, {k: "b"}],
+    [{a: false, b: {}, x: 0}, {}],
+    [{a: 5, b: [1, 2], x: 0}, [1, 2]],
+    [{a: "a", b: [], x: 0}, []],
+    [{a: false, b: 7, x: 0}, {}],
+    [{a: 5, b: "s", x: 0}, {}],
+    [{a: "a", b: true, x: 0}, {}],
+    [{a: false, b: null, x: 0}, {}],
+    [{a: 5, x: 0}, {}],
+  ],
+}
+
+{
+  name: "top level: the winner is null, the loser every kind",
+  graph: {
+    nodes: [
+      {function: "a", source: """export const handler = async (input) => input.a;"""},
+      {function: "b", source: """export const handler = async (input) => input.b;"""},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{a: null, b: {y: 2}, x: 0}, {y: 2}],
+    [{a: null, b: {k: "b"}, x: 0}, {k: "b"}],
+    [{a: null, b: {}, x: 0}, {}],
+    [{a: null, b: [1, 2], x: 0}, [1, 2]],
+    [{a: null, b: [], x: 0}, []],
+    [{a: null, b: 7, x: 0}, {}],
+    [{a: null, b: "s", x: 0}, {}],
+    [{a: null, b: true, x: 0}, {}],
+    [{a: null, b: null, x: 0}, {}],
+    [{a: null, x: 0}, {}],
+  ],
+}
+
+{
+  name: "top level: the winner is missing, the loser every kind",
+  graph: {
+    nodes: [
+      {function: "a", source: """export const handler = async (input) => input.a;"""},
+      {function: "b", source: """export const handler = async (input) => input.b;"""},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{b: {y: 2}, x: 0}, {y: 2}],
+    [{b: {k: "b"}, x: 0}, {k: "b"}],
+    [{b: {}, x: 0}, {}],
+    [{b: [1, 2], x: 0}, [1, 2]],
+    [{b: [], x: 0}, []],
+    [{b: 7, x: 0}, {}],
+    [{b: "s", x: 0}, {}],
+    [{b: true, x: 0}, {}],
+    [{b: null, x: 0}, {}],
+    [{x: 0}, {}],
+  ],
+}
+
+// The same pairs with the edges declared in the other order: the roles of `a` and `b` swap
+// although the node list is unchanged.
+{
+  name: "top level: edges declared b first, b wins",
+  graph: {
+    nodes: [
+      {function: "a", source: """export const handler = async (input) => input.a;"""},
+      {function: "b", source: """export const handler = async (input) => input.b;"""},
+    ],
+    edges: ["input -> b -> output", "input -> a -> output"],
+  },
+  cases: [
+    [{a: {k: "a"}, b: {k: "b"}, x: 0}, {k: "b"}],
+    [{a: {k: "a"}, b: [1], x: 0}, [1]],
+    [{a: [1], b: {k: "b"}, x: 0}, {k: "b"}],
+    [{a: {k: "a"}, b: 5, x: 0}, {k: "a"}],
+    [{a: 5, b: {k: "b"}, x: 0}, {k: "b"}],
+    [{a: [1], b: [2, 3], x: 0}, [2, 3]],
+    [{a: [1], b: null, x: 0}, [1]],
+    [{a: null, b: [1], x: 0}, [1]],
+    [{a: "s", b: "t", x: 0}, {}],
+    [{b: {k: "b"}, x: 0}, {k: "b"}],
+  ],
+}
+
+// --- Top-level kinds observed by a node after the join -------------------------------------------
+// The join node reports what it received: its type and the value itself under `seen`.
+{
+  name: "join node: what a node after a two-parent join receives",
+  graph: {
+    nodes: [
+      {function: "a", source: """export const handler = async (input) => input.a;"""},
+      {function: "b", source: """export const handler = async (input) => input.b;"""},
+      {function: "j", source: """export const handler = async (input) => ({ t: Array.isArray(input) ? "array" : typeof input, seen: input });"""},
+    ],
+    edges: ["input -> a -> j", "input -> b -> j", "j -> output"],
+  },
+  cases: [
+    [{a: {k: "a"}, b: {k: "b", y: 1}, x: 0}, {seen: {k: "a", y: 1}, t: "object"}],
+    [{a: {k: "a"}, b: [1], x: 0}, {seen: {k: "a"}, t: "object"}],
+    [{a: [1], b: {k: "b"}, x: 0}, {seen: [1], t: "array"}],
+    [{a: [1], b: [2], x: 0}, {seen: [1], t: "array"}],
+    [{a: [], b: {k: "b"}, x: 0}, {seen: [], t: "array"}],
+    [{a: {}, b: [1], x: 0}, {seen: {}, t: "object"}],
+    [{a: 7, b: {k: "b"}, x: 0}, {seen: {k: "b"}, t: "object"}],
+    [{a: {k: "a"}, b: 7, x: 0}, {seen: {k: "a"}, t: "object"}],
+    [{a: 7, b: [1], x: 0}, {seen: [1], t: "array"}],
+    [{a: null, b: null, x: 0}, {seen: {}, t: "object"}],
+    [{x: 0}, {seen: {}, t: "object"}],
+    [{a: "s", b: true, x: 0}, {seen: {}, t: "object"}],
+  ],
+}
+
+// --- Key-level kinds: both parents return an object holding `k` (or not) -------------------------
+// Below the top level a scalar or null is a value like any other: a scalar replaces, a null
+// deletes, missing leaves the loser alone. The node after the join reports what it sees at `k`.
+{
+  name: "key level at a join: the winner's k is an object",
+  graph: {
+    nodes: [
+      {function: "a", source: """export const handler = async (input) => ('a' in input ? { k: input.a } : {});"""},
+      {function: "b", source: """export const handler = async (input) => ('b' in input ? { k: input.b } : {});"""},
+      {expression: "j", fields: {t: "type(k)", has: "'k' in keys($root)", v: "k"}},
+    ],
+    edges: ["input -> a -> j", "input -> b -> j", "j -> output"],
+  },
+  cases: [
+    [{a: {q: 2}, b: {p: 1}, x: 0}, {has: true, t: "object", v: {p: 1, q: 2}}],
+    [{a: {q: 2}, b: [1], x: 0}, {has: true, t: "object", v: {q: 2}}],
+    [{a: {q: 2}, b: 2, x: 0}, {has: true, t: "object", v: {q: 2}}],
+    [{a: {q: 2}, b: "s", x: 0}, {has: true, t: "object", v: {q: 2}}],
+    [{a: {q: 2}, b: null, x: 0}, {has: true, t: "object", v: {q: 2}}],
+    [{a: {q: 2}, x: 0}, {has: true, t: "object", v: {q: 2}}],
+  ],
+}
+
+{
+  name: "key level at a join: the winner's k is an array",
+  graph: {
+    nodes: [
+      {function: "a", source: """export const handler = async (input) => ('a' in input ? { k: input.a } : {});"""},
+      {function: "b", source: """export const handler = async (input) => ('b' in input ? { k: input.b } : {});"""},
+      {expression: "j", fields: {t: "type(k)", has: "'k' in keys($root)", v: "k"}},
+    ],
+    edges: ["input -> a -> j", "input -> b -> j", "j -> output"],
+  },
+  cases: [
+    [{a: ["a"], b: {p: 1}, x: 0}, {has: true, t: "array", v: ["a"]}],
+    [{a: ["a"], b: [1], x: 0}, {has: true, t: "array", v: ["a"]}],
+    [{a: ["a"], b: 2, x: 0}, {has: true, t: "array", v: ["a"]}],
+    [{a: ["a"], b: "s", x: 0}, {has: true, t: "array", v: ["a"]}],
+    [{a: ["a"], b: null, x: 0}, {has: true, t: "array", v: ["a"]}],
+    [{a: ["a"], x: 0}, {has: true, t: "array", v: ["a"]}],
+  ],
+}
+
+{
+  name: "key level at a join: the winner's k is a scalar",
+  graph: {
+    nodes: [
+      {function: "a", source: """export const handler = async (input) => ('a' in input ? { k: input.a } : {});"""},
+      {function: "b", source: """export const handler = async (input) => ('b' in input ? { k: input.b } : {});"""},
+      {expression: "j", fields: {t: "type(k)", has: "'k' in keys($root)", v: "k"}},
+    ],
+    edges: ["input -> a -> j", "input -> b -> j", "j -> output"],
+  },
+  cases: [
+    [{a: 9, b: {p: 1}, x: 0}, {has: true, t: "number", v: 9}],
+    [{a: "a", b: [1], x: 0}, {has: true, t: "string", v: "a"}],
+    [{a: true, b: 2, x: 0}, {has: true, t: "bool", v: true}],
+    [{a: 9, b: "s", x: 0}, {has: true, t: "number", v: 9}],
+    [{a: "a", b: null, x: 0}, {has: true, t: "string", v: "a"}],
+    [{a: true, x: 0}, {has: true, t: "bool", v: true}],
+  ],
+}
+
+{
+  name: "key level at a join: the winner's k is null",
+  graph: {
+    nodes: [
+      {function: "a", source: """export const handler = async (input) => ('a' in input ? { k: input.a } : {});"""},
+      {function: "b", source: """export const handler = async (input) => ('b' in input ? { k: input.b } : {});"""},
+      {expression: "j", fields: {t: "type(k)", has: "'k' in keys($root)", v: "k"}},
+    ],
+    edges: ["input -> a -> j", "input -> b -> j", "j -> output"],
+  },
+  cases: [
+    [{a: null, b: {p: 1}, x: 0}, {has: false, t: "null"}],
+    [{a: null, b: [1], x: 0}, {has: false, t: "null"}],
+    [{a: null, b: 2, x: 0}, {has: false, t: "null"}],
+    [{a: null, b: "s", x: 0}, {has: false, t: "null"}],
+    [{a: null, b: null, x: 0}, {has: false, t: "null"}],
+    [{a: null, x: 0}, {has: false, t: "null"}],
+  ],
+}
+
+{
+  name: "key level at a join: the winner's k is missing",
+  graph: {
+    nodes: [
+      {function: "a", source: """export const handler = async (input) => ('a' in input ? { k: input.a } : {});"""},
+      {function: "b", source: """export const handler = async (input) => ('b' in input ? { k: input.b } : {});"""},
+      {expression: "j", fields: {t: "type(k)", has: "'k' in keys($root)", v: "k"}},
+    ],
+    edges: ["input -> a -> j", "input -> b -> j", "j -> output"],
+  },
+  cases: [
+    [{b: {p: 1}, x: 0}, {has: true, t: "object", v: {p: 1}}],
+    [{b: [1], x: 0}, {has: true, t: "array", v: [1]}],
+    [{b: 2, x: 0}, {has: true, t: "number", v: 2}],
+    [{b: "s", x: 0}, {has: true, t: "string", v: "s"}],
+    [{b: null, x: 0}, {has: true, t: "null"}],
+    [{x: 0}, {has: false, t: "null"}],
+  ],
+}
+
+// The same key-level pairs observed directly in the graph result: a surviving top-level null is
+// dropped there, nested values are kept.
+{
+  name: "key level in the graph result",
+  graph: {
+    nodes: [
+      {function: "a", source: """export const handler = async (input) => ('a' in input ? { k: input.a } : {});"""},
+      {function: "b", source: """export const handler = async (input) => ('b' in input ? { k: input.b } : {});"""},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{a: {q: 2}, b: {p: 1}, x: 0}, {k: {p: 1, q: 2}}],
+    [{a: {q: null}, b: {q: 1}, x: 0}, {k: {}}],
+    [{a: {q: 1}, b: {q: null}, x: 0}, {k: {q: 1}}],
+    [{a: [1], b: {p: 1}, x: 0}, {k: [1]}],
+    [{a: {p: 1}, b: [1], x: 0}, {k: {p: 1}}],
+    [{a: 2, b: null, x: 0}, {k: 2}],
+    [{a: null, b: 2, x: 0}, {}],
+    [{b: null, x: 0}, {}],
+    [{a: null, x: 0}, {}],
+    [{b: "s", x: 0}, {k: "s"}],
+  ],
+}
+
+// Deep merge below the top level: nested objects merge key by key at every depth, nested nulls
+// from the winner delete, nested nulls from the loser survive.
+{
+  name: "key level: nested objects under k",
+  graph: {
+    nodes: [
+      {function: "a", source: """export const handler = async (input) => ('a' in input ? { k: input.a } : {});"""},
+      {function: "b", source: """export const handler = async (input) => ('b' in input ? { k: input.b } : {});"""},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{a: {m: {x: 1}}, b: {m: {y: 2}}, x: 0}, {k: {m: {x: 1, y: 2}}}],
+    [{a: {m: {x: 1}}, b: {m: {x: 2, y: 2}}, x: 0}, {k: {m: {x: 1, y: 2}}}],
+    [{a: {m: {x: null}}, b: {m: {x: 2, y: 2}}, x: 0}, {k: {m: {y: 2}}}],
+    [{a: {m: {x: 1}}, b: {m: {x: null}}, x: 0}, {k: {m: {x: 1}}}],
+    [{a: {m: [1]}, b: {m: {x: 2}}, x: 0}, {k: {m: [1]}}],
+    [{a: {m: {x: 1}}, b: {m: [2]}, x: 0}, {k: {m: {x: 1}}}],
+    [{a: {m: {}}, b: {m: {x: 2}}, x: 0}, {k: {m: {x: 2}}}],
+    [{a: {m: 1}, b: {m: {x: 2}}, x: 0}, {k: {m: 1}}],
+  ],
+}
+
+// --- Three parents ---------------------------------------------------------------------------------
+// Edges into the join are declared a, b, c: `c` is the head, then `b`, then `a` is merged last.
+// A top-level array anywhere replaces what was merged before it, and an object after an array
+// replaces the array, so a parent before the array is lost.
+{
+  name: "three parents at the output: top-level kinds",
+  graph: {
+    nodes: [
+      {function: "a", source: """export const handler = async (input) => input.a;"""},
+      {function: "b", source: """export const handler = async (input) => input.b;"""},
+      {function: "c", source: """export const handler = async (input) => input.c;"""},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output", "input -> c -> output"],
+  },
+  cases: [
+    [{a: {k: "a"}, b: {k: "b"}, c: {k: "c"}, x: 0}, {k: "a"}],
+    [{a: {x1: 1}, b: {x2: 2}, c: {x3: 3}, x: 0}, {x1: 1, x2: 2, x3: 3}],
+    [{a: {k: "a"}, b: [1], c: {z: 1}, x: 0}, {k: "a"}, "question: an array from a middle parent replaces the keys merged before it, so an object parent is lost even though the final winner is an object"],
+    [{a: [1], b: {k: "b"}, c: {z: 1}, x: 0}, [1]],
+    [{a: {k: "a"}, b: {z: 1}, c: [1], x: 0}, {k: "a", z: 1}],
+    [{a: [1], b: [2], c: [3], x: 0}, [1]],
+    [{a: 5, b: {k: "b"}, c: {z: 1}, x: 0}, {k: "b", z: 1}],
+    [{a: {k: "a"}, b: 5, c: {z: 1}, x: 0}, {k: "a", z: 1}],
+    [{a: {k: "a"}, b: {z: 1}, c: 5, x: 0}, {k: "a", z: 1}],
+    [{a: null, b: null, c: {z: 1}, x: 0}, {z: 1}],
+    [{b: [1], c: null, x: 0}, [1]],
+    [{a: 5, b: "s", c: true, x: 0}, {}],
+  ],
+}
+
+{
+  name: "three parents at the output: edges declared c, b, a",
+  graph: {
+    nodes: [
+      {function: "a", source: """export const handler = async (input) => input.a;"""},
+      {function: "b", source: """export const handler = async (input) => input.b;"""},
+      {function: "c", source: """export const handler = async (input) => input.c;"""},
+    ],
+    edges: ["input -> c -> output", "input -> b -> output", "input -> a -> output"],
+  },
+  cases: [
+    [{a: {k: "a"}, b: {k: "b"}, c: {k: "c"}, x: 0}, {k: "c"}],
+    [{a: {k: "a"}, b: [1], c: {z: 1}, x: 0}, {z: 1}, "question: an array from a middle parent replaces the keys merged before it, so an object parent is lost even though the final winner is an object"],
+    [{a: {k: "a"}, b: {z: 1}, c: [1], x: 0}, [1]],
+    [{a: 5, b: {k: "b"}, c: {z: 1}, x: 0}, {k: "b", z: 1}],
+    [{a: null, b: [1], c: {z: 1}, x: 0}, {z: 1}],
+    [{a: [1], b: null, c: {z: 1}, x: 0}, {z: 1}],
+  ],
+}
+
+{
+  name: "three parents at a join: key-level kinds",
+  graph: {
+    nodes: [
+      {function: "a", source: """export const handler = async (input) => ('a' in input ? { k: input.a } : {});"""},
+      {function: "b", source: """export const handler = async (input) => ('b' in input ? { k: input.b } : {});"""},
+      {function: "c", source: """export const handler = async (input) => ('c' in input ? { k: input.c } : {});"""},
+      {expression: "j", fields: {t: "type(k)", has: "'k' in keys($root)", v: "k"}},
+    ],
+    edges: ["input -> a -> j", "input -> b -> j", "input -> c -> j", "j -> output"],
+  },
+  cases: [
+    [{a: 1, b: 2, c: 3, x: 0}, {has: true, t: "number", v: 1}],
+    [{a: null, b: 2, c: 3, x: 0}, {has: false, t: "null"}],
+    [{b: 2, c: 3, x: 0}, {has: true, t: "number", v: 2}],
+    [{b: null, c: 3, x: 0}, {has: false, t: "null"}],
+    [{c: null, x: 0}, {has: true, t: "null"}],
+    [{a: {p: 1}, b: {q: 2}, c: {r: 3}, x: 0}, {has: true, t: "object", v: {p: 1, q: 2, r: 3}}],
+    [{a: {p: 1}, b: 5, c: {r: 3}, x: 0}, {has: true, t: "object", v: {p: 1}}],
+    [{a: {p: null}, b: {p: 1, q: 2}, c: {r: 3}, x: 0}, {has: true, t: "object", v: {q: 2, r: 3}}],
+    [{a: [1], b: {q: 2}, c: null, x: 0}, {has: true, t: "array", v: [1]}],
+  ],
+}
+
+// --- passThrough at the join ----------------------------------------------------------------------
+// A passThrough node merges its own output over its (already merged) input with the same rules.
+// Without passThrough the node returns only its own fields.
+{
+  name: "passThrough join node over two parents",
+  graph: {
+    nodes: [
+      {function: "a", source: """export const handler = async (input) => input.a;"""},
+      {function: "b", source: """export const handler = async (input) => input.b;"""},
+      {expression: "j", passThrough: true, fields: {tag: "'j'"}},
+    ],
+    edges: ["input -> a -> j", "input -> b -> j", "j -> output"],
+  },
+  cases: [
+    [{a: {k: "a"}, b: {k: "b", y: 1}, x: 0}, {k: "a", tag: "j", y: 1}],
+    [{a: {k: "a"}, b: [1], x: 0}, {k: "a", tag: "j"}],
+    [{a: [1], b: {k: "b"}, x: 0}, {tag: "j"}, "question: passThrough over a merged input that is an array drops the array; only the node fields remain"],
+    [{a: [1], b: [2], x: 0}, {tag: "j"}, "question: passThrough over a merged input that is an array drops the array; only the node fields remain"],
+    [{a: 5, b: {k: "b"}, x: 0}, {k: "b", tag: "j"}],
+    [{a: null, b: null, x: 0}, {tag: "j"}],
+    [{b: {y: 1}, x: 0}, {tag: "j", y: 1}],
+    [{a: {tag: "a"}, b: {tag: "b"}, x: 0}, {tag: "j"}],
+    [{a: {k: null}, b: {k: "b"}, x: 0}, {tag: "j"}],
+  ],
+}
+
+{
+  name: "join node without passThrough over the same parents",
+  graph: {
+    nodes: [
+      {function: "a", source: """export const handler = async (input) => input.a;"""},
+      {function: "b", source: """export const handler = async (input) => input.b;"""},
+      {expression: "j", fields: {tag: "'j'"}},
+    ],
+    edges: ["input -> a -> j", "input -> b -> j", "j -> output"],
+  },
+  cases: [
+    [{a: {k: "a"}, b: {k: "b", y: 1}, x: 0}, {tag: "j"}],
+    [{a: {k: "a"}, b: [1], x: 0}, {tag: "j"}],
+    [{a: [1], b: {k: "b"}, x: 0}, {tag: "j"}],
+    [{a: [1], b: [2], x: 0}, {tag: "j"}],
+    [{a: 5, b: {k: "b"}, x: 0}, {tag: "j"}],
+  ],
+}
+
+// Parents with passThrough: each parent carries the request, so the request keys meet
+// themselves at the join and the parents' own keys conflict on top.
+{
+  name: "two passThrough parents at the output",
+  graph: {
+    nodes: [
+      {expression: "a", passThrough: true, fields: {k: "a", fromA: "true"}},
+      {expression: "b", passThrough: true, fields: {k: "b", fromB: "true"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{a: 1, b: 2, x: 0}, {a: 1, b: 2, fromA: true, fromB: true, k: 1, x: 0}],
+    [{a: null, b: 2, x: 0}, {b: 2, fromA: true, fromB: true, k: 2, x: 0}],
+    [{a: 1, b: null, x: 0}, {a: 1, fromA: true, fromB: true, k: 1, x: 0}],
+    [{b: 2, k: "req", x: 0}, {b: 2, fromA: true, fromB: true, k: 2, x: 0}],
+    [{k: "req", x: 0}, {fromA: true, fromB: true, x: 0}],
+    [{a: {p: 1}, b: {q: 2}, x: 0}, {a: {p: 1}, b: {q: 2}, fromA: true, fromB: true, k: {p: 1, q: 2}, x: 0}],
+    [{a: [1], b: {q: 2}, x: 0}, {a: [1], b: {q: 2}, fromA: true, fromB: true, k: [1], x: 0}],
+  ],
+}
+
+{
+  name: "a passThrough parent and a plain parent, plain edge first",
+  graph: {
+    nodes: [
+      {expression: "a", passThrough: true, fields: {k: "a", fromA: "true"}},
+      {expression: "b", fields: {k: "b", fromB: "true"}},
+    ],
+    edges: ["input -> b -> output", "input -> a -> output"],
+  },
+  cases: [
+    [{a: 1, b: 2, x: 0}, {a: 1, b: 2, fromA: true, fromB: true, k: 2, x: 0}],
+    [{a: null, b: 2, x: 0}, {b: 2, fromA: true, fromB: true, k: 2, x: 0}],
+    [{a: 1, b: null, x: 0}, {a: 1, fromA: true, fromB: true, x: 0}],
+    [{b: 2, k: "req", x: 0}, {b: 2, fromA: true, fromB: true, k: 2, x: 0}],
+    [{k: "req", x: 0}, {fromA: true, fromB: true, x: 0}],
+  ],
+}
+
+{
+  name: "a passThrough parent and a plain parent, passThrough edge first",
+  graph: {
+    nodes: [
+      {expression: "a", passThrough: true, fields: {k: "a", fromA: "true"}},
+      {expression: "b", fields: {k: "b", fromB: "true"}},
+    ],
+    edges: ["input -> a -> output", "input -> b -> output"],
+  },
+  cases: [
+    [{a: 1, b: 2, x: 0}, {a: 1, b: 2, fromA: true, fromB: true, k: 1, x: 0}],
+    [{a: null, b: 2, x: 0}, {b: 2, fromA: true, fromB: true, k: 2, x: 0}],
+    [{a: 1, b: null, x: 0}, {a: 1, fromA: true, fromB: true, k: 1, x: 0}],
+    [{b: 2, k: "req", x: 0}, {b: 2, fromA: true, fromB: true, k: 2, x: 0}],
+    [{k: "req", x: 0}, {fromA: true, fromB: true, x: 0}],
+  ],
+}
+
+// The input node itself as a parent next to a function returning every kind.
+{
+  name: "the input and a function parent, input edge first",
+  graph: {
+    nodes: [
+      {function: "a", source: """export const handler = async (input) => input.a;"""},
+    ],
+    edges: ["input -> output", "input -> a -> output"],
+  },
+  cases: [
+    [{a: {k: "a"}, k: "req"}, {a: {k: "a"}, k: "req"}],
+    [{a: [1], k: "req"}, {a: [1], k: "req"}],
+    [{a: 5, k: "req"}, {a: 5, k: "req"}],
+    [{a: null, k: "req"}, {k: "req"}],
+    [{k: "req"}, {k: "req"}],
+    [{a: {k: null}, k: "req"}, {a: {k: null}, k: "req"}],
+  ],
+}
+
+{
+  name: "the input and a function parent, function edge first",
+  graph: {
+    nodes: [
+      {function: "a", source: """export const handler = async (input) => input.a;"""},
+    ],
+    edges: ["input -> a -> output", "input -> output"],
+  },
+  cases: [
+    [{a: {k: "a"}, k: "req"}, {a: {k: "a"}, k: "a"}],
+    [{a: [1], k: "req"}, [1]],
+    [{a: 5, k: "req"}, {a: 5, k: "req"}],
+    [{a: null, k: "req"}, {k: "req"}],
+    [{k: "req"}, {k: "req"}],
+    [{a: {k: null}, k: "req"}, {a: {k: null}}],
+  ],
+}
+
+// --- Natural producers ------------------------------------------------------------------------------
+// The same rules with the node kinds that produce each kind in practice: an expression object, a
+// collect table array, a first-hit table null when no rule matches, and a branch a switch did
+// not take (missing: the parent never ran and is skipped by the join).
+{
+  name: "expression and first-hit table, table edge first",
+  graph: {
+    nodes: [
+      {expression: "e", fields: {k: "'expr'", e: "true"}},
+      {table: "t", inputs: ["n"], outputs: ["k"], rules: [["> 0", "'table'"]]},
+    ],
+    edges: ["input -> t -> output", "input -> e -> output"],
+  },
+  cases: [
+    [{n: 1}, {e: true, k: "table"}],
+    [{n: 0}, {e: true, k: "expr"}],
+    [{n: null}, {e: true, k: "expr"}],
+    [{}, {e: true, k: "expr"}],
+  ],
+}
+
+{
+  name: "expression and collect table, table edge first",
+  graph: {
+    nodes: [
+      {expression: "e", fields: {k: "'expr'", e: "true"}},
+      {table: "c", hit: "collect", inputs: ["n"], outputs: ["k"], rules: [["> 0", "'pos'"], ["> 10", "'big'"]]},
+    ],
+    edges: ["input -> c -> output", "input -> e -> output"],
+  },
+  cases: [
+    [{n: 1}, [{k: "pos"}]],
+    [{n: 20}, [{k: "pos"}, {k: "big"}]],
+    [{n: 0}, []],
+    [{}, []],
+  ],
+}
+
+{
+  name: "expression and collect table, expression edge first",
+  graph: {
+    nodes: [
+      {expression: "e", fields: {k: "'expr'", e: "true"}},
+      {table: "c", hit: "collect", inputs: ["n"], outputs: ["k"], rules: [["> 0", "'pos'"], ["> 10", "'big'"]]},
+    ],
+    edges: ["input -> e -> output", "input -> c -> output"],
+  },
+  cases: [
+    [{n: 1}, {e: true, k: "expr"}],
+    [{n: 20}, {e: true, k: "expr"}],
+    [{n: 0}, {e: true, k: "expr"}],
+  ],
+}
+
+{
+  name: "first-hit table and collect table at one join",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["n"], outputs: ["k"], rules: [["> 0", "'table'"]]},
+      {table: "c", hit: "collect", inputs: ["n"], outputs: ["k"], rules: [["> 0", "'pos'"], ["> 10", "'big'"]]},
+    ],
+    edges: ["input -> t -> output", "input -> c -> output"],
+  },
+  cases: [
+    [{n: 1}, {k: "table"}],
+    [{n: 20}, {k: "table"}],
+    [{n: 0}, []],
+    [{}, []],
+  ],
+}
+
+{
+  name: "a switch decides which parents exist at the join",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["l", "r"]},
+      {expression: "left", fields: {k: "'left'", l: "true"}},
+      {expression: "right", fields: {k: "'right'", r: "true"}},
+      {expression: "j", fields: {k: "k", l: "l ?? false", r: "r ?? false"}},
+    ],
+    edges: ["input -> s", "s:0 -> left -> j", "s:1 -> right -> j", "j -> output"],
+  },
+  cases: [
+    [{l: true, r: true}, {k: "left", l: true, r: true}],
+    [{l: true, r: false}, {k: "left", l: true, r: false}],
+    [{l: false, r: true}, {k: "right", l: false, r: true}],
+    [{l: false, r: false}, {}],
+  ],
+}
+
+{
+  name: "a loop result (top-level array) meeting an expression object",
+  graph: {
+    nodes: [
+      {expression: "loop", inputField: "items", executionMode: "loop", fields: {v: "x"}},
+      {expression: "e", fields: {k: "'expr'", e: "true"}},
+    ],
+    edges: ["input -> loop -> output", "input -> e -> output"],
+  },
+  cases: [
+    [{items: [{x: 1}]}, [{v: 1}]],
+    [{items: []}, []],
+    [{items: [{x: 1}, {x: null}]}, [{v: 1}, {v: null}]],
+  ],
+}
+
+{
+  name: "an expression object meeting a loop result",
+  graph: {
+    nodes: [
+      {expression: "loop", inputField: "items", executionMode: "loop", fields: {v: "x"}},
+      {expression: "e", fields: {k: "'expr'", e: "true"}},
+    ],
+    edges: ["input -> e -> output", "input -> loop -> output"],
+  },
+  cases: [
+    [{items: [{x: 1}]}, {e: true, k: "expr"}],
+    [{items: []}, {e: true, k: "expr"}],
+  ],
+}
+

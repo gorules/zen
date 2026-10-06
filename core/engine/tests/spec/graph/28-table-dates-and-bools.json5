@@ -1,0 +1,716 @@
+// Decision tables over dates and booleans.
+//
+// Date inputs reach a table in three shapes: plain strings that cells convert with `d($)`,
+// date values produced by an upstream expression (`d(...)`), and strings declared as
+// `format: date` / `date-time` in the input schema, which the input node turns into date
+// values. Comparison and interval cells work on date values; equality cells may compare a
+// date value with a date string. Boolean columns match `true` and `false` strictly: null,
+// missing, 0, '' and 'true' are not booleans. Tables of 8 rules or more take the indexed path
+// (literal cells looked up by value), so several suites are repeated at that size. Evaluation
+// time is fixed at 2025-03-20T10:15:30Z.
+
+// --- Date strings converted in the cell ------------------------------------------------------
+
+{
+  name: "dates: string inputs compared with d($) in every cell",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["since"], outputs: ["r"], rules: [
+        ["d($) < d('2024-01-01')", "'before 2024'"],
+        ["d($) <= d('2024-06-30')", "'first half'"],
+        ["d($) <= d('2024-12-31T23:59:59Z')", "'second half'"],
+        ["", "'2025 or later'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{since: "2023-12-31"}, {r: "before 2024"}],
+    [{since: "2024-01-01"}, {r: "first half"}],
+    [{since: "2024-06-30"}, {r: "first half"}],
+    [{since: "2024-06-30T00:00:01Z"}, {r: "second half"}],
+    [{since: "2024-12-31T23:59:59Z"}, {r: "second half"}],
+    [{since: "2025-01-01"}, {r: "2025 or later"}],
+  ],
+}
+
+{
+  name: "dates: d() in the input field makes plain comparison cells work",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["d(due)"], outputs: ["r"], rules: [
+        ["< d('2025-03-20')", "'overdue'"],
+        ["[d('2025-03-20')..d('2025-03-21'))", "'due today'"],
+        ["<= d('2025-03-27')", "'this week'"],
+        ["", "'later'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{due: "2025-03-19"}, {r: "overdue"}],
+    [{due: "2025-03-20"}, {r: "due today"}],
+    [{due: "2025-03-20T23:59:59Z"}, {r: "due today"}],
+    [{due: "2025-03-21"}, {r: "this week"}],
+    [{due: "2025-03-27"}, {r: "this week"}],
+    [{due: "2025-03-28"}, {r: "later"}],
+  ],
+}
+
+{
+  name: "dates: date-string inputs against d(...) cells, comparisons coerce but intervals do not",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["at"], outputs: ["r"], rules: [
+        ["> d('2024-01-01')", "'after'"],
+        ["<= d('2024-01-01')", "'on or before'"],
+        ["[d('2024-01-01')..d('2024-12-31')]", "'in 2024'"],
+        ["d('2024-06-01')", "'june 1st'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{at: "2025-01-01"}, [{r: "after"}]],
+    [{at: "2023-01-01"}, [{r: "on or before"}]],
+    [{at: "2024-01-01"}, [{r: "on or before"}], "question: `>`/`<=` against a date convert a date-string input, but an interval with date bounds does not (it errors), so the same string is before 2024-01-01 yet never inside [2024-01-01..2024-12-31]"],
+    [{at: "2024-06-01"}, [{r: "after"}, {r: "june 1st"}], "question: `>`/`<=` against a date convert a date-string input, but an interval with date bounds does not (it errors), so the same string is before 2024-01-01 yet never inside [2024-01-01..2024-12-31]"],
+    [{at: "2024-06-01T00:00:00Z"}, [{r: "after"}, {r: "june 1st"}], "question: `>`/`<=` against a date convert a date-string input, but an interval with date bounds does not (it errors), so the same string is before 2024-01-01 yet never inside [2024-01-01..2024-12-31]"],
+    [{at: null}, []],
+    [{}, []],
+  ],
+}
+
+{
+  name: "dates: invalid, null and missing values under d($)",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["at"], outputs: ["r"], rules: [
+        ["d($).isValid() == false", "'invalid'"],
+        ["d($) >= d('2025-01-01')", "'recent'"],
+        ["", "'old'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{at: "2025-02-01"}, {r: "recent"}],
+    [{at: "2020-02-01"}, {r: "old"}],
+    [{at: "not a date"}, {r: "invalid"}],
+    [{at: "2025-02-30"}, {r: "invalid"}],
+    [{at: null}, {r: "invalid"}, "question: d(null) is an invalid date rather than an error, so a null input is reported as invalid instead of falling through"],
+    [{}, {r: "invalid"}, "question: d(null) is an invalid date rather than an error, so a missing input is reported as invalid instead of falling through"],
+  ],
+}
+
+// --- Date values from upstream nodes -----------------------------------------------------------
+
+{
+  name: "dates: a date computed upstream compared with date cells",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {expires: "d(start).add(term, 'M')"}},
+      {table: "t", inputs: ["expires"], outputs: ["status"], rules: [
+        ["< d()", "'expired'"],
+        ["< d().add(30, 'd')", "'expiring soon'"],
+        ["", "'active'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{start: "2024-01-01", term: 12}, {status: "expired"}],
+    [{start: "2024-04-01", term: 12}, {status: "expiring soon"}],
+    [{start: "2024-03-20T10:15:31Z", term: 12}, {status: "expiring soon"}],
+    [{start: "2024-03-20T10:15:29Z", term: 12}, {status: "expired"}],
+    [{start: "2025-01-01", term: 12}, {status: "active"}],
+  ],
+}
+
+{
+  name: "dates: date intervals on date values, every bracket form",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["d(at)"], outputs: ["r"], rules: [
+        ["[d('2024-03-01')..d('2024-03-31')]", "'closed'"],
+        ["(d('2024-03-01')..d('2024-03-31'))", "'open'"],
+        ["[d('2024-03-01')..d('2024-03-31'))", "'right-open'"],
+        ["(d('2024-03-01')..d('2024-03-31')]", "'left-open'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{at: "2024-03-01"}, [{r: "closed"}, {r: "right-open"}]],
+    [{at: "2024-03-31"}, [{r: "closed"}, {r: "left-open"}]],
+    [{at: "2024-03-15"}, [{r: "closed"}, {r: "open"}, {r: "right-open"}, {r: "left-open"}]],
+    [{at: "2024-03-31T00:00:01Z"}, []],
+    [{at: "2024-02-29"}, []],
+  ],
+}
+
+{
+  name: "dates: interval bounds from other input fields",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["d(at)"], outputs: ["r"], rules: [
+        ["[d(window.from)..d(window.to)]", "'in window'"],
+        ["< d(window.from)", "'early'"],
+        ["", "'late or unknown'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{at: "2024-05-10", window: {from: "2024-05-01", to: "2024-05-31"}}, {r: "in window"}],
+    [{at: "2024-05-01", window: {from: "2024-05-01", to: "2024-05-31"}}, {r: "in window"}],
+    [{at: "2024-04-30", window: {from: "2024-05-01", to: "2024-05-31"}}, {r: "early"}],
+    [{at: "2024-06-01", window: {from: "2024-05-01", to: "2024-05-31"}}, {r: "late or unknown"}],
+  ],
+}
+
+{
+  name: "dates: date parts in cells",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["d(at)"], outputs: ["r"], rules: [
+        ["$.weekday() in [6, 7]", "'weekend'"],
+        ["$.month() == 12", "'december'"],
+        ["$.year() == 2024", "'2024'"],
+        ["$.day() == 1", "'first of month'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{at: "2024-12-01"}, [{r: "weekend"}, {r: "december"}, {r: "2024"}, {r: "first of month"}]],
+    [{at: "2024-12-02"}, [{r: "december"}, {r: "2024"}]],
+    [{at: "2025-03-01"}, [{r: "weekend"}, {r: "first of month"}]],
+    [{at: "2025-03-20"}, []],
+  ],
+}
+
+{
+  name: "dates: an age band computed from a birth date",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["d().diff(d(birth), 'year')"], outputs: ["band"], rules: [
+        ["< 18", "'minor'"],
+        ["[18..65)", "'adult'"],
+        [">= 65", "'senior'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{birth: "2007-03-21"}, {band: "minor"}],
+    [{birth: "2007-03-20"}, {band: "adult"}],
+    [{birth: "1960-03-20"}, {band: "senior"}],
+    [{birth: "1960-03-21"}, {band: "adult"}],
+    [{birth: "2000-01-01"}, {band: "adult"}],
+  ],
+}
+
+// --- Date values produced upstream ---------------------------------------------------------
+//
+// The harness `date('...')` literal reaches a graph's input node as plain text, so date values
+// are made by an upstream expression node here.
+
+{
+  name: "dates: date values against comparison, interval and equality cells",
+  graph: {
+    nodes: [
+      {expression: "conv", fields: {at: "raw == null ? null : d(raw)"}},
+      {table: "t", hit: "collect", inputs: ["at"], outputs: ["r"], rules: [
+        ["'2024-03-15'", "'string equality'"],
+        ["d('2024-03-15')", "'date equality'"],
+        ["> d('2024-03-01')", "'after march 1'"],
+        ["[d('2024-03-01')..d('2024-03-31')]", "'in march'"],
+        ["!= '2024-03-15'", "'not the 15th'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{raw: "2024-03-15"}, [{r: "string equality"}, {r: "date equality"}, {r: "after march 1"}, {r: "in march"}]],
+    [{raw: "2024-03-16"}, [{r: "after march 1"}, {r: "in march"}, {r: "not the 15th"}]],
+    [{raw: "2024-03-15T10:30:00+02:00"}, [{r: "after march 1"}, {r: "in march"}, {r: "not the 15th"}]],
+    [{raw: "2024-02-15"}, [{r: "not the 15th"}]],
+    [{raw: null}, [{r: "not the 15th"}]],
+  ],
+}
+
+{
+  name: "dates: indexed equality cells against date values",
+  graph: {
+    nodes: [
+      {expression: "conv", fields: {at: "d(raw)"}},
+      {table: "t", inputs: ["at"], outputs: ["holiday"], rules: [
+        ["'2024-01-01'", "'new year'"],
+        ["'2024-05-01'", "'labour day'"],
+        ["'2024-07-04'", "'independence day'"],
+        ["'2024-10-03'", "'unity day'"],
+        ["'2024-12-24', '2024-12-25', '2024-12-26'", "'christmas'"],
+        ["'2024-12-31'", "'new year eve'"],
+        ["'2025-01-01'", "'new year'"],
+        ["'2025-05-01'", "'labour day'"],
+        ["", "'workday'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{raw: "2024-05-01"}, {holiday: "labour day"}],
+    [{raw: "2024-12-25"}, {holiday: "christmas"}],
+    [{raw: "2024-05-02"}, {holiday: "workday"}],
+  ],
+}
+
+{
+  name: "dates: indexed equality cells against date strings",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["at"], outputs: ["holiday"], rules: [
+        ["'2024-01-01'", "'new year'"],
+        ["'2024-05-01'", "'labour day'"],
+        ["'2024-07-04'", "'independence day'"],
+        ["'2024-10-03'", "'unity day'"],
+        ["'2024-12-24', '2024-12-25', '2024-12-26'", "'christmas'"],
+        ["'2024-12-31'", "'new year eve'"],
+        ["'2025-01-01'", "'new year'"],
+        ["'2025-05-01'", "'labour day'"],
+        ["", "'workday'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{at: "2024-05-01"}, {holiday: "labour day"}],
+    [{at: "2024-12-25"}, {holiday: "christmas"}],
+    [{at: "2024-05-02"}, {holiday: "workday"}],
+    [{at: "2024-05-01T00:00:00Z"}, {holiday: "workday"}],
+  ],
+}
+
+{
+  name: "dates: the same equality cells in a small table match date values",
+  graph: {
+    nodes: [
+      {expression: "conv", fields: {at: "d(raw)"}},
+      {table: "t", inputs: ["at"], outputs: ["holiday"], rules: [
+        ["'2024-01-01'", "'new year'"],
+        ["'2024-05-01'", "'labour day'"],
+        ["'2024-12-24', '2024-12-25', '2024-12-26'", "'christmas'"],
+        ["", "'workday'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{raw: "2024-05-01"}, {holiday: "labour day"}],
+    [{raw: "2024-12-26"}, {holiday: "christmas"}],
+    [{raw: "2024-05-02"}, {holiday: "workday"}],
+    [{raw: "2024-05-01T08:00:00Z"}, {holiday: "workday"}],
+  ],
+}
+
+// --- Schema-declared dates ---------------------------------------------------------------------
+
+{
+  name: "schema dates: plain comparison cells work on declared date fields",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {due: {type: "string", format: "date"}}}},
+      {table: "t", inputs: ["due"], outputs: ["r"], rules: [
+        ["< d()", "'overdue'"],
+        ["<= d().add(7, 'd')", "'due soon'"],
+        ["", "'later'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{due: "2025-03-19"}, {r: "overdue"}],
+    [{due: "2025-03-20"}, {r: "overdue"}],
+    [{due: "2025-03-21"}, {r: "due soon"}],
+    [{due: "2025-03-27"}, {r: "due soon"}],
+    [{due: "2025-03-28"}, {r: "later"}],
+    [{}, {r: "later"}],
+  ],
+}
+
+{
+  name: "schema dates: date-time fields with offsets",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["at"], properties: {at: {type: "string", format: "date-time"}}}},
+      {table: "t", inputs: ["at"], outputs: ["r"], rules: [
+        ["< d('2025-01-01T00:00:00Z')", "'2024'"],
+        ["", "'2025'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{at: "2024-12-31T23:59:59Z"}, {r: "2024"}],
+    [{at: "2025-01-01T00:00:00Z"}, {r: "2025"}],
+    [{at: "2025-01-01T00:30:00+01:00"}, {r: "2024"}],
+    [{at: "2024-12-31T23:30:00-01:00"}, {r: "2025"}],
+  ],
+}
+
+{
+  name: "schema dates: a declared date passes through a pass-through table as its source text",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {day: {type: "string", format: "date"}}}},
+      {table: "t", passThrough: true, inputs: ["day"], outputs: ["weekend"], rules: [
+        ["$.weekday() >= 6", "true"],
+        ["", "false"],
+      ]},
+    ],
+  },
+  cases: [
+    [{day: "2025-03-22"}, {day: "2025-03-22", weekend: true}],
+    [{day: "2025-03-20"}, {day: "2025-03-20", weekend: false}],
+    [{}, {weekend: false}],
+  ],
+}
+
+{
+  name: "schema dates: equality cells in a small table",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {day: {type: "string", format: "date"}}}},
+      {table: "t", inputs: ["day"], outputs: ["r"], rules: [
+        ["'2025-03-20'", "'today'"],
+        ["d('2025-03-21')", "'tomorrow'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{day: "2025-03-20"}, {r: "today"}],
+    [{day: "2025-03-21"}, {r: "tomorrow"}],
+    [{day: "2025-03-22"}, {r: "other"}],
+  ],
+}
+
+{
+  name: "schema dates: equality cells in an indexed table",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {day: {type: "string", format: "date"}}}},
+      {table: "t", inputs: ["day"], outputs: ["r"], rules: [
+        ["'2025-03-17'", "'mon'"],
+        ["'2025-03-18'", "'tue'"],
+        ["'2025-03-19'", "'wed'"],
+        ["'2025-03-20'", "'thu'"],
+        ["'2025-03-21'", "'fri'"],
+        ["'2025-03-22'", "'sat'"],
+        ["'2025-03-23'", "'sun'"],
+        ["", "'other week'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{day: "2025-03-20"}, {r: "thu"}],
+    [{day: "2025-03-23"}, {r: "sun"}],
+    [{day: "2025-03-24"}, {r: "other week"}],
+  ],
+}
+
+{
+  name: "schema dates: a nullable date column",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {closed: {anyOf: [{type: "string", format: "date"}, {type: "null"}]}}}},
+      {table: "t", inputs: ["closed"], outputs: ["r"], rules: [
+        ["null", "'open'"],
+        ["< d('2025-01-01')", "'closed last year'"],
+        ["", "'closed this year'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{closed: null}, {r: "open"}],
+    [{}, {r: "open"}],
+    [{closed: "2024-11-11"}, {r: "closed last year"}],
+    [{closed: "2025-02-02"}, {r: "closed this year"}],
+  ],
+}
+
+{
+  name: "schema dates: dates inside array items, loop mode",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {payments: {type: "array", items: {type: "object", properties: {on: {type: "string", format: "date"}}}}}}},
+      {table: "t", executionMode: "loop", inputField: "payments", outputPath: "status", inputs: ["on"], outputs: ["late"], rules: [
+        ["> d('2025-03-15')", "true"],
+        ["", "false"],
+      ]},
+    ],
+  },
+  cases: [
+    [{payments: [{on: "2025-03-10"}, {on: "2025-03-16"}]}, {status: [{late: false}, {late: true}]}],
+    [{payments: [{on: "2025-03-15"}]}, {status: [{late: false}]}],
+    [{payments: []}, {status: []}],
+  ],
+}
+
+// --- Boolean columns --------------------------------------------------------------------------
+
+{
+  name: "bools: true, false and wildcard cells over two columns",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["verified", "blocked"], outputs: ["r"], rules: [
+        ["", "true", "'blocked'"],
+        ["true", "false", "'ok'"],
+        ["false", "false", "'unverified'"],
+        ["", "", "'unknown'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{verified: true, blocked: true}, {r: "blocked"}],
+    [{verified: false, blocked: true}, {r: "blocked"}],
+    [{verified: true, blocked: false}, {r: "ok"}],
+    [{verified: false, blocked: false}, {r: "unverified"}],
+    [{verified: true}, {r: "unknown"}],
+    [{verified: null, blocked: false}, {r: "unknown"}],
+    [{}, {r: "unknown"}],
+  ],
+}
+
+{
+  name: "bools: boolean cells do not match truthy or falsy non-booleans",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["v"], outputs: ["r"], rules: [
+        ["true", "'true'"],
+        ["false", "'false'"],
+        ["!= true", "'not true'"],
+        ["$ == false or $ == null", "'false or null'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{v: true}, [{r: "true"}]],
+    [{v: false}, [{r: "false"}, {r: "not true"}, {r: "false or null"}]],
+    [{v: null}, [{r: "not true"}, {r: "false or null"}]],
+    [{}, [{r: "not true"}, {r: "false or null"}]],
+    [{v: 1}, [{r: "not true"}]],
+    [{v: 0}, [{r: "not true"}]],
+    [{v: "true"}, [{r: "not true"}]],
+    [{v: "false"}, [{r: "not true"}]],
+    [{v: ""}, [{r: "not true"}]],
+    [{v: []}, [{r: "not true"}]],
+  ],
+}
+
+{
+  name: "bools: `true, false` matches any boolean and nothing else",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["flag"], outputs: ["r"], rules: [
+        ["true, false", "'boolean'"],
+        ["", "'not boolean'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{flag: true}, {r: "boolean"}],
+    [{flag: false}, {r: "boolean"}],
+    [{flag: null}, {r: "not boolean"}],
+    [{flag: "true"}, {r: "not boolean"}],
+    [{}, {r: "not boolean"}],
+  ],
+}
+
+{
+  name: "bools: treating null as false needs an explicit default in the field",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["optIn ?? false"], outputs: ["r"], rules: [
+        ["true", "'subscribed'"],
+        ["false", "'not subscribed'"],
+        ["", "'invalid'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{optIn: true}, {r: "subscribed"}],
+    [{optIn: false}, {r: "not subscribed"}],
+    [{optIn: null}, {r: "not subscribed"}],
+    [{}, {r: "not subscribed"}],
+    [{optIn: "yes"}, {r: "invalid"}],
+  ],
+}
+
+{
+  name: "bools: a field-less column with boolean expressions over inputs",
+  graph: {
+    nodes: [
+      {table: "t", inputs: [null, "premium"], outputs: ["shipping"], rules: [
+        ["total >= 50", "", "0"],
+        ["", "true", "0"],
+        ["express == true", "false", "15"],
+        ["", "", "5"],
+      ]},
+    ],
+  },
+  cases: [
+    [{total: 60, premium: false}, {shipping: 0}],
+    [{total: 10, premium: true}, {shipping: 0}],
+    [{total: 10, premium: false, express: true}, {shipping: 15}],
+    [{total: 10, premium: false}, {shipping: 5}],
+    [{total: 10}, {shipping: 5}],
+    [{total: 10, express: true}, {shipping: 5}],
+  ],
+}
+
+{
+  name: "bools: boolean outputs from comparisons and literals",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, inputs: ["age"], outputs: ["adult", "senior", "eligible"], rules: [
+        [">= 18", "true", "age >= 65", "member == true"],
+        ["", "false", "false", "false"],
+      ]},
+    ],
+  },
+  cases: [
+    [{age: 30, member: true}, {age: 30, member: true, adult: true, senior: false, eligible: true}],
+    [{age: 70}, {age: 70, adult: true, senior: true, eligible: false}],
+    [{age: 10, member: true}, {age: 10, member: true, adult: false, senior: false, eligible: false}],
+    [{age: null}, {adult: false, senior: false, eligible: false}],
+  ],
+}
+
+{
+  name: "bools: indexed boolean columns combined with strings",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["tier", "active", "trial"], outputs: ["r"], rules: [
+        ["'gold'", "true", "false", "'gold active'"],
+        ["'gold'", "true", "true", "'gold trial'"],
+        ["'gold'", "false", "", "'gold inactive'"],
+        ["'silver'", "true", "false", "'silver active'"],
+        ["'silver'", "true", "true", "'silver trial'"],
+        ["'silver'", "false", "", "'silver inactive'"],
+        ["", "true", "", "'other active'"],
+        ["", "false", "", "'other inactive'"],
+        ["", "", "", "'unknown'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{tier: "gold", active: true, trial: false}, {r: "gold active"}],
+    [{tier: "gold", active: true, trial: true}, {r: "gold trial"}],
+    [{tier: "gold", active: false}, {r: "gold inactive"}],
+    [{tier: "silver", active: true, trial: true}, {r: "silver trial"}],
+    [{tier: "silver", active: true}, {r: "other active"}],
+    [{tier: "bronze", active: false}, {r: "other inactive"}],
+    [{tier: "gold", active: "true", trial: false}, {r: "unknown"}],
+    [{tier: "gold", active: 1}, {r: "unknown"}],
+    [{tier: "gold"}, {r: "unknown"}],
+  ],
+}
+
+{
+  name: "bools: indexed collect over a boolean column",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["ok"], outputs: ["r"], rules: [
+        ["true", "'t1'"],
+        ["false", "'f1'"],
+        ["true", "'t2'"],
+        ["false", "'f2'"],
+        ["true, false", "'any bool'"],
+        ["", "'any'"],
+        ["!= true", "'not true'"],
+        ["null", "'null'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{ok: true}, [{r: "t1"}, {r: "t2"}, {r: "any bool"}, {r: "any"}]],
+    [{ok: false}, [{r: "f1"}, {r: "f2"}, {r: "any bool"}, {r: "any"}, {r: "not true"}]],
+    [{ok: null}, [{r: "any"}, {r: "not true"}, {r: "null"}]],
+    [{}, [{r: "any"}, {r: "not true"}, {r: "null"}]],
+    [{ok: "true"}, [{r: "any"}, {r: "not true"}]],
+    [{ok: 0}, [{r: "any"}, {r: "not true"}]],
+  ],
+}
+
+{
+  name: "bools: schema-declared booleans and a missing optional boolean",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", properties: {consent: {type: "boolean"}, adult: {type: "boolean"}}}},
+      {table: "t", inputs: ["consent", "adult"], outputs: ["r"], rules: [
+        ["true", "true", "'allowed'"],
+        ["true", "false", "'guardian needed'"],
+        ["false", "", "'refused'"],
+        ["", "", "'ask'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{consent: true, adult: true}, {r: "allowed"}],
+    [{consent: true, adult: false}, {r: "guardian needed"}],
+    [{consent: false}, {r: "refused"}],
+    [{}, {r: "ask"}],
+    [{consent: true}, {r: "ask"}],
+    [{consent: "true"}, "!error: NodeError"],
+  ],
+}
+
+// --- Dates and booleans together ---------------------------------------------------------------
+
+{
+  name: "mixed: subscription status from a date and two flags",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["cancelled", "d(renewsOn)", "autoRenew"], outputs: ["status"], rules: [
+        ["true", "", "", "'cancelled'"],
+        ["", "< d()", "false", "'lapsed'"],
+        ["", "< d()", "true", "'renewing'"],
+        ["", "<= d().add(14, 'd')", "false", "'expiring'"],
+        ["", "", "", "'active'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{cancelled: true, renewsOn: "2026-01-01", autoRenew: true}, {status: "cancelled"}],
+    [{cancelled: false, renewsOn: "2025-03-01", autoRenew: false}, {status: "lapsed"}],
+    [{renewsOn: "2025-03-01", autoRenew: true}, {status: "renewing"}],
+    [{renewsOn: "2025-03-30", autoRenew: false}, {status: "expiring"}],
+    [{renewsOn: "2025-03-30", autoRenew: true}, {status: "active"}],
+    [{renewsOn: "2025-03-01"}, {status: "active"}],
+  ],
+}
+
+{
+  name: "mixed: a date check in a field-less column next to a boolean column",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["kyc", null], outputs: ["r"], rules: [
+        ["true", "d(kycDate) >= d().sub(1, 'y')", "'verified'"],
+        ["true", "", "'reverify'"],
+        ["", "", "'unverified'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{kyc: true, kycDate: "2024-06-01"}, {r: "verified"}],
+    [{kyc: true, kycDate: "2024-03-20T10:15:30Z"}, {r: "verified"}],
+    [{kyc: true, kycDate: "2024-03-19"}, {r: "reverify"}],
+    [{kyc: true}, {r: "reverify"}],
+    [{kyc: false, kycDate: "2025-01-01"}, {r: "unverified"}],
+  ],
+}
+
+{
+  name: "mixed: date and boolean outputs flow into a downstream expression",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, inputs: ["plan"], outputs: ["trialEnds", "billable"], rules: [
+        ["'trial'", "d(start).add(14, 'd')", "false"],
+        ["", "null", "true"],
+      ]},
+      {expression: "e", fields: {inTrial: "trialEnds != null and trialEnds > d()", billable: "billable"}},
+    ],
+  },
+  cases: [
+    [{plan: "trial", start: "2025-03-10"}, {inTrial: true, billable: false}],
+    [{plan: "trial", start: "2025-03-01"}, {inTrial: false, billable: false}],
+    [{plan: "pro", start: "2025-03-10"}, {inTrial: false, billable: true}],
+  ],
+}

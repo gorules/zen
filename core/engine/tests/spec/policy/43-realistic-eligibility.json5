@@ -1,0 +1,712 @@
+// Realistic eligibility policies: a household means test with members and a referenced region,
+// a student grant with dictionary-typed documents, small business loans with grouped
+// assertions, a childcare subsidy with a referenced provider read from members, residency and
+// identity document checks, and an old-age supplement against globals. Each suite combines
+// several block kinds over related entities and runs valid, boundary, missing and invalid data.
+// Evaluation time is fixed at 2025-03-20T10:15:30Z.
+
+// --- Household means test ----------------------------------------------------------------------
+// Per-member age, dependency (children under 18, or under 25 while studying) and an income
+// weight match (disabled members count half, minors nothing). The household threshold uses an
+// equivalence scale on the referenced region's poverty line, housing is capped by the region,
+// an asset assertion requires an adult, and a benefit table with expression output cells.
+
+{
+  name: "household means test with members and a referenced region",
+  policy: {
+    models: {
+      household: {region: "&region", rent: "number", assets: "number", members: "member[]"},
+      region: {id: "string", povertyLine: "number", rentCap: "number"},
+      member: {dob: "date", role: "string(head|partner|child|other)", income: "number", disabled: "boolean", student: "boolean?"},
+    },
+    blocks: [
+      {expression: "member.age", value: "d().diff(member.dob, 'year')"},
+      {expression: "member.dependent", value: "member.role == 'child' and (member.age < 18 or (member.age < 25 and (member.student ?? false)))"},
+      {match: "member.incomeWeight", arms: [
+        ["member.disabled", "0.5"],
+        ["member.age < 18", "0"],
+        ["", "1"],
+      ]},
+      {expression: "member.countedIncome", value: "member.income * member.incomeWeight"},
+      {expression: "household.adults", value: "count(household.members, not #.dependent)"},
+      {expression: "household.dependents", value: "count(household.members, #.dependent)"},
+      {expression: "household.income", value: "sum(map(household.members, #.countedIncome))"},
+      {expression: "household.threshold", value: "household.region.povertyLine * (1 + (household.adults - 1) * 0.5 + household.dependents * 0.3)"},
+      {expression: "household.housing", value: "min([household.rent, household.region.rentCap])"},
+      {expression: "household.gap", value: "max([household.threshold + household.housing - household.income, 0])"},
+      {assertion: "household.assetTest", conditions: ["household.adults > 0", "household.assets <= 10000 * household.adults + 2000 * household.dependents"]},
+      {table: "benefit", inputs: ["household.assetTest", "household.gap"], outputs: ["household.benefit", "household.tier"], rules: [
+        ["false", "", "0", "'ineligible'"],
+        ["", "0", "0", "'not-needed'"],
+        ["", "< 200", "200", "'minimum'"],
+        ["", "", "round(household.gap, 0)", "'top-up'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {household: {region: "A", rent: 700, assets: 3000, members: [
+        {dob: "1985-01-01", role: "head", income: 900, disabled: false},
+        {dob: "2015-05-01", role: "child", income: 0, disabled: false},
+      ]}, region: [{id: "A", povertyLine: 1200, rentCap: 800}, {id: "B", povertyLine: 1000, rentCap: 600}]},
+      {household: {region: {id: "A", povertyLine: 1200, rentCap: 800}, rent: 700, assets: 3000, members: [
+        {dob: "1985-01-01", role: "head", income: 900, disabled: false, age: 40, dependent: false, incomeWeight: 1, countedIncome: 900},
+        {dob: "2015-05-01", role: "child", income: 0, disabled: false, age: 9, dependent: true, incomeWeight: 0, countedIncome: 0},
+      ], adults: 1, dependents: 1, income: 900, threshold: 1560, housing: 700, gap: 1360, assetTest: true, benefit: 1360, tier: "top-up"}, region: [{id: "A", povertyLine: 1200, rentCap: 800}, {id: "B", povertyLine: 1000, rentCap: 600}]},
+    ],
+    // A couple with a disabled partner and a studying 20-year-old: the gap is exactly 200, but
+    // assets exceed the limit of 22000.
+    [
+      {household: {region: "B", rent: 900, assets: 25000, members: [
+        {dob: "1970-01-01", role: "head", income: 1500, disabled: false},
+        {dob: "1972-01-01", role: "partner", income: 800, disabled: true},
+        {dob: "2004-06-01", role: "child", income: 300, disabled: false, student: true},
+      ]}, region: [{id: "B", povertyLine: 1000, rentCap: 600}]},
+      {household: {region: {id: "B", povertyLine: 1000, rentCap: 600}, rent: 900, assets: 25000, members: [
+        {dob: "1970-01-01", role: "head", income: 1500, disabled: false, age: 55, dependent: false, incomeWeight: 1, countedIncome: 1500},
+        {dob: "1972-01-01", role: "partner", income: 800, disabled: true, age: 53, dependent: false, incomeWeight: 0.5, countedIncome: 400},
+        {dob: "2004-06-01", role: "child", income: 300, disabled: false, student: true, age: 20, dependent: true, incomeWeight: 1, countedIncome: 300},
+      ], adults: 2, dependents: 1, income: 2200, threshold: 1800, housing: 600, gap: 200, assetTest: false, benefit: 0, tier: "ineligible"}, region: [{id: "B", povertyLine: 1000, rentCap: 600}]},
+    ],
+    // The same household at the asset limit; a gap of 200 is a regular top-up.
+    [
+      {household: {region: "B", rent: 900, assets: 22000, members: [
+        {dob: "1970-01-01", role: "head", income: 1500, disabled: false},
+        {dob: "1972-01-01", role: "partner", income: 800, disabled: true},
+        {dob: "2004-06-01", role: "child", income: 300, disabled: false, student: true},
+      ]}, region: [{id: "B", povertyLine: 1000, rentCap: 600}]},
+      {household: {region: {id: "B", povertyLine: 1000, rentCap: 600}, rent: 900, assets: 22000, members: [
+        {dob: "1970-01-01", role: "head", income: 1500, disabled: false, age: 55, dependent: false, incomeWeight: 1, countedIncome: 1500},
+        {dob: "1972-01-01", role: "partner", income: 800, disabled: true, age: 53, dependent: false, incomeWeight: 0.5, countedIncome: 400},
+        {dob: "2004-06-01", role: "child", income: 300, disabled: false, student: true, age: 20, dependent: true, incomeWeight: 1, countedIncome: 300},
+      ], adults: 2, dependents: 1, income: 2200, threshold: 1800, housing: 600, gap: 200, assetTest: true, benefit: 200, tier: "top-up"}, region: [{id: "B", povertyLine: 1000, rentCap: 600}]},
+    ],
+    [
+      {household: {region: "A", rent: 300, assets: 0, members: [{dob: "1990-01-01", role: "head", income: 1350, disabled: false}]}, region: [{id: "A", povertyLine: 1200, rentCap: 800}]},
+      {household: {region: {id: "A", povertyLine: 1200, rentCap: 800}, rent: 300, assets: 0, members: [
+        {dob: "1990-01-01", role: "head", income: 1350, disabled: false, age: 35, dependent: false, incomeWeight: 1, countedIncome: 1350},
+      ], adults: 1, dependents: 0, income: 1350, threshold: 1200, housing: 300, gap: 150, assetTest: true, benefit: 200, tier: "minimum"}, region: [{id: "A", povertyLine: 1200, rentCap: 800}]},
+    ],
+    [
+      {household: {region: "A", rent: 300, assets: 0, members: [{dob: "1990-01-01", role: "head", income: 5000, disabled: false}]}, region: [{id: "A", povertyLine: 1200, rentCap: 800}]},
+      {household: {region: {id: "A", povertyLine: 1200, rentCap: 800}, rent: 300, assets: 0, members: [
+        {dob: "1990-01-01", role: "head", income: 5000, disabled: false, age: 35, dependent: false, incomeWeight: 1, countedIncome: 5000},
+      ], adults: 1, dependents: 0, income: 5000, threshold: 1200, housing: 300, gap: 0, assetTest: true, benefit: 0, tier: "not-needed"}, region: [{id: "A", povertyLine: 1200, rentCap: 800}]},
+    ],
+    // A 25-year-old student is an adult; a working 17-year-old is a dependent whose income is not
+    // counted; rent above the cap is capped.
+    [
+      {household: {region: "A", rent: 1000, assets: 21999, members: [
+        {dob: "1980-01-01", role: "head", income: 0, disabled: true},
+        {dob: "1999-06-01", role: "child", income: 1000, disabled: false, student: true},
+        {dob: "2008-01-01", role: "child", income: 500, disabled: false},
+      ]}, region: [{id: "A", povertyLine: 1200, rentCap: 800}]},
+      {household: {region: {id: "A", povertyLine: 1200, rentCap: 800}, rent: 1000, assets: 21999, members: [
+        {dob: "1980-01-01", role: "head", income: 0, disabled: true, age: 45, dependent: false, incomeWeight: 0.5, countedIncome: 0},
+        {dob: "1999-06-01", role: "child", income: 1000, disabled: false, student: true, age: 25, dependent: false, incomeWeight: 1, countedIncome: 1000},
+        {dob: "2008-01-01", role: "child", income: 500, disabled: false, age: 17, dependent: true, incomeWeight: 0, countedIncome: 0},
+      ], adults: 2, dependents: 1, income: 1000, threshold: 2160, housing: 800, gap: 1960, assetTest: true, benefit: 1960, tier: "top-up"}, region: [{id: "A", povertyLine: 1200, rentCap: 800}]},
+    ],
+    // A 21-year-old child without a `student` flag is not a dependent.
+    [
+      {household: {region: "B", rent: 500, assets: 0, members: [
+        {dob: "1990-01-01", role: "head", income: 600, disabled: false},
+        {dob: "2004-01-01", role: "child", income: 0, disabled: false},
+      ]}, region: [{id: "B", povertyLine: 1000, rentCap: 600}]},
+      {household: {region: {id: "B", povertyLine: 1000, rentCap: 600}, rent: 500, assets: 0, members: [
+        {dob: "1990-01-01", role: "head", income: 600, disabled: false, age: 35, dependent: false, incomeWeight: 1, countedIncome: 600},
+        {dob: "2004-01-01", role: "child", income: 0, disabled: false, age: 21, dependent: false, incomeWeight: 1, countedIncome: 0},
+      ], adults: 2, dependents: 0, income: 600, threshold: 1500, housing: 500, gap: 1400, assetTest: true, benefit: 1400, tier: "top-up"}, region: [{id: "B", povertyLine: 1000, rentCap: 600}]},
+    ],
+    // The output cell rounds a fractional gap to whole units.
+    [
+      {household: {region: "C", rent: 0, assets: 0, members: [{dob: "1960-01-01", role: "head", income: 0, disabled: false}]}, region: [{id: "C", povertyLine: 1033.33, rentCap: 500}]},
+      {household: {region: {id: "C", povertyLine: 1033.33, rentCap: 500}, rent: 0, assets: 0, members: [
+        {dob: "1960-01-01", role: "head", income: 0, disabled: false, age: 65, dependent: false, incomeWeight: 1, countedIncome: 0},
+      ], adults: 1, dependents: 0, income: 0, threshold: 1033.33, housing: 0, gap: 1033.33, assetTest: true, benefit: 1033, tier: "top-up"}, region: [{id: "C", povertyLine: 1033.33, rentCap: 500}]},
+    ],
+    // A household of children only has no adult and fails the asset test.
+    [
+      {household: {region: "A", rent: 0, assets: 0, members: [{dob: "2010-01-01", role: "child", income: 0, disabled: false}]}, region: [{id: "A", povertyLine: 1200, rentCap: 800}]},
+      {household: {region: {id: "A", povertyLine: 1200, rentCap: 800}, rent: 0, assets: 0, members: [
+        {dob: "2010-01-01", role: "child", income: 0, disabled: false, age: 15, dependent: true, incomeWeight: 0, countedIncome: 0},
+      ], adults: 0, dependents: 1, income: 0, threshold: 960, housing: 0, gap: 960, assetTest: false, benefit: 0, tier: "ineligible"}, region: [{id: "A", povertyLine: 1200, rentCap: 800}]},
+    ],
+    [
+      {household: {region: "A", rent: 0, assets: 0, members: []}, region: [{id: "A", povertyLine: 1200, rentCap: 800}]},
+      {household: {region: {id: "A", povertyLine: 1200, rentCap: 800}, rent: 0, assets: 0, members: [], adults: 0, dependents: 0, income: 0, threshold: 600, housing: 0, gap: 600, assetTest: false, benefit: 0, tier: "ineligible"}, region: [{id: "A", povertyLine: 1200, rentCap: 800}]},
+    ],
+    // A member without `disabled` reads null; a null match condition does not match (like a null
+    // assertion condition), so the arm falls through to the next one.
+    [
+      {household: {region: "A", rent: 0, assets: 0, members: [{dob: "1990-01-01", role: "head", income: 100}]}, region: [{id: "A", povertyLine: 1200, rentCap: 800}]},
+      {household: {region: {id: "A", povertyLine: 1200, rentCap: 800}, rent: 0, assets: 0, members: [
+        {dob: "1990-01-01", role: "head", income: 100, age: 35, dependent: false, incomeWeight: 1, countedIncome: 100},
+      ], adults: 1, dependents: 0, income: 100, threshold: 1200, housing: 0, gap: 1100, assetTest: true, benefit: 1100, tier: "top-up"}, region: [{id: "A", povertyLine: 1200, rentCap: 800}]},
+    ],
+    [{household: {region: "A", rent: 0, assets: 0, members: [{dob: "1990-01-01", role: "lodger", income: 0, disabled: false}]}, region: [{id: "A", povertyLine: 1200, rentCap: 800}]}, "!error: InputValidationFailed"],
+    [{household: {region: "Z", rent: 0, assets: 0, members: []}, region: [{id: "A", povertyLine: 1200, rentCap: 800}]}, "!error: InputValidationFailed"],
+    [{household: {region: "A", rent: 0, assets: 0, members: [{dob: "1990-01-01", role: "head", disabled: false}]}, region: [{id: "A", povertyLine: 1200, rentCap: 800}]}, "!error: ExpressionFailed"],
+    [{household: {region: "A", assets: 0, members: []}, region: [{id: "A", povertyLine: 1200, rentCap: 800}]}, "!error: MissingRequiredInputs"],
+    [{household: {region: "A", rent: 0, assets: 0, members: [{dob: "1990-01-01", role: "head", income: 1, disabled: "no"}]}, region: [{id: "A", povertyLine: 1200, rentCap: 800}]}, "!error: InputValidationFailed"],
+  ],
+}
+
+// --- Student grant -----------------------------------------------------------------------------
+// Dictionary-typed document kinds; documents must be valid and uploaded within twelve months.
+// Required documents depend on independence and age; missing ones come from list filtering. A
+// base grant table over program and study load, a parental contribution above an income floor,
+// pro-rating by load, and a decision match. A goal on the missing documents skips the money.
+
+{
+  name: "student grant with documents and parental income",
+  policy: {
+    dictionaries: {docType: [["ID", "Identity"], ["ENR", "Enrolment"], ["TAX", "Parental tax return"], ["IND", "Proof of independence"]]},
+    models: {
+      applicant: {dob: "date", independent: "boolean", program: "string(bachelor|master|vocational)", studyLoad: "number", parentalIncome: "number?", documents: "document[]"},
+      document: {type: "docType", status: "string(valid|expired|pending)", uploaded: "date"},
+    },
+    blocks: [
+      {expression: "applicant.age", value: "d().diff(applicant.dob, 'year')"},
+      {expression: "applicant.selfSupporting", value: "applicant.independent or applicant.age >= 25"},
+      {expression: "applicant.validDocs", value: "map(filter(applicant.documents, #.status == 'valid' and d().diff(#.uploaded, 'month') < 12), #.type)"},
+      {expression: "applicant.requiredDocs", value: "applicant.independent ? ['ID', 'ENR', 'IND'] : applicant.age >= 25 ? ['ID', 'ENR'] : ['ID', 'ENR', 'TAX']"},
+      {expression: "applicant.missingDocs", value: "filter(applicant.requiredDocs, not (# in applicant.validDocs))"},
+      {table: "base", inputs: ["applicant.program", "applicant.studyLoad"], outputs: ["applicant.baseGrant"], rules: [
+        ["", "< 50", "0"],
+        ["'master'", "", "1100"],
+        ["'bachelor'", "", "1000"],
+        ["'vocational'", "", "800"],
+      ]},
+      {expression: "applicant.parentalContribution", value: "applicant.selfSupporting ? 0 : round(max([(applicant.parentalIncome ?? 0) - 40000, 0]) * 0.05 / 12, 2)"},
+      {expression: "applicant.grant", value: "max([round(applicant.baseGrant * (applicant.studyLoad >= 100 ? 1 : applicant.studyLoad / 100) - applicant.parentalContribution, 2), 0])"},
+      {match: "applicant.decision", arms: [
+        ["len(applicant.missingDocs) > 0", "'incomplete'"],
+        ["applicant.baseGrant == 0", "'load-too-low'"],
+        ["applicant.grant == 0", "'means-tested-out'"],
+        ["", "'award'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {applicant: {dob: "2004-09-01", independent: false, program: "bachelor", studyLoad: 100, parentalIncome: 60000, documents: [
+        {type: "ID", status: "valid", uploaded: "2024-09-01"},
+        {type: "ENR", status: "valid", uploaded: "2025-01-10"},
+        {type: "TAX", status: "valid", uploaded: "2024-05-01"},
+      ]}},
+      {applicant: {dob: "2004-09-01", independent: false, program: "bachelor", studyLoad: 100, parentalIncome: 60000, documents: [
+        {type: "ID", status: "valid", uploaded: "2024-09-01"},
+        {type: "ENR", status: "valid", uploaded: "2025-01-10"},
+        {type: "TAX", status: "valid", uploaded: "2024-05-01"},
+      ], age: 20, selfSupporting: false, validDocs: ["ID", "ENR", "TAX"], requiredDocs: ["ID", "ENR", "TAX"], missingDocs: [], baseGrant: 1000, parentalContribution: 83.33, grant: 916.67, decision: "award"}},
+    ],
+    [
+      {applicant: {dob: "2003-01-01", independent: true, program: "master", studyLoad: 60, parentalIncome: null, documents: [
+        {type: "ID", status: "valid", uploaded: "2025-01-01"},
+        {type: "ENR", status: "valid", uploaded: "2025-02-01"},
+        {type: "IND", status: "valid", uploaded: "2025-02-01"},
+      ]}},
+      {applicant: {dob: "2003-01-01", independent: true, program: "master", studyLoad: 60, parentalIncome: null, documents: [
+        {type: "ID", status: "valid", uploaded: "2025-01-01"},
+        {type: "ENR", status: "valid", uploaded: "2025-02-01"},
+        {type: "IND", status: "valid", uploaded: "2025-02-01"},
+      ], age: 22, selfSupporting: true, validDocs: ["ID", "ENR", "IND"], requiredDocs: ["ID", "ENR", "IND"], missingDocs: [], baseGrant: 1100, parentalContribution: 0, grant: 660, decision: "award"}},
+    ],
+    // Turning 25 today makes an applicant self-supporting without the independence proof.
+    [
+      {applicant: {dob: "2000-03-20", independent: false, program: "vocational", studyLoad: 100, parentalIncome: 200000, documents: [
+        {type: "ID", status: "valid", uploaded: "2024-04-01"},
+        {type: "ENR", status: "valid", uploaded: "2025-03-01"},
+      ]}},
+      {applicant: {dob: "2000-03-20", independent: false, program: "vocational", studyLoad: 100, parentalIncome: 200000, documents: [
+        {type: "ID", status: "valid", uploaded: "2024-04-01"},
+        {type: "ENR", status: "valid", uploaded: "2025-03-01"},
+      ], age: 25, selfSupporting: true, validDocs: ["ID", "ENR"], requiredDocs: ["ID", "ENR"], missingDocs: [], baseGrant: 800, parentalContribution: 0, grant: 800, decision: "award"}},
+    ],
+    [
+      {applicant: {dob: "2006-01-01", independent: false, program: "bachelor", studyLoad: 100, parentalIncome: 30000, documents: [
+        {type: "ID", status: "valid", uploaded: "2025-01-01"},
+        {type: "ENR", status: "pending", uploaded: "2025-03-01"},
+        {type: "TAX", status: "expired", uploaded: "2025-01-01"},
+      ]}},
+      {applicant: {dob: "2006-01-01", independent: false, program: "bachelor", studyLoad: 100, parentalIncome: 30000, documents: [
+        {type: "ID", status: "valid", uploaded: "2025-01-01"},
+        {type: "ENR", status: "pending", uploaded: "2025-03-01"},
+        {type: "TAX", status: "expired", uploaded: "2025-01-01"},
+      ], age: 19, selfSupporting: false, validDocs: ["ID"], requiredDocs: ["ID", "ENR", "TAX"], missingDocs: ["ENR", "TAX"], baseGrant: 1000, parentalContribution: 0, grant: 1000, decision: "incomplete"}},
+    ],
+    // An upload exactly twelve months old is stale.
+    [
+      {applicant: {dob: "2005-01-01", independent: false, program: "bachelor", studyLoad: 100, parentalIncome: 40000, documents: [
+        {type: "ID", status: "valid", uploaded: "2024-03-20"},
+        {type: "ENR", status: "valid", uploaded: "2024-03-21"},
+        {type: "TAX", status: "valid", uploaded: "2025-01-01"},
+      ]}},
+      {applicant: {dob: "2005-01-01", independent: false, program: "bachelor", studyLoad: 100, parentalIncome: 40000, documents: [
+        {type: "ID", status: "valid", uploaded: "2024-03-20"},
+        {type: "ENR", status: "valid", uploaded: "2024-03-21"},
+        {type: "TAX", status: "valid", uploaded: "2025-01-01"},
+      ], age: 20, selfSupporting: false, validDocs: ["ENR", "TAX"], requiredDocs: ["ID", "ENR", "TAX"], missingDocs: ["ID"], baseGrant: 1000, parentalContribution: 0, grant: 1000, decision: "incomplete"}},
+    ],
+    [
+      {applicant: {dob: "2005-01-01", independent: false, program: "master", studyLoad: 49, parentalIncome: 0, documents: [
+        {type: "ID", status: "valid", uploaded: "2025-01-01"},
+        {type: "ENR", status: "valid", uploaded: "2025-01-01"},
+        {type: "TAX", status: "valid", uploaded: "2025-01-01"},
+      ]}},
+      {applicant: {dob: "2005-01-01", independent: false, program: "master", studyLoad: 49, parentalIncome: 0, documents: [
+        {type: "ID", status: "valid", uploaded: "2025-01-01"},
+        {type: "ENR", status: "valid", uploaded: "2025-01-01"},
+        {type: "TAX", status: "valid", uploaded: "2025-01-01"},
+      ], age: 20, selfSupporting: false, validDocs: ["ID", "ENR", "TAX"], requiredDocs: ["ID", "ENR", "TAX"], missingDocs: [], baseGrant: 0, parentalContribution: 0, grant: 0, decision: "load-too-low"}},
+    ],
+    [
+      {applicant: {dob: "2005-01-01", independent: false, program: "bachelor", studyLoad: 100, parentalIncome: 300000, documents: [
+        {type: "ID", status: "valid", uploaded: "2025-01-01"},
+        {type: "ENR", status: "valid", uploaded: "2025-01-01"},
+        {type: "TAX", status: "valid", uploaded: "2025-01-01"},
+      ]}},
+      {applicant: {dob: "2005-01-01", independent: false, program: "bachelor", studyLoad: 100, parentalIncome: 300000, documents: [
+        {type: "ID", status: "valid", uploaded: "2025-01-01"},
+        {type: "ENR", status: "valid", uploaded: "2025-01-01"},
+        {type: "TAX", status: "valid", uploaded: "2025-01-01"},
+      ], age: 20, selfSupporting: false, validDocs: ["ID", "ENR", "TAX"], requiredDocs: ["ID", "ENR", "TAX"], missingDocs: [], baseGrant: 1000, parentalContribution: 1083.33, grant: 0, decision: "means-tested-out"}},
+    ],
+    // A load of exactly 50 is half a grant.
+    [
+      {applicant: {dob: "2004-01-01", independent: false, program: "vocational", studyLoad: 50, parentalIncome: 52000, documents: [
+        {type: "ID", status: "valid", uploaded: "2025-01-01"},
+        {type: "ENR", status: "valid", uploaded: "2025-01-01"},
+        {type: "TAX", status: "valid", uploaded: "2025-01-01"},
+      ]}},
+      {applicant: {dob: "2004-01-01", independent: false, program: "vocational", studyLoad: 50, parentalIncome: 52000, documents: [
+        {type: "ID", status: "valid", uploaded: "2025-01-01"},
+        {type: "ENR", status: "valid", uploaded: "2025-01-01"},
+        {type: "TAX", status: "valid", uploaded: "2025-01-01"},
+      ], age: 21, selfSupporting: false, validDocs: ["ID", "ENR", "TAX"], requiredDocs: ["ID", "ENR", "TAX"], missingDocs: [], baseGrant: 800, parentalContribution: 50, grant: 350, decision: "award"}},
+    ],
+    {
+      input: {applicant: {dob: "2006-01-01", independent: false, documents: [{type: "ID", status: "valid", uploaded: "2025-01-01"}]}},
+      goals: ["applicant.missingDocs"],
+      output: {applicant: {dob: "2006-01-01", independent: false, documents: [{type: "ID", status: "valid", uploaded: "2025-01-01"}], age: 19, validDocs: ["ID"], requiredDocs: ["ID", "ENR", "TAX"], missingDocs: ["ENR", "TAX"]}},
+    },
+    [{applicant: {dob: "2005-01-01", program: "bachelor", studyLoad: 100, documents: []}}, "!error: MissingRequiredInputs"],
+    [{applicant: {dob: "2005-01-01", independent: false, program: "bachelor", studyLoad: 100, documents: [{type: "PASS", status: "valid", uploaded: "2025-01-01"}]}}, "!error: InputValidationFailed"],
+    [{applicant: {dob: "2005-01-01", independent: false, program: "bachelor", studyLoad: 100, documents: [{type: "Identity", status: "valid", uploaded: "2025-01-01"}]}}, "!error: InputValidationFailed"],
+    [{applicant: {dob: "2005-01-01", independent: false, program: "bachelor", studyLoad: 100, documents: [{type: "ID", status: "revoked", uploaded: "2025-01-01"}]}}, "!error: InputValidationFailed"],
+    [{applicant: {dob: "2005-01-01", independent: false, program: "bachelor", documents: []}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// --- Small business loan -----------------------------------------------------------------------
+// A share-weighted owner credit score, debt service over existing loans plus the new payment, a
+// debt service coverage ratio guarded against zero, exclusions collected by a first-hit `[]`
+// table (sectors match case-sensitively), and the grouped assertion
+// `no exclusions and within max and (dscr >= 1.25 or guaranteed)`.
+
+{
+  name: "small business loan with owners and existing loans",
+  policy: {
+    globals: {program: {maxLoan: "number", minScore: "number"}},
+    models: {
+      business: {founded: "date", sector: "string", revenue: "number", requested: "number", owners: "owner[]", loans: "loan[]"},
+      owner: {creditScore: "number", share: "number", guarantor: "boolean"},
+      loan: {monthly: "number", inArrears: "boolean"},
+    },
+    blocks: [
+      {expression: "business.ageYears", value: "d().diff(business.founded, 'year')"},
+      {expression: "business.score", value: "round(sum(map(business.owners, #.creditScore * #.share)) / max([sum(map(business.owners, #.share)), 1]), 0)"},
+      {expression: "business.lowScore", value: "business.score < minScore"},
+      {expression: "business.debtService", value: "sum(map(business.loans, #.monthly))"},
+      {expression: "business.newPayment", value: "round(business.requested / 60, 2)"},
+      {expression: "business.dscr", value: "business.debtService + business.newPayment > 0 ? round(business.revenue / 12 * 0.2 / (business.debtService + business.newPayment), 2) : 99"},
+      {expression: "business.arrears", value: "some(business.loans, #.inArrears)"},
+      {expression: "business.guaranteed", value: "some(business.owners, #.guarantor and #.share >= 20)"},
+      {table: "exclusions", inputs: ["business.ageYears", "business.lowScore", "business.arrears", "business.sector"], outputs: ["business.exclusions[]"], rules: [
+        ["< 2", "", "", "", "'too-young'"],
+        ["", "true", "", "", "'low-score'"],
+        ["", "", "true", "", "'arrears'"],
+        ["", "", "", "'gambling', 'weapons'", "'excluded-sector'"],
+      ]},
+      {expression: "business.maxEligible", value: "min([maxLoan, business.revenue * 0.25])"},
+      {assertion: "business.eligible", conditions: [
+        ["and", "len(business.exclusions) == 0", 0],
+        ["and", "business.requested <= business.maxEligible", 0],
+        ["or", "business.dscr >= 1.25", 1],
+        ["and", "business.guaranteed", 1],
+      ]},
+      {match: "business.decision", arms: [
+        ["business.eligible and business.dscr >= 1.25", "'approve'"],
+        ["business.eligible", "'approve-guaranteed'"],
+        ["len(business.exclusions) > 0", "'decline'"],
+        ["", "'counter-offer'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {maxLoan: 250000, minScore: 650, business: {founded: "2015-01-01", sector: "retail", revenue: 1200000, requested: 100000, owners: [{creditScore: 720, share: 60, guarantor: false}, {creditScore: 680, share: 40, guarantor: true}], loans: [{monthly: 2000, inArrears: false}]}},
+      {maxLoan: 250000, minScore: 650, business: {founded: "2015-01-01", sector: "retail", revenue: 1200000, requested: 100000, owners: [{creditScore: 720, share: 60, guarantor: false}, {creditScore: 680, share: 40, guarantor: true}], loans: [{monthly: 2000, inArrears: false}],
+        ageYears: 10, score: 704, lowScore: false, debtService: 2000, newPayment: 1666.67, dscr: 5.45, arrears: false, guaranteed: true, exclusions: [], maxEligible: 250000, eligible: true, decision: "approve"}},
+    ],
+    [
+      {maxLoan: 250000, minScore: 650, business: {founded: "2024-01-01", sector: "tech", revenue: 200000, requested: 30000, owners: [{creditScore: 780, share: 100, guarantor: true}], loans: []}},
+      {maxLoan: 250000, minScore: 650, business: {founded: "2024-01-01", sector: "tech", revenue: 200000, requested: 30000, owners: [{creditScore: 780, share: 100, guarantor: true}], loans: [],
+        ageYears: 1, score: 780, lowScore: false, debtService: 0, newPayment: 500, dscr: 6.67, arrears: false, guaranteed: true, exclusions: ["too-young"], maxEligible: 50000, eligible: false, decision: "decline"}},
+    ],
+    // Coverage below 1.25 is rescued by a guarantor holding at least 20%.
+    [
+      {maxLoan: 250000, minScore: 650, business: {founded: "2018-06-01", sector: "retail", revenue: 240000, requested: 60000, owners: [{creditScore: 700, share: 50, guarantor: true}, {creditScore: 660, share: 50, guarantor: false}], loans: [{monthly: 2500, inArrears: false}]}},
+      {maxLoan: 250000, minScore: 650, business: {founded: "2018-06-01", sector: "retail", revenue: 240000, requested: 60000, owners: [{creditScore: 700, share: 50, guarantor: true}, {creditScore: 660, share: 50, guarantor: false}], loans: [{monthly: 2500, inArrears: false}],
+        ageYears: 6, score: 680, lowScore: false, debtService: 2500, newPayment: 1000, dscr: 1.14, arrears: false, guaranteed: true, exclusions: [], maxEligible: 60000, eligible: true, decision: "approve-guaranteed"}},
+    ],
+    [
+      {maxLoan: 250000, minScore: 650, business: {founded: "2018-06-01", sector: "retail", revenue: 240000, requested: 60000, owners: [{creditScore: 700, share: 85, guarantor: false}, {creditScore: 660, share: 15, guarantor: true}], loans: [{monthly: 2500, inArrears: false}]}},
+      {maxLoan: 250000, minScore: 650, business: {founded: "2018-06-01", sector: "retail", revenue: 240000, requested: 60000, owners: [{creditScore: 700, share: 85, guarantor: false}, {creditScore: 660, share: 15, guarantor: true}], loans: [{monthly: 2500, inArrears: false}],
+        ageYears: 6, score: 694, lowScore: false, debtService: 2500, newPayment: 1000, dscr: 1.14, arrears: false, guaranteed: false, exclusions: [], maxEligible: 60000, eligible: false, decision: "counter-offer"}},
+    ],
+    [
+      {maxLoan: 250000, minScore: 650, business: {founded: "2024-06-01", sector: "gambling", revenue: 100000, requested: 10000, owners: [{creditScore: 600, share: 100, guarantor: false}], loans: [{monthly: 500, inArrears: true}]}},
+      {maxLoan: 250000, minScore: 650, business: {founded: "2024-06-01", sector: "gambling", revenue: 100000, requested: 10000, owners: [{creditScore: 600, share: 100, guarantor: false}], loans: [{monthly: 500, inArrears: true}],
+        ageYears: 0, score: 600, lowScore: true, debtService: 500, newPayment: 166.67, dscr: 2.5, arrears: true, guaranteed: false, exclusions: ["too-young", "low-score", "arrears", "excluded-sector"], maxEligible: 25000, eligible: false, decision: "decline"}},
+    ],
+    // Every boundary at once: two years old, a score of exactly 650, coverage of exactly 1.25
+    // and the request equal to the maximum.
+    [
+      {maxLoan: 250000, minScore: 650, business: {founded: "2023-03-20", sector: "retail", revenue: 300000, requested: 75000, owners: [{creditScore: 650, share: 100, guarantor: false}], loans: [{monthly: 2750, inArrears: false}]}},
+      {maxLoan: 250000, minScore: 650, business: {founded: "2023-03-20", sector: "retail", revenue: 300000, requested: 75000, owners: [{creditScore: 650, share: 100, guarantor: false}], loans: [{monthly: 2750, inArrears: false}],
+        ageYears: 2, score: 650, lowScore: false, debtService: 2750, newPayment: 1250, dscr: 1.25, arrears: false, guaranteed: false, exclusions: [], maxEligible: 75000, eligible: true, decision: "approve"}},
+    ],
+    // No owners: the score divides by the floor of 1 and is 0. Nothing requested, nothing owed.
+    [
+      {maxLoan: 250000, minScore: 650, business: {founded: "2010-01-01", sector: "retail", revenue: 100000, requested: 0, owners: [], loans: []}},
+      {maxLoan: 250000, minScore: 650, business: {founded: "2010-01-01", sector: "retail", revenue: 100000, requested: 0, owners: [], loans: [],
+        ageYears: 15, score: 0, lowScore: true, debtService: 0, newPayment: 0, dscr: 99, arrears: false, guaranteed: false, exclusions: ["low-score"], maxEligible: 25000, eligible: false, decision: "decline"}},
+    ],
+    // Above the program maximum; `Gambling` does not match the lower-case sector cell.
+    [
+      {maxLoan: 250000, minScore: 650, business: {founded: "2000-01-01", sector: "Gambling", revenue: 2000000, requested: 300000, owners: [{creditScore: 800, share: 100, guarantor: true}], loans: []}},
+      {maxLoan: 250000, minScore: 650, business: {founded: "2000-01-01", sector: "Gambling", revenue: 2000000, requested: 300000, owners: [{creditScore: 800, share: 100, guarantor: true}], loans: [],
+        ageYears: 25, score: 800, lowScore: false, debtService: 0, newPayment: 5000, dscr: 6.67, arrears: false, guaranteed: true, exclusions: [], maxEligible: 250000, eligible: false, decision: "counter-offer"}},
+    ],
+    {
+      input: {business: {revenue: 120000, requested: 60000, loans: [{monthly: 1000, inArrears: false}]}},
+      goals: ["business.dscr"],
+      output: {business: {revenue: 120000, requested: 60000, loans: [{monthly: 1000, inArrears: false}], debtService: 1000, newPayment: 1000, dscr: 1}},
+    },
+    [{maxLoan: 250000, business: {founded: "2000-01-01", sector: "retail", revenue: 1, requested: 1, owners: [], loans: []}}, "!error: MissingRequiredInputs"],
+    [{maxLoan: 250000, minScore: 650, business: {founded: "2000-01-01", sector: "retail", revenue: 1, requested: 1, owners: [{share: 100, guarantor: false}], loans: []}}, "!error: ExpressionFailed"],
+    [{maxLoan: 250000, minScore: 650, business: {founded: "2000-01-01", sector: "retail", revenue: 1, requested: 1, owners: [], loans: [{monthly: 1}]}}, "!error: ExpressionFailed"],
+    [{maxLoan: 250000, minScore: 650, business: {founded: "2000-01-01", sector: "retail", revenue: "1M", requested: 1, owners: [], loans: []}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// --- Childcare subsidy -------------------------------------------------------------------------
+// The family references one provider; per-child blocks read the root reference, the root
+// income and globals. A per-child rate match puts special needs first, subsidised hours depend
+// on the number of working parents, and the fee is capped by a global hourly cap.
+
+{
+  name: "childcare subsidy with a referenced provider",
+  policy: {
+    globals: {scheme: {incomeCeiling: "number", hourlyCap: "number"}},
+    models: {
+      family: {income: "number", workingParents: "number", provider: "&provider", children: "child[]"},
+      provider: {id: "string", hourlyFee: "number", accredited: "boolean"},
+      child: {dob: "date", hoursPerWeek: "number", specialNeeds: "boolean?"},
+    },
+    blocks: [
+      {expression: "child.age", value: "d().diff(child.dob, 'year')"},
+      {expression: "child.eligible", value: "child.age < 13 and family.provider.accredited"},
+      {match: "child.rate", arms: [
+        ["child.specialNeeds ?? false", "0.95"],
+        ["family.income <= 40000", "0.85"],
+        ["family.income <= 80000", "0.6"],
+        ["family.income <= incomeCeiling", "0.3"],
+        ["", "0"],
+      ]},
+      {expression: "child.subsidisedHours", value: "min([child.hoursPerWeek, family.workingParents >= 2 ? 50 : 24])"},
+      {expression: "child.weekly", value: "child.eligible ? round(child.subsidisedHours * min([family.provider.hourlyFee, hourlyCap]) * child.rate, 2) : 0"},
+      {expression: "family.weeklySubsidy", value: "sum(map(family.children, #.weekly))"},
+      {expression: "family.eligibleChildren", value: "count(family.children, #.eligible)"},
+      {expression: "family.gapFee", value: "round(sum(map(family.children, #.hoursPerWeek)) * family.provider.hourlyFee - family.weeklySubsidy, 2)"},
+      {match: "family.status", arms: [
+        ["family.eligibleChildren == 0", "'no-entitlement'"],
+        ["family.weeklySubsidy == 0", "'income-too-high'"],
+        ["", "'entitled'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {incomeCeiling: 120000, hourlyCap: 12, family: {income: 35000, workingParents: 2, provider: "P1", children: [{dob: "2021-05-01", hoursPerWeek: 40}]}, provider: [{id: "P1", hourlyFee: 10, accredited: true}, {id: "P2", hourlyFee: 15, accredited: true}, {id: "P3", hourlyFee: 8, accredited: false}]},
+      {incomeCeiling: 120000, hourlyCap: 12, family: {income: 35000, workingParents: 2, provider: {id: "P1", hourlyFee: 10, accredited: true}, children: [
+        {dob: "2021-05-01", hoursPerWeek: 40, age: 3, eligible: true, rate: 0.85, subsidisedHours: 40, weekly: 340},
+      ], weeklySubsidy: 340, eligibleChildren: 1, gapFee: 60, status: "entitled"}, provider: [{id: "P1", hourlyFee: 10, accredited: true}, {id: "P2", hourlyFee: 15, accredited: true}, {id: "P3", hourlyFee: 8, accredited: false}]},
+    ],
+    // A provider fee above the cap, one working parent (24 hours), a special-needs child first.
+    [
+      {incomeCeiling: 120000, hourlyCap: 12, family: {income: 60000, workingParents: 1, provider: "P2", children: [
+        {dob: "2020-01-01", hoursPerWeek: 30, specialNeeds: true},
+        {dob: "2012-03-21", hoursPerWeek: 10},
+      ]}, provider: [{id: "P2", hourlyFee: 15, accredited: true}]},
+      {incomeCeiling: 120000, hourlyCap: 12, family: {income: 60000, workingParents: 1, provider: {id: "P2", hourlyFee: 15, accredited: true}, children: [
+        {dob: "2020-01-01", hoursPerWeek: 30, specialNeeds: true, age: 5, eligible: true, rate: 0.95, subsidisedHours: 24, weekly: 273.6},
+        {dob: "2012-03-21", hoursPerWeek: 10, age: 12, eligible: true, rate: 0.6, subsidisedHours: 10, weekly: 72},
+      ], weeklySubsidy: 345.6, eligibleChildren: 2, gapFee: 254.4, status: "entitled"}, provider: [{id: "P2", hourlyFee: 15, accredited: true}]},
+    ],
+    // An unaccredited provider: nobody is eligible.
+    [
+      {incomeCeiling: 120000, hourlyCap: 12, family: {income: 50000, workingParents: 2, provider: "P3", children: [{dob: "2022-01-01", hoursPerWeek: 20}]}, provider: [{id: "P3", hourlyFee: 8, accredited: false}]},
+      {incomeCeiling: 120000, hourlyCap: 12, family: {income: 50000, workingParents: 2, provider: {id: "P3", hourlyFee: 8, accredited: false}, children: [
+        {dob: "2022-01-01", hoursPerWeek: 20, age: 3, eligible: false, rate: 0.6, subsidisedHours: 20, weekly: 0},
+      ], weeklySubsidy: 0, eligibleChildren: 0, gapFee: 160, status: "no-entitlement"}, provider: [{id: "P3", hourlyFee: 8, accredited: false}]},
+    ],
+    // A child turning 13 today is no longer eligible.
+    [
+      {incomeCeiling: 120000, hourlyCap: 12, family: {income: 50000, workingParents: 2, provider: "P1", children: [{dob: "2012-03-20", hoursPerWeek: 15}]}, provider: [{id: "P1", hourlyFee: 10, accredited: true}]},
+      {incomeCeiling: 120000, hourlyCap: 12, family: {income: 50000, workingParents: 2, provider: {id: "P1", hourlyFee: 10, accredited: true}, children: [
+        {dob: "2012-03-20", hoursPerWeek: 15, age: 13, eligible: false, rate: 0.6, subsidisedHours: 15, weekly: 0},
+      ], weeklySubsidy: 0, eligibleChildren: 0, gapFee: 150, status: "no-entitlement"}, provider: [{id: "P1", hourlyFee: 10, accredited: true}]},
+    ],
+    [
+      {incomeCeiling: 120000, hourlyCap: 12, family: {income: 150000, workingParents: 2, provider: "P1", children: [{dob: "2021-01-01", hoursPerWeek: 45}]}, provider: [{id: "P1", hourlyFee: 10, accredited: true}]},
+      {incomeCeiling: 120000, hourlyCap: 12, family: {income: 150000, workingParents: 2, provider: {id: "P1", hourlyFee: 10, accredited: true}, children: [
+        {dob: "2021-01-01", hoursPerWeek: 45, age: 4, eligible: true, rate: 0, subsidisedHours: 45, weekly: 0},
+      ], weeklySubsidy: 0, eligibleChildren: 1, gapFee: 450, status: "income-too-high"}, provider: [{id: "P1", hourlyFee: 10, accredited: true}]},
+    ],
+    // Income bands are inclusive at the ceiling; hours above 50 are not subsidised.
+    [
+      {incomeCeiling: 120000, hourlyCap: 12, family: {income: 120000, workingParents: 2, provider: "P2", children: [{dob: "2019-06-01", hoursPerWeek: 55}]}, provider: [{id: "P2", hourlyFee: 15, accredited: true}]},
+      {incomeCeiling: 120000, hourlyCap: 12, family: {income: 120000, workingParents: 2, provider: {id: "P2", hourlyFee: 15, accredited: true}, children: [
+        {dob: "2019-06-01", hoursPerWeek: 55, age: 5, eligible: true, rate: 0.3, subsidisedHours: 50, weekly: 180},
+      ], weeklySubsidy: 180, eligibleChildren: 1, gapFee: 645, status: "entitled"}, provider: [{id: "P2", hourlyFee: 15, accredited: true}]},
+    ],
+    [
+      {incomeCeiling: 120000, hourlyCap: 12, family: {income: 200000, workingParents: 1, provider: "P1", children: [{dob: "2023-01-01", hoursPerWeek: 10, specialNeeds: true}]}, provider: [{id: "P1", hourlyFee: 10, accredited: true}]},
+      {incomeCeiling: 120000, hourlyCap: 12, family: {income: 200000, workingParents: 1, provider: {id: "P1", hourlyFee: 10, accredited: true}, children: [
+        {dob: "2023-01-01", hoursPerWeek: 10, specialNeeds: true, age: 2, eligible: true, rate: 0.95, subsidisedHours: 10, weekly: 95},
+      ], weeklySubsidy: 95, eligibleChildren: 1, gapFee: 5, status: "entitled"}, provider: [{id: "P1", hourlyFee: 10, accredited: true}]},
+    ],
+    [
+      {incomeCeiling: 120000, hourlyCap: 12, family: {income: 40000, workingParents: 1, provider: "P2", children: [{dob: "2018-01-01", hoursPerWeek: 24, specialNeeds: null}]}, provider: [{id: "P2", hourlyFee: 15, accredited: true}]},
+      {incomeCeiling: 120000, hourlyCap: 12, family: {income: 40000, workingParents: 1, provider: {id: "P2", hourlyFee: 15, accredited: true}, children: [
+        {dob: "2018-01-01", hoursPerWeek: 24, specialNeeds: null, age: 7, eligible: true, rate: 0.85, subsidisedHours: 24, weekly: 244.8},
+      ], weeklySubsidy: 244.8, eligibleChildren: 1, gapFee: 115.2, status: "entitled"}, provider: [{id: "P2", hourlyFee: 15, accredited: true}]},
+    ],
+    [
+      {incomeCeiling: 120000, hourlyCap: 12, family: {income: 10000, workingParents: 0, provider: "P1", children: []}, provider: [{id: "P1", hourlyFee: 10, accredited: true}]},
+      {incomeCeiling: 120000, hourlyCap: 12, family: {income: 10000, workingParents: 0, provider: {id: "P1", hourlyFee: 10, accredited: true}, children: [], weeklySubsidy: 0, eligibleChildren: 0, gapFee: 0, status: "no-entitlement"}, provider: [{id: "P1", hourlyFee: 10, accredited: true}]},
+    ],
+    {
+      input: {family: {provider: "P3", children: [{dob: "2020-01-01"}, {dob: "2010-01-01"}]}, provider: [{id: "P3", hourlyFee: 8, accredited: true}]},
+      goals: ["family.eligibleChildren"],
+      output: {family: {provider: {id: "P3", hourlyFee: 8, accredited: true}, children: [{dob: "2020-01-01", age: 5, eligible: true}, {dob: "2010-01-01", age: 15, eligible: false}], eligibleChildren: 1}, provider: [{id: "P3", hourlyFee: 8, accredited: true}]},
+    },
+    [{incomeCeiling: 120000, hourlyCap: 12, family: {income: 1, workingParents: 1, provider: "P9", children: []}, provider: [{id: "P1", hourlyFee: 10, accredited: true}]}, "!error: InputValidationFailed"],
+    [{incomeCeiling: 120000, family: {income: 1, workingParents: 1, provider: "P1", children: []}, provider: [{id: "P1", hourlyFee: 10, accredited: true}]}, "!error: MissingRequiredInputs"],
+    [{incomeCeiling: 120000, hourlyCap: 12, family: {income: 1, workingParents: 1, provider: "P1", children: [{dob: "2020-01-01"}]}, provider: [{id: "P1", hourlyFee: 10, accredited: true}]}, "!error: ExpressionFailed"],
+    [{incomeCeiling: 120000, hourlyCap: 12, family: {income: 1, workingParents: 1, provider: "P1", children: []}, provider: [{id: "P1", hourlyFee: 10, accredited: "yes"}]}, "!error: InputValidationFailed"],
+  ],
+}
+
+// --- Residency and identity documents ----------------------------------------------------------
+// Dictionary-typed document kinds and issuing countries; per-document currency and usability;
+// lawful residence as the grouped assertion `nordic or (permit and resident one year)`; a
+// first-hit `[]` table collecting outstanding items and a verification match.
+
+{
+  name: "residency and identity document checks",
+  policy: {
+    dictionaries: {
+      docKind: [["PASS", "Passport"], ["NID", "National id card"], ["RP", "Residence permit"], ["BANK", "Bank statement"], ["UTIL", "Utility bill"]],
+      country: ["NO", "SE", "DK", "PL", "UA"],
+    },
+    models: {
+      applicant: {citizenship: "country", residentSince: "date", documents: "doc[]"},
+      doc: {kind: "docKind", expires: "date?", issuedBy: "country", verified: "boolean"},
+    },
+    blocks: [
+      {expression: "doc.current", value: "(doc.expires ?? d('9999-12-31')) > d()"},
+      {expression: "doc.usable", value: "doc.verified and doc.current"},
+      {expression: "applicant.nordic", value: "applicant.citizenship in ['NO', 'SE', 'DK']"},
+      {expression: "applicant.residenceYears", value: "d().diff(applicant.residentSince, 'year')"},
+      {expression: "applicant.hasIdentity", value: "some(applicant.documents, #.usable and #.kind in ['PASS', 'NID'])"},
+      {expression: "applicant.hasPermit", value: "some(applicant.documents, #.usable and #.kind == 'RP')"},
+      {expression: "applicant.hasAddressProof", value: "some(applicant.documents, #.usable and #.kind in ['BANK', 'UTIL'])"},
+      {assertion: "applicant.lawfulResidence", conditions: [
+        ["or", "applicant.nordic", 0],
+        ["and", "applicant.hasPermit", 1],
+        ["and", "applicant.residenceYears >= 1", 1],
+      ]},
+      {table: "outstanding", inputs: ["applicant.hasIdentity", "applicant.lawfulResidence", "applicant.hasAddressProof"], outputs: ["applicant.outstanding[]"], rules: [
+        ["false", "", "", "'identity'"],
+        ["", "false", "", "'residence'"],
+        ["", "", "false", "'address'"],
+      ]},
+      {match: "applicant.verification", arms: [
+        ["len(applicant.outstanding) == 0", "'verified'"],
+        ["'identity' in applicant.outstanding", "'blocked'"],
+        ["", "'partial'"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {applicant: {citizenship: "NO", residentSince: "2000-01-01", documents: [{kind: "PASS", expires: "2030-01-01", issuedBy: "NO", verified: true}, {kind: "UTIL", expires: null, issuedBy: "NO", verified: true}]}},
+      {applicant: {citizenship: "NO", residentSince: "2000-01-01", documents: [
+        {kind: "PASS", expires: "2030-01-01", issuedBy: "NO", verified: true, current: true, usable: true},
+        {kind: "UTIL", expires: null, issuedBy: "NO", verified: true, current: true, usable: true},
+      ], nordic: true, residenceYears: 25, hasIdentity: true, hasPermit: false, hasAddressProof: true, lawfulResidence: true, outstanding: [], verification: "verified"}},
+    ],
+    [
+      {applicant: {citizenship: "PL", residentSince: "2023-01-01", documents: [
+        {kind: "PASS", expires: "2028-01-01", issuedBy: "PL", verified: true},
+        {kind: "RP", expires: "2026-01-01", issuedBy: "NO", verified: true},
+        {kind: "BANK", issuedBy: "NO", verified: true},
+      ]}},
+      {applicant: {citizenship: "PL", residentSince: "2023-01-01", documents: [
+        {kind: "PASS", expires: "2028-01-01", issuedBy: "PL", verified: true, current: true, usable: true},
+        {kind: "RP", expires: "2026-01-01", issuedBy: "NO", verified: true, current: true, usable: true},
+        {kind: "BANK", issuedBy: "NO", verified: true, current: true, usable: true},
+      ], nordic: false, residenceYears: 2, hasIdentity: true, hasPermit: true, hasAddressProof: true, lawfulResidence: true, outstanding: [], verification: "verified"}},
+    ],
+    // A permit but under a year of residence.
+    [
+      {applicant: {citizenship: "UA", residentSince: "2024-06-01", documents: [
+        {kind: "PASS", expires: "2027-01-01", issuedBy: "UA", verified: true},
+        {kind: "RP", expires: "2026-01-01", issuedBy: "NO", verified: true},
+      ]}},
+      {applicant: {citizenship: "UA", residentSince: "2024-06-01", documents: [
+        {kind: "PASS", expires: "2027-01-01", issuedBy: "UA", verified: true, current: true, usable: true},
+        {kind: "RP", expires: "2026-01-01", issuedBy: "NO", verified: true, current: true, usable: true},
+      ], nordic: false, residenceYears: 0, hasIdentity: true, hasPermit: true, hasAddressProof: false, lawfulResidence: false, outstanding: ["residence", "address"], verification: "partial"}},
+    ],
+    // An id card expiring today (midnight) is no longer current; an unverified statement is unusable.
+    [
+      {applicant: {citizenship: "SE", residentSince: "2010-01-01", documents: [
+        {kind: "NID", expires: "2025-03-20", issuedBy: "SE", verified: true},
+        {kind: "BANK", issuedBy: "SE", verified: false},
+      ]}},
+      {applicant: {citizenship: "SE", residentSince: "2010-01-01", documents: [
+        {kind: "NID", expires: "2025-03-20", issuedBy: "SE", verified: true, current: false, usable: false},
+        {kind: "BANK", issuedBy: "SE", verified: false, current: true, usable: false},
+      ], nordic: true, residenceYears: 15, hasIdentity: false, hasPermit: false, hasAddressProof: false, lawfulResidence: true, outstanding: ["identity", "address"], verification: "blocked"}},
+    ],
+    [
+      {applicant: {citizenship: "UA", residentSince: "2020-01-01", documents: [
+        {kind: "PASS", expires: "2030-01-01", issuedBy: "UA", verified: true},
+        {kind: "RP", expires: "2025-01-01", issuedBy: "NO", verified: true},
+        {kind: "UTIL", issuedBy: "NO", verified: true},
+      ]}},
+      {applicant: {citizenship: "UA", residentSince: "2020-01-01", documents: [
+        {kind: "PASS", expires: "2030-01-01", issuedBy: "UA", verified: true, current: true, usable: true},
+        {kind: "RP", expires: "2025-01-01", issuedBy: "NO", verified: true, current: false, usable: false},
+        {kind: "UTIL", issuedBy: "NO", verified: true, current: true, usable: true},
+      ], nordic: false, residenceYears: 5, hasIdentity: true, hasPermit: false, hasAddressProof: true, lawfulResidence: false, outstanding: ["residence"], verification: "partial"}},
+    ],
+    [
+      {applicant: {citizenship: "DK", residentSince: "2025-01-01", documents: []}},
+      {applicant: {citizenship: "DK", residentSince: "2025-01-01", documents: [], nordic: true, residenceYears: 0, hasIdentity: false, hasPermit: false, hasAddressProof: false, lawfulResidence: true, outstanding: ["identity", "address"], verification: "blocked"}},
+    ],
+    // Exactly one year of residence with a permit.
+    [
+      {applicant: {citizenship: "PL", residentSince: "2024-03-20", documents: [
+        {kind: "NID", expires: "2029-01-01", issuedBy: "PL", verified: true},
+        {kind: "RP", expires: "2026-01-01", issuedBy: "NO", verified: true},
+        {kind: "BANK", issuedBy: "NO", verified: true},
+      ]}},
+      {applicant: {citizenship: "PL", residentSince: "2024-03-20", documents: [
+        {kind: "NID", expires: "2029-01-01", issuedBy: "PL", verified: true, current: true, usable: true},
+        {kind: "RP", expires: "2026-01-01", issuedBy: "NO", verified: true, current: true, usable: true},
+        {kind: "BANK", issuedBy: "NO", verified: true, current: true, usable: true},
+      ], nordic: false, residenceYears: 1, hasIdentity: true, hasPermit: true, hasAddressProof: true, lawfulResidence: true, outstanding: [], verification: "verified"}},
+    ],
+    {
+      input: {applicant: {documents: [{kind: "PASS", expires: "2030-01-01", issuedBy: "NO", verified: true}, {kind: "NID", expires: "2020-01-01", issuedBy: "NO", verified: true}]}},
+      goals: ["applicant.hasIdentity"],
+      output: {applicant: {documents: [
+        {kind: "PASS", expires: "2030-01-01", issuedBy: "NO", verified: true, current: true, usable: true},
+        {kind: "NID", expires: "2020-01-01", issuedBy: "NO", verified: true, current: false, usable: false},
+      ], hasIdentity: true}},
+    },
+    // A document without `verified` reads null; `null and ...` is an error.
+    [{applicant: {citizenship: "NO", residentSince: "2000-01-01", documents: [{kind: "PASS", issuedBy: "NO"}]}}, "!error: ExpressionFailed"],
+    [{applicant: {citizenship: "NO", residentSince: "2000-01-01", documents: [{kind: "DL", issuedBy: "NO", verified: true}]}}, "!error: InputValidationFailed"],
+    [{applicant: {citizenship: "Norway", residentSince: "2000-01-01", documents: []}}, "!error: InputValidationFailed"],
+    [{applicant: {citizenship: "NO", residentSince: "2000-01-01", documents: [{kind: "PASS", issuedBy: "DE", verified: true}]}}, "!error: InputValidationFailed"],
+    [{applicant: {citizenship: "NO", documents: []}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// --- Old-age supplement ------------------------------------------------------------------------
+// The supplement tops up pensions to a residence-prorated full amount (married rate 85%), half
+// of a partner's income counts, and a three-condition assertion gates the payment, chosen by a
+// match whose arm value is an expression.
+
+{
+  name: "old-age supplement with pensions and globals",
+  policy: {
+    globals: {supplement: {fullAmount: "number", minAge: "number"}},
+    models: {
+      person: {dob: "date", residenceYears: "number", married: "boolean", partnerIncome: "number?", pensions: "pension[]"},
+      pension: {kind: "string(state|occupational|private)", monthly: "number"},
+    },
+    blocks: [
+      {expression: "person.age", value: "d().diff(person.dob, 'year')"},
+      {expression: "person.ownIncome", value: "sum(map(person.pensions, #.monthly))"},
+      {expression: "person.residenceRatio", value: "min([person.residenceYears / 40, 1])"},
+      {expression: "person.maxSupplement", value: "round(fullAmount * person.residenceRatio * (person.married ? 0.85 : 1), 2)"},
+      {expression: "person.countedIncome", value: "person.ownIncome + (person.married ? (person.partnerIncome ?? 0) * 0.5 : 0)"},
+      {expression: "person.supplement", value: "max([round(person.maxSupplement - person.countedIncome, 2), 0])"},
+      {assertion: "person.qualifies", conditions: ["person.age >= minAge", "person.residenceYears >= 10", "person.supplement > 0"]},
+      {match: "person.payment", arms: [
+        ["person.qualifies", "person.supplement"],
+        ["", "0"],
+      ]},
+    ],
+  },
+  cases: [
+    [
+      {fullAmount: 2000, minAge: 67, person: {dob: "1950-01-01", residenceYears: 40, married: false, pensions: [{kind: "state", monthly: 800}]}},
+      {fullAmount: 2000, minAge: 67, person: {dob: "1950-01-01", residenceYears: 40, married: false, pensions: [{kind: "state", monthly: 800}], age: 75, ownIncome: 800, residenceRatio: 1, maxSupplement: 2000, countedIncome: 800, supplement: 1200, qualifies: true, payment: 1200}},
+    ],
+    [
+      {fullAmount: 2000, minAge: 67, person: {dob: "1955-05-01", residenceYears: 20, married: true, partnerIncome: 1000, pensions: [{kind: "state", monthly: 300}, {kind: "private", monthly: 100}]}},
+      {fullAmount: 2000, minAge: 67, person: {dob: "1955-05-01", residenceYears: 20, married: true, partnerIncome: 1000, pensions: [{kind: "state", monthly: 300}, {kind: "private", monthly: 100}], age: 69, ownIncome: 400, residenceRatio: 0.5, maxSupplement: 850, countedIncome: 900, supplement: 0, qualifies: false, payment: 0}},
+    ],
+    // Exactly the minimum age and ten years of residence.
+    [
+      {fullAmount: 2000, minAge: 67, person: {dob: "1958-03-20", residenceYears: 10, married: false, pensions: []}},
+      {fullAmount: 2000, minAge: 67, person: {dob: "1958-03-20", residenceYears: 10, married: false, pensions: [], age: 67, ownIncome: 0, residenceRatio: 0.25, maxSupplement: 500, countedIncome: 0, supplement: 500, qualifies: true, payment: 500}},
+    ],
+    [
+      {fullAmount: 2000, minAge: 67, person: {dob: "1958-03-21", residenceYears: 50, married: false, pensions: [{kind: "occupational", monthly: 1500}]}},
+      {fullAmount: 2000, minAge: 67, person: {dob: "1958-03-21", residenceYears: 50, married: false, pensions: [{kind: "occupational", monthly: 1500}], age: 66, ownIncome: 1500, residenceRatio: 1, maxSupplement: 2000, countedIncome: 1500, supplement: 500, qualifies: false, payment: 0}},
+    ],
+    [
+      {fullAmount: 2000, minAge: 67, person: {dob: "1940-01-01", residenceYears: 9, married: false, pensions: [{kind: "state", monthly: 100}]}},
+      {fullAmount: 2000, minAge: 67, person: {dob: "1940-01-01", residenceYears: 9, married: false, pensions: [{kind: "state", monthly: 100}], age: 85, ownIncome: 100, residenceRatio: 0.225, maxSupplement: 450, countedIncome: 100, supplement: 350, qualifies: false, payment: 0}},
+    ],
+    // A null partner income counts as zero; a supplement of one cent still qualifies.
+    [
+      {fullAmount: 2000, minAge: 67, person: {dob: "1950-01-01", residenceYears: 32, married: true, partnerIncome: null, pensions: [{kind: "state", monthly: 1000}, {kind: "occupational", monthly: 359.99}]}},
+      {fullAmount: 2000, minAge: 67, person: {dob: "1950-01-01", residenceYears: 32, married: true, partnerIncome: null, pensions: [{kind: "state", monthly: 1000}, {kind: "occupational", monthly: 359.99}], age: 75, ownIncome: 1359.99, residenceRatio: 0.8, maxSupplement: 1360, countedIncome: 1359.99, supplement: 0.01, qualifies: true, payment: 0.01}},
+    ],
+    // A partner's income is ignored for a single person.
+    [
+      {fullAmount: 1800, minAge: 65, person: {dob: "1959-01-01", residenceYears: 45, married: false, partnerIncome: 5000, pensions: [{kind: "state", monthly: 900}]}},
+      {fullAmount: 1800, minAge: 65, person: {dob: "1959-01-01", residenceYears: 45, married: false, partnerIncome: 5000, pensions: [{kind: "state", monthly: 900}], age: 66, ownIncome: 900, residenceRatio: 1, maxSupplement: 1800, countedIncome: 900, supplement: 900, qualifies: true, payment: 900}},
+    ],
+    {
+      input: {fullAmount: 2000, person: {residenceYears: 44, married: true}},
+      goals: ["person.maxSupplement"],
+      output: {fullAmount: 2000, person: {residenceYears: 44, married: true, residenceRatio: 1, maxSupplement: 1700}},
+    },
+    [{fullAmount: 2000, minAge: 67, person: {dob: "1950-01-01", residenceYears: 40, married: false, pensions: [{kind: "annuity", monthly: 1}]}}, "!error: InputValidationFailed"],
+    [{fullAmount: 2000, minAge: 67, person: {dob: "1950-01-01", residenceYears: 40, pensions: []}}, "!error: MissingRequiredInputs"],
+    [{minAge: 67, person: {dob: "1950-01-01", residenceYears: 40, married: false, pensions: []}}, "!error: MissingRequiredInputs"],
+    [{fullAmount: 2000, minAge: 67, person: {dob: "1950-01-01", residenceYears: 40, married: true, partnerIncome: "none", pensions: []}}, "!error: InputValidationFailed"],
+  ],
+}

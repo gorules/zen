@@ -1,0 +1,904 @@
+// Aggregates over relationship members. Chapter 09 covers the basic sum/count/map/filter over
+// member fields and computed member properties; this chapter goes through every aggregate on
+// members, on computed member properties, on aggregates of aggregates, on empty collections and
+// on collections holding nulls. The aggregate functions themselves are specified by the
+// expression suite (06-aggregates); here the point is the engine: per-member blocks finish before
+// any aggregate over them runs, empty and absent relationships, and how a failing aggregate
+// fails the evaluation.
+
+// ---------------------------------------------------------------------------
+// Every numeric aggregate over a raw member field.
+// ---------------------------------------------------------------------------
+{
+  name: "numeric aggregates over a member field",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "customer.sum", value: "sum(map(customer.companies, #.revenue))"},
+      {expression: "customer.avg", value: "avg(map(customer.companies, #.revenue))"},
+      {expression: "customer.min", value: "min(map(customer.companies, #.revenue))"},
+      {expression: "customer.max", value: "max(map(customer.companies, #.revenue))"},
+      {expression: "customer.median", value: "median(map(customer.companies, #.revenue))"},
+      {expression: "customer.count", value: "len(customer.companies)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 4}, {revenue: 1}, {revenue: 10}]}},
+      {customer: {companies: [{revenue: 4}, {revenue: 1}, {revenue: 10}], sum: 15, avg: 5, min: 1, max: 10, median: 4, count: 3}},
+    ],
+    [
+      {customer: {companies: [{revenue: 2}, {revenue: 3}]}},
+      {customer: {companies: [{revenue: 2}, {revenue: 3}], sum: 5, avg: 2.5, min: 2, max: 3, median: 2.5, count: 2}},
+    ],
+    [
+      {customer: {companies: [{revenue: -1.5}]}},
+      {customer: {companies: [{revenue: -1.5}], sum: -1.5, avg: -1.5, min: -1.5, max: -1.5, median: -1.5, count: 1}},
+    ],
+    [
+      {customer: {companies: [{revenue: 0.1}, {revenue: 0.2}, {revenue: 0.3}]}},
+      {customer: {companies: [{revenue: 0.1}, {revenue: 0.2}, {revenue: 0.3}], sum: 0.6, avg: 0.2, min: 0.1, max: 0.3, median: 0.2, count: 3}},
+    ],
+    [
+      {customer: {companies: [{revenue: 7}, {revenue: 7}, {revenue: 7}, {revenue: 7}]}},
+      {customer: {companies: [{revenue: 7}, {revenue: 7}, {revenue: 7}, {revenue: 7}], sum: 28, avg: 7, min: 7, max: 7, median: 7, count: 4}},
+    ],
+  ],
+}
+
+// Aggregates with a neutral element on an empty relationship.
+{
+  name: "empty relationship: aggregates with a neutral element",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number", active: "boolean"}},
+    blocks: [
+      {expression: "customer.sum", value: "sum(map(customer.companies, #.revenue))"},
+      {expression: "customer.count", value: "count(customer.companies, #.active)"},
+      {expression: "customer.len", value: "len(customer.companies)"},
+      {expression: "customer.some", value: "some(customer.companies, #.active)"},
+      {expression: "customer.all", value: "all(customer.companies, #.active)"},
+      {expression: "customer.none", value: "none(customer.companies, #.active)"},
+      {expression: "customer.one", value: "one(customer.companies, #.active)"},
+      {expression: "customer.filtered", value: "filter(customer.companies, #.active)"},
+      {expression: "customer.mapped", value: "map(customer.companies, #.revenue)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: []}},
+      {customer: {companies: [], sum: 0, count: 0, len: 0, some: false, all: true, none: true, one: false, filtered: [], mapped: []}},
+    ],
+    [
+      {customer: {companies: [{revenue: 1, active: true}]}},
+      {customer: {companies: [{revenue: 1, active: true}], sum: 1, count: 1, len: 1, some: true, all: true, none: false, one: true, filtered: [{revenue: 1, active: true}], mapped: [1]}},
+    ],
+    [
+      {customer: {companies: [{revenue: 1, active: true}, {revenue: 2, active: true}]}},
+      {customer: {companies: [{revenue: 1, active: true}, {revenue: 2, active: true}], sum: 3, count: 2, len: 2, some: true, all: true, none: false, one: false, filtered: [{revenue: 1, active: true}, {revenue: 2, active: true}], mapped: [1, 2]}},
+    ],
+    [
+      {customer: {companies: [{revenue: 1, active: false}, {revenue: 2, active: true}]}},
+      {customer: {companies: [{revenue: 1, active: false}, {revenue: 2, active: true}], sum: 3, count: 1, len: 2, some: true, all: false, none: false, one: true, filtered: [{revenue: 2, active: true}], mapped: [1, 2]}},
+    ],
+    [
+      {customer: {companies: [{revenue: 1, active: false}]}},
+      {customer: {companies: [{revenue: 1, active: false}], sum: 1, count: 0, len: 1, some: false, all: false, none: true, one: false, filtered: [], mapped: [1]}},
+    ],
+  ],
+}
+
+// Aggregates without a neutral element fail the evaluation on an empty relationship.
+{
+  name: "empty relationship: avg fails the evaluation",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [{expression: "customer.avg", value: "avg(map(customer.companies, #.revenue))"}],
+  },
+  cases: [
+    [{customer: {companies: [{revenue: 3}, {revenue: 5}]}}, {customer: {companies: [{revenue: 3}, {revenue: 5}], avg: 4}}],
+    [{customer: {companies: []}}, "!error: ExpressionFailed"],
+  ],
+}
+
+{
+  name: "empty relationship: min and max fail the evaluation",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "customer.min", value: "min(map(customer.companies, #.revenue))"},
+      {expression: "customer.max", value: "max(map(customer.companies, #.revenue))"},
+    ],
+  },
+  cases: [
+    [{customer: {companies: [{revenue: 3}]}}, {customer: {companies: [{revenue: 3}], min: 3, max: 3}}],
+    [{customer: {companies: []}}, "!error: ExpressionFailed"],
+  ],
+}
+
+// Guarding the empty case keeps the evaluation alive.
+{
+  name: "guarded aggregates on an empty relationship",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "customer.avg", value: "len(customer.companies) > 0 ? avg(map(customer.companies, #.revenue)) : null"},
+      {expression: "customer.max", value: "len(customer.companies) == 0 ? 0 : max(map(customer.companies, #.revenue))"},
+      {expression: "customer.mean", value: "len(customer.companies) == 0 ? 0 : sum(map(customer.companies, #.revenue)) / len(customer.companies)"},
+    ],
+  },
+  cases: [
+    [{customer: {companies: []}}, {customer: {companies: [], avg: null, max: 0, mean: 0}}],
+    [{customer: {companies: [{revenue: 1}, {revenue: 2}]}}, {customer: {companies: [{revenue: 1}, {revenue: 2}], avg: 1.5, max: 2, mean: 1.5}}],
+    [{customer: {companies: [{revenue: -4}]}}, {customer: {companies: [{revenue: -4}], avg: -4, max: -4, mean: -4}}],
+  ],
+}
+
+// A failing aggregate fails the whole evaluation, even when other blocks succeeded.
+{
+  name: "a failing aggregate fails the whole evaluation",
+  policy: {
+    models: {customer: {name: "string", companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "customer.label", value: "customer.name + '!'"},
+      {expression: "customer.top", value: "max(map(customer.companies, #.revenue))"},
+    ],
+  },
+  cases: [
+    [{customer: {name: "a", companies: [{revenue: 2}]}}, {customer: {name: "a", companies: [{revenue: 2}], label: "a!", top: 2}}],
+    [{customer: {name: "a", companies: []}}, "!error: ExpressionFailed"],
+  ],
+}
+
+// Goals that do not need the failing aggregate succeed.
+{
+  name: "goals avoid a failing aggregate",
+  policy: {
+    models: {customer: {name: "string", companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "customer.label", value: "customer.name + '!'"},
+      {expression: "customer.top", value: "max(map(customer.companies, #.revenue))"},
+    ],
+  },
+  cases: [
+    {input: {customer: {name: "a", companies: []}}, goals: ["customer.label"], output: {customer: {name: "a", companies: [], label: "a!"}}},
+    {input: {customer: {name: "a", companies: []}}, goals: ["customer.top"], output: "!error: ExpressionFailed"},
+    {input: {customer: {name: "b", companies: [{revenue: 9}]}}, goals: ["customer.top"], output: {customer: {name: "b", companies: [{revenue: 9}], top: 9}}},
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Boolean aggregates over members: some / all / none / one / count with predicates on fields.
+// ---------------------------------------------------------------------------
+{
+  name: "boolean aggregates with field predicates",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number", country: "string"}},
+    blocks: [
+      {expression: "customer.anyForeign", value: "some(customer.companies, #.country != 'US')"},
+      {expression: "customer.allProfitable", value: "all(customer.companies, #.revenue > 0)"},
+      {expression: "customer.noneHuge", value: "none(customer.companies, #.revenue > 1000)"},
+      {expression: "customer.oneDomestic", value: "one(customer.companies, #.country == 'US')"},
+      {expression: "customer.domestic", value: "count(customer.companies, #.country == 'US')"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 1, country: "US"}, {revenue: 5, country: "DE"}]}},
+      {customer: {companies: [{revenue: 1, country: "US"}, {revenue: 5, country: "DE"}], anyForeign: true, allProfitable: true, noneHuge: true, oneDomestic: true, domestic: 1}},
+    ],
+    [
+      {customer: {companies: [{revenue: 1, country: "US"}, {revenue: 0, country: "US"}]}},
+      {customer: {companies: [{revenue: 1, country: "US"}, {revenue: 0, country: "US"}], anyForeign: false, allProfitable: false, noneHuge: true, oneDomestic: false, domestic: 2}},
+    ],
+    [
+      {customer: {companies: [{revenue: 2000, country: "FR"}]}},
+      {customer: {companies: [{revenue: 2000, country: "FR"}], anyForeign: true, allProfitable: true, noneHuge: false, oneDomestic: false, domestic: 0}},
+    ],
+    [
+      {customer: {companies: []}},
+      {customer: {companies: [], anyForeign: false, allProfitable: true, noneHuge: true, oneDomestic: false, domestic: 0}},
+    ],
+  ],
+}
+
+// Predicates reading the parent entity inside the closure.
+{
+  name: "aggregate predicates read the parent",
+  policy: {
+    models: {customer: {threshold: "number", companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "customer.above", value: "count(customer.companies, #.revenue > customer.threshold)"},
+      {expression: "customer.allAbove", value: "all(customer.companies, #.revenue > customer.threshold)"},
+      {expression: "customer.aboveSum", value: "sum(map(filter(customer.companies, #.revenue > customer.threshold), #.revenue - customer.threshold))"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {threshold: 10, companies: [{revenue: 5}, {revenue: 15}, {revenue: 30}]}},
+      {customer: {threshold: 10, companies: [{revenue: 5}, {revenue: 15}, {revenue: 30}], above: 2, allAbove: false, aboveSum: 25}},
+    ],
+    [
+      {customer: {threshold: 0, companies: [{revenue: 1}, {revenue: 2}]}},
+      {customer: {threshold: 0, companies: [{revenue: 1}, {revenue: 2}], above: 2, allAbove: true, aboveSum: 3}},
+    ],
+    [
+      {customer: {threshold: 100, companies: []}},
+      {customer: {threshold: 100, companies: [], above: 0, allAbove: true, aboveSum: 0}},
+    ],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Aggregates over computed member properties of every block kind.
+// ---------------------------------------------------------------------------
+{
+  name: "aggregates over expression-computed member properties",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number", cost: "number"}},
+    blocks: [
+      {expression: "company.profit", value: "company.revenue - company.cost"},
+      {expression: "customer.totalProfit", value: "sum(map(customer.companies, #.profit))"},
+      {expression: "customer.worst", value: "min(map(customer.companies, #.profit))"},
+      {expression: "customer.best", value: "max(map(customer.companies, #.profit))"},
+      {expression: "customer.losers", value: "count(customer.companies, #.profit < 0)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 10, cost: 4}, {revenue: 3, cost: 5}, {revenue: 8, cost: 8}]}},
+      {customer: {companies: [{revenue: 10, cost: 4, profit: 6}, {revenue: 3, cost: 5, profit: -2}, {revenue: 8, cost: 8, profit: 0}], totalProfit: 4, worst: -2, best: 6, losers: 1}},
+    ],
+    [
+      {customer: {companies: [{revenue: 0.3, cost: 0.1}]}},
+      {customer: {companies: [{revenue: 0.3, cost: 0.1, profit: 0.2}], totalProfit: 0.2, worst: 0.2, best: 0.2, losers: 0}},
+    ],
+  ],
+}
+
+{
+  name: "aggregates over match-computed member properties",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {match: "company.tier", arms: [
+        ["company.revenue >= 100", "'gold'"],
+        ["company.revenue >= 10", "'silver'"],
+        ["", "'bronze'"],
+      ]},
+      {match: "company.weight", arms: [
+        ["company.tier == 'gold'", "3"],
+        ["company.tier == 'silver'", "2"],
+        ["", "1"],
+      ]},
+      {expression: "customer.weight", value: "sum(map(customer.companies, #.weight))"},
+      {expression: "customer.golds", value: "count(customer.companies, #.tier == 'gold')"},
+      {expression: "customer.tiers", value: "map(customer.companies, #.tier)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 500}, {revenue: 50}, {revenue: 5}]}},
+      {customer: {companies: [
+        {revenue: 500, tier: "gold", weight: 3},
+        {revenue: 50, tier: "silver", weight: 2},
+        {revenue: 5, tier: "bronze", weight: 1},
+      ], weight: 6, golds: 1, tiers: ["gold", "silver", "bronze"]}},
+    ],
+    [
+      {customer: {companies: [{revenue: 100}, {revenue: 100}]}},
+      {customer: {companies: [{revenue: 100, tier: "gold", weight: 3}, {revenue: 100, tier: "gold", weight: 3}], weight: 6, golds: 2, tiers: ["gold", "gold"]}},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: [], weight: 0, golds: 0, tiers: []}}],
+  ],
+}
+
+{
+  name: "aggregates over table-computed member properties",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number", country: "string"}},
+    blocks: [
+      {table: "rate", inputs: ["company.country", "company.revenue"], outputs: ["company.rate"], rules: [
+        ["'US'", "> 100", "0.1"],
+        ["'US'", "", "0.2"],
+        ["", "", "0.3"],
+      ]},
+      {expression: "company.tax", value: "company.revenue * company.rate"},
+      {expression: "customer.tax", value: "sum(map(customer.companies, #.tax))"},
+      {expression: "customer.maxRate", value: "max(map(customer.companies, #.rate))"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 200, country: "US"}, {revenue: 50, country: "US"}, {revenue: 10, country: "DE"}]}},
+      {customer: {companies: [
+        {revenue: 200, country: "US", rate: 0.1, tax: 20},
+        {revenue: 50, country: "US", rate: 0.2, tax: 10},
+        {revenue: 10, country: "DE", rate: 0.3, tax: 3},
+      ], tax: 33, maxRate: 0.3}},
+    ],
+    [
+      {customer: {companies: [{revenue: 1000, country: "US"}]}},
+      {customer: {companies: [{revenue: 1000, country: "US", rate: 0.1, tax: 100}], tax: 100, maxRate: 0.1}},
+    ],
+  ],
+}
+
+{
+  name: "aggregates over assertion-computed member properties",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number", audited: "boolean"}},
+    blocks: [
+      {assertion: "company.eligible", conditions: ["company.revenue > 10", "company.audited"]},
+      {expression: "customer.eligible", value: "count(customer.companies, #.eligible)"},
+      {expression: "customer.allEligible", value: "all(customer.companies, #.eligible)"},
+      {expression: "customer.eligibleRevenue", value: "sum(map(filter(customer.companies, #.eligible), #.revenue))"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 20, audited: true}, {revenue: 20, audited: false}, {revenue: 5, audited: true}]}},
+      {customer: {companies: [
+        {revenue: 20, audited: true, eligible: true},
+        {revenue: 20, audited: false, eligible: false},
+        {revenue: 5, audited: true, eligible: false},
+      ], eligible: 1, allEligible: false, eligibleRevenue: 20}},
+    ],
+    [
+      {customer: {companies: [{revenue: 11, audited: true}]}},
+      {customer: {companies: [{revenue: 11, audited: true, eligible: true}], eligible: 1, allEligible: true, eligibleRevenue: 11}},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: [], eligible: 0, allEligible: true, eligibleRevenue: 0}}],
+  ],
+}
+
+// A computed member property that is null for some members: null-tolerant aggregates.
+{
+  name: "computed member property null for some members",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "company.bonus", value: "company.revenue > 10 ? company.revenue / 10 : null"},
+      {expression: "customer.withBonus", value: "count(customer.companies, #.bonus != null)"},
+      {expression: "customer.bonusTotal", value: "sum(map(customer.companies, #.bonus ?? 0))"},
+      {expression: "customer.bonuses", value: "map(customer.companies, #.bonus)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 50}, {revenue: 5}, {revenue: 20}]}},
+      {customer: {companies: [{revenue: 50, bonus: 5}, {revenue: 5, bonus: null}, {revenue: 20, bonus: 2}], withBonus: 2, bonusTotal: 7, bonuses: [5, null, 2]}},
+    ],
+    [
+      {customer: {companies: [{revenue: 1}]}},
+      {customer: {companies: [{revenue: 1, bonus: null}], withBonus: 0, bonusTotal: 0, bonuses: [null]}},
+    ],
+  ],
+}
+
+// Summing a computed member property that may be null: the type checker refuses the policy
+// (INVALID_EXPRESSION), whatever the data.
+{
+  name: "sum over a nullable computed member property is refused",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "company.bonus", value: "company.revenue > 10 ? company.revenue / 10 : null"},
+      {expression: "customer.bonusTotal", value: "sum(map(customer.companies, #.bonus))"},
+    ],
+  },
+  cases: [
+    [{customer: {companies: [{revenue: 50}, {revenue: 20}]}}, "!error: INVALID_EXPRESSION"],
+    [{customer: {companies: [{revenue: 50}, {revenue: 1}]}}, "!error: INVALID_EXPRESSION"],
+    [{customer: {companies: []}}, "!error: INVALID_EXPRESSION"],
+  ],
+}
+
+// The same policy run through the workspace: sum fails at runtime only when a null is present.
+{
+  name: "sum over a nullable computed member property through the workspace",
+  diagnostics: ["INVALID_EXPRESSION"],
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "company.bonus", value: "company.revenue > 10 ? company.revenue / 10 : null"},
+      {expression: "customer.bonusTotal", value: "sum(map(customer.companies, #.bonus))"},
+    ],
+  },
+  cases: [
+    [{customer: {companies: [{revenue: 50}, {revenue: 20}]}}, {customer: {companies: [{revenue: 50, bonus: 5}, {revenue: 20, bonus: 2}], bonusTotal: 7}}],
+    [{customer: {companies: [{revenue: 50}, {revenue: 1}]}}, "!error: ExpressionFailed"],
+    [{customer: {companies: []}}, {customer: {companies: [], bonusTotal: 0}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Aggregates of aggregates.
+// ---------------------------------------------------------------------------
+
+// Per-member aggregates over a primitive array on the member, aggregated again at the root.
+{
+  name: "member aggregates over a primitive array, re-aggregated at the root",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {scores: "number[]"}},
+    blocks: [
+      {expression: "company.total", value: "sum(company.scores)"},
+      {expression: "company.best", value: "len(company.scores) == 0 ? 0 : max(company.scores)"},
+      {expression: "customer.grand", value: "sum(map(customer.companies, #.total))"},
+      {expression: "customer.bestOfBest", value: "max(map(customer.companies, #.best))"},
+      {expression: "customer.avgTotal", value: "avg(map(customer.companies, #.total))"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{scores: [1, 2, 3]}, {scores: [10]}, {scores: []}]}},
+      {customer: {companies: [{scores: [1, 2, 3], total: 6, best: 3}, {scores: [10], total: 10, best: 10}, {scores: [], total: 0, best: 0}], grand: 16, bestOfBest: 10, avgTotal: 5.3333333333333333333333333333}},
+    ],
+    [
+      {customer: {companies: [{scores: [0.5, 0.5]}, {scores: [-1]}]}},
+      {customer: {companies: [{scores: [0.5, 0.5], total: 1, best: 0.5}, {scores: [-1], total: -1, best: -1}], grand: 0, bestOfBest: 0.5, avgTotal: 0}},
+    ],
+  ],
+}
+
+// Three stacked aggregates: member sum -> root list -> root aggregate of the list.
+{
+  name: "chained root aggregates",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "customer.revenues", value: "map(customer.companies, #.revenue)"},
+      {expression: "customer.total", value: "sum(customer.revenues)"},
+      {expression: "customer.shares", value: "map(customer.revenues, customer.total == 0 ? 0 : # / customer.total)"},
+      {expression: "customer.shareSum", value: "sum(customer.shares)"},
+      {expression: "customer.dominant", value: "some(customer.shares, # > 0.5)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 1}, {revenue: 3}]}},
+      {customer: {companies: [{revenue: 1}, {revenue: 3}], revenues: [1, 3], total: 4, shares: [0.25, 0.75], shareSum: 1, dominant: true}},
+    ],
+    [
+      {customer: {companies: [{revenue: 1}, {revenue: 1}]}},
+      {customer: {companies: [{revenue: 1}, {revenue: 1}], revenues: [1, 1], total: 2, shares: [0.5, 0.5], shareSum: 1, dominant: false}},
+    ],
+    [
+      {customer: {companies: [{revenue: 0}]}},
+      {customer: {companies: [{revenue: 0}], revenues: [0], total: 0, shares: [0], shareSum: 0, dominant: false}},
+    ],
+    [
+      {customer: {companies: []}},
+      {customer: {companies: [], revenues: [], total: 0, shares: [], shareSum: 0, dominant: false}},
+    ],
+  ],
+}
+
+// Members compare themselves against a root aggregate over a member computed.
+{
+  name: "member compares against an aggregate of a member computed",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number", cost: "number"}},
+    blocks: [
+      {expression: "company.margin", value: "company.revenue - company.cost"},
+      {expression: "customer.avgMargin", value: "avg(map(customer.companies, #.margin))"},
+      {expression: "company.aboveAvg", value: "company.margin > customer.avgMargin"},
+      {expression: "customer.aboveCount", value: "count(customer.companies, #.aboveAvg)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 10, cost: 2}, {revenue: 10, cost: 8}, {revenue: 6, cost: 1}]}},
+      {customer: {avgMargin: 5, aboveCount: 1, companies: [
+        {revenue: 10, cost: 2, margin: 8, aboveAvg: true},
+        {revenue: 10, cost: 8, margin: 2, aboveAvg: false},
+        {revenue: 6, cost: 1, margin: 5, aboveAvg: false},
+      ]}},
+    ],
+    [
+      {customer: {companies: [{revenue: 3, cost: 1}]}},
+      {customer: {avgMargin: 2, aboveCount: 0, companies: [{revenue: 3, cost: 1, margin: 2, aboveAvg: false}]}},
+    ],
+    [{customer: {companies: []}}, "!error: ExpressionFailed"],
+  ],
+}
+
+// Aggregates over a nested level from a member computed, then over that computed at the root.
+{
+  name: "nested level aggregated twice",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {loans: "loan[]"}, loan: {amount: "number"}},
+    blocks: [
+      {expression: "company.exposure", value: "sum(map(company.loans, #.amount))"},
+      {expression: "company.loanCount", value: "len(company.loans)"},
+      {expression: "customer.exposure", value: "sum(map(customer.companies, #.exposure))"},
+      {expression: "customer.avgLoan", value: "sum(map(customer.companies, #.loanCount)) == 0 ? 0 : customer.exposure / sum(map(customer.companies, #.loanCount))"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{loans: [{amount: 100}, {amount: 50}]}, {loans: [{amount: 30}]}]}},
+      {customer: {companies: [{loans: [{amount: 100}, {amount: 50}], exposure: 150, loanCount: 2}, {loans: [{amount: 30}], exposure: 30, loanCount: 1}], exposure: 180, avgLoan: 60}},
+    ],
+    [
+      {customer: {companies: [{loans: []}, {loans: []}]}},
+      {customer: {companies: [{loans: [], exposure: 0, loanCount: 0}, {loans: [], exposure: 0, loanCount: 0}], exposure: 0, avgLoan: 0}},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: [], exposure: 0, avgLoan: 0}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Nulls in collections.
+// ---------------------------------------------------------------------------
+
+// Summing an optional member field is refused statically (INVALID_EXPRESSION); through the
+// workspace, map keeps the nulls and sum fails on them at runtime.
+{
+  name: "sum over an optional member field is refused",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number?"}},
+    blocks: [{expression: "customer.total", value: "sum(map(customer.companies, #.revenue))"}],
+  },
+  cases: [
+    [{customer: {companies: [{revenue: 1}, {revenue: 2}]}}, "!error: INVALID_EXPRESSION"],
+    [{customer: {companies: []}}, "!error: INVALID_EXPRESSION"],
+  ],
+}
+
+{
+  name: "sum over an optional member field through the workspace",
+  diagnostics: ["INVALID_EXPRESSION"],
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number?"}},
+    blocks: [{expression: "customer.total", value: "sum(map(customer.companies, #.revenue))"}],
+  },
+  cases: [
+    [{customer: {companies: [{revenue: 1}, {revenue: 2}]}}, {customer: {companies: [{revenue: 1}, {revenue: 2}], total: 3}}],
+    [{customer: {companies: [{revenue: 1}, {revenue: null}]}}, "!error"],
+    [{customer: {companies: [{revenue: 1}, {}]}}, "!error"],
+  ],
+}
+
+// Filtering nulls out before aggregating. The type checker does not narrow the element type
+// through `filter(..., #.revenue != null)`, so the policy carries INVALID_EXPRESSION errors and
+// only runs through the workspace.
+{
+  name: "nulls filtered out before aggregating",
+  diagnostics: ["INVALID_EXPRESSION"],
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number?"}},
+    blocks: [
+      {expression: "customer.known", value: "map(filter(customer.companies, #.revenue != null), #.revenue)"},
+      {expression: "customer.total", value: "sum(customer.known)"},
+      {expression: "customer.max", value: "len(customer.known) == 0 ? null : max(customer.known)"},
+      {expression: "customer.unknown", value: "count(customer.companies, #.revenue == null)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 4}, {revenue: null}, {}, {revenue: 9}]}},
+      {customer: {companies: [{revenue: 4}, {revenue: null}, {}, {revenue: 9}], known: [4, 9], total: 13, max: 9, unknown: 2}},
+    ],
+    [
+      {customer: {companies: [{revenue: null}, {}]}},
+      {customer: {companies: [{revenue: null}, {}], known: [], total: 0, max: null, unknown: 2}},
+    ],
+    [
+      {customer: {companies: [{revenue: 0}]}},
+      {customer: {companies: [{revenue: 0}], known: [0], total: 0, max: 0, unknown: 0}},
+    ],
+    [{customer: {companies: []}}, {customer: {companies: [], known: [], total: 0, max: null, unknown: 0}}],
+  ],
+}
+
+// Defaults inside the map.
+{
+  name: "null fields defaulted inside the map",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number?"}},
+    blocks: [
+      {expression: "customer.total", value: "sum(map(customer.companies, #.revenue ?? 0))"},
+      {expression: "customer.min", value: "min(map(customer.companies, #.revenue ?? 0))"},
+    ],
+  },
+  cases: [
+    [{customer: {companies: [{revenue: 5}, {}]}}, {customer: {companies: [{revenue: 5}, {}], total: 5, min: 0}}],
+    [{customer: {companies: [{revenue: -5}, {revenue: null}]}}, {customer: {companies: [{revenue: -5}, {revenue: null}], total: -5, min: -5}}],
+    [{customer: {companies: [{revenue: 2}]}}, {customer: {companies: [{revenue: 2}], total: 2, min: 2}}],
+  ],
+}
+
+// Null items (not members with null fields) in the relationship array.
+{
+  name: "null items in the array under aggregates",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "customer.len", value: "len(customer.companies)"},
+      {expression: "customer.real", value: "filter(customer.companies, # != null)"},
+      {expression: "customer.total", value: "sum(map(customer.real, #.revenue))"},
+      {expression: "customer.revenues", value: "map(customer.companies, # == null ? null : #.revenue)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [null, {revenue: 2}, null, {revenue: 3}]}},
+      {customer: {companies: [null, {revenue: 2}, null, {revenue: 3}], len: 4, real: [{revenue: 2}, {revenue: 3}], total: 5, revenues: [null, 2, null, 3]}},
+    ],
+    [
+      {customer: {companies: [null]}},
+      {customer: {companies: [null], len: 1, real: [], total: 0, revenues: [null]}},
+    ],
+    [
+      {customer: {companies: [{revenue: 1}]}},
+      {customer: {companies: [{revenue: 1}], len: 1, real: [{revenue: 1}], total: 1, revenues: [1]}},
+    ],
+  ],
+}
+
+// Optional relationships: absent and null arrays.
+{
+  name: "aggregates over an optional relationship",
+  policy: {
+    models: {customer: {companies: "company[]?"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "customer.total", value: "sum(map(customer.companies ?? [], #.revenue))"},
+      {expression: "customer.any", value: "some(customer.companies ?? [], #.revenue > 0)"},
+      {expression: "customer.all", value: "all(customer.companies ?? [], #.revenue > 0)"},
+      {expression: "customer.present", value: "customer.companies != null"},
+    ],
+  },
+  cases: [
+    [{customer: {}}, {customer: {total: 0, any: false, all: true, present: false}}],
+    [{customer: {companies: null}}, {customer: {companies: null, total: 0, any: false, all: true, present: false}}],
+    [{customer: {companies: []}}, {customer: {companies: [], total: 0, any: false, all: true, present: true}}],
+    [{customer: {companies: [{revenue: 3}]}}, {customer: {companies: [{revenue: 3}], total: 3, any: true, all: true, present: true}}],
+    [{customer: {companies: [{revenue: 3}, {revenue: -3}]}}, {customer: {companies: [{revenue: 3}, {revenue: -3}], total: 0, any: true, all: false, present: true}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Aggregates in other block kinds: match conditions, table inputs, assertion conditions.
+// ---------------------------------------------------------------------------
+{
+  name: "aggregate inside match conditions",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number", defaulted: "boolean"}},
+    blocks: [
+      {match: "customer.decision", arms: [
+        ["some(customer.companies, #.defaulted)", "'decline'"],
+        ["sum(map(customer.companies, #.revenue)) >= 100", "'approve'"],
+        ["len(customer.companies) == 0", "'no-data'"],
+        ["", "'review'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{customer: {companies: [{revenue: 500, defaulted: true}]}}, {customer: {companies: [{revenue: 500, defaulted: true}], decision: "decline"}}],
+    [{customer: {companies: [{revenue: 60, defaulted: false}, {revenue: 40, defaulted: false}]}}, {customer: {companies: [{revenue: 60, defaulted: false}, {revenue: 40, defaulted: false}], decision: "approve"}}],
+    [{customer: {companies: [{revenue: 99, defaulted: false}]}}, {customer: {companies: [{revenue: 99, defaulted: false}], decision: "review"}}],
+    [{customer: {companies: []}}, {customer: {companies: [], decision: "no-data"}}],
+  ],
+}
+
+{
+  name: "aggregate as a table input",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "customer.total", value: "sum(map(customer.companies, #.revenue))"},
+      {expression: "customer.count", value: "len(customer.companies)"},
+      {table: "grade", inputs: ["customer.total", "customer.count"], outputs: ["customer.grade"], rules: [
+        [">= 1000", ">= 2", "'A'"],
+        [">= 1000", "", "'B'"],
+        ["> 0", "", "'C'"],
+        ["", "", "'D'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{customer: {companies: [{revenue: 600}, {revenue: 400}]}}, {customer: {companies: [{revenue: 600}, {revenue: 400}], total: 1000, count: 2, grade: "A"}}],
+    [{customer: {companies: [{revenue: 1000}]}}, {customer: {companies: [{revenue: 1000}], total: 1000, count: 1, grade: "B"}}],
+    [{customer: {companies: [{revenue: 1}, {revenue: 2}]}}, {customer: {companies: [{revenue: 1}, {revenue: 2}], total: 3, count: 2, grade: "C"}}],
+    [{customer: {companies: []}}, {customer: {companies: [], total: 0, count: 0, grade: "D"}}],
+    [{customer: {companies: [{revenue: -5}]}}, {customer: {companies: [{revenue: -5}], total: -5, count: 1, grade: "D"}}],
+  ],
+}
+
+{
+  name: "aggregate expression directly in a table input field",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {table: "size", inputs: ["len(customer.companies)"], outputs: ["customer.size"], rules: [
+        ["0", "'none'"],
+        ["1", "'single'"],
+        ["", "'many'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{customer: {companies: []}}, {customer: {companies: [], size: "none"}}],
+    [{customer: {companies: [{revenue: 1}]}}, {customer: {companies: [{revenue: 1}], size: "single"}}],
+    [{customer: {companies: [{revenue: 1}, {revenue: 2}, {revenue: 3}]}}, {customer: {companies: [{revenue: 1}, {revenue: 2}, {revenue: 3}], size: "many"}}],
+  ],
+}
+
+{
+  name: "aggregates in assertion conditions",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number", audited: "boolean"}},
+    blocks: [
+      {assertion: "customer.ok", conditions: [
+        "len(customer.companies) > 0",
+        "all(customer.companies, #.audited)",
+        "sum(map(customer.companies, #.revenue)) > 10",
+      ]},
+    ],
+  },
+  cases: [
+    [{customer: {companies: [{revenue: 20, audited: true}]}}, {customer: {companies: [{revenue: 20, audited: true}], ok: true}}],
+    [{customer: {companies: [{revenue: 20, audited: false}]}}, {customer: {companies: [{revenue: 20, audited: false}], ok: false}}],
+    [{customer: {companies: [{revenue: 5, audited: true}, {revenue: 5, audited: true}]}}, {customer: {companies: [{revenue: 5, audited: true}, {revenue: 5, audited: true}], ok: false}}],
+    [{customer: {companies: []}}, {customer: {companies: [], ok: false}}],
+  ],
+}
+
+// A collect table on the parent gathering per-member values via an aggregate input.
+{
+  name: "collect table over aggregate flags",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number", country: "string"}},
+    blocks: [
+      {expression: "customer.foreign", value: "count(customer.companies, #.country != 'US')"},
+      {expression: "customer.total", value: "sum(map(customer.companies, #.revenue))"},
+      {table: "flags", hit: "collect", inputs: ["customer.foreign", "customer.total"], outputs: ["customer.flags"], rules: [
+        ["> 0", "", "'foreign'"],
+        ["", "> 1000", "'large'"],
+        ["0", "0", "'empty'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{customer: {companies: [{revenue: 2000, country: "DE"}]}}, {customer: {companies: [{revenue: 2000, country: "DE"}], foreign: 1, total: 2000, flags: ["foreign", "large"]}}],
+    [{customer: {companies: [{revenue: 5, country: "US"}]}}, {customer: {companies: [{revenue: 5, country: "US"}], foreign: 0, total: 5, flags: []}}],
+    [{customer: {companies: []}}, {customer: {companies: [], foreign: 0, total: 0, flags: ["empty"]}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Other list operations over members: membership, flattening, mode.
+// ---------------------------------------------------------------------------
+{
+  name: "list operations over member fields",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {country: "string", revenue: "number", tags: "string[]"}},
+    blocks: [
+      {expression: "customer.hasUS", value: "'US' in map(customer.companies, #.country)"},
+      {expression: "customer.hasDE", value: "contains(map(customer.companies, #.country), 'DE')"},
+      {expression: "customer.tags", value: "flatten(map(customer.companies, #.tags))"},
+      {expression: "customer.tagCount", value: "sum(map(customer.companies, len(#.tags)))"},
+      {expression: "customer.vip", value: "some(customer.companies, 'vip' in #.tags)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{country: "US", revenue: 3, tags: ["a", "vip"]}, {country: "DE", revenue: 1, tags: []}, {country: "US", revenue: 2, tags: ["b"]}]}},
+      {customer: {companies: [{country: "US", revenue: 3, tags: ["a", "vip"]}, {country: "DE", revenue: 1, tags: []}, {country: "US", revenue: 2, tags: ["b"]}], hasUS: true, hasDE: true, tags: ["a", "vip", "b"], tagCount: 3, vip: true}},
+    ],
+    [
+      {customer: {companies: [{country: "FR", revenue: 0, tags: ["x", "x"]}]}},
+      {customer: {companies: [{country: "FR", revenue: 0, tags: ["x", "x"]}], hasUS: false, hasDE: false, tags: ["x", "x"], tagCount: 2, vip: false}},
+    ],
+    [
+      {customer: {companies: []}},
+      {customer: {companies: [], hasUS: false, hasDE: false, tags: [], tagCount: 0, vip: false}},
+    ],
+  ],
+}
+
+{
+  name: "mode over member values",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {employees: "number"}},
+    blocks: [{expression: "customer.typical", value: "mode(map(customer.companies, #.employees))"}],
+  },
+  cases: [
+    [{customer: {companies: [{employees: 5}, {employees: 3}, {employees: 5}]}}, {customer: {companies: [{employees: 5}, {employees: 3}, {employees: 5}], typical: 5}}],
+    [{customer: {companies: [{employees: 1}]}}, {customer: {companies: [{employees: 1}], typical: 1}}],
+    [{customer: {companies: []}}, "!error: ExpressionFailed"],
+  ],
+}
+
+// Grouped aggregates built with nested closures.
+{
+  name: "per-group aggregates via nested closures",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {country: "string", revenue: "number"}},
+    blocks: [
+      {expression: "customer.byCountry", value: "map(['DE', 'US'] as k, {country: k, total: sum(map(filter(customer.companies, #.country == k), #.revenue))})"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{country: "US", revenue: 1}, {country: "DE", revenue: 5}, {country: "US", revenue: 2}]}},
+      {customer: {companies: [{country: "US", revenue: 1}, {country: "DE", revenue: 5}, {country: "US", revenue: 2}], byCountry: [{country: "DE", total: 5}, {country: "US", total: 3}]}},
+      "bug: the outer alias `k` read inside the inner filter closure is collected as a required input named `k`, and the evaluation fails with MissingRequiredInputs [k]",
+    ],
+    [{customer: {companies: [{country: "FR", revenue: 9}]}}, {customer: {companies: [{country: "FR", revenue: 9}], byCountry: [{country: "DE", total: 0}, {country: "US", total: 0}]}}, "bug: MissingRequiredInputs [k] for an outer closure alias"],
+    [{customer: {companies: []}}, {customer: {companies: [], byCountry: [{country: "DE", total: 0}, {country: "US", total: 0}]}}, "bug: MissingRequiredInputs [k] for an outer closure alias"],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Precision and large collections.
+// ---------------------------------------------------------------------------
+{
+  name: "exact decimal aggregates over members",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "customer.total", value: "sum(map(customer.companies, #.revenue))"},
+      {expression: "customer.isPoint3", value: "customer.total == 0.3"},
+      {expression: "customer.avg", value: "avg(map(customer.companies, #.revenue))"},
+    ],
+  },
+  cases: [
+    [{customer: {companies: [{revenue: 0.1}, {revenue: 0.2}]}}, {customer: {companies: [{revenue: 0.1}, {revenue: 0.2}], total: 0.3, isPoint3: true, avg: 0.15}}],
+    [{customer: {companies: [{revenue: 1}, {revenue: 1}, {revenue: 1}]}}, {customer: {companies: [{revenue: 1}, {revenue: 1}, {revenue: 1}], total: 3, isPoint3: false, avg: 1}}],
+    [{customer: {companies: [{revenue: 1}, {revenue: 2}, {revenue: 2}]}}, {customer: {companies: [{revenue: 1}, {revenue: 2}, {revenue: 2}], total: 5, isPoint3: false, avg: 1.6666666666666666666666666667}}],
+    [{customer: {companies: [{revenue: 0.1}, {revenue: 0.1}, {revenue: 0.1}]}}, {customer: {companies: [{revenue: 0.1}, {revenue: 0.1}, {revenue: 0.1}], total: 0.3, isPoint3: true, avg: 0.1}}],
+  ],
+}
+
+{
+  name: "aggregates over many members",
+  policy: {
+    models: {customer: {companies: "company[]"}, company: {revenue: "number"}},
+    blocks: [
+      {expression: "company.double", value: "company.revenue * 2"},
+      {expression: "customer.total", value: "sum(map(customer.companies, #.double))"},
+      {expression: "customer.count", value: "count(customer.companies, #.double > 10)"},
+    ],
+  },
+  cases: [
+    [
+      {customer: {companies: [{revenue: 1}, {revenue: 2}, {revenue: 3}, {revenue: 4}, {revenue: 5}, {revenue: 6}, {revenue: 7}, {revenue: 8}, {revenue: 9}, {revenue: 10}]}},
+      {customer: {companies: [
+        {revenue: 1, double: 2}, {revenue: 2, double: 4}, {revenue: 3, double: 6}, {revenue: 4, double: 8}, {revenue: 5, double: 10},
+        {revenue: 6, double: 12}, {revenue: 7, double: 14}, {revenue: 8, double: 16}, {revenue: 9, double: 18}, {revenue: 10, double: 20},
+      ], total: 110, count: 5}},
+    ],
+    [
+      {customer: {companies: [{revenue: 100}]}},
+      {customer: {companies: [{revenue: 100, double: 200}], total: 200, count: 1}},
+    ],
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// Aggregates over global arrays and computed globals.
+// ---------------------------------------------------------------------------
+{
+  name: "aggregates over a global array relationship",
+  policy: {
+    models: {company: {revenue: "number"}},
+    globals: {portfolio: {companies: "company[]", cap: "number"}},
+    blocks: [
+      {expression: "company.capped", value: "min([company.revenue, cap])"},
+      {expression: "total", value: "sum(map(companies, #.capped))"},
+      {expression: "anyCapped", value: "some(companies, #.revenue > cap)"},
+    ],
+  },
+  cases: [
+    [
+      {cap: 10, companies: [{revenue: 5}, {revenue: 50}]},
+      {cap: 10, companies: [{revenue: 5, capped: 5}, {revenue: 50, capped: 10}], total: 15, anyCapped: true},
+    ],
+    [{cap: 10, companies: []}, {cap: 10, companies: [], total: 0, anyCapped: false}],
+    [
+      {cap: 0, companies: [{revenue: -1}]},
+      {cap: 0, companies: [{revenue: -1, capped: -1}], total: -1, anyCapped: false},
+    ],
+  ],
+}

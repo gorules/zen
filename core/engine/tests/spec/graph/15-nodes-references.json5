@@ -1,0 +1,1017 @@
+// `$nodes`: every node can read the outputs of nodes that already ran, by node name, next to its
+// regular input. `$nodes.<name>` is the node's output as produced (before merging at joins).
+
+// --- Reading the input node -------------------------------------------------------------------
+// The input node's output is the request itself.
+{
+  name: "$nodes.input reads the request",
+  graph: {
+    nodes: [{expression: "e", fields: {a: "$nodes.input.a", same: "$nodes.input.a == a"}}],
+  },
+  cases: [
+    [{a: 1}, {a: 1, same: true}],
+    [{a: "x"}, {a: "x", same: true}],
+    [{a: null}, {same: true}],
+    [{}, {same: true}],
+  ],
+}
+
+{
+  name: "$nodes.<input name> follows the input node's name",
+  graph: {
+    nodes: [
+      {input: "request"},
+      {expression: "e", fields: {v: "$nodes.request.v", viaDefault: "$nodes.input"}},
+    ],
+  },
+  cases: [
+    [{v: 5}, {v: 5}],
+    [{v: true}, {v: true}],
+  ],
+}
+
+{
+  name: "$nodes.input keeps the original request after transforms",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {x: "x * 10"}},
+      {expression: "b", fields: {now: "x", original: "$nodes.input.x"}},
+    ],
+  },
+  cases: [
+    [{x: 1}, {now: 10, original: 1}],
+    [{x: 0.5}, {now: 5, original: 0.5}],
+  ],
+}
+
+{
+  name: "$nodes.input nested paths",
+  graph: {
+    nodes: [{expression: "e", fields: {city: "$nodes.input.customer.address.city", first: "$nodes.input.items[0]", n: "len($nodes.input.items)"}}],
+  },
+  cases: [
+    [{customer: {address: {city: "Oslo"}}, items: [7, 8]}, {city: "Oslo", first: 7, n: 2}],
+    [{customer: {address: {}}, items: []}, {n: 0}],
+    [{customer: null, items: ["a"]}, {first: "a", n: 1}],
+  ],
+}
+
+// --- Reading earlier nodes ---------------------------------------------------------------------
+{
+  name: "reading an earlier node's output",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {total: "price * qty"}},
+      {expression: "fee", fields: {fee: "$nodes.calc.total * 0.1"}},
+      {expression: "sum", fields: {grand: "$nodes.calc.total + $nodes.fee.fee"}},
+    ],
+  },
+  cases: [
+    [{price: 10, qty: 2}, {grand: 22}],
+    [{price: 5, qty: 0}, {grand: 0}],
+    [{price: 0.1, qty: 3}, {grand: 0.33}],
+  ],
+}
+
+{
+  name: "a node two steps back is still readable",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {fromA: "x + 1"}},
+      {expression: "b", fields: {fromB: "fromA + 1"}},
+      {expression: "c", fields: {fromC: "fromB + 1", stillA: "$nodes.a.fromA", inputX: "$nodes.input.x"}},
+    ],
+  },
+  cases: [
+    [{x: 0}, {fromC: 3, stillA: 1, inputX: 0}],
+    [{x: 10}, {fromC: 13, stillA: 11, inputX: 10}],
+  ],
+}
+
+{
+  name: "reading a node on a parallel branch that already ran",
+  graph: {
+    nodes: [
+      {expression: "left", fields: {l: "x * 2"}},
+      {expression: "right", fields: {r: "x * 3"}},
+      {expression: "join", fields: {both: "$nodes.left.l + $nodes.right.r"}},
+    ],
+    edges: ["input -> left -> join", "input -> right -> join", "join -> output"],
+  },
+  cases: [
+    [{x: 1}, {both: 5}],
+    [{x: 2}, {both: 10}],
+  ],
+}
+
+{
+  name: "$nodes shows the node's own output, not the merged join input",
+  graph: {
+    nodes: [
+      {expression: "left", fields: {k: "'left'", l: "1"}},
+      {expression: "right", fields: {k: "'right'", r: "2"}},
+      {expression: "join", fields: {leftK: "$nodes.left.k", rightK: "$nodes.right.k", leftHasR: "$nodes.left.r == null"}},
+    ],
+    edges: ["input -> left -> join", "input -> right -> join", "join -> output"],
+  },
+  cases: [
+    [{}, {leftK: "left", rightK: "right", leftHasR: true}],
+    [{k: "input"}, {leftK: "left", rightK: "right", leftHasR: true}],
+  ],
+}
+
+{
+  name: "a whole node output as a value",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {x: "1", "y.z": "2"}},
+      {expression: "b", fields: {copy: "$nodes.a", keys: "keys($nodes.a)"}},
+    ],
+  },
+  cases: [
+    [{}, {copy: {x: 1, y: {z: 2}}, keys: ["x", "y"]}],
+    [{x: 9}, {copy: {x: 1, y: {z: 2}}, keys: ["x", "y"]}],
+  ],
+}
+
+{
+  name: "$nodes of a pass-through node includes its input",
+  graph: {
+    nodes: [
+      {expression: "a", passThrough: true, fields: {added: "1"}},
+      {expression: "b", fields: {seen: "$nodes.a"}},
+    ],
+  },
+  cases: [
+    [{v: 1}, {seen: {v: 1, added: 1}}],
+    [{}, {seen: {added: 1}}],
+  ],
+}
+
+{
+  name: "$nodes of a node with outputPath",
+  graph: {
+    nodes: [
+      {expression: "a", outputPath: "nested.out", fields: {v: "x"}},
+      {expression: "b", fields: {seen: "$nodes.a.nested.out.v", direct: "$nodes.a.v"}},
+    ],
+  },
+  cases: [
+    [{x: 3}, {seen: 3}],
+    [{x: "s"}, {seen: "s"}],
+  ],
+}
+
+{
+  name: "$nodes of a loop node is the result array",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "xs", executionMode: "loop", fields: {v: "$root * 2"}},
+      {expression: "after", fields: {n: "len($nodes.each)", second: "$nodes.each[1].v"}},
+    ],
+  },
+  cases: [
+    [{xs: [1, 2, 3]}, {n: 3, second: 4}],
+    [{xs: [5]}, {n: 1}],
+    [{xs: []}, {n: 0}],
+  ],
+}
+
+{
+  name: "$nodes of a table node",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["score"], outputs: ["grade"], rules: [[">= 50", "'pass'"], ["", "'fail'"]]},
+      {expression: "after", fields: {grade: "$nodes.t.grade", score: "$nodes.input.score"}},
+    ],
+  },
+  cases: [
+    [{score: 70}, {grade: "pass", score: 70}],
+    [{score: 10}, {grade: "fail", score: 10}],
+  ],
+}
+
+{
+  name: "$nodes of a table that matched nothing is null",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["score"], outputs: ["grade"], rules: [[">= 50", "'pass'"]]},
+      {expression: "after", fields: {isNull: "$nodes.t == null", grade: "$nodes.t.grade ?? 'none'"}},
+    ],
+  },
+  cases: [
+    [{score: 70}, {isNull: false, grade: "pass"}],
+    [{score: 10}, {isNull: true, grade: "none"}],
+  ],
+}
+
+{
+  name: "$nodes of a collect table is the row array",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["v"], outputs: ["tag"], rules: [["> 0", "'pos'"], ["> 10", "'big'"]]},
+      {expression: "after", fields: {tags: "map($nodes.t, #.tag)"}},
+    ],
+  },
+  cases: [
+    [{v: 20}, {tags: ["pos", "big"]}],
+    [{v: 5}, {tags: ["pos"]}],
+    [{v: -1}, {tags: []}],
+  ],
+}
+
+// --- Nodes that did not run ---------------------------------------------------------------------
+// A node on a switch branch that was not taken has no entry; reading it gives null.
+{
+  name: "$nodes of a node on a branch not taken is null",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["big", ""]},
+      {expression: "yes", fields: {y: "'yes'"}},
+      {expression: "no", fields: {n: "'no'"}},
+      {expression: "after", fields: {
+        yesRan: "$nodes.yes != null",
+        noRan: "$nodes.no != null",
+        y: "$nodes.yes.y ?? '-'",
+        n: "$nodes.no.n ?? '-'",
+      }},
+    ],
+    edges: ["input -> s", "s:0 -> yes -> after", "s:1 -> no -> after", "after -> output"],
+  },
+  cases: [
+    [{big: true}, {yesRan: true, noRan: false, y: "yes", n: "-"}],
+    [{big: false}, {yesRan: false, noRan: true, y: "-", n: "no"}],
+    [{}, {yesRan: false, noRan: true, y: "-", n: "no"}],
+  ],
+}
+
+{
+  name: "a member read on a node that did not run is null, not an error",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["go", ""]},
+      {expression: "deep", fields: {"a.b.c": "1"}},
+      {expression: "skip", fields: {}},
+      {expression: "after", fields: {v: "$nodes.deep.a.b.c", isNull: "$nodes.deep.a.b.c == null"}},
+    ],
+    edges: ["input -> s", "s:0 -> deep -> after", "s:1 -> skip -> after", "after -> output"],
+  },
+  cases: [
+    [{go: true}, {v: 1, isNull: false}],
+    [{go: false}, {isNull: true}],
+  ],
+}
+
+{
+  name: "an unknown node name is null",
+  graph: {
+    nodes: [{expression: "e", fields: {v: "$nodes.nothing", w: "$nodes.nothing.x ?? 'fallback'", isNull: "$nodes.nothing == null"}}],
+  },
+  cases: [
+    [{}, {w: "fallback", isNull: true}],
+    [{nothing: 1}, {w: "fallback", isNull: true}],
+  ],
+}
+
+{
+  name: "node names are case sensitive",
+  graph: {
+    nodes: [
+      {expression: "Calc", fields: {v: "1"}},
+      {expression: "after", fields: {upper: "$nodes.Calc.v", lower: "$nodes.calc.v ?? 'none'"}},
+    ],
+  },
+  cases: [
+    [{}, {upper: 1, lower: "none"}],
+  ],
+}
+
+{
+  name: "a downstream node that has not run yet is not visible",
+  graph: {
+    nodes: [
+      {expression: "first", fields: {sawSecond: "$nodes.second == null"}},
+      {expression: "second", fields: {s: "1"}},
+    ],
+  },
+  cases: [
+    [{}, {s: 1}],
+    [{x: 1}, {s: 1}],
+  ],
+}
+
+{
+  name: "a downstream node's view of an upstream node that has not run",
+  graph: {
+    nodes: [
+      {expression: "first", fields: {sawSecond: "$nodes.second == null"}},
+      {expression: "second", fields: {s: "1"}},
+      {expression: "third", fields: {firstSaw: "$nodes.first.sawSecond", second: "$nodes.second.s"}},
+    ],
+  },
+  cases: [
+    [{}, {firstSaw: true, second: 1}],
+  ],
+}
+
+{
+  name: "a node cannot see itself",
+  graph: {
+    nodes: [{expression: "me", fields: {selfIsNull: "$nodes.me == null"}}],
+  },
+  cases: [
+    [{}, {selfIsNull: true}],
+    [{me: 1}, {selfIsNull: true}],
+  ],
+}
+
+// --- Names with spaces and symbols --------------------------------------------------------------
+// Names that are not identifiers are read with bracket access.
+{
+  name: "node names with spaces via bracket access",
+  graph: {
+    nodes: [
+      {expression: "Risk Score", fields: {score: "income / 1000"}},
+      {expression: "after", fields: {score: "$nodes['Risk Score'].score", dq: "$nodes[\"Risk Score\"].score"}},
+    ],
+  },
+  cases: [
+    [{income: 5000}, {score: 5, dq: 5}],
+    [{income: 0}, {score: 0, dq: 0}],
+  ],
+}
+
+{
+  name: "node names with dashes, dots and unicode",
+  graph: {
+    nodes: [
+      {expression: "step-1", fields: {a: "1"}},
+      {expression: "v1.2", fields: {b: "2"}},
+      {expression: "Größe", fields: {c: "3"}},
+      {expression: "after", fields: {a: "$nodes['step-1'].a", b: "$nodes['v1.2'].b", c: "$nodes['Größe'].c"}},
+    ],
+  },
+  cases: [
+    [{}, {a: 1, b: 2, c: 3}],
+  ],
+}
+
+{
+  name: "a dotted node name is not a path",
+  graph: {
+    nodes: [
+      {expression: "v1.2", fields: {b: "2"}},
+      {expression: "after", fields: {dotted: "$nodes.v1 ?? 'none'"}},
+    ],
+  },
+  cases: [
+    [{}, {dotted: "none"}],
+  ],
+}
+
+{
+  name: "node name with a leading digit via bracket access",
+  graph: {
+    nodes: [
+      {expression: "1st", fields: {x: "'first'"}},
+      {expression: "after", fields: {x: "$nodes['1st'].x"}},
+    ],
+  },
+  cases: [
+    [{}, {x: "first"}],
+  ],
+}
+
+{
+  name: "node name given by an expression",
+  graph: {
+    nodes: [
+      {expression: "alpha", fields: {v: "'A'"}},
+      {expression: "beta", fields: {v: "'B'"}},
+      {expression: "pick", fields: {chosen: "$nodes[$nodes.input.which].v"}},
+    ],
+    edges: ["input -> alpha -> pick", "input -> beta -> pick", "pick -> output"],
+  },
+  cases: [
+    [{which: "alpha"}, {chosen: "A"}],
+    [{which: "beta"}, {chosen: "B"}],
+    [{which: "gamma"}, {}],
+  ],
+}
+
+{
+  name: "keys of $nodes lists the nodes that ran",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["a", ""]},
+      {expression: "x", fields: {x: "1"}},
+      {expression: "y", fields: {y: "1"}},
+      {expression: "after", fields: {n: "len(keys($nodes))", x: "'x' in keys($nodes)", y: "'y' in keys($nodes)", s: "'s' in keys($nodes)"}},
+    ],
+    edges: ["input -> s", "s:0 -> x -> after", "s:1 -> y -> after", "after -> output"],
+  },
+  cases: [
+    [{a: true}, {n: 3, x: true, y: false, s: true}],
+    [{a: false}, {n: 3, x: false, y: true, s: true}],
+  ],
+}
+
+// --- $nodes in tables ------------------------------------------------------------------------
+{
+  name: "table input column reading $nodes",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {ratio: "debt / income"}},
+      {table: "t", inputs: ["$nodes.calc.ratio"], outputs: ["risk"], rules: [["> 0.5", "'high'"], ["", "'low'"]]},
+    ],
+    edges: ["input -> calc", "input -> t -> output", "calc -> t"],
+  },
+  cases: [
+    [{debt: 60, income: 100}, {risk: "high"}],
+    [{debt: 10, income: 100}, {risk: "low"}],
+  ],
+}
+
+{
+  name: "table input cell comparing against $nodes",
+  graph: {
+    nodes: [
+      {expression: "limits", fields: {max: "100"}},
+      {table: "t", inputs: ["amount"], outputs: ["ok"], rules: [["<= $nodes.limits.max", "true"], ["", "false"]]},
+    ],
+    edges: ["input -> limits -> t", "input -> t -> output"],
+  },
+  cases: [
+    [{amount: 50}, {ok: true}],
+    [{amount: 100}, {ok: true}],
+    [{amount: 101}, {ok: false}],
+  ],
+}
+
+{
+  name: "table output cell reading $nodes",
+  graph: {
+    nodes: [
+      {expression: "base", fields: {rate: "0.05"}},
+      {table: "t", inputs: ["tier"], outputs: ["rate"], rules: [
+        ["'gold'", "$nodes.base.rate * 2"],
+        ["", "$nodes.base.rate"],
+      ]},
+    ],
+    edges: ["input -> base -> t", "input -> t -> output"],
+  },
+  cases: [
+    [{tier: "gold"}, {rate: 0.1}],
+    [{tier: "silver"}, {rate: 0.05}],
+    [{}, {rate: 0.05}],
+  ],
+}
+
+{
+  name: "table reading $nodes.input while its input comes from another node",
+  graph: {
+    nodes: [
+      {expression: "derived", fields: {age: "2025 - birthYear"}},
+      {table: "t", inputs: ["age", "$nodes.input.country"], outputs: ["eligible"], rules: [
+        [">= 18", "'US'", "true"],
+        [">= 16", "'DE'", "true"],
+        ["", "", "false"],
+      ]},
+    ],
+  },
+  cases: [
+    [{birthYear: 2000, country: "US"}, {eligible: true}],
+    [{birthYear: 2008, country: "DE"}, {eligible: true}],
+    [{birthYear: 2008, country: "US"}, {eligible: false}],
+  ],
+}
+
+{
+  name: "table in a loop reads $nodes for shared settings",
+  graph: {
+    nodes: [
+      {expression: "cfg", passThrough: true, fields: {threshold: "threshold ?? 10"}},
+      {table: "t", inputField: "items", outputPath: "out", executionMode: "loop", inputs: ["v"], outputs: ["over"], rules: [
+        ["> $nodes.cfg.threshold", "true"],
+        ["", "false"],
+      ]},
+    ],
+  },
+  cases: [
+    [{items: [{v: 5}, {v: 15}]}, {out: [{over: false}, {over: true}]}],
+    [{threshold: 1, items: [{v: 5}]}, {out: [{over: true}]}],
+  ],
+}
+
+// --- $nodes in switches --------------------------------------------------------------------------
+{
+  name: "switch condition reading $nodes",
+  graph: {
+    nodes: [
+      {expression: "score", fields: {s: "a + b"}},
+      {switch: "route", when: ["$nodes.score.s >= 10", ""]},
+      {expression: "high", fields: {band: "'high'"}},
+      {expression: "low", fields: {band: "'low'"}},
+    ],
+    edges: ["input -> score -> route", "route:0 -> high -> output", "route:1 -> low -> output"],
+  },
+  cases: [
+    [{a: 5, b: 5}, {band: "high"}],
+    [{a: 1, b: 2}, {band: "low"}],
+  ],
+}
+
+{
+  name: "switch condition reading $nodes.input after a transform",
+  graph: {
+    nodes: [
+      {expression: "strip", fields: {only: "1"}},
+      {switch: "route", when: ["$nodes.input.vip == true", "vip == null"]},
+      {expression: "vip", fields: {kind: "'vip'"}},
+      {expression: "plain", fields: {kind: "'plain'"}},
+    ],
+    edges: ["input -> strip -> route", "route:0 -> vip -> output", "route:1 -> plain -> output"],
+  },
+  cases: [
+    [{vip: true}, {kind: "vip"}],
+    [{vip: false}, {kind: "plain"}],
+    [{}, {kind: "plain"}],
+  ],
+}
+
+{
+  name: "collect switch over $nodes",
+  graph: {
+    nodes: [
+      {expression: "flags", fields: {a: "x > 0", b: "x > 10"}},
+      {switch: "route", hit: "collect", when: ["$nodes.flags.a", "$nodes.flags.b"]},
+      {expression: "pa", fields: {pa: "true"}},
+      {expression: "pb", fields: {pb: "true"}},
+    ],
+    edges: ["input -> flags -> route", "route:0 -> pa -> output", "route:1 -> pb -> output"],
+  },
+  cases: [
+    [{x: 20}, {pa: true, pb: true}],
+    [{x: 5}, {pa: true}],
+    [{x: -1}, {}],
+  ],
+}
+
+{
+  name: "a switch has a $nodes entry holding its input",
+  graph: {
+    nodes: [
+      {switch: "route", when: ["true"]},
+      {expression: "after", fields: {fromSwitch: "$nodes.route.v"}},
+    ],
+    edges: ["input -> route", "route:0 -> after -> output"],
+  },
+  cases: [
+    [{v: 1}, {fromSwitch: 1}],
+    [{v: "s"}, {fromSwitch: "s"}],
+  ],
+}
+
+// --- $nodes in expression features ------------------------------------------------------------
+{
+  name: "$nodes inside closures",
+  graph: {
+    nodes: [
+      {expression: "cfg", passThrough: true, fields: {min: "min"}},
+      {expression: "after", fields: {kept: "filter(items, # >= $nodes.cfg.min)", scaled: "map(items, # * $nodes.input.factor)"}},
+    ],
+  },
+  cases: [
+    [{min: 2, factor: 10, items: [1, 2, 3]}, {kept: [2, 3], scaled: [10, 20, 30]}],
+    [{min: 0, factor: 1, items: []}, {kept: [], scaled: []}],
+  ],
+}
+
+{
+  name: "$nodes in an inputField expression",
+  graph: {
+    nodes: [
+      {expression: "pick", fields: {target: "customer"}},
+      {expression: "use", inputField: "$nodes.pick.target", outputPath: "out", fields: {name: "name"}},
+    ],
+  },
+  cases: [
+    [{customer: {name: "ann"}}, {out: {name: "ann"}}],
+    [{customer: {}}, {out: {name: null}}],
+  ],
+}
+
+{
+  name: "$ and $nodes together",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {base: "10"}},
+      {expression: "b", fields: {x: "$nodes.a.base + 1", y: "$.x * 2", z: "$.y + $nodes.input.k"}},
+    ],
+  },
+  cases: [
+    [{k: 1}, {x: 11, y: 22, z: 23}],
+    [{k: -22}, {x: 11, y: 22, z: 0}],
+  ],
+}
+
+{
+  name: "an expression field named $nodes does not shadow the node map",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {v: "1"}},
+      {expression: "b", fields: {"$nodes": "'shadow'", after: "$nodes.a.v"}},
+    ],
+  },
+  cases: [
+    [{}, {after: 1}, "question: a field key `$nodes` is stripped from the result by the reserved-property cleaner"],
+  ],
+}
+
+{
+  name: "an input field named $nodes is replaced by the node map",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {v: "1"}},
+      {expression: "b", fields: {after: "$nodes.a.v", raw: "$root['$nodes'] ?? 'none'"}},
+    ],
+  },
+  cases: [
+    [{"$nodes": {a: {v: 99}}}, {after: 1, raw: {a: {v: 1}, input: {}}}, "question: `$root['$nodes']` reads the injected node map, while an input key `$nodes` is replaced by it"],
+    [{}, {after: 1, raw: {a: {v: 1}, input: {}}}, "question: `$root['$nodes']` reads the injected node map, while an input key `$nodes` is replaced by it"],
+  ],
+}
+
+{
+  name: "keys($root) inside an expression node lists $nodes and $",
+  graph: {
+    nodes: [{expression: "e", fields: {first: "keys($root)", second: "keys($root)"}}],
+  },
+  cases: [
+    {input: {q: 1}, output: {first: ["q", "$nodes"], second: ["q", "$nodes", "$"]}, note: "question: the `$nodes` local and the `$` accumulator are visible as keys of `$root` (compare expression spec: locals leak into $root)", engines: "walker and compiled single list $nodes in $root; batch and columnar do not"},
+    {input: {}, output: {first: ["$nodes"], second: ["$nodes", "$"]}, note: "question: the `$nodes` local and the `$` accumulator are visible as keys of `$root` (compare expression spec: locals leak into $root)", engines: "walker and compiled single list $nodes in $root; batch and columnar do not"},
+  ],
+}
+
+{
+  name: "$nodes does not appear in the result",
+  graph: {
+    nodes: [{expression: "e", passThrough: true, fields: {n: "len(keys($nodes))"}}],
+  },
+  cases: [
+    [{a: 1}, {a: 1, n: 1}],
+    [{}, {n: 1}],
+  ],
+}
+
+{
+  name: "copying $nodes into the output strips nothing below the top level",
+  graph: {
+    nodes: [
+      {expression: "a", fields: {v: "1"}},
+      {expression: "b", fields: {snapshot: "$nodes"}},
+    ],
+  },
+  cases: [
+    [{x: 1}, {snapshot: {input: {x: 1}, a: {v: 1}}}],
+  ],
+}
+
+// --- $nodes in function nodes ----------------------------------------------------------------
+// Functions see `$nodes` as a property of their input.
+{
+  name: "v2 function reads $nodes",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {total: "a + b"}},
+      {function: "f", source: """export const handler = async (input) => ({
+  doubled: input.$nodes.calc.total * 2,
+  original: input.$nodes.input.a,
+  fromInput: input.total,
+});"""},
+    ],
+  },
+  cases: [
+    [{a: 1, b: 2}, {doubled: 6, original: 1, fromInput: 3}],
+    [{a: 10, b: 0}, {doubled: 20, original: 10, fromInput: 10}],
+  ],
+}
+
+{
+  name: "v2 function reads a node with a spaced name",
+  graph: {
+    nodes: [
+      {expression: "My Calc", fields: {v: "x * 3"}},
+      {function: "f", source: """export const handler = async (input) => ({v: input.$nodes['My Calc'].v});"""},
+    ],
+  },
+  cases: [
+    [{x: 2}, {v: 6}],
+    [{x: 0}, {v: 0}],
+  ],
+}
+
+{
+  name: "v2 function sees a node that did not run as undefined",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["go", ""]},
+      {expression: "maybe", fields: {m: "1"}},
+      {expression: "other", fields: {o: "1"}},
+      {function: "f", source: """export const handler = async (input) => ({ran: input.$nodes.maybe !== undefined, keys: Object.keys(input.$nodes).sort()});"""},
+    ],
+    edges: ["input -> s", "s:0 -> maybe -> f", "s:1 -> other -> f", "f -> output"],
+  },
+  cases: [
+    [{go: true}, {ran: true, keys: ["input", "maybe", "s"]}],
+    [{go: false}, {ran: false, keys: ["input", "other", "s"]}],
+  ],
+}
+
+{
+  name: "v2 function returning its input does not leak $nodes",
+  graph: {
+    nodes: [
+      {expression: "a", passThrough: true, fields: {v: "1"}},
+      {function: "f", source: """export const handler = async (input) => input;"""},
+    ],
+  },
+  cases: [
+    [{x: 1}, {x: 1, v: 1}],
+    [{}, {v: 1}],
+  ],
+}
+
+{
+  name: "node after a v2 function returning its input",
+  graph: {
+    nodes: [
+      {expression: "a", passThrough: true, fields: {v: "1"}},
+      {function: "f", source: """export const handler = async (input) => input;"""},
+      {expression: "after", fields: {hasNodesKey: "'$nodes' in keys($nodes.f)", v: "v"}},
+    ],
+  },
+  cases: [
+    [{x: 1}, {hasNodesKey: false, v: 1}],
+    [{}, {hasNodesKey: false, v: 1}],
+  ],
+}
+
+{
+  name: "v1 function reads $nodes",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {total: "a * b"}},
+      {functionV1: "f", source: """const handler = (input) => {
+  return {total: input.$nodes.calc.total, a: input.$nodes.input.a};
+}"""},
+    ],
+  },
+  cases: [
+    [{a: 2, b: 3}, {total: 6, a: 2}],
+    [{a: 0, b: 3}, {total: 0, a: 0}],
+  ],
+}
+
+{
+  name: "expression reads a function node's output via $nodes",
+  graph: {
+    nodes: [
+      {function: "f", source: """export const handler = async (input) => ({list: [input.x, input.x + 1]});"""},
+      {expression: "after", fields: {last: "$nodes.f.list[1]", n: "len($nodes.f.list)"}},
+    ],
+  },
+  cases: [
+    [{x: 1}, {last: 2, n: 2}],
+    [{x: 10}, {last: 11, n: 2}],
+  ],
+}
+
+// --- $nodes in custom nodes --------------------------------------------------------------------
+{
+  name: "custom node templates read $nodes",
+  graph: {
+    nodes: [
+      {expression: "calc", fields: {v: "x * 2"}},
+      {custom: "c", kind: "render", config: {msg: "value {{ $nodes.calc.v }} from {{ $nodes.input.x }}"}},
+    ],
+  },
+  cases: [
+    [{x: 2}, {msg: "value 4 from 2"}],
+    [{x: 5}, {msg: "value 10 from 5"}],
+  ],
+}
+
+{
+  name: "custom echo output carries $nodes downstream",
+  graph: {
+    nodes: [
+      {expression: "a", passThrough: true, fields: {v: "1"}},
+      {custom: "c", kind: "echo"},
+      {expression: "after", fields: {hasNodes: "'$nodes' in keys($nodes.c)", inputSeen: "$nodes.c['$nodes'].input.x"}},
+    ],
+  },
+  cases: [
+    [{x: 1}, {hasNodes: true, inputSeen: 1}, "question: a custom node's input includes `$nodes`; an echo forwards it as a regular key the next node can see"],
+  ],
+}
+
+// --- $nodes inside sub-decisions -------------------------------------------------------------
+// A child graph has its own $nodes. The parent's nodes are reached through the child's input
+// node entry: `$nodes.<child input>.$nodes.<parent node>`.
+{
+  name: "child $nodes holds the child's own nodes",
+  decisions: {
+    child: {nodes: [
+      {expression: "inner", fields: {v: "x + 1"}},
+      {expression: "after", fields: {fromInner: "$nodes.inner.v", childInput: "$nodes.input.x"}},
+    ]},
+  },
+  graph: {
+    nodes: [
+      {expression: "pre", passThrough: true, fields: {x: "x * 10"}},
+      {decision: "call", key: "child"},
+    ],
+  },
+  cases: [
+    [{x: 1}, {fromInner: 11, childInput: 10}],
+    [{x: 0}, {fromInner: 1, childInput: 0}],
+  ],
+}
+
+{
+  name: "child reads parent nodes through its input node",
+  decisions: {
+    child: {nodes: [
+      {input: "request"},
+      {expression: "e", fields: {parentPre: "$nodes.request.$nodes.pre.y", parentInput: "$nodes.request.$nodes.input.x"}},
+    ]},
+  },
+  graph: {
+    nodes: [
+      {expression: "pre", fields: {y: "x + 100"}},
+      {decision: "call", key: "child"},
+    ],
+    edges: ["input -> pre", "input -> call -> output", "pre -> call"],
+  },
+  cases: [
+    [{x: 1}, {parentPre: 101, parentInput: 1}],
+    [{x: -1}, {parentPre: 99, parentInput: -1}],
+  ],
+}
+
+{
+  name: "child input node view without the parent map",
+  decisions: {
+    child: {nodes: [
+      {input: "request"},
+      {expression: "e", fields: {req: "$nodes.request"}},
+    ]},
+  },
+  graph: {
+    nodes: [{decision: "call", key: "child"}],
+  },
+  cases: [
+    [{hello: "world"}, {req: {hello: "world"}}],
+  ],
+}
+
+{
+  name: "child does not see parent nodes directly",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {direct: "$nodes.pre ?? 'none'"}}]},
+  },
+  graph: {
+    nodes: [
+      {expression: "pre", passThrough: true, fields: {p: "1"}},
+      {decision: "call", key: "child"},
+    ],
+  },
+  cases: [
+    [{}, {direct: "none"}],
+  ],
+}
+
+{
+  name: "grandchild reaches the root through two input views",
+  decisions: {
+    mid: {nodes: [
+      {input: "midIn"},
+      {expression: "m", passThrough: true, fields: {mid: "1"}},
+      {decision: "call", key: "leaf"},
+    ]},
+    leaf: {nodes: [
+      {input: "leafIn"},
+      {expression: "l", fields: {
+        fromMid: "$nodes.leafIn.$nodes.m.mid",
+        fromRoot: "$nodes.leafIn.$nodes.midIn.$nodes.root.r",
+      }},
+    ]},
+  },
+  graph: {
+    nodes: [
+      {expression: "root", passThrough: true, fields: {r: "'root'"}},
+      {decision: "call", key: "mid"},
+    ],
+  },
+  cases: [
+    [{}, {fromMid: 1, fromRoot: "root"}],
+  ],
+}
+
+{
+  name: "function in a child reads parent nodes",
+  decisions: {
+    child: {nodes: [
+      {input: "request"},
+      {function: "f", source: """export const handler = async (input) => ({parent: input.$nodes.request.$nodes.pre.v});"""},
+    ]},
+  },
+  graph: {
+    nodes: [
+      {expression: "pre", passThrough: true, fields: {v: "x * 2"}},
+      {decision: "call", key: "child"},
+    ],
+  },
+  cases: [
+    [{x: 4}, {parent: 8}],
+    [{x: 0}, {parent: 0}],
+  ],
+}
+
+{
+  name: "loop child items see the parent nodes",
+  decisions: {
+    child: {nodes: [
+      {input: "item"},
+      {expression: "e", fields: {v: "n * $nodes.item.$nodes.cfg.factor"}},
+    ]},
+  },
+  graph: {
+    nodes: [
+      {expression: "cfg", passThrough: true, fields: {factor: "factor ?? 2"}},
+      {decision: "each", key: "child", inputField: "items", outputPath: "out", executionMode: "loop"},
+    ],
+  },
+  cases: [
+    [{items: [{n: 1}, {n: 2}]}, {out: [{v: 2}, {v: 4}]}],
+    [{factor: 10, items: [{n: 3}]}, {out: [{v: 30}]}],
+    [{items: []}, {out: []}],
+  ],
+}
+
+{
+  name: "parent $nodes of a decision node is the child result",
+  decisions: {
+    child: {nodes: [{expression: "e", fields: {r: "x * 2"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "call", key: "child"},
+      {expression: "after", fields: {r: "$nodes.call.r", x: "$nodes.input.x"}},
+    ],
+  },
+  cases: [
+    [{x: 3}, {r: 6, x: 3}],
+    [{x: 0}, {r: 0, x: 0}],
+  ],
+}
+
+// --- $nodes in realistic combinations -------------------------------------------------------
+{
+  name: "pricing pipeline reading several earlier nodes",
+  graph: {
+    nodes: [
+      {table: "tier", inputs: ["spend"], outputs: ["tier"], rules: [[">= 1000", "'gold'"], [">= 100", "'silver'"], ["", "'basic'"]]},
+      {table: "discount", inputs: ["tier"], outputs: ["pct"], rules: [["'gold'", "20"], ["'silver'", "10"], ["", "0"]]},
+      {expression: "final", fields: {
+        tier: "$nodes.tier.tier",
+        pct: "$nodes.discount.pct",
+        price: "$nodes.input.price * (100 - $nodes.discount.pct) / 100",
+      }},
+    ],
+  },
+  cases: [
+    [{spend: 5000, price: 200}, {tier: "gold", pct: 20, price: 160}],
+    [{spend: 500, price: 200}, {tier: "silver", pct: 10, price: 180}],
+    [{spend: 5, price: 200}, {tier: "basic", pct: 0, price: 200}],
+  ],
+}
+
+{
+  name: "fan-in node choosing between branch results by $nodes",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["kind == 'a'", ""]},
+      {expression: "fa", fields: {val: "'from a'"}},
+      {expression: "fb", fields: {val: "'from b'"}},
+      {expression: "pick", fields: {chosen: "$nodes.fa.val ?? $nodes.fb.val"}},
+    ],
+    edges: ["input -> s", "s:0 -> fa -> pick", "s:1 -> fb -> pick", "pick -> output"],
+  },
+  cases: [
+    [{kind: "a"}, {chosen: "from a"}],
+    [{kind: "b"}, {chosen: "from b"}],
+    [{}, {chosen: "from b"}],
+  ],
+}

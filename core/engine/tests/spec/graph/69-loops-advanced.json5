@@ -1,0 +1,659 @@
+// Loops beyond the basics of 13 and 35-37: inputField expressions that filter, map, slice and
+// flatten; arrays inside objects with results written to nested outputPaths; loops whose results
+// drive switches; `$root` inside loop bodies; sub-decision loops with schemas; and arrays of 100
+// or more items.
+
+
+// ---------------------------------------------------------------------------------------
+// inputField expressions. The loop iterates whatever array the expression yields; items are
+// the values of that array, not of the source.
+// ---------------------------------------------------------------------------------------
+
+
+{
+  name: "inputField filter with a threshold from the request",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "filter(items, #.n > (min ?? 0))", outputPath: "out", executionMode: "loop", fields: {name: "name", big: "n > 10"}},
+    ],
+  },
+  cases: [
+    [{min: 1, items: [{name: "a", n: 0}, {name: "b", n: 5}, {name: "c", n: 50}]}, {out: [{name: "b", big: false}, {name: "c", big: true}]}],
+    [{items: [{name: "a", n: -1}, {name: "b", n: 11}]}, {out: [{name: "b", big: true}]}],
+    [{min: 100, items: [{name: "a", n: 5}]}, {out: []}],
+    [{min: 0, items: []}, {out: []}],
+  ],
+}
+
+{
+  name: "inputField map builds the item objects",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "map(prices, {p: #, idx: 0})", outputPath: "out", executionMode: "loop", fields: {gross: "p * 1.2", idx: "idx", orig: "$root.p"}},
+    ],
+  },
+  cases: [
+    [{prices: [10, 0.5]}, {out: [{gross: 12, idx: 0, orig: 10}, {gross: 0.6, idx: 0, orig: 0.5}]}],
+    [{prices: []}, {out: []}],
+    [{prices: [-5]}, {out: [{gross: -6, idx: 0, orig: -5}]}],
+  ],
+}
+
+{
+  name: "inputField maps scalars into objects, so fields read by name",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "map(names, {name: #, len: len(#)})", outputPath: "out", executionMode: "loop", fields: {label: "upper(name) + ':' + string(len)"}},
+    ],
+  },
+  cases: [
+    [{names: ["ann", "bo"]}, {out: [{label: "ANN:3"}, {label: "BO:2"}]}],
+    [{names: [""]}, {out: [{label: ":0"}]}],
+    [{names: []}, {out: []}],
+  ],
+}
+
+// Slices are inclusive of both ends (expression spec 04-slices).
+{
+  name: "inputField slices of the source array",
+  graph: {
+    nodes: [
+      {expression: "head", inputField: "xs[0:1]", outputPath: "head", executionMode: "loop", fields: {v: "$root"}},
+      {expression: "tail", inputField: "xs[2:]", outputPath: "tail", executionMode: "loop", fields: {v: "$root"}},
+    ],
+    edges: ["input -> head -> output", "input -> tail -> output"],
+  },
+  cases: [
+    [{xs: [1, 2, 3, 4]}, {head: [{v: 1}, {v: 2}], tail: [{v: 3}, {v: 4}]}],
+    [{xs: [5, 6, 7]}, {head: [{v: 5}, {v: 6}], tail: [{v: 7}]}],
+    [{xs: [1, 2]}, {head: [{v: 1}, {v: 2}], tail: []}],
+    [{xs: [1]}, "!error", "question: a slice end past the array errors rather than clamping (expression spec 04-slices), so the loop node fails"],
+  ],
+}
+
+{
+  name: "inputField flattens the line arrays of every order",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "flatten(map(orders, #.lines))", outputPath: "lines", executionMode: "loop", fields: {sku: "sku", qty2: "qty * 2"}},
+    ],
+  },
+  cases: [
+    [{orders: [{lines: [{sku: "a", qty: 1}, {sku: "b", qty: 2}]}, {lines: [{sku: "c", qty: 3}]}]}, {lines: [{sku: "a", qty2: 2}, {sku: "b", qty2: 4}, {sku: "c", qty2: 6}]}],
+    [{orders: [{lines: []}, {lines: [{sku: "x", qty: 0}]}]}, {lines: [{sku: "x", qty2: 0}]}],
+    [{orders: []}, {lines: []}],
+  ],
+}
+
+{
+  name: "inputField with a fallback for a null or missing array",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "items ?? defaults ?? []", outputPath: "out", executionMode: "loop", fields: {v: "v"}},
+    ],
+  },
+  cases: [
+    [{items: [{v: 1}]}, {out: [{v: 1}]}],
+    [{items: null, defaults: [{v: "d"}]}, {out: [{v: "d"}]}],
+    [{defaults: [{v: "d"}, {v: "e"}]}, {out: [{v: "d"}, {v: "e"}]}],
+    [{}, {out: []}],
+    [{items: []}, {out: []}],
+  ],
+}
+
+{
+  name: "inputField yielding a non-array fails the node",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "pick == 1 ? items : pick == 2 ? first : name", outputPath: "out", executionMode: "loop", fields: {v: "v"}},
+    ],
+  },
+  cases: [
+    [{pick: 1, items: [{v: 1}], first: {v: 2}, name: "x"}, {out: [{v: 1}]}],
+    [{pick: 2, items: [{v: 1}], first: {v: 2}, name: "x"}, "!error"],
+    [{pick: 3, items: [{v: 1}], first: {v: 2}, name: "x"}, "!error"],
+    [{pick: 3, items: [], name: null}, "!error"],
+  ],
+}
+
+// `cfg` is not passThrough, so the request only reaches the loop through `$nodes.input`.
+{
+  name: "inputField reads an earlier node and the request together",
+  graph: {
+    nodes: [
+      {expression: "cfg", fields: {keep: "['a', 'c']"}},
+      {expression: "each", inputField: "filter($nodes.input.items, #.k in $nodes.cfg.keep)", outputPath: "kept", executionMode: "loop", fields: {k: "k"}},
+    ],
+  },
+  cases: [
+    [{items: [{k: "a"}, {k: "b"}, {k: "c"}]}, {kept: [{k: "a"}, {k: "c"}]}],
+    [{items: [{k: "b"}]}, {kept: []}],
+    [{items: [{k: "c"}, {k: "c"}]}, {kept: [{k: "c"}, {k: "c"}]}],
+  ],
+}
+
+{
+  name: "a table loop over a filtered and mapped inputField",
+  graph: {
+    nodes: [
+      {table: "t", inputField: "map(filter(scores, # != null), {s: #})", outputPath: "graded", executionMode: "loop", inputs: ["s"], outputs: ["g"], rules: [[">= 90", "'A'"], [">= 50", "'B'"], ["", "'C'"]]},
+      {expression: "flat", fields: {graded: "map(graded, #.g)"}},
+    ],
+  },
+  cases: [
+    [{scores: [95, null, 50, 3]}, {graded: ["A", "B", "C"]}],
+    [{scores: [null]}, {graded: []}],
+    [{scores: [90, 89.99]}, {graded: ["A", "B"]}],
+  ],
+}
+
+
+// ---------------------------------------------------------------------------------------
+// Arrays inside objects, with results written to nested outputPaths. A dotted outputPath
+// creates the missing spine; with passThrough the rest of the input is kept around it.
+// ---------------------------------------------------------------------------------------
+
+
+{
+  name: "an array two levels deep, results under a sibling nested path",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "cart.lines", outputPath: "cart.priced", passThrough: true, executionMode: "loop", fields: {total: "qty * price"}},
+    ],
+  },
+  cases: [
+    [{cart: {id: 7, lines: [{qty: 2, price: 3}]}}, {cart: {id: 7, lines: [{qty: 2, price: 3}], priced: [{qty: 2, price: 3, total: 6}]}}],
+    [{cart: {lines: []}, x: 1}, {cart: {lines: [], priced: []}, x: 1}],
+    [{cart: {lines: [{qty: 1, price: 0.1}, {qty: 3, price: 0.1}]}}, {cart: {lines: [{qty: 1, price: 0.1}, {qty: 3, price: 0.1}], priced: [{qty: 1, price: 0.1, total: 0.1}, {qty: 3, price: 0.1, total: 0.3}]}}],
+  ],
+}
+
+// passThrough applies per item too: each result merges into its item, and the result array
+// replaces the source array in place.
+{
+  name: "a loop writes back into the array it reads, three levels deep",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "a.b.items", outputPath: "a.b.items", passThrough: true, executionMode: "loop", fields: {done: "true"}},
+    ],
+  },
+  cases: [
+    [{a: {b: {items: [{id: 1}, {id: 2}], meta: "m"}, c: 1}}, {a: {b: {items: [{id: 1, done: true}, {id: 2, done: true}], meta: "m"}, c: 1}}],
+    [{a: {b: {items: []}}}, {a: {b: {items: []}}}],
+  ],
+}
+
+{
+  name: "a loop over an array inside each element of an outer array via a child",
+  decisions: {
+    dept: {
+      nodes: [
+        {expression: "raise", inputField: "staff", outputPath: "pay", executionMode: "loop", fields: {p: "pay + 1"}},
+        {expression: "name", fields: {name: "$nodes.input.name"}},
+      ],
+      edges: ["input -> raise -> output", "input -> name -> output"],
+    },
+  },
+  graph: {
+    nodes: [
+      {decision: "each", key: "dept", inputField: "company.depts", outputPath: "report.depts", executionMode: "loop"},
+    ],
+  },
+  cases: [
+    [{company: {depts: [{name: "x", staff: [{pay: 10}, {pay: 20}]}, {name: "y", staff: []}]}}, {report: {depts: [{name: "x", pay: [{p: 11}, {p: 21}]}, {name: "y", pay: []}]}}],
+    [{company: {depts: []}}, {report: {depts: []}}],
+  ],
+}
+
+{
+  name: "two loops over two arrays of one object write into one nested result object",
+  graph: {
+    nodes: [
+      {expression: "ins", inputField: "acct.credits", outputPath: "summary.in", executionMode: "loop", fields: {v: "amount"}},
+      {expression: "outs", inputField: "acct.debits", outputPath: "summary.out", executionMode: "loop", fields: {v: "-amount"}},
+      {expression: "net", passThrough: true, fields: {"summary.net": "sum(map(summary.in, #.v)) + sum(map(summary.out, #.v))"}},
+    ],
+    edges: ["input -> ins -> net", "input -> outs -> net", "net -> output"],
+  },
+  cases: [
+    [{acct: {credits: [{amount: 10}], debits: [{amount: 3}, {amount: 2}]}}, {summary: {in: [{v: 10}], out: [{v: -3}, {v: -2}], net: 5}}],
+    [{acct: {credits: [], debits: []}}, {summary: {in: [], out: [], net: 0}}],
+    [{acct: {credits: [{amount: 1}, {amount: 1}], debits: []}}, {summary: {in: [{v: 1}, {v: 1}], out: [], net: 2}}],
+  ],
+}
+
+{
+  name: "a table loop over a nested array writes to an outputPath under the source's parent",
+  graph: {
+    nodes: [
+      {table: "t", inputField: "policy.drivers", outputPath: "policy.risk", passThrough: true, executionMode: "loop", inputs: ["age"], outputs: ["band", "load"], rules: [["< 25", "'young'", "1.5"], [">= 70", "'senior'", "1.2"], ["", "'std'", "1"]]},
+    ],
+  },
+  cases: [
+    [{policy: {id: "p", drivers: [{age: 20}, {age: 40}, {age: 80}]}}, {policy: {id: "p", drivers: [{age: 20}, {age: 40}, {age: 80}], risk: [{age: 20, band: "young", load: 1.5}, {age: 40, band: "std", load: 1}, {age: 80, band: "senior", load: 1.2}]}}],
+    [{policy: {drivers: [{}]}}, {policy: {drivers: [{}], risk: [{band: "std", load: 1}]}}],
+  ],
+}
+
+{
+  name: "an outputPath of a loop that collides with a scalar in the input",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "xs", outputPath: "meta.out", passThrough: true, executionMode: "loop", fields: {v: "$root"}},
+    ],
+  },
+  cases: [
+    [{xs: [1], meta: {keep: true}}, {xs: [1], meta: {keep: true, out: [{v: 1}]}}],
+    [{xs: [1], meta: "scalar"}, {xs: [1], meta: {out: [{v: 1}]}}],
+    [{xs: [1], meta: null}, {xs: [1], meta: {out: [{v: 1}]}}],
+    [{xs: [1], meta: [9]}, {xs: [1], meta: {out: [{v: 1}]}}],
+  ],
+}
+
+
+// ---------------------------------------------------------------------------------------
+// Loops feeding switches: routing on aggregates of the loop result, on the loop's `$nodes`
+// entry, and per item inside a child.
+// ---------------------------------------------------------------------------------------
+
+
+{
+  name: "a collect switch over aggregates of a loop result",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "xs", outputPath: "res", executionMode: "loop", fields: {v: "$root * 2"}},
+      {switch: "s", hit: "collect", when: ["len(res) == 0", "some(res, #.v > 10)", "len(res) > 0 and all(res, #.v > 0)", "sum(map(res, #.v)) > 20"]},
+      {expression: "e", fields: {empty: "true"}},
+      {expression: "b", fields: {someBig: "true"}},
+      {expression: "p", fields: {allPos: "true"}},
+      {expression: "u", fields: {sumBig: "sum(map(res, #.v))"}},
+    ],
+    edges: ["input -> each -> s", "s:0 -> e -> output", "s:1 -> b -> output", "s:2 -> p -> output", "s:3 -> u -> output"],
+  },
+  cases: [
+    [{xs: []}, {empty: true}],
+    [{xs: [1]}, {allPos: true}],
+    [{xs: [6]}, {someBig: true, allPos: true}],
+    [{xs: [6, 6]}, {someBig: true, allPos: true, sumBig: 24}],
+    [{xs: [-1, 20]}, {someBig: true, sumBig: 38}],
+    [{xs: [0]}, {}],
+    [{xs: [1, 2, 3]}, {allPos: true}],
+    [{xs: [11, -11]}, {someBig: true}],
+    [{xs: [5, 5, 1]}, {allPos: true, sumBig: 22}],
+  ],
+}
+
+// The loop has no outputPath, so the switch input is an array; the conditions read it
+// through `$nodes`.
+{
+  name: "a first switch routes on a bare loop array read through $nodes",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "xs", executionMode: "loop", fields: {v: "$root + 1"}},
+      {switch: "s", when: ["len($nodes.each) == 0", "$nodes.each[0].v > 5", ""]},
+      {expression: "n", fields: {route: "'none'"}},
+      {expression: "f", fields: {route: "'firstBig'", first: "$nodes.each[0].v"}},
+      {expression: "o", fields: {route: "'other'", n: "len($nodes.each)"}},
+    ],
+    edges: ["input -> each -> s", "s:0 -> n -> output", "s:1 -> f -> output", "s:2 -> o -> output"],
+  },
+  cases: [
+    [{xs: []}, {route: "none"}],
+    [{xs: [10]}, {route: "firstBig", first: 11}],
+    [{xs: [1, 100]}, {route: "other", n: 2}],
+    [{xs: [5, 5]}, {route: "firstBig", first: 6}],
+    [{xs: [4.5]}, {route: "firstBig", first: 5.5}],
+  ],
+}
+
+{
+  name: "a looped child routes every item through its own switch",
+  decisions: {
+    tax: {
+      nodes: [
+        {switch: "s", when: ["type == 'book'", "type == 'food'", ""]},
+        {expression: "b", fields: {tax: "0", kind: "'book'"}},
+        {expression: "f", fields: {tax: "price * 0.05", kind: "'food'"}},
+        {expression: "o", fields: {tax: "(price ?? 0) * 0.2", kind: "'other'"}},
+      ],
+      edges: ["input -> s", "s:0 -> b -> output", "s:1 -> f -> output", "s:2 -> o -> output"],
+    },
+  },
+  graph: {
+    nodes: [
+      {decision: "each", key: "tax", inputField: "items", outputPath: "taxed", executionMode: "loop"},
+    ],
+  },
+  cases: [
+    [{items: [{type: "book", price: 10}, {type: "food", price: 20}, {type: "toy", price: 5}]}, {taxed: [{tax: 0, kind: "book"}, {tax: 1.0, kind: "food"}, {tax: 1.0, kind: "other"}]}],
+    [{items: [{price: 10}]}, {taxed: [{tax: 2.0, kind: "other"}]}],
+    [{items: []}, {taxed: []}],
+    [{items: [{type: "food", price: 0}, {type: "book", price: 1}]}, {taxed: [{tax: 0.0, kind: "food"}, {tax: 0, kind: "book"}]}],
+  ],
+}
+
+{
+  name: "a loop validates rows, a switch accepts or rejects the batch",
+  graph: {
+    nodes: [
+      {expression: "check", inputField: "rows", outputPath: "checked", passThrough: true, executionMode: "loop", fields: {bad: "amount == null or amount < 0"}},
+      {switch: "s", when: ["some(checked, #.bad)", ""]},
+      {expression: "rej", fields: {status: "'reject'", badCount: "len(filter(checked, #.bad))"}},
+      {expression: "acc", fields: {status: "'accept'", total: "sum(map(rows, #.amount))"}},
+    ],
+    edges: ["input -> check -> s", "s:0 -> rej -> output", "s:1 -> acc -> output"],
+  },
+  cases: [
+    [{rows: [{amount: 1}, {amount: 2}]}, {status: "accept", total: 3}],
+    [{rows: [{amount: 1}, {amount: -2}]}, {status: "reject", badCount: 1}],
+    [{rows: [{}, {amount: -1}, {amount: 3}]}, {status: "reject", badCount: 2}],
+    [{rows: []}, {status: "accept", total: 0}],
+  ],
+}
+
+{
+  name: "a switch picks which loop runs over the same array, then a join reads both",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["mode == 'sum'", ""]},
+      {expression: "dbl", inputField: "xs", executionMode: "loop", fields: {v: "$root * 2"}},
+      {expression: "neg", inputField: "xs", executionMode: "loop", fields: {v: "-$root"}},
+      {expression: "join", fields: {which: "$nodes.dbl != null ? 'dbl' : 'neg'", vals: "map($nodes.dbl ?? $nodes.neg, #.v)"}},
+    ],
+    edges: ["input -> s", "s:0 -> dbl -> join", "s:1 -> neg -> join", "join -> output"],
+  },
+  cases: [
+    [{mode: "sum", xs: [1, 2]}, {which: "dbl", vals: [2, 4]}],
+    [{mode: "x", xs: [1, 2]}, {which: "neg", vals: [-1, -2]}],
+    [{xs: []}, {which: "neg", vals: []}],
+    [{mode: "sum", xs: []}, {which: "dbl", vals: []}],
+  ],
+}
+
+
+// ---------------------------------------------------------------------------------------
+// `$root` in loop bodies is the current item: an object, a scalar, an array or null. `$` is
+// the item's own result so far.
+// ---------------------------------------------------------------------------------------
+
+
+{
+  name: "$root of object items: whole item and member access",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "items", outputPath: "out", executionMode: "loop", fields: {copy: "$root", b: "$root.b ?? 'nob'", a: "$root.a", plain: "a"}},
+    ],
+  },
+  cases: [
+    [{items: [{a: 1}, {a: 2, b: 3}]}, {out: [{copy: {a: 1}, b: "nob", a: 1, plain: 1}, {copy: {a: 2, b: 3}, b: 3, a: 2, plain: 2}]}],
+    [{items: [{}]}, {out: [{copy: {}, b: "nob", a: null, plain: null}]}],
+  ],
+}
+
+{
+  name: "$root of mixed scalar items with type checks",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "xs", outputPath: "out", executionMode: "loop", fields: {t: "type($root)", isNum: "type($root) == 'number'", twice: "type($root) == 'number' ? $root * 2 : null"}},
+    ],
+  },
+  cases: [
+    [{xs: [1, "a", true, null]}, {out: [{t: "number", isNum: true, twice: 2}, {t: "string", isNum: false, twice: null}, {t: "bool", isNum: false, twice: null}, {t: "null", isNum: false, twice: null}]}],
+    [{xs: [[1], {a: 1}]}, {out: [{t: "array", isNum: false, twice: null}, {t: "object", isNum: false, twice: null}]}],
+  ],
+}
+
+{
+  name: "$root of array items indexes and aggregates the inner array",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "rows", outputPath: "out", executionMode: "loop", fields: {first: "$root[0]", total: "sum($root)", n: "len($root)"}},
+    ],
+  },
+  cases: [
+    [{rows: [[1, 2], [3], []]}, {out: [{first: 1, total: 3, n: 2}, {first: 3, total: 3, n: 1}, {first: null, total: 0, n: 0}]}],
+  ],
+}
+
+{
+  name: "$ accumulates per item and resets for the next",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "items", outputPath: "out", executionMode: "loop", fields: {base: "$root.v * 10", plus: "$.base + 1", self: "$root.v == $.base / 10"}},
+    ],
+  },
+  cases: [
+    [{items: [{v: 1}, {v: 2}, {v: 3}]}, {out: [{base: 10, plus: 11, self: true}, {base: 20, plus: 21, self: true}, {base: 30, plus: 31, self: true}]}],
+    [{items: [{v: 0}]}, {out: [{base: 0, plus: 1, self: true}]}],
+  ],
+}
+
+{
+  name: "$root inside closures of a loop body is still the item",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "groups", outputPath: "out", executionMode: "loop", fields: {above: "filter($root.vals, # > $root.limit)", scaled: "map($root.vals, # * len($root.vals))"}},
+    ],
+  },
+  cases: [
+    [{groups: [{limit: 1, vals: [0, 1, 2, 3]}, {limit: 10, vals: [5]}]}, {out: [{above: [2, 3], scaled: [0, 4, 8, 12]}, {above: [], scaled: [5]}]}],
+    [{groups: [{limit: 0, vals: []}]}, {out: [{above: [], scaled: []}]}],
+  ],
+}
+
+
+// ---------------------------------------------------------------------------------------
+// Sub-decision loops with schemas: the child's input schema validates every item, its
+// output schema every item result; one failing item fails the parent.
+// ---------------------------------------------------------------------------------------
+
+
+{
+  name: "child input schema with an enum and a default switch per item",
+  decisions: {
+    child: {
+      nodes: [
+        {input: "in", schema: {type: "object", required: ["kind", "n"], properties: {kind: {enum: ["a", "b"]}, n: {type: "number"}}}},
+        {switch: "s", when: ["kind == 'a'", ""]},
+        {expression: "ea", fields: {r: "'A' + string(n)"}},
+        {expression: "eo", fields: {r: "'other'"}},
+      ],
+      edges: ["in -> s", "s:0 -> ea -> output", "s:1 -> eo -> output"],
+    },
+  },
+  graph: {
+    nodes: [
+      {decision: "each", key: "child", inputField: "items", outputPath: "out", executionMode: "loop"},
+    ],
+  },
+  cases: [
+    [{items: [{kind: "a", n: 1}, {kind: "b", n: 2}]}, {out: [{r: "A1"}, {r: "other"}]}],
+    [{items: [{kind: "c", n: 1}]}, "!error: NodeError"],
+    [{items: [{kind: "a", n: 1}, {kind: "a"}]}, "!error: NodeError"],
+    [{items: []}, {out: []}],
+  ],
+}
+
+{
+  name: "child input schema with a date format: items get date values",
+  decisions: {
+    child: {
+      nodes: [
+        {input: "in", schema: {type: "object", required: ["due"], properties: {due: {type: "string", format: "date"}}}},
+        {expression: "e", fields: {overdue: "due < d('2025-03-20')", year: "due.year()"}},
+      ],
+    },
+  },
+  graph: {
+    nodes: [
+      {decision: "each", key: "child", inputField: "items", outputPath: "out", executionMode: "loop"},
+    ],
+  },
+  cases: [
+    [{items: [{due: "2025-03-01"}, {due: "2025-04-01"}]}, {out: [{overdue: true, year: 2025}, {overdue: false, year: 2025}]}],
+    [{items: [{due: "not a date"}]}, "!error: NodeError"],
+    [{items: []}, {out: []}],
+  ],
+}
+
+{
+  name: "child output schema rejects one item's result",
+  decisions: {
+    child: {
+      nodes: [
+        {expression: "e", fields: {pct: "n"}},
+        {output: "out", schema: {type: "object", required: ["pct"], properties: {pct: {type: "number", minimum: 0, maximum: 100}}}},
+      ],
+    },
+  },
+  graph: {
+    nodes: [
+      {decision: "each", key: "child", inputField: "items", outputPath: "out", executionMode: "loop"},
+    ],
+  },
+  cases: [
+    [{items: [{n: 1}, {n: 50}]}, {out: [{pct: 1}, {pct: 50}]}],
+    [{items: [{n: 1}, {n: 101}]}, "!error: NodeError"],
+    [{items: [{n: -1}]}, "!error: NodeError"],
+  ],
+}
+
+// Only selected items are validated: an inactive item without an id never reaches the child.
+{
+  name: "child schema validates items selected by a filtering inputField",
+  decisions: {
+    child: {
+      nodes: [
+        {input: "in", schema: {type: "object", required: ["id"], properties: {id: {type: "string"}}}},
+        {expression: "e", fields: {id: "upper(id)"}},
+      ],
+    },
+  },
+  graph: {
+    nodes: [
+      {decision: "each", key: "child", inputField: "filter(items, #.active == true)", outputPath: "out", executionMode: "loop"},
+    ],
+  },
+  cases: [
+    [{items: [{active: true, id: "a"}, {active: false}, {active: true, id: "b"}]}, {out: [{id: "A"}, {id: "B"}]}],
+    [{items: [{active: false, id: 5}]}, {out: []}],
+    [{items: [{active: true, id: 5}]}, "!error: NodeError"],
+  ],
+}
+
+{
+  name: "child schema with passThrough writes validated items back",
+  decisions: {
+    child: {
+      nodes: [
+        {input: "in", schema: {type: "object", properties: {q: {type: "integer", minimum: 1}}}},
+        {expression: "e", passThrough: true, fields: {ok: "true"}},
+      ],
+    },
+  },
+  graph: {
+    nodes: [
+      {decision: "each", key: "child", inputField: "items", outputPath: "items", passThrough: true, executionMode: "loop"},
+    ],
+  },
+  cases: [
+    [{items: [{q: 2}], other: "kept"}, {items: [{q: 2, ok: true}], other: "kept"}],
+    [{items: [{q: 0}]}, "!error: NodeError"],
+    [{items: [], other: 1}, {items: [], other: 1}],
+  ],
+}
+
+
+// ---------------------------------------------------------------------------------------
+// Arrays of 100 or more items. Results keep item order and every item is processed.
+// ---------------------------------------------------------------------------------------
+
+
+{
+  name: "expression loop over 120 items with an aggregate",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "items", outputPath: "out", executionMode: "loop", fields: {id: "id", sq: "v * v"}},
+      {expression: "agg", fields: {n: "len(out)", total: "sum(map(out, #.sq))", last: "out[len(out) - 1].id", firstSq: "out[0].sq"}},
+    ],
+  },
+  cases: [
+    [{items: [{id: 0, v: 0}, {id: 1, v: 7}, {id: 2, v: 14}, {id: 3, v: 21}, {id: 4, v: 5}, {id: 5, v: 12}, {id: 6, v: 19}, {id: 7, v: 3}, {id: 8, v: 10}, {id: 9, v: 17}, {id: 10, v: 1}, {id: 11, v: 8}, {id: 12, v: 15}, {id: 13, v: 22}, {id: 14, v: 6}, {id: 15, v: 13}, {id: 16, v: 20}, {id: 17, v: 4}, {id: 18, v: 11}, {id: 19, v: 18}, {id: 20, v: 2}, {id: 21, v: 9}, {id: 22, v: 16}, {id: 23, v: 0}, {id: 24, v: 7}, {id: 25, v: 14}, {id: 26, v: 21}, {id: 27, v: 5}, {id: 28, v: 12}, {id: 29, v: 19}, {id: 30, v: 3}, {id: 31, v: 10}, {id: 32, v: 17}, {id: 33, v: 1}, {id: 34, v: 8}, {id: 35, v: 15}, {id: 36, v: 22}, {id: 37, v: 6}, {id: 38, v: 13}, {id: 39, v: 20}, {id: 40, v: 4}, {id: 41, v: 11}, {id: 42, v: 18}, {id: 43, v: 2}, {id: 44, v: 9}, {id: 45, v: 16}, {id: 46, v: 0}, {id: 47, v: 7}, {id: 48, v: 14}, {id: 49, v: 21}, {id: 50, v: 5}, {id: 51, v: 12}, {id: 52, v: 19}, {id: 53, v: 3}, {id: 54, v: 10}, {id: 55, v: 17}, {id: 56, v: 1}, {id: 57, v: 8}, {id: 58, v: 15}, {id: 59, v: 22}, {id: 60, v: 6}, {id: 61, v: 13}, {id: 62, v: 20}, {id: 63, v: 4}, {id: 64, v: 11}, {id: 65, v: 18}, {id: 66, v: 2}, {id: 67, v: 9}, {id: 68, v: 16}, {id: 69, v: 0}, {id: 70, v: 7}, {id: 71, v: 14}, {id: 72, v: 21}, {id: 73, v: 5}, {id: 74, v: 12}, {id: 75, v: 19}, {id: 76, v: 3}, {id: 77, v: 10}, {id: 78, v: 17}, {id: 79, v: 1}, {id: 80, v: 8}, {id: 81, v: 15}, {id: 82, v: 22}, {id: 83, v: 6}, {id: 84, v: 13}, {id: 85, v: 20}, {id: 86, v: 4}, {id: 87, v: 11}, {id: 88, v: 18}, {id: 89, v: 2}, {id: 90, v: 9}, {id: 91, v: 16}, {id: 92, v: 0}, {id: 93, v: 7}, {id: 94, v: 14}, {id: 95, v: 21}, {id: 96, v: 5}, {id: 97, v: 12}, {id: 98, v: 19}, {id: 99, v: 3}, {id: 100, v: 10}, {id: 101, v: 17}, {id: 102, v: 1}, {id: 103, v: 8}, {id: 104, v: 15}, {id: 105, v: 22}, {id: 106, v: 6}, {id: 107, v: 13}, {id: 108, v: 20}, {id: 109, v: 4}, {id: 110, v: 11}, {id: 111, v: 18}, {id: 112, v: 2}, {id: 113, v: 9}, {id: 114, v: 16}, {id: 115, v: 0}, {id: 116, v: 7}, {id: 117, v: 14}, {id: 118, v: 21}, {id: 119, v: 5}]}, {n: 120, total: 19686, last: 119, firstSq: 0}],
+    [{items: [{id: 0, v: 0}, {id: 1, v: 7}, {id: 2, v: 14}, {id: 3, v: 21}, {id: 4, v: 5}, {id: 5, v: 12}, {id: 6, v: 19}, {id: 7, v: 3}, {id: 8, v: 10}, {id: 9, v: 17}, {id: 10, v: 1}, {id: 11, v: 8}, {id: 12, v: 15}, {id: 13, v: 22}, {id: 14, v: 6}, {id: 15, v: 13}, {id: 16, v: 20}, {id: 17, v: 4}, {id: 18, v: 11}, {id: 19, v: 18}, {id: 20, v: 2}, {id: 21, v: 9}, {id: 22, v: 16}, {id: 23, v: 0}, {id: 24, v: 7}, {id: 25, v: 14}, {id: 26, v: 21}, {id: 27, v: 5}, {id: 28, v: 12}, {id: 29, v: 19}, {id: 30, v: 3}, {id: 31, v: 10}, {id: 32, v: 17}, {id: 33, v: 1}, {id: 34, v: 8}, {id: 35, v: 15}, {id: 36, v: 22}, {id: 37, v: 6}, {id: 38, v: 13}, {id: 39, v: 20}, {id: 40, v: 4}, {id: 41, v: 11}, {id: 42, v: 18}, {id: 43, v: 2}, {id: 44, v: 9}, {id: 45, v: 16}, {id: 46, v: 0}, {id: 47, v: 7}, {id: 48, v: 14}, {id: 49, v: 21}, {id: 50, v: 5}, {id: 51, v: 12}, {id: 52, v: 19}, {id: 53, v: 3}, {id: 54, v: 10}, {id: 55, v: 17}, {id: 56, v: 1}, {id: 57, v: 8}, {id: 58, v: 15}, {id: 59, v: 22}, {id: 60, v: 6}, {id: 61, v: 13}, {id: 62, v: 20}, {id: 63, v: 4}, {id: 64, v: 11}, {id: 65, v: 18}, {id: 66, v: 2}, {id: 67, v: 9}, {id: 68, v: 16}, {id: 69, v: 0}, {id: 70, v: 7}, {id: 71, v: 14}, {id: 72, v: 21}, {id: 73, v: 5}, {id: 74, v: 12}, {id: 75, v: 19}, {id: 76, v: 3}, {id: 77, v: 10}, {id: 78, v: 17}, {id: 79, v: 1}, {id: 80, v: 8}, {id: 81, v: 15}, {id: 82, v: 22}, {id: 83, v: 6}, {id: 84, v: 13}, {id: 85, v: 20}, {id: 86, v: 4}, {id: 87, v: 11}, {id: 88, v: 18}, {id: 89, v: 2}, {id: 90, v: 9}, {id: 91, v: 16}, {id: 92, v: 0}, {id: 93, v: 7}, {id: 94, v: 14}, {id: 95, v: 21}, {id: 96, v: 5}, {id: 97, v: 12}, {id: 98, v: 19}, {id: 99, v: 3}, {id: 100, v: 10}]}, {n: 101, total: 16505, last: 100, firstSq: 0}],
+    [{items: [{id: 60, v: 6}, {id: 61, v: 13}, {id: 62, v: 20}, {id: 63, v: 4}, {id: 64, v: 11}, {id: 65, v: 18}, {id: 66, v: 2}, {id: 67, v: 9}, {id: 68, v: 16}, {id: 69, v: 0}, {id: 70, v: 7}, {id: 71, v: 14}, {id: 72, v: 21}, {id: 73, v: 5}, {id: 74, v: 12}, {id: 75, v: 19}, {id: 76, v: 3}, {id: 77, v: 10}, {id: 78, v: 17}, {id: 79, v: 1}, {id: 80, v: 8}, {id: 81, v: 15}, {id: 82, v: 22}, {id: 83, v: 6}, {id: 84, v: 13}, {id: 85, v: 20}, {id: 86, v: 4}, {id: 87, v: 11}, {id: 88, v: 18}, {id: 89, v: 2}, {id: 90, v: 9}, {id: 91, v: 16}, {id: 92, v: 0}, {id: 93, v: 7}, {id: 94, v: 14}, {id: 95, v: 21}, {id: 96, v: 5}, {id: 97, v: 12}, {id: 98, v: 19}, {id: 99, v: 3}, {id: 100, v: 10}, {id: 101, v: 17}, {id: 102, v: 1}, {id: 103, v: 8}, {id: 104, v: 15}, {id: 105, v: 22}, {id: 106, v: 6}, {id: 107, v: 13}, {id: 108, v: 20}, {id: 109, v: 4}, {id: 110, v: 11}, {id: 111, v: 18}, {id: 112, v: 2}, {id: 113, v: 9}, {id: 114, v: 16}, {id: 115, v: 0}, {id: 116, v: 7}, {id: 117, v: 14}, {id: 118, v: 21}, {id: 119, v: 5}]}, {n: 60, total: 9708, last: 119, firstSq: 36}],
+  ],
+}
+
+{
+  name: "table loop over 150 items counted per band",
+  graph: {
+    nodes: [
+      {table: "t", inputField: "items", outputPath: "b", executionMode: "loop", inputs: ["v"], outputs: ["band"], rules: [[">= 15", "'hi'"], [">= 5", "'mid'"], ["", "'lo'"]]},
+      {expression: "count", fields: {hi: "len(filter(b, #.band == 'hi'))", mid: "len(filter(b, #.band == 'mid'))", lo: "len(filter(b, #.band == 'lo'))", tenth: "b[9].band"}},
+    ],
+  },
+  cases: [
+    [{items: [{v: 0}, {v: 11}, {v: 22}, {v: 2}, {v: 13}, {v: 24}, {v: 4}, {v: 15}, {v: 26}, {v: 6}, {v: 17}, {v: 28}, {v: 8}, {v: 19}, {v: 30}, {v: 10}, {v: 21}, {v: 1}, {v: 12}, {v: 23}, {v: 3}, {v: 14}, {v: 25}, {v: 5}, {v: 16}, {v: 27}, {v: 7}, {v: 18}, {v: 29}, {v: 9}, {v: 20}, {v: 0}, {v: 11}, {v: 22}, {v: 2}, {v: 13}, {v: 24}, {v: 4}, {v: 15}, {v: 26}, {v: 6}, {v: 17}, {v: 28}, {v: 8}, {v: 19}, {v: 30}, {v: 10}, {v: 21}, {v: 1}, {v: 12}, {v: 23}, {v: 3}, {v: 14}, {v: 25}, {v: 5}, {v: 16}, {v: 27}, {v: 7}, {v: 18}, {v: 29}, {v: 9}, {v: 20}, {v: 0}, {v: 11}, {v: 22}, {v: 2}, {v: 13}, {v: 24}, {v: 4}, {v: 15}, {v: 26}, {v: 6}, {v: 17}, {v: 28}, {v: 8}, {v: 19}, {v: 30}, {v: 10}, {v: 21}, {v: 1}, {v: 12}, {v: 23}, {v: 3}, {v: 14}, {v: 25}, {v: 5}, {v: 16}, {v: 27}, {v: 7}, {v: 18}, {v: 29}, {v: 9}, {v: 20}, {v: 0}, {v: 11}, {v: 22}, {v: 2}, {v: 13}, {v: 24}, {v: 4}, {v: 15}, {v: 26}, {v: 6}, {v: 17}, {v: 28}, {v: 8}, {v: 19}, {v: 30}, {v: 10}, {v: 21}, {v: 1}, {v: 12}, {v: 23}, {v: 3}, {v: 14}, {v: 25}, {v: 5}, {v: 16}, {v: 27}, {v: 7}, {v: 18}, {v: 29}, {v: 9}, {v: 20}, {v: 0}, {v: 11}, {v: 22}, {v: 2}, {v: 13}, {v: 24}, {v: 4}, {v: 15}, {v: 26}, {v: 6}, {v: 17}, {v: 28}, {v: 8}, {v: 19}, {v: 30}, {v: 10}, {v: 21}, {v: 1}, {v: 12}, {v: 23}, {v: 3}, {v: 14}, {v: 25}, {v: 5}, {v: 16}, {v: 27}]}, {hi: 77, mid: 48, lo: 25, tenth: "mid"}],
+    [{items: [{v: 27}, {v: 16}, {v: 5}, {v: 25}, {v: 14}, {v: 3}, {v: 23}, {v: 12}, {v: 1}, {v: 21}, {v: 10}, {v: 30}, {v: 19}, {v: 8}, {v: 28}, {v: 17}, {v: 6}, {v: 26}, {v: 15}, {v: 4}, {v: 24}, {v: 13}, {v: 2}, {v: 22}, {v: 11}, {v: 0}, {v: 20}, {v: 9}, {v: 29}, {v: 18}, {v: 7}, {v: 27}, {v: 16}, {v: 5}, {v: 25}, {v: 14}, {v: 3}, {v: 23}, {v: 12}, {v: 1}, {v: 21}, {v: 10}, {v: 30}, {v: 19}, {v: 8}, {v: 28}, {v: 17}, {v: 6}, {v: 26}, {v: 15}, {v: 4}, {v: 24}, {v: 13}, {v: 2}, {v: 22}, {v: 11}, {v: 0}, {v: 20}, {v: 9}, {v: 29}, {v: 18}, {v: 7}, {v: 27}, {v: 16}, {v: 5}, {v: 25}, {v: 14}, {v: 3}, {v: 23}, {v: 12}, {v: 1}, {v: 21}, {v: 10}, {v: 30}, {v: 19}, {v: 8}, {v: 28}, {v: 17}, {v: 6}, {v: 26}, {v: 15}, {v: 4}, {v: 24}, {v: 13}, {v: 2}, {v: 22}, {v: 11}, {v: 0}, {v: 20}, {v: 9}, {v: 29}, {v: 18}, {v: 7}, {v: 27}, {v: 16}, {v: 5}, {v: 25}, {v: 14}, {v: 3}, {v: 23}, {v: 12}, {v: 1}, {v: 21}, {v: 10}, {v: 30}, {v: 19}, {v: 8}, {v: 28}, {v: 17}, {v: 6}, {v: 26}, {v: 15}, {v: 4}, {v: 24}, {v: 13}, {v: 2}, {v: 22}, {v: 11}, {v: 0}, {v: 20}, {v: 9}, {v: 29}, {v: 18}, {v: 7}, {v: 27}, {v: 16}, {v: 5}, {v: 25}, {v: 14}, {v: 3}, {v: 23}, {v: 12}, {v: 1}, {v: 21}, {v: 10}, {v: 30}, {v: 19}, {v: 8}, {v: 28}, {v: 17}, {v: 6}, {v: 26}, {v: 15}, {v: 4}, {v: 24}, {v: 13}, {v: 2}, {v: 22}, {v: 11}, {v: 0}]}, {hi: 77, mid: 48, lo: 25, tenth: "hi"}],
+    [{items: [{v: 0}, {v: 11}, {v: 22}, {v: 2}, {v: 13}, {v: 24}, {v: 4}, {v: 15}, {v: 26}, {v: 6}, {v: 17}, {v: 28}, {v: 8}, {v: 19}, {v: 30}, {v: 10}, {v: 21}, {v: 1}, {v: 12}, {v: 23}, {v: 3}, {v: 14}, {v: 25}, {v: 5}, {v: 16}, {v: 27}, {v: 7}, {v: 18}, {v: 29}, {v: 9}, {v: 20}, {v: 0}, {v: 11}, {v: 22}, {v: 2}, {v: 13}, {v: 24}, {v: 4}, {v: 15}, {v: 26}, {v: 6}, {v: 17}, {v: 28}, {v: 8}, {v: 19}, {v: 30}, {v: 10}, {v: 21}, {v: 1}, {v: 12}, {v: 23}, {v: 3}, {v: 14}, {v: 25}, {v: 5}, {v: 16}, {v: 27}, {v: 7}, {v: 18}, {v: 29}, {v: 9}, {v: 20}, {v: 0}, {v: 11}, {v: 22}, {v: 2}, {v: 13}, {v: 24}, {v: 4}, {v: 15}, {v: 26}, {v: 6}, {v: 17}, {v: 28}, {v: 8}, {v: 19}, {v: 30}, {v: 10}, {v: 21}, {v: 1}, {v: 12}, {v: 23}, {v: 3}, {v: 14}, {v: 25}, {v: 5}, {v: 16}, {v: 27}, {v: 7}, {v: 18}, {v: 29}, {v: 9}, {v: 20}, {v: 0}, {v: 11}, {v: 22}, {v: 2}, {v: 13}, {v: 24}, {v: 4}]}, {hi: 50, mid: 32, lo: 18, tenth: "mid"}],
+  ],
+}
+
+{
+  name: "sub-decision loop with a switch over 100 items",
+  decisions: {
+    child: {
+      nodes: [
+        {switch: "s", when: ["n > 0", "n < 0", ""]},
+        {expression: "p", fields: {sign: "'pos'", abs: "n"}},
+        {expression: "m", fields: {sign: "'neg'", abs: "-n"}},
+        {expression: "z", fields: {sign: "'zero'", abs: "0"}},
+      ],
+      edges: ["input -> s", "s:0 -> p -> output", "s:1 -> m -> output", "s:2 -> z -> output"],
+    },
+  },
+  graph: {
+    nodes: [
+      {decision: "each", key: "child", inputField: "items", outputPath: "out", executionMode: "loop"},
+      {expression: "agg", fields: {pos: "len(filter(out, #.sign == 'pos'))", zero: "len(filter(out, #.sign == 'zero'))", absSum: "sum(map(out, #.abs))", at50: "out[50]"}},
+    ],
+  },
+  cases: [
+    [{items: [{n: -50}, {n: -49}, {n: -48}, {n: -47}, {n: -46}, {n: -45}, {n: -44}, {n: -43}, {n: -42}, {n: -41}, {n: -40}, {n: -39}, {n: -38}, {n: -37}, {n: -36}, {n: -35}, {n: -34}, {n: -33}, {n: -32}, {n: -31}, {n: -30}, {n: -29}, {n: -28}, {n: -27}, {n: -26}, {n: -25}, {n: -24}, {n: -23}, {n: -22}, {n: -21}, {n: -20}, {n: -19}, {n: -18}, {n: -17}, {n: -16}, {n: -15}, {n: -14}, {n: -13}, {n: -12}, {n: -11}, {n: -10}, {n: -9}, {n: -8}, {n: -7}, {n: -6}, {n: -5}, {n: -4}, {n: -3}, {n: -2}, {n: -1}, {n: 0}, {n: 1}, {n: 2}, {n: 3}, {n: 4}, {n: 5}, {n: 6}, {n: 7}, {n: 8}, {n: 9}, {n: 10}, {n: 11}, {n: 12}, {n: 13}, {n: 14}, {n: 15}, {n: 16}, {n: 17}, {n: 18}, {n: 19}, {n: 20}, {n: 21}, {n: 22}, {n: 23}, {n: 24}, {n: 25}, {n: 26}, {n: 27}, {n: 28}, {n: 29}, {n: 30}, {n: 31}, {n: 32}, {n: 33}, {n: 34}, {n: 35}, {n: 36}, {n: 37}, {n: 38}, {n: 39}, {n: 40}, {n: 41}, {n: 42}, {n: 43}, {n: 44}, {n: 45}, {n: 46}, {n: 47}, {n: 48}, {n: 49}]}, {pos: 49, zero: 1, absSum: 2500, at50: {sign: "zero", abs: 0}}],
+    [{items: [{n: 49}, {n: 48}, {n: 47}, {n: 46}, {n: 45}, {n: 44}, {n: 43}, {n: 42}, {n: 41}, {n: 40}, {n: 39}, {n: 38}, {n: 37}, {n: 36}, {n: 35}, {n: 34}, {n: 33}, {n: 32}, {n: 31}, {n: 30}, {n: 29}, {n: 28}, {n: 27}, {n: 26}, {n: 25}, {n: 24}, {n: 23}, {n: 22}, {n: 21}, {n: 20}, {n: 19}, {n: 18}, {n: 17}, {n: 16}, {n: 15}, {n: 14}, {n: 13}, {n: 12}, {n: 11}, {n: 10}, {n: 9}, {n: 8}, {n: 7}, {n: 6}, {n: 5}, {n: 4}, {n: 3}, {n: 2}, {n: 1}, {n: 0}, {n: -1}, {n: -2}, {n: -3}, {n: -4}, {n: -5}, {n: -6}, {n: -7}, {n: -8}, {n: -9}, {n: -10}, {n: -11}, {n: -12}, {n: -13}, {n: -14}, {n: -15}, {n: -16}, {n: -17}, {n: -18}, {n: -19}, {n: -20}, {n: -21}, {n: -22}, {n: -23}, {n: -24}, {n: -25}, {n: -26}, {n: -27}, {n: -28}, {n: -29}, {n: -30}, {n: -31}, {n: -32}, {n: -33}, {n: -34}, {n: -35}, {n: -36}, {n: -37}, {n: -38}, {n: -39}, {n: -40}, {n: -41}, {n: -42}, {n: -43}, {n: -44}, {n: -45}, {n: -46}, {n: -47}, {n: -48}, {n: -49}, {n: -50}]}, {pos: 49, zero: 1, absSum: 2500, at50: {sign: "neg", abs: 1}}],
+  ],
+}
+
+{
+  name: "130 scalars through a filtering inputField and passThrough",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "map(filter(xs, # % 3 == 0), {x: #})", outputPath: "thirds", passThrough: true, executionMode: "loop", fields: {half: "x / 2"}},
+      {expression: "agg", fields: {n: "len(thirds)", inputN: "len(xs)", lastHalf: "thirds[len(thirds) - 1].half"}},
+    ],
+  },
+  cases: [
+    [{xs: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129]}, {n: 44, inputN: 130, lastHalf: 64.5}],
+    [{xs: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129]}, {n: 43, inputN: 129, lastHalf: 64.5}],
+  ],
+}
+
+{
+  name: "110 items routed by a collect switch after the loop",
+  graph: {
+    nodes: [
+      {expression: "each", inputField: "rows", outputPath: "res", executionMode: "loop", fields: {k: "k", flag: "amt > 100"}},
+      {switch: "s", hit: "collect", when: ["len(res) > 100", "some(res, #.flag)", "len(filter(res, #.k == 'k0')) == 22", ""]},
+      {expression: "a", fields: {many: "true"}},
+      {expression: "b", fields: {flagged: "len(filter(res, #.flag))"}},
+      {expression: "c", fields: {k0: "true"}},
+      {expression: "d", fields: {n: "len(res)"}},
+    ],
+    edges: ["input -> each -> s", "s:0 -> a -> output", "s:1 -> b -> output", "s:2 -> c -> output", "s:3 -> d -> output"],
+  },
+  cases: [
+    [{rows: [{k: "k0", amt: 0}, {k: "k1", amt: 1}, {k: "k2", amt: 2}, {k: "k3", amt: 3}, {k: "k4", amt: 4}, {k: "k0", amt: 5}, {k: "k1", amt: 6}, {k: "k2", amt: 7}, {k: "k3", amt: 8}, {k: "k4", amt: 9}, {k: "k0", amt: 10}, {k: "k1", amt: 11}, {k: "k2", amt: 12}, {k: "k3", amt: 13}, {k: "k4", amt: 14}, {k: "k0", amt: 15}, {k: "k1", amt: 16}, {k: "k2", amt: 17}, {k: "k3", amt: 18}, {k: "k4", amt: 19}, {k: "k0", amt: 20}, {k: "k1", amt: 21}, {k: "k2", amt: 22}, {k: "k3", amt: 23}, {k: "k4", amt: 24}, {k: "k0", amt: 25}, {k: "k1", amt: 26}, {k: "k2", amt: 27}, {k: "k3", amt: 28}, {k: "k4", amt: 29}, {k: "k0", amt: 30}, {k: "k1", amt: 31}, {k: "k2", amt: 32}, {k: "k3", amt: 33}, {k: "k4", amt: 34}, {k: "k0", amt: 35}, {k: "k1", amt: 36}, {k: "k2", amt: 37}, {k: "k3", amt: 38}, {k: "k4", amt: 39}, {k: "k0", amt: 40}, {k: "k1", amt: 41}, {k: "k2", amt: 42}, {k: "k3", amt: 43}, {k: "k4", amt: 44}, {k: "k0", amt: 45}, {k: "k1", amt: 46}, {k: "k2", amt: 47}, {k: "k3", amt: 48}, {k: "k4", amt: 49}, {k: "k0", amt: 50}, {k: "k1", amt: 51}, {k: "k2", amt: 52}, {k: "k3", amt: 53}, {k: "k4", amt: 54}, {k: "k0", amt: 55}, {k: "k1", amt: 56}, {k: "k2", amt: 57}, {k: "k3", amt: 58}, {k: "k4", amt: 59}, {k: "k0", amt: 60}, {k: "k1", amt: 61}, {k: "k2", amt: 62}, {k: "k3", amt: 63}, {k: "k4", amt: 64}, {k: "k0", amt: 65}, {k: "k1", amt: 66}, {k: "k2", amt: 67}, {k: "k3", amt: 68}, {k: "k4", amt: 69}, {k: "k0", amt: 70}, {k: "k1", amt: 71}, {k: "k2", amt: 72}, {k: "k3", amt: 73}, {k: "k4", amt: 74}, {k: "k0", amt: 75}, {k: "k1", amt: 76}, {k: "k2", amt: 77}, {k: "k3", amt: 78}, {k: "k4", amt: 79}, {k: "k0", amt: 80}, {k: "k1", amt: 81}, {k: "k2", amt: 82}, {k: "k3", amt: 83}, {k: "k4", amt: 84}, {k: "k0", amt: 85}, {k: "k1", amt: 86}, {k: "k2", amt: 87}, {k: "k3", amt: 88}, {k: "k4", amt: 89}, {k: "k0", amt: 90}, {k: "k1", amt: 91}, {k: "k2", amt: 92}, {k: "k3", amt: 93}, {k: "k4", amt: 94}, {k: "k0", amt: 95}, {k: "k1", amt: 96}, {k: "k2", amt: 97}, {k: "k3", amt: 98}, {k: "k4", amt: 99}, {k: "k0", amt: 100}, {k: "k1", amt: 101}, {k: "k2", amt: 102}, {k: "k3", amt: 103}, {k: "k4", amt: 104}, {k: "k0", amt: 105}, {k: "k1", amt: 106}, {k: "k2", amt: 107}, {k: "k3", amt: 108}, {k: "k4", amt: 109}]}, {many: true, flagged: 9, k0: true, n: 110}],
+    [{rows: [{k: "k0", amt: 0}, {k: "k1", amt: 1}, {k: "k2", amt: 2}, {k: "k3", amt: 3}, {k: "k4", amt: 4}, {k: "k0", amt: 5}, {k: "k1", amt: 6}, {k: "k2", amt: 7}, {k: "k3", amt: 8}, {k: "k4", amt: 9}, {k: "k0", amt: 10}, {k: "k1", amt: 11}, {k: "k2", amt: 12}, {k: "k3", amt: 13}, {k: "k4", amt: 14}, {k: "k0", amt: 15}, {k: "k1", amt: 16}, {k: "k2", amt: 17}, {k: "k3", amt: 18}, {k: "k4", amt: 19}, {k: "k0", amt: 20}, {k: "k1", amt: 21}, {k: "k2", amt: 22}, {k: "k3", amt: 23}, {k: "k4", amt: 24}, {k: "k0", amt: 25}, {k: "k1", amt: 26}, {k: "k2", amt: 27}, {k: "k3", amt: 28}, {k: "k4", amt: 29}, {k: "k0", amt: 30}, {k: "k1", amt: 31}, {k: "k2", amt: 32}, {k: "k3", amt: 33}, {k: "k4", amt: 34}, {k: "k0", amt: 35}, {k: "k1", amt: 36}, {k: "k2", amt: 37}, {k: "k3", amt: 38}, {k: "k4", amt: 39}, {k: "k0", amt: 40}, {k: "k1", amt: 41}, {k: "k2", amt: 42}, {k: "k3", amt: 43}, {k: "k4", amt: 44}, {k: "k0", amt: 45}, {k: "k1", amt: 46}, {k: "k2", amt: 47}, {k: "k3", amt: 48}, {k: "k4", amt: 49}, {k: "k0", amt: 50}, {k: "k1", amt: 51}, {k: "k2", amt: 52}, {k: "k3", amt: 53}, {k: "k4", amt: 54}, {k: "k0", amt: 55}, {k: "k1", amt: 56}, {k: "k2", amt: 57}, {k: "k3", amt: 58}, {k: "k4", amt: 59}, {k: "k0", amt: 60}, {k: "k1", amt: 61}, {k: "k2", amt: 62}, {k: "k3", amt: 63}, {k: "k4", amt: 64}, {k: "k0", amt: 65}, {k: "k1", amt: 66}, {k: "k2", amt: 67}, {k: "k3", amt: 68}, {k: "k4", amt: 69}, {k: "k0", amt: 70}, {k: "k1", amt: 71}, {k: "k2", amt: 72}, {k: "k3", amt: 73}, {k: "k4", amt: 74}, {k: "k0", amt: 75}, {k: "k1", amt: 76}, {k: "k2", amt: 77}, {k: "k3", amt: 78}, {k: "k4", amt: 79}, {k: "k0", amt: 80}, {k: "k1", amt: 81}, {k: "k2", amt: 82}, {k: "k3", amt: 83}, {k: "k4", amt: 84}, {k: "k0", amt: 85}, {k: "k1", amt: 86}, {k: "k2", amt: 87}, {k: "k3", amt: 88}, {k: "k4", amt: 89}, {k: "k0", amt: 90}, {k: "k1", amt: 91}, {k: "k2", amt: 92}, {k: "k3", amt: 93}, {k: "k4", amt: 94}, {k: "k0", amt: 95}, {k: "k1", amt: 96}, {k: "k2", amt: 97}, {k: "k3", amt: 98}, {k: "k4", amt: 99}]}, {n: 100}],
+    [{rows: [{k: "k0", amt: 5}, {k: "k1", amt: 6}, {k: "k2", amt: 7}, {k: "k3", amt: 8}, {k: "k4", amt: 9}, {k: "k0", amt: 10}, {k: "k1", amt: 11}, {k: "k2", amt: 12}, {k: "k3", amt: 13}, {k: "k4", amt: 14}, {k: "k0", amt: 15}, {k: "k1", amt: 16}, {k: "k2", amt: 17}, {k: "k3", amt: 18}, {k: "k4", amt: 19}, {k: "k0", amt: 20}, {k: "k1", amt: 21}, {k: "k2", amt: 22}, {k: "k3", amt: 23}, {k: "k4", amt: 24}, {k: "k0", amt: 25}, {k: "k1", amt: 26}, {k: "k2", amt: 27}, {k: "k3", amt: 28}, {k: "k4", amt: 29}, {k: "k0", amt: 30}, {k: "k1", amt: 31}, {k: "k2", amt: 32}, {k: "k3", amt: 33}, {k: "k4", amt: 34}, {k: "k0", amt: 35}, {k: "k1", amt: 36}, {k: "k2", amt: 37}, {k: "k3", amt: 38}, {k: "k4", amt: 39}, {k: "k0", amt: 40}, {k: "k1", amt: 41}, {k: "k2", amt: 42}, {k: "k3", amt: 43}, {k: "k4", amt: 44}, {k: "k0", amt: 45}, {k: "k1", amt: 46}, {k: "k2", amt: 47}, {k: "k3", amt: 48}, {k: "k4", amt: 49}, {k: "k0", amt: 50}, {k: "k1", amt: 51}, {k: "k2", amt: 52}, {k: "k3", amt: 53}, {k: "k4", amt: 54}, {k: "k0", amt: 55}, {k: "k1", amt: 56}, {k: "k2", amt: 57}, {k: "k3", amt: 58}, {k: "k4", amt: 59}, {k: "k0", amt: 60}, {k: "k1", amt: 61}, {k: "k2", amt: 62}, {k: "k3", amt: 63}, {k: "k4", amt: 64}, {k: "k0", amt: 65}, {k: "k1", amt: 66}, {k: "k2", amt: 67}, {k: "k3", amt: 68}, {k: "k4", amt: 69}, {k: "k0", amt: 70}, {k: "k1", amt: 71}, {k: "k2", amt: 72}, {k: "k3", amt: 73}, {k: "k4", amt: 74}, {k: "k0", amt: 75}, {k: "k1", amt: 76}, {k: "k2", amt: 77}, {k: "k3", amt: 78}, {k: "k4", amt: 79}, {k: "k0", amt: 80}, {k: "k1", amt: 81}, {k: "k2", amt: 82}, {k: "k3", amt: 83}, {k: "k4", amt: 84}, {k: "k0", amt: 85}, {k: "k1", amt: 86}, {k: "k2", amt: 87}, {k: "k3", amt: 88}, {k: "k4", amt: 89}, {k: "k0", amt: 90}, {k: "k1", amt: 91}, {k: "k2", amt: 92}, {k: "k3", amt: 93}, {k: "k4", amt: 94}, {k: "k0", amt: 95}, {k: "k1", amt: 96}, {k: "k2", amt: 97}, {k: "k3", amt: 98}, {k: "k4", amt: 99}, {k: "k0", amt: 100}, {k: "k1", amt: 101}, {k: "k2", amt: 102}, {k: "k3", amt: 103}, {k: "k4", amt: 104}, {k: "k0", amt: 105}, {k: "k1", amt: 106}, {k: "k2", amt: 107}, {k: "k3", amt: 108}, {k: "k4", amt: 109}]}, {many: true, flagged: 9, n: 105}],
+  ],
+}

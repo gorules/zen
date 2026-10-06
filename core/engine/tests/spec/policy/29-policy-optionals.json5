@@ -1,0 +1,767 @@
+// Optional values in depth. An optional property (`?`) may be missing or null; reading it gives
+// null, and so does reading anything below it. `??` replaces null (and only null) with a default.
+// Chapter 15 covers single-level optionals, guards and null through each block kind; this
+// chapter follows optionals through chains of relationships and references, optional arrays,
+// fallback chains, per-member blocks, tables, matches and assertions, and pins what the output
+// looks like when optionals are absent.
+
+// ---------------------------------------------------------------------------------------------
+// Optional chains through relationships. Every hop that is missing or null makes the whole read
+// null; the declared types below an absent hop are not required.
+
+{
+  name: "a two-hop optional chain reads null at any missing hop",
+  policy: {
+    models: {
+      customer: {account: "account?"},
+      account: {owner: "person?"},
+      person: {email: "string?"},
+    },
+    blocks: [{expression: "customer.contact", value: "customer.account.owner.email ?? 'none'"}],
+  },
+  cases: [
+    [{customer: {}}, {customer: {contact: "none"}}],
+    [{customer: {account: null}}, {customer: {account: null, contact: "none"}}],
+    [{customer: {account: {}}}, {customer: {account: {}, contact: "none"}}],
+    [{customer: {account: {owner: null}}}, {customer: {account: {owner: null}, contact: "none"}}],
+    [{customer: {account: {owner: {}}}}, {customer: {account: {owner: {}}, contact: "none"}}],
+    [{customer: {account: {owner: {email: null}}}}, {customer: {account: {owner: {email: null}}, contact: "none"}}],
+    [{customer: {account: {owner: {email: "a@b.c"}}}}, {customer: {account: {owner: {email: "a@b.c"}}, contact: "a@b.c"}}],
+    [{customer: {account: {owner: {email: 5}}}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "a required property below an optional hop is required only when the hop is present",
+  policy: {
+    models: {
+      customer: {account: "account?"},
+      account: {owner: "person"},
+      person: {email: "string"},
+    },
+    blocks: [{expression: "customer.contact", value: "customer.account.owner.email ?? 'none'"}],
+  },
+  cases: [
+    [{customer: {}}, {customer: {contact: "none"}}],
+    [{customer: {account: null}}, {customer: {account: null, contact: "none"}}],
+    [{customer: {account: {owner: {email: "x@y.z"}}}}, {customer: {account: {owner: {email: "x@y.z"}}, contact: "x@y.z"}}],
+    [{customer: {account: {}}}, "!error: MissingRequiredInputs"],
+    [{customer: {account: {owner: {}}}}, "!error: MissingRequiredInputs"],
+    [{customer: {account: {owner: null}}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "an optional hop below a required relationship",
+  policy: {
+    models: {
+      customer: {profile: "profile"},
+      profile: {address: "address?"},
+      address: {city: "string"},
+    },
+    blocks: [{expression: "customer.city", value: "customer.profile.address.city ?? 'unknown'"}],
+  },
+  cases: [
+    [{customer: {profile: {}}}, {customer: {profile: {}, city: "unknown"}}],
+    [{customer: {profile: {address: null}}}, {customer: {profile: {address: null}, city: "unknown"}}],
+    [{customer: {profile: {address: {city: "Oslo"}}}}, {customer: {profile: {address: {city: "Oslo"}}, city: "Oslo"}}],
+    {input: {customer: {}}, output: {customer: {city: "unknown"}}, note: "question: the required relationship `profile` is missing but the read goes through the optional `address`, so the required-input check is skipped and the chain reads null; a single-hop read of a missing required relationship is MissingRequiredInputs"},
+    {input: {customer: {profile: null}}, output: {customer: {profile: null, city: "unknown"}}, note: "question: as above, a null required relationship is not reported when the read continues through an optional hop"},
+    [{customer: {profile: {address: {}}}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "several reads through the same optional relationship",
+  policy: {
+    models: {customer: {report: "creditReport?"}, creditReport: {score: "number", defaults: "number?"}},
+    blocks: [
+      {expression: "customer.hasReport", value: "customer.report != null"},
+      {expression: "customer.score", value: "customer.report.score ?? 500"},
+      {expression: "customer.defaults", value: "customer.report.defaults ?? 0"},
+      {expression: "customer.clean", value: "customer.hasReport and customer.defaults == 0"},
+    ],
+  },
+  cases: [
+    [{customer: {}}, {customer: {hasReport: false, score: 500, defaults: 0, clean: false}}],
+    [{customer: {report: null}}, {customer: {report: null, hasReport: false, score: 500, defaults: 0, clean: false}}],
+    [{customer: {report: {score: 720}}}, {customer: {report: {score: 720}, hasReport: true, score: 720, defaults: 0, clean: true}}],
+    [{customer: {report: {score: 610, defaults: 2}}}, {customer: {report: {score: 610, defaults: 2}, hasReport: true, score: 610, defaults: 2, clean: false}}],
+    [{customer: {report: {score: 0, defaults: null}}}, {customer: {report: {score: 0, defaults: null}, hasReport: true, score: 0, defaults: 0, clean: true}}],
+    [{customer: {report: {defaults: 1}}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Optional chains through references. An optional reference may be missing or null; when present
+// it must resolve. Reads below it follow the same rules as relationships.
+
+{
+  name: "an optional reference to an entity with an optional relationship",
+  policy: {
+    models: {
+      order: {product: "&product?"},
+      product: {id: "string", supplier: "supplier?"},
+      supplier: {name: "string"},
+    },
+    blocks: [{expression: "order.supplier", value: "order.product.supplier.name ?? 'n/a'"}],
+  },
+  cases: [
+    [{order: {}}, {order: {supplier: "n/a"}}],
+    [{order: {product: null}, product: []}, {order: {product: null, supplier: "n/a"}, product: []}],
+    [
+      {order: {product: "p1"}, product: [{id: "p1"}]},
+      {order: {product: {id: "p1"}, supplier: "n/a"}, product: [{id: "p1"}]},
+    ],
+    [
+      {order: {product: "p1"}, product: [{id: "p1", supplier: {name: "Acme"}}]},
+      {order: {product: {id: "p1", supplier: {name: "Acme"}}, supplier: "Acme"}, product: [{id: "p1", supplier: {name: "Acme"}}]},
+    ],
+    [{order: {product: "p9"}, product: [{id: "p1"}]}, "!error: InputValidationFailed"],
+    [{order: {product: "p1"}, product: [{id: "p1", supplier: {}}]}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "an optional reference array",
+  policy: {
+    models: {cart: {items: "&product[]?"}, product: {id: "string", price: "number"}},
+    blocks: [
+      {expression: "cart.count", value: "len(cart.items ?? [])"},
+      {expression: "cart.total", value: "sum(map(cart.items ?? [], #.price))"},
+    ],
+  },
+  cases: [
+    [{cart: {}}, {cart: {count: 0, total: 0}}],
+    [{cart: {items: null}}, {cart: {items: null, count: 0, total: 0}}],
+    [{cart: {items: []}, product: []}, {cart: {items: [], count: 0, total: 0}, product: []}],
+    [
+      {cart: {items: ["a", "b", "a"]}, product: [{id: "a", price: 2}, {id: "b", price: 3.5}]},
+      {cart: {items: [{id: "a", price: 2}, {id: "b", price: 3.5}, {id: "a", price: 2}], count: 3, total: 7.5}, product: [{id: "a", price: 2}, {id: "b", price: 3.5}]},
+    ],
+    [{cart: {items: ["a", "z"]}, product: [{id: "a", price: 2}]}, "!error: InputValidationFailed"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// `??` defaults: only null is replaced; falsy values are kept. Chains try each operand in turn.
+
+{
+  name: "?? keeps zero, false and the empty string",
+  policy: {
+    models: {s: {n: "number?", b: "boolean?", t: "string?", list: "number[]?"}},
+    blocks: [
+      {expression: "s.n2", value: "s.n ?? 99"},
+      {expression: "s.b2", value: "s.b ?? true"},
+      {expression: "s.t2", value: "s.t ?? 'default'"},
+      {expression: "s.list2", value: "s.list ?? [9]"},
+    ],
+  },
+  cases: [
+    [{s: {n: 0, b: false, t: "", list: []}}, {s: {n: 0, b: false, t: "", list: [], n2: 0, b2: false, t2: "", list2: []}}],
+    [{s: {}}, {s: {n2: 99, b2: true, t2: "default", list2: [9]}}],
+    [{s: {n: null, b: null, t: null, list: null}}, {s: {n: null, b: null, t: null, list: null, n2: 99, b2: true, t2: "default", list2: [9]}}],
+    [{s: {n: -1, b: true, t: " ", list: [null]}}, {s: {n: -1, b: true, t: " ", list: [null], n2: -1, b2: true, t2: " ", list2: [null]}}],
+  ],
+}
+
+{
+  name: "a fallback chain across entities and globals",
+  policy: {
+    globals: {defaults: {defaultCurrency: "string?"}},
+    models: {order: {currency: "string?", customer: "buyer?"}, buyer: {currency: "string?"}},
+    blocks: [{expression: "order.effectiveCurrency", value: "order.currency ?? order.customer.currency ?? defaultCurrency ?? 'EUR'"}],
+  },
+  cases: [
+    [{order: {currency: "NOK", customer: {currency: "SEK"}}, defaultCurrency: "USD"}, {order: {currency: "NOK", customer: {currency: "SEK"}, effectiveCurrency: "NOK"}, defaultCurrency: "USD"}],
+    [{order: {customer: {currency: "SEK"}}, defaultCurrency: "USD"}, {order: {customer: {currency: "SEK"}, effectiveCurrency: "SEK"}, defaultCurrency: "USD"}],
+    [{order: {customer: {}}, defaultCurrency: "USD"}, {order: {customer: {}, effectiveCurrency: "USD"}, defaultCurrency: "USD"}],
+    [{order: {}, defaultCurrency: "USD"}, {order: {effectiveCurrency: "USD"}, defaultCurrency: "USD"}],
+    [{order: {}}, {order: {effectiveCurrency: "EUR"}}],
+    [{order: {currency: null, customer: null}, defaultCurrency: null}, {order: {currency: null, customer: null, effectiveCurrency: "EUR"}, defaultCurrency: null}],
+    [{order: {currency: ""}}, {order: {currency: "", effectiveCurrency: ""}}],
+  ],
+}
+
+{
+  name: "?? over a computed null from a table with no matching row",
+  policy: {
+    models: {customer: {country: "string"}},
+    blocks: [
+      {table: "t", inputs: ["customer.country"], outputs: ["customer.vat"], rules: [
+        ["'NO'", "0.25"],
+        ["'DE'", "0.19"],
+      ]},
+      {expression: "customer.vatOrZero", value: "customer.vat ?? 0"},
+      {expression: "customer.known", value: "customer.vat != null"},
+    ],
+  },
+  cases: [
+    [{customer: {country: "NO"}}, {customer: {country: "NO", vat: 0.25, vatOrZero: 0.25, known: true}}],
+    [{customer: {country: "DE"}}, {customer: {country: "DE", vat: 0.19, vatOrZero: 0.19, known: true}}],
+    [{customer: {country: "US"}}, {customer: {country: "US", vat: null, vatOrZero: 0, known: false}}],
+    [{customer: {country: ""}}, {customer: {country: "", vat: null, vatOrZero: 0, known: false}}],
+  ],
+}
+
+{
+  name: "?? with a default computed by another block",
+  policy: {
+    models: {item: {price: "number", override: "number?"}},
+    blocks: [
+      {expression: "item.listPrice", value: "item.price * 1.25"},
+      {expression: "item.finalPrice", value: "item.override ?? item.listPrice"},
+    ],
+  },
+  cases: [
+    [{item: {price: 100}}, {item: {price: 100, listPrice: 125, finalPrice: 125}}],
+    [{item: {price: 100, override: 80}}, {item: {price: 100, override: 80, listPrice: 125, finalPrice: 80}}],
+    [{item: {price: 100, override: null}}, {item: {price: 100, override: null, listPrice: 125, finalPrice: 125}}],
+    [{item: {price: 100, override: 0}}, {item: {price: 100, override: 0, listPrice: 125, finalPrice: 0}}],
+  ],
+}
+
+{
+  name: "?? inside arithmetic and comparisons",
+  policy: {
+    models: {loan: {amount: "number", fee: "number?", cap: "number?"}},
+    blocks: [
+      {expression: "loan.cost", value: "loan.amount + (loan.fee ?? 0)"},
+      {expression: "loan.withinCap", value: "loan.cost <= (loan.cap ?? loan.cost)"},
+    ],
+  },
+  cases: [
+    [{loan: {amount: 100}}, {loan: {amount: 100, cost: 100, withinCap: true}}],
+    [{loan: {amount: 100, fee: 5}}, {loan: {amount: 100, fee: 5, cost: 105, withinCap: true}}],
+    [{loan: {amount: 100, fee: 5, cap: 104}}, {loan: {amount: 100, fee: 5, cap: 104, cost: 105, withinCap: false}}],
+    [{loan: {amount: 100, cap: 100}}, {loan: {amount: 100, cap: 100, cost: 100, withinCap: true}}],
+    [{loan: {amount: 0.1, fee: 0.2, cap: 0.3}}, {loan: {amount: 0.1, fee: 0.2, cap: 0.3, cost: 0.3, withinCap: true}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Optional arrays of primitives and of entities. `??` replaces a null array only: an empty array
+// is kept, so `max(xs ?? [0])` still fails on `[]`.
+
+{
+  name: "closures over an optional primitive array",
+  policy: {
+    models: {user: {scores: "number[]?"}},
+    blocks: [
+      {expression: "user.best", value: "max(user.scores ?? [0])"},
+      {expression: "user.passed", value: "count(user.scores ?? [], # >= 50)"},
+      {expression: "user.allPassed", value: "all(user.scores ?? [], # >= 50)"},
+      {expression: "user.first", value: "(user.scores ?? [])[0] ?? -1"},
+    ],
+  },
+  cases: [
+    [{user: {}}, {user: {best: 0, passed: 0, allPassed: true, first: -1}}],
+    [{user: {scores: null}}, {user: {scores: null, best: 0, passed: 0, allPassed: true, first: -1}}],
+    [{user: {scores: []}}, "!error: ExpressionFailed"],
+    [{user: {scores: [40, 70, 55]}}, {user: {scores: [40, 70, 55], best: 70, passed: 2, allPassed: false, first: 40}}],
+    [{user: {scores: [50]}}, {user: {scores: [50], best: 50, passed: 1, allPassed: true, first: 50}}],
+    [{user: {scores: ["50"]}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "an optional enum array",
+  policy: {
+    models: {user: {roles: "string(admin|editor|viewer)[]?"}},
+    blocks: [
+      {expression: "user.isAdmin", value: "'admin' in (user.roles ?? [])"},
+      {expression: "user.roleCount", value: "len(user.roles ?? [])"},
+    ],
+  },
+  cases: [
+    [{user: {}}, {user: {isAdmin: false, roleCount: 0}}],
+    [{user: {roles: null}}, {user: {roles: null, isAdmin: false, roleCount: 0}}],
+    [{user: {roles: ["viewer", "admin"]}}, {user: {roles: ["viewer", "admin"], isAdmin: true, roleCount: 2}}],
+    [{user: {roles: ["owner"]}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "an optional date array",
+  policy: {
+    models: {member: {visits: "date[]?"}},
+    blocks: [
+      {expression: "member.visitedThisYear", value: "some(member.visits ?? [], #.year() == 2025)"},
+      {expression: "member.visitCount", value: "len(member.visits ?? [])"},
+    ],
+  },
+  cases: [
+    [{member: {}}, {member: {visitedThisYear: false, visitCount: 0}}],
+    [{member: {visits: null}}, {member: {visits: null, visitedThisYear: false, visitCount: 0}}],
+    [{member: {visits: ["2024-12-31", "2025-01-02"]}}, {member: {visits: ["2024-12-31", "2025-01-02"], visitedThisYear: true, visitCount: 2}}],
+    [{member: {visits: ["2024-01-01"]}}, {member: {visits: ["2024-01-01"], visitedThisYear: false, visitCount: 1}}],
+    [{member: {visits: ["soon"]}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "an optional relationship array with per-member blocks and a parent aggregate",
+  policy: {
+    models: {customer: {orders: "order[]?"}, order: {total: "number", coupon: "number?"}},
+    blocks: [
+      {expression: "order.net", value: "order.total - (order.coupon ?? 0)"},
+      {expression: "customer.spend", value: "sum(map(customer.orders ?? [], #.net))"},
+      {expression: "customer.usedCoupons", value: "count(customer.orders ?? [], #.coupon != null)"},
+    ],
+  },
+  cases: [
+    [{customer: {}}, {customer: {spend: 0, usedCoupons: 0}}],
+    [{customer: {orders: null}}, {customer: {orders: null, spend: 0, usedCoupons: 0}}],
+    [{customer: {orders: []}}, {customer: {orders: [], spend: 0, usedCoupons: 0}}],
+    [
+      {customer: {orders: [{total: 50, coupon: 5}, {total: 20}, {total: 10, coupon: null}]}},
+      {customer: {orders: [{total: 50, coupon: 5, net: 45}, {total: 20, net: 20}, {total: 10, coupon: null, net: 10}], spend: 75, usedCoupons: 1}},
+    ],
+    {input: {customer: {orders: [{coupon: 5}]}}, output: "!error: MissingRequiredInputs", note: "bug: a member missing a required property is not caught by the required-input check (a single relationship is); the per-member block fails with ExpressionFailed instead"},
+  ],
+}
+
+{
+  name: "optional properties on nested members",
+  policy: {
+    models: {
+      customer: {orders: "order[]"},
+      order: {lines: "line[]?"},
+      line: {qty: "number", discount: "number?"},
+    },
+    blocks: [
+      {expression: "order.discountedLines", value: "count(order.lines ?? [], #.discount != null)"},
+      {expression: "order.units", value: "sum(map(order.lines ?? [], #.qty))"},
+      {expression: "customer.units", value: "sum(map(customer.orders, #.units))"},
+    ],
+  },
+  cases: [
+    [{customer: {orders: []}}, {customer: {orders: [], units: 0}}],
+    [{customer: {orders: [{}]}}, {customer: {orders: [{discountedLines: 0, units: 0}], units: 0}}],
+    [
+      {customer: {orders: [{lines: [{qty: 2, discount: 0.1}, {qty: 3}, {qty: 1, discount: null}]}, {lines: null}]}},
+      {customer: {orders: [{lines: [{qty: 2, discount: 0.1}, {qty: 3}, {qty: 1, discount: null}], discountedLines: 1, units: 6}, {lines: null, discountedLines: 0, units: 0}], units: 6}},
+    ],
+    [{customer: {orders: [{lines: [{qty: "2"}]}]}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Outputs when optionals are absent: absent input keys stay absent, computed values are written
+// (as null when nothing else applies), and per-instance blocks of an absent relationship do not
+// write anything.
+
+{
+  name: "per-instance blocks of an absent optional relationship write nothing",
+  policy: {
+    models: {customer: {name: "string", report: "creditReport?"}, creditReport: {score: "number"}},
+    blocks: [
+      {expression: "creditReport.good", value: "creditReport.score >= 700"},
+      {expression: "customer.goodCredit", value: "customer.report.good ?? false"},
+    ],
+  },
+  cases: [
+    [{customer: {name: "a"}}, {customer: {name: "a", goodCredit: false}}],
+    [{customer: {name: "a", report: null}}, {customer: {name: "a", report: null, goodCredit: false}}],
+    [{customer: {name: "a", report: {score: 750}}}, {customer: {name: "a", report: {score: 750, good: true}, goodCredit: true}}],
+    [{customer: {name: "a", report: {score: 600}}}, {customer: {name: "a", report: {score: 600, good: false}, goodCredit: false}}],
+  ],
+}
+
+{
+  name: "a computed nested object built from optionals",
+  policy: {
+    models: {customer: {email: "string?", phone: "string?"}},
+    blocks: [
+      {expression: "customer.contact.email", value: "customer.email"},
+      {expression: "customer.contact.phone", value: "customer.phone"},
+      {expression: "customer.contact.reachable", value: "customer.email != null or customer.phone != null"},
+    ],
+  },
+  cases: [
+    [{customer: {}}, {customer: {contact: {email: null, phone: null, reachable: false}}}],
+    [{customer: {email: "a@b.c"}}, {customer: {email: "a@b.c", contact: {email: "a@b.c", phone: null, reachable: true}}}],
+    [{customer: {phone: "+47 1"}}, {customer: {phone: "+47 1", contact: {email: null, phone: "+47 1", reachable: true}}}],
+    [{customer: {email: null, phone: null}}, {customer: {email: null, phone: null, contact: {email: null, phone: null, reachable: false}}}],
+  ],
+}
+
+{
+  name: "an absent optional entity root gets its computed properties",
+  policy: {
+    models: {customer: {nickname: "string?"}, session: {locale: "string?"}},
+    blocks: [
+      {expression: "session.lang", value: "session.locale ?? 'en'"},
+      {expression: "customer.greeting", value: "(session.lang == 'no' ? 'Hei ' : 'Hello ') + (customer.nickname ?? 'there')"},
+    ],
+  },
+  cases: [
+    [{}, {session: {lang: "en"}, customer: {greeting: "Hello there"}}],
+    [{session: {locale: "no"}}, {session: {locale: "no", lang: "no"}, customer: {greeting: "Hei there"}}],
+    [{customer: {nickname: "Bo"}, session: {}}, {customer: {nickname: "Bo", greeting: "Hello Bo"}, session: {lang: "en"}}],
+    {input: {customer: null, session: null}, output: {customer: {greeting: "Hello there"}, session: {lang: "en"}}, note: "bug: computed writes into a null entity root are dropped (the output keeps the nulls), while a missing root gets them; elsewhere a null root is treated as missing"},
+  ],
+}
+
+{
+  name: "an optional copied into a list and an object keeps the nulls",
+  policy: {
+    models: {p: {a: "number?", b: "number?"}},
+    blocks: [
+      {expression: "p.list", value: "[p.a, p.b]"},
+      {expression: "p.obj", value: "{a: p.a, b: p.b}"},
+      {expression: "p.present", value: "filter([p.a, p.b], # != null)"},
+    ],
+  },
+  cases: [
+    [{p: {}}, {p: {list: [null, null], obj: {a: null, b: null}, present: []}}],
+    [{p: {a: 1}}, {p: {a: 1, list: [1, null], obj: {a: 1, b: null}, present: [1]}}],
+    [{p: {a: 0, b: -1}}, {p: {a: 0, b: -1, list: [0, -1], obj: {a: 0, b: -1}, present: [0, -1]}}],
+    [{p: {b: 2.5}}, {p: {b: 2.5, list: [null, 2.5], obj: {a: null, b: 2.5}, present: [2.5]}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Optionals in tables: `??` input fields, null rows over chained optionals, two optional columns,
+// output cells reading optionals, per-member tables.
+
+{
+  name: "a table over an optional chain with a null row",
+  policy: {
+    models: {customer: {report: "creditReport?"}, creditReport: {rating: "string(A|B|C)?"}},
+    blocks: [{table: "t", inputs: ["customer.report.rating"], outputs: ["customer.limit"], rules: [
+      ["null", "500"],
+      ["'A'", "10000"],
+      ["'B'", "5000"],
+      ["", "1000"],
+    ]}],
+  },
+  cases: [
+    [{customer: {}}, {customer: {limit: 500}}],
+    [{customer: {report: null}}, {customer: {report: null, limit: 500}}],
+    [{customer: {report: {}}}, {customer: {report: {}, limit: 500}}],
+    [{customer: {report: {rating: "A"}}}, {customer: {report: {rating: "A"}, limit: 10000}}],
+    [{customer: {report: {rating: "B"}}}, {customer: {report: {rating: "B"}, limit: 5000}}],
+    [{customer: {report: {rating: "C"}}}, {customer: {report: {rating: "C"}, limit: 1000}}],
+  ],
+}
+
+{
+  name: "a table with ?? defaults in its input fields",
+  policy: {
+    models: {applicant: {income: "number?", debts: "number?"}},
+    blocks: [{table: "t", inputs: ["applicant.income ?? 0", "applicant.debts ?? 0"], outputs: ["applicant.decision"], rules: [
+      ["0", "", "'no income'"],
+      ["", "0", "'approve'"],
+      ["> 50000", "< 10000", "'approve'"],
+      ["", "", "'review'"],
+    ]}],
+  },
+  cases: [
+    [{applicant: {}}, {applicant: {decision: "no income"}}],
+    [{applicant: {income: 30000}}, {applicant: {income: 30000, decision: "approve"}}],
+    [{applicant: {income: 60000, debts: 5000}}, {applicant: {income: 60000, debts: 5000, decision: "approve"}}],
+    [{applicant: {income: 60000, debts: 20000}}, {applicant: {income: 60000, debts: 20000, decision: "review"}}],
+    [{applicant: {income: null, debts: 100}}, {applicant: {income: null, debts: 100, decision: "no income"}}],
+    [{applicant: {income: 40000, debts: null}}, {applicant: {income: 40000, debts: null, decision: "approve"}}],
+  ],
+}
+
+{
+  name: "a table over two optional columns",
+  policy: {
+    models: {contact: {email: "string?", phone: "string?"}},
+    blocks: [{table: "t", inputs: ["contact.email", "contact.phone"], outputs: ["contact.channel"], rules: [
+      ["null", "null", "'none'"],
+      ["null", "", "'sms'"],
+      ["", "", "'email'"],
+    ]}],
+  },
+  cases: [
+    [{contact: {}}, {contact: {channel: "none"}}],
+    [{contact: {phone: "1"}}, {contact: {phone: "1", channel: "sms"}}],
+    [{contact: {email: "a@b"}}, {contact: {email: "a@b", channel: "email"}}],
+    [{contact: {email: "a@b", phone: "1"}}, {contact: {email: "a@b", phone: "1", channel: "email"}}],
+    [{contact: {email: null, phone: null}}, {contact: {email: null, phone: null, channel: "none"}}],
+    [{contact: {email: "", phone: null}}, {contact: {email: "", phone: null, channel: "email"}}],
+  ],
+}
+
+{
+  name: "table output cells read optionals",
+  policy: {
+    models: {product: {kind: "string(digital|physical)", weight: "number?", shippingOverride: "number?"}},
+    blocks: [{table: "t", inputs: ["product.kind"], outputs: ["product.shipping", "product.weightLabel"], rules: [
+      ["'digital'", "0", "null"],
+      ["'physical'", "product.shippingOverride ?? (product.weight ?? 1) * 2", "string(product.weight ?? 0) + ' kg'"],
+    ]}],
+  },
+  cases: [
+    [{product: {kind: "digital"}}, {product: {kind: "digital", shipping: 0, weightLabel: null}}],
+    [{product: {kind: "physical"}}, {product: {kind: "physical", shipping: 2, weightLabel: "0 kg"}}],
+    [{product: {kind: "physical", weight: 3}}, {product: {kind: "physical", weight: 3, shipping: 6, weightLabel: "3 kg"}}],
+    [{product: {kind: "physical", weight: 3, shippingOverride: 0}}, {product: {kind: "physical", weight: 3, shippingOverride: 0, shipping: 0, weightLabel: "3 kg"}}],
+  ],
+}
+
+{
+  name: "a per-member table over optional member properties",
+  policy: {
+    models: {household: {people: "person[]"}, person: {age: "number?", student: "boolean?"}},
+    blocks: [
+      {table: "t", inputs: ["person.age ?? 16", "person.student ?? false"], outputs: ["person.fare"], rules: [
+        ["< 16", "", "5"],
+        ["", "true", "7"],
+        ["", "", "10"],
+      ]},
+      {expression: "household.total", value: "sum(map(household.people, #.fare))"},
+    ],
+  },
+  cases: [
+    [{household: {people: []}}, {household: {people: [], total: 0}}],
+    [
+      {household: {people: [{age: 10}, {age: 20, student: true}, {}, {age: 40, student: null}]}},
+      {household: {people: [{age: 10, fare: 5}, {age: 20, student: true, fare: 7}, {fare: 10}, {age: 40, student: null, fare: 10}], total: 32}},
+    ],
+    [{household: {people: [{student: false}]}}, {household: {people: [{student: false, fare: 10}], total: 10}}],
+  ],
+}
+
+{
+  name: "a collect table over optional flags",
+  policy: {
+    models: {account: {overdraft: "boolean?", frozen: "boolean?", kycDone: "boolean?"}},
+    blocks: [{table: "t", hit: "collect", inputs: [""], outputs: ["account.issues[]"], rules: [
+      ["account.overdraft == true", "'overdraft'"],
+      ["account.frozen == true", "'frozen'"],
+      ["account.kycDone != true", "'kyc missing'"],
+    ]}],
+  },
+  cases: [
+    [{account: {}}, {account: {issues: ["kyc missing"]}}],
+    [{account: {kycDone: true}}, {account: {kycDone: true, issues: []}}],
+    [{account: {overdraft: true, frozen: null, kycDone: false}}, {account: {overdraft: true, frozen: null, kycDone: false, issues: ["overdraft", "kyc missing"]}}],
+    [{account: {overdraft: false, frozen: true, kycDone: true}}, {account: {overdraft: false, frozen: true, kycDone: true, issues: ["frozen"]}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Optionals in matches.
+
+{
+  name: "a match on the presence of optional relationships",
+  policy: {
+    models: {applicant: {cosigner: "person?", collateral: "asset?"}, person: {score: "number"}, asset: {value: "number"}},
+    blocks: [{match: "applicant.security", arms: [
+      ["applicant.cosigner != null and applicant.collateral != null", "'double'"],
+      ["applicant.collateral != null", "'collateral'"],
+      ["applicant.cosigner != null", "'cosigner'"],
+      ["", "'none'"],
+    ]}],
+  },
+  cases: [
+    [{applicant: {}}, {applicant: {security: "none"}}],
+    [{applicant: {cosigner: {score: 1}}}, {applicant: {cosigner: {score: 1}, security: "cosigner"}}],
+    [{applicant: {collateral: {value: 1}}}, {applicant: {collateral: {value: 1}, security: "collateral"}}],
+    [{applicant: {cosigner: {score: 1}, collateral: {value: 1}}}, {applicant: {cosigner: {score: 1}, collateral: {value: 1}, security: "double"}}],
+    [{applicant: {cosigner: null, collateral: null}}, {applicant: {cosigner: null, collateral: null, security: "none"}}],
+  ],
+}
+
+{
+  name: "match arms read optionals through ??",
+  policy: {
+    models: {claim: {amount: "number", deductible: "number?", covered: "boolean?"}},
+    blocks: [{match: "claim.payout", arms: [
+      ["(claim.covered ?? false) == false", "0"],
+      ["claim.amount <= (claim.deductible ?? 0)", "0"],
+      ["", "claim.amount - (claim.deductible ?? 0)"],
+    ]}],
+  },
+  cases: [
+    [{claim: {amount: 1000}}, {claim: {amount: 1000, payout: 0}}],
+    [{claim: {amount: 1000, covered: true}}, {claim: {amount: 1000, covered: true, payout: 1000}}],
+    [{claim: {amount: 1000, covered: true, deductible: 250}}, {claim: {amount: 1000, covered: true, deductible: 250, payout: 750}}],
+    [{claim: {amount: 200, covered: true, deductible: 250}}, {claim: {amount: 200, covered: true, deductible: 250, payout: 0}}],
+    [{claim: {amount: 1000, covered: false, deductible: 0}}, {claim: {amount: 1000, covered: false, deductible: 0, payout: 0}}],
+    [{claim: {amount: 1000, covered: null}}, {claim: {amount: 1000, covered: null, payout: 0}}],
+  ],
+}
+
+{
+  name: "a match arm value that reads an optional writes null",
+  policy: {
+    models: {user: {nickname: "string?", name: "string", preferNick: "boolean"}},
+    blocks: [{match: "user.display", arms: [
+      ["user.preferNick", "user.nickname"],
+      ["", "user.name"],
+    ]}],
+  },
+  cases: [
+    [{user: {name: "Robert", nickname: "Bob", preferNick: true}}, {user: {name: "Robert", nickname: "Bob", preferNick: true, display: "Bob"}}],
+    [{user: {name: "Robert", preferNick: true}}, {user: {name: "Robert", preferNick: true, display: null}}],
+    [{user: {name: "Robert", nickname: "Bob", preferNick: false}}, {user: {name: "Robert", nickname: "Bob", preferNick: false, display: "Robert"}}],
+  ],
+}
+
+{
+  name: "a per-member match over an optional member property",
+  policy: {
+    models: {team: {players: "player[]"}, player: {position: "string(gk|def|fwd)?"}},
+    blocks: [
+      {match: "player.role", arms: [
+        ["player.position == 'gk'", "'keeper'"],
+        ["player.position == null", "'unassigned'"],
+        ["", "'outfield'"],
+      ]},
+      {expression: "team.unassigned", value: "count(team.players, #.role == 'unassigned')"},
+    ],
+  },
+  cases: [
+    [{team: {players: []}}, {team: {players: [], unassigned: 0}}],
+    [
+      {team: {players: [{position: "gk"}, {}, {position: "fwd"}, {position: null}]}},
+      {team: {players: [{position: "gk", role: "keeper"}, {role: "unassigned"}, {position: "fwd", role: "outfield"}, {position: null, role: "unassigned"}], unassigned: 2}},
+    ],
+    [{team: {players: [{position: "mid"}]}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Optionals in assertions. A condition that evaluates to null is not true.
+
+{
+  name: "an assertion condition that reads a null optional boolean is false",
+  policy: {
+    models: {user: {verified: "boolean?", active: "boolean"}},
+    blocks: [{assertion: "user.ok", conditions: ["user.active", "user.verified"]}],
+  },
+  cases: [
+    [{user: {active: true, verified: true}}, {user: {active: true, verified: true, ok: true}}],
+    [{user: {active: true, verified: false}}, {user: {active: true, verified: false, ok: false}}],
+    [{user: {active: true}}, {user: {active: true, ok: false}}],
+    [{user: {active: true, verified: null}}, {user: {active: true, verified: null, ok: false}}],
+    [{user: {active: false, verified: true}}, {user: {active: false, verified: true, ok: false}}],
+  ],
+}
+
+{
+  name: "an or-group assertion over optional relationships",
+  policy: {
+    models: {applicant: {income: "number", cosigner: "person?"}, person: {income: "number"}},
+    blocks: [{assertion: "applicant.qualifies", conditions: [
+      ["or", "applicant.income >= 50000"],
+      ["and", "(applicant.cosigner.income ?? 0) >= 50000"],
+    ]}],
+  },
+  cases: [
+    [{applicant: {income: 60000}}, {applicant: {income: 60000, qualifies: true}}],
+    [{applicant: {income: 10000}}, {applicant: {income: 10000, qualifies: false}}],
+    [{applicant: {income: 10000, cosigner: {income: 70000}}}, {applicant: {income: 10000, cosigner: {income: 70000}, qualifies: true}}],
+    [{applicant: {income: 10000, cosigner: {income: 100}}}, {applicant: {income: 10000, cosigner: {income: 100}, qualifies: false}}],
+    [{applicant: {income: 10000, cosigner: null}}, {applicant: {income: 10000, cosigner: null, qualifies: false}}],
+  ],
+}
+
+{
+  name: "a per-member assertion over optional member values",
+  policy: {
+    models: {batch: {parcels: "parcel[]"}, parcel: {weight: "number", insured: "boolean?", value: "number?"}},
+    blocks: [
+      {assertion: "parcel.ready", conditions: ["parcel.weight <= 30", "(parcel.value ?? 0) < 1000 or parcel.insured == true"]},
+      {expression: "batch.allReady", value: "all(batch.parcels, #.ready)"},
+    ],
+  },
+  cases: [
+    [{batch: {parcels: []}}, {batch: {parcels: [], allReady: true}}],
+    [
+      {batch: {parcels: [{weight: 5}, {weight: 10, value: 5000, insured: true}]}},
+      {batch: {parcels: [{weight: 5, ready: true}, {weight: 10, value: 5000, insured: true, ready: true}], allReady: true}},
+    ],
+    [
+      {batch: {parcels: [{weight: 5, value: 5000}, {weight: 31}]}},
+      {batch: {parcels: [{weight: 5, value: 5000, ready: false}, {weight: 31, ready: false}], allReady: false}},
+    ],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Null checks do not narrow types. A `!= null` guard joined with `and` (or a ternary) still leaves
+// the optional nullable for the type checker, so the policy carries TYPE_MISMATCH and only the
+// workspace path evaluates it; at runtime the guard works.
+
+{
+  name: "an and-guard before an ordering comparison",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {customer: {score: "number?"}},
+    blocks: [{expression: "customer.high", value: "customer.score != null and customer.score > 700"}],
+  },
+  cases: [
+    {input: {customer: {score: 800}}, output: {customer: {score: 800, high: true}}, note: "question: `score != null and score > 700` is reported as TYPE_MISMATCH although the guard makes the comparison safe, so DecisionEngine refuses the policy"},
+    [{customer: {score: 600}}, {customer: {score: 600, high: false}}],
+    [{customer: {}}, {customer: {high: false}}],
+    [{customer: {score: null}}, {customer: {score: null, high: false}}],
+  ],
+}
+
+{
+  name: "a guard through an optional relationship",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {customer: {report: "creditReport?"}, creditReport: {score: "number"}},
+    blocks: [{expression: "customer.band", value: "customer.report == null ? 'none' : customer.report.score >= 700 ? 'good' : 'poor'"}],
+  },
+  cases: [
+    [{customer: {}}, {customer: {band: "none"}}],
+    [{customer: {report: null}}, {customer: {report: null, band: "none"}}],
+    [{customer: {report: {score: 700}}}, {customer: {report: {score: 700}, band: "good"}}],
+    [{customer: {report: {score: 699}}}, {customer: {report: {score: 699}, band: "poor"}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// A realistic combination: insurance quote where most of the profile is optional.
+
+{
+  name: "insurance quote with a sparse profile",
+  policy: {
+    globals: {rates: {baseRate: "number", smokerLoading: "number?"}},
+    models: {
+      quote: {driver: "driver", vehicle: "vehicle?", previousClaims: "claim[]?"},
+      driver: {age: "number", smoker: "boolean?", licenceYears: "number?"},
+      vehicle: {value: "number?"},
+      claim: {amount: "number"},
+    },
+    blocks: [
+      {expression: "quote.claimTotal", value: "sum(map(quote.previousClaims ?? [], #.amount))"},
+      {match: "quote.ageFactor", arms: [
+        ["quote.driver.age < 25", "1.5"],
+        ["(quote.driver.licenceYears ?? 0) < 3", "1.2"],
+        ["", "1"],
+      ]},
+      {expression: "quote.smokerFactor", value: "(quote.driver.smoker ?? false) ? 1 + (smokerLoading ?? 0.1) : 1"},
+      {expression: "quote.premium", value: "round(baseRate * quote.ageFactor * quote.smokerFactor + (quote.vehicle.value ?? 0) * 0.01 + quote.claimTotal * 0.05, 2)"},
+    ],
+  },
+  cases: [
+    [
+      {baseRate: 500, quote: {driver: {age: 40, licenceYears: 20}}},
+      {baseRate: 500, quote: {driver: {age: 40, licenceYears: 20}, claimTotal: 0, ageFactor: 1, smokerFactor: 1, premium: 500}},
+    ],
+    [
+      {baseRate: 500, quote: {driver: {age: 22}, vehicle: {value: 20000}, previousClaims: [{amount: 1000}]}},
+      {baseRate: 500, quote: {driver: {age: 22}, vehicle: {value: 20000}, previousClaims: [{amount: 1000}], claimTotal: 1000, ageFactor: 1.5, smokerFactor: 1, premium: 1000}},
+    ],
+    [
+      {baseRate: 500, smokerLoading: 0.3, quote: {driver: {age: 30, smoker: true}, vehicle: {}}},
+      {baseRate: 500, smokerLoading: 0.3, quote: {driver: {age: 30, smoker: true}, vehicle: {}, claimTotal: 0, ageFactor: 1.2, smokerFactor: 1.3, premium: 780}},
+    ],
+    [
+      {baseRate: 500, quote: {driver: {age: 30, smoker: true, licenceYears: 5}, vehicle: null, previousClaims: null}},
+      {baseRate: 500, quote: {driver: {age: 30, smoker: true, licenceYears: 5}, vehicle: null, previousClaims: null, claimTotal: 0, ageFactor: 1, smokerFactor: 1.1, premium: 550}},
+    ],
+    [{baseRate: 500, quote: {}}, "!error: MissingRequiredInputs"],
+    [{quote: {driver: {age: 30}}}, "!error: MissingRequiredInputs"],
+  ],
+}

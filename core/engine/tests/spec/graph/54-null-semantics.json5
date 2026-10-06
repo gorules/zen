@@ -1,0 +1,801 @@
+// Null, missing and empty values produced by each node kind, and how the next node and the graph
+// result see them.
+//
+// Vocabulary: a key is null when it is present with the value null, missing when it is absent,
+// and empty when it holds "", [] or {}. Expressions read null and missing alike (`k == null`,
+// `type(k)`, `k ?? d`); only `keys(...)` and `$nodes` presence tell them apart. Table cells read
+// a missing field as null.
+//
+// The rules pinned here:
+// - A node's output is stored as produced; nulls inside it are kept.
+// - At a join and under passThrough a null deletes the key it lands on (merge-patch), so a null
+//   written over an existing key becomes missing downstream, while a null written on a fresh key
+//   with a single parent stays null.
+// - The graph result is the merge of the ending nodes into an empty object, which drops
+//   top-level null keys; nested nulls and nulls inside arrays are kept.
+// - A node whose whole output is null (a first-hit table with no match, a function returning
+//   null) contributes nothing to the next node; its `$nodes` entry is null.
+// - A node that did not run (a branch a switch did not take) has no `$nodes` entry and is skipped
+//   by the join.
+//
+// Most suites end in an observer node `obs` reporting what it sees at `k`:
+//   t: type(k), has: whether k is a key of its input, d: k ?? 'dflt'.
+
+// --- Expression nodes ------------------------------------------------------------------------------
+// A field copies the request's `v`: missing and null both produce a null `k`, which the observer
+// sees as a present null (a single parent, no merge over an existing key).
+{
+  name: "expression: a field producing null, empty or falsy values, seen by the next node",
+  graph: {
+    nodes: [
+      {expression: "p", fields: {k: "v"}},
+      {expression: "obs", fields: {t: "type(k)", has: "'k' in keys($root)", d: "k ?? 'dflt'"}},
+    ],
+  },
+  cases: [
+    [{}, {d: "dflt", has: true, t: "null"}],
+    [{v: null}, {d: "dflt", has: true, t: "null"}],
+    [{v: ""}, {d: "", has: true, t: "string"}],
+    [{v: 0}, {d: 0, has: true, t: "number"}],
+    [{v: false}, {d: false, has: true, t: "bool"}],
+    [{v: []}, {d: [], has: true, t: "array"}],
+    [{v: {}}, {d: {}, has: true, t: "object"}],
+    [{v: "x"}, {d: "x", has: true, t: "string"}],
+  ],
+}
+
+{
+  name: "expression: the same values in the graph result, top level and nested",
+  graph: {
+    nodes: [{expression: "p", fields: {k: "v", "o.k": "v", list: "[v]"}}],
+  },
+  cases: [
+    [{}, {list: [null], o: {k: null}}],
+    [{v: null}, {list: [null], o: {k: null}}],
+    [{v: ""}, {k: "", list: [""], o: {k: ""}}],
+    [{v: 0}, {k: 0, list: [0], o: {k: 0}}],
+    [{v: []}, {k: [], list: [[]], o: {k: []}}],
+    [{v: {}}, {k: {}, list: [{}], o: {k: {}}}],
+  ],
+}
+
+{
+  name: "expression: a null field read through $nodes keeps the key",
+  graph: {
+    nodes: [
+      {expression: "p", fields: {k: "v"}},
+      {expression: "mid", fields: {other: "1"}},
+      {expression: "obs", fields: {
+        t: "type($nodes.p.k)",
+        has: "'k' in keys($nodes.p)",
+        d: "$nodes.p.k ?? 'dflt'",
+        midHasK: "'k' in keys($root)",
+      }},
+    ],
+  },
+  cases: [
+    [{}, {d: "dflt", has: true, midHasK: false, t: "null"}],
+    [{v: null}, {d: "dflt", has: true, midHasK: false, t: "null"}],
+    [{v: ""}, {d: "", has: true, midHasK: false, t: "string"}],
+    [{v: 0}, {d: 0, has: true, midHasK: false, t: "number"}],
+  ],
+}
+
+{
+  name: "expression with passThrough: a null field deletes the request key",
+  graph: {
+    nodes: [
+      {expression: "p", passThrough: true, fields: {k: "v"}},
+      {expression: "obs", fields: {t: "type(k)", has: "'k' in keys($root)", d: "k ?? 'dflt'"}},
+    ],
+  },
+  cases: [
+    [{k: "old"}, {d: "dflt", has: false, t: "null"}],
+    [{k: "old", v: null}, {d: "dflt", has: false, t: "null"}],
+    [{k: "old", v: ""}, {d: "", has: true, t: "string"}],
+    [{k: "old", v: 0}, {d: 0, has: true, t: "number"}],
+    [{v: null}, {d: "dflt", has: false, t: "null"}],
+    [{k: null}, {d: "dflt", has: false, t: "null"}],
+    [{k: null, v: false}, {d: false, has: true, t: "bool"}],
+  ],
+}
+
+{
+  name: "expression with passThrough: a nested null deletes only the nested key",
+  graph: {
+    nodes: [
+      {expression: "p", passThrough: true, fields: {"o.k": "v"}},
+      {expression: "obs", fields: {t: "type(o.k)", has: "o != null and 'k' in keys(o)", siblings: "o.s ?? 'none'"}},
+    ],
+  },
+  cases: [
+    [{o: {k: 1, s: 2}}, {has: false, siblings: 2, t: "null"}],
+    [{o: {k: 1, s: 2}, v: null}, {has: false, siblings: 2, t: "null"}],
+    [{o: {s: 2}}, {has: false, siblings: 2, t: "null"}],
+    [{v: null}, {has: true, siblings: "none", t: "null"}],
+    [{o: null, v: 3}, {has: true, siblings: "none", t: "number"}],
+    [{o: {k: null}, v: ""}, {has: true, siblings: "none", t: "string"}],
+  ],
+}
+
+{
+  name: "expression: a field producing null under outputPath",
+  graph: {
+    nodes: [
+      {expression: "p", outputPath: "out", fields: {k: "v"}},
+      {expression: "obs", fields: {t: "type(out.k)", has: "'k' in keys(out)", d: "out.k ?? 'dflt'"}},
+    ],
+  },
+  cases: [
+    [{}, {d: "dflt", has: true, t: "null"}],
+    [{v: null}, {d: "dflt", has: true, t: "null"}],
+    [{v: ""}, {d: "", has: true, t: "string"}],
+    [{v: false}, {d: false, has: true, t: "bool"}],
+  ],
+}
+
+// --- First-hit tables ------------------------------------------------------------------------------
+// An output cell that evaluates to null writes a null key; a table with no matching rule outputs
+// null as a whole, so the next node sees an empty object and `$nodes.p` is null.
+{
+  name: "first-hit table: matched with a null output, or not matched at all",
+  graph: {
+    nodes: [
+      {table: "p", inputs: ["m"], outputs: ["k"], rules: [
+        ["'yes'", "v"],
+      ]},
+      {expression: "obs", fields: {
+        t: "type(k)",
+        has: "'k' in keys($root)",
+        d: "k ?? 'dflt'",
+        ran: "$nodes.p != null",
+        pt: "type($nodes.p)",
+      }},
+    ],
+  },
+  cases: [
+    [{m: "yes", v: "x"}, {d: "x", has: true, pt: "object", ran: true, t: "string"}],
+    [{m: "yes", v: null}, {d: "dflt", has: true, pt: "object", ran: true, t: "null"}],
+    [{m: "yes"}, {d: "dflt", has: true, pt: "object", ran: true, t: "null"}],
+    [{m: "yes", v: ""}, {d: "", has: true, pt: "object", ran: true, t: "string"}],
+    [{m: "no", v: "x"}, {d: "dflt", has: false, pt: "null", ran: false, t: "null"}],
+    [{v: "x"}, {d: "dflt", has: false, pt: "null", ran: false, t: "null"}],
+    [{m: null}, {d: "dflt", has: false, pt: "null", ran: false, t: "null"}],
+  ],
+}
+
+{
+  name: "first-hit table: null output cells in the graph result",
+  graph: {
+    nodes: [
+      {table: "p", inputs: ["m"], outputs: ["k", "o.k", "list"], rules: [
+        ["'yes'", "v", "v", "[v]"],
+      ]},
+    ],
+  },
+  cases: [
+    [{m: "yes", v: 1}, {k: 1, list: [1], o: {k: 1}}],
+    [{m: "yes", v: null}, {list: [null], o: {k: null}}],
+    [{m: "yes"}, {list: [null], o: {k: null}}],
+    [{m: "no"}, {}],
+  ],
+}
+
+{
+  name: "first-hit table: an empty output cell writes nothing, a null cell writes null",
+  graph: {
+    nodes: [
+      {table: "p", inputs: ["m"], outputs: ["a", "b"], rules: [
+        ["1", "", "null"],
+        ["2", "null", ""],
+        ["", "'x'", "'y'"],
+      ]},
+      {expression: "obs", fields: {
+        aHas: "'a' in keys($root)",
+        bHas: "'b' in keys($root)",
+        a: "a ?? 'dflt'",
+        b: "b ?? 'dflt'",
+      }},
+    ],
+  },
+  cases: [
+    [{m: 1}, {a: "dflt", aHas: false, b: "dflt", bHas: true}],
+    [{m: 2}, {a: "dflt", aHas: true, b: "dflt", bHas: false}],
+    [{m: 3}, {a: "x", aHas: true, b: "y", bHas: true}],
+  ],
+}
+
+{
+  name: "first-hit table with outputPath: no match writes a null at the path",
+  graph: {
+    nodes: [
+      {table: "p", outputPath: "res", inputs: ["m"], outputs: ["k"], rules: [["'yes'", "1"]]},
+      {expression: "obs", fields: {t: "type(res)", has: "'res' in keys($root)", d: "res.k ?? 'dflt'"}},
+    ],
+  },
+  cases: [
+    [{m: "yes"}, {d: 1, has: true, t: "object"}],
+    [{m: "no"}, {d: "dflt", has: true, t: "null"}],
+    [{}, {d: "dflt", has: true, t: "null"}],
+  ],
+}
+
+{
+  name: "first-hit table with passThrough: no match keeps the input, a null cell deletes",
+  graph: {
+    nodes: [
+      {table: "p", passThrough: true, inputs: ["m"], outputs: ["k"], rules: [
+        ["'del'", "null"],
+        ["'set'", "'new'"],
+      ]},
+      {expression: "obs", fields: {t: "type(k)", has: "'k' in keys($root)", d: "k ?? 'dflt'"}},
+    ],
+  },
+  cases: [
+    [{m: "set", k: "old"}, {d: "new", has: true, t: "string"}],
+    [{m: "del", k: "old"}, {d: "dflt", has: false, t: "null"}],
+    [{m: "none", k: "old"}, {d: "old", has: true, t: "string"}],
+    [{m: "none", k: null}, {d: "dflt", has: true, t: "null"}],
+    [{m: "none"}, {d: "dflt", has: false, t: "null"}],
+    [{m: "del"}, {d: "dflt", has: false, t: "null"}],
+  ],
+}
+
+// --- Collect tables --------------------------------------------------------------------------------
+// A collect table outputs an array of rows; with no hits it outputs an empty array. The next node
+// receives that array as its input, so field reads see nothing.
+{
+  name: "collect table: null cells inside rows and an empty result",
+  graph: {
+    nodes: [
+      {table: "p", hit: "collect", inputs: ["n"], outputs: ["k"], rules: [
+        ["> 0", "v"],
+        ["> 10", "null"],
+      ]},
+      {expression: "obs", fields: {
+        rows: "len($nodes.p)",
+        firstK: "type($nodes.p[0].k)",
+        nulls: "len(filter($nodes.p, # .k == null))",
+      }},
+    ],
+  },
+  cases: [
+    [{n: 5, v: "x"}, {firstK: "string", nulls: 0, rows: 1}],
+    [{n: 5}, {firstK: "null", nulls: 1, rows: 1}],
+    [{n: 20, v: 1}, {firstK: "number", nulls: 1, rows: 2}],
+    [{n: 0}, {firstK: "null", nulls: 0, rows: 0}],
+    [{}, {firstK: "null", nulls: 0, rows: 0}],
+  ],
+}
+
+// The node after a collect table receives the row array itself as its input, so a bare field
+// read has no object to read from.
+{
+  name: "collect table: a bare field read on the row array input",
+  graph: {
+    nodes: [
+      {table: "p", hit: "collect", inputs: ["n"], outputs: ["k"], rules: [["> 0", "v"]]},
+      {expression: "obs", fields: {t: "type(k)"}},
+    ],
+  },
+  cases: [
+    [{n: 5, v: "x"}, "!error", "question: a field read on an array node input fails instead of reading null as it does on a scalar input (chapter 01)"],
+    [{n: 0}, "!error", "question: a field read on an array node input fails instead of reading null as it does on a scalar input (chapter 01)"],
+  ],
+}
+
+{
+  name: "collect table: rows in the graph result keep their nulls",
+  graph: {
+    nodes: [
+      {table: "p", hit: "collect", inputs: ["n"], outputs: ["k", "o.k"], rules: [
+        ["> 0", "v", "v"],
+        ["> 10", "null", "1"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 5, v: 1}, [{k: 1, o: {k: 1}}]],
+    [{n: 5}, [{k: null, o: {k: null}}]],
+    [{n: 20}, [{k: null, o: {k: null}}, {k: null, o: {k: 1}}]],
+    [{n: 0}, []],
+  ],
+}
+
+{
+  name: "collect table under outputPath: empty and null-holding row lists",
+  graph: {
+    nodes: [
+      {table: "p", hit: "collect", outputPath: "rows", inputs: ["n"], outputs: ["k"], rules: [
+        ["> 0", "v"],
+      ]},
+      {expression: "obs", fields: {n: "len(rows)", t: "type(rows)", allNull: "all(rows, # .k == null)"}},
+    ],
+  },
+  cases: [
+    [{n: 1, v: 2}, {allNull: false, n: 1, t: "array"}],
+    [{n: 1}, {allNull: true, n: 1, t: "array"}],
+    [{n: 0}, {allNull: true, n: 0, t: "array"}],
+    [{n: null}, {allNull: true, n: 0, t: "array"}],
+  ],
+}
+
+{
+  name: "first-hit table with a [] column: a null value is gathered, no match gives no list",
+  graph: {
+    nodes: [
+      {table: "p", inputs: ["n"], outputs: ["tags[]", "k"], rules: [
+        ["> 10", "'big'", "1"],
+        ["> 0", "v", "2"],
+      ]},
+      {expression: "obs", fields: {tags: "tags", t: "type(tags)", k: "k ?? 'dflt'"}},
+    ],
+  },
+  cases: [
+    [{n: 20, v: "x"}, {k: 1, t: "array", tags: ["big", "x"]}],
+    [{n: 5, v: "x"}, {k: 2, t: "array", tags: ["x"]}],
+    [{n: 5, v: null}, {k: 2, t: "array", tags: [null]}],
+    [{n: 5}, {k: 2, t: "array", tags: [null]}],
+    [{n: 0}, {k: "dflt", t: "null"}],
+  ],
+}
+
+// --- Tables reading null and missing values produced upstream -------------------------------------
+// A table cell cannot tell a null key from a missing one: both read as null.
+{
+  name: "table cells over a null, deleted or missing key produced upstream",
+  graph: {
+    nodes: [
+      {expression: "p", passThrough: true, fields: {k: "v"}},
+      {table: "cls", inputs: ["k"], outputs: ["cls"], rules: [
+        ["null", "'null'"],
+        ["''", "'empty'"],
+        ["0", "'zero'"],
+        ["false", "'false'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{}, {cls: "null"}],
+    [{v: null}, {cls: "null"}],
+    [{k: "old", v: null}, {cls: "null"}],
+    [{v: ""}, {cls: "empty"}],
+    [{v: 0}, {cls: "zero"}],
+    [{v: false}, {cls: "false"}],
+    [{v: "a"}, {cls: "other"}],
+  ],
+}
+
+{
+  name: "table cells over the output of an unmatched table",
+  graph: {
+    nodes: [
+      {table: "p", inputs: ["m"], outputs: ["k"], rules: [["'yes'", "'hit'"]]},
+      {table: "cls", inputs: ["k"], outputs: ["cls"], rules: [
+        ["null", "'null'"],
+        ["", "'other'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{m: "yes"}, {cls: "other"}],
+    [{m: "no"}, {cls: "null"}],
+    [{m: "no", k: "request"}, {cls: "null"}],
+  ],
+}
+
+// --- Switch nodes ----------------------------------------------------------------------------------
+// A switch passes its input on unchanged, nulls included. A branch it does not take never runs: its
+// node has no $nodes entry and contributes nothing to a later join.
+{
+  name: "switch: request nulls pass through the switch unchanged",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["k == null", ""]},
+      {expression: "isNull", fields: {branch: "'null'", has: "'k' in keys($root)"}},
+      {expression: "notNull", fields: {branch: "'value'", has: "'k' in keys($root)"}},
+    ],
+    edges: ["input -> s", "s:0 -> isNull -> output", "s:1 -> notNull -> output"],
+  },
+  cases: [
+    [{k: null}, {branch: "null", has: true}],
+    [{}, {branch: "null", has: false}],
+    [{k: ""}, {branch: "value", has: true}],
+    [{k: 0}, {branch: "value", has: true}],
+  ],
+}
+
+{
+  name: "switch: a branch not taken is missing from $nodes and from the join",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["go", ""]},
+      {expression: "taken", fields: {k: "v"}},
+      {expression: "skipped", fields: {other: "1"}},
+      {expression: "obs", fields: {
+        t: "type(k)",
+        has: "'k' in keys($root)",
+        takenRan: "$nodes.taken != null",
+        takenK: "type($nodes.taken.k)",
+        skippedRan: "$nodes.skipped != null",
+      }},
+    ],
+    edges: ["input -> s", "s:0 -> taken -> obs", "s:1 -> skipped -> obs", "obs -> output"],
+  },
+  cases: [
+    [{go: true, v: 1}, {has: true, skippedRan: false, t: "number", takenK: "number", takenRan: true}],
+    [{go: true, v: null}, {has: true, skippedRan: false, t: "null", takenK: "null", takenRan: true}],
+    [{go: true}, {has: true, skippedRan: false, t: "null", takenK: "null", takenRan: true}],
+    [{go: false, v: 1}, {has: false, skippedRan: true, t: "null", takenK: "null", takenRan: false}],
+    [{v: 1}, {has: false, skippedRan: true, t: "null", takenK: "null", takenRan: false}],
+  ],
+}
+
+{
+  name: "switch: a null written by the taken branch over a key from the input",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["a", "b"]},
+      {expression: "A", fields: {k: "null"}},
+      {expression: "B", fields: {k: "'b'"}},
+      {expression: "obs", fields: {t: "type(k)", has: "'k' in keys($root)", d: "k ?? 'dflt'"}},
+    ],
+    edges: ["input -> s", "s:0 -> A -> obs", "s:1 -> B -> obs", "input -> obs", "obs -> output"],
+  },
+  cases: [
+    [{a: true, b: true, k: "req"}, {d: "dflt", has: false, t: "null"}],
+    [{a: true, b: false, k: "req"}, {d: "dflt", has: false, t: "null"}],
+    [{a: false, b: true, k: "req"}, {d: "b", has: true, t: "string"}],
+    [{a: false, b: false, k: "req"}, {d: "req", has: true, t: "string"}],
+    [{a: true, b: false}, {d: "dflt", has: false, t: "null"}],
+  ],
+}
+
+// --- Loops -----------------------------------------------------------------------------------------
+// A loop outputs one result per item, nulls included; an empty array gives an empty array.
+{
+  name: "loop: per-item nulls stay in the result array",
+  graph: {
+    nodes: [
+      {expression: "p", inputField: "items", outputPath: "out", executionMode: "loop", fields: {k: "v"}},
+      {expression: "obs", fields: {
+        n: "len(out)",
+        nulls: "len(filter(out, # .k == null))",
+        keyed: "len(filter(out, 'k' in keys(#)))",
+      }},
+    ],
+  },
+  cases: [
+    [{items: [{v: 1}, {v: null}, {}]}, {keyed: 3, n: 3, nulls: 2}],
+    [{items: [{v: ""}, {v: 0}, {v: false}]}, {keyed: 3, n: 3, nulls: 0}],
+    [{items: []}, {keyed: 0, n: 0, nulls: 0}],
+    [{items: [null]}, {keyed: 1, n: 1, nulls: 1}],
+  ],
+}
+
+{
+  name: "loop: in the graph result, nulls inside the array survive",
+  graph: {
+    nodes: [
+      {expression: "p", inputField: "items", outputPath: "out", executionMode: "loop", fields: {k: "v"}},
+    ],
+  },
+  cases: [
+    [{items: [{v: 1}, {v: null}, {}]}, {out: [{k: 1}, {k: null}, {k: null}]}],
+    [{items: []}, {out: []}],
+    [{items: [{}]}, {out: [{k: null}]}],
+  ],
+}
+
+{
+  name: "loop: an unmatched table per item yields null items",
+  graph: {
+    nodes: [
+      {table: "p", inputField: "items", outputPath: "out", executionMode: "loop", inputs: ["n"], outputs: ["k"], rules: [
+        ["> 0", "'pos'"],
+      ]},
+      {expression: "obs", fields: {n: "len(out)", nullItems: "len(filter(out, # == null))", k: "map(out, # == null ? '-' : #.k)"}},
+    ],
+  },
+  cases: [
+    [{items: [{n: 1}, {n: -1}, {}]}, {k: ["pos", "-", "-"], n: 3, nullItems: 2}],
+    [{items: [{n: -1}]}, {k: ["-"], n: 1, nullItems: 1}],
+    [{items: []}, {k: [], n: 0, nullItems: 0}],
+  ],
+}
+
+{
+  name: "loop: with passThrough a null per-item field deletes the item key",
+  graph: {
+    nodes: [
+      {expression: "p", inputField: "items", outputPath: "items", executionMode: "loop", passThrough: true, fields: {k: "v"}},
+    ],
+  },
+  cases: [
+    [{items: [{k: "old", v: null}, {k: "old", v: 1}, {k: "old"}]}, {items: [{v: null}, {k: 1, v: 1}, {}]}],
+    [{items: [{v: null}]}, {items: [{v: null}]}],
+    [{items: []}, {items: []}],
+  ],
+}
+
+{
+  name: "loop: null, missing and empty sources",
+  graph: {
+    nodes: [
+      {expression: "p", inputField: "items ?? []", outputPath: "out", executionMode: "loop", fields: {k: "v"}},
+      {expression: "obs", fields: {n: "len(out)", t: "type(out)"}},
+    ],
+  },
+  cases: [
+    [{items: null}, {n: 0, t: "array"}],
+    [{}, {n: 0, t: "array"}],
+    [{items: []}, {n: 0, t: "array"}],
+    [{items: [{v: null}]}, {n: 1, t: "array"}],
+  ],
+}
+
+// --- Sub-decisions ---------------------------------------------------------------------------------
+// A sub-decision returns its graph result, so its top-level nulls are already dropped: the parent
+// sees them as missing. Nested nulls cross the boundary.
+{
+  name: "sub-decision: top-level nulls of the child arrive missing, nested ones null",
+  decisions: {
+    child: {nodes: [{expression: "c", fields: {k: "v", "o.k": "v", list: "[v]"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "p", key: "child"},
+      {expression: "obs", fields: {
+        has: "'k' in keys($root)",
+        nestedHas: "'k' in keys(o)",
+        nested: "type(o.k)",
+        list: "list",
+        viaNodes: "'k' in keys($nodes.p)",
+      }},
+    ],
+  },
+  cases: [
+    [{v: 1}, {has: true, list: [1], nested: "number", nestedHas: true, viaNodes: true}],
+    [{v: null}, {has: false, list: [null], nested: "null", nestedHas: true, viaNodes: false}],
+    [{}, {has: false, list: [null], nested: "null", nestedHas: true, viaNodes: false}],
+    [{v: ""}, {has: true, list: [""], nested: "string", nestedHas: true, viaNodes: true}],
+  ],
+}
+
+{
+  name: "sub-decision: a child whose table matches nothing",
+  decisions: {
+    child: {nodes: [{table: "t", inputs: ["m"], outputs: ["k"], rules: [["'yes'", "1"]]}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "p", key: "child"},
+      {expression: "obs", fields: {t: "type($nodes.p)", d: "k ?? 'dflt'", n: "len(keys($nodes.p ?? {}))"}},
+    ],
+  },
+  cases: [
+    [{m: "yes"}, {d: 1, n: 1, t: "object"}],
+    [{m: "no"}, {d: "dflt", n: 0, t: "object"}],
+    [{}, {d: "dflt", n: 0, t: "object"}],
+  ],
+}
+
+{
+  name: "sub-decision with passThrough: a child's top-level null cannot delete a parent key",
+  decisions: {
+    child: {nodes: [{expression: "c", fields: {k: "v"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "p", key: "child", passThrough: true},
+      {expression: "obs", fields: {t: "type(k)", d: "k ?? 'dflt'"}},
+    ],
+  },
+  cases: [
+    [{k: "old", v: "new"}, {d: "new", t: "string"}],
+    [{k: "old", v: null}, {d: "old", t: "string"}],
+    [{k: "old"}, {d: "old", t: "string"}],
+    [{v: null}, {d: "dflt", t: "null"}],
+  ],
+}
+
+{
+  name: "sub-decision with outputPath: a child returning nothing",
+  decisions: {
+    child: {nodes: [{expression: "c", fields: {k: "v"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "p", key: "child", outputPath: "res"},
+      {expression: "obs", fields: {t: "type(res)", n: "len(keys(res))", d: "res.k ?? 'dflt'"}},
+    ],
+  },
+  cases: [
+    [{v: 1}, {d: 1, n: 1, t: "object"}],
+    [{v: null}, {d: "dflt", n: 0, t: "object"}],
+    [{}, {d: "dflt", n: 0, t: "object"}],
+  ],
+}
+
+// --- Function nodes --------------------------------------------------------------------------------
+// A v2 function's result is converted as it is: null and undefined properties both arrive as null.
+// A function returning null or undefined as a whole contributes nothing.
+{
+  name: "function: null, undefined and empty properties",
+  graph: {
+    nodes: [
+      {function: "p", source: """export const handler = async (input) => ({ k: input.v, u: undefined, n: null, e: '', o: {}, a: [] });"""},
+      {expression: "obs", fields: {
+        t: "type(k)",
+        has: "'k' in keys($root)",
+        uHas: "'u' in keys($root)",
+        u: "type(u)",
+        n: "type(n)",
+        e: "e ?? 'dflt'",
+        o: "o",
+        a: "a",
+      }},
+    ],
+  },
+  cases: [
+    [{v: 1}, {a: [], e: "", has: true, n: "null", o: {}, t: "number", u: "null", uHas: true}],
+    [{v: null}, {a: [], e: "", has: true, n: "null", o: {}, t: "null", u: "null", uHas: true}],
+    [{}, {a: [], e: "", has: true, n: "null", o: {}, t: "null", u: "null", uHas: true}],
+  ],
+}
+
+{
+  name: "function: null and undefined properties in the graph result",
+  graph: {
+    nodes: [
+      {function: "p", source: """export const handler = async (input) => ({ k: input.v, u: undefined, nested: { k: input.v, u: undefined }, list: [input.v, undefined, null] });"""},
+    ],
+  },
+  cases: [
+    [{v: 1}, {k: 1, list: [1, null, null], nested: {k: 1, u: null}}],
+    [{v: null}, {list: [null, null, null], nested: {k: null, u: null}}],
+    [{}, {list: [null, null, null], nested: {k: null, u: null}}],
+  ],
+}
+
+{
+  name: "function: returning null or undefined as a whole",
+  graph: {
+    nodes: [
+      {function: "p", source: """export const handler = async (input) => input.mode === 'null' ? null : input.mode === 'undef' ? undefined : input.mode === 'empty' ? {} : { k: 1 };"""},
+      {expression: "obs", fields: {t: "type($nodes.p)", d: "k ?? 'dflt'"}},
+    ],
+  },
+  cases: [
+    [{mode: "null"}, {d: "dflt", t: "null"}],
+    [{mode: "undef"}, {d: "dflt", t: "null"}],
+    [{mode: "empty"}, {d: "dflt", t: "object"}],
+    [{mode: "obj"}, {d: 1, t: "object"}],
+  ],
+}
+
+{
+  name: "function: the function sees null and missing request keys differently",
+  graph: {
+    nodes: [
+      {function: "p", source: """export const handler = async (input) => ({ inKeys: 'k' in input, isNull: input.k === null, isUndef: input.k === undefined, t: typeof input.k });"""},
+    ],
+  },
+  cases: [
+    [{k: null}, {inKeys: true, isNull: true, isUndef: false, t: "object"}],
+    [{}, {inKeys: false, isNull: false, isUndef: true, t: "undefined"}],
+    [{k: ""}, {inKeys: true, isNull: false, isUndef: false, t: "string"}],
+    [{k: 0}, {inKeys: true, isNull: false, isUndef: false, t: "number"}],
+  ],
+}
+
+{
+  name: "function: a null written upstream with passThrough arrives deleted",
+  graph: {
+    nodes: [
+      {expression: "e", passThrough: true, fields: {k: "v"}},
+      {function: "p", source: """export const handler = async (input) => ({ inKeys: 'k' in input, isNull: input.k === null });"""},
+    ],
+  },
+  cases: [
+    [{k: "old", v: null}, {inKeys: false, isNull: false}],
+    [{v: null}, {inKeys: false, isNull: false}],
+    [{k: null}, {inKeys: false, isNull: false}],
+    [{k: "old", v: 1}, {inKeys: true, isNull: false}],
+  ],
+}
+
+// --- Custom nodes ----------------------------------------------------------------------------------
+// The `config` adapter returns its configuration verbatim, nulls included; `render` writes a null
+// for a template field it cannot resolve.
+{
+  name: "custom: a config with null and empty values, seen by the next node",
+  graph: {
+    nodes: [
+      {custom: "p", kind: "config", config: {k: null, e: "", o: {k: null}, a: [null]}},
+      {expression: "obs", fields: {
+        has: "'k' in keys($root)",
+        t: "type(k)",
+        e: "e ?? 'dflt'",
+        ok: "'k' in keys(o)",
+        a: "a",
+        x: "x ?? 'dflt'",
+      }},
+    ],
+  },
+  cases: [
+    [{}, {a: [null], e: "", has: true, ok: true, t: "null", x: "dflt"}],
+    [{k: 1}, {a: [null], e: "", has: true, ok: true, t: "null", x: "dflt"}],
+    [{x: null}, {a: [null], e: "", has: true, ok: true, t: "null", x: "dflt"}],
+  ],
+}
+
+{
+  name: "custom: config nulls in the graph result",
+  graph: {
+    nodes: [{custom: "p", kind: "config", config: {k: null, e: "", o: {k: null}, a: [null]}}],
+  },
+  cases: [
+    [{}, {a: [null], e: "", o: {k: null}}],
+    [{k: 1}, {a: [null], e: "", o: {k: null}}],
+  ],
+}
+
+{
+  name: "custom: echo carries request nulls to the next node",
+  graph: {
+    nodes: [
+      {custom: "p", kind: "echo", config: {}},
+      {expression: "obs", fields: {t: "type(k)", has: "'k' in keys($root)", d: "k ?? 'dflt'"}},
+    ],
+  },
+  cases: [
+    [{k: null}, {d: "dflt", has: true, t: "null"}],
+    [{}, {d: "dflt", has: false, t: "null"}],
+    [{k: ""}, {d: "", has: true, t: "string"}],
+  ],
+}
+
+// --- The graph result: top level versus nested ------------------------------------------------------
+// Every producer above, writing null both at the top level and one level down, merged into one
+// result: only the top-level keys disappear.
+{
+  name: "result: top-level nulls from every node kind are dropped, nested ones kept",
+  graph: {
+    nodes: [
+      {expression: "e", fields: {e: "null", "eo.k": "null"}},
+      {table: "t", inputs: [""], outputs: ["t", "to.k"], rules: [["", "null", "null"]]},
+      {function: "f", source: """export const handler = async () => ({ f: null, fo: { k: null } });"""},
+      {custom: "c", kind: "config", config: {c: null, co: {k: null}}},
+    ],
+    edges: ["input -> e -> output", "input -> t -> output", "input -> f -> output", "input -> c -> output"],
+  },
+  cases: [
+    [{}, {co: {k: null}, eo: {k: null}, fo: {k: null}, to: {k: null}}],
+    [{e: 1, t: 1, f: 1, c: 1}, {co: {k: null}, eo: {k: null}, fo: {k: null}, to: {k: null}}],
+  ],
+}
+
+{
+  name: "result: a null deep inside arrays and objects survives",
+  graph: {
+    nodes: [{expression: "e", fields: {deep: "{a: [{b: null}, null, [null]], c: {d: {e: null}}}"}}],
+  },
+  cases: [
+    [{}, {deep: {a: [{b: null}, null, [null]], c: {d: {e: null}}}}],
+  ],
+}
+
+{
+  name: "result: a top-level null written by the output node's only parent with passThrough",
+  graph: {
+    nodes: [{expression: "e", passThrough: true, fields: {k: "v"}}],
+  },
+  cases: [
+    [{k: 1, v: null}, {}],
+    [{v: null}, {}],
+    [{k: null, v: null}, {}],
+    [{v: {x: null}}, {k: {x: null}, v: {x: null}}],
+  ],
+}

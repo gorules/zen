@@ -1,0 +1,509 @@
+// Realistic healthcare decisions: emergency triage through a first-hit switch whose branches
+// meet at a wait-target table, benefit cost sharing with deductible and out-of-pocket caps,
+// weight and renal dosing checks with first-hit severity plus collected alerts, specialist
+// appointment eligibility over dates (evaluation time is fixed at Thursday
+// 2025-03-20T10:15:30Z), drug interaction screening through a loop table and a function node,
+// and lab result interpretation through a sub-decision in loop mode. Each suite is one decision
+// exercised across main paths, boundaries, missing data and bad types.
+
+// ---------------------------------------------------------------------------------------------
+// Emergency triage (ESI-like): a pass-through expression derives the shock index and the
+// number of planned resources, a column-less table collects danger-zone vitals through
+// `dangerFlags[]`, a first-hit switch assigns the level, and every branch meets at a wait table.
+// A condition that errors on a missing value is false as a whole, so a missing pain score hides
+// the GCS term next to it.
+{
+  name: "triage: danger-zone vitals, resources and the acuity level",
+  graph: {
+    nodes: [
+      {input: "patient"},
+      {expression: "vitalsCalc", passThrough: true, fields: {
+        shockIndex: "round(vitals.hr / vitals.sbp, 2)",
+        resources: "len(filter(plannedResources ?? [], # in ['labs', 'ecg', 'xray', 'ct', 'iv', 'consult', 'procedure']))",
+      }},
+      {table: "danger", passThrough: true, inputs: [null], outputs: ["dangerFlags[]"], rules: [
+        ["vitals.hr > 100", "'tachycardia'"],
+        ["vitals.rr > 20", "'tachypnea'"],
+        ["vitals.spo2 < 92", "'hypoxia'"],
+        ["shockIndex >= 1", "'shock index'"],
+        ["ageMonths < 3 and vitals.temp >= 38", "'febrile infant'"],
+        ["", ""],
+      ]},
+      {switch: "esi", when: [
+        "airway == 'compromised' or vitals.gcs <= 8 or vitals.spo2 < 85",
+        "len(dangerFlags) >= 2 or painScore >= 7 or vitals.gcs < 15",
+        "resources >= 2 or len(dangerFlags) == 1",
+        "resources == 1",
+        "",
+      ]},
+      {expression: "resus", fields: {level: "1", area: "'resus'", flags: "dangerFlags"}},
+      {expression: "emergent", fields: {level: "2", area: "'acute'", flags: "dangerFlags"}},
+      {expression: "urgent", fields: {level: "3", area: "'acute'", flags: "dangerFlags"}},
+      {expression: "lessUrgent", fields: {level: "4", area: "'fast-track'", flags: "dangerFlags"}},
+      {expression: "nonUrgent", fields: {level: "5", area: "'fast-track'", flags: "dangerFlags"}},
+      {table: "waitTarget", passThrough: true, inputs: ["level"], outputs: ["maxWaitMin"], rules: [
+        ["1", "0"],
+        ["2", "10"],
+        ["3", "30"],
+        ["4", "60"],
+        ["5", "120"],
+      ]},
+      {output: "disposition"},
+    ],
+    edges: [
+      "patient -> vitalsCalc -> danger -> esi",
+      "esi:0 -> resus -> waitTarget",
+      "esi:1 -> emergent -> waitTarget",
+      "esi:2 -> urgent -> waitTarget",
+      "esi:3 -> lessUrgent -> waitTarget",
+      "esi:4 -> nonUrgent -> waitTarget",
+      "waitTarget -> disposition",
+    ],
+  },
+  cases: [
+    [{ageMonths: 360, airway: "patent", painScore: 2, vitals: {hr: 80, sbp: 120, rr: 16, spo2: 98, gcs: 15, temp: 37}, plannedResources: []}, {level: 5, area: "fast-track", flags: [], maxWaitMin: 120}],
+    [{ageMonths: 360, airway: "patent", painScore: 2, vitals: {hr: 80, sbp: 120, rr: 16, spo2: 98, gcs: 15, temp: 37}, plannedResources: ["labs"]}, {level: 4, area: "fast-track", flags: [], maxWaitMin: 60}],
+    [{ageMonths: 360, airway: "patent", painScore: 2, vitals: {hr: 80, sbp: 120, rr: 16, spo2: 98, gcs: 15, temp: 37}, plannedResources: ["labs", "xray", "ice pack"]}, {level: 3, area: "acute", flags: [], maxWaitMin: 30}],
+    [{ageMonths: 360, airway: "patent", painScore: 2, vitals: {hr: 110, sbp: 120, rr: 16, spo2: 98, gcs: 15, temp: 37}, plannedResources: []}, {level: 3, area: "acute", flags: ["tachycardia"], maxWaitMin: 30}],
+    [{ageMonths: 360, airway: "patent", painScore: 2, vitals: {hr: 125, sbp: 110, rr: 24, spo2: 95, gcs: 15, temp: 37}, plannedResources: ["labs"]}, {level: 2, area: "acute", flags: ["tachycardia", "tachypnea", "shock index"], maxWaitMin: 10}],
+    [{ageMonths: 360, airway: "patent", painScore: 2, vitals: {hr: 90, sbp: 120, rr: 16, spo2: 84, gcs: 15, temp: 37}, plannedResources: []}, {level: 1, area: "resus", flags: ["hypoxia"], maxWaitMin: 0}],
+    [{ageMonths: 360, airway: "patent", painScore: 2, vitals: {hr: 90, sbp: 120, rr: 16, spo2: 85, gcs: 15, temp: 37}, plannedResources: []}, {level: 3, area: "acute", flags: ["hypoxia"], maxWaitMin: 30}],
+    [{ageMonths: 360, airway: "patent", painScore: 2, vitals: {hr: 90, sbp: 120, rr: 16, spo2: 92, gcs: 15, temp: 37}, plannedResources: []}, {level: 5, area: "fast-track", flags: [], maxWaitMin: 120}],
+    [{ageMonths: 360, airway: "patent", painScore: 0, vitals: {hr: 70, sbp: 130, rr: 12, spo2: 97, gcs: 8, temp: 36.5}, plannedResources: ["ct"]}, {level: 1, area: "resus", flags: [], maxWaitMin: 0}],
+    [{ageMonths: 360, airway: "patent", painScore: 0, vitals: {hr: 70, sbp: 130, rr: 12, spo2: 97, gcs: 14, temp: 36.5}, plannedResources: ["ct"]}, {level: 2, area: "acute", flags: [], maxWaitMin: 10}],
+    [{ageMonths: 360, airway: "compromised", painScore: 0, vitals: {hr: 70, sbp: 130, rr: 12, spo2: 97, gcs: 15, temp: 36.5}}, {level: 1, area: "resus", flags: [], maxWaitMin: 0}],
+    [{ageMonths: 360, airway: "patent", painScore: 7, vitals: {hr: 80, sbp: 120, rr: 16, spo2: 98, gcs: 15, temp: 37}}, {level: 2, area: "acute", flags: [], maxWaitMin: 10}],
+    [{ageMonths: 360, airway: "patent", painScore: 6, vitals: {hr: 80, sbp: 120, rr: 16, spo2: 98, gcs: 15, temp: 37}}, {level: 5, area: "fast-track", flags: [], maxWaitMin: 120}],
+    [{ageMonths: 2, airway: "patent", painScore: 0, vitals: {hr: 160, sbp: 80, rr: 40, spo2: 97, gcs: 15, temp: 38}}, {level: 2, area: "acute", flags: ["tachycardia", "tachypnea", "shock index", "febrile infant"], maxWaitMin: 10}],
+    [{ageMonths: 3, airway: "patent", painScore: 0, vitals: {hr: 90, sbp: 100, rr: 18, spo2: 99, gcs: 15, temp: 38.5}}, {level: 5, area: "fast-track", flags: [], maxWaitMin: 120}],
+    [{ageMonths: 360, airway: "patent", painScore: 2, vitals: {hr: 100, sbp: 100, rr: 20, spo2: 96, gcs: 15, temp: 37}, plannedResources: ["iv", "labs"]}, {level: 3, area: "acute", flags: ["shock index"], maxWaitMin: 30}],
+    // Missing pain score: the second condition errors on `painScore >= 7` before reaching the
+    // GCS term, so a confused patient (GCS 14) is not upgraded. The decision has to default it.
+    [{ageMonths: 360, airway: "patent", vitals: {hr: 80, sbp: 120, rr: 16, spo2: 98, gcs: 14, temp: 37}}, {level: 5, area: "fast-track", flags: [], maxWaitMin: 120}],
+    // A missing temperature only skips the febrile-infant rule; a missing airway compares unequal.
+    [{ageMonths: 1, painScore: 0, vitals: {hr: 90, sbp: 100, rr: 18, spo2: 99, gcs: 15}}, {level: 5, area: "fast-track", flags: [], maxWaitMin: 120}],
+    // The shock index needs both vitals: a missing or zero systolic pressure (division by zero is
+    // null) and a string heart rate fail the first expression node.
+    [{ageMonths: 360, painScore: 0, vitals: {hr: 90, rr: 18, spo2: 99, gcs: 15, temp: 37}}, "!error"],
+    [{ageMonths: 360, painScore: 0, vitals: {hr: 90, sbp: 0, rr: 18, spo2: 99, gcs: 15, temp: 37}}, "!error"],
+    [{ageMonths: 360, painScore: 0, vitals: {hr: "90", sbp: 120, rr: 18, spo2: 99, gcs: 15, temp: 37}}, "!error"],
+    [{ageMonths: 360, painScore: 0, vitals: {hr: 90, sbp: 120, rr: 18, spo2: 99, gcs: 15, temp: 37}, plannedResources: "labs"}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Benefit cost sharing: plan limits and a benefit row by plan, network and category, a gate
+// that denies uncovered services and pends missing prior authorization, then the deductible,
+// copay and coinsurance are applied in order and capped by the remaining out-of-pocket room.
+{
+  name: "benefits: deductible, copay, coinsurance and the out-of-pocket cap",
+  graph: {
+    nodes: [
+      {input: "claim"},
+      {table: "planLimits", passThrough: true, inputs: ["plan.type", "service.network"], outputs: ["limits.deductible", "limits.oopMax"], rules: [
+        ["'hmo'", "", "500", "4000"],
+        ["'ppo'", "'in'", "1000", "5000"],
+        ["'ppo'", "'out'", "2500", "10000"],
+        ["'hdhp'", "", "3000", "7000"],
+      ]},
+      {table: "benefit", passThrough: true, inputs: ["plan.type", "service.network", "service.category"], outputs: ["benefit.covered", "benefit.copay", "benefit.coinsurance", "benefit.deductibleApplies", "benefit.authRequired"], rules: [
+        ["'hmo'", "'out'", "'er'", "true", "150", "0", "false", "false"],
+        ["'hmo'", "'out'", "", "false", "0", "0", "false", "false"],
+        ["", "", "'cosmetic'", "false", "0", "0", "false", "false"],
+        ["'hdhp'", "", "'rx-generic'", "true", "10", "0", "false", "false"],
+        ["'hdhp'", "", "", "true", "0", "0.2", "true", "false"],
+        ["", "", "'primary'", "true", "20", "0", "false", "false"],
+        ["", "'in'", "'specialist'", "true", "40", "0", "false", "false"],
+        ["", "'out'", "'specialist'", "true", "0", "0.4", "true", "false"],
+        ["", "", "'er'", "true", "250", "0.1", "true", "false"],
+        ["", "'in'", "'imaging'", "true", "0", "0.2", "true", "true"],
+        ["", "'out'", "'imaging'", "true", "0", "0.4", "true", "true"],
+        ["", "", "'rx-generic'", "true", "10", "0", "false", "false"],
+        ["", "", "'rx-brand'", "true", "45", "0", "false", "false"],
+      ]},
+      {switch: "gate", when: [
+        "benefit == null or benefit.covered == false",
+        "benefit.authRequired and service.priorAuth != true",
+        "",
+      ]},
+      {expression: "denied", fields: {status: "'denied'", reason: "'not covered'", planPays: "0", memberPays: "service.charge"}},
+      {expression: "pended", fields: {status: "'pended'", reason: "'prior authorization required'", planPays: "0", memberPays: "0"}},
+      {expression: "deductible", passThrough: true, fields: {
+        "calc.dedRemaining": "benefit.deductibleApplies ? max([0, limits.deductible - (accumulators.deductibleMet ?? 0)]) : 0",
+        "calc.dedApplied": "min([service.charge, $.calc.dedRemaining])",
+        "calc.afterDed": "service.charge - $.calc.dedApplied",
+        "calc.copay": "min([benefit.copay, $.calc.afterDed])",
+        "calc.coins": "round(($.calc.afterDed - $.calc.copay) * benefit.coinsurance, 2)",
+        "calc.memberRaw": "$.calc.dedApplied + $.calc.copay + $.calc.coins",
+      }},
+      {expression: "oopCap", fields: {
+        oopRemaining: "max([0, limits.oopMax - (accumulators.oopMet ?? 0)])",
+        memberPays: "min([calc.memberRaw, $.oopRemaining])",
+        planPays: "service.charge - $.memberPays",
+        status: "'approved'",
+        reason: "$.memberPays < calc.memberRaw ? 'out-of-pocket maximum reached' : 'cost share applied'",
+      }},
+      {output: "adjudication"},
+    ],
+    edges: [
+      "claim -> planLimits -> benefit -> gate",
+      "gate:0 -> denied -> adjudication",
+      "gate:1 -> pended -> adjudication",
+      "gate:2 -> deductible -> oopCap -> adjudication",
+    ],
+  },
+  cases: [
+    [{plan: {type: "ppo"}, service: {category: "primary", network: "in", charge: 150}, accumulators: {deductibleMet: 0, oopMet: 0}}, {oopRemaining: 5000, memberPays: 20, planPays: 130, status: "approved", reason: "cost share applied"}],
+    [{plan: {type: "ppo"}, service: {category: "specialist", network: "in", charge: 300}, accumulators: {deductibleMet: 0, oopMet: 0}}, {oopRemaining: 5000, memberPays: 40, planPays: 260, status: "approved", reason: "cost share applied"}],
+    [{plan: {type: "ppo"}, service: {category: "specialist", network: "out", charge: 1000}, accumulators: {deductibleMet: 2000, oopMet: 0}}, {oopRemaining: 10000, memberPays: 700, planPays: 300, status: "approved", reason: "cost share applied"}],
+    [{plan: {type: "ppo"}, service: {category: "er", network: "in", charge: 2000}, accumulators: {deductibleMet: 1000, oopMet: 4800}}, {oopRemaining: 200, memberPays: 200, planPays: 1800, status: "approved", reason: "out-of-pocket maximum reached"}],
+    [{plan: {type: "ppo"}, service: {category: "er", network: "in", charge: 2000}, accumulators: {deductibleMet: 1000, oopMet: 4575}}, {oopRemaining: 425, memberPays: 425, planPays: 1575, status: "approved", reason: "cost share applied"}],
+    [{plan: {type: "hmo"}, service: {category: "er", network: "out", charge: 1200}, accumulators: {deductibleMet: 0, oopMet: 0}}, {oopRemaining: 4000, memberPays: 150, planPays: 1050, status: "approved", reason: "cost share applied"}],
+    [{plan: {type: "hmo"}, service: {category: "specialist", network: "out", charge: 300}, accumulators: {deductibleMet: 0, oopMet: 0}}, {status: "denied", reason: "not covered", planPays: 0, memberPays: 300}],
+    [{plan: {type: "ppo"}, service: {category: "cosmetic", network: "in", charge: 5000}}, {status: "denied", reason: "not covered", planPays: 0, memberPays: 5000}],
+    [{plan: {type: "ppo"}, service: {category: "imaging", network: "in", charge: 800}}, {status: "pended", reason: "prior authorization required", planPays: 0, memberPays: 0}],
+    [{plan: {type: "ppo"}, service: {category: "imaging", network: "in", charge: 800, priorAuth: false}}, {status: "pended", reason: "prior authorization required", planPays: 0, memberPays: 0}],
+    [{plan: {type: "ppo"}, service: {category: "imaging", network: "in", charge: 800, priorAuth: true}, accumulators: {deductibleMet: 600, oopMet: 600}}, {oopRemaining: 4400, memberPays: 480, planPays: 320, status: "approved", reason: "cost share applied"}],
+    [{plan: {type: "hdhp"}, service: {category: "primary", network: "in", charge: 150}, accumulators: {deductibleMet: 0, oopMet: 0}}, {oopRemaining: 7000, memberPays: 150, planPays: 0, status: "approved", reason: "cost share applied"}],
+    [{plan: {type: "hdhp"}, service: {category: "rx-generic", network: "in", charge: 30}, accumulators: {deductibleMet: 0, oopMet: 0}}, {oopRemaining: 7000, memberPays: 10, planPays: 20, status: "approved", reason: "cost share applied"}],
+    // The HDHP catch-all row sits above the imaging rows, so HDHP imaging needs no authorization.
+    [{plan: {type: "hdhp"}, service: {category: "imaging", network: "in", charge: 1000}, accumulators: {deductibleMet: 2900, oopMet: 2900}}, {oopRemaining: 4100, memberPays: 280, planPays: 720, status: "approved", reason: "cost share applied"}],
+    [{plan: {type: "ppo"}, service: {category: "primary", network: "in", charge: 0}}, {oopRemaining: 5000, memberPays: 0, planPays: 0, status: "approved", reason: "cost share applied"}],
+    [{plan: {type: "ppo"}, service: {category: "primary", network: "in", charge: 12.5}}, {oopRemaining: 5000, memberPays: 12.5, planPays: 0, status: "approved", reason: "cost share applied"}],
+    [{plan: {type: "ppo"}, service: {category: "specialist", network: "out", charge: 1000}}, {oopRemaining: 10000, memberPays: 1000, planPays: 0, status: "approved", reason: "cost share applied"}],
+    [{plan: {type: "ppo"}, service: {category: "rx-brand", network: "in", charge: 300}, accumulators: {deductibleMet: 0, oopMet: 5200}}, {oopRemaining: 0, memberPays: 0, planPays: 300, status: "approved", reason: "out-of-pocket maximum reached"}],
+    [{plan: {type: "ppo"}, service: {category: "specialist", network: "out", charge: 333.33}, accumulators: {deductibleMet: 2500, oopMet: 0}}, {oopRemaining: 10000, memberPays: 133.33, planPays: 200, status: "approved", reason: "cost share applied"}],
+    // Unknown categories match no benefit row and are denied; a case-mismatched network too.
+    [{plan: {type: "ppo"}, service: {category: "dental", network: "in", charge: 400}}, {status: "denied", reason: "not covered", planPays: 0, memberPays: 400}],
+    [{plan: {type: "ppo"}, service: {category: "specialist", network: "IN", charge: 400}}, {status: "denied", reason: "not covered", planPays: 0, memberPays: 400}],
+    // Without a plan the benefit still matches a plan-agnostic row, but no limits exist and the
+    // out-of-pocket arithmetic fails; a string charge fails the deductible step.
+    [{service: {category: "primary", network: "in", charge: 150}}, "!error"],
+    [{plan: {type: "ppo"}, service: {category: "primary", network: "in", charge: "150"}}, "!error"],
+    // A missing charge on a denied claim reads as null and the null field is dropped.
+    [{plan: {type: "ppo"}, service: {category: "cosmetic", network: "in"}}, {status: "denied", reason: "not covered", planPays: 0}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Dosing check: creatinine clearance (Cockcroft-Gault, only when a creatinine is known), daily
+// and per-kg dose, the formulary reference, a renal factor for renally cleared drugs, then a
+// column-less table where `severity` is first hit and `alerts[]` collects every matching row.
+{
+  name: "dosing: formulary limits, per-kg dose and renal adjustment",
+  graph: {
+    nodes: [
+      {input: "order"},
+      {expression: "derive", passThrough: true, fields: {
+        "renal.crcl": "patient.scr == null ? null : round((140 - patient.age) * patient.weightKg / (72 * patient.scr) * (patient.sex == 'female' ? 0.85 : 1))",
+        "dosing.daily": "order.doseMg * order.frequencyPerDay",
+        "dosing.perKg": "round(order.doseMg / patient.weightKg, 2)",
+      }},
+      {table: "formulary", passThrough: true, inputs: ["order.drug"], outputs: ["ref.mgPerKgMax", "ref.maxSingleMg", "ref.maxDailyMg", "ref.renalCleared"], rules: [
+        ["'amoxicillin'", "25", "1000", "3000", "true"],
+        ["'acetaminophen'", "15", "1000", "4000", "false"],
+        ["'ibuprofen'", "10", "800", "3200", "true"],
+        ["'gentamicin'", "2.5", "500", "600", "true"],
+      ]},
+      {table: "renalAdjust", passThrough: true, inputs: ["ref.renalCleared", "renal.crcl"], outputs: ["ref.renalFactor", "ref.renalNote"], rules: [
+        ["true", "< 30", "0.5", "'severe renal impairment: halve the daily maximum'"],
+        ["true", "[30..59]", "0.75", "'moderate renal impairment'"],
+        ["", "", "1", "null"],
+      ]},
+      {table: "checks", inputs: [null], outputs: ["severity", "alerts[]"], rules: [
+        ["ref.maxDailyMg == null", "'block'", "'drug not in formulary'"],
+        ["order.doseMg > ref.maxSingleMg", "'block'", "'single dose above maximum'"],
+        ["dosing.daily > ref.maxDailyMg * ref.renalFactor", "'block'", "'daily dose above maximum'"],
+        ["dosing.perKg > ref.mgPerKgMax", "'warn'", "'dose per kg above reference'"],
+        ["ref.renalFactor < 1", "'warn'", "ref.renalNote"],
+        ["", "'ok'", ""],
+      ]},
+      {expression: "result", fields: {
+        severity: "severity",
+        alerts: "alerts",
+        crcl: "$nodes.derive.renal.crcl",
+        maxDailyMg: "$nodes.renalAdjust.ref.maxDailyMg == null ? null : $nodes.renalAdjust.ref.maxDailyMg * $nodes.renalAdjust.ref.renalFactor",
+      }},
+      {output: "verdict"},
+    ],
+  },
+  cases: [
+    [{patient: {age: 40, weightKg: 80, sex: "male", scr: 1.0}, order: {drug: "amoxicillin", doseMg: 500, frequencyPerDay: 3}}, {severity: "ok", alerts: [], crcl: 111, maxDailyMg: 3000}],
+    [{patient: {age: 40, weightKg: 80, sex: "male", scr: 1.0}, order: {drug: "amoxicillin", doseMg: 1000, frequencyPerDay: 4}}, {severity: "block", alerts: ["daily dose above maximum"], crcl: 111, maxDailyMg: 3000}],
+    [{patient: {age: 40, weightKg: 80, sex: "male", scr: 1.0}, order: {drug: "amoxicillin", doseMg: 1000, frequencyPerDay: 3}}, {severity: "ok", alerts: [], crcl: 111, maxDailyMg: 3000}],
+    [{patient: {age: 40, weightKg: 80, sex: "male", scr: 1.0}, order: {drug: "amoxicillin", doseMg: 1200, frequencyPerDay: 2}}, {severity: "block", alerts: ["single dose above maximum"], crcl: 111, maxDailyMg: 3000}],
+    [{patient: {age: 80, weightKg: 60, sex: "female", scr: 1.5}, order: {drug: "amoxicillin", doseMg: 500, frequencyPerDay: 3}}, {severity: "warn", alerts: ["severe renal impairment: halve the daily maximum"], crcl: 28, maxDailyMg: 1500}],
+    [{patient: {age: 80, weightKg: 60, sex: "female", scr: 1.5}, order: {drug: "amoxicillin", doseMg: 500, frequencyPerDay: 4}}, {severity: "block", alerts: ["daily dose above maximum", "severe renal impairment: halve the daily maximum"], crcl: 28, maxDailyMg: 1500}],
+    [{patient: {age: 80, weightKg: 60, sex: "male", scr: 1.5}, order: {drug: "amoxicillin", doseMg: 500, frequencyPerDay: 3}}, {severity: "warn", alerts: ["moderate renal impairment"], crcl: 33, maxDailyMg: 2250}],
+    [{patient: {age: 70, weightKg: 70, sex: "male", scr: 1.2}, order: {drug: "ibuprofen", doseMg: 400, frequencyPerDay: 3}}, {severity: "warn", alerts: ["moderate renal impairment"], crcl: 57, maxDailyMg: 2400}],
+    [{patient: {age: 68, weightKg: 30, sex: "male", scr: 1.0}, order: {drug: "gentamicin", doseMg: 75, frequencyPerDay: 1}}, {severity: "warn", alerts: ["moderate renal impairment"], crcl: 30, maxDailyMg: 450}],
+    [{patient: {age: 68, weightKg: 30, sex: "male", scr: 1.0}, order: {drug: "gentamicin", doseMg: 76, frequencyPerDay: 1}}, {severity: "warn", alerts: ["dose per kg above reference", "moderate renal impairment"], crcl: 30, maxDailyMg: 450}],
+    [{patient: {age: 80, weightKg: 72, sex: "male", scr: 1.0}, order: {drug: "ibuprofen", doseMg: 400, frequencyPerDay: 3}}, {severity: "ok", alerts: [], crcl: 60, maxDailyMg: 3200}],
+    // Acetaminophen is not renally cleared: severe impairment changes nothing.
+    [{patient: {age: 80, weightKg: 60, sex: "female", scr: 1.5}, order: {drug: "acetaminophen", doseMg: 1000, frequencyPerDay: 4}}, {severity: "warn", alerts: ["dose per kg above reference"], crcl: 28, maxDailyMg: 4000}],
+    // Pediatric orders without a creatinine: the clearance is null (and dropped from the result),
+    // the renal range cells fail against null and the catch-all keeps the full maximum.
+    [{patient: {age: 6, weightKg: 20}, order: {drug: "acetaminophen", doseMg: 300, frequencyPerDay: 4}}, {severity: "ok", alerts: [], maxDailyMg: 4000}],
+    [{patient: {age: 6, weightKg: 20}, order: {drug: "acetaminophen", doseMg: 400, frequencyPerDay: 4}}, {severity: "warn", alerts: ["dose per kg above reference"], maxDailyMg: 4000}],
+    [{patient: {age: 6, weightKg: 20}, order: {drug: "amoxicillin", doseMg: 250, frequencyPerDay: 3}}, {severity: "ok", alerts: [], maxDailyMg: 3000}],
+    [{patient: {age: 6, weightKg: 20}, order: {drug: "amoxicillin", doseMg: 600, frequencyPerDay: 6}}, {severity: "block", alerts: ["daily dose above maximum", "dose per kg above reference"], maxDailyMg: 3000}],
+    // Drugs outside the formulary block; the other rules fail against the missing references and
+    // the null maximum is dropped from the result.
+    [{patient: {age: 50, weightKg: 70, sex: "male", scr: 1.0}, order: {drug: "warfarin", doseMg: 5, frequencyPerDay: 1}}, {severity: "block", alerts: ["drug not in formulary"], crcl: 88}],
+    [{patient: {age: 50, weightKg: 70, sex: "male", scr: 1.0}, order: {doseMg: 5, frequencyPerDay: 1}}, {severity: "block", alerts: ["drug not in formulary"], crcl: 88}],
+    [{patient: {age: 50, weightKg: 70, scr: 1.0}, order: {drug: "Amoxicillin", doseMg: 500, frequencyPerDay: 3}}, {severity: "block", alerts: ["drug not in formulary"], crcl: 88}],
+    // Bad numbers fail the derive step: zero weight (null per-kg dose), zero creatinine, a string
+    // dose and a missing frequency.
+    [{patient: {age: 50, weightKg: 0, scr: 1.0}, order: {drug: "amoxicillin", doseMg: 500, frequencyPerDay: 3}}, "!error"],
+    [{patient: {age: 50, weightKg: 70, scr: 0}, order: {drug: "amoxicillin", doseMg: 500, frequencyPerDay: 3}}, "!error"],
+    [{patient: {age: 50, weightKg: 70, scr: 1.0}, order: {drug: "amoxicillin", doseMg: "500", frequencyPerDay: 3}}, "!error"],
+    [{patient: {age: 50, weightKg: 70, scr: 1.0}, order: {drug: "amoxicillin", doseMg: 500}}, "!error"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Specialist appointment eligibility: age at the appointment and days ahead derived from dates,
+// per-specialty rules, a column-less table with first-hit `eligible` and collected `problems[]`,
+// then a switch into a booking or a rejection. The referral check defaults missing counters so a
+// missing referral is a problem rather than an erroring (and therefore silent) condition.
+{
+  name: "appointments: coverage, age range, referral, telehealth licensing and horizon",
+  graph: {
+    nodes: [
+      {input: "booking"},
+      {expression: "derive", passThrough: true, fields: {
+        "calc.ageYears": "d(appt.date).diff(d(patient.dob), 'year')",
+        "calc.daysAhead": "d(appt.date).diff(d(), 'day')",
+        "calc.coverageOk": "patient.plan.status == 'active' and not d(appt.date).isAfter(d(patient.plan.end))",
+      }},
+      {table: "specialty", passThrough: true, inputs: ["appt.specialty"], outputs: ["rule.minAge", "rule.maxAge", "rule.referral", "rule.telehealth", "rule.maxDaysAhead"], rules: [
+        ["'pediatrics'", "0", "17", "false", "true", "60"],
+        ["'geriatrics'", "65", "150", "true", "true", "90"],
+        ["'cardiology'", "18", "150", "true", "false", "120"],
+        ["'dermatology'", "0", "150", "true", "true", "180"],
+        ["'psychiatry'", "12", "150", "false", "true", "30"],
+        ["", "0", "150", "false", "false", "90"],
+      ]},
+      {table: "checks", passThrough: true, inputs: [null], outputs: ["eligible", "problems[]"], rules: [
+        ["not calc.coverageOk", "false", "'coverage inactive on appointment date'"],
+        ["calc.ageYears < rule.minAge or calc.ageYears > rule.maxAge", "false", "'age outside specialty range'"],
+        ["rule.referral and patient.plan.referralRequired == true and not (referral.specialty == appt.specialty and not d(referral.expires).isBefore(d(appt.date)) and (referral.visitsUsed ?? 0) < (referral.visitsAllowed ?? 0))", "false", "'valid referral required'"],
+        ["appt.mode == 'telehealth' and (not rule.telehealth or not (patient.state in (provider.licensedStates ?? [])))", "false", "'telehealth not allowed'"],
+        ["calc.daysAhead > rule.maxDaysAhead", "false", "'too far ahead'"],
+        ["calc.daysAhead < 0", "false", "'date in the past'"],
+        ["patient.isNew == true and provider.acceptsNew == false", "false", "'provider not accepting new patients'"],
+        ["", "true", ""],
+      ]},
+      {switch: "route", when: ["eligible", ""]},
+      {expression: "book", fields: {status: "'bookable'", visit: "rule.referral and patient.plan.referralRequired == true ? referral.visitsUsed + 1 : null"}},
+      {expression: "reject", fields: {status: "'rejected'", problems: "problems"}},
+      {output: "result"},
+    ],
+    edges: [
+      "booking -> derive -> specialty -> checks -> route",
+      "route:0 -> book -> result",
+      "route:1 -> reject -> result",
+    ],
+  },
+  cases: [
+    [{patient: {dob: "1980-05-01", state: "CA", isNew: false, plan: {status: "active", end: "2025-12-31", referralRequired: true}}, referral: {specialty: "cardiology", expires: "2025-06-30", visitsUsed: 1, visitsAllowed: 3}, appt: {specialty: "cardiology", date: "2025-04-10", mode: "in-person"}, provider: {licensedStates: ["CA", "NV"], acceptsNew: true}}, {status: "bookable", visit: 2}],
+    [{patient: {dob: "1980-05-01", state: "CA", isNew: false, plan: {status: "active", end: "2025-12-31", referralRequired: true}}, referral: {specialty: "cardiology", expires: "2025-06-30", visitsUsed: 3, visitsAllowed: 3}, appt: {specialty: "cardiology", date: "2025-04-10", mode: "in-person"}, provider: {licensedStates: ["CA", "NV"], acceptsNew: true}}, {status: "rejected", problems: ["valid referral required"]}],
+    [{patient: {dob: "1980-05-01", state: "CA", isNew: false, plan: {status: "active", end: "2025-12-31", referralRequired: true}}, referral: {specialty: "cardiology", expires: "2025-04-10", visitsUsed: 0, visitsAllowed: 3}, appt: {specialty: "cardiology", date: "2025-04-10", mode: "in-person"}, provider: {licensedStates: ["CA", "NV"], acceptsNew: true}}, {status: "bookable", visit: 1}],
+    [{patient: {dob: "1980-05-01", state: "CA", isNew: false, plan: {status: "active", end: "2025-12-31", referralRequired: true}}, referral: {specialty: "cardiology", expires: "2025-04-09", visitsUsed: 0, visitsAllowed: 3}, appt: {specialty: "cardiology", date: "2025-04-10", mode: "in-person"}, provider: {licensedStates: ["CA", "NV"], acceptsNew: true}}, {status: "rejected", problems: ["valid referral required"]}],
+    [{patient: {dob: "1980-05-01", state: "CA", isNew: false, plan: {status: "active", end: "2025-12-31", referralRequired: true}}, referral: {specialty: "dermatology", expires: "2025-06-30", visitsUsed: 0, visitsAllowed: 3}, appt: {specialty: "cardiology", date: "2025-04-10", mode: "in-person"}, provider: {licensedStates: ["CA", "NV"], acceptsNew: true}}, {status: "rejected", problems: ["valid referral required"]}],
+    [{patient: {dob: "1980-05-01", state: "CA", isNew: false, plan: {status: "active", end: "2025-12-31", referralRequired: true}}, appt: {specialty: "cardiology", date: "2025-04-10", mode: "in-person"}, provider: {licensedStates: ["CA", "NV"], acceptsNew: true}}, {status: "rejected", problems: ["valid referral required"]}],
+    [{patient: {dob: "1980-05-01", state: "CA", isNew: false, plan: {status: "active", end: "2025-12-31", referralRequired: false}}, appt: {specialty: "cardiology", date: "2025-04-10", mode: "in-person"}, provider: {licensedStates: ["CA", "NV"], acceptsNew: true}}, {status: "bookable"}],
+    [{patient: {dob: "1980-05-01", state: "CA", isNew: false, plan: {status: "active", end: "2025-04-10", referralRequired: false}}, appt: {specialty: "cardiology", date: "2025-04-10", mode: "in-person"}, provider: {licensedStates: ["CA"]}}, {status: "bookable"}],
+    [{patient: {dob: "1980-05-01", state: "CA", isNew: false, plan: {status: "active", end: "2025-04-09", referralRequired: false}}, appt: {specialty: "cardiology", date: "2025-04-10", mode: "in-person"}, provider: {licensedStates: ["CA"]}}, {status: "rejected", problems: ["coverage inactive on appointment date"]}],
+    [{patient: {dob: "1980-05-01", state: "CA", isNew: false, plan: {status: "terminated", end: "2025-12-31", referralRequired: false}}, appt: {specialty: "cardiology", date: "2025-04-10", mode: "telehealth"}, provider: {licensedStates: ["CA"]}}, {status: "rejected", problems: ["coverage inactive on appointment date", "telehealth not allowed"]}],
+    [{patient: {dob: "1990-01-15", state: "TX", isNew: false, plan: {status: "active", end: "2025-12-31", referralRequired: true}}, referral: {specialty: "dermatology", expires: "2025-12-31", visitsUsed: 0, visitsAllowed: 1}, appt: {specialty: "dermatology", date: "2025-05-02", mode: "telehealth"}, provider: {licensedStates: ["CA", "NV"]}}, {status: "rejected", problems: ["telehealth not allowed"]}],
+    [{patient: {dob: "1990-01-15", state: "NV", isNew: false, plan: {status: "active", end: "2025-12-31", referralRequired: true}}, referral: {specialty: "dermatology", expires: "2025-12-31", visitsUsed: 0, visitsAllowed: 1}, appt: {specialty: "dermatology", date: "2025-05-02", mode: "telehealth"}, provider: {licensedStates: ["CA", "NV"]}}, {status: "bookable", visit: 1}],
+    [{patient: {dob: "1990-01-15", state: "NV", isNew: false, plan: {status: "active", end: "2025-12-31", referralRequired: true}}, referral: {specialty: "dermatology", expires: "2025-12-31", visitsUsed: 0, visitsAllowed: 1}, appt: {specialty: "dermatology", date: "2025-05-02", mode: "telehealth"}, provider: {}}, {status: "rejected", problems: ["telehealth not allowed"]}],
+    // Age is measured on the appointment date: 18 the day before, 17 one day short of it.
+    [{patient: {dob: "2007-03-21", state: "CA", plan: {status: "active", end: "2025-12-31"}}, appt: {specialty: "pediatrics", date: "2025-04-10", mode: "in-person"}, provider: {acceptsNew: true}}, {status: "rejected", problems: ["age outside specialty range"]}],
+    [{patient: {dob: "2007-04-11", state: "CA", plan: {status: "active", end: "2025-12-31"}}, appt: {specialty: "pediatrics", date: "2025-04-10", mode: "in-person"}, provider: {acceptsNew: true}}, {status: "bookable"}],
+    [{patient: {dob: "1960-04-11", state: "CA", plan: {status: "active", end: "2025-12-31", referralRequired: false}}, appt: {specialty: "geriatrics", date: "2025-04-10", mode: "in-person"}}, {status: "rejected", problems: ["age outside specialty range"]}],
+    [{patient: {dob: "1960-04-10", state: "CA", plan: {status: "active", end: "2025-12-31", referralRequired: false}}, appt: {specialty: "geriatrics", date: "2025-04-10", mode: "in-person"}}, {status: "bookable"}],
+    // The horizon: days ahead truncate against the fixed evaluation time.
+    [{patient: {dob: "1990-01-15", state: "CA", plan: {status: "active", end: "2025-12-31"}}, appt: {specialty: "psychiatry", date: "2025-04-20", mode: "telehealth"}, provider: {licensedStates: ["CA"]}}, {status: "bookable"}],
+    [{patient: {dob: "1990-01-15", state: "CA", plan: {status: "active", end: "2025-12-31"}}, appt: {specialty: "psychiatry", date: "2025-04-21", mode: "telehealth"}, provider: {licensedStates: ["CA"]}}, {status: "rejected", problems: ["too far ahead"]}],
+    [{patient: {dob: "1990-01-15", state: "CA", plan: {status: "active", end: "2025-12-31"}}, appt: {specialty: "psychiatry", date: "2025-03-20", mode: "in-person"}}, {status: "bookable"}],
+    [{patient: {dob: "1990-01-15", state: "CA", plan: {status: "active", end: "2025-12-31"}}, appt: {specialty: "psychiatry", date: "2025-03-19", mode: "in-person"}}, {status: "rejected", problems: ["date in the past"]}],
+    [{patient: {dob: "1990-01-15", state: "CA", isNew: true, plan: {status: "active", end: "2025-12-31"}}, appt: {specialty: "psychiatry", date: "2025-04-01", mode: "in-person"}, provider: {acceptsNew: false}}, {status: "rejected", problems: ["provider not accepting new patients"]}],
+    [{patient: {dob: "1990-01-15", state: "CA", isNew: true, plan: {status: "active", end: "2025-12-31"}}, appt: {specialty: "psychiatry", date: "2025-04-01", mode: "in-person"}, provider: {}}, {status: "bookable"}],
+    [{patient: {dob: "1990-01-15", state: "CA", plan: {status: "active", end: "2025-12-31"}}, appt: {specialty: "podiatry", date: "2025-06-18", mode: "telehealth"}, provider: {licensedStates: ["CA"]}}, {status: "rejected", problems: ["telehealth not allowed"]}],
+    [{patient: {dob: "2015-06-01", state: "TX", isNew: true, plan: {status: "lapsed", end: "2024-12-31", referralRequired: true}}, appt: {specialty: "cardiology", date: "2026-01-05", mode: "telehealth"}, provider: {licensedStates: ["CA"], acceptsNew: false}}, {status: "rejected", problems: ["coverage inactive on appointment date", "age outside specialty range", "valid referral required", "telehealth not allowed", "too far ahead", "provider not accepting new patients"]}],
+    // Without a birth date or with an unparsable appointment date the diffs are null, every
+    // comparison against them fails, and the age and horizon rules are silently skipped.
+    [{patient: {state: "CA", plan: {status: "active", end: "2025-12-31"}}, appt: {specialty: "psychiatry", date: "2025-04-01", mode: "in-person"}}, {status: "bookable"}],
+    [{patient: {dob: "1990-01-15", state: "CA", plan: {status: "active", end: "2025-12-31"}}, appt: {specialty: "psychiatry", date: "next week", mode: "in-person"}}, {status: "bookable"}],
+    [{patient: {dob: "2015-01-15", state: "CA", plan: {status: "active", end: "2025-12-31"}}, appt: {specialty: "psychiatry", date: "2026-03-01", mode: "in-person"}}, {status: "rejected", problems: ["coverage inactive on appointment date", "age outside specialty range", "too far ahead"]}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Interaction screening: a loop-mode table classifies each medication, the classification joins
+// the request in a function node that checks every distinct pair against class rules and QT
+// risk, and a switch holds, counsels or dispenses.
+{
+  name: "interactions: per-drug class loop, pairwise function check and dispensing action",
+  graph: {
+    nodes: [
+      {input: "prescription"},
+      {table: "classify", executionMode: "loop", inputField: "medications", outputPath: "classified", inputs: ["name"], outputs: ["name", "class", "qt"], rules: [
+        ["'warfarin', 'apixaban'", "name", "'anticoagulant'", "false"],
+        ["'aspirin', 'ibuprofen', 'naproxen'", "name", "'nsaid'", "false"],
+        ["'sertraline', 'fluoxetine'", "name", "'ssri'", "false"],
+        ["'citalopram'", "name", "'ssri'", "true"],
+        ["'tramadol'", "name", "'opioid'", "false"],
+        ["'azithromycin', 'ondansetron'", "name", "'other'", "true"],
+        ["", "name", "'unclassified'", "false"],
+      ]},
+      {function: "pairs", source: """
+export const handler = async (input) => {
+  const meds = input.classified ?? [];
+  const rules = [
+    ['anticoagulant', 'anticoagulant', 'major', 'duplicate anticoagulation'],
+    ['anticoagulant', 'nsaid', 'major', 'bleeding'],
+    ['ssri', 'opioid', 'major', 'serotonin syndrome'],
+    ['ssri', 'nsaid', 'moderate', 'bleeding'],
+    ['nsaid', 'nsaid', 'moderate', 'duplicate nsaid'],
+  ];
+  const interactions = [];
+  for (let i = 0; i < meds.length; i++) {
+    for (let j = i + 1; j < meds.length; j++) {
+      const a = meds[i];
+      const b = meds[j];
+      if (a.name === b.name) {
+        continue;
+      }
+      const rule = rules.find(([x, y]) => (a.class === x && b.class === y) || (a.class === y && b.class === x));
+      if (rule) {
+        interactions.push({ pair: [a.name, b.name], severity: rule[2], effect: rule[3] });
+      }
+      if (a.qt && b.qt) {
+        interactions.push({ pair: [a.name, b.name], severity: 'major', effect: 'qt prolongation' });
+      }
+    }
+  }
+  return { interactions, medCount: meds.length, override: input.prescriberOverride === true };
+};
+"""},
+      {switch: "action", when: [
+        "some(interactions, #.severity == 'major') and not override",
+        "len(interactions) > 0",
+        "",
+      ]},
+      {expression: "hold", fields: {action: "'hold'", notify: "'prescriber'", major: "map(filter(interactions, #.severity == 'major'), #.effect)"}},
+      {expression: "counsel", fields: {action: "'counsel'", notes: "map(interactions, #.effect + ': ' + #.pair[0] + '+' + #.pair[1])"}},
+      {expression: "dispense", fields: {action: "'dispense'", count: "medCount"}},
+      {output: "pharmacy"},
+    ],
+    edges: [
+      "prescription -> classify -> pairs",
+      "prescription -> pairs -> action",
+      "action:0 -> hold -> pharmacy",
+      "action:1 -> counsel -> pharmacy",
+      "action:2 -> dispense -> pharmacy",
+    ],
+  },
+  cases: [
+    [{medications: [{name: "warfarin"}, {name: "ibuprofen"}]}, {action: "hold", notify: "prescriber", major: ["bleeding"]}],
+    [{medications: [{name: "sertraline"}, {name: "ibuprofen"}]}, {action: "counsel", notes: ["bleeding: sertraline+ibuprofen"]}],
+    [{medications: [{name: "sertraline"}, {name: "tramadol"}, {name: "naproxen"}]}, {action: "hold", notify: "prescriber", major: ["serotonin syndrome"]}],
+    [{medications: [{name: "citalopram"}, {name: "ondansetron"}]}, {action: "hold", notify: "prescriber", major: ["qt prolongation"]}],
+    [{medications: [{name: "azithromycin"}, {name: "ondansetron"}, {name: "citalopram"}]}, {action: "hold", notify: "prescriber", major: ["qt prolongation", "qt prolongation", "qt prolongation"]}],
+    [{medications: [{name: "warfarin"}, {name: "apixaban"}]}, {action: "hold", notify: "prescriber", major: ["duplicate anticoagulation"]}],
+    [{medications: [{name: "aspirin"}, {name: "ibuprofen"}, {name: "metformin"}]}, {action: "counsel", notes: ["duplicate nsaid: aspirin+ibuprofen"]}],
+    [{medications: [{name: "fluoxetine"}, {name: "naproxen"}, {name: "aspirin"}]}, {action: "counsel", notes: ["bleeding: fluoxetine+naproxen", "bleeding: fluoxetine+aspirin", "duplicate nsaid: naproxen+aspirin"]}],
+    [{medications: [{name: "warfarin"}, {name: "ibuprofen"}], prescriberOverride: true}, {action: "counsel", notes: ["bleeding: warfarin+ibuprofen"]}],
+    [{medications: [{name: "warfarin"}, {name: "ibuprofen"}], prescriberOverride: "yes"}, {action: "hold", notify: "prescriber", major: ["bleeding"]}],
+    // The same drug listed twice is not a pair; unknown or differently cased names are
+    // unclassified; an item without a name classifies with a null name.
+    [{medications: [{name: "warfarin"}, {name: "warfarin"}]}, {action: "dispense", count: 2}],
+    [{medications: [{name: "metformin"}, {name: "lisinopril"}]}, {action: "dispense", count: 2}],
+    [{medications: [{name: "Warfarin"}, {name: "ibuprofen"}]}, {action: "dispense", count: 2}],
+    [{medications: [{dose: 5}, {name: "ibuprofen"}]}, {action: "dispense", count: 2}],
+    [{medications: [{name: "tramadol"}]}, {action: "dispense", count: 1}],
+    [{medications: []}, {action: "dispense", count: 0}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Lab results: an expression reshapes the results into rows carrying the patient's sex, a
+// sub-decision runs per row in loop mode (reference range by analyte and sex, then a flag table
+// whose cells compare against the looked-up limits), a summary joins them and a switch decides
+// the notification. Unknown analytes flag as unknown; values that are not numbers fail every
+// comparison cell and fall to `normal`, which the decision itself has to guard against.
+{
+  name: "lab results: reference ranges per analyte through a looped sub-decision",
+  decisions: {
+    interpret: {
+      nodes: [
+        {table: "ref", passThrough: true, inputs: ["analyte", "sex"], outputs: ["low", "high", "critLow", "critHigh", "unit"], rules: [
+          ["'potassium'", "", "3.5", "5.1", "2.5", "6.5", "'mmol/L'"],
+          ["'sodium'", "", "135", "145", "120", "160", "'mmol/L'"],
+          ["'hemoglobin'", "'female'", "12", "15.5", "7", "20", "'g/dL'"],
+          ["'hemoglobin'", "", "13.5", "17.5", "7", "20", "'g/dL'"],
+          ["'glucose'", "", "70", "99", "40", "500", "'mg/dL'"],
+        ]},
+        {table: "flag", passThrough: true, inputs: ["low", "value"], outputs: ["flag"], rules: [
+          ["null", "", "'unknown'"],
+          ["", "< critLow", "'critical-low'"],
+          ["", "> critHigh", "'critical-high'"],
+          ["", "< low", "'low'"],
+          ["", "> high", "'high'"],
+          ["", "", "'normal'"],
+        ]},
+        {expression: "out", fields: {analyte: "analyte", value: "value", flag: "flag", unit: "unit"}},
+      ],
+    },
+  },
+  graph: {
+    nodes: [
+      {input: "labs"},
+      {expression: "rows", fields: {rows: "map(results ?? [], {analyte: lower(#.analyte), value: #.value, sex: patient.sex})"}},
+      {decision: "interpret", key: "interpret", executionMode: "loop", inputField: "rows", outputPath: "interpreted"},
+      {expression: "summary", fields: {
+        critical: "map(filter(interpreted, #.flag in ['critical-low', 'critical-high']), #.analyte)",
+        abnormal: "count(interpreted, #.flag in ['low', 'high', 'critical-low', 'critical-high'])",
+        unknown: "map(filter(interpreted, #.flag == 'unknown'), #.analyte)",
+      }},
+      {switch: "notify", when: ["len(critical) > 0", "abnormal > 0", ""]},
+      {expression: "page", passThrough: true, fields: {action: "'page clinician'"}},
+      {expression: "inbox", passThrough: true, fields: {action: "'inbox'"}},
+      {expression: "release", passThrough: true, fields: {action: "'release to patient'"}},
+      {output: "report"},
+    ],
+    edges: [
+      "labs -> rows -> interpret -> summary -> notify",
+      "notify:0 -> page -> report",
+      "notify:1 -> inbox -> report",
+      "notify:2 -> release -> report",
+    ],
+  },
+  cases: [
+    [{patient: {sex: "male"}, results: [{analyte: "potassium", value: 4.0}, {analyte: "sodium", value: 140}]}, {critical: [], abnormal: 0, unknown: [], action: "release to patient"}],
+    [{patient: {sex: "male"}, results: [{analyte: "potassium", value: 5.2}]}, {critical: [], abnormal: 1, unknown: [], action: "inbox"}],
+    [{patient: {sex: "male"}, results: [{analyte: "potassium", value: 6.6}]}, {critical: ["potassium"], abnormal: 1, unknown: [], action: "page clinician"}],
+    [{patient: {sex: "male"}, results: [{analyte: "potassium", value: 6.5}]}, {critical: [], abnormal: 1, unknown: [], action: "inbox"}],
+    [{patient: {sex: "male"}, results: [{analyte: "potassium", value: 2.5}]}, {critical: [], abnormal: 1, unknown: [], action: "inbox"}],
+    [{patient: {sex: "male"}, results: [{analyte: "potassium", value: 2.49}]}, {critical: ["potassium"], abnormal: 1, unknown: [], action: "page clinician"}],
+    [{patient: {sex: "male"}, results: [{analyte: "potassium", value: 3.5}, {analyte: "potassium", value: 5.1}]}, {critical: [], abnormal: 0, unknown: [], action: "release to patient"}],
+    [{patient: {sex: "female"}, results: [{analyte: "hemoglobin", value: 12.5}]}, {critical: [], abnormal: 0, unknown: [], action: "release to patient"}],
+    [{patient: {sex: "male"}, results: [{analyte: "hemoglobin", value: 12.5}]}, {critical: [], abnormal: 1, unknown: [], action: "inbox"}],
+    [{patient: {}, results: [{analyte: "hemoglobin", value: 12.5}]}, {critical: [], abnormal: 1, unknown: [], action: "inbox"}],
+    [{patient: {sex: "male"}, results: [{analyte: "Glucose", value: 650}]}, {critical: ["glucose"], abnormal: 1, unknown: [], action: "page clinician"}],
+    [{patient: {sex: "female"}, results: [{analyte: "SODIUM", value: 118}, {analyte: "potassium", value: 6.8}, {analyte: "glucose", value: 65}]}, {critical: ["sodium", "potassium"], abnormal: 3, unknown: [], action: "page clinician"}],
+    [{patient: {sex: "male"}, results: [{analyte: "troponin", value: 0.04}]}, {critical: [], abnormal: 0, unknown: ["troponin"], action: "release to patient"}],
+    [{patient: {sex: "male"}, results: [{analyte: "troponin", value: 0.04}, {analyte: "glucose", value: 120}]}, {critical: [], abnormal: 1, unknown: ["troponin"], action: "inbox"}],
+    [{patient: {sex: "male"}, results: []}, {critical: [], abnormal: 0, unknown: [], action: "release to patient"}],
+    [{patient: {sex: "male"}}, {critical: [], abnormal: 0, unknown: [], action: "release to patient"}],
+    // A string or missing value fails every comparison cell and lands on `normal`.
+    [{patient: {sex: "male"}, results: [{analyte: "potassium", value: "7.9"}]}, {critical: [], abnormal: 0, unknown: [], action: "release to patient"}],
+    [{patient: {sex: "male"}, results: [{analyte: "potassium"}]}, {critical: [], abnormal: 0, unknown: [], action: "release to patient"}],
+    // A result without an analyte name fails `lower` in the reshaping expression.
+    [{patient: {sex: "male"}, results: [{value: 4.0}]}, "!error"],
+    [{patient: {sex: "male"}, results: {analyte: "potassium", value: 4.0}}, "!error"],
+  ],
+}

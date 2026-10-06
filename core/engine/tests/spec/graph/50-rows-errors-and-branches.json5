@@ -1,0 +1,817 @@
+// Rows of one suite that fail in different places or take different routes.
+//
+// In batch and columnar mode one compiled program runs every row together; a row that errors
+// must fail alone, with the error of the node it failed in, and a row taking one switch branch
+// must not see the work of rows taking another. Each suite here has many rows: some succeed,
+// some fail in the first node, some in a later node, some in a branch only they take; collect
+// tables return many rules for some rows and none for others. Expected results are single-row
+// semantics.
+
+// --- Errors in different nodes of a chain --------------------------------------------------
+
+{
+  name: "a chain of three expression nodes, rows failing in each of them",
+  graph: {
+    nodes: [
+      {expression: "first", passThrough: true, fields: {a: "x * 2"}},
+      {expression: "second", passThrough: true, fields: {b: "a + y"}},
+      {expression: "third", fields: {c: "b / z"}},
+    ],
+  },
+  cases: [
+    [{x: 1, y: 2, z: 2}, {c: 2}],
+    [{x: "s", y: 2, z: 2}, "!error: \"first\""],
+    [{x: 1, y: "s", z: 2}, "!error: \"second\""],
+    [{x: 1, y: 2, z: "s"}, "!error: \"third\""],
+    [{x: 3, y: 4, z: 5}, {c: 2}],
+    [{y: 1, z: 1}, "!error: \"first\""],
+    [{x: 1, z: 1}, "!error: \"second\""],
+    [{x: 1, y: 1}, "!error: \"third\""],
+    [{x: 0.5, y: 0, z: 0.5}, {c: 2}],
+    [{x: 10, y: -20, z: 1}, {c: 0}],
+    [{x: -1, y: 1, z: -1}, {c: 1}],
+    [{x: true, y: 1, z: 1}, "!error: \"first\""],
+  ],
+}
+
+{
+  name: "division by zero gives null only on the rows with a zero divisor",
+  graph: {
+    nodes: [{expression: "e", fields: {q: "a / b", m: "a % b"}}],
+  },
+  cases: [
+    [{a: 10, b: 2}, {q: 5, m: 0}],
+    [{a: 10, b: 0}, {}],
+    [{a: 7, b: 3}, {q: 2.3333333333333333333333333333, m: 1}],
+    [{a: 0, b: 5}, {q: 0, m: 0}],
+    [{a: 1, b: 0.0}, {}],
+    [{a: -9, b: 4}, {q: -2.25, m: -1}],
+    [{a: 1.5, b: 0.5}, {q: 3, m: 0}],
+    [{a: 0, b: 0}, {}],
+    [{a: 100, b: -10}, {q: -10, m: 0}],
+    [{a: 5, b: 1}, {q: 5, m: 0}],
+  ],
+}
+
+{
+  name: "number() parsing fails only the rows with non-numeric text",
+  graph: {
+    nodes: [
+      {expression: "parse", passThrough: true, fields: {n: "number(raw)"}},
+      {expression: "use", fields: {r: "n + 1"}},
+    ],
+  },
+  cases: [
+    [{raw: "1"}, {r: 2}],
+    [{raw: "abc"}, "!error: \"parse\""],
+    [{raw: "2.5"}, {r: 3.5}],
+    [{raw: "-7"}, {r: -6}],
+    [{raw: ""}, "!error: \"parse\""],
+    [{raw: 4}, {r: 5}],
+    [{raw: "1e2"}, {r: 101}],
+    [{raw: "12px"}, "!error: \"parse\""],
+    [{raw: "0"}, {r: 1}],
+    [{raw: true}, {r: 2}],
+    [{raw: "  3  "}, {r: 4}],
+  ],
+}
+
+{
+  name: "a table output cell that fails for some matching rows",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["kind"], outputs: ["v"], rules: [
+        ["'double'", "n * 2"],
+        ["'upper'", "upper(s)"],
+        ["", "'none'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{kind: "double", n: 2}, {v: 4}],
+    [{kind: "double", n: "2"}, {v: "none"}, "question: a failing output cell drops the rule silently (falls through to the next match) instead of failing the node, as in 06-table-cells and 07-table-outputs"],
+    [{kind: "upper", s: "ab"}, {v: "AB"}],
+    [{kind: "upper", s: 3}, {v: "none"}, "question: a failing output cell drops the rule silently (falls through to the next match) instead of failing the node, as in 06-table-cells and 07-table-outputs"],
+    [{kind: "other", n: "2", s: 3}, {v: "none"}],
+    [{kind: "double"}, {v: "none"}, "question: a failing output cell drops the rule silently (falls through to the next match) instead of failing the node, as in 06-table-cells and 07-table-outputs"],
+    [{kind: "upper", s: ""}, {v: ""}],
+    [{kind: "double", n: -0.5}, {v: -1}],
+    [{}, {v: "none"}],
+    [{kind: "upper", s: "żółw"}, {v: "ŻÓŁW"}],
+  ],
+}
+
+{
+  name: "a collect table where only some matching rules have failing outputs",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["n"], outputs: ["v"], rules: [
+        ["> 0", "'positive'"],
+        ["> 10", "n * factor"],
+        ["> 100", "'huge'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 1}, [{v: "positive"}]],
+    [{n: 11, factor: 2}, [{v: "positive"}, {v: 22}]],
+    [{n: 11}, [{v: "positive"}], "question: a failing output cell drops the rule silently (falls through to the next match) instead of failing the node, as in 06-table-cells and 07-table-outputs"],
+    [{n: 101, factor: 1}, [{v: "positive"}, {v: 101}, {v: "huge"}]],
+    [{n: 101, factor: "x"}, [{v: "positive"}, {v: "huge"}], "question: a failing output cell drops the rule silently (falls through to the next match) instead of failing the node, as in 06-table-cells and 07-table-outputs"],
+    [{n: 0}, []],
+    [{n: -5, factor: "x"}, []],
+    [{n: 5, factor: "x"}, [{v: "positive"}]],
+    [{n: 50, factor: 0.1}, [{v: "positive"}, {v: 5}]],
+    [{}, []],
+  ],
+}
+
+{
+  name: "rows failing after a table: the table output feeds an expression",
+  graph: {
+    nodes: [
+      {table: "t", passThrough: true, inputs: ["tier"], outputs: ["rate"], rules: [
+        ["'gold'", "0.2"],
+        ["'silver'", "0.1"],
+        ["'broken'", "'n/a'"],
+      ]},
+      {expression: "e", fields: {discount: "amount * rate"}},
+    ],
+  },
+  cases: [
+    [{tier: "gold", amount: 100}, {discount: 20}],
+    [{tier: "silver", amount: 100}, {discount: 10}],
+    [{tier: "broken", amount: 100}, "!error: \"e\""],
+    [{tier: "none", amount: 100}, "!error: \"e\""],
+    [{tier: "gold"}, "!error: \"e\""],
+    [{tier: "gold", amount: 0}, {discount: 0}],
+    [{tier: "silver", amount: 12.5}, {discount: 1.25}],
+    [{amount: 100}, "!error: \"e\""],
+    [{tier: "gold", amount: -50}, {discount: -10}],
+    [{tier: "silver", amount: "100"}, "!error: \"e\""],
+  ],
+}
+
+// --- Rows taking different switch branches -------------------------------------------------
+
+{
+  name: "first switch with four branches, each row picking one",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["score >= 90", "score >= 70", "score >= 50", ""]},
+      {expression: "a", fields: {grade: "'A'", bonus: "score - 90"}},
+      {expression: "b", fields: {grade: "'B'"}},
+      {expression: "c", fields: {grade: "'C'", retake: "true"}},
+      {expression: "f", fields: {grade: "'F'", gap: "50 - (score ?? 0)"}},
+    ],
+    edges: ["input -> s", "s:0 -> a -> output", "s:1 -> b -> output", "s:2 -> c -> output", "s:3 -> f -> output"],
+  },
+  cases: [
+    [{score: 95}, {grade: "A", bonus: 5}],
+    [{score: 90}, {grade: "A", bonus: 0}],
+    [{score: 89.9}, {grade: "B"}],
+    [{score: 70}, {grade: "B"}],
+    [{score: 69}, {grade: "C", retake: true}],
+    [{score: 50}, {grade: "C", retake: true}],
+    [{score: 49}, {grade: "F", gap: 1}],
+    [{score: 0}, {grade: "F", gap: 50}],
+    [{}, {grade: "F", gap: 50}],
+    [{score: "95"}, "!error: \"f\""],
+    [{score: 100}, {grade: "A", bonus: 10}],
+    [{score: -10}, {grade: "F", gap: 60}],
+  ],
+}
+
+{
+  name: "branch-only failures: a node fails only for the rows routed to it",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["mode == 'num'", "mode == 'text'", ""]},
+      {expression: "num", fields: {r: "value * 2"}},
+      {expression: "text", fields: {r: "upper(value)"}},
+      {expression: "rest", fields: {r: "'rest'"}},
+    ],
+    edges: ["input -> s", "s:0 -> num -> output", "s:1 -> text -> output", "s:2 -> rest -> output"],
+  },
+  cases: [
+    [{mode: "num", value: 2}, {r: 4}],
+    [{mode: "num", value: "x"}, "!error: \"num\""],
+    [{mode: "text", value: "x"}, {r: "X"}],
+    [{mode: "text", value: 2}, "!error: \"text\""],
+    [{mode: "other", value: "x"}, {r: "rest"}],
+    [{mode: "other", value: 2}, {r: "rest"}],
+    [{value: 2}, {r: "rest"}],
+    [{mode: "num"}, "!error: \"num\""],
+    [{mode: "text"}, "!error: \"text\""],
+    [{mode: "num", value: 0.25}, {r: 0.5}],
+    [{mode: "text", value: "ab cd"}, {r: "AB CD"}],
+    [{mode: "num", value: -1}, {r: -2}],
+  ],
+}
+
+{
+  name: "a switch whose conditions error for some rows routes them to the default",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["len(items) > 2", "items[0] > 10", ""]},
+      {expression: "many", fields: {r: "'many'"}},
+      {expression: "big", fields: {r: "'big first'"}},
+      {expression: "rest", fields: {r: "'rest'"}},
+    ],
+    edges: ["input -> s", "s:0 -> many -> output", "s:1 -> big -> output", "s:2 -> rest -> output"],
+  },
+  cases: [
+    [{items: [1, 2, 3]}, {r: "many"}],
+    [{items: [11, 2]}, {r: "big first"}],
+    [{items: [1, 2]}, {r: "rest"}],
+    [{items: []}, {r: "rest"}],
+    [{}, {r: "rest"}],
+    [{items: "abc"}, {r: "many"}],
+    [{items: "ab"}, {r: "rest"}],
+    [{items: ["a", "b"]}, {r: "rest"}],
+    [{items: 5}, {r: "rest"}],
+    [{items: [100]}, {r: "big first"}],
+    [{items: [null, 1]}, {r: "rest"}],
+  ],
+}
+
+{
+  name: "collect switch: rows taking zero, one, two or three branches",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["a == true", "b == true", "c == true"]},
+      {expression: "ea", fields: {fromA: "1"}},
+      {expression: "eb", fields: {fromB: "2"}},
+      {expression: "ec", fields: {fromC: "3"}},
+    ],
+    edges: ["input -> s", "s:0 -> ea -> output", "s:1 -> eb -> output", "s:2 -> ec -> output"],
+  },
+  cases: [
+    [{}, {}],
+    [{a: true}, {fromA: 1}],
+    [{b: true}, {fromB: 2}],
+    [{c: true}, {fromC: 3}],
+    [{a: true, b: true}, {fromA: 1, fromB: 2}],
+    [{a: true, c: true}, {fromA: 1, fromC: 3}],
+    [{b: true, c: true}, {fromB: 2, fromC: 3}],
+    [{a: true, b: true, c: true}, {fromA: 1, fromB: 2, fromC: 3}],
+    [{a: false, b: false, c: false}, {}],
+    [{a: "true", b: 1}, {}],
+    [{a: true, b: false, c: true}, {fromA: 1, fromC: 3}],
+  ],
+}
+
+{
+  name: "collect switch: one taken branch fails for some rows, the whole row fails",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["x > 0", "y > 0"]},
+      {expression: "ex", fields: {rx: "x * 10"}},
+      {expression: "ey", fields: {ry: "upper(name)"}},
+    ],
+    edges: ["input -> s", "s:0 -> ex -> output", "s:1 -> ey -> output"],
+  },
+  cases: [
+    [{x: 1, y: 0}, {rx: 10}],
+    [{x: 1, y: 1, name: "a"}, {rx: 10, ry: "A"}],
+    [{x: 1, y: 1}, "!error: \"ey\""],
+    [{x: 0, y: 1, name: "b"}, {ry: "B"}],
+    [{x: 0, y: 1, name: 5}, "!error: \"ey\""],
+    [{x: 0, y: 0}, {}],
+    [{x: 2, y: 2, name: "c"}, {rx: 20, ry: "C"}],
+    [{}, {}],
+    [{x: 1}, {rx: 10}],
+    [{y: 1, name: "d"}, {ry: "D"}],
+    [{x: 0.5, y: -1, name: 7}, {rx: 5}],
+  ],
+}
+
+{
+  name: "branches converging on a shared node, rows from either branch",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["kind == 'a'", ""]},
+      {expression: "ea", passThrough: true, fields: {v: "n + 1"}},
+      {expression: "eb", passThrough: true, fields: {v: "n - 1"}},
+      {expression: "join", fields: {r: "v * 10", kind: "kind"}},
+    ],
+    edges: ["input -> s", "s:0 -> ea -> join", "s:1 -> eb -> join", "join -> output"],
+  },
+  cases: [
+    [{kind: "a", n: 1}, {r: 20, kind: "a"}],
+    [{kind: "b", n: 1}, {r: 0, kind: "b"}],
+    [{kind: "a", n: 0.5}, {r: 15, kind: "a"}],
+    [{n: 5}, {r: 40}],
+    [{kind: "a"}, "!error: \"ea\""],
+    [{kind: "b"}, "!error: \"eb\""],
+    [{kind: "a", n: -1}, {r: 0, kind: "a"}],
+    [{kind: "c", n: 100}, {r: 990, kind: "c"}],
+    [{kind: "a", n: "1"}, "!error: \"ea\""],
+    [{kind: "b", n: 2.5}, {r: 15, kind: "b"}],
+  ],
+}
+
+{
+  name: "nested switches: rows reaching four different leaves",
+  graph: {
+    nodes: [
+      {switch: "outer", when: ["region == 'EU'", ""]},
+      {switch: "eu", when: ["amount > 1000", ""]},
+      {switch: "other", when: ["amount > 5000", ""]},
+      {expression: "euBig", fields: {path: "'eu-big'", fee: "amount * 0.01"}},
+      {expression: "euSmall", fields: {path: "'eu-small'", fee: "5"}},
+      {expression: "otherBig", fields: {path: "'other-big'", fee: "amount * 0.02"}},
+      {expression: "otherSmall", fields: {path: "'other-small'", fee: "10"}},
+    ],
+    edges: [
+      "input -> outer",
+      "outer:0 -> eu",
+      "outer:1 -> other",
+      "eu:0 -> euBig -> output",
+      "eu:1 -> euSmall -> output",
+      "other:0 -> otherBig -> output",
+      "other:1 -> otherSmall -> output",
+    ],
+  },
+  cases: [
+    [{region: "EU", amount: 2000}, {path: "eu-big", fee: 20}],
+    [{region: "EU", amount: 1000}, {path: "eu-small", fee: 5}],
+    [{region: "US", amount: 6000}, {path: "other-big", fee: 120}],
+    [{region: "US", amount: 5000}, {path: "other-small", fee: 10}],
+    [{amount: 10000}, {path: "other-big", fee: 200}],
+    [{region: "EU"}, {path: "eu-small", fee: 5}],
+    [{}, {path: "other-small", fee: 10}],
+    [{region: "EU", amount: "2000"}, {path: "eu-small", fee: 5}],
+    [{region: "eu", amount: 2000}, {path: "other-small", fee: 10}],
+    [{region: "EU", amount: 1000.01}, {path: "eu-big", fee: 10.0001}],
+    [{region: "APAC", amount: 5000.5}, {path: "other-big", fee: 100.01}],
+  ],
+}
+
+{
+  name: "a switch branch that goes straight to the output next to computed branches",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["skip == true", ""]},
+      {expression: "calc", fields: {total: "price * qty"}},
+    ],
+    edges: ["input -> s", "s:0 -> output", "s:1 -> calc -> output"],
+  },
+  cases: [
+    [{skip: true, price: 2, qty: 3}, {skip: true, price: 2, qty: 3}],
+    [{price: 2, qty: 3}, {total: 6}],
+    [{skip: false, price: 1, qty: 1}, {total: 1}],
+    [{skip: true}, {skip: true}],
+    [{price: "x", qty: 1}, "!error: \"calc\""],
+    [{skip: true, price: "x", qty: 1}, {skip: true, price: "x", qty: 1}],
+    [{price: 0.5, qty: 4}, {total: 2}],
+    [{}, "!error: \"calc\""],
+    [{skip: true, nested: {a: 1}}, {skip: true, nested: {a: 1}}],
+    [{price: 10, qty: 0}, {total: 0}],
+  ],
+}
+
+// --- Collect tables with many vs zero matches ---------------------------------------------
+
+{
+  name: "collect table: rows matching zero to five rules",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", inputs: ["n"], outputs: ["k"], rules: [
+        ["> 0", "1"],
+        ["> 10", "2"],
+        ["> 100", "3"],
+        ["> 1000", "4"],
+        ["> 10000", "5"],
+      ]},
+    ],
+  },
+  cases: [
+    [{n: 0}, []],
+    [{n: 1}, [{k: 1}]],
+    [{n: 11}, [{k: 1}, {k: 2}]],
+    [{n: 101}, [{k: 1}, {k: 2}, {k: 3}]],
+    [{n: 1001}, [{k: 1}, {k: 2}, {k: 3}, {k: 4}]],
+    [{n: 10001}, [{k: 1}, {k: 2}, {k: 3}, {k: 4}, {k: 5}]],
+    [{n: -1}, []],
+    [{}, []],
+    [{n: "50"}, []],
+    [{n: 10}, [{k: 1}]],
+    [{n: 99999999}, [{k: 1}, {k: 2}, {k: 3}, {k: 4}, {k: 5}]],
+  ],
+}
+
+{
+  name: "collect table under an output path, counted downstream",
+  graph: {
+    nodes: [
+      {table: "t", hit: "collect", passThrough: true, outputPath: "hits", inputs: ["age", "country"], outputs: ["rule"], rules: [
+        [">= 18", "", "'adult'"],
+        [">= 21", "'US'", "'us-drink'"],
+        [">= 65", "", "'senior'"],
+        ["", "'US', 'CA'", "'na'"],
+      ]},
+      {expression: "e", fields: {count: "len(hits)", rules: "map(hits, #.rule)"}},
+    ],
+  },
+  cases: [
+    [{age: 30, country: "US"}, {count: 3, rules: ["adult", "us-drink", "na"]}],
+    [{age: 70, country: "US"}, {count: 4, rules: ["adult", "us-drink", "senior", "na"]}],
+    [{age: 20, country: "US"}, {count: 2, rules: ["adult", "na"]}],
+    [{age: 10, country: "DE"}, {count: 0, rules: []}],
+    [{age: 10, country: "CA"}, {count: 1, rules: ["na"]}],
+    [{}, {count: 0, rules: []}],
+    [{age: 66}, {count: 2, rules: ["adult", "senior"]}],
+    [{country: "US"}, {count: 1, rules: ["na"]}],
+    [{age: 18, country: "FR"}, {count: 1, rules: ["adult"]}],
+    [{age: 21, country: "CA"}, {count: 2, rules: ["adult", "na"]}],
+    [{age: "70", country: "US"}, {count: 1, rules: ["na"]}],
+  ],
+}
+
+{
+  name: "per-column collect: zero, one or many values gathered per row",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["x"], outputs: ["tags[]", "first"], rules: [
+        ["> 0", "'pos'", "'pos'"],
+        ["> 5", "'gt5'", "'gt5'"],
+        ["> 50", "'gt50'", "'gt50'"],
+        ["< 0", "'neg'", "'neg'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{x: 1}, {tags: ["pos"], first: "pos"}],
+    [{x: 6}, {tags: ["pos", "gt5"], first: "pos"}],
+    [{x: 51}, {tags: ["pos", "gt5", "gt50"], first: "pos"}],
+    [{x: -1}, {tags: ["neg"], first: "neg"}],
+    [{x: 0}, {}],
+    [{}, {}],
+    [{x: 5}, {tags: ["pos"], first: "pos"}],
+    [{x: 1000}, {tags: ["pos", "gt5", "gt50"], first: "pos"}],
+    [{x: -0.001}, {tags: ["neg"], first: "neg"}],
+    [{x: "9"}, {}],
+  ],
+}
+
+{
+  name: "a loop over items where some rows have failing items",
+  graph: {
+    nodes: [{expression: "each", inputField: "items", outputPath: "out", executionMode: "loop", fields: {t: "price * qty"}}],
+  },
+  cases: [
+    [{items: [{price: 1, qty: 2}, {price: 3, qty: 4}]}, {out: [{t: 2}, {t: 12}]}],
+    [{items: [{price: 1, qty: 2}, {price: "x", qty: 4}]}, "!error"],
+    [{items: []}, {out: []}],
+    [{items: [{price: 1}]}, "!error"],
+    [{items: [{price: 0.5, qty: 0.5}]}, {out: [{t: 0.25}]}],
+    [{items: [{price: 2, qty: 2}, {price: 2, qty: 2}, {price: 2, qty: 2}]}, {out: [{t: 4}, {t: 4}, {t: 4}]}],
+    [{}, "!error"],
+    [{items: "abc"}, "!error"],
+    [{items: [{price: -1, qty: 3}]}, {out: [{t: -3}]}],
+    [{items: [{qty: 1}, {price: 1, qty: 1}]}, "!error"],
+  ],
+}
+
+{
+  name: "a sub-decision that fails for some rows",
+  decisions: {
+    child: {nodes: [{expression: "inner", fields: {y: "x * 2"}}]},
+  },
+  graph: {
+    nodes: [
+      {decision: "call", key: "child", passThrough: true},
+      {expression: "after", fields: {z: "y + 1"}},
+    ],
+  },
+  cases: [
+    [{x: 1}, {z: 3}],
+    [{x: "s"}, "!error"],
+    [{x: 0}, {z: 1}],
+    [{}, "!error"],
+    [{x: 2.5}, {z: 6}],
+    [{x: -1}, {z: -1}],
+    [{x: true}, "!error"],
+    [{x: 100}, {z: 201}],
+    [{x: [1]}, "!error"],
+    [{x: 0.1}, {z: 1.2}],
+  ],
+}
+
+{
+  name: "a function node that throws for some rows",
+  graph: {
+    nodes: [
+      {expression: "pre", passThrough: true, fields: {n2: "n * 2"}},
+      {function: "f", source: """export const handler = async (input) => { if (input.n2 > 10) throw new Error('too big'); return { r: input.n2 + 1 }; };"""},
+    ],
+  },
+  cases: [
+    [{n: 1}, {r: 3}],
+    [{n: 6}, "!error: too big"],
+    [{n: 5}, {r: 11}],
+    [{n: "x"}, "!error: \"pre\""],
+    [{n: 0}, {r: 1}],
+    [{n: 100}, "!error: too big"],
+    [{n: -3}, {r: -5}],
+    [{n: 2.5}, {r: 6}],
+    [{}, "!error: \"pre\""],
+    [{n: 5.01}, "!error: too big"],
+  ],
+}
+
+{
+  name: "a custom fail node in one switch branch",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["ok == true", ""]},
+      {expression: "good", fields: {r: "'ok:' + string(n)"}},
+      {custom: "bad", kind: "fail", config: {message: "rejected row"}},
+    ],
+    edges: ["input -> s", "s:0 -> good -> output", "s:1 -> bad -> output"],
+  },
+  cases: [
+    [{ok: true, n: 1}, {r: "ok:1"}],
+    [{ok: false, n: 1}, "!error: rejected row"],
+    [{ok: true, n: "x"}, {r: "ok:x"}],
+    [{}, "!error: rejected row"],
+    [{ok: true}, {r: "ok:null"}],
+    [{ok: "true"}, "!error: rejected row"],
+    [{ok: true, n: [1]}, "!error"],
+    [{ok: true, n: 2.5}, {r: "ok:2.5"}],
+    [{ok: null}, "!error: rejected row"],
+    [{ok: true, n: false}, {r: "ok:false"}],
+  ],
+}
+
+// --- Long mixed suites ---------------------------------------------------------------------
+
+{
+  name: "long: a pricing graph with branches, tables, and failures in each stage",
+  graph: {
+    nodes: [
+      {expression: "base", passThrough: true, fields: {subtotal: "price * qty"}},
+      {switch: "route", when: ["member == true", ""]},
+      {table: "memberRate", passThrough: true, inputs: ["subtotal"], outputs: ["rate"], rules: [
+        [">= 1000", "0.15"],
+        [">= 100", "0.1"],
+        ["", "0.05"],
+      ]},
+      {table: "guestRate", passThrough: true, inputs: ["coupon"], outputs: ["rate"], rules: [
+        ["'SAVE10'", "0.1"],
+        ["'BROKEN'", "'oops'"],
+        ["", "0"],
+      ]},
+      {expression: "final", fields: {total: "round(subtotal * (1 - rate), 2)", rate: "rate"}},
+    ],
+    edges: [
+      "input -> base -> route",
+      "route:0 -> memberRate -> final",
+      "route:1 -> guestRate -> final",
+      "final -> output",
+    ],
+  },
+  cases: [
+    [{price: 10, qty: 2, member: true}, {total: 19, rate: 0.05}],
+    [{price: 50, qty: 2, member: true}, {total: 90, rate: 0.1}],
+    [{price: 500, qty: 2, member: true}, {total: 850, rate: 0.15}],
+    [{price: 10, qty: 2}, {total: 20, rate: 0}],
+    [{price: 10, qty: 2, coupon: "SAVE10"}, {total: 18, rate: 0.1}],
+    [{price: 10, qty: 2, coupon: "BROKEN"}, "!error: \"final\""],
+    [{price: "10", qty: 2}, "!error: \"base\""],
+    [{qty: 2, member: true}, "!error: \"base\""],
+    [{price: 3.33, qty: 3, member: true}, {total: 9.49, rate: 0.05}],
+    [{price: 0, qty: 5, member: false, coupon: "SAVE10"}, {total: 0, rate: 0.1}],
+    [{price: 99.99, qty: 1, member: true}, {total: 94.99, rate: 0.05}],
+    [{price: 100, qty: 1, member: true}, {total: 90, rate: 0.1}],
+    [{price: 1, qty: 1000, member: true}, {total: 850, rate: 0.15}],
+    [{price: 12.5, qty: 4, coupon: "save10"}, {total: 50, rate: 0}],
+    [{price: 12.5, qty: 4, member: true, coupon: "BROKEN"}, {total: 47.5, rate: 0.05}],
+    [{price: 7, qty: 0, member: true}, {total: 0, rate: 0.05}],
+    [{price: 1, qty: -1}, {total: -1, rate: 0}],
+    [{price: 2, qty: 2, member: "yes", coupon: "SAVE10"}, {total: 3.6, rate: 0.1}],
+    [{price: 10, member: true}, "!error: \"base\""],
+    [{price: 1000, qty: 1, member: true, coupon: "SAVE10"}, {total: 850, rate: 0.15}],
+    [{price: 33.333, qty: 3}, {total: 100, rate: 0}],
+    [{price: 0.01, qty: 1, coupon: "BROKEN"}, "!error: \"final\""],
+  ],
+}
+
+{
+  name: "long: alternating success and failure rows in one expression node",
+  graph: {
+    nodes: [{expression: "e", fields: {r: "a + b"}}],
+  },
+  cases: [
+    [{a: 1, b: 1}, {r: 2}],
+    [{a: 1, b: "x"}, "!error"],
+    [{a: 2, b: 2}, {r: 4}],
+    [{a: "x", b: 1}, "!error"],
+    [{a: 3, b: 3}, {r: 6}],
+    [{a: 1}, "!error"],
+    [{a: 4, b: 4}, {r: 8}],
+    [{b: 1}, "!error"],
+    [{a: 5, b: 5}, {r: 10}],
+    [{a: true, b: 1}, "!error"],
+    [{a: 6, b: 6}, {r: 12}],
+    [{a: [1], b: 1}, "!error"],
+    [{a: 7, b: 7}, {r: 14}],
+    [{a: null, b: null}, "!error"],
+    [{a: "s", b: "t"}, {r: "st"}],
+    [{a: 8, b: 8}, {r: 16}],
+    [{a: 1, b: {x: 1}}, "!error"],
+    [{a: 9, b: 9}, {r: 18}],
+    [{a: 0.1, b: 0.2}, {r: 0.3}],
+    [{a: -1, b: 1}, {r: 0}],
+    [{a: 10, b: "10"}, "!error"],
+    [{a: 11, b: 11}, {r: 22}],
+  ],
+}
+
+{
+  name: "long: a collect switch fanning to tables, rows matching any subset",
+  graph: {
+    nodes: [
+      {switch: "s", hit: "collect", when: ["income != null", "debt != null", "age != null"]},
+      {table: "ti", outputPath: "income", inputs: ["income"], outputs: ["band"], rules: [
+        [">= 100000", "'high'"],
+        [">= 30000", "'mid'"],
+        ["", "'low'"],
+      ]},
+      {table: "td", outputPath: "debt", inputs: ["debt"], outputs: ["band"], rules: [
+        ["> 50000", "'heavy'"],
+        ["", "'light'"],
+      ]},
+      {expression: "ea", fields: {"age.adult": "age >= 18"}},
+    ],
+    edges: ["input -> s", "s:0 -> ti -> output", "s:1 -> td -> output", "s:2 -> ea -> output"],
+  },
+  cases: [
+    [{income: 120000, debt: 60000, age: 40}, {income: {band: "high"}, debt: {band: "heavy"}, age: {adult: true}}],
+    [{income: 40000}, {income: {band: "mid"}}],
+    [{debt: 1000}, {debt: {band: "light"}}],
+    [{age: 10}, {age: {adult: false}}],
+    [{}, {}],
+    [{income: 1, age: 18}, {income: {band: "low"}, age: {adult: true}}],
+    [{debt: 50001, age: 30}, {debt: {band: "heavy"}, age: {adult: true}}],
+    [{income: 100000, debt: 50000}, {income: {band: "high"}, debt: {band: "light"}}],
+    [{age: "x"}, "!error: \"ea\""],
+    [{income: "lots"}, {income: {band: "low"}}],
+    [{income: 30000, debt: 0, age: 17}, {income: {band: "mid"}, debt: {band: "light"}, age: {adult: false}}],
+    [{debt: -5}, {debt: {band: "light"}}],
+    [{income: 99999.99, age: 65}, {income: {band: "mid"}, age: {adult: true}}],
+    [{income: 0, debt: 0, age: 0}, {income: {band: "low"}, debt: {band: "light"}, age: {adult: false}}],
+    [{debt: 99999999}, {debt: {band: "heavy"}}],
+    [{income: 50000, debt: 60000, age: "old"}, "!error: \"ea\""],
+    [{age: 100}, {age: {adult: true}}],
+    [{income: 250000}, {income: {band: "high"}}],
+    [{debt: 50000.01, income: 29999}, {income: {band: "low"}, debt: {band: "heavy"}}],
+    [{age: 18.5, debt: 1}, {debt: {band: "light"}, age: {adult: true}}],
+    [{income: 30000}, {income: {band: "mid"}}],
+    [{income: null, debt: null, age: null}, {}],
+  ],
+}
+
+// --- Rows whose result kind differs: arrays from one branch, objects from another ----------
+
+{
+  name: "a switch routing some rows to a collect table (array result) and others to an expression",
+  graph: {
+    nodes: [
+      {switch: "s", when: ["list == true", ""]},
+      {table: "t", hit: "collect", inputs: ["n"], outputs: ["k"], rules: [
+        ["> 0", "'a'"],
+        ["> 1", "'b'"],
+      ]},
+      {expression: "e", fields: {single: "n"}},
+    ],
+    edges: ["input -> s", "s:0 -> t -> output", "s:1 -> e -> output"],
+  },
+  cases: [
+    [{list: true, n: 2}, [{k: "a"}, {k: "b"}]],
+    [{list: true, n: 1}, [{k: "a"}]],
+    [{list: true, n: 0}, []],
+    [{n: 2}, {single: 2}],
+    [{list: false, n: "x"}, {single: "x"}],
+    [{list: true}, []],
+    [{}, {}],
+    [{list: true, n: 5}, [{k: "a"}, {k: "b"}]],
+    [{n: [1]}, {single: [1]}],
+    [{list: true, n: -1}, []],
+  ],
+}
+
+{
+  name: "a node input selected by inputField that is an object, array, scalar or missing per row",
+  graph: {
+    nodes: [{expression: "e", inputField: "payload", fields: {t: "type(x)", x: "x"}}],
+  },
+  cases: [
+    [{payload: {x: 1}}, {t: "number", x: 1}],
+    [{payload: {x: "s", y: 2}}, {t: "string", x: "s"}],
+    [{payload: {}}, {t: "null"}],
+    [{}, {t: "null"}],
+    [{payload: 5}, "!error", "question: a scalar node input becomes the expression environment and reading a field of it errors, while a scalar request is replaced by an empty object (01-input-output)"],
+    [{payload: "s"}, "!error", "question: a scalar node input becomes the expression environment and reading a field of it errors, while a scalar request is replaced by an empty object (01-input-output)"],
+    [{payload: null}, {t: "null"}],
+    [{payload: {x: {deep: [1]}}}, {t: "object", x: {deep: [1]}}],
+    [{payload: {x: true}, x: 99}, {t: "bool", x: true}],
+    [{x: 99}, {t: "null"}],
+  ],
+}
+
+{
+  name: "a sub-decision in loop mode over items whose shapes differ, some failing",
+  decisions: {
+    child: {nodes: [{table: "t", inputs: ["kind"], outputs: ["cost"], rules: [
+      ["'a'", "price * 2"],
+      ["'b'", "price + 1"],
+      ["", "0"],
+    ]}, {expression: "e", passThrough: true, fields: {checked: "cost >= 0"}}]},
+  },
+  graph: {
+    nodes: [{decision: "each", key: "child", inputField: "items", outputPath: "out", executionMode: "loop"}],
+  },
+  cases: [
+    [{items: [{kind: "a", price: 2}, {kind: "b", price: 2}, {kind: "c"}]}, {out: [{cost: 4, checked: true}, {cost: 3, checked: true}, {cost: 0, checked: true}]}],
+    [{items: []}, {out: []}],
+    [{items: [{kind: "a", price: -1}]}, {out: [{cost: -2, checked: false}]}],
+    [{items: [{price: 9}]}, {out: [{cost: 0, checked: true}]}],
+    [{items: [{kind: "a"}]}, {out: [{cost: 0, checked: true}]}, "question: the failing output cell `price * 2` drops rule a silently, so the default rule answers"],
+    [{items: [{kind: "b", price: 0.5, extra: {x: 1}}, {kind: "a", price: 0.25}]}, {out: [{cost: 1.5, checked: true}, {cost: 0.5, checked: true}]}],
+    [{}, "!error"],
+  ],
+}
+
+{
+  name: "a fan-in join of two pass-through parents writing one key with types that differ per row",
+  graph: {
+    nodes: [
+      {expression: "left", passThrough: true, fields: {v: "n > 0 ? n : 'neg'"}},
+      {expression: "right", passThrough: true, fields: {w: "n > 0 ? 'pos' : n"}},
+      {expression: "join", fields: {v: "v", w: "w", tv: "type(v)", tw: "type(w)"}},
+    ],
+    edges: ["input -> left -> join", "input -> right -> join", "join -> output"],
+  },
+  cases: [
+    [{n: 1}, {v: 1, w: "pos", tv: "number", tw: "string"}],
+    [{n: -1}, {v: "neg", w: -1, tv: "string", tw: "number"}],
+    [{n: 0}, {v: "neg", w: 0, tv: "string", tw: "number"}],
+    [{n: 2.5}, {v: 2.5, w: "pos", tv: "number", tw: "string"}],
+    [{n: "x"}, "!error"],
+    [{}, "!error"],
+    [{n: 1000}, {v: 1000, w: "pos", tv: "number", tw: "string"}],
+    [{n: -0.5}, {v: "neg", w: -0.5, tv: "string", tw: "number"}],
+    [{n: 3}, {v: 3, w: "pos", tv: "number", tw: "string"}],
+    [{n: -3}, {v: "neg", w: -3, tv: "string", tw: "number"}],
+  ],
+}
+
+{
+  name: "templates over fields of every type, some rows failing",
+  graph: {
+    nodes: [{expression: "e", fields: {s: "`${name}:${n * 2}`"}}],
+  },
+  cases: [
+    [{name: "a", n: 1}, {s: "a:2"}],
+    [{name: 5, n: 1}, {s: "5:2"}],
+    [{name: true, n: 0.5}, {s: "true:1.0"}],
+    [{n: 1}, {s: "null:2"}],
+    [{name: "b", n: "x"}, "!error"],
+    [{name: "c"}, "!error"],
+    [{name: "", n: -1}, {s: ":-2"}],
+    [{name: "d", n: 100}, {s: "d:200"}],
+    [{name: [1], n: 1}, "!error"],
+    [{name: "e", n: 0}, {s: "e:0"}],
+  ],
+}
+
+{
+  name: "a table with many rules over mixed rows, matching early, late or never",
+  graph: {
+    nodes: [
+      {table: "t", inputs: ["code"], outputs: ["label"], rules: [
+        ["1", "'one'"], ["2", "'two'"], ["3", "'three'"], ["4", "'four'"], ["5", "'five'"],
+        ["6", "'six'"], ["7", "'seven'"], ["8", "'eight'"], ["9", "'nine'"], ["10", "'ten'"],
+        ["'1'", "'string one'"], ["true", "'bool'"], ["[11..20]", "'teens'"], ["> 20", "'big'"],
+      ]},
+    ],
+  },
+  cases: [
+    [{code: 1}, {label: "one"}],
+    [{code: 10}, {label: "ten"}],
+    [{code: 5}, {label: "five"}],
+    [{code: "1"}, {label: "string one"}],
+    [{code: true}, {label: "bool"}],
+    [{code: 15}, {label: "teens"}],
+    [{code: 21}, {label: "big"}],
+    [{code: 0}, {}],
+    [{}, {}],
+    [{code: "x"}, {}],
+    [{code: 1.0}, {label: "one"}],
+    [{code: 10.5}, {}],
+    [{code: false}, {}],
+    [{code: 20}, {label: "teens"}],
+  ],
+}

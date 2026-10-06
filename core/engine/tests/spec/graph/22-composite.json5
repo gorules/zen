@@ -1,0 +1,611 @@
+// Realistic multi-node decisions mixing tables, switches, expressions, sub-decisions, loops and
+// `$nodes`. Each suite is one business decision exercised across its main paths, boundaries and
+// missing inputs.
+
+// ---------------------------------------------------------------------------------------------
+// Pricing: base price by product, tiered discount, coupon, tax by country.
+{
+  name: "pricing: base, tier discount, coupon and tax",
+  graph: {
+    nodes: [
+      {table: "base", passThrough: true, inputs: ["product"], outputs: ["unitPrice"], rules: [
+        ["'basic'", "9.99"],
+        ["'pro'", "29.99"],
+        ["'enterprise'", "199"],
+      ]},
+      {table: "tier", passThrough: true, inputs: ["qty"], outputs: ["discount"], rules: [
+        ["< 10", "0"],
+        ["[10..49]", "0.05"],
+        ["[50..99]", "0.1"],
+        [">= 100", "0.15"],
+      ]},
+      {expression: "subtotal", passThrough: true, fields: {
+        gross: "unitPrice * qty",
+        net: "round(unitPrice * qty * (1 - discount), 2)",
+      }},
+      {table: "coupon", passThrough: true, inputs: ["coupon", "net"], outputs: ["couponOff"], rules: [
+        ["'SAVE10'", ">= 50", "10"],
+        ["'HALF'", "", "round(net / 2, 2)"],
+        ["", "", "0"],
+      ]},
+      {table: "tax", passThrough: true, inputs: ["country"], outputs: ["taxRate"], rules: [
+        ["'DE'", "0.19"],
+        ["'FR'", "0.2"],
+        ["'US'", "0"],
+        ["", "0.1"],
+      ]},
+      {expression: "total", fields: {
+        net: "net - couponOff",
+        tax: "round((net - couponOff) * taxRate, 2)",
+        total: "round((net - couponOff) * (1 + taxRate), 2)",
+      }},
+    ],
+  },
+  cases: [
+    [{product: "basic", qty: 1, country: "US"}, {net: 9.99, tax: 0, total: 9.99}],
+    [{product: "basic", qty: 10, country: "DE"}, {net: 94.91, tax: 18.03, total: 112.94}],
+    [{product: "pro", qty: 50, country: "FR", coupon: "SAVE10"}, {net: 1339.55, tax: 267.91, total: 1607.46}],
+    [{product: "pro", qty: 2, country: "FR", coupon: "SAVE10"}, {net: 49.98, tax: 10, total: 59.98}],
+    [{product: "enterprise", qty: 100, country: "JP"}, {net: 16915, tax: 1691.5, total: 18606.5}],
+    [{product: "enterprise", qty: 1, country: "DE", coupon: "HALF"}, {net: 99.5, tax: 18.91, total: 118.41}],
+    [{product: "pro", qty: 49, country: "US", coupon: "NOPE"}, {net: 1396.03, tax: 0, total: 1396.03}],
+    [{product: "unknown", qty: 1, country: "US"}, "!error: \"nodeId\":\"subtotal\""],
+    [{product: "basic", qty: 0, country: "US"}, {net: 0, tax: 0, total: 0}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Loan eligibility: hard rejections first through a switch, then a scoring table.
+{
+  name: "eligibility: loan application with hard rules and a score band",
+  graph: {
+    nodes: [
+      {switch: "gate", when: ["age < 18 or age > 75", "income <= 0", "bankrupt == true", ""]},
+      {expression: "tooYoungOrOld", fields: {decision: "'reject'", reason: "'age'"}},
+      {expression: "noIncome", fields: {decision: "'reject'", reason: "'income'"}},
+      {expression: "bankrupt", fields: {decision: "'reject'", reason: "'bankruptcy'"}},
+      {expression: "ratio", passThrough: true, fields: {dti: "round(debt / income, 4)"}},
+      {table: "band", inputs: ["creditScore", "dti"], outputs: ["decision", "rate", "reason"], rules: [
+        [">= 750", "< 0.35", "'approve'", "0.045", "'prime'"],
+        [">= 680", "< 0.4", "'approve'", "0.065", "'near prime'"],
+        [">= 620", "< 0.3", "'review'", "0.09", "'subprime'"],
+        ["", "", "'reject'", "", "'score'"],
+      ]},
+    ],
+    edges: [
+      "input -> gate",
+      "gate:0 -> tooYoungOrOld -> output",
+      "gate:1 -> noIncome -> output",
+      "gate:2 -> bankrupt -> output",
+      "gate:3 -> ratio -> band -> output",
+    ],
+  },
+  cases: [
+    [{age: 30, income: 5000, debt: 1000, creditScore: 780}, {decision: "approve", rate: 0.045, reason: "prime"}],
+    [{age: 30, income: 5000, debt: 1900, creditScore: 780}, {decision: "approve", rate: 0.065, reason: "near prime"}],
+    [{age: 30, income: 5000, debt: 2000, creditScore: 780}, {decision: "reject", reason: "score"}],
+    [{age: 45, income: 4000, debt: 1000, creditScore: 650}, {decision: "review", rate: 0.09, reason: "subprime"}],
+    [{age: 45, income: 4000, debt: 1200, creditScore: 650}, {decision: "reject", reason: "score"}],
+    [{age: 17, income: 5000, debt: 0, creditScore: 800}, {decision: "reject", reason: "age"}],
+    [{age: 76, income: 5000, debt: 0, creditScore: 800}, {decision: "reject", reason: "age"}],
+    [{age: 18, income: 0, debt: 0, creditScore: 800}, {decision: "reject", reason: "income"}],
+    [{age: 40, income: 3000, debt: 0, creditScore: 800, bankrupt: true}, {decision: "reject", reason: "bankruptcy"}],
+    [{age: 75, income: 3000, debt: 0, creditScore: 800, bankrupt: false}, {decision: "approve", rate: 0.045, reason: "prime"}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Routing: support tickets routed by a collect switch to several queues at once.
+{
+  name: "routing: a ticket can land in several queues",
+  graph: {
+    nodes: [
+      {switch: "route", hit: "collect", when: [
+        "priority == 'urgent'",
+        "contains(lower(subject), 'invoice') or category == 'billing'",
+        "customer.tier == 'enterprise'",
+        "",
+      ]},
+      {expression: "pager", fields: {"queues.pager": "true", "sla.hours": "1"}},
+      {expression: "billing", fields: {"queues.billing": "true"}},
+      {expression: "tam", fields: {"queues.tam": "customer.owner"}},
+      {expression: "triage", fields: {"queues.triage": "true", "sla.default": "24"}},
+    ],
+    edges: [
+      "input -> route",
+      "route:0 -> pager -> output",
+      "route:1 -> billing -> output",
+      "route:2 -> tam -> output",
+      "route:3 -> triage -> output",
+    ],
+  },
+  cases: [
+    [{priority: "low", subject: "hello", customer: {tier: "free"}}, {queues: {triage: true}, sla: {default: 24}}],
+    [{priority: "urgent", subject: "down", customer: {tier: "free"}}, {queues: {pager: true, triage: true}, sla: {hours: 1, default: 24}}],
+    [{priority: "low", subject: "Invoice #42 wrong", customer: {tier: "free"}}, {queues: {billing: true, triage: true}, sla: {default: 24}}],
+    [{priority: "low", subject: "x", category: "billing", customer: {tier: "enterprise", owner: "kim"}}, {queues: {billing: true, tam: "kim", triage: true}, sla: {default: 24}}],
+    [{priority: "urgent", subject: "INVOICE", customer: {tier: "enterprise", owner: "lee"}}, {queues: {pager: true, billing: true, tam: "lee", triage: true}, sla: {hours: 1, default: 24}}],
+    [{priority: "urgent", subject: "x", customer: {tier: "enterprise"}}, {queues: {pager: true, triage: true}, sla: {hours: 1, default: 24}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Risk scoring: a collect table of signals summed into a score, then banded.
+{
+  name: "scoring: fraud signals summed and banded",
+  graph: {
+    nodes: [
+      {table: "signals", hit: "collect", outputPath: "signals", passThrough: true, inputs: ["amount", "country", "accountAgeDays", "attempts"], outputs: ["code", "points"], rules: [
+        ["> 1000", "", "", "", "'high_amount'", "30"],
+        ["> 5000", "", "", "", "'very_high_amount'", "20"],
+        ["", "$ not in ['US', 'CA', 'GB']", "", "", "'foreign'", "15"],
+        ["", "", "< 7", "", "'new_account'", "25"],
+        ["", "", "", ">= 3", "'retries'", "10 * (attempts - 2)"],
+      ]},
+      {expression: "score", passThrough: true, fields: {score: "sum(map(signals, #.points))", codes: "map(signals, #.code)"}},
+      {table: "band", passThrough: true, inputs: ["score"], outputs: ["action"], rules: [
+        ["< 30", "'allow'"],
+        ["[30..59]", "'review'"],
+        [">= 60", "'block'"],
+      ]},
+      {expression: "out", fields: {action: "action", score: "score", codes: "codes"}},
+    ],
+  },
+  cases: [
+    [{amount: 50, country: "US", accountAgeDays: 400, attempts: 1}, {action: "allow", score: 0, codes: []}],
+    [{amount: 1500, country: "US", accountAgeDays: 400, attempts: 1}, {action: "review", score: 30, codes: ["high_amount"]}],
+    [{amount: 6000, country: "US", accountAgeDays: 400, attempts: 1}, {action: "review", score: 50, codes: ["high_amount", "very_high_amount"]}],
+    [{amount: 6000, country: "BR", accountAgeDays: 2, attempts: 5}, {action: "block", score: 120, codes: ["high_amount", "very_high_amount", "foreign", "new_account", "retries"]}],
+    [{amount: 10, country: "DE", accountAgeDays: 3, attempts: 1}, {action: "review", score: 40, codes: ["foreign", "new_account"]}],
+    [{amount: 10, country: "GB", accountAgeDays: 30, attempts: 3}, {action: "allow", score: 10, codes: ["retries"]}],
+    [{amount: 1000, country: "CA", accountAgeDays: 7, attempts: 2}, {action: "allow", score: 0, codes: []}],
+    [{amount: 1000.01, country: "FR", accountAgeDays: 6, attempts: 4}, {action: "block", score: 90, codes: ["high_amount", "foreign", "new_account", "retries"]}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Insurance premium: a sub-decision computes a risk factor per driver in a loop.
+{
+  name: "insurance: per-driver factors from a sub-decision loop",
+  decisions: {
+    driver: {nodes: [
+      {table: "ageFactor", passThrough: true, inputs: ["age"], outputs: ["ageFactor"], rules: [
+        ["< 25", "1.8"],
+        ["[25..64]", "1"],
+        [">= 65", "1.3"],
+      ]},
+      {table: "claimsFactor", passThrough: true, inputs: ["claims"], outputs: ["claimsFactor"], rules: [
+        ["0", "0.9"],
+        ["1", "1.2"],
+        ["", "1.6"],
+      ]},
+      {expression: "factor", fields: {name: "name", factor: "ageFactor * claimsFactor"}},
+    ]},
+  },
+  graph: {
+    nodes: [
+      {decision: "drivers", key: "driver", inputField: "drivers", executionMode: "loop", outputPath: "factors", passThrough: true},
+      {expression: "premium", fields: {
+        worst: "max(map(factors, #.factor))",
+        premium: "round(base * max(map(factors, #.factor)), 2)",
+        names: "map(factors, #.name)",
+      }},
+    ],
+  },
+  cases: [
+    [{base: 500, drivers: [{name: "a", age: 40, claims: 0}]}, {worst: 0.9, premium: 450, names: ["a"]}],
+    [{base: 500, drivers: [{name: "a", age: 40, claims: 0}, {name: "b", age: 19, claims: 0}]}, {worst: 1.62, premium: 810, names: ["a", "b"]}],
+    [{base: 500, drivers: [{name: "a", age: 70, claims: 1}]}, {worst: 1.56, premium: 780, names: ["a"]}],
+    [{base: 499.99, drivers: [{name: "a", age: 22, claims: 3}, {name: "b", age: 30, claims: 1}]}, {worst: 2.88, premium: 1439.97, names: ["a", "b"]}],
+    [{base: 500, drivers: [{name: "a", age: 25, claims: 0}, {name: "b", age: 64, claims: 0}, {name: "c", age: 65, claims: 0}]}, {worst: 1.17, premium: 585, names: ["a", "b", "c"]}],
+    [{base: 500, drivers: []}, "!error: NodeError"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Shipping: carrier selection by weight and destination with a surcharge expression and $nodes.
+{
+  name: "shipping: carrier, cost and delivery date",
+  graph: {
+    nodes: [
+      {expression: "parcel", passThrough: true, fields: {
+        volumetric: "round(l * w * h / 5000, 2)",
+        billable: "max([weight, round(l * w * h / 5000, 2)])",
+      }},
+      {table: "carrier", passThrough: true, inputs: ["dest", "billable"], outputs: ["carrier", "cost", "days"], rules: [
+        ["'domestic'", "<= 2", "'post'", "4.5", "3"],
+        ["'domestic'", "(2..30]", "'ground'", "8 + billable * 0.5", "2"],
+        ["'eu'", "<= 30", "'euroexpress'", "15 + billable * 1.2", "4"],
+        ["'world'", "<= 30", "'air'", "40 + billable * 3", "7"],
+        ["", "> 30", "'freight'", "120", "10"],
+      ]},
+      {expression: "quote", fields: {
+        carrier: "carrier",
+        cost: "round(cost * (express ? 1.5 : 1), 2)",
+        eta: "d(shipDate).add(express ? days - 1 : days, 'd')",
+        billable: "$nodes.parcel.billable",
+      }},
+    ],
+  },
+  cases: [
+    [{dest: "domestic", weight: 1, l: 10, w: 10, h: 10, shipDate: "2025-03-20", express: false}, {carrier: "post", cost: 4.5, eta: "2025-03-23T00:00:00Z", billable: 1}],
+    [{dest: "domestic", weight: 1, l: 50, w: 40, h: 30, shipDate: "2025-03-20", express: false}, {carrier: "ground", cost: 14, eta: "2025-03-22T00:00:00Z", billable: 12}],
+    [{dest: "eu", weight: 5.5, l: 20, w: 20, h: 20, shipDate: "2025-03-20", express: true}, {carrier: "euroexpress", cost: 32.4, eta: "2025-03-23T00:00:00Z", billable: 5.5}],
+    [{dest: "world", weight: 30, l: 10, w: 10, h: 10, shipDate: "2025-12-30", express: false}, {carrier: "air", cost: 130, eta: "2026-01-06T00:00:00Z", billable: 30}],
+    [{dest: "world", weight: 30.01, l: 10, w: 10, h: 10, shipDate: "2025-03-20", express: false}, {carrier: "freight", cost: 120, eta: "2025-03-30T00:00:00Z", billable: 30.01}],
+    [{dest: "domestic", weight: 2, l: 1, w: 1, h: 1, shipDate: "2024-02-27", express: true}, {carrier: "post", cost: 6.75, eta: "2024-02-29T00:00:00Z", billable: 2}],
+    [{dest: "moon", weight: 1, l: 1, w: 1, h: 1, shipDate: "2025-03-20", express: false}, "!error: \"nodeId\":\"quote\""],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Payroll: overtime, allowances and a progressive tax computed with a collect table.
+{
+  name: "payroll: overtime and progressive tax brackets",
+  graph: {
+    nodes: [
+      {expression: "gross", passThrough: true, fields: {
+        regular: "min([hours, 40]) * rate",
+        overtime: "max([hours - 40, 0]) * rate * 1.5",
+        gross: "min([hours, 40]) * rate + max([hours - 40, 0]) * rate * 1.5 + (allowance ?? 0)",
+      }},
+      {table: "brackets", hit: "collect", outputPath: "brackets", passThrough: true, inputs: ["gross"], outputs: ["from", "to", "pct"], rules: [
+        ["> 0", "0", "500", "0"],
+        ["> 500", "500", "2000", "0.2"],
+        ["> 2000", "2000", "1000000", "0.4"],
+      ]},
+      {expression: "net", fields: {
+        gross: "gross",
+        tax: "sum(map(brackets, (min([gross, #.to]) - #.from) * #.pct))",
+        net: "gross - sum(map(brackets, (min([gross, #.to]) - #.from) * #.pct))",
+      }},
+    ],
+  },
+  cases: [
+    [{hours: 40, rate: 10}, {gross: 400, tax: 0, net: 400}],
+    [{hours: 40, rate: 12.5}, {gross: 500, tax: 0, net: 500}],
+    [{hours: 45, rate: 20}, {gross: 950, tax: 90, net: 860}],
+    [{hours: 50, rate: 40, allowance: 100}, {gross: 2300, tax: 420, net: 1880}],
+    [{hours: 0, rate: 30}, {gross: 0, tax: 0, net: 0}],
+    [{hours: 38.5, rate: 15.25, allowance: 12.75}, {gross: 599.875, tax: 19.975, net: 579.9}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Commission: plan chosen by a switch, each plan its own sub-decision.
+{
+  name: "commission: plans as sub-decisions behind a switch",
+  decisions: {
+    flat: {nodes: [{expression: "c", fields: {commission: "sales * 0.05", plan: "'flat'"}}]},
+    tiered: {nodes: [
+      {table: "t", inputs: ["sales"], outputs: ["commission", "plan"], rules: [
+        ["< 10000", "sales * 0.03", "'tiered'"],
+        ["[10000..50000)", "300 + (sales - 10000) * 0.06", "'tiered'"],
+        [">= 50000", "2700 + (sales - 50000) * 0.1", "'tiered'"],
+      ]},
+    ]},
+  },
+  graph: {
+    nodes: [
+      {switch: "plan", when: ["plan == 'flat'", "plan == 'tiered'", ""]},
+      {decision: "flatPlan", key: "flat"},
+      {decision: "tieredPlan", key: "tiered"},
+      {expression: "none", fields: {commission: "0", plan: "'none'"}},
+      {expression: "cap", fields: {commission: "min([commission, 10000])", plan: "plan", capped: "commission > 10000"}},
+    ],
+    edges: [
+      "input -> plan",
+      "plan:0 -> flatPlan -> cap",
+      "plan:1 -> tieredPlan -> cap",
+      "plan:2 -> none -> cap",
+      "cap -> output",
+    ],
+  },
+  cases: [
+    [{plan: "flat", sales: 1000}, {commission: 50, plan: "flat", capped: false}],
+    [{plan: "flat", sales: 300000}, {commission: 10000, plan: "flat", capped: true}],
+    [{plan: "tiered", sales: 9999.99}, {commission: 299.9997, plan: "tiered", capped: false}],
+    [{plan: "tiered", sales: 10000}, {commission: 300, plan: "tiered", capped: false}],
+    [{plan: "tiered", sales: 50000}, {commission: 2700, plan: "tiered", capped: false}],
+    [{plan: "tiered", sales: 123456}, {commission: 10000, plan: "tiered", capped: true}],
+    [{plan: "other", sales: 5000}, {commission: 0, plan: "none", capped: false}],
+    [{sales: 5000}, {commission: 0, plan: "none", capped: false}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// KYC: document checks, age from a schema date, and a final verdict collecting reasons.
+{
+  name: "kyc: verdict with collected reasons",
+  graph: {
+    nodes: [
+      {input: "request", schema: {type: "object", required: ["dob", "country"], properties: {
+        dob: {type: "string", format: "date"},
+        country: {type: "string", minLength: 2, maxLength: 2},
+        docs: {type: "array", items: {type: "string"}},
+      }}},
+      {expression: "facts", passThrough: true, fields: {age: "d().diff(dob, 'year')", docCount: "len(docs ?? [])"}},
+      {table: "checks", hit: "collect", outputPath: "failures", passThrough: true, inputs: ["age", "country", "docCount", "pep"], outputs: ["reason"], rules: [
+        ["< 18", "", "", "", "'underage'"],
+        ["", "'KP', 'IR', 'SY'", "", "", "'sanctioned_country'"],
+        ["", "", "< 2", "", "'insufficient_documents'"],
+        ["", "", "", "true", "'politically_exposed'"],
+      ]},
+      {expression: "verdict", fields: {
+        age: "age",
+        status: "len(failures) == 0 ? 'pass' : (some(failures, #.reason == 'politically_exposed') and len(failures) == 1 ? 'manual' : 'fail')",
+        reasons: "map(failures, #.reason)",
+      }},
+    ],
+  },
+  cases: [
+    [{dob: "1990-01-01", country: "DE", docs: ["passport", "utility"]}, {age: 35, status: "pass", reasons: []}],
+    [{dob: "2007-03-21", country: "DE", docs: ["passport", "utility"]}, {age: 17, status: "fail", reasons: ["underage"]}],
+    [{dob: "2007-03-20", country: "DE", docs: ["passport", "utility"]}, {age: 18, status: "pass", reasons: []}],
+    [{dob: "1980-05-05", country: "IR", docs: ["passport"]}, {age: 44, status: "fail", reasons: ["sanctioned_country", "insufficient_documents"]}],
+    [{dob: "1970-01-01", country: "GB", docs: ["passport", "id"], pep: true}, {age: 55, status: "manual", reasons: ["politically_exposed"]}],
+    [{dob: "1970-01-01", country: "GB", pep: true}, {age: 55, status: "fail", reasons: ["insufficient_documents", "politically_exposed"]}],
+    [{dob: "1970-01-01", country: "GBR"}, "!error: NodeError"],
+    [{country: "GB"}, "!error: NodeError"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Healthcare triage: vitals scored in parallel branches, joined by a final table.
+{
+  name: "triage: parallel vital scores joined into a level",
+  graph: {
+    nodes: [
+      {table: "hr", inputs: ["heartRate"], outputs: ["hrScore"], rules: [
+        ["< 40", "3"], ["[40..50]", "1"], ["(50..90]", "0"], ["(90..110]", "1"], ["(110..130]", "2"], ["> 130", "3"],
+      ]},
+      {table: "temp", inputs: ["temperature"], outputs: ["tempScore"], rules: [
+        ["< 35", "3"], ["[35..36]", "1"], ["(36..38]", "0"], ["(38..39]", "1"], ["> 39", "2"],
+      ]},
+      {table: "spo2", inputs: ["spo2"], outputs: ["spo2Score"], rules: [
+        ["<= 91", "3"], ["[92..93]", "2"], ["[94..95]", "1"], ["", "0"],
+      ]},
+      {expression: "total", passThrough: true, fields: {score: "hrScore + tempScore + spo2Score", maxSingle: "max([hrScore, tempScore, spo2Score])"}},
+      {table: "level", inputs: ["score", "maxSingle"], outputs: ["level", "respondWithinMin"], rules: [
+        [">= 7", "", "'emergency'", "0"],
+        ["", "3", "'urgent'", "15"],
+        ["[5..6]", "", "'urgent'", "15"],
+        ["[1..4]", "", "'standard'", "60"],
+        ["", "", "'routine'", "240"],
+      ]},
+    ],
+    edges: [
+      "input -> hr -> total",
+      "input -> temp -> total",
+      "input -> spo2 -> total",
+      "total -> level -> output",
+    ],
+  },
+  cases: [
+    [{heartRate: 70, temperature: 37, spo2: 98}, {level: "routine", respondWithinMin: 240}],
+    [{heartRate: 95, temperature: 37, spo2: 98}, {level: "standard", respondWithinMin: 60}],
+    [{heartRate: 95, temperature: 38.5, spo2: 95}, {level: "standard", respondWithinMin: 60}],
+    [{heartRate: 120, temperature: 39.5, spo2: 95}, {level: "urgent", respondWithinMin: 15}],
+    [{heartRate: 35, temperature: 37, spo2: 99}, {level: "urgent", respondWithinMin: 15}],
+    [{heartRate: 140, temperature: 34, spo2: 90}, {level: "emergency", respondWithinMin: 0}],
+    [{heartRate: 50, temperature: 36, spo2: 93}, {level: "standard", respondWithinMin: 60}],
+    [{heartRate: 90, temperature: 38, spo2: 96}, {level: "routine", respondWithinMin: 240}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// E-commerce cart: line items in a loop, free-shipping threshold, loyalty points.
+{
+  name: "cart: line totals in a loop then cart-level rules",
+  graph: {
+    nodes: [
+      {expression: "lines", inputField: "items", executionMode: "loop", outputPath: "lines", passThrough: true, fields: {
+        sku: "sku",
+        lineTotal: "round(price * qty * (1 - (lineDiscount ?? 0)), 2)",
+      }},
+      {expression: "cart", passThrough: true, fields: {
+        subtotal: "sum(map(lines, #.lineTotal))",
+        itemCount: "sum(map(items, #.qty))",
+      }},
+      {table: "shipping", passThrough: true, inputs: ["subtotal", "member"], outputs: ["shipping"], rules: [
+        ["", "true", "0"],
+        [">= 50", "", "0"],
+        ["", "", "4.99"],
+      ]},
+      {expression: "summary", fields: {
+        subtotal: "subtotal",
+        shipping: "shipping",
+        total: "subtotal + shipping",
+        points: "floor(subtotal) * (member ? 2 : 1)",
+        skus: "map(lines, #.sku)",
+      }},
+    ],
+  },
+  cases: [
+    [{items: [{sku: "a", price: 10, qty: 2}], member: false}, {subtotal: 20, shipping: 4.99, total: 24.99, points: 20, skus: ["a"]}],
+    [{items: [{sku: "a", price: 10, qty: 2}, {sku: "b", price: 15.5, qty: 2}], member: false}, {subtotal: 51, shipping: 0, total: 51, points: 51, skus: ["a", "b"]}],
+    [{items: [{sku: "a", price: 49.99, qty: 1}], member: true}, {subtotal: 49.99, shipping: 0, total: 49.99, points: 98, skus: ["a"]}],
+    [{items: [{sku: "a", price: 100, qty: 1, lineDiscount: 0.5}], member: false}, {subtotal: 50, shipping: 0, total: 50, points: 50, skus: ["a"]}],
+    [{items: [{sku: "a", price: 33.33, qty: 3, lineDiscount: 0.1}], member: false}, {subtotal: 89.99, shipping: 0, total: 89.99, points: 89, skus: ["a"]}],
+    [{items: [], member: false}, {subtotal: 0, shipping: 4.99, total: 4.99, points: 0, skus: []}],
+    [{items: [{sku: "a", price: 10, qty: 1}]}, "!error: \"nodeId\":\"summary\""],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Subscription renewal: dates, grace periods and a switch on status.
+{
+  name: "subscription: renewal status from dates",
+  graph: {
+    nodes: [
+      {expression: "dates", passThrough: true, fields: {
+        daysLeft: "d(renewsOn).diff(d(), 'day')",
+        graceEnds: "d(renewsOn).add(graceDays ?? 7, 'd')",
+      }},
+      {switch: "status", when: ["cancelled == true", "daysLeft > 30", "daysLeft >= 0", "d() <= graceEnds", ""]},
+      {expression: "cancelled", fields: {status: "'cancelled'", notify: "false"}},
+      {expression: "active", fields: {status: "'active'", notify: "false"}},
+      {expression: "renewing", fields: {status: "'renewing'", notify: "true", daysLeft: "daysLeft"}},
+      {expression: "grace", fields: {status: "'grace'", notify: "true", graceEnds: "graceEnds"}},
+      {expression: "lapsed", fields: {status: "'lapsed'", notify: "false"}},
+    ],
+    edges: [
+      "input -> dates -> status",
+      "status:0 -> cancelled -> output",
+      "status:1 -> active -> output",
+      "status:2 -> renewing -> output",
+      "status:3 -> grace -> output",
+      "status:4 -> lapsed -> output",
+    ],
+  },
+  cases: [
+    [{renewsOn: "2025-06-01"}, {status: "active", notify: false}],
+    [{renewsOn: "2025-04-01"}, {status: "renewing", notify: true, daysLeft: 11}],
+    [{renewsOn: "2025-03-21"}, {status: "renewing", notify: true, daysLeft: 0}],
+    [{renewsOn: "2025-03-15"}, {status: "grace", notify: true, graceEnds: "2025-03-22T00:00:00Z"}],
+    [{renewsOn: "2025-03-01", graceDays: 30}, {status: "grace", notify: true, graceEnds: "2025-03-31T00:00:00Z"}],
+    [{renewsOn: "2025-03-01"}, {status: "lapsed", notify: false}],
+    [{renewsOn: "2025-06-01", cancelled: true}, {status: "cancelled", notify: false}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Currency conversion: rates from a table, fees from a nested sub-decision.
+{
+  name: "fx: conversion with a fee sub-decision",
+  decisions: {
+    fee: {nodes: [
+      {table: "fee", inputs: ["amount", "channel"], outputs: ["fee"], rules: [
+        ["", "'app'", "0"],
+        ["< 100", "", "2"],
+        ["", "", "round(amount * 0.015, 2)"],
+      ]},
+    ]},
+  },
+  graph: {
+    nodes: [
+      {table: "rate", passThrough: true, inputs: ["from", "to"], outputs: ["rate"], rules: [
+        ["'EUR'", "'USD'", "1.0825"],
+        ["'USD'", "'EUR'", "0.9238"],
+        ["'GBP'", "'EUR'", "1.1691"],
+        ["", "", "null"],
+      ]},
+      {decision: "fees", key: "fee", passThrough: true},
+      {expression: "convert", fields: {
+        supported: "rate != null",
+        fee: "fee",
+        received: "rate != null ? round((amount - fee) * rate, 2) : null",
+      }},
+    ],
+  },
+  cases: [
+    [{from: "EUR", to: "USD", amount: 1000, channel: "web"}, {supported: true, fee: 15, received: 1066.26}],
+    [{from: "EUR", to: "USD", amount: 1000, channel: "app"}, {supported: true, fee: 0, received: 1082.5}],
+    [{from: "USD", to: "EUR", amount: 50, channel: "web"}, {supported: true, fee: 2, received: 44.34}],
+    [{from: "GBP", to: "EUR", amount: 99.99, channel: "web"}, {supported: true, fee: 2, received: 114.56}],
+    [{from: "GBP", to: "EUR", amount: 100, channel: "web"}, {supported: true, fee: 1.5, received: 115.16}],
+    [{from: "JPY", to: "EUR", amount: 100, channel: "web"}, {supported: false, fee: 1.5}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Lending affordability: a function node computes an amortised payment.
+{
+  name: "lending: function node computes the monthly payment",
+  graph: {
+    nodes: [
+      {table: "apr", passThrough: true, inputs: ["termMonths", "creditScore"], outputs: ["apr"], rules: [
+        ["<= 36", ">= 700", "0.06"],
+        ["<= 36", "", "0.09"],
+        ["", ">= 700", "0.075"],
+        ["", "", "0.11"],
+      ]},
+      {function: "amortise", source: """
+export const handler = async (input) => {
+  const r = input.apr / 12;
+  const n = input.termMonths;
+  const payment = r === 0 ? input.principal / n : input.principal * r / (1 - Math.pow(1 + r, -n));
+  return { ...input, payment: Math.round(payment * 100) / 100 };
+};
+"""},
+      {expression: "afford", fields: {
+        apr: "apr",
+        payment: "payment",
+        affordable: "payment <= income * 0.35",
+      }},
+    ],
+  },
+  cases: [
+    [{principal: 10000, termMonths: 36, creditScore: 720, income: 3000}, {apr: 0.06, payment: 304.22, affordable: true}],
+    [{principal: 10000, termMonths: 36, creditScore: 650, income: 1000}, {apr: 0.09, payment: 318, affordable: true}],
+    [{principal: 30000, termMonths: 60, creditScore: 760, income: 1500}, {apr: 0.075, payment: 601.14, affordable: false}],
+    [{principal: 30000, termMonths: 72, creditScore: 600, income: 2000}, {apr: 0.11, payment: 571.02, affordable: true}],
+    [{principal: 1200, termMonths: 12, creditScore: 800, income: 300}, {apr: 0.06, payment: 103.28, affordable: true}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Inventory reorder: per-warehouse decisions in a loop with first-hit tables, then aggregation.
+// In loop mode, passThrough merges each item into its own output, and the request into the node's.
+{
+  name: "inventory: reorder plan across warehouses",
+  graph: {
+    nodes: [
+      {table: "plan", inputField: "warehouses", executionMode: "loop", outputPath: "plan", passThrough: true, inputs: ["stock", "dailyDemand"], outputs: ["id", "action", "orderQty"], rules: [
+        ["", "0", "id", "'hold'", "0"],
+        ["< dailyDemand * 3", "", "id", "'expedite'", "dailyDemand * 14 - stock"],
+        ["< dailyDemand * 7", "", "id", "'reorder'", "dailyDemand * 14 - stock"],
+        ["", "", "id", "'hold'", "0"],
+      ]},
+      {expression: "totals", fields: {
+        plan: "plan",
+        totalOrder: "sum(map(plan, #.orderQty))",
+        urgent: "some(plan, #.action == 'expedite')",
+      }},
+    ],
+  },
+  cases: [
+    [{warehouses: [{id: "w1", stock: 100, dailyDemand: 10}]}, {plan: [{id: "w1", stock: 100, dailyDemand: 10, action: "hold", orderQty: 0}], totalOrder: 0, urgent: false}],
+    [{warehouses: [{id: "w1", stock: 50, dailyDemand: 10}]}, {plan: [{id: "w1", stock: 50, dailyDemand: 10, action: "reorder", orderQty: 90}], totalOrder: 90, urgent: false}],
+    [{warehouses: [{id: "w1", stock: 20, dailyDemand: 10}, {id: "w2", stock: 5, dailyDemand: 0}]}, {plan: [{id: "w1", stock: 20, dailyDemand: 10, action: "expedite", orderQty: 120}, {id: "w2", stock: 5, dailyDemand: 0, action: "hold", orderQty: 0}], totalOrder: 120, urgent: true}],
+    [{warehouses: [{id: "a", stock: 30, dailyDemand: 10}, {id: "b", stock: 69, dailyDemand: 10}, {id: "c", stock: 70, dailyDemand: 10}]}, {plan: [{id: "a", stock: 30, dailyDemand: 10, action: "reorder", orderQty: 110}, {id: "b", stock: 69, dailyDemand: 10, action: "reorder", orderQty: 71}, {id: "c", stock: 70, dailyDemand: 10, action: "hold", orderQty: 0}], totalOrder: 181, urgent: false}],
+    [{warehouses: []}, {plan: [], totalOrder: 0, urgent: false}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Access control: role table, ownership expression and a deny-overrides switch.
+{
+  name: "access: deny overrides, then role and ownership",
+  graph: {
+    nodes: [
+      {switch: "deny", when: ["user.suspended == true or resource.locked == true", ""]},
+      {expression: "denied", fields: {allow: "false", why: "'blocked'"}},
+      {table: "role", passThrough: true, inputs: ["user.role", "action"], outputs: ["roleAllows"], rules: [
+        ["'admin'", "", "true"],
+        ["'editor'", "'read', 'write'", "true"],
+        ["'viewer'", "'read'", "true"],
+        ["", "", "false"],
+      ]},
+      {expression: "decide", fields: {
+        allow: "roleAllows or (resource.owner == user.id and action != 'delete')",
+        why: "roleAllows ? 'role' : (resource.owner == user.id and action != 'delete' ? 'owner' : 'none')",
+      }},
+    ],
+    edges: [
+      "input -> deny",
+      "deny:0 -> denied -> output",
+      "deny:1 -> role -> decide -> output",
+    ],
+  },
+  cases: [
+    [{user: {id: "u1", role: "admin"}, resource: {owner: "u2"}, action: "delete"}, {allow: true, why: "role"}],
+    [{user: {id: "u1", role: "editor"}, resource: {owner: "u2"}, action: "write"}, {allow: true, why: "role"}],
+    [{user: {id: "u1", role: "editor"}, resource: {owner: "u2"}, action: "delete"}, {allow: false, why: "none"}],
+    [{user: {id: "u1", role: "viewer"}, resource: {owner: "u1"}, action: "write"}, {allow: true, why: "owner"}],
+    [{user: {id: "u1", role: "viewer"}, resource: {owner: "u1"}, action: "delete"}, {allow: false, why: "none"}],
+    [{user: {id: "u1", role: "admin", suspended: true}, resource: {owner: "u1"}, action: "read"}, {allow: false, why: "blocked"}],
+    [{user: {id: "u1", role: "admin"}, resource: {owner: "u1", locked: true}, action: "read"}, {allow: false, why: "blocked"}],
+    [{user: {id: "u1"}, resource: {}, action: "read"}, {allow: false, why: "none"}],
+  ],
+}

@@ -1,0 +1,775 @@
+// Strings, enums and dictionaries through policies. A `string` property accepts any string and
+// passes it through byte for byte; enums (`string(a|b)`) and dictionary-typed properties accept
+// only their listed values, compared exactly. At evaluation every one of them is a plain string.
+// Chapters 01, 12 and 17 cover validation basics, labels and simple operations; this chapter
+// covers the string content itself, string building, enum use in every block kind, dictionaries
+// in tables and unicode.
+
+// ---------------------------------------------------------------------------------------------
+// String content passes through unchanged: whitespace, control characters, quotes, backslashes
+// and unicode are data.
+
+{
+  name: "string inputs pass through byte for byte",
+  policy: {
+    models: {note: {text: "string"}},
+    blocks: [{expression: "note.copy", value: "note.text"}],
+  },
+  cases: [
+    [{note: {text: ""}}, {note: {text: "", copy: ""}}],
+    [{note: {text: "   "}}, {note: {text: "   ", copy: "   "}}],
+    [{note: {text: "line1\nline2\ttab"}}, {note: {text: "line1\nline2\ttab", copy: "line1\nline2\ttab"}}],
+    [{note: {text: "say \"hi\" and 'bye'"}}, {note: {text: "say \"hi\" and 'bye'", copy: "say \"hi\" and 'bye'"}}],
+    [{note: {text: "C:\\path\\to"}}, {note: {text: "C:\\path\\to", copy: "C:\\path\\to"}}],
+    [{note: {text: "日本語 😀 ünïcödé"}}, {note: {text: "日本語 😀 ünïcödé", copy: "日本語 😀 ünïcödé"}}],
+    [{note: {text: "null"}}, {note: {text: "null", copy: "null"}}],
+    [{note: {text: "123"}}, {note: {text: "123", copy: "123"}}],
+  ],
+}
+
+{
+  name: "number-like and boolean-like strings stay strings",
+  policy: {
+    models: {row: {code: "string"}},
+    blocks: [
+      {expression: "row.isZero", value: "row.code == '0'"},
+      {expression: "row.kind", value: "type(row.code)"},
+      {expression: "row.padded", value: "row.code + '!'"},
+    ],
+  },
+  cases: [
+    [{row: {code: "0"}}, {row: {code: "0", isZero: true, kind: "string", padded: "0!"}}],
+    [{row: {code: "00"}}, {row: {code: "00", isZero: false, kind: "string", padded: "00!"}}],
+    [{row: {code: "true"}}, {row: {code: "true", isZero: false, kind: "string", padded: "true!"}}],
+    [{row: {code: "1e3"}}, {row: {code: "1e3", isZero: false, kind: "string", padded: "1e3!"}}],
+    [{row: {code: 0}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "string equality is exact: case, whitespace and unicode normal form matter",
+  policy: {
+    models: {pair: {a: "string", b: "string"}},
+    blocks: [
+      {expression: "pair.same", value: "pair.a == pair.b"},
+      {expression: "pair.sameIgnoringCase", value: "lower(pair.a) == lower(pair.b)"},
+      {expression: "pair.sameTrimmed", value: "trim(pair.a) == trim(pair.b)"},
+    ],
+  },
+  cases: [
+    [{pair: {a: "abc", b: "abc"}}, {pair: {a: "abc", b: "abc", same: true, sameIgnoringCase: true, sameTrimmed: true}}],
+    [{pair: {a: "abc", b: "ABC"}}, {pair: {a: "abc", b: "ABC", same: false, sameIgnoringCase: true, sameTrimmed: false}}],
+    [{pair: {a: " abc", b: "abc "}}, {pair: {a: " abc", b: "abc ", same: false, sameIgnoringCase: false, sameTrimmed: true}}],
+    [{pair: {a: "é", b: "e\u0301"}}, {pair: {a: "é", b: "e\u0301", same: false, sameIgnoringCase: false, sameTrimmed: false}}],
+    [{pair: {a: "Straße", b: "STRASSE"}}, {pair: {a: "Straße", b: "STRASSE", same: false, sameIgnoringCase: false, sameTrimmed: false}}],
+    [{pair: {a: "", b: ""}}, {pair: {a: "", b: "", same: true, sameIgnoringCase: true, sameTrimmed: true}}],
+  ],
+}
+
+{
+  name: "strings have no ordering",
+  diagnostics: ["TYPE_MISMATCH"],
+  policy: {
+    models: {pair: {a: "string", b: "string"}},
+    blocks: [{expression: "pair.lt", value: "pair.a < pair.b"}],
+  },
+  cases: [
+    {input: {pair: {a: "apple", b: "banana"}}, output: "!error: ExpressionFailed", note: "question: ordering operators reject strings (the type checker reports TYPE_MISMATCH and evaluation fails), as in the expression spec; lexicographic order may be intended"},
+    [{pair: {a: "b", b: "a"}}, "!error: ExpressionFailed"],
+    [{pair: {a: "", b: ""}}, "!error: ExpressionFailed"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Unicode through string functions.
+
+{
+  name: "case mapping and trimming of unicode text",
+  policy: {
+    models: {person: {name: "string"}},
+    blocks: [
+      {expression: "person.upper", value: "upper(person.name)"},
+      {expression: "person.lower", value: "lower(person.name)"},
+      {expression: "person.trimmed", value: "trim(person.name)"},
+    ],
+  },
+  cases: [
+    [{person: {name: "Øystein"}}, {person: {name: "Øystein", upper: "ØYSTEIN", lower: "øystein", trimmed: "Øystein"}}],
+    [{person: {name: "  Ἀθηνᾶ  "}}, {person: {name: "  Ἀθηνᾶ  ", upper: "  ἈΘΗΝΑ\u0342  ", lower: "  ἀθηνᾶ  ", trimmed: "Ἀθηνᾶ"}}],
+    [{person: {name: "東京"}}, {person: {name: "東京", upper: "東京", lower: "東京", trimmed: "東京"}}],
+    [{person: {name: "straße"}}, {person: {name: "straße", upper: "STRASSE", lower: "straße", trimmed: "straße"}}],
+    [{person: {name: "\tİstanbul\n"}}, {person: {name: "\tİstanbul\n", upper: "\tİSTANBUL\n", lower: "\ti̇stanbul\n", trimmed: "İstanbul"}}],
+  ],
+}
+
+{
+  name: "searching unicode text",
+  policy: {
+    models: {msg: {body: "string"}},
+    blocks: [
+      {expression: "msg.hasHeart", value: "contains(msg.body, '❤')"},
+      {expression: "msg.greek", value: "startsWith(msg.body, 'Γειά')"},
+      {expression: "msg.parts", value: "split(msg.body, '·')"},
+    ],
+  },
+  cases: [
+    [{msg: {body: "Γειά·σου·❤"}}, {msg: {body: "Γειά·σου·❤", hasHeart: true, greek: true, parts: ["Γειά", "σου", "❤"]}}],
+    [{msg: {body: "hello"}}, {msg: {body: "hello", hasHeart: false, greek: false, parts: ["hello"]}}],
+    [{msg: {body: ""}}, {msg: {body: "", hasHeart: false, greek: false, parts: [""]}}],
+    [{msg: {body: "··"}}, {msg: {body: "··", hasHeart: false, greek: false, parts: ["", "", ""]}}],
+  ],
+}
+
+{
+  name: "length of unicode strings counts characters",
+  policy: {
+    models: {msg: {body: "string"}},
+    blocks: [{expression: "msg.length", value: "len(msg.body)"}],
+  },
+  cases: [
+    [{msg: {body: "abc"}}, {msg: {body: "abc", length: 3}}],
+    [{msg: {body: ""}}, {msg: {body: "", length: 0}}],
+    [{msg: {body: "Zoë"}}, {msg: {body: "Zoë", length: 3}}, "bug: len counts UTF-8 bytes (4), as in the expression spec"],
+    [{msg: {body: "日本"}}, {msg: {body: "日本", length: 2}}, "bug: len counts UTF-8 bytes (6), as in the expression spec"],
+  ],
+}
+
+{
+  name: "unicode keys and values in undeclared input pass through",
+  policy: {
+    models: {customer: {name: "string"}},
+    blocks: [{expression: "customer.greeting", value: "'Hej ' + customer.name"}],
+  },
+  cases: [
+    [{customer: {name: "Åsa", "größe": 1}}, {customer: {name: "Åsa", "größe": 1, greeting: "Hej Åsa"}}],
+    [{customer: {name: "李"}, "メタ": {"キー": "値"}}, {customer: {name: "李", greeting: "Hej 李"}, "メタ": {"キー": "値"}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Building strings: concatenation, templates, conversion and joins.
+
+{
+  name: "templates interpolate every scalar type, numbers keep their scale",
+  policy: {
+    models: {item: {name: "string", qty: "number", price: "number", gift: "boolean"}},
+    blocks: [
+      {expression: "item.line", value: "`${item.qty} x ${item.name} @ ${item.price}`"},
+      {expression: "item.giftNote", value: "`gift: ${item.gift}`"},
+      {expression: "item.total", value: "`total ${item.qty * item.price}`"},
+    ],
+  },
+  cases: [
+    [{item: {name: "pen", qty: 2, price: 1.5, gift: false}}, {item: {name: "pen", qty: 2, price: 1.5, gift: false, line: "2 x pen @ 1.5", giftNote: "gift: false", total: "total 3.0"}}],
+    [{item: {name: "", qty: 0, price: 0, gift: true}}, {item: {name: "", qty: 0, price: 0, gift: true, line: "0 x  @ 0", giftNote: "gift: true", total: "total 0"}}],
+    [{item: {name: "ünï", qty: 3, price: 0.10, gift: true}}, {item: {name: "ünï", qty: 3, price: 0.10, gift: true, line: "3 x ünï @ 0.10", giftNote: "gift: true", total: "total 0.30"}}],
+    [{item: {name: "x", qty: -1, price: 1.25, gift: false}}, {item: {name: "x", qty: -1, price: 1.25, gift: false, line: "-1 x x @ 1.25", giftNote: "gift: false", total: "total -1.25"}}],
+  ],
+}
+
+{
+  name: "templates over optional values",
+  policy: {
+    models: {person: {first: "string", middle: "string?"}},
+    blocks: [
+      {expression: "person.raw", value: "`${person.first} ${person.middle}`"},
+      {expression: "person.full", value: "trim(person.first + ' ' + (person.middle ?? ''))"},
+    ],
+  },
+  cases: [
+    [{person: {first: "Ann", middle: "Lee"}}, {person: {first: "Ann", middle: "Lee", raw: "Ann Lee", full: "Ann Lee"}}],
+    [{person: {first: "Ann"}}, {person: {first: "Ann", raw: "Ann null", full: "Ann"}}],
+    [{person: {first: "Ann", middle: null}}, {person: {first: "Ann", middle: null, raw: "Ann null", full: "Ann"}}],
+    [{person: {first: "Ann", middle: ""}}, {person: {first: "Ann", middle: "", raw: "Ann ", full: "Ann"}}],
+  ],
+}
+
+{
+  name: "numbers converted to strings keep their decimal scale",
+  policy: {
+    models: {money: {amount: "number", currency: "string"}},
+    blocks: [
+      {expression: "money.label", value: "string(money.amount) + ' ' + money.currency"},
+      {expression: "money.rounded", value: "string(round(money.amount, 2)) + ' ' + money.currency"},
+    ],
+  },
+  cases: [
+    [{money: {amount: 10, currency: "EUR"}}, {money: {amount: 10, currency: "EUR", label: "10 EUR", rounded: "10 EUR"}}],
+    [{money: {amount: 10.5, currency: "USD"}}, {money: {amount: 10.5, currency: "USD", label: "10.5 USD", rounded: "10.5 USD"}}],
+    [{money: {amount: 1.005, currency: "NOK"}}, {money: {amount: 1.005, currency: "NOK", label: "1.005 NOK", rounded: "1.01 NOK"}}],
+    [{money: {amount: -0.333, currency: "¥"}}, {money: {amount: -0.333, currency: "¥", label: "-0.333 ¥", rounded: "-0.33 ¥"}}],
+    [{money: {amount: 123456789.123456789, currency: "€"}}, {money: {amount: 123456789.123456789, currency: "€", label: "123456789.123456789 €", rounded: "123456789.12 €"}}],
+  ],
+}
+
+{
+  name: "mapping member strings",
+  policy: {
+    models: {team: {members: "member[]"}, member: {name: "string", role: "string(lead|dev)"}},
+    blocks: [
+      {expression: "member.tag", value: "member.role == 'lead' ? member.name + ' (lead)' : member.name"},
+      {expression: "team.roster", value: "map(team.members, #.tag)"},
+      {expression: "team.initials", value: "map(team.members, upper(#.name[0:0]))"},
+    ],
+  },
+  cases: [
+    [{team: {members: []}}, {team: {members: [], roster: [], initials: []}}],
+    [
+      {team: {members: [{name: "ann", role: "lead"}, {name: "bob", role: "dev"}]}},
+      {team: {members: [{name: "ann", role: "lead", tag: "ann (lead)"}, {name: "bob", role: "dev", tag: "bob"}], roster: ["ann (lead)", "bob"], initials: ["A", "B"]}},
+    ],
+    [
+      {team: {members: [{name: "Zoë", role: "dev"}]}},
+      {team: {members: [{name: "Zoë", role: "dev", tag: "Zoë"}], roster: ["Zoë"], initials: ["Z"]}},
+    ],
+    [{team: {members: [{name: "x", role: "boss"}]}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "a string built across several blocks",
+  policy: {
+    models: {address: {street: "string", city: "string", zip: "string", country: "string(NO|SE|US)"}},
+    blocks: [
+      {expression: "address.line1", value: "trim(address.street)"},
+      {match: "address.line2", arms: [
+        ["address.country == 'US'", "address.city + ', ' + address.zip"],
+        ["", "address.zip + ' ' + upper(address.city)"],
+      ]},
+      {expression: "address.label", value: "address.line1 + '\n' + address.line2 + '\n' + address.country"},
+    ],
+  },
+  cases: [
+    [
+      {address: {street: " Storgata 1 ", city: "Oslo", zip: "0155", country: "NO"}},
+      {address: {street: " Storgata 1 ", city: "Oslo", zip: "0155", country: "NO", line1: "Storgata 1", line2: "0155 OSLO", label: "Storgata 1\n0155 OSLO\nNO"}},
+    ],
+    [
+      {address: {street: "1 Main St", city: "Springfield", zip: "12345", country: "US"}},
+      {address: {street: "1 Main St", city: "Springfield", zip: "12345", country: "US", line1: "1 Main St", line2: "Springfield, 12345", label: "1 Main St\nSpringfield, 12345\nUS"}},
+    ],
+    [
+      {address: {street: "Götgatan 2", city: "Malmö", zip: "211 20", country: "SE"}},
+      {address: {street: "Götgatan 2", city: "Malmö", zip: "211 20", country: "SE", line1: "Götgatan 2", line2: "211 20 MALMÖ", label: "Götgatan 2\n211 20 MALMÖ\nSE"}},
+    ],
+  ],
+}
+
+{
+  name: "string slicing and searching on input",
+  policy: {
+    models: {account: {iban: "string"}},
+    blocks: [
+      {expression: "account.country", value: "account.iban[0:1]"},
+      {expression: "account.isNorwegian", value: "startsWith(account.iban, 'NO')"},
+      {expression: "account.wellFormed", value: "matches(account.iban, '^[A-Z]{2}[0-9]{2}[A-Z0-9]+$')"},
+    ],
+  },
+  cases: [
+    [{account: {iban: "NO9386011117947"}}, {account: {iban: "NO9386011117947", country: "NO", isNorwegian: true, wellFormed: true}}],
+    [{account: {iban: "DE89370400440532013000"}}, {account: {iban: "DE89370400440532013000", country: "DE", isNorwegian: false, wellFormed: true}}],
+    [{account: {iban: "no93 8601"}}, {account: {iban: "no93 8601", country: "no", isNorwegian: false, wellFormed: false}}],
+    [{account: {iban: "NO"}}, {account: {iban: "NO", country: "NO", isNorwegian: true, wellFormed: false}}],
+    [{account: {iban: "N"}}, "!error: ExpressionFailed"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// String arrays.
+
+{
+  name: "string arrays: membership, filtering and mapping",
+  policy: {
+    models: {post: {tags: "string[]"}},
+    blocks: [
+      {expression: "post.featured", value: "'featured' in post.tags"},
+      {expression: "post.clean", value: "filter(post.tags, trim(#) != '')"},
+      {expression: "post.hashtags", value: "map(post.clean, '#' + lower(#))"},
+    ],
+  },
+  cases: [
+    [{post: {tags: []}}, {post: {tags: [], featured: false, clean: [], hashtags: []}}],
+    [{post: {tags: ["Featured", "News"]}}, {post: {tags: ["Featured", "News"], featured: false, clean: ["Featured", "News"], hashtags: ["#featured", "#news"]}}],
+    [{post: {tags: ["featured", " ", ""]}}, {post: {tags: ["featured", " ", ""], featured: true, clean: ["featured"], hashtags: ["#featured"]}}],
+    [{post: {tags: ["Ünï", "日本"]}}, {post: {tags: ["Ünï", "日本"], featured: false, clean: ["Ünï", "日本"], hashtags: ["#ünï", "#日本"]}}],
+    [{post: {tags: ["a", 1]}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Enums: values with spaces, punctuation, digits and unicode are matched exactly.
+
+{
+  name: "enum values with spaces, punctuation and unicode",
+  policy: {
+    models: {ticket: {state: "string(on hold|in-progress|v2.0|ready ✓)"}},
+    blocks: [{expression: "ticket.active", value: "ticket.state != 'on hold'"}],
+  },
+  cases: [
+    [{ticket: {state: "on hold"}}, {ticket: {state: "on hold", active: false}}],
+    [{ticket: {state: "in-progress"}}, {ticket: {state: "in-progress", active: true}}],
+    [{ticket: {state: "v2.0"}}, {ticket: {state: "v2.0", active: true}}],
+    [{ticket: {state: "ready ✓"}}, {ticket: {state: "ready ✓", active: true}}],
+    [{ticket: {state: "on  hold"}}, "!error: InputValidationFailed"],
+    [{ticket: {state: "in_progress"}}, "!error: InputValidationFailed"],
+    [{ticket: {state: "v2"}}, "!error: InputValidationFailed"],
+    [{ticket: {state: "ready"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "a single-value enum",
+  policy: {
+    models: {consent: {given: "string(yes)"}},
+    blocks: [{expression: "consent.ok", value: "consent.given == 'yes'"}],
+  },
+  cases: [
+    [{consent: {given: "yes"}}, {consent: {given: "yes", ok: true}}],
+    [{consent: {given: "no"}}, "!error: InputValidationFailed"],
+    [{consent: {given: "YES"}}, "!error: InputValidationFailed"],
+    [{consent: {}}, "!error: MissingRequiredInputs"],
+  ],
+}
+
+{
+  name: "numeric-looking enum values are strings",
+  policy: {
+    models: {plan: {seats: "string(1|5|10)"}},
+    blocks: [{expression: "plan.label", value: "plan.seats + ' seats'"}],
+  },
+  cases: [
+    [{plan: {seats: "1"}}, {plan: {seats: "1", label: "1 seats"}}],
+    [{plan: {seats: "10"}}, {plan: {seats: "10", label: "10 seats"}}],
+    [{plan: {seats: 5}}, "!error: InputValidationFailed"],
+    [{plan: {seats: "5.0"}}, "!error: InputValidationFailed"],
+    [{plan: {seats: "01"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Enums in blocks: expressions, matches (exhaustive without a default), tables and assertions.
+
+{
+  name: "an exhaustive match over an enum needs no default",
+  policy: {
+    models: {shipment: {speed: "string(standard|express|overnight)", weight: "number"}},
+    blocks: [{match: "shipment.cost", arms: [
+      ["shipment.speed == 'standard'", "5 + shipment.weight"],
+      ["shipment.speed == 'express'", "10 + shipment.weight * 2"],
+      ["shipment.speed == 'overnight'", "25 + shipment.weight * 3"],
+    ]}],
+  },
+  cases: [
+    [{shipment: {speed: "standard", weight: 2}}, {shipment: {speed: "standard", weight: 2, cost: 7}}],
+    [{shipment: {speed: "express", weight: 2}}, {shipment: {speed: "express", weight: 2, cost: 14}}],
+    [{shipment: {speed: "overnight", weight: 0.5}}, {shipment: {speed: "overnight", weight: 0.5, cost: 26.5}}],
+    [{shipment: {speed: "drone", weight: 1}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "a match covering only part of an enum without a default",
+  diagnostics: ["MISSING_DEFAULT_BRANCH"],
+  policy: {
+    models: {shipment: {speed: "string(standard|express|overnight)"}},
+    blocks: [{match: "shipment.fast", arms: [
+      ["shipment.speed == 'express'", "true"],
+      ["shipment.speed == 'overnight'", "true"],
+    ]}],
+  },
+  cases: [
+    [{shipment: {speed: "express"}}, {shipment: {speed: "express", fast: true}}],
+    [{shipment: {speed: "overnight"}}, {shipment: {speed: "overnight", fast: true}}],
+    [{shipment: {speed: "standard"}}, {shipment: {speed: "standard", fast: null}}],
+  ],
+}
+
+{
+  name: "enum membership against a list of values",
+  policy: {
+    models: {order: {status: "string(new|paid|shipped|delivered|cancelled)"}},
+    blocks: [
+      {expression: "order.open", value: "order.status in ['new', 'paid', 'shipped']"},
+      {expression: "order.final", value: "order.status not in ['new', 'paid', 'shipped']"},
+      {expression: "order.canCancel", value: "order.status in ['new', 'paid'] and order.status != 'cancelled'"},
+    ],
+  },
+  cases: [
+    [{order: {status: "new"}}, {order: {status: "new", open: true, final: false, canCancel: true}}],
+    [{order: {status: "shipped"}}, {order: {status: "shipped", open: true, final: false, canCancel: false}}],
+    [{order: {status: "delivered"}}, {order: {status: "delivered", open: false, final: true, canCancel: false}}],
+    [{order: {status: "cancelled"}}, {order: {status: "cancelled", open: false, final: true, canCancel: false}}],
+    [{order: {status: "returned"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "an enum table with list cells and an inequality cell",
+  policy: {
+    models: {order: {status: "string(new|paid|shipped|delivered|cancelled)", total: "number"}},
+    blocks: [{table: "t", inputs: ["order.status", "order.total"], outputs: ["order.action"], rules: [
+      ["'new', 'paid'", "> 1000", "'review'"],
+      ["'new', 'paid'", "", "'process'"],
+      ["'cancelled'", "", "'refund'"],
+      ["!= 'delivered'", "", "'track'"],
+      ["", "", "'archive'"],
+    ]}],
+  },
+  cases: [
+    [{order: {status: "new", total: 5000}}, {order: {status: "new", total: 5000, action: "review"}}],
+    [{order: {status: "paid", total: 1000}}, {order: {status: "paid", total: 1000, action: "process"}}],
+    [{order: {status: "cancelled", total: 1}}, {order: {status: "cancelled", total: 1, action: "refund"}}],
+    [{order: {status: "shipped", total: 1}}, {order: {status: "shipped", total: 1, action: "track"}}],
+    [{order: {status: "delivered", total: 1}}, {order: {status: "delivered", total: 1, action: "archive"}}],
+  ],
+}
+
+{
+  name: "a collect table over enum array items",
+  policy: {
+    models: {user: {perms: "string(read|write|delete|admin)[]"}},
+    blocks: [{table: "t", hit: "collect", inputs: [""], outputs: ["user.risks[]"], rules: [
+      ["'delete' in user.perms", "'can delete'"],
+      ["'admin' in user.perms", "'is admin'"],
+      ["len(user.perms) == 0", "'no access'"],
+    ]}],
+  },
+  cases: [
+    [{user: {perms: ["read"]}}, {user: {perms: ["read"], risks: []}}],
+    [{user: {perms: ["read", "delete", "admin"]}}, {user: {perms: ["read", "delete", "admin"], risks: ["can delete", "is admin"]}}],
+    [{user: {perms: []}}, {user: {perms: [], risks: ["no access"]}}],
+    [{user: {perms: ["root"]}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "an assertion over enum values",
+  policy: {
+    models: {loan: {purpose: "string(home|car|education|other)", employment: "string(employed|self|unemployed)"}},
+    blocks: [{assertion: "loan.eligible", conditions: [
+      "loan.employment != 'unemployed'",
+      ["or", "loan.purpose in ['home', 'education']"],
+      "loan.employment == 'employed'",
+    ]}],
+  },
+  cases: [
+    [{loan: {purpose: "home", employment: "self"}}, {loan: {purpose: "home", employment: "self", eligible: true}}],
+    [{loan: {purpose: "car", employment: "employed"}}, {loan: {purpose: "car", employment: "employed", eligible: true}}],
+    [{loan: {purpose: "car", employment: "self"}}, {loan: {purpose: "car", employment: "self", eligible: false}}],
+    [{loan: {purpose: "home", employment: "unemployed"}}, {loan: {purpose: "home", employment: "unemployed", eligible: false}}],
+    [{loan: {purpose: "other", employment: "unemployed"}}, {loan: {purpose: "other", employment: "unemployed", eligible: false}}],
+  ],
+}
+
+{
+  name: "a computed enum-like string drives a later match",
+  policy: {
+    models: {customer: {spend: "number"}},
+    blocks: [
+      {table: "t", inputs: ["customer.spend"], outputs: ["customer.tier"], rules: [
+        [">= 10000", "'gold'"],
+        [">= 1000", "'silver'"],
+        ["", "'bronze'"],
+      ]},
+      {match: "customer.discount", arms: [
+        ["customer.tier == 'gold'", "0.15"],
+        ["customer.tier == 'silver'", "0.05"],
+        ["", "0"],
+      ]},
+    ],
+  },
+  cases: [
+    [{customer: {spend: 20000}}, {customer: {spend: 20000, tier: "gold", discount: 0.15}}],
+    [{customer: {spend: 1000}}, {customer: {spend: 1000, tier: "silver", discount: 0.05}}],
+    [{customer: {spend: 999.99}}, {customer: {spend: 999.99, tier: "bronze", discount: 0}}],
+    [{customer: {spend: -1}}, {customer: {spend: -1, tier: "bronze", discount: 0}}],
+  ],
+}
+
+{
+  name: "an enum on a referenced pool entity",
+  policy: {
+    models: {order: {product: "&product"}, product: {id: "string", category: "string(food|tech|book)"}},
+    blocks: [{match: "order.vat", arms: [
+      ["order.product.category == 'food'", "0.15"],
+      ["order.product.category == 'book'", "0"],
+      ["", "0.25"],
+    ]}],
+  },
+  cases: [
+    [
+      {order: {product: "p1"}, product: [{id: "p1", category: "food"}, {id: "p2", category: "tech"}]},
+      {order: {product: {id: "p1", category: "food"}, vat: 0.15}, product: [{id: "p1", category: "food"}, {id: "p2", category: "tech"}]},
+    ],
+    [
+      {order: {product: "p2"}, product: [{id: "p1", category: "food"}, {id: "p2", category: "tech"}]},
+      {order: {product: {id: "p2", category: "tech"}, vat: 0.25}, product: [{id: "p1", category: "food"}, {id: "p2", category: "tech"}]},
+    ],
+    [{order: {product: "p1"}, product: [{id: "p1", category: "toys"}]}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "an enum global selects a member formula",
+  policy: {
+    globals: {settings: {rounding: "string(up|down|nearest)"}},
+    models: {cart: {items: "item[]"}, item: {price: "number"}},
+    blocks: [
+      {match: "item.charged", arms: [
+        ["rounding == 'up'", "ceil(item.price)"],
+        ["rounding == 'down'", "floor(item.price)"],
+        ["rounding == 'nearest'", "round(item.price)"],
+      ]},
+      {expression: "cart.total", value: "sum(map(cart.items, #.charged))"},
+    ],
+  },
+  cases: [
+    [{rounding: "up", cart: {items: [{price: 1.2}, {price: 2.5}]}}, {rounding: "up", cart: {items: [{price: 1.2, charged: 2}, {price: 2.5, charged: 3}], total: 5}}],
+    [{rounding: "down", cart: {items: [{price: 1.2}, {price: 2.5}]}}, {rounding: "down", cart: {items: [{price: 1.2, charged: 1}, {price: 2.5, charged: 2}], total: 3}}],
+    [{rounding: "nearest", cart: {items: [{price: 1.2}, {price: 2.5}]}}, {rounding: "nearest", cart: {items: [{price: 1.2, charged: 1}, {price: 2.5, charged: 3}], total: 4}}],
+    [{rounding: "banker", cart: {items: []}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// Dictionaries in tables.
+
+{
+  name: "a dictionary column with list cells",
+  policy: {
+    dictionaries: {country: [["NO", "Norway"], ["SE", "Sweden"], ["DK", "Denmark"], ["DE", "Germany"], ["US", "United States"]]},
+    models: {shipment: {to: "country", kg: "number"}},
+    blocks: [{table: "t", inputs: ["shipment.to", "shipment.kg"], outputs: ["shipment.zone", "shipment.price"], rules: [
+      ["'NO'", "", "'domestic'", "5 + shipment.kg"],
+      ["'SE', 'DK'", "<= 10", "'nordic'", "15"],
+      ["'SE', 'DK'", "", "'nordic'", "25"],
+      ["'DE'", "", "'eu'", "40"],
+      ["", "", "'world'", "80"],
+    ]}],
+  },
+  cases: [
+    [{shipment: {to: "NO", kg: 3}}, {shipment: {to: "NO", kg: 3, zone: "domestic", price: 8}}],
+    [{shipment: {to: "SE", kg: 10}}, {shipment: {to: "SE", kg: 10, zone: "nordic", price: 15}}],
+    [{shipment: {to: "DK", kg: 10.5}}, {shipment: {to: "DK", kg: 10.5, zone: "nordic", price: 25}}],
+    [{shipment: {to: "DE", kg: 1}}, {shipment: {to: "DE", kg: 1, zone: "eu", price: 40}}],
+    [{shipment: {to: "US", kg: 1}}, {shipment: {to: "US", kg: 1, zone: "world", price: 80}}],
+    [{shipment: {to: "Norway", kg: 1}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "a dictionary table writes dictionary values out",
+  policy: {
+    dictionaries: {risk: ["low", "medium", "high"], industry: ["finance", "retail", "mining"]},
+    models: {company: {industry: "industry", employees: "number"}},
+    blocks: [
+      {table: "t", inputs: ["company.industry", "company.employees"], outputs: ["company.risk"], rules: [
+        ["'mining'", "", "'high'"],
+        ["'finance'", "> 1000", "'medium'"],
+        ["", "", "'low'"],
+      ]},
+      {expression: "company.riskLabel", value: "upper(company.risk)"},
+    ],
+  },
+  cases: [
+    [{company: {industry: "mining", employees: 5}}, {company: {industry: "mining", employees: 5, risk: "high", riskLabel: "HIGH"}}],
+    [{company: {industry: "finance", employees: 5000}}, {company: {industry: "finance", employees: 5000, risk: "medium", riskLabel: "MEDIUM"}}],
+    [{company: {industry: "finance", employees: 1000}}, {company: {industry: "finance", employees: 1000, risk: "low", riskLabel: "LOW"}}],
+    [{company: {industry: "retail", employees: 50000}}, {company: {industry: "retail", employees: 50000, risk: "low", riskLabel: "LOW"}}],
+  ],
+}
+
+{
+  name: "a per-member table over a dictionary property",
+  policy: {
+    dictionaries: {doc: [["pass", "Passport"], ["id", "National ID"], ["dl", "Driving licence"]]},
+    models: {applicant: {documents: "document[]"}, document: {kind: "doc", verified: "boolean"}},
+    blocks: [
+      {table: "t", inputs: ["document.kind", "document.verified"], outputs: ["document.points"], rules: [
+        ["'pass'", "true", "50"],
+        ["'id'", "true", "40"],
+        ["'dl'", "true", "20"],
+        ["", "", "0"],
+      ]},
+      {expression: "applicant.score", value: "sum(map(applicant.documents, #.points))"},
+      {expression: "applicant.passes", value: "applicant.score >= 60"},
+    ],
+  },
+  cases: [
+    [{applicant: {documents: []}}, {applicant: {documents: [], score: 0, passes: false}}],
+    [
+      {applicant: {documents: [{kind: "pass", verified: true}, {kind: "dl", verified: true}]}},
+      {applicant: {documents: [{kind: "pass", verified: true, points: 50}, {kind: "dl", verified: true, points: 20}], score: 70, passes: true}},
+    ],
+    [
+      {applicant: {documents: [{kind: "id", verified: false}, {kind: "pass", verified: true}]}},
+      {applicant: {documents: [{kind: "id", verified: false, points: 0}, {kind: "pass", verified: true, points: 50}], score: 50, passes: false}},
+    ],
+    [{applicant: {documents: [{kind: "Passport", verified: true}]}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "a collect table over a dictionary array",
+  policy: {
+    dictionaries: {feature: ["sso", "audit", "api", "export"]},
+    models: {account: {features: "feature[]"}},
+    blocks: [{table: "t", hit: "collect", inputs: [""], outputs: ["account.addons[]", "account.cost[]"], rules: [
+      ["'sso' in account.features", "'SSO pack'", "10"],
+      ["'audit' in account.features", "'Compliance pack'", "25"],
+      ["'api' in account.features or 'export' in account.features", "'Integration pack'", "5"],
+    ]}],
+  },
+  cases: [
+    [{account: {features: []}}, {account: {features: [], addons: [], cost: []}}],
+    [{account: {features: ["sso", "api"]}}, {account: {features: ["sso", "api"], addons: ["SSO pack", "Integration pack"], cost: [10, 5]}}],
+    [{account: {features: ["export", "audit", "api"]}}, {account: {features: ["export", "audit", "api"], addons: ["Compliance pack", "Integration pack"], cost: [25, 5]}}],
+    [{account: {features: ["sso", "chat"]}}, "!error: InputValidationFailed"],
+  ],
+}
+
+{
+  name: "dictionary values with unicode and spaces in table cells",
+  policy: {
+    dictionaries: {city: ["Zürich", "São Paulo", "Kraków", "東京"]},
+    models: {office: {city: "city"}},
+    blocks: [{table: "t", inputs: ["office.city"], outputs: ["office.region"], rules: [
+      ["'Zürich', 'Kraków'", "'Europe'"],
+      ["'São Paulo'", "'Americas'"],
+      ["'東京'", "'Asia'"],
+    ]}],
+  },
+  cases: [
+    [{office: {city: "Zürich"}}, {office: {city: "Zürich", region: "Europe"}}],
+    [{office: {city: "Kraków"}}, {office: {city: "Kraków", region: "Europe"}}],
+    [{office: {city: "São Paulo"}}, {office: {city: "São Paulo", region: "Americas"}}],
+    [{office: {city: "東京"}}, {office: {city: "東京", region: "Asia"}}],
+    [{office: {city: "Zurich"}}, "!error: InputValidationFailed"],
+    [{office: {city: "Sao Paulo"}}, "!error: InputValidationFailed"],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// String columns in tables: exact cells, function cells over `$`, and computed string inputs.
+
+{
+  name: "string cells are exact and case-sensitive",
+  policy: {
+    models: {lead: {source: "string"}},
+    blocks: [{table: "t", inputs: ["lead.source"], outputs: ["lead.channel"], rules: [
+      ["'google'", "'search'"],
+      ["'Google'", "'search (capitalised)'"],
+      ["''", "'unknown'"],
+      ["", "'other'"],
+    ]}],
+  },
+  cases: [
+    [{lead: {source: "google"}}, {lead: {source: "google", channel: "search"}}],
+    [{lead: {source: "Google"}}, {lead: {source: "Google", channel: "search (capitalised)"}}],
+    [{lead: {source: "GOOGLE"}}, {lead: {source: "GOOGLE", channel: "other"}}],
+    [{lead: {source: ""}}, {lead: {source: "", channel: "unknown"}}],
+    [{lead: {source: " google"}}, {lead: {source: " google", channel: "other"}}],
+  ],
+}
+
+{
+  name: "function cells over a string column",
+  policy: {
+    models: {email: {address: "string"}},
+    blocks: [{table: "t", inputs: ["email.address"], outputs: ["email.kind"], rules: [
+      ["endsWith($, '@example.com')", "'internal'"],
+      ["contains($, '+')", "'alias'"],
+      ["matches($, '^[^@]+@[^@]+$')", "'external'"],
+      ["", "'invalid'"],
+    ]}],
+  },
+  cases: [
+    [{email: {address: "ann@example.com"}}, {email: {address: "ann@example.com", kind: "internal"}}],
+    [{email: {address: "bob+news@mail.org"}}, {email: {address: "bob+news@mail.org", kind: "alias"}}],
+    [{email: {address: "cé@exämple.de"}}, {email: {address: "cé@exämple.de", kind: "external"}}],
+    [{email: {address: "nobody"}}, {email: {address: "nobody", kind: "invalid"}}],
+    [{email: {address: ""}}, {email: {address: "", kind: "invalid"}}],
+  ],
+}
+
+{
+  name: "a table over a normalised string expression",
+  policy: {
+    models: {country: {input: "string"}},
+    blocks: [{table: "t", inputs: ["upper(trim(country.input))"], outputs: ["country.code"], rules: [
+      ["'NORWAY', 'NORGE', 'NO'", "'NO'"],
+      ["'SWEDEN', 'SVERIGE', 'SE'", "'SE'"],
+      ["", "null"],
+    ]}],
+  },
+  cases: [
+    [{country: {input: " norway "}}, {country: {input: " norway ", code: "NO"}}],
+    [{country: {input: "Norge"}}, {country: {input: "Norge", code: "NO"}}],
+    [{country: {input: "sverige"}}, {country: {input: "sverige", code: "SE"}}],
+    [{country: {input: "Finland"}}, {country: {input: "Finland", code: null}}],
+    [{country: {input: ""}}, {country: {input: "", code: null}}],
+  ],
+}
+
+{
+  name: "table string outputs built from inputs",
+  policy: {
+    models: {user: {first: "string", last: "string", formal: "boolean"}},
+    blocks: [{table: "t", inputs: ["user.formal"], outputs: ["user.salutation"], rules: [
+      ["true", "'Dear ' + user.first + ' ' + upper(user.last)"],
+      ["false", "`Hi ${user.first}!`"],
+    ]}],
+  },
+  cases: [
+    [{user: {first: "Ada", last: "Lovelace", formal: true}}, {user: {first: "Ada", last: "Lovelace", formal: true, salutation: "Dear Ada LOVELACE"}}],
+    [{user: {first: "Ada", last: "Lovelace", formal: false}}, {user: {first: "Ada", last: "Lovelace", formal: false, salutation: "Hi Ada!"}}],
+    [{user: {first: "Jürgen", last: "Weiß", formal: true}}, {user: {first: "Jürgen", last: "Weiß", formal: true, salutation: "Dear Jürgen WEISS"}}],
+  ],
+}
+
+// ---------------------------------------------------------------------------------------------
+// A realistic combination: support ticket routing with enums, dictionaries and string rules.
+
+{
+  name: "support ticket routing",
+  policy: {
+    dictionaries: {lang: [["en", "English"], ["de", "German"], ["ja", "Japanese"]]},
+    models: {ticket: {subject: "string", body: "string", language: "lang", plan: "string(free|pro|enterprise)"}},
+    blocks: [
+      {expression: "ticket.text", value: "lower(ticket.subject + ' ' + ticket.body)"},
+      {expression: "ticket.urgent", value: "contains(ticket.text, 'outage') or contains(ticket.text, 'down') or contains(ticket.text, '至急')"},
+      {table: "t", inputs: ["ticket.language"], outputs: ["ticket.queue"], rules: [
+        ["'de'", "'dach'"],
+        ["'ja'", "'apac'"],
+        ["", "'global'"],
+      ]},
+      {match: "ticket.priority", arms: [
+        ["ticket.urgent and ticket.plan == 'enterprise'", "'P1'"],
+        ["ticket.urgent", "'P2'"],
+        ["ticket.plan == 'free'", "'P4'"],
+        ["", "'P3'"],
+      ]},
+      {expression: "ticket.routing", value: "ticket.queue + '/' + ticket.priority"},
+    ],
+  },
+  cases: [
+    [
+      {ticket: {subject: "Site DOWN", body: "help", language: "en", plan: "enterprise"}},
+      {ticket: {subject: "Site DOWN", body: "help", language: "en", plan: "enterprise", text: "site down help", urgent: true, queue: "global", priority: "P1", routing: "global/P1"}},
+    ],
+    [
+      {ticket: {subject: "Frage", body: "Rechnung", language: "de", plan: "free"}},
+      {ticket: {subject: "Frage", body: "Rechnung", language: "de", plan: "free", text: "frage rechnung", urgent: false, queue: "dach", priority: "P4", routing: "dach/P4"}},
+    ],
+    [
+      {ticket: {subject: "障害", body: "至急対応", language: "ja", plan: "pro"}},
+      {ticket: {subject: "障害", body: "至急対応", language: "ja", plan: "pro", text: "障害 至急対応", urgent: true, queue: "apac", priority: "P2", routing: "apac/P2"}},
+    ],
+    [
+      {ticket: {subject: "", body: "", language: "en", plan: "pro"}},
+      {ticket: {subject: "", body: "", language: "en", plan: "pro", text: " ", urgent: false, queue: "global", priority: "P3", routing: "global/P3"}},
+    ],
+    [{ticket: {subject: "x", body: "y", language: "fr", plan: "pro"}}, "!error: InputValidationFailed"],
+    [{ticket: {subject: "x", body: "y", language: "en", plan: "Pro"}}, "!error: InputValidationFailed"],
+  ],
+}

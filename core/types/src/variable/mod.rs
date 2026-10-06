@@ -24,10 +24,12 @@ mod map;
 mod ref_deser;
 mod ref_ser;
 mod ser;
+mod shape;
 
 pub use crate::rccell::RcCell;
 
 pub use crate::variable::map::{Iter as MapIter, VariableMap};
+pub use crate::variable::shape::{Shape, ShapeHint};
 
 thread_local! {
     static DOLLAR_KEY_RC: Rc<str> = Rc::from("$");
@@ -321,12 +323,7 @@ impl Variable {
                 Variable::from_array(arr.iter().map(|v| v.deep_clone()).collect())
             }
             Variable::Object(o) => {
-                let obj = o.borrow();
-                Variable::from_object(
-                    obj.iter()
-                        .map(|(k, v)| (k.clone(), v.deep_clone()))
-                        .collect(),
-                )
+                Variable::from_object(o.borrow().map_values(|value| value.deep_clone()))
             }
             _ => self.shallow_clone(),
         }
@@ -340,14 +337,9 @@ impl Variable {
                     let arr = a.borrow();
                     Variable::from_array(arr.iter().map(|v| v.depth_clone(depth - 1)).collect())
                 }
-                Variable::Object(o) => {
-                    let obj = o.borrow();
-                    Variable::from_object(
-                        obj.iter()
-                            .map(|(k, v)| (k.clone(), v.depth_clone(depth - 1)))
-                            .collect(),
-                    )
-                }
+                Variable::Object(o) => Variable::from_object(
+                    o.borrow().map_values(|value| value.depth_clone(depth - 1)),
+                ),
                 _ => self.shallow_clone(),
             },
         }

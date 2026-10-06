@@ -142,6 +142,10 @@ impl Isolate {
     }
 
     pub fn run_standard(&mut self, source: &str) -> Result<Variable, IsolateError> {
+        #[cfg(feature = "lane")]
+        return crate::lane::Backend::run(source, ExpressionKind::Standard, &self.scope);
+
+        #[allow(unreachable_code)]
         let cached = self
             .cache
             .as_ref()
@@ -171,6 +175,12 @@ impl Isolate {
     }
 
     pub fn run_unary(&mut self, source: &str) -> Result<bool, IsolateError> {
+        #[cfg(feature = "lane")]
+        return crate::lane::Backend::run(source, ExpressionKind::Unary, &self.scope)?
+            .as_bool()
+            .ok_or(IsolateError::ValueCastError);
+
+        #[allow(unreachable_code)]
         let cached = self
             .cache
             .as_ref()

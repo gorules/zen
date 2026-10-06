@@ -65,6 +65,7 @@ mod exports;
 pub mod expression;
 pub mod functions;
 pub mod intellisense;
+pub mod lane;
 pub mod lexer;
 pub mod parser;
 pub mod scope;

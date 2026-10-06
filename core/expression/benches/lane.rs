@@ -1,0 +1,943 @@
+use rust_decimal::Decimal;
+use serde_json::Value;
+use std::collections::BTreeMap;
+use std::hint::black_box;
+use std::time::{Duration, Instant};
+use zen_expression::lane::{Column, Columns, LaneProgram, LaneRunner, Values};
+use zen_expression::variable::VariableType;
+use zen_expression::vm::VM;
+use zen_expression::{ExpressionKind, Isolate, Scope, Variable};
+
+const ROWS: usize = 512;
+const GRAPHS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../test-data/graphs");
+
+struct Case {
+    source: String,
+    scopes: Vec<Scope>,
+}
+
+struct Bench;
+
+enum Data {
+    I64(Vec<i64>),
+    Dec(Vec<Decimal>),
+    Bool(Vec<u64>),
+    Str(Vec<String>),
+    Dict(Vec<i32>, Vec<String>),
+    ListDec(Vec<i32>, Vec<Decimal>),
+    ListI64(Vec<i32>, Vec<i64>),
+    ListStr(Vec<i32>, Vec<String>),
+    Any(Vec<Variable>),
+}
+
+struct Table {
+    rows: usize,
+    keys: Vec<String>,
+    data: Vec<Data>,
+    valid: Vec<Vec<u64>>,
+}
+
+impl Table {
+    fn flatten(value: &Variable, prefix: String, out: &mut BTreeMap<String, Variable>) {
+        match value {
+            Variable::Object(map) if !map.borrow().is_empty() => {
+                for (k, v) in map.borrow().iter() {
+                    let path = if prefix.is_empty() {
+                        k.to_string()
+                    } else {
+                        format!("{prefix}.{k}")
+                    };
+                    Self::flatten(v, path, out);
+                }
+            }
+            v if !prefix.is_empty() => {
+                out.insert(prefix, v.clone());
+            }
+            _ => {}
+        }
+    }
+
+    fn build(scopes: &[Scope]) -> Self {
+        let flat: Vec<BTreeMap<String, Variable>> = scopes
+            .iter()
+            .map(|s| {
+                let mut m = BTreeMap::new();
+                Self::flatten(s.base(), String::new(), &mut m);
+                m
+            })
+            .collect();
+        let mut keys: Vec<String> = flat.iter().flat_map(|m| m.keys().cloned()).collect();
+        keys.sort();
+        keys.dedup();
+        let rows = scopes.len();
+        let mut data = Vec::new();
+        let mut valid = Vec::new();
+        for key in &keys {
+            let values: Vec<Option<&Variable>> = flat.iter().map(|m| m.get(key)).collect();
+            let mut bits = vec![0u64; rows.div_ceil(64)];
+            for (i, v) in values.iter().enumerate() {
+                if v.is_some_and(|v| !matches!(v, Variable::Null)) {
+                    bits[i / 64] |= 1 << (i % 64);
+                }
+            }
+            let present: Vec<&Variable> = values
+                .iter()
+                .flatten()
+                .copied()
+                .filter(|v| !matches!(v, Variable::Null))
+                .collect();
+            let all =
+                |f: fn(&Variable) -> bool| !present.is_empty() && present.iter().all(|v| f(v));
+            let integral = |v: &Variable| matches!(v, Variable::Number(n) if n.scale() == 0 && i64::try_from(n.mantissa()).is_ok());
+            let column = if !present.is_empty() && present.iter().all(|v| integral(v)) {
+                Data::I64(
+                    values
+                        .iter()
+                        .map(|v| match v {
+                            Some(Variable::Number(n)) => i64::try_from(n.mantissa()).unwrap_or(0),
+                            _ => 0,
+                        })
+                        .collect(),
+                )
+            } else if all(|v| matches!(v, Variable::Number(_))) {
+                Data::Dec(
+                    values
+                        .iter()
+                        .map(|v| match v {
+                            Some(Variable::Number(n)) => *n,
+                            _ => Decimal::ZERO,
+                        })
+                        .collect(),
+                )
+            } else if all(|v| matches!(v, Variable::Bool(_))) {
+                let mut words = vec![0u64; rows.div_ceil(64)];
+                for (i, v) in values.iter().enumerate() {
+                    if matches!(v, Some(Variable::Bool(true))) {
+                        words[i / 64] |= 1 << (i % 64);
+                    }
+                }
+                Data::Bool(words)
+            } else if all(|v| matches!(v, Variable::String(_)))
+                && std::env::var("LANE_DICT").is_ok()
+            {
+                let mut distinct: Vec<String> = Vec::new();
+                let codes = values
+                    .iter()
+                    .map(|v| {
+                        let text = v.and_then(|v| v.as_str()).unwrap_or_default();
+                        match distinct.iter().position(|d| d == text) {
+                            Some(i) => i as i32,
+                            None => {
+                                distinct.push(text.to_string());
+                                (distinct.len() - 1) as i32
+                            }
+                        }
+                    })
+                    .collect();
+                Data::Dict(codes, distinct)
+            } else if all(|v| matches!(v, Variable::String(_))) {
+                Data::Str(
+                    values
+                        .iter()
+                        .map(|v| v.and_then(|v| v.as_str()).unwrap_or_default().to_string())
+                        .collect(),
+                )
+            } else if std::env::var("LANE_LISTS").is_ok()
+                && all(
+                    |v| matches!(v, Variable::Array(a) if a.borrow().iter().all(|x| matches!(x, Variable::Number(_)))),
+                )
+            {
+                let mut offsets = vec![0i32];
+                let mut items = Vec::new();
+                for v in &values {
+                    if let Some(Variable::Array(a)) = v {
+                        items.extend(a.borrow().iter().map(|x| match x {
+                            Variable::Number(n) => *n,
+                            _ => Decimal::ZERO,
+                        }));
+                    }
+                    offsets.push(items.len() as i32);
+                }
+                match items
+                    .iter()
+                    .all(|n| n.scale() == 0 && i64::try_from(n.mantissa()).is_ok())
+                {
+                    true => Data::ListI64(
+                        offsets,
+                        items
+                            .iter()
+                            .map(|n| i64::try_from(n.mantissa()).unwrap_or(0))
+                            .collect(),
+                    ),
+                    false => Data::ListDec(offsets, items),
+                }
+            } else if std::env::var("LANE_LISTS").is_ok()
+                && all(
+                    |v| matches!(v, Variable::Array(a) if a.borrow().iter().all(|x| matches!(x, Variable::String(_)))),
+                )
+            {
+                let mut offsets = vec![0i32];
+                let mut items = Vec::new();
+                for v in &values {
+                    if let Some(Variable::Array(a)) = v {
+                        items.extend(
+                            a.borrow()
+                                .iter()
+                                .map(|x| x.as_str().unwrap_or_default().to_string()),
+                        );
+                    }
+                    offsets.push(items.len() as i32);
+                }
+                Data::ListStr(offsets, items)
+            } else {
+                Data::Any(
+                    values
+                        .iter()
+                        .map(|v| v.cloned().unwrap_or(Variable::Null))
+                        .collect(),
+                )
+            };
+            data.push(column);
+            valid.push(bits);
+        }
+        Self {
+            rows,
+            keys,
+            data,
+            valid,
+        }
+    }
+
+    fn children<'a>(&'a self, texts: &'a [(Vec<i32>, Vec<u8>)]) -> Vec<Column<'a>> {
+        self.data
+            .iter()
+            .enumerate()
+            .map(|(i, d)| match d {
+                Data::ListDec(_, items) => Column::new(Values::Dec(items)),
+                Data::ListI64(_, items) => Column::new(Values::I64(items)),
+                Data::ListStr(..) | Data::Dict(..) => Column::new(Values::Utf8 {
+                    offsets: &texts[i].0,
+                    data: &texts[i].1,
+                }),
+                _ => Column::new(Values::Any(&[])),
+            })
+            .collect()
+    }
+
+    fn columns<'a>(
+        &'a self,
+        texts: &'a [(Vec<i32>, Vec<u8>)],
+        children: &'a [Column<'a>],
+    ) -> Columns<'a> {
+        let mut columns = Columns::new(self.rows);
+        for (i, ((key, data), valid)) in self
+            .keys
+            .iter()
+            .zip(&self.data)
+            .zip(&self.valid)
+            .enumerate()
+        {
+            let values = match data {
+                Data::I64(v) => Values::I64(v),
+                Data::Dec(v) => Values::Dec(v),
+                Data::Bool(bits) => Values::Bool { bits, offset: 0 },
+                Data::Str(_) => Values::Utf8 {
+                    offsets: &texts[i].0,
+                    data: &texts[i].1,
+                },
+                Data::ListDec(offsets, _)
+                | Data::ListI64(offsets, _)
+                | Data::ListStr(offsets, _) => Values::List {
+                    offsets,
+                    child: (&children[i]).into(),
+                },
+                Data::Dict(keys, _) => Values::Dict {
+                    keys,
+                    values: (&children[i]).into(),
+                },
+                Data::Any(v) => Values::Any(v),
+            };
+            columns = columns.column(key, Column::with_validity(values, valid, 0));
+        }
+        columns
+    }
+
+    fn texts(&self) -> Vec<(Vec<i32>, Vec<u8>)> {
+        self.data
+            .iter()
+            .map(|d| match d {
+                Data::Str(v) | Data::ListStr(_, v) | Data::Dict(_, v) => {
+                    let mut offsets = vec![0i32];
+                    let mut data = Vec::new();
+                    for text in v {
+                        data.extend_from_slice(text.as_bytes());
+                        offsets.push(data.len() as i32);
+                    }
+                    (offsets, data)
+                }
+                _ => (Vec::new(), Vec::new()),
+            })
+            .collect()
+    }
+}
+
+impl Bench {
+    fn cases() -> Vec<Case> {
+        let mut names: Vec<_> = std::fs::read_dir(GRAPHS)
+            .map(|d| d.flatten().map(|e| e.path()).collect())
+            .unwrap_or_default();
+        names.sort();
+        let mut out = Vec::new();
+        for path in names {
+            let Ok(raw) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let Ok(doc) = serde_json::from_str::<Value>(&raw) else {
+                continue;
+            };
+            let inputs: Vec<Variable> = doc["tests"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|t| t.get("input").cloned())
+                .map(Variable::from)
+                .collect();
+            if inputs.is_empty() {
+                continue;
+            }
+            for node in doc["nodes"].as_array().into_iter().flatten() {
+                if node["type"] != "expressionNode" {
+                    continue;
+                }
+                for e in node["content"]["expressions"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                {
+                    let Some(source) = e["value"].as_str() else {
+                        continue;
+                    };
+                    let scopes: Vec<Scope> = (0..ROWS)
+                        .map(|i| Scope::new(inputs[i % inputs.len()].depth_clone(64)))
+                        .collect();
+                    let ok = scopes.iter().take(inputs.len()).all(|s| {
+                        let mut iso = Isolate::new();
+                        iso.set_environment(s.base().clone());
+                        matches!(iso.run_standard(source), Ok(v) if v != Variable::Null)
+                    });
+                    if ok && !source.contains("date(") {
+                        out.push(Case {
+                            source: source.to_string(),
+                            scopes,
+                        });
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    fn timed(budget: Duration, mut f: impl FnMut()) -> f64 {
+        f();
+        let start = Instant::now();
+        let mut n = 0u64;
+        while start.elapsed() < budget {
+            f();
+            n += 1;
+        }
+        start.elapsed().as_nanos() as f64 / n as f64
+    }
+
+    fn median(mut v: Vec<f64>) -> f64 {
+        v.sort_by(|a, b| a.total_cmp(b));
+        v.get(v.len() / 2).copied().unwrap_or(0.0)
+    }
+
+    fn geomean(v: &[f64]) -> f64 {
+        (v.iter().map(|x| x.ln()).sum::<f64>() / v.len() as f64).exp()
+    }
+}
+
+fn micro() -> bool {
+    let Ok(list) = std::env::var("LANE_EXPR") else {
+        return false;
+    };
+    let input = Variable::from(serde_json::json!({
+        "a": 5, "b": 7, "s": "gold", "flag": true, "items": [1, 2, 3, 4, 5, 6, 7, 8],
+        "tags": ["x", "diabetes", "y"], "o": {"x": 1, "y": {"z": 2}}, "d1": "2025-03-15T10:30:00Z", "d2": "2025-03-15", "d3": "2025-03-15 10:30:00",
+        "objs": [{"x": 1, "k": "a"}, {"x": 5, "k": "b"}, {"x": 9, "k": "c"}, {"x": 2, "k": "a"}],
+        "email": "john.doe@example.com", "phone": "+1-555-0100"
+    }));
+    let rows: usize = std::env::var("LANE_ROWS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(ROWS);
+    let mut runner = LaneRunner::new();
+    let budget = Duration::from_millis(300);
+    for entry in list.split('|') {
+        let (reference, source) = match entry.split_once(':') {
+            Some(("u", rest)) => (Some(Variable::Number(5.into())), rest),
+            Some(("us", rest)) => (Some(Variable::String("gold".into())), rest),
+            _ => (None, entry),
+        };
+        let vary = std::env::var("LANE_VARY").is_ok();
+        let scopes: Vec<Scope> = (0..rows)
+            .map(|i| {
+                let base = match vary {
+                    true => {
+                        let mut value = input.depth_clone(64);
+                        if let Variable::Object(o) = &mut value {
+                            let mut o = o.borrow_mut();
+                            let day = |k: usize| {
+                                format!("20{:02}-{:02}-{:02}", 10 + k % 15, 1 + k % 12, 1 + k % 28)
+                            };
+                            o.insert(
+                                "a".into(),
+                                Variable::Number(Decimal::from(((i * 7919) % 97) as i64 - 40)),
+                            );
+                            o.insert(
+                                "b".into(),
+                                Variable::Number(Decimal::from(((i * 104729) % 89) as i64 - 30)),
+                            );
+                            o.insert(
+                                "d1".into(),
+                                Variable::String(
+                                    format!("{}T{:02}:30:00Z", day(i), i % 24).as_str().into(),
+                                ),
+                            );
+                            o.insert(
+                                "d2".into(),
+                                Variable::String(day(i * 31 + 7).as_str().into()),
+                            );
+                            o.insert(
+                                "s".into(),
+                                Variable::String(
+                                    ["gold", "silver", "Bronze", "platinum"][i % 4].into(),
+                                ),
+                            );
+                        }
+                        value
+                    }
+                    false => input.depth_clone(64),
+                };
+                let mut scope = Scope::new(base);
+                if let Some(r) = &reference {
+                    scope.set_local(Variable::dollar_key(), r.clone());
+                }
+                scope
+            })
+            .collect();
+        let program = match reference {
+            Some(_) => LaneProgram::unary(source),
+            None => LaneProgram::standard(source),
+        }
+        .expect("lane compile")
+        .specialize(&scopes)
+        .expect("specialize");
+        let mut vm = VM::new();
+        let s = match reference {
+            Some(_) => {
+                let expression = Isolate::new().compile_unary(source).expect("compile");
+                Bench::timed(budget, || {
+                    for scope in &scopes {
+                        black_box(expression.evaluate_with_scope(scope, &mut vm).is_ok());
+                    }
+                })
+            }
+            None => {
+                let expression = Isolate::new().compile_standard(source).expect("compile");
+                Bench::timed(budget, || {
+                    for scope in &scopes {
+                        black_box(expression.evaluate_with_scope(scope, &mut vm).is_ok());
+                    }
+                })
+            }
+        } / rows as f64;
+        if std::env::var("LANE_DUMP").is_ok() {
+            for step in &program.program().steps {
+                println!("  {:?}", step);
+            }
+        }
+        let profile = std::env::var("LANE_PROFILE").is_ok();
+        let one = Bench::timed(
+            if profile {
+                Duration::from_secs(4)
+            } else {
+                budget
+            },
+            || {
+                for scope in &scopes {
+                    black_box(runner.evaluate_one(&program, scope).is_ok());
+                }
+            },
+        ) / rows as f64;
+        if profile {
+            println!("{source} lane-w1 {one:.1}");
+            continue;
+        }
+        let batch = Bench::timed(budget, || {
+            let mut n = 0usize;
+            runner.evaluate_with(&program, &scopes, |_, r| n += r.is_ok() as usize);
+            black_box(n);
+        }) / rows as f64;
+        let table = Table::build(&scopes);
+        let texts = table.texts();
+        let children = table.children(&texts);
+        let columns = table.columns(&texts, &children);
+        let columnar = match reference {
+            Some(_) => None,
+            None => LaneProgram::standard(source)
+                .ok()
+                .and_then(|p| p.specialize_columns(&columns).ok()),
+        };
+        let mut out = zen_expression::lane::Output::new();
+        if let (Ok(_), Some(p)) = (std::env::var("LANE_PROFILE_COLS"), &columnar) {
+            let ns = Bench::timed(Duration::from_secs(4), || {
+                runner.evaluate_columns_into(p, &columns, &mut out);
+                black_box(out.len());
+            }) / rows as f64;
+            println!("{entry} cols {ns:.1}");
+            continue;
+        }
+        let cols = match &columnar {
+            Some(p) => {
+                Bench::timed(budget, || {
+                    runner.evaluate_columns_into(p, &columns, &mut out);
+                    black_box(out.len());
+                }) / rows as f64
+            }
+            None => f64::NAN,
+        };
+        if std::env::var("LANE_TABLE").is_ok() {
+            let generic = match reference {
+                Some(_) => LaneProgram::unary(source),
+                None => LaneProgram::standard(source),
+            }
+            .expect("lane compile");
+            let cold1 = Bench::timed(budget, || {
+                for scope in &scopes {
+                    black_box(runner.evaluate_one(&generic, scope).is_ok());
+                }
+            }) / rows as f64;
+            let cold64 = Bench::timed(budget, || {
+                let mut n = 0usize;
+                runner.evaluate_with(&generic, &scopes, |_, r| n += r.is_ok() as usize);
+                black_box(n);
+            }) / rows as f64;
+            println!(
+                "TSV\t{entry}\t{s:.1}\t{cold1:.1}\t{cold64:.1}\t{one:.1}\t{batch:.1}\t{cols:.1}"
+            );
+            continue;
+        }
+        println!(
+            "{:50} ops {:3} stack {s:7.1} lane-w1 {one:7.1} lane-w64 {batch:7.1} cols {cols:6.1} | w1 {:5.2}x w64 {:5.2}x cols {:5.1}x",
+            entry,
+            program.program().steps.len(),
+            s / one,
+            s / batch,
+            s / cols
+        );
+    }
+    true
+}
+
+fn cells() -> bool {
+    if std::env::var("LANE_CELLS").is_err() {
+        return false;
+    }
+    let mut state = 0x1234_5678_9ABC_DEF1u64;
+    let mut next = |n: u64| {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state % n
+    };
+    for rules in [100usize, 1000, 8000] {
+        let cells: Vec<String> = (0..rules)
+            .map(|r| match (next(10), r + 1 == rules) {
+                (_, true) | (0..=2, _) => String::new(),
+                (3 | 4, _) => format!(
+                    "'{}'",
+                    ["US", "GB", "DE", "FR", "ES", "IT", "NL", "PL"][next(8) as usize]
+                ),
+                (5 | 6, _) => format!(
+                    "{} {}",
+                    ["<", "<=", ">", ">="][next(4) as usize],
+                    next(20) * 5
+                ),
+                (7, _) => format!("[{}..{}]", next(10) * 5, 50 + next(10) * 5),
+                (8, _) => format!(
+                    "'{}', '{}'",
+                    ["US", "GB"][next(2) as usize],
+                    ["DE", "FR"][next(2) as usize]
+                ),
+                _ => "$ > limit".to_string(),
+            })
+            .collect();
+        let refs: Vec<Option<&str>> = cells.iter().map(|c| Some(c.as_str())).collect();
+        let set = zen_expression::lane::CellSet::compile(&refs).expect("cells");
+        let values: Vec<Variable> = (0..ROWS)
+            .map(|i| match i % 2 {
+                0 => Variable::from(serde_json::json!(
+                    ["US", "GB", "DE", "SE"][next(4) as usize]
+                )),
+                _ => Variable::from(serde_json::json!(next(100))),
+            })
+            .collect();
+        let envs: Vec<Scope> = (0..ROWS)
+            .map(|_| Scope::new(serde_json::json!({"limit": next(50)}).into()))
+            .collect();
+        let exprs: Vec<Option<zen_expression::Expression<zen_expression::expression::Unary>>> =
+            cells
+                .iter()
+                .map(|c| (!c.is_empty()).then(|| Isolate::new().compile_unary(c).expect("unary")))
+                .collect();
+        let mut vm = VM::new();
+        let stack = Bench::timed(Duration::from_millis(400), || {
+            let mut hits = 0usize;
+            for (value, env) in values.iter().zip(&envs).take(64) {
+                let mut scope = Scope::new(env.base().clone());
+                scope.set_local(Variable::dollar_key(), value.clone());
+                for e in &exprs {
+                    hits += match e {
+                        None => 1,
+                        Some(e) => e.evaluate_with_scope(&scope, &mut vm).unwrap_or(false) as usize,
+                    };
+                }
+            }
+            black_box(hits);
+        }) / 64.0;
+        let mut runner = LaneRunner::new();
+        let mut out = Vec::new();
+        let lane = Bench::timed(Duration::from_millis(400), || {
+            set.evaluate(&mut runner, &values, &envs, &mut out);
+            black_box(out.len());
+        }) / ROWS as f64;
+        println!("cells rules {rules:5}: evaluate every cell (stack VM) {stack:10.0} ns/row | cell set {lane:8.1} ns/row | {:6.1}x", stack / lane);
+    }
+    true
+}
+
+fn nodes() -> bool {
+    if std::env::var("LANE_NODES").is_err() {
+        return false;
+    }
+    let mut names: Vec<_> = std::fs::read_dir(GRAPHS)
+        .map(|d| d.flatten().map(|e| e.path()).collect())
+        .unwrap_or_default();
+    names.sort();
+    let (mut stack_all, mut one_all, mut batch_all) = (Vec::new(), Vec::new(), Vec::new());
+    let mut runner = LaneRunner::new();
+    for path in names {
+        let Ok(raw) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(doc) = serde_json::from_str::<Value>(&raw) else {
+            continue;
+        };
+        let inputs: Vec<Variable> = doc["tests"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|t| t.get("input").cloned())
+            .map(Variable::from)
+            .collect();
+        if inputs.is_empty() {
+            continue;
+        }
+        for node in doc["nodes"].as_array().into_iter().flatten() {
+            if node["type"] != "expressionNode"
+                || node["content"]["inputField"]
+                    .as_str()
+                    .is_some_and(|s| !s.is_empty())
+            {
+                continue;
+            }
+            let entries: Vec<(String, String)> = node["content"]["expressions"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|e| {
+                    Some((
+                        e["key"].as_str()?.to_string(),
+                        e["value"].as_str()?.to_string(),
+                    ))
+                })
+                .filter(|(k, v)| !k.is_empty() && !v.is_empty())
+                .collect();
+            if entries.is_empty() {
+                continue;
+            }
+            let refs: Vec<(&str, &str)> = entries
+                .iter()
+                .map(|(k, v)| (k.as_str(), v.as_str()))
+                .collect();
+            let Ok(program) = LaneProgram::compile_many(&refs, true) else {
+                continue;
+            };
+            let scopes: Vec<Scope> = (0..ROWS)
+                .map(|i| Scope::new(inputs[i % inputs.len()].depth_clone(64)))
+                .collect();
+            let program = program.specialize(&scopes).expect("specialize");
+            let codes: Vec<(
+                String,
+                zen_expression::Expression<zen_expression::expression::Standard>,
+            )> = entries
+                .iter()
+                .filter_map(|(k, v)| Some((k.clone(), Isolate::new().compile_standard(v).ok()?)))
+                .collect();
+            if codes.len() != entries.len() {
+                continue;
+            }
+            let mut vm = VM::new();
+            let budget = Duration::from_millis(80);
+            let stack = Bench::timed(budget, || {
+                for scope in &scopes {
+                    let mut scope = scope.clone();
+                    let dollar = Variable::empty_object();
+                    scope.set_local(Variable::dollar_key(), dollar.clone());
+                    for (key, e) in &codes {
+                        match e.evaluate_with_scope(&scope, &mut vm) {
+                            Ok(v) => {
+                                dollar.dot_insert(key, v);
+                            }
+                            Err(_) => break,
+                        }
+                    }
+                    black_box(&dollar);
+                }
+            }) / ROWS as f64;
+            let one = Bench::timed(budget, || {
+                for scope in &scopes {
+                    runner.evaluate_many(&program, std::slice::from_ref(scope), None, |_, r| {
+                        black_box(r.is_some());
+                    });
+                }
+            }) / ROWS as f64;
+            let batch = Bench::timed(budget, || {
+                runner.evaluate_many(&program, &scopes, None, |_, r| {
+                    black_box(r.is_some());
+                });
+            }) / ROWS as f64;
+            stack_all.push(stack);
+            one_all.push(one);
+            batch_all.push(batch);
+        }
+    }
+    let r1: Vec<f64> = stack_all.iter().zip(&one_all).map(|(s, l)| s / l).collect();
+    let r64: Vec<f64> = stack_all
+        .iter()
+        .zip(&batch_all)
+        .map(|(s, l)| s / l)
+        .collect();
+    println!(
+        "expression nodes {} | median ns/row: stack {:.0}, lane w1 {:.0}, lane w64 {:.0} | stack/lane geomean: w1 {:.2}x, w64 {:.2}x | sums: stack {:.0}, w1 {:.0}, w64 {:.0}",
+        stack_all.len(),
+        Bench::median(stack_all.clone()),
+        Bench::median(one_all.clone()),
+        Bench::median(batch_all.clone()),
+        Bench::geomean(&r1),
+        Bench::geomean(&r64),
+        stack_all.iter().sum::<f64>(),
+        one_all.iter().sum::<f64>(),
+        batch_all.iter().sum::<f64>()
+    );
+    true
+}
+
+fn main() {
+    if nodes() {
+        return;
+    }
+    if cells() {
+        return;
+    }
+    if micro() {
+        return;
+    }
+    let filter = std::env::args().nth(1).filter(|a| !a.starts_with('-'));
+    let budget = Duration::from_millis(60);
+    let cases = Bench::cases();
+    let (mut stack, mut w1, mut w64, mut cols, mut outs) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    let mut typing: Vec<[f64; 9]> = Vec::new();
+    let mut runner = LaneRunner::new();
+    for case in &cases {
+        if let Some(f) = &filter {
+            if !case.source.contains(f.as_str()) {
+                continue;
+            }
+        }
+        let expression = Isolate::new()
+            .compile_standard(&case.source)
+            .expect("compile");
+        let generic = LaneProgram::standard(&case.source).expect("lane compile");
+        let program = generic.specialize(&case.scopes).expect("specialize");
+        let mut vm = VM::new();
+        let only_columns = std::env::var("LANE_ONLY_COLUMNS").is_ok();
+        let budget = if only_columns {
+            Duration::from_millis(1)
+        } else {
+            budget
+        };
+        let s = Bench::timed(budget, || {
+            for scope in &case.scopes {
+                black_box(expression.evaluate_with_scope(scope, &mut vm).is_ok());
+            }
+        }) / ROWS as f64;
+        let one = Bench::timed(budget, || {
+            for scope in &case.scopes {
+                black_box(runner.evaluate_one(&program, scope).is_ok());
+            }
+        }) / ROWS as f64;
+        let batch = Bench::timed(budget, || {
+            let mut n = 0usize;
+            runner.evaluate_with(&program, &case.scopes, |_, r| n += r.is_ok() as usize);
+            black_box(n);
+        }) / ROWS as f64;
+        let table = Table::build(&case.scopes);
+        let texts = table.texts();
+        let children = table.children(&texts);
+        let columns = table.columns(&texts, &children);
+        let columnar = generic.specialize_columns(&columns).expect("specialize");
+        let col = Bench::timed(
+            if only_columns {
+                Duration::from_millis(300)
+            } else {
+                budget
+            },
+            || {
+                let mut n = 0usize;
+                runner.evaluate_columns(&columnar, &columns, |_, r| n += r.is_ok() as usize);
+                black_box(n);
+            },
+        ) / ROWS as f64;
+        let mut out = zen_expression::lane::Output::new();
+        let typed = Bench::timed(
+            if only_columns {
+                Duration::from_millis(300)
+            } else {
+                budget
+            },
+            || {
+                runner.evaluate_columns_into(&columnar, &columns, &mut out);
+                black_box(out.len());
+            },
+        ) / ROWS as f64;
+        if std::env::var("LANE_DEBUG").is_ok() {
+            let p = columnar.program();
+            let bound: Vec<zen_expression::lane::Binding> = p
+                .site_keys
+                .iter()
+                .map(|k| {
+                    k.as_deref()
+                        .map_or(zen_expression::lane::Binding::Row, |k| columns.bind(k))
+                })
+                .collect();
+            println!(
+                "keys {:?} bound {:?} rows {} kinds {:?}",
+                p.site_keys,
+                bound,
+                p.needs_rows(&bound),
+                p.kinds
+            );
+            for (k, c) in &columns.columns {
+                if k.contains("status") || k.contains("watch") {
+                    println!("  column {k} {:?}", c.kind());
+                }
+            }
+        }
+        if std::env::var("LANE_DUMP").is_ok() {
+            println!("input {:?}", case.scopes[0].base().to_value());
+            for step in &program.program().steps {
+                println!("  {:?}", step);
+            }
+        }
+        if filter.is_some() {
+            println!("{:70} stack {s:8.1} lane-w1 {one:8.1} lane-w64 {batch:8.1} columns {col:8.1} typed {typed:8.1}", &case.source[..case.source.len().min(70)]);
+        }
+        stack.push(s);
+        w1.push(one);
+        w64.push(batch);
+        cols.push(col);
+        outs.push(typed);
+        if std::env::var("LANE_TYPING").is_ok() {
+            let first = VariableType::from(&case.scopes[0].base().to_value());
+            let typed_program =
+                LaneProgram::compile_typed(&case.source, ExpressionKind::Standard, &first)
+                    .expect("typed");
+            let leg = |p: &LaneProgram, runner: &mut LaneRunner| {
+                let w1 = Bench::timed(budget, || {
+                    for scope in &case.scopes {
+                        black_box(runner.evaluate_one(p, scope).is_ok());
+                    }
+                }) / ROWS as f64;
+                let w64 = Bench::timed(budget, || {
+                    let mut n = 0usize;
+                    runner.evaluate_with(p, &case.scopes, |_, r| n += r.is_ok() as usize);
+                    black_box(n);
+                }) / ROWS as f64;
+                (w1, w64)
+            };
+            let (g1, g64) = leg(&generic, &mut runner);
+            let (t1, t64) = leg(&typed_program, &mut runner);
+            let gc = Bench::timed(budget, || {
+                runner.evaluate_columns_into(&generic, &columns, &mut out);
+                black_box(out.len());
+            }) / ROWS as f64;
+            typing.push([s, one, batch, typed, g1, g64, gc, t1, t64]);
+        }
+    }
+    let r1: Vec<f64> = stack.iter().zip(&w1).map(|(s, l)| s / l).collect();
+    let r64: Vec<f64> = stack.iter().zip(&w64).map(|(s, l)| s / l).collect();
+    let rc: Vec<f64> = stack.iter().zip(&cols).map(|(s, l)| s / l).collect();
+    let ro: Vec<f64> = stack.iter().zip(&outs).map(|(s, l)| s / l).collect();
+    if !typing.is_empty() {
+        let labels = [
+            "speculated w1",
+            "speculated w64",
+            "column-typed output",
+            "generic w1",
+            "generic w64",
+            "generic columns output",
+            "compile_typed w1",
+            "compile_typed w64",
+        ];
+        for (i, label) in labels.iter().enumerate() {
+            let ratios: Vec<f64> = typing.iter().map(|t| t[0] / t[i + 1]).collect();
+            let times: Vec<f64> = typing.iter().map(|t| t[i + 1]).collect();
+            println!(
+                "typing | {label:24} geomean {:5.2}x median {:5.2}x | median {:6.1} ns/row",
+                Bench::geomean(&ratios),
+                Bench::median(ratios.clone()),
+                Bench::median(times)
+            );
+        }
+    }
+    println!(
+        "typed output: median {:.1} ns/row, stack/typed geomean {:.2}x, median {:.2}x, sum {:.0}",
+        Bench::median(outs.clone()),
+        Bench::geomean(&ro),
+        Bench::median(ro.clone()),
+        outs.iter().sum::<f64>()
+    );
+    println!(
+        "columns: median {:.1} ns/row, stack/columns geomean {:.2}x, median {:.2}x, sum {:.0}",
+        Bench::median(cols.clone()),
+        Bench::geomean(&rc),
+        Bench::median(rc.clone()),
+        cols.iter().sum::<f64>()
+    );
+    println!(
+        "{} expressions | median ns/eval: stack {:.1}, lane w1 {:.1}, lane w64 {:.1} | stack/lane geomean: w1 {:.2}x, w64 {:.2}x | sums: stack {:.0}, w1 {:.0}, w64 {:.0}",
+        stack.len(),
+        Bench::median(stack.clone()),
+        Bench::median(w1.clone()),
+        Bench::median(w64.clone()),
+        Bench::geomean(&r1),
+        Bench::geomean(&r64),
+        stack.iter().sum::<f64>(),
+        w1.iter().sum::<f64>(),
+        w64.iter().sum::<f64>()
+    );
+}

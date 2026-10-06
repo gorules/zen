@@ -48,6 +48,7 @@ default = ["regex-deprecated"]
 regex-lite = ["dep:regex-lite"]
 regex-deprecated = ["dep:regex"]
 arbitrary_precision = ["serde_json/arbitrary_precision", "zen-types/arbitrary_precision"]
+lane = []
 
 [[bench]]
 harness = false
@@ -64,3 +65,7 @@ name = "unary"
 [[bench]]
 harness = false
 name = "isolate"
+
+[[bench]]
+harness = false
+name = "lane"

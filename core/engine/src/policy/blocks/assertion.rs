@@ -241,8 +241,25 @@ impl AssertionIr {
         cx: &ExecutionContext,
         traces: &mut Vec<ConditionTrace>,
     ) -> Result<bool, ExecutionError> {
+        let mut results = Vec::with_capacity(self.conditions.len());
+        for condition in &self.conditions {
+            let cond_result = isolate
+                .run_standard(&condition.expression)
+                .map_err(|e| cx.expression_error(&condition.expression, e))?
+                .as_bool()
+                .unwrap_or(false);
+            traces.push(ConditionTrace {
+                id: condition.id.clone(),
+                result: cond_result,
+            });
+            results.push(cond_result);
+        }
+        Ok(self.fold(&results))
+    }
+
+    pub(crate) fn fold(&self, results: &[bool]) -> bool {
         if self.conditions.is_empty() {
-            return Ok(false);
+            return false;
         }
 
         let mut stack: Vec<Frame> = Vec::new();
@@ -251,7 +268,7 @@ impl AssertionIr {
         let mut depth = 0u32;
         let mut combine_next = ConditionOperator::And;
 
-        for condition in &self.conditions {
+        for (condition, &cond_result) in self.conditions.iter().zip(results) {
             while condition.depth > depth {
                 stack.push(Frame {
                     acc,
@@ -271,17 +288,6 @@ impl AssertionIr {
                 depth -= 1;
             }
 
-            let cond_result = isolate
-                .run_standard(&condition.expression)
-                .map_err(|e| cx.expression_error(&condition.expression, e))?
-                .as_bool()
-                .unwrap_or(false);
-
-            traces.push(ConditionTrace {
-                id: condition.id.clone(),
-                result: cond_result,
-            });
-
             acc = if started {
                 combine_next.apply(acc, cond_result)
             } else {
@@ -295,7 +301,7 @@ impl AssertionIr {
             acc = frame.close(acc);
         }
 
-        Ok(acc)
+        acc
     }
 }
 

@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
@@ -8,7 +10,9 @@ use crate::nodes::function::v2::module::console::{Console, Log};
 use crate::nodes::function::v2::module::ModuleLoader;
 use crate::nodes::function::v2::serde::{JsValue, JsValueWithNodes};
 use rquickjs::promise::MaybePromise;
-use rquickjs::{async_with, AsyncContext, AsyncRuntime, CatchResultExt, Ctx, Module};
+use rquickjs::prelude::Func;
+use rquickjs::{async_with, AsyncContext, AsyncRuntime, CatchResultExt, Ctx, Module, Object};
+use std::rc::Rc;
 use serde::{Deserialize, Serialize};
 use zen_expression::variable::{ToVariable, Variable};
 
@@ -21,6 +25,7 @@ pub struct Function {
     ctx: AsyncContext,
     listeners: Vec<Box<dyn RuntimeListener>>,
     module_loader: ModuleLoader,
+    declared: RefCell<HashMap<String, u64>>,
 }
 
 impl Debug for Function {
@@ -43,6 +48,7 @@ impl Function {
             ctx,
             module_loader,
             listeners: config.listeners.unwrap_or_default(),
+            declared: RefCell::new(HashMap::new()),
         };
 
         this.dispatch_event(RuntimeEvent::Startup).await?;
@@ -101,6 +107,23 @@ impl Function {
         Ok(())
     }
 
+    pub(crate) async fn shared_module(&self, name: &str, source: &str) -> FunctionResult<String> {
+        let content_hash = create_content_hash(source);
+        let declarative_name = format!("node:{name}");
+        let module_name = match self.declared.borrow().get(&declarative_name) {
+            Some(hash) if *hash == content_hash => return Ok(declarative_name),
+            Some(_) => format!("node:{name}.{content_hash:x}"),
+            None if self.module_loader.has_module(&declarative_name) => format!("node:{name}.{content_hash:x}"),
+            None => declarative_name.clone(),
+        };
+        if self.declared.borrow().get(&module_name) == Some(&content_hash) {
+            return Ok(module_name);
+        }
+        self.register_module(&module_name, source).await?;
+        self.declared.borrow_mut().insert(module_name.clone(), content_hash);
+        Ok(module_name)
+    }
+
     pub(crate) async fn call_handler(
         &self,
         name: &str,
@@ -123,6 +146,55 @@ impl Function {
         .await;
 
         Ok(k?)
+    }
+
+    pub(crate) async fn call_rows(
+        &self,
+        name: &str,
+        config: (u8, u8, bool),
+        rows: Vec<(Variable, Option<Variable>)>,
+        tick: &dyn Fn(),
+    ) -> Vec<FunctionResult<Variable>> {
+        let count = rows.len();
+        let current: Rc<RefCell<Variable>> = Rc::new(RefCell::new(Variable::Null));
+        let shared = current.clone();
+        let results: FunctionResult<Vec<FunctionResult<Variable>>> = async_with!(&self.ctx => |ctx| {
+            let settings = Object::new(ctx.clone()).catch(&ctx)?;
+            settings.prop("iteration", config.0).catch(&ctx)?;
+            settings.prop("maxDepth", config.1).catch(&ctx)?;
+            settings.prop("trace", config.2).catch(&ctx)?;
+            ctx.globals().set("config", settings).catch(&ctx)?;
+            ctx.globals()
+                .set("__getNodesData", Func::from(move || JsValue(shared.borrow().clone())))
+                .catch(&ctx)?;
+            let m: rquickjs::Object = Module::import(&ctx, name).catch(&ctx)?.into_future().await.catch(&ctx)?;
+            let handler: rquickjs::Function = m.get("handler").catch(&ctx)?;
+            let mut results = Vec::with_capacity(count);
+            self.dispatch_event_inner(&ctx, RuntimeEvent::SoftReset).await?;
+            for (input, nodes) in rows {
+                tick();
+                *current.borrow_mut() = nodes.unwrap_or_default();
+                let result: FunctionResult<Variable> = async {
+                    if config.2 {
+                        self.dispatch_event_inner(&ctx, RuntimeEvent::SoftReset).await?;
+                    }
+                    let promise: MaybePromise = handler.call((JsValueWithNodes(JsValue(input)), 5)).catch(&ctx)?;
+                    let value = promise.into_future::<JsValue>().await.catch(&ctx)?;
+                    Ok(value.0)
+                }
+                .await;
+                results.push(result);
+            }
+            Ok(results)
+        })
+        .await;
+        match results {
+            Ok(results) => results,
+            Err(error) => {
+                let message = error.to_string();
+                (0..count).map(|_| Err(FunctionError::Caught(message.clone()))).collect()
+            }
+        }
     }
 
     pub(crate) async fn extract_logs(&self) -> Vec<Log> {

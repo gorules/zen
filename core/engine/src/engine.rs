@@ -6,6 +6,7 @@ use crate::model::{DecisionContent, GraphContent};
 use crate::nodes::custom::{DynamicCustomNode, NoopCustomNode};
 use crate::nodes::function::http_handler::DynamicHttpHandler;
 use crate::policy::runtime::{CompiledEntry, CompiledSet};
+use crate::workspace::types::EvaluateRequest;
 use crate::{CompileFailure, EvaluationError};
 use arc_swap::ArcSwapOption;
 use serde_json::Value;
@@ -221,6 +222,66 @@ impl DecisionEngine {
                 .await
             }
         }
+    }
+
+    pub async fn evaluate_batch<K>(
+        &self,
+        key: K,
+        contexts: &[Variable],
+        options: EvaluationOptions,
+    ) -> Vec<Result<DecisionGraphResponse, Box<EvaluationError>>>
+    where
+        K: AsRef<str>,
+    {
+        let key_str = key.as_ref();
+        if let Some(set) = self.compiled.load_full() {
+            if let Some(entry) = set.get(key_str) {
+                return match entry {
+                    CompiledEntry::Policy(artifact) => {
+                        let requests: Vec<EvaluateRequest> = contexts
+                            .iter()
+                            .map(|context| EvaluateRequest {
+                                policy_path: Arc::from(key_str),
+                                input: context.clone(),
+                                goals: Vec::new(),
+                                trace: options.trace,
+                            })
+                            .collect();
+                        artifact
+                            .evaluate_batch(&requests)
+                            .into_iter()
+                            .map(|result| {
+                                result
+                                    .map(|r| DecisionGraphResponse {
+                                        performance: format!("{:.1?}", r.duration),
+                                        result: r.output,
+                                        trace: r.trace.map(EvaluationTrace::Policy),
+                                    })
+                                    .map_err(|e| Box::new(EvaluationError::Policy(e)))
+                            })
+                            .collect()
+                    }
+                    CompiledEntry::Graph(graph) => {
+                        self.decision_from_graph(graph)
+                            .evaluate_batch(contexts, options)
+                            .await
+                    }
+                };
+            }
+        }
+        if let Ok(content) = self.loader.load(key_str).await {
+            if let DecisionContent::Graph(_) = content.as_ref() {
+                return self
+                    .decision_from_graph_arc(content)
+                    .evaluate_batch(contexts, options)
+                    .await;
+            }
+        }
+        let mut results = Vec::with_capacity(contexts.len());
+        for context in contexts {
+            results.push(self.evaluate_with_opts(key_str, context.clone(), options).await);
+        }
+        results
     }
 
     pub async fn evaluate_serialized<K>(

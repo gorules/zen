@@ -1,3 +1,4 @@
+use crate::compiled::CompiledPlan;
 use crate::decision_graph::schema_dict;
 use crate::loader::DynamicLoader;
 use crate::nodes::decision_table::index::TableIndex;
@@ -121,6 +122,9 @@ pub struct GraphContent {
 
     #[serde(skip)]
     pub(crate) dt_indexes: Option<Arc<HashMap<Arc<str>, TableIndex>>>,
+
+    #[serde(skip)]
+    pub(crate) compiled_plan: Option<Arc<CompiledPlan>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -128,9 +132,18 @@ pub struct GraphContent {
 pub struct PolicyContent(pub Arc<PolicyDocument>);
 
 impl GraphContent {
+    pub fn compiled_verdict(&self) -> Option<Result<(), &str>> {
+        self.compiled_plan.as_deref().map(CompiledPlan::verdict)
+    }
+}
+
+impl GraphContent {
     pub fn compile(&mut self) {
         self.compile_functions();
         self.build_dt_indexes();
+        if self.compiled_plan.is_none() {
+            self.compiled_plan = Some(Arc::new(CompiledPlan::compile(self)));
+        }
         if self.compiled_cache.is_some() {
             return;
         }

@@ -18,6 +18,17 @@ impl DeclaredDates {
         "deprecated",
     ];
 
+    pub(crate) fn mentions(schema: &Value) -> bool {
+        match schema {
+            Value::Object(map) => {
+                matches!(map.get("format").and_then(Value::as_str), Some("date" | "date-time"))
+                    || map.values().any(Self::mentions)
+            }
+            Value::Array(items) => items.iter().any(Self::mentions),
+            _ => false,
+        }
+    }
+
     pub(crate) fn declared(schema: &Value) -> bool {
         schema.as_object().is_some_and(Self::declared_map)
     }
@@ -69,6 +80,15 @@ impl DeclaredDates {
         }
     }
 
+    pub(crate) fn dated(value: &Variable) -> bool {
+        match value {
+            Variable::Dynamic(_) => DateValue::source_text(value).is_some(),
+            Variable::Array(items) => items.borrow().iter().any(Self::dated),
+            Variable::Object(object) => object.borrow().values().any(Self::dated),
+            _ => false,
+        }
+    }
+
     fn structure<'s>(schema: &'s Map<String, Value>, key: &str) -> Option<&'s Value> {
         schema.get(key).or_else(|| {
             ["anyOf", "oneOf", "allOf"]
@@ -108,15 +128,16 @@ impl DeclaredDates {
     ) -> Option<Variable> {
         let array = value.as_array()?;
         let array = array.borrow();
-        let rewritten: Vec<Option<Variable>> = array.iter().map(&rewrite).collect();
-        if rewritten.iter().all(Option::is_none) {
-            return None;
-        }
+        let (first, next) = array
+            .iter()
+            .enumerate()
+            .find_map(|(index, item)| rewrite(item).map(|next| (index, next)))?;
         Some(Variable::from_array(
-            array
+            array[..first]
                 .iter()
-                .zip(rewritten)
-                .map(|(item, next)| next.unwrap_or_else(|| item.clone()))
+                .cloned()
+                .chain(std::iter::once(next))
+                .chain(array[first + 1..].iter().map(|item| rewrite(item).unwrap_or_else(|| item.clone())))
                 .collect(),
         ))
     }

@@ -1,4 +1,6 @@
 use std::ops::Deref;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::nodes::definition::NodeHandler;
@@ -7,15 +9,17 @@ use crate::nodes::function::v2::function::Function;
 use crate::nodes::function::v2::module::console::Log;
 use crate::nodes::function::v2::serde::{JsValue, JsValueWithNodes};
 use crate::nodes::result::NodeResult;
-use crate::nodes::{NodeContext, NodeError};
+use crate::nodes::{NodeContext, NodeContextConfig, NodeError, NodeHandlerExtensions};
 use rquickjs::prelude::Func;
 use rquickjs::{async_with, CatchResultExt, Object};
 use serde_json::json;
 use zen_expression::variable::ToVariable;
 use zen_types::decision::FunctionContent;
+use zen_types::variable::Variable;
 
 pub(crate) mod error;
 pub(crate) mod function;
+pub(crate) mod isolation;
 pub(crate) mod listener;
 pub(crate) mod module;
 pub(crate) mod serde;
@@ -107,6 +111,82 @@ impl FunctionV2NodeHandler {
             Ok(())
         })
         .await
+    }
+}
+
+impl FunctionV2NodeHandler {
+    pub(crate) async fn batch(
+        id: &Arc<str>,
+        content: &FunctionContent,
+        extensions: &NodeHandlerExtensions,
+        config: &NodeContextConfig,
+        rows: Vec<(Variable, Option<Variable>)>,
+    ) -> Vec<Result<Variable, NodeError>> {
+        let source = extensions
+            .stripped_functions
+            .as_ref()
+            .and_then(|stripped| stripped.get(content.source.as_ref()).cloned())
+            .unwrap_or_else(|| strip::TypeStripper::strip(content.source.deref()));
+        if isolation::Isolation::shareable(source.as_ref()) || rows.len() < 2 {
+            return Self::run(id, &source, extensions, config, rows).await;
+        }
+        let mut results = Vec::with_capacity(rows.len());
+        for row in rows {
+            let fresh = NodeHandlerExtensions {
+                function_runtime: Default::default(),
+                ..extensions.clone()
+            };
+            results.extend(Self::run(id, &source, &fresh, config, vec![row]).await);
+        }
+        results
+    }
+
+    async fn run(
+        id: &Arc<str>,
+        source: &Arc<str>,
+        extensions: &NodeHandlerExtensions,
+        config: &NodeContextConfig,
+        rows: Vec<(Variable, Option<Variable>)>,
+    ) -> Vec<Result<Variable, NodeError>> {
+        let failed = |source: Box<dyn std::error::Error>| NodeError {
+            node_id: id.clone(),
+            trace: None,
+            source,
+        };
+        let count = rows.len();
+        let function = match extensions.function_runtime().await {
+            Ok(function) => function,
+            Err(error) => {
+                let message = error.to_string();
+                return (0..count).map(|_| Err(failed(message.clone().into()))).collect();
+            }
+        };
+        let module_name = match function.shared_module(id.deref(), source.as_ref()).await {
+            Ok(name) => name,
+            Err(error) => {
+                let message = error.to_string();
+                return (0..count).map(|_| Err(failed(FunctionError::Caught(message.clone()).into()))).collect();
+            }
+        };
+        let base = Instant::now();
+        let started = Arc::new(AtomicU64::new(0));
+        let limit = Duration::from_millis(config.function_timeout_millis);
+        let watched = started.clone();
+        function
+            .runtime()
+            .set_interrupt_handler(Some(Box::new(move || {
+                base.elapsed().saturating_sub(Duration::from_nanos(watched.load(Ordering::Relaxed))) > limit
+            })))
+            .await;
+        let tick = || started.store(base.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        let results = function
+            .call_rows(&module_name, (0, config.max_depth, config.trace), rows, &tick)
+            .await;
+        function.runtime().set_interrupt_handler(None).await;
+        results
+            .into_iter()
+            .map(|result| result.map_err(|error| failed(error.into())))
+            .collect()
     }
 }
 

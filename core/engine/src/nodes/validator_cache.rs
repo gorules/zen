@@ -1,5 +1,6 @@
 use crate::nodes::variable_json::VariableJson;
-use ahash::HashMap;
+use ahash::{AHasher, HashMap};
+use std::hash::Hasher;
 use anyhow::Context;
 use jsonschema::Validator;
 use serde_json::Value;
@@ -17,6 +18,14 @@ impl PartialEq for ValidatorCache {
 }
 
 impl ValidatorCache {
+    pub(crate) fn key(id: &str, name: &str, salt: u64) -> u64 {
+        let mut hasher = AHasher::default();
+        hasher.write(id.as_bytes());
+        hasher.write(name.as_bytes());
+        hasher.write_u64(salt);
+        hasher.finish()
+    }
+
     pub fn get(&self, key: u64) -> Option<Arc<Validator<VariableJson>>> {
         let read = self.inner.read().ok()?;
         read.get(&key).cloned()

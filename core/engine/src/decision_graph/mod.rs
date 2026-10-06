@@ -3,7 +3,7 @@ mod error;
 pub(crate) mod graph;
 pub(crate) mod schema_dict;
 mod tracer;
-mod walker;
+pub(crate) mod walker;
 
 pub use error::DecisionGraphValidationError;
 pub use graph::{DecisionGraphResponse, EvaluationTrace};

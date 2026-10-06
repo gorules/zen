@@ -22,7 +22,7 @@ use super::{
 
 pub(crate) struct MatchSelection {
     pub(crate) matched_arm: Option<Arc<str>>,
-    arms: Vec<ConditionTrace>,
+    pub(crate) arms: Vec<ConditionTrace>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

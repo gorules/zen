@@ -117,9 +117,25 @@ impl<'js> IntoJs<'js> for JsValueWithNodes {
         }
 
         let obj = base_js.into_object().or_throw(ctx)?;
-        let nodes_proxy: QValue<'js> = ctx.eval(
-            r#"
-            (() => {
+        let globals = ctx.globals();
+        let factory: rquickjs::Function<'js> = match globals.get::<_, Option<rquickjs::Function<'js>>>("__zenNodesProxy")? {
+            Some(factory) => factory,
+            None => {
+                let factory: rquickjs::Function<'js> = ctx.eval(Self::FACTORY)?;
+                globals.set("__zenNodesProxy", factory.clone())?;
+                factory
+            }
+        };
+        let nodes_proxy: QValue<'js> = factory.call(())?;
+
+        obj.set("$nodes", nodes_proxy)?;
+        Ok(obj.into_value())
+    }
+}
+
+impl JsValueWithNodes {
+    const FACTORY: &'static str = r#"
+            () => {
               const _data = { loaded: false, inner: null };
               const data = () => {
                 if (!_data.loaded) {
@@ -136,13 +152,8 @@ impl<'js> IntoJs<'js> for JsValueWithNodes {
                 ownKeys: () => Object.keys(data()),
                 getOwnPropertyDescriptor: (target, prop) => Object.getOwnPropertyDescriptor(data(), prop),
               });
-            })();
-        "#,
-        )?;
-
-        obj.set("$nodes", nodes_proxy)?;
-        Ok(obj.into_value())
-    }
+            }
+        "#;
 }
 
 pub(crate) struct JsConverter<'r, 'js> {

@@ -72,21 +72,92 @@ impl Decision {
         context: Variable,
         options: EvaluationOptions,
     ) -> Result<DecisionGraphResponse, Box<EvaluationError>> {
+        if let Some(compiled) = self.compiled(&options) {
+            let responses = compiled
+                .evaluate(
+                    &self.content,
+                    &self.extensions(),
+                    options.max_depth,
+                    std::slice::from_ref(&context),
+                )
+                .await;
+            if let Some(response) = responses.into_iter().next() {
+                return response;
+            }
+        }
+
+        self.evaluate_walker(context, options).await
+    }
+
+    /// Evaluates a decision for many contexts at once
+    pub async fn evaluate_batch(
+        &self,
+        contexts: &[Variable],
+        options: EvaluationOptions,
+    ) -> Vec<Result<DecisionGraphResponse, Box<EvaluationError>>> {
+        if let Some(compiled) = self.compiled(&options) {
+            return compiled
+                .evaluate(&self.content, &self.extensions(), options.max_depth, contexts)
+                .await;
+        }
+
+        let mut responses = Vec::with_capacity(contexts.len());
+        for context in contexts {
+            responses.push(self.evaluate_walker(context.clone(), options).await);
+        }
+        responses
+    }
+
+    pub async fn evaluate_columns<'a>(
+        &self,
+        columns: &'a zen_expression::lane::Columns<'a>,
+        options: EvaluationOptions,
+    ) -> crate::compiled::ColumnarOutput<'a> {
+        match self.compiled(&options) {
+            Some(compiled) => {
+                compiled
+                    .evaluate_columns(&self.content, &self.extensions(), options.max_depth, columns)
+                    .await
+            }
+            None => {
+                let contexts: Vec<Variable> = (0..columns.rows).map(|row| columns.row(row)).collect();
+                let results = self.evaluate_batch(&contexts, options).await;
+                crate::compiled::ColumnarOutput::from_results(results)
+            }
+        }
+    }
+
+    fn compiled(&self, options: &EvaluationOptions) -> Option<&crate::compiled::CompiledGraph> {
+        if options.trace {
+            return None;
+        }
+        self.content.compiled_plan.as_deref()?.usable(&self.content)
+    }
+
+    fn extensions(&self) -> NodeHandlerExtensions {
+        NodeHandlerExtensions {
+            function_runtime: Default::default(),
+            loader: self.loader.clone(),
+            custom_node: self.adapter.clone(),
+            http_handler: self.http_handler.clone(),
+            compiled_cache: self.content.compiled_cache.clone(),
+            dt_indexes: self.content.dt_indexes.clone(),
+            stripped_functions: self.content.stripped_functions.clone(),
+            validator_cache: Arc::new(OnceCell::from(self.content.validator_cache.clone())),
+        }
+    }
+
+    async fn evaluate_walker(
+        &self,
+        context: Variable,
+        options: EvaluationOptions,
+    ) -> Result<DecisionGraphResponse, Box<EvaluationError>> {
         let mut decision_graph = DecisionGraph::try_new(DecisionGraphConfig {
             content: self.content.clone(),
             max_depth: options.max_depth,
             trace: options.trace,
             iteration: 0,
-            extensions: NodeHandlerExtensions {
-                loader: self.loader.clone(),
-                custom_node: self.adapter.clone(),
-                http_handler: self.http_handler.clone(),
-                compiled_cache: self.content.compiled_cache.clone(),
-                dt_indexes: self.content.dt_indexes.clone(),
-                stripped_functions: self.content.stripped_functions.clone(),
-                validator_cache: Arc::new(OnceCell::from(self.content.validator_cache.clone())),
-                ..Default::default()
-            },
+            extensions: self.extensions(),
         })?;
 
         let response = decision_graph.evaluate(context).await?;
@@ -129,6 +200,28 @@ impl Decision {
         })?;
 
         decision_graph.validate()
+    }
+
+    #[doc(hidden)]
+    pub fn interpreted(&self) -> Self {
+        let mut content = (*self.content).clone();
+        content.compiled_plan = None;
+        Self {
+            content: Arc::new(content),
+            loader: self.loader.clone(),
+            adapter: self.adapter.clone(),
+            http_handler: self.http_handler.clone(),
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn plan_verdict(&self, columns: &zen_expression::lane::Columns) -> Option<Result<(), String>> {
+        let compiled = self.content.compiled_plan.as_deref()?.usable(&self.content)?;
+        Some(compiled.plan_verdict(columns))
+    }
+
+    pub fn compiled_verdict(&self) -> Option<Result<(), &str>> {
+        self.content.compiled_verdict()
     }
 
     pub fn compile(&mut self) -> () {

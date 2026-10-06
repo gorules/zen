@@ -5,13 +5,13 @@ use crate::nodes::result::{NodeResponse, NodeResult};
 use crate::nodes::variable_json::{Guards, VariableNode};
 use crate::nodes::NodeError;
 use crate::ZEN_CONFIG;
-use ahash::{AHasher, HashSet};
+use crate::nodes::validator_cache::ValidatorCache;
+use ahash::HashSet;
 use jsonschema::ValidationError;
 use serde::Serialize;
 use serde_json::Value;
 use std::cell::RefCell;
 use std::fmt::{Display, Formatter};
-use std::hash::Hasher;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use thiserror::Error;
@@ -235,11 +235,7 @@ where
     }
 
     fn hash_node(&self) -> u64 {
-        let mut hasher = AHasher::default();
-        hasher.write(self.id.as_bytes());
-        hasher.write(self.name.as_bytes());
-        hasher.write_u64(self.config.validation_salt);
-        hasher.finish()
+        ValidatorCache::key(&self.id, &self.name, self.config.validation_salt)
     }
 }
 

@@ -296,13 +296,16 @@ impl DecisionTableNodeHandler {
         pruned: Option<(&TableIndex, usize)>,
     ) -> bool {
         for (col_idx, input) in ctx.node.inputs.iter().enumerate() {
-            if pruned.is_some_and(|(ix, row_idx)| ix.decides(col_idx, row_idx)) {
-                continue;
-            }
             let Some(rule_value) = rule.get(&input.id) else {
                 continue;
             };
             if rule_value.is_empty() {
+                continue;
+            }
+            if pruned.is_some_and(|(ix, row_idx)| ix.decides(col_idx, row_idx)) {
+                if let Some(field) = &input.field {
+                    let _ = isolate.set_reference(field);
+                }
                 continue;
             }
 

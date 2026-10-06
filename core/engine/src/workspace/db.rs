@@ -789,6 +789,9 @@ impl Db {
             input_schema,
             reads,
             read_plans,
+            compiled: Default::default(),
+            goal_plans: Default::default(),
+            requirements: Default::default(),
         });
         snap.eval_artifacts
             .borrow_mut()

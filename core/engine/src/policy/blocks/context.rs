@@ -543,15 +543,19 @@ impl ExecutionContext<'_> {
                 value: value.deep_clone(),
             });
         }
-        self.store.dot_insert(path, value);
-        self.mirror_top_level(path);
+        Self::write_into(self.store, self.env_mirror, path, value);
     }
 
-    fn mirror_top_level(&self, path: &str) {
-        let Some(env) = self.env_mirror else {
+    pub(crate) fn write_into(store: &Variable, env_mirror: Option<&Variable>, path: &str, value: Variable) {
+        store.dot_insert(path, value);
+        Self::mirror_top_level(store, env_mirror, path);
+    }
+
+    fn mirror_top_level(store: &Variable, env_mirror: Option<&Variable>, path: &str) {
+        let Some(env) = env_mirror else {
             return;
         };
-        let (Some(store_fields), Some(env_fields)) = (self.store.as_object(), env.as_object())
+        let (Some(store_fields), Some(env_fields)) = (store.as_object(), env.as_object())
         else {
             return;
         };

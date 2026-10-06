@@ -61,7 +61,7 @@ impl DecisionGraph {
         self.parent_nodes = nodes;
     }
 
-    fn build_graph(
+    pub(crate) fn build_graph(
         content: &GraphContent,
     ) -> Result<StableDiDecisionGraph, DecisionGraphValidationError> {
         let mut graph = StableDiDecisionGraph::new();
@@ -386,6 +386,21 @@ impl DecisionGraphResponse {
         }
 
         map.end()
+    }
+}
+
+impl DecisionGraph {
+    pub(crate) async fn handle<NodeData, TraceData, NodeHandlerType>(
+        base_ctx: NodeContextBase,
+        content: NodeData,
+        handler: NodeHandlerType,
+    ) -> NodeResult
+    where
+        TraceData: TraceDataType,
+        NodeData: NodeDataType,
+        NodeHandlerType: NodeHandler<NodeData = NodeData, TraceData = TraceData>,
+    {
+        handle_node(base_ctx, content, handler).await
     }
 }
 

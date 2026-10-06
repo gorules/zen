@@ -111,6 +111,33 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         self.current.get().map(|token| &token.kind)
     }
 
+    /// Arguments of the call whose `(` was just read: top-level commas up to
+    /// the matching `)`, plus one. Looks ahead without moving.
+    fn arguments_ahead(&self) -> usize {
+        let mut depth = 0usize;
+        let mut count = 1;
+        for token in &self.tokens[self.position.get().min(self.tokens.len())..] {
+            match token.kind {
+                TokenKind::Bracket(
+                    Bracket::LeftParenthesis | Bracket::LeftSquareBracket | Bracket::LeftCurlyBracket,
+                ) => depth += 1,
+                TokenKind::Bracket(
+                    Bracket::RightParenthesis
+                    | Bracket::RightSquareBracket
+                    | Bracket::RightCurlyBracket,
+                ) => {
+                    if depth == 0 {
+                        break;
+                    }
+                    depth -= 1;
+                }
+                TokenKind::Operator(Operator::Comma) if depth == 0 => count += 1,
+                _ => {}
+            }
+        }
+        count
+    }
+
     fn token_start(&self) -> u32 {
         match self.current() {
             None => self.tokens.last().map(|t| t.span.1).unwrap_or_default(),
@@ -731,11 +758,47 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         };
 
         self.next();
+
+        // `sum([1, 2])` is the built-in; `sum(items, #.amount)` and
+        // `sum(items as t, t.amount)` are its callback form.
+        let mut function = function;
+        let mut first_argument = None;
+        let closes_at_once =
+            self.current_kind() == Some(&TokenKind::Bracket(Bracket::RightParenthesis));
+        if let FunctionKind::Internal(internal) = &function {
+            if let Some(closure) = internal
+                .parameterized_closure_form()
+                .filter(|_| !closes_at_once)
+            {
+                let many = self.arguments_ahead() >= 3;
+                let argument = expression_parser(ParserContext::Global);
+                let aliased = self
+                    .current()
+                    .is_some_and(|t| t.kind == TokenKind::Literal && t.value == "as");
+                if many || aliased {
+                    function = FunctionKind::Closure(closure);
+                }
+                first_argument = Some(argument);
+            } else if let Some(closure) = internal.closure_form().filter(|_| !closes_at_once) {
+                let argument = expression_parser(ParserContext::Global);
+                let continues = self.current().is_some_and(|t| {
+                    t.kind == TokenKind::Operator(Operator::Comma)
+                        || (t.kind == TokenKind::Literal && t.value == "as")
+                });
+                if continues {
+                    function = FunctionKind::Closure(closure);
+                }
+                first_argument = Some(argument);
+            }
+        }
+
         let function_node = match function {
-            FunctionKind::Closure(_) => {
+            FunctionKind::Closure(closure) => {
                 let mut arguments = BumpVec::new_in(&self.bump);
 
-                arguments.push(expression_parser(ParserContext::Global));
+                arguments.push(
+                    first_argument.unwrap_or_else(|| expression_parser(ParserContext::Global)),
+                );
 
                 let alias: Option<&'arena str> =
                     if self
@@ -767,11 +830,21 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
                         None
                     };
 
-                if let Some(error) = self.expect(TokenKind::Operator(Operator::Comma)) {
-                    arguments.push(error);
-                };
+                let (required, maximum) = closure.callbacks();
+                for index in 0..maximum {
+                    let more = self.current_kind() == Some(&TokenKind::Operator(Operator::Comma));
+                    if !more && index >= required {
+                        break;
+                    }
 
-                arguments.push(self.closure(&expression_parser, alias));
+                    if let Some(error) = self.expect(TokenKind::Operator(Operator::Comma)) {
+                        arguments.push(error);
+                        break;
+                    };
+
+                    arguments.push(self.closure(&expression_parser, alias));
+                }
+
                 if let Some(error) = self.expect(TokenKind::Bracket(Bracket::RightParenthesis)) {
                     arguments.push(error);
                 }
@@ -783,12 +856,19 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
             }
             _ => {
                 let mut arguments = BumpVec::new_in(&self.bump);
+                let mut parsed_first = first_argument;
                 loop {
-                    if self.current_kind() == Some(&TokenKind::Bracket(Bracket::RightParenthesis)) {
-                        break;
-                    }
+                    if let Some(argument) = parsed_first.take() {
+                        arguments.push(argument);
+                    } else {
+                        if self.current_kind()
+                            == Some(&TokenKind::Bracket(Bracket::RightParenthesis))
+                        {
+                            break;
+                        }
 
-                    arguments.push(expression_parser(ParserContext::Global));
+                        arguments.push(expression_parser(ParserContext::Global));
+                    }
                     if self.current_kind() != Some(&TokenKind::Operator(Operator::Comma)) {
                         break;
                     }

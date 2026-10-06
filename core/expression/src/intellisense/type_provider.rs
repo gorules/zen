@@ -565,7 +565,7 @@ impl TypesProvider {
                 let mut type_list: Vec<VariableType> = arguments
                     .iter()
                     .enumerate()
-                    .map(|(i, n)| match is_closure_kind && i == 1 {
+                    .map(|(i, n)| match is_closure_kind && i >= 1 {
                         true => VariableType::Any,
                         false => self.determine(n, scope.clone()).kind,
                     })
@@ -577,26 +577,28 @@ impl TypesProvider {
                         .unwrap_or_else(|| Rc::new(VariableType::Any));
                     let ptr_type_inner = ptr_type.deref().clone();
 
-                    let alias = match arguments[1] {
-                        Node::Closure { alias, .. } => *alias,
-                        _ => None,
-                    };
+                    for i in 1..arguments.len() {
+                        let alias = match arguments[i] {
+                            Node::Closure { alias, .. } => *alias,
+                            _ => None,
+                        };
 
-                    let mut closure_scope = IntelliSenseScope {
-                        pointer_data: ptr_type_inner.clone(),
-                        current_data: scope.current_data.clone(),
-                        root_data: scope.root_data.clone(),
-                        aliases: scope.aliases.clone(),
-                    };
+                        let mut closure_scope = IntelliSenseScope {
+                            pointer_data: ptr_type_inner.clone(),
+                            current_data: scope.current_data.clone(),
+                            root_data: scope.root_data.clone(),
+                            aliases: scope.aliases.clone(),
+                        };
 
-                    if let Some(alias_name) = alias {
-                        closure_scope
-                            .aliases
-                            .insert(Rc::from(alias_name), ptr_type_inner);
+                        if let Some(alias_name) = alias {
+                            closure_scope
+                                .aliases
+                                .insert(Rc::from(alias_name), ptr_type_inner.clone());
+                        }
+
+                        let new_type = self.determine(arguments[i], closure_scope);
+                        type_list[i] = new_type.kind;
                     }
-
-                    let new_type = self.determine(arguments[1], closure_scope);
-                    type_list[1] = new_type.kind;
                 }
 
                 match kind {
@@ -612,7 +614,9 @@ impl TypesProvider {
                     FunctionKind::Internal(InternalFunction::Values) => {
                         self.values_typecheck(&type_list, arguments)
                     }
-                    FunctionKind::Internal(_) | FunctionKind::Deprecated(_) => {
+                    FunctionKind::Internal(_)
+                    | FunctionKind::Deprecated(_)
+                    | FunctionKind::Host(_) => {
                         let Some(def) = FunctionRegistry::get_definition(kind) else {
                             return V(VariableType::Any);
                         };
@@ -644,25 +648,26 @@ impl TypesProvider {
                             );
                         }
 
-                        if matches!(
-                            c,
-                            ClosureFunction::All
-                                | ClosureFunction::None
-                                | ClosureFunction::Some
-                                | ClosureFunction::One
-                                | ClosureFunction::Filter
-                                | ClosureFunction::Count
-                        ) {
-                            if !type_list[1].satisfies(&VariableType::Bool) {
+                        for i in 1..arguments.len() {
+                            if c.is_predicate(i) && !type_list[i].satisfies(&VariableType::Bool) {
                                 self.set_error(
-                                    arguments[1],
+                                    arguments[i],
                                     format!(
                                         "Callback must return a `bool`, but its return type is `{}`.",
-                                        type_list[1]
+                                        type_list[i]
                                     ),
                                 );
                             }
                         }
+
+                        // What an aggregate reads: the projection, else the items.
+                        let value_type = || match type_list.get(1) {
+                            Some(projection) => projection.clone(),
+                            None => type_list[0]
+                                .iterator()
+                                .map(|t| t.deref().clone())
+                                .unwrap_or(VariableType::Any),
+                        };
 
                         match c {
                             ClosureFunction::All => V(VariableType::Bool),
@@ -681,6 +686,24 @@ impl TypesProvider {
                                     None => body_ty.clone(),
                                 };
                                 V(VariableType::Array(Rc::new(element)))
+                            }
+                            ClosureFunction::Sum
+                            | ClosureFunction::Avg
+                            | ClosureFunction::Median
+                            | ClosureFunction::Stddev
+                            | ClosureFunction::Variance
+                            | ClosureFunction::Percentile
+                            | ClosureFunction::CountDistinct => V(VariableType::Number),
+                            ClosureFunction::TopK | ClosureFunction::LastN => {
+                                V(VariableType::Array(Rc::new(value_type())))
+                            }
+                            ClosureFunction::Mode
+                            | ClosureFunction::Min
+                            | ClosureFunction::Max
+                            | ClosureFunction::First
+                            | ClosureFunction::Last => V(value_type()),
+                            ClosureFunction::Unique => {
+                                V(VariableType::Array(Rc::new(value_type())))
                             }
                         }
                     }

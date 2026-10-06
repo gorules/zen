@@ -262,3 +262,77 @@ diagnostics = [{ source = "type_check", severity = "error" }]
 
 [test.strict]
 diagnostics = [{ source = "type_check", severity = "error" }]
+
+# ── Aggregates with callbacks: projection, then filter ────────────────────────
+
+[[test]]
+name = "sum with projection and filter"
+expression = "sum(items, #.amount, #.kind == 'in')"
+input = '{"items": [{"amount": 1, "kind": "in"}]}'
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "sum with alias"
+expression = "sum(items as t, t.amount, t.kind == 'in')"
+input = '{"items": [{"amount": 1, "kind": "in"}]}'
+reads = [
+    { type = "iteration", collection = ["items"], alias = "t", reads = [
+        { type = "direct", path = ["t", "amount"] },
+        { type = "direct", path = ["t", "kind"] },
+    ] },
+]
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "count without callback"
+expression = "count(items)"
+input = '{"items": [1, 2, 3]}'
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "unique of a projection"
+expression = "unique(items, #.country)"
+input = '{"items": [{"country": "GB"}]}'
+
+[test.loose]
+return_type = '{"Array":"String"}'
+
+[test.strict]
+return_type = '{"Array":"String"}'
+
+[[test]]
+name = "max keeps the projection type"
+expression = "max(items, #.amount)"
+input = '{"items": [{"amount": 1}]}'
+
+[test.loose]
+return_type = '"Number"'
+
+[test.strict]
+return_type = '"Number"'
+
+[[test]]
+name = "countDistinct filter must be a bool"
+expression = "countDistinct(items, #.country, #.amount)"
+input = '{"items": [{"country": "GB", "amount": 1}]}'
+
+[test.loose]
+diagnostics = [{ source = "type_check", severity = "error" }]
+
+[test.strict]
+diagnostics = [{ source = "type_check", severity = "error" }]

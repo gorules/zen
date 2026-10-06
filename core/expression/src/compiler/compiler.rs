@@ -423,7 +423,7 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                 }),
             },
             Node::FunctionCall { kind, arguments } => match kind {
-                FunctionKind::Internal(_) | FunctionKind::Deprecated(_) => {
+                FunctionKind::Internal(_) | FunctionKind::Deprecated(_) | FunctionKind::Host(_) => {
                     let function = FunctionRegistry::get_definition(kind).ok_or_else(|| {
                         CompilerError::UnknownFunction {
                             name: kind.to_string(),
@@ -553,6 +553,87 @@ impl<'arena, 'bytecode_ref> CompilerInner<'arena, 'bytecode_ref> {
                         self.emit(Opcode::End);
                         self.emit(Opcode::Array);
                         Ok(self.emit(Opcode::Flatten))
+                    }
+                    ClosureFunction::Count if arguments.len() == 1 => {
+                        self.compile_argument(kind, arguments, 0)?;
+                        self.emit(Opcode::Begin);
+                        self.emit(Opcode::GetLen);
+                        Ok(self.emit(Opcode::End))
+                    }
+                    ClosureFunction::Sum
+                    | ClosureFunction::Avg
+                    | ClosureFunction::Min
+                    | ClosureFunction::Max
+                    | ClosureFunction::Median
+                    | ClosureFunction::Mode
+                    | ClosureFunction::Stddev
+                    | ClosureFunction::Variance
+                    | ClosureFunction::TopK
+                    | ClosureFunction::LastN
+                    | ClosureFunction::Percentile
+                    | ClosureFunction::CountDistinct
+                    | ClosureFunction::Unique
+                    | ClosureFunction::First
+                    | ClosureFunction::Last => {
+                        let (_, maximum) = c.callbacks();
+                        if arguments.len() > maximum + 1 {
+                            return Err(CompilerError::InvalidFunctionCall {
+                                name: kind.to_string(),
+                                message: "Invalid number of arguments".to_string(),
+                            });
+                        }
+
+                        // A parameter (`topK`'s count) sits between the
+                        // projection and the filter.
+                        let parameter = c.parameter();
+                        let filter_at = if parameter.is_some() { 3 } else { 2 };
+                        self.compile_argument(kind, arguments, 0)?;
+                        self.emit(Opcode::Begin);
+                        self.emit_loop(|c| {
+                            let filtered = arguments.len() > filter_at;
+                            let mut noop = 0;
+                            if filtered {
+                                c.compile_argument(kind, arguments, filter_at)?;
+                                noop = c.emit(Opcode::Jump(Jump::IfFalse, 0));
+                                c.emit(Opcode::Pop);
+                            }
+
+                            // The item (or its projection) joins the result
+                            // unless it is null.
+                            if arguments.len() > 1 {
+                                c.compile_argument(kind, arguments, 1)?;
+                            } else {
+                                c.emit(Opcode::Pointer(0));
+                            }
+                            let keep = c.emit(Opcode::Jump(Jump::IfNotNull, 0));
+                            c.emit(Opcode::Pop);
+                            let skip = c.emit(Opcode::Jump(Jump::Forward, 0));
+                            let kept = c.bytecode.len();
+                            c.replace(keep, Opcode::Jump(Jump::IfNotNull, (kept - keep) as u32));
+                            c.emit(Opcode::IncrementCount);
+                            let skipped = c.bytecode.len();
+                            c.replace(skip, Opcode::Jump(Jump::Forward, (skipped - skip) as u32));
+
+                            if filtered {
+                                let jmp = c.emit(Opcode::Jump(Jump::Forward, 0));
+                                c.replace(noop, Opcode::Jump(Jump::IfFalse, (jmp - noop) as u32));
+                                let e = c.emit(Opcode::Pop);
+                                c.replace(jmp, Opcode::Jump(Jump::Forward, (e - jmp) as u32));
+                            }
+                            Ok(())
+                        })?;
+                        self.emit(Opcode::GetCount);
+                        self.emit(Opcode::End);
+                        self.emit(Opcode::Array);
+                        let mut arg_count = 1;
+                        if let Some(at) = parameter {
+                            self.compile_argument(kind, arguments, at)?;
+                            arg_count = 2;
+                        }
+                        Ok(self.emit(Opcode::CallFunction {
+                            kind: kind.clone(),
+                            arg_count,
+                        }))
                     }
                     ClosureFunction::Count => {
                         self.compile_argument(kind, arguments, 0)?;

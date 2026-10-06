@@ -34,6 +34,11 @@ pub enum InternalFunction {
     Rand,
     Median,
     Mode,
+    Stddev,
+    Variance,
+    Percentile,
+    TopK,
+    LastN,
     Floor,
     Ceil,
     Round,
@@ -257,6 +262,40 @@ impl From<&InternalFunction> for Rc<dyn FunctionDefinition> {
             IF::Mode => Rc::new(StaticFunction {
                 implementation: Rc::new(imp::mode),
                 signature: FunctionSignature::single(VT::Number.array(), VT::Number),
+            }),
+
+            IF::Stddev => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::stddev),
+                signature: FunctionSignature::single(VT::Number.array(), VT::Number),
+            }),
+
+            IF::Variance => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::variance),
+                signature: FunctionSignature::single(VT::Number.array(), VT::Number),
+            }),
+
+            IF::Percentile => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::percentile),
+                signature: FunctionSignature {
+                    parameters: vec![VT::Number.array(), VT::Number],
+                    return_type: VT::Number,
+                },
+            }),
+
+            IF::TopK => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::top_k),
+                signature: FunctionSignature {
+                    parameters: vec![VT::Any.array(), VT::Number],
+                    return_type: VT::Any.array(),
+                },
+            }),
+
+            IF::LastN => Rc::new(StaticFunction {
+                implementation: Rc::new(imp::last_n),
+                signature: FunctionSignature {
+                    parameters: vec![VT::Any.array(), VT::Number],
+                    return_type: VT::Any.array(),
+                },
             }),
 
             IF::Type => Rc::new(StaticFunction {
@@ -716,6 +755,140 @@ pub(crate) mod imp {
             .context("Empty array")?;
 
         Ok(V::Number(most_common))
+    }
+
+    /// Sample variance, exact in decimals: `(Σx² − (Σx)²/n) / (n − 1)`;
+    /// `None` below two values. Feature engines merging `(n, Σx, Σx²)`
+    /// across buckets use the same formula and get the same digits.
+    pub fn sample_variance(values: &[Decimal]) -> anyhow::Result<Option<Decimal>> {
+        let mut sum = Decimal::ZERO;
+        let mut squares = Decimal::ZERO;
+        for x in values {
+            sum = sum.checked_add(*x).context("Number overflow")?;
+            squares = x
+                .checked_mul(*x)
+                .and_then(|sq| squares.checked_add(sq))
+                .context("Number overflow")?;
+        }
+        variance_of(values.len() as i64, sum, squares)
+    }
+
+    pub fn variance_of(n: i64, sum: Decimal, squares: Decimal) -> anyhow::Result<Option<Decimal>> {
+        if n < 2 {
+            return Ok(None);
+        }
+        let n = Decimal::from(n);
+        let spread = sum
+            .checked_mul(sum)
+            .and_then(|s2| s2.checked_div(n))
+            .and_then(|s2n| squares.checked_sub(s2n))
+            .context("Number overflow")?;
+        let variance = spread
+            .checked_div(n - Decimal::ONE)
+            .context("Number overflow")?;
+        Ok(Some(variance.max(Decimal::ZERO).normalize()))
+    }
+
+    pub fn sqrt_of(value: Decimal) -> anyhow::Result<Decimal> {
+        use rust_decimal::MathematicalOps;
+        Ok(value.sqrt().context("Square root of a negative number")?.normalize())
+    }
+
+    pub fn variance(args: Arguments) -> anyhow::Result<V> {
+        let a = __internal_number_array(&args, 0)?;
+        Ok(sample_variance(&a)?.map_or(V::Null, V::Number))
+    }
+
+    pub fn stddev(args: Arguments) -> anyhow::Result<V> {
+        let a = __internal_number_array(&args, 0)?;
+        match sample_variance(&a)? {
+            None => Ok(V::Null),
+            Some(variance) => Ok(V::Number(sqrt_of(variance)?)),
+        }
+    }
+
+    /// Linear interpolation between the closest ranks of sorted values
+    /// (`q` in 0..=1): `x[⌊p⌋] + (p − ⌊p⌋)·(x[⌊p⌋+1] − x[⌊p⌋])`, `p = q·(n − 1)`.
+    pub fn percentile_of(sorted: &[Decimal], q: Decimal) -> anyhow::Result<Option<Decimal>> {
+        if !(Decimal::ZERO..=Decimal::ONE).contains(&q) {
+            anyhow::bail!("Percentile must be between 0 and 1, got {q}");
+        }
+        if sorted.is_empty() {
+            return Ok(None);
+        }
+        let position = q
+            .checked_mul(Decimal::from(sorted.len() - 1))
+            .context("Number overflow")?;
+        let low = position.floor();
+        let index = low.to_usize().context("Index out of bounds")?;
+        let fraction = position - low;
+        let value = if fraction.is_zero() {
+            sorted[index]
+        } else {
+            let (a, b) = (sorted[index], sorted[index + 1]);
+            b.checked_sub(a)
+                .and_then(|d| d.checked_mul(fraction))
+                .and_then(|d| a.checked_add(d))
+                .context("Number overflow")?
+        };
+        Ok(Some(value.normalize()))
+    }
+
+    fn __internal_count(args: &Arguments, pos: usize) -> anyhow::Result<usize> {
+        let n = args.number(pos)?;
+        if n.is_sign_negative() || !n.fract().is_zero() {
+            anyhow::bail!("Expected a whole number of items, got {n}");
+        }
+        n.to_usize().context("Number of items is too large")
+    }
+
+    /// The `k` most frequent non-null values (numbers or strings), most
+    /// frequent first; equal counts go to the smaller value.
+    pub fn top_k(args: Arguments) -> anyhow::Result<V> {
+        let k = __internal_count(&args, 1)?;
+        let array = args.array(0)?;
+        let items = array.borrow();
+        let mut numbers: BTreeMap<Decimal, usize> = BTreeMap::new();
+        let mut strings = BTreeMap::new();
+        for item in items.iter() {
+            match item {
+                V::Null => {}
+                V::Number(n) => *numbers.entry(n.normalize()).or_insert(0) += 1,
+                V::String(s) => *strings.entry(s.clone()).or_insert(0) += 1,
+                _ => anyhow::bail!("Expected an array of numbers or strings"),
+            }
+        }
+        let mut ranked: Vec<(usize, V)> = numbers
+            .into_iter()
+            .map(|(n, c)| (c, V::Number(n)))
+            .chain(strings.into_iter().map(|(s, c)| (c, V::String(s))))
+            .collect();
+        // Stable: within a count, numbers then strings, each ascending.
+        ranked.sort_by(|a, b| b.0.cmp(&a.0));
+        Ok(V::from_array(ranked.into_iter().take(k).map(|(_, v)| v).collect()))
+    }
+
+    /// The last `n` non-null items, the last one first.
+    pub fn last_n(args: Arguments) -> anyhow::Result<V> {
+        let n = __internal_count(&args, 1)?;
+        let array = args.array(0)?;
+        let items = array.borrow();
+        Ok(V::from_array(
+            items
+                .iter()
+                .rev()
+                .filter(|item| !matches!(item, V::Null))
+                .take(n)
+                .cloned()
+                .collect(),
+        ))
+    }
+
+    pub fn percentile(args: Arguments) -> anyhow::Result<V> {
+        let mut a = __internal_number_array(&args, 0)?;
+        let q = args.number(1)?;
+        a.sort();
+        Ok(percentile_of(&a, q)?.map_or(V::Null, V::Number))
     }
 
     pub fn to_type(args: Arguments) -> anyhow::Result<V> {

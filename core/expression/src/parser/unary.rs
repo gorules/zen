@@ -356,6 +356,11 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                     InternalFunction::Rand => CompareWithReference(Equal),
                     InternalFunction::Median => CompareWithReference(Equal),
                     InternalFunction::Mode => CompareWithReference(Equal),
+                    InternalFunction::Stddev => CompareWithReference(Equal),
+                    InternalFunction::Variance => CompareWithReference(Equal),
+                    InternalFunction::Percentile => CompareWithReference(Equal),
+                    InternalFunction::TopK => CompareWithReference(In),
+                    InternalFunction::LastN => CompareWithReference(In),
                     InternalFunction::Floor => CompareWithReference(Equal),
                     InternalFunction::Ceil => CompareWithReference(Equal),
                     InternalFunction::Round => CompareWithReference(Equal),
@@ -404,7 +409,22 @@ impl From<&Node<'_>> for UnaryNodeBehaviour {
                     ClosureFunction::Map => CompareWithReference(In),
                     ClosureFunction::FlatMap => CompareWithReference(In),
                     ClosureFunction::Count => CompareWithReference(Equal),
+                    ClosureFunction::Unique => CompareWithReference(In),
+                    ClosureFunction::TopK | ClosureFunction::LastN => CompareWithReference(In),
+                    ClosureFunction::Sum
+                    | ClosureFunction::Avg
+                    | ClosureFunction::Min
+                    | ClosureFunction::Max
+                    | ClosureFunction::Median
+                    | ClosureFunction::Mode
+                    | ClosureFunction::Stddev
+                    | ClosureFunction::Variance
+                    | ClosureFunction::Percentile
+                    | ClosureFunction::CountDistinct
+                    | ClosureFunction::First
+                    | ClosureFunction::Last => CompareWithReference(Equal),
                 },
+                FunctionKind::Host(_) => CompareWithReference(Equal),
             },
             Node::MethodCall { kind, .. } => match kind {
                 MethodKind::DateMethod(dm) => match dm {

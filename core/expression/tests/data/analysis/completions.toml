@@ -201,3 +201,17 @@ expression = "'hello"
 pos = 6
 input = '{"price": 10, "qty": 5}'
 includes = ["price", "qty", "sum"]
+
+[[test]]
+name = "feature aggregates complete"
+expression = "co"
+pos = 2
+input = '{"items": []}'
+includes = ["count", "countDistinct"]
+
+[[test]]
+name = "first and last complete"
+expression = "f"
+pos = 1
+input = '{"items": []}'
+includes = ["first", "filter", "flatMap"]

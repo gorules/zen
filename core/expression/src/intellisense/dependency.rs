@@ -679,7 +679,6 @@ impl<'a> DependencyResolutionWalker<'a> {
                 if let FunctionKind::Closure(_) = kind {
                     if arguments.len() >= 2 {
                         let collection_node = arguments[0];
-                        let closure_node = arguments[1];
 
                         let collection_info = self.extract_path_with_spans(collection_node);
                         let collection_source = collection_info
@@ -687,44 +686,49 @@ impl<'a> DependencyResolutionWalker<'a> {
                             .map(|(p, _)| p.clone())
                             .or_else(|| Self::collection_source_path(collection_node));
 
-                        let (alias, inner_reads, inner_refs) = match closure_node {
-                            Node::Closure { body, alias } => {
-                                let mut inner_scope = scope.clone();
-                                inner_scope.locals.insert(Variable::dollar_key_rc());
-                                inner_scope.pointer_collection = collection_source
-                                    .as_ref()
-                                    .filter(|source| !scope.is_local(source))
-                                    .map(|source| scope.expand_alias_root(source));
+                        // Every callback (an aggregate's projection and its
+                        // filter) reads through the same items.
+                        let mut alias_found: Option<Rc<str>> = None;
+                        let mut inner_reads = Vec::new();
+                        let mut inner_refs = Vec::new();
+                        for &closure_node in &arguments[1..] {
+                            let Node::Closure { body, alias } = closure_node else {
+                                self.resolve(closure_node, scope);
+                                return;
+                            };
 
-                                match (alias, collection_source.as_ref()) {
-                                    (Some(alias_name), Some(source)) => {
-                                        let expanded = scope.expand_alias_root(source);
-                                        if scope.is_local(&expanded) {
-                                            inner_scope
-                                                .unresolved_aliases
-                                                .insert(Rc::from(*alias_name));
-                                        } else {
-                                            inner_scope
-                                                .aliases
-                                                .insert(Rc::from(*alias_name), expanded);
-                                        }
-                                    }
-                                    (Some(alias_name), None) => {
+                            let mut inner_scope = scope.clone();
+                            inner_scope.locals.insert(Variable::dollar_key_rc());
+                            inner_scope.pointer_collection = collection_source
+                                .as_ref()
+                                .filter(|source| !scope.is_local(source))
+                                .map(|source| scope.expand_alias_root(source));
+
+                            match (alias, collection_source.as_ref()) {
+                                (Some(alias_name), Some(source)) => {
+                                    let expanded = scope.expand_alias_root(source);
+                                    if scope.is_local(&expanded) {
                                         inner_scope
                                             .unresolved_aliases
                                             .insert(Rc::from(*alias_name));
+                                    } else {
+                                        inner_scope.aliases.insert(Rc::from(*alias_name), expanded);
                                     }
-                                    _ => {}
                                 }
-                                let (reads, refs) =
-                                    Self::walk_inner(body, &mut inner_scope, self.metadata);
-                                (alias.map(|a| Rc::from(a)), reads, refs)
+                                (Some(alias_name), None) => {
+                                    inner_scope.unresolved_aliases.insert(Rc::from(*alias_name));
+                                }
+                                _ => {}
                             }
-                            _ => {
-                                self.resolve(closure_node, scope);
-                                return;
+                            let (reads, refs) =
+                                Self::walk_inner(body, &mut inner_scope, self.metadata);
+                            if alias_found.is_none() {
+                                alias_found = alias.map(Rc::from);
                             }
-                        };
+                            inner_reads.extend(reads);
+                            inner_refs.extend(refs);
+                        }
+                        let alias = alias_found;
 
                         match collection_info {
                             Some((collection, spans)) if !scope.is_local(&collection) => {

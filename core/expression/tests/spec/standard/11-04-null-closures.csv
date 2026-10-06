@@ -1,0 +1,398 @@
+expression (string);input (json 5);output (json 5);note
+# A null list is an error for every closure; an empty list never evaluates the body
+map(xs, # * 2);{xs: [1, 5, 10]};[2, 10, 20]
+map(xs, # * 2);{xs: [5, null, 10]};!error
+map(xs, # * 2);{xs: []};[]
+map(xs, # * 2);{xs: null};!error;question: a null list is an error rather than an empty list
+map(xs, # * 2);{};!error;question: a null list is an error rather than an empty list
+map(xs, # * 2);{xs: [1, 'a']};!error
+map(xs, # * 2);{xs: ['a', 20]};!error
+map(xs, # * 2);{xs: 'abc'};!error
+filter(xs, # > 4);{xs: [1, 5, 10]};[5, 10]
+filter(xs, # > 4);{xs: [5, null, 10]};!error
+filter(xs, # > 4);{xs: []};[]
+filter(xs, # > 4);{xs: null};!error;question: a null list is an error rather than an empty list
+filter(xs, # > 4);{};!error;question: a null list is an error rather than an empty list
+filter(xs, # > 4);{xs: [1, 'a']};!error
+filter(xs, # > 4);{xs: ['a', 20]};!error
+filter(xs, # > 4);{xs: 'abc'};!error
+some(xs, # > 4);{xs: [1, 5, 10]};true
+some(xs, # > 4);{xs: [5, null, 10]};true
+some(xs, # > 4);{xs: []};false
+some(xs, # > 4);{xs: null};!error;question: a null list is an error rather than an empty list
+some(xs, # > 4);{};!error;question: a null list is an error rather than an empty list
+some(xs, # > 4);{xs: [1, 'a']};!error
+some(xs, # > 4);{xs: ['a', 20]};!error
+some(xs, # > 4);{xs: 'abc'};!error
+all(xs, # > 4);{xs: [1, 5, 10]};false
+all(xs, # > 4);{xs: [5, null, 10]};!error
+all(xs, # > 4);{xs: []};true
+all(xs, # > 4);{xs: null};!error;question: a null list is an error rather than an empty list
+all(xs, # > 4);{};!error;question: a null list is an error rather than an empty list
+all(xs, # > 4);{xs: [1, 'a']};false
+all(xs, # > 4);{xs: ['a', 20]};!error
+all(xs, # > 4);{xs: 'abc'};!error
+none(xs, # > 4);{xs: [1, 5, 10]};false
+none(xs, # > 4);{xs: [5, null, 10]};false
+none(xs, # > 4);{xs: []};true
+none(xs, # > 4);{xs: null};!error;question: a null list is an error rather than an empty list
+none(xs, # > 4);{};!error;question: a null list is an error rather than an empty list
+none(xs, # > 4);{xs: [1, 'a']};!error
+none(xs, # > 4);{xs: ['a', 20]};!error
+none(xs, # > 4);{xs: 'abc'};!error
+count(xs, # > 4);{xs: [1, 5, 10]};2
+count(xs, # > 4);{xs: [5, null, 10]};!error
+count(xs, # > 4);{xs: []};0
+count(xs, # > 4);{xs: null};!error;question: a null list is an error rather than an empty list
+count(xs, # > 4);{};!error;question: a null list is an error rather than an empty list
+count(xs, # > 4);{xs: [1, 'a']};!error
+count(xs, # > 4);{xs: ['a', 20]};!error
+count(xs, # > 4);{xs: 'abc'};!error
+one(xs, # > 4);{xs: [1, 5, 10]};false
+one(xs, # > 4);{xs: [5, null, 10]};!error
+one(xs, # > 4);{xs: []};false
+one(xs, # > 4);{xs: null};!error;question: a null list is an error rather than an empty list
+one(xs, # > 4);{};!error;question: a null list is an error rather than an empty list
+one(xs, # > 4);{xs: [1, 'a']};!error
+one(xs, # > 4);{xs: ['a', 20]};!error
+one(xs, # > 4);{xs: 'abc'};!error
+map(xs ?? [], # * 2);{xs: [1, 5, 10]};[2, 10, 20]
+map(xs ?? [], # * 2);{xs: [5, null, 10]};!error
+map(xs ?? [], # * 2);{xs: []};[]
+map(xs ?? [], # * 2);{xs: null};[]
+map(xs ?? [], # * 2);{};[]
+map(xs ?? [], # * 2);{xs: [1, 'a']};!error
+map(xs ?? [], # * 2);{xs: ['a', 20]};!error
+map(xs ?? [], # * 2);{xs: 'abc'};!error
+count(xs ?? [], true);{xs: [1, 5, 10]};3
+count(xs ?? [], true);{xs: [5, null, 10]};3
+count(xs ?? [], true);{xs: []};0
+count(xs ?? [], true);{xs: null};0
+count(xs ?? [], true);{};0
+count(xs ?? [], true);{xs: [1, 'a']};2
+count(xs ?? [], true);{xs: ['a', 20]};2
+count(xs ?? [], true);{xs: 'abc'};!error
+# Guarding each element inside the body
+map(xs, # ?? 0);{xs: [1, 5, 10]};[1, 5, 10]
+map(xs, # ?? 0);{xs: [5, null, 10]};[5, 0, 10]
+map(xs, # ?? 0);{xs: []};[]
+map(xs, # ?? 0);{xs: null};!error;question: a null list is an error rather than an empty list
+map(xs, # ?? 0);{};!error;question: a null list is an error rather than an empty list
+map(xs, # ?? 0);{xs: [1, 'a']};[1, 'a']
+map(xs, # ?? 0);{xs: ['a', 20]};['a', 20]
+map(xs, # ?? 0);{xs: 'abc'};!error
+map(xs, (# ?? 0) * 2);{xs: [1, 5, 10]};[2, 10, 20]
+map(xs, (# ?? 0) * 2);{xs: [5, null, 10]};[10, 0, 20]
+map(xs, (# ?? 0) * 2);{xs: []};[]
+map(xs, (# ?? 0) * 2);{xs: null};!error;question: a null list is an error rather than an empty list
+map(xs, (# ?? 0) * 2);{};!error;question: a null list is an error rather than an empty list
+map(xs, (# ?? 0) * 2);{xs: [1, 'a']};!error
+map(xs, (# ?? 0) * 2);{xs: ['a', 20]};!error
+map(xs, (# ?? 0) * 2);{xs: 'abc'};!error
+map(xs, # == null ? -1 : # * 2);{xs: [1, 5, 10]};[2, 10, 20]
+map(xs, # == null ? -1 : # * 2);{xs: [5, null, 10]};[10, -1, 20]
+map(xs, # == null ? -1 : # * 2);{xs: []};[]
+map(xs, # == null ? -1 : # * 2);{xs: null};!error;question: a null list is an error rather than an empty list
+map(xs, # == null ? -1 : # * 2);{};!error;question: a null list is an error rather than an empty list
+map(xs, # == null ? -1 : # * 2);{xs: [1, 'a']};!error
+map(xs, # == null ? -1 : # * 2);{xs: ['a', 20]};!error
+map(xs, # == null ? -1 : # * 2);{xs: 'abc'};!error
+map(xs, type(#) == 'number' ? # * 2 : #);{xs: [1, 5, 10]};[2, 10, 20]
+map(xs, type(#) == 'number' ? # * 2 : #);{xs: [5, null, 10]};[10, null, 20]
+map(xs, type(#) == 'number' ? # * 2 : #);{xs: []};[]
+map(xs, type(#) == 'number' ? # * 2 : #);{xs: null};!error;question: a null list is an error rather than an empty list
+map(xs, type(#) == 'number' ? # * 2 : #);{};!error;question: a null list is an error rather than an empty list
+map(xs, type(#) == 'number' ? # * 2 : #);{xs: [1, 'a']};[2, 'a']
+map(xs, type(#) == 'number' ? # * 2 : #);{xs: ['a', 20]};['a', 40]
+map(xs, type(#) == 'number' ? # * 2 : #);{xs: 'abc'};!error
+filter(xs, # != null and # > 4);{xs: [1, 5, 10]};[5, 10]
+filter(xs, # != null and # > 4);{xs: [5, null, 10]};[5, 10]
+filter(xs, # != null and # > 4);{xs: []};[]
+filter(xs, # != null and # > 4);{xs: null};!error;question: a null list is an error rather than an empty list
+filter(xs, # != null and # > 4);{};!error;question: a null list is an error rather than an empty list
+filter(xs, # != null and # > 4);{xs: [1, 'a']};!error
+filter(xs, # != null and # > 4);{xs: ['a', 20]};!error
+filter(xs, # != null and # > 4);{xs: 'abc'};!error
+filter(xs, type(#) == 'number' and # > 4);{xs: [1, 5, 10]};[5, 10]
+filter(xs, type(#) == 'number' and # > 4);{xs: [5, null, 10]};[5, 10]
+filter(xs, type(#) == 'number' and # > 4);{xs: []};[]
+filter(xs, type(#) == 'number' and # > 4);{xs: null};!error;question: a null list is an error rather than an empty list
+filter(xs, type(#) == 'number' and # > 4);{};!error;question: a null list is an error rather than an empty list
+filter(xs, type(#) == 'number' and # > 4);{xs: [1, 'a']};[]
+filter(xs, type(#) == 'number' and # > 4);{xs: ['a', 20]};[20]
+filter(xs, type(#) == 'number' and # > 4);{xs: 'abc'};!error
+count(xs, # == null);{xs: [1, 5, 10]};0
+count(xs, # == null);{xs: [5, null, 10]};1
+count(xs, # == null);{xs: []};0
+count(xs, # == null);{xs: null};!error;question: a null list is an error rather than an empty list
+count(xs, # == null);{};!error;question: a null list is an error rather than an empty list
+count(xs, # == null);{xs: [1, 'a']};0
+count(xs, # == null);{xs: ['a', 20]};0
+count(xs, # == null);{xs: 'abc'};!error
+some(xs, # == null);{xs: [1, 5, 10]};false
+some(xs, # == null);{xs: [5, null, 10]};true
+some(xs, # == null);{xs: []};false
+some(xs, # == null);{xs: null};!error;question: a null list is an error rather than an empty list
+some(xs, # == null);{};!error;question: a null list is an error rather than an empty list
+some(xs, # == null);{xs: [1, 'a']};false
+some(xs, # == null);{xs: ['a', 20]};false
+some(xs, # == null);{xs: 'abc'};!error
+all(xs, # != null);{xs: [1, 5, 10]};true
+all(xs, # != null);{xs: [5, null, 10]};false
+all(xs, # != null);{xs: []};true
+all(xs, # != null);{xs: null};!error;question: a null list is an error rather than an empty list
+all(xs, # != null);{};!error;question: a null list is an error rather than an empty list
+all(xs, # != null);{xs: [1, 'a']};true
+all(xs, # != null);{xs: ['a', 20]};true
+all(xs, # != null);{xs: 'abc'};!error
+map(xs, `${#}`);{xs: [1, 5, 10]};['1', '5', '10']
+map(xs, `${#}`);{xs: [5, null, 10]};['5', 'null', '10']
+map(xs, `${#}`);{xs: []};[]
+map(xs, `${#}`);{xs: null};!error;question: a null list is an error rather than an empty list
+map(xs, `${#}`);{};!error;question: a null list is an error rather than an empty list
+map(xs, `${#}`);{xs: [1, 'a']};['1', 'a']
+map(xs, `${#}`);{xs: ['a', 20]};['a', '20']
+map(xs, `${#}`);{xs: 'abc'};!error
+map(xs, [#]);{xs: [1, 5, 10]};[[1], [5], [10]]
+map(xs, [#]);{xs: [5, null, 10]};[[5], [null], [10]]
+map(xs, [#]);{xs: []};[]
+map(xs, [#]);{xs: null};!error;question: a null list is an error rather than an empty list
+map(xs, [#]);{};!error;question: a null list is an error rather than an empty list
+map(xs, [#]);{xs: [1, 'a']};[[1], ['a']]
+map(xs, [#]);{xs: ['a', 20]};[['a'], [20]]
+map(xs, [#]);{xs: 'abc'};!error
+map(xs, 10 / (# ?? 0));{xs: [1, 5, 10]};[10, 2, 1]
+map(xs, 10 / (# ?? 0));{xs: [5, null, 10]};[2, null, 1]
+map(xs, 10 / (# ?? 0));{xs: []};[]
+map(xs, 10 / (# ?? 0));{xs: null};!error;question: a null list is an error rather than an empty list
+map(xs, 10 / (# ?? 0));{};!error;question: a null list is an error rather than an empty list
+map(xs, 10 / (# ?? 0));{xs: [1, 'a']};!error
+map(xs, 10 / (# ?? 0));{xs: ['a', 20]};!error
+map(xs, 10 / (# ?? 0));{xs: 'abc'};!error
+# some/all/none stop at the deciding element, so a bad element after it is never evaluated
+some(xs, # > 3);{xs: [5, null]};true
+some(xs, # > 3);{xs: [null, 5]};!error
+some(xs, # > 3);{xs: [5, 'a', {}]};true
+some(xs, # > 3);{xs: [1, 'a']};!error
+all(xs, # > 3);{xs: [1, null]};false
+all(xs, # > 3);{xs: [null, 1]};!error
+all(xs, # > 3);{xs: [5, 6, null]};!error
+none(xs, # > 3);{xs: [5, null]};false
+none(xs, # > 3);{xs: [1, null]};!error
+some(xs, #.a > 1);{xs: [{a: 2}, {}]};true
+some(xs, #.a > 1);{xs: [{}, {a: 2}]};!error
+all(xs, #.a > 1);{xs: [{a: 0}, {b: 1}]};false
+all(xs, #.a > 1);{xs: [{a: 3}, {b: 1}]};!error
+some(xs, # == 1 or # + {} > 0);{xs: [1, 2]};true
+some(xs, # == 2 or # + {} > 0);{xs: [1, 2]};!error
+# count, one, map and filter visit every element, so one bad element is an error
+count(xs, # > 3);{xs: [5, null]};!error
+count(xs, # > 3);{xs: [5, 6]};2
+one(xs, # > 3);{xs: [5, 1, null]};!error
+one(xs, # > 3);{xs: [5, 6, null]};!error;question: one() keeps evaluating after a second match already decided false
+map(xs, # * 2);{xs: [1, 2, null]};!error
+map(xs, # * 2);{xs: [null, 1, 2]};!error
+filter(xs, # > 1);{xs: [2, 3, null]};!error
+flatMap(xs, [# * 2]);{xs: [1, null]};!error
+flatMap(xs, [# ?? 0]);{xs: [1, null]};[1, 0]
+# Filtering before mapping removes the elements that would fail
+map(filter(xs, type(#) == 'number'), # * 2);{xs: [1, null, 'a', 3]};[2, 6]
+map(filter(xs, type(#) == 'number'), # * 2);{xs: [null, null]};[]
+map(filter(xs, type(#) == 'number'), # * 2);{xs: []};[]
+map(filter(xs, type(#) == 'number'), # * 2);{xs: [0.5, true]};[1.0]
+sum(filter(xs, type(#) == 'number'));{xs: [1, null, 'a', 3]};4
+sum(filter(xs, type(#) == 'number'));{xs: [null, null]};0
+sum(filter(xs, type(#) == 'number'));{xs: []};0
+sum(filter(xs, type(#) == 'number'));{xs: [0.5, true]};0.5
+map(xs, # * 2);{xs: [1, null, 'a', 3]};!error
+map(xs, # * 2);{xs: [null, null]};!error
+map(xs, # * 2);{xs: []};[]
+map(xs, # * 2);{xs: [0.5, true]};!error
+filter(map(xs, # ?? 0), # != 0);{xs: [1, null, 'a', 3]};[1, 'a', 3]
+filter(map(xs, # ?? 0), # != 0);{xs: [null, null]};[]
+filter(map(xs, # ?? 0), # != 0);{xs: []};[]
+filter(map(xs, # ?? 0), # != 0);{xs: [0.5, true]};[0.5, true]
+# Null predicate results are errors, not false
+filter(xs, #.ok);{xs: [{ok: true}, {ok: false}]};[{ok: true}]
+filter(xs, #.ok);{xs: [{ok: true}, {ok: null}]};!error;question: a null predicate result is an error, not falsy
+filter(xs, #.ok);{xs: [{ok: true}, {}]};!error;question: a null predicate result is an error, not falsy
+filter(xs, #.ok);{xs: [{ok: 'yes'}]};!error
+filter(xs, #.ok);{xs: [{ok: false}, {ok: null}]};!error;question: a null predicate result is an error, not falsy
+filter(xs, #.ok ?? false);{xs: [{ok: true}, {ok: false}]};[{ok: true}]
+filter(xs, #.ok ?? false);{xs: [{ok: true}, {ok: null}]};[{ok: true}]
+filter(xs, #.ok ?? false);{xs: [{ok: true}, {}]};[{ok: true}]
+filter(xs, #.ok ?? false);{xs: [{ok: 'yes'}]};!error
+filter(xs, #.ok ?? false);{xs: [{ok: false}, {ok: null}]};[]
+filter(xs, #.ok == true);{xs: [{ok: true}, {ok: false}]};[{ok: true}]
+filter(xs, #.ok == true);{xs: [{ok: true}, {ok: null}]};[{ok: true}]
+filter(xs, #.ok == true);{xs: [{ok: true}, {}]};[{ok: true}]
+filter(xs, #.ok == true);{xs: [{ok: 'yes'}]};[]
+filter(xs, #.ok == true);{xs: [{ok: false}, {ok: null}]};[]
+some(xs, #.ok);{xs: [{ok: true}, {ok: false}]};true
+some(xs, #.ok);{xs: [{ok: true}, {ok: null}]};true
+some(xs, #.ok);{xs: [{ok: true}, {}]};true
+some(xs, #.ok);{xs: [{ok: 'yes'}]};!error
+some(xs, #.ok);{xs: [{ok: false}, {ok: null}]};!error;question: a null predicate result is an error, not falsy
+all(xs, #.ok);{xs: [{ok: true}, {ok: false}]};false
+all(xs, #.ok);{xs: [{ok: true}, {ok: null}]};!error;question: a null predicate result is an error, not falsy
+all(xs, #.ok);{xs: [{ok: true}, {}]};!error;question: a null predicate result is an error, not falsy
+all(xs, #.ok);{xs: [{ok: 'yes'}]};!error
+all(xs, #.ok);{xs: [{ok: false}, {ok: null}]};false
+count(xs, #.ok);{xs: [{ok: true}, {ok: false}]};1
+count(xs, #.ok);{xs: [{ok: true}, {ok: null}]};!error;question: a null predicate result is an error, not falsy
+count(xs, #.ok);{xs: [{ok: true}, {}]};!error;question: a null predicate result is an error, not falsy
+count(xs, #.ok);{xs: [{ok: 'yes'}]};!error
+count(xs, #.ok);{xs: [{ok: false}, {ok: null}]};!error;question: a null predicate result is an error, not falsy
+count(xs, #.ok ?? false);{xs: [{ok: true}, {ok: false}]};1
+count(xs, #.ok ?? false);{xs: [{ok: true}, {ok: null}]};1
+count(xs, #.ok ?? false);{xs: [{ok: true}, {}]};1
+count(xs, #.ok ?? false);{xs: [{ok: 'yes'}]};!error
+count(xs, #.ok ?? false);{xs: [{ok: false}, {ok: null}]};0
+# Null fields in #.x
+map(xs, #.p);{xs: [{p: 10, q: 2}, {p: 5, q: 1}]};[10, 5]
+map(xs, #.p);{xs: [{p: 10, q: 2}, {p: null, q: 1}]};[10, null]
+map(xs, #.p);{xs: [{p: 10, q: 2}, {q: 1}]};[10, null]
+map(xs, #.p);{xs: [{p: 10, q: 2}, null]};[10, null]
+map(xs, #.p);{xs: [{p: 10, q: 2}, 7]};[10, null]
+map(xs, #.p);{xs: [{p: 10, q: 0}]};[10]
+map(xs, #.p);{xs: [{p: 10}]};[10]
+map(xs, #.p * #.q);{xs: [{p: 10, q: 2}, {p: 5, q: 1}]};[20, 5]
+map(xs, #.p * #.q);{xs: [{p: 10, q: 2}, {p: null, q: 1}]};!error
+map(xs, #.p * #.q);{xs: [{p: 10, q: 2}, {q: 1}]};!error
+map(xs, #.p * #.q);{xs: [{p: 10, q: 2}, null]};!error
+map(xs, #.p * #.q);{xs: [{p: 10, q: 2}, 7]};!error
+map(xs, #.p * #.q);{xs: [{p: 10, q: 0}]};[0]
+map(xs, #.p * #.q);{xs: [{p: 10}]};!error
+map(xs, (#.p ?? 0) * (#.q ?? 1));{xs: [{p: 10, q: 2}, {p: 5, q: 1}]};[20, 5]
+map(xs, (#.p ?? 0) * (#.q ?? 1));{xs: [{p: 10, q: 2}, {p: null, q: 1}]};[20, 0]
+map(xs, (#.p ?? 0) * (#.q ?? 1));{xs: [{p: 10, q: 2}, {q: 1}]};[20, 0]
+map(xs, (#.p ?? 0) * (#.q ?? 1));{xs: [{p: 10, q: 2}, null]};[20, 0]
+map(xs, (#.p ?? 0) * (#.q ?? 1));{xs: [{p: 10, q: 2}, 7]};[20, 0]
+map(xs, (#.p ?? 0) * (#.q ?? 1));{xs: [{p: 10, q: 0}]};[0]
+map(xs, (#.p ?? 0) * (#.q ?? 1));{xs: [{p: 10}]};[10]
+map(xs, #.p / #.q);{xs: [{p: 10, q: 2}, {p: 5, q: 1}]};[5, 5]
+map(xs, #.p / #.q);{xs: [{p: 10, q: 2}, {p: null, q: 1}]};!error
+map(xs, #.p / #.q);{xs: [{p: 10, q: 2}, {q: 1}]};!error
+map(xs, #.p / #.q);{xs: [{p: 10, q: 2}, null]};!error
+map(xs, #.p / #.q);{xs: [{p: 10, q: 2}, 7]};!error
+map(xs, #.p / #.q);{xs: [{p: 10, q: 0}]};[null]
+map(xs, #.p / #.q);{xs: [{p: 10}]};!error
+sum(map(xs, #.p ?? 0));{xs: [{p: 10, q: 2}, {p: 5, q: 1}]};15
+sum(map(xs, #.p ?? 0));{xs: [{p: 10, q: 2}, {p: null, q: 1}]};10
+sum(map(xs, #.p ?? 0));{xs: [{p: 10, q: 2}, {q: 1}]};10
+sum(map(xs, #.p ?? 0));{xs: [{p: 10, q: 2}, null]};10
+sum(map(xs, #.p ?? 0));{xs: [{p: 10, q: 2}, 7]};10
+sum(map(xs, #.p ?? 0));{xs: [{p: 10, q: 0}]};10
+sum(map(xs, #.p ?? 0));{xs: [{p: 10}]};10
+sum(map(xs, #.p));{xs: [{p: 10, q: 2}, {p: 5, q: 1}]};15
+sum(map(xs, #.p));{xs: [{p: 10, q: 2}, {p: null, q: 1}]};!error
+sum(map(xs, #.p));{xs: [{p: 10, q: 2}, {q: 1}]};!error
+sum(map(xs, #.p));{xs: [{p: 10, q: 2}, null]};!error
+sum(map(xs, #.p));{xs: [{p: 10, q: 2}, 7]};!error
+sum(map(xs, #.p));{xs: [{p: 10, q: 0}]};10
+sum(map(xs, #.p));{xs: [{p: 10}]};10
+filter(xs, #.p > 6);{xs: [{p: 10, q: 2}, {p: 5, q: 1}]};[{p: 10, q: 2}]
+filter(xs, #.p > 6);{xs: [{p: 10, q: 2}, {p: null, q: 1}]};!error
+filter(xs, #.p > 6);{xs: [{p: 10, q: 2}, {q: 1}]};!error
+filter(xs, #.p > 6);{xs: [{p: 10, q: 2}, null]};!error
+filter(xs, #.p > 6);{xs: [{p: 10, q: 2}, 7]};!error
+filter(xs, #.p > 6);{xs: [{p: 10, q: 0}]};[{p: 10, q: 0}]
+filter(xs, #.p > 6);{xs: [{p: 10}]};[{p: 10}]
+count(xs, #.p == null);{xs: [{p: 10, q: 2}, {p: 5, q: 1}]};0
+count(xs, #.p == null);{xs: [{p: 10, q: 2}, {p: null, q: 1}]};1
+count(xs, #.p == null);{xs: [{p: 10, q: 2}, {q: 1}]};1
+count(xs, #.p == null);{xs: [{p: 10, q: 2}, null]};1
+count(xs, #.p == null);{xs: [{p: 10, q: 2}, 7]};1
+count(xs, #.p == null);{xs: [{p: 10, q: 0}]};0
+count(xs, #.p == null);{xs: [{p: 10}]};0
+map(xs, {p: #.p, q: #.q});{xs: [{p: 10, q: 2}, {p: 5, q: 1}]};[{p: 10, q: 2}, {p: 5, q: 1}]
+map(xs, {p: #.p, q: #.q});{xs: [{p: 10, q: 2}, {p: null, q: 1}]};[{p: 10, q: 2}, {p: null, q: 1}]
+map(xs, {p: #.p, q: #.q});{xs: [{p: 10, q: 2}, {q: 1}]};[{p: 10, q: 2}, {p: null, q: 1}]
+map(xs, {p: #.p, q: #.q});{xs: [{p: 10, q: 2}, null]};[{p: 10, q: 2}, {p: null, q: null}]
+map(xs, {p: #.p, q: #.q});{xs: [{p: 10, q: 2}, 7]};[{p: 10, q: 2}, {p: null, q: null}]
+map(xs, {p: #.p, q: #.q});{xs: [{p: 10, q: 0}]};[{p: 10, q: 0}]
+map(xs, {p: #.p, q: #.q});{xs: [{p: 10}]};[{p: 10, q: null}]
+map(xs, `${#.p}/${#.q}`);{xs: [{p: 10, q: 2}, {p: 5, q: 1}]};['10/2', '5/1']
+map(xs, `${#.p}/${#.q}`);{xs: [{p: 10, q: 2}, {p: null, q: 1}]};['10/2', 'null/1']
+map(xs, `${#.p}/${#.q}`);{xs: [{p: 10, q: 2}, {q: 1}]};['10/2', 'null/1']
+map(xs, `${#.p}/${#.q}`);{xs: [{p: 10, q: 2}, null]};['10/2', 'null/null']
+map(xs, `${#.p}/${#.q}`);{xs: [{p: 10, q: 2}, 7]};['10/2', 'null/null']
+map(xs, `${#.p}/${#.q}`);{xs: [{p: 10, q: 0}]};['10/0']
+map(xs, `${#.p}/${#.q}`);{xs: [{p: 10}]};['10/null']
+# Nested closures over null inner lists
+map(xs, len(#.t ?? []));{xs: [{t: [1, 2]}, {t: [3]}]};[2, 1]
+map(xs, len(#.t ?? []));{xs: [{t: [1, 2]}, {t: []}]};[2, 0]
+map(xs, len(#.t ?? []));{xs: [{t: [1, 2]}, {t: null}]};[2, 0]
+map(xs, len(#.t ?? []));{xs: [{t: [1, 2]}, {}]};[2, 0]
+map(xs, len(#.t ?? []));{xs: [{t: [1, null]}]};[2]
+map(xs, sum(#.t ?? []));{xs: [{t: [1, 2]}, {t: [3]}]};[3, 3]
+map(xs, sum(#.t ?? []));{xs: [{t: [1, 2]}, {t: []}]};[3, 0]
+map(xs, sum(#.t ?? []));{xs: [{t: [1, 2]}, {t: null}]};[3, 0]
+map(xs, sum(#.t ?? []));{xs: [{t: [1, 2]}, {}]};[3, 0]
+map(xs, sum(#.t ?? []));{xs: [{t: [1, null]}]};!error
+map(xs, map(#.t, # * 10));{xs: [{t: [1, 2]}, {t: [3]}]};[[10, 20], [30]]
+map(xs, map(#.t, # * 10));{xs: [{t: [1, 2]}, {t: []}]};[[10, 20], []]
+map(xs, map(#.t, # * 10));{xs: [{t: [1, 2]}, {t: null}]};!error
+map(xs, map(#.t, # * 10));{xs: [{t: [1, 2]}, {}]};!error
+map(xs, map(#.t, # * 10));{xs: [{t: [1, null]}]};!error
+map(xs, map(#.t ?? [], (# ?? 0) * 10));{xs: [{t: [1, 2]}, {t: [3]}]};[[10, 20], [30]]
+map(xs, map(#.t ?? [], (# ?? 0) * 10));{xs: [{t: [1, 2]}, {t: []}]};[[10, 20], []]
+map(xs, map(#.t ?? [], (# ?? 0) * 10));{xs: [{t: [1, 2]}, {t: null}]};[[10, 20], []]
+map(xs, map(#.t ?? [], (# ?? 0) * 10));{xs: [{t: [1, 2]}, {}]};[[10, 20], []]
+map(xs, map(#.t ?? [], (# ?? 0) * 10));{xs: [{t: [1, null]}]};[[10, 0]]
+flatMap(xs, #.t ?? []);{xs: [{t: [1, 2]}, {t: [3]}]};[1, 2, 3]
+flatMap(xs, #.t ?? []);{xs: [{t: [1, 2]}, {t: []}]};[1, 2]
+flatMap(xs, #.t ?? []);{xs: [{t: [1, 2]}, {t: null}]};[1, 2]
+flatMap(xs, #.t ?? []);{xs: [{t: [1, 2]}, {}]};[1, 2]
+flatMap(xs, #.t ?? []);{xs: [{t: [1, null]}]};[1, null]
+some(xs, some(#.t ?? [], # == null));{xs: [{t: [1, 2]}, {t: [3]}]};false
+some(xs, some(#.t ?? [], # == null));{xs: [{t: [1, 2]}, {t: []}]};false
+some(xs, some(#.t ?? [], # == null));{xs: [{t: [1, 2]}, {t: null}]};false
+some(xs, some(#.t ?? [], # == null));{xs: [{t: [1, 2]}, {}]};false
+some(xs, some(#.t ?? [], # == null));{xs: [{t: [1, null]}]};true
+filter(xs, #.t != null and len(#.t) > 1);{xs: [{t: [1, 2]}, {t: [3]}]};[{t: [1, 2]}]
+filter(xs, #.t != null and len(#.t) > 1);{xs: [{t: [1, 2]}, {t: []}]};[{t: [1, 2]}]
+filter(xs, #.t != null and len(#.t) > 1);{xs: [{t: [1, 2]}, {t: null}]};[{t: [1, 2]}]
+filter(xs, #.t != null and len(#.t) > 1);{xs: [{t: [1, 2]}, {}]};[{t: [1, 2]}]
+filter(xs, #.t != null and len(#.t) > 1);{xs: [{t: [1, null]}]};[{t: [1, null]}]
+# Named closure variables behave like #
+map(xs as x, x ?? 0);{xs: [1, 5, 10]};[1, 5, 10]
+map(xs as x, x ?? 0);{xs: [5, null, 10]};[5, 0, 10]
+map(xs as x, x ?? 0);{xs: []};[]
+map(xs as x, x ?? 0);{xs: null};!error
+map(xs as x, x ?? 0);{};!error
+map(xs as x, x ?? 0);{xs: [1, 'a']};[1, 'a']
+filter(xs as x, x != null);{xs: [1, 5, 10]};[1, 5, 10]
+filter(xs as x, x != null);{xs: [5, null, 10]};[5, 10]
+filter(xs as x, x != null);{xs: []};[]
+filter(xs as x, x != null);{xs: null};!error
+filter(xs as x, x != null);{};!error
+filter(xs as x, x != null);{xs: [1, 'a']};[1, 'a']
+map(xs as x, x.p ?? x);{xs: [{p: 10, q: 2}, {p: 5, q: 1}]};[10, 5]
+map(xs as x, x.p ?? x);{xs: [{p: 10, q: 2}, {p: null, q: 1}]};[10, {p: null, q: 1}]
+map(xs as x, x.p ?? x);{xs: [{p: 10, q: 2}, {q: 1}]};[10, {q: 1}]
+map(xs as x, x.p ?? x);{xs: [{p: 10, q: 2}, null]};[10, null]
+map(xs as x, x.p ?? x);{xs: [{p: 10, q: 2}, 7]};[10, 7]
+map(xs as x, x.p ?? x);{xs: [{p: 10, q: 0}]};[10]
+map(xs as x, x.p ?? x);{xs: [{p: 10}]};[10]
+# Outer inputs that are null inside a closure body
+map(xs, # * k);{xs: [1, 2], k: 10};[10, 20]
+map(xs, # * k);{xs: [1, 2], k: null};!error
+map(xs, # * k);{xs: [1, 2]};!error
+map(xs, # * k);{xs: [], k: null};[]
+map(xs, # * k);{xs: [1, 2], k: 'a'};!error
+map(xs, # * (k ?? 1));{xs: [1, 2], k: 10};[10, 20]
+map(xs, # * (k ?? 1));{xs: [1, 2], k: null};[1, 2]
+map(xs, # * (k ?? 1));{xs: [1, 2]};[1, 2]
+map(xs, # * (k ?? 1));{xs: [], k: null};[]
+map(xs, # * (k ?? 1));{xs: [1, 2], k: 'a'};!error
+filter(xs, # < k);{xs: [1, 2], k: 10};[1, 2]
+filter(xs, # < k);{xs: [1, 2], k: null};!error
+filter(xs, # < k);{xs: [1, 2]};!error
+filter(xs, # < k);{xs: [], k: null};[]
+filter(xs, # < k);{xs: [1, 2], k: 'a'};!error
+map(xs, k == null ? # : # + k);{xs: [1, 2], k: 10};[11, 12]
+map(xs, k == null ? # : # + k);{xs: [1, 2], k: null};[1, 2]
+map(xs, k == null ? # : # + k);{xs: [1, 2]};[1, 2]
+map(xs, k == null ? # : # + k);{xs: [], k: null};[]
+map(xs, k == null ? # : # + k);{xs: [1, 2], k: 'a'};!error

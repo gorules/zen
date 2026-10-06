@@ -1,0 +1,178 @@
+expression (string);input (json 5);output (json 5);note
+# d: argument 1 is any
+# d arg 1 (literal)
+d(null);;'Invalid date'
+d(true);;'Invalid date'
+d(false);;'Invalid date'
+d(0);;'1970-01-01T00:00:00Z'
+d(-1);;'1969-12-31T23:59:59Z'
+d(1.5);;'1970-01-01T00:00:00Z'
+d(79228162514264337593543950335);;'Invalid date'
+d('');;'Invalid date'
+d('abc');;'Invalid date'
+d('12.5');;'Invalid date'
+d('żółw');;'Invalid date'
+d([]);;'Invalid date'
+d([1, 2]);;'Invalid date'
+d(['a']);;'Invalid date'
+d([[1]]);;'Invalid date'
+d({});;'Invalid date'
+d({a: 1});;'Invalid date'
+d(d('2024-01-01'));;'2024-01-01T00:00:00Z'
+d([1..3]);;'Invalid date'
+# d arg 1 (input)
+d(x);{x: null};'Invalid date'
+d(x);{x: true};'Invalid date'
+d(x);{x: false};'Invalid date'
+d(x);{x: 0};'1970-01-01T00:00:00Z'
+d(x);{x: -1};'1969-12-31T23:59:59Z'
+d(x);{x: 1.5};'1970-01-01T00:00:00Z'
+d(x);{x: 79228162514264337593543950335};'Invalid date'
+d(x);{x: ''};'Invalid date'
+d(x);{x: 'abc'};'Invalid date'
+d(x);{x: '12.5'};'Invalid date'
+d(x);{x: 'żółw'};'Invalid date'
+d(x);{x: []};'Invalid date'
+d(x);{x: [1, 2]};'Invalid date'
+d(x);{x: ['a']};'Invalid date'
+d(x);{x: [[1]]};'Invalid date'
+d(x);{x: {}};'Invalid date'
+d(x);{x: {a: 1}};'Invalid date'
+d(x);{};'Invalid date'
+# d: argument 1 with an explicit zone
+# d arg 1 zoned (literal)
+d(null, 'UTC');;'Invalid date'
+d(true, 'UTC');;'Invalid date'
+d(false, 'UTC');;'Invalid date'
+d(0, 'UTC');;'1970-01-01T00:00:00Z'
+d(-1, 'UTC');;'1969-12-31T23:59:59Z'
+d(1.5, 'UTC');;'1970-01-01T00:00:00Z'
+d(79228162514264337593543950335, 'UTC');;'Invalid date'
+d('', 'UTC');;'Invalid date'
+d('abc', 'UTC');;'Invalid date'
+d('12.5', 'UTC');;'Invalid date'
+d('żółw', 'UTC');;'Invalid date'
+d([], 'UTC');;'Invalid date'
+d([1, 2], 'UTC');;'Invalid date'
+d(['a'], 'UTC');;'Invalid date'
+d([[1]], 'UTC');;'Invalid date'
+d({}, 'UTC');;'Invalid date'
+d({a: 1}, 'UTC');;'Invalid date'
+d(d('2024-01-01'), 'UTC');;'2024-01-01T00:00:00Z'
+d([1..3], 'UTC');;'Invalid date'
+# d arg 1 zoned (input)
+d(x, 'UTC');{x: null};'Invalid date'
+d(x, 'UTC');{x: true};'Invalid date'
+d(x, 'UTC');{x: false};'Invalid date'
+d(x, 'UTC');{x: 0};'1970-01-01T00:00:00Z'
+d(x, 'UTC');{x: -1};'1969-12-31T23:59:59Z'
+d(x, 'UTC');{x: 1.5};'1970-01-01T00:00:00Z'
+d(x, 'UTC');{x: 79228162514264337593543950335};'Invalid date'
+d(x, 'UTC');{x: ''};'Invalid date'
+d(x, 'UTC');{x: 'abc'};'Invalid date'
+d(x, 'UTC');{x: '12.5'};'Invalid date'
+d(x, 'UTC');{x: 'żółw'};'Invalid date'
+d(x, 'UTC');{x: []};'Invalid date'
+d(x, 'UTC');{x: [1, 2]};'Invalid date'
+d(x, 'UTC');{x: ['a']};'Invalid date'
+d(x, 'UTC');{x: [[1]]};'Invalid date'
+d(x, 'UTC');{x: {}};'Invalid date'
+d(x, 'UTC');{x: {a: 1}};'Invalid date'
+d(x, 'UTC');{};'Invalid date'
+# d: argument 2 is a time zone name string
+# d arg 2 (literal)
+d('2024-01-01', null);;!error
+d('2024-01-01', true);;!error
+d('2024-01-01', false);;!error
+d('2024-01-01', 0);;!error
+d('2024-01-01', -1);;!error
+d('2024-01-01', 1.5);;!error
+d('2024-01-01', 79228162514264337593543950335);;!error
+d('2024-01-01', '');;!error
+d('2024-01-01', 'abc');;!error
+d('2024-01-01', '12.5');;!error
+d('2024-01-01', 'żółw');;!error
+d('2024-01-01', []);;!error
+d('2024-01-01', [1, 2]);;!error
+d('2024-01-01', ['a']);;!error
+d('2024-01-01', [[1]]);;!error
+d('2024-01-01', {});;!error
+d('2024-01-01', {a: 1});;!error
+d('2024-01-01', d('2024-01-01'));;!error
+d('2024-01-01', [1..3]);;!error
+# d arg 2 (input)
+d('2024-01-01', x);{x: null};!error
+d('2024-01-01', x);{x: true};!error
+d('2024-01-01', x);{x: false};!error
+d('2024-01-01', x);{x: 0};!error
+d('2024-01-01', x);{x: -1};!error
+d('2024-01-01', x);{x: 1.5};!error
+d('2024-01-01', x);{x: 79228162514264337593543950335};!error
+d('2024-01-01', x);{x: ''};!error
+d('2024-01-01', x);{x: 'abc'};!error
+d('2024-01-01', x);{x: '12.5'};!error
+d('2024-01-01', x);{x: 'żółw'};!error
+d('2024-01-01', x);{x: []};!error
+d('2024-01-01', x);{x: [1, 2]};!error
+d('2024-01-01', x);{x: ['a']};!error
+d('2024-01-01', x);{x: [[1]]};!error
+d('2024-01-01', x);{x: {}};!error
+d('2024-01-01', x);{x: {a: 1}};!error
+d('2024-01-01', x);{};!error
+# d: both arguments from input
+d(x, y);{x: '2024-01-01', y: 'UTC'};'2024-01-01T00:00:00Z'
+d(x, y);{x: '2024-01-01', y: 'Europe/Berlin'};'2024-01-01T00:00:00+01:00'
+d(x, y);{x: '2024-01-01', y: 'Mars/Base'};!error
+d(x, y);{x: '2024-01-01', y: 1};!error
+d(x, y);{x: '2024-01-01', y: null};!error
+d(x, y);{x: '2024-01-01'};!error
+d(x, y);{x: null, y: 'UTC'};'Invalid date'
+d(x, y);{x: 0, y: 'UTC'};'1970-01-01T00:00:00Z'
+# d: validity for every argument class
+# d isValid (literal)
+d(null).isValid();;false
+d(true).isValid();;false
+d(false).isValid();;false
+d(0).isValid();;true
+d(-1).isValid();;true
+d(1.5).isValid();;true
+d(79228162514264337593543950335).isValid();;false
+d('').isValid();;false
+d('abc').isValid();;false
+d('12.5').isValid();;false
+d('żółw').isValid();;false
+d([]).isValid();;false
+d([1, 2]).isValid();;false
+d(['a']).isValid();;false
+d([[1]]).isValid();;false
+d({}).isValid();;false
+d({a: 1}).isValid();;false
+d(d('2024-01-01')).isValid();;true
+d([1..3]).isValid();;false
+# d isValid (input)
+d(x).isValid();{x: null};false
+d(x).isValid();{x: true};false
+d(x).isValid();{x: false};false
+d(x).isValid();{x: 0};true
+d(x).isValid();{x: -1};true
+d(x).isValid();{x: 1.5};true
+d(x).isValid();{x: 79228162514264337593543950335};false
+d(x).isValid();{x: ''};false
+d(x).isValid();{x: 'abc'};false
+d(x).isValid();{x: '12.5'};false
+d(x).isValid();{x: 'żółw'};false
+d(x).isValid();{x: []};false
+d(x).isValid();{x: [1, 2]};false
+d(x).isValid();{x: ['a']};false
+d(x).isValid();{x: [[1]]};false
+d(x).isValid();{x: {}};false
+d(x).isValid();{x: {a: 1}};false
+d(x).isValid();{};false
+# conversion to a zone past chrono's range
+d('-262143-01-01').tz('Pacific/Kiritimati');;!error;bug: the date is valid but converting it to its string form panics in chrono (local time out of range)
+d(s).tz('Pacific/Kiritimati');{s: '-262143-01-01'};!error;bug: the date is valid but converting it to its string form panics in chrono (local time out of range)
+d(s).tz('Pacific/Kiritimati').isValid();{s: '-262143-01-01'};true
+d(s).tz('Pacific/Kiritimati').isValid();{s: '2024-01-01'};true
+d(n, 'Pacific/Kiritimati');{n: -8334601228800000};!error;bug: the date is valid but converting it to its string form panics in chrono (local time out of range)
+d(n, 'Pacific/Kiritimati').year();{n: -8334601228800000};-262144
+d(n, 'Pacific/Kiritimati').year();{n: 0};1969

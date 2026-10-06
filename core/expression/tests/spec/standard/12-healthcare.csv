@@ -1,0 +1,124 @@
+expression (string);input (json 5);output (json 5);note
+# Age-based program eligibility
+"age = d(serviceDate).diff(d(dob), 'year'); age < 19 ? 'CHIP' : age >= 65 ? 'Medicare' : income <= fpl * 1.38 ? 'Medicaid' : 'Marketplace'";{dob: '2007-03-20', serviceDate: '2025-03-19', income: 0, fpl: 15650};'CHIP'
+"age = d(serviceDate).diff(d(dob), 'year'); age < 19 ? 'CHIP' : age >= 65 ? 'Medicare' : income <= fpl * 1.38 ? 'Medicaid' : 'Marketplace'";{dob: '2006-03-20', serviceDate: '2025-03-20', income: 0, fpl: 15650};'Medicaid'
+"age = d(serviceDate).diff(d(dob), 'year'); age < 19 ? 'CHIP' : age >= 65 ? 'Medicare' : income <= fpl * 1.38 ? 'Medicaid' : 'Marketplace'";{dob: '1960-03-21', serviceDate: '2025-03-20', income: 90000, fpl: 15650};'Marketplace'
+"age = d(serviceDate).diff(d(dob), 'year'); age < 19 ? 'CHIP' : age >= 65 ? 'Medicare' : income <= fpl * 1.38 ? 'Medicaid' : 'Marketplace'";{dob: '1960-03-20', serviceDate: '2025-03-20', income: 90000, fpl: 15650};'Medicare'
+"age = d(serviceDate).diff(d(dob), 'year'); age < 19 ? 'CHIP' : age >= 65 ? 'Medicare' : income <= fpl * 1.38 ? 'Medicaid' : 'Marketplace'";{dob: '1985-01-01', serviceDate: '2025-03-20', income: 21597, fpl: 15650};'Medicaid'
+"age = d(serviceDate).diff(d(dob), 'year'); age < 19 ? 'CHIP' : age >= 65 ? 'Medicare' : income <= fpl * 1.38 ? 'Medicaid' : 'Marketplace'";{dob: '1985-01-01', serviceDate: '2025-03-20', income: 21597.01, fpl: 15650};'Marketplace'
+"age = d(serviceDate).diff(d(dob), 'year'); age < 19 ? 'CHIP' : age >= 65 ? 'Medicare' : income <= fpl * 1.38 ? 'Medicaid' : 'Marketplace'";{dob: '1985-01-01', serviceDate: '2025-03-20', income: null, fpl: 15650};!error
+"age = d(serviceDate).diff(d(dob), 'year'); age < 19 ? 'CHIP' : age >= 65 ? 'Medicare' : income <= fpl * 1.38 ? 'Medicaid' : 'Marketplace'";{dob: 'unknown', serviceDate: '2025-03-20', income: 0, fpl: 15650};!error
+round(income / (fpl + (householdSize - 1) * perPerson) * 100, 1);{income: 32000, fpl: 15650, householdSize: 1, perPerson: 5500};204.5
+round(income / (fpl + (householdSize - 1) * perPerson) * 100, 1);{income: 32000, fpl: 15650, householdSize: 4, perPerson: 5500};99.5
+round(income / (fpl + (householdSize - 1) * perPerson) * 100, 1);{income: 0, fpl: 15650, householdSize: 2, perPerson: 5500};0
+round(income / (fpl + (householdSize - 1) * perPerson) * 100, 1);{income: 45000.50, fpl: 15650, householdSize: 3, perPerson: 5500};168.9
+round(income / (fpl + (householdSize - 1) * perPerson) * 100, 1);{income: 32000, fpl: 0, householdSize: 1, perPerson: 5500};!error
+round(income / (fpl + (householdSize - 1) * perPerson) * 100, 1);{income: 32000, fpl: 15650, perPerson: 5500};!error
+# Cost sharing: deductible, coinsurance, out-of-pocket max
+"remaining = max([0, deductible - metYtd]); ded = min([billed, remaining]); min([ded + (billed - ded) * coinsurance, max([0, oopMax - oopYtd])])";{billed: 1000, deductible: 1500, metYtd: 0, coinsurance: 0.2, oopMax: 6000, oopYtd: 0};1000.0
+"remaining = max([0, deductible - metYtd]); ded = min([billed, remaining]); min([ded + (billed - ded) * coinsurance, max([0, oopMax - oopYtd])])";{billed: 1000, deductible: 1500, metYtd: 1200, coinsurance: 0.2, oopMax: 6000, oopYtd: 1200};440.0
+"remaining = max([0, deductible - metYtd]); ded = min([billed, remaining]); min([ded + (billed - ded) * coinsurance, max([0, oopMax - oopYtd])])";{billed: 1000, deductible: 1500, metYtd: 1500, coinsurance: 0.2, oopMax: 6000, oopYtd: 3000};200.0
+"remaining = max([0, deductible - metYtd]); ded = min([billed, remaining]); min([ded + (billed - ded) * coinsurance, max([0, oopMax - oopYtd])])";{billed: 1000, deductible: 1500, metYtd: 1500, coinsurance: 0.2, oopMax: 6000, oopYtd: 5900};100
+"remaining = max([0, deductible - metYtd]); ded = min([billed, remaining]); min([ded + (billed - ded) * coinsurance, max([0, oopMax - oopYtd])])";{billed: 1000, deductible: 1500, metYtd: 1500, coinsurance: 0.2, oopMax: 6000, oopYtd: 6000};0
+"remaining = max([0, deductible - metYtd]); ded = min([billed, remaining]); min([ded + (billed - ded) * coinsurance, max([0, oopMax - oopYtd])])";{billed: 1000, deductible: 1500, metYtd: 1600, coinsurance: 0.2, oopMax: 6000, oopYtd: 6100};0
+"remaining = max([0, deductible - metYtd]); ded = min([billed, remaining]); min([ded + (billed - ded) * coinsurance, max([0, oopMax - oopYtd])])";{billed: 0, deductible: 1500, metYtd: 0, coinsurance: 0.3, oopMax: 6000, oopYtd: 0};0.0
+"remaining = max([0, deductible - metYtd]); ded = min([billed, remaining]); min([ded + (billed - ded) * coinsurance, max([0, oopMax - oopYtd])])";{billed: 437.63, deductible: 250, metYtd: 100, coinsurance: 0.15, oopMax: 3000, oopYtd: 100};193.1445
+"remaining = max([0, deductible - metYtd]); ded = min([billed, remaining]); min([ded + (billed - ded) * coinsurance, max([0, oopMax - oopYtd])])";{billed: 1000, deductible: 1500, metYtd: null, coinsurance: 0.2, oopMax: 6000, oopYtd: 0};!error
+sum(map(claims, #.billed * (#.inNetwork ? 0.8 : 0.5)));{claims: [{billed: 200, inNetwork: true}, {billed: 300, inNetwork: false}]};310.0
+sum(map(claims, #.billed * (#.inNetwork ? 0.8 : 0.5)));{claims: []};0
+sum(map(claims, #.billed * (#.inNetwork ? 0.8 : 0.5)));{claims: [{billed: 125.25, inNetwork: true}]};100.200
+sum(map(claims, #.billed * (#.inNetwork ? 0.8 : 0.5)));{claims: [{billed: 100}]};!error
+sum(map(claims, #.billed * (#.inNetwork ? 0.8 : 0.5)));{claims: [{billed: 100, inNetwork: 'Y'}]};!error
+sum(map(claims, #.billed * (#.inNetwork ? 0.8 : 0.5)));{claims: [{billed: 50.00, inNetwork: false}, {billed: 61.03, inNetwork: true}, {billed: 72.06, inNetwork: true}, {billed: 83.09, inNetwork: false}, {billed: 94.12, inNetwork: true}, {billed: 105.15, inNetwork: true}, {billed: 116.18, inNetwork: false}, {billed: 127.21, inNetwork: true}, {billed: 138.24, inNetwork: true}, {billed: 149.27, inNetwork: false}, {billed: 160.30, inNetwork: true}, {billed: 171.33, inNetwork: true}, {billed: 182.36, inNetwork: false}, {billed: 193.39, inNetwork: true}, {billed: 204.42, inNetwork: true}, {billed: 215.45, inNetwork: false}, {billed: 226.48, inNetwork: true}, {billed: 237.51, inNetwork: true}, {billed: 248.54, inNetwork: false}, {billed: 259.57, inNetwork: true}, {billed: 270.60, inNetwork: true}, {billed: 281.63, inNetwork: false}, {billed: 292.66, inNetwork: true}, {billed: 303.69, inNetwork: true}, {billed: 314.72, inNetwork: false}]};3154.828
+"copay = ({primary: 25, specialist: 50, urgent: 75, er: 250})[visitType] ?? 0; visitType == 'er' and admitted ? 0 : copay";{visitType: 'primary', admitted: false};25
+"copay = ({primary: 25, specialist: 50, urgent: 75, er: 250})[visitType] ?? 0; visitType == 'er' and admitted ? 0 : copay";{visitType: 'specialist'};50
+"copay = ({primary: 25, specialist: 50, urgent: 75, er: 250})[visitType] ?? 0; visitType == 'er' and admitted ? 0 : copay";{visitType: 'er', admitted: false};250
+"copay = ({primary: 25, specialist: 50, urgent: 75, er: 250})[visitType] ?? 0; visitType == 'er' and admitted ? 0 : copay";{visitType: 'er', admitted: true};0
+"copay = ({primary: 25, specialist: 50, urgent: 75, er: 250})[visitType] ?? 0; visitType == 'er' and admitted ? 0 : copay";{visitType: 'telehealth', admitted: false};0
+"copay = ({primary: 25, specialist: 50, urgent: 75, er: 250})[visitType] ?? 0; visitType == 'er' and admitted ? 0 : copay";{visitType: null};0
+"copay = ({primary: 25, specialist: 50, urgent: 75, er: 250})[visitType] ?? 0; visitType == 'er' and admitted ? 0 : copay";{visitType: 'ER', admitted: true};0
+"copay = ({primary: 25, specialist: 50, urgent: 75, er: 250})[visitType] ?? 0; visitType == 'er' and admitted ? 0 : copay";{visitType: 'er'};!error
+# Clinical thresholds
+systolic >= 180 or diastolic >= 120 ? 'crisis' : systolic >= 140 or diastolic >= 90 ? 'stage2' : systolic >= 130 or diastolic >= 80 ? 'stage1' : systolic >= 120 ? 'elevated' : 'normal';{systolic: 118, diastolic: 76};'normal'
+systolic >= 180 or diastolic >= 120 ? 'crisis' : systolic >= 140 or diastolic >= 90 ? 'stage2' : systolic >= 130 or diastolic >= 80 ? 'stage1' : systolic >= 120 ? 'elevated' : 'normal';{systolic: 120, diastolic: 79};'elevated'
+systolic >= 180 or diastolic >= 120 ? 'crisis' : systolic >= 140 or diastolic >= 90 ? 'stage2' : systolic >= 130 or diastolic >= 80 ? 'stage1' : systolic >= 120 ? 'elevated' : 'normal';{systolic: 129, diastolic: 80};'stage1'
+systolic >= 180 or diastolic >= 120 ? 'crisis' : systolic >= 140 or diastolic >= 90 ? 'stage2' : systolic >= 130 or diastolic >= 80 ? 'stage1' : systolic >= 120 ? 'elevated' : 'normal';{systolic: 130, diastolic: 70};'stage1'
+systolic >= 180 or diastolic >= 120 ? 'crisis' : systolic >= 140 or diastolic >= 90 ? 'stage2' : systolic >= 130 or diastolic >= 80 ? 'stage1' : systolic >= 120 ? 'elevated' : 'normal';{systolic: 139, diastolic: 89};'stage1'
+systolic >= 180 or diastolic >= 120 ? 'crisis' : systolic >= 140 or diastolic >= 90 ? 'stage2' : systolic >= 130 or diastolic >= 80 ? 'stage1' : systolic >= 120 ? 'elevated' : 'normal';{systolic: 140, diastolic: 60};'stage2'
+systolic >= 180 or diastolic >= 120 ? 'crisis' : systolic >= 140 or diastolic >= 90 ? 'stage2' : systolic >= 130 or diastolic >= 80 ? 'stage1' : systolic >= 120 ? 'elevated' : 'normal';{systolic: 150, diastolic: 120};'crisis'
+systolic >= 180 or diastolic >= 120 ? 'crisis' : systolic >= 140 or diastolic >= 90 ? 'stage2' : systolic >= 130 or diastolic >= 80 ? 'stage1' : systolic >= 120 ? 'elevated' : 'normal';{systolic: 180, diastolic: 80};'crisis'
+systolic >= 180 or diastolic >= 120 ? 'crisis' : systolic >= 140 or diastolic >= 90 ? 'stage2' : systolic >= 130 or diastolic >= 80 ? 'stage1' : systolic >= 120 ? 'elevated' : 'normal';{systolic: 110, diastolic: null};!error
+systolic >= 180 or diastolic >= 120 ? 'crisis' : systolic >= 140 or diastolic >= 90 ? 'stage2' : systolic >= 130 or diastolic >= 80 ? 'stage1' : systolic >= 120 ? 'elevated' : 'normal';{systolic: null, diastolic: 130};!error
+round(weightKg * (sex == 'F' ? 0.85 : 1) * (140 - age) / (72 * creatinine), 1);{weightKg: 70, sex: 'M', age: 60, creatinine: 1.0};77.8
+round(weightKg * (sex == 'F' ? 0.85 : 1) * (140 - age) / (72 * creatinine), 1);{weightKg: 70, sex: 'F', age: 60, creatinine: 1.0};66.1
+round(weightKg * (sex == 'F' ? 0.85 : 1) * (140 - age) / (72 * creatinine), 1);{weightKg: 82.5, sex: 'M', age: 45, creatinine: 1.3};83.7
+round(weightKg * (sex == 'F' ? 0.85 : 1) * (140 - age) / (72 * creatinine), 1);{weightKg: 55, sex: 'F', age: 85, creatinine: 0.7};51.0
+round(weightKg * (sex == 'F' ? 0.85 : 1) * (140 - age) / (72 * creatinine), 1);{weightKg: 70, sex: 'M', age: 60, creatinine: 0};!error
+round(weightKg * (sex == 'F' ? 0.85 : 1) * (140 - age) / (72 * creatinine), 1);{weightKg: 70, sex: 'X', age: 140, creatinine: 1};0
+round(weightKg * (sex == 'F' ? 0.85 : 1) * (140 - age) / (72 * creatinine), 1);{weightKg: 70, age: 30, creatinine: 1.1};97.2
+map(readings, #.value >= 70 and #.value <= 180 ? 'in-range' : #.value < 70 ? 'low' : 'high');{readings: [{value: 69}, {value: 70}, {value: 180}, {value: 181}, {value: 120.5}]};['low', 'in-range', 'in-range', 'high', 'in-range']
+map(readings, #.value >= 70 and #.value <= 180 ? 'in-range' : #.value < 70 ? 'low' : 'high');{readings: []};[]
+map(readings, #.value >= 70 and #.value <= 180 ? 'in-range' : #.value < 70 ? 'low' : 'high');{readings: [{value: 40}]};['low']
+map(readings, #.value >= 70 and #.value <= 180 ? 'in-range' : #.value < 70 ? 'low' : 'high');{readings: [{value: null}]};!error
+round(count(readings, #.value >= 70 and #.value <= 180) / len(readings) * 100, 1);{readings: [{value: 69}, {value: 70}, {value: 180}, {value: 181}, {value: 120.5}]};60.0
+round(count(readings, #.value >= 70 and #.value <= 180) / len(readings) * 100, 1);{readings: [{value: 100}, {value: 100}, {value: 250}]};66.7
+round(count(readings, #.value >= 70 and #.value <= 180) / len(readings) * 100, 1);{readings: []};!error
+round(count(readings, #.value >= 70 and #.value <= 180) / len(readings) * 100, 1);{readings: [{value: 50}, {value: 57}, {value: 64}, {value: 71}, {value: 78}, {value: 85}, {value: 92}, {value: 99}, {value: 106}, {value: 113}, {value: 120}, {value: 127}, {value: 134}, {value: 141}, {value: 148}, {value: 155}, {value: 162}, {value: 169}, {value: 176}, {value: 183}, {value: 190}, {value: 197}, {value: 204}, {value: 211}, {value: 218}, {value: 225}, {value: 232}, {value: 239}, {value: 246}, {value: 253}]};53.3
+# Prior authorization and formulary
+drug.tier >= 4 or drug.specialty or (quantity ?? 0) > (drug.maxQty ?? 30) ? 'prior-auth' : 'auto-approve';{drug: {tier: 4, specialty: false}, quantity: 30};'prior-auth'
+drug.tier >= 4 or drug.specialty or (quantity ?? 0) > (drug.maxQty ?? 30) ? 'prior-auth' : 'auto-approve';{drug: {tier: 2, specialty: true}, quantity: 30};'prior-auth'
+drug.tier >= 4 or drug.specialty or (quantity ?? 0) > (drug.maxQty ?? 30) ? 'prior-auth' : 'auto-approve';{drug: {tier: 2, specialty: false}, quantity: 30};'auto-approve'
+drug.tier >= 4 or drug.specialty or (quantity ?? 0) > (drug.maxQty ?? 30) ? 'prior-auth' : 'auto-approve';{drug: {tier: 2, specialty: false}, quantity: 31};'prior-auth'
+drug.tier >= 4 or drug.specialty or (quantity ?? 0) > (drug.maxQty ?? 30) ? 'prior-auth' : 'auto-approve';{drug: {tier: 1, specialty: false, maxQty: 90}, quantity: 90};'auto-approve'
+drug.tier >= 4 or drug.specialty or (quantity ?? 0) > (drug.maxQty ?? 30) ? 'prior-auth' : 'auto-approve';{drug: {tier: 1, specialty: false}};'auto-approve'
+drug.tier >= 4 or drug.specialty or (quantity ?? 0) > (drug.maxQty ?? 30) ? 'prior-auth' : 'auto-approve';{drug: {tier: 1}, quantity: 10};!error
+drug.tier >= 4 or drug.specialty or (quantity ?? 0) > (drug.maxQty ?? 30) ? 'prior-auth' : 'auto-approve';{drug: null, quantity: 10};!error
+some(diagnoses, startsWith(#, 'E11')) and not some(meds, lower(#) == 'metformin') ? 'care-gap' : 'ok';{diagnoses: ['E11.9', 'I10'], meds: ['Lisinopril']};'care-gap'
+some(diagnoses, startsWith(#, 'E11')) and not some(meds, lower(#) == 'metformin') ? 'care-gap' : 'ok';{diagnoses: ['E11.65'], meds: ['METFORMIN']};'ok'
+some(diagnoses, startsWith(#, 'E11')) and not some(meds, lower(#) == 'metformin') ? 'care-gap' : 'ok';{diagnoses: ['E10.9'], meds: []};'ok'
+some(diagnoses, startsWith(#, 'E11')) and not some(meds, lower(#) == 'metformin') ? 'care-gap' : 'ok';{diagnoses: [], meds: []};'ok'
+some(diagnoses, startsWith(#, 'E11')) and not some(meds, lower(#) == 'metformin') ? 'care-gap' : 'ok';{diagnoses: ['I10', 'E11'], meds: ['Metformin ER']};'care-gap'
+some(diagnoses, startsWith(#, 'E11')) and not some(meds, lower(#) == 'metformin') ? 'care-gap' : 'ok';{diagnoses: ['E11.9'], meds: null};!error
+some(diagnoses, startsWith(#, 'E11')) and not some(meds, lower(#) == 'metformin') ? 'care-gap' : 'ok';{diagnoses: [11], meds: []};!error
+filter(map(codes, trim(upper(#))), matches(#, '^[A-TV-Z][0-9][0-9AB](\.[0-9A-TV-Z]{1,4})?$'));{codes: ['e11.9', ' I10 ', 'U07.1', 'XYZ', 'J45.909', 'Z00.00000']};['E11.9', 'I10', 'J45.909']
+filter(map(codes, trim(upper(#))), matches(#, '^[A-TV-Z][0-9][0-9AB](\.[0-9A-TV-Z]{1,4})?$'));{codes: []};[]
+filter(map(codes, trim(upper(#))), matches(#, '^[A-TV-Z][0-9][0-9AB](\.[0-9A-TV-Z]{1,4})?$'));{codes: ['a01']};['A01']
+filter(map(codes, trim(upper(#))), matches(#, '^[A-TV-Z][0-9][0-9AB](\.[0-9A-TV-Z]{1,4})?$'));{codes: [null]};!error
+# Coverage periods and waiting periods
+d(serviceDate) >= d(coverageStart) and d(serviceDate) <= d(coverageEnd ?? '9999-12-31');{serviceDate: '2025-01-01', coverageStart: '2025-01-01', coverageEnd: '2025-12-31'};true
+d(serviceDate) >= d(coverageStart) and d(serviceDate) <= d(coverageEnd ?? '9999-12-31');{serviceDate: '2024-12-31', coverageStart: '2025-01-01', coverageEnd: '2025-12-31'};false
+d(serviceDate) >= d(coverageStart) and d(serviceDate) <= d(coverageEnd ?? '9999-12-31');{serviceDate: '2025-12-31', coverageStart: '2025-01-01', coverageEnd: '2025-12-31'};true
+d(serviceDate) >= d(coverageStart) and d(serviceDate) <= d(coverageEnd ?? '9999-12-31');{serviceDate: '2025-12-31 12:00', coverageStart: '2025-01-01', coverageEnd: '2025-12-31'};false
+d(serviceDate) >= d(coverageStart) and d(serviceDate) <= d(coverageEnd ?? '9999-12-31');{serviceDate: '2031-06-01', coverageStart: '2025-01-01'};true
+d(serviceDate) >= d(coverageStart) and d(serviceDate) <= d(coverageEnd ?? '9999-12-31');{serviceDate: '2025-06-01', coverageStart: '2025-01-01', coverageEnd: null};true
+d(serviceDate) >= d(serviceDate).startOf('month') and d(coverageStart).add(waitingMonths, 'month') <= d(serviceDate);{coverageStart: '2024-08-31', waitingMonths: 6, serviceDate: '2025-02-28'};true
+d(serviceDate) >= d(serviceDate).startOf('month') and d(coverageStart).add(waitingMonths, 'month') <= d(serviceDate);{coverageStart: '2024-08-31', waitingMonths: 6, serviceDate: '2025-02-27'};false
+d(serviceDate) >= d(serviceDate).startOf('month') and d(coverageStart).add(waitingMonths, 'month') <= d(serviceDate);{coverageStart: '2024-01-15', waitingMonths: 12, serviceDate: '2025-01-15'};true
+d(serviceDate) >= d(serviceDate).startOf('month') and d(coverageStart).add(waitingMonths, 'month') <= d(serviceDate);{coverageStart: '2024-01-15', waitingMonths: 12, serviceDate: '2025-01-14'};false
+d(serviceDate) >= d(serviceDate).startOf('month') and d(coverageStart).add(waitingMonths, 'month') <= d(serviceDate);{coverageStart: '2024-01-15', waitingMonths: 0, serviceDate: '2024-01-15'};true
+d(serviceDate) >= d(serviceDate).startOf('month') and d(coverageStart).add(waitingMonths, 'month') <= d(serviceDate);{coverageStart: '2024-01-15', serviceDate: '2025-01-15'};!error
+d(dischargedAt).diff(d(admittedAt), 'day') < 30 and previousDiagnosis == diagnosis ? 'readmission' : 'new-episode';{admittedAt: '2025-02-01', dischargedAt: '2025-03-02', previousDiagnosis: 'I50.9', diagnosis: 'I50.9'};'readmission'
+d(dischargedAt).diff(d(admittedAt), 'day') < 30 and previousDiagnosis == diagnosis ? 'readmission' : 'new-episode';{admittedAt: '2025-02-01', dischargedAt: '2025-03-03', previousDiagnosis: 'I50.9', diagnosis: 'I50.9'};'new-episode'
+d(dischargedAt).diff(d(admittedAt), 'day') < 30 and previousDiagnosis == diagnosis ? 'readmission' : 'new-episode';{admittedAt: '2024-02-01', dischargedAt: '2024-03-02', previousDiagnosis: 'I50.9', diagnosis: 'I50.9'};'new-episode'
+d(dischargedAt).diff(d(admittedAt), 'day') < 30 and previousDiagnosis == diagnosis ? 'readmission' : 'new-episode';{admittedAt: '2025-02-01', dischargedAt: '2025-02-05', previousDiagnosis: 'J18.9', diagnosis: 'I50.9'};'new-episode'
+d(dischargedAt).diff(d(admittedAt), 'day') < 30 and previousDiagnosis == diagnosis ? 'readmission' : 'new-episode';{admittedAt: '2025-02-01', dischargedAt: '2025-02-05', diagnosis: 'I50.9'};'new-episode'
+d(dischargedAt).diff(d(admittedAt), 'day') < 30 and previousDiagnosis == diagnosis ? 'readmission' : 'new-episode';{admittedAt: '2025-02-01', previousDiagnosis: 'x', diagnosis: 'x'};!error
+d(lastVisit).add(intervalMonths ?? 12, 'month').isBefore(d()) ? 'overdue' : 'up-to-date';{lastVisit: '2024-03-20'};'overdue'
+d(lastVisit).add(intervalMonths ?? 12, 'month').isBefore(d()) ? 'overdue' : 'up-to-date';{lastVisit: '2024-03-21'};'up-to-date'
+d(lastVisit).add(intervalMonths ?? 12, 'month').isBefore(d()) ? 'overdue' : 'up-to-date';{lastVisit: '2024-03-19', intervalMonths: 12};'overdue'
+d(lastVisit).add(intervalMonths ?? 12, 'month').isBefore(d()) ? 'overdue' : 'up-to-date';{lastVisit: '2024-09-20', intervalMonths: 6};'overdue'
+d(lastVisit).add(intervalMonths ?? 12, 'month').isBefore(d()) ? 'overdue' : 'up-to-date';{lastVisit: '2024-09-21', intervalMonths: 6};'up-to-date'
+d(lastVisit).add(intervalMonths ?? 12, 'month').isBefore(d()) ? 'overdue' : 'up-to-date';{lastVisit: '2023-01-01', intervalMonths: 24};'overdue'
+# Dosage by weight
+min([maxDose, round(weightKg * mgPerKg / (dosesPerDay ?? 1), 0)]);{weightKg: 20, mgPerKg: 15, dosesPerDay: 4, maxDose: 1000};75
+min([maxDose, round(weightKg * mgPerKg / (dosesPerDay ?? 1), 0)]);{weightKg: 18.5, mgPerKg: 10, dosesPerDay: 3, maxDose: 500};62
+min([maxDose, round(weightKg * mgPerKg / (dosesPerDay ?? 1), 0)]);{weightKg: 90, mgPerKg: 15, dosesPerDay: 1, maxDose: 1000};1000
+min([maxDose, round(weightKg * mgPerKg / (dosesPerDay ?? 1), 0)]);{weightKg: 25, mgPerKg: 10, dosesPerDay: 2, maxDose: 125};125
+min([maxDose, round(weightKg * mgPerKg / (dosesPerDay ?? 1), 0)]);{weightKg: 25, mgPerKg: 10, maxDose: 1000};250
+min([maxDose, round(weightKg * mgPerKg / (dosesPerDay ?? 1), 0)]);{weightKg: 25, mgPerKg: 10, dosesPerDay: 0, maxDose: 1000};!error
+min([maxDose, round(weightKg * mgPerKg / (dosesPerDay ?? 1), 0)]);{weightKg: 4.2, mgPerKg: 12.5, dosesPerDay: 3, maxDose: 1000};18
+# Member summaries
+`${upper(member.last)}, ${member.first} (${member.id}) - ${len(filter(claims, #.status == 'denied'))} denied, $${string(sum(map(claims, #.paid ?? 0)))} paid`;{member: {first: 'Ana', last: 'Pérez', id: 'M001'}, claims: [{status: 'paid', paid: 120.50}, {status: 'denied'}]};'PÉREZ, Ana (M001) - 1 denied, $120.50 paid'
+`${upper(member.last)}, ${member.first} (${member.id}) - ${len(filter(claims, #.status == 'denied'))} denied, $${string(sum(map(claims, #.paid ?? 0)))} paid`;{member: {first: 'Øyvind', last: 'Å', id: 42}, claims: []};'Å, Øyvind (42) - 0 denied, $0 paid'
+`${upper(member.last)}, ${member.first} (${member.id}) - ${len(filter(claims, #.status == 'denied'))} denied, $${string(sum(map(claims, #.paid ?? 0)))} paid`;{member: {first: 'x', last: null, id: 1}, claims: []};!error
+`${upper(member.last)}, ${member.first} (${member.id}) - ${len(filter(claims, #.status == 'denied'))} denied, $${string(sum(map(claims, #.paid ?? 0)))} paid`;{member: {first: 'Kim', last: 'Lee', id: 'M9'}, claims: [{status: 'paid', paid: 10.10}, {status: 'paid', paid: 0.90}]};'LEE, Kim (M9) - 0 denied, $11.00 paid'

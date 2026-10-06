@@ -1,0 +1,495 @@
+expression (string);input (json 5);output (json 5);note
+# len: arity
+len('ab');;2
+len();;!error
+len('ab', 1);;!error
+len('ab', 1, 1);;!error
+true ? 1 : len('ab', 1);;!error
+true ? 1 : len();;!error
+true ? 1 : len(5);;1
+len(5);;!error
+len(x, x);{x: 1};!error
+len(x, x);{x: 'a'};!error
+len(x, x);{x: [1]};!error
+len(x, x);{};!error
+# contains: arity
+contains('ab', 'a');;true
+contains();;!error
+contains('ab');;!error
+contains('ab', 'a', 1);;!error
+contains('ab', 'a', 1, 1);;!error
+true ? 1 : contains('ab', 'a', 1);;!error
+true ? 1 : contains();;!error
+true ? 1 : contains(5, 5);;1
+contains(5, 5);;!error
+contains(x, x, x);{x: 1};!error
+contains(x, x, x);{x: 'a'};!error
+contains(x, x, x);{x: [1]};!error
+contains(x, x, x);{};!error
+# flatten: arity
+flatten([[1]]);;[1]
+flatten();;!error
+flatten([[1]], 1);;!error
+flatten([[1]], 1, 1);;!error
+true ? 1 : flatten([[1]], 1);;!error
+true ? 1 : flatten();;!error
+true ? 1 : flatten(5);;1
+flatten(5);;!error
+flatten(x, x);{x: 1};!error
+flatten(x, x);{x: 'a'};!error
+flatten(x, x);{x: [1]};!error
+flatten(x, x);{};!error
+# merge: arity
+merge([[1]]);;[1]
+merge();;!error
+merge([[1]], 1);;!error
+merge([[1]], 1, 1);;!error
+true ? 1 : merge([[1]], 1);;!error
+true ? 1 : merge();;!error
+true ? 1 : merge(5);;1
+merge(5);;!error
+merge(x, x);{x: 1};!error
+merge(x, x);{x: 'a'};!error
+merge(x, x);{x: [1]};!error
+merge(x, x);{};!error
+# mergeDeep: arity
+mergeDeep([{a: 1}]);;{a: 1}
+mergeDeep();;!error
+mergeDeep([{a: 1}], 1);;!error
+mergeDeep([{a: 1}], 1, 1);;!error
+true ? 1 : mergeDeep([{a: 1}], 1);;!error
+true ? 1 : mergeDeep();;!error
+true ? 1 : mergeDeep(5);;1
+mergeDeep(5);;!error
+mergeDeep(x, x);{x: 1};!error
+mergeDeep(x, x);{x: 'a'};!error
+mergeDeep(x, x);{x: [1]};!error
+mergeDeep(x, x);{};!error
+# upper: arity
+upper('ab');;'AB'
+upper();;!error
+upper('ab', 1);;!error
+upper('ab', 1, 1);;!error
+true ? 1 : upper('ab', 1);;!error
+true ? 1 : upper();;!error
+true ? 1 : upper(5);;1
+upper(5);;!error
+upper(x, x);{x: 1};!error
+upper(x, x);{x: 'a'};!error
+upper(x, x);{x: [1]};!error
+upper(x, x);{};!error
+# lower: arity
+lower('AB');;'ab'
+lower();;!error
+lower('AB', 1);;!error
+lower('AB', 1, 1);;!error
+true ? 1 : lower('AB', 1);;!error
+true ? 1 : lower();;!error
+true ? 1 : lower(5);;1
+lower(5);;!error
+lower(x, x);{x: 1};!error
+lower(x, x);{x: 'a'};!error
+lower(x, x);{x: [1]};!error
+lower(x, x);{};!error
+# trim: arity
+trim(' a ');;'a'
+trim();;!error
+trim(' a ', 1);;!error
+trim(' a ', 1, 1);;!error
+true ? 1 : trim(' a ', 1);;!error
+true ? 1 : trim();;!error
+true ? 1 : trim(5);;1
+trim(5);;!error
+trim(x, x);{x: 1};!error
+trim(x, x);{x: 'a'};!error
+trim(x, x);{x: [1]};!error
+trim(x, x);{};!error
+# startsWith: arity
+startsWith('ab', 'a');;true
+startsWith();;!error
+startsWith('ab');;!error
+startsWith('ab', 'a', 1);;!error
+startsWith('ab', 'a', 1, 1);;!error
+true ? 1 : startsWith('ab', 'a', 1);;!error
+true ? 1 : startsWith();;!error
+true ? 1 : startsWith(5, 5);;1
+startsWith(5, 5);;!error
+startsWith(x, x, x);{x: 1};!error
+startsWith(x, x, x);{x: 'a'};!error
+startsWith(x, x, x);{x: [1]};!error
+startsWith(x, x, x);{};!error
+# endsWith: arity
+endsWith('ab', 'b');;true
+endsWith();;!error
+endsWith('ab');;!error
+endsWith('ab', 'b', 1);;!error
+endsWith('ab', 'b', 1, 1);;!error
+true ? 1 : endsWith('ab', 'b', 1);;!error
+true ? 1 : endsWith();;!error
+true ? 1 : endsWith(5, 5);;1
+endsWith(5, 5);;!error
+endsWith(x, x, x);{x: 1};!error
+endsWith(x, x, x);{x: 'a'};!error
+endsWith(x, x, x);{x: [1]};!error
+endsWith(x, x, x);{};!error
+# matches: arity
+matches('ab', 'a');;true
+matches();;!error
+matches('ab');;!error
+matches('ab', 'a', 1);;!error
+matches('ab', 'a', 1, 1);;!error
+true ? 1 : matches('ab', 'a', 1);;!error
+true ? 1 : matches();;!error
+true ? 1 : matches(5, 5);;1
+matches(5, 5);;!error
+matches(x, x, x);{x: 1};!error
+matches(x, x, x);{x: 'a'};!error
+matches(x, x, x);{x: [1]};!error
+matches(x, x, x);{};!error
+# extract: arity
+extract('ab', 'a');;['a']
+extract();;!error
+extract('ab');;!error
+extract('ab', 'a', 1);;!error
+extract('ab', 'a', 1, 1);;!error
+true ? 1 : extract('ab', 'a', 1);;!error
+true ? 1 : extract();;!error
+true ? 1 : extract(5, 5);;1
+extract(5, 5);;!error
+extract(x, x, x);{x: 1};!error
+extract(x, x, x);{x: 'a'};!error
+extract(x, x, x);{x: [1]};!error
+extract(x, x, x);{};!error
+# split: arity
+split('a,b', ',');;['a', 'b']
+split();;!error
+split('a,b');;!error
+split('a,b', ',', 1);;!error
+split('a,b', ',', 1, 1);;!error
+true ? 1 : split('a,b', ',', 1);;!error
+true ? 1 : split();;!error
+true ? 1 : split(5, 5);;1
+split(5, 5);;!error
+split(x, x, x);{x: 1};!error
+split(x, x, x);{x: 'a'};!error
+split(x, x, x);{x: [1]};!error
+split(x, x, x);{};!error
+# fuzzyMatch: arity
+fuzzyMatch('ab', 'ab');;1
+fuzzyMatch();;!error
+fuzzyMatch('ab');;!error
+fuzzyMatch('ab', 'ab', 1);;!error
+fuzzyMatch('ab', 'ab', 1, 1);;!error
+true ? 1 : fuzzyMatch('ab', 'ab', 1);;!error
+true ? 1 : fuzzyMatch();;!error
+true ? 1 : fuzzyMatch(5, 5);;1
+fuzzyMatch(5, 5);;!error
+fuzzyMatch(x, x, x);{x: 1};!error
+fuzzyMatch(x, x, x);{x: 'a'};!error
+fuzzyMatch(x, x, x);{x: [1]};!error
+fuzzyMatch(x, x, x);{};!error
+# abs: arity
+abs(-1);;1
+abs();;!error
+abs(-1, 1);;!error
+abs(-1, 1, 1);;!error
+true ? 1 : abs(-1, 1);;!error
+true ? 1 : abs();;!error
+true ? 1 : abs('a');;1
+abs('a');;!error
+abs(x, x);{x: 1};!error
+abs(x, x);{x: 'a'};!error
+abs(x, x);{x: [1]};!error
+abs(x, x);{};!error
+# floor: arity
+floor(1.5);;1
+floor();;!error
+floor(1.5, 1);;!error
+floor(1.5, 1, 1);;!error
+true ? 1 : floor(1.5, 1);;!error
+true ? 1 : floor();;!error
+true ? 1 : floor('a');;1
+floor('a');;!error
+floor(x, x);{x: 1};!error
+floor(x, x);{x: 'a'};!error
+floor(x, x);{x: [1]};!error
+floor(x, x);{};!error
+# ceil: arity
+ceil(1.5);;2
+ceil();;!error
+ceil(1.5, 1);;!error
+ceil(1.5, 1, 1);;!error
+true ? 1 : ceil(1.5, 1);;!error
+true ? 1 : ceil();;!error
+true ? 1 : ceil('a');;1
+ceil('a');;!error
+ceil(x, x);{x: 1};!error
+ceil(x, x);{x: 'a'};!error
+ceil(x, x);{x: [1]};!error
+ceil(x, x);{};!error
+# round: arity
+round(1.25);;1
+round(1.25, 1);;1.3
+round();;!error
+round(1.25, 1, 1);;!error
+round(1.25, 1, 1, 1);;!error
+true ? 1 : round(1.25, 1, 1);;!error
+true ? 1 : round();;!error
+true ? 1 : round('a');;1
+round('a');;!error
+round(x, x, x);{x: 1};!error
+round(x, x, x);{x: 'a'};!error
+round(x, x, x);{x: [1]};!error
+round(x, x, x);{};!error
+# trunc: arity
+trunc(1.25);;1
+trunc(1.25, 1);;1.2
+trunc();;!error
+trunc(1.25, 1, 1);;!error
+trunc(1.25, 1, 1, 1);;!error
+true ? 1 : trunc(1.25, 1, 1);;!error
+true ? 1 : trunc();;!error
+true ? 1 : trunc('a');;1
+trunc('a');;!error
+trunc(x, x, x);{x: 1};!error
+trunc(x, x, x);{x: 'a'};!error
+trunc(x, x, x);{x: [1]};!error
+trunc(x, x, x);{};!error
+# rand: arity
+rand(0);;0
+rand();;!error
+rand(0, 1);;!error
+rand(0, 1, 1);;!error
+true ? 1 : rand(0, 1);;!error
+true ? 1 : rand();;!error
+true ? 1 : rand('a');;1
+rand('a');;!error
+rand(x, x);{x: 1};!error
+rand(x, x);{x: 'a'};!error
+rand(x, x);{x: [1]};!error
+rand(x, x);{};!error
+# sum: arity
+sum([1, 2]);;3
+sum();;!error
+sum([1, 2], 1);;!error
+sum([1, 2], 1, 1);;!error
+true ? 1 : sum([1, 2], 1);;!error
+true ? 1 : sum();;!error
+true ? 1 : sum('a');;1
+sum('a');;!error
+sum(x, x);{x: 1};!error
+sum(x, x);{x: 'a'};!error
+sum(x, x);{x: [1]};!error
+sum(x, x);{};!error
+# avg: arity
+avg([1, 2]);;1.5
+avg();;!error
+avg([1, 2], 1);;!error
+avg([1, 2], 1, 1);;!error
+true ? 1 : avg([1, 2], 1);;!error
+true ? 1 : avg();;!error
+true ? 1 : avg('a');;1
+avg('a');;!error
+avg(x, x);{x: 1};!error
+avg(x, x);{x: 'a'};!error
+avg(x, x);{x: [1]};!error
+avg(x, x);{};!error
+# min: arity
+min([1, 2]);;1
+min();;!error
+min([1, 2], 1);;!error
+min([1, 2], 1, 1);;!error
+true ? 1 : min([1, 2], 1);;!error
+true ? 1 : min();;!error
+true ? 1 : min('a');;1
+min('a');;!error
+min(x, x);{x: 1};!error
+min(x, x);{x: 'a'};!error
+min(x, x);{x: [1]};!error
+min(x, x);{};!error
+# max: arity
+max([1, 2]);;2
+max();;!error
+max([1, 2], 1);;!error
+max([1, 2], 1, 1);;!error
+true ? 1 : max([1, 2], 1);;!error
+true ? 1 : max();;!error
+true ? 1 : max('a');;1
+max('a');;!error
+max(x, x);{x: 1};!error
+max(x, x);{x: 'a'};!error
+max(x, x);{x: [1]};!error
+max(x, x);{};!error
+# median: arity
+median([1, 2]);;1.5
+median();;!error
+median([1, 2], 1);;!error
+median([1, 2], 1, 1);;!error
+true ? 1 : median([1, 2], 1);;!error
+true ? 1 : median();;!error
+true ? 1 : median('a');;1
+median('a');;!error
+median(x, x);{x: 1};!error
+median(x, x);{x: 'a'};!error
+median(x, x);{x: [1]};!error
+median(x, x);{};!error
+# mode: arity
+mode([1, 1, 2]);;1
+mode();;!error
+mode([1, 1, 2], 1);;!error
+mode([1, 1, 2], 1, 1);;!error
+true ? 1 : mode([1, 1, 2], 1);;!error
+true ? 1 : mode();;!error
+true ? 1 : mode('a');;1
+mode('a');;!error
+mode(x, x);{x: 1};!error
+mode(x, x);{x: 'a'};!error
+mode(x, x);{x: [1]};!error
+mode(x, x);{};!error
+# type: arity
+type(1);;'number'
+type();;!error
+type(1, 1);;!error
+type(1, 1, 1);;!error
+true ? 1 : type(1, 1);;!error
+true ? 1 : type();;!error
+type(x, x);{x: 1};!error
+type(x, x);{x: 'a'};!error
+type(x, x);{x: [1]};!error
+type(x, x);{};!error
+# string: arity
+string(1);;'1'
+string();;!error
+string(1, 1);;!error
+string(1, 1, 1);;!error
+true ? 1 : string(1, 1);;!error
+true ? 1 : string();;!error
+true ? 1 : string([]);;1
+string([]);;!error
+string(x, x);{x: 1};!error
+string(x, x);{x: 'a'};!error
+string(x, x);{x: [1]};!error
+string(x, x);{};!error
+# bool: arity
+bool(1);;true
+bool();;!error
+bool(1, 1);;!error
+bool(1, 1, 1);;!error
+true ? 1 : bool(1, 1);;!error
+true ? 1 : bool();;!error
+bool(x, x);{x: 1};!error
+bool(x, x);{x: 'a'};!error
+bool(x, x);{x: [1]};!error
+bool(x, x);{};!error
+# isNumeric: arity
+isNumeric(1);;true
+isNumeric();;!error
+isNumeric(1, 1);;!error
+isNumeric(1, 1, 1);;!error
+true ? 1 : isNumeric(1, 1);;!error
+true ? 1 : isNumeric();;!error
+isNumeric(x, x);{x: 1};!error
+isNumeric(x, x);{x: 'a'};!error
+isNumeric(x, x);{x: [1]};!error
+isNumeric(x, x);{};!error
+# number: arity
+number('1');;1
+number();;!error
+number('1', 1);;!error
+number('1', 1, 1);;!error
+true ? 1 : number('1', 1);;!error
+true ? 1 : number();;!error
+true ? 1 : number('a');;1
+number('a');;!error
+number(x, x);{x: 1};!error
+number(x, x);{x: 'a'};!error
+number(x, x);{x: [1]};!error
+number(x, x);{};!error
+# keys: arity
+keys({a: 1});;['a']
+keys();;!error
+keys({a: 1}, 1);;!error
+keys({a: 1}, 1, 1);;!error
+true ? 1 : keys({a: 1}, 1);;!error
+true ? 1 : keys();;!error
+true ? 1 : keys(5);;1
+keys(5);;!error
+keys(x, x);{x: 1};!error
+keys(x, x);{x: 'a'};!error
+keys(x, x);{x: [1]};!error
+keys(x, x);{};!error
+# values: arity
+values({a: 1});;[1]
+values();;!error
+values({a: 1}, 1);;!error
+values({a: 1}, 1, 1);;!error
+true ? 1 : values({a: 1}, 1);;!error
+true ? 1 : values();;!error
+true ? 1 : values(5);;1
+values(5);;!error
+values(x, x);{x: 1};!error
+values(x, x);{x: 'a'};!error
+values(x, x);{x: [1]};!error
+values(x, x);{};!error
+# d: arity
+d();;'2025-03-20T10:15:30Z'
+d('2024-01-01');;'2024-01-01T00:00:00Z'
+d('2024-01-01', 'UTC');;'2024-01-01T00:00:00Z'
+d('2024-01-01', 'UTC', 1);;!error
+d('2024-01-01', 'UTC', 1, 1);;!error
+true ? 1 : d('2024-01-01', 'UTC', 1);;!error
+true ? 1 : d('2024-01-01', 5);;1
+d('2024-01-01', 5);;!error
+d(x, x, x);{x: 1};!error
+d(x, x, x);{x: 'a'};!error
+d(x, x, x);{x: [1]};!error
+d(x, x, x);{};!error
+# closures: arity
+map();;!error
+map([1]);;!error
+map([1], true, 1);;!error
+true ? 1 : map([1]);;!error
+true ? 1 : map(5, true);;1
+filter();;!error
+filter([1]);;!error
+filter([1], true, 1);;!error
+true ? 1 : filter([1]);;!error
+true ? 1 : filter(5, true);;1
+flatMap();;!error
+flatMap([1]);;!error
+flatMap([1], true, 1);;!error
+true ? 1 : flatMap([1]);;!error
+true ? 1 : flatMap(5, true);;1
+all();;!error
+all([1]);;!error
+all([1], true, 1);;!error
+true ? 1 : all([1]);;!error
+true ? 1 : all(5, true);;1
+some();;!error
+some([1]);;!error
+some([1], true, 1);;!error
+true ? 1 : some([1]);;!error
+true ? 1 : some(5, true);;1
+none();;!error
+none([1]);;!error
+none([1], true, 1);;!error
+true ? 1 : none([1]);;!error
+true ? 1 : none(5, true);;1
+one();;!error
+one([1]);;!error
+one([1], true, 1);;!error
+true ? 1 : one([1]);;!error
+true ? 1 : one(5, true);;1
+count();;!error
+count([1]);;!error
+count([1], true, 1);;!error
+true ? 1 : count([1]);;!error
+true ? 1 : count(5, true);;1
+# unknown functions are compile errors
+foo(1);;!error
+true ? 1 : foo(1);;!error
+Upper(1);;!error
+LEN([]);;!error
+date2(1);;!error
+x(1);;!error
+x(1);{x: 1};!error

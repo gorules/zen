@@ -1,0 +1,252 @@
+expression (string);input (json 5);output (json 5);note
+# Array literals
+[];;[]
+[ ];;[]
+type([]);;'array'
+[1];;[1]
+[1, 2, 3];;[1, 2, 3]
+[1,2,3];;[1, 2, 3]
+[ 1 , 2 , 3 ];;[1, 2, 3]
+[1, 'a', true, null];;[1, 'a', true, null]
+[{}, [], null, '', 0, false];;[{}, [], null, '', 0, false]
+[1.50, -0.5, 1e2];;[1.5, -0.5, 100]
+[1 + 1, 2 * 3];;[2, 6]
+['a' + 'b'];;['ab']
+[(1)];;[1]
+len([1, 2, 3]);;3
+len([]);;0
+# Nested arrays
+[[]];;[[]]
+[[[]]];;[[[]]]
+[[1, 2], [3]];;[[1, 2], [3]]
+[[1, [2, [3, [4]]]]];;[[1, [2, [3, [4]]]]]
+[[], [[]], [[], []]];;[[], [[]], [[], []]]
+# Trailing commas and holes
+[1,];;[1]
+[1, 2,];;[1, 2]
+[[1,],];;[[1]]
+[,];;!error
+[,1];;!error
+[1,,2];;!error
+[1,,];;!error
+# Missing separators and brackets
+[1 2];;!error
+['a' 'b'];;!error
+[;;!error
+[1;;!error
+[1,;;!error
+];;!error
+[1]];;!error
+[[1];;!error
+# Indexing an array literal
+[1, 2, 3][0];;1
+[1, 2, 3][2];;3
+[1, 2, 3][3];;null
+[[1, 2], [3]][0][1];;2
+[{a: 1}][0].a;;1
+# Arrays built from the input
+[x];{x: 1};[1]
+[x];{x: null};[null]
+[x];{};[null]
+[x];{x: [1]};[[1]]
+[x];{x: {a: 1}};[{a: 1}]
+[x, y];{x: 1, y: 'b'};[1, 'b']
+[x, y];{x: 1};[1, null]
+[x, y];{};[null, null]
+[x, y];{x: true, y: [2]};[true, [2]]
+[x, y];{x: 0.10, y: -0};[0.1, 0]
+len([x, x, x]);{x: 1};3
+len([x, x, x]);{x: null};3
+len([x, x, x]);{};3
+len([x, x, x]);{x: []};3
+# Object literals with bare keys
+{};;{}
+{ };;{}
+type({});;'object'
+{a: 1};;{a: 1}
+{a:1};;{a: 1}
+{ a : 1 };;{a: 1}
+{a: 1, b: 2};;{a: 1, b: 2}
+{a: 1, b: 'x', c: true, d: null, e: [], f: {}};;{a: 1, b: 'x', c: true, d: null, e: [], f: {}}
+{a: 1 + 1};;{a: 2}
+{a: [1, 2]};;{a: [1, 2]}
+{_a: 1, $b: 2, c1: 3, d_e: 4};;{_a: 1, $b: 2, c1: 3, d_e: 4}
+{camelCase: 1, snake_case: 2, PascalCase: 3};;{camelCase: 1, snake_case: 2, PascalCase: 3}
+{$: 1};;{'$': 1}
+{$root: 1};;{'$root': 1}
+{_: 1};;{'_': 1}
+# Quoted keys
+{'a': 1};;{a: 1}
+"{""a"": 1}";;{a: 1}
+{'a b': 1};;{'a b': 1}
+keys({'': 1});;['']
+{'a.b': 1};;{'a.b': 1}
+{'1': 1};;{'1': 1}
+{'é': 1};;{'é': 1}
+{'😀': 'x'};;{'😀': 'x'}
+{'a-b': 1, 'c:d': 2};;{'a-b': 1, 'c:d': 2}
+{`a`: 1};;!error;question: template keys are rejected even without interpolation
+# Keys that are literals of other kinds
+{1: 2};;{'1': 2}
+{0: 'a', 1: 'b'};;{'0': 'a', '1': 'b'}
+{1.5: 1};;{'1.5': 1}
+{1.50: 1};;{'1.50': 1}
+{1e3: 1};;{'1e3': 1}
+{1_000: 1};;{'1_000': 1};question: numeric keys keep their source text, separators included
+{-1: 1};;!error
+{true: 1};;{'true': 1}
+{false: 1};;{'false': 1}
+{null: 1};;{'null': 1}
+{true: 1, false: 2, null: 3};;{'true': 1, 'false': 2, 'null': 3}
+# Keywords that are operators cannot be bare keys
+{and: 1};;!error;question: operator keywords are not allowed as bare keys while true/false/null are
+{or: 1};;!error;question: operator keywords are not allowed as bare keys while true/false/null are
+{in: 1};;!error;question: operator keywords are not allowed as bare keys while true/false/null are
+{not: 1};;!error;question: operator keywords are not allowed as bare keys while true/false/null are
+{'and': 1, 'or': 2, 'in': 3, 'not': 4};;{and: 1, or: 2, in: 3, not: 4}
+# Computed keys
+{['a']: 1};;{a: 1}
+{['a' + 'b']: 1};;{ab: 1}
+{[`k${1}`]: 1};;{k1: 1}
+{[1 + 1]: 3};;{'2': 3}
+{[1.50]: 1};;{'1.50': 1}
+{[true]: 1};;{'true': 1}
+{[null]: 1};;{'null': 1};question: a null computed key becomes the string 'null'
+{[[1]]: 1};;!error
+{[{}]: 1};;!error
+{['a']: 1, ['b']: 2};;{a: 1, b: 2}
+{[]: 1};;!error
+{[1: 1};;!error
+{[k]: 1};{k: 'z'};{z: 1}
+keys({[k]: 1});{k: ''};['']
+{[k]: 1};{k: 5};{'5': 1}
+{[k]: 1};{k: 0.50};{'0.50': 1}
+{[k]: 1};{k: true};{'true': 1}
+{[k]: 1};{k: null};{'null': 1};question: a null computed key becomes the string 'null'
+{[k]: 1};{};{'null': 1};question: a missing computed key becomes the string 'null'
+{[k]: 1};{k: [1]};!error
+{[k]: 1};{k: {a: 1}};!error
+{[k + 'x']: v};{k: 'a', v: 1};{ax: 1}
+{[k + 'x']: v};{k: 'a'};{ax: null}
+{[k + 'x']: v};{k: '', v: [1]};{x: [1]}
+{[k + 'x']: v};{k: 1, v: 2};!error
+{[k + 'x']: v};{};!error
+# Nested objects
+{a: {}};;{a: {}}
+{a: {b: {c: {}}}};;{a: {b: {c: {}}}}
+{a: {b: 1}, c: {d: [1, {e: 2}]}};;{a: {b: 1}, c: {d: [1, {e: 2}]}}
+{a: [{b: [{c: 1}]}]};;{a: [{b: [{c: 1}]}]}
+[{a: 1}, {a: 2}];;[{a: 1}, {a: 2}]
+# Duplicate keys
+{a: 1, a: 2};;{a: 1};question: duplicate keys keep the first value (JS/JSON5 keep the last)
+{a: 1, b: 2, a: 3};;{a: 1, b: 2};question: duplicate keys keep the first value (JS/JSON5 keep the last)
+{a: 1, 'a': 2};;{a: 1};question: duplicate keys keep the first value (JS/JSON5 keep the last)
+{['a']: 1, a: 2};;{a: 1};question: duplicate keys keep the first value (JS/JSON5 keep the last)
+{1: 'x', '1': 'y'};;{'1': 'x'};question: duplicate keys keep the first value (JS/JSON5 keep the last)
+{[k]: 1, a: 2};{k: 'a'};{a: 1};question: duplicate keys keep the first value (JS/JSON5 keep the last)
+{[k]: 1, a: 2};{k: 'b'};{a: 2, b: 1}
+{[k]: 1, a: 2};{};{a: 2, 'null': 1}
+# Trailing comma, shorthand and malformed objects
+{a: 1,};;{a: 1};bug: objects reject a trailing comma while arrays accept it
+{a: 1, b: 2,};;{a: 1, b: 2};bug: objects reject a trailing comma while arrays accept it
+{,};;!error
+{a: 1,, b: 2};;!error
+{a};{a: 1};!error
+{a, b};{a: 1, b: 2};!error
+{a: 1 b: 2};;!error
+{a 1};;!error
+{:1};;!error
+{a:};;!error
+{a: 1;;!error
+{a: 1}};;!error
+{;;!error
+};;!error
+{a.b: 1};;!error
+"{a: 1; b: 2}";;!error
+# Member access on object literals
+({a: 1}).a;;1
+({a: 1})['a'];;1
+({a: {b: 2}}).a.b;;2
+({a: 1}).b;;null
+{a: 1}.a;;1;bug: postfix access works on a parenthesized object literal but not a bare one
+{a: 1}['a'];;1;bug: postfix access works on a parenthesized object literal but not a bare one
+{'a.b': 1}['a.b'];;1;bug: postfix access works on a parenthesized object literal but not a bare one
+# Objects built from the input
+{a: x};{x: 2};{a: 2}
+{a: x};{x: null};{a: null}
+{a: x};{};{a: null}
+{a: x};{x: [1, {b: 2}]};{a: [1, {b: 2}]}
+{a: x};{x: 'é'};{a: 'é'}
+{a: x.y, b: x.z};{x: {y: 1, z: 2}};{a: 1, b: 2}
+{a: x.y, b: x.z};{x: {y: 1}};{a: 1, b: null}
+{a: x.y, b: x.z};{x: null};{a: null, b: null}
+{a: x.y, b: x.z};{};{a: null, b: null}
+{a: x.y, b: x.z};{x: 5};{a: null, b: null}
+# Interval literals
+[1..5];;'[1..5]'
+(1..5);;'(1..5)'
+[1..5);;'[1..5)'
+(1..5];;'(1..5]'
+]1..5[;;']1..5['
+]1..5];;']1..5]'
+[1..5[;;'[1..5['
+type([1..5]);;'interval'
+type((1..5));;'interval'
+type(]1..5[);;'interval'
+[1 .. 5];;'[1..5]'
+[ 1..5 ];;'[1..5]'
+[-5..-1];;'[-5..-1]'
+[1.5..2.5];;'[1.5..2.5]'
+[1e1..1e2];;'[10..100]'
+[1_000..2_000];;'[1000..2000]'
+[1 + 1..2 * 3];;'[2..6]'
+[5..1];;'[5..1]'
+[1..1];;'[1..1]'
+[(1)..(5)];;'[1..5]'
+[d('2024-01-01')..d('2024-02-01')];;'[2024-01-01T00:00:00Z..2024-02-01T00:00:00Z]'
+[(1..2)];;['(1..2)']
+[[1..2]];;['[1..2]']
+{r: [1..2]};;{r: '[1..2]'}
+[1..5] == [1..5];;false;question: two identical interval literals compare unequal
+# Intervals in their main use: membership
+3 in [1..5];;true
+1 in (1..5);;false
+5 in [1..5];;true
+# Reversed brackets denote the complement of the interval
+0 in ]1..5[;;true;question: reversed brackets mean the complement (outside) of the interval
+1 in ]1..5[;;true;question: reversed brackets mean the complement (outside) of the interval
+3 in ]1..5[;;false;question: reversed brackets mean the complement (outside) of the interval
+5 in ]1..5[;;true;question: reversed brackets mean the complement (outside) of the interval
+6 in ]1..5[;;true;question: reversed brackets mean the complement (outside) of the interval
+1 in )1..5(;;false;question: reversed parentheses mean the complement (outside) of the interval
+0 in )1..5(;;true;question: reversed parentheses mean the complement (outside) of the interval
+3 in [1..5[;;false;question: a mixed [a..b[ interval means v >= a and v >= b
+5 in [1..5[;;true;question: a mixed [a..b[ interval means v >= a and v >= b
+# Malformed intervals
+[1..];;!error
+[..5];;!error
+[..];;!error
+(1..);;!error
+[1...5];;!error
+[1..5, 6];;!error
+[1..2..3];;!error
+{1..2};;!error;bug: curly brackets are accepted as interval brackets and display as {1..2}}
+['a'..'z'];;!error
+[null..1];;!error
+[true..false];;!error
+[[1]..[2]];;!error
+[1..5] + 1;;!error
+# Intervals built from the input
+[x..y];{x: 1, y: 3};'[1..3]'
+[x..y];{x: -1.5, y: 0};'[-1.5..0]'
+[x..y];{x: null, y: 2};!error
+[x..y];{x: 1};!error
+[x..y];{};!error
+[x..y];{x: 'a', y: 'b'};!error
+[x..y];{x: [1], y: [2]};!error
+v in [x..y];{v: 2, x: 1, y: 3};true
+v in [x..y];{v: 3, x: 1, y: 3};true
+v in [x..y];{v: 4, x: 1, y: 3};false
+v in [x..y];{v: null, x: 1, y: 3};!error
+v in [x..y];{v: 2, x: null, y: 3};!error
+v in [x..y];{};!error

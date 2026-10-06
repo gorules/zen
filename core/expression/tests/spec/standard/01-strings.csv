@@ -1,0 +1,177 @@
+expression (string);input (json 5);output (json 5);note
+# Single and double quotes
+'hello';;'hello'
+"""hello""";;'hello'
+'hello world';;'hello world'
+"""hello world""";;'hello world'
+'';;''
+"""""";;''
+' ';;' '
+'   ';;'   '
+"'a' == ""a""";;true
+type('');;'string'
+type('a');;'string'
+len('');;0
+len(' ');;1
+# The other quote kind is plain text inside a string
+"'""'";;"'""'"
+"'a""b'";;'a"b'
+"""'""";;'\''
+"""it's""";;'it\'s'
+"""a'b'c""";;'a\'b\'c'
+# Numeric-looking and keyword-looking strings stay strings
+'1';;'1'
+'1' == 1;;false
+type('1');;'string'
+'1e3';;'1e3'
+'-0';;'-0'
+'0x10';;'0x10'
+'true';;'true'
+'true' == true;;false
+'null';;'null'
+'null' == null;;false
+'and';;'and'
+'not in';;'not in'
+# Operator and punctuation characters inside strings
+'a + b';;'a + b'
+'a, b';;'a, b'
+'[1..5]';;'[1..5]'
+'{a: 1}';;'{a: 1}'
+'a.b';;'a.b'
+'?? ?:';;'?? ?:'
+'#';;'#'
+'$';;'$'
+'${x}';;'${x}'
+"'a;b'";;"'a;b'"
+'`';;'`'
+'a`b`c';;'a`b`c'
+'//';;'//'
+'/* */';;'/* */'
+'%^&*=!<>';;'%^&*=!<>'
+'@~|';;'@~|'
+# No escape sequences: a backslash is an ordinary character
+'a\nb';;'a\\nb';question: string literals have no escape sequences so \n stays two characters
+len('a\nb');;4;question: string literals have no escape sequences so \n stays two characters
+'\t';;'\\t';question: string literals have no escape sequences
+'\u0041';;'\\u0041';question: string literals have no escape sequences
+'\\';;'\\\\';question: string literals have no escape sequences so \\ stays two backslashes
+'\';;'\\';question: a trailing backslash does not escape the closing quote
+"'\'";;'\\'
+'a\'b';;!error;question: \' does not escape the quote so the literal is unterminated
+"""a\""b""";;!error;question: \"" does not escape the quote
+'a''b';;!error;question: doubling the quote is not an escape either, so a quote cannot appear in a same-quoted string
+'''';;!error
+# Unicode
+'é';;'é'
+'ü';;'ü'
+'日本語';;'日本語'
+'Привет';;'Привет'
+'مرحبا';;'مرحبا'
+'😀';;'😀'
+'👨‍👩‍👧';;'👨‍👩‍👧'
+'a😀b';;'a😀b'
+'é' == 'é';;true
+'😀' + '😀';;'😀😀'
+len('é');;1;bug: len counts UTF-8 bytes instead of characters
+len('日本語');;3;bug: len counts UTF-8 bytes instead of characters
+len('😀');;1;bug: len counts UTF-8 bytes instead of characters
+['é', '😀'];;['é', '😀']
+# Multi-line strings keep the newline
+"'a
+b'";;'a\nb'
+"""a
+b""";;'a\nb'
+"len('a
+b')";;3
+"'
+'";;'\n'
+# Tabs inside strings are kept
+'a	b';;'a\tb'
+# Unterminated strings
+';;!error
+'abc;;!error
+"""abc";;!error
+'abc"";;!error
+"""abc'";;!error
+'a' + 'b;;!error
+['a];;!error
+{a: 'b};;!error
+# Adjacent strings do not concatenate
+'a' 'b';;!error
+'a''';;!error
+'a' + 'b';;'ab'
+# Strings from the input
+s;{s: 'x'};'x'
+s;{s: ''};''
+s;{s: 'é😀'};'é😀'
+s;{s: 'a\nb'};'a\nb'
+s;{s: null};null
+s;{};null
+s == 'x';{s: 'x'};true
+s == 'x';{s: 'X'};false
+s == 'x';{s: ''};false
+s == 'x';{s: null};false
+s == 'x';{s: 1};false
+s == 'x';{};false
+s == 'é😀';{s: 'é😀'};true
+s == 'é😀';{s: 'e😀'};false
+s == 'é😀';{s: null};false
+s == 'é😀';{};false
+s == 'a\nb';{s: 'a\\nb'};true;question: string literals have no escape sequences
+s == 'a\nb';{s: 'a\nb'};false;question: string literals have no escape sequences
+s == 'a\nb';{s: null};false
+# Booleans
+true;;true
+false;;false
+type(true);;'bool'
+type(false);;'bool'
+true == true;;true
+true == false;;false
+not true;;false
+not false;;true
+!true;;false
+!false;;true
+[true, false];;[true, false]
+{t: true, f: false};;{t: true, f: false}
+# Keywords are lower-case only; other spellings are identifiers
+TRUE;{};null
+True;{};null
+FALSE;{};null
+True;{True: 1};1
+trueish;{trueish: 2};2
+falsey;{falsey: 3};3
+true1;{true1: 4};4
+# Null
+null;;null
+type(null);;'null'
+null == null;;true
+null != null;;false
+null == false;;false
+null == 0;;false
+null == '';;false
+[null];;[null]
+[null, null];;[null, null]
+{a: null};;{a: null}
+Null;{};null
+NULL;{Null: 1, NULL: 2};2
+nulls;{nulls: 5};5
+nullable;{nullable: 6};6
+null_;{null_: 7};7
+# Literal values compared to input values
+b;{b: true};true
+b;{b: false};false
+b;{b: null};null
+b;{};null
+b == true;{b: true};true
+b == true;{b: false};false
+b == true;{b: 'true'};false
+b == true;{b: 1};false
+b == true;{b: null};false
+b == true;{};false
+n == null;{n: null};true
+n == null;{};true
+n == null;{n: 0};false
+n == null;{n: ''};false
+n == null;{n: false};false
+n == null;{n: []};false
+n == null;{n: 'null'};false

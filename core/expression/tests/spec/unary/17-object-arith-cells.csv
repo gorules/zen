@@ -1,0 +1,273 @@
+expression (string);input (json 5);output (json 5);note
+# $ as an object: field tests
+$.tier == 'gold';{$: {tier: 'gold', age: 30, score: 720}};true
+$.tier == 'gold';{$: {tier: 'silver', age: 17, score: 580}};false
+$.tier == 'gold';{$: {tier: 'GOLD', age: 65, score: 850}};false
+$.tier == 'gold';{$: {tier: null, age: null}};false
+$.tier == 'gold';{$: {}};false
+$.tier == 'gold';{$: null};false
+$.tier == 'gold';{};false
+$.tier == 'gold';{$: 'gold'};false
+$.tier == 'gold';{$: 5};false
+$.tier in ['gold', 'platinum'];{$: {tier: 'gold', age: 30, score: 720}};true
+$.tier in ['gold', 'platinum'];{$: {tier: 'silver', age: 17, score: 580}};false
+$.tier in ['gold', 'platinum'];{$: {tier: 'GOLD', age: 65, score: 850}};false
+$.tier in ['gold', 'platinum'];{$: {tier: null, age: null}};false
+$.tier in ['gold', 'platinum'];{$: {}};false
+$.tier in ['gold', 'platinum'];{$: null};false
+$.tier in ['gold', 'platinum'];{};false
+$.tier in ['gold', 'platinum'];{$: 'gold'};false
+$.tier in ['gold', 'platinum'];{$: 5};false
+$.tier != 'gold';{$: {tier: 'gold', age: 30, score: 720}};false
+$.tier != 'gold';{$: {tier: 'silver', age: 17, score: 580}};true
+$.tier != 'gold';{$: {tier: 'GOLD', age: 65, score: 850}};true
+$.tier != 'gold';{$: {tier: null, age: null}};true
+$.tier != 'gold';{$: {}};true
+$.tier != 'gold';{$: null};true
+$.tier != 'gold';{};true
+$.tier != 'gold';{$: 'gold'};true
+$.tier != 'gold';{$: 5};true
+$.age >= 18;{$: {tier: 'gold', age: 30, score: 720}};true
+$.age >= 18;{$: {tier: 'silver', age: 17, score: 580}};false
+$.age >= 18;{$: {tier: 'GOLD', age: 65, score: 850}};true
+$.age >= 18;{$: {tier: null, age: null}};!error
+$.age >= 18;{$: {}};!error
+$.age >= 18;{$: null};!error
+$.age >= 18;{};!error
+$.age >= 18;{$: 'gold'};!error
+$.age >= 18;{$: 5};!error
+$.age >= 18 and $.score > 700;{$: {tier: 'gold', age: 30, score: 720}};true
+$.age >= 18 and $.score > 700;{$: {tier: 'silver', age: 17, score: 580}};false
+$.age >= 18 and $.score > 700;{$: {tier: 'GOLD', age: 65, score: 850}};true
+$.age >= 18 and $.score > 700;{$: {tier: null, age: null}};!error
+$.age >= 18 and $.score > 700;{$: {}};!error
+$.age >= 18 and $.score > 700;{$: null};!error
+$.age >= 18 and $.score > 700;{};!error
+$.age >= 18 and $.score > 700;{$: 'gold'};!error
+$.age >= 18 and $.score > 700;{$: 5};!error
+$.tier == 'gold' and $.score > 700;{$: {tier: 'gold', age: 30, score: 720}};true
+$.tier == 'gold' and $.score > 700;{$: {tier: 'silver', age: 17, score: 580}};false
+$.tier == 'gold' and $.score > 700;{$: {tier: 'GOLD', age: 65, score: 850}};false
+$.tier == 'gold' and $.score > 700;{$: {tier: null, age: null}};false
+$.tier == 'gold' and $.score > 700;{$: {}};false
+$.tier == 'gold' and $.score > 700;{$: null};false
+$.tier == 'gold' and $.score > 700;{};false
+$.tier == 'gold' and $.score > 700;{$: 'gold'};false
+$.tier == 'gold' and $.score > 700;{$: 5};false
+$.score in [700..800];{$: {tier: 'gold', age: 30, score: 720}};true
+$.score in [700..800];{$: {tier: 'silver', age: 17, score: 580}};false
+$.score in [700..800];{$: {tier: 'GOLD', age: 65, score: 850}};false
+$.score in [700..800];{$: {tier: null, age: null}};!error
+$.score in [700..800];{$: {}};!error
+$.score in [700..800];{$: null};!error
+$.score in [700..800];{};!error
+$.score in [700..800];{$: 'gold'};!error
+$.score in [700..800];{$: 5};!error
+lower($.tier ?? '') == 'gold';{$: {tier: 'gold', age: 30, score: 720}};true
+lower($.tier ?? '') == 'gold';{$: {tier: 'silver', age: 17, score: 580}};false
+lower($.tier ?? '') == 'gold';{$: {tier: 'GOLD', age: 65, score: 850}};true
+lower($.tier ?? '') == 'gold';{$: {tier: null, age: null}};false
+lower($.tier ?? '') == 'gold';{$: {}};false
+lower($.tier ?? '') == 'gold';{$: null};false
+lower($.tier ?? '') == 'gold';{};false
+lower($.tier ?? '') == 'gold';{$: 'gold'};false
+lower($.tier ?? '') == 'gold';{$: 5};false
+$.tier == null;{$: {tier: 'gold', age: 30, score: 720}};false
+$.tier == null;{$: {tier: 'silver', age: 17, score: 580}};false
+$.tier == null;{$: {tier: 'GOLD', age: 65, score: 850}};false
+$.tier == null;{$: {tier: null, age: null}};true
+$.tier == null;{$: {}};true
+$.tier == null;{$: null};true
+$.tier == null;{};true
+$.tier == null;{$: 'gold'};true
+$.tier == null;{$: 5};true
+($.age ?? 0) < 18;{$: {tier: 'gold', age: 30, score: 720}};false
+($.age ?? 0) < 18;{$: {tier: 'silver', age: 17, score: 580}};true
+($.age ?? 0) < 18;{$: {tier: 'GOLD', age: 65, score: 850}};false
+($.age ?? 0) < 18;{$: {tier: null, age: null}};true
+($.age ?? 0) < 18;{$: {}};true
+($.age ?? 0) < 18;{$: null};true
+($.age ?? 0) < 18;{};true
+($.age ?? 0) < 18;{$: 'gold'};true
+($.age ?? 0) < 18;{$: 5};true
+# Nested objects and arrays inside $
+$.address.country == 'GB';{$: {address: {country: 'GB', zip: 'SW1A'}}};true
+$.address.country == 'GB';{$: {address: {country: 'US'}}};false
+$.address.country == 'GB';{$: {address: null}};false
+$.address.country == 'GB';{$: {address: {}}};false
+$.address.country == 'GB';{$: {}};false
+$.address.country == 'GB';{$: null};false
+$.address.country in ['GB', 'IE'];{$: {address: {country: 'GB', zip: 'SW1A'}}};true
+$.address.country in ['GB', 'IE'];{$: {address: {country: 'US'}}};false
+$.address.country in ['GB', 'IE'];{$: {address: null}};false
+$.address.country in ['GB', 'IE'];{$: {address: {}}};false
+$.address.country in ['GB', 'IE'];{$: {}};false
+$.address.country in ['GB', 'IE'];{$: null};false
+startsWith($.address.zip ?? '', 'SW');{$: {address: {country: 'GB', zip: 'SW1A'}}};true
+startsWith($.address.zip ?? '', 'SW');{$: {address: {country: 'US'}}};false
+startsWith($.address.zip ?? '', 'SW');{$: {address: null}};false
+startsWith($.address.zip ?? '', 'SW');{$: {address: {}}};false
+startsWith($.address.zip ?? '', 'SW');{$: {}};false
+startsWith($.address.zip ?? '', 'SW');{$: null};false
+'country' in keys($.address ?? {});{$: {address: {country: 'GB', zip: 'SW1A'}}};true
+'country' in keys($.address ?? {});{$: {address: {country: 'US'}}};true
+'country' in keys($.address ?? {});{$: {address: null}};false
+'country' in keys($.address ?? {});{$: {address: {}}};false
+'country' in keys($.address ?? {});{$: {}};false
+'country' in keys($.address ?? {});{$: null};false
+$['address'].country == 'US';{$: {address: {country: 'GB', zip: 'SW1A'}}};false
+$['address'].country == 'US';{$: {address: {country: 'US'}}};true
+$['address'].country == 'US';{$: {address: null}};false
+$['address'].country == 'US';{$: {address: {}}};false
+$['address'].country == 'US';{$: {}};false
+$['address'].country == 'US';{$: null};false
+len($.items ?? []) >= 2;{$: {items: [1, 2, 3]}};true
+len($.items ?? []) >= 2;{$: {items: []}};false
+len($.items ?? []) >= 2;{$: {items: [10]}};false
+len($.items ?? []) >= 2;{$: {}};false
+len($.items ?? []) >= 2;{$: null};false
+some($.items ?? [], # > 5);{$: {items: [1, 2, 3]}};false
+some($.items ?? [], # > 5);{$: {items: []}};false
+some($.items ?? [], # > 5);{$: {items: [10]}};true
+some($.items ?? [], # > 5);{$: {}};false
+some($.items ?? [], # > 5);{$: null};false
+# Arithmetic on $ inside a comparison
+$ * 1.2 > 100;{$: 100};true
+$ * 1.2 > 100;{$: 83.33};false
+$ * 1.2 > 100;{$: 83.34};true
+$ * 1.2 > 100;{$: 0};false
+$ * 1.2 > 100;{$: -100};false
+$ * 1.2 > 100;{$: 1000000};true
+$ * 1.2 > 100;{$: null};!error
+$ * 1.2 > 100;{};!error
+$ * 1.2 > 100;{$: '100'};!error
+$ * 1.2 > 100;{$: true};!error
+$ / 12 <= 1000;{$: 100};true
+$ / 12 <= 1000;{$: 83.33};true
+$ / 12 <= 1000;{$: 83.34};true
+$ / 12 <= 1000;{$: 0};true
+$ / 12 <= 1000;{$: -100};true
+$ / 12 <= 1000;{$: 1000000};false
+$ / 12 <= 1000;{$: null};!error
+$ / 12 <= 1000;{};!error
+$ / 12 <= 1000;{$: '100'};!error
+$ / 12 <= 1000;{$: true};!error
+$ / 12 <= 1000;{$: 12000};true
+$ / 12 <= 1000;{$: 12000.01};false
+$ - 50 >= 0;{$: 100};true
+$ - 50 >= 0;{$: 83.33};true
+$ - 50 >= 0;{$: 83.34};true
+$ - 50 >= 0;{$: 0};false
+$ - 50 >= 0;{$: -100};false
+$ - 50 >= 0;{$: 1000000};true
+$ - 50 >= 0;{$: null};!error
+$ - 50 >= 0;{};!error
+$ - 50 >= 0;{$: '100'};!error
+$ - 50 >= 0;{$: true};!error
+$ + 0.1 == 100.1;{$: 100};true
+$ + 0.1 == 100.1;{$: 83.33};false
+$ + 0.1 == 100.1;{$: 83.34};false
+$ + 0.1 == 100.1;{$: 0};false
+$ + 0.1 == 100.1;{$: -100};false
+$ + 0.1 == 100.1;{$: 1000000};false
+$ + 0.1 == 100.1;{$: null};!error
+$ + 0.1 == 100.1;{};!error
+$ + 0.1 == 100.1;{$: '100'};!error
+$ + 0.1 == 100.1;{$: true};!error
+abs($ - 100) <= 0.5;{$: 100};true
+abs($ - 100) <= 0.5;{$: 83.33};false
+abs($ - 100) <= 0.5;{$: 83.34};false
+abs($ - 100) <= 0.5;{$: 0};false
+abs($ - 100) <= 0.5;{$: -100};false
+abs($ - 100) <= 0.5;{$: 1000000};false
+abs($ - 100) <= 0.5;{$: null};!error
+abs($ - 100) <= 0.5;{};!error
+abs($ - 100) <= 0.5;{$: '100'};!error
+abs($ - 100) <= 0.5;{$: true};!error
+abs($ - 100) <= 0.5;{$: 99.5};true
+abs($ - 100) <= 0.5;{$: 100.5};true
+abs($ - 100) <= 0.5;{$: 100.51};false
+$ % 10 == 0;{$: 100};true
+$ % 10 == 0;{$: 83.33};false
+$ % 10 == 0;{$: 83.34};false
+$ % 10 == 0;{$: 0};true
+$ % 10 == 0;{$: -100};true
+$ % 10 == 0;{$: 1000000};true
+$ % 10 == 0;{$: null};!error
+$ % 10 == 0;{};!error
+$ % 10 == 0;{$: '100'};!error
+$ % 10 == 0;{$: true};!error
+$ % 10 == 0;{$: 10.5};false
+$ % 10 == 0;{$: -10};true
+$ ^ 2 > 50;{$: 7};false
+$ ^ 2 > 50;{$: 8};true
+$ ^ 2 > 50;{$: -8};true
+$ ^ 2 > 50;{$: 7.07};false
+$ ^ 2 > 50;{$: 7.08};true
+$ ^ 2 > 50;{$: 0};false
+$ ^ 2 > 50;{$: null};!error
+100 / $ > 2;{$: 10};true
+100 / $ > 2;{$: 50};false
+100 / $ > 2;{$: 49};true
+100 / $ > 2;{$: -1};false
+100 / $ > 2;{$: null};!error
+100 / $ > 2;{$: 0};!error
+# Arithmetic with another field
+$ * rate >= 50;{$: 100, rate: 0.5};true
+$ * rate >= 50;{$: 99, rate: 0.5};false
+$ * rate >= 50;{$: 100, rate: 0};false
+$ * rate >= 50;{$: 100};!error
+$ * rate >= 50;{$: null, rate: 1};!error
+$ * rate >= 50;{$: 500.01, rate: 0.1};true
+$ > income * 0.4;{$: 400, income: 1000};false
+$ > income * 0.4;{$: 401, income: 1000};true
+$ > income * 0.4;{$: 0, income: 0};false
+$ > income * 0.4;{$: 1, income: null};!error
+($ - base) / base > 0.1;{$: 111, base: 100};true
+($ - base) / base > 0.1;{$: 110, base: 100};false
+($ - base) / base > 0.1;{$: 90, base: 100};false
+($ - base) / base > 0.1;{$: 110.01, base: 100};true
+($ - base) / base > 0.1;{$: 5};!error
+# Null and missing $ across cell kinds
+> 0;{$: null};!error
+> 0;{};!error
+[1..5];{$: null};!error
+[1..5];{};!error
+'gold';{$: null};false
+'gold';{};false
+'gold', 'silver';{$: null};false
+'gold', 'silver';{};false
+null;{$: null};true
+null;{};true
+!= 'gold';{$: null};true
+!= 'gold';{};true
+$ in ['a'];{$: null};false
+$ in ['a'];{};false
+$ not in ['a'];{$: null};true
+$ not in ['a'];{};true
+startsWith($, 'a');{$: null};!error
+startsWith($, 'a');{};!error
+len($) > 0;{$: null};!error
+len($) > 0;{};!error
+some($, # > 0);{$: null};!error
+some($, # > 0);{};!error
+$.tier == null;{$: null};true
+$.tier == null;{};true
+$.tier == 'a';{$: null};false
+$.tier == 'a';{};false
+$.age > 1;{$: null};!error
+$.age > 1;{};!error
+$ * 2 > 1;{$: null};!error
+$ * 2 > 1;{};!error
+d($).isValid();{$: null};false
+d($).isValid();{};false
+($ ?? 0) >= 0;{$: null};true
+($ ?? 0) >= 0;{};true
+$ == null or $ > 0;{$: null};true
+$ == null or $ > 0;{};true
+$ != null and $ > 0;{$: null};false
+$ != null and $ > 0;{};false
+isNumeric($);{$: null};false
+isNumeric($);{};false
+type($) == 'null';{$: null};true
+type($) == 'null';{};true

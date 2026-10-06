@@ -1,0 +1,486 @@
+expression (string);input (json 5);output (json 5);note
+# A nested path that is null, missing or crosses a non-object reads as null, and null is an arithmetic error
+o.a.b + 1;{o: {a: {b: 3}}};4
+o.a.b + 1;{o: {a: {b: 0.5}}};1.5
+o.a.b + 1;{o: {a: {b: null}}};!error
+o.a.b + 1;{o: {a: {}}};!error
+o.a.b + 1;{o: {a: null}};!error
+o.a.b + 1;{o: {a: 5}};!error
+o.a.b + 1;{o: null};!error
+o.a.b + 1;{};!error
+o.a.b + 1;{o: {a: {b: '7'}}};!error
+o.a.b * 2;{o: {a: {b: 3}}};6
+o.a.b * 2;{o: {a: {b: 0.5}}};1.0
+o.a.b * 2;{o: {a: {b: null}}};!error
+o.a.b * 2;{o: {a: {}}};!error
+o.a.b * 2;{o: {a: null}};!error
+o.a.b * 2;{o: {a: 5}};!error
+o.a.b * 2;{o: null};!error
+o.a.b * 2;{};!error
+o.a.b * 2;{o: {a: {b: '7'}}};!error
+6 / o.a.b;{o: {a: {b: 3}}};2
+6 / o.a.b;{o: {a: {b: 0.5}}};12
+6 / o.a.b;{o: {a: {b: null}}};!error
+6 / o.a.b;{o: {a: {}}};!error
+6 / o.a.b;{o: {a: null}};!error
+6 / o.a.b;{o: {a: 5}};!error
+6 / o.a.b;{o: null};!error
+6 / o.a.b;{};!error
+6 / o.a.b;{o: {a: {b: '7'}}};!error
+# Ordering against a null or missing path is an error, equality is not
+o.a.b > 1;{o: {a: {b: 3}}};true
+o.a.b > 1;{o: {a: {b: 0.5}}};false
+o.a.b > 1;{o: {a: {b: null}}};!error
+o.a.b > 1;{o: {a: {}}};!error
+o.a.b > 1;{o: {a: null}};!error
+o.a.b > 1;{o: {a: 5}};!error
+o.a.b > 1;{o: null};!error
+o.a.b > 1;{};!error
+o.a.b > 1;{o: {a: {b: '7'}}};!error
+o.a.b == 3;{o: {a: {b: 3}}};true
+o.a.b == 3;{o: {a: {b: 0.5}}};false
+o.a.b == 3;{o: {a: {b: null}}};false
+o.a.b == 3;{o: {a: {}}};false
+o.a.b == 3;{o: {a: null}};false
+o.a.b == 3;{o: {a: 5}};false
+o.a.b == 3;{o: null};false
+o.a.b == 3;{};false
+o.a.b == 3;{o: {a: {b: '7'}}};false
+o.a.b != null;{o: {a: {b: 3}}};true
+o.a.b != null;{o: {a: {b: 0.5}}};true
+o.a.b != null;{o: {a: {b: null}}};false
+o.a.b != null;{o: {a: {}}};false
+o.a.b != null;{o: {a: null}};false
+o.a.b != null;{o: {a: 5}};false
+o.a.b != null;{o: null};false
+o.a.b != null;{};false
+o.a.b != null;{o: {a: {b: '7'}}};true
+# Coalescing a nested path
+o.a.b ?? 0;{o: {a: {b: 3}}};3
+o.a.b ?? 0;{o: {a: {b: 0.5}}};0.5
+o.a.b ?? 0;{o: {a: {b: null}}};0
+o.a.b ?? 0;{o: {a: {}}};0
+o.a.b ?? 0;{o: {a: null}};0
+o.a.b ?? 0;{o: {a: 5}};0
+o.a.b ?? 0;{o: null};0
+o.a.b ?? 0;{};0
+o.a.b ?? 0;{o: {a: {b: '7'}}};'7'
+(o.a.b ?? 0) + 1;{o: {a: {b: 3}}};4
+(o.a.b ?? 0) + 1;{o: {a: {b: 0.5}}};1.5
+(o.a.b ?? 0) + 1;{o: {a: {b: null}}};1
+(o.a.b ?? 0) + 1;{o: {a: {}}};1
+(o.a.b ?? 0) + 1;{o: {a: null}};1
+(o.a.b ?? 0) + 1;{o: {a: 5}};1
+(o.a.b ?? 0) + 1;{o: null};1
+(o.a.b ?? 0) + 1;{};1
+(o.a.b ?? 0) + 1;{o: {a: {b: '7'}}};!error
+o.a.b ?? o.a ?? o ?? 'root';{o: {a: {b: 3}}};3
+o.a.b ?? o.a ?? o ?? 'root';{o: {a: {b: 0.5}}};0.5
+o.a.b ?? o.a ?? o ?? 'root';{o: {a: {b: null}}};{b: null}
+o.a.b ?? o.a ?? o ?? 'root';{o: {a: {}}};{}
+o.a.b ?? o.a ?? o ?? 'root';{o: {a: null}};{a: null}
+o.a.b ?? o.a ?? o ?? 'root';{o: {a: 5}};5
+o.a.b ?? o.a ?? o ?? 'root';{o: null};'root'
+o.a.b ?? o.a ?? o ?? 'root';{};'root'
+o.a.b ?? o.a ?? o ?? 'root';{o: {a: {b: '7'}}};'7'
+# Guarding a nested path
+o.a.b == null ? 0 : o.a.b * 2;{o: {a: {b: 3}}};6
+o.a.b == null ? 0 : o.a.b * 2;{o: {a: {b: 0.5}}};1.0
+o.a.b == null ? 0 : o.a.b * 2;{o: {a: {b: null}}};0
+o.a.b == null ? 0 : o.a.b * 2;{o: {a: {}}};0
+o.a.b == null ? 0 : o.a.b * 2;{o: {a: null}};0
+o.a.b == null ? 0 : o.a.b * 2;{o: {a: 5}};0
+o.a.b == null ? 0 : o.a.b * 2;{o: null};0
+o.a.b == null ? 0 : o.a.b * 2;{};0
+o.a.b == null ? 0 : o.a.b * 2;{o: {a: {b: '7'}}};!error
+type(o.a.b) == 'number' and o.a.b > 1;{o: {a: {b: 3}}};true
+type(o.a.b) == 'number' and o.a.b > 1;{o: {a: {b: 0.5}}};false
+type(o.a.b) == 'number' and o.a.b > 1;{o: {a: {b: null}}};false
+type(o.a.b) == 'number' and o.a.b > 1;{o: {a: {}}};false
+type(o.a.b) == 'number' and o.a.b > 1;{o: {a: null}};false
+type(o.a.b) == 'number' and o.a.b > 1;{o: {a: 5}};false
+type(o.a.b) == 'number' and o.a.b > 1;{o: null};false
+type(o.a.b) == 'number' and o.a.b > 1;{};false
+type(o.a.b) == 'number' and o.a.b > 1;{o: {a: {b: '7'}}};false
+type(o.a.b) != 'number' or o.a.b > 1;{o: {a: {b: 3}}};true
+type(o.a.b) != 'number' or o.a.b > 1;{o: {a: {b: 0.5}}};false
+type(o.a.b) != 'number' or o.a.b > 1;{o: {a: {b: null}}};true
+type(o.a.b) != 'number' or o.a.b > 1;{o: {a: {}}};true
+type(o.a.b) != 'number' or o.a.b > 1;{o: {a: null}};true
+type(o.a.b) != 'number' or o.a.b > 1;{o: {a: 5}};true
+type(o.a.b) != 'number' or o.a.b > 1;{o: null};true
+type(o.a.b) != 'number' or o.a.b > 1;{};true
+type(o.a.b) != 'number' or o.a.b > 1;{o: {a: {b: '7'}}};true
+o.a.b != null and o.a.b > 1;{o: {a: {b: 3}}};true
+o.a.b != null and o.a.b > 1;{o: {a: {b: 0.5}}};false
+o.a.b != null and o.a.b > 1;{o: {a: {b: null}}};false
+o.a.b != null and o.a.b > 1;{o: {a: {}}};false
+o.a.b != null and o.a.b > 1;{o: {a: null}};false
+o.a.b != null and o.a.b > 1;{o: {a: 5}};false
+o.a.b != null and o.a.b > 1;{o: null};false
+o.a.b != null and o.a.b > 1;{};false
+o.a.b != null and o.a.b > 1;{o: {a: {b: '7'}}};!error
+# Nested path inside values that do not compute
+type(o.a.b);{o: {a: {b: 3}}};'number'
+type(o.a.b);{o: {a: {b: 0.5}}};'number'
+type(o.a.b);{o: {a: {b: null}}};'null'
+type(o.a.b);{o: {a: {}}};'null'
+type(o.a.b);{o: {a: null}};'null'
+type(o.a.b);{o: {a: 5}};'null'
+type(o.a.b);{o: null};'null'
+type(o.a.b);{};'null'
+type(o.a.b);{o: {a: {b: '7'}}};'string'
+[o.a.b, o.a];{o: {a: {b: 3}}};[3, {b: 3}]
+[o.a.b, o.a];{o: {a: {b: 0.5}}};[0.5, {b: 0.5}]
+[o.a.b, o.a];{o: {a: {b: null}}};[null, {b: null}]
+[o.a.b, o.a];{o: {a: {}}};[null, {}]
+[o.a.b, o.a];{o: {a: null}};[null, null]
+[o.a.b, o.a];{o: {a: 5}};[null, 5]
+[o.a.b, o.a];{o: null};[null, null]
+{v: o.a.b};{o: {a: {b: 3}}};{v: 3}
+{v: o.a.b};{o: {a: {b: 0.5}}};{v: 0.5}
+{v: o.a.b};{o: {a: {b: null}}};{v: null}
+{v: o.a.b};{o: {a: {}}};{v: null}
+{v: o.a.b};{o: {a: null}};{v: null}
+{v: o.a.b};{o: {a: 5}};{v: null}
+{v: o.a.b};{o: null};{v: null}
+o.a.b in [3, null];{o: {a: {b: 3}}};true
+o.a.b in [3, null];{o: {a: {b: 0.5}}};false
+o.a.b in [3, null];{o: {a: {b: null}}};true
+o.a.b in [3, null];{o: {a: {}}};true
+o.a.b in [3, null];{o: {a: null}};true
+o.a.b in [3, null];{o: {a: 5}};true
+o.a.b in [3, null];{o: null};true
+o.a.b in [3, null];{};true
+o.a.b in [3, null];{o: {a: {b: '7'}}};false
+`v=${o.a.b}`;{o: {a: {b: 3}}};'v=3'
+`v=${o.a.b}`;{o: {a: {b: 0.5}}};'v=0.5'
+`v=${o.a.b}`;{o: {a: {b: null}}};'v=null'
+`v=${o.a.b}`;{o: {a: {}}};'v=null'
+`v=${o.a.b}`;{o: {a: null}};'v=null'
+`v=${o.a.b}`;{o: {a: 5}};'v=null'
+`v=${o.a.b}`;{o: null};'v=null'
+`v=${o.a.b}`;{};'v=null'
+`v=${o.a.b}`;{o: {a: {b: '7'}}};'v=7'
+# Out-of-range and non-numeric indexes read as null and flow onward
+o.list[i] + 1;{o: {list: [10, 20]}, i: 0};11
+o.list[i] + 1;{o: {list: [10, 20]}, i: 1};21
+o.list[i] + 1;{o: {list: [10, 20]}, i: 2};!error
+o.list[i] + 1;{o: {list: [10, 20]}, i: null};!error
+o.list[i] + 1;{o: {list: [10, 20]}};!error
+o.list[i] + 1;{o: {list: [10, 20]}, i: '1'};!error
+o.list[i] + 1;{o: {list: [null, 20]}, i: 0};!error
+o.list[i] + 1;{o: {list: null}, i: 0};!error
+o.list[i] + 1;{o: {}, i: 0};!error
+o.list[i] + 1;{o: {list: 'ab'}, i: 1};!error
+o.list[i] + 1;{i: 0};!error
+o.list[i] ?? -1;{o: {list: [10, 20]}, i: 0};10
+o.list[i] ?? -1;{o: {list: [10, 20]}, i: 1};20
+o.list[i] ?? -1;{o: {list: [10, 20]}, i: 2};-1
+o.list[i] ?? -1;{o: {list: [10, 20]}, i: null};-1
+o.list[i] ?? -1;{o: {list: [10, 20]}};-1
+o.list[i] ?? -1;{o: {list: [10, 20]}, i: '1'};-1
+o.list[i] ?? -1;{o: {list: [null, 20]}, i: 0};-1
+o.list[i] ?? -1;{o: {list: null}, i: 0};-1
+o.list[i] ?? -1;{o: {}, i: 0};-1
+o.list[i] ?? -1;{o: {list: 'ab'}, i: 1};'b'
+o.list[i] ?? -1;{i: 0};-1
+(o.list[i] ?? 0) * 2;{o: {list: [10, 20]}, i: 0};20
+(o.list[i] ?? 0) * 2;{o: {list: [10, 20]}, i: 1};40
+(o.list[i] ?? 0) * 2;{o: {list: [10, 20]}, i: 2};0
+(o.list[i] ?? 0) * 2;{o: {list: [10, 20]}, i: null};0
+(o.list[i] ?? 0) * 2;{o: {list: [10, 20]}};0
+(o.list[i] ?? 0) * 2;{o: {list: [10, 20]}, i: '1'};0
+(o.list[i] ?? 0) * 2;{o: {list: [null, 20]}, i: 0};0
+(o.list[i] ?? 0) * 2;{o: {list: null}, i: 0};0
+(o.list[i] ?? 0) * 2;{o: {}, i: 0};0
+(o.list[i] ?? 0) * 2;{o: {list: 'ab'}, i: 1};!error
+(o.list[i] ?? 0) * 2;{i: 0};0
+o.list[i] == null;{o: {list: [10, 20]}, i: 0};false
+o.list[i] == null;{o: {list: [10, 20]}, i: 1};false
+o.list[i] == null;{o: {list: [10, 20]}, i: 2};true
+o.list[i] == null;{o: {list: [10, 20]}, i: null};true
+o.list[i] == null;{o: {list: [10, 20]}};true
+o.list[i] == null;{o: {list: [10, 20]}, i: '1'};true
+o.list[i] == null;{o: {list: [null, 20]}, i: 0};true
+o.list[i] == null;{o: {list: null}, i: 0};true
+o.list[i] == null;{o: {}, i: 0};true
+o.list[i] == null;{o: {list: 'ab'}, i: 1};false
+o.list[i] == null;{i: 0};true
+`${o.list[i]}`;{o: {list: [10, 20]}, i: 0};'10'
+`${o.list[i]}`;{o: {list: [10, 20]}, i: 1};'20'
+`${o.list[i]}`;{o: {list: [10, 20]}, i: 2};'null'
+`${o.list[i]}`;{o: {list: [10, 20]}, i: null};'null'
+`${o.list[i]}`;{o: {list: [10, 20]}};'null'
+`${o.list[i]}`;{o: {list: [10, 20]}, i: '1'};'null'
+`${o.list[i]}`;{o: {list: [null, 20]}, i: 0};'null'
+`${o.list[i]}`;{o: {list: null}, i: 0};'null'
+`${o.list[i]}`;{o: {}, i: 0};'null'
+`${o.list[i]}`;{o: {list: 'ab'}, i: 1};'b'
+`${o.list[i]}`;{i: 0};'null'
+o.list[i] > 15 ? 'big' : 'small';{o: {list: [10, 20]}, i: 0};'small'
+o.list[i] > 15 ? 'big' : 'small';{o: {list: [10, 20]}, i: 1};'big'
+o.list[i] > 15 ? 'big' : 'small';{o: {list: [10, 20]}, i: 2};!error
+o.list[i] > 15 ? 'big' : 'small';{o: {list: [10, 20]}, i: null};!error
+o.list[i] > 15 ? 'big' : 'small';{o: {list: [10, 20]}};!error
+o.list[i] > 15 ? 'big' : 'small';{o: {list: [10, 20]}, i: '1'};!error
+o.list[i] > 15 ? 'big' : 'small';{o: {list: [null, 20]}, i: 0};!error
+o.list[i] > 15 ? 'big' : 'small';{o: {list: null}, i: 0};!error
+o.list[i] > 15 ? 'big' : 'small';{o: {}, i: 0};!error
+o.list[i] > 15 ? 'big' : 'small';{o: {list: 'ab'}, i: 1};!error
+o.list[i] > 15 ? 'big' : 'small';{i: 0};!error
+# Division by zero yields null, which then fails in arithmetic but coalesces, compares for equality and interpolates
+a / b + 1;{a: 6, b: 3};3
+a / b + 1;{a: 1, b: 4};1.25
+a / b + 1;{a: 1, b: 0};!error
+a / b + 1;{a: 0, b: 0};!error
+a / b + 1;{a: -5, b: 0.0};!error
+a / b + 1;{a: 1, b: null};!error
+a / b + 1;{a: 1};!error
+a / b + 1;{a: null, b: 2};!error
+a / b + 1;{a: 1, b: '2'};!error
+-(a / b);{a: 6, b: 3};-2
+-(a / b);{a: 1, b: 4};-0.25
+-(a / b);{a: 1, b: 0};!error
+-(a / b);{a: 0, b: 0};!error
+-(a / b);{a: -5, b: 0.0};!error
+-(a / b);{a: 1, b: null};!error
+-(a / b);{a: 1};!error
+-(a / b);{a: null, b: 2};!error
+-(a / b);{a: 1, b: '2'};!error
+(a / b) > 1;{a: 6, b: 3};true
+(a / b) > 1;{a: 1, b: 4};false
+(a / b) > 1;{a: 1, b: 0};!error
+(a / b) > 1;{a: 0, b: 0};!error
+(a / b) > 1;{a: -5, b: 0.0};!error
+(a / b) > 1;{a: 1, b: null};!error
+(a / b) > 1;{a: 1};!error
+(a / b) > 1;{a: null, b: 2};!error
+(a / b) > 1;{a: 1, b: '2'};!error
+(a / b) == null;{a: 6, b: 3};false
+(a / b) == null;{a: 1, b: 4};false
+(a / b) == null;{a: 1, b: 0};true
+(a / b) == null;{a: 0, b: 0};true
+(a / b) == null;{a: -5, b: 0.0};true
+(a / b) == null;{a: 1, b: null};!error
+(a / b) == null;{a: 1};!error
+(a / b) == null;{a: null, b: 2};!error
+(a / b) == null;{a: 1, b: '2'};!error
+(a / b) ?? 0;{a: 6, b: 3};2
+(a / b) ?? 0;{a: 1, b: 4};0.25
+(a / b) ?? 0;{a: 1, b: 0};0
+(a / b) ?? 0;{a: 0, b: 0};0
+(a / b) ?? 0;{a: -5, b: 0.0};0
+(a / b) ?? 0;{a: 1, b: null};!error
+(a / b) ?? 0;{a: 1};!error
+(a / b) ?? 0;{a: null, b: 2};!error
+(a / b) ?? 0;{a: 1, b: '2'};!error
+((a / b) ?? 0) + 1;{a: 6, b: 3};3
+((a / b) ?? 0) + 1;{a: 1, b: 4};1.25
+((a / b) ?? 0) + 1;{a: 1, b: 0};1
+((a / b) ?? 0) + 1;{a: 0, b: 0};1
+((a / b) ?? 0) + 1;{a: -5, b: 0.0};1
+((a / b) ?? 0) + 1;{a: 1, b: null};!error
+((a / b) ?? 0) + 1;{a: 1};!error
+((a / b) ?? 0) + 1;{a: null, b: 2};!error
+((a / b) ?? 0) + 1;{a: 1, b: '2'};!error
+type(a / b);{a: 6, b: 3};'number'
+type(a / b);{a: 1, b: 4};'number'
+type(a / b);{a: 1, b: 0};'null'
+type(a / b);{a: 0, b: 0};'null'
+type(a / b);{a: -5, b: 0.0};'null'
+type(a / b);{a: 1, b: null};!error
+type(a / b);{a: 1};!error
+type(a / b);{a: null, b: 2};!error
+type(a / b);{a: 1, b: '2'};!error
+string(a / b);{a: 6, b: 3};'2'
+string(a / b);{a: 1, b: 4};'0.25'
+string(a / b);{a: 1, b: 0};'null'
+string(a / b);{a: 0, b: 0};'null'
+string(a / b);{a: -5, b: 0.0};'null'
+`r=${a / b}`;{a: 6, b: 3};'r=2'
+`r=${a / b}`;{a: 1, b: 4};'r=0.25'
+`r=${a / b}`;{a: 1, b: 0};'r=null'
+`r=${a / b}`;{a: 0, b: 0};'r=null'
+`r=${a / b}`;{a: -5, b: 0.0};'r=null'
+{r: a / b};{a: 6, b: 3};{r: 2}
+{r: a / b};{a: 1, b: 4};{r: 0.25}
+{r: a / b};{a: 1, b: 0};{r: null}
+{r: a / b};{a: 0, b: 0};{r: null}
+{r: a / b};{a: -5, b: 0.0};{r: null}
+{r: a / b};{a: 1, b: null};!error
+{r: a / b};{a: 1};!error
+{r: a / b};{a: null, b: 2};!error
+{r: a / b};{a: 1, b: '2'};!error
+round(a / b);{a: 6, b: 3};2
+round(a / b);{a: 1, b: 4};0
+round(a / b);{a: 1, b: 0};!error
+round(a / b);{a: 0, b: 0};!error
+round(a / b);{a: -5, b: 0.0};!error
+round(a / b);{a: 1, b: null};!error
+round(a / b);{a: 1};!error
+round(a / b);{a: null, b: 2};!error
+round(a / b);{a: 1, b: '2'};!error
+(a / b) == null ? 'undefined' : a / b;{a: 6, b: 3};2
+(a / b) == null ? 'undefined' : a / b;{a: 1, b: 4};0.25
+(a / b) == null ? 'undefined' : a / b;{a: 1, b: 0};'undefined'
+(a / b) == null ? 'undefined' : a / b;{a: 0, b: 0};'undefined'
+(a / b) == null ? 'undefined' : a / b;{a: -5, b: 0.0};'undefined'
+(a / b) == null ? 'undefined' : a / b;{a: 1, b: null};!error
+(a / b) == null ? 'undefined' : a / b;{a: 1};!error
+(a / b) == null ? 'undefined' : a / b;{a: null, b: 2};!error
+(a / b) == null ? 'undefined' : a / b;{a: 1, b: '2'};!error
+# Modulo by zero yields null too
+a % b + 1;{a: 6, b: 3};1
+a % b + 1;{a: 1, b: 4};2
+a % b + 1;{a: 1, b: 0};!error
+a % b + 1;{a: 0, b: 0};!error
+a % b + 1;{a: -5, b: 0.0};!error
+a % b + 1;{a: 1, b: null};!error
+a % b + 1;{a: 1};!error
+a % b + 1;{a: null, b: 2};!error
+a % b + 1;{a: 1, b: '2'};!error
+(a % b) ?? -1;{a: 6, b: 3};0
+(a % b) ?? -1;{a: 1, b: 4};1
+(a % b) ?? -1;{a: 1, b: 0};-1
+(a % b) ?? -1;{a: 0, b: 0};-1
+(a % b) ?? -1;{a: -5, b: 0.0};-1
+(a % b) ?? -1;{a: 1, b: null};!error
+(a % b) ?? -1;{a: 1};!error
+(a % b) ?? -1;{a: null, b: 2};!error
+(a % b) ?? -1;{a: 1, b: '2'};!error
+a % b == 0;{a: 6, b: 3};true
+a % b == 0;{a: 1, b: 4};false
+a % b == 0;{a: 1, b: 0};false
+a % b == 0;{a: 0, b: 0};false
+a % b == 0;{a: -5, b: 0.0};false
+a % b == 0;{a: 1, b: null};!error
+a % b == 0;{a: 1};!error
+a % b == 0;{a: null, b: 2};!error
+a % b == 0;{a: 1, b: '2'};!error
+# Null and error are distinct: null is a value, a type error aborts
+v + 1;{v: null};!error
+v + 1;{};!error
+v + 1;{v: {}};!error
+v + 1;{v: []};!error
+v + 1;{v: ''};!error
+v + 1;{v: 0};1
+v + 1;{v: false};!error
+v + 1;{v: 'x'};!error
+v + 1;{v: [null]};!error
+v + 1;{v: {a: null}};!error
+v ?? 1;{v: null};1
+v ?? 1;{};1
+v ?? 1;{v: {}};{}
+v ?? 1;{v: []};[]
+v ?? 1;{v: ''};''
+v ?? 1;{v: 0};0
+v ?? 1;{v: false};false
+v ?? 1;{v: 'x'};'x'
+v ?? 1;{v: [null]};[null]
+v ?? 1;{v: {a: null}};{a: null}
+v == null;{v: null};true
+v == null;{};true
+v == null;{v: {}};false
+v == null;{v: []};false
+v == null;{v: ''};false
+v == null;{v: 0};false
+v == null;{v: false};false
+v == null;{v: 'x'};false
+v == null;{v: [null]};false
+v == null;{v: {a: null}};false
+type(v);{v: null};'null'
+type(v);{};'null'
+type(v);{v: {}};'object'
+type(v);{v: []};'array'
+type(v);{v: ''};'string'
+type(v);{v: 0};'number'
+type(v);{v: false};'bool'
+type(v);{v: 'x'};'string'
+type(v);{v: [null]};'array'
+type(v);{v: {a: null}};'object'
+v != null ? 'set' : 'unset';{v: null};'unset'
+v != null ? 'set' : 'unset';{};'unset'
+v != null ? 'set' : 'unset';{v: {}};'set'
+v != null ? 'set' : 'unset';{v: []};'set'
+v != null ? 'set' : 'unset';{v: ''};'set'
+v != null ? 'set' : 'unset';{v: 0};'set'
+v != null ? 'set' : 'unset';{v: false};'set'
+v != null ? 'set' : 'unset';{v: 'x'};'set'
+v != null ? 'set' : 'unset';{v: [null]};'set'
+v != null ? 'set' : 'unset';{v: {a: null}};'set'
+v.a;{v: null};null
+v.a;{};null
+v.a;{v: {}};null
+v.a;{v: []};null
+v.a;{v: ''};null
+v.a;{v: 0};null
+v.a;{v: false};null
+v.a;{v: 'x'};null
+v.a;{v: [null]};null
+v.a;{v: {a: null}};null
+v[0];{v: null};null
+v[0];{};null
+v[0];{v: {}};null
+v[0];{v: []};null
+v[0];{v: ''};null
+v[0];{v: 0};null
+v[0];{v: false};null
+v[0];{v: 'x'};'x'
+v[0];{v: [null]};null
+v[0];{v: {a: null}};null
+# Literal null in operators
+null + null;;!error
+null - 0;;!error
+0 * null;;!error
+null / 1;;!error
+1 / null;;!error
+null % 2;;!error
+null ^ 2;;!error
+2 ^ null;;!error
+null + 'a';;!error
+null + [];;!error
+-null;;!error
+null < null;;!error
+null >= 0;;!error
+0 > null;;!error
+null == null;;true
+null != null;;false
+null == 0;;false
+null == 'null';;false
+null == false;;false
+null == [];;false
+null == {};;false
+[] == null;;false
+null != false;;true
+null ?? null;;null
+(null);;null
+[null][0];;null
+[null][0] ?? 1;;1
+({a: null}).a ?? 2;;2
+({a: null}).a.b;;null
+({}).a;;null
+({}).a.b.c ?? 3;;3
+[][0];;null
+[][0] + 1;;!error
+[1, 2][5] ?? 0;;0
+('abc')[9] ?? '-';;'-'
+# An error anywhere in an evaluated operand aborts the whole expression
+1 + {} + 1;;!error
+(1 + {}) ?? 1;;!error
+(1 + {}) == null;;!error
+[1 + {}] ?? [];;!error
+type(1 + {});;!error
+string(1 + {});;!error
+-(1 + {});;!error
+(1 / 0) + (1 + {});;!error
+(1 + {}) / 0;;!error
+(1 / 0) ?? 7;;7
+(1 / 0) ?? (2 / 0) ?? 9;;9
+(2 / 0) ?? (1 / 0);;null
+(1 / 0) == (2 / 0);;true
+(1 / 0) != 0;;true
+[1 / 0, 0 / 0, 1 % 0];;[null, null, null]
+{x: 1 / 0};;{x: null}
+`${1 / 0}|${0 % 0}`;;'null|null'
+1 / 0 ?? (1 + {});;null;question: ?? binds tighter than / so this is 1 / (0 ?? (1 + {})); JS/C# would evaluate (1 / 0) ?? (1 + {}) and fail

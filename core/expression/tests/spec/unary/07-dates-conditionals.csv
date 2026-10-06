@@ -1,0 +1,106 @@
+expression (string);input (json 5);output (json 5);note
+# Date $: convert with d($) before comparing
+d($) > d('2024-01-01');{$: '2024-05-01'};true
+d($) > d('2024-01-01');{$: '2024-01-01'};false
+d($) > d('2024-01-01');{$: '2023-12-31'};false
+d($) > d('2024-01-01');{$: '2024-01-01T00:00:01Z'};true
+d($) > d('2024-01-01');{$: 'not a date'};false;question: an invalid date orders before every valid date instead of erroring (same as standard mode)
+d($) > d('2024-01-01');{$: null};false;question: d(null) is an invalid date, so ordering against it is false instead of an error
+d($) >= d('2024-01-01') and d($) < d('2025-01-01');{$: '2024-01-01'};true
+d($) >= d('2024-01-01') and d($) < d('2025-01-01');{$: '2024-12-31T23:59:59Z'};true
+d($) >= d('2024-01-01') and d($) < d('2025-01-01');{$: '2025-01-01'};false
+d($) >= d('2024-01-01') and d($) < d('2025-01-01');{$: '2023-06-01'};false
+d($) == d('2024-05-01');{$: '2024-05-01'};true
+d($) == d('2024-05-01');{$: '2024-05-01T00:00:00Z'};true
+d($) == d('2024-05-01');{$: '2024-05-02'};false
+d($) == d('2024-05-01');{$: '2024-05-01T00:00:01Z'};false
+d($).year() == 2024;{$: '2024-05-01'};true
+d($).year() == 2024;{$: '2024-12-31T23:59:59Z'};true
+d($).year() == 2024;{$: '2023-05-01'};false
+d($).year() == 2024;{$: '2025-01-01'};false
+d($).year() == 2024;{$: 'garbage'};false
+d($).month() in [6, 7, 8];{$: '2024-07-15'};true
+d($).month() in [6, 7, 8];{$: '2024-06-01'};true
+d($).month() in [6, 7, 8];{$: '2024-09-01'};false
+d($).month() in [6, 7, 8];{$: '2024-01-31'};false
+d($).isAfter(d('2024-01-01'));{$: '2024-05-01'};true
+d($).isAfter(d('2024-01-01'));{$: '2024-01-01'};false
+d($).isAfter(d('2024-01-01'));{$: '2020-01-01'};false
+d($).isAfter(d('2024-01-01'));{$: '2024-01-02'};true
+d($).isBefore(d());{$: '2025-03-20T10:15:29Z'};true
+d($).isBefore(d());{$: '2025-03-20T10:15:31Z'};false
+d($).isBefore(d());{$: '1999-01-01'};true
+d($).isBefore(d());{$: '2030-01-01'};false
+d($).isToday();{$: '2025-03-20'};true
+d($).isToday();{$: '2025-03-20T23:00:00Z'};true
+d($).isToday();{$: '2025-03-21'};false
+d($).isToday();{$: '2025-03-19'};false
+d($) in [d('2024-01-01')..d('2024-12-31')];{$: '2024-05-01'};true
+d($) in [d('2024-01-01')..d('2024-12-31')];{$: '2024-01-01'};true
+d($) in [d('2024-01-01')..d('2024-12-31')];{$: '2024-12-31'};true
+d($) in [d('2024-01-01')..d('2024-12-31')];{$: '2025-01-01'};false
+d($) in [d('2024-01-01')..d('2024-12-31')];{$: '2023-12-31'};false
+d($) in (d('2024-01-01')..d('2024-12-31'));{$: '2024-01-01'};false
+d($) in (d('2024-01-01')..d('2024-12-31'));{$: '2024-06-01'};true
+d($) in (d('2024-01-01')..d('2024-12-31'));{$: '2024-12-31'};false
+d($) in (d('2024-01-01')..d('2024-12-31'));{$: '2025-06-01'};false
+# A date-string $ is not coerced by shorthands or date literals
+> d('2024-01-01');{$: '2024-05-01'};true
+> d('2024-01-01');{$: '2023-05-01'};false
+> d('2024-01-01');{$: null};!error
+> d('2024-01-01');{$: 5};!error
+[d('2024-01-01')..d('2024-12-31')];{$: '2024-05-01'};!error;question: a date-string $ is not coerced to a date for date intervals
+[d('2024-01-01')..d('2024-12-31')];{$: '2025-05-01'};!error;question: a date-string $ is not coerced to a date for date intervals
+[d('2024-01-01')..d('2024-12-31')];{$: null};!error
+[d('2024-01-01')..d('2024-12-31')];{$: 20240501};!error;bug: a number $ against a date interval is compared by enum variant order instead of erroring like a string $
+)d('2024-01-01')..d('2024-12-31')(;{$: 20240501};!error;bug: a number $ against a date interval is compared by enum variant order instead of erroring like a string $
+)d('2024-01-01')..d('2024-12-31')(;{$: '2025-05-01'};!error
+)d('2024-01-01')..d('2024-12-31')(;{$: null};!error
+$ in [d('2024-01-01')..d('2024-12-31')];{$: 0};!error;bug: a number $ against a date interval is compared by enum variant order instead of erroring like a string $
+d('2024-05-01');{$: '2024-05-01'};true
+d('2024-05-01');{$: '2024-05-01T00:00:00Z'};true
+d('2024-05-01');{$: null};false
+d('2024-05-01');{$: 1714521600};false
+== d('2024-05-01');{$: '2024-05-01'};true
+== d('2024-05-01');{$: '2024-05-02'};false
+== d('2024-05-01');{$: null};false
+== d('2024-05-01');{};false
+d($).year();{$: '2024-05-01'};false
+d($).year();{$: '2024'};false
+d($).year();{$: 2024};false
+d($).year();{$: null};true;question: d(null).year() is null, so `d($).year()` matches a null $ through `$ == null`
+d('2024-05-01').format('%Y');{$: '2024'};true
+d('2024-05-01').format('%Y');{$: 2024};false
+d('2024-05-01').format('%Y');{$: '2025'};false
+d('2024-05-01').format('%Y');{$: null};false
+d($).isValid();{$: '2024-02-29'};true
+d($).isValid();{$: '2023-02-29'};false
+d($).isValid();{$: 'garbage'};false
+d($).isValid();{$: null};false
+d($).isValid();{$: '2024-05-01T10:00:00Z'};true
+# Ternaries: branch types decide whether the result is compared with $
+x > 5 ? 'hi' : 'lo';{$: 'hi', x: 7};true
+x > 5 ? 'hi' : 'lo';{$: 'lo', x: 7};false
+x > 5 ? 'hi' : 'lo';{$: 'lo', x: 3};true
+x > 5 ? 'hi' : 'lo';{$: 'hi', x: 3};false
+x > 5 ? 'hi' : 'lo';{$: 'hi'};!error
+$ > 5 ? 10 : 0;{$: 10};true
+$ > 5 ? 10 : 0;{$: 0};true
+$ > 5 ? 10 : 0;{$: 6};false
+$ > 5 ? 10 : 0;{$: null};!error
+x > 5 ? contains($, 'a') : contains($, 'b');{$: 'a', x: 7};true
+x > 5 ? contains($, 'a') : contains($, 'b');{$: 'b', x: 7};false
+x > 5 ? contains($, 'a') : contains($, 'b');{$: 'b', x: 3};true
+x > 5 ? contains($, 'a') : contains($, 'b');{$: 'a', x: 3};false
+$ > 5 ? true : false;{$: 6};false;question: bool-literal branches make the ternary `$ == ($ > 5 ? true : false)`; the standard-mode reading is true
+$ > 5 ? true : false;{$: 5};false
+$ > 5 ? true : false;{$: true};!error
+$ > 5 ? true : false;{$: null};!error
+x > 5 ? true : false;{$: true, x: 7};true
+x > 5 ? true : false;{$: false, x: 7};false
+x > 5 ? true : false;{$: false, x: 3};true
+x > 5 ? true : false;{$: 1, x: 7};false
+x > 5 ? contains($, 'a') : false;{$: 'a', x: 7};false;question: mixed branch kinds (boolean function vs literal) fall back to comparing `$ == result`, so a matching contains() is compared with $ instead of used as the result
+x > 5 ? contains($, 'a') : false;{$: 'b', x: 7};false
+x > 5 ? contains($, 'a') : false;{$: false, x: 3};true;question: mixed branch kinds (boolean function vs literal) fall back to comparing `$ == result`, so $ = false matches the false branch
+x > 5 ? contains($, 'a') : false;{$: 'a', x: 3};false

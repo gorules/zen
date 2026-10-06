@@ -1,0 +1,366 @@
+expression (string);input (json 5);output (json 5);note
+# Parenthesized sequences as values inside assignments
+"total = (s = a + b; s * 2); total";{a: 1, b: 2};6
+"total = (s = a + b; s * 2); total";{a: 0.5, b: 1.5};4.0
+"total = (s = a + b; s * 2); total";{a: -2, b: 2};0
+"total = (s = a + b; s * 2); total";{a: 0, b: 0};0
+"total = (s = a + b; s * 2); total";{a: null, b: 1};!error
+"total = (s = a + b; s * 2); total";{b: 1};!error
+"total = (s = a + b; s * 2); total";{a: 1, b: 'x'};!error
+"total = (s = a + b; s * 2)";{a: 1, b: 2};{total: 6}
+"total = (s = a + b; s * 2)";{a: 0.5, b: 1.5};{total: 4.0}
+"total = (s = a + b; s * 2)";{a: -2, b: 2};{total: 0}
+"total = (s = a + b; s * 2)";{a: 0, b: 0};{total: 0}
+"total = (s = a + b; s * 2)";{a: null, b: 1};!error
+"total = (s = a + b; s * 2)";{b: 1};!error
+"total = (s = a + b; s * 2)";{a: 1, b: 'x'};!error
+"total = (s = a + b; s * 2); s";{a: 1, b: 2};3;question: a parenthesized sequence has no scope of its own so s stays visible after it
+"total = (s = a + b; s * 2); s";{a: 0.5, b: 1.5};2.0;question: a parenthesized sequence has no scope of its own so s stays visible after it
+"total = (s = a + b; s * 2); s";{a: -2, b: 2};0;question: a parenthesized sequence has no scope of its own so s stays visible after it
+"total = (s = a + b; s * 2); s";{a: 0, b: 0};0;question: a parenthesized sequence has no scope of its own so s stays visible after it
+"total = (s = a + b; s * 2); s";{a: null, b: 1};!error;question: a parenthesized sequence has no scope of its own so s stays visible after it
+"total = (s = a + b; s * 2); s";{b: 1};!error;question: a parenthesized sequence has no scope of its own so s stays visible after it
+"total = (s = a + b; s * 2); s";{a: 1, b: 'x'};!error;question: a parenthesized sequence has no scope of its own so s stays visible after it
+"r = [(p = a * 2; p), (q = b * 2; q)]; r";{a: 1, b: 2};[2, 4]
+"r = [(p = a * 2; p), (q = b * 2; q)]; r";{a: 0.5, b: 1.5};[1.0, 3.0]
+"r = [(p = a * 2; p), (q = b * 2; q)]; r";{a: -2, b: 2};[-4, 4]
+"r = [(p = a * 2; p), (q = b * 2; q)]; r";{a: 0, b: 0};[0, 0]
+"r = [(p = a * 2; p), (q = b * 2; q)]; r";{a: null, b: 1};!error
+"r = [(p = a * 2; p), (q = b * 2; q)]; r";{b: 1};!error
+"r = [(p = a * 2; p), (q = b * 2; q)]; r";{a: 1, b: 'x'};!error
+"r = [(p = a * 2; p), (q = b * 2; q)]";{a: 1, b: 2};{r: [2, 4]}
+"r = [(p = a * 2; p), (q = b * 2; q)]";{a: 0.5, b: 1.5};{r: [1.0, 3.0]}
+"r = [(p = a * 2; p), (q = b * 2; q)]";{a: -2, b: 2};{r: [-4, 4]}
+"r = [(p = a * 2; p), (q = b * 2; q)]";{a: 0, b: 0};{r: [0, 0]}
+"r = [(p = a * 2; p), (q = b * 2; q)]";{a: null, b: 1};!error
+"r = [(p = a * 2; p), (q = b * 2; q)]";{b: 1};!error
+"r = [(p = a * 2; p), (q = b * 2; q)]";{a: 1, b: 'x'};!error
+"r = {x: (t = a; t + 1), y: b}; r.x";{a: 1, b: 2};2
+"r = {x: (t = a; t + 1), y: b}; r.x";{a: 0.5, b: 1.5};1.5
+"r = {x: (t = a; t + 1), y: b}; r.x";{a: -2, b: 2};-1
+"r = {x: (t = a; t + 1), y: b}; r.x";{a: 0, b: 0};1
+"r = {x: (t = a; t + 1), y: b}; r.x";{a: null, b: 1};!error
+"r = {x: (t = a; t + 1), y: b}; r.x";{b: 1};!error
+"r = {x: (t = a; t + 1), y: b}; r.x";{a: 1, b: 'x'};2
+"r = {x: (t = a; t + 1), y: b}; r";{a: 1, b: 2};{x: 2, y: 2}
+"r = {x: (t = a; t + 1), y: b}; r";{a: 0.5, b: 1.5};{x: 1.5, y: 1.5}
+"r = {x: (t = a; t + 1), y: b}; r";{a: -2, b: 2};{x: -1, y: 2}
+"r = {x: (t = a; t + 1), y: b}; r";{a: 0, b: 0};{x: 1, y: 0}
+"r = {x: (t = a; t + 1), y: b}; r";{a: null, b: 1};!error
+"r = {x: (t = a; t + 1), y: b}; r";{b: 1};!error
+"r = {x: (t = a; t + 1), y: b}; r";{a: 1, b: 'x'};{x: 2, y: 'x'}
+"x = (y = a; y) + (y = b; y); x";{a: 1, b: 2};3
+"x = (y = a; y) + (y = b; y); x";{a: 0.5, b: 1.5};2.0
+"x = (y = a; y) + (y = b; y); x";{a: -2, b: 2};0
+"x = (y = a; y) + (y = b; y); x";{a: 0, b: 0};0
+"x = (y = a; y) + (y = b; y); x";{a: null, b: 1};!error
+"x = (y = a; y) + (y = b; y); x";{b: 1};!error
+"x = (y = a; y) + (y = b; y); x";{a: 1, b: 'x'};!error
+"s = `${(t = a + b; t)}`; s";{a: 1, b: 2};'3'
+"s = `${(t = a + b; t)}`; s";{a: 0.5, b: 1.5};'2.0'
+"s = `${(t = a + b; t)}`; s";{a: -2, b: 2};'0'
+"s = `${(t = a + b; t)}`; s";{a: 0, b: 0};'0'
+"s = `${(t = a + b; t)}`; s";{a: null, b: 1};!error
+"s = `${(t = a + b; t)}`; s";{b: 1};!error
+"s = `${(t = a + b; t)}`; s";{a: 1, b: 'x'};!error
+"r = round((t = a / b; t * 100), 1); r";{a: 1, b: 2};50.0
+"r = round((t = a / b; t * 100), 1); r";{a: 0.5, b: 1.5};33.3
+"r = round((t = a / b; t * 100), 1); r";{a: -2, b: 2};-100
+"r = round((t = a / b; t * 100), 1); r";{a: 0, b: 0};!error
+"r = round((t = a / b; t * 100), 1); r";{a: null, b: 1};!error
+"r = round((t = a / b; t * 100), 1); r";{b: 1};!error
+"r = round((t = a / b; t * 100), 1); r";{a: 1, b: 'x'};!error
+"r = max([(t = a; t), (u = b; u)]); r";{a: 1, b: 2};2
+"r = max([(t = a; t), (u = b; u)]); r";{a: 0.5, b: 1.5};1.5
+"r = max([(t = a; t), (u = b; u)]); r";{a: -2, b: 2};2
+"r = max([(t = a; t), (u = b; u)]); r";{a: 0, b: 0};0
+"r = max([(t = a; t), (u = b; u)]); r";{a: null, b: 1};!error
+"r = max([(t = a; t), (u = b; u)]); r";{b: 1};!error
+"r = max([(t = a; t), (u = b; u)]); r";{a: 1, b: 'x'};!error
+"r = (t = a > b; t) ? 'a' : 'b'; r";{a: 1, b: 2};'b'
+"r = (t = a > b; t) ? 'a' : 'b'; r";{a: 0.5, b: 1.5};'b'
+"r = (t = a > b; t) ? 'a' : 'b'; r";{a: -2, b: 2};'b'
+"r = (t = a > b; t) ? 'a' : 'b'; r";{a: 0, b: 0};'b'
+"r = (t = a > b; t) ? 'a' : 'b'; r";{a: null, b: 1};!error
+"r = (t = a > b; t) ? 'a' : 'b'; r";{b: 1};!error
+"r = (t = a > b; t) ? 'a' : 'b'; r";{a: 1, b: 'x'};!error
+"r = (o.v = a; o.v * 2); r";{a: 1, b: 2};2
+"r = (o.v = a; o.v * 2); r";{a: 0.5, b: 1.5};1.0
+"r = (o.v = a; o.v * 2); r";{a: -2, b: 2};-4
+"r = (o.v = a; o.v * 2); r";{a: 0, b: 0};0
+"r = (o.v = a; o.v * 2); r";{a: null, b: 1};!error
+"r = (o.v = a; o.v * 2); r";{b: 1};!error
+"r = (o.v = a; o.v * 2); r";{a: 1, b: 'x'};2
+"r = (o.v = a; o.v * 2)";{a: 1, b: 2};{r: 2}
+"r = (o.v = a; o.v * 2)";{a: 0.5, b: 1.5};{r: 1.0}
+"r = (o.v = a; o.v * 2)";{a: -2, b: 2};{r: -4}
+"r = (o.v = a; o.v * 2)";{a: 0, b: 0};{r: 0}
+"r = (o.v = a; o.v * 2)";{a: null, b: 1};!error
+"r = (o.v = a; o.v * 2)";{b: 1};!error
+"r = (o.v = a; o.v * 2)";{a: 1, b: 'x'};{r: 2}
+"m = 3; r = (k = a * m; k + b); r";{a: 1, b: 2};5
+"m = 3; r = (k = a * m; k + b); r";{a: 0.5, b: 1.5};3.0
+"m = 3; r = (k = a * m; k + b); r";{a: -2, b: 2};-4
+"m = 3; r = (k = a * m; k + b); r";{a: 0, b: 0};0
+"m = 3; r = (k = a * m; k + b); r";{a: null, b: 1};!error
+"m = 3; r = (k = a * m; k + b); r";{b: 1};!error
+"m = 3; r = (k = a * m; k + b); r";{a: 1, b: 'x'};!error
+# Sequences inside ternary branches across statements
+"v = c ? (t = a; t * 10) : (t = b; t * 100); v";{c: true, a: 1, b: 2};10
+"v = c ? (t = a; t * 10) : (t = b; t * 100); v";{c: false, a: 1, b: 2};200
+"v = c ? (t = a; t * 10) : (t = b; t * 100); v";{c: true, a: null, b: 2};!error
+"v = c ? (t = a; t * 10) : (t = b; t * 100); v";{c: false, a: 1, b: null};!error
+"v = c ? (t = a; t * 10) : (t = b; t * 100); v";{c: null, a: 1, b: 2};!error
+"v = c ? (t = a; t * 10) : (t = b; t * 100); v";{a: 1, b: 2};!error
+"v = c ? (t = a; t * 10) : (t = b; t * 100); v";{c: 1, a: 1, b: 2};!error
+"v = c ? (t = a; t * 10) : (t = b; t * 100)";{c: true, a: 1, b: 2};{v: 10}
+"v = c ? (t = a; t * 10) : (t = b; t * 100)";{c: false, a: 1, b: 2};{v: 200}
+"v = c ? (t = a; t * 10) : (t = b; t * 100)";{c: true, a: null, b: 2};!error
+"v = c ? (t = a; t * 10) : (t = b; t * 100)";{c: false, a: 1, b: null};!error
+"v = c ? (t = a; t * 10) : (t = b; t * 100)";{c: null, a: 1, b: 2};!error
+"v = c ? (t = a; t * 10) : (t = b; t * 100)";{a: 1, b: 2};!error
+"v = c ? (t = a; t * 10) : (t = b; t * 100)";{c: 1, a: 1, b: 2};!error
+"v = c ? (t = a; t * 10) : (t = b; t * 100); t";{c: true, a: 1, b: 2};1;question: t assigned inside the taken branch is visible after the program-level ternary
+"v = c ? (t = a; t * 10) : (t = b; t * 100); t";{c: false, a: 1, b: 2};2;question: t assigned inside the taken branch is visible after the program-level ternary
+"v = c ? (t = a; t * 10) : (t = b; t * 100); t";{c: true, a: null, b: 2};!error;question: t assigned inside the taken branch is visible after the program-level ternary
+"v = c ? (t = a; t * 10) : (t = b; t * 100); t";{c: false, a: 1, b: null};!error;question: t assigned inside the taken branch is visible after the program-level ternary
+"v = c ? (t = a; t * 10) : (t = b; t * 100); t";{c: null, a: 1, b: 2};!error;question: t assigned inside the taken branch is visible after the program-level ternary
+"v = c ? (t = a; t * 10) : (t = b; t * 100); t";{a: 1, b: 2};!error;question: t assigned inside the taken branch is visible after the program-level ternary
+"v = c ? (t = a; t * 10) : (t = b; t * 100); t";{c: 1, a: 1, b: 2};!error;question: t assigned inside the taken branch is visible after the program-level ternary
+"v = c ? (p = 'yes'; p) : (q = 'no'; q); [v, p, q]";{c: true, a: 1, b: 2};['yes', 'yes', null]
+"v = c ? (p = 'yes'; p) : (q = 'no'; q); [v, p, q]";{c: false, a: 1, b: 2};['no', null, 'no']
+"v = c ? (p = 'yes'; p) : (q = 'no'; q); [v, p, q]";{c: true, a: null, b: 2};['yes', 'yes', null]
+"v = c ? (p = 'yes'; p) : (q = 'no'; q); [v, p, q]";{c: false, a: 1, b: null};['no', null, 'no']
+"v = c ? (p = 'yes'; p) : (q = 'no'; q); [v, p, q]";{c: null, a: 1, b: 2};!error
+"v = c ? (p = 'yes'; p) : (q = 'no'; q); [v, p, q]";{a: 1, b: 2};!error
+"v = c ? (p = 'yes'; p) : (q = 'no'; q); [v, p, q]";{c: 1, a: 1, b: 2};!error
+"v = c ? (p = a; p) : b; w = p ?? 'unset'; w";{c: true, a: 1, b: 2};1
+"v = c ? (p = a; p) : b; w = p ?? 'unset'; w";{c: false, a: 1, b: 2};'unset'
+"v = c ? (p = a; p) : b; w = p ?? 'unset'; w";{c: true, a: null, b: 2};'unset'
+"v = c ? (p = a; p) : b; w = p ?? 'unset'; w";{c: false, a: 1, b: null};'unset'
+"v = c ? (p = a; p) : b; w = p ?? 'unset'; w";{c: null, a: 1, b: 2};!error
+"v = c ? (p = a; p) : b; w = p ?? 'unset'; w";{a: 1, b: 2};!error
+"v = c ? (p = a; p) : b; w = p ?? 'unset'; w";{c: 1, a: 1, b: 2};!error
+# Sequences on the right of ?? across statements
+"v = a ?? (d = 5; d); v";{a: 1};1
+"v = a ?? (d = 5; d); v";{a: null};5
+"v = a ?? (d = 5; d); v";{};5
+"v = a ?? (d = 5; d); v";{a: 0};0
+"v = a ?? (d = 5; d); v";{a: false};false
+"v = a ?? (d = 5; d); v";{a: 'x'};'x'
+"v = a ?? (d = 5; d)";{a: 1};{v: 1}
+"v = a ?? (d = 5; d)";{a: null};{v: 5}
+"v = a ?? (d = 5; d)";{};{v: 5}
+"v = a ?? (d = 5; d)";{a: 0};{v: 0}
+"v = a ?? (d = 5; d)";{a: false};{v: false}
+"v = a ?? (d = 5; d)";{a: 'x'};{v: 'x'}
+"v = a ?? (d = 5; d); [v, d]";{a: 1};[1, null]
+"v = a ?? (d = 5; d); [v, d]";{a: null};[5, 5]
+"v = a ?? (d = 5; d); [v, d]";{};[5, 5]
+"v = a ?? (d = 5; d); [v, d]";{a: 0};[0, null]
+"v = a ?? (d = 5; d); [v, d]";{a: false};[false, null]
+"v = a ?? (d = 5; d); [v, d]";{a: 'x'};['x', null]
+"v = a ?? (d = 'dflt'; d); used = d != null; used";{a: 1};false
+"v = a ?? (d = 'dflt'; d); used = d != null; used";{a: null};true
+"v = a ?? (d = 'dflt'; d); used = d != null; used";{};true
+"v = a ?? (d = 'dflt'; d); used = d != null; used";{a: 0};false
+"v = a ?? (d = 'dflt'; d); used = d != null; used";{a: false};false
+"v = a ?? (d = 'dflt'; d); used = d != null; used";{a: 'x'};false
+# Sequences inside templates and function arguments across statements
+"x = `${(t = a; t)}/${b}`; x";{a: 1, b: 2};'1/2'
+"x = `${(t = a; t)}/${b}`; x";{a: 0.5, b: 1.5};'0.5/1.5'
+"x = `${(t = a; t)}/${b}`; x";{a: -2, b: 2};'-2/2'
+"x = `${(t = a; t)}/${b}`; x";{a: 0, b: 0};'0/0'
+"x = `${(t = a; t)}/${b}`; x";{a: null, b: 1};'null/1'
+"x = `${(t = a; t)}/${b}`; x";{b: 1};'null/1'
+"x = `${(t = a; t)}/${b}`; x";{a: 1, b: 'x'};'1/x'
+"x = `${(t = a; t)}/${b}`; y = `${t}`; y";{a: 1, b: 2};'1';question: a parenthesized sequence inside a template has no scope of its own
+"x = `${(t = a; t)}/${b}`; y = `${t}`; y";{a: 0.5, b: 1.5};'0.5';question: a parenthesized sequence inside a template has no scope of its own
+"x = `${(t = a; t)}/${b}`; y = `${t}`; y";{a: -2, b: 2};'-2';question: a parenthesized sequence inside a template has no scope of its own
+"x = `${(t = a; t)}/${b}`; y = `${t}`; y";{a: 0, b: 0};'0';question: a parenthesized sequence inside a template has no scope of its own
+"x = `${(t = a; t)}/${b}`; y = `${t}`; y";{a: null, b: 1};'null';question: a parenthesized sequence inside a template has no scope of its own
+"x = `${(t = a; t)}/${b}`; y = `${t}`; y";{b: 1};'null';question: a parenthesized sequence inside a template has no scope of its own
+"x = `${(t = a; t)}/${b}`; y = `${t}`; y";{a: 1, b: 'x'};'1';question: a parenthesized sequence inside a template has no scope of its own
+"x = abs((t = a - b; t)); [x, t]";{a: 1, b: 2};[1, -1];question: a parenthesized sequence has no scope of its own so t stays visible after it
+"x = abs((t = a - b; t)); [x, t]";{a: 0.5, b: 1.5};[1.0, -1.0];question: a parenthesized sequence has no scope of its own so t stays visible after it
+"x = abs((t = a - b; t)); [x, t]";{a: -2, b: 2};[4, -4];question: a parenthesized sequence has no scope of its own so t stays visible after it
+"x = abs((t = a - b; t)); [x, t]";{a: 0, b: 0};[0, 0];question: a parenthesized sequence has no scope of its own so t stays visible after it
+"x = abs((t = a - b; t)); [x, t]";{a: null, b: 1};!error;question: a parenthesized sequence has no scope of its own so t stays visible after it
+"x = abs((t = a - b; t)); [x, t]";{b: 1};!error;question: a parenthesized sequence has no scope of its own so t stays visible after it
+"x = abs((t = a - b; t)); [x, t]";{a: 1, b: 'x'};!error;question: a parenthesized sequence has no scope of its own so t stays visible after it
+"x = ((y = a; y * 2) + (y = b; y)); [x, y]";{a: 1, b: 2};[4, 2];question: nested sequences rebind y in the program environment
+"x = ((y = a; y * 2) + (y = b; y)); [x, y]";{a: 0.5, b: 1.5};[2.5, 1.5];question: nested sequences rebind y in the program environment
+"x = ((y = a; y * 2) + (y = b; y)); [x, y]";{a: -2, b: 2};[-2, 2];question: nested sequences rebind y in the program environment
+"x = ((y = a; y * 2) + (y = b; y)); [x, y]";{a: 0, b: 0};[0, 0];question: nested sequences rebind y in the program environment
+"x = ((y = a; y * 2) + (y = b; y)); [x, y]";{a: null, b: 1};!error;question: nested sequences rebind y in the program environment
+"x = ((y = a; y * 2) + (y = b; y)); [x, y]";{b: 1};!error;question: nested sequences rebind y in the program environment
+"x = ((y = a; y * 2) + (y = b; y)); [x, y]";{a: 1, b: 'x'};!error;question: nested sequences rebind y in the program environment
+# Sequences containing closures
+"r = (lim = a; filter(list, # > lim)); r";{list: [1, 2, 3], a: 1};[2, 3]
+"r = (lim = a; filter(list, # > lim)); r";{list: [], a: 1};[]
+"r = (lim = a; filter(list, # > lim)); r";{list: [5], a: 10};[]
+"r = (lim = a; filter(list, # > lim)); r";{list: [1, 2], a: null};!error
+"r = (lim = a; filter(list, # > lim)); r";{list: [1, 2]};!error
+"r = (lim = a; filter(list, # > lim)); r";{list: null, a: 1};!error
+"r = (lim = a ?? 0; filter(list, # > lim)); len(r)";{list: [1, 2, 3], a: 1};2
+"r = (lim = a ?? 0; filter(list, # > lim)); len(r)";{list: [], a: 1};0
+"r = (lim = a ?? 0; filter(list, # > lim)); len(r)";{list: [5], a: 10};0
+"r = (lim = a ?? 0; filter(list, # > lim)); len(r)";{list: [1, 2], a: null};2
+"r = (lim = a ?? 0; filter(list, # > lim)); len(r)";{list: [1, 2]};2
+"r = (lim = a ?? 0; filter(list, # > lim)); len(r)";{list: null, a: 1};!error
+"r = (d = map(list, # * 2); sum(d)); r";{list: [1, 2, 3], a: 1};12
+"r = (d = map(list, # * 2); sum(d)); r";{list: [], a: 1};0
+"r = (d = map(list, # * 2); sum(d)); r";{list: [5], a: 10};10
+"r = (d = map(list, # * 2); sum(d)); r";{list: [1, 2], a: null};6
+"r = (d = map(list, # * 2); sum(d)); r";{list: [1, 2]};6
+"r = (d = map(list, # * 2); sum(d)); r";{list: null, a: 1};!error
+"r = (lim = a ?? 0; count(list, # > lim)); lim";{list: [1, 2, 3], a: 1};1;question: a parenthesized sequence has no scope of its own so lim stays visible after it
+"r = (lim = a ?? 0; count(list, # > lim)); lim";{list: [], a: 1};1;question: a parenthesized sequence has no scope of its own so lim stays visible after it
+"r = (lim = a ?? 0; count(list, # > lim)); lim";{list: [5], a: 10};10;question: a parenthesized sequence has no scope of its own so lim stays visible after it
+"r = (lim = a ?? 0; count(list, # > lim)); lim";{list: [1, 2], a: null};0;question: a parenthesized sequence has no scope of its own so lim stays visible after it
+"r = (lim = a ?? 0; count(list, # > lim)); lim";{list: [1, 2]};0;question: a parenthesized sequence has no scope of its own so lim stays visible after it
+"r = (lim = a ?? 0; count(list, # > lim)); lim";{list: null, a: 1};!error;question: a parenthesized sequence has no scope of its own so lim stays visible after it
+# $root sees every assignment made so far
+"subtotal = a * b; ($root).subtotal";{a: 1, b: 2};2
+"subtotal = a * b; ($root).subtotal";{a: 0.5, b: 1.5};0.75
+"subtotal = a * b; ($root).subtotal";{a: -2, b: 2};-4
+"subtotal = a * b; ($root).subtotal";{a: 0, b: 0};0
+"subtotal = a * b; ($root).subtotal";{a: null, b: 1};!error
+"subtotal = a * b; ($root).subtotal";{b: 1};!error
+"subtotal = a * b; ($root).subtotal";{a: 1, b: 'x'};!error
+"subtotal = a * b; r = $root; r.subtotal";{a: 1, b: 2};2
+"subtotal = a * b; r = $root; r.subtotal";{a: 0.5, b: 1.5};0.75
+"subtotal = a * b; r = $root; r.subtotal";{a: -2, b: 2};-4
+"subtotal = a * b; r = $root; r.subtotal";{a: 0, b: 0};0
+"subtotal = a * b; r = $root; r.subtotal";{a: null, b: 1};!error
+"subtotal = a * b; r = $root; r.subtotal";{b: 1};!error
+"subtotal = a * b; r = $root; r.subtotal";{a: 1, b: 'x'};!error
+"subtotal = a * b; k = 'subtotal'; $root[k]";{a: 1, b: 2};2
+"subtotal = a * b; k = 'subtotal'; $root[k]";{a: 0.5, b: 1.5};0.75
+"subtotal = a * b; k = 'subtotal'; $root[k]";{a: -2, b: 2};-4
+"subtotal = a * b; k = 'subtotal'; $root[k]";{a: 0, b: 0};0
+"subtotal = a * b; k = 'subtotal'; $root[k]";{a: null, b: 1};!error
+"subtotal = a * b; k = 'subtotal'; $root[k]";{b: 1};!error
+"subtotal = a * b; k = 'subtotal'; $root[k]";{a: 1, b: 'x'};!error
+"subtotal = a * b; $root";{a: 1, b: 2};{a: 1, b: 2, subtotal: 2}
+"subtotal = a * b; $root";{a: 0.5, b: 1.5};{a: 0.5, b: 1.5, subtotal: 0.75}
+"subtotal = a * b; $root";{a: -2, b: 2};{a: -2, b: 2, subtotal: -4}
+"subtotal = a * b; $root";{a: 0, b: 0};{a: 0, b: 0, subtotal: 0}
+"subtotal = a * b; $root";{a: null, b: 1};!error
+"subtotal = a * b; $root";{b: 1};!error
+"subtotal = a * b; $root";{a: 1, b: 'x'};!error
+"subtotal = a * b; $root.subtotal";{a: 1, b: 2};2;bug: $root.subtotal compiles to a fast path that reads the original input instead of the assigned value
+"subtotal = a * b; $root.subtotal";{a: 0.5, b: 1.5};0.75;bug: $root.subtotal compiles to a fast path that reads the original input instead of the assigned value
+"subtotal = a * b; $root.subtotal";{a: -2, b: 2};-4;bug: $root.subtotal compiles to a fast path that reads the original input instead of the assigned value
+"subtotal = a * b; $root.subtotal";{a: 0, b: 0};0;bug: $root.subtotal compiles to a fast path that reads the original input instead of the assigned value
+"subtotal = a * b; $root.subtotal";{a: null, b: 1};!error
+"subtotal = a * b; $root.subtotal";{b: 1};!error
+"subtotal = a * b; $root.subtotal";{a: 1, b: 'x'};!error
+"a = a * 10; ($root).a";{a: 1, b: 2};10
+"a = a * 10; ($root).a";{a: 0.5, b: 1.5};5.0
+"a = a * 10; ($root).a";{a: -2, b: 2};-20
+"a = a * 10; ($root).a";{a: 0, b: 0};0
+"a = a * 10; ($root).a";{a: null, b: 1};!error
+"a = a * 10; ($root).a";{b: 1};!error
+"a = a * 10; ($root).a";{a: 1, b: 'x'};10
+"a = a * 10; $root.a";{a: 1, b: 2};10;bug: $root.a reads the original input while ($root).a reads the assigned value
+"a = a * 10; $root.a";{a: 0.5, b: 1.5};5.0;bug: $root.a reads the original input while ($root).a reads the assigned value
+"a = a * 10; $root.a";{a: -2, b: 2};-20;bug: $root.a reads the original input while ($root).a reads the assigned value
+"a = a * 10; $root.a";{a: 0, b: 0};0
+"a = a * 10; $root.a";{a: null, b: 1};!error
+"a = a * 10; $root.a";{b: 1};!error
+"a = a * 10; $root.a";{a: 1, b: 'x'};10;bug: $root.a reads the original input while ($root).a reads the assigned value
+"a = a * 10; b2 = ($root).a + b; b2";{a: 1, b: 2};12
+"a = a * 10; b2 = ($root).a + b; b2";{a: 0.5, b: 1.5};6.5
+"a = a * 10; b2 = ($root).a + b; b2";{a: -2, b: 2};-18
+"a = a * 10; b2 = ($root).a + b; b2";{a: 0, b: 0};0
+"a = a * 10; b2 = ($root).a + b; b2";{a: null, b: 1};!error
+"a = a * 10; b2 = ($root).a + b; b2";{b: 1};!error
+"a = a * 10; b2 = ($root).a + b; b2";{a: 1, b: 'x'};!error
+"a = a * 10; $root.b";{a: 1, b: 2};2
+"a = a * 10; $root.b";{a: 0.5, b: 1.5};1.5
+"a = a * 10; $root.b";{a: -2, b: 2};2
+"a = a * 10; $root.b";{a: 0, b: 0};0
+"a = a * 10; $root.b";{a: null, b: 1};!error
+"a = a * 10; $root.b";{b: 1};!error
+"a = a * 10; $root.b";{a: 1, b: 'x'};'x'
+"r.x = a; r.y = b; ($root).r";{a: 1, b: 2};{x: 1, y: 2}
+"r.x = a; r.y = b; ($root).r";{a: 0.5, b: 1.5};{x: 0.5, y: 1.5}
+"r.x = a; r.y = b; ($root).r";{a: -2, b: 2};{x: -2, y: 2}
+"r.x = a; r.y = b; ($root).r";{a: 0, b: 0};{x: 0, y: 0}
+"r.x = a; r.y = b; ($root).r";{a: null, b: 1};{x: null, y: 1}
+"r.x = a; r.y = b; ($root).r";{b: 1};{x: null, y: 1}
+"r.x = a; r.y = b; ($root).r";{a: 1, b: 'x'};{x: 1, y: 'x'}
+"r.x = a; r.y = b; ($root).r.y";{a: 1, b: 2};2
+"r.x = a; r.y = b; ($root).r.y";{a: 0.5, b: 1.5};1.5
+"r.x = a; r.y = b; ($root).r.y";{a: -2, b: 2};2
+"r.x = a; r.y = b; ($root).r.y";{a: 0, b: 0};0
+"r.x = a; r.y = b; ($root).r.y";{a: null, b: 1};1
+"r.x = a; r.y = b; ($root).r.y";{b: 1};1
+"r.x = a; r.y = b; ($root).r.y";{a: 1, b: 'x'};'x'
+"r.x = a; r.y = b; $root.r.y";{a: 1, b: 2};2;bug: $root.r.y reads the original input instead of the assigned value
+"r.x = a; r.y = b; $root.r.y";{a: 0.5, b: 1.5};1.5;bug: $root.r.y reads the original input instead of the assigned value
+"r.x = a; r.y = b; $root.r.y";{a: -2, b: 2};2;bug: $root.r.y reads the original input instead of the assigned value
+"r.x = a; r.y = b; $root.r.y";{a: 0, b: 0};0;bug: $root.r.y reads the original input instead of the assigned value
+"r.x = a; r.y = b; $root.r.y";{a: null, b: 1};1;bug: $root.r.y reads the original input instead of the assigned value
+"r.x = a; r.y = b; $root.r.y";{b: 1};1;bug: $root.r.y reads the original input instead of the assigned value
+"r.x = a; r.y = b; $root.r.y";{a: 1, b: 'x'};'x';bug: $root.r.y reads the original input instead of the assigned value
+"snapshot = $root; a = 99; snapshot";{a: 1, b: 2};{a: 1, b: 2}
+"snapshot = $root; a = 99; snapshot";{a: 0.5, b: 1.5};{a: 0.5, b: 1.5}
+"snapshot = $root; a = 99; snapshot";{a: -2, b: 2};{a: -2, b: 2}
+"snapshot = $root; a = 99; snapshot";{a: 0, b: 0};{a: 0, b: 0}
+"snapshot = $root; a = 99; snapshot";{a: null, b: 1};{a: null, b: 1}
+"snapshot = $root; a = 99; snapshot";{b: 1};{b: 1}
+"snapshot = $root; a = 99; snapshot";{a: 1, b: 'x'};{a: 1, b: 'x'}
+"snapshot = $root; a = 99; [snapshot.a, a]";{a: 1, b: 2};[1, 99]
+"snapshot = $root; a = 99; [snapshot.a, a]";{a: 0.5, b: 1.5};[0.5, 99]
+"snapshot = $root; a = 99; [snapshot.a, a]";{a: -2, b: 2};[-2, 99]
+"snapshot = $root; a = 99; [snapshot.a, a]";{a: 0, b: 0};[0, 99]
+"snapshot = $root; a = 99; [snapshot.a, a]";{a: null, b: 1};[null, 99]
+"snapshot = $root; a = 99; [snapshot.a, a]";{b: 1};[null, 99]
+"snapshot = $root; a = 99; [snapshot.a, a]";{a: 1, b: 'x'};[1, 99]
+"x2 = a; y2 = b; len(keys($root))";{a: 1, b: 2};4
+"x2 = a; y2 = b; len(keys($root))";{a: 0.5, b: 1.5};4
+"x2 = a; y2 = b; len(keys($root))";{a: -2, b: 2};4
+"x2 = a; y2 = b; len(keys($root))";{a: 0, b: 0};4
+"x2 = a; y2 = b; len(keys($root))";{a: null, b: 1};4
+"x2 = a; y2 = b; len(keys($root))";{b: 1};3
+"x2 = a; y2 = b; len(keys($root))";{a: 1, b: 'x'};4
+"x2 = a; y2 = b; len(values($root))";{a: 1, b: 2};4
+"x2 = a; y2 = b; len(values($root))";{a: 0.5, b: 1.5};4
+"x2 = a; y2 = b; len(values($root))";{a: -2, b: 2};4
+"x2 = a; y2 = b; len(values($root))";{a: 0, b: 0};4
+"x2 = a; y2 = b; len(values($root))";{a: null, b: 1};4
+"x2 = a; y2 = b; len(values($root))";{b: 1};3
+"x2 = a; y2 = b; len(values($root))";{a: 1, b: 'x'};4
+# $root inside closures
+"doubled = map(list, # * 2); $root";{list: [1, 3, 5], lim: 2};{list: [1, 3, 5], lim: 2, doubled: [2, 6, 10]}
+"doubled = map(list, # * 2); $root";{list: [], lim: 2};{list: [], lim: 2, doubled: []}
+"doubled = map(list, # * 2); $root";{list: [1, 3, 5], lim: null};{list: [1, 3, 5], lim: null, doubled: [2, 6, 10]}
+"doubled = map(list, # * 2); $root";{list: [1, 3, 5]};{list: [1, 3, 5], doubled: [2, 6, 10]}
+"doubled = map(list, # * 2); $root";{list: [2, 4], lim: 3};{list: [2, 4], lim: 3, doubled: [4, 8]}
+"lim = 3; filter(list, # > ($root).lim)";{list: [1, 3, 5], lim: 2};[5]
+"lim = 3; filter(list, # > ($root).lim)";{list: [], lim: 2};[]
+"lim = 3; filter(list, # > ($root).lim)";{list: [1, 3, 5], lim: null};[5]
+"lim = 3; filter(list, # > ($root).lim)";{list: [1, 3, 5]};[5]
+"lim = 3; filter(list, # > ($root).lim)";{list: [2, 4], lim: 3};[4]
+"lim = 3; filter(list, # > $root.lim)";{list: [1, 3, 5], lim: 2};[5];bug: $root.lim inside the closure reads the original input instead of the assigned 3
+"lim = 3; filter(list, # > $root.lim)";{list: [], lim: 2};[]
+"lim = 3; filter(list, # > $root.lim)";{list: [1, 3, 5], lim: null};[5];bug: $root.lim inside the closure reads the original input instead of the assigned 3
+"lim = 3; filter(list, # > $root.lim)";{list: [1, 3, 5]};[5];bug: $root.lim inside the closure reads the original input instead of the assigned 3
+"lim = 3; filter(list, # > $root.lim)";{list: [2, 4], lim: 3};[4]
+"lim = lim ?? 0; map(list, # > ($root).lim)";{list: [1, 3, 5], lim: 2};[false, true, true]
+"lim = lim ?? 0; map(list, # > ($root).lim)";{list: [], lim: 2};[]
+"lim = lim ?? 0; map(list, # > ($root).lim)";{list: [1, 3, 5], lim: null};[true, true, true]
+"lim = lim ?? 0; map(list, # > ($root).lim)";{list: [1, 3, 5]};[true, true, true]
+"lim = lim ?? 0; map(list, # > ($root).lim)";{list: [2, 4], lim: 3};[false, true]
+"n = len(list); map(list, ($root).n)";{list: [1, 3, 5], lim: 2};[3, 3, 3]
+"n = len(list); map(list, ($root).n)";{list: [], lim: 2};[]
+"n = len(list); map(list, ($root).n)";{list: [1, 3, 5], lim: null};[3, 3, 3]
+"n = len(list); map(list, ($root).n)";{list: [1, 3, 5]};[3, 3, 3]
+"n = len(list); map(list, ($root).n)";{list: [2, 4], lim: 3};[2, 2]
+"scale = 10; map(list as x, x * ($root).scale)";{list: [1, 3, 5], lim: 2};[10, 30, 50]
+"scale = 10; map(list as x, x * ($root).scale)";{list: [], lim: 2};[]
+"scale = 10; map(list as x, x * ($root).scale)";{list: [1, 3, 5], lim: null};[10, 30, 50]
+"scale = 10; map(list as x, x * ($root).scale)";{list: [1, 3, 5]};[10, 30, 50]
+"scale = 10; map(list as x, x * ($root).scale)";{list: [2, 4], lim: 3};[20, 40]

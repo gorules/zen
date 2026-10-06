@@ -1,0 +1,208 @@
+expression (string);input (json 5);output (json 5);note
+# string: numbers keep their scale
+string(123);;'123'
+string(123.123);;'123.123'
+string(0);;'0'
+string(-1.5);;'-1.5'
+string(1.10);;'1.10'
+string(1.0);;'1.0'
+string(100);;'100'
+string(0.5);;'0.5'
+string(0.000001);;'0.000001'
+string(1e3);;'1000'
+string(1.5e3);;'1500'
+string(2.5e2);;'250'
+string(1.23e-3);;'0.00123'
+string(1e-7);;'0.0000001'
+string(1e28);;'10000000000000000000000000000'
+string(79228162514264337593543950335);;'79228162514264337593543950335'
+string(-79228162514264337593543950335);;'-79228162514264337593543950335'
+string(-0);;'-0';question: negative zero keeps its sign in string form although -0 == 0
+string(-0.0);;'-0.0';question: negative zero keeps its sign in string form although -0 == 0
+string(0.1 + 0.2);;'0.3'
+string(1.10 + 1);;'2.10'
+string(2 * 1.50);;'3.00'
+string(10 / 4);;'2.50';question: division result carries a trailing zero scale (2.50), unlike 1 / 3 or literal 2.5
+string(1 / 3);;'0.3333333333333333333333333333'
+string(1_000);;'1000'
+# string: other scalar types
+string(true);;'true'
+string(false);;'false'
+string(null);;'null'
+string(missing);;'null'
+string('');;''
+string('already string');;'already string'
+string('ä😀');;'ä😀'
+string(' ');;' '
+string(string(1.50));;'1.50'
+# string: composite values
+string([1]);;!error;question: arrays have no string form (JSON would be a natural choice)
+string([]);;!error;question: arrays have no string form
+string({a: 1});;!error;question: objects have no string form
+string({});;!error;question: objects have no string form
+string(d('2024-01-01'));;'2024-01-01T00:00:00Z'
+# string: input rows
+string(n);{n: 1.10};'1.10'
+string(n);{n: 1.10};'1.10'
+string(n);{n: 0};'0'
+string(n);{n: -2};'-2'
+string(n);{n: 0.000001};'0.000001'
+string(n);{n: 12345678901234567890};'12345678901234567890'
+string(n);{n: true};'true'
+string(n);{n: false};'false'
+string(n);{n: null};'null'
+string(n);{};'null'
+string(n);{n: 'x'};'x'
+string(n);{n: ''};''
+string(n);{n: [1]};!error
+string(n);{n: {a: 1}};!error
+# string: arguments
+string();;!error
+string(1, 2);;!error
+# number: brief (parsing is covered by the math chapter)
+number('12');;12
+number(' 12 ');;12
+number('-3.5');;-3.5
+string(number('1.50'));;'1.50'
+number('1e3');;1000
+number('0.1');;0.1
+number(12);;12
+number(true);;1
+number(false);;0
+number('abc');;!error
+number('');;!error
+number('  ');;!error
+number('1,000');;!error
+number('0x10');;!error
+number('١٢');;!error
+number(null);;!error
+number([1]);;!error
+number({});;!error
+number(d('2024-01-01'));;!error
+number();;!error
+number(s);{s: '42'};42
+number(s);{s: '42'};42
+number(s);{s: '\t7\n'};7
+number(s);{s: 'x'};!error
+number(s);{s: null};!error
+number(s);{};!error
+number(s);{s: 3.25};3.25
+number(s);{s: false};0
+# bool: bools, numbers, null
+bool(true);;true
+bool(false);;false
+bool(1);;true
+bool(0);;false
+bool(-1);;true
+bool(0.0);;false
+bool(0.001);;true
+bool(-0);;false
+bool(null);;false
+bool(missing);;false
+# bool: strings
+bool('true');;true
+bool('false');;false
+bool(' true ');;true
+bool(' false ');;false
+bool('');;false;bug: empty string converts to true (non-true/false strings return s.is_empty(), inverted)
+bool('yes');;true;bug: non-empty string converts to false (non-true/false strings return s.is_empty(), inverted)
+bool('abc');;true;bug: non-empty string converts to false (inverted is_empty)
+bool('1');;true;bug: non-empty string converts to false (inverted is_empty)
+bool('TRUE');;false;question: only lowercase 'true'/'false' are recognized; with the non-empty rule this would be true
+bool('True');;false;question: only lowercase 'true'/'false' are recognized
+bool('FALSE');;false;question: uppercase 'FALSE' is not recognized as false
+bool('0');;false;question: '0' is not recognized; a non-empty-is-true rule would give true
+bool('no');;false;question: 'no' is not recognized; a non-empty-is-true rule would give true
+bool('   ');;false;question: whitespace-only string is neither trimmed-empty nor truthy consistently
+# bool: composite values
+bool([]);;true
+bool([0]);;true
+bool({});;true
+bool({a: false});;true
+bool(d('2024-01-01'));;true
+# bool: input rows
+bool(v);{v: 'true'};true
+bool(v);{v: 'true'};true
+bool(v);{v: 'false'};false
+bool(v);{v: '\ttrue\n'};true
+bool(v);{v: 1};true
+bool(v);{v: 0};false
+bool(v);{v: true};true
+bool(v);{v: null};false
+bool(v);{};false
+bool(v);{v: []};true
+bool(v);{v: ''};false;bug: empty string converts to true (inverted is_empty)
+bool(v);{v: 'x'};true;bug: non-empty string converts to false (inverted is_empty)
+# bool: arguments
+bool();;!error
+bool(1, 2);;!error
+# type: every value class
+type('hello');;'string'
+type('');;'string'
+type(123);;'number'
+type(1.5);;'number'
+type(-0);;'number'
+type(true);;'bool'
+type(false);;'bool'
+type(null);;'null'
+type(missing);;'null'
+type([1, 2, 3]);;'array'
+type([]);;'array'
+type({});;'object'
+type({a: 1});;'object'
+type(d('2024-01-01'));;'date'
+type(1 == 1);;'bool'
+type(`x`);;'string'
+type(split('a', ','));;'array'
+type(string(1));;'string'
+type(number('1'));;'number'
+type(type(1));;'string'
+# type: input rows
+type(v);{v: 'a'};'string'
+type(v);{v: 'a'};'string'
+type(v);{v: ''};'string'
+type(v);{v: 1};'number'
+type(v);{v: 1.10};'number'
+type(v);{v: false};'bool'
+type(v);{v: null};'null'
+type(v);{};'null'
+type(v);{v: []};'array'
+type(v);{v: {}};'object'
+type(v);{v: '2024-01-01'};'string'
+type(v.x);{v: {x: 1}};'number'
+type(v.x);{v: {}};'null'
+# type: arguments
+type();;!error
+type(1, 2);;!error
+# isNumeric: brief
+isNumeric(123);;true
+isNumeric(1.5);;true
+isNumeric('123');;true
+isNumeric('1.5');;true
+isNumeric('-1.5');;true
+isNumeric(' 1 ');;true
+isNumeric('1e3');;true
+isNumeric('');;false
+isNumeric(' ');;false
+isNumeric('abc');;false
+isNumeric('12a');;false
+isNumeric('1,5');;false
+isNumeric('0x1');;false
+isNumeric('NaN');;false
+isNumeric('Infinity');;false
+isNumeric('١');;false
+isNumeric(null);;false
+isNumeric(true);;false
+isNumeric([1]);;false
+isNumeric({});;false
+isNumeric(d('2024-01-01'));;false
+isNumeric();;!error
+isNumeric(s);{s: '10'};true
+isNumeric(s);{s: '10'};true
+isNumeric(s);{s: '\t10\n'};true
+isNumeric(s);{s: 'ten'};false
+isNumeric(s);{s: ''};false
+isNumeric(s);{s: 10};true
+isNumeric(s);{s: null};false
+isNumeric(s);{};false
+isNumeric(s) == (type(s) == 'number' or s == '10');{s: '10'};true

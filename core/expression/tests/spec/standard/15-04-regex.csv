@@ -1,0 +1,651 @@
+expression (string);input (json 5);output (json 5);note
+# regex matrix: email addresses
+matches(s, '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$');{s: 'john.doe@example.com'};true
+matches(s, '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$');{s: 'a+tag@sub.domain.co.uk'};true
+matches(s, '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$');{s: 'UPPER@EXAMPLE.ORG'};true
+matches(s, '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$');{s: 'no-at-sign.com'};false
+matches(s, '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$');{s: 'two@@example.com'};false
+matches(s, '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$');{s: 'user@localhost'};false
+matches(s, '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$');{s: 'user@exa mple.com'};false
+matches(s, '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$');{s: ' lead@space.com'};false
+matches(s, '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$');{s: 'x@y.z'};false
+matches(s, '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$');{s: 'dots..ok@example.io'};true
+matches(s, '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$');{s: 'ünï@example.com'};false
+matches(s, '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$');{s: ''};false
+matches(s, '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$');{s: null};!error
+matches(s, '(?i)^[a-z0-9._%+-]+@example\.(com|org)$');{s: 'john.doe@example.com'};true
+matches(s, '(?i)^[a-z0-9._%+-]+@example\.(com|org)$');{s: 'a+tag@sub.domain.co.uk'};false
+matches(s, '(?i)^[a-z0-9._%+-]+@example\.(com|org)$');{s: 'UPPER@EXAMPLE.ORG'};true
+matches(s, '(?i)^[a-z0-9._%+-]+@example\.(com|org)$');{s: 'no-at-sign.com'};false
+matches(s, '(?i)^[a-z0-9._%+-]+@example\.(com|org)$');{s: 'two@@example.com'};false
+matches(s, '(?i)^[a-z0-9._%+-]+@example\.(com|org)$');{s: 'user@localhost'};false
+matches(s, '(?i)^[a-z0-9._%+-]+@example\.(com|org)$');{s: 'user@exa mple.com'};false
+matches(s, '(?i)^[a-z0-9._%+-]+@example\.(com|org)$');{s: ' lead@space.com'};false
+matches(s, '(?i)^[a-z0-9._%+-]+@example\.(com|org)$');{s: 'x@y.z'};false
+matches(s, '(?i)^[a-z0-9._%+-]+@example\.(com|org)$');{s: 'dots..ok@example.io'};false
+matches(s, '(?i)^[a-z0-9._%+-]+@example\.(com|org)$');{s: 'ünï@example.com'};false
+matches(s, '(?i)^[a-z0-9._%+-]+@example\.(com|org)$');{s: ''};false
+matches(s, '(?i)^[a-z0-9._%+-]+@example\.(com|org)$');{s: null};!error
+extract(s, '([A-Za-z0-9._%+-]+)@([A-Za-z0-9.-]+)');{s: 'john.doe@example.com'};['john.doe@example.com', 'john.doe', 'example.com']
+extract(s, '([A-Za-z0-9._%+-]+)@([A-Za-z0-9.-]+)');{s: 'a+tag@sub.domain.co.uk'};['a+tag@sub.domain.co.uk', 'a+tag', 'sub.domain.co.uk']
+extract(s, '([A-Za-z0-9._%+-]+)@([A-Za-z0-9.-]+)');{s: 'UPPER@EXAMPLE.ORG'};['UPPER@EXAMPLE.ORG', 'UPPER', 'EXAMPLE.ORG']
+extract(s, '([A-Za-z0-9._%+-]+)@([A-Za-z0-9.-]+)');{s: 'no-at-sign.com'};[]
+extract(s, '([A-Za-z0-9._%+-]+)@([A-Za-z0-9.-]+)');{s: 'two@@example.com'};[]
+extract(s, '([A-Za-z0-9._%+-]+)@([A-Za-z0-9.-]+)');{s: 'user@localhost'};['user@localhost', 'user', 'localhost']
+extract(s, '([A-Za-z0-9._%+-]+)@([A-Za-z0-9.-]+)');{s: 'user@exa mple.com'};['user@exa', 'user', 'exa']
+extract(s, '([A-Za-z0-9._%+-]+)@([A-Za-z0-9.-]+)');{s: ' lead@space.com'};['lead@space.com', 'lead', 'space.com']
+extract(s, '([A-Za-z0-9._%+-]+)@([A-Za-z0-9.-]+)');{s: 'x@y.z'};['x@y.z', 'x', 'y.z']
+extract(s, '([A-Za-z0-9._%+-]+)@([A-Za-z0-9.-]+)');{s: 'dots..ok@example.io'};['dots..ok@example.io', 'dots..ok', 'example.io']
+extract(s, '([A-Za-z0-9._%+-]+)@([A-Za-z0-9.-]+)');{s: 'ünï@example.com'};[]
+extract(s, '([A-Za-z0-9._%+-]+)@([A-Za-z0-9.-]+)');{s: ''};[]
+extract(s, '([A-Za-z0-9._%+-]+)@([A-Za-z0-9.-]+)');{s: null};!error
+extract(s, '([A-Za-z0-9._%+-]+)@([A-Za-z0-9.-]+)');{s: 'contact: sales@acme.com, or support@acme.com'};['sales@acme.com', 'sales', 'acme.com']
+lower(extract(s, '@([A-Za-z0-9.-]+)$')[1] ?? '');{s: 'john.doe@example.com'};'example.com'
+lower(extract(s, '@([A-Za-z0-9.-]+)$')[1] ?? '');{s: 'a+tag@sub.domain.co.uk'};'sub.domain.co.uk'
+lower(extract(s, '@([A-Za-z0-9.-]+)$')[1] ?? '');{s: 'UPPER@EXAMPLE.ORG'};'example.org'
+lower(extract(s, '@([A-Za-z0-9.-]+)$')[1] ?? '');{s: 'no-at-sign.com'};''
+lower(extract(s, '@([A-Za-z0-9.-]+)$')[1] ?? '');{s: 'two@@example.com'};'example.com'
+lower(extract(s, '@([A-Za-z0-9.-]+)$')[1] ?? '');{s: 'user@localhost'};'localhost'
+lower(extract(s, '@([A-Za-z0-9.-]+)$')[1] ?? '');{s: 'user@exa mple.com'};''
+lower(extract(s, '@([A-Za-z0-9.-]+)$')[1] ?? '');{s: ' lead@space.com'};'space.com'
+lower(extract(s, '@([A-Za-z0-9.-]+)$')[1] ?? '');{s: 'x@y.z'};'y.z'
+lower(extract(s, '@([A-Za-z0-9.-]+)$')[1] ?? '');{s: 'dots..ok@example.io'};'example.io'
+lower(extract(s, '@([A-Za-z0-9.-]+)$')[1] ?? '');{s: 'ünï@example.com'};'example.com'
+lower(extract(s, '@([A-Za-z0-9.-]+)$')[1] ?? '');{s: ''};''
+lower(extract(s, '@([A-Za-z0-9.-]+)$')[1] ?? '');{s: null};!error
+# regex matrix: phone numbers
+matches(s, '^\+?1?[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}$');{s: '555-123-4567'};true
+matches(s, '^\+?1?[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}$');{s: '(555) 123-4567'};true
+matches(s, '^\+?1?[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}$');{s: '+1 555 123 4567'};true
+matches(s, '^\+?1?[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}$');{s: '5551234567'};true
+matches(s, '^\+?1?[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}$');{s: '555.123.4567'};true
+matches(s, '^\+?1?[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}$');{s: '1-555-123-4567'};true
+matches(s, '^\+?1?[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}$');{s: '555-1234'};false
+matches(s, '^\+?1?[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}$');{s: '555-123-45678'};false
+matches(s, '^\+?1?[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}$');{s: 'abc-def-ghij'};false
+matches(s, '^\+?1?[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}$');{s: '+44 20 7946 0958'};false
+matches(s, '^\+?1?[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}$');{s: ''};false
+matches(s, '^\+?1?[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}$');{s: null};!error
+matches(s, '^\+[1-9]\d{6,14}$');{s: '+14155552671'};true
+matches(s, '^\+[1-9]\d{6,14}$');{s: '+442079460958'};true
+matches(s, '^\+[1-9]\d{6,14}$');{s: '+0123456789'};false
+matches(s, '^\+[1-9]\d{6,14}$');{s: '14155552671'};false
+matches(s, '^\+[1-9]\d{6,14}$');{s: '+1415555267123456'};false
+matches(s, '^\+[1-9]\d{6,14}$');{s: '+123456'};false
+matches(s, '^\+[1-9]\d{6,14}$');{s: '+1234567'};true
+matches(s, '^\+[1-9]\d{6,14}$');{s: '+49 30 1234'};false
+matches(s, '^\+[1-9]\d{6,14}$');{s: ''};false
+extract(s, '^(\+\d{1,3})?\s*\(?(\d{3})\)?[\s.-]*(\d{3})[\s.-]*(\d{4})$');{s: '555-123-4567'};['555-123-4567', null, '555', '123', '4567'];bug: non-participating groups are dropped, shifting group positions
+extract(s, '^(\+\d{1,3})?\s*\(?(\d{3})\)?[\s.-]*(\d{3})[\s.-]*(\d{4})$');{s: '(555) 123-4567'};['(555) 123-4567', null, '555', '123', '4567'];bug: non-participating groups are dropped, shifting group positions
+extract(s, '^(\+\d{1,3})?\s*\(?(\d{3})\)?[\s.-]*(\d{3})[\s.-]*(\d{4})$');{s: '+1 555 123 4567'};['+1 555 123 4567', '+1', '555', '123', '4567']
+extract(s, '^(\+\d{1,3})?\s*\(?(\d{3})\)?[\s.-]*(\d{3})[\s.-]*(\d{4})$');{s: '5551234567'};['5551234567', null, '555', '123', '4567'];bug: non-participating groups are dropped, shifting group positions
+extract(s, '^(\+\d{1,3})?\s*\(?(\d{3})\)?[\s.-]*(\d{3})[\s.-]*(\d{4})$');{s: '555.123.4567'};['555.123.4567', null, '555', '123', '4567'];bug: non-participating groups are dropped, shifting group positions
+extract(s, '^(\+\d{1,3})?\s*\(?(\d{3})\)?[\s.-]*(\d{3})[\s.-]*(\d{4})$');{s: '1-555-123-4567'};[]
+extract(s, '^(\+\d{1,3})?\s*\(?(\d{3})\)?[\s.-]*(\d{3})[\s.-]*(\d{4})$');{s: '555-1234'};[]
+extract(s, '^(\+\d{1,3})?\s*\(?(\d{3})\)?[\s.-]*(\d{3})[\s.-]*(\d{4})$');{s: '555-123-45678'};[]
+extract(s, '^(\+\d{1,3})?\s*\(?(\d{3})\)?[\s.-]*(\d{3})[\s.-]*(\d{4})$');{s: 'abc-def-ghij'};[]
+extract(s, '^(\+\d{1,3})?\s*\(?(\d{3})\)?[\s.-]*(\d{3})[\s.-]*(\d{4})$');{s: '+44 20 7946 0958'};[]
+extract(s, '^(\+\d{1,3})?\s*\(?(\d{3})\)?[\s.-]*(\d{3})[\s.-]*(\d{4})$');{s: ''};[]
+extract(s, '^(\+\d{1,3})?\s*\(?(\d{3})\)?[\s.-]*(\d{3})[\s.-]*(\d{4})$');{s: null};!error
+map(extract(s, '(\d{3})\D*(\d{3})\D*(\d{4})'), len(#));{s: '555-123-4567'};[12, 3, 3, 4]
+map(extract(s, '(\d{3})\D*(\d{3})\D*(\d{4})'), len(#));{s: '(555) 123-4567'};[13, 3, 3, 4]
+map(extract(s, '(\d{3})\D*(\d{3})\D*(\d{4})'), len(#));{s: '+1 555 123 4567'};[12, 3, 3, 4]
+map(extract(s, '(\d{3})\D*(\d{3})\D*(\d{4})'), len(#));{s: '5551234567'};[10, 3, 3, 4]
+map(extract(s, '(\d{3})\D*(\d{3})\D*(\d{4})'), len(#));{s: '555.123.4567'};[12, 3, 3, 4]
+map(extract(s, '(\d{3})\D*(\d{3})\D*(\d{4})'), len(#));{s: '1-555-123-4567'};[12, 3, 3, 4]
+map(extract(s, '(\d{3})\D*(\d{3})\D*(\d{4})'), len(#));{s: 'call 555 123 4567 now'};[12, 3, 3, 4]
+# regex matrix: postcodes
+matches(s, '^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$');{s: 'SW1A 1AA'};true
+matches(s, '^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$');{s: 'M1 1AE'};true
+matches(s, '^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$');{s: 'B33 8TH'};true
+matches(s, '^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$');{s: 'CR2 6XH'};true
+matches(s, '^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$');{s: 'DN55 1PT'};true
+matches(s, '^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$');{s: 'EC1A1BB'};true
+matches(s, '^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$');{s: 'sw1a 1aa'};false
+matches(s, '^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$');{s: 'SW1A  1AA'};false
+matches(s, '^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$');{s: '12345'};false
+matches(s, '^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$');{s: 'W1A 0AX'};true
+matches(s, '^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$');{s: 'Q1 1QQQ'};false
+matches(s, '^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$');{s: ''};false
+matches(s, '(?i)^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$');{s: 'SW1A 1AA'};true
+matches(s, '(?i)^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$');{s: 'M1 1AE'};true
+matches(s, '(?i)^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$');{s: 'B33 8TH'};true
+matches(s, '(?i)^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$');{s: 'CR2 6XH'};true
+matches(s, '(?i)^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$');{s: 'DN55 1PT'};true
+matches(s, '(?i)^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$');{s: 'EC1A1BB'};true
+matches(s, '(?i)^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$');{s: 'sw1a 1aa'};true
+matches(s, '(?i)^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$');{s: 'SW1A  1AA'};false
+matches(s, '(?i)^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$');{s: '12345'};false
+matches(s, '(?i)^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$');{s: 'W1A 0AX'};true
+matches(s, '(?i)^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$');{s: 'Q1 1QQQ'};false
+matches(s, '(?i)^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$');{s: ''};false
+matches(upper(trim(s)), '^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$');{s: ' sw1a 1aa '};true
+matches(upper(trim(s)), '^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$');{s: 'm1 1ae'};true
+matches(upper(trim(s)), '^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$');{s: 'b338th'};true
+matches(upper(trim(s)), '^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$');{s: 'xx'};false
+matches(upper(trim(s)), '^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$');{s: null};!error
+matches(s, '^\d{5}(-\d{4})?$');{s: '12345'};true
+matches(s, '^\d{5}(-\d{4})?$');{s: '12345-6789'};true
+matches(s, '^\d{5}(-\d{4})?$');{s: '1234'};false
+matches(s, '^\d{5}(-\d{4})?$');{s: '123456'};false
+matches(s, '^\d{5}(-\d{4})?$');{s: '12345-678'};false
+matches(s, '^\d{5}(-\d{4})?$');{s: '12345 6789'};false
+matches(s, '^\d{5}(-\d{4})?$');{s: 'ABCDE'};false
+matches(s, '^\d{5}(-\d{4})?$');{s: '02134'};true
+matches(s, '^\d{5}(-\d{4})?$');{s: ''};false
+matches(s, '^\d{5}(-\d{4})?$');{s: '９４１０７'};true;question: \d is Unicode-aware (matches fullwidth digits), unlike JS
+matches(s, '^[0-9]{5}(-[0-9]{4})?$');{s: '12345'};true
+matches(s, '^[0-9]{5}(-[0-9]{4})?$');{s: '12345-6789'};true
+matches(s, '^[0-9]{5}(-[0-9]{4})?$');{s: '1234'};false
+matches(s, '^[0-9]{5}(-[0-9]{4})?$');{s: '123456'};false
+matches(s, '^[0-9]{5}(-[0-9]{4})?$');{s: '12345-678'};false
+matches(s, '^[0-9]{5}(-[0-9]{4})?$');{s: '12345 6789'};false
+matches(s, '^[0-9]{5}(-[0-9]{4})?$');{s: 'ABCDE'};false
+matches(s, '^[0-9]{5}(-[0-9]{4})?$');{s: '02134'};true
+matches(s, '^[0-9]{5}(-[0-9]{4})?$');{s: ''};false
+matches(s, '^[0-9]{5}(-[0-9]{4})?$');{s: '９４１０７'};false
+extract(s, '^(\d{5})(?:-(\d{4}))?$');{s: '12345'};['12345', '12345', null];bug: non-participating groups are dropped, shifting group positions
+extract(s, '^(\d{5})(?:-(\d{4}))?$');{s: '12345-6789'};['12345-6789', '12345', '6789']
+extract(s, '^(\d{5})(?:-(\d{4}))?$');{s: '1234'};[]
+extract(s, '^(\d{5})(?:-(\d{4}))?$');{s: '123456'};[]
+extract(s, '^(\d{5})(?:-(\d{4}))?$');{s: '12345-678'};[]
+extract(s, '^(\d{5})(?:-(\d{4}))?$');{s: '12345 6789'};[]
+extract(s, '^(\d{5})(?:-(\d{4}))?$');{s: 'ABCDE'};[]
+extract(s, '^(\d{5})(?:-(\d{4}))?$');{s: '02134'};['02134', '02134', null];bug: non-participating groups are dropped, shifting group positions
+extract(s, '^(\d{5})(?:-(\d{4}))?$');{s: ''};[]
+extract(s, '^(\d{5})(?:-(\d{4}))?$');{s: '９４１０７'};['９４１０７', '９４１０７', null];bug: non-participating groups are dropped, shifting group positions
+matches(s, '^[A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d$');{s: 'K1A 0B1'};true
+matches(s, '^[A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d$');{s: 'k1a0b1'};true
+matches(s, '^[A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d$');{s: 'K1A-0B1'};true
+matches(s, '^[A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d$');{s: 'K1A  0B1'};false
+matches(s, '^[A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d$');{s: 'KIA 0B1'};false
+matches(s, '^[A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d$');{s: '1A1 A1A'};false
+matches(s, '^[A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d$');{s: 'H0H 0H0'};true
+matches(s, '^[A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d$');{s: ''};false
+# regex matrix: IBAN-like account numbers
+matches(s, '^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$');{s: 'DE89370400440532013000'};true
+matches(s, '^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$');{s: 'GB82WEST12345698765432'};true
+matches(s, '^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$');{s: 'NL91ABNA0417164300'};true
+matches(s, '^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$');{s: 'de89370400440532013000'};false
+matches(s, '^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$');{s: 'DE89 3704 0044 0532 0130 00'};false
+matches(s, '^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$');{s: 'D89370400440532013000'};false
+matches(s, '^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$');{s: 'DE8937040044'};false
+matches(s, '^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$');{s: 'FR1420041010050500013M02606'};true
+matches(s, '^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$');{s: 'XX00'};false
+matches(s, '^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$');{s: ''};false
+matches(s, '^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$');{s: null};!error
+extract(s, '^([A-Z]{2})(\d{2})([A-Z0-9]{4})');{s: 'DE89370400440532013000'};['DE893704', 'DE', '89', '3704']
+extract(s, '^([A-Z]{2})(\d{2})([A-Z0-9]{4})');{s: 'GB82WEST12345698765432'};['GB82WEST', 'GB', '82', 'WEST']
+extract(s, '^([A-Z]{2})(\d{2})([A-Z0-9]{4})');{s: 'NL91ABNA0417164300'};['NL91ABNA', 'NL', '91', 'ABNA']
+extract(s, '^([A-Z]{2})(\d{2})([A-Z0-9]{4})');{s: 'de89370400440532013000'};[]
+extract(s, '^([A-Z]{2})(\d{2})([A-Z0-9]{4})');{s: 'DE89 3704 0044 0532 0130 00'};[]
+extract(s, '^([A-Z]{2})(\d{2})([A-Z0-9]{4})');{s: 'D89370400440532013000'};[]
+extract(s, '^([A-Z]{2})(\d{2})([A-Z0-9]{4})');{s: 'DE8937040044'};['DE893704', 'DE', '89', '3704']
+extract(s, '^([A-Z]{2})(\d{2})([A-Z0-9]{4})');{s: 'FR1420041010050500013M02606'};['FR142004', 'FR', '14', '2004']
+extract(s, '^([A-Z]{2})(\d{2})([A-Z0-9]{4})');{s: 'XX00'};[]
+extract(s, '^([A-Z]{2})(\d{2})([A-Z0-9]{4})');{s: ''};[]
+extract(s, '^([A-Z]{2})(\d{2})([A-Z0-9]{4})');{s: null};!error
+matches(upper(s), '^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$');{s: 'DE89370400440532013000'};true
+matches(upper(s), '^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$');{s: 'GB82WEST12345698765432'};true
+matches(upper(s), '^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$');{s: 'NL91ABNA0417164300'};true
+matches(upper(s), '^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$');{s: 'de89370400440532013000'};true
+matches(upper(s), '^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$');{s: 'DE89 3704 0044 0532 0130 00'};false
+matches(upper(s), '^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$');{s: 'D89370400440532013000'};false
+matches(upper(s), '^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$');{s: 'DE8937040044'};false
+matches(upper(s), '^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$');{s: 'FR1420041010050500013M02606'};true
+matches(upper(s), '^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$');{s: 'XX00'};false
+matches(upper(s), '^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$');{s: ''};false
+matches(upper(s), '^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$');{s: null};!error
+extract(s, '^([A-Z]{2})')[1] in ['DE', 'NL', 'FR'];{s: 'DE89370400440532013000'};true
+extract(s, '^([A-Z]{2})')[1] in ['DE', 'NL', 'FR'];{s: 'GB82WEST12345698765432'};false
+extract(s, '^([A-Z]{2})')[1] in ['DE', 'NL', 'FR'];{s: 'NL91ABNA0417164300'};true
+extract(s, '^([A-Z]{2})')[1] in ['DE', 'NL', 'FR'];{s: 'de89370400440532013000'};false
+extract(s, '^([A-Z]{2})')[1] in ['DE', 'NL', 'FR'];{s: 'DE89 3704 0044 0532 0130 00'};true
+extract(s, '^([A-Z]{2})')[1] in ['DE', 'NL', 'FR'];{s: 'D89370400440532013000'};false
+extract(s, '^([A-Z]{2})')[1] in ['DE', 'NL', 'FR'];{s: 'DE8937040044'};true
+extract(s, '^([A-Z]{2})')[1] in ['DE', 'NL', 'FR'];{s: 'FR1420041010050500013M02606'};true
+extract(s, '^([A-Z]{2})')[1] in ['DE', 'NL', 'FR'];{s: 'XX00'};false
+# regex matrix: SKUs and product codes
+matches(s, '^[A-Z]{3}-\d{4}(-[A-Z]{2})?$');{s: 'ABC-1234'};true
+matches(s, '^[A-Z]{3}-\d{4}(-[A-Z]{2})?$');{s: 'ABC-1234-XL'};true
+matches(s, '^[A-Z]{3}-\d{4}(-[A-Z]{2})?$');{s: 'abc-1234'};false
+matches(s, '^[A-Z]{3}-\d{4}(-[A-Z]{2})?$');{s: 'AB-1234'};false
+matches(s, '^[A-Z]{3}-\d{4}(-[A-Z]{2})?$');{s: 'ABCD-1234'};false
+matches(s, '^[A-Z]{3}-\d{4}(-[A-Z]{2})?$');{s: 'ABC-123'};false
+matches(s, '^[A-Z]{3}-\d{4}(-[A-Z]{2})?$');{s: 'ABC-12345'};false
+matches(s, '^[A-Z]{3}-\d{4}(-[A-Z]{2})?$');{s: 'ABC-1234-X'};false
+matches(s, '^[A-Z]{3}-\d{4}(-[A-Z]{2})?$');{s: 'ABC-1234-XLL'};false
+matches(s, '^[A-Z]{3}-\d{4}(-[A-Z]{2})?$');{s: 'ABC1234'};false
+matches(s, '^[A-Z]{3}-\d{4}(-[A-Z]{2})?$');{s: ' ABC-1234'};false
+matches(s, '^[A-Z]{3}-\d{4}(-[A-Z]{2})?$');{s: ''};false
+extract(s, '^([A-Z]{3})-(\d{4})(?:-([A-Z]{2}))?$');{s: 'ABC-1234'};['ABC-1234', 'ABC', '1234', null];bug: non-participating groups are dropped, shifting group positions
+extract(s, '^([A-Z]{3})-(\d{4})(?:-([A-Z]{2}))?$');{s: 'ABC-1234-XL'};['ABC-1234-XL', 'ABC', '1234', 'XL']
+extract(s, '^([A-Z]{3})-(\d{4})(?:-([A-Z]{2}))?$');{s: 'abc-1234'};[]
+extract(s, '^([A-Z]{3})-(\d{4})(?:-([A-Z]{2}))?$');{s: 'AB-1234'};[]
+extract(s, '^([A-Z]{3})-(\d{4})(?:-([A-Z]{2}))?$');{s: 'ABCD-1234'};[]
+extract(s, '^([A-Z]{3})-(\d{4})(?:-([A-Z]{2}))?$');{s: 'ABC-123'};[]
+extract(s, '^([A-Z]{3})-(\d{4})(?:-([A-Z]{2}))?$');{s: 'ABC-12345'};[]
+extract(s, '^([A-Z]{3})-(\d{4})(?:-([A-Z]{2}))?$');{s: 'ABC-1234-X'};[]
+extract(s, '^([A-Z]{3})-(\d{4})(?:-([A-Z]{2}))?$');{s: 'ABC-1234-XLL'};[]
+extract(s, '^([A-Z]{3})-(\d{4})(?:-([A-Z]{2}))?$');{s: 'ABC1234'};[]
+extract(s, '^([A-Z]{3})-(\d{4})(?:-([A-Z]{2}))?$');{s: ' ABC-1234'};[]
+extract(s, '^([A-Z]{3})-(\d{4})(?:-([A-Z]{2}))?$');{s: ''};[]
+extract(s, '^([A-Z]{3})-(\d{4})')[2] ?? 'none';{s: 'ABC-1234'};'1234'
+extract(s, '^([A-Z]{3})-(\d{4})')[2] ?? 'none';{s: 'ABC-1234-XL'};'1234'
+extract(s, '^([A-Z]{3})-(\d{4})')[2] ?? 'none';{s: 'abc-1234'};'none'
+extract(s, '^([A-Z]{3})-(\d{4})')[2] ?? 'none';{s: 'AB-1234'};'none'
+extract(s, '^([A-Z]{3})-(\d{4})')[2] ?? 'none';{s: 'ABCD-1234'};'none'
+extract(s, '^([A-Z]{3})-(\d{4})')[2] ?? 'none';{s: 'ABC-123'};'none'
+extract(s, '^([A-Z]{3})-(\d{4})')[2] ?? 'none';{s: 'ABC-12345'};'1234'
+extract(s, '^([A-Z]{3})-(\d{4})')[2] ?? 'none';{s: 'ABC-1234-X'};'1234'
+extract(s, '^([A-Z]{3})-(\d{4})')[2] ?? 'none';{s: 'ABC-1234-XLL'};'1234'
+extract(s, '^([A-Z]{3})-(\d{4})')[2] ?? 'none';{s: 'ABC1234'};'none'
+extract(s, '^([A-Z]{3})-(\d{4})')[2] ?? 'none';{s: ' ABC-1234'};'none'
+extract(s, '^([A-Z]{3})-(\d{4})')[2] ?? 'none';{s: ''};'none'
+number(extract(s, '-(\d{4})')[1] ?? '0') + 1;{s: 'ABC-1234'};1235
+number(extract(s, '-(\d{4})')[1] ?? '0') + 1;{s: 'ABC-1234-XL'};1235
+number(extract(s, '-(\d{4})')[1] ?? '0') + 1;{s: 'abc-1234'};1235
+number(extract(s, '-(\d{4})')[1] ?? '0') + 1;{s: 'AB-1234'};1235
+number(extract(s, '-(\d{4})')[1] ?? '0') + 1;{s: 'ABCD-1234'};1235
+number(extract(s, '-(\d{4})')[1] ?? '0') + 1;{s: 'ABC-123'};1
+number(extract(s, '-(\d{4})')[1] ?? '0') + 1;{s: 'ABC-12345'};1235
+number(extract(s, '-(\d{4})')[1] ?? '0') + 1;{s: 'ABC-1234-X'};1235
+matches(upper(trim(s)), '^[A-Z]{3}-\d{4}(-[A-Z]{2})?$');{s: 'ABC-1234'};true
+matches(upper(trim(s)), '^[A-Z]{3}-\d{4}(-[A-Z]{2})?$');{s: 'ABC-1234-XL'};true
+matches(upper(trim(s)), '^[A-Z]{3}-\d{4}(-[A-Z]{2})?$');{s: 'abc-1234'};true
+matches(upper(trim(s)), '^[A-Z]{3}-\d{4}(-[A-Z]{2})?$');{s: 'AB-1234'};false
+matches(upper(trim(s)), '^[A-Z]{3}-\d{4}(-[A-Z]{2})?$');{s: 'ABCD-1234'};false
+matches(upper(trim(s)), '^[A-Z]{3}-\d{4}(-[A-Z]{2})?$');{s: 'ABC-123'};false
+matches(upper(trim(s)), '^[A-Z]{3}-\d{4}(-[A-Z]{2})?$');{s: 'ABC-12345'};false
+matches(upper(trim(s)), '^[A-Z]{3}-\d{4}(-[A-Z]{2})?$');{s: 'ABC-1234-X'};false
+matches(upper(trim(s)), '^[A-Z]{3}-\d{4}(-[A-Z]{2})?$');{s: 'ABC-1234-XLL'};false
+matches(upper(trim(s)), '^[A-Z]{3}-\d{4}(-[A-Z]{2})?$');{s: 'ABC1234'};false
+matches(upper(trim(s)), '^[A-Z]{3}-\d{4}(-[A-Z]{2})?$');{s: ' ABC-1234'};true
+matches(upper(trim(s)), '^[A-Z]{3}-\d{4}(-[A-Z]{2})?$');{s: ''};false
+# regex matrix: dates
+matches(s, '^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$');{s: '2024-01-31'};true
+matches(s, '^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$');{s: '2024-12-01'};true
+matches(s, '^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$');{s: '2024-13-01'};false
+matches(s, '^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$');{s: '2024-00-10'};false
+matches(s, '^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$');{s: '2024-02-30'};true
+matches(s, '^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$');{s: '2024-1-5'};false
+matches(s, '^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$');{s: '24-01-01'};false
+matches(s, '^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$');{s: '2024/01/01'};false
+matches(s, '^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$');{s: '2024-01-32'};false
+matches(s, '^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$');{s: '2024-10-10T00:00'};false
+matches(s, '^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$');{s: ''};false
+matches(s, '^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$');{s: null};!error
+extract(s, '^(\d{4})-(\d{2})-(\d{2})');{s: '2024-01-31'};['2024-01-31', '2024', '01', '31']
+extract(s, '^(\d{4})-(\d{2})-(\d{2})');{s: '2024-12-01'};['2024-12-01', '2024', '12', '01']
+extract(s, '^(\d{4})-(\d{2})-(\d{2})');{s: '2024-13-01'};['2024-13-01', '2024', '13', '01']
+extract(s, '^(\d{4})-(\d{2})-(\d{2})');{s: '2024-00-10'};['2024-00-10', '2024', '00', '10']
+extract(s, '^(\d{4})-(\d{2})-(\d{2})');{s: '2024-02-30'};['2024-02-30', '2024', '02', '30']
+extract(s, '^(\d{4})-(\d{2})-(\d{2})');{s: '2024-1-5'};[]
+extract(s, '^(\d{4})-(\d{2})-(\d{2})');{s: '24-01-01'};[]
+extract(s, '^(\d{4})-(\d{2})-(\d{2})');{s: '2024/01/01'};[]
+extract(s, '^(\d{4})-(\d{2})-(\d{2})');{s: '2024-01-32'};['2024-01-32', '2024', '01', '32']
+extract(s, '^(\d{4})-(\d{2})-(\d{2})');{s: '2024-10-10T00:00'};['2024-10-10', '2024', '10', '10']
+extract(s, '^(\d{4})-(\d{2})-(\d{2})');{s: ''};[]
+extract(s, '^(\d{4})-(\d{2})-(\d{2})');{s: null};!error
+matches(s, '\b\d{4}-\d{2}-\d{2}\b');{s: 'Invoice dated 2024-03-15, due 2024-04-15.'};true
+matches(s, '\b\d{4}-\d{2}-\d{2}\b');{s: 'no date here'};false
+matches(s, '\b\d{4}-\d{2}-\d{2}\b');{s: 'on 1999-12-31 at noon'};true
+matches(s, '\b\d{4}-\d{2}-\d{2}\b');{s: 'v2024-01-01x'};false
+matches(s, '\b\d{4}-\d{2}-\d{2}\b');{s: '20240101'};false
+matches(s, '\b\d{4}-\d{2}-\d{2}\b');{s: 'Date:2025-03-20'};true
+matches(s, '\b\d{4}-\d{2}-\d{2}\b');{s: ''};false
+matches(s, '\b\d{4}-\d{2}-\d{2}\b');{s: 'range 2024-01-01..2024-02-01'};true
+extract(s, '(\d{4})-(\d{2})-(\d{2})');{s: 'Invoice dated 2024-03-15, due 2024-04-15.'};['2024-03-15', '2024', '03', '15']
+extract(s, '(\d{4})-(\d{2})-(\d{2})');{s: 'no date here'};[]
+extract(s, '(\d{4})-(\d{2})-(\d{2})');{s: 'on 1999-12-31 at noon'};['1999-12-31', '1999', '12', '31']
+extract(s, '(\d{4})-(\d{2})-(\d{2})');{s: 'v2024-01-01x'};['2024-01-01', '2024', '01', '01']
+extract(s, '(\d{4})-(\d{2})-(\d{2})');{s: '20240101'};[]
+extract(s, '(\d{4})-(\d{2})-(\d{2})');{s: 'Date:2025-03-20'};['2025-03-20', '2025', '03', '20']
+extract(s, '(\d{4})-(\d{2})-(\d{2})');{s: ''};[]
+extract(s, '(\d{4})-(\d{2})-(\d{2})');{s: 'range 2024-01-01..2024-02-01'};['2024-01-01', '2024', '01', '01']
+extract(s, 'due (\d{4}-\d{2}-\d{2})');{s: 'Invoice dated 2024-03-15, due 2024-04-15.'};['due 2024-04-15', '2024-04-15']
+extract(s, 'due (\d{4}-\d{2}-\d{2})');{s: 'no date here'};[]
+extract(s, 'due (\d{4}-\d{2}-\d{2})');{s: 'on 1999-12-31 at noon'};[]
+extract(s, 'due (\d{4}-\d{2}-\d{2})');{s: 'v2024-01-01x'};[]
+extract(s, 'due (\d{4}-\d{2}-\d{2})');{s: '20240101'};[]
+extract(s, 'due (\d{4}-\d{2}-\d{2})');{s: 'Date:2025-03-20'};[]
+extract(s, 'due (\d{4}-\d{2}-\d{2})');{s: ''};[]
+extract(s, 'due (\d{4}-\d{2}-\d{2})');{s: 'range 2024-01-01..2024-02-01'};[]
+d(extract(s, '\d{4}-\d{2}-\d{2}')[0]).format('%d/%m/%Y');{s: 'Invoice dated 2024-03-15, due 2024-04-15.'};'15/03/2024'
+d(extract(s, '\d{4}-\d{2}-\d{2}')[0]).format('%d/%m/%Y');{s: 'on 1999-12-31 at noon'};'31/12/1999'
+d(extract(s, '\d{4}-\d{2}-\d{2}')[0]).format('%d/%m/%Y');{s: 'Date:2025-03-20'};'20/03/2025'
+extract(s, '(\d{1,2})/(\d{1,2})/(\d{4})');{s: 'Paid on 3/7/2024'};['3/7/2024', '3', '7', '2024']
+extract(s, '(\d{1,2})/(\d{1,2})/(\d{4})');{s: 'due 12/31/1999!'};['12/31/1999', '12', '31', '1999']
+extract(s, '(\d{1,2})/(\d{1,2})/(\d{4})');{s: '1/1/70'};[]
+extract(s, '(\d{1,2})/(\d{1,2})/(\d{4})');{s: 'n/a'};[]
+# regex matrix: times, colors, network
+matches(s, '^([01]\d|2[0-3]):[0-5]\d$');{s: '00:00'};true
+matches(s, '^([01]\d|2[0-3]):[0-5]\d$');{s: '23:59'};true
+matches(s, '^([01]\d|2[0-3]):[0-5]\d$');{s: '24:00'};false
+matches(s, '^([01]\d|2[0-3]):[0-5]\d$');{s: '12:60'};false
+matches(s, '^([01]\d|2[0-3]):[0-5]\d$');{s: '9:30'};false
+matches(s, '^([01]\d|2[0-3]):[0-5]\d$');{s: '09:30'};true
+matches(s, '^([01]\d|2[0-3]):[0-5]\d$');{s: '19:05:00'};false
+matches(s, '^([01]\d|2[0-3]):[0-5]\d$');{s: ''};false
+matches(s, '^([01]\d|2[0-3]):[0-5]\d$');{s: '7pm'};false
+extract(s, '^(\d{1,2}):(\d{2})(?::(\d{2}))?$');{s: '00:00'};['00:00', '00', '00', null];bug: non-participating groups are dropped, shifting group positions
+extract(s, '^(\d{1,2}):(\d{2})(?::(\d{2}))?$');{s: '23:59'};['23:59', '23', '59', null];bug: non-participating groups are dropped, shifting group positions
+extract(s, '^(\d{1,2}):(\d{2})(?::(\d{2}))?$');{s: '24:00'};['24:00', '24', '00', null];bug: non-participating groups are dropped, shifting group positions
+extract(s, '^(\d{1,2}):(\d{2})(?::(\d{2}))?$');{s: '12:60'};['12:60', '12', '60', null];bug: non-participating groups are dropped, shifting group positions
+extract(s, '^(\d{1,2}):(\d{2})(?::(\d{2}))?$');{s: '9:30'};['9:30', '9', '30', null];bug: non-participating groups are dropped, shifting group positions
+extract(s, '^(\d{1,2}):(\d{2})(?::(\d{2}))?$');{s: '09:30'};['09:30', '09', '30', null];bug: non-participating groups are dropped, shifting group positions
+extract(s, '^(\d{1,2}):(\d{2})(?::(\d{2}))?$');{s: '19:05:00'};['19:05:00', '19', '05', '00']
+extract(s, '^(\d{1,2}):(\d{2})(?::(\d{2}))?$');{s: ''};[]
+extract(s, '^(\d{1,2}):(\d{2})(?::(\d{2}))?$');{s: '7pm'};[]
+matches(s, '^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$');{s: '#fff'};true
+matches(s, '^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$');{s: '#FFFFFF'};true
+matches(s, '^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$');{s: '#a1b2c3'};true
+matches(s, '^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$');{s: '#abcd'};false
+matches(s, '^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$');{s: '#ggg'};false
+matches(s, '^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$');{s: 'fff'};false
+matches(s, '^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$');{s: '#12345'};false
+matches(s, '^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$');{s: '#1234567'};false
+matches(s, '^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$');{s: ''};false
+matches(s, '^(\d{1,3}\.){3}\d{1,3}$');{s: '192.168.0.1'};true
+matches(s, '^(\d{1,3}\.){3}\d{1,3}$');{s: '10.0.0.255'};true
+matches(s, '^(\d{1,3}\.){3}\d{1,3}$');{s: '256.1.1.1'};true
+matches(s, '^(\d{1,3}\.){3}\d{1,3}$');{s: '1.2.3'};false
+matches(s, '^(\d{1,3}\.){3}\d{1,3}$');{s: '1.2.3.4.5'};false
+matches(s, '^(\d{1,3}\.){3}\d{1,3}$');{s: 'a.b.c.d'};false
+matches(s, '^(\d{1,3}\.){3}\d{1,3}$');{s: '127.000.000.001'};true
+matches(s, '^(\d{1,3}\.){3}\d{1,3}$');{s: ''};false
+matches(s, '^(\d{1,3}\.){3}\d{1,3}$');{s: ' 1.1.1.1'};false
+matches(s, '^((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$');{s: '192.168.0.1'};true
+matches(s, '^((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$');{s: '10.0.0.255'};true
+matches(s, '^((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$');{s: '256.1.1.1'};false
+matches(s, '^((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$');{s: '1.2.3'};false
+matches(s, '^((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$');{s: '1.2.3.4.5'};false
+matches(s, '^((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$');{s: 'a.b.c.d'};false
+matches(s, '^((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$');{s: '127.000.000.001'};false
+matches(s, '^((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$');{s: ''};false
+matches(s, '^((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$');{s: ' 1.1.1.1'};false
+matches(s, '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$');{s: '123e4567-e89b-12d3-a456-426614174000'};true
+matches(s, '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$');{s: '123E4567-E89B-12D3-A456-426614174000'};false
+matches(s, '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$');{s: '123e4567e89b12d3a456426614174000'};false
+matches(s, '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$');{s: '123e4567-e89b-12d3-a456-42661417400'};false
+matches(s, '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$');{s: 'zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz'};false
+matches(s, '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$');{s: ''};false
+matches(s, '(?i)^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$');{s: '123e4567-e89b-12d3-a456-426614174000'};true
+matches(s, '(?i)^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$');{s: '123E4567-E89B-12D3-A456-426614174000'};true
+matches(s, '(?i)^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$');{s: '123e4567e89b12d3a456426614174000'};false
+matches(s, '(?i)^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$');{s: '123e4567-e89b-12d3-a456-42661417400'};false
+matches(s, '(?i)^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$');{s: 'zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz'};false
+matches(s, '(?i)^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$');{s: ''};false
+# regex matrix: URLs
+matches(s, '^https?://[^\s/$.?#].[^\s]*$');{s: 'https://example.com'};true
+matches(s, '^https?://[^\s/$.?#].[^\s]*$');{s: 'http://example.com:8080/path?q=1'};true
+matches(s, '^https?://[^\s/$.?#].[^\s]*$');{s: 'https://sub.example.co.uk/a/b'};true
+matches(s, '^https?://[^\s/$.?#].[^\s]*$');{s: 'ftp://example.com'};false
+matches(s, '^https?://[^\s/$.?#].[^\s]*$');{s: 'https://'};false
+matches(s, '^https?://[^\s/$.?#].[^\s]*$');{s: 'example.com'};false
+matches(s, '^https?://[^\s/$.?#].[^\s]*$');{s: 'HTTPS://EXAMPLE.COM/'};false
+matches(s, '^https?://[^\s/$.?#].[^\s]*$');{s: 'https://ex ample.com'};false
+matches(s, '^https?://[^\s/$.?#].[^\s]*$');{s: ''};false
+extract(s, '^(https?)://([^/:]+)(?::(\d+))?(/.*)?$');{s: 'https://example.com'};['https://example.com', 'https', 'example.com', null, null];bug: non-participating groups are dropped, shifting group positions
+extract(s, '^(https?)://([^/:]+)(?::(\d+))?(/.*)?$');{s: 'http://example.com:8080/path?q=1'};['http://example.com:8080/path?q=1', 'http', 'example.com', '8080', '/path?q=1']
+extract(s, '^(https?)://([^/:]+)(?::(\d+))?(/.*)?$');{s: 'https://sub.example.co.uk/a/b'};['https://sub.example.co.uk/a/b', 'https', 'sub.example.co.uk', null, '/a/b'];bug: non-participating groups are dropped, shifting group positions
+extract(s, '^(https?)://([^/:]+)(?::(\d+))?(/.*)?$');{s: 'ftp://example.com'};[]
+extract(s, '^(https?)://([^/:]+)(?::(\d+))?(/.*)?$');{s: 'https://'};[]
+extract(s, '^(https?)://([^/:]+)(?::(\d+))?(/.*)?$');{s: 'example.com'};[]
+extract(s, '^(https?)://([^/:]+)(?::(\d+))?(/.*)?$');{s: 'HTTPS://EXAMPLE.COM/'};[]
+extract(s, '^(https?)://([^/:]+)(?::(\d+))?(/.*)?$');{s: 'https://ex ample.com'};['https://ex ample.com', 'https', 'ex ample.com', null, null];bug: non-participating groups are dropped, shifting group positions
+extract(s, '^(https?)://([^/:]+)(?::(\d+))?(/.*)?$');{s: ''};[]
+extract(url, '^https?://([^/:]+)')[1] ?? 'invalid';{url: 'https://example.com'};'example.com'
+extract(url, '^https?://([^/:]+)')[1] ?? 'invalid';{url: 'http://example.com:8080/path?q=1'};'example.com'
+extract(url, '^https?://([^/:]+)')[1] ?? 'invalid';{url: 'https://sub.example.co.uk/a/b'};'sub.example.co.uk'
+extract(url, '^https?://([^/:]+)')[1] ?? 'invalid';{url: 'ftp://example.com'};'invalid'
+extract(url, '^https?://([^/:]+)')[1] ?? 'invalid';{url: 'https://'};'invalid'
+extract(url, '^https?://([^/:]+)')[1] ?? 'invalid';{url: 'example.com'};'invalid'
+extract(url, '^https?://([^/:]+)')[1] ?? 'invalid';{url: 'HTTPS://EXAMPLE.COM/'};'invalid'
+extract(url, '^https?://([^/:]+)')[1] ?? 'invalid';{url: 'https://ex ample.com'};'ex ample.com'
+extract(url, '^https?://([^/:]+)')[1] ?? 'invalid';{url: ''};'invalid'
+extract(url, '^https?://([^/:]+)')[1] ?? 'invalid';{url: null};!error
+lower(extract(url, '(?i)^(https?)://')[1] ?? '') == 'https';{url: 'https://example.com'};true
+lower(extract(url, '(?i)^(https?)://')[1] ?? '') == 'https';{url: 'http://example.com:8080/path?q=1'};false
+lower(extract(url, '(?i)^(https?)://')[1] ?? '') == 'https';{url: 'https://sub.example.co.uk/a/b'};true
+lower(extract(url, '(?i)^(https?)://')[1] ?? '') == 'https';{url: 'ftp://example.com'};false
+lower(extract(url, '(?i)^(https?)://')[1] ?? '') == 'https';{url: 'https://'};true
+lower(extract(url, '(?i)^(https?)://')[1] ?? '') == 'https';{url: 'example.com'};false
+lower(extract(url, '(?i)^(https?)://')[1] ?? '') == 'https';{url: 'HTTPS://EXAMPLE.COM/'};true
+lower(extract(url, '(?i)^(https?)://')[1] ?? '') == 'https';{url: 'https://ex ample.com'};true
+lower(extract(url, '(?i)^(https?)://')[1] ?? '') == 'https';{url: ''};false
+# regex matrix: amounts and quantities
+matches(s, '^\$?\d{1,3}(,\d{3})*(\.\d{2})?$');{s: '$1,234.56'};true
+matches(s, '^\$?\d{1,3}(,\d{3})*(\.\d{2})?$');{s: '1234.56'};false
+matches(s, '^\$?\d{1,3}(,\d{3})*(\.\d{2})?$');{s: '$12'};true
+matches(s, '^\$?\d{1,3}(,\d{3})*(\.\d{2})?$');{s: '1,234'};true
+matches(s, '^\$?\d{1,3}(,\d{3})*(\.\d{2})?$');{s: '12,34'};false
+matches(s, '^\$?\d{1,3}(,\d{3})*(\.\d{2})?$');{s: '$1,234.5'};false
+matches(s, '^\$?\d{1,3}(,\d{3})*(\.\d{2})?$');{s: '$0.99'};true
+matches(s, '^\$?\d{1,3}(,\d{3})*(\.\d{2})?$');{s: '1,234,567.00'};true
+matches(s, '^\$?\d{1,3}(,\d{3})*(\.\d{2})?$');{s: '$'};false
+matches(s, '^\$?\d{1,3}(,\d{3})*(\.\d{2})?$');{s: ''};false
+matches(s, '^\$?(\d+|\d{1,3}(,\d{3})*)(\.\d{2})?$');{s: '$1,234.56'};true
+matches(s, '^\$?(\d+|\d{1,3}(,\d{3})*)(\.\d{2})?$');{s: '1234.56'};true
+matches(s, '^\$?(\d+|\d{1,3}(,\d{3})*)(\.\d{2})?$');{s: '$12'};true
+matches(s, '^\$?(\d+|\d{1,3}(,\d{3})*)(\.\d{2})?$');{s: '1,234'};true
+matches(s, '^\$?(\d+|\d{1,3}(,\d{3})*)(\.\d{2})?$');{s: '12,34'};false
+matches(s, '^\$?(\d+|\d{1,3}(,\d{3})*)(\.\d{2})?$');{s: '$1,234.5'};false
+matches(s, '^\$?(\d+|\d{1,3}(,\d{3})*)(\.\d{2})?$');{s: '$0.99'};true
+matches(s, '^\$?(\d+|\d{1,3}(,\d{3})*)(\.\d{2})?$');{s: '1,234,567.00'};true
+matches(s, '^\$?(\d+|\d{1,3}(,\d{3})*)(\.\d{2})?$');{s: '$'};false
+matches(s, '^\$?(\d+|\d{1,3}(,\d{3})*)(\.\d{2})?$');{s: ''};false
+extract(s, '(\d+(?:\.\d+)?)\s*(kg|g|lb)');{s: '2.5 kg'};['2.5 kg', '2.5', 'kg']
+extract(s, '(\d+(?:\.\d+)?)\s*(kg|g|lb)');{s: '10kg'};['10kg', '10', 'kg']
+extract(s, '(\d+(?:\.\d+)?)\s*(kg|g|lb)');{s: '500 g'};['500 g', '500', 'g']
+extract(s, '(\d+(?:\.\d+)?)\s*(kg|g|lb)');{s: '3 lb bag'};['3 lb', '3', 'lb']
+extract(s, '(\d+(?:\.\d+)?)\s*(kg|g|lb)');{s: '1.25lbs'};['1.25lb', '1.25', 'lb']
+extract(s, '(\d+(?:\.\d+)?)\s*(kg|g|lb)');{s: 'kg'};[]
+extract(s, '(\d+(?:\.\d+)?)\s*(kg|g|lb)');{s: 'about 7 g'};['7 g', '7', 'g']
+extract(s, '(\d+(?:\.\d+)?)\s*(kg|g|lb)');{s: ''};[]
+extract(s, '(\d+(?:\.\d+)?)\s*(kg|g|lb)');{s: 'weight: 0.5 KG'};[]
+extract(s, '(?i)(\d+(?:\.\d+)?)\s*(kg|g|lb)\b');{s: '2.5 kg'};['2.5 kg', '2.5', 'kg']
+extract(s, '(?i)(\d+(?:\.\d+)?)\s*(kg|g|lb)\b');{s: '10kg'};['10kg', '10', 'kg']
+extract(s, '(?i)(\d+(?:\.\d+)?)\s*(kg|g|lb)\b');{s: '500 g'};['500 g', '500', 'g']
+extract(s, '(?i)(\d+(?:\.\d+)?)\s*(kg|g|lb)\b');{s: '3 lb bag'};['3 lb', '3', 'lb']
+extract(s, '(?i)(\d+(?:\.\d+)?)\s*(kg|g|lb)\b');{s: '1.25lbs'};[]
+extract(s, '(?i)(\d+(?:\.\d+)?)\s*(kg|g|lb)\b');{s: 'kg'};[]
+extract(s, '(?i)(\d+(?:\.\d+)?)\s*(kg|g|lb)\b');{s: 'about 7 g'};['7 g', '7', 'g']
+extract(s, '(?i)(\d+(?:\.\d+)?)\s*(kg|g|lb)\b');{s: ''};[]
+extract(s, '(?i)(\d+(?:\.\d+)?)\s*(kg|g|lb)\b');{s: 'weight: 0.5 KG'};['0.5 KG', '0.5', 'KG']
+number(extract(s, '(\d+(?:\.\d+)?)\s*kg')[1] ?? '0') * 1000;{s: '2.5 kg'};2500.0
+number(extract(s, '(\d+(?:\.\d+)?)\s*kg')[1] ?? '0') * 1000;{s: '10kg'};10000
+number(extract(s, '(\d+(?:\.\d+)?)\s*kg')[1] ?? '0') * 1000;{s: '500 g'};0
+number(extract(s, '(\d+(?:\.\d+)?)\s*kg')[1] ?? '0') * 1000;{s: '3 lb bag'};0
+number(extract(s, '(\d+(?:\.\d+)?)\s*kg')[1] ?? '0') * 1000;{s: '1.25lbs'};0
+number(extract(s, '(\d+(?:\.\d+)?)\s*kg')[1] ?? '0') * 1000;{s: 'kg'};0
+number(extract(s, '(\d+(?:\.\d+)?)\s*kg')[1] ?? '0') * 1000;{s: 'about 7 g'};0
+number(extract(s, '(\d+(?:\.\d+)?)\s*kg')[1] ?? '0') * 1000;{s: ''};0
+number(extract(s, '(\d+(?:\.\d+)?)\s*kg')[1] ?? '0') * 1000;{s: 'weight: 0.5 KG'};0
+# regex matrix: keyword alternation
+matches(s, '(?i)\b(refund|chargeback|dispute)\b');{s: 'Customer requests a REFUND'};true
+matches(s, '(?i)\b(refund|chargeback|dispute)\b');{s: 'chargeback initiated'};true
+matches(s, '(?i)\b(refund|chargeback|dispute)\b');{s: 'Dispute opened'};true
+matches(s, '(?i)\b(refund|chargeback|dispute)\b');{s: 'refunded already'};false
+matches(s, '(?i)\b(refund|chargeback|dispute)\b');{s: 'nothing to see'};false
+matches(s, '(?i)\b(refund|chargeback|dispute)\b');{s: 'prerefund'};false
+matches(s, '(?i)\b(refund|chargeback|dispute)\b');{s: 'Refund/Dispute'};true
+matches(s, '(?i)\b(refund|chargeback|dispute)\b');{s: ''};false
+matches(s, '(?i)(refund|chargeback|dispute)');{s: 'Customer requests a REFUND'};true
+matches(s, '(?i)(refund|chargeback|dispute)');{s: 'chargeback initiated'};true
+matches(s, '(?i)(refund|chargeback|dispute)');{s: 'Dispute opened'};true
+matches(s, '(?i)(refund|chargeback|dispute)');{s: 'refunded already'};true
+matches(s, '(?i)(refund|chargeback|dispute)');{s: 'nothing to see'};false
+matches(s, '(?i)(refund|chargeback|dispute)');{s: 'prerefund'};true
+matches(s, '(?i)(refund|chargeback|dispute)');{s: 'Refund/Dispute'};true
+matches(s, '(?i)(refund|chargeback|dispute)');{s: ''};false
+extract(s, '(?i)\b(refund|chargeback|dispute)\b');{s: 'Customer requests a REFUND'};['REFUND', 'REFUND']
+extract(s, '(?i)\b(refund|chargeback|dispute)\b');{s: 'chargeback initiated'};['chargeback', 'chargeback']
+extract(s, '(?i)\b(refund|chargeback|dispute)\b');{s: 'Dispute opened'};['Dispute', 'Dispute']
+extract(s, '(?i)\b(refund|chargeback|dispute)\b');{s: 'refunded already'};[]
+extract(s, '(?i)\b(refund|chargeback|dispute)\b');{s: 'nothing to see'};[]
+extract(s, '(?i)\b(refund|chargeback|dispute)\b');{s: 'prerefund'};[]
+extract(s, '(?i)\b(refund|chargeback|dispute)\b');{s: 'Refund/Dispute'};['Refund', 'Refund']
+extract(s, '(?i)\b(refund|chargeback|dispute)\b');{s: ''};[]
+upper(extract(s, '(?i)\b(refund|chargeback|dispute)\b')[1] ?? 'none');{s: 'Customer requests a REFUND'};'REFUND'
+upper(extract(s, '(?i)\b(refund|chargeback|dispute)\b')[1] ?? 'none');{s: 'chargeback initiated'};'CHARGEBACK'
+upper(extract(s, '(?i)\b(refund|chargeback|dispute)\b')[1] ?? 'none');{s: 'Dispute opened'};'DISPUTE'
+upper(extract(s, '(?i)\b(refund|chargeback|dispute)\b')[1] ?? 'none');{s: 'refunded already'};'NONE'
+upper(extract(s, '(?i)\b(refund|chargeback|dispute)\b')[1] ?? 'none');{s: 'nothing to see'};'NONE'
+upper(extract(s, '(?i)\b(refund|chargeback|dispute)\b')[1] ?? 'none');{s: 'prerefund'};'NONE'
+upper(extract(s, '(?i)\b(refund|chargeback|dispute)\b')[1] ?? 'none');{s: 'Refund/Dispute'};'REFUND'
+upper(extract(s, '(?i)\b(refund|chargeback|dispute)\b')[1] ?? 'none');{s: ''};'NONE'
+extract(s, '(?i)order\s*#?\s*(\d+)');{s: 'Order #12345 shipped'};['Order #12345', '12345']
+extract(s, '(?i)order\s*#?\s*(\d+)');{s: 'order 987'};['order 987', '987']
+extract(s, '(?i)order\s*#?\s*(\d+)');{s: 'ORDER#42'};['ORDER#42', '42']
+extract(s, '(?i)order\s*#?\s*(\d+)');{s: 'Re: order no. 77'};[]
+extract(s, '(?i)order\s*#?\s*(\d+)');{s: 'orders 5'};[]
+extract(s, '(?i)order\s*#?\s*(\d+)');{s: 'no order'};[]
+extract(s, '(?i)order\s*#?\s*(\d+)');{s: ''};[]
+number(extract(s, '(?i)order\s*#?\s*(\d+)')[1] ?? '-1');{s: 'Order #12345 shipped'};12345
+number(extract(s, '(?i)order\s*#?\s*(\d+)')[1] ?? '-1');{s: 'order 987'};987
+number(extract(s, '(?i)order\s*#?\s*(\d+)')[1] ?? '-1');{s: 'ORDER#42'};42
+number(extract(s, '(?i)order\s*#?\s*(\d+)')[1] ?? '-1');{s: 'Re: order no. 77'};-1
+number(extract(s, '(?i)order\s*#?\s*(\d+)')[1] ?? '-1');{s: 'orders 5'};-1
+number(extract(s, '(?i)order\s*#?\s*(\d+)')[1] ?? '-1');{s: 'no order'};-1
+number(extract(s, '(?i)order\s*#?\s*(\d+)')[1] ?? '-1');{s: ''};-1
+# regex matrix: masks, usernames, passwords
+matches(s, '^\d{4}( ?\*{4}){2} ?\d{4}$');{s: '4111 **** **** 1111'};true
+matches(s, '^\d{4}( ?\*{4}){2} ?\d{4}$');{s: '4111********1111'};true
+matches(s, '^\d{4}( ?\*{4}){2} ?\d{4}$');{s: '4111 1111 1111 1111'};false
+matches(s, '^\d{4}( ?\*{4}){2} ?\d{4}$');{s: '**** **** **** 1111'};false
+matches(s, '^\d{4}( ?\*{4}){2} ?\d{4}$');{s: '4111 **** 1111'};false
+matches(s, '^\d{4}( ?\*{4}){2} ?\d{4}$');{s: ''};false
+matches(s, '^[a-z][a-z0-9_]{2,15}$');{s: 'alice'};true
+matches(s, '^[a-z][a-z0-9_]{2,15}$');{s: 'bob_99'};true
+matches(s, '^[a-z][a-z0-9_]{2,15}$');{s: 'x1'};false
+matches(s, '^[a-z][a-z0-9_]{2,15}$');{s: 'a_very_long_username_here'};false
+matches(s, '^[a-z][a-z0-9_]{2,15}$');{s: '9lives'};false
+matches(s, '^[a-z][a-z0-9_]{2,15}$');{s: 'Alice'};false
+matches(s, '^[a-z][a-z0-9_]{2,15}$');{s: 'al'};false
+matches(s, '^[a-z][a-z0-9_]{2,15}$');{s: 'abc'};true
+matches(s, '^[a-z][a-z0-9_]{2,15}$');{s: 'ab-c'};false
+matches(s, '^[a-z][a-z0-9_]{2,15}$');{s: 'ünï'};false
+len(s) >= 8 and matches(s, '[A-Z]') and matches(s, '[a-z]') and matches(s, '\d');{s: 'Passw0rd'};true
+len(s) >= 8 and matches(s, '[A-Z]') and matches(s, '[a-z]') and matches(s, '\d');{s: 'password'};false
+len(s) >= 8 and matches(s, '[A-Z]') and matches(s, '[a-z]') and matches(s, '\d');{s: 'PASSWORD1'};false
+len(s) >= 8 and matches(s, '[A-Z]') and matches(s, '[a-z]') and matches(s, '\d');{s: 'Pass1'};false
+len(s) >= 8 and matches(s, '[A-Z]') and matches(s, '[a-z]') and matches(s, '\d');{s: 'P4ssword!'};true
+len(s) >= 8 and matches(s, '[A-Z]') and matches(s, '[a-z]') and matches(s, '\d');{s: '12345678'};false
+len(s) >= 8 and matches(s, '[A-Z]') and matches(s, '[a-z]') and matches(s, '\d');{s: 'Ab1Ab1Ab1'};true
+len(s) >= 8 and matches(s, '[A-Z]') and matches(s, '[a-z]') and matches(s, '\d');{s: ''};false
+count([matches(s, '[A-Z]'), matches(s, '[a-z]'), matches(s, '\d'), matches(s, '[^A-Za-z0-9]')], #);{s: 'Passw0rd'};3
+count([matches(s, '[A-Z]'), matches(s, '[a-z]'), matches(s, '\d'), matches(s, '[^A-Za-z0-9]')], #);{s: 'password'};1
+count([matches(s, '[A-Z]'), matches(s, '[a-z]'), matches(s, '\d'), matches(s, '[^A-Za-z0-9]')], #);{s: 'PASSWORD1'};2
+count([matches(s, '[A-Z]'), matches(s, '[a-z]'), matches(s, '\d'), matches(s, '[^A-Za-z0-9]')], #);{s: 'Pass1'};3
+count([matches(s, '[A-Z]'), matches(s, '[a-z]'), matches(s, '\d'), matches(s, '[^A-Za-z0-9]')], #);{s: 'P4ssword!'};4
+count([matches(s, '[A-Z]'), matches(s, '[a-z]'), matches(s, '\d'), matches(s, '[^A-Za-z0-9]')], #);{s: '12345678'};1
+count([matches(s, '[A-Z]'), matches(s, '[a-z]'), matches(s, '\d'), matches(s, '[^A-Za-z0-9]')], #);{s: 'Ab1Ab1Ab1'};3
+count([matches(s, '[A-Z]'), matches(s, '[a-z]'), matches(s, '\d'), matches(s, '[^A-Za-z0-9]')], #);{s: ''};0
+# regex: key-value extraction
+extract(s, '(?P<key>\w+)=(?P<value>[^&]*)');{s: 'key=value'};['key=value', 'key', 'value']
+extract(s, '(?P<key>\w+)=(?P<value>[^&]*)');{s: 'a=1&b=2'};['a=1', 'a', '1']
+extract(s, '(?P<key>\w+)=(?P<value>[^&]*)');{s: 'name = Ann'};[]
+extract(s, '(?P<key>\w+)=(?P<value>[^&]*)');{s: '=empty'};[]
+extract(s, '(?P<key>\w+)=(?P<value>[^&]*)');{s: 'noequals'};[]
+extract(s, '(?P<key>\w+)=(?P<value>[^&]*)');{s: 'x='};['x=', 'x', '']
+extract(s, '(?P<key>\w+)=(?P<value>[^&]*)');{s: 'ä=ö'};['ä=ö', 'ä', 'ö']
+extract(s, '(?P<key>\w+)=(?P<value>[^&]*)');{s: ''};[]
+extract(s, '^(\w+)\s*=\s*(.*)$');{s: 'key=value'};['key=value', 'key', 'value']
+extract(s, '^(\w+)\s*=\s*(.*)$');{s: 'a=1&b=2'};['a=1&b=2', 'a', '1&b=2']
+extract(s, '^(\w+)\s*=\s*(.*)$');{s: 'name = Ann'};['name = Ann', 'name', 'Ann']
+extract(s, '^(\w+)\s*=\s*(.*)$');{s: '=empty'};[]
+extract(s, '^(\w+)\s*=\s*(.*)$');{s: 'noequals'};[]
+extract(s, '^(\w+)\s*=\s*(.*)$');{s: 'x='};['x=', 'x', '']
+extract(s, '^(\w+)\s*=\s*(.*)$');{s: 'ä=ö'};['ä=ö', 'ä', 'ö']
+extract(s, '^(\w+)\s*=\s*(.*)$');{s: ''};[]
+map(split(s, '&'), extract(#, '^(\w+)=(.*)$')[1] ?? '');{s: 'key=value'};['key']
+map(split(s, '&'), extract(#, '^(\w+)=(.*)$')[1] ?? '');{s: 'a=1&b=2'};['a', 'b']
+map(split(s, '&'), extract(#, '^(\w+)=(.*)$')[1] ?? '');{s: 'name = Ann'};['']
+map(split(s, '&'), extract(#, '^(\w+)=(.*)$')[1] ?? '');{s: '=empty'};['']
+map(split(s, '&'), extract(#, '^(\w+)=(.*)$')[1] ?? '');{s: 'noequals'};['']
+map(split(s, '&'), extract(#, '^(\w+)=(.*)$')[1] ?? '');{s: 'x='};['x']
+map(split(s, '&'), extract(#, '^(\w+)=(.*)$')[1] ?? '');{s: 'ä=ö'};['ä']
+map(split(s, '&'), extract(#, '^(\w+)=(.*)$')[1] ?? '');{s: ''};['']
+# regex: anchors and multiline text
+matches(s, '^first');{s: 'first\nsecond'};true
+matches(s, '^first');{s: 'second\nfirst'};false
+matches(s, '^first');{s: 'first'};true
+matches(s, '^first');{s: 'x first\nsecond'};false
+matches(s, '^first');{s: ''};false
+matches(s, '^first');{s: 'FIRST\nsecond'};false
+matches(s, '(?m)^second$');{s: 'first\nsecond'};true
+matches(s, '(?m)^second$');{s: 'second\nfirst'};true
+matches(s, '(?m)^second$');{s: 'first'};false
+matches(s, '(?m)^second$');{s: 'x first\nsecond'};true
+matches(s, '(?m)^second$');{s: ''};false
+matches(s, '(?m)^second$');{s: 'FIRST\nsecond'};true
+matches(s, '(?i)^first');{s: 'first\nsecond'};true
+matches(s, '(?i)^first');{s: 'second\nfirst'};false
+matches(s, '(?i)^first');{s: 'first'};true
+matches(s, '(?i)^first');{s: 'x first\nsecond'};false
+matches(s, '(?i)^first');{s: ''};false
+matches(s, '(?i)^first');{s: 'FIRST\nsecond'};true
+matches(s, 'first$');{s: 'first\nsecond'};false
+matches(s, 'first$');{s: 'second\nfirst'};true
+matches(s, 'first$');{s: 'first'};true
+matches(s, 'first$');{s: 'x first\nsecond'};false
+matches(s, 'first$');{s: ''};false
+matches(s, 'first$');{s: 'FIRST\nsecond'};false
+matches(s, '(?m)first$');{s: 'first\nsecond'};true
+matches(s, '(?m)first$');{s: 'second\nfirst'};true
+matches(s, '(?m)first$');{s: 'first'};true
+matches(s, '(?m)first$');{s: 'x first\nsecond'};true
+matches(s, '(?m)first$');{s: ''};false
+matches(s, '(?m)first$');{s: 'FIRST\nsecond'};false
+# regex: patterns from the input across rows
+matches(s, p);{s: 'ABC-1234', p: '^[A-Z]{3}-\\d{4}(-[A-Z]{2})?$'};true
+matches(s, p);{s: 'john@example.com', p: '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$'};true
+matches(s, p);{s: '12345', p: '^\\d{5}$'};true
+matches(s, p);{s: 'abc', p: '^[A-Z]+$'};false
+matches(s, p);{s: 'abc', p: '(?i)^[A-Z]+$'};true
+matches(s, p);{s: 'x', p: ''};true
+matches(s, p);{s: 'x', p: '(unclosed'};!error
+matches(s, p);{s: 'x', p: null};!error
+matches(s, p);{s: null, p: 'x'};!error
+matches(s, p);{s: 'ab', p: 'a|b'};true
+len(extract(s, p));{s: 'ABC-1234', p: '^[A-Z]{3}-\\d{4}(-[A-Z]{2})?$'};2;bug: non-participating groups are dropped, shifting group positions
+len(extract(s, p));{s: 'john@example.com', p: '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$'};1
+len(extract(s, p));{s: '12345', p: '^\\d{5}$'};1
+len(extract(s, p));{s: 'abc', p: '^[A-Z]+$'};0
+len(extract(s, p));{s: 'abc', p: '(?i)^[A-Z]+$'};1
+len(extract(s, p));{s: 'x', p: ''};1
+len(extract(s, p));{s: 'x', p: '(unclosed'};!error
+len(extract(s, p));{s: 'x', p: null};!error
+len(extract(s, p));{s: null, p: 'x'};!error
+len(extract(s, p));{s: 'ab', p: 'a|b'};1
+filter(patterns, matches(s, #));{s: '123', patterns: ['^\\d+$', '^[a-z]+$', '^[A-Z]', '\\s']};['^\\d+$']
+filter(patterns, matches(s, #));{s: 'abc', patterns: ['^\\d+$', '^[a-z]+$', '^[A-Z]', '\\s']};['^[a-z]+$']
+filter(patterns, matches(s, #));{s: 'Abc', patterns: ['^\\d+$', '^[a-z]+$', '^[A-Z]', '\\s']};['^[A-Z]']
+filter(patterns, matches(s, #));{s: 'a b', patterns: ['^\\d+$', '^[a-z]+$', '^[A-Z]', '\\s']};['\\s']
+filter(patterns, matches(s, #));{s: '', patterns: ['^\\d+$', '^[a-z]+$', '^[A-Z]', '\\s']};[]
+filter(patterns, matches(s, #));{s: 'A 1', patterns: ['^\\d+$', '^[a-z]+$', '^[A-Z]', '\\s']};['^[A-Z]', '\\s']
+map(patterns, matches(s, #));{s: '123', patterns: ['^\\d+$', '^[a-z]+$', '^[A-Z]', '\\s']};[true, false, false, false]
+map(patterns, matches(s, #));{s: 'abc', patterns: ['^\\d+$', '^[a-z]+$', '^[A-Z]', '\\s']};[false, true, false, false]
+map(patterns, matches(s, #));{s: 'A 1', patterns: ['^\\d+$', '^[a-z]+$', '^[A-Z]', '\\s']};[false, false, true, true]
+# regex: over arrays via closures
+filter(codes, matches(#, '^[A-Z]{3}-\d{4}(-[A-Z]{2})?$'));{codes: ['ABC-1234', 'xyz-0001', 'DEF-9999-XL']};['ABC-1234', 'DEF-9999-XL']
+filter(codes, matches(#, '^[A-Z]{3}-\d{4}(-[A-Z]{2})?$'));{codes: []};[]
+filter(codes, matches(#, '^[A-Z]{3}-\d{4}(-[A-Z]{2})?$'));{codes: ['bad']};[]
+filter(codes, matches(#, '^[A-Z]{3}-\d{4}(-[A-Z]{2})?$'));{codes: ['GHI-0000', null]};!error
+map(codes, extract(#, '(\d{4})')[1] ?? '');{codes: ['ABC-1234', 'xyz-0001', 'DEF-9999-XL']};['1234', '0001', '9999']
+map(codes, extract(#, '(\d{4})')[1] ?? '');{codes: []};[]
+map(codes, extract(#, '(\d{4})')[1] ?? '');{codes: ['bad']};['']
+map(codes, extract(#, '(\d{4})')[1] ?? '');{codes: ['GHI-0000', null]};!error
+all(codes, matches(upper(#), '^[A-Z]{3}-'));{codes: ['ABC-1234', 'xyz-0001', 'DEF-9999-XL']};true
+all(codes, matches(upper(#), '^[A-Z]{3}-'));{codes: []};true
+all(codes, matches(upper(#), '^[A-Z]{3}-'));{codes: ['bad']};false
+all(codes, matches(upper(#), '^[A-Z]{3}-'));{codes: ['GHI-0000', null]};!error
+count(codes, matches(#, '-XL$'));{codes: ['ABC-1234', 'xyz-0001', 'DEF-9999-XL']};1
+count(codes, matches(#, '-XL$'));{codes: []};0
+count(codes, matches(#, '-XL$'));{codes: ['bad']};0
+count(codes, matches(#, '-XL$'));{codes: ['GHI-0000', null]};!error
+map(codes, len(extract(#, '^([A-Z]+)-(\d+)')));{codes: ['ABC-1234', 'xyz-0001', 'DEF-9999-XL']};[3, 0, 3]
+map(codes, len(extract(#, '^([A-Z]+)-(\d+)')));{codes: []};[]
+map(codes, len(extract(#, '^([A-Z]+)-(\d+)')));{codes: ['bad']};[0]
+map(codes, len(extract(#, '^([A-Z]+)-(\d+)')));{codes: ['GHI-0000', null]};!error

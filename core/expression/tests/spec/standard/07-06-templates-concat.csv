@@ -1,0 +1,128 @@
+expression (string);input (json 5);output (json 5);note
+# templates: literal parts
+`hello`;;'hello'
+``;;''
+` `;;' '
+`a b  c`;;'a b  c'
+`ä😀`;;'ä😀'
+# templates: scalar interpolation
+`${1}`;;'1'
+`${1.10}`;;'1.10'
+`${1.0}`;;'1.0'
+`${1e3}`;;'1000'
+`${0.000001}`;;'0.000001'
+`${-0}`;;'-0';question: negative zero keeps its sign in string form
+`${0.1 + 0.2}`;;'0.3'
+`${2 * 1.50}`;;'3.00'
+`${true}`;;'true'
+`${false}`;;'false'
+`${null}`;;'null'
+`${missing}`;;'null'
+`${''}`;;''
+`${'a'}${'b'}`;;'ab'
+`a${1}b${2}c`;;'a1b2c'
+`${1}${1}`;;'11'
+`${ 1 + 1 }`;;'2'
+`${'x' + 'y'}`;;'xy'
+`${upper('x')}`;;'X'
+`uppercase inner ${upper('string')}`;;'uppercase inner STRING'
+`${len('abc')}`;;'3'
+`${1 == 1}`;;'true'
+`${1 > 2 ? 'yes' : 'no'}`;;'no'
+`${string(1.50)}`;;'1.50'
+`${type([])}`;;'array'
+# templates: composite interpolation
+`${[1]}`;;!error;question: arrays cannot be interpolated (no string form)
+`${[]}`;;!error;question: arrays cannot be interpolated (no string form)
+`${ {a: 1} }`;;!error;question: objects cannot be interpolated (no string form)
+`${d('2024-01-01')}`;;'2024-01-01T00:00:00Z'
+`${d('2024-01-01').format('%Y-%m-%d')}`;;'2024-01-01'
+# templates: input rows
+`${s}|${n}`;{s: 'a', n: 1};'a|1'
+`${s}|${n}`;{s: 'a', n: 1};'a|1'
+`${s}|${n}`;{s: 'ä', n: 1.50};'ä|1.50'
+`${s}|${n}`;{s: '', n: 0};'|0'
+`${s}|${n}`;{s: ' ', n: -2};' |-2'
+`${s}|${n}`;{s: 'a\tb', n: 1e2};'a\tb|100'
+`${s}|${n}`;{s: null, n: null};'null|null'
+`${s}|${n}`;{};'null|null'
+`${s}|${n}`;{s: true, n: false};'true|false'
+`${s}|${n}`;{s: '1', n: '2'};'1|2'
+`${s}|${n}`;{s: [1], n: 1};!error
+`${s}|${n}`;{s: 'a', n: {x: 1}};!error
+`${s}|${n}`;{s: 'a', n: 1};'a|1'
+`Hello ${upper(s)}!`;{s: 'world'};'Hello WORLD!'
+`Hello ${upper(s)}!`;{s: 'straße'};'Hello STRASSE!'
+`Hello ${upper(s)}!`;{s: ''};'Hello !'
+`Hello ${upper(s)}!`;{s: null};!error
+`Hello ${upper(s)}!`;{s: 'world'};'Hello WORLD!'
+`${n * 2}`;{n: 1.5};'3.0'
+`${n * 2}`;{n: 1.25};'2.50'
+`${n * 2}`;{n: 0};'0'
+`${n * 2}`;{n: null};!error
+`${n * 2}`;{n: '1'};!error
+`${a.b}-${a.c}`;{a: {b: 'x', c: 2}};'x-2'
+`${a.b}-${a.c}`;{a: {b: 'x'}};'x-null'
+`${a.b}-${a.c}`;{a: null};'null-null'
+len(`${s}`);{s: 'abc'};3
+len(`${s}`);{s: 12.50};5
+type(`${n}`);{n: 1};'string'
+`${s}` == s;{s: 'abc'};true
+`${n}` == string(n);{n: 1.10};true
+# concatenation: literals
+'a' + 'b';;'ab'
+'' + '';;''
+'a' + '';;'a'
+'' + 'a';;'a'
+'1' + '2';;'12'
+'ä' + 'ö';;'äö'
+'😀' + '👍';;'😀👍'
+'a' + ' ' + 'b';;'a b'
+'a' + string(1);;'a1'
+'a' + string(1.50);;'a1.50'
+'a' + string(null);;'anull'
+'x' + `${1}`;;'x1'
+upper('a' + 'b');;'AB'
+len('ab' + 'cd');;4
+# concatenation: every non-string operand is rejected
+'a' + 1;;!error
+1 + 'a';;!error
+'a' + 1.5;;!error
+'a' + null;;!error
+null + 'a';;!error
+'a' + true;;!error
+false + 'a';;!error
+'a' + [1];;!error
+['a'] + 'b';;!error
+'a' + {};;!error
+'a' + d('2024-01-01');;'a2024-01-01T00:00:00Z'
+'a' + missing;;!error
+# concatenation: input rows
+s + '-' + t;{s: 'a', t: 'b'};'a-b'
+s + '-' + t;{s: 'a', t: 'b'};'a-b'
+s + '-' + t;{s: '', t: ''};'-'
+s + '-' + t;{s: 'ä', t: '😀'};'ä-😀'
+s + '-' + t;{s: 'a\nb', t: 'c'};'a\nb-c'
+s + '-' + t;{s: ' ', t: ' '};' - '
+s + '-' + t;{s: 'a', t: null};!error
+s + '-' + t;{s: null, t: 'b'};!error
+s + '-' + t;{s: 1, t: 'b'};!error
+s + '-' + t;{s: 'a', t: true};!error
+s + '-' + t;{s: 'a', t: ['b']};!error
+s + '-' + t;{};!error
+s + '-' + t;{s: 'a', t: 'b'};'a-b'
+s + s;{s: 'ab'};'abab'
+s + s;{s: ''};''
+s + s;{s: 'é'};'éé'
+s + s;{s: 2};4
+upper(s + t);{s: 'ab', t: 'ß'};'ABSS'
+upper(s + t);{s: 'x', t: ''};'X'
+len(s + t);{s: 'ab', t: 'cd'};4
+len(s + t);{s: 'ä', t: 'ö'};2;bug: len counts UTF-8 bytes (4), intended character count
+s + string(n);{s: 'n=', n: 1.10};'n=1.10'
+s + string(n);{s: 'n=', n: null};'n=null'
+s + string(n);{s: 'n=', n: true};'n=true'
+s + string(n);{s: 'n=', n: [1]};!error
+(s + t) == 'ab';{s: 'a', t: 'b'};true
+(s + t) == 'ab';{s: 'ab', t: ''};true
+(s + t) == 'ab';{s: 'A', t: 'b'};false

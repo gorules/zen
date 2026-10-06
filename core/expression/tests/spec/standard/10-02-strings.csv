@@ -1,0 +1,656 @@
+expression (string);input (json 5);output (json 5);note
+# upper: argument 1 is string
+# upper (literal)
+upper(null);;!error
+upper(true);;!error
+upper(false);;!error
+upper(0);;!error
+upper(-1);;!error
+upper(1.5);;!error
+upper(79228162514264337593543950335);;!error
+upper('');;''
+upper('abc');;'ABC'
+upper('12.5');;'12.5'
+upper('żółw');;'ŻÓŁW'
+upper([]);;!error
+upper([1, 2]);;!error
+upper(['a']);;!error
+upper([[1]]);;!error
+upper({});;!error
+upper({a: 1});;!error
+upper(d('2024-01-01'));;'2024-01-01T00:00:00Z'
+upper([1..3]);;!error
+# upper (input)
+upper(x);{x: null};!error
+upper(x);{x: true};!error
+upper(x);{x: false};!error
+upper(x);{x: 0};!error
+upper(x);{x: -1};!error
+upper(x);{x: 1.5};!error
+upper(x);{x: 79228162514264337593543950335};!error
+upper(x);{x: ''};''
+upper(x);{x: 'abc'};'ABC'
+upper(x);{x: '12.5'};'12.5'
+upper(x);{x: 'żółw'};'ŻÓŁW'
+upper(x);{x: []};!error
+upper(x);{x: [1, 2]};!error
+upper(x);{x: ['a']};!error
+upper(x);{x: [[1]]};!error
+upper(x);{x: {}};!error
+upper(x);{x: {a: 1}};!error
+upper(x);{};!error
+# lower: argument 1 is string
+# lower (literal)
+lower(null);;!error
+lower(true);;!error
+lower(false);;!error
+lower(0);;!error
+lower(-1);;!error
+lower(1.5);;!error
+lower(79228162514264337593543950335);;!error
+lower('');;''
+lower('abc');;'abc'
+lower('12.5');;'12.5'
+lower('żółw');;'żółw'
+lower([]);;!error
+lower([1, 2]);;!error
+lower(['a']);;!error
+lower([[1]]);;!error
+lower({});;!error
+lower({a: 1});;!error
+lower(d('2024-01-01'));;'2024-01-01t00:00:00z'
+lower([1..3]);;!error
+# lower (input)
+lower(x);{x: null};!error
+lower(x);{x: true};!error
+lower(x);{x: false};!error
+lower(x);{x: 0};!error
+lower(x);{x: -1};!error
+lower(x);{x: 1.5};!error
+lower(x);{x: 79228162514264337593543950335};!error
+lower(x);{x: ''};''
+lower(x);{x: 'abc'};'abc'
+lower(x);{x: '12.5'};'12.5'
+lower(x);{x: 'żółw'};'żółw'
+lower(x);{x: []};!error
+lower(x);{x: [1, 2]};!error
+lower(x);{x: ['a']};!error
+lower(x);{x: [[1]]};!error
+lower(x);{x: {}};!error
+lower(x);{x: {a: 1}};!error
+lower(x);{};!error
+# trim: argument 1 is string
+# trim (literal)
+trim(null);;!error
+trim(true);;!error
+trim(false);;!error
+trim(0);;!error
+trim(-1);;!error
+trim(1.5);;!error
+trim(79228162514264337593543950335);;!error
+trim('');;''
+trim('abc');;'abc'
+trim('12.5');;'12.5'
+trim('żółw');;'żółw'
+trim([]);;!error
+trim([1, 2]);;!error
+trim(['a']);;!error
+trim([[1]]);;!error
+trim({});;!error
+trim({a: 1});;!error
+trim(d('2024-01-01'));;'2024-01-01T00:00:00Z'
+trim([1..3]);;!error
+# trim (input)
+trim(x);{x: null};!error
+trim(x);{x: true};!error
+trim(x);{x: false};!error
+trim(x);{x: 0};!error
+trim(x);{x: -1};!error
+trim(x);{x: 1.5};!error
+trim(x);{x: 79228162514264337593543950335};!error
+trim(x);{x: ''};''
+trim(x);{x: 'abc'};'abc'
+trim(x);{x: '12.5'};'12.5'
+trim(x);{x: 'żółw'};'żółw'
+trim(x);{x: []};!error
+trim(x);{x: [1, 2]};!error
+trim(x);{x: ['a']};!error
+trim(x);{x: [[1]]};!error
+trim(x);{x: {}};!error
+trim(x);{x: {a: 1}};!error
+trim(x);{};!error
+# startsWith: argument 1
+# startsWith arg 1 (literal)
+startsWith(null, 'a');;!error
+startsWith(true, 'a');;!error
+startsWith(false, 'a');;!error
+startsWith(0, 'a');;!error
+startsWith(-1, 'a');;!error
+startsWith(1.5, 'a');;!error
+startsWith(79228162514264337593543950335, 'a');;!error
+startsWith('', 'a');;false
+startsWith('abc', 'a');;true
+startsWith('12.5', 'a');;false
+startsWith('żółw', 'a');;false
+startsWith([], 'a');;!error
+startsWith([1, 2], 'a');;!error
+startsWith(['a'], 'a');;!error
+startsWith([[1]], 'a');;!error
+startsWith({}, 'a');;!error
+startsWith({a: 1}, 'a');;!error
+startsWith(d('2024-01-01'), 'a');;false
+startsWith([1..3], 'a');;!error
+# startsWith arg 1 (input)
+startsWith(x, 'a');{x: null};!error
+startsWith(x, 'a');{x: true};!error
+startsWith(x, 'a');{x: false};!error
+startsWith(x, 'a');{x: 0};!error
+startsWith(x, 'a');{x: -1};!error
+startsWith(x, 'a');{x: 1.5};!error
+startsWith(x, 'a');{x: 79228162514264337593543950335};!error
+startsWith(x, 'a');{x: ''};false
+startsWith(x, 'a');{x: 'abc'};true
+startsWith(x, 'a');{x: '12.5'};false
+startsWith(x, 'a');{x: 'żółw'};false
+startsWith(x, 'a');{x: []};!error
+startsWith(x, 'a');{x: [1, 2]};!error
+startsWith(x, 'a');{x: ['a']};!error
+startsWith(x, 'a');{x: [[1]]};!error
+startsWith(x, 'a');{x: {}};!error
+startsWith(x, 'a');{x: {a: 1}};!error
+startsWith(x, 'a');{};!error
+# startsWith: argument 2
+# startsWith arg 2 (literal)
+startsWith('abc', null);;!error
+startsWith('abc', true);;!error
+startsWith('abc', false);;!error
+startsWith('abc', 0);;!error
+startsWith('abc', -1);;!error
+startsWith('abc', 1.5);;!error
+startsWith('abc', 79228162514264337593543950335);;!error
+startsWith('abc', '');;true
+startsWith('abc', 'abc');;true
+startsWith('abc', '12.5');;false
+startsWith('abc', 'żółw');;false
+startsWith('abc', []);;!error
+startsWith('abc', [1, 2]);;!error
+startsWith('abc', ['a']);;!error
+startsWith('abc', [[1]]);;!error
+startsWith('abc', {});;!error
+startsWith('abc', {a: 1});;!error
+startsWith('abc', d('2024-01-01'));;false
+startsWith('abc', [1..3]);;!error
+# startsWith arg 2 (input)
+startsWith('abc', x);{x: null};!error
+startsWith('abc', x);{x: true};!error
+startsWith('abc', x);{x: false};!error
+startsWith('abc', x);{x: 0};!error
+startsWith('abc', x);{x: -1};!error
+startsWith('abc', x);{x: 1.5};!error
+startsWith('abc', x);{x: 79228162514264337593543950335};!error
+startsWith('abc', x);{x: ''};true
+startsWith('abc', x);{x: 'abc'};true
+startsWith('abc', x);{x: '12.5'};false
+startsWith('abc', x);{x: 'żółw'};false
+startsWith('abc', x);{x: []};!error
+startsWith('abc', x);{x: [1, 2]};!error
+startsWith('abc', x);{x: ['a']};!error
+startsWith('abc', x);{x: [[1]]};!error
+startsWith('abc', x);{x: {}};!error
+startsWith('abc', x);{x: {a: 1}};!error
+startsWith('abc', x);{};!error
+# startsWith: both arguments from input
+startsWith(x, y);{x: 'abc', y: 'ab'};true
+startsWith(x, y);{x: 'abc', y: 'b'};false
+startsWith(x, y);{x: 1, y: '1'};!error
+startsWith(x, y);{x: '1', y: 1};!error
+startsWith(x, y);{x: null, y: null};!error
+startsWith(x, y);{};!error
+startsWith(x, y);{x: 'żółw', y: 'ż'};true
+# endsWith: argument 1
+# endsWith arg 1 (literal)
+endsWith(null, 'c');;!error
+endsWith(true, 'c');;!error
+endsWith(false, 'c');;!error
+endsWith(0, 'c');;!error
+endsWith(-1, 'c');;!error
+endsWith(1.5, 'c');;!error
+endsWith(79228162514264337593543950335, 'c');;!error
+endsWith('', 'c');;false
+endsWith('abc', 'c');;true
+endsWith('12.5', 'c');;false
+endsWith('żółw', 'c');;false
+endsWith([], 'c');;!error
+endsWith([1, 2], 'c');;!error
+endsWith(['a'], 'c');;!error
+endsWith([[1]], 'c');;!error
+endsWith({}, 'c');;!error
+endsWith({a: 1}, 'c');;!error
+endsWith(d('2024-01-01'), 'c');;false
+endsWith([1..3], 'c');;!error
+# endsWith arg 1 (input)
+endsWith(x, 'c');{x: null};!error
+endsWith(x, 'c');{x: true};!error
+endsWith(x, 'c');{x: false};!error
+endsWith(x, 'c');{x: 0};!error
+endsWith(x, 'c');{x: -1};!error
+endsWith(x, 'c');{x: 1.5};!error
+endsWith(x, 'c');{x: 79228162514264337593543950335};!error
+endsWith(x, 'c');{x: ''};false
+endsWith(x, 'c');{x: 'abc'};true
+endsWith(x, 'c');{x: '12.5'};false
+endsWith(x, 'c');{x: 'żółw'};false
+endsWith(x, 'c');{x: []};!error
+endsWith(x, 'c');{x: [1, 2]};!error
+endsWith(x, 'c');{x: ['a']};!error
+endsWith(x, 'c');{x: [[1]]};!error
+endsWith(x, 'c');{x: {}};!error
+endsWith(x, 'c');{x: {a: 1}};!error
+endsWith(x, 'c');{};!error
+# endsWith: argument 2
+# endsWith arg 2 (literal)
+endsWith('abc', null);;!error
+endsWith('abc', true);;!error
+endsWith('abc', false);;!error
+endsWith('abc', 0);;!error
+endsWith('abc', -1);;!error
+endsWith('abc', 1.5);;!error
+endsWith('abc', 79228162514264337593543950335);;!error
+endsWith('abc', '');;true
+endsWith('abc', 'abc');;true
+endsWith('abc', '12.5');;false
+endsWith('abc', 'żółw');;false
+endsWith('abc', []);;!error
+endsWith('abc', [1, 2]);;!error
+endsWith('abc', ['a']);;!error
+endsWith('abc', [[1]]);;!error
+endsWith('abc', {});;!error
+endsWith('abc', {a: 1});;!error
+endsWith('abc', d('2024-01-01'));;false
+endsWith('abc', [1..3]);;!error
+# endsWith arg 2 (input)
+endsWith('abc', x);{x: null};!error
+endsWith('abc', x);{x: true};!error
+endsWith('abc', x);{x: false};!error
+endsWith('abc', x);{x: 0};!error
+endsWith('abc', x);{x: -1};!error
+endsWith('abc', x);{x: 1.5};!error
+endsWith('abc', x);{x: 79228162514264337593543950335};!error
+endsWith('abc', x);{x: ''};true
+endsWith('abc', x);{x: 'abc'};true
+endsWith('abc', x);{x: '12.5'};false
+endsWith('abc', x);{x: 'żółw'};false
+endsWith('abc', x);{x: []};!error
+endsWith('abc', x);{x: [1, 2]};!error
+endsWith('abc', x);{x: ['a']};!error
+endsWith('abc', x);{x: [[1]]};!error
+endsWith('abc', x);{x: {}};!error
+endsWith('abc', x);{x: {a: 1}};!error
+endsWith('abc', x);{};!error
+# endsWith: both arguments from input
+endsWith(x, y);{x: 'abc', y: 'bc'};true
+endsWith(x, y);{x: 'abc', y: 'b'};false
+endsWith(x, y);{x: 1, y: '1'};!error
+endsWith(x, y);{x: '1', y: 1};!error
+endsWith(x, y);{x: null, y: null};!error
+endsWith(x, y);{};!error
+endsWith(x, y);{x: 'żółw', y: 'w'};true
+# matches: argument 1
+# matches arg 1 (literal)
+matches(null, '^a');;!error
+matches(true, '^a');;!error
+matches(false, '^a');;!error
+matches(0, '^a');;!error
+matches(-1, '^a');;!error
+matches(1.5, '^a');;!error
+matches(79228162514264337593543950335, '^a');;!error
+matches('', '^a');;false
+matches('abc', '^a');;true
+matches('12.5', '^a');;false
+matches('żółw', '^a');;false
+matches([], '^a');;!error
+matches([1, 2], '^a');;!error
+matches(['a'], '^a');;!error
+matches([[1]], '^a');;!error
+matches({}, '^a');;!error
+matches({a: 1}, '^a');;!error
+matches(d('2024-01-01'), '^a');;false
+matches([1..3], '^a');;!error
+# matches arg 1 (input)
+matches(x, '^a');{x: null};!error
+matches(x, '^a');{x: true};!error
+matches(x, '^a');{x: false};!error
+matches(x, '^a');{x: 0};!error
+matches(x, '^a');{x: -1};!error
+matches(x, '^a');{x: 1.5};!error
+matches(x, '^a');{x: 79228162514264337593543950335};!error
+matches(x, '^a');{x: ''};false
+matches(x, '^a');{x: 'abc'};true
+matches(x, '^a');{x: '12.5'};false
+matches(x, '^a');{x: 'żółw'};false
+matches(x, '^a');{x: []};!error
+matches(x, '^a');{x: [1, 2]};!error
+matches(x, '^a');{x: ['a']};!error
+matches(x, '^a');{x: [[1]]};!error
+matches(x, '^a');{x: {}};!error
+matches(x, '^a');{x: {a: 1}};!error
+matches(x, '^a');{};!error
+# matches: argument 2
+# matches arg 2 (literal)
+matches('abc', null);;!error
+matches('abc', true);;!error
+matches('abc', false);;!error
+matches('abc', 0);;!error
+matches('abc', -1);;!error
+matches('abc', 1.5);;!error
+matches('abc', 79228162514264337593543950335);;!error
+matches('abc', '');;true
+matches('abc', 'abc');;true
+matches('abc', '12.5');;false
+matches('abc', 'żółw');;false
+matches('abc', []);;!error
+matches('abc', [1, 2]);;!error
+matches('abc', ['a']);;!error
+matches('abc', [[1]]);;!error
+matches('abc', {});;!error
+matches('abc', {a: 1});;!error
+matches('abc', d('2024-01-01'));;false
+matches('abc', [1..3]);;!error
+# matches arg 2 (input)
+matches('abc', x);{x: null};!error
+matches('abc', x);{x: true};!error
+matches('abc', x);{x: false};!error
+matches('abc', x);{x: 0};!error
+matches('abc', x);{x: -1};!error
+matches('abc', x);{x: 1.5};!error
+matches('abc', x);{x: 79228162514264337593543950335};!error
+matches('abc', x);{x: ''};true
+matches('abc', x);{x: 'abc'};true
+matches('abc', x);{x: '12.5'};false
+matches('abc', x);{x: 'żółw'};false
+matches('abc', x);{x: []};!error
+matches('abc', x);{x: [1, 2]};!error
+matches('abc', x);{x: ['a']};!error
+matches('abc', x);{x: [[1]]};!error
+matches('abc', x);{x: {}};!error
+matches('abc', x);{x: {a: 1}};!error
+matches('abc', x);{};!error
+# matches: both arguments from input
+matches(x, y);{x: 'abc', y: 'b'};true
+matches(x, y);{x: 'abc', y: '^b'};false
+matches(x, y);{x: 1, y: '1'};!error
+matches(x, y);{x: '1', y: 1};!error
+matches(x, y);{x: null, y: null};!error
+matches(x, y);{};!error
+matches(x, y);{x: 'abc', y: '('};!error
+# extract: argument 1
+# extract arg 1 (literal)
+extract(null, '(b)');;!error
+extract(true, '(b)');;!error
+extract(false, '(b)');;!error
+extract(0, '(b)');;!error
+extract(-1, '(b)');;!error
+extract(1.5, '(b)');;!error
+extract(79228162514264337593543950335, '(b)');;!error
+extract('', '(b)');;[]
+extract('abc', '(b)');;['b', 'b']
+extract('12.5', '(b)');;[]
+extract('żółw', '(b)');;[]
+extract([], '(b)');;!error
+extract([1, 2], '(b)');;!error
+extract(['a'], '(b)');;!error
+extract([[1]], '(b)');;!error
+extract({}, '(b)');;!error
+extract({a: 1}, '(b)');;!error
+extract(d('2024-01-01'), '(b)');;[]
+extract([1..3], '(b)');;!error
+# extract arg 1 (input)
+extract(x, '(b)');{x: null};!error
+extract(x, '(b)');{x: true};!error
+extract(x, '(b)');{x: false};!error
+extract(x, '(b)');{x: 0};!error
+extract(x, '(b)');{x: -1};!error
+extract(x, '(b)');{x: 1.5};!error
+extract(x, '(b)');{x: 79228162514264337593543950335};!error
+extract(x, '(b)');{x: ''};[]
+extract(x, '(b)');{x: 'abc'};['b', 'b']
+extract(x, '(b)');{x: '12.5'};[]
+extract(x, '(b)');{x: 'żółw'};[]
+extract(x, '(b)');{x: []};!error
+extract(x, '(b)');{x: [1, 2]};!error
+extract(x, '(b)');{x: ['a']};!error
+extract(x, '(b)');{x: [[1]]};!error
+extract(x, '(b)');{x: {}};!error
+extract(x, '(b)');{x: {a: 1}};!error
+extract(x, '(b)');{};!error
+# extract: argument 2
+# extract arg 2 (literal)
+extract('abc', null);;!error
+extract('abc', true);;!error
+extract('abc', false);;!error
+extract('abc', 0);;!error
+extract('abc', -1);;!error
+extract('abc', 1.5);;!error
+extract('abc', 79228162514264337593543950335);;!error
+extract('abc', '');;['']
+extract('abc', 'abc');;['abc']
+extract('abc', '12.5');;[]
+extract('abc', 'żółw');;[]
+extract('abc', []);;!error
+extract('abc', [1, 2]);;!error
+extract('abc', ['a']);;!error
+extract('abc', [[1]]);;!error
+extract('abc', {});;!error
+extract('abc', {a: 1});;!error
+extract('abc', d('2024-01-01'));;[]
+extract('abc', [1..3]);;!error
+# extract arg 2 (input)
+extract('abc', x);{x: null};!error
+extract('abc', x);{x: true};!error
+extract('abc', x);{x: false};!error
+extract('abc', x);{x: 0};!error
+extract('abc', x);{x: -1};!error
+extract('abc', x);{x: 1.5};!error
+extract('abc', x);{x: 79228162514264337593543950335};!error
+extract('abc', x);{x: ''};['']
+extract('abc', x);{x: 'abc'};['abc']
+extract('abc', x);{x: '12.5'};[]
+extract('abc', x);{x: 'żółw'};[]
+extract('abc', x);{x: []};!error
+extract('abc', x);{x: [1, 2]};!error
+extract('abc', x);{x: ['a']};!error
+extract('abc', x);{x: [[1]]};!error
+extract('abc', x);{x: {}};!error
+extract('abc', x);{x: {a: 1}};!error
+extract('abc', x);{};!error
+# extract: both arguments from input
+extract(x, y);{x: 'abc', y: 'b'};['b']
+extract(x, y);{x: 'abc', y: 'z'};[]
+extract(x, y);{x: 1, y: '1'};!error
+extract(x, y);{x: '1', y: 1};!error
+extract(x, y);{x: null, y: null};!error
+extract(x, y);{};!error
+extract(x, y);{x: 'abc', y: '['};!error
+# split: argument 1
+# split arg 1 (literal)
+split(null, ',');;!error
+split(true, ',');;!error
+split(false, ',');;!error
+split(0, ',');;!error
+split(-1, ',');;!error
+split(1.5, ',');;!error
+split(79228162514264337593543950335, ',');;!error
+split('', ',');;['']
+split('abc', ',');;['abc']
+split('12.5', ',');;['12.5']
+split('żółw', ',');;['żółw']
+split([], ',');;!error
+split([1, 2], ',');;!error
+split(['a'], ',');;!error
+split([[1]], ',');;!error
+split({}, ',');;!error
+split({a: 1}, ',');;!error
+split(d('2024-01-01'), ',');;['2024-01-01T00:00:00Z']
+split([1..3], ',');;!error
+# split arg 1 (input)
+split(x, ',');{x: null};!error
+split(x, ',');{x: true};!error
+split(x, ',');{x: false};!error
+split(x, ',');{x: 0};!error
+split(x, ',');{x: -1};!error
+split(x, ',');{x: 1.5};!error
+split(x, ',');{x: 79228162514264337593543950335};!error
+split(x, ',');{x: ''};['']
+split(x, ',');{x: 'abc'};['abc']
+split(x, ',');{x: '12.5'};['12.5']
+split(x, ',');{x: 'żółw'};['żółw']
+split(x, ',');{x: []};!error
+split(x, ',');{x: [1, 2]};!error
+split(x, ',');{x: ['a']};!error
+split(x, ',');{x: [[1]]};!error
+split(x, ',');{x: {}};!error
+split(x, ',');{x: {a: 1}};!error
+split(x, ',');{};!error
+# split: argument 2
+# split arg 2 (literal)
+split('a,b', null);;!error
+split('a,b', true);;!error
+split('a,b', false);;!error
+split('a,b', 0);;!error
+split('a,b', -1);;!error
+split('a,b', 1.5);;!error
+split('a,b', 79228162514264337593543950335);;!error
+split('a,b', '');;['a', ',', 'b'];bug: empty separator yields leading and trailing empty strings
+split('a,b', 'abc');;['a,b']
+split('a,b', '12.5');;['a,b']
+split('a,b', 'żółw');;['a,b']
+split('a,b', []);;!error
+split('a,b', [1, 2]);;!error
+split('a,b', ['a']);;!error
+split('a,b', [[1]]);;!error
+split('a,b', {});;!error
+split('a,b', {a: 1});;!error
+split('a,b', d('2024-01-01'));;['a,b']
+split('a,b', [1..3]);;!error
+# split arg 2 (input)
+split('a,b', x);{x: null};!error
+split('a,b', x);{x: true};!error
+split('a,b', x);{x: false};!error
+split('a,b', x);{x: 0};!error
+split('a,b', x);{x: -1};!error
+split('a,b', x);{x: 1.5};!error
+split('a,b', x);{x: 79228162514264337593543950335};!error
+split('a,b', x);{x: ''};['a', ',', 'b'];bug: empty separator yields leading and trailing empty strings
+split('a,b', x);{x: 'abc'};['a,b']
+split('a,b', x);{x: '12.5'};['a,b']
+split('a,b', x);{x: 'żółw'};['a,b']
+split('a,b', x);{x: []};!error
+split('a,b', x);{x: [1, 2]};!error
+split('a,b', x);{x: ['a']};!error
+split('a,b', x);{x: [[1]]};!error
+split('a,b', x);{x: {}};!error
+split('a,b', x);{x: {a: 1}};!error
+split('a,b', x);{};!error
+# split: both arguments from input
+split(x, y);{x: 'a b', y: ' '};['a', 'b']
+split(x, y);{x: 'ab', y: ','};['ab']
+split(x, y);{x: 1, y: '1'};!error
+split(x, y);{x: '1', y: 1};!error
+split(x, y);{x: null, y: null};!error
+split(x, y);{};!error
+split(x, y);{x: ['a,b'], y: ','};!error
+# fuzzyMatch: argument 1
+# fuzzyMatch arg 1 (literal)
+fuzzyMatch(null, 'abc');;!error
+fuzzyMatch(true, 'abc');;!error
+fuzzyMatch(false, 'abc');;!error
+fuzzyMatch(0, 'abc');;!error
+fuzzyMatch(-1, 'abc');;!error
+fuzzyMatch(1.5, 'abc');;!error
+fuzzyMatch(79228162514264337593543950335, 'abc');;!error
+fuzzyMatch('', 'abc');;0
+fuzzyMatch('abc', 'abc');;1
+fuzzyMatch('12.5', 'abc');;0
+fuzzyMatch('żółw', 'abc');;0
+fuzzyMatch([], 'abc');;[]
+fuzzyMatch([1, 2], 'abc');;!error
+fuzzyMatch(['a'], 'abc');;[0.3333333333333334]
+fuzzyMatch([[1]], 'abc');;!error
+fuzzyMatch({}, 'abc');;!error
+fuzzyMatch({a: 1}, 'abc');;!error
+fuzzyMatch(d('2024-01-01'), 'abc');;0
+fuzzyMatch([1..3], 'abc');;!error
+# fuzzyMatch arg 1 (input)
+fuzzyMatch(x, 'abc');{x: null};!error
+fuzzyMatch(x, 'abc');{x: true};!error
+fuzzyMatch(x, 'abc');{x: false};!error
+fuzzyMatch(x, 'abc');{x: 0};!error
+fuzzyMatch(x, 'abc');{x: -1};!error
+fuzzyMatch(x, 'abc');{x: 1.5};!error
+fuzzyMatch(x, 'abc');{x: 79228162514264337593543950335};!error
+fuzzyMatch(x, 'abc');{x: ''};0
+fuzzyMatch(x, 'abc');{x: 'abc'};1
+fuzzyMatch(x, 'abc');{x: '12.5'};0
+fuzzyMatch(x, 'abc');{x: 'żółw'};0
+fuzzyMatch(x, 'abc');{x: []};[]
+fuzzyMatch(x, 'abc');{x: [1, 2]};!error
+fuzzyMatch(x, 'abc');{x: ['a']};[0.3333333333333334]
+fuzzyMatch(x, 'abc');{x: [[1]]};!error
+fuzzyMatch(x, 'abc');{x: {}};!error
+fuzzyMatch(x, 'abc');{x: {a: 1}};!error
+fuzzyMatch(x, 'abc');{};!error
+# fuzzyMatch: argument 2
+# fuzzyMatch arg 2 (literal)
+fuzzyMatch('abc', null);;!error
+fuzzyMatch('abc', true);;!error
+fuzzyMatch('abc', false);;!error
+fuzzyMatch('abc', 0);;!error
+fuzzyMatch('abc', -1);;!error
+fuzzyMatch('abc', 1.5);;!error
+fuzzyMatch('abc', 79228162514264337593543950335);;!error
+fuzzyMatch('abc', '');;0
+fuzzyMatch('abc', 'abc');;1
+fuzzyMatch('abc', '12.5');;0
+fuzzyMatch('abc', 'żółw');;0
+fuzzyMatch('abc', []);;!error
+fuzzyMatch('abc', [1, 2]);;!error
+fuzzyMatch('abc', ['a']);;!error
+fuzzyMatch('abc', [[1]]);;!error
+fuzzyMatch('abc', {});;!error
+fuzzyMatch('abc', {a: 1});;!error
+fuzzyMatch('abc', d('2024-01-01'));;0
+fuzzyMatch('abc', [1..3]);;!error
+# fuzzyMatch arg 2 (input)
+fuzzyMatch('abc', x);{x: null};!error
+fuzzyMatch('abc', x);{x: true};!error
+fuzzyMatch('abc', x);{x: false};!error
+fuzzyMatch('abc', x);{x: 0};!error
+fuzzyMatch('abc', x);{x: -1};!error
+fuzzyMatch('abc', x);{x: 1.5};!error
+fuzzyMatch('abc', x);{x: 79228162514264337593543950335};!error
+fuzzyMatch('abc', x);{x: ''};0
+fuzzyMatch('abc', x);{x: 'abc'};1
+fuzzyMatch('abc', x);{x: '12.5'};0
+fuzzyMatch('abc', x);{x: 'żółw'};0
+fuzzyMatch('abc', x);{x: []};!error
+fuzzyMatch('abc', x);{x: [1, 2]};!error
+fuzzyMatch('abc', x);{x: ['a']};!error
+fuzzyMatch('abc', x);{x: [[1]]};!error
+fuzzyMatch('abc', x);{x: {}};!error
+fuzzyMatch('abc', x);{x: {a: 1}};!error
+fuzzyMatch('abc', x);{};!error
+# fuzzyMatch: both arguments from input
+fuzzyMatch(x, y);{x: 'abc', y: 'abc'};1
+fuzzyMatch(x, y);{x: ['abc'], y: 'abc'};[1]
+fuzzyMatch(x, y);{x: 1, y: '1'};!error
+fuzzyMatch(x, y);{x: 'abc', y: ['abc']};!error
+fuzzyMatch(x, y);{x: null, y: null};!error
+fuzzyMatch(x, y);{};!error
+fuzzyMatch(x, y);{x: [], y: 'x'};[]
+# fuzzyMatch: array elements must be strings
+fuzzyMatch(x, 'abc');{x: ['abc', 'abc']};[1, 1]
+fuzzyMatch(x, 'abc');{x: ['abc', null]};!error
+fuzzyMatch(x, 'abc');{x: ['abc', 1]};!error
+fuzzyMatch(x, 'abc');{x: [['abc']]};!error
+fuzzyMatch(x, 'abc');{x: [null]};!error
+fuzzyMatch(x, 'abc');{x: ['', 'abc']};[0, 1]

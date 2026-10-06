@@ -1,0 +1,167 @@
+expression (string);input (json 5);output (json 5);note
+# `and` joins shorthands, all must hold
+> 5 and < 10;{$: 7};true
+> 5 and < 10;{$: 5};false
+> 5 and < 10;{$: 10};false
+> 5 and < 10;{$: 5.5};true
+> 5 and < 10;{$: 11};false
+> 5 and < 10;{$: null};!error
+> 5 and < 10;{$: '7'};!error
+>= 5 and <= 10;{$: 5};true
+>= 5 and <= 10;{$: 10};true
+>= 5 and <= 10;{$: 4.9};false
+>= 5 and <= 10;{$: 10.1};false
+>= 5 and <= 10;{};!error
+> 5 and < 10 and != 7;{$: 7};false
+> 5 and < 10 and != 7;{$: 6};true
+> 5 and < 10 and != 7;{$: 9.5};true
+> 5 and < 10 and != 7;{$: 10};false
+> 5 and < 10 and != 7;{$: 3};false
+# `and` short-circuits: a failing left side skips a right side that would error
+> 5 and < 'b';{$: 3};false
+> 5 and < 'b';{$: 6};!error
+!= null and > 5;{$: null};false
+!= null and > 5;{};false
+!= null and > 5;{$: 6};true
+!= null and > 5;{$: 5};false
+!= null and > 5;{$: 'a'};!error
+# `or` joins shorthands, any may hold
+>= 10 or < 5;{$: 10};true
+>= 10 or < 5;{$: 4};true
+>= 10 or < 5;{$: 5};false
+>= 10 or < 5;{$: 9.99};false
+>= 10 or < 5;{$: null};!error
+== null or > 5;{$: null};true
+== null or > 5;{};true
+== null or > 5;{$: 6};true
+== null or > 5;{$: 5};false
+== null or > 5;{$: 'a'};!error
+'a' or > 5;{$: 'a'};true
+'a' or > 5;{$: 6};true
+'a' or > 5;{$: 1};false
+'a' or > 5;{$: 'b'};!error
+# Mixed `and` / `or` follow standard precedence (`and` binds tighter)
+> 5 and < 10 or == 20;{$: 7};true
+> 5 and < 10 or == 20;{$: 20};true
+> 5 and < 10 or == 20;{$: 15};false
+> 5 and < 10 or == 20;{$: 1};false
+== 20 or > 5 and < 10;{$: 7};true
+== 20 or > 5 and < 10;{$: 20};true;bug: unary joins are folded left to right, giving (== 20 or > 5) and < 10; standard `$ == 20 or $ > 5 and $ < 10` is true
+== 20 or > 5 and < 10;{$: 15};false
+== 20 or > 5 and < 10;{$: 1};false
+== 1 or > 5 and < 0;{$: 1};true;bug: unary joins are folded left to right, giving (== 1 or > 5) and < 0; standard `$ == 1 or $ > 5 and $ < 0` is true
+== 1 or > 5 and < 0;{$: 6};false
+== 1 or > 5 and < 0;{$: 0};false
+== 1 or > 5 and < 0;{$: -1};false
+'a', 'b' and 'c';{$: 'a'};true;bug: unary joins are folded left to right, giving ('a', 'b') and 'c'; standard `$ == 'a' or $ == 'b' and $ == 'c'` is true
+'a', 'b' and 'c';{$: 'b'};false
+'a', 'b' and 'c';{$: 'c'};false
+'a', 'b' and 'c';{$: null};false
+# Parenthesised groups of full expressions
+($ > 5 and $ < 10);{$: 7};true;bug: parenthesised `and`/`or` in unary mode fails to parse (Incomplete parser output); the same text is valid in standard mode
+($ > 5 and $ < 10);{$: 5};false;bug: parenthesised `and`/`or` in unary mode fails to parse (Incomplete parser output); the same text is valid in standard mode
+($ > 5 and $ < 10);{$: 10};false;bug: parenthesised `and`/`or` in unary mode fails to parse (Incomplete parser output); the same text is valid in standard mode
+($ > 5 and $ < 10);{$: null};!error
+($ == 1 or $ == 2) and $ != 2;{$: 1};true;bug: parenthesised `and`/`or` in unary mode fails to parse (Incomplete parser output); the same text is valid in standard mode
+($ == 1 or $ == 2) and $ != 2;{$: 2};false;bug: parenthesised `and`/`or` in unary mode fails to parse (Incomplete parser output); the same text is valid in standard mode
+($ == 1 or $ == 2) and $ != 2;{$: 3};false;bug: parenthesised `and`/`or` in unary mode fails to parse (Incomplete parser output); the same text is valid in standard mode
+($ == 1 or $ == 2) and $ != 2;{$: null};false;bug: parenthesised `and`/`or` in unary mode fails to parse (Incomplete parser output); the same text is valid in standard mode
+== 1 or ($ > 5 and $ < 0);{$: 1};true;bug: parenthesised `and`/`or` in unary mode fails to parse (Incomplete parser output); the same text is valid in standard mode
+== 1 or ($ > 5 and $ < 0);{$: 6};false;bug: parenthesised `and`/`or` in unary mode fails to parse (Incomplete parser output); the same text is valid in standard mode
+== 1 or ($ > 5 and $ < 0);{$: 2};false;bug: parenthesised `and`/`or` in unary mode fails to parse (Incomplete parser output); the same text is valid in standard mode
+== 1 or ($ > 5 and $ < 0);{$: -1};false;bug: parenthesised `and`/`or` in unary mode fails to parse (Incomplete parser output); the same text is valid in standard mode
+# Shorthands cannot be parenthesised
+(> 5);{$: 7};!error
+(> 5);{$: 3};!error
+(> 5);{$: null};!error
+(> 5);{};!error
+> 5 and (< 10);{$: 7};!error
+> 5 and (< 10);{$: 11};!error
+> 5 and (< 10);{$: 1};!error
+> 5 and (< 10);{$: null};!error
+# Mixing explicit $ with shorthands
+$ > 5 and < 10;{$: 7};true
+$ > 5 and < 10;{$: 5};false
+$ > 5 and < 10;{$: 10};false
+$ > 5 and < 10;{$: null};!error
+> 5 and $ < 10;{$: 7};true
+> 5 and $ < 10;{$: 12};false
+> 5 and $ < 10;{$: 2};false
+> 5 and $ < 10;{$: 'a'};!error
+$ > 5 and $ < 10;{$: 7};true
+$ > 5 and $ < 10;{$: 5};false
+$ > 5 and $ < 10;{$: 10};false
+$ > 5 and $ < 10;{$: null};!error
+$ == 'a' or $ == 'b';{$: 'a'};true
+$ == 'a' or $ == 'b';{$: 'b'};true
+$ == 'a' or $ == 'b';{$: 'c'};false
+$ == 'a' or $ == 'b';{$: null};false
+contains($, 'a') and len($) > 2;{$: 'abc'};true
+contains($, 'a') and len($) > 2;{$: 'ab'};false
+contains($, 'a') and len($) > 2;{$: 'xyz'};false
+contains($, 'a') and len($) > 2;{$: null};!error
+# `not` / `!` negate a boolean expression
+not ($ > 5);{$: 3};true
+not ($ > 5);{$: 5};true
+not ($ > 5);{$: 6};false
+not ($ > 5);{$: null};!error
+!($ == 'a');{$: 'b'};true
+!($ == 'a');{$: 'a'};false
+!($ == 'a');{$: null};true
+!($ == 'a');{};true
+not ($ in ['a', 'b']);{$: 'c'};true
+not ($ in ['a', 'b']);{$: 'a'};false
+not ($ in ['a', 'b']);{$: null};true
+not ($ in ['a', 'b']);{$: 1};true
+not contains($, 'x');{$: 'abc'};true
+not contains($, 'x');{$: 'axc'};false
+not contains($, 'x');{$: ''};true
+not contains($, 'x');{$: null};!error
+# `not` applied to a bare literal negates the literal, then compares with $
+not true;{$: false};true;question: `not true` is `$ == false`, not "not equal to true"; a FEEL-style reading would match $ != true
+not true;{$: true};false
+not true;{$: null};false;question: `not true` is `$ == false`, not "not equal to true"; a FEEL-style reading would match $ != true
+not true;{$: 'x'};false;question: `not true` is `$ == false`, not "not equal to true"; a FEEL-style reading would match $ != true
+not not true;{$: true};true
+not not true;{$: false};false
+not not true;{$: null};false
+not not true;{$: 1};false
+not 5;{$: 5};!error;question: `not 5` errors (not on a number); FEEL-style unary tests read it as "not equal to 5"
+not 5;{$: 6};!error;question: `not 5` errors (not on a number); FEEL-style unary tests read it as "not equal to 5"
+not 5;{$: null};!error
+not 5;{};!error
+not 'a';{$: 'a'};!error
+not 'a';{$: 'b'};!error
+not 'a';{$: false};!error
+not 'a';{$: null};!error
+not null;{$: null};!error
+not null;{$: true};!error
+not null;{$: false};!error
+not null;{};!error
+# `$` as a bare operand of and/or is compared with itself, not used as a boolean
+$ or false;{$: true};true
+$ or false;{$: false};true;question: `$ or false` is ($ == $) or ($ == false), so it is true for $ = false; standard `$ or false` is false
+$ or false;{$: null};true;question: `$ or false` is ($ == $) or ($ == false), so it is true for $ = null; standard `$ or false` errors or is false
+$ or false;{$: 1};true;question: `$ or false` is ($ == $) or ($ == false), so it is true for any non-array $
+$ and true;{$: true};true
+$ and true;{$: false};false
+$ and true;{$: 1};false
+$ and true;{$: null};false
+true and true;{$: true};true
+true and true;{$: false};false
+true and true;{$: 1};false
+true and true;{};false
+# C-style operators are not part of the language
+> 5 && < 10;{$: 7};!error
+> 5 && < 10;{$: 1};!error
+> 5 || < 0;{$: 7};!error
+> 5 || < 0;{$: -1};!error
+# Malformed joins are parse errors
+> 5 and;{$: 6};!error
+> 5 and;{$: 1};!error
+and > 5;{$: 6};!error
+and > 5;{$: 1};!error
+>;{$: 6};!error
+>;{$: null};!error
+> > 5;{$: 6};!error
+> > 5;{$: 1};!error

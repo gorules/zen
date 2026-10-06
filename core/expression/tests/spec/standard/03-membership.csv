@@ -1,0 +1,246 @@
+expression (string);input (json 5);output (json 5);note
+# Membership in arrays: numbers compare by value
+1 in [1, 2, 3];;true
+4 in [1, 2, 3];;false
+1 in [1.0];;true
+1.00 in [1];;true
+0 in [-0];;true
+-1 in [1];;false
+0.1 + 0.2 in [0.3];;true
+1 in [];;false
+1 in ['1'];;false
+1 in [true];;false
+1 in [null];;false
+1 in [[1]];;false
+1 not in [1, 2];;false
+3 not in [1, 2];;true
+1 not in [];;true
+1 not in ['1'];;true
+# Membership in arrays: strings are exact
+'a' in ['a', 'b'];;true
+'c' in ['a', 'b'];;false
+'A' in ['a'];;false
+'' in [''];;true
+'' in [];;false
+'1' in [1];;false
+'a' in ['a', 1, null];;true
+'a ' in ['a'];;false
+'日本' in ['日本'];;true
+'US' not in ['US', 'CA'];;false
+'GB' not in ['US', 'CA'];;true
+# Membership in arrays: booleans and null
+true in [true];;true
+true in [false];;false
+false in [false, true];;true
+true in [1];;false
+false in [0, null, ''];;false
+null in [null];;true
+null in [1, null];;true
+null in [];;false
+null in [0, false, ''];;false
+null not in [null];;false
+null not in [1];;true
+# Membership in arrays: dates
+d('2024-01-01') in [d('2024-01-01'), d('2024-02-01')];;true
+d('2024-01-01') in [d('2024-01-02')];;false
+d('2024-01-01') in ['2024-01-01'];;true
+d('2024-01-01') in [];;false
+d('2024-01-01T00:00:00Z') in [d('2024-01-01')];;true
+# Membership in arrays: arrays and objects as the needle
+[1] in [[1], [2]];;true;bug: membership of an array needle errors instead of using the deep equality `in` implies
+[3] in [[1], [2]];;false;bug: membership of an array needle errors instead of returning false
+[] in [];;false;bug: membership of an array needle errors instead of returning false
+{a: 1} in [{a: 1}];;true;bug: membership of an object needle errors instead of using the deep equality `in` implies
+{a: 1} in [{a: 2}];;false;bug: membership of an object needle errors instead of returning false
+# Membership: intervals as haystack
+1 in [1..5];;true
+5 in [1..5];;true
+3 in [1..5];;true
+0 in [1..5];;false
+6 in [1..5];;false
+1 in (1..5);;false
+5 in (1..5);;false
+3 in (1..5);;true
+1 in [1..5);;true
+5 in [1..5);;false
+1 in (1..5];;false
+5 in (1..5];;true
+2.5 in [1..5];;true
+0.9999999999999999999999999999 in [1..5];;false
+5.0000000000000000000000000001 in [1..5];;false
+1.0000000000000000000000000001 in (1..5);;true
+4.9999999999999999999999999999 in (1..5);;true
+1.00 in (1..5];;false
+3.2 in [1..3.5];;true
+3.6 in [1..3.5];;false
+0.5 in [0.1..0.9];;true
+0.1 in (0.1..0.9);;false
+-5 in [-10..-1];;true
+-10 in (-10..-1];;false
+-1 in [-10..-1);;false
+-0.5 in (-1..0);;true
+0 in (-1..0);;false
+0 in [-0..0];;true
+3 in [3..3];;true
+3 in (3..3);;false
+3 in [3..3);;false
+3 in [5..1];;false
+5 in [5..1];;false
+3 not in [1..5];;false
+0 not in [1..5];;true
+5 not in [1..5);;true
+# Membership: reversed brackets mean the outside of the range
+3 in ]1..5[;;false;question: `]a..b[` is the exterior of [a..b] with endpoints included, not the ISO open interval (a..b)
+1 in ]1..5[;;true;question: `]a..b[` is the exterior of [a..b] with endpoints included, not the ISO open interval (a..b)
+5 in ]1..5[;;true;question: `]a..b[` is the exterior of [a..b] with endpoints included, not the ISO open interval (a..b)
+0 in ]1..5[;;true
+6 in ]1..5[;;true
+1 in )1..5(;;false
+5 in )1..5(;;false
+0 in )1..5(;;true
+3 in )1..5(;;false
+x in ]1..5[;{x: 3};false;question: `]a..b[` is the exterior of [a..b] with endpoints included, not the ISO open interval (a..b)
+x in ]1..5[;{x: 1};true;question: `]a..b[` is the exterior of [a..b] with endpoints included, not the ISO open interval (a..b)
+x in ]1..5[;{x: 9};true
+x in ]1..5[;{x: null};!error
+x in ]a..5[;{x: 0, a: 1};true
+x in ]1..b[;{x: 0, b: 5};true;bug: `b[` after `..` is parsed as an index access, so a non-literal right bound cannot close with `[`
+x in )1..b(;{x: 0, b: 5};true;bug: `b(` after `..` is parsed as a call, so a non-literal right bound cannot close with `(`
+d('2024-01-06') in ]d('2024-01-01')..d('2024-01-05')[;;true;bug: a call as the right bound followed by `[` is parsed as an index access
+# Membership: mixed bracket forms
+]1..5];;']1..5]'
+[1..5[;;'[1..5['
+3 in ]1..5];;true;question: `]a..b]` accepts any v <= b (union of two half-lines), not the ISO half-open interval (a..b]
+-100 in ]1..5];;true;question: `]a..b]` accepts any v <= b (union of two half-lines), not the ISO half-open interval (a..b]
+3 in [1..5[;;false;question: `[a..b[` accepts only v >= b, not the ISO half-open interval [a..b)
+7 in [1..5[;;true;question: `[a..b[` accepts only v >= b, not the ISO half-open interval [a..b)
+# Membership: intervals are values
+[1..5];;'[1..5]'
+(1..5);;'(1..5)'
+[1..5);;'[1..5)'
+(0.5..2.5];;'(0.5..2.5]'
+[-3..-1];;'[-3..-1]'
+[5..1];;'[5..1]'
+]1..5[;;']1..5['
+1..5;;!error
+x in 1..5;{x: 2};!error
+[1..'5'];;!error
+['a'..'b'];;!error
+[null..5];;!error
+[1..d('2024-01-01')];;!error
+[a..b];{a: 1, b: 3};'[1..3]'
+# Membership: non-number needles in number intervals
+null in [1..5];;!error
+'3' in [1..5];;!error
+true in [0..1];;!error
+[3] in [1..5];;!error
+d('2024-01-03') in [1..5];;!error;bug: a date against a number interval is false instead of the type error that `<` gives
+d('2024-01-03') in ]1..5[;;!error;bug: a date against a number interval compares across types (true here) instead of erroring
+3 in [d('2024-01-01')..d('2024-01-05')];;!error;bug: a number against a date interval is false instead of the type error that `<` gives
+# Membership: date intervals
+d('2024-01-03') in [d('2024-01-01')..d('2024-01-05')];;true
+d('2024-01-01') in [d('2024-01-01')..d('2024-01-05')];;true
+d('2024-01-01') in (d('2024-01-01')..d('2024-01-05')];;false
+d('2024-01-05') in [d('2024-01-01')..d('2024-01-05'));;false
+d('2024-01-06') in [d('2024-01-01')..d('2024-01-05')];;false
+d('2024-01-03') not in [d('2024-01-01')..d('2024-01-05')];;false
+# Membership: strings and objects as haystack
+'a' in 'abc';;!error;question: `in` has no substring form; contains() is the supported way
+1 in 'abc';;!error
+'a' in {a: 1};;true
+'b' in {a: 1};;false
+'a' in {a: null};;true
+'' in {};;false
+'a' not in {a: 1};;false
+'b' not in {a: 1};;true
+1 in {a: 1};;!error
+null in {a: 1};;!error
+'A' in {a: 1};;false
+# Membership: invalid haystacks
+1 in null;;!error
+null in null;;!error
+1 in 1;;!error
+'a' in 'a';;!error
+1 in true;;!error
+{} in {};;!error
+# Membership: precedence
+1 + 1 in [2];;true
+2 * 2 in [1..4];;true
+1 in [1] == true;;true
+true == 1 in [1];;false
+1 in [1] and 2 in [2];;true
+1 in [2] or 2 in [2];;true
+not 1 in [1];;!error
+not (1 in [1]);;false
+1 not in [2] and true;;true
+(1 in [1]) in [true];;true
+1 in [1, 2, 3][0:2];;true
+2 in map([1, 2], # * 1);;true
+x ?? 1 in [1];{};true
+# Membership: variable needle and haystack
+x in [1, 2, 3];{x: 2};true
+x in [1, 2, 3];{x: 4};false
+x in [1, 2, 3];{x: 2.0};true
+x in [1, 2, 3];{x: '2'};false
+x in [1, 2, 3];{x: null};false
+x in [1, 2, 3];{};false
+x in [1, 2, 3];{x: true};false
+x in [1, 2, 3];{x: [2]};false;bug: membership of an array needle errors instead of returning false
+x in list;{x: [1], list: [[1]]};true;bug: membership of an array needle errors instead of using deep equality
+x in list;{x: {a: 1}, list: [{a: 1}]};true;bug: membership of an object needle errors instead of using deep equality
+x in ['US', 'CA'];{x: 'US'};true
+x in ['US', 'CA'];{x: 'us'};false
+x in ['US', 'CA'];{x: ''};false
+x in ['US', 'CA'];{x: null};false
+x in ['US', 'CA'];{};false
+x in ['US', 'CA'];{x: 1};false
+x not in ['US', 'CA'];{x: 'US'};false
+x not in ['US', 'CA'];{x: 'GB'};true
+x not in ['US', 'CA'];{x: null};true
+x not in ['US', 'CA'];{};true
+x not in ['US', 'CA'];{x: 5};true
+x in list;{x: 1, list: [1, 2]};true
+x in list;{x: 3, list: [1, 2]};false
+x in list;{x: 'a', list: ['a']};true
+x in list;{x: 1, list: []};false
+x in list;{x: null, list: [null]};true
+x in list;{x: 1, list: null};!error
+x in list;{x: 1};!error
+x in list;{x: 'k', list: {k: 1}};true
+x in list;{x: 'z', list: {k: 1}};false
+x in [1..10];{x: 1};true
+x in [1..10];{x: 10};true
+x in [1..10];{x: 10.5};false
+x in [1..10];{x: 0};false
+x in [1..10];{x: null};!error
+x in [1..10];{};!error
+x in [1..10];{x: '5'};!error
+x in (0..100);{x: 0};false
+x in (0..100);{x: 0.01};true
+x in (0..100);{x: 100};false
+x in (0..100);{x: 99.99};true
+x in (0..100);{x: -1};false
+x in [0..100);{x: 0};true
+x in [0..100);{x: 100};false
+x in [0..100);{x: 50};true
+x in (0..100];{x: 0};false
+x in (0..100];{x: 100};true
+x in (0..100];{x: 100.0000000000000000000000001};false
+x in [a..b];{x: 3, a: 1, b: 5};true
+x in [a..b];{x: 5, a: 1, b: 5};true
+x in [a..b];{x: 6, a: 1, b: 5};false
+x in [a..b];{x: 3, a: 5, b: 1};false
+x in [a..b];{x: 3, a: 1};!error
+x in [a..b];{x: 3, a: '1', b: 5};!error
+x in (a..b);{x: 1, a: 1, b: 5};false
+x in (a..b);{x: 2, a: 1, b: 5};true
+x in (a..b);{x: 1.5, a: 1, b: 2};true
+x in (a..b);{x: -3, a: -5, b: -1};true
+x not in [1..5];{x: 3};false
+x not in [1..5];{x: 7};true
+x not in [1..5];{x: 5};false
+x not in [1..5];{x: null};!error
+d(x) in [d('2024-01-01')..d('2024-12-31')];{x: '2024-06-15'};true
+d(x) in [d('2024-01-01')..d('2024-12-31')];{x: '2024-12-31'};true
+d(x) in [d('2024-01-01')..d('2024-12-31')];{x: '2025-01-01'};false
+d(x) in [d('2024-01-01')..d('2024-12-31')];{x: '2023-12-31T23:59:59Z'};false

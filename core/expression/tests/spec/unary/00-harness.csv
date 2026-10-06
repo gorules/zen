@@ -1,0 +1,4 @@
+expression (string);input (json 5);output (json 5);note
+# Harness self-checks
+> 5;{$: 6};true
+'a', 'b';{$: 'b'};true

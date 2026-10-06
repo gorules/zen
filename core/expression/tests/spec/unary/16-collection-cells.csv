@@ -1,0 +1,172 @@
+expression (string);input (json 5);output (json 5);note
+# some / all / none / one over a numeric array $
+some($, # > 5);{$: [1, 6]};true
+some($, # > 5);{$: [1, 2]};false
+some($, # > 5);{$: []};false
+some($, # > 5);{$: [6]};true
+some($, # > 5);{$: [5]};false
+some($, # > 5);{$: [5.01]};true
+some($, # > 5);{$: [-1, 10, 0]};true
+some($, # > 5);{$: null};!error
+some($, # > 5);{};!error
+some($, # > 5);{$: 6};!error
+some($, # > 5);{$: [1, 'x', 7]};!error
+all($, # > 0);{$: [1, 6]};true
+all($, # > 0);{$: [1, 2]};true
+all($, # > 0);{$: []};true
+all($, # > 0);{$: [6]};true
+all($, # > 0);{$: [5]};true
+all($, # > 0);{$: [5.01]};true
+all($, # > 0);{$: [-1, 10, 0]};false
+all($, # > 0);{$: null};!error
+all($, # > 0);{};!error
+all($, # > 0);{$: 6};!error
+all($, # > 0);{$: [1, 'x', 7]};!error
+none($, # < 0);{$: [1, 6]};true
+none($, # < 0);{$: [1, 2]};true
+none($, # < 0);{$: []};true
+none($, # < 0);{$: [6]};true
+none($, # < 0);{$: [5]};true
+none($, # < 0);{$: [5.01]};true
+none($, # < 0);{$: [-1, 10, 0]};false
+none($, # < 0);{$: null};!error
+none($, # < 0);{};!error
+none($, # < 0);{$: 6};!error
+none($, # < 0);{$: [1, 'x', 7]};!error
+one($, # > 5);{$: [1, 6]};true
+one($, # > 5);{$: [6, 7]};false
+one($, # > 5);{$: []};false
+one($, # > 5);{$: [6]};true
+one($, # > 5);{$: [1, 2]};false
+one($, # > 5);{$: null};!error
+one($, # > 5);{$: [6, 'x']};!error
+# count and sums compared with thresholds
+count($, # > 0) >= 2;{$: [1, 6]};true
+count($, # > 0) >= 2;{$: [1, 2]};true
+count($, # > 0) >= 2;{$: []};false
+count($, # > 0) >= 2;{$: [6]};false
+count($, # > 0) >= 2;{$: [5]};false
+count($, # > 0) >= 2;{$: [5.01]};false
+count($, # > 0) >= 2;{$: [-1, 10, 0]};false
+count($, # > 0) >= 2;{$: null};!error
+count($, # > 0) >= 2;{};!error
+count($, # > 0) >= 2;{$: 6};!error
+count($, # > 0) >= 2;{$: [1, 2, 3]};true
+count($, # > 0) >= 2;{$: [0, 0, 1]};false
+len($) > 0 and all($, # >= 1);{$: [1, 2]};true
+len($) > 0 and all($, # >= 1);{$: []};false
+len($) > 0 and all($, # >= 1);{$: [0]};false
+len($) > 0 and all($, # >= 1);{$: [1]};true
+len($) > 0 and all($, # >= 1);{$: null};!error
+len($) > 0 and all($, # >= 1);{$: 'ab'};!error
+sum($) >= 100;{$: [50, 50]};true
+sum($) >= 100;{$: [99.99]};false
+sum($) >= 100;{$: []};false
+sum($) >= 100;{$: [33.34, 33.33, 33.33]};true
+sum($) >= 100;{$: null};!error
+sum($) >= 100;{$: [1, 'a']};!error
+max($) < 10;{$: [1, 9]};true
+max($) < 10;{$: [1, 10]};false
+max($) < 10;{$: [9.99]};true
+max($) < 10;{$: null};!error
+max($) < 10;{$: []};!error;question: max of an empty array errors instead of null or false
+# String arrays against allowed sets
+all($, # in ['a', 'b']);{$: ['a', 'b']};true
+all($, # in ['a', 'b']);{$: ['a']};true
+all($, # in ['a', 'b']);{$: []};true
+all($, # in ['a', 'b']);{$: ['c']};false
+all($, # in ['a', 'b']);{$: ['a', 'c']};false
+all($, # in ['a', 'b']);{$: ['A']};false
+all($, # in ['a', 'b']);{$: null};!error
+all($, # in ['a', 'b']);{};!error
+all($, # in ['a', 'b']);{$: 'a'};!error
+all($, # in ['a', 'b']);{$: [1]};false
+some($, # in ['a', 'b']);{$: ['a', 'b']};true
+some($, # in ['a', 'b']);{$: ['a']};true
+some($, # in ['a', 'b']);{$: []};false
+some($, # in ['a', 'b']);{$: ['c']};false
+some($, # in ['a', 'b']);{$: ['a', 'c']};true
+some($, # in ['a', 'b']);{$: ['A']};false
+some($, # in ['a', 'b']);{$: null};!error
+some($, # in ['a', 'b']);{};!error
+some($, # in ['a', 'b']);{$: 'a'};!error
+some($, # in ['a', 'b']);{$: [1]};false
+none($, # == 'c');{$: ['a', 'b']};true
+none($, # == 'c');{$: ['a']};true
+none($, # == 'c');{$: []};true
+none($, # == 'c');{$: ['c']};false
+none($, # == 'c');{$: ['a', 'c']};false
+none($, # == 'c');{$: ['A']};true
+none($, # == 'c');{$: null};!error
+none($, # == 'c');{};!error
+none($, # == 'c');{$: 'a'};!error
+none($, # == 'c');{$: [1]};true
+'a' in $;{$: ['a', 'b']};true
+'a' in $;{$: ['a']};true
+'a' in $;{$: []};false
+'a' in $;{$: ['c']};false
+'a' in $;{$: ['a', 'c']};true
+'a' in $;{$: ['A']};false
+'a' in $;{$: null};!error
+'a' in $;{};!error
+'a' in $;{$: 'a'};!error
+'a' in $;{$: [1]};false
+contains($, 'a');{$: ['a', 'b']};true
+contains($, 'a');{$: ['a']};true
+contains($, 'a');{$: []};false
+contains($, 'a');{$: ['c']};false
+contains($, 'a');{$: ['a', 'c']};true
+contains($, 'a');{$: ['A']};false
+contains($, 'a');{$: null};!error
+contains($, 'a');{};!error
+contains($, 'a');{$: 'a'};true
+contains($, 'a');{$: [1]};false
+some($, startsWith(#, 'a'));{$: ['ab']};true
+some($, startsWith(#, 'a'));{$: ['ba']};false
+some($, startsWith(#, 'a'));{$: []};false
+some($, startsWith(#, 'a'));{$: ['x', 'abc']};true
+some($, startsWith(#, 'a'));{$: null};!error
+some($, startsWith(#, 'a'));{$: [1]};!error
+some($, lower(#) == 'vip');{$: ['VIP']};true
+some($, lower(#) == 'vip');{$: ['vip']};true
+some($, lower(#) == 'vip');{$: ['Vip', 'x']};true
+some($, lower(#) == 'vip');{$: ['v']};false
+some($, lower(#) == 'vip');{$: []};false
+some($, lower(#) == 'vip');{$: null};!error
+# Arrays of objects
+some($, #.qty > 10);{$: [{qty: 1, price: 10}, {qty: 3, price: 5}]};false
+some($, #.qty > 10);{$: [{qty: 0, price: 10}]};false
+some($, #.qty > 10);{$: []};false
+some($, #.qty > 10);{$: [{price: 10}]};!error
+some($, #.qty > 10);{$: null};!error
+some($, #.qty > 10);{$: [{qty: 11, price: 1}]};true
+all($, #.qty > 0);{$: [{qty: 1, price: 10}, {qty: 3, price: 5}]};true
+all($, #.qty > 0);{$: [{qty: 0, price: 10}]};false
+all($, #.qty > 0);{$: []};true
+all($, #.qty > 0);{$: [{price: 10}]};!error
+all($, #.qty > 0);{$: null};!error
+all($, #.qty > 0);{$: [{qty: 11, price: 1}]};true
+sum(map($, #.qty * #.price)) > 20;{$: [{qty: 1, price: 10}, {qty: 3, price: 5}]};true
+sum(map($, #.qty * #.price)) > 20;{$: [{qty: 0, price: 10}]};false
+sum(map($, #.qty * #.price)) > 20;{$: []};false
+sum(map($, #.qty * #.price)) > 20;{$: [{price: 10}]};!error
+sum(map($, #.qty * #.price)) > 20;{$: null};!error
+sum(map($, #.qty * #.price)) > 20;{$: [{qty: 11, price: 1}]};false
+count($, #.price >= 10) == 1;{$: [{qty: 1, price: 10}, {qty: 3, price: 5}]};true
+count($, #.price >= 10) == 1;{$: [{qty: 0, price: 10}]};true
+count($, #.price >= 10) == 1;{$: []};false
+count($, #.price >= 10) == 1;{$: [{price: 10}]};true
+count($, #.price >= 10) == 1;{$: null};!error
+count($, #.price >= 10) == 1;{$: [{qty: 11, price: 1}]};false
+# Closures reading another field
+some($, # > limit);{$: [1, 5], limit: 4};true
+some($, # > limit);{$: [1, 5], limit: 5};false
+some($, # > limit);{$: [], limit: 0};false
+some($, # > limit);{$: [1]};!error
+some($, # > limit);{$: null, limit: 1};!error
+some($, # > limit);{$: [10], limit: 9.99};true
+all($, # in allowed);{$: ['a'], allowed: ['a', 'b']};true
+all($, # in allowed);{$: ['a', 'z'], allowed: ['a', 'b']};false
+all($, # in allowed);{$: [], allowed: []};true
+all($, # in allowed);{$: ['a'], allowed: []};false
+all($, # in allowed);{$: ['a']};!error

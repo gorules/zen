@@ -1,0 +1,177 @@
+expression (string);input (json 5);output (json 5);note
+# Identifiers: ASCII letters, digits, _ and $
+x;{x: 1};1
+_;{_: 2};2
+_a;{_a: 3};3
+a_b_1;{a_b_1: 4};4
+a1;{a1: 5};5
+abc123def;{abc123def: 6};6
+$$;{$$: 7};7
+a$b;{a$b: 8};8
+camelCase;{camelCase: 9};9
+UPPER;{UPPER: 10};10
+x;{X: 1};null
+X;{x: 1};null
+# Keyword prefixes are ordinary identifiers
+android;{android: 1};1
+order;{order: 2};2
+index;{index: 3};3
+notx;{notx: 4};4
+nothing;{nothing: 5};5
+truex;{truex: 6};6
+inx;{inx: 7};7
+# Identifiers must not start with a digit or use non-ASCII letters
+1a;{};!error
+1_a;{};!error
+é;{};!error;question: identifiers are ASCII-only
+café;{};!error;question: identifiers are ASCII-only
+日本;{};!error;question: identifiers are ASCII-only
+# Unknown characters are lexer errors
+@;;!error
+a @ b;{a: 1, b: 2};!error
+~1;;!error
+1 & 2;;!error
+1 | 2;;!error
+a\b;{};!error
+'a' ` ;;!error
+# Missing and present identifiers
+x;;null
+x;{};null
+x;{x: null};null
+x;{x: 0};0
+x;{x: ''};''
+x;{x: false};false
+x;{x: []};[]
+x;{x: {}};{}
+x;{x: [1, [2]]};[1, [2]]
+x;{x: {a: {b: 1}}};{a: {b: 1}}
+x.y;{x: {y: 2}};2
+x.y;{x: {}};null
+x.y;{x: null};null
+x.y;{};null
+x.y;{x: 'str'};null
+x.y;{x: 1};null
+x['y'];{x: {y: 2}};2
+x['y'];{x: {}};null
+x['y'];{x: null};null
+x['y'];{};null
+"x[""y""]";{x: {y: 2}};2
+x['a b'];{x: {'a b': 3}};3
+x['é'];{x: {'é': 4}};4
+x['😀'];{x: {'😀': 5}};5
+x.😀;{x: {'😀': 5}};!error
+x.1;{x: {'1': 6}};!error
+x[1];{x: [5, 6]};6
+x.and;{x: {and: 1}};1
+x.in;{x: {in: 2}};2
+x.true;{x: {true: 1}};1;bug: true/false cannot follow a dot although and/in/null can
+x.null;{x: {null: 1}};1
+x['and'];{x: {and: 1}};1
+# Whitespace: spaces, tabs and newlines
+1+2;;3
+1 + 2;;3
+  1 + 2  ;;3
+1	+	2;;3
+	1;;1
+"1
++
+2";;3
+"
+1
+";;1
+"[
+1,
+2,
+]";;[1, 2]
+"{
+a: 1,
+b: [
+2
+]
+}";;{a: 1, b: [2]}
+[1,	2];;[1, 2]
+{a	:	1};;{a: 1}
+x . y;{x: {y: 2}};2
+x .y;{x: {y: 2}};2
+x. y;{x: {y: 2}};2
+x [ 'y' ];{x: {y: 2}};2
+"x
+.y";{x: {y: 2}};2
+"x
+.y";{x: null};null
+"x
+.y";{};null
+"x
+.y";{x: {y: [1]}};[1]
+# Parentheses
+(1);;1
+((1));;1
+((((((1))))));;1
+# nested parentheses around a closure call over an interval: parse time grows about 4x per level (10 levels take ~1 s, 11 take ~4 s) in the shared parser
+((((((map([0..3], [])))))));;[[], [], [], []]
+((((((((map([0..3], [])))))))));;[[], [], [], []]
+((((((((flatMap([0..3], [#])))))))));;[0, 1, 2, 3]
+((((((((map([0, 3], [])))))))));;[[], []]
+( 1 );;1
+('a');;'a'
+(true);;true
+(null);;null
+([1]);;[1]
+({a: 1});;{a: 1}
+([1..2]);;'[1..2]'
+(`t`);;'t'
+type((1));;'number'
+(1 + 2) * 3;;9
+1 + (2 * 3);;7
+(x);{x: 1};1
+(x);{x: null};null
+(x);{};null
+(x);{x: 'a'};'a'
+(x).y;{x: {y: 1}};1
+(x).y;{x: null};null
+(x).y;{};null
+(x).y;{x: 3};null
+# Unbalanced and empty parentheses
+();;!error
+(;;!error
+);;!error
+(1;;!error
+1);;!error
+((1);;!error
+(1));;!error
+(1)(2);;!error
+(1 2);;!error
+( );;!error
+# Dangling and misplaced operators
+1 +;;!error
+1 -;;!error
+1 *;;!error
+* 1;;!error
+/ 1;;!error
+1 * * 2;;!error
+1 ==;;!error
+== 1;;!error
+1 and;;!error
+and 1;;!error
+1 ? 2;;!error
+? 1 : 2;;!error
+1 ? : 2;;!error
+1 ??;;!error
+.;;!error
+..;;!error
+x.;{x: {}};!error
+.x;{x: 1};!error
+x..y;{x: {y: 1}};!error
+,;;!error
+1, 2;;!error
+:;;!error
+1 = 2;{};!error
+# Juxtaposed values
+1 2;;!error
+'a' 'b';;!error
+x y;{x: 1, y: 2};!error
+[1] [2];;null
+[1, 2] [1];;2
+{} {};;!error
+true false;;!error
+null null;;!error

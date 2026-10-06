@@ -1,0 +1,152 @@
+expression (string);input (json 5);output (json 5);note
+# matches: search semantics and anchors
+matches('hello123', '[a-z]+[0-9]+');;true
+matches('Hello, World!', 'H[a-z]+, W[a-z]+!');;true
+matches('Hello, World!', '[0-9]+');;false
+matches('abc', 'b');;true
+matches('abc', '^b');;false
+matches('abc', 'b$');;false
+matches('abc', '^abc$');;true
+matches('abcd', '^abc$');;false
+matches('xabc', '^abc');;false
+matches('abc', '\Aabc\z');;true
+matches('abc', '');;true
+matches('', '');;true
+matches('', '^$');;true
+matches('a', '^$');;false
+matches('', '.');;false
+# matches: case sensitivity and flags
+matches('ABC', 'abc');;false
+matches('ABC', '(?i)abc');;true
+matches('ÄBC', '(?i)äbc');;true
+matches('ΣΑΣ', '(?i)σας');;true
+# matches: escaping and special characters
+matches('a.c', 'a\.c');;true
+matches('abc', 'a\.c');;false
+matches('abc', 'a.c');;true
+matches('a+b', 'a\+b');;true
+matches('aab', 'a+b');;true
+matches('a|b', '^a\|b$');;true
+matches('a b', 'a\sb');;true
+matches('(x)', '^\(x\)$');;true
+matches('$5', '^\$\d$');;true
+matches('back\slash', '\\');;true
+matches('tab', '\t');;false
+matches('a/b', 'a/b');;true
+# matches: unicode classes
+matches('ä', '^.$');;true
+matches('😀', '^.$');;true
+matches('ä', '^\w$');;true
+matches('日本', '^\p{Han}+$');;true
+matches('abc', '\p{Lu}');;false
+matches('aBc', '\p{Lu}');;true
+matches('ß', '^\p{Ll}$');;true
+matches('Ω', '^[α-ω]$');;false
+matches('ω', '^[α-ω]$');;true
+# matches: input rows with a fixed pattern
+matches(s, '^[0-9]+$');{s: '123'};true
+matches(s, '^[0-9]+$');{s: '123'};true
+matches(s, '^[0-9]+$');{s: '12a'};false
+matches(s, '^[0-9]+$');{s: ''};false
+matches(s, '^[0-9]+$');{s: ' 123'};false
+matches(s, '^[0-9]+$');{s: '١٢٣'};false
+matches(s, '^[0-9]+$');{s: null};!error
+matches(s, '^[0-9]+$');{};!error
+matches(s, '^[0-9]+$');{s: 123};!error
+matches(s, '^[0-9]+$');{s: ['1']};!error
+matches(s, '^\d+$');{s: '123'};true
+matches(s, '^\d+$');{s: '١٢٣'};true;question: \d is Unicode-aware (matches Arabic-Indic digits), unlike JS
+matches(s, '^b$');{s: 'a\nb'};false
+matches(s, '(?m)^b$');{s: 'a\nb'};true
+matches(s, 'a.b');{s: 'a\nb'};false
+matches(s, '(?s)a.b');{s: 'a\nb'};true
+matches(s, '^\s+$');{s: ' \t\n'};true
+matches(s, '^\s+$');{s: ' '};true
+matches(s, '^\s+$');{s: ''};false
+# matches: dynamic pattern rows
+matches(s, p);{s: 'abc', p: 'b'};true
+matches(s, p);{s: 'abc', p: '^b'};false
+matches(s, p);{s: 'abc', p: 'b'};true
+matches(s, p);{s: '', p: ''};true
+matches(s, p);{s: 'abc', p: '('};!error
+matches(s, p);{s: null, p: 'a'};!error
+matches(s, p);{s: 'a', p: null};!error
+matches(s, p);{s: 'a', p: 1};!error
+matches(s, p);{s: 'a'};!error
+# matches: invalid and unsupported patterns
+matches('abc', '(');;!error
+matches('abc', ')');;!error
+matches('abc', '[');;!error
+matches('abc', '[a-');;!error
+matches('abc', '*');;!error
+matches('abc', 'a**');;true
+matches('abc', '\');;!error
+matches('abc', '\p{Nope}');;!error
+matches('aa', '(a)\1');;!error;question: regex flavour has no backreferences
+matches('ab', 'a(?=b)');;!error;question: regex flavour has no lookaround
+matches('abc', 'z{2}');;false
+matches('abc', 'c{0}');;true
+# matches: bad arguments
+matches(1, '1');;!error
+matches(null, 'a');;!error
+matches('a', null);;!error
+matches(true, 'true');;!error
+matches(['a'], 'a');;!error
+matches('a');;!error
+matches('a', 'a', 'a');;!error
+# extract: groups
+extract('2022-09-18', '(\d{4})-(\d{2})-(\d{2})');;['2022-09-18', '2022', '09', '18']
+extract('abc', 'b');;['b']
+extract('abcabc', 'b');;['b']
+extract('abc', 'x');;[]
+extract('', 'a');;[]
+extract('abc', '');;['']
+extract('', '');;['']
+extract('abc', '(?:b)');;['b']
+extract('abc', '(?:b)(c)');;['bc', 'c']
+extract('key=val', '(?P<k>\w+)=(?P<v>\w+)');;['key=val', 'key', 'val']
+extract('a1b2', '\d');;['1']
+extract('a1b2', '[a-z](\d)$');;['b2', '2']
+extract('aaa', '(a)*');;['aaa', 'a']
+extract('x=', '(\w)=(\w*)');;['x=', 'x', '']
+# extract: greedy vs lazy
+extract('aaa', 'a+');;['aaa']
+extract('aaa', 'a+?');;['a']
+extract('<a><b>', '<.+>');;['<a><b>']
+extract('<a><b>', '<.+?>');;['<a>']
+extract('<a><b>', '<(.+?)>');;['<a>', 'a']
+extract('aaa', 'a*?');;['']
+# extract: non-participating groups
+extract('ab', '(a)|(b)');;['a', 'a', null];bug: non-participating groups are dropped, shifting group positions (got ['a', 'a'])
+extract('b', '(a)|(b)');;['b', null, 'b'];bug: non-participating groups are dropped, group 2 lands at index 1 (got ['b', 'b'])
+extract('ac', 'a(b)?c');;['ac', null];bug: optional group that did not participate is dropped (got ['ac'])
+# extract: unicode
+extract('Ä', '(?i)ä');;['Ä']
+extract('ÄÖ', '(\p{L})(\p{L})');;['ÄÖ', 'Ä', 'Ö']
+extract('日本語', '(.)(.)');;['日本', '日', '本']
+extract('😀x', '(.)x');;['😀x', '😀']
+extract('straße 12', '(\w+) (\d+)');;['straße 12', 'straße', '12']
+# extract: input rows
+extract(s, '(\w+)@(\w+)\.com');{s: 'a@b.com'};['a@b.com', 'a', 'b']
+extract(s, '(\w+)@(\w+)\.com');{s: 'a@b.com'};['a@b.com', 'a', 'b']
+extract(s, '(\w+)@(\w+)\.com');{s: 'mail me: joe@site.com!'};['joe@site.com', 'joe', 'site']
+extract(s, '(\w+)@(\w+)\.com');{s: 'x'};[]
+extract(s, '(\w+)@(\w+)\.com');{s: ''};[]
+extract(s, '(\w+)@(\w+)\.com');{s: 'ü@ö.com'};['ü@ö.com', 'ü', 'ö']
+extract(s, '(\w+)@(\w+)\.com');{s: null};!error
+extract(s, '(\w+)@(\w+)\.com');{};!error
+extract(s, '(\w+)@(\w+)\.com');{s: 5};!error
+extract(s, p);{s: 'abc', p: '(b)'};['b', 'b']
+extract(s, p);{s: 'abc', p: '['};!error
+extract(s, p);{s: 'abc', p: null};!error
+len(extract(s, '(\d+)'));{s: 'no digits'};0
+len(extract(s, '(\d+)'));{s: 'n=42'};2
+extract(s, '(\d+)')[1];{s: 'n=42'};'42'
+# extract: bad arguments
+extract('abc', '(');;!error
+extract('abc', '[a-');;!error
+extract(1, '1');;!error
+extract(null, 'a');;!error
+extract('a', null);;!error
+extract('a');;!error
+extract('a', 'a', 'a');;!error

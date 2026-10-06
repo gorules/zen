@@ -1,0 +1,104 @@
+expression (string);input (json 5);output (json 5);note
+# Array indexing with literal indexes
+a[0];{a: [1, 2, 3]};1
+a[0];{a: ['x']};'x'
+a[0];{a: [null]};null
+a[0];{a: [[9]]};[9]
+a[0];{a: [{b: 1}]};{b: 1}
+a[0];{a: []};null
+a[0];{a: null};null
+a[0];{};null
+a[0];;null
+a[1];{a: [1, 2, 3]};2
+a[2];{a: [1, 2, 3]};3
+a[3];{a: [1, 2, 3]};null
+a[100];{a: [1, 2, 3]};null
+# Indexing a non-array value is null
+a[0];{a: 5};null
+a[0];{a: true};null
+a[0];{a: {'0': 'z'}};null
+a[0];{a: {}};null
+# Negative indexes count from the end (documented: items[-1] is the last item)
+a[-1];{a: [1, 2, 3]};3;bug: docs say items[-1] is the last item but the VM fails to convert -1 to usize
+a[-2];{a: [1, 2, 3]};2;bug: negative indexes should count from the end
+a[-3];{a: [1, 2, 3]};1;bug: negative indexes should count from the end
+a[-4];{a: [1, 2, 3]};null;bug: a negative index past the start should be out of range (null) like a positive one
+a[-1];{a: []};null;bug: negative index on an empty array should be null
+a[-1];{a: null};null
+a[-1];{};null
+[1, 2, 3][-1];;3;bug: docs say items[-1] is the last item
+a[-1].x;{a: [{x: 1}, {x: 2}]};2;bug: negative indexes should count from the end
+# Dynamic indexes
+a[i];{a: [10, 20, 30], i: 0};10
+a[i];{a: [10, 20, 30], i: 2};30
+a[i];{a: [10, 20, 30], i: 3};null
+a[i];{a: [10, 20, 30], i: null};null
+a[i];{a: [10, 20, 30]};null
+a[i];{a: [10, 20, 30], i: '1'};null
+a[i];{a: [10, 20, 30], i: -1};30;bug: negative dynamic index should count from the end
+a[i];{a: [10, 20, 30], i: 99999999999999999999};null;bug: an index beyond usize should be out of range (null) like any other large index
+a[1+1];{a: [10, 20, 30]};30
+a[len(a)-1];{a: [10, 20, 30]};30
+a[len(a)-1];{a: [7]};7
+a[len(a)];{a: [10, 20, 30]};null
+a[len(a)-1];{a: []};null;bug: len(a)-1 on an empty array is -1 which should index as out of range (null)
+a[b[0]];{a: [10, 20], b: [1]};20
+a[a[0]];{a: [2, 0, 9]};9
+# Decimal indexes are truncated
+a[1.5];{a: [1, 2, 3]};2;question: a fractional index truncates to 1 instead of being null or an error
+a[1.0];{a: [1, 2, 3]};2
+a[1.00];{a: [1, 2, 3]};2
+a[0.9];{a: [1, 2, 3]};1;question: a fractional index truncates to 0 instead of being null or an error
+a[i];{a: [1, 2, 3], i: 1.5};2;question: a fractional index truncates to 1 instead of being null or an error
+a[i];{a: [1, 2, 3], i: 2.999};3;question: a fractional index truncates to 2 instead of being null or an error
+# Chained indexing and member access
+a[0].x;{a: [{x: 1}]};1
+a[0].x;{a: [{y: 1}]};null
+a[0].x;{a: []};null
+a[0].x;{a: [5]};null
+a[0].x;{a: null};null
+a[0].x;{};null
+a[1][0];{a: [[1], [2, 3]]};2
+a[1][1];{a: [[1], [2, 3]]};3
+a[1][5];{a: [[1], [2, 3]]};null
+a[0][0][0];{a: [[[7]]]};7
+a.b[1].c;{a: {b: [{c: 1}, {c: 2}]}};2
+a.b[1].c;{a: {b: [{c: 1}]}};null
+a.b[1].c;{a: {b: null}};null
+a.b[1].c;{a: {b: 'xy'}};null
+a.b[1].c;{a: null};null
+a.b[0].c[1].d;{a: {b: [{c: [{d: 1}, {d: 2}]}]}};2
+a[0]['x'];{a: [{x: 'bx'}]};'bx'
+a[0][k];{a: [{x: 'kx'}], k: 'x'};'kx'
+a['0'];{a: [1, 2, 3]};null
+a[0] + a[1];{a: [1, 2]};3
+a[0] ?? 'none';{a: []};'none'
+a[0] ?? 'none';{a: [0]};0
+# String indexing selects one character
+s[0];{s: 'hello'};'h'
+s[1];{s: 'hello'};'e'
+s[4];{s: 'hello'};'o'
+s[5];{s: 'hello'};null
+s[0];{s: ''};null
+s[0];{s: 'a'};'a'
+s[i];{s: 'hello', i: 1};'e'
+s[i];{s: 'hello', i: 9};null
+s[i];{s: 'hello', i: null};null
+s[i];{s: 'hello', i: '1'};null
+s[-1];{s: 'hello'};'o';bug: negative index on a string should count from the end
+s[i];{s: 'hello', i: -1};'o';bug: negative index on a string should count from the end
+s[1.5];{s: 'hello'};'e';question: a fractional string index truncates
+s['0'];{s: 'hello'};null
+s.x;{s: 'hello'};null
+# String indexing is by character, not by UTF-8 byte
+s[0];{s: 'żółw'};'ż';bug: string indexing uses UTF-8 byte offsets so any multi-byte character reads as null
+s[1];{s: 'żółw'};'ó';bug: string indexing uses UTF-8 byte offsets instead of characters
+s[3];{s: 'żółw'};'w';bug: string indexing uses UTF-8 byte offsets instead of characters
+s[i];{s: 'żółw', i: 0};'ż';bug: string indexing uses UTF-8 byte offsets instead of characters
+s[i];{s: 'żółw', i: 2};'ł';bug: string indexing uses UTF-8 byte offsets instead of characters
+s[0];{s: '😀x'};'😀';bug: string indexing uses UTF-8 byte offsets instead of characters
+s[1];{s: '😀x'};'x';bug: string indexing uses UTF-8 byte offsets instead of characters
+s[1];{s: '日本語'};'本';bug: string indexing uses UTF-8 byte offsets instead of characters
+s[4];{s: 'żółw'};null
+a[0][0];{a: ['xyz']};'x'
+a.b[0];{a: {b: 'bc'}};'b'

@@ -1,0 +1,287 @@
+expression (string);input (json 5);output (json 5);note
+# round(a, 2) over mixed inputs
+round(a, 2);{a: 0.5};0.5
+round(a, 2);{a: 1.25};1.25
+round(a, 2);{a: -0.10};-0.1
+round(a, 2);{a: 1234567.891};1234567.89
+round(a, 2);{a: 1.005};1.01
+round(a, 2);{a: -1.005};-1.01
+round(a, 2);{a: 2.675};2.68
+round(a, 2);{a: 9223372036854775807};9223372036854775807
+round(a, 2);{a: 922337203685477580.735};922337203685477580.74
+round(a, 2);{a: 92233720368547758.075};92233720368547758.08
+round(a, 2);{a: 0};0
+round(a, 2);{a: -0.004};0
+round(a, 2);{a: 79228162514264337593543950335};79228162514264337593543950335
+round(a, 2);{a: 0.0000000000000000000000000001};0
+round(a, 2);{a: null};!error
+round(a, 2);{};!error
+round(a, 2);{a: '1.5'};!error
+round(a, 2);{a: true};!error
+round(a, 2);{a: [1.5]};!error
+# string(round(a, 2)) observes scale
+string(round(a, 2));{a: 0.5};'0.5'
+string(round(a, 2));{a: 1.25};'1.25'
+string(round(a, 2));{a: -0.10};'-0.10'
+string(round(a, 2));{a: 1234567.891};'1234567.89'
+string(round(a, 2));{a: 1.995};'2.00'
+string(round(a, 2));{a: -1.995};'-2.00'
+string(round(a, 2));{a: 7};'7'
+string(round(a, 2));{a: 1.2500};'1.25'
+string(round(a, 2));{a: -0.004};'0.00'
+string(round(a, 2));{a: 9223372036854775807};'9223372036854775807'
+# round(a) ties away from zero
+round(a);{a: 0.5};1
+round(a);{a: -0.5};-1
+round(a);{a: 2.5};3
+round(a);{a: -2.5};-3
+round(a);{a: 1.49};1
+round(a);{a: -1.25};-1
+round(a);{a: 1234567.891};1234568
+round(a);{a: 9223372036854775806.5};9223372036854775807
+round(a);{a: 9223372036854775807.5};9223372036854775808
+round(a);{a: -9223372036854775808.5};-9223372036854775809
+round(a);{a: 0};0
+round(a);{a: null};!error
+string(round(a));{a: -0.4};'0'
+string(round(a));{a: 2.50};'3'
+string(round(a));{a: -0.10};'0'
+# round(a, p) with input precision
+round(a, p);{a: 3.14159, p: 0};3
+round(a, p);{a: 3.14159, p: 1};3.1
+round(a, p);{a: 3.14159, p: 4};3.1416
+round(a, p);{a: 3.14159, p: 10};3.14159
+round(a, p);{a: -3.14159, p: 3};-3.142
+round(a, p);{a: 3.14159, p: -1};!error;question: negative precision is rejected
+round(a, p);{a: 3.14159, p: null};!error;question: null precision fails; could mean the default precision 0
+round(a, p);{a: 3.14159};!error
+round(a, p);{a: 3.14159, p: '2'};!error
+string(round(a, p));{a: 2.5, p: 3};'2.5'
+string(round(a, p));{a: 2.5555, p: 3};'2.556'
+# floor, ceil, trunc, abs over mixed inputs
+floor(a);{a: 0.5};0
+floor(a);{a: 1.25};1
+floor(a);{a: -0.10};-1
+floor(a);{a: 1234567.891};1234567
+floor(a);{a: 9223372036854775807};9223372036854775807
+floor(a);{a: -9223372036854775807.5};-9223372036854775808
+floor(a);{a: -9223372036854775808.5};-9223372036854775809
+floor(a);{a: 0};0
+floor(a);{a: null};!error
+floor(a);{};!error
+ceil(a);{a: 0.5};1
+ceil(a);{a: 1.25};2
+ceil(a);{a: -0.10};0
+ceil(a);{a: 1234567.891};1234568
+ceil(a);{a: 9223372036854775806.1};9223372036854775807
+ceil(a);{a: 9223372036854775807.1};9223372036854775808
+ceil(a);{a: -9223372036854775808.9};-9223372036854775808
+ceil(a);{a: null};!error
+ceil(a);{a: 'x'};!error
+string(ceil(a));{a: -0.10};'0';bug: ceil of a negative fraction yields negative zero '-0'
+string(ceil(a));{a: 1.00};'1'
+string(floor(a));{a: -0.10};'-1'
+string(floor(a));{a: 2.90};'2'
+trunc(a);{a: 0.5};0
+trunc(a);{a: 1.25};1
+trunc(a);{a: -1.25};-1
+trunc(a);{a: 1234567.891};1234567
+trunc(a);{a: -9223372036854775808.9};-9223372036854775808
+trunc(a);{a: 9223372036854775807.9};9223372036854775807
+trunc(a);{a: null};!error
+string(trunc(a));{a: -0.10};'0';bug: truncating a negative fraction yields negative zero '-0'
+string(trunc(a, 1));{a: 1.25};'1.2'
+string(trunc(a, 1));{a: -1.25};'-1.2'
+string(trunc(a, 1));{a: 1234567.891};'1234567.8'
+string(trunc(a, 1));{a: 5};'5.0';question: trunc pads the result to the requested scale while round(5, 1) keeps scale '5'
+abs(a);{a: 0.5};0.5
+abs(a);{a: -1.25};1.25
+abs(a);{a: -0.10};0.1
+abs(a);{a: -9223372036854775808};9223372036854775808
+abs(a);{a: -79228162514264337593543950335};79228162514264337593543950335
+abs(a);{a: 0};0
+abs(a);{a: null};!error
+abs(a);{a: '-1'};!error
+string(abs(a));{a: -0.10};'0.10'
+# sum(list)
+sum(list);{list: []};0
+sum(list);{list: [0.5, 1.25, -0.10]};1.65
+sum(list);{list: [1234567.891, 0.109]};1234568
+sum(list);{list: [9223372036854775807, 1]};9223372036854775808
+sum(list);{list: [9223372036854775807, 9223372036854775807]};18446744073709551614
+sum(list);{list: [-9223372036854775808, -9223372036854775808]};-18446744073709551616
+sum(list);{list: [922337203685477580.7, 0.1]};922337203685477580.8
+sum(list);{list: [92233720368547758.07, 0.01]};92233720368547758.08
+sum(list);{list: [0.5, -0.5]};0
+sum(list);{list: [0.1000000000000000000000000001, 1]};1.1000000000000000000000000001
+sum(list);{list: [79228162514264337593543950335, 1]};!error
+sum(list);{list: [1, null]};!error
+sum(list);{list: ['1']};!error
+sum(list);{list: [1, true]};!error
+sum(list);{list: [[1]]};!error
+sum(list);{list: null};!error
+sum(list);{};!error
+sum(list);{list: 5};!error
+string(sum(list));{list: []};'0'
+string(sum(list));{list: [0.5, 1.25, -0.10]};'1.65'
+string(sum(list));{list: [1234567.891, 0.109]};'1234568.000'
+string(sum(list));{list: [0.5, -0.5]};'0.0'
+string(sum(list));{list: [0.1, 0.20]};'0.30'
+string(sum(list));{list: [1, 2, 3]};'6'
+string(sum(list));{list: [1.10, 2]};'3.10'
+string(sum(list));{list: [-0.25, 0.25, -0.50]};'-0.50'
+# sum over map and filter results
+sum(map(list, # * 1.5));{list: []};0
+sum(map(list, # * 1.5));{list: [0.5, 1.25, -0.10]};2.475
+sum(map(list, # * 1.5));{list: [1234567.891]};1851851.8365
+sum(map(list, # * 1.5));{list: [9223372036854775807, 1]};13835058055282163712
+sum(map(list, # * 1.5));{list: [2, -2]};0
+sum(map(list, # * 1.5));{list: [1, null]};!error
+sum(map(list, # * 1.5));{list: ['2']};!error
+string(sum(map(list, # * 1.5)));{list: [2, 4]};'9.0'
+string(sum(map(list, # * 1.5)));{list: [0.10, 0.30]};'0.600'
+sum(map(list, #.price * #.qty));{list: [{price: 9.99, qty: 3}, {price: 0.01, qty: 1}]};29.98
+sum(map(list, #.price * #.qty));{list: [{price: 1.25, qty: -2}, {price: 0.5, qty: 5}]};0
+sum(map(list, #.price * #.qty));{list: []};0
+sum(map(list, #.price * #.qty));{list: [{price: 1}]};!error
+string(sum(map(list, #.price * #.qty)));{list: [{price: 9.99, qty: 3}, {price: 0.01, qty: 1}]};'29.98'
+sum(filter(list, # > 0));{list: [0.5, 1.25, -0.10]};1.75
+sum(filter(list, # > 0));{list: [-1, -2]};0
+sum(filter(list, # > 0));{list: [9223372036854775807, 9223372036854775807, -1]};18446744073709551614
+sum(filter(list, # > 0));{list: []};0
+string(sum(filter(list, # > 0)));{list: [1.50, -3, 2]};'3.50'
+# max and min over filter results
+max(filter(list, # > 0));{list: [0.5, 1.25, -0.10]};1.25
+max(filter(list, # > 0));{list: [1234567.891, 9223372036854775807, 1]};9223372036854775807
+max(filter(list, # > 0));{list: [0.0000000000000000000000000001, -1]};0.0000000000000000000000000001
+max(filter(list, # > 0));{list: [-1, -2]};!error
+max(filter(list, # > 0));{list: []};!error
+max(filter(list, # > 0));{list: [1, null]};!error
+min(filter(list, # > 0));{list: [0.5, 1.25, -0.10]};0.5
+min(filter(list, # > 0));{list: [9223372036854775808, 9223372036854775807]};9223372036854775807
+min(filter(list, # > 0));{list: [-5]};!error
+min(map(list, # - 1));{list: [0.5, 1.25, -0.10]};-1.1
+max(map(list, # * -1));{list: [0.5, 1.25, -0.10]};0.1
+string(max(filter(list, # > 0)));{list: [1.50, 1.5, -1]};'1.5';question: among equal values max returns the last one, so the result scale depends on order
+string(min(filter(list, # > 0)));{list: [1.50, 1.5, -1]};'1.50';question: among equal values min returns the first one, so the result scale depends on order
+# min and max over list inputs
+max(list);{list: [0.5, 1.25, -0.10]};1.25
+max(list);{list: [-0.10, -0.5]};-0.1
+max(list);{list: [9223372036854775807, 9223372036854775808, 1234567.891]};9223372036854775808
+max(list);{list: [-79228162514264337593543950335, 79228162514264337593543950335]};79228162514264337593543950335
+max(list);{list: [0]};0
+max(list);{list: []};!error
+max(list);{list: [1, '2']};!error
+max(list);{list: null};!error
+max(list);{};!error
+min(list);{list: [0.5, 1.25, -0.10]};-0.1
+min(list);{list: [-9223372036854775808, -9223372036854775809]};-9223372036854775809
+min(list);{list: [1234567.891, 1234567.89]};1234567.89
+min(list);{list: [0.0000000000000000000000000001, 0.0000000000000000000000000002]};0.0000000000000000000000000001
+min(list);{list: []};!error
+min(list);{list: [null]};!error
+string(max(list));{list: [1, 1.0, 1.00]};'1.00';question: among equal values max returns the last one, so the result scale depends on order
+string(min(list));{list: [1, 1.0, 1.00]};'1';question: among equal values min returns the first one, so the result scale depends on order
+string(max(list));{list: [2.50, 1]};'2.50'
+string(min(list));{list: [-0.10, 3]};'-0.10'
+# max([a, b, c]) and min with literals
+max([a, b, 1.5]);{a: 0.5, b: 1.25};1.5
+max([a, b, 1.5]);{a: 1234567.891, b: -0.10};1234567.891
+max([a, b, 1.5]);{a: -1, b: -2};1.5
+max([a, b, 1.5]);{a: 9223372036854775807, b: 0};9223372036854775807
+max([a, b, 1.5]);{a: 1.5, b: 1.50};1.5
+max([a, b, 1.5]);{a: null, b: 1};!error
+max([a, b, 1.5]);{a: 1};!error
+max([a, b, 1.5]);{a: '3', b: 1};!error
+string(max([a, b, 1.5]));{a: 1.50, b: 0};'1.5';question: among equal values max returns the last one, so the result scale depends on order
+string(max([a, b, 1.5]));{a: 1.25, b: 1.500};'1.5';question: among equal values max returns the last one, so the result scale depends on order
+min([a, b, c]);{a: 0.5, b: 1.25, c: -0.10};-0.1
+min([a, b, c]);{a: 9223372036854775807, b: 9223372036854775806, c: 9223372036854775808};9223372036854775806
+min([a, b, c]);{a: 0, b: 0.0, c: -0};0
+min([a, b, c]);{a: -79228162514264337593543950335, b: 0, c: 1};-79228162514264337593543950335
+min([a, b, c]);{a: 1, b: 2};!error
+min([a, b, c]);{a: 1, b: 2, c: false};!error
+string(min([a, b, c]));{a: 2, b: 2.0, c: 2.00};'2';question: among equal values min returns the first one, so the result scale depends on order
+string(min([a, b, c]));{a: 0.10, b: 0.1, c: 5};'0.10'
+sum([a, b, c]);{a: 0.5, b: 1.25, c: -0.10};1.65
+sum([a, b, c]);{a: 9223372036854775807, b: 9223372036854775807, c: 2};18446744073709551616
+sum([a, b, c]);{a: 1, b: null, c: 2};!error
+string(sum([a, b, c]));{a: 0.5, b: 0.25, c: -0.75};'0.00'
+avg([a, b]);{a: 1, b: 2};1.5
+avg([a, b]);{a: 0.5, b: -0.10};0.2
+avg([a, b]);{a: 9223372036854775807, b: 9223372036854775807};9223372036854775807
+avg([a, b]);{a: 1};!error
+# avg(list)
+avg(list);{list: [1, 2]};1.5
+avg(list);{list: [1, 1, 2]};1.3333333333333333333333333333
+avg(list);{list: [0.5, 1.25, -0.10]};0.55
+avg(list);{list: [1234567.891, 0.109]};617284
+avg(list);{list: [9223372036854775807, 9223372036854775806]};9223372036854775806.5
+avg(list);{list: [-0.5, 0.5]};0
+avg(list);{list: [7]};7
+avg(list);{list: []};!error;question: average of an empty list fails; could be null
+avg(list);{list: [1, null]};!error
+avg(list);{list: null};!error
+string(avg(list));{list: [1.50, 2.50]};'2.00'
+string(avg(list));{list: [10, 20, 30]};'20'
+avg(map(list, # * 2));{list: [0.5, 1.25, -0.10]};1.1
+avg(filter(list, # > 0));{list: [0.5, 1.25, -0.10]};0.875
+avg(filter(list, # > 0));{list: [-1]};!error
+round(avg(list), 2);{list: [1, 1, 2]};1.33
+round(avg(list), 2);{list: [1, 2, 2]};1.67
+round(avg(list), 2);{list: [0.125, 0.125]};0.13
+string(round(avg(list), 2));{list: [1, 2]};'1.50';question: the mean's scale follows Decimal division (3 / 2 prints '1.50'), not the inputs' scale
+string(avg(list));{list: [1, 2]};'1.50';question: the mean's scale follows Decimal division (3 / 2 prints '1.50'), not the inputs' scale
+string(avg(list));{list: [1, 3]};'2'
+round(sum(list), 1);{list: [0.25, 0.1]};0.4
+round(sum(list), 1);{list: [-0.25, -0.1]};-0.4
+string(round(sum(list), 1));{list: [0.04, -0.08]};'0.0'
+# median and mode over list inputs
+median(list);{list: [0.5, 1.25, -0.10]};0.5
+median(list);{list: [0.5, 1.25, -0.10, 1234567.891]};0.875
+median(list);{list: [9223372036854775807, 9223372036854775807]};9223372036854775807
+median(list);{list: [3]};3
+median(list);{list: [2, 1]};1.5
+median(list);{list: []};!error
+median(list);{list: [1, 'a']};!error
+mode(list);{list: [0.5, 1.25, 0.5]};0.5
+mode(list);{list: [-0.10, -0.1, 3]};-0.1
+mode(list);{list: [9223372036854775807, 9223372036854775807, 1]};9223372036854775807
+mode(list);{list: [1, 2, 3]};3;question: ties resolve to the largest value
+mode(list);{list: []};!error
+mode(list);{list: [null]};!error
+# number and isNumeric over input strings
+number(s);{s: '1.5'};1.5
+number(s);{s: ' 42 '};42
+number(s);{s: '1e3'};1000
+number(s);{s: '-0.10'};-0.1
+number(s);{s: '9223372036854775807'};9223372036854775807
+number(s);{s: ''};!error
+number(s);{s: 'abc'};!error
+number(s);{s: null};!error
+number(s);{s: 12.50};12.5
+number(s);{s: true};1
+string(number(s));{s: '-0.10'};'-0.10'
+string(number(s));{s: '1234567.891'};'1234567.891'
+isNumeric(s);{s: '1.5'};true
+isNumeric(s);{s: ' 42 '};true
+isNumeric(s);{s: 'abc'};false
+isNumeric(s);{s: ''};false
+isNumeric(s);{s: null};false
+isNumeric(s);{};false
+isNumeric(s);{s: 3};true
+isNumeric(s);{s: [1]};false
+sum(map(list, number(#)));{list: ['0.5', '1.25', '-0.10']};1.65
+sum(map(filter(list, isNumeric(#)), number(#)));{list: ['1', 'x', '2.5', '']};3.5
+# aggregates in conditions
+sum(list) > 100;{list: [50, 50.01]};true
+sum(list) > 100;{list: [50, 50]};false
+max(list) - min(list);{list: [0.5, 1.25, -0.10]};1.35
+max(list) - min(list);{list: [9223372036854775807, -9223372036854775808]};18446744073709551615
+avg(list) == median(list);{list: [1, 2, 3]};true
+round(a * b, 2);{a: 19.99, b: 0.075};1.5
+round(a * b, 2);{a: 1234567.891, b: 1.5};1851851.84
+round(a * b, 2);{a: -0.10, b: 0.05};-0.01
+round(a / b, 4);{a: 1, b: 3};0.3333
+round(a / b, 4);{a: 2, b: 3};0.6667
+round(a / b, 4);{a: 1, b: 0};!error

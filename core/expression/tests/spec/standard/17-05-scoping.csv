@@ -1,0 +1,308 @@
+expression (string);input (json 5);output (json 5);note
+# Three nested closures reading top-level variables
+"k2 = k; map(xs as x, map(ys as y, map(zs as z, x + y + z + k2)))";{xs: [1, 2], ys: [10], zs: [100, 200], k: 1000};[[[1111, 1211]], [[1112, 1212]]]
+"k2 = k; map(xs as x, map(ys as y, map(zs as z, x + y + z + k2)))";{xs: [], ys: [10], zs: [100], k: 0};[]
+"k2 = k; map(xs as x, map(ys as y, map(zs as z, x + y + z + k2)))";{xs: [1], ys: [], zs: [100], k: 0};[[]]
+"k2 = k; map(xs as x, map(ys as y, map(zs as z, x + y + z + k2)))";{xs: [1], ys: [2], zs: [], k: 0};[[[]]]
+"k2 = k; map(xs as x, map(ys as y, map(zs as z, x + y + z + k2)))";{xs: [0.5], ys: [0.25], zs: [0.125], k: 0.1};[[[0.975]]]
+"k2 = k; map(xs as x, map(ys as y, map(zs as z, x + y + z + k2)))";{xs: [1], ys: [2], zs: [3], k: null};!error
+"k2 = k; map(xs as x, map(ys as y, map(zs as z, x + y + z + k2)))";{xs: [1], ys: [2], zs: [3]};!error
+"k2 = k ?? 0; flat = flatMap(xs as x, flatMap(ys as y, map(zs as z, x * y * z))); sum(flat) + k2";{xs: [1, 2], ys: [10], zs: [100, 200], k: 1000};10000
+"k2 = k ?? 0; flat = flatMap(xs as x, flatMap(ys as y, map(zs as z, x * y * z))); sum(flat) + k2";{xs: [], ys: [10], zs: [100], k: 0};0
+"k2 = k ?? 0; flat = flatMap(xs as x, flatMap(ys as y, map(zs as z, x * y * z))); sum(flat) + k2";{xs: [1], ys: [], zs: [100], k: 0};0
+"k2 = k ?? 0; flat = flatMap(xs as x, flatMap(ys as y, map(zs as z, x * y * z))); sum(flat) + k2";{xs: [1], ys: [2], zs: [], k: 0};0
+"k2 = k ?? 0; flat = flatMap(xs as x, flatMap(ys as y, map(zs as z, x * y * z))); sum(flat) + k2";{xs: [0.5], ys: [0.25], zs: [0.125], k: 0.1};0.115625
+"k2 = k ?? 0; flat = flatMap(xs as x, flatMap(ys as y, map(zs as z, x * y * z))); sum(flat) + k2";{xs: [1], ys: [2], zs: [3], k: null};6
+"k2 = k ?? 0; flat = flatMap(xs as x, flatMap(ys as y, map(zs as z, x * y * z))); sum(flat) + k2";{xs: [1], ys: [2], zs: [3]};6
+"k2 = k ?? 0; c = count(xs as x, some(ys as y, some(zs as z, x + y + z > k2))); c";{xs: [1, 2], ys: [10], zs: [100, 200], k: 1000};0
+"k2 = k ?? 0; c = count(xs as x, some(ys as y, some(zs as z, x + y + z > k2))); c";{xs: [], ys: [10], zs: [100], k: 0};0
+"k2 = k ?? 0; c = count(xs as x, some(ys as y, some(zs as z, x + y + z > k2))); c";{xs: [1], ys: [], zs: [100], k: 0};0
+"k2 = k ?? 0; c = count(xs as x, some(ys as y, some(zs as z, x + y + z > k2))); c";{xs: [1], ys: [2], zs: [], k: 0};0
+"k2 = k ?? 0; c = count(xs as x, some(ys as y, some(zs as z, x + y + z > k2))); c";{xs: [0.5], ys: [0.25], zs: [0.125], k: 0.1};1
+"k2 = k ?? 0; c = count(xs as x, some(ys as y, some(zs as z, x + y + z > k2))); c";{xs: [1], ys: [2], zs: [3], k: null};1
+"k2 = k ?? 0; c = count(xs as x, some(ys as y, some(zs as z, x + y + z > k2))); c";{xs: [1], ys: [2], zs: [3]};1
+"k2 = k ?? 0; r = map(xs as x, filter(ys as y, all(zs as z, x + y < z + k2))); r";{xs: [1, 2], ys: [10], zs: [100, 200], k: 1000};[[10], [10]]
+"k2 = k ?? 0; r = map(xs as x, filter(ys as y, all(zs as z, x + y < z + k2))); r";{xs: [], ys: [10], zs: [100], k: 0};[]
+"k2 = k ?? 0; r = map(xs as x, filter(ys as y, all(zs as z, x + y < z + k2))); r";{xs: [1], ys: [], zs: [100], k: 0};[[]]
+"k2 = k ?? 0; r = map(xs as x, filter(ys as y, all(zs as z, x + y < z + k2))); r";{xs: [1], ys: [2], zs: [], k: 0};[[2]]
+"k2 = k ?? 0; r = map(xs as x, filter(ys as y, all(zs as z, x + y < z + k2))); r";{xs: [0.5], ys: [0.25], zs: [0.125], k: 0.1};[[]]
+"k2 = k ?? 0; r = map(xs as x, filter(ys as y, all(zs as z, x + y < z + k2))); r";{xs: [1], ys: [2], zs: [3], k: null};[[]]
+"k2 = k ?? 0; r = map(xs as x, filter(ys as y, all(zs as z, x + y < z + k2))); r";{xs: [1], ys: [2], zs: [3]};[[]]
+# Three nested closures with a body-local at each level
+"r = map(xs as x, (a = x * 10; map(ys as y, (b = a + y; map(zs as z, (c = b + z; c)))))); r";{xs: [1, 2], ys: [10], zs: [100, 200], k: 1000};[[[120, 220]], [[130, 230]]]
+"r = map(xs as x, (a = x * 10; map(ys as y, (b = a + y; map(zs as z, (c = b + z; c)))))); r";{xs: [], ys: [10], zs: [100], k: 0};[]
+"r = map(xs as x, (a = x * 10; map(ys as y, (b = a + y; map(zs as z, (c = b + z; c)))))); r";{xs: [1], ys: [], zs: [100], k: 0};[[]]
+"r = map(xs as x, (a = x * 10; map(ys as y, (b = a + y; map(zs as z, (c = b + z; c)))))); r";{xs: [1], ys: [2], zs: [], k: 0};[[[]]]
+"r = map(xs as x, (a = x * 10; map(ys as y, (b = a + y; map(zs as z, (c = b + z; c)))))); r";{xs: [0.5], ys: [0.25], zs: [0.125], k: 0.1};[[[5.375]]]
+"r = map(xs as x, (a = x * 10; map(ys as y, (b = a + y; map(zs as z, (c = b + z; c)))))); r";{xs: [1], ys: [2], zs: [3], k: null};[[[15]]]
+"r = map(xs as x, (a = x * 10; map(ys as y, (b = a + y; map(zs as z, (c = b + z; c)))))); r";{xs: [1], ys: [2], zs: [3]};[[[15]]]
+"r = map(xs as x, (a = x * 10; map(ys as y, (b = a + y; map(zs as z, (c = b + z; c))))))";{xs: [1, 2], ys: [10], zs: [100, 200], k: 1000};{r: [[[120, 220]], [[130, 230]]]}
+"r = map(xs as x, (a = x * 10; map(ys as y, (b = a + y; map(zs as z, (c = b + z; c))))))";{xs: [], ys: [10], zs: [100], k: 0};{r: []}
+"r = map(xs as x, (a = x * 10; map(ys as y, (b = a + y; map(zs as z, (c = b + z; c))))))";{xs: [1], ys: [], zs: [100], k: 0};{r: [[]]}
+"r = map(xs as x, (a = x * 10; map(ys as y, (b = a + y; map(zs as z, (c = b + z; c))))))";{xs: [1], ys: [2], zs: [], k: 0};{r: [[[]]]}
+"r = map(xs as x, (a = x * 10; map(ys as y, (b = a + y; map(zs as z, (c = b + z; c))))))";{xs: [0.5], ys: [0.25], zs: [0.125], k: 0.1};{r: [[[5.375]]]}
+"r = map(xs as x, (a = x * 10; map(ys as y, (b = a + y; map(zs as z, (c = b + z; c))))))";{xs: [1], ys: [2], zs: [3], k: null};{r: [[[15]]]}
+"r = map(xs as x, (a = x * 10; map(ys as y, (b = a + y; map(zs as z, (c = b + z; c))))))";{xs: [1], ys: [2], zs: [3]};{r: [[[15]]]}
+"r = map(xs as x, (a = x * 10; map(ys as y, (b = a + y; map(zs as z, (c = b + z; c)))))); [a, b, c]";{xs: [1, 2], ys: [10], zs: [100, 200], k: 1000};[null, null, null];bug: an assignment inside a closure body leaks to the outer scope
+"r = map(xs as x, (a = x * 10; map(ys as y, (b = a + y; map(zs as z, (c = b + z; c)))))); [a, b, c]";{xs: [], ys: [10], zs: [100], k: 0};[null, null, null]
+"r = map(xs as x, (a = x * 10; map(ys as y, (b = a + y; map(zs as z, (c = b + z; c)))))); [a, b, c]";{xs: [1], ys: [], zs: [100], k: 0};[null, null, null];bug: an assignment inside a closure body leaks to the outer scope
+"r = map(xs as x, (a = x * 10; map(ys as y, (b = a + y; map(zs as z, (c = b + z; c)))))); [a, b, c]";{xs: [1], ys: [2], zs: [], k: 0};[null, null, null];bug: an assignment inside a closure body leaks to the outer scope
+"r = map(xs as x, (a = x * 10; map(ys as y, (b = a + y; map(zs as z, (c = b + z; c)))))); [a, b, c]";{xs: [0.5], ys: [0.25], zs: [0.125], k: 0.1};[null, null, null];bug: an assignment inside a closure body leaks to the outer scope
+"r = map(xs as x, (a = x * 10; map(ys as y, (b = a + y; map(zs as z, (c = b + z; c)))))); [a, b, c]";{xs: [1], ys: [2], zs: [3], k: null};[null, null, null];bug: an assignment inside a closure body leaks to the outer scope
+"r = map(xs as x, (a = x * 10; map(ys as y, (b = a + y; map(zs as z, (c = b + z; c)))))); [a, b, c]";{xs: [1], ys: [2], zs: [3]};[null, null, null];bug: an assignment inside a closure body leaks to the outer scope
+"a = 7; r = map(xs as x, (a = x * 10; map(ys as y, (b = a + y; map(zs as z, (c = b + z; c)))))); a";{xs: [1, 2], ys: [10], zs: [100, 200], k: 1000};7;bug: an assignment inside a closure body leaks to the outer scope
+"a = 7; r = map(xs as x, (a = x * 10; map(ys as y, (b = a + y; map(zs as z, (c = b + z; c)))))); a";{xs: [], ys: [10], zs: [100], k: 0};7
+"a = 7; r = map(xs as x, (a = x * 10; map(ys as y, (b = a + y; map(zs as z, (c = b + z; c)))))); a";{xs: [1], ys: [], zs: [100], k: 0};7;bug: an assignment inside a closure body leaks to the outer scope
+"a = 7; r = map(xs as x, (a = x * 10; map(ys as y, (b = a + y; map(zs as z, (c = b + z; c)))))); a";{xs: [1], ys: [2], zs: [], k: 0};7;bug: an assignment inside a closure body leaks to the outer scope
+"a = 7; r = map(xs as x, (a = x * 10; map(ys as y, (b = a + y; map(zs as z, (c = b + z; c)))))); a";{xs: [0.5], ys: [0.25], zs: [0.125], k: 0.1};7;bug: an assignment inside a closure body leaks to the outer scope
+"a = 7; r = map(xs as x, (a = x * 10; map(ys as y, (b = a + y; map(zs as z, (c = b + z; c)))))); a";{xs: [1], ys: [2], zs: [3], k: null};7;bug: an assignment inside a closure body leaks to the outer scope
+"a = 7; r = map(xs as x, (a = x * 10; map(ys as y, (b = a + y; map(zs as z, (c = b + z; c)))))); a";{xs: [1], ys: [2], zs: [3]};7;bug: an assignment inside a closure body leaks to the outer scope
+"r = map(xs, (t = #; map(ys, (t = t * 10 + #; map(zs, (t = t * 10 + #; t)))))); r";{xs: [1, 2], ys: [10], zs: [100, 200], k: 1000};[[[300, 400]], [[400, 500]]];bug: the same local name at three closure levels is shared, so inner iterations see the previous iteration value instead of the enclosing one
+"r = map(xs, (t = #; map(ys, (t = t * 10 + #; map(zs, (t = t * 10 + #; t)))))); r";{xs: [], ys: [10], zs: [100], k: 0};[]
+"r = map(xs, (t = #; map(ys, (t = t * 10 + #; map(zs, (t = t * 10 + #; t)))))); r";{xs: [1], ys: [], zs: [100], k: 0};[[]]
+"r = map(xs, (t = #; map(ys, (t = t * 10 + #; map(zs, (t = t * 10 + #; t)))))); r";{xs: [1], ys: [2], zs: [], k: 0};[[[]]]
+"r = map(xs, (t = #; map(ys, (t = t * 10 + #; map(zs, (t = t * 10 + #; t)))))); r";{xs: [0.5], ys: [0.25], zs: [0.125], k: 0.1};[[[52.625]]]
+"r = map(xs, (t = #; map(ys, (t = t * 10 + #; map(zs, (t = t * 10 + #; t)))))); r";{xs: [1], ys: [2], zs: [3], k: null};[[[123]]]
+"r = map(xs, (t = #; map(ys, (t = t * 10 + #; map(zs, (t = t * 10 + #; t)))))); r";{xs: [1], ys: [2], zs: [3]};[[[123]]]
+# Two nested closures: inner reads the outer iteration local
+"r = map(xs, (o = #; map(ys, o * #))); r";{xs: [1, 2], ys: [10, 20]};[[10, 20], [20, 40]]
+"r = map(xs, (o = #; map(ys, o * #))); r";{xs: [], ys: [1]};[]
+"r = map(xs, (o = #; map(ys, o * #))); r";{xs: [3], ys: []};[[]]
+"r = map(xs, (o = #; map(ys, o * #))); r";{xs: [0.5], ys: [2, 4]};[[1.0, 2.0]]
+"r = map(xs, (o = #; map(ys, o * #))); r";{xs: [1, null], ys: [1]};!error
+"r = map(xs, (o = #; map(ys, o * #))); r";{xs: [1], ys: null};!error
+"r = map(xs, (o = # * 2; sum(map(ys, o + #)))); r";{xs: [1, 2], ys: [10, 20]};[34, 38]
+"r = map(xs, (o = # * 2; sum(map(ys, o + #)))); r";{xs: [], ys: [1]};[]
+"r = map(xs, (o = # * 2; sum(map(ys, o + #)))); r";{xs: [3], ys: []};[0]
+"r = map(xs, (o = # * 2; sum(map(ys, o + #)))); r";{xs: [0.5], ys: [2, 4]};[8.0]
+"r = map(xs, (o = # * 2; sum(map(ys, o + #)))); r";{xs: [1, null], ys: [1]};!error
+"r = map(xs, (o = # * 2; sum(map(ys, o + #)))); r";{xs: [1], ys: null};!error
+"r = map(xs, (o = #; filter(ys, # > o * 10))); r";{xs: [1, 2], ys: [10, 20]};[[20], []]
+"r = map(xs, (o = #; filter(ys, # > o * 10))); r";{xs: [], ys: [1]};[]
+"r = map(xs, (o = #; filter(ys, # > o * 10))); r";{xs: [3], ys: []};[[]]
+"r = map(xs, (o = #; filter(ys, # > o * 10))); r";{xs: [0.5], ys: [2, 4]};[[]]
+"r = map(xs, (o = #; filter(ys, # > o * 10))); r";{xs: [1, null], ys: [1]};!error
+"r = map(xs, (o = #; filter(ys, # > o * 10))); r";{xs: [1], ys: null};!error
+"r = map(xs, (o = #; map(ys, (p = o + #; p)))); [r, o, p]";{xs: [1, 2], ys: [10, 20]};[[[11, 21], [12, 22]], null, null];bug: an assignment inside a closure body leaks to the outer scope
+"r = map(xs, (o = #; map(ys, (p = o + #; p)))); [r, o, p]";{xs: [], ys: [1]};[[], null, null]
+"r = map(xs, (o = #; map(ys, (p = o + #; p)))); [r, o, p]";{xs: [3], ys: []};[[[]], null, null];bug: an assignment inside a closure body leaks to the outer scope
+"r = map(xs, (o = #; map(ys, (p = o + #; p)))); [r, o, p]";{xs: [0.5], ys: [2, 4]};[[[2.5, 4.5]], null, null];bug: an assignment inside a closure body leaks to the outer scope
+"r = map(xs, (o = #; map(ys, (p = o + #; p)))); [r, o, p]";{xs: [1, null], ys: [1]};!error
+"r = map(xs, (o = #; map(ys, (p = o + #; p)))); [r, o, p]";{xs: [1], ys: null};!error
+"r = map(xs, (o = #; w = map(ys, (o = o + #; o)); [o, w])); r";{xs: [1, 2], ys: [10, 20]};[[1, [11, 21]], [2, [12, 22]]];bug: an inner closure assignment overwrites the outer iteration local of the same name
+"r = map(xs, (o = #; w = map(ys, (o = o + #; o)); [o, w])); r";{xs: [], ys: [1]};[]
+"r = map(xs, (o = #; w = map(ys, (o = o + #; o)); [o, w])); r";{xs: [3], ys: []};[[3, []]]
+"r = map(xs, (o = #; w = map(ys, (o = o + #; o)); [o, w])); r";{xs: [0.5], ys: [2, 4]};[[0.5, [2.5, 4.5]]];bug: an inner closure assignment overwrites the outer iteration local of the same name
+"r = map(xs, (o = #; w = map(ys, (o = o + #; o)); [o, w])); r";{xs: [1, null], ys: [1]};!error
+"r = map(xs, (o = #; w = map(ys, (o = o + #; o)); [o, w])); r";{xs: [1], ys: null};!error
+"r = map(xs, (lim = #; f = filter(ys, (lim = lim + 1; # > lim)); [lim, f])); r";{xs: [1, 2], ys: [10, 20]};[[1, [10, 20]], [2, [10, 20]]];bug: an inner closure assignment overwrites the outer iteration local of the same name
+"r = map(xs, (lim = #; f = filter(ys, (lim = lim + 1; # > lim)); [lim, f])); r";{xs: [], ys: [1]};[]
+"r = map(xs, (lim = #; f = filter(ys, (lim = lim + 1; # > lim)); [lim, f])); r";{xs: [3], ys: []};[[3, []]]
+"r = map(xs, (lim = #; f = filter(ys, (lim = lim + 1; # > lim)); [lim, f])); r";{xs: [0.5], ys: [2, 4]};[[0.5, [2, 4]]];bug: an inner closure assignment overwrites the outer iteration local of the same name
+"r = map(xs, (lim = #; f = filter(ys, (lim = lim + 1; # > lim)); [lim, f])); r";{xs: [1, null], ys: [1]};!error
+"r = map(xs, (lim = #; f = filter(ys, (lim = lim + 1; # > lim)); [lim, f])); r";{xs: [1], ys: null};!error
+# Closures in different statements reusing a local name
+"p = map(xs, (t = # * 2; t)); q = map(ys, (t = # + 1; t)); [p, q]";{xs: [1, 2], ys: [5]};[[2, 4], [6]]
+"p = map(xs, (t = # * 2; t)); q = map(ys, (t = # + 1; t)); [p, q]";{xs: [], ys: []};[[], []]
+"p = map(xs, (t = # * 2; t)); q = map(ys, (t = # + 1; t)); [p, q]";{xs: [3], ys: [1, 2, 3]};[[6], [2, 3, 4]]
+"p = map(xs, (t = # * 2; t)); q = map(ys, (t = # + 1; t)); [p, q]";{xs: [1.5], ys: [0]};[[3.0], [1]]
+"p = map(xs, (t = # * 2; t)); q = map(ys, (t = # + 1; t)); [p, q]";{xs: [1], ys: []};[[2], []]
+"p = map(xs, (t = # * 2; t)); q = map(ys, (t = # + 1; t)); [p, q]";{xs: [], ys: [7]};[[], [8]]
+"p = map(xs, (t = # * 2; t)); q = map(ys, (t = # + 1; t))";{xs: [1, 2], ys: [5]};{p: [2, 4], q: [6]}
+"p = map(xs, (t = # * 2; t)); q = map(ys, (t = # + 1; t))";{xs: [], ys: []};{p: [], q: []}
+"p = map(xs, (t = # * 2; t)); q = map(ys, (t = # + 1; t))";{xs: [3], ys: [1, 2, 3]};{p: [6], q: [2, 3, 4]}
+"p = map(xs, (t = # * 2; t)); q = map(ys, (t = # + 1; t))";{xs: [1.5], ys: [0]};{p: [3.0], q: [1]}
+"p = map(xs, (t = # * 2; t)); q = map(ys, (t = # + 1; t))";{xs: [1], ys: []};{p: [2], q: []}
+"p = map(xs, (t = # * 2; t)); q = map(ys, (t = # + 1; t))";{xs: [], ys: [7]};{p: [], q: [8]}
+"p = map(xs, (t = # * 2; t)); q = map(ys, (t = # + 1; t)); t";{xs: [1, 2], ys: [5]};null;bug: an assignment inside a closure body leaks to the outer scope
+"p = map(xs, (t = # * 2; t)); q = map(ys, (t = # + 1; t)); t";{xs: [], ys: []};null
+"p = map(xs, (t = # * 2; t)); q = map(ys, (t = # + 1; t)); t";{xs: [3], ys: [1, 2, 3]};null;bug: an assignment inside a closure body leaks to the outer scope
+"p = map(xs, (t = # * 2; t)); q = map(ys, (t = # + 1; t)); t";{xs: [1.5], ys: [0]};null;bug: an assignment inside a closure body leaks to the outer scope
+"p = map(xs, (t = # * 2; t)); q = map(ys, (t = # + 1; t)); t";{xs: [1], ys: []};null;bug: an assignment inside a closure body leaks to the outer scope
+"p = map(xs, (t = # * 2; t)); q = map(ys, (t = # + 1; t)); t";{xs: [], ys: [7]};null;bug: an assignment inside a closure body leaks to the outer scope
+"p = map(xs, (t = # * 2; t)); q = map(ys, t ?? 0); q";{xs: [1, 2], ys: [5]};[0];bug: t from the first closure is visible inside a later, unrelated closure
+"p = map(xs, (t = # * 2; t)); q = map(ys, t ?? 0); q";{xs: [], ys: []};[]
+"p = map(xs, (t = # * 2; t)); q = map(ys, t ?? 0); q";{xs: [3], ys: [1, 2, 3]};[0, 0, 0];bug: t from the first closure is visible inside a later, unrelated closure
+"p = map(xs, (t = # * 2; t)); q = map(ys, t ?? 0); q";{xs: [1.5], ys: [0]};[0];bug: t from the first closure is visible inside a later, unrelated closure
+"p = map(xs, (t = # * 2; t)); q = map(ys, t ?? 0); q";{xs: [1], ys: []};[]
+"p = map(xs, (t = # * 2; t)); q = map(ys, t ?? 0); q";{xs: [], ys: [7]};[0]
+"p = map(xs, (t = # * 2; t)); q = map(ys, (t = (t ?? 0) + #; t)); q";{xs: [1, 2], ys: [5]};[5];bug: the second closure starts from t leaked by the first closure and accumulates across iterations
+"p = map(xs, (t = # * 2; t)); q = map(ys, (t = (t ?? 0) + #; t)); q";{xs: [], ys: []};[]
+"p = map(xs, (t = # * 2; t)); q = map(ys, (t = (t ?? 0) + #; t)); q";{xs: [3], ys: [1, 2, 3]};[1, 2, 3];bug: the second closure starts from t leaked by the first closure and accumulates across iterations
+"p = map(xs, (t = # * 2; t)); q = map(ys, (t = (t ?? 0) + #; t)); q";{xs: [1.5], ys: [0]};[0];bug: the second closure starts from t leaked by the first closure and accumulates across iterations
+"p = map(xs, (t = # * 2; t)); q = map(ys, (t = (t ?? 0) + #; t)); q";{xs: [1], ys: []};[]
+"p = map(xs, (t = # * 2; t)); q = map(ys, (t = (t ?? 0) + #; t)); q";{xs: [], ys: [7]};[7]
+"t = 5; p = map(xs, (t = #; t)); t + 1";{xs: [1, 2], ys: [5]};6;bug: an assignment inside a closure body leaks to the outer scope
+"t = 5; p = map(xs, (t = #; t)); t + 1";{xs: [], ys: []};6
+"t = 5; p = map(xs, (t = #; t)); t + 1";{xs: [3], ys: [1, 2, 3]};6;bug: an assignment inside a closure body leaks to the outer scope
+"t = 5; p = map(xs, (t = #; t)); t + 1";{xs: [1.5], ys: [0]};6;bug: an assignment inside a closure body leaks to the outer scope
+"t = 5; p = map(xs, (t = #; t)); t + 1";{xs: [1], ys: []};6;bug: an assignment inside a closure body leaks to the outer scope
+"t = 5; p = map(xs, (t = #; t)); t + 1";{xs: [], ys: [7]};6
+"t = 5; p = map(xs, (t = #; t)); q = map(ys, # + t); q";{xs: [1, 2], ys: [5]};[10];bug: an assignment inside a closure body leaks to the outer scope
+"t = 5; p = map(xs, (t = #; t)); q = map(ys, # + t); q";{xs: [], ys: []};[]
+"t = 5; p = map(xs, (t = #; t)); q = map(ys, # + t); q";{xs: [3], ys: [1, 2, 3]};[6, 7, 8];bug: an assignment inside a closure body leaks to the outer scope
+"t = 5; p = map(xs, (t = #; t)); q = map(ys, # + t); q";{xs: [1.5], ys: [0]};[5];bug: an assignment inside a closure body leaks to the outer scope
+"t = 5; p = map(xs, (t = #; t)); q = map(ys, # + t); q";{xs: [1], ys: []};[]
+"t = 5; p = map(xs, (t = #; t)); q = map(ys, # + t); q";{xs: [], ys: [7]};[12]
+"t = 5; p = map(xs, (t = #; t)); p";{xs: [1, 2], ys: [5]};[1, 2]
+"t = 5; p = map(xs, (t = #; t)); p";{xs: [], ys: []};[]
+"t = 5; p = map(xs, (t = #; t)); p";{xs: [3], ys: [1, 2, 3]};[3]
+"t = 5; p = map(xs, (t = #; t)); p";{xs: [1.5], ys: [0]};[1.5]
+"t = 5; p = map(xs, (t = #; t)); p";{xs: [1], ys: []};[1]
+"t = 5; p = map(xs, (t = #; t)); p";{xs: [], ys: [7]};[]
+"t = 5; p = map(xs, (t = #; t))";{xs: [1, 2], ys: [5]};{t: 5, p: [1, 2]}
+"t = 5; p = map(xs, (t = #; t))";{xs: [], ys: []};{t: 5, p: []}
+"t = 5; p = map(xs, (t = #; t))";{xs: [3], ys: [1, 2, 3]};{t: 5, p: [3]}
+"t = 5; p = map(xs, (t = #; t))";{xs: [1.5], ys: [0]};{t: 5, p: [1.5]}
+"t = 5; p = map(xs, (t = #; t))";{xs: [1], ys: []};{t: 5, p: [1]}
+"t = 5; p = map(xs, (t = #; t))";{xs: [], ys: [7]};{t: 5, p: []}
+"p = filter(xs, (v = #; v > 1)); q = count(ys, (v = #; v > 1)); [p, q, v ?? 0]";{xs: [1, 2], ys: [5]};[[2], 1, 0];bug: an assignment inside a closure body leaks to the outer scope
+"p = filter(xs, (v = #; v > 1)); q = count(ys, (v = #; v > 1)); [p, q, v ?? 0]";{xs: [], ys: []};[[], 0, 0]
+"p = filter(xs, (v = #; v > 1)); q = count(ys, (v = #; v > 1)); [p, q, v ?? 0]";{xs: [3], ys: [1, 2, 3]};[[3], 2, 0];bug: an assignment inside a closure body leaks to the outer scope
+"p = filter(xs, (v = #; v > 1)); q = count(ys, (v = #; v > 1)); [p, q, v ?? 0]";{xs: [1.5], ys: [0]};[[1.5], 0, 0]
+"p = filter(xs, (v = #; v > 1)); q = count(ys, (v = #; v > 1)); [p, q, v ?? 0]";{xs: [1], ys: []};[[], 0, 0];bug: an assignment inside a closure body leaks to the outer scope
+"p = filter(xs, (v = #; v > 1)); q = count(ys, (v = #; v > 1)); [p, q, v ?? 0]";{xs: [], ys: [7]};[[], 1, 0];bug: an assignment inside a closure body leaks to the outer scope
+# Closure-body locals do not persist across iterations (new shapes)
+"r = map(xs, (seen = (seen ?? 0) + 1; seen)); r";{xs: [1, 2, 3]};[1, 1, 1];bug: a closure-body assignment carries over from one iteration to the next
+"r = map(xs, (seen = (seen ?? 0) + 1; seen)); r";{xs: [5]};[1]
+"r = map(xs, (seen = (seen ?? 0) + 1; seen)); r";{xs: []};[]
+"r = map(xs, (seen = (seen ?? 0) + 1; seen)); r";{xs: [3, 1, 2]};[1, 1, 1];bug: a closure-body assignment carries over from one iteration to the next
+"r = map(xs, (seen = (seen ?? 0) + 1; seen)); r";{xs: [0, 0]};[1, 1];bug: a closure-body assignment carries over from one iteration to the next
+"r = map(xs, (m = max([m ?? #, #]); m)); r";{xs: [1, 2, 3]};[1, 2, 3]
+"r = map(xs, (m = max([m ?? #, #]); m)); r";{xs: [5]};[5]
+"r = map(xs, (m = max([m ?? #, #]); m)); r";{xs: []};[]
+"r = map(xs, (m = max([m ?? #, #]); m)); r";{xs: [3, 1, 2]};[3, 1, 2];bug: a closure-body assignment carries over from one iteration to the next
+"r = map(xs, (m = max([m ?? #, #]); m)); r";{xs: [0, 0]};[0, 0]
+"r = filter(xs, (first = first ?? #; # == first)); r";{xs: [1, 2, 3]};[1, 2, 3];bug: a closure-body assignment carries over from one iteration to the next
+"r = filter(xs, (first = first ?? #; # == first)); r";{xs: [5]};[5]
+"r = filter(xs, (first = first ?? #; # == first)); r";{xs: []};[]
+"r = filter(xs, (first = first ?? #; # == first)); r";{xs: [3, 1, 2]};[3, 1, 2];bug: a closure-body assignment carries over from one iteration to the next
+"r = filter(xs, (first = first ?? #; # == first)); r";{xs: [0, 0]};[0, 0]
+"r = map(xs, (acc = (acc ?? '') + string(#); acc)); r";{xs: [1, 2, 3]};['1', '2', '3'];bug: a closure-body assignment carries over from one iteration to the next
+"r = map(xs, (acc = (acc ?? '') + string(#); acc)); r";{xs: [5]};['5']
+"r = map(xs, (acc = (acc ?? '') + string(#); acc)); r";{xs: []};[]
+"r = map(xs, (acc = (acc ?? '') + string(#); acc)); r";{xs: [3, 1, 2]};['3', '1', '2'];bug: a closure-body assignment carries over from one iteration to the next
+"r = map(xs, (acc = (acc ?? '') + string(#); acc)); r";{xs: [0, 0]};['0', '0'];bug: a closure-body assignment carries over from one iteration to the next
+"r = map(xs, (prev = prev ?? null; cur = #; d = prev == null ? 0 : cur - prev; prev = cur; d)); r";{xs: [1, 2, 3]};[0, 0, 0];bug: a closure-body assignment carries over from one iteration to the next
+"r = map(xs, (prev = prev ?? null; cur = #; d = prev == null ? 0 : cur - prev; prev = cur; d)); r";{xs: [5]};[0]
+"r = map(xs, (prev = prev ?? null; cur = #; d = prev == null ? 0 : cur - prev; prev = cur; d)); r";{xs: []};[]
+"r = map(xs, (prev = prev ?? null; cur = #; d = prev == null ? 0 : cur - prev; prev = cur; d)); r";{xs: [3, 1, 2]};[0, 0, 0];bug: a closure-body assignment carries over from one iteration to the next
+"r = map(xs, (prev = prev ?? null; cur = #; d = prev == null ? 0 : cur - prev; prev = cur; d)); r";{xs: [0, 0]};[0, 0]
+# Assignments inside ternary branches in one statement, read by the next
+"r = c ? (t = a; t) : (u = b; u); [r, t, u]";{c: true, a: 1, b: 2};[1, 1, null];question: t assigned inside the taken branch is visible after the program-level ternary
+"r = c ? (t = a; t) : (u = b; u); [r, t, u]";{c: false, a: 1, b: 2};[2, null, 2];question: t assigned inside the taken branch is visible after the program-level ternary
+"r = c ? (t = a; t) : (u = b; u); [r, t, u]";{c: true, a: 'x', b: null};['x', 'x', null];question: t assigned inside the taken branch is visible after the program-level ternary
+"r = c ? (t = a; t) : (u = b; u); [r, t, u]";{c: false, a: null, b: 'y'};['y', null, 'y'];question: t assigned inside the taken branch is visible after the program-level ternary
+"r = c ? (t = a; t) : (u = b; u); [r, t, u]";{c: null, a: 1, b: 2};!error;question: t assigned inside the taken branch is visible after the program-level ternary
+"r = c ? (t = a; t) : (u = b; u); [r, t, u]";{a: 1, b: 2};!error;question: t assigned inside the taken branch is visible after the program-level ternary
+"r = c ? (t = a; t) : (u = b; u); s = t ?? u; s";{c: true, a: 1, b: 2};1;question: t assigned inside the taken branch is visible after the program-level ternary
+"r = c ? (t = a; t) : (u = b; u); s = t ?? u; s";{c: false, a: 1, b: 2};2;question: t assigned inside the taken branch is visible after the program-level ternary
+"r = c ? (t = a; t) : (u = b; u); s = t ?? u; s";{c: true, a: 'x', b: null};'x';question: t assigned inside the taken branch is visible after the program-level ternary
+"r = c ? (t = a; t) : (u = b; u); s = t ?? u; s";{c: false, a: null, b: 'y'};'y';question: t assigned inside the taken branch is visible after the program-level ternary
+"r = c ? (t = a; t) : (u = b; u); s = t ?? u; s";{c: null, a: 1, b: 2};!error;question: t assigned inside the taken branch is visible after the program-level ternary
+"r = c ? (t = a; t) : (u = b; u); s = t ?? u; s";{a: 1, b: 2};!error;question: t assigned inside the taken branch is visible after the program-level ternary
+"r = c ? (t = a; 'A') : 'B'; out = {r: r, t: t}; out";{c: true, a: 1, b: 2};{r: 'A', t: 1};question: t assigned inside the taken branch is visible after the program-level ternary
+"r = c ? (t = a; 'A') : 'B'; out = {r: r, t: t}; out";{c: false, a: 1, b: 2};{r: 'B', t: null};question: t assigned inside the taken branch is visible after the program-level ternary
+"r = c ? (t = a; 'A') : 'B'; out = {r: r, t: t}; out";{c: true, a: 'x', b: null};{r: 'A', t: 'x'};question: t assigned inside the taken branch is visible after the program-level ternary
+"r = c ? (t = a; 'A') : 'B'; out = {r: r, t: t}; out";{c: false, a: null, b: 'y'};{r: 'B', t: null};question: t assigned inside the taken branch is visible after the program-level ternary
+"r = c ? (t = a; 'A') : 'B'; out = {r: r, t: t}; out";{c: null, a: 1, b: 2};!error;question: t assigned inside the taken branch is visible after the program-level ternary
+"r = c ? (t = a; 'A') : 'B'; out = {r: r, t: t}; out";{a: 1, b: 2};!error;question: t assigned inside the taken branch is visible after the program-level ternary
+"r = c ? (t = a; 'A') : 'B'";{c: true, a: 1, b: 2};{r: 'A'}
+"r = c ? (t = a; 'A') : 'B'";{c: false, a: 1, b: 2};{r: 'B'}
+"r = c ? (t = a; 'A') : 'B'";{c: true, a: 'x', b: null};{r: 'A'}
+"r = c ? (t = a; 'A') : 'B'";{c: false, a: null, b: 'y'};{r: 'B'}
+"r = c ? (t = a; 'A') : 'B'";{c: null, a: 1, b: 2};!error
+"r = c ? (t = a; 'A') : 'B'";{a: 1, b: 2};!error
+# Assignments inside object literals in one statement, read by the next
+"o = {x: (t = a; t)}; p = {y: t}; [o, p]";{a: 1};[{x: 1}, {y: 1}];question: a parenthesized sequence inside an object literal has no scope of its own
+"o = {x: (t = a; t)}; p = {y: t}; [o, p]";{a: 'x'};[{x: 'x'}, {y: 'x'}];question: a parenthesized sequence inside an object literal has no scope of its own
+"o = {x: (t = a; t)}; p = {y: t}; [o, p]";{a: null};[{x: null}, {y: null}];question: a parenthesized sequence inside an object literal has no scope of its own
+"o = {x: (t = a; t)}; p = {y: t}; [o, p]";{};[{x: null}, {y: null}];question: a parenthesized sequence inside an object literal has no scope of its own
+"o = {x: (t = a; t)}; p = {y: t}; [o, p]";{a: [1]};[{x: [1]}, {y: [1]}];question: a parenthesized sequence inside an object literal has no scope of its own
+"o = {x: (t = a; t), y: t}; o";{a: 1};{x: 1, y: 1};question: a parenthesized sequence inside an object literal has no scope of its own
+"o = {x: (t = a; t), y: t}; o";{a: 'x'};{x: 'x', y: 'x'};question: a parenthesized sequence inside an object literal has no scope of its own
+"o = {x: (t = a; t), y: t}; o";{a: null};{x: null, y: null};question: a parenthesized sequence inside an object literal has no scope of its own
+"o = {x: (t = a; t), y: t}; o";{};{x: null, y: null};question: a parenthesized sequence inside an object literal has no scope of its own
+"o = {x: (t = a; t), y: t}; o";{a: [1]};{x: [1], y: [1]};question: a parenthesized sequence inside an object literal has no scope of its own
+"o = {x: (t = a; t)}; o";{a: 1};{x: 1}
+"o = {x: (t = a; t)}; o";{a: 'x'};{x: 'x'}
+"o = {x: (t = a; t)}; o";{a: null};{x: null}
+"o = {x: (t = a; t)}; o";{};{x: null}
+"o = {x: (t = a; t)}; o";{a: [1]};{x: [1]}
+"o = {x: (t = a; t)}";{a: 1};{o: {x: 1}}
+"o = {x: (t = a; t)}";{a: 'x'};{o: {x: 'x'}}
+"o = {x: (t = a; t)}";{a: null};{o: {x: null}}
+"o = {x: (t = a; t)}";{};{o: {x: null}}
+"o = {x: (t = a; t)}";{a: [1]};{o: {x: [1]}}
+"o = {x: (t = a; t)}; $root";{a: 1};{a: 1, o: {x: 1}, t: 1};question: $root contains t although the returned object does not
+"o = {x: (t = a; t)}; $root";{a: 'x'};{a: 'x', o: {x: 'x'}, t: 'x'};question: $root contains t although the returned object does not
+"o = {x: (t = a; t)}; $root";{a: null};{a: null, o: {x: null}, t: null};question: $root contains t although the returned object does not
+"o = {x: (t = a; t)}; $root";{};{o: {x: null}, t: null};question: $root contains t although the returned object does not
+"o = {x: (t = a; t)}; $root";{a: [1]};{a: [1], o: {x: [1]}, t: [1]};question: $root contains t although the returned object does not
+"o = {x: (t = a ?? 'd'; t), y: (t = 'e'; t)}; [o, t]";{a: 1};[{x: 1, y: 'e'}, 'e'];question: a parenthesized sequence inside an object literal has no scope of its own
+"o = {x: (t = a ?? 'd'; t), y: (t = 'e'; t)}; [o, t]";{a: 'x'};[{x: 'x', y: 'e'}, 'e'];question: a parenthesized sequence inside an object literal has no scope of its own
+"o = {x: (t = a ?? 'd'; t), y: (t = 'e'; t)}; [o, t]";{a: null};[{x: 'd', y: 'e'}, 'e'];question: a parenthesized sequence inside an object literal has no scope of its own
+"o = {x: (t = a ?? 'd'; t), y: (t = 'e'; t)}; [o, t]";{};[{x: 'd', y: 'e'}, 'e'];question: a parenthesized sequence inside an object literal has no scope of its own
+"o = {x: (t = a ?? 'd'; t), y: (t = 'e'; t)}; [o, t]";{a: [1]};[{x: [1], y: 'e'}, 'e'];question: a parenthesized sequence inside an object literal has no scope of its own
+# Ternary, ?? and object-literal assignments inside closure bodies
+"r = map(xs, # > 0 ? (pos = #; pos) : (neg = #; neg)); r";{xs: [1, -2, 3]};[1, -2, 3]
+"r = map(xs, # > 0 ? (pos = #; pos) : (neg = #; neg)); r";{xs: []};[]
+"r = map(xs, # > 0 ? (pos = #; pos) : (neg = #; neg)); r";{xs: [-1]};[-1]
+"r = map(xs, # > 0 ? (pos = #; pos) : (neg = #; neg)); r";{xs: [0]};[0]
+"r = map(xs, # > 0 ? (pos = #; pos) : (neg = #; neg)); r";{xs: [1, null]};!error
+"r = map(xs, # > 0 ? (pos = #; pos) : (neg = #; neg)); [pos ?? 'none', neg ?? 'none']";{xs: [1, -2, 3]};['none', 'none'];bug: an assignment inside a closure body leaks to the outer scope
+"r = map(xs, # > 0 ? (pos = #; pos) : (neg = #; neg)); [pos ?? 'none', neg ?? 'none']";{xs: []};['none', 'none']
+"r = map(xs, # > 0 ? (pos = #; pos) : (neg = #; neg)); [pos ?? 'none', neg ?? 'none']";{xs: [-1]};['none', 'none'];bug: an assignment inside a closure body leaks to the outer scope
+"r = map(xs, # > 0 ? (pos = #; pos) : (neg = #; neg)); [pos ?? 'none', neg ?? 'none']";{xs: [0]};['none', 'none'];bug: an assignment inside a closure body leaks to the outer scope
+"r = map(xs, # > 0 ? (pos = #; pos) : (neg = #; neg)); [pos ?? 'none', neg ?? 'none']";{xs: [1, null]};!error
+"r = map(xs, {v: #, sign: # > 0 ? (s = 'p'; s) : (s = 'n'; s)}); r";{xs: [1, -2, 3]};[{v: 1, sign: 'p'}, {v: -2, sign: 'n'}, {v: 3, sign: 'p'}]
+"r = map(xs, {v: #, sign: # > 0 ? (s = 'p'; s) : (s = 'n'; s)}); r";{xs: []};[]
+"r = map(xs, {v: #, sign: # > 0 ? (s = 'p'; s) : (s = 'n'; s)}); r";{xs: [-1]};[{v: -1, sign: 'n'}]
+"r = map(xs, {v: #, sign: # > 0 ? (s = 'p'; s) : (s = 'n'; s)}); r";{xs: [0]};[{v: 0, sign: 'n'}]
+"r = map(xs, {v: #, sign: # > 0 ? (s = 'p'; s) : (s = 'n'; s)}); r";{xs: [1, null]};!error
+"r = map(xs, (s = # > 0 ? 'p' : 'n'; {v: #, s: s})); r";{xs: [1, -2, 3]};[{v: 1, s: 'p'}, {v: -2, s: 'n'}, {v: 3, s: 'p'}]
+"r = map(xs, (s = # > 0 ? 'p' : 'n'; {v: #, s: s})); r";{xs: []};[]
+"r = map(xs, (s = # > 0 ? 'p' : 'n'; {v: #, s: s})); r";{xs: [-1]};[{v: -1, s: 'n'}]
+"r = map(xs, (s = # > 0 ? 'p' : 'n'; {v: #, s: s})); r";{xs: [0]};[{v: 0, s: 'n'}]
+"r = map(xs, (s = # > 0 ? 'p' : 'n'; {v: #, s: s})); r";{xs: [1, null]};!error
+"r = map(xs, (s = # > 0 ? 'p' : 'n'; {v: #, s: s})); s";{xs: [1, -2, 3]};null;bug: an assignment inside a closure body leaks to the outer scope
+"r = map(xs, (s = # > 0 ? 'p' : 'n'; {v: #, s: s})); s";{xs: []};null
+"r = map(xs, (s = # > 0 ? 'p' : 'n'; {v: #, s: s})); s";{xs: [-1]};null;bug: an assignment inside a closure body leaks to the outer scope
+"r = map(xs, (s = # > 0 ? 'p' : 'n'; {v: #, s: s})); s";{xs: [0]};null;bug: an assignment inside a closure body leaks to the outer scope
+"r = map(xs, (s = # > 0 ? 'p' : 'n'; {v: #, s: s})); s";{xs: [1, null]};!error
+"r = map(xs, (d = # ?? (z = 0; z); d * 2)); r";{xs: [1, -2, 3]};[2, -4, 6]
+"r = map(xs, (d = # ?? (z = 0; z); d * 2)); r";{xs: []};[]
+"r = map(xs, (d = # ?? (z = 0; z); d * 2)); r";{xs: [-1]};[-2]
+"r = map(xs, (d = # ?? (z = 0; z); d * 2)); r";{xs: [0]};[0]
+"r = map(xs, (d = # ?? (z = 0; z); d * 2)); r";{xs: [1, null]};[2, 0]
+"r = map(xs, (d = # ?? (z = 0; z); d * 2)); z ?? 'unset'";{xs: [1, -2, 3]};'unset'
+"r = map(xs, (d = # ?? (z = 0; z); d * 2)); z ?? 'unset'";{xs: []};'unset'
+"r = map(xs, (d = # ?? (z = 0; z); d * 2)); z ?? 'unset'";{xs: [-1]};'unset'
+"r = map(xs, (d = # ?? (z = 0; z); d * 2)); z ?? 'unset'";{xs: [0]};'unset'
+"r = map(xs, (d = # ?? (z = 0; z); d * 2)); z ?? 'unset'";{xs: [1, null]};'unset';bug: an assignment inside a closure body leaks to the outer scope
+# Closure assignments must not write through into the input
+"y = map(list, (t = #; t.pos = (t.v ?? 0) > 0; t)); y";{list: [{v: 1}, {v: -1}]};[{v: 1, pos: true}, {v: -1, pos: false}]
+"y = map(list, (t = #; t.pos = (t.v ?? 0) > 0; t)); y";{list: [{v: 0}]};[{v: 0, pos: false}]
+"y = map(list, (t = #; t.pos = (t.v ?? 0) > 0; t)); y";{list: []};[]
+"y = map(list, (t = #; t.pos = (t.v ?? 0) > 0; t)); y";{list: [{}]};[{pos: false}]
+"y = map(list, (t = #; t.pos = (t.v ?? 0) > 0; t)); list";{list: [{v: 1}, {v: -1}]};[{v: 1}, {v: -1}];bug: a dotted assignment on a closure local writes through into the input element
+"y = map(list, (t = #; t.pos = (t.v ?? 0) > 0; t)); list";{list: [{v: 0}]};[{v: 0}];bug: a dotted assignment on a closure local writes through into the input element
+"y = map(list, (t = #; t.pos = (t.v ?? 0) > 0; t)); list";{list: []};[]
+"y = map(list, (t = #; t.pos = (t.v ?? 0) > 0; t)); list";{list: [{}]};[{}];bug: a dotted assignment on a closure local writes through into the input element
+"y = map(list, (t = #; t.pos = (t.v ?? 0) > 0; t)); map(list, #.pos)";{list: [{v: 1}, {v: -1}]};[null, null];bug: a dotted assignment on a closure local writes through into the input element
+"y = map(list, (t = #; t.pos = (t.v ?? 0) > 0; t)); map(list, #.pos)";{list: [{v: 0}]};[null];bug: a dotted assignment on a closure local writes through into the input element
+"y = map(list, (t = #; t.pos = (t.v ?? 0) > 0; t)); map(list, #.pos)";{list: []};[]
+"y = map(list, (t = #; t.pos = (t.v ?? 0) > 0; t)); map(list, #.pos)";{list: [{}]};[null];bug: a dotted assignment on a closure local writes through into the input element
+# Top-level aliases of input objects must not write through
+"out = order; out.total = sum(order.lines ?? []); order";{order: {id: 1, lines: [1, 2]}};{id: 1, lines: [1, 2]};bug: a dotted assignment through an alias mutates the shared input object in place
+"out = order; out.total = sum(order.lines ?? []); order";{order: {}};{};bug: a dotted assignment through an alias mutates the shared input object in place
+"out = order; out.total = sum(order.lines ?? []); order";{order: {total: 5}};{total: 5};bug: a dotted assignment through an alias mutates the shared input object in place
+"out = order; out.total = sum(order.lines ?? []); out";{order: {id: 1, lines: [1, 2]}};{id: 1, lines: [1, 2], total: 3}
+"out = order; out.total = sum(order.lines ?? []); out";{order: {}};{total: 0}
+"out = order; out.total = sum(order.lines ?? []); out";{order: {total: 5}};{total: 0}
+"out = order; out.total = sum(order.lines ?? []); order.total";{order: {id: 1, lines: [1, 2]}};null;bug: a dotted assignment through an alias mutates the shared input object in place
+"out = order; out.total = sum(order.lines ?? []); order.total";{order: {}};null;bug: a dotted assignment through an alias mutates the shared input object in place
+"out = order; out.total = sum(order.lines ?? []); order.total";{order: {total: 5}};5;bug: a dotted assignment through an alias mutates the shared input object in place
+"out = order; out.total = sum(order.lines ?? [])";{order: {id: 1, lines: [1, 2]}};{out: {id: 1, lines: [1, 2], total: 3}}
+"out = order; out.total = sum(order.lines ?? [])";{order: {}};{out: {total: 0}}
+"out = order; out.total = sum(order.lines ?? [])";{order: {total: 5}};{out: {total: 0}}

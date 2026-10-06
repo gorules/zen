@@ -1,0 +1,120 @@
+expression (string);input (json 5);output (json 5);note
+# number: numbers and booleans
+number(123);;123
+number(-1.5);;-1.5
+string(number(1.50));;'1.50'
+number(true);;1
+number(false);;0
+number(79228162514264337593543950335);;79228162514264337593543950335
+# number: strings
+number('123');;123
+number('12.5');;12.5
+number('-12.5');;-12.5
+number('+12.5');;12.5
+string(number('1.50'));;'1.50'
+string(number('0.000'));;'0.000'
+number('0');;0
+number('-0');;0
+number('  42 ');;42
+number(' -7 ');;-7
+number('1e3');;1000
+number('1E3');;1000
+number('1.5e1');;15
+number('1e-2');;0.01
+number('-2.5e2');;-250
+number('1e+3');;1000
+string(number('1e3'));;'1000'
+number('.5');;0.5
+number('5.');;5
+number('007');;7
+number('9223372036854775807');;9223372036854775807
+number('9223372036854775808');;9223372036854775808
+number('-9223372036854775809');;-9223372036854775809
+number('79228162514264337593543950335');;79228162514264337593543950335
+number('79228162514264337593543950336');;!error
+number('0.1000000000000000000000000001');;0.1000000000000000000000000001
+string(number('-0'));;'0'
+string(number('-0.0'));;'0.0'
+string(number('1.5e1'));;'15'
+string(number('2.50e1'));;'25.0'
+string(number('1e0'));;'1'
+string(number('1e-2'));;'0.01'
+number(' 1e3 ');;1000
+number('1e28');;10000000000000000000000000000
+number('1e29');;!error
+number('1e-28');;0.0000000000000000000000000001
+number('1e-29');;!error;question: a value below the smallest representable step fails instead of rounding to 0
+number('0.12345678901234567890123456789');;!error;question: a string with more fractional digits than Decimal holds fails instead of rounding
+number('123456789012345678901234567890.5');;!error
+number('1_000');;1000
+number('0x10');;!error
+number('0b10');;!error
+number('');;!error
+number('   ');;!error
+number('abc');;!error
+number('12abc');;!error
+number('1,000');;!error
+number('1 000');;!error
+number('1.2.3');;!error
+number('--1');;!error
+number('Infinity');;!error
+number('NaN');;!error
+number('e3');;!error
+number('1e');;!error
+number('.');;!error
+number('-');;!error
+number(null);;!error;question: null does not convert; could be null or 0
+number([1]);;!error
+number({});;!error
+number(d('2024-01-01'));;!error
+number();;!error
+number('1', 2);;!error
+number('1.5') + 1;;2.5
+number('10') * number('0.5');;5
+sum(map(['1', '2.5', '-0.5'], number(#)));;3
+# isNumeric
+isNumeric(123);;true
+isNumeric(-1.5);;true
+isNumeric(0);;true
+isNumeric('123');;true
+isNumeric('12.5');;true
+isNumeric('-12.5');;true
+isNumeric('+12.5');;true
+isNumeric('  42 ');;true
+isNumeric('1e3');;true
+isNumeric('1E3');;true
+isNumeric('1e-2');;true
+isNumeric('.5');;true
+isNumeric('5.');;true
+isNumeric('-0');;true
+isNumeric('79228162514264337593543950335');;true
+isNumeric('79228162514264337593543950336');;false
+isNumeric('hello');;false
+isNumeric('');;false
+isNumeric('   ');;false
+isNumeric('1_000');;true
+isNumeric('0x10');;false
+isNumeric('1,000');;false
+isNumeric('1.2.3');;false
+isNumeric('Infinity');;false
+isNumeric('NaN');;false
+isNumeric('12abc');;false
+isNumeric(true);;false;question: number(true) converts to 1 but isNumeric(true) is false
+isNumeric(false);;false;question: number(false) converts to 0 but isNumeric(false) is false
+isNumeric(null);;false
+isNumeric([1]);;false
+isNumeric({});;false
+isNumeric(d('2024-01-01'));;false
+isNumeric();;!error
+# rand: only deterministic properties
+rand(0);;0
+rand(0.4);;0
+rand(-0.4);;0
+"r = rand(10); r >= 0 and r <= 10 and r == trunc(r)";{};true
+"r = rand(1); r == 0 or r == 1";{};true
+"r = rand(9223372036854775807); r >= 0";{};true
+type(rand(5));;'number'
+rand(null);;!error
+rand('5');;!error
+rand();;!error
+rand(79228162514264337593543950335);;!error

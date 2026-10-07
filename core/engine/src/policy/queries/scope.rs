@@ -673,6 +673,7 @@ impl PropertyTypeIr {
             )),
             PropertyTypeIr::Number => Some(VariableType::Number),
             PropertyTypeIr::Boolean => Some(VariableType::Bool),
+            PropertyTypeIr::Any => Some(VariableType::Any),
             PropertyTypeIr::Date => Some(VariableType::Date),
             PropertyTypeIr::Relationship { .. } | PropertyTypeIr::Reference { .. } => None,
         }
@@ -693,6 +694,7 @@ impl Property {
             }
             PropertyTypeIr::Number => VariableType::Number,
             PropertyTypeIr::Boolean => VariableType::Bool,
+            PropertyTypeIr::Any => VariableType::Any,
             PropertyTypeIr::Relationship { target } | PropertyTypeIr::Reference { target } => {
                 match entity_map.get(target.as_ref()) {
                     Some(t) => t.shallow_clone(),

@@ -170,6 +170,8 @@ pub enum PropertyTypeIr {
     Date,
     Relationship { target: Arc<str> },
     Reference { target: Arc<str> },
+    /// Any value (`object`, `any`): not checked.
+    Any,
 }
 
 impl DataModelIr {
@@ -226,6 +228,7 @@ impl DataModelIr {
             PropertyTypeIr::Enum(values) => VariableType::Enum(None, enum_values_to_rc(values)),
             PropertyTypeIr::Number => VariableType::Number,
             PropertyTypeIr::Boolean => VariableType::Bool,
+            PropertyTypeIr::Any => VariableType::Any,
             PropertyTypeIr::Reference { .. } => VariableType::String,
             PropertyTypeIr::Relationship { target } => match dictionaries.get(target.as_ref()) {
                 Some(dict) if !entities.contains_key(target.as_ref()) => dict.enum_type(),
@@ -394,9 +397,12 @@ impl DataModelIr {
                         PropertyTypeIr::Enum(trimmed)
                     }
                 }
-                PropertyTypeDoc::Number => PropertyTypeIr::Number,
+                PropertyTypeDoc::Number
+                | PropertyTypeDoc::Decimal { .. }
+                | PropertyTypeDoc::Integer => PropertyTypeIr::Number,
                 PropertyTypeDoc::Boolean => PropertyTypeIr::Boolean,
-                PropertyTypeDoc::Date => PropertyTypeIr::Date,
+                PropertyTypeDoc::Date | PropertyTypeDoc::Timestamp => PropertyTypeIr::Date,
+                PropertyTypeDoc::Object | PropertyTypeDoc::Any => PropertyTypeIr::Any,
                 PropertyTypeDoc::Relationship { target } => PropertyTypeIr::Relationship {
                     target: target.trimmed(),
                 },
@@ -405,12 +411,81 @@ impl DataModelIr {
                 },
             };
 
+            // A feature: the host supplies it, one property per window
+            // (`txn_count` over 1h, 7d: `txn_count_1h`, `txn_count_7d`).
+            // Without a `default` (or `required`) it is absent when unknown
+            // (not covered), so optional: rules handle null. With one, the
+            // host always supplies a value (or rejects the request).
+            if let Some(feature) = &prop.feature {
+                let optional = !feature.rest.contains_key("default") && prop.required != Some(true);
+                let windows = feature.window.as_ref().map(|w| w.list()).unwrap_or_default();
+                let names: Vec<Arc<str>> = if windows.is_empty() {
+                    vec![prop_name.clone()]
+                } else {
+                    let listed = windows.len() > 1;
+                    windows
+                        .iter()
+                        .filter_map(|window| {
+                            if !is_window(window) {
+                                diagnostics.push(Diagnostic::error(
+                                    DiagnosticCode::ParseError,
+                                    DiagnosticLocation::expression(
+                                        policy_path.clone(),
+                                        id.clone(),
+                                        prop.id.clone(),
+                                        None,
+                                    ),
+                                    format!(
+                                        "window '{window}' of feature '{prop_name}' in entity '{name}' is not a duration such as 10m, 1h or 7d"
+                                    ),
+                                ));
+                                return None;
+                            }
+                            Some(window_name(&prop_name, window, listed))
+                        })
+                        .collect()
+                };
+                for feature_name in names {
+                    if feature_name != prop_name {
+                        if let Some(prev_id) = seen.get(&feature_name) {
+                            diagnostics.push(Diagnostic::error(
+                                DiagnosticCode::DuplicateProperty,
+                                DiagnosticLocation::expression(
+                                    policy_path.clone(),
+                                    id.clone(),
+                                    prev_id.clone(),
+                                    None,
+                                ),
+                                format!("duplicate property '{feature_name}' in entity '{name}'"),
+                            ));
+                            continue;
+                        }
+                        seen.insert(feature_name.clone(), prop.id.clone());
+                    }
+                    properties.push(Property {
+                        id: prop.id.clone(),
+                        name: feature_name,
+                        kind: kind.clone(),
+                        array: prop.array,
+                        optional,
+                    });
+                }
+                continue;
+            }
+
+            // A model's output: supplied by the host; null when the model was
+            // not called (`when`) or fell back without a value, unless
+            // `required` or a fallback value makes it always there.
+            let host_optional = prop.model.as_ref().is_some_and(|m| {
+                prop.required != Some(true) && m.get("fallback").is_none_or(serde_json::Value::is_null)
+            });
             properties.push(Property {
                 id: prop.id.clone(),
                 name: prop_name,
                 kind,
                 array: prop.array,
-                optional: prop.optional,
+                // Computed by the host: always there.
+                optional: (prop.optional || host_optional) && prop.compute.is_none() && prop.required != Some(true),
             });
         }
 
@@ -419,6 +494,30 @@ impl DataModelIr {
             scope,
             properties,
         })
+    }
+}
+
+/// A feature window as written: a positive whole number (no leading zero)
+/// of minutes, hours or days (`10m`, `1h`, `7d`).
+fn is_window(window: &str) -> bool {
+    let Some((digits, unit)) = window.split_at_checked(window.len().saturating_sub(1)) else {
+        return false;
+    };
+    matches!(unit, "m" | "h" | "d")
+        && !digits.is_empty()
+        && !digits.starts_with('0')
+        && digits.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// The property a feature window becomes: `<name>_<window>`; a single
+/// window already at the end of the name (`txn_count_7d`) is not doubled.
+/// The feature store names its features the same way.
+pub fn window_name(name: &Arc<str>, window: &str, listed: bool) -> Arc<str> {
+    let suffix = format!("_{window}");
+    if !listed && name.ends_with(&suffix) {
+        name.clone()
+    } else {
+        Arc::from(format!("{name}{suffix}"))
     }
 }
 
@@ -551,6 +650,7 @@ impl std::fmt::Display for PropertyTypeIr {
             }
             PropertyTypeIr::Number => f.write_str("number"),
             PropertyTypeIr::Boolean => f.write_str("bool"),
+            PropertyTypeIr::Any => f.write_str("any"),
             PropertyTypeIr::Date => f.write_str("date"),
             PropertyTypeIr::Reference { target } => {
                 write!(f, "reference id (string → {target})")

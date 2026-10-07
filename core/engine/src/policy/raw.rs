@@ -219,6 +219,33 @@ pub struct DataModelDoc {
     pub scope: ScopeDoc,
     #[serde(default)]
     pub properties: Vec<PropertyDoc>,
+    /// An entity whose records are events (`{ "id": .., "time": .. }`):
+    /// read by the feature store, kept as is here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub events: Option<serde_json::Value>,
+    /// An entity whose records are reference data, optionally versioned
+    /// (`{ "validFrom": .., "validTo": .. }`): read by the feature store,
+    /// kept as is here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference: Option<serde_json::Value>,
+    /// The key property (`id` when absent), or a list for a composite key:
+    /// read by the feature store, kept as is here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<serde_json::Value>,
+    /// Has-many reference rows: the property identifying a row, when it is
+    /// not the key. Kept as is here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub row_key: Option<Arc<str>>,
+    /// Where the entity's data comes from (`history`, `stream`, `changes`,
+    /// `live`), by datasource name: read by the feature store, kept as is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sources: Option<serde_json::Value>,
+    /// The daily rebuild of its features from the history: kept as is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rebuild: Option<serde_json::Value>,
+    /// An events entity that may have no events on a day: kept as is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sparse: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
@@ -240,6 +267,56 @@ pub struct PropertyDoc {
     pub array: bool,
     #[serde(default)]
     pub optional: bool,
+    /// A feature: a value the host computes and supplies (e.g. a windowed
+    /// aggregate over an events entity). Each window becomes an optional
+    /// input property `<name>_<window>`; see [`FeatureDoc`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feature: Option<FeatureDoc>,
+    /// Computed per event by the host from the event's other properties
+    /// (an events entity's `amount_gbp = amount * fx_rate`): always supplied.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compute: Option<Arc<str>>,
+    /// The column in the source data when it differs from the name: read by
+    /// the feature store, kept as is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub column: Option<Arc<str>>,
+    /// A model's output: the host calls the model with the property's
+    /// inputs and supplies it. Kept as is here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<serde_json::Value>,
+    /// The host always supplies it, or rejects the request: never null.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub required: Option<bool>,
+}
+
+/// A property computed by the host's feature store. The engine only needs
+/// its windows (which properties exist); everything else is kept as is.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeatureDoc {
+    #[serde(default)]
+    pub expr: Arc<str>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<WindowsDoc>,
+    #[serde(flatten)]
+    pub rest: serde_json::Map<String, serde_json::Value>,
+}
+
+/// One window (`"7d"`) or several (`["1h", "7d"]`).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum WindowsDoc {
+    One(Arc<str>),
+    Many(Vec<Arc<str>>),
+}
+
+impl WindowsDoc {
+    pub fn list(&self) -> Vec<Arc<str>> {
+        match self {
+            WindowsDoc::One(w) => vec![w.clone()],
+            WindowsDoc::Many(ws) => ws.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -270,6 +347,21 @@ pub enum PropertyTypeDoc {
     Number,
     Boolean,
     Date,
+    /// An exact decimal (`scale` digits after the point): a number here, kept
+    /// exact by the feature store.
+    Decimal {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scale: Option<u32>,
+    },
+    /// A whole number: a number here.
+    Integer,
+    /// An instant: a date here.
+    Timestamp,
+    /// A structured value (a map, such as a feature grouped by a column):
+    /// any value here.
+    Object,
+    /// Any value.
+    Any,
     Relationship {
         target: Arc<str>,
     },

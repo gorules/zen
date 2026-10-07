@@ -266,6 +266,7 @@ impl InputValidator<'_> {
             }
             PropertyTypeIr::Number => matches!(value, Variable::Number(_)),
             PropertyTypeIr::Boolean => matches!(value, Variable::Bool(_)),
+            PropertyTypeIr::Any => true,
             PropertyTypeIr::Date => match value {
                 Variable::String(text) => {
                     text.is_empty() || zen_expression::DateValue::is_text(text)

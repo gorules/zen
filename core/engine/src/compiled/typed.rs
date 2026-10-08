@@ -95,6 +95,31 @@ pub(crate) enum Store {
     List { offsets: Vec<i32>, child: Box<Store> },
 }
 
+impl Store {
+    #[inline(always)]
+    pub fn part(n: &rust_decimal::Decimal) -> Option<(i64, u8)> {
+        let unpacked = n.unpack();
+        let wide = u64::from(unpacked.mid) << 32 | u64::from(unpacked.lo);
+        let scale = u8::try_from(unpacked.scale).ok()?;
+        match (unpacked.hi, unpacked.negative) {
+            (0, false) => Some((i64::try_from(wide).ok()?, scale)),
+            (0, true) if wide != 0 => Some((0i64.checked_sub_unsigned(wide)?, scale)),
+            _ => None,
+        }
+    }
+
+    pub fn unpacked(values: &[rust_decimal::Decimal]) -> Option<Store> {
+        let mut mant = Vec::with_capacity(values.len());
+        let mut scale = Vec::with_capacity(values.len());
+        for value in values {
+            let (m, s) = Self::part(value)?;
+            mant.push(m);
+            scale.push(s);
+        }
+        Some(Store::Scaled { mant, scale })
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct Array {
     values: Store,
@@ -1066,6 +1091,19 @@ impl<'a> Leaf<'a> {
 
     pub fn nulls(rows: usize) -> Leaf<'a> {
         Leaf::Any((0..rows).map(|_| Variable::Null).collect())
+    }
+
+    pub fn lean(column: Column<'a>, rows: usize) -> Leaf<'a> {
+        let validity = column.validity.filter(|(bits, offset)| !Bits::full(bits, *offset, rows));
+        let column = Column { validity, ..column };
+        let unpacked = match column.values {
+            Values::Dec(values) => values.get(..rows).and_then(Store::unpacked),
+            _ => None,
+        };
+        match unpacked {
+            Some(store) => Leaf::typed(Array::parts(store, validity.map(|(bits, offset)| Bits::window(bits, offset, rows)), rows)),
+            None => Leaf::input(column, rows),
+        }
     }
 
     pub fn input(column: Column<'a>, rows: usize) -> Leaf<'a> {

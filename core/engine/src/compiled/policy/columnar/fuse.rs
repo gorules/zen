@@ -259,7 +259,7 @@ impl<'s, 'a> Pass<'s, 'a> {
             events.extend_from_slice(&next.events);
             last = next;
         }
-        let mut seen = None;
+        let mut seen = Some(0);
         let mut fresh = |pass: &mut Self, rows: &mut Vec<usize>| {
             if seen != Some(pass.fell) {
                 rows.retain(|&row| !pass.fallback[row]);

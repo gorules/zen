@@ -41,26 +41,27 @@ impl<'a> Entity<'a> {
         let Values::Struct { fields, len } = child.values else {
             return None;
         };
-        if child.validity.is_some() {
+        if child.validity.is_some_and(|(bits, offset)| !Bits::full(bits, offset, len)) {
             return None;
         }
         let fields = fields
             .iter()
             .map(|(name, column)| Field {
                 name: Arc::from(*name),
-                leaf: Leaf::input(CompiledGraph::validated(*column, len), len),
+                leaf: Leaf::lean(CompiledGraph::validated(*column, len), len),
                 present: None,
                 input: true,
             })
             .collect();
         let rows = offsets.len().saturating_sub(1);
+        let validity = list.validity.filter(|(bits, offset)| !Bits::full(bits, *offset, rows));
         Some(Self {
             name,
             path,
             owner,
             entry,
             offsets: Rc::from(offsets),
-            validity: list.validity.map(|(bits, offset)| Rc::from(Bits::window(bits, offset, rows))),
+            validity: validity.map(|(bits, offset)| Rc::from(Bits::window(bits, offset, rows))),
             children: len,
             fields,
             active: true,

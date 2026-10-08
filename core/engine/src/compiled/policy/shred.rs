@@ -44,12 +44,6 @@ impl Field {
         field
     }
 
-    fn scaled(n: &rust_decimal::Decimal) -> Option<(i64, u8)> {
-        if n.is_zero() && n.is_sign_negative() {
-            return None;
-        }
-        Some((i64::try_from(n.mantissa()).ok()?, u8::try_from(n.scale()).ok()?))
-    }
 
     fn bit(&mut self, on: bool) {
         if self.len & 63 == 0 {
@@ -92,7 +86,7 @@ impl Field {
     fn start(&mut self, value: &Variable, capacity: usize) {
         let len = self.len;
         self.cells = match value {
-            Variable::Number(n) if Self::scaled(n).is_some() => {
+            Variable::Number(n) if Store::part(n).is_some() => {
                 let (mut mant, mut scale) = (Vec::with_capacity(capacity), Vec::with_capacity(capacity));
                 mant.resize(len, 0);
                 scale.resize(len, 0);
@@ -112,13 +106,14 @@ impl Field {
         };
     }
 
+    #[inline(always)]
     fn push(&mut self, value: &Variable, capacity: usize) {
         if matches!(self.cells, Cells::Empty) {
             self.start(value, capacity);
         }
         let len = self.len;
         let fits = match (&mut self.cells, value) {
-            (Cells::Scaled { mant, scale }, Variable::Number(n)) => match Self::scaled(n) {
+            (Cells::Scaled { mant, scale }, Variable::Number(n)) => match Store::part(n) {
                 Some((m, s)) => {
                     mant.push(m);
                     scale.push(s);
@@ -240,6 +235,7 @@ impl Builder {
         Some(self.shapes.len() - 1)
     }
 
+    #[inline(always)]
     fn item(&mut self, item: &Variable) -> Option<()> {
         let Variable::Object(map) = item else {
             return None;

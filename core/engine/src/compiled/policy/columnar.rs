@@ -9,7 +9,7 @@ use super::{Fixed, Native, PolicyPlan, Rows};
 use crate::compiled::bound::Outs;
 use crate::compiled::columnar::OutputColumn;
 use crate::compiled::shred::Shredder;
-use crate::compiled::typed::{Array, Bits, ColumnBuilder, Leaf};
+use crate::compiled::typed::{Array, Bits, ColumnBuilder, Dict, Leaf};
 use crate::compiled::CompiledGraph;
 use crate::policy::blocks::{AssertionIr, MatchIr, MatchSelection, TableSelection};
 use crate::policy::evaluator::{Driver, EvalArtifact, Iteration, Pick};
@@ -122,10 +122,13 @@ impl<'a> Sheet<'a> {
             if path.is_empty() || path.contains('[') {
                 return None;
             }
-            let present = column.validity.map(|(bits, offset)| Rc::from(Bits::window(bits, offset, rows)));
+            let present = column
+                .validity
+                .filter(|(bits, offset)| !Bits::full(bits, *offset, rows))
+                .map(|(bits, offset)| Rc::from(Bits::window(bits, offset, rows)));
             entries.push(Entry {
                 path: Arc::from(*path),
-                leaf: Leaf::input(CompiledGraph::validated(*column, rows), rows),
+                leaf: Leaf::lean(CompiledGraph::validated(*column, rows), rows),
                 present,
                 input: true,
                 dead: false,
@@ -375,7 +378,7 @@ struct Pass<'s, 'a> {
     members: Vec<(usize, Vec<Option<usize>>)>,
     hosting: Vec<(usize, Vec<bool>)>,
     owners: Vec<Option<Arc<str>>>,
-    kin: Vec<(usize, Rc<[usize]>, Rc<[usize]>, bool)>,
+    kin: Vec<(usize, Rc<[usize]>, Rc<[usize]>, bool, OnceCell<Option<Rc<[i32]>>>)>,
     delegated: bool,
     fell: usize,
 }
@@ -1045,22 +1048,61 @@ impl<'s, 'a> Pass<'s, 'a> {
 
     fn kids(&mut self, at: usize, positions: &[usize]) -> (Rc<[usize]>, Rc<[usize]>) {
         let full = positions.len() == self.sheet.rows;
-        if let Some((_, kids, parents, _)) = self.kin.iter().find(|(a, ..)| full && *a == at) {
+        if let Some((_, kids, parents, ..)) = self.kin.iter().find(|(a, ..)| full && *a == at) {
             return (kids.clone(), parents.clone());
+        }
+        if let Some((kids, parents)) = full.then(|| self.spans(at)).flatten() {
+            self.kin.push((at, kids.clone(), parents.clone(), true, OnceCell::new()));
+            return (kids, parents);
         }
         let (kids, parents) = self.gather(at, positions);
         if full {
             let identity = kids.len() == self.sheet.entities[at].children && kids.iter().enumerate().all(|(i, &k)| i == k);
-            self.kin.push((at, kids.clone(), parents.clone(), identity));
+            self.kin.push((at, kids.clone(), parents.clone(), identity, OnceCell::new()));
         }
         (kids, parents)
     }
 
+    fn spans(&self, at: usize) -> Option<(Rc<[usize]>, Rc<[usize]>)> {
+        let entity = &self.sheet.entities[at];
+        if entity.validity.is_some() {
+            return None;
+        }
+        let offsets = entity.offsets.get(..=self.sheet.rows)?;
+        let ordered = offsets.first() == Some(&0)
+            && offsets.last().and_then(|&end| usize::try_from(end).ok()) == Some(entity.children)
+            && offsets.windows(2).all(|pair| pair[0] <= pair[1]);
+        if !ordered {
+            return None;
+        }
+        let mut parents = Vec::with_capacity(entity.children);
+        for (row, pair) in offsets.windows(2).enumerate() {
+            parents.extend(std::iter::repeat_n(row, (pair[1] - pair[0]) as usize));
+        }
+        Some(((0..entity.children).collect(), parents.into()))
+    }
+
     fn identity(&self, at: usize, kids: &Rc<[usize]>) -> bool {
         match self.kin.iter().find(|(a, k, ..)| *a == at && Rc::ptr_eq(k, kids)) {
-            Some((.., identity)) => *identity,
+            Some((_, _, _, identity, _)) => *identity,
             None => kids.len() == self.sheet.entities[at].children && kids.iter().enumerate().all(|(i, &k)| i == k),
         }
+    }
+
+    fn broadcast(&self, entry: usize, parents: &Rc<[usize]>) -> Option<Leaf<'a>> {
+        let column = self.sheet.entries[entry].leaf.column();
+        let (Values::Scaled { mant, scale }, None) = (column.values, column.validity) else {
+            return None;
+        };
+        let (.., codes) = self.kin.iter().find(|(_, _, owners, ..)| Rc::ptr_eq(owners, parents))?;
+        let codes = codes
+            .get_or_init(|| parents.iter().map(|&row| i32::try_from(row).ok()).collect())
+            .clone()?;
+        let dict = Dict::Scaled {
+            mant: mant.to_vec(),
+            scale: scale.to_vec(),
+        };
+        Some(Leaf::typed(Array::coded(codes, Rc::new(dict))))
     }
 
     fn gather(&self, at: usize, positions: &[usize]) -> (Rc<[usize]>, Rc<[usize]>) {
@@ -1179,7 +1221,7 @@ impl<'s, 'a> Pass<'s, 'a> {
                 let leaf = match self.site(at, key.as_deref(), parents) {
                     Member::Field(field) if identity => self.sheet.entities[at].view(field),
                     Member::Field(field) => self.sheet.entities[at].view(field).pick(kids),
-                    Member::Root(entry) => self.sheet.entries[entry].leaf.pick(parents),
+                    Member::Root(entry) => self.broadcast(entry, parents).unwrap_or_else(|| self.sheet.entries[entry].leaf.pick(parents)),
                     Member::Closure => return Binding::Row,
                     Member::Absent | Member::Unsupported => return Binding::Absent,
                 };
@@ -1831,12 +1873,14 @@ impl PolicyPlan {
             }
         }
         let base = sheet.entries.len();
-        let live: Vec<usize> = match erred {
-            true => (0..rows).filter(|&row| errors[row].is_none() && !fallback[row]).collect(),
-            false => (0..rows).filter(|&row| !fallback[row]).collect(),
+        let settled = !fallback.contains(&true);
+        let live: Vec<usize> = match (erred, settled) {
+            (true, _) => (0..rows).filter(|&row| errors[row].is_none() && !fallback[row]).collect(),
+            (false, true) => (0..rows).collect(),
+            (false, false) => (0..rows).filter(|&row| !fallback[row]).collect(),
         };
         let mut runner = Self::RUNNER.with_borrow_mut(std::mem::take);
-        let (sheet, fallback, errors, owned) = {
+        let (sheet, fallback, errors, owned, fell) = {
             let runner = &mut runner;
             let mut pass = Pass {
                 plan: self,
@@ -1879,13 +1923,18 @@ impl PolicyPlan {
                     .collect(),
             };
             erred |= pass.delegated;
-            (pass.sheet, pass.fallback, pass.state.failures, owned)
+            (pass.sheet, pass.fallback, pass.state.failures, owned, pass.fell)
         };
         Self::RUNNER.with_borrow_mut(|slot| *slot = runner);
         let mut errors = errors;
         let clean = |row: usize| !erred || errors[row].is_none();
-        let hosted: Vec<usize> = (0..rows).filter(|&row| fallback[row] && clean(row)).collect();
-        let finished: Vec<usize> = (0..rows).filter(|&row| !fallback[row] && clean(row)).collect();
+        let (hosted, finished): (Vec<usize>, Vec<usize>) = match settled && fell == 0 && !erred {
+            true => (Vec::new(), (0..rows).collect()),
+            false => (
+                (0..rows).filter(|&row| fallback[row] && clean(row)).collect(),
+                (0..rows).filter(|&row| !fallback[row] && clean(row)).collect(),
+            ),
+        };
         if hosted.is_empty() && owned.iter().all(Option::is_none) {
             let columns = sheet.output(&finished);
             return PolicyColumnarOutput {

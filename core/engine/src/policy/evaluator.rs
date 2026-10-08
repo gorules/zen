@@ -120,10 +120,22 @@ impl<'p> Steps<'p> {
         Self { probe, steps }
     }
 
+    fn coded(column: &zen_expression::lane::Column) -> Option<usize> {
+        use zen_expression::lane::{Dictionary, Values};
+        match column.values {
+            Values::Dict {
+                values: values @ (Dictionary::Text { .. } | Dictionary::Scaled { .. } | Dictionary::Bool { .. }),
+                ..
+            } => Some(values.len()),
+            _ => None,
+        }
+    }
+
     fn held(column: &zen_expression::lane::Column, row: usize) -> bool {
         use zen_expression::lane::Values;
-        match column.values {
-            Values::Any(_) | Values::Dict { .. } => column.valid(row) && !matches!(column.variable(row), Variable::Null),
+        match (column.values, Self::coded(column)) {
+            (Values::Dict { .. }, Some(len)) => column.valid(row) && column.code(row).is_some_and(|key| key < len),
+            (Values::Any(_) | Values::Dict { .. }, _) => column.valid(row) && !matches!(column.variable(row), Variable::Null),
             _ => column.valid(row),
         }
     }
@@ -131,7 +143,12 @@ impl<'p> Steps<'p> {
     fn solid(column: &zen_expression::lane::Column, rows: usize) -> bool {
         use zen_expression::lane::Values;
         let full = column.validity.is_none_or(|(bits, offset)| Self::ones(bits, offset, rows));
-        full && !matches!(column.values, Values::Any(_) | Values::Dict { .. })
+        match (column.values, Self::coded(column)) {
+            (Values::Dict { keys, .. }, Some(len)) => {
+                full && keys.get(..rows).is_some_and(|keys| keys.iter().all(|&key| usize::try_from(key).is_ok_and(|key| key < len)))
+            }
+            (values, _) => full && !matches!(values, Values::Any(_) | Values::Dict { .. }),
+        }
     }
 
     fn ones(bits: &[u64], offset: usize, rows: usize) -> bool {

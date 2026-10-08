@@ -1,8 +1,7 @@
-use crate::lane::Fusion;
 use crate::typed::tests::data::{ColSpec, Enc, Frame, ListSpec, Mock, Row, Spec, Value};
 use crate::typed::tests::oracle::{Oracle, Val};
 use crate::typed::tests::workload::{Block, Dialect, Workload};
-use crate::typed::{Class, Data, Dec, Hir, Lowering, Program, Scope};
+use crate::typed::{Class, Data, Dec, Hir, Hit, Lowering, Program, Scope, TableRule, TableSpec};
 
 struct Case {
     workload: Workload,
@@ -17,7 +16,7 @@ impl Case {
         let mut lowering = Lowering::new(None);
         let mut mock = Mock { spec: &workload.spec, member: None };
         for block in &workload.blocks {
-            lowering.unit(&block.entries(), &mut mock).expect("lowering");
+            block.lower(&mut lowering, &mut mock, Hit::Strict).expect("lowering");
         }
         let hir = lowering.finish();
         let program = Program::new(hir.clone()).expect("program");
@@ -253,15 +252,17 @@ fn outputs_move_out() {
 #[test]
 fn rules_fault_strictly() {
     let spec = Spec { columns: vec![ColSpec::new("c.score", Class::Num, Enc::Scaled), ColSpec::new("c.tier", Class::Text, Enc::Text)], lists: Vec::new() };
-    let rules = vec![
-        (vec![("c.score".to_string(), "> 10".to_string()), ("c.tier".to_string(), "'gold'".to_string())], "1".to_string()),
-        (vec![("c.tier".to_string(), "'silver'".to_string())], "2".to_string()),
-        (Vec::new(), "3".to_string()),
-    ];
-    let entries = vec![Fusion::Rules { key: "c.pick".to_string(), rules }];
-    for strict in [true, false] {
+    let rule = |score: Option<&str>, tier: Option<&str>, value: &str| TableRule { cells: vec![score.map(str::to_string), tier.map(str::to_string)], values: vec![Some(value.to_string())] };
+    for hit in [Hit::Strict, Hit::Lenient] {
+        let table = TableSpec {
+            inputs: vec![Some("c.score".to_string()), Some("c.tier".to_string())],
+            outputs: vec!["c.pick".to_string()],
+            rules: vec![rule(Some("> 10"), Some("'gold'"), "1"), rule(None, Some("'silver'"), "2"), rule(None, None, "3")],
+            hit,
+            selector: false,
+        };
         let mut lowering = Lowering::new(None);
-        lowering.unit_with(&entries, &mut Mock { spec: &spec, member: None }, strict).expect("lowering");
+        lowering.table(&table, &mut Mock { spec: &spec, member: None }).expect("lowering");
         let hir = lowering.finish();
         let program = Program::new(hir.clone()).expect("program");
         let rows = [
@@ -277,9 +278,9 @@ fn rules_fault_strictly() {
         let got: Vec<String> = (0..rows.len())
             .map(|r| if out.faults().get(r) { "fault".to_string() } else { out.slots()[0].num(r).map_or("null".to_string(), |d| d.to_string()) })
             .collect();
-        match strict {
-            true => assert_eq!(got, ["1", "2", "fault", "3", "3"]),
-            false => assert_eq!(got, ["1", "2", "2", "3", "3"]),
+        match hit {
+            Hit::Strict => assert_eq!(got, ["1", "2", "fault", "3", "3"]),
+            Hit::Lenient => assert_eq!(got, ["1", "2", "2", "3", "3"]),
         }
     }
 }

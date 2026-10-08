@@ -22,9 +22,32 @@ pub enum Class {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Resolved {
     Column(Class),
+    Keyed(Class, Arc<str>),
+    Output(usize),
     List { fields: Vec<(Arc<str>, Class)> },
     Absent,
     Unsupported,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Hit {
+    Strict,
+    Lenient,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TableRule {
+    pub cells: Vec<Option<String>>,
+    pub values: Vec<Option<String>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TableSpec {
+    pub inputs: Vec<Option<String>>,
+    pub outputs: Vec<String>,
+    pub rules: Vec<TableRule>,
+    pub hit: Hit,
+    pub selector: bool,
 }
 
 pub trait Resolve {
@@ -43,6 +66,8 @@ pub struct Lowering {
     classes: Vec<(NodeId, DictId)>,
     member: Option<ListId>,
     units: usize,
+    graph: bool,
+    local: usize,
 }
 
 struct Mark {
@@ -80,6 +105,12 @@ impl Class {
     }
 }
 
+impl TableRule {
+    fn value(&self, at: usize) -> Option<&str> {
+        self.values.get(at).and_then(Option::as_deref).filter(|v| !v.trim().is_empty())
+    }
+}
+
 impl Lowering {
     pub fn new(member: Option<(&str, &str)>) -> Self {
         let mut schema = Schema::default();
@@ -98,16 +129,30 @@ impl Lowering {
             classes: Vec::new(),
             member,
             units: 0,
+            graph: false,
+            local: 0,
         }
     }
 
-    pub fn unit(&mut self, entries: &[Fusion], resolve: &mut dyn Resolve) -> Result<(), Unsupported> {
-        self.unit_with(entries, resolve, true)
+    pub fn graph() -> Self {
+        Self { graph: true, ..Self::new(None) }
     }
 
-    pub(crate) fn unit_with(&mut self, entries: &[Fusion], resolve: &mut dyn Resolve, strict: bool) -> Result<(), Unsupported> {
+    pub fn unit(&mut self, entries: &[Fusion], resolve: &mut dyn Resolve) -> Result<(), Unsupported> {
         let mark = self.mark();
-        let result = entries.iter().try_for_each(|entry| self.entry(entry, resolve, strict));
+        self.local = self.names.len();
+        let result = entries.iter().try_for_each(|entry| self.entry(entry, resolve));
+        self.settle(mark, result)
+    }
+
+    pub fn table(&mut self, spec: &TableSpec, resolve: &mut dyn Resolve) -> Result<(), Unsupported> {
+        let mark = self.mark();
+        self.local = self.names.len();
+        let result = self.tabled(spec, resolve);
+        self.settle(mark, result)
+    }
+
+    fn settle(&mut self, mark: Mark, result: Result<(), Unsupported>) -> Result<(), Unsupported> {
         match result {
             Ok(()) => self.units += 1,
             Err(_) => self.rollback(mark),
@@ -121,6 +166,14 @@ impl Lowering {
 
     pub fn outputs(&self) -> usize {
         self.outputs.len()
+    }
+
+    pub fn retain(&mut self, mut keep: impl FnMut(usize) -> bool) {
+        let mut at = 0;
+        self.outputs.retain(|_| {
+            at += 1;
+            keep(at - 1)
+        });
     }
 
     pub fn finish(mut self) -> Hir {
@@ -195,7 +248,7 @@ impl Lowering {
         }
     }
 
-    fn entry(&mut self, entry: &Fusion, r: &mut dyn Resolve, strict: bool) -> Result<(), Unsupported> {
+    fn entry(&mut self, entry: &Fusion, r: &mut dyn Resolve) -> Result<(), Unsupported> {
         let ctx = self.ctx();
         match entry {
             Fusion::Output { key, source } => {
@@ -206,29 +259,40 @@ impl Lowering {
                 let id = self.parse(source, false, ctx, r)?;
                 self.output(key, id, ctx.scope, false)
             }
-            Fusion::Rules { key, rules } => self.rules(key, rules, ctx, r, strict),
+            Fusion::Rules { .. } => Err(Unsupported::new("rules outside a table")),
         }
     }
 
-    fn rules(&mut self, key: &str, rules: &[(Vec<(String, String)>, String)], ctx: Ctx, r: &mut dyn Resolve, strict: bool) -> Result<(), Unsupported> {
-        let mut targets: Vec<(&str, NodeId)> = Vec::new();
-        let mut conds = Vec::with_capacity(rules.len());
-        for (cells, _) in rules {
+    fn tabled(&mut self, spec: &TableSpec, r: &mut dyn Resolve) -> Result<(), Unsupported> {
+        if spec.rules.is_empty() || spec.outputs.is_empty() {
+            return Err(Unsupported::new("empty table"));
+        }
+        let ctx = self.ctx();
+        let mut targets: Vec<Option<NodeId>> = vec![None; spec.inputs.len()];
+        let mut conds = Vec::with_capacity(spec.rules.len());
+        for rule in &spec.rules {
             let mut cond: Option<NodeId> = None;
-            for (field, cell) in cells {
-                if cell.trim().is_empty() {
+            for (at, cell) in rule.cells.iter().enumerate() {
+                let Some(cell) = cell.as_deref().filter(|c| !c.is_empty()) else {
                     continue;
-                }
-                let target = match targets.iter().find(|(f, _)| *f == field.as_str()) {
-                    Some((_, t)) => *t,
-                    None => {
-                        let t = self.parse(field, false, ctx, r)?;
-                        targets.push((field.as_str(), t));
-                        t
-                    }
                 };
-                let test = self.parse(cell, true, Ctx { dollar: Some(target), ..ctx }, r)?;
+                if cell.trim().is_empty() {
+                    return Err(Unsupported::new("blank table cell"));
+                }
+                let test = match (spec.inputs.get(at).and_then(Option::as_deref), targets.get(at).copied().flatten()) {
+                    (Some(_), Some(target)) => self.parse(cell, true, Ctx { dollar: Some(target), ..ctx }, r)?,
+                    (Some(field), None) => {
+                        let target = self.parse(field, false, ctx, r)?;
+                        targets[at] = Some(target);
+                        self.parse(cell, true, Ctx { dollar: Some(target), ..ctx }, r)?
+                    }
+                    (None, _) => self.parse(cell, false, ctx, r)?,
+                };
                 self.require(test, |k| k == Kind::Bool, "table cell")?;
+                let test = match spec.hit {
+                    Hit::Lenient => self.guarded(test)?,
+                    Hit::Strict => test,
+                };
                 cond = Some(match cond {
                     None => test,
                     Some(left) => self.logic(true, left, test)?,
@@ -241,20 +305,68 @@ impl Lowering {
         }
         let total = conds.iter().any(|c| self.nodes[*c as usize].op == Op::Const(Lit::Bool(true)));
         let (scope, conds) = self.scoped(&conds)?;
-        let sel = self.add(Op::FirstMatch { conds, strict }, Ty::num(Some(0)), scope);
-        let mut arms = Vec::with_capacity(rules.len());
-        for (_, value) in rules {
-            arms.push(match value.trim().is_empty() {
-                true => self.konst(Lit::Null),
-                false => self.parse(value, false, ctx, r)?,
+        let sel = self.add(Op::FirstMatch { conds, strict: spec.hit == Hit::Strict }, Ty::num(Some(0)), scope);
+        let mut picks = Vec::with_capacity(spec.outputs.len());
+        for at in 0..spec.outputs.len() {
+            let mut arms = Vec::with_capacity(spec.rules.len());
+            for rule in &spec.rules {
+                arms.push(match rule.value(at) {
+                    Some(source) => self.parse(source, false, ctx, r)?,
+                    None => self.konst(Lit::Null),
+                });
+            }
+            picks.push(self.picked(sel, arms, total)?);
+        }
+        if spec.selector {
+            picks.push(sel);
+        }
+        let names = spec.outputs.iter().map(String::as_str).chain(std::iter::repeat(""));
+        for (name, pick) in names.zip(picks) {
+            self.output(name, pick, ctx.scope, true)?;
+        }
+        Ok(())
+    }
+
+    fn leftmost(&self, id: NodeId) -> Vec<NodeId> {
+        match &self.nodes[id as usize].op {
+            Op::And(a, _) | Op::Or(a, _) | Op::Not(a) => self.leftmost(*a),
+            Op::Cmp(Cmp::Lt | Cmp::Le | Cmp::Gt | Cmp::Ge, a, b) => vec![*a, *b],
+            Op::InRange(a, _) => vec![*a],
+            _ => Vec::new(),
+        }
+    }
+
+    fn guarded(&mut self, id: NodeId) -> Lowered {
+        if let Op::And(a, b) = self.nodes[id as usize].op {
+            let (a, b) = (self.guarded(a)?, self.guarded(b)?);
+            return self.logic(true, a, b);
+        }
+        let operands = self.leftmost(id);
+        let null = self.konst(Lit::Null);
+        let mut valid: Option<NodeId> = None;
+        let nullable: Vec<NodeId> = operands.into_iter().filter(|x| self.ty(*x).nullable).collect();
+        for operand in nullable {
+            let present = self.compare(Cmp::Ne, operand, null)?;
+            valid = Some(match valid {
+                None => present,
+                Some(left) => self.logic(true, left, present)?,
             });
         }
+        let Some(valid) = valid else {
+            return Ok(id);
+        };
+        let no = self.konst(Lit::Bool(false));
+        let (arms, ty) = self.unify(vec![id, no])?;
+        let (scope, ids) = self.scoped(&[valid, arms[0], arms[1]])?;
+        Ok(self.add(Op::If(ids[0], ids[1], ids[2]), ty, scope))
+    }
+
+    fn picked(&mut self, sel: NodeId, arms: Vec<NodeId>, total: bool) -> Lowered {
         let (arms, mut ty) = self.unify(arms)?;
         ty.nullable |= !total;
         let ids: Vec<NodeId> = std::iter::once(sel).chain(arms).collect();
         let (scope, ids) = self.scoped(&ids)?;
-        let pick = self.add(Op::Pick(ids[0], ids[1..].to_vec()), ty, scope);
-        self.output(key, pick, ctx.scope, true)
+        Ok(self.add(Op::Pick(ids[0], ids[1..].to_vec()), ty, scope))
     }
 
     fn parse(&mut self, source: &str, unary: bool, ctx: Ctx, r: &mut dyn Resolve) -> Lowered {
@@ -482,6 +594,14 @@ impl Lowering {
         self.names.iter().rev().find(|(name, _)| name == path).map(|(_, node)| *node)
     }
 
+    fn own(&self, path: &str) -> Option<NodeId> {
+        let from = match self.graph {
+            true => self.local.min(self.names.len()),
+            false => 0,
+        };
+        self.names[from..].iter().rev().find(|(name, _)| name == path).map(|(_, node)| *node)
+    }
+
     fn overlap(&self, path: &str) -> Result<(), Unsupported> {
         let inside = |outer: &str, inner: &str| inner.len() > outer.len() && inner.starts_with(outer) && inner.as_bytes()[outer.len()] == b'.';
         match self.names.iter().any(|(name, _)| inside(name, path) || inside(path, name)) {
@@ -501,12 +621,15 @@ impl Lowering {
             }
             Base::Dollar if segments.is_empty() => ctx.dollar.ok_or_else(|| Unsupported::new("$ outside a table cell")),
             Base::Dollar if ctx.dollar.is_some() => Err(Unsupported::new("member of $ in a table cell")),
-            Base::Dollar => self.named(&rest).ok_or_else(|| Unsupported::new(format!("unknown $.{rest}"))),
+            Base::Dollar => self.own(&rest).ok_or_else(|| Unsupported::new(format!("unknown $.{rest}"))),
             Base::Ident(name) => {
                 let path = match rest.is_empty() {
                     true => name.to_string(),
                     false => format!("{name}.{rest}"),
                 };
+                if self.graph {
+                    return self.column(&path, r);
+                }
                 self.overlap(&path)?;
                 if let Some(id) = self.named(&path) {
                     return Ok(id);
@@ -525,6 +648,14 @@ impl Lowering {
     }
 
     fn column(&mut self, path: &str, r: &mut dyn Resolve) -> Lowered {
+        if self.graph {
+            return match r.path(path) {
+                Resolved::Keyed(class, key) => self.keyed(class, &key),
+                Resolved::Output(at) => self.outputs.get(at).map(|o| o.node).ok_or_else(|| Unsupported::new(format!("output {at} of {path}"))),
+                Resolved::Absent => Ok(self.konst(Lit::Null)),
+                _ => Err(Unsupported::new(format!("path {path}"))),
+            };
+        }
         if let Some(c) = self.schema.column(path) {
             let ty = self.schema.columns[c as usize].ty;
             return Ok(self.add(Op::Column(c), ty, Scope::Row));
@@ -545,8 +676,25 @@ impl Lowering {
                 self.absent.push(path.to_string());
                 Ok(self.konst(Lit::Null))
             }
+            Resolved::Keyed(class, key) => self.keyed(class, &key),
             Resolved::List { .. } => Err(Unsupported::new(format!("list {path} used as a value"))),
-            Resolved::Unsupported => Err(Unsupported::new(format!("path {path}"))),
+            Resolved::Output(_) | Resolved::Unsupported => Err(Unsupported::new(format!("path {path}"))),
+        }
+    }
+
+    fn keyed(&mut self, class: Class, key: &str) -> Lowered {
+        let c = match self.schema.column(key) {
+            Some(c) => c,
+            None => {
+                let c = u16::try_from(self.schema.columns.len()).map_err(|_| Unsupported::new("too many columns"))?;
+                self.schema.columns.push(ColumnDef { path: key.to_string(), ty: class.ty() });
+                c
+            }
+        };
+        let ty = self.schema.columns[c as usize].ty;
+        match ty == class.ty() {
+            true => Ok(self.add(Op::Column(c), ty, Scope::Row)),
+            false => Err(Unsupported::new(format!("column {key} read as two classes"))),
         }
     }
 

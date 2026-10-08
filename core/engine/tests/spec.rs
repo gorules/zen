@@ -359,6 +359,8 @@ impl Engines {
             let structs = built.structs(&fields);
             let columns = built.columns_with(&structs);
             let output = run.compiled.evaluate_columns(&columns, EvaluationOptions::default()).await;
+            self.typed += output.typed;
+            self.laned += output.laned;
             for row in 0..built.rows {
                 let input = columns.row(row);
                 let want = match run.walker.evaluate(input.depth_clone(64)).await {
@@ -515,6 +517,8 @@ fn graph_engines_match_walker() {
         engines.columnar,
         engines.failures.len()
     );
+    eprintln!("graph engines: {} typed units, {} laned units", engines.typed, engines.laned);
+    assert!(std::env::var("ZEN_TYPED").is_ok_and(|v| v.trim() == "0") || engines.typed > 0, "no graph unit ran typed");
     Differential::assert(problems, engines.failures);
 }
 

@@ -6,6 +6,7 @@ mod schedule;
 mod table;
 mod columnar;
 mod data;
+mod lowered;
 mod schema;
 mod shred;
 mod typed;

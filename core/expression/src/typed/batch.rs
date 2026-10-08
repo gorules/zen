@@ -42,6 +42,7 @@ pub(crate) enum Data<'x> {
 pub(crate) struct Feed<'x> {
     pub(crate) data: Data<'x>,
     pub(crate) validity: Option<(&'x [u64], usize)>,
+    pub(crate) holes: Option<Vec<u64>>,
     pub(crate) faults: Option<Vec<u64>>,
     pub(crate) fixed: Option<u8>,
 }
@@ -131,12 +132,16 @@ impl<'x> Text<'x> {
 impl<'x> Feed<'x> {
     #[inline]
     pub(crate) fn valid_word(&self, at: usize, width: usize) -> u64 {
-        match self.validity {
+        let valid = match self.validity {
             None => match width >= 64 {
                 true => u64::MAX,
                 false => (1u64 << width) - 1,
             },
             Some((bits, offset)) => Column::word(bits, offset + at, width),
+        };
+        match &self.holes {
+            None => valid,
+            Some(holes) => valid & !Column::word(holes, at, width),
         }
     }
 
@@ -173,12 +178,17 @@ impl<'x> Feed<'x> {
     }
 
     fn new(data: Data<'x>, validity: Option<(&'x [u64], usize)>) -> Self {
-        Self { data, validity, faults: None, fixed: None }
+        Self { data, validity, holes: None, faults: None, fixed: None }
     }
 
     fn fault(&mut self, at: usize, len: usize) {
         let faults = self.faults.get_or_insert_with(|| vec![0u64; K::words(len)]);
         K::set(faults, at, true);
+    }
+
+    fn hole(&mut self, at: usize, len: usize) {
+        let holes = self.holes.get_or_insert_with(|| vec![0u64; K::words(len)]);
+        K::set(holes, at, true);
     }
 
     fn of(column: &Column<'x>, def: &ColumnDef, base: usize, len: usize) -> Result<Self, Unsupported> {
@@ -238,7 +248,7 @@ impl<'x> Feed<'x> {
                 }
                 let mut feed = Self::new(Data::Num { mant: Cow::Owned(mant), scale: Scales::Each(Cow::Owned(scale)) }, validity);
                 for i in bad {
-                    feed.fault(i, len);
+                    feed.hole(i, len);
                 }
                 feed.scan(len)
             }
@@ -249,16 +259,22 @@ impl<'x> Feed<'x> {
                 let dict = values.column();
                 let mut bits = vec![0u64; K::words(len)];
                 let mut bad = Vec::new();
+                let mut holes = Vec::new();
                 for (i, k) in keys[base..base + len].iter().enumerate() {
-                    match usize::try_from(*k).ok().and_then(|k| dict.boolean(k)) {
-                        Some(b) => K::set(&mut bits, i, b),
-                        None if column.valid(base + i) => bad.push(i),
-                        None => {}
+                    let entry = usize::try_from(*k).ok().filter(|k| *k < dict.len() && dict.valid(*k));
+                    match entry.map(|k| dict.boolean(k)) {
+                        Some(Some(b)) => K::set(&mut bits, i, b),
+                        Some(None) if column.valid(base + i) => bad.push(i),
+                        None if column.valid(base + i) => holes.push(i),
+                        _ => {}
                     }
                 }
                 let mut feed = Self::new(Data::Bool { bits: Cow::Owned(bits), offset: 0 }, validity);
                 for i in bad {
                     feed.fault(i, len);
+                }
+                for i in holes {
+                    feed.hole(i, len);
                 }
                 feed
             }
@@ -290,7 +306,7 @@ impl<'x> Feed<'x> {
                         .collect(),
                 };
                 for i in bad {
-                    feed.fault(i, len);
+                    feed.hole(i, len);
                 }
                 feed
             }
@@ -305,7 +321,7 @@ impl<'x> Feed<'x> {
         };
         let mut fixed: Option<u8> = None;
         let mut mixed = false;
-        let plain = self.validity.is_none() && self.faults.is_none();
+        let plain = self.validity.is_none() && self.holes.is_none() && self.faults.is_none();
         if plain && !each.is_empty() {
             let s = each[0];
             fixed = Some(s);
@@ -361,7 +377,7 @@ impl<'x> Feed<'x> {
             },
             _ => vec![matcher.other; len],
         };
-        Feed { data: Data::Codes(codes), validity: self.validity, faults: self.faults.clone(), fixed: None }
+        Feed { data: Data::Codes(codes), validity: self.validity, holes: self.holes.clone(), faults: self.faults.clone(), fixed: None }
     }
 }
 

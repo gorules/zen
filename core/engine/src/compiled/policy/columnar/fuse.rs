@@ -6,8 +6,10 @@ use crate::policy::blocks::{AssertionIr, BlockKind, ConditionOperator, DecisionT
 use std::cmp::Ordering;
 use std::rc::Rc;
 use super::typed::TypedGroup;
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::{Arc, RwLock};
+use crate::compiled::lowered::Exports;
 use zen_expression::lane::{Fusion, LaneProgram};
+use zen_expression::typed::{Hit, TableRule, TableSpec};
 
 type Variants = ahash::HashMap<(Vec<usize>, bool), Vec<Arc<TypedGroup>>>;
 
@@ -16,6 +18,7 @@ pub(crate) struct Fusions {
     groups: RwLock<ahash::HashMap<Vec<usize>, Option<Arc<Fused>>>>,
     effects: RwLock<ahash::HashMap<usize, Option<Arc<Effects>>>>,
     tables: RwLock<ahash::HashMap<usize, bool>>,
+    runs: RwLock<ahash::HashMap<(Vec<usize>, bool), usize>>,
     pub(super) typed: RwLock<Variants>,
 }
 
@@ -47,13 +50,6 @@ struct Unit<'p> {
 }
 
 impl Fusions {
-    const TYPED: bool = true;
-
-    pub(super) fn enabled() -> bool {
-        static ENABLED: OnceLock<bool> = OnceLock::new();
-        *ENABLED.get_or_init(|| std::env::var("ZEN_TYPED").map_or(Self::TYPED, |value| value.trim() != "0"))
-    }
-
     fn table(&self, block: usize, ir: &DecisionTableIr) -> bool {
         if let Some(found) = self.tables.read().ok().and_then(|cache| cache.get(&block).copied()) {
             return found;
@@ -74,6 +70,19 @@ impl Fusions {
             cache.insert(block, built.clone());
         }
         built
+    }
+
+    fn run(&self, blocks: &[usize], member: bool) -> Option<usize> {
+        self.runs.read().ok().and_then(|cache| cache.get(&(blocks.to_vec(), member)).copied())
+    }
+
+    fn ran(&self, blocks: &[usize], member: bool, run: usize) {
+        if self.run(blocks, member) == Some(run) {
+            return;
+        }
+        if let Ok(mut cache) = self.runs.write() {
+            cache.insert((blocks.to_vec(), member), run);
+        }
     }
 
     fn get(&self, plan: &PolicyPlan, blocks: &[usize], member: bool) -> Option<Arc<Fused>> {
@@ -199,6 +208,29 @@ impl Fused {
             && ir.inputs.iter().all(|input| input.field.as_deref().is_some_and(|f| !f.trim().is_empty()) || ir.rules.iter().all(|rule| !cell(rule, &input.id)))
     }
 
+    pub(super) fn spec(ir: &DecisionTableIr) -> Option<TableSpec> {
+        if !Self::fusable(ir) {
+            return None;
+        }
+        let used = |id: &Arc<str>| ir.rules.iter().any(|rule| rule.get(id).is_some_and(|c| !c.is_empty()));
+        let inputs: Vec<_> = ir.inputs.iter().filter(|input| used(&input.id)).collect();
+        let outputs: Vec<_> = ir.outputs.iter().filter(|o| !o.field.is_empty()).collect();
+        Some(TableSpec {
+            inputs: inputs.iter().map(|input| input.field.as_deref().map(str::to_string)).collect(),
+            outputs: outputs.iter().map(|o| o.field.to_string()).collect(),
+            rules: ir
+                .rules
+                .iter()
+                .map(|rule| TableRule {
+                    cells: inputs.iter().map(|input| rule.get(&input.id).filter(|c| !c.is_empty()).map(|c| c.to_string())).collect(),
+                    values: outputs.iter().map(|o| rule.get(&o.id).map(|c| c.to_string())).collect(),
+                })
+                .collect(),
+            hit: Hit::Strict,
+            selector: false,
+        })
+    }
+
     fn table(ir: &DecisionTableIr, block: usize) -> Option<(Vec<Fusion>, Vec<Fusion>)> {
         if !Self::fusable(ir) {
             return None;
@@ -288,7 +320,7 @@ impl<'s, 'a> Pass<'s, 'a> {
             }
         };
         fresh(self, rows);
-        let typed = Fusions::enabled();
+        let typed = Exports::enabled();
         for item in self.schedule(&events, rows) {
             fresh(self, rows);
             if rows.is_empty() {
@@ -297,17 +329,37 @@ impl<'s, 'a> Pass<'s, 'a> {
             let blocks: Vec<usize> = item.units.iter().map(|(block, _, _)| *block).collect();
             if let (Some(_), true) = (item.domain, typed) {
                 if let Some(entity) = self.regroup(&item, rows) {
+                    let member = entity.is_some();
+                    let plan = self.plan;
+                    let fusions = &plan.fusions;
                     let mut at = 0;
+                    let mut laning: Option<usize> = None;
                     while at < item.units.len() {
                         fresh(self, rows);
                         if rows.is_empty() {
                             break;
                         }
-                        let consumed = self.typed(&item.units[at..], entity, rows);
+                        let (consumed, faulted) = self.typed(&item.units[at..], entity, rows);
                         if consumed > 0 {
+                            if let Some(from) = laning.take() {
+                                fusions.ran(&blocks[from..], member, at - from);
+                            }
                             self.counts.0 += consumed;
+                            if !faulted.is_empty() {
+                                self.retry(&events, &item.units[at..at + consumed], faulted);
+                            }
                             at += consumed;
                             continue;
+                        }
+                        if laning.is_none() {
+                            let run = fusions.run(&blocks[at..], member).map_or(0, |run| run.min(blocks.len() - at));
+                            if let Some(fused) = (run > 1).then(|| fusions.get(plan, &blocks[at..at + run], member)).flatten() {
+                                self.fused(&fused, entity, rows);
+                                self.counts.1 += run;
+                                at += run;
+                                continue;
+                            }
+                            laning = Some(at);
                         }
                         let (_, start, len) = item.units[at];
                         for event in &events[start..start + len] {
@@ -319,6 +371,9 @@ impl<'s, 'a> Pass<'s, 'a> {
                         }
                         self.counts.1 += 1;
                         at += 1;
+                    }
+                    if let (Some(from), true) = (laning, at == item.units.len()) {
+                        fusions.ran(&blocks[from..], member, at - from);
                     }
                     continue;
                 }
@@ -348,6 +403,18 @@ impl<'s, 'a> Pass<'s, 'a> {
         }
         fresh(self, rows);
         last
+    }
+
+    fn retry(&mut self, events: &[Event], units: &[(usize, usize, usize)], mut rows: Vec<usize>) {
+        for (_, start, len) in units {
+            for event in &events[*start..start + len] {
+                rows.retain(|&row| !self.fallback[row]);
+                if rows.is_empty() {
+                    return;
+                }
+                self.event(*event, &rows);
+            }
+        }
     }
 
     fn regroup(&self, item: &Item, rows: &[usize]) -> Option<Option<usize>> {

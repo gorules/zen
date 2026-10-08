@@ -270,8 +270,8 @@ impl<'a, 'x> Interp<'a, 'x> {
                 for (i, c) in conds.iter().enumerate() {
                     match (self.eval(*c), strict) {
                         (Ok(V::Bool(true)), _) => return Ok(V::Num(Dec::int(i as i64))),
-                        (Ok(V::Bool(false)), _) | (_, false) => {}
-                        (_, true) => return Err(Fault),
+                        (Ok(V::Bool(false)), _) | (Ok(_), false) => {}
+                        (Ok(_), true) | (Err(_), _) => return Err(Fault),
                     }
                 }
                 Ok(V::Num(Dec::int(conds.len() as i64)))

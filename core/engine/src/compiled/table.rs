@@ -6,6 +6,7 @@ use std::borrow::Cow;
 use std::rc::Rc;
 use std::sync::Arc;
 use zen_expression::lane::{Binding, CellEnv, CellSet, Column as LaneColumn, LaneProgram, LaneRunner, Op, Pieces, SourceInfo, Values};
+use zen_expression::typed::{TableRule, TableSpec};
 use zen_expression::Variable;
 use zen_types::decision::{DecisionTableContent, DecisionTableHitPolicy};
 
@@ -102,6 +103,15 @@ pub(crate) struct First {
 }
 
 impl First {
+    pub fn coded(rules: usize, codes: Vec<i32>) -> First {
+        First {
+            rules,
+            codes,
+            batches: Vec::new(),
+            starts: vec![0],
+        }
+    }
+
     fn entries(&self) -> usize {
         self.rules + self.starts.last().copied().unwrap_or(0)
     }
@@ -150,7 +160,6 @@ pub(crate) struct Dispatch {
     strides: Vec<usize>,
     lut: Option<Vec<u32>>,
     candidates: Vec<Vec<u64>>,
-    firsts: Vec<i32>,
     chosen: Option<Vec<i32>>,
 }
 
@@ -218,7 +227,6 @@ impl Dispatch {
             strides,
             lut,
             candidates,
-            firsts,
             chosen,
         })
     }
@@ -280,6 +288,7 @@ pub(crate) struct Table {
     split: Option<Arc<[Arc<str>]>>,
     literal: bool,
     pub stable: bool,
+    pub spec: Option<TableSpec>,
 }
 
 enum Part {
@@ -557,6 +566,7 @@ impl Table {
         let stable = content.rules.iter().all(|rule| rule.values().all(|cell| !clocked(cell.as_ref())));
         let mut table = Self {
             id: Self::next_id(),
+            spec: Self::spec(content),
             stable,
             fused,
             positions,
@@ -595,6 +605,58 @@ impl Table {
         Ok(table)
     }
 
+    fn spec(content: &DecisionTableContent) -> Option<TableSpec> {
+        if !matches!(content.hit_policy, DecisionTableHitPolicy::First) {
+            return None;
+        }
+        let mut paths: Vec<&str> = Vec::new();
+        for output in content.outputs.iter() {
+            let (path, collect) = output.write_path();
+            if collect {
+                return None;
+            }
+            if !path.is_empty() && !paths.contains(&path) {
+                paths.push(path);
+            }
+        }
+        let nested = paths.iter().any(|a| paths.iter().any(|b| b.strip_prefix(a).is_some_and(|rest| rest.starts_with('.'))));
+        let plain = paths.iter().all(|path| path.split('.').all(|segment| !segment.is_empty() && !segment.contains(['$', '[', ']'])));
+        let blank = content.inputs.iter().any(|input| input.field.as_deref().is_some_and(|field| field.trim().is_empty()))
+            || content.rules.iter().any(|rule| rule.values().any(|cell| !cell.is_empty() && cell.trim().is_empty()));
+        if nested || !plain || blank {
+            return None;
+        }
+        let rules = content
+            .rules
+            .iter()
+            .map(|rule| {
+                let values = paths
+                    .iter()
+                    .map(|path| {
+                        content
+                            .outputs
+                            .iter()
+                            .filter(|output| output.write_path().0 == *path)
+                            .filter_map(|output| rule.get(&output.id).filter(|cell| !cell.is_empty()))
+                            .next_back()
+                            .map(|cell| cell.to_string())
+                    })
+                    .collect();
+                TableRule {
+                    cells: content.inputs.iter().map(|input| rule.get(&input.id).filter(|cell| !cell.is_empty()).map(|cell| cell.to_string())).collect(),
+                    values,
+                }
+            })
+            .collect();
+        Some(TableSpec {
+            inputs: content.inputs.iter().map(|input| input.field.as_deref().map(str::to_string)).collect(),
+            outputs: paths.iter().map(|path| path.to_string()).collect(),
+            rules,
+            hit: zen_expression::typed::Hit::Lenient,
+            selector: true,
+        })
+    }
+
     pub fn programs(&self) -> Vec<&LaneProgram> {
         let mut programs: Vec<&LaneProgram> = Vec::new();
         for column in &self.columns {
@@ -611,6 +673,18 @@ impl Table {
             programs.extend(outputs.collect.iter());
         }
         programs
+    }
+
+    pub fn literal(&self) -> bool {
+        self.literal
+    }
+
+    pub fn rules(&self) -> usize {
+        self.outputs.len()
+    }
+
+    pub fn writes(&self, rule: usize, slot: usize) -> bool {
+        self.positions.get(rule * self.all_paths.len() + slot).is_some_and(Option::is_some)
     }
 
     pub fn paths(&self) -> &Arc<[Arc<str>]> {

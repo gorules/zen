@@ -17,6 +17,7 @@ pub struct Slot {
     pub len: usize,
     pub data: Data,
     pub valid: Vec<u64>,
+    pub fault: Faults,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -170,7 +171,7 @@ impl Outputs {
                 Kind::Code(_) => Data::Code(Vec::new()),
                 Kind::Text => return Err(Unsupported::new(format!("text output {}", o.name))),
             };
-            slots.push(Slot { name: o.name.clone(), scope: o.scope, kind: o.ty.kind, len: 0, data, valid: Vec::new() });
+            slots.push(Slot { name: o.name.clone(), scope: o.scope, kind: o.ty.kind, len: 0, data, valid: Vec::new(), fault: Faults::default() });
         }
         Ok(Self { rows: 0, slots, faults: Faults::default() })
     }
@@ -184,6 +185,7 @@ impl Outputs {
         self.faults.reset(rows);
         for slot in &mut self.slots {
             slot.reset(len(slot.scope));
+            slot.fault.reset(rows);
         }
     }
 

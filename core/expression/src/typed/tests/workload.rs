@@ -1,6 +1,6 @@
 use crate::lane::Fusion;
 use crate::typed::tests::data::{ColSpec, Enc, ListSpec, Mock, Row, Spec, Value};
-use crate::typed::{Class, Dec, Hir, Lowering, Unsupported};
+use crate::typed::{Class, Dec, Hir, Hit, Lowering, Resolve, TableRule, TableSpec, Unsupported};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Dialect {
@@ -53,23 +53,25 @@ struct AnchorCustomer {
 }
 
 impl Block {
-    pub(crate) fn entries(&self) -> Vec<Fusion> {
+    pub(crate) fn lower(&self, lowering: &mut Lowering, resolve: &mut dyn Resolve, hit: Hit) -> Result<(), Unsupported> {
         match self {
-            Block::Expr { key, source } => vec![Fusion::Output { key: key.clone(), source: source.clone() }],
-            Block::Table { inputs, outputs, rules } => outputs
-                .iter()
-                .enumerate()
-                .map(|(j, key)| Fusion::Rules {
-                    key: key.clone(),
+            Block::Expr { key, source } => lowering.unit(&[Fusion::Output { key: key.clone(), source: source.clone() }], resolve),
+            Block::Table { inputs, outputs, rules } => {
+                let spec = TableSpec {
+                    inputs: inputs.iter().cloned().map(Some).collect(),
+                    outputs: outputs.clone(),
                     rules: rules
                         .iter()
-                        .map(|rule| {
-                            let cells = inputs.iter().zip(&rule.cells).filter(|(_, c)| !c.trim().is_empty()).map(|(i, c)| (i.clone(), c.clone())).collect();
-                            (cells, rule.values.get(j).cloned().unwrap_or_default())
+                        .map(|rule| TableRule {
+                            cells: rule.cells.iter().map(|cell| (!cell.trim().is_empty()).then(|| cell.clone())).collect(),
+                            values: rule.values.iter().map(|value| Some(value.clone())).collect(),
                         })
                         .collect(),
-                })
-                .collect(),
+                    hit,
+                    selector: false,
+                };
+                lowering.table(&spec, resolve)
+            }
         }
     }
 }
@@ -143,7 +145,11 @@ impl Workload {
         let mut lowering = Lowering::new(member);
         let mut mock = Mock { spec: &self.spec, member: self.member };
         for block in &self.blocks {
-            lowering.unit_with(&block.entries(), &mut mock, self.dialect == Dialect::Policy)?;
+            let hit = match self.dialect {
+                Dialect::Policy => Hit::Strict,
+                Dialect::Graph => Hit::Lenient,
+            };
+            block.lower(&mut lowering, &mut mock, hit)?;
         }
         Ok(lowering.finish())
     }

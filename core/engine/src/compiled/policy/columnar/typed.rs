@@ -1,10 +1,12 @@
 use super::fuse::{Fused, Fusions, Sink};
 use super::{Bind, Member, Pass, Sheet};
-use crate::compiled::typed::{Array, Bits, Dict, Leaf, Store};
+use crate::compiled::lowered::Exports;
+use crate::compiled::typed::{Bits, Leaf};
+use crate::policy::blocks::BlockKind;
 use std::rc::Rc;
 use std::sync::Arc;
 use zen_expression::lane::{Dictionary, Values};
-use zen_expression::typed::{Batch, Class, Data, List, Lowering, Outputs, Program, Resolve, Resolved, Slot};
+use zen_expression::typed::{Batch, Class, List, Lowering, Outputs, Program, Resolve, Resolved};
 
 pub(crate) struct TypedGroup {
     program: Option<Program>,
@@ -14,7 +16,7 @@ pub(crate) struct TypedGroup {
     columns: Vec<usize>,
     lists: Vec<usize>,
     fields: Vec<usize>,
-    dicts: Vec<(Vec<i32>, String)>,
+    exports: Exports,
 }
 
 struct Probed {
@@ -77,13 +79,17 @@ impl TypedGroup {
             let mut lowering = Lowering::new(member);
             let mut sinks = Vec::new();
             for &(block, _, _) in &units[..limit] {
-                let Some((entries, sunk)) = Fused::entries(pass.plan, block, entity.is_some()) else {
-                    break;
+                let lowered = match &pass.plan.blocks.rules[block].kind {
+                    BlockKind::DecisionTable(ir) => Fused::spec(ir).map(|spec| {
+                        let sunk: Vec<Sink> = spec.outputs.iter().map(|key| Sink::Write(Arc::from(key.as_str()))).collect();
+                        (lowering.table(&spec, &mut probe), sunk)
+                    }),
+                    _ => Fused::entries(pass.plan, block, entity.is_some()).map(|(entries, sunk)| (lowering.unit(&entries, &mut probe), sunk)),
                 };
-                if lowering.unit(&entries, &mut probe).is_err() {
-                    break;
+                match lowered {
+                    Some((Ok(()), sunk)) => sinks.extend(sunk),
+                    _ => break,
                 }
-                sinks.extend(sunk);
             }
             let consumed = lowering.units();
             let record = probe.record;
@@ -111,7 +117,7 @@ impl TypedGroup {
             columns: Vec::new(),
             lists: Vec::new(),
             fields: Vec::new(),
-            dicts: Vec::new(),
+            exports: Exports::of(&Default::default()),
         }
     }
 
@@ -127,20 +133,7 @@ impl TypedGroup {
         let (Some(columns), Some(lists), Some(fields)) = (columns, lists, fields) else {
             return Err(record);
         };
-        let dicts = hir
-            .schema
-            .dicts
-            .iter()
-            .map(|dict| {
-                let mut offsets = vec![0i32];
-                let mut data = String::new();
-                for value in &dict.values {
-                    data.push_str(value);
-                    offsets.push(i32::try_from(data.len()).unwrap_or(i32::MAX));
-                }
-                (offsets, data)
-            })
-            .collect();
+        let exports = Exports::of(hir);
         Ok(Self {
             program: Some(program),
             sinks,
@@ -149,7 +142,7 @@ impl TypedGroup {
             columns,
             lists,
             fields,
-            dicts,
+            exports,
         })
     }
 
@@ -189,23 +182,23 @@ impl Fusions {
 }
 
 impl<'s, 'a> Pass<'s, 'a> {
-    pub(super) fn typed(&mut self, units: &[(usize, usize, usize)], entity: Option<usize>, rows: &[usize]) -> usize {
+    pub(super) fn typed(&mut self, units: &[(usize, usize, usize)], entity: Option<usize>, rows: &[usize]) -> (usize, Vec<usize>) {
         let total = self.sheet.rows;
         let full = rows.len() == total;
         if !full && rows.len() * 4 < total {
-            return 0;
+            return (0, Vec::new());
         }
         let plan = self.plan;
         let Some((group, sources)) = plan.fusions.group(self, units, entity, rows) else {
-            return 0;
+            return (0, Vec::new());
         };
         let Some(program) = group.program.as_ref() else {
-            return 0;
+            return (0, Vec::new());
         };
         let span = match entity {
             Some(at) => match self.span(at) {
                 Some(span) => Some((at, span)),
-                None => return 0,
+                None => return (0, Vec::new()),
             },
             None => None,
         };
@@ -215,20 +208,25 @@ impl<'s, 'a> Pass<'s, 'a> {
             bits
         });
         let Some(mut out) = self.execute(&group, program, &sources, entity, select.as_deref()) else {
-            return 0;
+            return (0, Vec::new());
         };
-        if out.faults().any() {
-            for row in out.faults().iter() {
-                self.fall(row);
+        let faulted: Vec<usize> = match out.faults().any() {
+            true => rows.iter().copied().filter(|&row| out.faults().get(row)).collect(),
+            false => Vec::new(),
+        };
+        let kept: Vec<usize>;
+        let rows = match faulted.is_empty() {
+            true => rows,
+            false => {
+                kept = rows.iter().copied().filter(|&row| !out.faults().get(row)).collect();
+                kept.as_slice()
             }
+        };
+        if rows.is_empty() {
+            return (group.units, faulted);
         }
-        let mut dicts: Vec<Option<Rc<Dict>>> = vec![None; group.dicts.len()];
-        let mut leaves: Vec<Leaf<'a>> = Vec::with_capacity(out.slots().len());
-        for at in 0..out.slots().len() {
-            if let Some(slot) = out.slot_mut(at) {
-                leaves.push(Self::slotted(slot, &group, &mut dicts));
-            }
-        }
+        let full = rows.len() == total;
+        let leaves: Vec<Leaf<'a>> = group.exports.leaves(&mut out);
         match span {
             None => {
                 let leaves = match full {
@@ -252,7 +250,7 @@ impl<'s, 'a> Pass<'s, 'a> {
                 self.sink(&group.sinks, leaves, Some((at, &kids)), rows);
             }
         }
-        group.units
+        (group.units, faulted)
     }
 
     fn span(&self, at: usize) -> Option<(usize, usize)> {
@@ -298,70 +296,6 @@ impl<'s, 'a> Pass<'s, 'a> {
         let mut out = program.outputs();
         program.run(&batch, &mut out, select).ok()?;
         Some(out)
-    }
-
-    fn slotted(slot: &mut Slot, group: &TypedGroup, dicts: &mut [Option<Rc<Dict>>]) -> Leaf<'a> {
-        let len = slot.len;
-        let dict = slot.dict();
-        let array = match &slot.data {
-            Data::Num { .. } => match slot.take_num() {
-                Some((mut mant, mut scale, valid)) => {
-                    let valid = Self::validity(valid, len);
-                    if let Some(bits) = &valid {
-                        for at in (0..len).filter(|&at| !Bits::get(bits, at)) {
-                            mant[at] = 0;
-                            scale[at] = 0;
-                        }
-                    }
-                    Array::parts(Store::Scaled { mant, scale }, valid, len)
-                }
-                None => return Leaf::nulls(len),
-            },
-            Data::Bool(_) => match slot.take_bool() {
-                Some((mut bits, valid)) => {
-                    Bits::trim(&mut bits, len);
-                    Array::parts(Store::Bool(bits), Self::validity(valid, len), len)
-                }
-                None => return Leaf::nulls(len),
-            },
-            Data::Code(_) => {
-                let (Some((mut codes, valid)), Some(d)) = (slot.take_code(), dict) else {
-                    return Leaf::nulls(len);
-                };
-                let Some(dict) = Self::dictionary(group, dicts, usize::from(d)) else {
-                    return Leaf::nulls(len);
-                };
-                match Self::validity(valid, len) {
-                    None => Array::coded(codes.into(), dict),
-                    Some(bits) => {
-                        for at in (0..len).filter(|&at| !Bits::get(&bits, at)) {
-                            codes[at] = -1;
-                        }
-                        Array::coded_with(codes.into(), dict, bits)
-                    }
-                }
-            }
-        };
-        Leaf::typed(array)
-    }
-
-    fn dictionary(group: &TypedGroup, dicts: &mut [Option<Rc<Dict>>], at: usize) -> Option<Rc<Dict>> {
-        let slot = dicts.get_mut(at)?;
-        if slot.is_none() {
-            let (offsets, data) = group.dicts.get(at)?;
-            *slot = Some(Rc::new(Dict::Text {
-                offsets: offsets.clone(),
-                data: data.clone(),
-            }));
-        }
-        slot.clone()
-    }
-
-    fn validity(mut valid: Vec<u64>, len: usize) -> Option<Vec<u64>> {
-        valid.resize(len.div_ceil(64), 0);
-        Bits::trim(&mut valid, len);
-        let full = valid.iter().map(|w| w.count_ones() as usize).sum::<usize>() == len;
-        (!full).then_some(valid)
     }
 
     fn locate(&self, entity: Option<usize>, rows: &[usize], key: &str, alias: bool) -> (Resolved, Source) {

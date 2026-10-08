@@ -795,6 +795,27 @@ fn policy_typed_falls_back_per_unit() {
 }
 
 #[test]
+fn policy_typed_fuses_lane_runs() {
+    let policy = Anchor::POLICY.replace(
+        "    {match: \"customer.risk\"",
+        "    {expression: \"customer.label\", value: \"string(customer.age)\"},\n    {expression: \"customer.tag\", value: \"string(customer.income)\"},\n    {match: \"customer.risk\"",
+    );
+    assert_ne!(policy, Anchor::POLICY);
+    let ws = Anchor::workspace_with(&policy);
+    let mut failures = Vec::new();
+    for seed in [5, 6, 7] {
+        for (typed, laned, hosted) in Anchor::checked(&ws, &Anchor::rows(256, seed), &mut failures) {
+            assert_eq!(hosted, 0, "rows hosted");
+            if Anchor::typed() {
+                assert!(typed > 0 && laned >= 2, "units typed {typed}, laned {laned}");
+                assert_eq!(typed + laned, 10, "units typed {typed}, laned {laned}");
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.join("\n"));
+}
+
+#[test]
 fn policy_typed_extremes() {
     let customer = |accounts: Value| json!({"customer": {"age": 30, "income": 4000, "tier": "gold", "rate": 2, "accounts": accounts}});
     let overflow = [
@@ -837,9 +858,10 @@ fn policy_typed_extremes() {
     assert_eq!(counts.len(), 2, "flat and struct-list columns");
     for (typed, laned, hosted) in counts {
         eprintln!("extremes typed {typed} laned {laned} hosted {hosted}");
+        assert_eq!(hosted, 0, "hosted rows");
         if Anchor::typed() {
-            assert_eq!((typed, laned), (8, 0), "anchor units typed / laned");
-            assert_eq!(hosted, overflow.len(), "hosted rows");
+            assert!(typed > 0, "anchor units typed {typed}");
+            assert_eq!(typed + laned, 8, "anchor units typed {typed} / laned {laned}");
         }
     }
     for (at, row) in nulls.into_iter().enumerate() {

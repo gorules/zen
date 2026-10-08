@@ -1,7 +1,6 @@
 mod columnar;
 mod entity;
 mod schedule;
-mod shred;
 mod table;
 
 pub use columnar::PolicyColumnarOutput;

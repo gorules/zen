@@ -238,6 +238,19 @@ impl Bits {
         true
     }
 
+    pub fn rows(bits: &[u64]) -> impl Iterator<Item = usize> + '_ {
+        bits.iter().enumerate().flat_map(|(w, &word)| {
+            let mut word = word;
+            std::iter::from_fn(move || {
+                (word != 0).then(|| {
+                    let at = word.trailing_zeros() as usize;
+                    word &= word - 1;
+                    w * 64 + at
+                })
+            })
+        })
+    }
+
     pub fn none(bits: &[u64]) -> bool {
         bits.iter().all(|w| *w == 0)
     }
@@ -787,10 +800,6 @@ impl<'a> Records<'a> {
         }
     }
 
-    pub fn nulled(&self) -> Option<&[u64]> {
-        self.nulled.as_deref()
-    }
-
     pub fn valid(&self, row: usize) -> bool {
         Bits::get(&self.valid, row)
     }
@@ -1093,19 +1102,6 @@ impl<'a> Leaf<'a> {
         Leaf::Any((0..rows).map(|_| Variable::Null).collect())
     }
 
-    pub fn lean(column: Column<'a>, rows: usize) -> Leaf<'a> {
-        let validity = column.validity.filter(|(bits, offset)| !Bits::full(bits, *offset, rows));
-        let column = Column { validity, ..column };
-        let unpacked = match column.values {
-            Values::Dec(values) => values.get(..rows).and_then(Store::unpacked),
-            _ => None,
-        };
-        match unpacked {
-            Some(store) => Leaf::typed(Array::parts(store, validity.map(|(bits, offset)| Bits::window(bits, offset, rows)), rows)),
-            None => Leaf::input(column, rows),
-        }
-    }
-
     pub fn input(column: Column<'a>, rows: usize) -> Leaf<'a> {
         Leaf::Input(Rc::new(Input {
             column,
@@ -1261,7 +1257,8 @@ impl<'a> Leaf<'a> {
             Leaf::Scattered(_) => self.column().valid(row),
             Leaf::Typed(typed) => typed.valid(row),
             Leaf::Any(_) | Leaf::Records(_) => true,
-            Leaf::Picked(_) | Leaf::Stitched(_) => self.source(row).is_some_and(|(leaf, at)| leaf.valid_at(at)),
+            Leaf::Picked(_) => self.source(row).is_some_and(|(leaf, at)| leaf.valid_at(at)),
+            Leaf::Stitched(_) => self.column().valid(row),
         }
     }
 
@@ -1285,7 +1282,10 @@ impl<'a> Leaf<'a> {
                 Some(dense) => dense.validity(rows),
                 None => Bits::gather(&picked.source.validity(picked.source.len()), &picked.positions),
             },
-            Leaf::Stitched(_) => Bits::of(rows, |row| self.valid_at(row)),
+            Leaf::Stitched(_) => match self.column().validity {
+                Some((bits, offset)) => Bits::window(bits, offset, rows),
+                None => Bits::ones(rows),
+            },
         }
     }
 

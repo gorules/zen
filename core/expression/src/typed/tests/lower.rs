@@ -1,8 +1,13 @@
 use crate::lane::Fusion;
 use crate::typed::tests::data::{ColSpec, Enc, ListSpec, Mock, Spec};
-use crate::typed::{Class, DictKind, Hir, Kind, Lowering, Op, Resolve, Resolved};
+use crate::typed::{Class, DictKind, Hir, Hit, Kind, Lowering, Op, Resolve, Resolved, TableRule, TableSpec};
 
 struct Anchor;
+
+enum Unit {
+    Fused(Vec<Fusion>),
+    Table(TableSpec),
+}
 
 impl Anchor {
     fn spec() -> Spec {
@@ -27,23 +32,20 @@ impl Anchor {
         }
     }
 
-    fn out(key: &str, source: &str) -> Vec<Fusion> {
-        vec![Fusion::Output { key: key.to_string(), source: source.to_string() }]
+    fn out(key: &str, source: &str) -> Unit {
+        Unit::Fused(vec![Fusion::Output { key: key.to_string(), source: source.to_string() }])
     }
 
-    fn member() -> Vec<Vec<Fusion>> {
+    fn member() -> Vec<Unit> {
         vec![
             Self::out("account.fee", "account.balance * customer.rate / 100 * (account.kind == 'loan' ? 2 : 1)"),
             Self::out("account.label", "((account.kind == 'savings') == true) ? ('S') : (((account.kind == 'checking') == true) ? ('C') : ('L'))"),
         ]
     }
 
-    fn root() -> Vec<Vec<Fusion>> {
-        let rule = |tier: &str, risk: &str, value: &str| {
-            let cells =
-                [("customer.tier", tier), ("customer.risk", risk)].iter().filter(|(_, c)| !c.is_empty()).map(|(f, c)| (f.to_string(), c.to_string())).collect();
-            (cells, value.to_string())
-        };
+    fn root() -> Vec<Unit> {
+        let cell = |cell: &str| (!cell.is_empty()).then(|| cell.to_string());
+        let rule = |tier: &str, risk: &str, value: &str| TableRule { cells: vec![cell(tier), cell(risk)], values: vec![Some(value.to_string())] };
         vec![
             Self::out("customer.total", "sum(map(filter(customer.accounts, #.active), #.balance))"),
             Self::out("customer.fees", "sum(map(customer.accounts, #.fee))"),
@@ -51,8 +53,9 @@ impl Anchor {
                 "customer.risk",
                 "((customer.total > customer.income * 2) == true) ? ('high') : (((customer.total > customer.income) == true) ? ('mid') : ('low'))",
             ),
-            vec![Fusion::Rules {
-                key: "customer.discount".to_string(),
+            Unit::Table(TableSpec {
+                inputs: vec![Some("customer.tier".to_string()), Some("customer.risk".to_string())],
+                outputs: vec!["customer.discount".to_string()],
                 rules: vec![
                     rule("'gold'", "'low'", "0.15"),
                     rule("'gold'", "'mid'", "0.1"),
@@ -61,21 +64,27 @@ impl Anchor {
                     rule("", "'low'", "0.02"),
                     rule("", "", "0"),
                 ],
-            }],
+                hit: Hit::Strict,
+                selector: false,
+            }),
             Self::out("customer.net", "customer.total - customer.fees - customer.discount"),
-            vec![
+            Unit::Fused(vec![
                 Fusion::Output { key: String::new(), source: "customer.age >= 18".to_string() },
                 Fusion::Output { key: String::new(), source: "customer.risk != 'high'".to_string() },
-            ],
+            ]),
         ]
     }
 
-    fn lower(member: bool, units: Vec<Vec<Fusion>>) -> Hir {
+    fn lower(member: bool, units: Vec<Unit>) -> Hir {
         let spec = Self::spec();
         let mut lowering = Lowering::new(member.then_some(("account", "customer.accounts")));
         let mut mock = Mock { spec: &spec, member: member.then_some(0) };
         for unit in units {
-            lowering.unit(&unit, &mut mock).expect("unit");
+            match unit {
+                Unit::Fused(entries) => lowering.unit(&entries, &mut mock),
+                Unit::Table(table) => lowering.table(&table, &mut mock),
+            }
+            .expect("unit");
         }
         lowering.finish()
     }
@@ -262,8 +271,17 @@ fn text_compares_classify() {
 fn strict_rules_lower_to_firstmatch() {
     let mut lowering = Lowering::new(None);
     let mut probe = Probe::new();
-    let rules = vec![(vec![("c.n".to_string(), "> 5".to_string())], "'hi'".to_string()), (Vec::new(), "'lo'".to_string())];
-    lowering.unit(&[Fusion::Rules { key: "c.r".to_string(), rules }], &mut probe).expect("rules");
+    let table = TableSpec {
+        inputs: vec![Some("c.n".to_string())],
+        outputs: vec!["c.r".to_string()],
+        rules: vec![
+            TableRule { cells: vec![Some("> 5".to_string())], values: vec![Some("'hi'".to_string())] },
+            TableRule { cells: vec![None], values: vec![Some("'lo'".to_string())] },
+        ],
+        hit: Hit::Strict,
+        selector: false,
+    };
+    lowering.table(&table, &mut probe).expect("rules");
     let hir = lowering.finish();
     assert!(hir.nodes.iter().any(|n| matches!(n.op, Op::FirstMatch { strict: true, .. })), "{hir}");
     assert!(matches!(hir.outputs[0].ty.kind, Kind::Code(_)));

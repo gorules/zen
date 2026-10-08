@@ -1,4 +1,5 @@
 mod run;
+mod typed;
 mod view;
 
 use crate::compiled::schedule::{End, Outcome, Segment};
@@ -47,6 +48,7 @@ pub(crate) struct LaneOp {
     pub stable: bool,
     pub specialized: OnceLock<Option<LaneProgram>>,
     pub own: Option<Box<Reduced>>,
+    pub sources: Vec<(Arc<str>, Arc<str>)>,
 }
 
 pub(crate) struct Reduced {
@@ -73,6 +75,8 @@ pub(crate) enum TableMode {
 pub(crate) enum Op {
     Lane(Box<LaneOp>),
     Table(TableOp),
+    Typed { op: Box<typed::TypedOp>, units: Vec<Op> },
+    Deferred { op: Box<typed::Deferred>, units: Vec<Op> },
     Select { a: Ref, b: Ref, take: M, out: SlotId },
     Materialize { node: Node, out: SlotId },
     Extract { from: Ref, path: Vec<Arc<str>>, out: SlotId },
@@ -296,6 +300,7 @@ impl<'g> Builder<'g> {
             stable,
             specialized: OnceLock::new(),
             own: None,
+            sources: Vec::new(),
         })
     }
 
@@ -453,7 +458,8 @@ impl<'g> Builder<'g> {
         let mut lane_regs = lane_regs.into_iter();
         let mut out = Node::root(M::All);
         let mut outs = Vec::new();
-        for (((key, empty), (_, source)), alias) in keys.iter().zip(empty.iter()).zip(entries.iter()).zip(aliases.iter_mut()) {
+        let mut sources = Vec::new();
+        for ((((key, empty), (_, source)), alias), fragment) in keys.iter().zip(empty.iter()).zip(entries.iter()).zip(aliases.iter_mut()).zip(fragments.iter()) {
             if keys.iter().filter(|k| *k == key).count() > 1 {
                 return Err("duplicate expression key".into());
             }
@@ -478,6 +484,7 @@ impl<'g> Builder<'g> {
             };
             let slot = self.slot(shape);
             outs.push(slot);
+            sources.push((key.clone(), fragment.clone()));
             match empty {
                 true => out.insert_object(&path, M::All)?,
                 false => out.insert(&path, Ref { slot, present: M::All }, M::All)?,
@@ -486,6 +493,7 @@ impl<'g> Builder<'g> {
         if !outs.is_empty() {
             let mut op = self.lane(node, Program::Expression, lane_program, input, transform.base.as_deref(), outs)?;
             op.own = reduced.map(Box::new);
+            op.sources = sources;
             self.catalog.ops.push(Op::Lane(Box::new(op)));
         }
         match transform.pass_through {
@@ -849,6 +857,7 @@ impl<'g> Builder<'g> {
                         }
                     }
                 }
+                self.typed();
                 let mut output = Vec::new();
                 acc.leaves("", &mut output);
                 if output.iter().any(|(path, _)| path.split('.').any(|s| s == "$nodes")) {
@@ -857,6 +866,7 @@ impl<'g> Builder<'g> {
                 SegEnd::Finish(output)
             }
             End::Switch { node, parents, visible, .. } => {
+                self.typed();
                 let step = self.graph.step_at(*node).ok_or("missing switch")?;
                 let Kind::Switch { first, conditions } = &step.kind else {
                     return Err("not a switch".into());

@@ -651,6 +651,46 @@ impl<'e, 'x> Exec<'e, 'x> {
                     d.valid[w] = u64::MAX;
                 }
             }),
+            Ins::CmpGen { op, dst, a, ra, b, rb } if matches!((ra, rb), (Rep::Null, _) | (_, Rep::Null)) && *ra != Rep::Text && *rb != Rep::Text => Self::def(regs, *dst, |d, regs| {
+                let (a, b) = (&regs[*a as usize], &regs[*b as usize]);
+                for w in 0..words {
+                    let va = if *ra == Rep::Null { 0 } else { a.valid[w] };
+                    let vb = if *rb == Rep::Null { 0 } else { b.valid[w] };
+                    let (both, none) = (va & vb, !(va | vb));
+                    d.valid[w] = u64::MAX;
+                    d.fault[w] = a.fault[w] | b.fault[w];
+                    d.bits[w] = match op {
+                        Cmp::Eq => none,
+                        Cmp::Ne => !none,
+                        _ => 0,
+                    };
+                    if !matches!(op, Cmp::Eq | Cmp::Ne) {
+                        d.fault[w] |= !both & self.tail(w);
+                    }
+                }
+            }),
+            Ins::CmpGen { op, dst, a, ra, b, rb } if matches!((ra, rb), (Rep::Fix(_) | Rep::Dyn, Rep::Fix(_) | Rep::Dyn)) => Self::def(regs, *dst, |d, regs| {
+                let (a, b) = (&regs[*a as usize], &regs[*b as usize]);
+                let equality = matches!(op, Cmp::Eq | Cmp::Ne);
+                for w in 0..words {
+                    let tail = self.tail(w);
+                    let mut hit = 0u64;
+                    for j in 0..(n - w * 64).min(64) {
+                        let i = w * 64 + j;
+                        let order = Dec::new(a.mant[i], ra.scale_at(a, i)).compare(Dec::new(b.mant[i], rb.scale_at(b, i)));
+                        hit |= u64::from(K::ord(*op, order)) << j;
+                    }
+                    let both = a.valid[w] & b.valid[w];
+                    let none = !(a.valid[w] | b.valid[w]);
+                    d.bits[w] = match op {
+                        Cmp::Eq => (hit & both) | none,
+                        Cmp::Ne => !(hit & both) & !none,
+                        _ => hit & both,
+                    };
+                    d.valid[w] = u64::MAX;
+                    d.fault[w] = a.fault[w] | b.fault[w] | if equality { 0 } else { !both & tail };
+                }
+            }),
             Ins::CmpGen { op, dst, a, ra, b, rb } => Self::def(regs, *dst, |d, regs| {
                 let (a, b) = (&regs[*a as usize], &regs[*b as usize]);
                 for w in 0..words {
@@ -728,15 +768,17 @@ impl<'e, 'x> Exec<'e, 'x> {
             Ins::InRangeGen { dst, a, ra, range } => Self::def(regs, *dst, |d, regs| {
                 let a = &regs[*a as usize];
                 self.strict1(d, a);
-                d.bits[..words].fill(0);
-                for i in 0..n {
-                    if let V::Num(x) = a.v(*ra, i) {
-                        let lo = x.compare(range.lo);
-                        let hi = x.compare(range.hi);
+                for w in 0..words {
+                    let mut hit = 0u64;
+                    for j in 0..(n - w * 64).min(64) {
+                        let i = w * 64 + j;
+                        let x = Dec::new(a.mant[i], ra.scale_at(a, i));
+                        let (lo, hi) = (x.compare(range.lo), x.compare(range.hi));
                         let above = lo == Ordering::Greater || (range.lo_closed && lo == Ordering::Equal);
                         let below = hi == Ordering::Less || (range.hi_closed && hi == Ordering::Equal);
-                        K::set(&mut d.bits, i, above && below);
+                        hit |= u64::from(above && below) << j;
                     }
+                    d.bits[w] = hit & a.valid[w];
                 }
             }),
             Ins::Not { dst, a } => Self::def(regs, *dst, |d, regs| {
@@ -826,7 +868,7 @@ impl<'e, 'x> Exec<'e, 'x> {
                         m[w] = hit;
                         let fail = match strict {
                             true => (!c.valid[w] | c.fault[w]) & rem[w],
-                            false => 0,
+                            false => c.fault[w] & rem[w],
                         };
                         bad[w] |= fail;
                         rem[w] &= !(hit | fail);
@@ -1222,6 +1264,7 @@ impl<'e, 'x> Exec<'e, 'x> {
                 };
                 if self.select.is_none_or(|sel| K::get(sel, row)) {
                     faults.set(row);
+                    s.fault.set(row);
                 }
             }
         }

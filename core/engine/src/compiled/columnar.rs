@@ -1,10 +1,10 @@
 use crate::compiled::data::{Data, Layer, Mask, Shape};
+use crate::compiled::shred::Normalizer;
 use crate::compiled::typed::{ColumnBuilder, Input, Leaf};
 use crate::compiled::{CompiledGraph, Source};
 use crate::decision_graph::cleaner::{VariableCleaner, ZEN_RESERVED_PROPERTIES};
 use crate::decision_graph::walker::GraphWalker;
 use crate::model::GraphContent;
-use crate::nodes::input::dates::DeclaredDates;
 use crate::nodes::NodeHandlerExtensions;
 use crate::EvaluationError;
 use std::rc::Rc;
@@ -47,6 +47,8 @@ pub struct ColumnarOutput<'a> {
     pub rows: usize,
     pub columns: Vec<(Arc<str>, OutputColumn<'a>)>,
     pub errors: Vec<Option<Box<EvaluationError>>>,
+    pub typed: usize,
+    pub laned: usize,
 }
 
 impl ColumnarOutput<'_> {
@@ -84,6 +86,8 @@ impl ColumnarOutput<'_> {
                 .map(|(path, column)| (path, OutputColumn(Leaf::Any(column.into()))))
                 .collect(),
             errors,
+            typed: 0,
+            laned: 0,
         }
     }
 
@@ -109,54 +113,13 @@ struct Group<'a> {
 }
 
 impl CompiledGraph {
-    pub(crate) fn input_leaf<'a>(column: Column<'a>, rows: usize) -> Leaf<'a> {
-        let dated = DeclaredDates::dated;
-        let nested = match column.values {
-            Values::Any(values) => values.iter().take(rows).any(dated),
-            Values::Dict { values: Dictionary::Any(values), .. } | Values::List { child: Dictionary::Any(values), .. } => {
-                values.iter().any(dated)
-            }
-            Values::List {
-                child: Dictionary::Text { .. } | Dictionary::Scaled { .. } | Dictionary::Bool { .. },
-                ..
-            } => false,
-            Values::List {
-                child: Dictionary::Column(child),
-                ..
-            } if Self::scalar_struct(child) => false,
-            Values::Struct { .. } if Self::scalar_struct(&column) => false,
-            Values::List { .. } | Values::Dict { values: Dictionary::Column(_), .. } => {
-                (0..rows).any(|row| dated(&column.variable(row)))
-            }
-            _ => false,
-        };
-        match nested {
-            true => Leaf::Any(
-                (0..rows)
-                    .map(|row| {
-                        let value = column.variable(row);
-                        DeclaredDates::prepare(&value, None).unwrap_or(value)
-                    })
-                    .collect(),
-            ),
-            false => Leaf::input(Self::validated(column, rows), rows),
-        }
-    }
-
-    fn scalar_struct(column: &Column) -> bool {
-        match column.values {
-            Values::Struct { fields, .. } => fields.iter().all(|(_, field)| !matches!(field.values, Values::Any(_) | Values::List { .. } | Values::Struct { .. } | Values::Dict { values: Dictionary::Any(_) | Dictionary::Column(_), .. })),
-            _ => false,
-        }
-    }
-
     fn input_data<'a>(columns: &Columns<'a>) -> Data<'a> {
         let rows = columns.rows;
         let mut paths: Vec<Arc<str>> = Vec::with_capacity(columns.columns.len());
         let mut leaves: Vec<Leaf<'a>> = Vec::with_capacity(columns.columns.len());
         for (path, column) in &columns.columns {
             paths.push(Arc::from(*path));
-            leaves.push(Self::input_leaf(*column, rows));
+            leaves.push(Normalizer::input(*column, rows));
         }
         let masked = columns.columns.iter().any(|(_, column)| column.validity.is_some());
         let present = masked.then(|| {
@@ -173,24 +136,6 @@ impl CompiledGraph {
         });
         let layer = Layer::new(paths.into(), leaves, present);
         Data::record(&(0..rows).collect::<Rc<[usize]>>(), layer, None)
-    }
-
-    pub(crate) fn validated<'a>(column: Column<'a>, rows: usize) -> Column<'a> {
-        let Values::Utf8 { offsets, data } = column.values else {
-            return column;
-        };
-        let text = offsets
-            .get(rows)
-            .and_then(|&end| usize::try_from(end).ok())
-            .and_then(|end| data.get(..end))
-            .and_then(|bytes| std::str::from_utf8(bytes).ok());
-        match text {
-            Some(data) => Column {
-                values: Values::Text { offsets, data },
-                validity: column.validity,
-            },
-            None => column,
-        }
     }
 
     async fn planned_input(
@@ -465,6 +410,8 @@ impl CompiledGraph {
             rows: count,
             columns,
             errors: state.errors,
+            typed: 0,
+            laned: 0,
         }
     }
 }

@@ -4,14 +4,12 @@ mod typed;
 pub(super) use fuse::Fusions;
 use super::schedule::{Demand, End, Event, Segment};
 use super::entity::Entity;
-use super::shred::Shred;
 use super::table::TableNative;
 use super::{Fixed, Native, PolicyPlan, Rows};
 use crate::compiled::bound::Outs;
 use crate::compiled::columnar::OutputColumn;
-use crate::compiled::shred::Shredder;
+use crate::compiled::shred::{Normalizer, Shred, Shredder};
 use crate::compiled::typed::{Array, Bits, ColumnBuilder, Dict, Leaf};
-use crate::compiled::CompiledGraph;
 use crate::policy::blocks::{AssertionIr, MatchIr, MatchSelection, TableSelection};
 use crate::policy::evaluator::{Driver, EvalArtifact, Iteration, Pick};
 use std::cell::OnceCell;
@@ -133,7 +131,7 @@ impl<'a> Sheet<'a> {
                 .map(|(bits, offset)| Rc::from(Bits::window(bits, offset, rows)));
             entries.push(Entry {
                 path: Arc::from(*path),
-                leaf: Leaf::lean(CompiledGraph::validated(*column, rows), rows),
+                leaf: Normalizer::lean(*column, rows),
                 present,
                 input: true,
                 dead: false,
@@ -1855,7 +1853,7 @@ impl PolicyPlan {
         let mut erred = false;
         let sure = match shared {
             true => None,
-            false => Shred::sure(artifact, columns, &sheet.entities, goals),
+            false => Entity::sure(artifact, columns, &sheet.entities, goals),
         };
         sheet.entities.iter().filter_map(|entity| entity.hosted.as_deref()).flatten().for_each(|&row| fallback[row] = true);
         for row in 0..rows {

@@ -1,9 +1,9 @@
-use super::shred::Shred;
+use crate::compiled::shred::{Normalizer, Shred};
+use crate::policy::evaluator::EvalArtifact;
 use crate::compiled::typed::{Bits, ColumnBuilder, Leaf};
-use crate::compiled::CompiledGraph;
 use std::rc::Rc;
 use std::sync::Arc;
-use zen_expression::lane::{Column, Dictionary, Values};
+use zen_expression::lane::{Column, Columns, Dictionary, Values};
 use zen_expression::Variable;
 use zen_types::symbol::Symbol;
 use zen_types::variable::VariableMap;
@@ -30,6 +30,44 @@ pub(super) struct Entity<'a> {
 }
 
 impl<'a> Entity<'a> {
+    pub fn sure(artifact: &EvalArtifact, columns: &Columns, entities: &[Entity], goals: &[Arc<str>]) -> Option<Vec<bool>> {
+        let shredded: Vec<&Entity> = entities.iter().filter(|entity| entity.hosted.is_some()).collect();
+        if shredded.is_empty() {
+            return artifact.sure(columns, goals);
+        }
+        let parts: Vec<Vec<(&str, Column)>> = shredded
+            .iter()
+            .map(|entity| entity.fields.iter().map(|field| (field.name.as_ref(), field.leaf.column())).collect())
+            .collect();
+        let items: Vec<Column> = parts
+            .iter()
+            .zip(&shredded)
+            .map(|(fields, entity)| Column::new(Values::Struct { fields, len: entity.children }))
+            .collect();
+        let lists: Vec<(usize, Column)> = items
+            .iter()
+            .zip(&shredded)
+            .map(|(item, entity)| {
+                (
+                    entity.entry,
+                    Column {
+                        values: Values::List {
+                            offsets: &entity.offsets,
+                            child: Dictionary::Column(item),
+                        },
+                        validity: entity.validity.as_deref().map(|bits| (bits, 0)),
+                    },
+                )
+            })
+            .collect();
+        let mut replaced = Columns::new(columns.rows);
+        for (index, (path, column)) in columns.columns.iter().enumerate() {
+            let column = lists.iter().find(|(entry, _)| *entry == index).map_or(*column, |(_, list)| *list);
+            replaced = replaced.column(path, column);
+        }
+        artifact.sure(&replaced, goals)
+    }
+
     pub fn new(name: Arc<str>, path: Arc<str>, owner: Option<Arc<str>>, entry: usize, list: Column<'a>) -> Option<Self> {
         let Values::List {
             offsets,
@@ -48,7 +86,7 @@ impl<'a> Entity<'a> {
             .iter()
             .map(|(name, column)| Field {
                 name: Arc::from(*name),
-                leaf: Leaf::lean(CompiledGraph::validated(*column, len), len),
+                leaf: Normalizer::lean(*column, len),
                 present: None,
                 input: true,
             })

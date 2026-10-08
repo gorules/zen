@@ -810,3 +810,198 @@ async fn plan_census() {
         println!("{:>3} {reason}: {}", names.len(), names.join(" "));
     }
 }
+
+struct Chain;
+
+impl Chain {
+    const FULLY_TYPED: &[&str] = &[
+        "affiliate-commission-calculator.json",
+        "airline-upgrade-eligibility.json",
+        "auto-insurance-premium-calculator.json",
+        "delivery-route-optimizer.json",
+        "dynamic-fx-rate-pricing-system.json",
+        "environment-compliance-assessment.json",
+    ];
+
+    fn typed() -> bool {
+        std::env::var("ZEN_TYPED").map_or(true, |v| v.trim() != "0")
+    }
+
+    fn graph(nodes: Vec<Value>) -> GraphContent {
+        let mut all = vec![json!({"id": "input", "name": "request", "type": "inputNode", "content": {}})];
+        all.extend(nodes);
+        all.push(json!({"id": "output", "name": "response", "type": "outputNode", "content": {}}));
+        let edges: Vec<Value> = all
+            .windows(2)
+            .enumerate()
+            .map(|(at, pair)| json!({"id": format!("e{at}"), "sourceId": pair[0]["id"], "targetId": pair[1]["id"], "type": "edge"}))
+            .collect();
+        serde_json::from_value(json!({"nodes": all, "edges": edges})).expect("graph")
+    }
+
+    fn expression(id: &str, pairs: &[(&str, &str)]) -> Value {
+        let expressions: Vec<Value> = pairs.iter().enumerate().map(|(at, (key, value))| json!({"id": format!("{id}-{at}"), "key": key, "value": value})).collect();
+        json!({"id": id, "name": id, "type": "expressionNode", "content": {"expressions": expressions, "passThrough": true, "inputField": null, "outputPath": null, "executionMode": "single"}})
+    }
+
+    fn table(id: &str, inputs: &[&str], outputs: &[&str], rules: &[&[&str]]) -> Value {
+        let inputs_json: Vec<Value> = inputs.iter().enumerate().map(|(at, field)| json!({"id": format!("i{at}"), "name": field, "field": field})).collect();
+        let outputs_json: Vec<Value> = outputs.iter().enumerate().map(|(at, field)| json!({"id": format!("o{at}"), "name": field, "field": field})).collect();
+        let rules_json: Vec<Value> = rules
+            .iter()
+            .enumerate()
+            .map(|(at, cells)| {
+                let mut rule = serde_json::Map::new();
+                rule.insert("_id".into(), json!(format!("r{at}")));
+                for (column, cell) in cells.iter().enumerate() {
+                    let key = match column < inputs.len() {
+                        true => format!("i{column}"),
+                        false => format!("o{}", column - inputs.len()),
+                    };
+                    rule.insert(key, json!(cell));
+                }
+                Value::Object(rule)
+            })
+            .collect();
+        json!({"id": id, "name": id, "type": "decisionTableNode", "content": {"hitPolicy": "first", "inputs": inputs_json, "outputs": outputs_json, "rules": rules_json, "passThrough": true, "inputField": null, "outputPath": null, "executionMode": "single"}})
+    }
+
+    async fn checked(content: GraphContent, rows: &[Value], failures: &mut Vec<String>) -> (usize, usize) {
+        let mut compiled = Decision::from(Arc::new(content));
+        compiled.compile();
+        assert!(matches!(compiled.compiled_verdict(), Some(Ok(()))), "verdict {:?}", compiled.compiled_verdict());
+        let walker = compiled.interpreted();
+        let built = Built::new(rows).expect("columns");
+        let columns = built.columns();
+        let output = compiled.evaluate_columns(&columns, EvaluationOptions::default()).await;
+        for row in 0..built.rows {
+            let input = columns.row(row);
+            let want = match walker.evaluate(input.clone()).await {
+                Ok(r) => Ok(Built::normalized(r.result.to_value()).to_string()),
+                Err(e) => Err(serde_json::to_value(&*e).map(|v| v.to_string()).unwrap_or_default()),
+            };
+            let got = match &output.errors[row] {
+                Some(e) => Err(serde_json::to_value(&**e).map(|v| v.to_string()).unwrap_or_default()),
+                None => Ok(Built::normalized(output.row(row).to_value()).to_string()),
+            };
+            if got != want {
+                failures.push(format!("row {row} input {}\n  walker   {want:?}\n  columnar {got:?}", input.to_value()));
+            }
+        }
+        (output.typed, output.laned)
+    }
+
+    fn rows(count: usize, seed: u64) -> Vec<Value> {
+        let mut noise = Noise::new(seed);
+        let tiers = ["gold", "silver", "bronze", "platinum"];
+        (0..count)
+            .map(|_| {
+                let income = noise.below(9000) as i64 - 500;
+                let cents = noise.below(100);
+                json!({"tier": tiers[noise.below(tiers.len())], "income": income, "rate": format!("{}.{cents:02}", noise.below(5)).parse::<serde_json::Number>().map(Value::Number).unwrap_or(Value::Null), "age": noise.below(90)})
+            })
+            .collect()
+    }
+
+    fn nodes(middle: Option<Value>) -> Vec<Value> {
+        let mut nodes = vec![
+            Self::table(
+                "band",
+                &["tier", "income"],
+                &["band", "factor"],
+                &[&["'gold'", "> 5000", "'high'", "1.25"], &["'gold', 'platinum'", "", "'mid'", "1.10"], &["", "[0..1000]", "'low'", "0.5"], &["", "", "'none'", "1"]],
+            ),
+            Self::expression("score", &[("net", "income - 100"), ("scaled", "$.net * factor"), ("adult", "age >= 18"), ("third", "$.net / 3")]),
+        ];
+        nodes.extend(middle);
+        nodes.push(Self::expression("final", &[("total", "scaled + rate"), ("share", "total / 4"), ("rich", "band == 'high' and adult"), ("large", "third > 100 or scaled < 0")]));
+        nodes
+    }
+}
+
+#[tokio::test]
+async fn graph_typed_falls_back_per_unit() {
+    let mut failures = Vec::new();
+    let unsupported = Chain::expression("label", &[("label", "string(income) + ' ' + tier")]);
+    let (typed, laned) = Chain::checked(Chain::graph(Chain::nodes(Some(unsupported))), &Chain::rows(300, 3), &mut failures).await;
+    assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.join("\n"));
+    if Chain::typed() {
+        assert!(typed > 0 && laned > 0, "units typed {typed}, laned {laned}");
+        assert_eq!(typed + laned, 4, "units typed {typed}, laned {laned}");
+    }
+}
+
+#[tokio::test]
+async fn graph_typed_reads_dynamic_slots() {
+    let mut rows = Chain::rows(240, 5);
+    let odd = [
+        json!({"tier": "gold", "income": "lots", "rate": 1, "age": 30}),
+        json!({"tier": "gold", "income": {"value": 5}, "rate": 0.5, "age": 70}),
+        json!({"tier": "silver", "income": 79228162514264337593543950335u128, "rate": 0, "age": 40}),
+        json!({"tier": "gold", "income": true, "rate": 0.25, "age": 60}),
+        json!({"tier": "bronze", "income": -0.0, "rate": 1.50, "age": 18}),
+        json!({"tier": null, "income": null, "rate": null, "age": null}),
+        json!({"tier": "gold", "income": 6000.50, "rate": 2, "age": 55}),
+    ];
+    for (at, row) in odd.into_iter().enumerate() {
+        rows.insert(at * 31 + 3, row);
+    }
+    let nodes = vec![
+        Chain::expression("pick", &[("pick", "age > 20 ? income : tier")]),
+        Chain::expression("half", &[("half", "income / 2")]),
+        Chain::table("level", &["pick", "half"], &["level"], &[&["> 3000", "", "'top'"], &["", "> 100", "'some'"], &["", "", "'none'"]]),
+        Chain::expression("final", &[("bonus", "half * rate"), ("big", "level == 'top' or $.bonus > 50")]),
+    ];
+    let mut failures = Vec::new();
+    let (typed, laned) = Chain::checked(Chain::graph(nodes), &rows, &mut failures).await;
+    assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.join("\n"));
+    if Chain::typed() {
+        assert!(typed > 0, "units typed {typed}, laned {laned}");
+    }
+}
+
+#[tokio::test]
+async fn graph_typed_extremes() {
+    let mut rows = Chain::rows(200, 9);
+    let odd = [
+        json!({"tier": "gold", "income": 9223372036854775807i64, "rate": 1, "age": 30}),
+        json!({"tier": "gold", "income": -9223372036854775807i64, "rate": 0.5, "age": 30}),
+        json!({"tier": "silver", "income": 79228162514264337593543950335u128, "rate": 0, "age": 40}),
+        json!({"tier": "gold", "income": 12.5, "rate": 0.000000001, "age": 18}),
+        json!({"tier": "gold", "income": 0.00, "rate": 0.00, "age": 17}),
+        json!({"tier": "bronze", "income": -0.0, "rate": 1.50, "age": 18}),
+        json!({"tier": null, "income": null, "rate": null, "age": null}),
+        json!({"tier": "platinum", "income": 1000, "rate": 3.333, "age": 0}),
+        json!({"tier": "", "income": 1000.000, "rate": 2.10, "age": 65}),
+        json!({"income": 7, "age": 5}),
+        json!({"tier": "gold", "income": 5000.01, "rate": 0.1, "age": 90}),
+        json!({"tier": "gold", "income": 100, "rate": 0.3333333333333333333333333333, "age": 20}),
+    ];
+    for (at, row) in odd.into_iter().enumerate() {
+        rows.insert(at * 13 + 4, row);
+    }
+    let mut failures = Vec::new();
+    let (typed, laned) = Chain::checked(Chain::graph(Chain::nodes(None)), &rows, &mut failures).await;
+    assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.join("\n"));
+    if Chain::typed() {
+        assert!(typed > 0, "units typed {typed}, laned {laned}");
+        assert_eq!(typed + laned, 3, "units typed {typed}, laned {laned}");
+    }
+}
+
+#[tokio::test]
+async fn graph_fixtures_are_fully_typed() {
+    std::env::set_var("__ZEN_MOCK_UTC_TIME", "2025-08-19T16:55:02.078Z");
+    let mut failures = Vec::new();
+    let fixtures: Vec<Fixture> = Fixture::load_all().into_iter().filter(|f| Chain::FULLY_TYPED.contains(&f.name.as_str())).collect();
+    assert_eq!(fixtures.len(), Chain::FULLY_TYPED.len(), "fixtures found");
+    for fixture in fixtures {
+        let variants = fixture.typed_variants();
+        let rows: Vec<Value> = (0..256).map(|at| variants[at % variants.len()].clone()).collect();
+        let (typed, laned) = Chain::checked(fixture.content.clone(), &rows, &mut failures).await;
+        if Chain::typed() {
+            assert!(typed > 0 && laned == 0, "{}: units typed {typed}, laned {laned}", fixture.name);
+        }
+    }
+    assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.iter().take(10).cloned().collect::<Vec<_>>().join("\n"));
+}

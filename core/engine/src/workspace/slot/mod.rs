@@ -295,6 +295,8 @@ impl Db {
         }
         if self.is_graph(&cursor.policy_path) {
             self.graph_cursor_scope(cursor, cache)
+        } else if cursor.target.is_data_model_expression() {
+            self.data_model_cursor_scope(cursor)
         } else {
             self.policy_cursor_scope(cursor, cache)
         }

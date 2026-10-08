@@ -246,6 +246,40 @@ pub struct DataModelDoc {
     /// An events entity that may have no events on a day: kept as is.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sparse: Option<bool>,
+    /// Attributes the engine doesn't read, kept as is.
+    #[serde(flatten)]
+    pub rest: serde_json::Map<String, serde_json::Value>,
+}
+
+impl DataModelDoc {
+    /// The source of a property's expression: `feature.expr`, `compute`, a
+    /// model input's request path or `model.when` (empty when not written).
+    pub fn expression(&self, target: &crate::workspace::types::CursorTarget) -> Option<Arc<str>> {
+        use crate::workspace::types::CursorTarget;
+        let (CursorTarget::FeatureExpr { id }
+        | CursorTarget::ComputeExpr { id }
+        | CursorTarget::ModelInput { id, .. }
+        | CursorTarget::ModelWhen { id }
+        | CursorTarget::ModelRequest { id }
+        | CursorTarget::ModelResponse { id }) = target
+        else {
+            return None;
+        };
+        let prop = self.properties.iter().find(|p| p.id == *id)?;
+        let model_str = |value: Option<&serde_json::Value>| {
+            Arc::from(value.and_then(serde_json::Value::as_str).unwrap_or(""))
+        };
+        Some(match target {
+            CursorTarget::FeatureExpr { .. } => prop.feature.as_ref()?.expr.clone(),
+            CursorTarget::ComputeExpr { .. } => prop.compute.clone().unwrap_or_else(|| Arc::from("")),
+            CursorTarget::ModelInput { input, .. } => {
+                model_str(prop.model.as_ref()?.get("inputs")?.get(input.as_ref()))
+            }
+            CursorTarget::ModelRequest { .. } => model_str(prop.model.as_ref()?.get("request")),
+            CursorTarget::ModelResponse { .. } => model_str(prop.model.as_ref()?.get("response")),
+            _ => model_str(prop.model.as_ref()?.get("when")),
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
@@ -287,6 +321,9 @@ pub struct PropertyDoc {
     /// The host always supplies it, or rejects the request: never null.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub required: Option<bool>,
+    /// Attributes the engine doesn't read, kept as is.
+    #[serde(flatten)]
+    pub rest: serde_json::Map<String, serde_json::Value>,
 }
 
 /// A property computed by the host's feature store. The engine only needs
@@ -373,6 +410,38 @@ pub enum PropertyTypeDoc {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unknown_data_model_attributes_round_trip() {
+        let doc_json = serde_json::json!({
+            "blocks": [{ "id": "dm", "type": "dataModel", "props": { "data": {
+                "name": "card",
+                "owner": "risk",
+                "properties": [
+                    { "id": "p1", "name": "limit", "type": "decimal", "scale": 2, "description": "credit limit", "unit": "GBP" },
+                    { "id": "p2", "name": "holder", "type": "reference", "target": "customer", "ui": { "pinned": true } },
+                    { "id": "p3", "name": "status", "type": "string", "enum": ["a", "b"], "column": "status_cd" },
+                    { "id": "p4", "name": "txn_count", "type": "integer",
+                      "feature": { "expr": "count(transaction)", "window": ["1h"], "bucket": "5m" } }
+                ]
+            } } }]
+        });
+        let doc: PolicyDocument = serde_json::from_value(doc_json).unwrap();
+        let out = serde_json::to_value(&doc).unwrap();
+        let data = &out["blocks"][0]["props"]["data"];
+        assert_eq!(data["owner"], "risk");
+        let props = &data["properties"];
+        assert_eq!(props[0]["description"], "credit limit");
+        assert_eq!(props[0]["unit"], "GBP");
+        assert_eq!(props[0]["scale"], 2);
+        assert_eq!(props[1]["ui"], serde_json::json!({ "pinned": true }));
+        assert_eq!(props[1]["target"], "customer");
+        assert_eq!(props[2]["column"], "status_cd");
+        assert_eq!(props[3]["feature"]["bucket"], "5m");
+        // Read back the same.
+        let again: PolicyDocument = serde_json::from_value(out.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&again).unwrap(), out);
+    }
 
     #[test]
     fn unknown_block_round_trips_losslessly() {

@@ -1,14 +1,19 @@
+use std::rc::Rc;
 use std::sync::Arc;
 
 use ahash::{HashMap, HashMapExt, HashSet};
 
-use crate::policy::blocks::BlockKind;
+use crate::analysis::nullable::NullableOperand;
+use crate::policy::blocks::{AnalysisContext, BlockKind};
+use crate::policy::raw::BlockDoc;
 use crate::policy::ir::PropertyTypeIr;
 use crate::policy::linter::Linter;
 use crate::policy::queries::dependency::{RuleEnrichedAnalysis, WriteScope};
 use crate::policy::queries::path::PathRoot;
-use crate::workspace::db::{Db, Unit};
-use crate::workspace::types::{BlockRef, Diagnostic, DiagnosticCode, DiagnosticLocation};
+use crate::workspace::db::{AnalysisPass, Db, Unit};
+use crate::workspace::types::{
+    BlockRef, Cursor, CursorTarget, Diagnostic, DiagnosticCode, DiagnosticLocation,
+};
 
 impl Db {
     pub fn compute_policy_diagnostics(&self, path: &Arc<str>) -> Vec<Diagnostic> {
@@ -69,6 +74,217 @@ impl Db {
 
         self.locate_nullable_sources(path, &mut out);
 
+        out.extend(self.data_model_expression_diagnostics(path));
+
+        out
+    }
+
+    /// Expressions on data model properties (features, per-event computes,
+    /// model inputs and `when`), checked against what each can read.
+    fn data_model_expression_diagnostics(&self, path: &Arc<str>) -> Vec<Diagnostic> {
+        let Some(policy) = self.raw_policy(path) else {
+            return Vec::new();
+        };
+        let intellisense = self.intellisense();
+        let unit = self.unit(path);
+        let dictionary_types = Rc::new(unit.dictionary_types());
+        let declared_paths = Rc::new(unit.data_model_paths.clone());
+        let mut out = Vec::new();
+        for block in &policy.blocks {
+            let BlockDoc::DataModel { id, data } = block else {
+                continue;
+            };
+            // Own fields each derived feature or compute reads: name → (read, where).
+            let own_names: HashSet<&str> = data.properties.iter().map(|p| p.name.as_ref()).collect();
+            let mut depends: Vec<(&Arc<str>, Arc<str>, CursorTarget, Arc<str>, Option<(u32, u32)>)> =
+                Vec::new();
+            for prop in &data.properties {
+                let mut targets = Vec::new();
+                if prop.feature.is_some() {
+                    targets.push(CursorTarget::FeatureExpr { id: prop.id.clone() });
+                }
+                if prop.compute.is_some() {
+                    targets.push(CursorTarget::ComputeExpr { id: prop.id.clone() });
+                }
+                if let Some(model) = &prop.model {
+                    if let Some(inputs) = model.get("inputs").and_then(serde_json::Value::as_object) {
+                        targets.extend(inputs.keys().map(|input| CursorTarget::ModelInput {
+                            id: prop.id.clone(),
+                            input: Arc::from(input.as_str()),
+                        }));
+                    }
+                    if model.get("when").is_some() {
+                        targets.push(CursorTarget::ModelWhen { id: prop.id.clone() });
+                    }
+                    if model.get("request").is_some() && model.get("inputs").is_none() {
+                        targets.push(CursorTarget::ModelRequest { id: prop.id.clone() });
+                    }
+                    if model.get("response").is_some() {
+                        targets.push(CursorTarget::ModelResponse { id: prop.id.clone() });
+                    }
+                }
+                for target in targets {
+                    let Some(source) = data.expression(&target).filter(|s| !s.trim().is_empty())
+                    else {
+                        continue;
+                    };
+                    let cursor = Cursor {
+                        policy_path: path.clone(),
+                        block_id: id.clone(),
+                        pos: 0,
+                        target,
+                    };
+                    let Some(scope) = self.data_model_cursor_scope(&cursor) else {
+                        continue;
+                    };
+                    // As a rule block's expression: type errors and unknown names.
+                    let mut cx = AnalysisContext::new(
+                        scope.scope,
+                        path.clone(),
+                        id.clone(),
+                        intellisense.clone(),
+                        AnalysisPass::Enriched,
+                        dictionary_types.clone(),
+                        Rc::default(),
+                        declared_paths.clone(),
+                    );
+                    cx.with_target(Some(cursor.target.clone()), |cx| {
+                        cx.analyze_standard(&source, Some(prop.id.clone()));
+                    });
+                    // Derived features and computes: null in, null out.
+                    let propagates = matches!(cursor.target, CursorTarget::ComputeExpr { .. })
+                        || matches!(cursor.target, CursorTarget::FeatureExpr { .. })
+                            && prop.feature.as_ref().is_some_and(|f| {
+                                f.window.as_ref().is_none_or(|w| w.list().is_empty())
+                            });
+                    let summary = cx.finish();
+                    // Calls take part in the order too: what their request,
+                    // `when` and response read (a call with named inputs reads
+                    // the request, not the entity).
+                    let orders = propagates
+                        || match &cursor.target {
+                            CursorTarget::ModelRequest { .. } | CursorTarget::ModelResponse { .. } => true,
+                            CursorTarget::ModelWhen { .. } => prop
+                                .model
+                                .as_ref()
+                                .is_some_and(|m| m.get("inputs").is_none()),
+                            _ => false,
+                        };
+                    if orders {
+                        for read in &summary.reads {
+                            let first = read.path.split('.').next().unwrap_or_default();
+                            if !read.via_alias && own_names.contains(first) {
+                                depends.push((
+                                    &prop.name,
+                                    Arc::from(first),
+                                    cursor.target.clone(),
+                                    prop.id.clone(),
+                                    read.span,
+                                ));
+                            }
+                        }
+                    }
+                    let diagnostics = summary.diagnostics.into_iter().filter(|d| {
+                        !(propagates && NullableOperand::null_propagates(d))
+                    });
+                    out.extend(diagnostics.map(|mut d| {
+                        d.location.target.get_or_insert_with(|| cursor.target.clone());
+                        d
+                    }));
+                }
+            }
+            out.extend(Self::derivation_cycles(path, id, &depends));
+            // How long a call's reply may be reused: a duration like 5m.
+            for prop in &data.properties {
+                let Some(staleness) = prop.model.as_ref().and_then(|m| m.get("maxStaleness")) else {
+                    continue;
+                };
+                let text = staleness.as_str().unwrap_or_default();
+                if text.is_empty() || Self::is_staleness(text) {
+                    continue;
+                }
+                out.push(Diagnostic::error(
+                    DiagnosticCode::ParseError,
+                    DiagnosticLocation::expression(path.clone(), id.clone(), prop.id.clone(), None),
+                    format!(
+                        "`maxStaleness` of call '{}' is a duration like 30s, 5m or 1h, not `{}`",
+                        prop.name,
+                        if staleness.is_string() { text.to_string() } else { staleness.to_string() }
+                    ),
+                ));
+            }
+        }
+        out
+    }
+
+    /// A positive whole number of seconds, minutes, hours or days: `30s`, `5m`, `5h`, `1d`.
+    fn is_staleness(text: &str) -> bool {
+        let Some((digits, unit)) = text.split_at_checked(text.len().saturating_sub(1)) else {
+            return false;
+        };
+        matches!(unit, "s" | "m" | "h" | "d")
+            && !digits.is_empty()
+            && !digits.starts_with('0')
+            && digits.bytes().all(|b| b.is_ascii_digit())
+    }
+
+    /// A derived field that needs its own value, directly (`x = x + 5`) or
+    /// through others (`a = b`, `b = a`): no order computes it. Reported on
+    /// each read that closes the loop.
+    fn derivation_cycles(
+        path: &Arc<str>,
+        block_id: &Arc<str>,
+        depends: &[(&Arc<str>, Arc<str>, CursorTarget, Arc<str>, Option<(u32, u32)>)],
+    ) -> Vec<Diagnostic> {
+        let mut edges: HashMap<&str, Vec<&str>> = HashMap::new();
+        for (from, to, ..) in depends {
+            edges.entry(from.as_ref()).or_default().push(to.as_ref());
+        }
+        // The way from `start` back to `goal`, if any.
+        let way_back = |start: &str, goal: &str| -> Option<Vec<String>> {
+            let mut seen: HashSet<&str> = HashSet::default();
+            let mut stack: Vec<(&str, Vec<String>)> = vec![(start, vec![start.to_string()])];
+            while let Some((at, trail)) = stack.pop() {
+                if at == goal {
+                    return Some(trail);
+                }
+                if !seen.insert(at) {
+                    continue;
+                }
+                for next in edges.get(at).into_iter().flatten() {
+                    let mut trail = trail.clone();
+                    trail.push(next.to_string());
+                    stack.push((next, trail));
+                }
+            }
+            None
+        };
+        let mut out = Vec::new();
+        for (from, to, target, prop_id, span) in depends {
+            let message = if from.as_ref() == to.as_ref() {
+                format!("`{from}` reads itself: it can't be computed from its own value")
+            } else if let Some(trail) = way_back(to, from) {
+                format!(
+                    "`{from}` depends on itself: {from} → {}",
+                    trail.join(" → ")
+                )
+            } else {
+                continue;
+            };
+            out.push(
+                Diagnostic::error(
+                    DiagnosticCode::CyclicDependency,
+                    DiagnosticLocation::expression(
+                        path.clone(),
+                        block_id.clone(),
+                        prop_id.clone(),
+                        *span,
+                    )
+                    .with_target(target.clone()),
+                    message,
+                ),
+            );
+        }
         out
     }
 

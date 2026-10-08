@@ -114,6 +114,8 @@ pub(crate) enum CompiledEntry {
 pub(crate) struct CompiledSet {
     entries: HashMap<Arc<str>, CompiledEntry>,
     failures: Vec<CompileFailure>,
+    /// What each compiled document reads from its request (None: unknown).
+    reads: HashMap<Arc<str>, Option<std::collections::BTreeSet<String>>>,
 }
 
 impl CompiledSet {
@@ -152,6 +154,7 @@ impl CompiledSet {
                         error: Some(error.to_string()),
                     }),
                     Ok(()) => {
+                        workspace.set_document_arc(key.clone(), content.clone());
                         let mut compiled = graph.clone();
                         Arc::make_mut(&mut compiled).compile();
                         entries.insert(key.clone(), CompiledEntry::Graph(compiled));
@@ -189,7 +192,12 @@ impl CompiledSet {
             });
         }
 
-        CompiledSet { entries, failures }
+        let reads = entries.keys().map(|key| (key.clone(), workspace.reads(key))).collect();
+        CompiledSet { entries, failures, reads }
+    }
+
+    pub(crate) fn reads(&self, key: &str) -> Option<std::collections::BTreeSet<String>> {
+        self.reads.get(key).cloned().flatten()
     }
 
     fn error_diagnostics(workspace: &Workspace, key: &Arc<str>) -> Vec<Diagnostic> {

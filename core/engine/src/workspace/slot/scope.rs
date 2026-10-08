@@ -1,5 +1,8 @@
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
+
+use ahash::HashMap;
 
 use zen_expression::variable::VariableType;
 use zen_types::decision::{
@@ -13,7 +16,8 @@ use crate::model::GraphContent;
 use crate::policy::blocks::{
     BlockKind, DecisionTableIr, IntelliSenseSource, SharedIntelliSense, ROW_ID_KEY,
 };
-use crate::policy::ir::PropertyTypeIr;
+use crate::policy::ir::{DataModelIr, PropertyTypeIr, Records};
+use crate::policy::raw::BlockDoc;
 use crate::policy::queries::scope::VariableTypeScope;
 use crate::workspace::db::{Db, Unit};
 use crate::workspace::graph::{GraphAnalyzer, GraphNodeAnalysis, SchemaType};
@@ -52,6 +56,137 @@ impl Db {
             }
             _ => None,
         }
+    }
+
+    /// Expressions on a data model property, read by the host rather than
+    /// run by the policy. A windowed feature aggregates the records of an
+    /// events (or reference) entity: `count(transaction)`. A derived feature
+    /// and a per-event `compute` read the entity's own properties (and
+    /// through references, other entities' features). A model's inputs and
+    /// `when` read the request.
+    pub(crate) fn data_model_cursor_scope(&self, cursor: &Cursor) -> Option<CursorScope> {
+        let unit = self.unit(&cursor.policy_path);
+        let entry = unit
+            .data_models
+            .iter()
+            .find(|e| e.policy_path == cursor.policy_path && e.block_id == cursor.block_id)?;
+        let enriched = self.enriched_of_unit(&unit);
+        let own = || -> HashMap<Rc<str>, VariableType> {
+            match enriched.declared_at(&entry.ir.name) {
+                VariableType::Object(obj) => obj.borrow().clone(),
+                _ => HashMap::default(),
+            }
+        };
+        let object = |fields: HashMap<Rc<str>, VariableType>| {
+            VariableType::Object(Rc::new(RefCell::new(fields)))
+        };
+        match &cursor.target {
+            CursorTarget::FeatureExpr { id } => {
+                let BlockDoc::DataModel { data, .. } = self.block_doc(&BlockRef {
+                    policy_path: cursor.policy_path.clone(),
+                    block_id: cursor.block_id.clone(),
+                })?
+                else {
+                    return None;
+                };
+                let feature = data.properties.iter().find(|p| p.id == *id)?.feature.as_ref()?;
+                let windowed = feature.window.as_ref().is_some_and(|w| !w.list().is_empty());
+                let mut fields = if windowed {
+                    let mut sources: Vec<&Arc<DataModelIr>> = unit
+                        .entities
+                        .values()
+                        .filter(|dm| dm.records != Records::Plain)
+                        .collect();
+                    if sources.is_empty() {
+                        sources = unit.entities.values().collect();
+                    }
+                    sources
+                        .into_iter()
+                        .map(|dm| {
+                            (
+                                Rc::from(dm.name.as_ref()),
+                                enriched.declared_at(&dm.name).array(),
+                            )
+                        })
+                        .collect()
+                } else {
+                    // Derived at read time: the instant read for.
+                    let mut fields = own();
+                    fields.insert(Rc::from("asOf"), VariableType::Date);
+                    fields
+                };
+                fields.insert(Rc::from("params"), self.feature_params(&unit));
+                Some(CursorScope::value(object(fields), None))
+            }
+            CursorTarget::ComputeExpr { .. } => Some(CursorScope::value(object(own()), None)),
+            CursorTarget::ModelInput { .. } => {
+                Some(CursorScope::value(enriched.declared_scope(), None))
+            }
+            // What a call sends: the instance, as its derived features read it.
+            CursorTarget::ModelRequest { .. } => Some(CursorScope::value(object(own()), None)),
+            // The call's value: the reply (`response`) beside the instance.
+            CursorTarget::ModelResponse { .. } => {
+                let mut fields = own();
+                fields.insert(Rc::from("response"), VariableType::Any);
+                Some(CursorScope::value(object(fields), None))
+            }
+            // `when` reads the instance; a call written with named `inputs`
+            // (the earlier format) reads the request and those names.
+            CursorTarget::ModelWhen { id } => {
+                let BlockDoc::DataModel { data, .. } = self.block_doc(&BlockRef {
+                    policy_path: cursor.policy_path.clone(),
+                    block_id: cursor.block_id.clone(),
+                })?
+                else {
+                    return None;
+                };
+                let model = data.properties.iter().find(|p| p.id == *id)?.model.as_ref()?;
+                if model.get("inputs").is_some() {
+                    Some(CursorScope::condition(enriched.declared_scope()))
+                } else {
+                    Some(CursorScope::condition(object(own())))
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// `params` in feature expressions: the constants of a `featureSettings`
+    /// block in the policy or its imports (`{ name, type, value }`).
+    fn feature_params(&self, unit: &Unit) -> VariableType {
+        let mut fields: HashMap<Rc<str>, VariableType> = HashMap::default();
+        let mut members: Vec<&Arc<str>> = unit.members.iter().collect();
+        members.sort();
+        for member in members {
+            let Some(policy) = self.raw_policy(member) else {
+                continue;
+            };
+            for block in &policy.blocks {
+                let BlockDoc::Ignored(value) = block else {
+                    continue;
+                };
+                if value.get("type").and_then(serde_json::Value::as_str) != Some("featureSettings") {
+                    continue;
+                }
+                let params = value
+                    .pointer("/props/data/params")
+                    .and_then(serde_json::Value::as_array);
+                for param in params.into_iter().flatten() {
+                    let Some(name) = param.get("name").and_then(serde_json::Value::as_str) else {
+                        continue;
+                    };
+                    let kind = match param.get("type").and_then(serde_json::Value::as_str) {
+                        Some("number" | "decimal" | "integer") => VariableType::Number,
+                        Some("string") => VariableType::String,
+                        Some("boolean") => VariableType::Bool,
+                        Some("date" | "timestamp") => VariableType::Date,
+                        _ => VariableType::Any,
+                    };
+                    fields.entry(Rc::from(name)).or_insert(kind);
+                }
+            }
+        }
+        VariableType::Object(Rc::new(RefCell::new(fields)))
     }
 
     fn policy_table_scope(

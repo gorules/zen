@@ -597,3 +597,15 @@ async fn unknown_relationship_target_in_import_refuses_importer() {
     assert!(reported.contains(&("main", "policy")), "{failures:#?}");
     assert!(reported.contains(&("child", "policy")), "{failures:#?}");
 }
+
+#[tokio::test]
+async fn compiled_documents_say_what_they_read() {
+    let loader = Arc::new(MemoryLoader::default());
+    loader.add("policy", make_policy_content(simple_policy_json()));
+    let engine = engine_with(loader);
+    assert_eq!(engine.reads("policy"), None, "nothing is known before compile()");
+    engine.compile();
+    let reads = engine.reads("policy").expect("known after compile");
+    assert!(reads.contains("customer.age"), "{reads:?}");
+    assert_eq!(engine.reads("missing"), None);
+}

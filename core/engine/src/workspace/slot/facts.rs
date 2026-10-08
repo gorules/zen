@@ -177,8 +177,45 @@ impl Db {
                         }
                     }
                 }
-                BlockDoc::DataModel { .. } | BlockDoc::Dictionary { .. } | BlockDoc::Ignored(_) => {
+                // The expressions on a data model's properties (features, per
+                // event values, model inputs and `when`): facts like any other
+                // expression, so business mode shows their pills unfocused.
+                BlockDoc::DataModel { data, .. } => {
+                    for prop in &data.properties {
+                        if let Some(feature) = prop.feature.as_ref().filter(|f| !f.expr.is_empty()) {
+                            push(CursorTarget::FeatureExpr { id: prop.id.clone() }, &feature.expr);
+                        }
+                        if let Some(compute) = prop.compute.as_ref().filter(|c| !c.is_empty()) {
+                            push(CursorTarget::ComputeExpr { id: prop.id.clone() }, compute);
+                        }
+                        let Some(model) = prop.model.as_ref() else {
+                            continue;
+                        };
+                        if let Some(inputs) = model.get("inputs").and_then(serde_json::Value::as_object) {
+                            for (input, expr) in inputs {
+                                if let Some(expr) = expr.as_str().filter(|e| !e.is_empty()) {
+                                    push(
+                                        CursorTarget::ModelInput {
+                                            id: prop.id.clone(),
+                                            input: Arc::from(input.as_str()),
+                                        },
+                                        &Arc::from(expr),
+                                    );
+                                }
+                            }
+                        }
+                        if let Some(when) = model.get("when").and_then(serde_json::Value::as_str).filter(|w| !w.is_empty()) {
+                            push(CursorTarget::ModelWhen { id: prop.id.clone() }, &Arc::from(when));
+                        }
+                        if let Some(request) = model.get("request").and_then(serde_json::Value::as_str).filter(|s| !s.is_empty() && model.get("inputs").is_none()) {
+                            push(CursorTarget::ModelRequest { id: prop.id.clone() }, &Arc::from(request));
+                        }
+                        if let Some(response) = model.get("response").and_then(serde_json::Value::as_str).filter(|a| !a.is_empty()) {
+                            push(CursorTarget::ModelResponse { id: prop.id.clone() }, &Arc::from(response));
+                        }
+                    }
                 }
+                BlockDoc::Dictionary { .. } | BlockDoc::Ignored(_) => {}
             }
         }
         sites

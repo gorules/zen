@@ -129,6 +129,18 @@ pub struct DataModelIr {
     pub name: Arc<str>,
     pub scope: Scope,
     pub properties: Vec<Property>,
+    /// What the entity's records are, for the feature store.
+    pub records: Records,
+}
+
+/// What an entity's records are: plain request data, events (`events`) or
+/// reference data (`reference`). Windowed features aggregate the latter two.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Records {
+    #[default]
+    Plain,
+    Events,
+    Reference,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -159,6 +171,80 @@ pub struct Property {
     pub kind: PropertyTypeIr,
     pub array: bool,
     pub optional: bool,
+    /// The type as written when it is checked as another (`integer` as
+    /// `number`, `timestamp` as `date`).
+    pub exact: Option<Arc<str>>,
+    /// Supplied by the host rather than the request: a feature, a value
+    /// computed per event, or a model's output.
+    pub supply: Option<Arc<Supply>>,
+    /// Filled in when the value is missing or null (a property's or a
+    /// feature's `default`), so never null.
+    pub default: Option<Arc<serde_json::Value>>,
+}
+
+/// How the host supplies a property.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum Supply {
+    /// A feature: `base` is the property as written, `window` the one this
+    /// property is (`txn_count` over `1h` is `txn_count_1h`).
+    Feature {
+        base: Arc<str>,
+        expr: Arc<str>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        window: Option<Arc<str>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        default: Option<serde_json::Value>,
+    },
+    /// Computed per event from the event's other properties.
+    Compute { expr: Arc<str> },
+    /// A model's output.
+    Model {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        datasource: Option<Arc<str>>,
+    },
+}
+
+impl Supply {
+    /// Shown after the type: `count(transaction) · 1h`.
+    pub fn summary(&self) -> String {
+        match self {
+            Supply::Feature { expr, window, .. } => match window {
+                Some(window) => format!("{expr} · {window}"),
+                None => expr.to_string(),
+            },
+            Supply::Compute { expr } => expr.to_string(),
+            Supply::Model { datasource } => match datasource {
+                Some(datasource) => format!("model {datasource}"),
+                None => "model".to_string(),
+            },
+        }
+    }
+}
+
+impl Property {
+    /// The type as written, with `[]` and `?`: `integer?`.
+    pub fn type_label(&self) -> String {
+        let base = match &self.exact {
+            Some(exact) => exact.to_string(),
+            None => match &self.kind {
+                PropertyTypeIr::Relationship { target } | PropertyTypeIr::Reference { target } => {
+                    target.to_string()
+                }
+                PropertyTypeIr::Enum(_) => "enum".to_string(),
+                kind => kind.to_string(),
+            },
+        };
+        let array = if self.array { "[]" } else { "" };
+        let optional = if self.optional { "?" } else { "" };
+        format!("{base}{array}{optional}")
+    }
+
+    /// `integer? · count(transaction) · 1h` for a host-supplied property.
+    pub fn supply_detail(&self) -> Option<String> {
+        let supply = self.supply.as_ref()?;
+        Some(format!("{} · {}", self.type_label(), supply.summary()))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -411,16 +497,26 @@ impl DataModelIr {
                 },
             };
 
+            let exact: Option<Arc<str>> = match &prop.property_type {
+                PropertyTypeDoc::Decimal { .. } => Some(Arc::from("decimal")),
+                PropertyTypeDoc::Integer => Some(Arc::from("integer")),
+                PropertyTypeDoc::Timestamp => Some(Arc::from("timestamp")),
+                PropertyTypeDoc::Object => Some(Arc::from("object")),
+                PropertyTypeDoc::Any => Some(Arc::from("any")),
+                _ => None,
+            };
+
             // A feature: the host supplies it, one property per window
             // (`txn_count` over 1h, 7d: `txn_count_1h`, `txn_count_7d`).
             // Without a `default` (or `required`) it is absent when unknown
             // (not covered), so optional: rules handle null. With one, the
             // host always supplies a value (or rejects the request).
             if let Some(feature) = &prop.feature {
-                let optional = !feature.rest.contains_key("default") && prop.required != Some(true);
+                let optional = feature.rest.get("default").is_none_or(serde_json::Value::is_null)
+                    && prop.required != Some(true);
                 let windows = feature.window.as_ref().map(|w| w.list()).unwrap_or_default();
-                let names: Vec<Arc<str>> = if windows.is_empty() {
-                    vec![prop_name.clone()]
+                let names: Vec<(Arc<str>, Option<Arc<str>>)> = if windows.is_empty() {
+                    vec![(prop_name.clone(), None)]
                 } else {
                     let listed = windows.len() > 1;
                     windows
@@ -441,11 +537,12 @@ impl DataModelIr {
                                 ));
                                 return None;
                             }
-                            Some(window_name(&prop_name, window, listed))
+                            Some((window_name(&prop_name, window, listed), Some(window.clone())))
                         })
                         .collect()
                 };
-                for feature_name in names {
+                let default = feature.rest.get("default").cloned();
+                for (feature_name, window) in names {
                     if feature_name != prop_name {
                         if let Some(prev_id) = seen.get(&feature_name) {
                             diagnostics.push(Diagnostic::error(
@@ -468,6 +565,14 @@ impl DataModelIr {
                         kind: kind.clone(),
                         array: prop.array,
                         optional,
+                        exact: exact.clone(),
+                        default: default.clone().filter(|d| !d.is_null()).map(Arc::new),
+                        supply: Some(Arc::new(Supply::Feature {
+                            base: prop_name.clone(),
+                            expr: feature.expr.clone(),
+                            window,
+                            default: default.clone(),
+                        })),
                     });
                 }
                 continue;
@@ -484,22 +589,55 @@ impl DataModelIr {
                 name: prop_name,
                 kind,
                 array: prop.array,
-                // Computed by the host: always there.
-                optional: (prop.optional || host_optional) && prop.compute.is_none() && prop.required != Some(true),
+                // Computed by the host, or filled with its `default` when
+                // missing: always there.
+                optional: (prop.optional || host_optional)
+                    && prop.compute.is_none()
+                    && prop.required != Some(true)
+                    && prop.rest.get("default").is_none_or(serde_json::Value::is_null),
+                exact,
+                default: prop
+                    .rest
+                    .get("default")
+                    .filter(|d| !d.is_null())
+                    .map(|d| Arc::new(d.clone())),
+                supply: match (&prop.compute, &prop.model) {
+                    (Some(expr), _) => Some(Arc::new(Supply::Compute { expr: expr.clone() })),
+                    (None, Some(model)) => Some(Arc::new(Supply::Model {
+                        datasource: model
+                            .get("datasource")
+                            .and_then(serde_json::Value::as_str)
+                            .filter(|d| !d.is_empty())
+                            .map(Arc::from),
+                    })),
+                    (None, None) => None,
+                },
             });
         }
 
+        let records = if doc.events.is_some() {
+            Records::Events
+        } else if doc.reference.is_some() {
+            Records::Reference
+        } else {
+            Records::Plain
+        };
         Some(DataModelIr {
             name,
             scope,
             properties,
+            records,
         })
     }
 }
 
 /// A feature window as written: a positive whole number (no leading zero)
-/// of minutes, hours or days (`10m`, `1h`, `7d`).
+/// of minutes, hours or days (`10m`, `1h`, `7d`), or `all` (all time).
 fn is_window(window: &str) -> bool {
+    // `all`: every day there is data for.
+    if window == "all" {
+        return true;
+    }
     let Some((digits, unit)) = window.split_at_checked(window.len().saturating_sub(1)) else {
         return false;
     };

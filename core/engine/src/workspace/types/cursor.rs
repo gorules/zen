@@ -46,6 +46,46 @@ pub enum CursorTarget {
         id: Arc<str>,
     },
     TransformInput,
+    /// A data model property's `feature.expr`.
+    FeatureExpr {
+        id: Arc<str>,
+    },
+    /// A data model property's `compute`.
+    ComputeExpr {
+        id: Arc<str>,
+    },
+    /// The request path of a model input (`model.inputs[input]`).
+    ModelInput {
+        id: Arc<str>,
+        input: Arc<str>,
+    },
+    /// A model's `model.when`.
+    ModelWhen {
+        id: Arc<str>,
+    },
+    /// What a call sends (`model.request`): empty sends the whole entity.
+    ModelRequest {
+        id: Arc<str>,
+    },
+    /// The call's value from its reply (`model.response`, reading `response`).
+    ModelResponse {
+        id: Arc<str>,
+    },
+}
+
+impl CursorTarget {
+    /// On an expression of a data model property (feature, compute, model).
+    pub fn is_data_model_expression(&self) -> bool {
+        matches!(
+            self,
+            CursorTarget::FeatureExpr { .. }
+                | CursorTarget::ComputeExpr { .. }
+                | CursorTarget::ModelInput { .. }
+                | CursorTarget::ModelWhen { .. }
+                | CursorTarget::ModelRequest { .. }
+                | CursorTarget::ModelResponse { .. }
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]

@@ -98,6 +98,11 @@ impl Workspace {
         self.db.enhance_graph_trace(document, trace)
     }
 
+    /// What a document reads from its request; None when it can't be known.
+    pub fn reads(&self, path: &str) -> Option<std::collections::BTreeSet<String>> {
+        self.db.document_reads(&Arc::from(path))
+    }
+
     pub(crate) fn eval_artifact(&self, policy: &str) -> Arc<EvalArtifact> {
         self.db.eval_artifact(policy)
     }

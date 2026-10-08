@@ -1123,9 +1123,26 @@ impl<'arena, 'token_ref, Flavor> Parser<'arena, 'token_ref, Flavor> {
         }
 
         loop {
+            let key_token = self.current().map(|t| (t.kind, t.value, t.span));
             let key = self.object_key(&expression_parser);
-            expect!(self, TokenKind::Operator(Operator::Slice));
-            let value = expression_parser(ParserContext::Global);
+            // Shorthand: `{ amount }` is `{ amount: amount }`.
+            let shorthand = match (key_token, self.current_kind()) {
+                (
+                    Some((TokenKind::Literal, value, span)),
+                    Some(
+                        TokenKind::Operator(Operator::Comma)
+                        | TokenKind::Bracket(Bracket::RightCurlyBracket),
+                    ),
+                ) => Some((value, span)),
+                _ => None,
+            };
+            let value = match shorthand {
+                Some((value, span)) => self.node(Node::Identifier(value), |_| NodeMetadata { span }),
+                None => {
+                    expect!(self, TokenKind::Operator(Operator::Slice));
+                    expression_parser(ParserContext::Global)
+                }
+            };
 
             key_value_pairs.push((key, value));
 

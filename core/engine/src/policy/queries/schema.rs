@@ -71,6 +71,8 @@ impl Db {
                 origin: FieldOrigin::Schema {
                     source: vp.policy_path,
                     kind: vp.property.kind.to_schema_field_kind(vp.property.array),
+                    exact_type: vp.property.exact.clone(),
+                    supply: vp.property.supply.clone(),
                 },
             });
         }
@@ -241,6 +243,8 @@ impl Db {
                 let origin = FieldOrigin::Schema {
                     source: vp.policy_path,
                     kind: vp.property.kind.to_schema_field_kind(vp.property.array),
+                    exact_type: vp.property.exact.clone(),
+                    supply: vp.property.supply.clone(),
                 };
                 Some((
                     entity,

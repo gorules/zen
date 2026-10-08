@@ -36,6 +36,71 @@ impl DepWalk {
 }
 
 impl Db {
+    /// The paths a document reads from its request (`transaction.amount`,
+    /// `card.txn_count_7d`), or None when that can't be known: a read of
+    /// `$`/`$root` or of something unresolved, or a node whose reads aren't
+    /// followed (a function, a custom node, a sub-decision, an input field
+    /// that isn't a plain path). A policy includes the rules of what it
+    /// imports; a graph typed by an entity reads under the entity's name.
+    pub(crate) fn document_reads(&self, document: &Arc<str>) -> Option<std::collections::BTreeSet<String>> {
+        let mut out = std::collections::BTreeSet::new();
+        if !self.is_graph(document) {
+            let unit = self.unit(document);
+            let shallow = self.shallow();
+            for rule in shallow.per_rule.iter().filter(|r| unit.members.contains(&r.policy_path)) {
+                for read in &rule.reads {
+                    let path = read.path.as_ref();
+                    if path == "$" || path == "$root" || path.starts_with("$.") || read.unresolved {
+                        return None;
+                    }
+                    if !read.via_alias {
+                        out.insert(path.to_string());
+                    }
+                }
+            }
+            return Some(out);
+        }
+        let snap = self.snapshot();
+        let content = snap.graphs.get(document).cloned()?;
+        let content = content.as_graph()?;
+        let root = content.request_target();
+        for node in &content.nodes {
+            match &node.kind {
+                DecisionNodeKind::InputNode { .. } | DecisionNodeKind::OutputNode { .. } => continue,
+                DecisionNodeKind::ExpressionNode { .. }
+                | DecisionNodeKind::DecisionTableNode { .. }
+                | DecisionNodeKind::SwitchNode { .. } => {}
+                _ => return None,
+            }
+            let paths = NodePaths::new(node);
+            if matches!(paths.read_base, ReadBase::Opaque) || self.node_reads_whole(node) {
+                return None;
+            }
+            for read in self.node_global_reads(node, &paths, None) {
+                out.insert(match &root {
+                    Some(target) => format!("{target}.{read}"),
+                    None => read.to_string(),
+                });
+            }
+        }
+        Some(out)
+    }
+
+    /// Whether a node reads its whole input (`$`, `$root`) or something unresolved.
+    fn node_reads_whole(&self, node: &DecisionNode) -> bool {
+        let intellisense = self.graph_intellisense();
+        let mut is = intellisense.borrow_mut();
+        GraphAnalyzer::node_sites(node).iter().any(|site| {
+            let deps = match site.kind {
+                ExpressionKind::Standard => is.dependencies(&site.source).reads,
+                ExpressionKind::Unary => is.reads_unary(&site.source),
+            };
+            let mut flat: Vec<PropertyRead> = Vec::new();
+            ReadFlattener::extend_from_deps(&deps, &None, &mut flat);
+            flat.iter().any(|read| matches!(read.path.as_ref(), "$" | "$root") || read.unresolved)
+        })
+    }
+
     pub(crate) fn graph_dependencies(&self, document: &Arc<str>, target: &str) -> DependencyNode {
         self.graph_dep_node(document, target, &mut DepWalk::new())
     }

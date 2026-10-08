@@ -31,8 +31,16 @@ impl FilesystemLoader {
         }
     }
 
+    /// The file of a key: as named, else with `.json` (BRMS names documents
+    /// and their imports without an extension, `models/cards`, while a
+    /// folder on disk usually has `models/cards.json`).
     fn key_to_path<K: AsRef<str>>(&self, key: K) -> PathBuf {
-        Path::new(&self.root).join(key.as_ref())
+        let path = Path::new(&self.root).join(key.as_ref());
+        if path.exists() {
+            return path;
+        }
+        let with_json = Path::new(&self.root).join(format!("{}.json", key.as_ref()));
+        if with_json.exists() { with_json } else { path }
     }
 
     fn read_content<K: AsRef<str>>(&self, key: K) -> LoaderResponse {
@@ -120,6 +128,8 @@ mod tests {
 
         assert!(loader.load("table.json").await.is_ok());
         assert!(loader.load_sync("table.json").unwrap().is_ok());
+        // A key without its extension, as BRMS imports name documents.
+        assert!(loader.load("table").await.is_ok());
     }
 
     #[tokio::test]

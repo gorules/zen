@@ -25,6 +25,7 @@ use crate::policy::linter::{AstOps, RedundantParentheses};
 use crate::policy::queries::scope::VariableTypeScope;
 use crate::workspace::db::Db;
 use crate::workspace::graph::function::FunctionTypeOutcome;
+use crate::workspace::graph::request::{RequestTarget, RequestTypes};
 use crate::workspace::types::{
     CursorTarget, Diagnostic, DiagnosticArgs, DiagnosticCode, DiagnosticLocation, ExpressionKind,
     Severity,
@@ -107,6 +108,8 @@ pub(crate) struct GraphAnalyzer<'a> {
     unchecked: bool,
     nodes_scope: VariableType,
     dictionary_types: HashMap<Arc<str>, VariableType>,
+    /// The Request node's entity, when it names one (`target`).
+    request: RequestTarget,
     constraints: PathConstraints,
     rewritten: Option<Vec<Arc<str>>>,
 }
@@ -153,6 +156,7 @@ impl GraphTopology {
 impl<'a> GraphAnalyzer<'a> {
     pub(crate) fn new(db: &'a Db, path: Arc<str>, content: &'a GraphContent) -> Self {
         let dictionary_types = db.graph_dictionary_types(&content.imports);
+        let request = Self::request_target(db, content);
         Self {
             db,
             path,
@@ -162,9 +166,36 @@ impl<'a> GraphAnalyzer<'a> {
             unchecked: false,
             nodes_scope: VariableType::Any,
             dictionary_types,
+            request,
             constraints: PathConstraints::default(),
             rewritten: None,
         }
+    }
+
+    /// The Request node's entity, resolved through the graph's imports (as
+    /// an entity property's `target` is). The imports are recorded as read by
+    /// `graph_dictionary_types`, entities with them.
+    fn request_target(db: &Db, content: &GraphContent) -> RequestTarget {
+        let Some(target) = content.nodes.iter().find_map(|node| match &node.kind {
+            DecisionNodeKind::InputNode { content } => content.target.clone(),
+            _ => None,
+        }) else {
+            return RequestTarget::None;
+        };
+        let blocks = db.graph_entity_blocks(&content.imports);
+        if !blocks.iter().any(|b| b.ir.name == target) {
+            return RequestTarget::Missing(target);
+        }
+        let entities: HashMap<Arc<str>, Arc<crate::policy::ir::DataModelIr>> =
+            blocks.into_iter().map(|b| (b.ir.name.clone(), b.ir)).collect();
+        let dictionaries: HashMap<Arc<str>, Arc<crate::policy::ir::DictionaryIr>> = db
+            .graph_dictionary_blocks(&content.imports)
+            .into_iter()
+            .map(|b| (b.ir.name.clone(), b.ir))
+            .collect();
+        let types = RequestTypes { entities: &entities, dictionaries: &dictionaries };
+        let (input, roots) = types.input(&target);
+        RequestTarget::Entity { input, roots }
     }
 
     pub(crate) fn analyze(mut self) -> GraphAnalysis {
@@ -627,6 +658,9 @@ impl<'a> GraphAnalyzer<'a> {
     }
 
     fn graph_input_type(&self) -> VariableType {
+        if let Some(input) = self.request.input() {
+            return input.shallow_clone();
+        }
         self.content
             .nodes
             .iter()
@@ -639,6 +673,9 @@ impl<'a> GraphAnalyzer<'a> {
     }
 
     fn graph_input_signature(&self) -> VariableType {
+        if let Some(input) = self.request.input() {
+            return input.shallow_clone();
+        }
         self.content
             .nodes
             .iter()
@@ -648,6 +685,25 @@ impl<'a> GraphAnalyzer<'a> {
             })
             .map(|schema| super::SchemaType::variable_type_with(schema, &self.dictionary_types))
             .unwrap_or(VariableType::Any)
+    }
+
+    /// A Request node typed by an entity: not with a schema too, and the
+    /// entity visible through the graph's imports.
+    fn check_request_target(&mut self, node: &DecisionNode, with_schema: bool) {
+        let location = || DiagnosticLocation::block(self.path.clone(), node.id.clone());
+        if with_schema {
+            self.diagnostics.push(Diagnostic::error(
+                DiagnosticCode::InvalidGraphStructure,
+                location(),
+                "the request is typed twice: by a schema and by an entity (`target`); keep one",
+            ));
+        }
+        if let RequestTarget::Missing(target) = &self.request {
+            let message = format!(
+                "no entity `{target}` visible from this document; import the policy that defines it"
+            );
+            self.diagnostics.push(Diagnostic::error(DiagnosticCode::UnknownDataModelTarget, location(), message));
+        }
     }
 
     fn check_schema_dictionaries(&mut self, node: &DecisionNode, schema: &serde_json::Value) {
@@ -711,6 +767,14 @@ impl<'a> GraphAnalyzer<'a> {
         };
 
         match &node.kind {
+            DecisionNodeKind::InputNode { content } if content.target.is_some() => {
+                self.check_request_target(node, content.schema.is_some());
+                analysis.output = graph_input.shallow_clone();
+                if matches!(graph_input, VariableType::Any) {
+                    analysis.opaque = true;
+                    analysis.open = true;
+                }
+            }
             DecisionNodeKind::InputNode { content } => {
                 if let Some(schema) = content.schema.as_ref() {
                     self.check_schema_dictionaries(node, schema);
@@ -2643,6 +2707,10 @@ impl<'a> GraphAnalyzer<'a> {
     }
 
     fn locate_nullable_sources(&mut self, topology: &GraphTopology) {
+        let request_roots: Vec<Arc<str>> = match &self.request {
+            RequestTarget::Entity { roots, .. } => roots.clone(),
+            _ => Vec::new(),
+        };
         let covers = |written: &str, field: &str| {
             field == written
                 || field
@@ -2667,6 +2735,10 @@ impl<'a> GraphAnalyzer<'a> {
                         !written.is_empty()
                             && covers(&prefixed(&content.transform_attributes, written), field)
                     })
+                }
+                DecisionNodeKind::InputNode { content } if content.target.is_some() => {
+                    let root = field.split('.').next().unwrap_or_default();
+                    request_roots.iter().any(|r| r.as_ref() == root)
                 }
                 DecisionNodeKind::InputNode { content } => {
                     let mut schema = content.schema.as_deref();

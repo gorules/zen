@@ -260,6 +260,13 @@ pub enum FieldOrigin {
         source: Arc<str>,
         #[serde(rename = "fieldKind")]
         kind: SchemaFieldKind,
+        /// The type as written when checked as another (`integer`, `timestamp`).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        exact_type: Option<Arc<str>>,
+        /// Supplied by the host: a feature (one field per window), a value
+        /// computed per event, or a model's output.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        supply: Option<Arc<crate::policy::ir::Supply>>,
     },
     Computed {
         written_by: BlockRef,

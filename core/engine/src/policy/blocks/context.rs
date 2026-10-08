@@ -425,7 +425,8 @@ impl AnalysisContext {
             }
             let resolved = self.scope.resolve_at(&read.path);
             let unknown = match resolved {
-                VariableType::Any => true,
+                // Under a value declared open (`any`), every path may exist.
+                VariableType::Any => !Self::under_open(&self.scope, &read.path),
                 VariableType::Null => !Self::path_declared(&self.scope, &read.path),
                 _ => false,
             };
@@ -444,6 +445,19 @@ impl AnalysisContext {
         for (expr_id, span, msg) in problems {
             self.error(DiagnosticCode::UndefinedVariable, expr_id, span, msg);
         }
+    }
+
+    /// Whether `path` is below a declared value typed `any` (a call's
+    /// `response`, an open field): nothing more is known of its shape.
+    fn under_open(scope: &VariableType, path: &str) -> bool {
+        let mut parent = path;
+        while let Some((head, _)) = parent.rsplit_once('.') {
+            if matches!(scope.resolve_at(head), VariableType::Any) && Self::path_declared(scope, head) {
+                return true;
+            }
+            parent = head;
+        }
+        false
     }
 
     fn path_declared(scope: &VariableType, path: &str) -> bool {

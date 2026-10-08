@@ -14,7 +14,7 @@ use crate::policy::blocks::{
 };
 use crate::policy::evaluator::EvalArtifact;
 use crate::policy::ir::{
-    DataModelIr, DictionaryIr, ParsedPolicy, Policy, Property, PropertyPath, Scope,
+    DataModelIr, DictionaryIr, ParsedPolicy, Policy, Property, PropertyPath, Records, Scope,
 };
 use crate::policy::queries::dependency::{
     DataModelPaths, DependencyGraph, EnrichedState, EvalGraph, RuleShallowAnalysis, ShallowAnalyses,
@@ -1045,8 +1045,13 @@ impl Snapshot {
         let mut sorted: Vec<&Arc<str>> = subset.keys().collect();
         sorted.sort();
         let mut props_by_entity: HashMap<Arc<str>, Vec<Property>> = HashMap::new();
+        let mut records_by_entity: HashMap<Arc<str>, Records> = HashMap::new();
         for pp in sorted {
             for (_, dm) in subset[pp].policy.entity_data_models() {
+                let records = records_by_entity.entry(dm.name.clone()).or_default();
+                if *records == Records::Plain {
+                    *records = dm.records;
+                }
                 let bucket = props_by_entity.entry(dm.name.clone()).or_default();
                 for prop in &dm.properties {
                     if !bucket.iter().any(|p| p.name == prop.name) {
@@ -1062,6 +1067,7 @@ impl Snapshot {
                     name: name.clone(),
                     scope: Scope::Entity,
                     properties,
+                    records: records_by_entity.get(&name).copied().unwrap_or_default(),
                 });
                 (name, dm)
             })

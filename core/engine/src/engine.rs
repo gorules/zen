@@ -154,6 +154,13 @@ impl DecisionEngine {
         failures
     }
 
+    /// The paths a compiled document reads from its request (`transaction.amount`,
+    /// `card.txn_count_7d`); None when unknown (a dynamic read, an opaque node)
+    /// or when the document isn't compiled. Available after `compile()`.
+    pub fn reads(&self, key: &str) -> Option<std::collections::BTreeSet<String>> {
+        self.compiled.load_full()?.reads(key)
+    }
+
     pub fn compile_failures(&self) -> Vec<CompileFailure> {
         self.compiled
             .load_full()
@@ -186,7 +193,13 @@ impl DecisionEngine {
     {
         let key_str = key.as_ref();
         if let Some(set) = self.compiled.load_full() {
-            if let Some(entry) = set.get(key_str) {
+            // Compiled under its path with or without `.json`, as loaders
+            // find documents either way.
+            let entry = set.get(key_str).or_else(|| match key_str.strip_suffix(".json") {
+                Some(bare) => set.get(bare),
+                None => set.get(&format!("{key_str}.json")),
+            });
+            if let Some(entry) = entry {
                 return match entry {
                     CompiledEntry::Policy(artifact) => artifact
                         .evaluate_entry(key_str, context, options.trace)

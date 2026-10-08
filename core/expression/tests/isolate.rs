@@ -1046,3 +1046,18 @@ fn string_index_at_usize_max_returns_null() {
     let result = isolate.run_standard("s[i]").unwrap();
     assert_eq!(result, Variable::Null);
 }
+
+#[test]
+fn object_shorthand_names_its_value() {
+    let mut isolate = Isolate::new();
+    isolate.set_environment(Variable::from(json!({ "amount": 9500, "customer": { "risk": "high" } })));
+    assert_eq!(
+        isolate.run_standard("{ amount, risk: customer.risk, customer }").unwrap().to_value(),
+        json!({ "amount": 9500, "risk": "high", "customer": { "risk": "high" } })
+    );
+    assert_eq!(isolate.run_standard("{ amount }").unwrap().to_value(), json!({ "amount": 9500 }));
+    assert_eq!(isolate.run_standard("{ missing }").unwrap().to_value(), json!({ "missing": null }));
+    // Quoted keys and keys that are words stay keys that need a value.
+    assert!(isolate.run_standard("{ 'amount' }").is_err());
+    assert!(isolate.run_standard("{ true }").is_err());
+}

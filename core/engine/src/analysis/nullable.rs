@@ -255,6 +255,27 @@ impl NullableOperand {
             .collect()
     }
 
+    /// A type error only because an operand may be null (`number?` and
+    /// `number` under `/` or `>`): where null in gives null out, as in the
+    /// feature store's derived expressions, not an error.
+    pub(crate) fn null_propagates(diagnostic: &Diagnostic) -> bool {
+        if diagnostic.code != DiagnosticCode::TypeMismatch {
+            return false;
+        }
+        let Some((operator, left, right)) = Self::parse_message(&diagnostic.message) else {
+            return false;
+        };
+        let nullable = left.ends_with('?') || right.ends_with('?');
+        let (left, right) = (left.trim_end_matches('?'), right.trim_end_matches('?'));
+        let numeric = matches!(operator.as_str(), "+" | "-" | "*" | "/" | "%" | "^");
+        let ordered = matches!(operator.as_str(), ">" | "<" | ">=" | "<=");
+        nullable
+            && left == right
+            && ((numeric && left == "number")
+                || (ordered && matches!(left, "number" | "date"))
+                || (operator == "+" && left == "string"))
+    }
+
     fn parse_message(message: &str) -> Option<(String, String, String)> {
         let rest = message.strip_prefix("Operator `")?;
         let parts: Vec<&str> = rest.split('`').collect();

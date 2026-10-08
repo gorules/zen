@@ -76,6 +76,23 @@ pub(crate) struct InputSchema {
 }
 
 impl InputSchema {
+    /// The schema of a graph's request typed by an entity: `target` at the
+    /// root, the entities it references as pools beside it.
+    pub(crate) fn for_request(
+        entities: Arc<HashMap<Arc<str>, Arc<DataModelIr>>>,
+        target: Arc<str>,
+        pools: impl IntoIterator<Item = Arc<str>>,
+        dictionaries: HashMap<Arc<str>, Arc<DictionaryIr>>,
+    ) -> Self {
+        InputSchema {
+            entities,
+            globals: HashMap::new(),
+            roots: std::iter::once(target).collect(),
+            ref_targets: pools.into_iter().collect(),
+            dictionaries,
+        }
+    }
+
     pub(crate) fn validate(&self, input: &Variable) -> Vec<InputValidationError> {
         let ref_pools = RefPoolIndex::from_input(input, self.ref_targets.iter().cloned());
         let mut validator = InputValidator {
@@ -116,8 +133,12 @@ impl InputSchema {
 }
 
 impl InputSchema {
+    /// The input with declared dates converted and missing (or null)
+    /// properties given their `default`, on every entity instance: roots,
+    /// pool items and nested objects. `None` when nothing changes; the
+    /// input itself is never modified.
     pub(crate) fn convert_dates(&self, input: &Variable) -> Option<Variable> {
-        DeclaredDates::rewrite_fields(input, |key, value| {
+        let converted = DeclaredDates::rewrite_fields(input, |key, value| {
             if self.ref_targets.contains(key) {
                 DeclaredDates::rewrite_items(value, |item| self.convert_entity(item, key, 0))
             } else if self.roots.contains(key) {
@@ -125,7 +146,13 @@ impl InputSchema {
             } else {
                 self.convert_property(value, self.globals.get(key)?, 0)
             }
-        })
+        });
+        if input.as_object().is_none() {
+            return converted;
+        }
+        let mut globals: Vec<&Property> = self.globals.values().collect();
+        globals.sort_by(|a, b| a.name.cmp(&b.name));
+        self.fill_defaults(converted, input, globals.into_iter(), 0)
     }
 
     fn convert_entity(&self, value: &Variable, entity: &str, depth: usize) -> Option<Variable> {
@@ -133,10 +160,48 @@ impl InputSchema {
             return None;
         }
         let model = self.entities.get(entity)?;
-        DeclaredDates::rewrite_fields(value, |key, child| {
+        let converted = DeclaredDates::rewrite_fields(value, |key, child| {
             let property = model.properties.iter().find(|p| *p.name == *key)?;
             self.convert_property(child, property, depth + 1)
-        })
+        });
+        self.fill_defaults(converted, value, model.properties.iter(), depth + 1)
+    }
+
+    /// Sets each missing or null property that has a `default` (converted
+    /// like a supplied value), on a copy.
+    fn fill_defaults<'p>(
+        &self,
+        converted: Option<Variable>,
+        value: &Variable,
+        properties: impl Iterator<Item = &'p Property>,
+        depth: usize,
+    ) -> Option<Variable> {
+        let current = converted.as_ref().unwrap_or(value);
+        let object = current.as_object()?;
+        let missing: Vec<(Arc<str>, Variable)> = {
+            let fields = object.borrow();
+            properties
+                .filter_map(|p| {
+                    let default = p.default.as_ref()?;
+                    let absent = fields
+                        .get(&zen_types::symbol::Symbol::from(p.name.as_ref()))
+                        .is_none_or(|v| matches!(v, Variable::Null));
+                    absent.then(|| {
+                        let filled = Variable::from(default.as_ref().clone());
+                        let filled = self.convert_property(&filled, p, depth).unwrap_or(filled);
+                        (p.name.clone(), filled)
+                    })
+                })
+                .collect()
+        };
+        if missing.is_empty() {
+            return converted;
+        }
+        let mut next = object.borrow().clone();
+        for (name, filled) in missing {
+            next.insert_str(&name, filled);
+        }
+        Some(Variable::from_object(next))
     }
 
     fn convert_property(

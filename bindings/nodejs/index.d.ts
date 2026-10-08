@@ -29,7 +29,17 @@ export type PolicyCursorTarget =
   | { kind: 'decisionTableRow'; row: string }
   | { kind: 'dataModelName' }
   | { kind: 'dataModelProperty'; id: string }
-  | { kind: 'transformInput' };
+  | { kind: 'transformInput' }
+  /** A data model property's `feature.expr` (`id` is the property id). */
+  | { kind: 'featureExpr'; id: string }
+  /** A data model property's per-event `compute`. */
+  | { kind: 'computeExpr'; id: string }
+  /** The request path given to a model input, `model.inputs[input]`. */
+  | { kind: 'modelInput'; id: string; input: string }
+  /** A model's `model.when` condition. */
+  | { kind: 'modelWhen'; id: string }
+  | { kind: 'modelRequest'; id: string }
+  | { kind: 'modelResponse'; id: string };
 
 /**
  * How an entity field came into existence — declared by a DataModel
@@ -38,8 +48,26 @@ export type PolicyCursorTarget =
  * through filter / index / slice) carry `instanceOf`.
  */
 export type PolicyFieldOrigin =
-  | { origin: 'schema'; source: string; fieldKind: PolicyFieldKindInfo }
+  | {
+      origin: 'schema';
+      source: string;
+      fieldKind: PolicyFieldKindInfo;
+      /** The type as written when checked as another: `integer`, `decimal`, `timestamp`, `object`, `any`. */
+      exactType?: string;
+      /** Supplied by the host rather than the request. */
+      supply?: PolicyFieldSupply;
+    }
   | { origin: 'computed'; writtenBy: PolicyPropertyWriter; instanceOf?: PolicyInstanceOf };
+/**
+ * How the host supplies a field. A feature with windows is one field per
+ * window: `txn_count` over `1h` is the field `txn_count_1h` with
+ * `base: 'txn_count'`, `window: '1h'`. A feature without `default` is
+ * nullable (unknown or not covered).
+ */
+export type PolicyFieldSupply =
+  | { kind: 'feature'; base: string; expr: string; window?: string; default?: unknown }
+  | { kind: 'compute'; expr: string }
+  | { kind: 'model'; datasource?: string };
 export type PolicyDiagnosticCode =
   | 'UNDEFINED_VARIABLE'
   | 'TYPE_MISMATCH'

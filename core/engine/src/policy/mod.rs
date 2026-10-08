@@ -24,6 +24,7 @@ pub use crate::workspace::{
     ScopeRequest, Severity, SlotResponse, SlotRole, Span, Trace, Workspace, WriteConflict,
     WriteTrace,
 };
+pub use ir::Supply;
 pub use raw::{BlockDoc, PolicyDocument};
 
 pub type PolicyWorkspace = Workspace;

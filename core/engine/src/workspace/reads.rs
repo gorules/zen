@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::policy::ir::DictionaryIr;
 use crate::workspace::db::Db;
-use crate::workspace::graph::SignatureResolution;
+use crate::workspace::graph::{EntityUnitEntry, SignatureResolution};
 
 #[derive(Clone, PartialEq)]
 pub(crate) enum ReadView {
@@ -21,6 +21,8 @@ pub(crate) enum ImportKind {
 pub(crate) struct DictionaryView {
     imports: Vec<(Arc<str>, ImportKind)>,
     entries: Vec<(Arc<str>, Arc<str>, Arc<DictionaryIr>)>,
+    /// The entities seen through the same imports (a Request node typed by one).
+    entities: Vec<EntityUnitEntry>,
 }
 
 impl Db {
@@ -46,6 +48,7 @@ impl Db {
                 .into_iter()
                 .map(|entry| (entry.policy_path, entry.block_id, entry.ir))
                 .collect(),
+            entities: self.graph_entity_blocks(imports),
         }
     }
 

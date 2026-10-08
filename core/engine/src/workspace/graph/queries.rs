@@ -4,6 +4,7 @@ use std::sync::Arc;
 use ahash::{HashMap, HashMapExt, HashSet};
 use zen_expression::variable::VariableType;
 
+use crate::policy::ir::DataModelIr;
 use crate::workspace::db::{Db, DictionaryUnitEntry};
 use crate::workspace::graph::analysis::{
     GraphAnalysis, GraphAnalyzer, GraphSignature, SignatureResolution,
@@ -64,6 +65,40 @@ impl Db {
                     continue;
                 }
                 out.push(DictionaryUnitEntry {
+                    policy_path: path.clone(),
+                    block_id: block.id.clone(),
+                    ir: block.ir.clone(),
+                });
+            }
+            queue.extend(parsed.policy.imports().iter().cloned());
+        }
+        out
+    }
+
+    /// The entities a graph's imports make visible (the imports and what
+    /// they import), each with the policy that defines it; the first of a
+    /// name wins.
+    pub(crate) fn graph_entity_blocks(&self, imports: &[Arc<str>]) -> Vec<EntityUnitEntry> {
+        let snap = self.snapshot();
+        let mut seen: HashSet<Arc<str>> = HashSet::default();
+        let mut visited: HashSet<Arc<str>> = HashSet::default();
+        let mut queue: VecDeque<Arc<str>> = imports.iter().cloned().collect();
+        let mut out: Vec<EntityUnitEntry> = Vec::new();
+        while let Some(path) = queue.pop_front() {
+            if !visited.insert(path.clone()) {
+                continue;
+            }
+            let Some(parsed) = snap.all_parsed.get(&path) else {
+                continue;
+            };
+            for block in &parsed.policy.data_models {
+                if block.ir.scope.is_global() || block.ir.name.is_empty() {
+                    continue;
+                }
+                if !seen.insert(block.ir.name.clone()) {
+                    continue;
+                }
+                out.push(EntityUnitEntry {
                     policy_path: path.clone(),
                     block_id: block.id.clone(),
                     ir: block.ir.clone(),
@@ -204,5 +239,22 @@ impl Db {
             .collect();
         nodes.sort();
         nodes
+    }
+}
+
+/// An entity a graph sees through its imports, and where it is defined.
+#[derive(Clone)]
+pub(crate) struct EntityUnitEntry {
+    pub policy_path: Arc<str>,
+    pub block_id: Arc<str>,
+    pub ir: Arc<DataModelIr>,
+}
+
+impl PartialEq for EntityUnitEntry {
+    // The same parsed block: a policy's blocks are parsed again only when it changes.
+    fn eq(&self, other: &Self) -> bool {
+        self.policy_path == other.policy_path
+            && self.block_id == other.block_id
+            && Arc::ptr_eq(&self.ir, &other.ir)
     }
 }

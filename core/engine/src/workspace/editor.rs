@@ -1,8 +1,9 @@
+use std::rc::Rc;
 use std::sync::Arc;
 
 use ahash::{HashMap, HashMapExt, HashSet};
 use serde_json::Value;
-use zen_expression::intellisense::completion::Completions;
+use zen_expression::intellisense::completion::{CompletionKind, Completions};
 use zen_expression::intellisense::Reference;
 use zen_expression::slot::SlotRole;
 use zen_expression::variable::VariableType;
@@ -28,13 +29,67 @@ impl Db {
             role,
             &scope,
         )?;
+        let detail = r.detail.or_else(|| {
+            let path = Self::dotted_path_before(source.get(..r.span.1 as usize)?)?;
+            self.supply_detail(cursor, &path)
+        });
         Some(InspectResult {
             span: SpanOps::char_span(&source, r.span),
             kind: r.kind,
             label: r.label,
-            detail: r.detail,
+            detail,
             info: r.info,
         })
+    }
+
+    /// The dotted path ending the text: `transaction.card.txn_count_1h`.
+    fn dotted_path_before(text: &str) -> Option<Vec<&str>> {
+        let start = text
+            .char_indices()
+            .rev()
+            .take_while(|(_, c)| c.is_alphanumeric() || *c == '_' || *c == '.' || *c == '$')
+            .last()
+            .map(|(i, _)| i)?;
+        let path: Vec<&str> = text[start..].split('.').collect();
+        path.iter().all(|s| !s.is_empty()).then_some(path)
+    }
+
+    /// `integer? · count(transaction) · 1h` for a property the host supplies
+    /// (a feature, a per-event compute, a model's output), by its path.
+    fn supply_detail(&self, cursor: &Cursor, path: &[&str]) -> Option<String> {
+        if self.is_graph(&cursor.policy_path) {
+            return None;
+        }
+        let unit = self.unit(&cursor.policy_path);
+        let (field, parent) = path.split_last()?;
+        let entity: Arc<str> = if parent.is_empty() {
+            // An entity's own properties, in its derived features and computes.
+            if !matches!(
+                cursor.target,
+                CursorTarget::FeatureExpr { .. }
+                    | CursorTarget::ComputeExpr { .. }
+                    | CursorTarget::ModelRequest { .. }
+                    | CursorTarget::ModelResponse { .. }
+                    | CursorTarget::ModelWhen { .. }
+            ) {
+                return None;
+            }
+            unit.data_models
+                .iter()
+                .find(|e| e.policy_path == cursor.policy_path && e.block_id == cursor.block_id)?
+                .ir
+                .name
+                .clone()
+        } else {
+            let segments: Vec<Rc<str>> = parent.iter().map(|s| Rc::from(*s)).collect();
+            unit.entity_graph.resolve_path_to_element(&segments)?
+        };
+        unit.entities
+            .get(&entity)?
+            .properties
+            .iter()
+            .find(|p| p.name.as_ref() == *field)?
+            .supply_detail()
     }
 
     pub fn completions(&self, cursor: &Cursor) -> Vec<Completion> {
@@ -69,6 +124,22 @@ impl Db {
         let mut completions = Completions::from_slot(source, pos, &scope.scope, &result.slot);
         if !self.is_graph(&cursor.policy_path) {
             completions.retain(|c| c.label != "$root");
+            let before = source.get(..result.slot.replace_span.0 as usize).unwrap_or("");
+            let parent = match before.strip_suffix('.') {
+                Some(receiver) => Self::dotted_path_before(receiver),
+                None => Some(Vec::new()),
+            };
+            if let Some(parent) = parent {
+                for completion in completions.iter_mut().filter(|c| {
+                    matches!(c.kind, CompletionKind::Property | CompletionKind::Variable)
+                }) {
+                    let path: Vec<&str> =
+                        parent.iter().copied().chain([completion.label.as_str()]).collect();
+                    if let Some(detail) = self.supply_detail(cursor, &path) {
+                        completion.detail = detail;
+                    }
+                }
+            }
         }
         completions
     }
@@ -321,6 +392,9 @@ impl Db {
                 .clone(),
             (BlockDoc::Assertion { data, .. }, CursorTarget::AssertionOutput) => {
                 data.output.clone()
+            }
+            (BlockDoc::DataModel { data, .. }, target) if target.is_data_model_expression() => {
+                data.expression(target)?
             }
             (BlockDoc::Match { data, .. }, CursorTarget::MatchTarget) => data.key.clone(),
             (BlockDoc::Match { data, .. }, CursorTarget::MatchValue { id }) => {

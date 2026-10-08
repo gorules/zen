@@ -9,6 +9,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::sync::Arc;
 use zen_expression::{ExpressionKind, Isolate, OpcodeCache};
 use zen_types::decision::{DecisionEdge, DecisionNode, DecisionNodeKind, FunctionNodeContent};
+use crate::decision_graph::request_entity::RequestPreparation;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(untagged)]
@@ -116,6 +117,10 @@ pub struct GraphContent {
     #[serde(skip)]
     pub resolved_schemas: Option<Arc<HashMap<Arc<str>, (Arc<serde_json::Value>, u64)>>>,
 
+    /// The Request node's entity preparation (`target`), loaded once.
+    #[serde(skip)]
+    pub(crate) request_preparation: RequestPreparationCache,
+
     #[serde(skip)]
     pub(crate) validator_cache: ValidatorCache,
 
@@ -222,7 +227,22 @@ impl GraphContent {
         self.dt_indexes = Some(Arc::new(indexes));
     }
 
+    /// The entity a Request node names (`target`): the host passes a flat
+    /// body under this name.
+    pub fn request_target(&self) -> Option<Arc<str>> {
+        self.nodes.iter().find_map(|node| match &node.kind {
+            DecisionNodeKind::InputNode { content } => content.target.clone(),
+            _ => None,
+        })
+    }
+
     pub async fn resolve_schemas(&mut self, loader: &DynamicLoader) -> Result<(), String> {
+        if self.request_preparation.0.is_none() {
+            if let Some(target) = self.request_target() {
+                let prepared = RequestPreparation::load(loader, &self.imports, &target).await?;
+                self.request_preparation = RequestPreparationCache(Some(Arc::new(prepared)));
+            }
+        }
         if self.resolved_schemas.is_some() {
             return Ok(());
         }
@@ -319,5 +339,16 @@ mod tests {
     fn valid_policy_routes_to_policy_variant() {
         let content: DecisionContent = serde_json::from_str(r#"{"blocks":[]}"#).unwrap();
         assert!(content.as_policy().is_some());
+    }
+}
+
+/// A graph's loaded Request entity preparation (equal whatever it holds, as
+/// the other caches of a graph are).
+#[derive(Clone, Default, Debug)]
+pub(crate) struct RequestPreparationCache(pub(crate) Option<Arc<RequestPreparation>>);
+
+impl PartialEq for RequestPreparationCache {
+    fn eq(&self, _: &Self) -> bool {
+        true
     }
 }

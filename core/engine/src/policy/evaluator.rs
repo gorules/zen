@@ -742,7 +742,7 @@ impl Block {
     }
 }
 
-trait StoreOps {
+pub(crate) trait StoreOps {
     fn hydrate_references(&self, reference_fields: &[ReferenceField], pool_index: &RefPoolIndex);
     fn snapshot(&self, order: &[PropertyPath]) -> HashMap<Arc<str>, Variable>;
 }
